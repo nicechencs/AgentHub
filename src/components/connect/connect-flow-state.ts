@@ -16,6 +16,12 @@ import type {
 import { connectSourceKey, planFanoutKey } from '@/lib/connect-flow/types';
 import type { AdapterReusePath } from '@/lib/backend/contracts/adapter';
 import type { TranslateFn } from '@/lib/i18n';
+import {
+  routeEndpointIdForBinding,
+  routeEndpointIdForTargetAgent,
+  routeEndpointPath,
+  type RouteEndpointId,
+} from '@/lib/route-endpoints';
 
 export type ConnectFlowStep = 'select' | 'preview' | 'result';
 export type ConnectFlowBusy = 'idle' | 'applying' | 'switching';
@@ -577,7 +583,12 @@ export function describePlanPreview(plan: AdapterApplyPlan, t?: TranslateFn): Pl
   const reusePath = reusePathForPlan(plan);
   const analysisReason = plan.analysis.reason || plan.reason || '';
   const sourceHint = sourceHintFromReason(analysisReason, t);
-  const display = localTargetLabels(plan.targetAgentId).display;
+  const display = reusePath === 'local_bridge'
+    ? routeEndpointPath(routeEndpointIdForBinding({
+        agentId: plan.targetAgentId,
+        ruleId: plan.analysis.ruleId,
+      }))
+    : localTargetLabels(plan.targetAgentId).display;
   const reason = reusePath === 'local_bridge'
     ? (t
       ? t('connect.preview.localReason', { source: sourceHint, target: display })
@@ -852,6 +863,11 @@ export function adapterRouteMatchesPurpose(
   return route === 'native_endpoint' || route === 'config_sync';
 }
 
+/** Route picker binds an existing login onto loopback endpoints; extra import/key CTAs do not apply. */
+export function shouldShowConnectGuideActions(entry: ConnectFlowEntry): boolean {
+  return entry.mode !== 'for-source' || entry.purpose !== 'route';
+}
+
 /** Keep loading/error rows; drop ready plans that belong to the other purpose. */
 export function visibleTargetsForPurpose(
   targetIds: readonly AgentId[],
@@ -869,6 +885,62 @@ export function visibleTargetsForPurpose(
     }
     return false;
   });
+}
+
+function routeEndpointIdForAgentEligibility(
+  agentId: AgentId,
+  eligibility: PlanEligibility | undefined,
+): RouteEndpointId {
+  if (eligibility?.kind === 'ready') {
+    return routeEndpointIdForBinding({
+      agentId,
+      ruleId: eligibility.plan.analysis.ruleId,
+    });
+  }
+  return routeEndpointIdForTargetAgent(agentId);
+}
+
+/** Writer agents that currently sit on this unified downstream surface. */
+export function agentsForRouteEndpoint(
+  endpointId: RouteEndpointId,
+  targetAgentIds: readonly AgentId[],
+  source: ConnectSourceRef,
+  eligibilities: ReadonlyMap<string, PlanEligibility>,
+): AgentId[] {
+  return targetAgentIds.filter((agentId) => {
+    const eligibility = eligibilityOf(eligibilities, source, agentId);
+    return routeEndpointIdForAgentEligibility(agentId, eligibility) === endpointId;
+  });
+}
+
+/** Prefer a canApply writer; otherwise the first agent still listed for the surface. */
+export function representativeAgentForRouteEndpoint(
+  endpointId: RouteEndpointId,
+  targetAgentIds: readonly AgentId[],
+  source: ConnectSourceRef,
+  eligibilities: ReadonlyMap<string, PlanEligibility>,
+): AgentId | null {
+  const agents = agentsForRouteEndpoint(endpointId, targetAgentIds, source, eligibilities);
+  const applyable = agents.find((agentId) => (
+    isTargetSelectable(eligibilityOf(eligibilities, source, agentId))
+  ));
+  return applyable ?? agents[0] ?? null;
+}
+
+export function eligibilityForRouteEndpoint(
+  endpointId: RouteEndpointId,
+  targetAgentIds: readonly AgentId[],
+  source: ConnectSourceRef,
+  eligibilities: ReadonlyMap<string, PlanEligibility>,
+): PlanEligibility | undefined {
+  const agentId = representativeAgentForRouteEndpoint(
+    endpointId,
+    targetAgentIds,
+    source,
+    eligibilities,
+  );
+  if (!agentId) return undefined;
+  return eligibilityOf(eligibilities, source, agentId);
 }
 
 /** 状态机 entry 与当前打开的 entry 不同步（首帧旧会话）。 */

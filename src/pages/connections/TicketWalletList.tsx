@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentId } from '@/lib/types';
@@ -245,6 +246,14 @@ function TicketRow({
                 >
                   {part.label}
                 </Link>
+              ) : part.kind === 'endpoint' ? (
+                <RouteEndpointUrl
+                  key={`endpoint:${index}`}
+                  path={part.path}
+                  port={part.port}
+                  endpointId={part.endpointId}
+                  className="text-meta"
+                />
               ) : (
                 <span key={`text:${index}`}>{part.text}</span>
               )

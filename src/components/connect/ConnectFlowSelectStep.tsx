@@ -9,8 +9,10 @@ import { Notice } from '@/components/shared/Notice';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { agentDisplayName } from '@/config/agents';
 import { planMaturityLabel, planRouteSummary } from '@/lib/connect-flow/eligibility';
+import { ROUTE_ENDPOINTS } from '@/lib/route-endpoints';
 import type { AgentId } from '@/lib/types';
 import type {
   ConnectFlowEntry,
@@ -19,11 +21,15 @@ import type {
 } from '@/lib/connect-flow/types';
 import { cn } from '@/lib/utils';
 import {
+  agentsForRouteEndpoint,
+  eligibilityForRouteEndpoint,
   eligibilityOf,
   isOptionSelectable,
   isTargetSelectable,
   planEligibilityAllowsApply,
+  representativeAgentForRouteEndpoint,
   resolveEmptyKind,
+  shouldShowConnectGuideActions,
   shouldShowSelectSkeleton,
   splitSourceOptions,
   type ConnectFlowState,
@@ -187,6 +193,17 @@ export function ConnectFlowSelectStep({
           onRetryEligibility={onRetryEligibility}
           onOauthGuide={onOauthGuide}
         />
+      ) : entry.purpose === 'route' ? (
+        <EndpointGrid
+          targetAgentIds={targetAgentIds}
+          selected={state.selectedTargetAgentId}
+          source={entry.source}
+          sourceAgentId={sourceAgentId}
+          eligibilities={eligibilities}
+          onSelect={onSelectTarget}
+          onRetryEligibility={onRetryEligibility}
+          onOauthGuide={onOauthGuide}
+        />
       ) : (
         <TargetGrid
           targetAgentIds={targetAgentIds}
@@ -212,7 +229,9 @@ export function ConnectFlowSelectStep({
         </Notice>
       ) : null}
 
-      <GuideActions onGoImport={onGoImport} onGoNewKey={onGoNewKey} />
+      {shouldShowConnectGuideActions(entry) ? (
+        <GuideActions onGoImport={onGoImport} onGoNewKey={onGoNewKey} />
+      ) : null}
     </div>
   );
 }
@@ -374,6 +393,102 @@ function CrossOptionRow({
         </div>
       </div>
     </ListRow>
+  );
+}
+
+function EndpointGrid({
+  targetAgentIds,
+  selected,
+  source,
+  sourceAgentId,
+  eligibilities,
+  onSelect,
+  onRetryEligibility,
+  onOauthGuide,
+}: {
+  targetAgentIds: AgentId[];
+  selected: AgentId | null;
+  source: SourceOption['ref'];
+  sourceAgentId: AgentId | null;
+  eligibilities: ReadonlyMap<string, PlanEligibility>;
+  onSelect: (agentId: AgentId) => void;
+  onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentId }) => void;
+  onOauthGuide: (agentId: AgentId) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="grid grid-cols-1 gap-2">
+      {ROUTE_ENDPOINTS.map((endpoint) => {
+        const agents = agentsForRouteEndpoint(
+          endpoint.id,
+          targetAgentIds,
+          source,
+          eligibilities,
+        );
+        const representative = representativeAgentForRouteEndpoint(
+          endpoint.id,
+          targetAgentIds,
+          source,
+          eligibilities,
+        );
+        const eligibility = eligibilityForRouteEndpoint(
+          endpoint.id,
+          targetAgentIds,
+          source,
+          eligibilities,
+        );
+        const selectable = representative != null && isTargetSelectable(eligibility);
+        const active = selected != null && agents.includes(selected);
+        return (
+          <div
+            key={endpoint.id}
+            role="button"
+            tabIndex={selectable ? 0 : -1}
+            aria-disabled={!selectable}
+            onClick={() => {
+              if (selectable && representative) onSelect(representative);
+            }}
+            onKeyDown={(event) => {
+              if (!selectable || !representative) return;
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onSelect(representative);
+              }
+            }}
+            className={cn(
+              'rounded-card border border-border bg-panel p-3 text-left transition-colors',
+              active && selectable && 'border-border-strong bg-active',
+              !selectable && 'opacity-60',
+              selectable && 'hover:bg-hover/50',
+            )}
+          >
+            <div className="min-w-0">
+              <RouteEndpointUrl
+                path={endpoint.path}
+                endpointId={endpoint.id}
+                className="text-sm font-medium"
+              />
+              <p className="text-xs text-muted">
+                {endpoint.id === 'messages'
+                  ? t('connect.select.endpointMessages')
+                  : endpoint.id === 'responses'
+                    ? t('connect.select.endpointResponses')
+                    : t('connect.select.endpointChat')}
+              </p>
+            </div>
+            {representative ? (
+              <EligibilityBody
+                eligibility={eligibility}
+                onRetry={() => onRetryEligibility({ source, targetAgentId: representative })}
+                onOauthGuide={() => onOauthGuide(sourceAgentId ?? representative)}
+              />
+            ) : (
+              <p className="mt-1 text-xs text-muted">{t('connect.select.endpointUnavailable')}</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

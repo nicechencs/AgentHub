@@ -338,7 +338,7 @@ describe('ticket detail fields', () => {
       wallet.bindings.filter((binding) => binding.ticketId === 'provider:kimi-1'),
     )).toEqual([
       { agent: agentDisplayName('claude'), status: '当前使用' },
-      { agent: agentDisplayName('codex'), status: '本机路由运行中' },
+      { agent: 'http://127.0.0.1:8123/v1/responses', status: '本机路由运行中' },
     ]);
     expect(formatTicketBindingDetailLines(
       wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),

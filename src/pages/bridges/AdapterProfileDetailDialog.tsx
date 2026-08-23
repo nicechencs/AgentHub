@@ -15,8 +15,13 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/toast';
-import { agentDisplayName } from '@/config/agents';
+import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { openLogsDir } from '@/lib/api/settings';
+import {
+  formatRouteEndpointHttpUrl,
+  routeEndpointIdForBinding,
+  routeEndpointPathForBinding,
+} from '@/lib/route-endpoints';
 import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
@@ -27,7 +32,6 @@ import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from './adapter-components';
 import { bridgeMemberRows, memberPinTone } from './adapter-member-model';
 import {
-  adapterBridgeEndpointLabel,
   adapterBridgeHostPort,
   adapterBridgeUpstreamLabel,
   adapterCredentialKindLabel,
@@ -129,17 +133,35 @@ function ProfileDetailBody({
   }, t);
   const isBridge = profile.route === 'local_bridge';
   const endpointParts = isBridge ? adapterBridgeHostPort(profile, bridgeStatus) : null;
-  const endpoint = isBridge ? adapterBridgeEndpointLabel(profile, bridgeStatus) : null;
+  const endpointPath = isBridge
+    ? routeEndpointPathForBinding({
+        agentId: profile.targetAgentId,
+        ruleId: profile.ruleId,
+      })
+    : null;
+  const endpointId = isBridge
+    ? routeEndpointIdForBinding({
+        agentId: profile.targetAgentId,
+        ruleId: profile.ruleId,
+      })
+    : null;
+  const endpointHref = endpointPath
+    ? formatRouteEndpointHttpUrl({
+        path: endpointPath,
+        port: endpointParts?.port,
+        host: endpointParts?.host,
+      })
+    : null;
   const recovery = adapterProfileRecoveryGuide(profile, t);
   const members = isBridge
     ? bridgeMemberRows({ profile, groups: surfaceGroups, entries, t })
     : [];
 
   const copyEndpoint = async () => {
-    if (!endpoint) return;
+    if (!endpointHref || !endpointParts?.port) return;
     try {
-      await navigator.clipboard.writeText(`http://${endpoint}`);
-      toast({ title: t('routes.endpointCopied'), description: `http://${endpoint}` });
+      await navigator.clipboard.writeText(endpointHref);
+      toast({ title: t('routes.endpointCopied'), description: endpointHref });
     } catch {
       toast({ title: t('routes.copyFailed'), variant: 'danger' });
     }
@@ -152,8 +174,15 @@ function ProfileDetailBody({
           {source.agentId ? <AgentDot agentId={source.agentId} size="sm" title={null} /> : null}
           <span className="truncate">{source.title}</span>
           <ArrowRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-          <AgentDot agentId={profile.targetAgentId} size="sm" title={null} />
-          <span className="truncate">{agentDisplayName(profile.targetAgentId)}</span>
+          {endpointPath && endpointId ? (
+            <RouteEndpointUrl
+              path={endpointPath}
+              port={endpointParts?.port}
+              host={endpointParts?.host}
+              endpointId={endpointId}
+              className="truncate text-sm"
+            />
+          ) : null}
         </DialogTitle>
         <DialogDescription className="flex flex-wrap items-center gap-1.5">
           <Badge variant="default">{adapterCredentialKindLabel(profile.mode, t)}</Badge>
@@ -212,15 +241,21 @@ function ProfileDetailBody({
             <div className="space-y-2 rounded-btn border border-border bg-subtle p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-muted">{t('routes.localEndpointLabel')}</span>
-                {endpoint ? (
+                {endpointPath && endpointId ? (
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 rounded-btn px-1 py-0.5 font-mono text-xs text-secondary hover:bg-hover hover:text-primary"
+                    className="inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left hover:bg-hover"
                     onClick={() => { void copyEndpoint(); }}
-                    aria-label={t('routes.copyEndpointAria', { endpoint })}
+                    aria-label={t('routes.copyEndpointAria', { endpoint: endpointHref ?? endpointPath })}
                   >
-                    {endpoint}
-                    <Copy className="h-3 w-3" aria-hidden />
+                    <RouteEndpointUrl
+                      path={endpointPath}
+                      port={endpointParts?.port}
+                      host={endpointParts?.host}
+                      endpointId={endpointId}
+                      className="text-xs"
+                    />
+                    <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
                   </button>
                 ) : null}
               </div>
@@ -262,7 +297,9 @@ function ProfileDetailBody({
           <h3 className="text-sm font-medium">{t('routes.targetWrite')}</h3>
           <p className="text-sm text-secondary">
             {profile.generatedProviderId
-              ? t('routes.writtenTo', { name: agentDisplayName(profile.targetAgentId) })
+              ? t('routes.writtenTo', {
+                  name: endpointHref ?? endpointPath ?? '',
+                })
               : t('routes.notWritten')}
           </p>
         </section>

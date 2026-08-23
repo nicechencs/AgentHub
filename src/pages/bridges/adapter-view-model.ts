@@ -2,7 +2,6 @@
  * Pure view-model helpers for the Bridges page: partition, single-layer
  * runtime status, source resolution, fleet, and recovery. No IO, no React.
  */
-import { agentDisplayName } from '@/config/agents';
 import type {
   AdapterBridgeRuntimeState,
   AdapterProfile,
@@ -10,6 +9,7 @@ import type {
 import type { AgentId } from '@/lib/types';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { TranslateFn } from '@/lib/i18n';
+import { formatRouteEndpointHttpUrl, routeEndpointPathForBinding } from '@/lib/route-endpoints';
 
 export type AdapterStatusTone = 'success' | 'warning' | 'danger' | 'info' | 'muted';
 
@@ -245,13 +245,20 @@ export function adapterProfilePrimaryAction(input: {
   return { kind: 'start', label: retry ? (t ? t('routes.action.retryStart') : '重试启动') : startLabel };
 }
 
-/** Human-readable "source → target" one-liner for confirmations. */
+/** Human-readable "source → endpoint" one-liner for confirmations. */
 export function adapterProfileFlowLabel(
-  profile: Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'name' | 'targetAgentId'>,
+  profile: Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'name' | 'targetAgentId' | 'ruleId' | 'localPort'>,
   entries: readonly Pick<ConnectionEntry, 'source' | 'id' | 'title' | 'agentId'>[],
 ): string {
   const source = resolveAdapterProfileSource(profile, entries);
-  return `${source.title} → ${agentDisplayName(profile.targetAgentId)}`;
+  const path = routeEndpointPathForBinding({
+    agentId: profile.targetAgentId,
+    ruleId: profile.ruleId,
+  });
+  return `${source.title} → ${formatRouteEndpointHttpUrl({
+    path,
+    port: profile.localPort,
+  })}`;
 }
 
 /**

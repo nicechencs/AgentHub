@@ -1,21 +1,20 @@
-import { ArrowRight, Boxes, Copy } from 'lucide-react';
+import { ArrowRight, Boxes } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { ListRow } from '@/components/shared/ListRow';
+import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/components/ui/toast';
-import { agentDisplayName } from '@/config/agents';
 import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
 } from '@/lib/backend/contracts/adapter';
+import { routeEndpointIdForBinding, routeEndpointPathForBinding } from '@/lib/route-endpoints';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { AdapterErrorLines } from './adapter-components';
 import {
-  adapterBridgeEndpointLabel,
   adapterBridgeHostPort,
   adapterFailurePresentation,
 } from './adapter-model';
@@ -150,8 +149,17 @@ function AdapterProfileRow({
   const endpointParts = profile.route === 'local_bridge'
     ? adapterBridgeHostPort(profile, bridgeStatus)
     : null;
-  const endpoint = profile.route === 'local_bridge'
-    ? adapterBridgeEndpointLabel(profile, bridgeStatus)
+  const endpointPath = profile.route === 'local_bridge'
+    ? routeEndpointPathForBinding({
+        agentId: profile.targetAgentId,
+        ruleId: profile.ruleId,
+      })
+    : null;
+  const endpointId = profile.route === 'local_bridge'
+    ? routeEndpointIdForBinding({
+        agentId: profile.targetAgentId,
+        ruleId: profile.ruleId,
+      })
     : null;
   const action = adapterProfilePrimaryAction({
     route: profile.route,
@@ -170,15 +178,21 @@ function AdapterProfileRow({
           {runtimeStatus ? <StatusLine view={runtimeStatus} emphasis /> : null}
         </div>
         <div className="min-w-0 flex-1 space-y-1">
-          <p className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-medium">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-medium">
             {source.agentId ? <AgentDot agentId={source.agentId} size="sm" title={null} /> : null}
             <span className="truncate">{source.title}</span>
             <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
-            <AgentDot agentId={profile.targetAgentId} size="sm" title={null} />
-            <span className="truncate">{agentDisplayName(profile.targetAgentId)}</span>
-          </p>
+            {endpointPath && endpointId ? (
+              <CopyableRouteEndpointUrl
+                path={endpointPath}
+                port={endpointParts?.port}
+                host={endpointParts?.host}
+                endpointId={endpointId}
+                className="text-xs"
+              />
+            ) : null}
+          </div>
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {endpoint ? <EndpointCopy endpoint={endpoint} /> : null}
             {endpointParts && !endpointParts.port ? (
               <span className="text-xs text-muted">{t('routes.pendingPort')}</span>
             ) : null}
@@ -235,29 +249,5 @@ function StatusLine({ view, emphasis = false }: { view: AdapterStatusView; empha
       />
       <span className={adapterStatusTextClass(view.tone)}>{view.label}</span>
     </span>
-  );
-}
-
-function EndpointCopy({ endpoint }: { endpoint: string }) {
-  const { toast } = useToast();
-  const { t } = useI18n();
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(`http://${endpoint}`);
-      toast({ title: t('routes.endpointCopied'), description: `http://${endpoint}` });
-    } catch {
-      toast({ title: t('routes.copyFailed'), variant: 'danger' });
-    }
-  };
-  return (
-    <button
-      type="button"
-      className="inline-flex items-center gap-1 rounded-btn px-1 py-0.5 font-mono text-xs text-secondary hover:bg-hover hover:text-primary"
-      onClick={() => { void copy(); }}
-      aria-label={t('routes.copyEndpointAria', { endpoint })}
-    >
-      {endpoint}
-      <Copy className="h-3 w-3" aria-hidden />
-    </button>
   );
 }

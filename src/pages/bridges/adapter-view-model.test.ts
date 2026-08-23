@@ -177,7 +177,7 @@ describe('adapter profile source resolution', () => {
 
   it('builds a human-readable flow label for confirmations', () => {
     expect(adapterProfileFlowLabel(bridgeProfile({ sourceKind: 'provider', sourceId: 'row-1' }), entries))
-      .toBe('Provider row → Codex');
+      .toBe('Provider row → http://127.0.0.1:32123/v1/responses');
   });
 });
 

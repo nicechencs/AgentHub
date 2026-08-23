@@ -3,6 +3,12 @@
  * Filter / binding usage lines — pure functions for vitest.
  */
 import { agentDisplayName } from '@/config/agents';
+import {
+  formatRouteEndpointHttpUrl,
+  routeEndpointIdForBinding,
+  routeEndpointPathForBinding,
+  type RouteEndpointId,
+} from '@/lib/route-endpoints';
 import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 import type {
@@ -244,7 +250,8 @@ export function isUnrecognizedTicket(ticket: Pick<TicketView, 'surface' | 'crede
 
 export type TicketUsagePart =
   | { kind: 'text'; text: string }
-  | { kind: 'bridge'; label: string; href: string };
+  | { kind: 'bridge'; label: string; href: string }
+  | { kind: 'endpoint'; path: string; port: number | null; endpointId: RouteEndpointId };
 
 export interface TicketWalletRow {
   ticket: TicketView;
@@ -275,13 +282,17 @@ export function formatBindingUsageParts(
       : ` · ${memberCount} 个登录轮询承接`)
     : '';
   if (binding.route === 'bridge') {
+    const path = routeEndpointPathForBinding({ agentId: binding.agentId });
+    const endpointId = routeEndpointIdForBinding({ agentId: binding.agentId });
+    const port = binding.bridge?.port ?? null;
     const suffix = binding.bridge?.running
       ? `${poolSuffix}${t ? t('connections.list.runningSuffix') : ' · 运行中'}`
       : binding.bridge && !binding.bridge.running
         ? `${poolSuffix}${t ? t('connections.list.stoppedSuffix') : ' · 已停止'}`
         : poolSuffix;
     return [
-      { kind: 'text', text: t ? t('connections.list.usageOpen', { name }) : `${name}（` },
+      { kind: 'endpoint', path, port, endpointId },
+      { kind: 'text', text: '（' },
       { kind: 'bridge', label: route, href: bridgesHrefForProfile(binding.profileId) },
       { kind: 'text', text: t ? t('connections.list.usageCloseWithSuffix', { suffix }) : `${suffix}）` },
     ];
@@ -298,8 +309,16 @@ export function formatBindingUsagePart(
   memberCount = 1,
 ): string {
   return formatBindingUsageParts(binding, t, memberCount)
-    .map((part) => (part.kind === 'bridge' ? part.label : part.text))
+    .map((part) => usagePartPlainText(part))
     .join('');
+}
+
+function usagePartPlainText(part: TicketUsagePart): string {
+  if (part.kind === 'bridge') return part.label;
+  if (part.kind === 'endpoint') {
+    return formatRouteEndpointHttpUrl({ path: part.path, port: part.port });
+  }
+  return part.text;
 }
 
 export function formatTicketUsageParts(
@@ -344,7 +363,7 @@ export function formatTicketUsageText(
   memberCount = 1,
 ): string {
   return formatTicketUsageParts(bindings, ownerAgentId, t, memberCount)
-    .map((part) => (part.kind === 'bridge' ? part.label : part.text))
+    .map((part) => usagePartPlainText(part))
     .join('');
 }
 
@@ -624,7 +643,12 @@ export function formatTicketBindingDetailLines(
   t?: TranslateFn,
 ): TicketBindingDetailLine[] {
   return bindings.map((binding) => ({
-    agent: agentDisplayName(binding.agentId),
+    agent: binding.route === 'bridge'
+      ? formatRouteEndpointHttpUrl({
+          path: routeEndpointPathForBinding({ agentId: binding.agentId }),
+          port: binding.bridge?.port ?? null,
+        })
+      : agentDisplayName(binding.agentId),
     status: ticketBindingStatus(binding, t),
   }));
 }
