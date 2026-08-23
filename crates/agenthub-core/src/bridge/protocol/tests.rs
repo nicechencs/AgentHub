@@ -843,6 +843,11 @@ fn prepare_official_codex_request_allowlists_responses_keys() {
         "input": [
             {
                 "type": "message",
+                "role": "system",
+                "content": [{ "type": "input_text", "text": "You are a coding agent." }]
+            },
+            {
+                "type": "message",
                 "role": "user",
                 "content": [{ "type": "input_text", "text": "ping" }]
             }
@@ -862,7 +867,13 @@ fn prepare_official_codex_request_allowlists_responses_keys() {
     assert_eq!(body["store"], false);
     assert!(body.get("model").is_none(), "must not invent gpt-* models");
     assert_eq!(body["stream"], true);
-    assert_eq!(body["instructions"], "Be brief.");
+    let instructions = body["instructions"].as_str().expect("instructions");
+    assert!(instructions.contains("Be brief."), "{instructions}");
+    assert!(
+        instructions.contains("You are a coding agent."),
+        "{instructions}"
+    );
+    assert_no_system_input_items(&body);
     assert_eq!(body["tool_choice"], "auto");
     assert_eq!(body["tools"][0]["name"], "echo");
     assert_eq!(body["temperature"], 0.2);
