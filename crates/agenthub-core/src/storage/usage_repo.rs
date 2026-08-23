@@ -240,6 +240,12 @@ impl UsageRepo {
         })
     }
 
+    /// Daily token trend bucketed by **local calendar day**.
+    ///
+    /// The dashboard's "today" filter also uses the local calendar day, so the
+    /// window starts at local midnight of `today - (days - 1)` and each record
+    /// is bucketed into its local day. This keeps the metric cards and the
+    /// trend chart consistent across midnight boundaries in any timezone.
     pub fn trend(
         &self,
         days: u32,
@@ -248,22 +254,42 @@ impl UsageRepo {
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
     ) -> Result<Vec<UsageTrendPoint>> {
-        let days = days.max(1) as i64;
+        let days = days.max(1);
+        let today_local = chrono::Local::now().date_naive();
+        let start_day = today_local - chrono::Days::new(u64::from(days) - 1);
+        let start_local = start_day
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is a valid time");
+        // A DST transition can skip local midnight; fall back to 01:00 then.
+        let start_utc = match start_local.and_local_timezone(chrono::Local) {
+            chrono::LocalResult::None => start_day
+                .and_hms_opt(1, 0, 0)
+                .expect("01:00 is a valid time")
+                .and_local_timezone(chrono::Local)
+                .earliest()
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|| start_local.and_utc().with_timezone(&chrono::Utc)),
+            chrono::LocalResult::Ambiguous(dt, _) | chrono::LocalResult::Single(dt) => {
+                dt.with_timezone(&chrono::Utc)
+            }
+        };
+        let day_arg = start_utc.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         self.db.with_conn(|conn| {
             let mut sql = String::from(
                 r#"
-                    SELECT substr(ts, 1, 10) AS day, agent_id,
+                    SELECT ts, agent_id,
                            SUM(input_tokens + output_tokens) AS tokens
                     FROM usage_records
-                    WHERE ts >= datetime('now', ?1)
+                    WHERE ts >= ?1
                 "#,
             );
-            let day_arg = format!("-{days} days");
             let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(day_arg)];
             push_since_filter(&mut sql, &mut args, since);
             push_agent_model_filters(&mut sql, &mut args, agent, model);
             push_exclude_agents(&mut sql, &mut args, exclude_agent_ids);
-            sql.push_str(" GROUP BY day, agent_id ORDER BY day");
+            // Bucketing by local day needs real timestamp parsing, which is
+            // done below in Rust; SQL only pre-aggregates per raw ts value.
+            sql.push_str(" GROUP BY ts, agent_id");
 
             let mut stmt = conn.prepare(&sql)?;
             let params_ref: Vec<&dyn rusqlite::types::ToSql> =
@@ -272,9 +298,12 @@ impl UsageRepo {
             let mut map: std::collections::BTreeMap<String, UsageTrendPoint> =
                 std::collections::BTreeMap::new();
             while let Some(row) = rows.next()? {
-                let day: String = row.get(0)?;
+                let ts: String = row.get(0)?;
                 let agent_s: String = row.get(1)?;
                 let tokens: i64 = row.get(2)?;
+                let Some(day) = local_day_bucket(&ts) else {
+                    continue;
+                };
                 let point = map
                     .entry(day.clone())
                     .or_insert_with(|| UsageTrendPoint::new(day));
@@ -288,6 +317,7 @@ impl UsageRepo {
 
     /// SQL aggregates for dashboard first paint (metrics + distribution + models).
     ///
+    /// `models` uses the same window + agent filter but ignores `model` so the
     /// `models` uses the same window + agent filter but ignores `model` so the
     /// dropdown stays populated while a model is selected.
     pub fn overview(
@@ -621,6 +651,19 @@ impl UsageRepo {
 /// format (same offset, same fractional-second precision), so lexicographic
 /// order matches chronological order. Mixed formats (e.g. differing UTC
 /// offsets or precision) can produce boundary inaccuracies at day edges.
+/// Bucket an RFC3339-ish timestamp into its **local** calendar day (`YYYY-MM-DD`).
+/// Falls back to the raw UTC date prefix when the string cannot be parsed.
+fn local_day_bucket(ts: &str) -> Option<String> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
+        return Some(
+            dt.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d")
+                .to_string(),
+        );
+    }
+    ts.get(0..10).map(str::to_string)
+}
+
 fn push_since_filter(
     sql: &mut String,
     args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,

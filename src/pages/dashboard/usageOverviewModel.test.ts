@@ -73,6 +73,12 @@ describe('filterHiddenUsageOverview', () => {
     models: ['opus', 'sonnet'],
   };
 
+  it('maps empty overview metrics to zeroed UI metrics with null cacheHitPct', () => {
+    const ui = overviewToUsageMetrics({ billableInput: 0, output: 0, cache: 0, costUsd: 0 });
+    expect(ui.fullInput).toBe(0);
+    expect(ui.cacheHitPct).toBeNull();
+  });
+
   it('drops hidden agent slices and re-sums metrics', () => {
     const next = filterHiddenUsageOverview(overview, ['kimi'], true);
     expect(next.distribution.map((d) => d.key)).toEqual(['claude']);

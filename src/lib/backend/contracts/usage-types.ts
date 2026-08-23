@@ -21,6 +21,11 @@ export interface UsageOverviewMetrics {
   costUsd: number;
 }
 
+/**
+ * 契约不变量：distribution 必须覆盖查询窗口内的全部行（含未知 agent / 零 token 行）。
+ * 前端 filterHiddenUsageOverview 依赖 distribution 切片重算 metrics；
+ * 若后端排除任何切片，隐藏过滤后的指标会静默漏算。
+ */
 export interface UsageOverviewDistributionSlice {
   key: string;
   tokens: number;
