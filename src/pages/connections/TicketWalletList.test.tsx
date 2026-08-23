@@ -342,6 +342,97 @@ describe('TicketWalletList details', () => {
     expect(allMarkup).toContain('2 份登录');
   });
 
+  it('does not keep a Grok ticket for a leftover inactive Claude binding; keeps a Codex ticket with an active Claude binding', () => {
+    const wallet: TicketWallet = {
+      tickets: [
+        {
+          id: 'account:grok-1',
+          sourceKind: 'account',
+          sourceId: 'grok-1',
+          agentId: 'grok',
+          label: 'user@x.ai',
+          surface: 'grok-xai-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'grok',
+        },
+        {
+          id: 'account:codex-1',
+          sourceKind: 'account',
+          sourceId: 'codex-1',
+          agentId: 'codex',
+          label: 'me@openai.com',
+          surface: 'codex-chatgpt-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'codex',
+        },
+      ],
+      bindings: [
+        {
+          ticketId: 'account:grok-1',
+          agentId: 'claude',
+          route: 'native',
+          active: false,
+          profileId: null,
+          bridge: null,
+        },
+        {
+          ticketId: 'account:codex-1',
+          agentId: 'claude',
+          route: 'bridge',
+          active: true,
+          profileId: 'p-claude',
+          bridge: { port: 8123, running: true },
+        },
+      ],
+      surfaceGroups: [],
+    };
+
+    const claudeMarkup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        agentFilterId: 'claude',
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(claudeMarkup).toContain('me@openai.com');
+    expect(claudeMarkup).not.toContain('user@x.ai');
+    expect(claudeMarkup).toContain('1 份登录');
+    expect(claudeMarkup).not.toContain('2 份登录');
+    expect(claudeMarkup).not.toContain('没有匹配的登录');
+
+    const grokMarkup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        agentFilterId: 'grok',
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(grokMarkup).toContain('user@x.ai');
+    expect(grokMarkup).not.toContain('me@openai.com');
+    expect(grokMarkup).toContain('1 份登录');
+
+    const allMarkup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(allMarkup).toContain('user@x.ai');
+    expect(allMarkup).toContain('me@openai.com');
+    expect(allMarkup).toContain('2 份登录');
+  });
+
   it('does not put 添加 in the list chrome when logins exist', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {

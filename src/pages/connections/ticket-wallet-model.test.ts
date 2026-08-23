@@ -249,6 +249,64 @@ describe('buildTicketWalletRows', () => {
     expect(grok).toEqual([]);
   });
 
+  it('does not keep a Grok ticket for a leftover inactive Claude binding; keeps a Codex ticket with an active Claude binding', () => {
+    const wallet: TicketWallet = {
+      tickets: [
+        {
+          id: 'account:grok-1',
+          sourceKind: 'account',
+          sourceId: 'grok-1',
+          agentId: 'grok',
+          label: 'user@x.ai',
+          surface: 'grok-xai-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'grok',
+        },
+        {
+          id: 'account:codex-1',
+          sourceKind: 'account',
+          sourceId: 'codex-1',
+          agentId: 'codex',
+          label: 'me@openai.com',
+          surface: 'codex-chatgpt-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'codex',
+        },
+      ],
+      bindings: [
+        {
+          ticketId: 'account:grok-1',
+          agentId: 'claude',
+          route: 'native',
+          active: false,
+          profileId: null,
+          bridge: null,
+        },
+        {
+          ticketId: 'account:codex-1',
+          agentId: 'claude',
+          route: 'bridge',
+          active: true,
+          profileId: 'p-claude',
+          bridge: { port: 8123, running: true },
+        },
+      ],
+      surfaceGroups: [],
+    };
+
+    const claude = buildTicketWalletRows(wallet, { agentFilterId: 'claude' });
+    expect(claude.map((row) => row.ticket.id)).toEqual(['account:codex-1']);
+    expect(claude.some((row) => row.ticket.agentId === 'grok')).toBe(false);
+
+    const grok = buildTicketWalletRows(wallet, { agentFilterId: 'grok' });
+    expect(grok.map((row) => row.ticket.id)).toEqual(['account:grok-1']);
+
+    const codex = buildTicketWalletRows(wallet, { agentFilterId: 'codex' });
+    expect(codex.map((row) => row.ticket.id)).toEqual(['account:codex-1']);
+  });
+
   it('finds active binding for dashboard agent', () => {
     const wallet = sampleWallet();
     const hit = activeBindingForAgent(wallet, 'codex');
