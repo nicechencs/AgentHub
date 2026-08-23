@@ -523,7 +523,13 @@ fn bind_openai_and_xai_provider_and_account_to_pi_then_unbind() {
         ticket_id: ticket_id(AdapterSourceKind::Provider, "relay-source"),
         target_agent_id: AgentId::Pi,
     });
-    assert!(relay.is_err(), "unknown custom relay must not bind");
+    let relay = relay.expect("openai-compat custom URL binds");
+    assert!(relay.active);
+    let relay_profile = AdapterProfileRepo::new(db)
+        .get(relay.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(relay_profile.rule_id, "openai-api-to-pi-v1");
 }
 
 #[test]
@@ -929,7 +935,13 @@ fn bind_glm_and_deepseek_to_claude_then_unbind_rejects_unknown_relay() {
         ticket_id: ticket_id(AdapterSourceKind::Provider, "relay-source"),
         target_agent_id: AgentId::Claude,
     });
-    assert!(relay.is_err(), "unknown custom relay must not bind");
+    let relay = relay.expect("openai-compat custom URL binds");
+    assert!(relay.active);
+    let relay_profile = AdapterProfileRepo::new(db)
+        .get(relay.profile_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(relay_profile.rule_id, "openai-api-to-pi-v1");
 }
 
 #[test]

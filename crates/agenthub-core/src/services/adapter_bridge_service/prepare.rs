@@ -79,13 +79,15 @@ impl AdapterBridgeService {
             Some(provider) => local_bearer_from_provider(provider)?,
             None => generate_local_bearer()?,
         };
+        let (upstream_base_url, upstream_model) =
+            openai_source_upstream(self, &rule, request.source_kind, source_id);
         Ok(AdapterBridgePrepared {
             material: AdapterBridgeRuntimeMaterial {
                 profile_id: profile.id.clone(),
                 source_connection_id: profile.source_id.clone(),
                 preferred_port: profile.local_port,
-                upstream_base_url: rule.upstream_base_url.into(),
-                upstream_model: rule.default_model.into(),
+                upstream_base_url,
+                upstream_model,
                 protocol: rule.protocol,
                 local_surface: rule.local_surface,
                 source: rule.source,
@@ -169,7 +171,7 @@ impl AdapterBridgeService {
             .and_then(rule_for_id)
             .ok_or_else(|| {
                 AppError::Unsupported(
-                    "adapter bridge currently supports Kimi / Anthropic / OpenAI → Codex, Codex subscription → Claude / Grok / Kimi / DSH, or Grok subscription → Claude / Codex"
+                    "adapter bridge currently supports Kimi / Anthropic / OpenAI → Codex / Claude / Grok, Codex subscription → Claude / Grok / Kimi / DSH, or Grok subscription → Claude / Codex"
                         .into(),
                 )
             })?;
@@ -208,7 +210,11 @@ impl AdapterBridgeService {
         source_id: &str,
     ) -> Result<crate::bridge::ResolvedAuth> {
         match (rule.protocol, rule.rule_id) {
-            (BridgeUpstreamProtocol::OpenAiChatCompletions, OPENAI_RULE_ID) => {
+            (BridgeUpstreamProtocol::OpenAiChatCompletions, rule_id)
+                if rule_id == OPENAI_RULE_ID
+                    || rule_id == OPENAI_CLAUDE_EDGE.rule_id
+                    || rule_id == OPENAI_GROK_BRIDGE_EDGE.rule_id =>
+            {
                 self.secrets.resolve_openai_auth(source_kind, source_id)
             }
             (BridgeUpstreamProtocol::OpenAiChatCompletions, _) => self
@@ -251,7 +257,11 @@ impl AdapterBridgeService {
             AppError::NotFound(format!("adapter profile not found: {profile_id}"))
         })?;
         let supported_source = match profile.rule_id.as_str() {
-            RULE_ID | ANTHROPIC_RULE_ID | OPENAI_RULE_ID => matches!(
+            RULE_ID
+            | ANTHROPIC_RULE_ID
+            | OPENAI_RULE_ID
+            | OPENAI_CLAUDE_BRIDGE_RULE_ID
+            | OPENAI_GROK_LOCAL_RULE_ID => matches!(
                 profile.source_kind,
                 AdapterSourceKind::Provider | AdapterSourceKind::Account
             ),
@@ -276,4 +286,36 @@ impl AdapterBridgeService {
         }
         Ok(profile)
     }
+}
+
+pub(super) fn openai_source_upstream(
+    service: &AdapterBridgeService,
+    rule: &CodexBridgeRule,
+    source_kind: AdapterSourceKind,
+    source_id: &str,
+) -> (String, String) {
+    let mut url = rule.upstream_base_url.to_string();
+    let mut model = rule.default_model.to_string();
+    if rule.source != crate::models::AdapterSourceProduct::OpenaiApi {
+        return (url, model);
+    }
+    if source_kind != AdapterSourceKind::Provider {
+        return (url, model);
+    }
+    let Ok(Some(provider)) = service.providers.get_by_id(source_id) else {
+        return (url, model);
+    };
+    if let Some(custom) =
+        crate::services::adapter_route_constants::openai_compat_base_url(&provider.settings_config)
+    {
+        url = custom;
+    }
+    if let Some(pinned) =
+        crate::services::adapter_route_constants::openai_compat_pinned_model(
+            &provider.settings_config,
+        )
+    {
+        model = pinned;
+    }
+    (url, model)
 }
