@@ -60,6 +60,53 @@ pub fn mask_secret_preview(secret: &str) -> String {
     format!("{head}-••••{tail}")
 }
 
+fn is_refresh_token_key(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "refresh_token" | "refreshtoken"
+    )
+}
+
+fn find_refresh_token(value: &Value) -> Option<&str> {
+    match value {
+        Value::Object(map) => {
+            for key in ["refresh_token", "refreshToken"] {
+                if let Some(secret) = map
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty() && *s != "***")
+                {
+                    return Some(secret);
+                }
+            }
+            if let Some(found) = map.get("tokens").and_then(find_refresh_token) {
+                return Some(found);
+            }
+            if let Some(found) = map.get("body").and_then(find_refresh_token) {
+                return Some(found);
+            }
+            for (key, child) in map {
+                if is_refresh_token_key(key) {
+                    continue;
+                }
+                if let Some(found) = find_refresh_token(child) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        Value::Array(items) => items.iter().find_map(find_refresh_token),
+        _ => None,
+    }
+}
+
+/// Head/tail preview of an OAuth refresh token. Never returns the full secret.
+pub fn refresh_token_preview(credentials: &Value) -> Option<String> {
+    let preview = mask_secret_preview(find_refresh_token(credentials)?);
+    (preview != "••••").then_some(preview)
+}
+
 /// Redact likely secrets inside free-form text (install logs, errors, chat lines).
 ///
 /// Heuristics (fail closed on matches):
@@ -379,6 +426,26 @@ mod tests {
         assert!(!preview.contains("abcdefghijklmnop"));
         assert!(preview.starts_with("sk-"));
         assert_eq!(mask_secret_preview(""), "••••");
+    }
+
+    #[test]
+    fn refresh_token_preview_uses_head_tail_and_nested_codex_shape() {
+        let flat = json!({ "refresh_token": "rt-abcdefghijklmnopqrstuvwxyz" });
+        let preview = refresh_token_preview(&flat).expect("preview");
+        assert!(preview.contains("••••"));
+        assert!(!preview.contains("abcdefghijklmnopqrstuvwxyz"));
+        assert_eq!(preview, mask_secret_preview("rt-abcdefghijklmnopqrstuvwxyz"));
+
+        let nested = json!({
+            "format": "auth_json",
+            "body": { "tokens": { "access_token": "at-secret", "refresh_token": "rt-nested-secret-value" } }
+        });
+        let nested_preview = refresh_token_preview(&nested).expect("nested preview");
+        assert_eq!(nested_preview, mask_secret_preview("rt-nested-secret-value"));
+        assert!(!nested_preview.contains("rt-nested-secret-value"));
+
+        assert!(refresh_token_preview(&json!({ "refresh_token": "***" })).is_none());
+        assert!(refresh_token_preview(&json!({ "access_token": "only-access" })).is_none());
     }
 
     #[test]

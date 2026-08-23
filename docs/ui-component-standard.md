@@ -190,7 +190,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 ### 5.4 搜索
 
-列表筛选 **必须** `SearchField`。现行已收口：Skills、Chat、Projects、**Connections 登录列表**。
+列表筛选 **必须** `SearchField`。现行已收口：Skills、Chat、Projects。**Connections 登录列表无搜索框。**
 
 禁止再写 `relative + Search icon + Input`（旧方言：`h-8 w-44 pl-7 text-xs`）。
 
@@ -273,7 +273,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 项 | 原状 | 本标准 |
 |---|---|---|
-| Connections 登录列表搜索 | 手写 `h-8 w-44 pl-7 text-xs` | 已改 `SearchField` |
+| Connections 登录列表搜索 | 手写 `h-8 w-44 pl-7 text-xs`，后改 `SearchField` | **现行无搜索框** |
 | 登录列表 loading | 「正在加载钱包…」（历史文案） | 已改为 `ListSkeleton` / 登录列表 loading |
 | `EmptyState` / `ErrorState` / `Notice` / `QuotaBar` / `StatusDot` | `text-sm` / `text-xs` | 已改语义名；空态/错误主句升为 `text-title` |
 | 全站仍大量 `text-sm` / `text-xs` | 别名，像素相同 | 新代码写语义名；存量不搞大扫除 |
@@ -301,7 +301,7 @@ src/components/connect/   # ConnectFlow / OAuth
 ### 当前（Phase 3 收口，可拆 PR）
 
 1. **文档**：本文 + 回写 `ui-design.md` §1.3 / §5 + `docs/README.md` + 对标文档相关链接。  
-2. **SearchField 收口** Connections 登录列表（本 PR 已做）。  
+2. **SearchField 收口** Skills / Chat / Projects（禁止手写搜索框）。Connections 登录列表**无搜索框**。  
 3. **共享件字号**改语义 token；空态/错误主句用 `text-title`（本 PR 已做）。  
 4. **登录列表 loading** 改 `ListSkeleton`（本 PR 已做）。  
 5. **提示通道决策**以本文 §5.5 为准；后续 PR 按检查表自检。

@@ -170,6 +170,7 @@ export function mapCoreAccount(a: CoreAccount): Account {
     source,
     envKey,
     credentialSummary,
+    refreshTokenPreview: a.kind === 'oauth' ? pickString(extra.refreshTokenPreview) : undefined,
   };
 }
 

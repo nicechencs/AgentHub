@@ -447,7 +447,7 @@ checkbox 多选 ⟂ activeKey  // 两套状态，禁止混用
 
 **仍做（以 [ui-component-standard.md](ui-component-standard.md) §8 为准，不按「天」排期）**：
 
-1. SearchField 收口（Connections 钱包已收；禁止再手写搜索框）。  
+1. SearchField 收口（Skills / Chat / Projects；Connections 无搜索框；禁止再手写搜索框）。  
 2. 共享件字号改语义 token（`text-title` / `text-body` / `text-meta`）；存量页面别名不搞大扫除。  
 3. loading 用 Skeleton，不用一句「正在加载…」。  
 4. Accent 面积：一页一主 CTA，随 PR 自检。  

@@ -23,7 +23,6 @@ import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ListRow } from '@/components/shared/ListRow';
 import { QuotaBar } from '@/components/shared/QuotaBar';
-import { SearchField } from '@/components/shared/SearchField';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -96,7 +95,6 @@ export function TicketDetailPanel({
   advanced,
   bindings,
   extras,
-  importedFromLabel,
   editLabel,
   onEdit,
   onDelete,
@@ -105,7 +103,6 @@ export function TicketDetailPanel({
   advanced: TicketDetailField[];
   bindings: TicketBindingDetailLine[];
   extras?: TicketDetailExtras | null;
-  importedFromLabel?: string | null;
   editLabel?: string | null;
   onEdit?: () => void;
   onDelete: () => void;
@@ -165,6 +162,14 @@ export function TicketDetailPanel({
         </div>
       </div>
 
+      {extras?.refreshTokenPreview ? (
+        <DetailRow
+          label={t('connections.list.refreshToken')}
+          value={extras.refreshTokenPreview}
+          mono
+        />
+      ) : null}
+
       {visibleAdvanced.length > 0 ? (
         <details>
           <summary className="cursor-pointer text-meta text-muted">{t('connections.list.more')}</summary>
@@ -181,13 +186,8 @@ export function TicketDetailPanel({
         </details>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-        {importedFromLabel ? (
-          <p className="text-meta text-muted">{importedFromLabel}</p>
-        ) : (
-          <span />
-        )}
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+        <div className="flex flex-wrap items-center gap-2">
           {editLabel && onEdit ? (
             <Button size="sm" variant="secondary" onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5" /> {editLabel}
@@ -320,11 +320,6 @@ function TicketRow({
           advanced={buildTicketDetailFields(ticket, extras, t).advanced}
           bindings={formatTicketBindingDetailLines(row.bindings, t)}
           extras={extras}
-          importedFromLabel={
-            ticket.importedFrom
-              ? t('connections.list.importedFrom', { name: agentDisplayName(ticket.importedFrom) })
-              : null
-          }
           editLabel={editLabel}
           onEdit={editLabel ? () => onEdit(ticket) : undefined}
           onDelete={() => onDelete(ticket)}
@@ -432,14 +427,12 @@ export function TicketWalletList({
   installedAgentIds?: readonly AgentId[];
 }) {
   const { t } = useI18n();
-  const [query, setQuery] = React.useState('');
 
   const tickets = wallet?.tickets ?? [];
   const rows = React.useMemo(() => {
     if (!wallet) return [];
     try {
       return buildTicketWalletRows(wallet, {
-        query,
         highlightAgentId: highlightAgentId ?? null,
         agentFilterId,
         t,
@@ -447,7 +440,7 @@ export function TicketWalletList({
     } catch {
       return [];
     }
-  }, [wallet, query, highlightAgentId, agentFilterId, t]);
+  }, [wallet, highlightAgentId, agentFilterId, t]);
   const addAgents = React.useMemo(
     () => buildTicketAddMenu(installedAgentIds),
     [installedAgentIds],
@@ -464,16 +457,7 @@ export function TicketWalletList({
   return (
     <div>
       <div className={cn(pageRhythm.chromeRow, 'flex-wrap justify-end gap-2')}>
-        <div className="flex items-center gap-2">
-          <SearchField
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('connections.list.searchPlaceholder')}
-            className="w-44"
-            aria-label={t('connections.list.searchAria')}
-          />
-          {renderAddMenu()}
-        </div>
+        <div className="flex items-center gap-2">{renderAddMenu()}</div>
       </div>
 
       {loading && !wallet ? <ListSkeleton rows={4} /> : null}
@@ -498,7 +482,6 @@ export function TicketWalletList({
               variant="outline"
               className="mt-2"
               onClick={() => {
-                setQuery('');
                 onClearAgentFilter?.();
               }}
             >

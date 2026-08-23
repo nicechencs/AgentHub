@@ -25,7 +25,6 @@ import {
   formatTicketUsageText,
   humanizeTicketAuthLabel,
   isUnrecognizedTicket,
-  searchTickets,
   ticketBindingStatus,
   ticketDetailEditLabel,
   ticketWalletFilterLabel,
@@ -111,7 +110,7 @@ function sampleWallet(): TicketWallet {
   };
 }
 
-describe('ticket wallet filter / search', () => {
+describe('ticket wallet filter', () => {
   it('counts and filters 未识别 by surface (production unknown + api_key shape)', () => {
     const tickets = sampleWallet().tickets;
     expect(isUnrecognizedTicket(tickets[2]!)).toBe(true);
@@ -126,28 +125,6 @@ describe('ticket wallet filter / search', () => {
       'provider:unk-1',
       'account:oauth-1',
     ]);
-  });
-
-  it('searches by label and surface synonyms', () => {
-    const tickets = sampleWallet().tickets;
-    expect(searchTickets(tickets, '会员').map((t) => t.id)).toEqual(['provider:kimi-1']);
-    expect(searchTickets(tickets, '官方登录').map((t) => t.id)).toEqual(['account:oauth-1']);
-    expect(searchTickets(tickets, '未识别').map((t) => t.id)).toEqual([
-      'provider:unk-1',
-      'account:oauth-1',
-    ]);
-  });
-
-  it('matches「正用于」agent and route labels (Codex / 本机路由)', () => {
-    const wallet = sampleWallet();
-    expect(searchTickets(wallet.tickets, 'Codex', wallet.bindings).map((t) => t.id))
-      .toEqual(['provider:kimi-1']);
-    expect(searchTickets(wallet.tickets, '本机路由', wallet.bindings).map((t) => t.id))
-      .toEqual(['provider:kimi-1']);
-    expect(searchTickets(wallet.tickets, '改配置', wallet.bindings).map((t) => t.id))
-      .toEqual(['provider:kimi-1']);
-    expect(buildTicketWalletRows(wallet, { query: 'Codex' }).map((r) => r.ticket.id))
-      .toEqual(['provider:kimi-1']);
   });
 });
 
@@ -203,8 +180,6 @@ describe('binding usage text', () => {
     expect(kimi?.usageText).toContain('运行中');
     const ant = rows.find((row) => row.ticket.id === 'provider:ant-1');
     expect(ant?.usageText).not.toContain('轮询承接');
-    expect(searchTickets(wallet.tickets, '轮询承接', wallet.bindings, wallet.surfaceGroups).map((t) => t.id))
-      .toEqual(['provider:kimi-1']);
   });
 
   it('keeps self-use on one phrase so the row does not repeat the owner', () => {
@@ -407,7 +382,19 @@ describe('ticket detail fields', () => {
     expect(extras.canEditKey).toBe(false);
     expect(extras.canEditConfig).toBe(false);
     expect(extras.oauthAction).toEqual({ kind: 'refresh-quota', label: '刷新' });
+    expect(extras.refreshTokenPreview).toBeUndefined();
     expect(ticketDetailEditLabel(extras)).toBeNull();
+
+    const previewExtras = extrasFromPoolSource(oauth, {
+      account: account({
+        id: 'oauth-1',
+        kind: 'oauth',
+        label: 'me@example.com',
+        email: 'me@example.com',
+        refreshTokenPreview: 'rt--••••wxyz',
+      }),
+    });
+    expect(previewExtras.refreshTokenPreview).toBe('rt--••••wxyz');
 
     const keyTicket = ticket({ id: 'provider:kimi-1' });
     const keyExtras = extrasFromPoolSource(

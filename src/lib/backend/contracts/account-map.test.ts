@@ -101,6 +101,27 @@ describe('mapCoreAccount', () => {
     expect(mapped.subscription).toBe('prolite');
   });
 
+  it('maps OAuth refreshTokenPreview from extra and ignores it on API keys', () => {
+    const oauth = mapCoreAccount(
+      core({
+        id: 'codex-rt',
+        agentId: 'codex',
+        extra: { refreshTokenPreview: 'rt--••••wxyz', email: 'c@x.com' },
+      }),
+    );
+    expect(oauth.refreshTokenPreview).toBe('rt--••••wxyz');
+
+    const key = mapCoreAccount(
+      core({
+        id: 'kimi-key',
+        agentId: 'kimi',
+        kind: 'apikey',
+        extra: { refreshTokenPreview: 'rt--••••wxyz' },
+      }),
+    );
+    expect(key.refreshTokenPreview).toBeUndefined();
+  });
+
   it('derives tokenRemainingSec from expiresAt (RFC3339)', () => {
     const exp = new Date(Date.now() + 2 * 3600 * 1000 + 5 * 60 * 1000).toISOString();
     const mapped = mapCoreAccount(

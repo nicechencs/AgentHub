@@ -1,6 +1,6 @@
 /**
  * Global ticket-wallet list helpers (Connections page).
- * Filter / search / binding usage lines — pure functions for vitest.
+ * Filter / binding usage lines — pure functions for vitest.
  */
 import { agentDisplayName } from '@/config/agents';
 import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
@@ -369,51 +369,6 @@ export function filterTickets(
   return tickets.filter((t) => t.credentialClass === filter);
 }
 
-function ticketSearchHaystack(
-  ticket: TicketView,
-  bindings: readonly BindingView[],
-  memberCount = 1,
-): string {
-  const own = bindings.filter((binding) => binding.ticketId === ticket.id);
-  const usageText = formatTicketUsageText(own, undefined, undefined, memberCount);
-  const bindingBits = own.flatMap((binding) => [
-    binding.agentId,
-    agentDisplayName(binding.agentId),
-    bindingRouteUsageLabel(binding.route),
-    bindingRouteDashboardLabel(binding.route),
-  ]);
-  return [
-    ticket.label,
-    ticket.id,
-    ticket.agentId,
-    ticket.surface,
-    ticket.credentialClass,
-    ticketCredentialClassLabel(ticket.credentialClass),
-    ticketSurfaceLabel(ticket.surface),
-    agentDisplayName(ticket.agentId),
-    ...(Array.isArray(ticket.speaks) ? ticket.speaks : []),
-    usageText,
-    ...bindingBits,
-  ]
-    .join(' ')
-    .toLowerCase();
-}
-
-/** Matches ticket fields and「正用于」bindings (agent / route label / usageText). */
-export function searchTickets(
-  tickets: readonly TicketView[],
-  query: string,
-  bindings: readonly BindingView[] = [],
-  groups: TicketWallet['surfaceGroups'] = [],
-): TicketView[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [...tickets];
-  return tickets.filter((ticket) => {
-    const memberCount = surfaceGroupMemberCount(groups, ticket.id);
-    return ticketSearchHaystack(ticket, bindings, memberCount).includes(q);
-  });
-}
-
 /** Soft agent filter: tickets that belong to or bind to the agent. */
 export function filterTicketsByAgentUsage(
   wallet: TicketWallet,
@@ -431,7 +386,6 @@ export function buildTicketWalletRows(
   wallet: TicketWallet,
   options: {
     filter?: TicketWalletFilter;
-    query?: string;
     /** Deep-link highlight for that Agent's active binding. */
     highlightAgentId?: AgentId | null;
     /** Agent tab filter; omit for the full wallet. */
@@ -440,13 +394,11 @@ export function buildTicketWalletRows(
   } = {},
 ): TicketWalletRow[] {
   const filter = options.filter ?? 'all';
-  const query = options.query ?? '';
   const highlightAgentId = options.highlightAgentId ?? null;
   const agentFilterId = options.agentFilterId ?? null;
   const t = options.t;
 
   let tickets = filterTickets(wallet.tickets, filter);
-  tickets = searchTickets(tickets, query, wallet.bindings, wallet.surfaceGroups);
   if (agentFilterId) {
     tickets = filterTicketsByAgentUsage(wallet, tickets, agentFilterId);
   }
@@ -492,6 +444,7 @@ export interface TicketDetailExtras {
   canEditConfig?: boolean;
   isCurrent?: boolean;
   oauthAction?: AccountAction;
+  refreshTokenPreview?: string;
 }
 
 export interface TicketDetailField {
@@ -600,6 +553,9 @@ export function extrasFromPoolSource(
     extras.quota7dResetIn = source.account.quota7dResetIn;
     extras.endpointMode = source.account.kind === 'apikey' ? 'official' : undefined;
     extras.oauthAction = oauthListAction(source.account);
+    if (ticket.credentialClass === 'oauth' && source.account.refreshTokenPreview) {
+      extras.refreshTokenPreview = source.account.refreshTokenPreview;
+    }
   }
 
   if (source.provider) {
@@ -616,7 +572,7 @@ export function extrasFromPoolSource(
 
 /**
  * Advanced-only facts for the ticket detail expand.
- * Header already shows type / surface / health chip; footer shows 导入自.
+ * Header already shows type / surface / health chip.
  */
 export function buildTicketDetailFields(
   ticket: TicketView,

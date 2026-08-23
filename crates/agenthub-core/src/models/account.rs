@@ -4,10 +4,10 @@
 //! scheme (no additional at-rest encryption in this version).
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use super::{AgentId, BackupRecord};
-use crate::utils::redact::redact_json;
+use crate::utils::redact::{redact_json, refresh_token_preview};
 
 /// How an account authenticates against an agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -96,13 +96,25 @@ pub struct AccountSwitchResult {
 impl Account {
     /// Deep-copy with likely secret keys redacted.
     pub fn redacted(&self) -> Self {
+        let credentials = redact_json(&self.credentials);
+        let mut extra = redact_json(&self.extra);
+        if self.kind == AccountKind::Oauth {
+            if let Some(preview) = refresh_token_preview(&self.credentials) {
+                match extra {
+                    Value::Object(ref mut map) => {
+                        map.insert("refreshTokenPreview".into(), json!(preview));
+                    }
+                    _ => extra = json!({ "refreshTokenPreview": preview }),
+                }
+            }
+        }
         Self {
             id: self.id.clone(),
             agent_id: self.agent_id,
             kind: self.kind,
             label: self.label.clone(),
-            credentials: redact_json(&self.credentials),
-            extra: redact_json(&self.extra),
+            credentials,
+            extra,
             status: self.status.clone(),
             is_current: self.is_current,
             created_at: self.created_at.clone(),

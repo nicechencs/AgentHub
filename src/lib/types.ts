@@ -224,6 +224,8 @@ export interface Account {
   envKey?: string;
   /** 脱敏后的凭据摘要字段（不含明文密钥） */
   credentialSummary?: string;
+  /** OAuth 刷新令牌脱敏预览（头尾，不含明文） */
+  refreshTokenPreview?: string;
 }
 
 /** 投影状态（与 core SkillSyncState 对齐） */
