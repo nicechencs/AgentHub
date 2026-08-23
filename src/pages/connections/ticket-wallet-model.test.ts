@@ -20,6 +20,7 @@ import {
   dashboardBindingMetaText,
   extrasFromPoolSource,
   filterTickets,
+  hasOfficialQuotaWindow,
   findTicketPoolSource,
   formatTicketBindingDetailLines,
   formatTicketUsageParts,
@@ -130,6 +131,16 @@ describe('ticket wallet filter', () => {
       'provider:unk-1',
       'account:oauth-1',
     ]);
+  });
+});
+
+describe('hasOfficialQuotaWindow', () => {
+  it('hides missing official percents and shows 0 as a real value', () => {
+    expect(hasOfficialQuotaWindow(undefined)).toBe(false);
+    expect(hasOfficialQuotaWindow(null)).toBe(false);
+    expect(hasOfficialQuotaWindow(Number.NaN)).toBe(false);
+    expect(hasOfficialQuotaWindow(0)).toBe(true);
+    expect(hasOfficialQuotaWindow(40)).toBe(true);
   });
 });
 

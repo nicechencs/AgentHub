@@ -22,9 +22,32 @@ fn expand_binary_names_adds_windows_suffixes() {
     assert!(names.iter().any(|n| n == "codex"));
     #[cfg(windows)]
     {
-        assert!(names.iter().any(|n| n == "codex.cmd"));
+        assert_eq!(names[0], "codex.cmd");
         assert!(names.iter().any(|n| n == "codex.exe"));
+        let cmd = names.iter().position(|n| n == "codex.cmd").unwrap();
+        let bare = names.iter().position(|n| n == "codex").unwrap();
+        assert!(
+            cmd < bare,
+            "Windows must probe .cmd before the Unix shebang shim: {names:?}"
+        );
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn first_existing_named_bin_skips_unix_shebang_prefers_cmd() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("npm");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("codex"), "#!/bin/sh\necho 0.1.0\n").unwrap();
+    std::fs::write(dir.join("codex.cmd"), "@echo 0.149.0\n").unwrap();
+
+    let found = first_existing_named_bin(&[dir.clone()], &expand_binary_names("codex"));
+    assert_eq!(
+        found,
+        Some(dir.join("codex.cmd")),
+        "must not pick the Unix shebang `codex` that CreateProcess cannot run"
+    );
 }
 
 #[test]
@@ -154,7 +177,10 @@ fn looks_like_version_line_rejects_shell_errors() {
 #[test]
 fn not_found_firefighting_note_mentions_path_and_restart() {
     assert!(NOT_FOUND_FIREFIGHTING_NOTE.contains("PATH"));
-    assert!(NOT_FOUND_FIREFIGHTING_NOTE.contains("常见安装目录") || NOT_FOUND_FIREFIGHTING_NOTE.contains("well-known"));
+    assert!(
+        NOT_FOUND_FIREFIGHTING_NOTE.contains("常见安装目录")
+            || NOT_FOUND_FIREFIGHTING_NOTE.contains("well-known")
+    );
     assert!(
         NOT_FOUND_FIREFIGHTING_NOTE.contains("重启")
             || NOT_FOUND_FIREFIGHTING_NOTE.contains("restart")
@@ -271,7 +297,11 @@ fn is_under_agenthub_user_npm_prefix_excludes_legacy_global() {
         #[cfg(windows)]
         {
             assert!(!is_under_agenthub_user_npm_prefix(
-                &home.join("AppData").join("Roaming").join("npm").join("codex.cmd")
+                &home
+                    .join("AppData")
+                    .join("Roaming")
+                    .join("npm")
+                    .join("codex.cmd")
             ));
         }
     }
@@ -577,7 +607,9 @@ fn require_planned_uses_distinct_copy_from_unsupported() {
     let reg = register_all();
     // Claude Usage is Full; SessionResume is Partial (print+resume). Grok SessionResume stays Planned.
     assert!(reg.require(AgentId::Claude, Capability::Usage).is_ok());
-    assert!(reg.require(AgentId::Claude, Capability::SessionResume).is_ok());
+    assert!(reg
+        .require(AgentId::Claude, Capability::SessionResume)
+        .is_ok());
     let planned = match reg.require(AgentId::Grok, Capability::SessionResume) {
         Ok(_) => panic!("grok session resume should be planned/blocked"),
         Err(e) => e,
@@ -1435,7 +1467,9 @@ fn print_resume_flags_match_official_cli() {
     assert_eq!(codex.args[2], "resume");
     assert_eq!(codex.args[3], "sess-1");
     assert!(codex.args.contains(&"--json".into()));
-    assert!(codex.args.contains(&"--dangerously-bypass-approvals-and-sandbox".into()));
+    assert!(codex
+        .args
+        .contains(&"--dangerously-bypass-approvals-and-sandbox".into()));
     assert_eq!(codex.args.last().map(String::as_str), Some("hi"));
 }
 
