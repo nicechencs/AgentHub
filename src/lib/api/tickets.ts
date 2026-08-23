@@ -1,5 +1,5 @@
 /** Thin façade for the ticket / binding read model and bind/unbind write. */
-import { getBackend, notifyBridgePresenceChanged, notifyConnectionPoolChanged } from '@/app/runtime';
+import { getBackend, notifyConnectionPoolChanged } from '@/app/runtime';
 import type {
   AdapterApplyPlan,
   BindTicketResult,
@@ -36,7 +36,6 @@ async function refreshConnectionPoolAfterTicketMutation(): Promise<void> {
     // The mutation itself succeeded. The pool store keeps previous rows and
     // exposes the refresh error instead of pretending the list is current.
   }
-  notifyBridgePresenceChanged();
 }
 
 /** Load the global ticket wallet (tickets + bindings). */

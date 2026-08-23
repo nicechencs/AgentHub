@@ -7,6 +7,7 @@
 
 mod import_live;
 mod live_reconcile;
+mod oauth_file_sync;
 mod oauth_owner;
 mod pool_crud;
 mod surface;

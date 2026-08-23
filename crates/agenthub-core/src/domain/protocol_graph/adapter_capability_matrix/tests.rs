@@ -473,7 +473,7 @@ fn registered_surfaces_have_writable_pi_cells() {
     assert_eq!(xai_grok.route, AdapterRoute::Unsupported);
     assert!(!xai_grok.can_apply);
     assert_eq!(xai_grok.reason, SAME_PROTOCOL_NO_EDGE_REASON);
-    assert_eq!(xai_grok.reason, "这条接到方式还没做好，暂不能绑定。");
+    assert_eq!(xai_grok.reason, "这条接法还没做好，现在接不上。");
     assert!(!xai_grok.reason.contains("仅支持预览"));
 }
 
@@ -643,8 +643,8 @@ fn grok_subscription_to_kimi_and_dsh_stay_closed_with_clear_reasons() {
     assert!(!kimi.can_apply);
     assert_eq!(kimi.reason, GROK_SUBSCRIPTION_TO_KIMI_REASON);
     assert!(
-        GROK_SUBSCRIPTION_TO_KIMI_REASON.contains("Codex 官方登录"),
-        "closed copy must name Codex official login as the supported upstream"
+        GROK_SUBSCRIPTION_TO_KIMI_REASON.contains("官方 Key"),
+        "closed copy must say Kimi only accepts its own official key"
     );
 
     let dsh = decide_adapter_capability(
@@ -657,8 +657,8 @@ fn grok_subscription_to_kimi_and_dsh_stay_closed_with_clear_reasons() {
     assert!(!dsh.can_apply);
     assert_eq!(dsh.reason, GROK_SUBSCRIPTION_TO_DSH_REASON);
     assert!(
-        GROK_SUBSCRIPTION_TO_DSH_REASON.contains("Codex 官方登录"),
-        "closed copy must name Codex official login as the supported upstream"
+        GROK_SUBSCRIPTION_TO_DSH_REASON.contains("DeepSeek 官方 Key"),
+        "closed copy must say DSH only accepts the DeepSeek official key"
     );
 }
 

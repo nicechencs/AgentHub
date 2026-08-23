@@ -112,7 +112,7 @@ Chat 是 Workspace 的一等表面：在选定工作目录上，把同一条 pro
 - 页面层不 `invoke`；mock 不进生产 build。
 - 测试与生产分文件；纯函数必须可单测。
 - 中文正文；导航专有名词保持英文（Chat / Agents / Connections / Projects…）。
-- 浅色优先、低对比边框、明度分层；禁止魔法 `rounded-[Npx]`，只用 `rounded-btn` / `rounded-card` / `rounded-composer`。
+- 浅色优先、低对比边框、明度分层；禁止魔法 `rounded-[Npx]`，只用 `rounded-btn` / `rounded-card` / `rounded-composer`。用户气泡 12px，助手消息平铺。
 - Chat 继续 fullBleed、无 TopBar；主区 chrome 水平 inset 统一引用 `pageRhythm.chatChromeX`。
 
 ---

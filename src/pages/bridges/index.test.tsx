@@ -82,7 +82,7 @@ const emptyListProps = {
 
 describe('Bridges page', () => {
   it('describes the page as local-bridge runtime ops', () => {
-    expect(adapterPageDescription()).toBe('本机协议转换 · 仅 127.0.0.1');
+    expect(adapterPageDescription()).toBe('本机转发 · 仅 127.0.0.1 · 含端口');
   });
 
   it('rewrites /adapter, /router and /bridges bookmarks onto /routes and drops ?tab=', () => {
@@ -177,7 +177,7 @@ describe('Bridges page', () => {
     expect(markup).toContain('运行中');
     expect(markup).toContain('本机端点');
     expect(markup).toContain('目标写入');
-    expect(markup).toContain('解除绑定');
+    expect(markup).toContain('停止并还原');
     expect(markup).not.toContain('配置已生效');
     expect(markup).not.toContain('在 Connections 查看');
     expect(markup).not.toContain('删除适配');
@@ -248,12 +248,12 @@ describe('Bridges page', () => {
         onRequestRemove: vi.fn(),
       }),
     );
-    expect(markup).toContain('同票面登录');
+    expect(markup).toContain('同一类登录');
     expect(markup).toContain('Kimi Code 会员');
     expect(markup).toContain('Kimi 会员（失效号）');
     expect(markup).toContain('需要重新登录');
-    expect(markup).toContain('可接单');
-    expect(markup).toContain('绑定来源');
+    expect(markup).toContain('>可用<');
+    expect(markup).toContain('当前使用');
     expect(markup).toContain('text-muted');
     expect(markup).not.toContain('sk-');
     expect(markup).not.toContain('token');

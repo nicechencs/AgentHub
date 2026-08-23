@@ -115,7 +115,7 @@ fn cursor_reason_is_no_writer_for_any_ticket_speaks() {
     ] {
         let reason = unsupported_reason_for_target(AgentId::Cursor, surface.speaks());
         assert_eq!(reason, AGENT_NO_WRITER_REASON, "{surface:?}");
-        assert!(reason.contains("无配置写入"));
+        assert!(reason.contains("不能写入配置"));
     }
 }
 
@@ -148,7 +148,7 @@ fn anthropic_ticket_and_grok_are_same_protocol_no_edge() {
     );
     assert_eq!(
         SAME_PROTOCOL_NO_EDGE_REASON,
-        "这条接到方式还没做好，暂不能绑定。"
+        "这条接法还没做好，现在接不上。"
     );
 
     let decision = decide_adapter_capability(

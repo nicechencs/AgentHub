@@ -13,7 +13,7 @@ describe('chat layout wiring', () => {
   it('keeps the main column on canvas so an empty transcript matches composer chrome', () => {
     const page = source('index.tsx');
     expect(page).toContain('flex min-w-0 flex-1 flex-col bg-canvas');
-    expect(page).toContain('chatComposerChromeClass(page.turns.length > 0)');
+    expect(page).toContain('chatStageClass');
     expect(page).not.toContain('flex min-w-0 flex-1 flex-col bg-panel');
   });
 
@@ -31,5 +31,44 @@ describe('chat layout wiring', () => {
     expect(source('ChatTranscript.tsx')).toContain(
       'chatTranscriptSurfaceClass(turns.length > 0)',
     );
+  });
+
+  it('keeps the transcript white column on the same max-w-3xl as the composer', () => {
+    expect(source('index.tsx')).toContain('chatMainColumnClass');
+    expect(source('index.tsx')).toContain('chatStageClass');
+    expect(source('index.tsx')).toContain('pageRhythm.chatChromeX');
+  });
+
+  it('hides the splitter in an 8px gutter between transcript and composer', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('useChatComposerSplit');
+    expect(page).toContain('role="separator"');
+    expect(page).toContain('aria-orientation="horizontal"');
+    expect(page).toContain('cursor-row-resize');
+    expect(page).toContain('h-2 shrink-0 cursor-row-resize');
+    expect(page).toContain('bg-transparent');
+    expect(page).not.toContain('after:bg-border');
+    expect(page).not.toContain('hover:after:bg-accent');
+    expect(page).not.toContain('-my-2');
+    expect(page).not.toContain('flex min-h-0 flex-1 flex-col gap-4');
+  });
+
+  it('lets a dragged composer pane fill leftover height', () => {
+    const composer = source('ChatComposer.tsx');
+    expect(composer).toContain('fillHeight');
+    expect(composer).toContain('min-h-0 flex-1');
+    expect(composer).toContain('[field-sizing:content]');
+    expect(composer.indexOf('<BlockerNotice')).toBeLessThan(composer.indexOf('ref={paneRef}'));
+  });
+
+  it('puts the auto-approve hint to the left of send, muted and meta-sized', () => {
+    const composer = source('ChatComposer.tsx');
+    const hintAt = composer.indexOf('approveFooter.text');
+    const sendAt = composer.indexOf('<SendHorizontal');
+    expect(hintAt).toBeGreaterThan(0);
+    expect(sendAt).toBeGreaterThan(hintAt);
+    expect(composer).toContain('text-muted/35');
+    expect(composer).toContain('text-left text-meta leading-none');
+    expect(composer).not.toContain('mt-2 shrink-0 text-center text-meta');
   });
 });

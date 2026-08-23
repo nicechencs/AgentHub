@@ -251,8 +251,8 @@ describe('mock adapter route preview', () => {
     expect(analysis.support).toBe('unsupported');
     expect(analysis.gateKind).toBe('subscription_candidate');
     expect(analysis.ruleId).toBeNull();
-    expect(analysis.reason).toContain('当前不支持');
-    expect(analysis.reason).toContain('门禁');
+    expect(analysis.reason).toContain('现在还接不到');
+    expect(analysis.reason).toContain('不会改配置');
     expect(analysis.reason).toMatch(/Claude/);
     expect(analysis.reason).toMatch(/API Key|官方登录/);
     expect(plan.canApply).toBe(false);
@@ -379,25 +379,25 @@ describe('mock adapter route preview', () => {
         sourceId: 'claude-subscription',
         value: 'anthropic',
         ruleId: 'claude-subscription-to-pi-v1',
-        reason: 'Claude 订阅可写入 Pi 的 anthropic 登录槽（原生订阅复用）。',
+        reason: '把这份 Claude 订阅写进 Pi 认的 Claude 登录。',
       },
       {
         sourceId: 'codex-auth-json',
         value: 'openai-codex',
         ruleId: 'codex-subscription-to-pi-v1',
-        reason: 'Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。',
+        reason: '把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。',
       },
       {
         sourceId: 'codex-oauth-other',
         value: 'openai-codex',
         ruleId: 'codex-subscription-to-pi-v1',
-        reason: 'Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。',
+        reason: '把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。',
       },
       {
         sourceId: 'grok-subscription',
         value: 'xai',
         ruleId: 'grok-subscription-to-pi-v1',
-        reason: 'Grok / xAI 订阅可写入 Pi 的 xai 登录槽（原生订阅复用）。',
+        reason: '把这份 Grok 订阅写进 Pi 认的 Grok 登录。',
       },
     ] as const;
 
@@ -429,9 +429,9 @@ describe('mock adapter route preview', () => {
             },
           ],
           limitations: [
-            '会把 OAuth access/refresh 写入 Pi auth.json 对应槽；预览、IPC、日志不传输明文 token。',
-            '写入后由 Pi 刷新该槽；Hub 不双刷同一 refresh token。原 Agent 与 Pi 同时刷新可能互相打翻。',
-            '实验性：应用后会把生成 Provider 设为 Pi 当前连接。',
+            '会把官方登录写进 Pi 认的位置；预览和日志不显示完整令牌。',
+            '写进去之后由 Pi 自己续期；AgentHub 不会再刷一次。原来的工具和 Pi 一起续期可能互相踢下线。',
+            '接上后会把自动生成的配置设成 Pi 当前在用的连接。',
           ],
         },
         canApply: true,
@@ -631,7 +631,7 @@ describe('mock adapter route preview', () => {
     expect(codex.canApply).toBe(true);
     expect(codex.analysis.route).toBe('local_bridge');
     expect(codex.analysis.ruleId).toBe('anthropic-api-to-codex-v1');
-    expect(codex.changes[0].value).toBe('AgentHub Anthropic 本地桥接');
+    expect(codex.changes[0].value).toBe('AgentHub Anthropic 本机路由');
     expect(codex.reason).not.toContain('同边但暂不可写');
   });
 

@@ -138,6 +138,7 @@ export function createMockAccountPort(): AccountPort {
         tokenValid: true,
         authHealth: 'configured',
         identityLabel: label?.trim() || masked,
+        secretTail: key.trim().length >= 8 ? `**${key.trim().slice(-4)}` : undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -165,6 +166,7 @@ export function createMockAccountPort(): AccountPort {
         if (!nextLabel) {
           acc.label = `${masked} (API Key)`;
         }
+        acc.secretTail = key.length >= 8 ? `**${key.slice(-4)}` : undefined;
         acc.tokenValid = true;
       }
       if (!nextLabel && !opts.key?.trim()) {
@@ -187,6 +189,8 @@ export function createMockAccountPort(): AccountPort {
         tokenValid: true,
         authHealth: 'renewable',
         refreshable: true,
+        refreshTokenPreview: 'rt--••••JF6Q',
+        secretTail: '**JF6Q',
         tokenRemainingSec: 8 * 3600,
         quota5hPct: 5,
         lastUsedAt: new Date().toISOString(),
@@ -316,6 +320,8 @@ export function createMockAccountPort(): AccountPort {
         tokenValid: true,
         authHealth: 'renewable',
         refreshable: true,
+        refreshTokenPreview: 'rt--••••JF6Q',
+        secretTail: '**JF6Q',
         tokenRemainingSec: 30 * 24 * 3600,
         quota5hPct: 0,
         quota7dPct: 0,

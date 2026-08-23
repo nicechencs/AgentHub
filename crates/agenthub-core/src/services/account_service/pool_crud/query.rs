@@ -67,11 +67,7 @@ impl AccountService {
         Ok(items)
     }
 
-    /// Best-effort reconciliation of the adapter's current live credentials.
-    /// Exact authorizations and safe rotations update their existing pool row;
-    /// a verified, distinct live grant is retained as its own row instead of
-    /// being mistaken for a token refresh. Pi is expanded by provider before
-    /// reconciliation because its live snapshot is a combined auth.json file.
+    /// Probe upstream 5h/7d quota for one OAuth account and persist healed fields.
     pub fn refresh_quota(&self, id_or_label: &str, agent: AgentId) -> Result<Account> {
         let mut account = self.get(id_or_label, Some(agent))?;
         if account.kind != AccountKind::Oauth {

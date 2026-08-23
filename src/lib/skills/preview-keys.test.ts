@@ -18,19 +18,19 @@ function mockRoot(hits: string[]): ParentNode {
 
 describe('skillPreviewActiveKey', () => {
   it('distinguishes shared vs private with the same skill id', () => {
-    const shared = skillPreviewActiveKey({ skillId: 'dbs-action' });
+    const shared = skillPreviewActiveKey({ skillId: 'notes' });
     const privateCodex = skillPreviewActiveKey({
-      skillId: 'dbs-action',
+      skillId: 'notes',
       privateAgent: 'codex',
     });
     const privateClaude = skillPreviewActiveKey({
-      skillId: 'dbs-action',
+      skillId: 'notes',
       privateAgent: 'claude',
     });
 
-    expect(shared).toBe('shared:dbs-action');
-    expect(privateCodex).toBe('agent:codex:dbs-action');
-    expect(privateClaude).toBe('agent:claude:dbs-action');
+    expect(shared).toBe('shared:notes');
+    expect(privateCodex).toBe('agent:codex:notes');
+    expect(privateClaude).toBe('agent:claude:notes');
     expect(shared).not.toBe(privateCodex);
     expect(privateCodex).not.toBe(privateClaude);
   });

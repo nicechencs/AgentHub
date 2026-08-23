@@ -6,13 +6,14 @@ import {
   type RefObject,
   type TransitionEvent as ReactTransitionEvent,
 } from 'react';
-import { Code2, Eye, FolderOpen, PanelRightClose } from 'lucide-react';
+import { Code2, Eye, FolderOpen, PanelRightClose, Trash2 } from 'lucide-react';
 import { MarkdownView } from '@/components/shared/MarkdownView';
+import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { Button } from '@/components/ui/button';
 import { segmentedItemClass, segmentedTrackClass } from '@/components/ui/segmented-styles';
 import { Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { agentDisplayName } from '@/config/agents';
+import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import { readSkillMarkdown } from '@/lib/api/skill';
 import {
   hasEscPriorityOverlay,
@@ -23,6 +24,11 @@ import type { AgentId } from '@/lib/types';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 
+export type SkillPreviewCopy = {
+  agentId: AgentId;
+  sourceDir: string;
+};
+
 export type SkillPreviewTarget = {
   skillId: string;
   name?: string;
@@ -30,6 +36,10 @@ export type SkillPreviewTarget = {
   privateAgent?: AgentId | null;
   /** Optional dir path for “open folder”. */
   sourceDir?: string | null;
+  /** Identical private copies; length ≥ 2 shows an Agent switcher. */
+  copies?: SkillPreviewCopy[];
+  /** Matrix row key; switching copies does not change this. */
+  rowKey?: string;
 };
 
 function PreviewSkeleton() {
@@ -56,6 +66,8 @@ export function SkillMarkdownPreviewPanel({
   open,
   onClose,
   onOpenDir,
+  onSelectCopy,
+  onRemoveCopy,
   width,
   className,
   contentRef,
@@ -65,6 +77,8 @@ export function SkillMarkdownPreviewPanel({
   open: boolean;
   onClose: () => void;
   onOpenDir?: (path: string) => void;
+  onSelectCopy?: (agentId: AgentId) => void;
+  onRemoveCopy?: () => void;
   /** Pixel width when open (parent + resize handle own the split). */
   width?: number;
   className?: string;
@@ -140,8 +154,15 @@ export function SkillMarkdownPreviewPanel({
 
   if (!open || !target) return null;
 
+  const copies = target.copies ?? [];
+  const selectedCopy =
+    copies.find((copy) => copy.agentId === target.privateAgent) ?? copies[0] ?? null;
+  const showCopyTabs = copies.length > 1 && Boolean(selectedCopy);
+  const copyAgents = copies.map((copy) => resolveAgentMeta(copy.agentId));
   const openFolderPath =
-    target.sourceDir ?? (path ? path.replace(/[\\/][^\\/]+$/, '') : null);
+    selectedCopy?.sourceDir ??
+    target.sourceDir ??
+    (path ? path.replace(/[\\/][^\\/]+$/, '') : null);
   const originLabel = target.privateAgent
     ? agentDisplayName(target.privateAgent)
     : t('skills.preview.sharedOrigin');
@@ -161,63 +182,90 @@ export function SkillMarkdownPreviewPanel({
       aria-labelledby={titleId}
       onTransitionEnd={onWidthTransitionEnd}
     >
-      {/* Single-row chrome；过窄时横向滚动工具区，避免按钮被裁切 */}
-      <header className="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-3">
-        <div className="min-w-0 flex-1 basis-16">
-          <div className="flex min-w-0 items-baseline gap-2">
-            <h2
-              id={titleId}
-              className="truncate text-sm font-semibold leading-tight text-primary"
-            >
-              {name || t('skills.preview.titleFallback')}
-            </h2>
-            <span className="shrink-0 text-meta text-muted">{originLabel}</span>
+      <header className="shrink-0 border-b border-border">
+        {/* Single-row chrome；过窄时横向滚动工具区，避免按钮被裁切 */}
+        <div className="flex h-10 items-center gap-1.5 overflow-x-auto px-3">
+          <div className="min-w-0 flex-1 basis-16">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <h2
+                id={titleId}
+                className="truncate text-sm font-semibold leading-tight text-primary"
+              >
+                {name || t('skills.preview.titleFallback')}
+              </h2>
+              {showCopyTabs ? null : (
+                <span className="shrink-0 text-meta text-muted">{originLabel}</span>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* chrome 特例：比页内筛选 sm 更扁（h-6），不与列表筛选同高 */}
-        <div className={cn(segmentedTrackClass, 'shrink-0 flex-nowrap')}>
-          <button
-            type="button"
-            className={cn(segmentedItemClass(mode === 'preview', 'sm'), 'h-6 gap-1 px-2')}
-            onClick={() => setMode('preview')}
-          >
-            <Eye className="h-3 w-3" />
-            {t('skills.preview.modePreview')}
-          </button>
-          <button
-            type="button"
-            className={cn(segmentedItemClass(mode === 'source', 'sm'), 'h-6 gap-1 px-2')}
-            onClick={() => setMode('source')}
-          >
-            <Code2 className="h-3 w-3" />
-            {t('skills.preview.modeSource')}
-          </button>
-        </div>
+          {/* chrome 特例：比页内筛选 sm 更扁（h-6），不与列表筛选同高 */}
+          <div className={cn(segmentedTrackClass, 'shrink-0 flex-nowrap')}>
+            <button
+              type="button"
+              className={cn(segmentedItemClass(mode === 'preview', 'sm'), 'h-6 gap-1 px-2')}
+              onClick={() => setMode('preview')}
+            >
+              <Eye className="h-3 w-3" />
+              {t('skills.preview.modePreview')}
+            </button>
+            <button
+              type="button"
+              className={cn(segmentedItemClass(mode === 'source', 'sm'), 'h-6 gap-1 px-2')}
+              onClick={() => setMode('source')}
+            >
+              <Code2 className="h-3 w-3" />
+              {t('skills.preview.modeSource')}
+            </button>
+          </div>
 
-        {openFolderPath && onOpenDir ? (
+          {openFolderPath && onOpenDir ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 shrink-0"
+              title={t('skills.preview.openDir')}
+              aria-label={t('skills.preview.openDir')}
+              onClick={() => onOpenDir(openFolderPath)}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+
+          {target.privateAgent && onRemoveCopy ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 shrink-0 text-danger hover:text-danger"
+              title={t('skills.preview.removeCopy')}
+              aria-label={t('skills.preview.removeCopy')}
+              onClick={onRemoveCopy}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+
           <Button
             size="icon"
             variant="ghost"
             className="h-7 w-7 shrink-0"
-            title={t('skills.preview.openDir')}
-            aria-label={t('skills.preview.openDir')}
-            onClick={() => onOpenDir(openFolderPath)}
+            aria-label={t('skills.preview.collapse')}
+            title={t('skills.preview.collapse')}
+            onClick={onClose}
           >
-            <FolderOpen className="h-3.5 w-3.5" />
+            <PanelRightClose className="h-4 w-4" />
           </Button>
+        </div>
+        {showCopyTabs && selectedCopy ? (
+          <div className="px-3 pb-2">
+            <AgentTabStrip
+              value={selectedCopy.agentId}
+              onChange={(id) => onSelectCopy?.(id)}
+              agents={copyAgents}
+              aria-label={t('skills.preview.copyTabs')}
+            />
+          </div>
         ) : null}
-
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7 shrink-0"
-          aria-label={t('skills.preview.collapse')}
-          title={t('skills.preview.collapse')}
-          onClick={onClose}
-        >
-          <PanelRightClose className="h-4 w-4" />
-        </Button>
       </header>
 
       {/* Top 1px progress while loading */}
@@ -294,7 +342,7 @@ export function SkillMarkdownPreviewPanel({
             )}
           </div>
         ) : (
-          <pre className="min-w-0 overflow-x-auto whitespace-pre-wrap break-words rounded-btn border border-border/60 bg-subtle p-3 font-mono text-xs leading-relaxed text-primary">
+          <pre className="min-w-0 overflow-x-auto whitespace-pre-wrap break-words rounded-card border border-border/60 bg-subtle p-3 font-mono text-xs leading-relaxed text-primary">
             {content}
           </pre>
         )}

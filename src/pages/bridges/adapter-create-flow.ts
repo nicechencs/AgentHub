@@ -13,20 +13,20 @@ import type {
 } from '@/lib/backend/contracts/adapter';
 
 export function routeLabel(route: AdapterRouteAnalysis['route'], t?: TranslateFn): string {
-  if (route === 'native_endpoint') return t ? t('routes.create.route.nativeEndpoint') : '原生端点';
-  if (route === 'local_bridge') return t ? t('routes.create.route.localBridge') : '需要本地代理';
-  if (route === 'config_sync') return t ? t('routes.create.route.configSync') : '直接同步';
+  if (route === 'native_endpoint') return t ? t('routes.create.route.nativeEndpoint') : '直连';
+  if (route === 'local_bridge') return t ? t('routes.create.route.localBridge') : '本机路由';
+  if (route === 'config_sync') return t ? t('routes.create.route.configSync') : '用这份登录';
   return t ? t('routes.create.route.unsupported') : '当前不支持';
 }
 
 /** Table column copy for the projection path. Credential family is a separate column. */
 export function adapterTableRouteLabel(route: AdapterRouteAnalysis['route'], t?: TranslateFn): string {
-  if (route === 'local_bridge') return t ? t('routes.create.tableLocalBridge') : '本地协议转换';
+  if (route === 'local_bridge') return t ? t('routes.create.tableLocalBridge') : '本机转发';
   return routeLabel(route, t);
 }
 
 export function supportBadge(support: AdapterSupport, t?: TranslateFn): { label: string; variant: 'success' | 'warning' | 'default' } {
-  if (support === 'stable') return { label: t ? t('routes.create.support.stable') : '稳定规则', variant: 'success' };
+  if (support === 'stable') return { label: t ? t('routes.create.support.stable') : '稳定', variant: 'success' };
   if (support === 'experimental') return { label: '', variant: 'default' };
   // Neutral, not a fault state: unsupported is a gate conclusion, not a red error.
   return { label: t ? t('routes.create.support.unsupported') : '当前不支持', variant: 'default' };
@@ -168,7 +168,7 @@ export function unsupportedPresentation(
     gateLines: subscription
       ? [
           '跨产品授权尚未验证。',
-          '不会创建适配或启动桥接。',
+          '不会创建适配或启动本机转发。',
           ...(wireWouldApply ? ['异常可应用标记已被忽略。'] : []),
         ]
       : [
@@ -182,7 +182,7 @@ export function unsupportedPresentation(
           '改用已支持的 API Key，如 Kimi → Claude。',
         ]
       : [
-          '改用目标 Agent 自己登录。',
+          '改用目标工具自己登录。',
           '换一条已支持的组合。',
         ],
     safetyNote: '',
@@ -271,8 +271,8 @@ export function adapterApplyCommit(result: Pick<AdapterApplyResult, 'profile'>, 
 } {
   return {
     successMessage: result.profile.route === 'local_bridge'
-      ? (t ? t('routes.create.apply.localCreated') : '本地桥接已创建并启动，Codex 连接已切换。')
-      : (t ? t('routes.create.apply.applied') : '适配已应用。'),
+      ? (t ? t('routes.create.apply.localCreated') : '本机路由已创建并启动，已切到 Codex。')
+      : (t ? t('routes.create.apply.applied') : '已接到目标工具。'),
     shouldProbeBridge: result.profile.route === 'local_bridge',
     shouldRefresh: true,
   };
@@ -286,8 +286,8 @@ export function maskedIdSuffix(id: string): string {
 
 export function sourceKindLabel(sourceKind: 'account' | 'provider', t?: TranslateFn): string {
   return sourceKind === 'account'
-    ? (t ? t('routes.create.sourceKind.account') : '账户')
-    : (t ? t('routes.create.sourceKind.provider') : 'Provider');
+    ? (t ? t('routes.create.sourceKind.account') : '账号')
+    : (t ? t('routes.create.sourceKind.provider') : 'API 配置');
 }
 
 /** One canonical source label for selection, preview, and confirmation. */

@@ -1,8 +1,15 @@
 /**
  * Global ticket-wallet list helpers (Connections page).
- * Filter / search / binding usage lines — pure functions for vitest.
+ * Filter / binding usage lines — pure functions for vitest.
  */
 import { agentDisplayName } from '@/config/agents';
+import {
+  formatRouteEndpointHttpUrl,
+  routeEndpointIdForBinding,
+  routeEndpointPathForBinding,
+  type RouteEndpointId,
+} from '@/lib/route-endpoints';
+import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 import type {
   BindingRoute,
@@ -25,8 +32,12 @@ import {
 } from '@/lib/credential-row';
 import { bridgesHrefForProfile } from '@/lib/bridges-path';
 import type { TranslateFn } from '@/lib/i18n';
+import {
+  activeBindingForAgent,
+  filterTicketsByAgentUsage,
+} from '@/lib/ticket-wallet';
 
-export { activeBindingForAgent } from '@/lib/ticket-wallet';
+export { activeBindingForAgent, filterTicketsByAgentUsage };
 
 export type TicketWalletFilter = 'all' | TicketCredentialClass;
 
@@ -123,6 +134,15 @@ export function buildTicketAddMenu(
     name: agentDisplayName(id),
     actions: TICKET_ADD_ACTIONS,
   }));
+}
+
+/** When an Agent tab is selected, skip the agent picker and use that Agent's actions. */
+export function focusedTicketAddAgent(
+  agents: readonly TicketAddMenuAgent[],
+  focusedAgentId?: AgentId | null,
+): TicketAddMenuAgent | null {
+  if (!focusedAgentId) return null;
+  return agents.find((item) => item.id === focusedAgentId) ?? null;
 }
 
 export function dispatchTicketAddAction(
@@ -234,7 +254,8 @@ export function isUnrecognizedTicket(ticket: Pick<TicketView, 'surface' | 'crede
 
 export type TicketUsagePart =
   | { kind: 'text'; text: string }
-  | { kind: 'bridge'; label: string; href: string };
+  | { kind: 'bridge'; label: string; href: string }
+  | { kind: 'endpoint'; path: string; port: number | null; endpointId: RouteEndpointId };
 
 export interface TicketWalletRow {
   ticket: TicketView;
@@ -262,16 +283,20 @@ export function formatBindingUsageParts(
   const poolSuffix = binding.route === 'bridge' && memberCount > 1
     ? (t
       ? t('connections.list.poolSuffix', { n: memberCount })
-      : ` · ${memberCount} 个登录轮询承接`)
+      : ` · ${memberCount} 份同类登录可轮换`)
     : '';
   if (binding.route === 'bridge') {
+    const path = routeEndpointPathForBinding({ agentId: binding.agentId });
+    const endpointId = routeEndpointIdForBinding({ agentId: binding.agentId });
+    const port = binding.bridge?.port ?? null;
     const suffix = binding.bridge?.running
       ? `${poolSuffix}${t ? t('connections.list.runningSuffix') : ' · 运行中'}`
       : binding.bridge && !binding.bridge.running
         ? `${poolSuffix}${t ? t('connections.list.stoppedSuffix') : ' · 已停止'}`
         : poolSuffix;
     return [
-      { kind: 'text', text: t ? t('connections.list.usageOpen', { name }) : `${name}（` },
+      { kind: 'endpoint', path, port, endpointId },
+      { kind: 'text', text: '（' },
       { kind: 'bridge', label: route, href: bridgesHrefForProfile(binding.profileId) },
       { kind: 'text', text: t ? t('connections.list.usageCloseWithSuffix', { suffix }) : `${suffix}）` },
     ];
@@ -288,8 +313,16 @@ export function formatBindingUsagePart(
   memberCount = 1,
 ): string {
   return formatBindingUsageParts(binding, t, memberCount)
-    .map((part) => (part.kind === 'bridge' ? part.label : part.text))
+    .map((part) => usagePartPlainText(part))
     .join('');
+}
+
+function usagePartPlainText(part: TicketUsagePart): string {
+  if (part.kind === 'bridge') return part.label;
+  if (part.kind === 'endpoint') {
+    return formatRouteEndpointHttpUrl({ path: part.path, port: part.port });
+  }
+  return part.text;
 }
 
 export function formatTicketUsageParts(
@@ -334,7 +367,7 @@ export function formatTicketUsageText(
   memberCount = 1,
 ): string {
   return formatTicketUsageParts(bindings, ownerAgentId, t, memberCount)
-    .map((part) => (part.kind === 'bridge' ? part.label : part.text))
+    .map((part) => usagePartPlainText(part))
     .join('');
 }
 
@@ -368,84 +401,23 @@ export function filterTickets(
   return tickets.filter((t) => t.credentialClass === filter);
 }
 
-function ticketSearchHaystack(
-  ticket: TicketView,
-  bindings: readonly BindingView[],
-  memberCount = 1,
-): string {
-  const own = bindings.filter((binding) => binding.ticketId === ticket.id);
-  const usageText = formatTicketUsageText(own, undefined, undefined, memberCount);
-  const bindingBits = own.flatMap((binding) => [
-    binding.agentId,
-    agentDisplayName(binding.agentId),
-    bindingRouteUsageLabel(binding.route),
-    bindingRouteDashboardLabel(binding.route),
-  ]);
-  return [
-    ticket.label,
-    ticket.id,
-    ticket.agentId,
-    ticket.surface,
-    ticket.credentialClass,
-    ticketCredentialClassLabel(ticket.credentialClass),
-    ticketSurfaceLabel(ticket.surface),
-    agentDisplayName(ticket.agentId),
-    ...(Array.isArray(ticket.speaks) ? ticket.speaks : []),
-    usageText,
-    ...bindingBits,
-  ]
-    .join(' ')
-    .toLowerCase();
-}
-
-/** Matches ticket fields and「正用于」bindings (agent / route label / usageText). */
-export function searchTickets(
-  tickets: readonly TicketView[],
-  query: string,
-  bindings: readonly BindingView[] = [],
-  groups: TicketWallet['surfaceGroups'] = [],
-): TicketView[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [...tickets];
-  return tickets.filter((ticket) => {
-    const memberCount = surfaceGroupMemberCount(groups, ticket.id);
-    return ticketSearchHaystack(ticket, bindings, memberCount).includes(q);
-  });
-}
-
-/** Soft agent filter: tickets that belong to or bind to the agent. */
-export function filterTicketsByAgentUsage(
-  wallet: TicketWallet,
-  tickets: readonly TicketView[],
-  agentId: AgentId | null,
-): TicketView[] {
-  if (!agentId) return [...tickets];
-  const ticketIds = new Set(
-    wallet.bindings.filter((b) => b.agentId === agentId).map((b) => b.ticketId),
-  );
-  return tickets.filter((t) => ticketIds.has(t.id) || t.agentId === agentId);
-}
-
 export function buildTicketWalletRows(
   wallet: TicketWallet,
   options: {
     filter?: TicketWalletFilter;
-    query?: string;
-    /** Deep-link agent: highlight active binding rows; does not privatize the list. */
+    /** Deep-link highlight for that Agent's active binding. */
     highlightAgentId?: AgentId | null;
-    /** Optional soft filter by agent (UI chip); omit for full wallet. */
+    /** Agent tab filter; omit for the full wallet. */
     agentFilterId?: AgentId | null;
     t?: TranslateFn;
   } = {},
 ): TicketWalletRow[] {
   const filter = options.filter ?? 'all';
-  const query = options.query ?? '';
   const highlightAgentId = options.highlightAgentId ?? null;
   const agentFilterId = options.agentFilterId ?? null;
   const t = options.t;
 
   let tickets = filterTickets(wallet.tickets, filter);
-  tickets = searchTickets(tickets, query, wallet.bindings, wallet.surfaceGroups);
   if (agentFilterId) {
     tickets = filterTicketsByAgentUsage(wallet, tickets, agentFilterId);
   }
@@ -490,6 +462,12 @@ export interface TicketDetailExtras {
   canEditKey?: boolean;
   canEditConfig?: boolean;
   isCurrent?: boolean;
+  oauthAction?: AccountAction;
+  refreshTokenPreview?: string;
+  /** `**XXXX` chip replacing 可续期 / 已配置 when a secret tail is known. */
+  secretTail?: string;
+  /** Pool-row display title (email when identity heal succeeded). */
+  accountLabel?: string;
 }
 
 export interface TicketDetailField {
@@ -522,6 +500,76 @@ const AUTH_LABEL_HUMAN: Record<string, string> = {
 export function humanizeTicketAuthLabel(label: string): string {
   const mapped = AUTH_LABEL_HUMAN[label] ?? label.replace(/·/g, '，');
   return mapped.replace(/[·，]\s*(尚未验证|未验证)\s*$/u, '').trim() || mapped;
+}
+
+const SECRET_TAIL_HEALTH = new Set(['可续期', '已配置', 'Renewable', 'Configured']);
+
+/** Card chip: secret tail (`**JF6Q`) in place of 可续期 / 已配置 when known. */
+export function ticketAuthChip(
+  extras?: TicketDetailExtras | null,
+): { label: string; mono: boolean } | null {
+  if (!extras) return null;
+  const health = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel) : '';
+  const tail = extras.secretTail?.trim();
+  if (tail && (!health || SECRET_TAIL_HEALTH.has(health))) {
+    return { label: tail, mono: true };
+  }
+  if (health) return { label: health, mono: false };
+  return null;
+}
+
+export type TicketSwitchChip = {
+  kind: 'switch' | 'in-use';
+  label: string;
+};
+
+function isPlaceholderOAuthLabel(label: string): boolean {
+  const t = label.trim().toLowerCase();
+  return (
+    !t
+    || t === '官方未提供账号信息'
+    || t === 'codex-oauth'
+    || t === 'codex oauth'
+    || t === 'grok-oauth'
+    || t === 'kimi-oauth'
+    || t === 'claude-oauth'
+    || t === 'pi-auth'
+    || /\(oauth\)$/i.test(t)
+    || / · oauth$/i.test(t)
+    || / oauth$/i.test(t)
+    || /-oauth$/i.test(t)
+  );
+}
+
+/** Card title prefers healed account email over placeholder ticket labels. */
+export function ticketCardTitle(
+  ticket: Pick<TicketView, 'label'>,
+  extras?: TicketDetailExtras | null,
+): string {
+  const identity = extras?.identity?.trim();
+  if (identity && identity.includes('@')) return identity;
+  const fromAccount = extras?.accountLabel?.trim();
+  if (fromAccount && !isPlaceholderOAuthLabel(fromAccount)) return fromAccount;
+  return ticket.label;
+}
+
+/** Native 切换 applies to the ticket's owner Agent, not a foreign usage tab. */
+export function showsNativeSwitch(
+  ticketAgentId: AgentId,
+  agentFilterId?: AgentId | null,
+): boolean {
+  return !agentFilterId || agentFilterId === ticketAgentId;
+}
+
+/** Card action: unused → 切换; current live grant → disabled 使用中. */
+export function ticketSwitchChip(
+  extras?: Pick<TicketDetailExtras, 'isCurrent'> | null,
+  t?: TranslateFn,
+): TicketSwitchChip {
+  if (extras?.isCurrent) {
+    return { kind: 'in-use', label: t ? t('connections.list.inUse') : '使用中' };
+  }
+  return { kind: 'switch', label: t ? t('connections.list.switch') : '切换' };
 }
 
 function endpointHostOnly(host: string): string {
@@ -567,11 +615,14 @@ export function extrasFromPoolSource(
   ticket: TicketView,
   source: { account?: Account; provider?: Provider },
   t?: TranslateFn,
+  tabCurrentTicketId?: string | null,
 ): TicketDetailExtras {
   const extras: TicketDetailExtras = {
     canEditKey: ticket.sourceKind === 'account' && source.account?.kind === 'apikey',
     canEditConfig: ticket.sourceKind === 'provider' && Boolean(source.provider),
-    isCurrent: source.account?.isCurrent === true || source.provider?.isCurrent === true,
+    isCurrent: tabCurrentTicketId === undefined
+      ? source.account?.isCurrent === true || source.provider?.isCurrent === true
+      : ticket.id === tabCurrentTicketId,
   };
 
   if (source.account) {
@@ -597,6 +648,14 @@ export function extrasFromPoolSource(
     extras.quotaResetIn = source.account.quotaResetIn;
     extras.quota7dResetIn = source.account.quota7dResetIn;
     extras.endpointMode = source.account.kind === 'apikey' ? 'official' : undefined;
+    extras.oauthAction = oauthListAction(source.account);
+    if (ticket.credentialClass === 'oauth' && source.account.refreshTokenPreview) {
+      extras.refreshTokenPreview = source.account.refreshTokenPreview;
+    }
+    if (source.account.secretTail) {
+      extras.secretTail = source.account.secretTail;
+    }
+    extras.accountLabel = source.account.label;
   }
 
   if (source.provider) {
@@ -606,6 +665,9 @@ export function extrasFromPoolSource(
     extras.endpointHost = endpoint.endpointHost;
     extras.authLabel = row.auth.label;
     extras.authStatus = row.auth.status;
+    if (source.provider.secretTail) {
+      extras.secretTail = source.provider.secretTail;
+    }
   }
 
   return extras;
@@ -613,7 +675,7 @@ export function extrasFromPoolSource(
 
 /**
  * Advanced-only facts for the ticket detail expand.
- * Header already shows type / surface / health chip; footer shows 导入自.
+ * Header already shows type / surface / health chip.
  */
 export function buildTicketDetailFields(
   ticket: TicketView,
@@ -630,7 +692,7 @@ export function buildTicketDetailFields(
     });
     if (extras.endpointHost) {
       advanced.push({
-        label: 'Endpoint',
+        label: t ? t('connections.list.endpointHost') : '主机',
         value: endpointHostOnly(extras.endpointHost),
         mono: true,
       });
@@ -656,7 +718,12 @@ export function formatTicketBindingDetailLines(
   t?: TranslateFn,
 ): TicketBindingDetailLine[] {
   return bindings.map((binding) => ({
-    agent: agentDisplayName(binding.agentId),
+    agent: binding.route === 'bridge'
+      ? formatRouteEndpointHttpUrl({
+          path: routeEndpointPathForBinding({ agentId: binding.agentId }),
+          port: binding.bridge?.port ?? null,
+        })
+      : agentDisplayName(binding.agentId),
     status: ticketBindingStatus(binding, t),
   }));
 }

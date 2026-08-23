@@ -19,31 +19,19 @@ import { loadJson } from '@/lib/ui-preferences';
 /** Browser mock skills always have a shared source directory. */
 type MockSkill = Omit<Skill, 'sourceDir'> & { sourceDir: string };
 
-const dbsNames = [
-  'action', 'agent-migration', 'ai-check', 'benchmark', 'chatroom', 'content', 'deconstruct',
-  'diagnosis', 'goal', 'good-question', 'hook', 'learning', 'report', 'restore', 'save',
-  'slowisfast', 'xhs-title',
+/** Generic demo catalog — not a personal skill dump. */
+const uniqueNames = [
+  'notes', 'pdf', 'pdf-helper', 'git-commit', 'code-review', 'summarize', 'format-json',
+  'search-docs', 'write-tests', 'changelog', 'open-url', 'extract-tables', 'draft-email',
+  'find-skills', 'pptx', 'rename-files', 'lint-code', 'fix-typos', 'split-csv', 'merge-pdfs',
+  'translate', 'outline', 'rewrite', 'cite-sources', 'compare-files', 'sort-list',
+  'count-words', 'trim-whitespace', 'slugify', 'pretty-print', 'minify', 'convert-markdown',
+  'generate-readme', 'scaffold', 'bump-version', 'tag-release', 'run-checks', 'parse-logs',
+  'group-issues', 'prioritize', 'estimate', 'schedule', 'remind', 'bookmark', 'archive',
+  'export-csv', 'import-csv', 'filter-rows', 'chart', 'diagram', 'screenshot',
+  'resize-image', 'compress', 'hash-file', 'diff-text', 'wrap-text', 'clip-quote',
+  'time-box', 'todo-list',
 ];
-const hfNames = ['core', 'cli', 'animation', 'keyframes', 'creative', 'registry'];
-const larkNames = [
-  'approval', 'apps', 'attendance', 'base', 'calendar', 'contact', 'doc', 'drive', 'event',
-  'im', 'mail', 'markdown', 'minutes', 'note', 'okr', 'openapi-explorer', 'shared', 'sheets',
-  'skill-maker', 'slides', 'task', 'vc', 'vc-agent', 'whiteboard', 'wiki',
-  'workflow-meeting-summary', 'workflow-standup-report',
-];
-const miscNames = [
-  'agent-builder', 'find-skills', 'pdf', 'pptx', 'media-use', 'general-video',
-  'write-goal', 'update-config', 'check-docs',
-];
-
-const skillNames: string[] = [
-  ...dbsNames.map((n) => `dbs-${n}`),
-  ...hfNames.map((n) => `hyperframes-${n}`),
-  'hyperframes',
-  ...larkNames.map((n) => `lark-${n}`),
-  ...miscNames,
-];
-const uniqueNames = [...new Set(skillNames)].slice(0, 59);
 
 function seededRandom(seed: number) {
   let s = seed;
@@ -105,7 +93,7 @@ function buildMockSkill(name: string): MockSkill {
   return {
     id: name,
     name,
-    description: `${name} 技能`,
+    description: `${name} demo skill`,
     sourceDir: `C:\\mock\\skills\\${name}`,
     projections,
     sync,
@@ -133,23 +121,38 @@ function toSharedInstalledRow(s: MockSkill): InstalledSkillDto {
 
 const mockPrivateSkills: InstalledSkillDto[] = [
   {
-    id: 'hatch-pet',
-    name: 'hatch-pet',
+    id: 'sample-pet',
+    name: 'sample-pet',
     description: 'Codex private skill',
-    sourceDir: 'C:\\mock\\.codex\\skills\\hatch-pet',
+    sourceDir: 'C:\\mock\\.codex\\skills\\sample-pet',
     rootLabel: '~/.codex/skills',
     rootDir: 'C:\\mock\\.codex\\skills',
     origin: 'codex',
     projectable: false,
     mapStatus: 'private_source',
+    contentHash: 'sample-pet-identical',
     source: null,
     projections: [],
   },
   {
-    id: 'changelog-generator',
-    name: 'changelog-generator',
+    id: 'sample-pet',
+    name: 'sample-pet',
+    description: 'Cursor private skill',
+    sourceDir: 'C:\\mock\\.cursor\\skills-cursor\\sample-pet',
+    rootLabel: '~/.cursor/skills-cursor',
+    rootDir: 'C:\\mock\\.cursor\\skills-cursor',
+    origin: 'cursor',
+    projectable: false,
+    mapStatus: 'private_source',
+    contentHash: 'sample-pet-identical',
+    source: null,
+    projections: [],
+  },
+  {
+    id: 'sample-changelog',
+    name: 'sample-changelog',
     description: 'Claude private skill',
-    sourceDir: 'C:\\mock\\.claude\\skills\\changelog-generator',
+    sourceDir: 'C:\\mock\\.claude\\skills\\sample-changelog',
     rootLabel: '~/.claude/skills',
     rootDir: 'C:\\mock\\.claude\\skills',
     origin: 'claude',
@@ -159,10 +162,10 @@ const mockPrivateSkills: InstalledSkillDto[] = [
     projections: [],
   },
   {
-    id: 'local-review',
-    name: 'local-review',
-    description: 'Claude 本地 code review 流程',
-    sourceDir: 'C:\\mock\\.claude\\skills\\local-review',
+    id: 'sample-review',
+    name: 'sample-review',
+    description: 'Claude private review skill',
+    sourceDir: 'C:\\mock\\.claude\\skills\\sample-review',
     rootLabel: '~/.claude/skills',
     rootDir: 'C:\\mock\\.claude\\skills',
     origin: 'claude',
@@ -172,10 +175,10 @@ const mockPrivateSkills: InstalledSkillDto[] = [
     projections: [],
   },
   {
-    id: 'grok-session-notes',
-    name: 'grok-session-notes',
-    description: 'Grok 会话纪要（仅本地）',
-    sourceDir: 'C:\\mock\\.grok\\skills\\grok-session-notes',
+    id: 'sample-notes',
+    name: 'sample-notes',
+    description: 'Grok private notes skill',
+    sourceDir: 'C:\\mock\\.grok\\skills\\sample-notes',
     rootLabel: '~/.grok/skills',
     rootDir: 'C:\\mock\\.grok\\skills',
     origin: 'grok',
@@ -184,12 +187,12 @@ const mockPrivateSkills: InstalledSkillDto[] = [
     source: null,
     projections: [],
   },
-  // 与共享库同 id 且内容一致 → 已在共享库
+  // Same id as a shared row, matching content → already in the library
   {
-    id: 'dbs-action',
-    name: 'dbs-action',
-    description: '已同步到 Claude 的共享技能（内容一致）',
-    sourceDir: 'C:\\mock\\.claude\\skills\\dbs-action',
+    id: 'notes',
+    name: 'notes',
+    description: 'notes demo skill',
+    sourceDir: 'C:\\mock\\.claude\\skills\\notes',
     rootLabel: '~/.claude/skills',
     rootDir: 'C:\\mock\\.claude\\skills',
     origin: 'claude',
@@ -198,11 +201,11 @@ const mockPrivateSkills: InstalledSkillDto[] = [
     source: null,
     projections: [],
   },
-  // 与共享库同 id 但内容不同 → 内容不同（可覆盖加入）
+  // Same id as a shared row, different content → conflict (can overwrite)
   {
     id: 'pdf',
     name: 'pdf',
-    description: 'Claude 本地改过，与共享库内容不同',
+    description: 'pdf demo skill',
     sourceDir: 'C:\\mock\\.claude\\skills\\pdf',
     rootLabel: '~/.claude/skills',
     rootDir: 'C:\\mock\\.claude\\skills',
@@ -279,9 +282,10 @@ export function createMockSkillPort(): SkillPort {
     async listSkillCatalog() {
       await delay(randomLatency());
       const shared = mockState.map(toSharedInstalledRow);
-      // 仅 private_source：已在共享库 / 内容冲突的 agent 副本不进 catalog
+      const sharedIds = new Set(shared.map((s) => s.id));
+      // 仅 private_source：已在共享库的 agent 副本不进 catalog（与 core list_catalog 一致）
       const privateOnly = mockPrivateSkills
-        .filter((s) => s.mapStatus === 'private_source')
+        .filter((s) => s.mapStatus === 'private_source' && !sharedIds.has(s.id))
         .map((s) => ({ ...s, projections: [] as InstalledSkillDto['projections'] }));
       return [...shared, ...privateOnly];
     },
@@ -324,8 +328,18 @@ export function createMockSkillPort(): SkillPort {
       await this.installSkillFromSource(source, false);
     },
 
-    async uninstallSkill() {
-      throw unsupportedError('技能卸载（浏览器 mock）');
+    async uninstallSkill(skillId, privateAgent) {
+      await delay(120);
+      if (!privateAgent) {
+        throw unsupportedError('技能卸载（浏览器 mock）');
+      }
+      const idx = mockPrivateSkills.findIndex(
+        (s) => s.id === skillId && s.origin === privateAgent,
+      );
+      if (idx < 0) {
+        throw new Error(`私有技能不存在: ${skillId} (${privateAgent})`);
+      }
+      mockPrivateSkills.splice(idx, 1);
     },
 
     async updateSkill() {
@@ -442,7 +456,7 @@ export function createMockSkillPort(): SkillPort {
         throw new Error(`技能不存在: ${skillId}`);
       }
       const name = hit.name;
-      const description = hit.description || `${name} 技能`;
+      const description = hit.description || `${name} demo skill`;
       const content = [
         '---',
         `name: ${name}`,

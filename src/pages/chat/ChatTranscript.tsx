@@ -2,6 +2,7 @@ import type { RefObject } from 'react';
 import { Loader2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { StatusPin } from '@/components/shared/StatusPin';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { agentDisplayName } from '@/config/agents';
@@ -10,7 +11,11 @@ import type { ChatMessageStatus, Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import type { TranslateFn } from '@/lib/i18n';
 import { formatDurationMs, type TurnGroup } from './chat-format';
-import { agentPickerLabel, chatTranscriptSurfaceClass, turnComparisonChips } from './chat-model';
+import {
+  agentPickerLabel,
+  chatTranscriptSurfaceClass,
+  turnComparisonChips,
+} from './chat-model';
 import { ChatMessageBubble } from './ChatMessageBubble';
 
 export function ChatTranscript({
@@ -55,10 +60,7 @@ export function ChatTranscript({
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      className={cn(
-        'min-h-0 flex-1 overflow-y-auto',
-        chatTranscriptSurfaceClass(turns.length > 0),
-      )}
+      className="min-h-0 flex-1 overflow-y-auto bg-canvas"
     >
       {messagesLoading && turns.length === 0 ? (
         <div className="flex h-full flex-col justify-center p-6">
@@ -74,41 +76,48 @@ export function ChatTranscript({
           </div>
         </div>
       ) : (
-        <div className={cn('mx-auto w-full max-w-3xl space-y-6 py-6', pageRhythm.chatChromeX)}>
-          {turns.map((g) => {
-            const chips = g.agents.length >= 2 ? turnComparisonChips(g.agents) : [];
-            return (
-              <div key={g.turn} className="space-y-4">
-                {g.user && (
-                  <ChatMessageBubble
-                    message={g.user}
-                    isLastTurn={g.turn === lastTurn}
-                    multiAgent={g.agents.length > 1}
-                    retryDisabled={retryDisabled || sending}
-                    onRetry={onRetry}
-                  />
-                )}
-                {chips.length > 0 && (
-                  <ComparisonBar chips={chips} />
-                )}
-                {g.agents.map((m) => {
-                  const agent = m.agentId ?? 'claude';
-                  return (
+        <div
+          className={cn(
+            'min-h-full rounded-composer',
+            chatTranscriptSurfaceClass(turns.length > 0),
+          )}
+        >
+          <div className={cn('space-y-6 py-4', pageRhythm.chatChromeX)}>
+            {turns.map((g) => {
+              const chips = g.agents.length >= 2 ? turnComparisonChips(g.agents) : [];
+              return (
+                <div key={g.turn} className="space-y-4">
+                  {g.user && (
                     <ChatMessageBubble
-                      key={m.id}
-                      message={m}
-                      process={processMap[processKey(m.turn, agent)]}
+                      message={g.user}
                       isLastTurn={g.turn === lastTurn}
                       multiAgent={g.agents.length > 1}
                       retryDisabled={retryDisabled || sending}
                       onRetry={onRetry}
                     />
-                  );
-                })}
-              </div>
-            );
-          })}
-          <div ref={bottomRef} />
+                  )}
+                  {chips.length > 0 && (
+                    <ComparisonBar chips={chips} />
+                  )}
+                  {g.agents.map((m) => {
+                    const agent = m.agentId ?? 'claude';
+                    return (
+                      <ChatMessageBubble
+                        key={m.id}
+                        message={m}
+                        process={processMap[processKey(m.turn, agent)]}
+                        isLastTurn={g.turn === lastTurn}
+                        multiAgent={g.agents.length > 1}
+                        retryDisabled={retryDisabled || sending}
+                        onRetry={onRetry}
+                      />
+                    );
+                  })}
+                </div>
+              );
+            })}
+            <div ref={bottomRef} />
+          </div>
         </div>
       )}
     </div>
@@ -180,13 +189,13 @@ function ChipStatus({ status }: { status: ChatMessageStatus }) {
   }
   const tone =
     status === 'ok'
-      ? 'bg-success'
+      ? 'success'
       : status === 'failed' || status === 'timeout'
-        ? 'bg-danger'
-        : 'bg-muted';
+        ? 'danger'
+        : 'muted';
   return (
-    <span className={cn('inline-block h-1.5 w-1.5 rounded-full', tone)} aria-label={label}>
-      <span className="sr-only">{label}</span>
+    <span className="inline-flex" aria-label={label}>
+      <StatusPin tone={tone} size="sm" />
     </span>
   );
 }

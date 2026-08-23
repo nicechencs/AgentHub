@@ -41,7 +41,7 @@ import {
   currentTargetAgentId,
   eligibilityOf,
   excludeOwnAgentTargets,
-  isOfficialCodexOauthAccount,
+  keepOwnAgentTarget,
   fanoutRequestsForAgent,
   fanoutRequestsForSource,
   findOption,
@@ -59,6 +59,7 @@ import {
   shouldShowPreviewImportHint,
   sourceAgentIdOf,
   tryAcquireConfirmLock,
+  visibleTargetsForPurpose,
 } from './connect-flow-state';
 import {
   ConnectFlowSelectStep,
@@ -190,16 +191,23 @@ export function ConnectFlowDialog({
     const ids = AGENT_IDS.length > 0 ? [...AGENT_IDS] : uniquePoolAgentIds(pool.accounts, pool.providers);
     return ids.filter((id) => !hiddenSet.has(id));
   }, [pool.accounts, pool.providers, hiddenSet]);
-  const keepOwnCodexTarget = Boolean(
-    entry?.mode === 'for-source'
-    && entry.source.kind === 'account'
-    && isOfficialCodexOauthAccount(pool.accounts.find((item) => item.id === entry.source.id)),
+  const keepOwnAgent = keepOwnAgentTarget(entry, pool.accounts);
+  const allTargetAgentIds = React.useMemo(
+    () => (entry?.mode === 'for-source'
+      ? excludeOwnAgentTargets(catalogIds, sourceAgentId, keepOwnAgent)
+      : []),
+    [entry, catalogIds, sourceAgentId, keepOwnAgent],
   );
   const targetAgentIds = React.useMemo(
     () => (entry?.mode === 'for-source'
-      ? excludeOwnAgentTargets(catalogIds, sourceAgentId, keepOwnCodexTarget)
+      ? visibleTargetsForPurpose(
+          allTargetAgentIds,
+          entry.source,
+          eligibilities,
+          entry.purpose,
+        )
       : []),
-    [entry, catalogIds, sourceAgentId, keepOwnCodexTarget],
+    [entry, allTargetAgentIds, eligibilities],
   );
 
   const generatedSourceBlocked = Boolean(
@@ -212,8 +220,8 @@ export function ConnectFlowDialog({
     if (!entry || !optionsReady || generatedSourceBlocked) return [];
     return entry.mode === 'for-agent'
       ? fanoutRequestsForAgent(options, entry.targetAgentId)
-      : fanoutRequestsForSource(entry.source, targetAgentIds);
-  }, [entry, options, targetAgentIds, optionsReady, generatedSourceBlocked]);
+      : fanoutRequestsForSource(entry.source, allTargetAgentIds);
+  }, [entry, options, allTargetAgentIds, optionsReady, generatedSourceBlocked]);
 
   React.useEffect(() => {
     if (!fanout || !entry) return;
@@ -375,7 +383,11 @@ export function ConnectFlowDialog({
     ? t('connect.dialog.title')
     : entry.mode === 'for-agent'
       ? t('connect.dialog.titleAgent', { name: agentDisplayName(entry.targetAgentId) })
-      : t('connect.dialog.titleSource');
+      : entry.purpose === 'route'
+        ? t('connect.dialog.titleRoute')
+        : entry.purpose === 'share'
+          ? t('connect.dialog.titleShare')
+          : t('connect.dialog.titleSource');
 
   return (
     <Dialog
@@ -429,7 +441,7 @@ export function ConnectFlowDialog({
                     type: 'select_target',
                     agentId,
                     sourceAgentId,
-                    allowOwnAgent: keepOwnCodexTarget,
+                    allowOwnAgent: keepOwnAgent,
                   })}
                   onRetryEligibility={(request) => fanout?.retry(request)}
                   onRetryResources={retryResources}

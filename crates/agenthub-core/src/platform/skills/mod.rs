@@ -53,11 +53,12 @@ pub(crate) use fs_safe::{
     collect_regular_files, detect_link_kind, ensure_no_symlink_in_ancestors,
     ensure_no_symlink_in_existing_prefix, inspect_projection_target, is_exact_child,
     is_link_or_reparse, link_resolves_to_source, normalize_rel_path, paths_equal_lexical,
-    reject_source_target_overlap, remove_projection_link, resolve_link_path, validate_skill_id,
-    validate_skills_root, validate_tree_entries_safe, TargetPresence,
+    reject_source_target_overlap, remove_projection_link, resolve_link_path,
+    resolve_readable_skill_dir, validate_skill_id, validate_skills_root,
+    validate_tree_entries_safe, TargetPresence,
 };
 pub(crate) use git_update::prepare_git_skill_staging;
-pub(crate) use hash::hash_skill_root_shallow;
+pub(crate) use hash::{fingerprint_skill_tree, hash_skill_root_shallow};
 pub(crate) use journal::journal_path as skill_commit_journal_path;
 pub(crate) use lockfile::{skill_lock_load, skill_lock_remove, skill_lock_upsert};
 pub(crate) use ownership::{

@@ -650,7 +650,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-canvas">
-      <div className={cn('shrink-0 border-b border-border pt-4 pb-1', pageRhythm.workbenchX)}>
+      <div className={pageRhythm.workbenchHeader}>
         <PageHeader
           size="compact"
           title={t('projects.page.title')}
@@ -741,7 +741,7 @@ export default function ProjectsPage() {
                 className="box-border flex h-full min-h-0"
                 style={{
                   width: preview.previewWidth + PREVIEW_FRAME_PAD_RIGHT,
-                  paddingTop: PREVIEW_FRAME_PAD_Y,
+                  paddingTop: 0,
                   paddingBottom: PREVIEW_FRAME_PAD_Y,
                   paddingRight: PREVIEW_FRAME_PAD_RIGHT,
                 }}
@@ -774,7 +774,7 @@ export default function ProjectsPage() {
             </DialogDescription>
           </DialogHeader>
           {deleteTarget && (
-            <div className="rounded-btn bg-subtle px-3 py-2 text-sm">
+            <div className="rounded-card bg-subtle px-3 py-2 text-sm">
               <p className="font-medium">{deleteTarget.title}</p>
               {nativeSessionId(deleteTarget) && (
                 <p className="mt-0.5 break-all font-mono text-xs text-muted">

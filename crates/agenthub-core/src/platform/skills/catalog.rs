@@ -103,6 +103,7 @@ pub(crate) fn installed_skill_from_shared(
         origin: "shared".into(),
         projectable: true,
         map_status: SkillMapStatus::Available,
+        content_hash: None,
         source,
         projections: skill.projections,
     }
@@ -111,6 +112,7 @@ pub(crate) fn installed_skill_from_shared(
 pub(crate) fn installed_skill_from_agent(
     entry: AgentSkillDirEntry,
     map_status: SkillMapStatus,
+    content_hash: Option<String>,
 ) -> InstalledSkill {
     InstalledSkill {
         id: entry.skill_id,
@@ -122,6 +124,7 @@ pub(crate) fn installed_skill_from_agent(
         origin: entry.agent.as_str().to_string(),
         projectable: false,
         map_status,
+        content_hash,
         source: None,
         projections: vec![],
     }

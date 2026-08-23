@@ -44,19 +44,34 @@ export function listMockProviders(): Provider[] {
   );
 }
 
+function mockSecretTail(provider: Provider): string | undefined {
+  if (provider.secretTail?.trim()) return provider.secretTail.trim();
+  const fromAuth = provider.authApiKey?.trim();
+  if (fromAuth && fromAuth !== '***' && fromAuth.length >= 8) {
+    return `**${fromAuth.slice(-4)}`;
+  }
+  const match = (provider.configText ?? '').match(
+    /(?:api[_-]?key|ANTHROPIC_AUTH_TOKEN|OPENAI_API_KEY)\s*[:=]\s*["']?([^\s"',]+)["']?/i,
+  );
+  const key = match?.[1]?.trim();
+  if (key && key !== '***' && key.length >= 8) return `**${key.slice(-4)}`;
+  return undefined;
+}
+
 /** Synchronous test-only insertion used when the mock Adapter generates a Connection. */
 export function upsertMockProvider(provider: Provider): Provider {
   const list = mockState[provider.agentId] ?? (mockState[provider.agentId] = []);
   const index = list.findIndex((item) => item.id === provider.id);
+  const next = { ...provider, secretTail: mockSecretTail(provider) };
   if (provider.isCurrent) {
     list.forEach((item) => {
       item.isCurrent = false;
     });
   }
   if (index >= 0) {
-    list[index] = { ...provider };
+    list[index] = next;
   } else {
-    list.push({ ...provider });
+    list.push(next);
   }
   return { ...(index >= 0 ? list[index] : list[list.length - 1]) };
 }

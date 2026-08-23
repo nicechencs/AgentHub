@@ -126,7 +126,7 @@ export function seedTicketWalletBindingProfiles(): {
   upsertMockProvider({
     id: codexGenId,
     agentId: 'codex',
-    name: 'Kimi → Codex 本地桥接 (demo)',
+    name: 'Kimi → Codex 本机路由 (demo)',
     preset: 'openai-compatible',
     configText: JSON.stringify({
       baseUrl: 'http://127.0.0.1:32123/v1',
@@ -155,7 +155,7 @@ export function seedTicketWalletBindingProfiles(): {
   };
   const codexProfile: AdapterProfile = {
     id: `adapter-kimi-codex-bridge-${kimiId}`,
-    name: `Kimi → Codex 本地桥接 (${kimiId})`,
+    name: `Kimi → Codex 本机路由 (${kimiId})`,
     sourceKind: 'provider',
     sourceId: kimiId,
     targetAgentId: 'codex',

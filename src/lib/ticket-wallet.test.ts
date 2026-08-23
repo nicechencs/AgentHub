@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
-import { activeBindingForAgent } from './ticket-wallet';
+import { activeBindingForAgent, filterTicketsByAgentUsage } from './ticket-wallet';
 
 function wallet(): TicketWallet {
   return {
@@ -65,5 +65,40 @@ describe('ticket-wallet', () => {
       bridge: null,
     });
     expect(activeBindingForAgent(dup, 'claude')?.binding.profileId).toBe('p1');
+  });
+
+  it('filters tickets owned by or bound to the agent', () => {
+    const all = wallet();
+    all.tickets.push({
+      id: 't2',
+      sourceKind: 'account',
+      sourceId: 'codex-1',
+      agentId: 'codex',
+      label: 'me@openai.com',
+      surface: 'codex-chatgpt-subscription',
+      credentialClass: 'oauth',
+      speaks: [],
+      importedFrom: 'codex',
+    });
+    all.tickets.push({
+      id: 't3',
+      sourceKind: 'provider',
+      sourceId: 'grok-1',
+      agentId: 'grok',
+      label: 'Grok',
+      surface: 'xai-api',
+      credentialClass: 'api_key',
+      speaks: [],
+      importedFrom: 'grok',
+    });
+    expect(filterTicketsByAgentUsage(all, all.tickets, null).map((row) => row.id)).toEqual([
+      't1',
+      't2',
+      't3',
+    ]);
+    expect(filterTicketsByAgentUsage(all, all.tickets, 'claude').map((row) => row.id)).toEqual(['t1']);
+    expect(filterTicketsByAgentUsage(all, all.tickets, 'codex').map((row) => row.id)).toEqual(['t2']);
+    expect(filterTicketsByAgentUsage(all, all.tickets, 'pi').map((row) => row.id)).toEqual(['t1']);
+    expect(filterTicketsByAgentUsage(all, all.tickets, 'cursor')).toEqual([]);
   });
 });

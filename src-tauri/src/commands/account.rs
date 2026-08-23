@@ -204,9 +204,23 @@ fn probe_live_auth_inner(hub: &AgentHub, agent_id: &str) -> Result<AuthState, St
         .registry
         .get(agent)
         .ok_or_else(|| format!("adapter not registered: {}", agent.as_str()))?;
-    adapter
+    let mut state = adapter
         .read_auth()
-        .map_err(|e| map_err_string("probe_live_auth", e))
+        .map_err(|e| map_err_string("probe_live_auth", e))?;
+    if hub
+        .accounts
+        .live_is_adapter_projection(agent)
+        .unwrap_or(false)
+        && !state
+            .also_present
+            .iter()
+            .any(|kind| kind == agenthub_core::services::ADAPTER_PROJECTION_KIND)
+    {
+        state
+            .also_present
+            .push(agenthub_core::services::ADAPTER_PROJECTION_KIND.to_owned());
+    }
+    Ok(state)
 }
 
 fn import_account_live_inner(

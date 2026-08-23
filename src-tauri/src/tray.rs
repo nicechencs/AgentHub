@@ -563,9 +563,9 @@ mod tests {
         use crate::tray_i18n::tray_menu_copy;
         let copy = tray_menu_copy(TrayUiLanguage::Zh);
         assert_eq!(copy.show, "打开 AgentHub");
-        assert_eq!(copy.open_routes, "打开路由");
-        assert_eq!(copy.start_routes, "启动路由");
-        assert_eq!(copy.stop_routes, "停止路由");
+        assert_eq!(copy.open_routes, "打开本机转发");
+        assert_eq!(copy.start_routes, "启动本机转发");
+        assert_eq!(copy.stop_routes, "停止本机转发");
         assert_eq!(copy.quit, "退出");
     }
 
@@ -574,9 +574,9 @@ mod tests {
         use crate::tray_i18n::tray_menu_copy;
         let copy = tray_menu_copy(TrayUiLanguage::En);
         assert_eq!(copy.show, "Open AgentHub");
-        assert_eq!(copy.open_routes, "Open routes");
-        assert_eq!(copy.start_routes, "Start routes");
-        assert_eq!(copy.stop_routes, "Stop routes");
+        assert_eq!(copy.open_routes, "Open local forward");
+        assert_eq!(copy.start_routes, "Start local forward");
+        assert_eq!(copy.stop_routes, "Stop local forward");
         assert_eq!(copy.quit, "Quit");
     }
 

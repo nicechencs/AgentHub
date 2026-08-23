@@ -33,6 +33,7 @@ pub(crate) use workbuddy::detect_installation as detect_workbuddy_installation;
 // Codex OAuth PKCE historically stored flat token bundles; adapters + oauth finish
 // both need the same conversion into live `auth_json` shape.
 pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_credentials;
+pub(crate) use grok::{expand_grok_auth_to_live_accounts, grok_live_uses_default_auth_slot};
 
 pub use adapter_trait::{default_authorization_key, default_identity_label, AgentAdapter};
 pub(crate) use auth_revision::{

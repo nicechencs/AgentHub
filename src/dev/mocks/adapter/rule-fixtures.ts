@@ -100,7 +100,7 @@ export interface MockRuleFixture {
 }
 
 const COMPAT_LIMIT_SECRET =
-  '生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。';
+  '自动生成的配置只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。';
 
 const CLAUDE_LIMIT_SWITCH =
   '应用后会切换当前 Claude Connection；请确认无其他进行中的配置写入。';
@@ -109,7 +109,7 @@ const CLAUDE_EXPERIMENTAL_LIMIT =
   '实验性：官方 Anthropic 兼容入口；部分扩展字段可能被忽略或不支持。';
 
 const PI_SLOT_LIMITS = [
-  '将写入 Pi models.json 对应 provider 槽；凭据只引用已保存的 Connection，不会读取或显示明文 Key。',
+  '将写入 Pi models.json 对应 provider 位置；凭据只引用已保存的 Connection，不会读取或显示明文 Key。',
   '应用后会切换当前 Pi Connection。',
 ] as const;
 
@@ -127,7 +127,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'claude',
     route: 'native_endpoint',
     support: 'stable',
-    reason: 'Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。',
+    reason: '用这份 Kimi Code 会员接到 Claude，只改地址和模型。',
     evidence: [
       {
         label: 'Kimi Code: Claude Code integration',
@@ -156,7 +156,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'claude',
     route: 'native_endpoint',
     support: 'experimental',
-    reason: 'GLM Coding Plan 可实验预览为 Claude 的原生 Anthropic Messages 端点。',
+    reason: '用这份 GLM Coding Plan 接到 Claude，只改地址和模型。',
     evidence: [
       {
         label: 'GLM Coding Plan 接入工具与双协议端点',
@@ -186,7 +186,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'claude',
     route: 'native_endpoint',
     support: 'experimental',
-    reason: 'DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。',
+    reason: '用这份 DeepSeek API 接到 Claude，只改地址和模型。',
     evidence: [
       {
         label: 'DeepSeek 接入 Claude Code',
@@ -218,7 +218,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'grok',
     route: 'native_endpoint',
     support: 'experimental',
-    reason: 'Kimi Code 会员可实验写入 Grok 的 OpenAI Chat Completions 配置。',
+    reason: '用这份 Kimi Code 会员接到 Grok，只改地址和模型。',
     evidence: 'compatibility',
     limitations: [
       '只修改 Grok ~/.grok/config.toml 的官方 TOML provider；不会启动本机路由。',
@@ -244,7 +244,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'grok',
     route: 'native_endpoint',
     support: 'experimental',
-    reason: 'OpenAI API 可实验写入 Grok 的官方 OpenAI Chat Completions 配置。',
+    reason: '用这份 OpenAI Key 接到 Grok，只改地址和模型。',
     evidence: 'compatibility',
     limitations: [
       '只修改 Grok ~/.grok/config.toml 的官方 TOML provider；不会启动本机路由。',
@@ -272,7 +272,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'codex',
     route: 'native_endpoint',
     support: 'experimental',
-    reason: 'GLM Coding Plan 官方 Responses 端点可实验直连 Codex。',
+    reason: '用这份 GLM 会员接到 Codex，只改地址和模型。',
     evidence: [
       {
         label: 'GLM Coding Plan Codex Responses integration',
@@ -280,7 +280,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
       },
     ],
     limitations: [
-      '将把 Codex 配置为官方 Responses 端点；不会启动本机 loopback Bridge。',
+      '将把 Codex 配置为官方 Responses 端点；不会开本机转发。',
       COMPAT_LIMIT_SECRET,
       '当前未写入官方 ~/.codex/models.json；使用默认 model 与显式 Provider 配置。',
     ],
@@ -304,7 +304,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'codex',
     route: 'native_endpoint',
     support: 'experimental',
-    reason: 'DeepSeek API 官方 Responses 端点可实验直连 Codex。',
+    reason: '用这份 DeepSeek Key 接到 Codex，只改地址和模型。',
     evidence: [
       {
         label: 'DeepSeek API Codex Responses integration',
@@ -312,7 +312,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
       },
     ],
     limitations: [
-      '将把 Codex 配置为官方 Responses 端点；不会启动本机 loopback Bridge。',
+      '将把 Codex 配置为官方 Responses 端点；不会开本机转发。',
       COMPAT_LIMIT_SECRET,
       '当前未写入官方 ~/.codex/models.json；使用默认 model 与显式 Provider 配置。',
     ],
@@ -338,7 +338,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'pi',
     route: 'config_sync',
     support: 'stable',
-    reason: 'Kimi Code 会员可预览为 Pi 的配置同步。',
+    reason: '把这份 Kimi Code 会员写进 Pi 认的登录位置。',
     evidence: [
       {
         label: 'Kimi Code CLI provider configuration',
@@ -363,7 +363,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'pi',
     route: 'config_sync',
     support: 'stable',
-    reason: '显式 Anthropic API Key 可预览为 Pi 的配置同步。',
+    reason: '把这份 Anthropic API Key 写进 Pi 认的登录位置。',
     evidence: [PI_DOCS],
     limitations: [...PI_SLOT_LIMITS],
     buildActions: () => [
@@ -383,11 +383,11 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'pi',
     route: 'config_sync',
     support: 'stable',
-    reason: '显式 OpenAI API Key 可预览为 Pi 的配置同步。',
+    reason: '把这份 OpenAI API Key 写进 Pi 认的登录位置。',
     evidence: [PI_DOCS],
     limitations: [
-      '将写入 Pi models.json 的 openai 槽与凭据引用标记；不会在预览中传输明文 Key。',
-      '应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。',
+      '将写入 Pi models.json 的 openai 位置与凭据引用标记；不会在预览中传输明文 Key。',
+      '接上后会把自动生成的配置设成 Pi 当前在用的连接；请确认无其他进行中的配置写入。',
     ],
     buildActions: () => [
       action('set_config', 'Pi', '选择 Pi 的 OpenAI provider。', 'openai'),
@@ -406,11 +406,11 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'pi',
     route: 'config_sync',
     support: 'stable',
-    reason: '显式 xAI API Key 可预览为 Pi 的配置同步。',
+    reason: '把这份 xAI API Key 写进 Pi 认的登录位置。',
     evidence: [PI_DOCS],
     limitations: [
-      '将写入 Pi models.json 的 xai 槽与凭据引用标记；不会在预览中传输明文 Key。',
-      '应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。',
+      '将写入 Pi models.json 的 xai 位置与凭据引用标记；不会在预览中传输明文 Key。',
+      '接上后会把自动生成的配置设成 Pi 当前在用的连接；请确认无其他进行中的配置写入。',
     ],
     buildActions: () => [
       action('set_config', 'Pi', '选择 Pi 的 xAI provider。', 'xai'),
@@ -429,14 +429,14 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'pi',
     route: 'config_sync',
     support: 'experimental',
-    reason: 'GLM Coding Plan 可实验预览为 Pi 的配置同步。',
+    reason: '把这份 GLM Coding Plan 写进 Pi 认的登录位置。',
     evidence: [PI_DOCS],
     limitations: [
-      '将写入 Pi models.json 的 glm-coding-plan 自定义槽（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。',
+      '将写入 Pi models.json 的 glm-coding-plan 自定义位置（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。',
       COMPAT_LIMIT_SECRET,
     ],
     buildActions: () => [
-      action('set_config', 'Pi', '写入 Pi 的 GLM Coding Plan 自定义 provider 槽。', 'glm-coding-plan'),
+      action('set_config', 'Pi', '写入 Pi 的 GLM Coding Plan 自定义 provider 位置。', 'glm-coding-plan'),
       secretAction('Pi', '从已选 Connection 引用 API Key；不会读取或显示它。'),
     ],
     materialize: {
@@ -454,14 +454,14 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'pi',
     route: 'config_sync',
     support: 'experimental',
-    reason: 'DeepSeek API 可实验预览为 Pi 的配置同步。',
+    reason: '把这份 DeepSeek API 写进 Pi 认的登录位置。',
     evidence: [PI_DOCS],
     limitations: [
-      '将写入 Pi models.json 的 deepseek 自定义槽（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。',
+      '将写入 Pi models.json 的 deepseek 自定义位置（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。',
       COMPAT_LIMIT_SECRET,
     ],
     buildActions: () => [
-      action('set_config', 'Pi', '写入 Pi 的 DeepSeek 自定义 provider 槽。', 'deepseek'),
+      action('set_config', 'Pi', '写入 Pi 的 DeepSeek 自定义 provider 位置。', 'deepseek'),
       secretAction('Pi', '从已选 Connection 引用 API Key；不会读取或显示它。'),
     ],
     materialize: {
@@ -481,15 +481,15 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'pi',
     route: 'config_sync',
     support: 'experimental',
-    reason: 'Claude 订阅可写入 Pi 的 anthropic 登录槽（原生订阅复用）。',
+    reason: '把这份 Claude 订阅写进 Pi 认的 Claude 登录。',
     evidence: 'compatibility',
     limitations: [
-      '会把 OAuth access/refresh 写入 Pi auth.json 对应槽；预览、IPC、日志不传输明文 token。',
-      '写入后由 Pi 刷新该槽；Hub 不双刷同一 refresh token。原 Agent 与 Pi 同时刷新可能互相打翻。',
-      '实验性：应用后会把生成 Provider 设为 Pi 当前连接。',
+      '会把官方登录写进 Pi 认的位置；预览和日志不显示完整令牌。',
+      '写进去之后由 Pi 自己续期；AgentHub 不会再刷一次。原来的工具和 Pi 一起续期可能互相踢下线。',
+      '接上后会把自动生成的配置设成 Pi 当前在用的连接。',
     ],
     buildActions: () => [
-      action('set_config', 'Pi', '选择 Pi 的订阅登录槽。', 'anthropic'),
+      action('set_config', 'Pi', '选择 Pi 的订阅登录位置。', 'anthropic'),
       secretAction('Pi', '从已选 Connection 引用授权（OAuth）；不会读取或显示 token。'),
     ],
     materialize: {
@@ -505,15 +505,15 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'pi',
     route: 'config_sync',
     support: 'experimental',
-    reason: 'Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。',
+    reason: '把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。',
     evidence: 'compatibility',
     limitations: [
-      '会把 OAuth access/refresh 写入 Pi auth.json 对应槽；预览、IPC、日志不传输明文 token。',
-      '写入后由 Pi 刷新该槽；Hub 不双刷同一 refresh token。原 Agent 与 Pi 同时刷新可能互相打翻。',
-      '实验性：应用后会把生成 Provider 设为 Pi 当前连接。',
+      '会把官方登录写进 Pi 认的位置；预览和日志不显示完整令牌。',
+      '写进去之后由 Pi 自己续期；AgentHub 不会再刷一次。原来的工具和 Pi 一起续期可能互相踢下线。',
+      '接上后会把自动生成的配置设成 Pi 当前在用的连接。',
     ],
     buildActions: () => [
-      action('set_config', 'Pi', '选择 Pi 的订阅登录槽。', 'openai-codex'),
+      action('set_config', 'Pi', '选择 Pi 的订阅登录位置。', 'openai-codex'),
       secretAction('Pi', '从已选 Connection 引用授权（OAuth）；不会读取或显示 token。'),
     ],
     materialize: {
@@ -529,15 +529,15 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'pi',
     route: 'config_sync',
     support: 'experimental',
-    reason: 'Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。',
+    reason: '把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。',
     evidence: 'compatibility',
     limitations: [
-      '会把 OAuth access/refresh 写入 Pi auth.json 对应槽；预览、IPC、日志不传输明文 token。',
-      '写入后由 Pi 刷新该槽；Hub 不双刷同一 refresh token。原 Agent 与 Pi 同时刷新可能互相打翻。',
-      '实验性：应用后会把生成 Provider 设为 Pi 当前连接。',
+      '会把官方登录写进 Pi 认的位置；预览和日志不显示完整令牌。',
+      '写进去之后由 Pi 自己续期；AgentHub 不会再刷一次。原来的工具和 Pi 一起续期可能互相踢下线。',
+      '接上后会把自动生成的配置设成 Pi 当前在用的连接。',
     ],
     buildActions: () => [
-      action('set_config', 'Pi', '选择 Pi 的订阅登录槽。', 'openai-codex'),
+      action('set_config', 'Pi', '选择 Pi 的订阅登录位置。', 'openai-codex'),
       secretAction('Pi', '从已选 Connection 引用授权（OAuth）；不会读取或显示 token。'),
     ],
     materialize: {
@@ -553,15 +553,15 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'pi',
     route: 'config_sync',
     support: 'experimental',
-    reason: 'Grok / xAI 订阅可写入 Pi 的 xai 登录槽（原生订阅复用）。',
+    reason: '把这份 Grok 订阅写进 Pi 认的 Grok 登录。',
     evidence: 'compatibility',
     limitations: [
-      '会把 OAuth access/refresh 写入 Pi auth.json 对应槽；预览、IPC、日志不传输明文 token。',
-      '写入后由 Pi 刷新该槽；Hub 不双刷同一 refresh token。原 Agent 与 Pi 同时刷新可能互相打翻。',
-      '实验性：应用后会把生成 Provider 设为 Pi 当前连接。',
+      '会把官方登录写进 Pi 认的位置；预览和日志不显示完整令牌。',
+      '写进去之后由 Pi 自己续期；AgentHub 不会再刷一次。原来的工具和 Pi 一起续期可能互相踢下线。',
+      '接上后会把自动生成的配置设成 Pi 当前在用的连接。',
     ],
     buildActions: () => [
-      action('set_config', 'Pi', '选择 Pi 的订阅登录槽。', 'xai'),
+      action('set_config', 'Pi', '选择 Pi 的订阅登录位置。', 'xai'),
       secretAction('Pi', '从已选 Connection 引用授权（OAuth）；不会读取或显示 token。'),
     ],
     materialize: {
@@ -579,7 +579,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     targetAgentId: 'dsh',
     route: 'config_sync',
     support: 'stable',
-    reason: 'DeepSeek API Key 可预览为 DeepSeek Harness 的配置同步。',
+    reason: '把这份 DeepSeek Key 写进 DeepSeek Harness 认的登录位置。',
     evidence: [
       {
         label: 'DeepSeek Harness LLM / credentials',
@@ -588,7 +588,7 @@ export const MOCK_RULE_FIXTURES: readonly MockRuleFixture[] = [
     ],
     limitations: [
       '将写入 DeepSeek Harness 的 home 级 provider 引用与凭据文件；不会把 API Key 写入 cordis.patch.yml。',
-      '应用后会把该生成 Provider 设为 DSH 当前连接；请确认无其他进行中的配置写入。',
+      '接上后会把自动生成的配置设成 DSH 当前在用的连接；请确认无其他进行中的配置写入。',
     ],
     buildActions: () => [
       action('set_config', 'DeepSeek Harness', '选择 DSH 的官方 DeepSeek provider。', 'deepseek-official'),

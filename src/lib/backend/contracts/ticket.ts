@@ -240,7 +240,7 @@ export function memberHealthFromAuthHealth(
 export function ticketMemberHealthLabel(health: TicketMemberHealth): string {
   if (health === 'needs_login') return '需要重新登录';
   if (health === 'try_once') return '可试一次';
-  return '可接单';
+  return '可用';
 }
 
 export function isIsolatedMemberHealth(health: TicketMemberHealth): boolean {
@@ -331,7 +331,7 @@ export function mapTicketWallet(wire: TicketWalletWire): TicketWallet {
 
 const BIND_RESULT_UNREADABLE = '绑定结果无法识别，请重试';
 const PLAN_RESULT_UNREADABLE = '连接方案无法识别，请重试';
-const UNBIND_RESULT_UNREADABLE = '解除绑定结果无法识别，请重试';
+const UNBIND_RESULT_UNREADABLE = '停止并还原结果无法识别，请重试';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;

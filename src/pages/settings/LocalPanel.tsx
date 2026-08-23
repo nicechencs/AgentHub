@@ -1,5 +1,4 @@
 import { useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +14,6 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { openLogsDir } from '@/lib/api/settings';
 import { openPathInFileManager } from '@/lib/api/skill';
-import { BRIDGES_PATH } from '@/lib/bridges-path';
 import type { AppSettings, LogLevel } from '@/lib/types';
 import { persistSettingsPatch } from './settings-persist';
 import {
@@ -36,7 +34,6 @@ export function LocalPanel({
 }) {
   const { toast } = useToast();
   const { t } = useI18n();
-  const navigate = useNavigate();
   const retentionBaselineRef = useRef(settings.logRetentionDays);
 
   const persist = async (
@@ -187,15 +184,6 @@ export function LocalPanel({
                 })();
               }}
             >
-              {t('common.open')}
-            </Button>
-          </SettingsRow>
-          <SettingsRow
-            label={t('settings.data.routesLabel')}
-            description={t('settings.data.routesDescription')}
-            descriptionTip={t('settings.data.routesTip')}
-          >
-            <Button size="sm" variant="outline" onClick={() => navigate(BRIDGES_PATH)}>
               {t('common.open')}
             </Button>
           </SettingsRow>

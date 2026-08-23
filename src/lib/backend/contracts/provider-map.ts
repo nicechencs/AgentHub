@@ -77,6 +77,10 @@ export function mapCoreProvider(p: CoreProvider): Provider {
   const authApiKey = extractAuthApiKey(raw);
   const official =
     p.meta && typeof p.meta.official === 'boolean' ? p.meta.official : undefined;
+  const secretTail =
+    p.meta && typeof p.meta.secretTail === 'string' && p.meta.secretTail.trim()
+      ? p.meta.secretTail.trim()
+      : undefined;
 
   return {
     id: p.id,
@@ -89,6 +93,7 @@ export function mapCoreProvider(p: CoreProvider): Provider {
     isCurrent: p.isCurrent,
     updatedAt: p.updatedAt,
     official,
+    secretTail,
   };
 }
 

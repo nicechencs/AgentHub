@@ -8,13 +8,13 @@
 use crate::models::{AgentId, TicketProtocol};
 
 /// Target has no live-config writer and cannot be a bind sink (e.g. Cursor).
-pub const AGENT_NO_WRITER_REASON: &str = "该 Agent 无配置写入能力，不能作为绑定落点";
+pub const AGENT_NO_WRITER_REASON: &str = "这个工具不能写入配置，接不上。";
 
 /// `票.speaks ∩ agent.accepts` is empty.
-pub const PROTOCOL_MISMATCH_REASON: &str = "这份登录接不到这个 Agent。";
+pub const PROTOCOL_MISMATCH_REASON: &str = "这份登录接不到这个工具。";
 
 /// Protocols overlap, but the graph has no verified edge for this pair.
-pub const SAME_PROTOCOL_NO_EDGE_REASON: &str = "这条接到方式还没做好，暂不能绑定。";
+pub const SAME_PROTOCOL_NO_EDGE_REASON: &str = "这条接法还没做好，现在接不上。";
 
 /// What an Agent listens to: a wire protocol and/or a named config slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

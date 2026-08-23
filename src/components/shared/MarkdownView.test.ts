@@ -11,12 +11,37 @@ vi.mock('@/lib/open-external', () => ({
 }));
 
 import {
+  MARKDOWN_TOKEN_CHROME,
   filterUnsafeMarkdownPlugins,
   handleMarkdownClick,
   isSafeMarkdownUrl,
   sanitizeMarkdownNode,
   scrollMarkdownAnchor,
+  wrapMarkdownTable,
 } from './MarkdownView';
+
+describe('MarkdownView token chrome', () => {
+  it('overrides library 6px / square boxes with btn and card radii', () => {
+    expect(MARKDOWN_TOKEN_CHROME).toContain('[&_pre]:!rounded-card');
+    expect(MARKDOWN_TOKEN_CHROME).toContain('[&_code]:!rounded-btn');
+    expect(MARKDOWN_TOKEN_CHROME).toContain('[&_kbd]:!rounded-btn');
+    expect(MARKDOWN_TOKEN_CHROME).toContain('[&_.md-table-shell]:rounded-card');
+    expect(MARKDOWN_TOKEN_CHROME).toContain('[&_.md-table-shell_table]:border-hidden');
+    expect(MARKDOWN_TOKEN_CHROME).not.toContain('[&_table]:!overflow-hidden');
+  });
+
+  it('wraps tables once in a radius shell', () => {
+    const table = { tagName: 'table', children: [] };
+    const parent = { tagName: 'div', children: [table] };
+    wrapMarkdownTable(table, 0, parent);
+    const shell = parent.children[0] as { tagName?: string; properties?: { className?: string[] }; children?: unknown[] };
+    expect(shell.tagName).toBe('div');
+    expect(shell.properties?.className).toEqual(['md-table-shell']);
+    expect(shell.children).toEqual([table]);
+    wrapMarkdownTable(table, 0, shell);
+    expect(shell.children).toEqual([table]);
+  });
+});
 
 describe('MarkdownView content safety', () => {
   it('allows web and local links but rejects unsafe/custom schemes', () => {

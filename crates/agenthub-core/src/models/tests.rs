@@ -64,3 +64,45 @@ fn auth_state_legacy_json_defaults_new_fields() {
     assert_eq!(state.source, None);
     assert_eq!(state.revision.as_deref(), Some("legacy-revision"));
 }
+
+#[test]
+fn oauth_account_redacted_adds_refresh_token_preview() {
+    let secret = "rt-abcdefghijklmnopqrstuvwxyz";
+    let a = Account {
+        id: "a1".into(),
+        agent_id: AgentId::Codex,
+        kind: AccountKind::Oauth,
+        label: "c@x.com".into(),
+        credentials: serde_json::json!({
+            "format": "auth_json",
+            "body": { "tokens": { "refresh_token": secret, "access_token": "at-secret" } }
+        }),
+        extra: serde_json::json!({ "email": "c@x.com" }),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t1".into(),
+    };
+    let r = a.redacted();
+    assert_eq!(r.credentials["body"]["tokens"]["refresh_token"], "***");
+    let preview = r.extra["refreshTokenPreview"].as_str().expect("preview");
+    assert!(preview.contains("••••"));
+    assert!(!preview.contains(secret));
+    assert_eq!(
+        preview,
+        crate::utils::redact::mask_secret_preview(secret)
+    );
+    assert_eq!(r.extra["secretTail"], "**wxyz");
+    let dumped = serde_json::to_string(&r).unwrap();
+    assert!(!dumped.contains(secret));
+
+    let key = Account {
+        kind: AccountKind::ApiKey,
+        credentials: serde_json::json!({ "api_key": "sk-secret-value-here" }),
+        extra: serde_json::json!({}),
+        ..a
+    };
+    let redacted_key = key.redacted();
+    assert!(redacted_key.extra.get("refreshTokenPreview").is_none());
+    assert_eq!(redacted_key.extra["secretTail"], "**here");
+}

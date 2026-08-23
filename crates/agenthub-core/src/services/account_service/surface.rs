@@ -1,6 +1,6 @@
 //! Shared account identity / label / authorization helpers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -11,6 +11,7 @@ use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{Account, AccountKind, AgentId, LiveAccount};
+use crate::utils::loopback::credentials_are_loopback;
 
 /// Process-local counterpart to the optional cross-process file lock. Services
 /// built without a backup root have no `lock_dir`, but concurrent UI reads can
@@ -206,12 +207,125 @@ pub(super) fn accounts_same_authorization(
     }
 }
 
+/// Same OAuth person: emails compared to emails, subject-like ids
+/// (`user_id` / `sub` / `account_id` / …) compared among themselves.
+/// Display labels are not identity. Unknown identity is fail-closed.
+pub(super) fn accounts_same_oauth_identity(
+    kind: AccountKind,
+    incoming_credentials: &Value,
+    existing: &Account,
+) -> bool {
+    if kind != AccountKind::Oauth || existing.kind != AccountKind::Oauth {
+        return false;
+    }
+    oauth_credentials_same_identity(incoming_credentials, &existing.credentials)
+}
+
+/// Emails vs emails, subject-like ids vs subject-like ids. Empty-vs-empty is fail-closed.
+pub(super) fn oauth_credentials_same_identity(left: &Value, right: &Value) -> bool {
+    let left = collect_oauth_identity_marks(left);
+    let right = collect_oauth_identity_marks(right);
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+    left.intersects(&right)
+}
+
+pub(super) fn oauth_credentials_identity_unknown(value: &Value) -> bool {
+    collect_oauth_identity_marks(value).is_empty()
+}
+
+const OAUTH_EMAIL_KEYS: &[&str] = &["email", "email_address", "emailAddress"];
+const OAUTH_SUBJECT_KEYS: &[&str] = &[
+    "user_id",
+    "userId",
+    "principal_id",
+    "principalId",
+    "sub",
+    "subject",
+    "account_id",
+    "accountId",
+    "account_uuid",
+];
+
+struct OauthIdentityMarks {
+    emails: HashSet<String>,
+    subjects: HashSet<String>,
+}
+
+impl OauthIdentityMarks {
+    fn is_empty(&self) -> bool {
+        self.emails.is_empty() && self.subjects.is_empty()
+    }
+
+    fn intersects(&self, other: &Self) -> bool {
+        !self.emails.is_disjoint(&other.emails) || !self.subjects.is_disjoint(&other.subjects)
+    }
+}
+
+fn collect_oauth_identity_marks(credentials: &Value) -> OauthIdentityMarks {
+    let mut marks = OauthIdentityMarks {
+        emails: HashSet::new(),
+        subjects: HashSet::new(),
+    };
+    collect_oauth_identity_fields(credentials, &mut marks);
+    marks
+}
+
+fn collect_oauth_identity_fields(value: &Value, marks: &mut OauthIdentityMarks) {
+    match value {
+        Value::Object(map) => {
+            for (key, nested) in map {
+                if let Some(raw) = nested.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    if OAUTH_EMAIL_KEYS.iter().any(|k| *k == key) {
+                        marks.emails.insert(raw.to_ascii_lowercase());
+                    } else if OAUTH_SUBJECT_KEYS.iter().any(|k| *k == key) {
+                        marks.subjects.insert(raw.to_owned());
+                    }
+                }
+            }
+            for nested in map.values() {
+                if nested.is_object() || nested.is_array() {
+                    collect_oauth_identity_fields(nested, marks);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_oauth_identity_fields(item, marks);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Same-agent rows to upsert: token fingerprint, loopback slot, or OAuth identity.
+pub(super) fn authorization_duplicates(
+    adapter: &dyn AgentAdapter,
+    agent: AgentId,
+    kind: AccountKind,
+    credentials: &Value,
+    snapshot: &[Account],
+) -> Vec<Account> {
+    let incoming_loopback = credentials_are_loopback(credentials);
+    snapshot
+        .iter()
+        .filter(|candidate| {
+            candidate.kind == kind
+                && same_live_slot(agent, credentials, &candidate.credentials)
+                && if incoming_loopback {
+                    credentials_are_loopback(&candidate.credentials)
+                } else {
+                    !credentials_are_loopback(&candidate.credentials)
+                        && (accounts_same_authorization(adapter, kind, credentials, candidate)
+                            || accounts_same_oauth_identity(kind, credentials, candidate))
+                }
+        })
+        .cloned()
+        .collect()
+}
+
 /// Compare the serialized live credential payload, not the authorization key.
-///
-/// A Grok CLI refresh rotates the access/refresh token pair while preserving
-/// the same user and grant. Treat that as an update to the current row; the
-/// authorization-key matcher intentionally remains token-sensitive for
-/// explicit imports of separate grants.
 pub(super) fn live_credentials_changed(current: &Account, live: &LiveAccount) -> bool {
     let Some(current_body) = current.credentials.get("body") else {
         return current.credentials != live.credentials;
@@ -325,7 +439,7 @@ pub(super) fn attach_identity_meta(
     extra
 }
 
-/// 同授权指纹的多条历史冗余：优先 current → 更早 created_at → 更小 id。
+/// 同授权或同 OAuth 身份的多条历史冗余：优先 current → 更早 created_at → 更小 id。
 pub(super) fn pick_primary_authorization_match(mut matches: Vec<Account>) -> Option<Account> {
     if matches.is_empty() {
         return None;

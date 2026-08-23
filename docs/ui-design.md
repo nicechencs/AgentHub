@@ -6,13 +6,14 @@
 > v1.1：Usage 模型筛选语义、Backups 流程、Dashboard/侧栏与当前 agent 集合对齐。  
 > v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
 > v1.4：环境条/安装预览按宿主平台分流——macOS/Linux 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS/Linux=`curl|bash`；Runtime 修复默认 Windows=`winget`、macOS=`brew`、Linux=`manual`。  
-> 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections「接到…」，统一 `ConnectFlowDialog`。  
-> 2026-08-15：Connections 全局登录列表与真登录「接到…」、Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，本机路由解绑走 `unbind`。用户表面是 **Routes / 本机路由**（`/routes`）；内部模块仍叫 Adapter。下文 §4.1 / §4.3 为目标线框。现行界面说「登录」不说「票/钱包」；预览芯片不再标 ①②③。  
+> 2026-08-23 表面：Connections 顶部 AgentTabStrip（`?agent=` 高亮并把 Tab 落到该 Agent）；行上「分享 / 路由」拆开（分享 = 直连或写进对方登录，路由 = 本机转发）；OAuth 头像 / API Key 钥匙；无登录类型筛选芯片。侧栏与页标题中文「路由」、英文 Routes，永久显示；运行时行显示 127.0.0.1 与端口。MCP 同样顶部 Agent 筛选。  
+> 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections 登录行，统一 `ConnectFlowDialog`。  
+> 2026-08-15：Connections 全局登录列表与 Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，本机路由解绑走 `unbind`。用户表面是 **Routes / 路由**（`/routes`）；侧栏与页标题中文现为「路由」。内部模块仍叫 Adapter。下文 §4.1 / §4.3 为目标线框。现行界面说「登录」不说「票/钱包」；预览芯片不再标 ①②③。  
 > 把已有登录接到另一个工具的产品模型仍是三种做法：直接改配置 / 写进对方认的登录 / 本机转发，见 [product-decisions.md](product-decisions.md)。**现行界面芯片**是「直连 / 用这份登录 / 本机路由 / 当前不支持」。预览不得把「直接改配置 / 写进对方认的登录」写成「需要本机服务」。
 
 ## 1. 设计原则
 
-1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（有本机路由才出现） / Settings）；备份在 Settings `?tab=backups`，不占侧栏。用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。**例外：Connections 现行是跨工具登录列表**（一份份登录），Agent 只作筛选/高亮，不作第一导航；见 §4.3 与 [connection-binding-model.md](connection-binding-model.md)。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。连接从 Agent 卡片或登录行「接到…」发起；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
+1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（永久显示） / Settings）；备份在 Settings `?tab=backups`，不占侧栏。用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。Connections 是跨工具登录列表，顶部 AgentTabStrip 可筛；`?agent=` 高亮并把 Tab 落到该 Agent。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。登录行拆成「分享」（直连 / 写进对方登录）与「路由」（本机转发）；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
 2. **危险操作必有前置信息**：切换供应商/账号前展示 backfill 摘要、备份位置、运行中进程警告。
 3. **凭据永不明文回显**：`SecretInput` 统一脱敏回显（`sk-••••3f2a` 一类掩码）；点眼睛切换明文。现行实现无二次确认、无自动再遮蔽。聚焦已遮蔽值会清空以便重新输入。
 4. **空状态给动作**：每个空列表都有明确的下一步按钮（添加供应商/导入账号/安装 Agent / 安装运行环境）。**例外：Routes 健康空态没有按钮**——多数连接不需要本机转发，空是常态，不是待转化漏斗。
@@ -41,10 +42,10 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
   --agent-pi / --agent-workbuddy / --agent-cursor / --agent-dsh
   TS 取 hex：agentHex(id) ；样式绑定：agentCssVar(id) 或 AGENT_MAP[id].color
 字号:  仅三档，真源 `TYPE_SCALE`（`src/styles/tokens.ts`）— 16 `text-title` 页标题/空态主句/指标 · 13 `text-body` 正文/按钮/列表名/段标题 · 12 `text-meta` 次级/表头/路径/角标。`text-lg`/`text-xl`=`title`，`text-sm`/`text-base`=`body`，`text-xs`/`text-2xs`=`meta`（同像素别名，禁止再长出第四档）
-圆角:  6px `rounded-btn` 控件 / 8px `rounded-card` 卡片·弹层 / 12px `rounded-composer` 输入壳·聊天气泡；chip 与头像用 `rounded-full`（禁止魔法 `rounded-[Npx]`）
+圆角:  6px `rounded-btn` 控件 / 8px `rounded-card` 卡片·弹层（含 Tooltip）·嵌套面板·代码井·**应用壳列**（侧栏 + 主列） / 12px `rounded-composer` 输入壳·用户气泡（助手消息平铺）；chip / 头像 / Switch / Progress 用 `rounded-full`；产品标 `rounded-mark` 22% squircle。Tailwind 只生成这些语义名（禁止 `rounded-lg` / `rounded-[Npx]`）
 阴影:  `shadow-xs` 卡片 / `shadow-sm` 轻浮层(Tooltip、分段选中) / `shadow-md` popover·菜单·Toast / `shadow-lg` Dialog
 间距:  4 / 8 / 12 / 16 / 24 / 32（优先整数阶梯；列表卡 `p-3`、组合 Card 水平 `px-4`、Dialog `p-6`）
-边缘:  常规页 / TopBar / Skills 工作台水平 **24**（`pageRhythm.pageShell` / `workbenchX` / `pageEdgePx.x`）；Chat 主区 chrome **16**（`chatChromeX`）；Skills 预览距右缘 **24**、上下 **12**
+边缘:  窗内画布缝 **8**（`pageRhythm.shell` `p-2 gap-2`）；内容宽度只分两套（§3.1）：阅读列 `readingColumn` = `max-w-3xl` 居中（Chat 消息列 / Settings 表单）；贴边列左右 **18**（`pageShell` / `workbenchX` / `pageEdgePx.x`）。页标题四周 18；标题槽已含底距，正文第一块不加顶距（Chat 除外）。Chat 消息 chrome **16**（`chatChromeX`）；Skills 预览距主列右缘 **18**、顶距 0、底距 **18**
 表格:  `TableShell variant` 决定密度（Context 自动套表头/行/单元格）。全站管理表（含 Skills 三 Tab、Dashboard 用量）统一 `default`=Card 壳；`workbench`/`flush` 仅留给无 Card 的特例贴边场景。禁止业务侧手写 `*Workbench` class
 焦点:  输入类 `focus:ring-2 focus:ring-accent/60`（Input / Select 一致）
 控件: Switch 选中态 = accent（`data-[state=checked]:bg-accent`）
@@ -75,12 +76,14 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
 
 **Card 变体**：`default` 有边框阴影；`plain` / `subtle` 用于嵌套与工具条，避免双重描边。
 
-**PageHeader**：标题一律 `text-title`；全高页（Skills）用 `size="compact"` 只收底边距。
+**PageHeader**：标题一律 `pageRhythm.pageTitle`（`text-title`），槽高固定两行（标题 + 一行 meta，`pageTitleBlock`）。全高页（Skills / Projects）用 `workbenchHeader` + `size="compact"`。切页时页标题字号 / 高度 / 边距对齐。Chat 不走 PageHeader。
 
 **页面区块节奏**（`pageRhythm` / `PageSection` / `pageEdgePx`，`components/layout`）：
-- **边缘**：常规页 `pageShell`（`px-6 py-6`）；TopBar `px-6`；Skills `workbenchX` + 预览 `pageEdgePx.x=24`；Chat 主 chrome `px-4`
-- Header 自带 `mb-4`（compact `mb-2`）
-- 其下工具带 / Agent 条：`chrome` / `chromeRow`（`mb-3`）
+- **壳**：`shell` 窗内 8px 缝；侧栏 `shellNav`、主列 `shellMain` 均为 `rounded-card` + 裁剪（含 Chat / Skills / Projects）
+- **边缘**：贴边列 18px（`pageShell` / `workbenchX` / TopBar）；阅读列 `readingColumn`（Chat 消息 / Settings 表单）；Chat 消息 chrome `px-4`。细则 §3.1，禁止第三套宽度
+- Header 常规页底距 18px（compact 由 `workbenchHeader` 提供）
+- 标题槽已含 18px 底距，正文第一块不加顶距（Skills / Projects `workbenchY` 仅底距 18；Chat 除外）
+- 其下工具带 / Agent 条：`chrome` / `chromeRow`（`mb-3`；段距不进 `TabsContent`）
 - 引导块（环境条、Notice 组）：`lead`（`mb-4 space-y-3`）
 - 主列表：`stack`（`gap-3`）或 `stackDense`（`gap-2`）
 - 同段卡片块：`blocks`（`space-y-4`）
@@ -92,51 +95,75 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
 ## 3. 全局布局
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ Sidebar ~224px       │  TopBar:右侧操作(通知)               │
-│ ┌────────────────┐   ├──────────────────────────────────────┤
-│ │ ◆ AgentHub     │   │                                      │
-│ ├────────────────┤   │                                      │
-│ │ Workspace      │   │           Page Content               │
-│ │ 💬 Chat        │   │   内容区 max-w-content（1200px）居中   │
-│ │ ▦ Agents       │   │   （Chat / Skills 全高特例）          │
-│ │ ✦ Skills       │   │                                      │
-│ │ ◉ MCP          │   │                                      │
-│ │ ◫ Projects     │   │                                      │
-│ ├────────────────┤   │                                      │
-│ │ Manage         │   │                                      │
-│ │ ▣ Dashboard    │   │                                      │
-│ │ ⇄ Connections  │   │                                      │
-│ │ ▦ Routes       │   │  （有本机路由才出现；Settings 本机区常驻入口）│
-│ │ ⚙ Settings     │   │                                      │
-│ ├────────────────┤   │                                      │
-│ │ ● N/M agents   │   │   (侧栏底部:agent 在线状态迷你条)      │
-│ └────────────────┘   │                                      │
+┌─ canvas 8px 缝 ──────────────────────────────────────────────┐
+│ ┌─ 侧栏 rounded-card ─┐ ┌─ 主列 rounded-card ──────────────┐ │
+│ │ ◆ AgentHub          │ │ TopBar:右侧操作(通知)            │ │
+│ ├─────────────────────┤ ├──────────────────────────────────┤ │
+│ │ Workspace           │ │                                  │ │
+│ │ 💬 Chat             │ │         Page Content             │ │
+│ │ ▦ Agents            │ │  内容宽两套：阅读列 / 贴边列     │ │
+│ │ ✦ Skills            │ │  （细则 §3.1；Chat 等全高）      │ │
+│ │ ◉ MCP               │ │                                  │ │
+│ │ ◫ Projects          │ │                                  │ │
+│ ├─────────────────────┤ │                                  │ │
+│ │ Manage              │ │                                  │ │
+│ │ ▣ Dashboard         │ │                                  │ │
+│ │ ⇄ Connections       │ │ （侧栏永久显示）                 │ │
+│ │ ▦ Routes            │ │                                  │ │
+│ │ ⚙ Settings          │ │                                  │ │
+│ ├─────────────────────┤ │                                  │ │
+│ │ ● N/M agents        │ │ (侧栏底部:agent 在线状态迷你条)  │ │
+│ └─────────────────────┘ └──────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-- 常规页：主区 `mx-auto max-w-content`（theme token = **1200px**）+ 内边距；含 TopBar。
-- **Chat 特例**：无 TopBar / 无 PageHeader，主区 `h-full` 全高铺满，不受 `max-w-content` 限制。
-- **Skills / Projects 特例**：保留页内 Header，与 Chat 一样走 `fullBleed`、主区 `h-full overflow-hidden`；左侧列表与右侧预览在页内独立滚动，不受 `max-w-content` 限制。
+### 3.1 内容宽度（两套，禁止第三套）
+
+后续做页**只在这两套里选**。不要再发明 `max-w-content` / `max-w-4xl` / 页面私有 `max-w-*` / 左对齐的 768 列。
+
+| 套 | 规则 | Token | 现行页 |
+|---|---|---|---|
+| **阅读列** | 列宽固定 `max-w-3xl`（768px），`mx-auto` 居中。窗口变宽，列宽不变。 | `pageRhythm.readingColumn`（`mx-auto w-full max-w-3xl`） | Chat 消息 + composer；Settings **整页**（页头 / Tab / 四面板，含备份） |
+| **贴边列** | 铺满主列，左右离主列内缘 **18px**。窗口变宽，内容变宽，右缘对齐。 | 常规页 `pageRhythm.pageShell`；Skills / Projects `workbenchX` + `pageEdgePx.x` | Dashboard / Agents / Connections / Routes / MCP / Skills / Projects |
+
+**怎么选（新页默认贴边列）**
+
+- 对话、设置表单、长文阅读 → 阅读列，必须引用 `pageRhythm.readingColumn`，不得另写一套 class。
+- 列表、表格、卡片墙、主从分栏、工作台 → 贴边列。
+- `fullBleed`（Chat / Skills / Projects）只管全高、是否套 `pageShell`、有没有 TopBar，**不另开第三套宽度**。Skills / Projects 仍是贴边列；Chat 外壳贴主列边，内列走阅读列。Settings 不是 fullBleed，但整页是阅读列。
+
+**不要**
+
+- 给贴边页再套 `mx-auto max-w-*`（含旧的 1200px `max-w-content`）。
+- 把阅读列改成左对齐，或让 Chat 与 Settings 用不同的 max 宽。
+- 在业务页硬编码 `px-4` / `px-6` / `px-[18px]` 当页边距（Chat chrome 除外，真源是 `chatChromeX`；贴边真源是 `pageShell` / `workbenchX`）。
+
+**壳（高度，不是第三套宽度）**
+
+- **Chat**：无 TopBar / 无 PageHeader，主区 `h-full` 全高铺满；会话顶栏自管，不进页标题槽。
+- **Skills / Projects**：compact Header 走 `workbenchHeader`，`fullBleed` + `overflow-hidden`；列表与预览页内分栏滚动。
 - 侧栏底部迷你状态条：品牌色圆点（数量随 `AGENTS`）+ 已安装计数，hover 显示各 agent 版本；有更新时圆点带黄环。折叠/展开态均允许换行，避免 agent 增多时溢出。
 
 ## 4. 页面设计
 
 ### 4.1 Dashboard（总览 + 用量）
 
-上半 Agent 总览 + 共享筛选下的一套指标/趋势/分布；下半用量明细（模型筛选、明细表、UsageParserHealth）。`/usage` 永久重定向到 `/?section=usage` 并滚动到用量段。
+上半 Agent 总览 + 共享筛选（时间 + Agent + 模型）下的一套指标/趋势/分布；下半用量明细表、UsageParserHealth。`/usage` 永久重定向到 `/?section=usage` 并滚动到用量段。
 
 Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自适应网格，**支持任意数量 agent**，不写死列数；骨架屏复用同一网格定义，loading → 内容无跳动。
 
+就绪计数并进页头副标题（`状态与用量（3/4 就绪 · 1 项待处理）`），卡片区不再重复「Agent 总览」行，也没有「管理」按钮（装 Agent 走侧栏 / 空态「去安装」）。
+
 ```
 ┌─ Dashboard ────────────────────────────────────────────────┐
-│ Agent 总览  3/4 就绪 · 1 项待处理              [管理]      │
+│ 总览                                                       │
+│ 状态与用量（3/4 就绪 · 1 项待处理）                          │
 │ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
 │ │● Claude  ●│ │● Codex   ●│ │● Kimi    ●│ │● Grok    ●│       │
 │ │官方 · v2… │ │xx云·兼容路由│ │官方 · v0… │ │官方 · v0… │       │
 │ └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
 │  （只渲染已安装；点击卡片=连接/切换；N>4 折行，列宽≥190px）│
-│ 时间 [近 7 天 ▾] Agent [全部 ▾]              [⟳ 立即采集] │
+│ Agent [全部 ▾] 模型 [全部 ▾] 时间 [近 7 天 ▾]  [⟳ 立即采集] │
 │ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐               │
 │ │ 输入    │ │ 输出    │ │ 缓存命中│ │ 估算成本│               │
 │ └────────┘ └────────┘ └────────┘ └────────┘               │
@@ -146,7 +173,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 │ └────────────────────────────────────┘ └───────────────────┘│
 │ ┌─ Agent/模型 用量分布条 ──────────────────────────────────┐│
 │ └──────────────────────────────────────────────────────────┘│
-│ ── 用量明细 ──────────────── 模型 [全部 ▾] ──────────────── │
+│ ── 用量明细 ────────────────────────────────────────────── │
 │ ┌─ 明细表(最多 50 条) ─────────────────────────────────────┐│
 │ │ 时间 │ Agent │ 模型 │ 输入 │ 输出 │ 缓存读 │ 成本 │ 会话   ││
 │ └──────────────────────────────────────────────────────────┘│
@@ -160,8 +187,8 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
   - **直接改配置 / 写进对方认的登录**：`route=reshape`（或命中自动生成的配置）。meta 用「直连」或「改配置」，不要显示转发。
   - **本机转发**：仅当前生效的本机转发显示路由徽标（meta **本机路由**）；查询失败显示「状态不可用」，不得静默隐藏。点击徽标进入 `/routes?profile=`（无 id 则 `/routes`），tip「管理本机路由」（`stopPropagation`）。孤立 / 非当前本机路由没有徽标。
 - **ConnectFlow（工具侧）**：两组来源——**本来就是给它的登录**（走切换）+ **其他登录**（`plan(ticket, agent)`）。可执行权威是 `plan()` 的 route / maturity / canApply / reason（`canApply` 表示现在能写入）。产品模型仍是三种做法；界面芯片现行 **直连 / 用这份登录 / 本机路由 / 当前不支持**。写进对方认的登录不得出现「需要本机服务」或转发启停。接不上的登录**留在列表**，置灰 + 原因原文，不从 Connections 藏起来再让本页单独诊断。OAuth 未完成：引导去 Connections 补登录。空态与「导入登录态 / 新 API Key」走深链 `intent=import-login|add-key`；成功后回 `/?connect=` 重开。导入仍是读官方 CLI 已完成的登录。
-- **共享筛选**（时间 + Agent）驱动一套指标卡与趋势图；筛选变更时 `queryUsage` / `usageTrend` 各请求一次，上下共用 records。
-- 用量图：堆叠 Area，按 agent 分色。选中单 agent 时分布条下钻到**按模型**拆分。
+- **共享筛选**（时间 + Agent + 模型）驱动一套指标卡、趋势图、分布条与明细表。时间窗变化时 `queryUsage` 请求一次；Agent / 模型在前端过滤，即时反映到图表。趋势由同一份 records 按日聚合（input+output，与 `usageTrend` 公式一致）。
+- 用量图：堆叠 Area，按 agent 分色。选中单 agent 时分布条下钻到**按模型**拆分；模型下拉再收窄到该模型。
 - Agent 总览与用量分区处理 loading/error：用量失败不白屏上半。
 
 ### 4.2 Agents（安装管理）
@@ -206,34 +233,36 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 侧栏只保留一个入口。目标态：**跨工具的登录列表**，不是按工具切开的两套池。底层 accounts/providers 可继续分表；UI 谈一份登录和「正用于」哪些绑定。自动生成的配置不出现在登录列表。完整规则见 [connection-binding-model.md §5](connection-binding-model.md#51-两个入口一个对象)。
 
-路由：`/connections`；`/connections?agent=codex` 高亮该 Agent 的 active 绑定（**不**再把整页收成该 Agent 私有列表）；`?mode=` 仍可筛到 API Key。旧 `/providers`、`/accounts` 重定向至此。
+路由：`/connections`；`/connections?agent=codex` 高亮该 Agent 的 active 绑定，并把顶部 Tab 落到该 Agent。旧 `/providers`、`/accounts` 重定向至此。
 
 **目标线框：**
 
 ```
 ┌─ 连接 ─────────────────────────────────────────────────────┐
 │ 连接 · n 份登录                               [+ 添加]     │
-│ 筛选 [全部] [官方登录] [API Key] [未识别]                   │
-│ ● Kimi 会员     [API Key] [会员]                           │
+│ [全部] [Claude] [Codex] …                                  │
+│ 🔑 Kimi 会员     [会员]                                    │
 │   正用于：Claude（只改配置）· Codex（本机转发 · 运行中）     │
-│   [接到…] [详情]                                           │
-│ ○ Anthropic     [API Key] [官方]                           │
+│   [分享] [路由] [详情]                                     │
+│ 🔑 Anthropic     [官方]                                    │
 │   正用于：Pi（改配置）                                     │
-│   [接到…] [详情]                                           │
-│ ○ me@…          [官方登录]                                 │
+│   [分享] [路由] [详情]                                     │
+│ 👤 me@…                                                    │
 │   正用于：Claude（切换）                                   │
-│   [接到…]  → 不可行目标在对话框置灰 + 原因                 │
+│   [分享] [路由] [刷新] → 对话框按目的过滤目标              │
 └────────────────────────────────────────────────────────────┘
 ```
 
+- 「添加」在页头标题「连接」同一行右侧（`PageHeader` `actions`）。顶部 **AgentTabStrip**（含「全部」）：选「全部」时添加先选 Agent；选了某个 Agent 后，添加直接给出该 Agent 的「导入当前登录 / 添加 API Key」。无「官方登录 / API Key / 未识别」类型芯片。OAuth 用人头（账号登录），API Key 用钥匙（密钥授权），颜色与该行 Agent 品牌色一致。
 - 「正用于」来自绑定：native / reshape / bridge，不是手写 account/provider 出身。
-- **每一份真登录都有「接到…」**，打开同一绑定对话框（登录固定，选工具）。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。选目标后预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。不要把订阅默认写成转发。
+- **每一份真登录都有「分享」和「路由」**：分享打开绑定对话框并只列出直连 / 写进对方登录；路由只列本机转发。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。不要把订阅默认写成转发。
+- **OAuth 刷新**（有 `oauthListAction` 才出现）：Grok / Codex 的 Hub-owned 可续期行「刷新」凭据，CLI-owned 当前行「同步当前登录」，其它 OAuth「刷新」额度；Pi 可续期 provider「刷新凭据」；Claude「刷新」额度；Kimi 不显示。
 - 「切换」只用于这份登录对它本来所属工具的 native 绑定。接到其他工具一律走 `bind`。
 - 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。**Pi 无单一官方 URL**：弹窗选厂商槽，官方槽（anthropic / openai / …）只写 `~/.pi/agent/auth.json`，自定义 URL 写 `models.json`。
-- **已落地（读模型 + 写入）**：跨工具登录列表 + 真登录常驻「接到…」+ Dashboard 当前绑定；自动生成的配置不出现在登录列表。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
+- **已落地（读模型 + 写入）**：跨工具登录列表 + 真登录常驻「分享 / 路由」+ Dashboard 当前绑定；自动生成的配置不出现在登录列表。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
 - 导入当前登录时若本机同时有 Key 与官方登录，对话框警告条说明当前会收入哪一份。
-- **详情展开**：不是字段堆。行头在官方登录 / 订阅旁放安静健康 chip（可续期 / 已配置；不写实验 / 未验证）。`sm+` 两栏 **用量**（有配额才出现，QuotaBar 先 7d 再 5h + reset）| **用在哪**（每行一个绑定：左 Agent 名，右「当前使用 / 本机路由运行中 / 本机路由已停止 / 未使用」；空态「还没接到任何工具」）。**更多**仅在有自定义端点 / 协议时出现（默认折叠）；仅 import + 登录状态时不渲染。页脚一行：左「导入自 …」，右编辑配置或编辑密钥（若可）+「移入回收站」。
-- 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为登录常驻「接到…」语义。
+- **详情展开**：不是字段堆。行头在官方登录 / 订阅旁放安静健康 chip（可续期 / 已配置；不写实验 / 未验证）。**用量**有配额才出现（QuotaBar 先 7d 再 5h + reset）；用途已在行上，详情不再列「用在哪」。OAuth 详情显示脱敏 Refresh token（头尾预览，不含明文），方便区分同一身份下的多份授权。**更多**仅在有自定义端点 / 协议时出现（默认折叠）；仅 import + 登录状态时不渲染。页脚只放编辑配置或编辑密钥（若可）+「移入回收站」；行头已有 Agent，不再写「导入自 …」。
+- 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为登录常驻「分享 / 路由」语义。
 
 #### 4.3.1 mode=providers — API 配置（历史线框 / 过渡形态）
 
@@ -293,9 +322,9 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 用户表面是 **本机路由运行时**：协议对不上时在这台电脑上开的一层转发。登录在 Connections，绑定在 Dashboard / ConnectFlow；本页只服务本机转发。内部模块仍叫 Adapter（`lib/api/adapter`），不得漏进侧栏、页标题、空态、确认框、徽标、托盘。
 
-规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Routes**，仅当本机确有本机路由（含孤立）或登录列表仍有 `route=bridge` 时出现；Settings → 本机有一条永远在的「本机路由运行时」回收链。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
+规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏与页标题英文 **Routes**、中文 **「路由」**，永久显示。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 
-列出全部 `route=local_bridge`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。行与详情都是**单层**进程健康 + 端口，不画「配置已生效 / 桥接运行中」。解绑只走 unbind，不提供 `removeAdapter`。健康空态（profile 与登录列表均已结算且 `bound+orphan===0` 且 last-known 本机路由数为 0）标题「没有本机路由」，**无按钮**——这是对 §1.4 的显式例外。
+列出全部 `route=local_bridge`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。行与详情都是**单层**进程健康 + **本机 IP（127.0.0.1）+ 端口**，不画「配置已生效 / 桥接运行中」。无端口时标「待分配端口」，不复制无端口的地址。解绑只走 unbind，不提供 `removeAdapter`。健康空态（profile 与登录列表均已结算且 `bound+orphan===0` 且 last-known 本机路由数为 0）标题「没有本机路由」，**无按钮**——这是对 §1.4 的显式例外。
 
 - 与 ConnectFlow 两处 bind 同源（`lib/api/adapter` / `lib/api/tickets`）；可执行权威是 `plan.canApply`，禁止以 `analysis.support` 推断可执行。
 - 规则名称、route 和可执行状态以[当前实现矩阵](provider-api-oauth-adaptation.md#4-当前实现矩阵)为准。
@@ -303,7 +332,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 ### 4.4 Chat（会话）
 
-全高特例布局（`App` 中 `pathname === '/chat'`）：**无 TopBar / 无 PageHeader**，主区 `overflow-hidden` + 子树 `h-full`，会话列表与消息区自行分配高度；**不**套用 `max-w-content` 居中内容壳。其余功能页保持标准壳（TopBar + max-w-content）。本节为产品契约摘要；完整方案（已落地，见 [chat-page-redesign.md](chat-page-redesign.md) Implemented 2026-08）。**现行一会话一 Agent**（core `require_single_agent`；打开旧多选行折叠为首位）。线框里的对比条 / Agent 多选是历史表面残留，只对旧数据生效。
+全高特例布局（`App` 中 `pathname === '/chat'`）：**无 TopBar / 无 PageHeader**，主区 `overflow-hidden` + 子树 `h-full`，会话列表与消息区自行分配高度。消息列属阅读列（§3.1 `pageRhythm.readingColumn`）。本节为产品契约摘要；完整方案（已落地，见 [chat-page-redesign.md](chat-page-redesign.md) Implemented 2026-08）。**现行一会话一 Agent**（core `require_single_agent`；打开旧多选行折叠为首位）。线框里的对比条 / Agent 多选是历史表面残留，只对旧数据生效。
 
 **目标线框：**
 
@@ -412,11 +441,12 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 独立 Usage 路由已取消；能力落在 Dashboard 下半段（见 §4.1）。深链 `/usage` → `/?section=usage`。
 
 - **数据来源**：只读解析各 Agent 本地日志/会话（零侵入），经 `usage_service.collect` 增量入库；非代理流量。
-- **「模型」下拉**：`listModels` = 已入库 `usage_records` 的 **DISTINCT model**（实际用过的模型）。  
-  - **默认只筛选明细表**，不必扩展 `usageTrend` API。  
+- **「模型」下拉**：当前时间 + Agent 窗口内 records 的 **DISTINCT model**（实际用过的模型）。  
+  - 与时间、Agent 同为页面级筛选：指标卡、趋势图、分布条、明细表共用过滤后的 records。  
+  - 不必扩展 `usageTrend` API；趋势由同一份 records 在前端按日聚合。  
   - 不是官方可购模型目录，也不是独立「模型管理」页。  
-  - 空库时下拉仅「全部」，引导先「手动采集」。
-- 时间 + Agent 为页面级共享筛选；指标卡与趋势图只保留一套。
+  - 空窗口时下拉仅「全部」，引导先「手动采集」。当前模型不在新窗口内时回退到「全部」。
+- 时间 + Agent + 模型为页面级共享筛选；指标卡与趋势图只保留一套。
 - 成本为 `pricing` 估价（**与价表同单位，当前为 USD / 1M tokens**；不做汇率换算；价表为离线快照，由 LiteLLM 日更 CI / `pnpm pricing:update` 刷新，App 运行时不拉价），标注「估算」以免误解为账单原件。
 - 底部 **UsageParserHealth**（`variant="dashboard"`；兼容旧名 `ParserHealthBar`）：只列出 **已安装且未隐藏** 的 Agent 的 parser 条数与失败率（与卡片同一套 `visibleInstalledIds`）；若无则「解析：暂无已安装的 Agent」；失败率高时提示「日志格式可能已变更」。手动/自动采集同样只扫这些 Agent。
 - **「手动采集」**：与筛选同行；进度条；首次引导用 `StorageKey.usageGuideDismissed`。
@@ -462,9 +492,11 @@ Settings 子页（`?tab=backups`），**不**占侧栏。页内 tab 中文 **备
 四个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 备份 / 关于**，英文 **Preferences / This device / Backups / About**）：
 
 1. **偏好**（`?tab=preferences`）：语言、主题、开机自启、关闭到托盘、技能市场源、用量采集间隔。
-2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录、本机路由回收链。
+2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录。路由页走侧栏 **Routes**（永久显示）。
 3. **备份**（`?tab=backups`）：各 Agent live 配置快照的查看 / 手动备份 / 恢复 / 删除，见 §4.7。
 4. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
+
+属 **阅读列**（§3.1）：整页居中，与 Chat 消息列共用 `pageRhythm.readingColumn`（`mx-auto w-full max-w-3xl`）。
 
 Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings。
 
@@ -498,11 +530,11 @@ Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` /
 | 组件 | 职责 |
 |---|---|
 | `AgentTabStrip` | 页内 agent 切换条，能力位置灰（如 Kimi 不支持账号切换/技能） |
-| `ConnectFlowDialog` | 绑定对话框：Dashboard（工具固定，选一份登录）与 Connections「接到…」（登录固定，选工具）；目标语义 `bind`；预览按三种做法说明，界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；`plan.canApply` 只表示现在能写入 |
+| `ConnectFlowDialog` | 绑定对话框：Dashboard（工具固定，选一份登录）与 Connections「分享 / 路由」（登录固定、按目的过滤工具）；目标语义 `bind`；预览按三种做法说明，界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；`plan.canApply` 只表示现在能写入 |
 | `AgentDot` | Agent 品牌色圆点（侧栏/列表等轻量标识） |
 | `StatusDot` | 四态认证状态（有效/临期/失效/未配置） |
 | `SearchField` | 统一搜索输入（左图标 + `h-7`）。列表筛选禁止手写搜索框 |
-| `SegmentedControl` | 页内列表筛选（Connections 登录类型等）；页级导航用 `Tabs` |
+| `SegmentedControl` | 页内列表筛选；页级导航用 `Tabs` |
 | `SecretInput` | 脱敏回显 + 眼睛切换明文。无二次确认、无自动再遮蔽 |
 | `ConfigEditor` | CodeMirror 封装：JSON/TOML 高亮、敏感键自动脱敏层 |
 | `QuotaBar` | 5h/7d 配额窗口进度条 + reset 倒计时 |

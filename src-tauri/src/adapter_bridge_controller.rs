@@ -1,11 +1,12 @@
 //! Desktop-process control plane for Adapter local bridges.
 //!
 //! `agenthub-core` owns profile persistence, source-secret resolution and the
-//! generated target provider projection.  This module deliberately owns the
-//! cross-boundary saga: the loopback listener must bind before the generated
-//! provider is made current, and a failed apply must not leave a newly-started
-//! listener running.  Neither upstream nor local bearer tokens cross the
-//! Tauri command boundary.
+//! generated target provider projection.  This module owns the cross-boundary
+//! saga: the loopback listener must bind before the generated provider is
+//! persisted, and a failed apply must not leave a newly-started listener
+//! running. Generated loopback is persisted non-current; live config is
+//! refreshed only if that row is already current. Neither upstream nor local
+//! bearer tokens cross the Tauri command boundary.
 //!
 //! Process-local profile / target gates and the credential-free status DTO live
 //! in [`agenthub_core::adapter_control`] so commands stay Tauri-neutral.
@@ -19,8 +20,8 @@ use agenthub_core::bridge::{
     BridgeUpstreamStatus, MemberHealth, UpstreamAuthReload,
 };
 use agenthub_core::models::{
-    local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile, AdapterProfileStatus,
-    AdapterRoute, AdapterSourceKind, AgentId, Provider, ProviderInput,
+    local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile,
+    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AgentId, Provider, ProviderInput,
 };
 use agenthub_core::services::{
     oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
@@ -59,8 +60,7 @@ pub(crate) async fn apply_local_bridge(
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let profile_id = bridge_profile_id_for_request(hub.clone(), request.clone()).await?;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
-    // First-time apply must make the generated target Connection current.
-    apply_local_bridge_locked(hub, host, coordinator, request, true).await
+    apply_local_bridge_locked(hub, host, coordinator, request).await
 }
 
 async fn apply_local_bridge_locked(
@@ -68,11 +68,6 @@ async fn apply_local_bridge_locked(
     host: Arc<BridgeRuntimeHost>,
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     request: AdapterBridgePrepareRequest,
-    // When true (initial apply), always switch the target Agent to the
-    // generated bridge. Manual start keeps the user's current Connection
-    // unless the generated bridge provider was already current (then refresh
-    // live config only).
-    force_switch_current: bool,
 ) -> Result<AdapterApplyResult, String> {
     let target_agent_id = request.target_agent_id;
     let prepared = with_hub_blocking(hub.clone(), move |hub| {
@@ -102,18 +97,19 @@ async fn apply_local_bridge_locked(
         members,
         local_bridge_multi_account(&prepared.profile().rule_id),
     )
-    .await {
-            Ok(runtime) => runtime,
-            Err(error) => {
-                let code = if matches!(error, BridgeHostError::Bind(_)) {
-                    CODE_BRIDGE_PORT_IN_USE
-                } else {
-                    CODE_BRIDGE_START
-                };
-                mark_retryable(hub, &profile_id, code).await;
-                return Err(map_bridge_host_error(error));
-            }
-        };
+    .await
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            let code = if matches!(error, BridgeHostError::Bind(_)) {
+                CODE_BRIDGE_PORT_IN_USE
+            } else {
+                CODE_BRIDGE_START
+            };
+            mark_retryable(hub, &profile_id, code).await;
+            return Err(map_bridge_host_error(error));
+        }
+    };
     // Own any listener this saga started or replaced. An idempotent reuse of an
     // already-running identical spec is not compensated on later projection failure.
     let owns_listener = runtime.owned_by_saga;
@@ -152,15 +148,7 @@ async fn apply_local_bridge_locked(
         let provider_id = prepared.profile().generated_provider_id.clone();
         let snapshot =
             capture_provider_snapshot(hub, &core_guard, provider_id.as_deref(), target_agent)?;
-        persist_bridge_projection_inner(
-            hub,
-            &core_guard,
-            &prepared,
-            projection,
-            port,
-            &snapshot,
-            force_switch_current,
-        )
+        persist_bridge_projection_inner(hub, &core_guard, &prepared, projection, port, &snapshot)
     })
     .await;
 
@@ -205,8 +193,7 @@ pub(crate) async fn start_local_bridge(
         target_agent_id: profile.target_agent_id,
         auto_start: profile.auto_start,
     };
-    // Manual start must not steal Codex current if the user already switched away.
-    let applied = apply_local_bridge_locked(hub, host.clone(), coordinator, request, false).await?;
+    let applied = apply_local_bridge_locked(hub, host.clone(), coordinator, request).await?;
     let status = host
         .status(&applied.profile.id)
         .map_err(map_bridge_host_error)?
@@ -442,7 +429,6 @@ fn persist_bridge_projection_inner(
     projection: AdapterBridgeProviderProjection,
     port: u16,
     snapshot: &BridgeProviderSnapshot,
-    force_switch_current: bool,
 ) -> Result<AdapterApplyResult, String> {
     let provider_id = prepared
         .profile()
@@ -478,7 +464,7 @@ fn persist_bridge_projection_inner(
         .as_ref()
         .map(|provider| provider.is_current)
         .unwrap_or(false);
-    let should_switch = should_make_bridge_current(force_switch_current, generated_was_current);
+    let should_switch = should_make_bridge_current(generated_was_current);
 
     let previous_current_id = snapshot
         .current_provider
@@ -507,6 +493,7 @@ fn persist_bridge_projection_inner(
                             &provider_id,
                             snapshot,
                             created,
+                            should_switch,
                             prepared.profile().target_agent_id,
                         );
                         return Err(composite_saga_error(
@@ -524,6 +511,7 @@ fn persist_bridge_projection_inner(
                     &provider_id,
                     snapshot,
                     created,
+                    should_switch,
                     prepared.profile().target_agent_id,
                 );
                 return Err(composite_saga_error(
@@ -555,6 +543,7 @@ fn persist_bridge_projection_inner(
                 &provider_id,
                 snapshot,
                 created,
+                should_switch,
                 prepared.profile().target_agent_id,
             );
             return Err(composite_saga_error(
@@ -567,10 +556,9 @@ fn persist_bridge_projection_inner(
     Ok(AdapterApplyResult { profile, provider })
 }
 
-/// Initial apply always promotes the generated bridge; manual start only
-/// refreshes live config when that bridge was already the current Connection.
-fn should_make_bridge_current(force_switch_current: bool, generated_was_current: bool) -> bool {
-    force_switch_current || generated_was_current
+/// Refresh live only if the generated loopback is already current.
+fn should_make_bridge_current(generated_was_current: bool) -> bool {
+    generated_was_current
 }
 
 #[derive(Clone)]
@@ -610,15 +598,15 @@ fn capture_provider_snapshot(
     })
 }
 
-/// Restore the persisted provider pool through `ProviderService`; it is the
-/// sole live-config owner.  We intentionally try every inverse action so a
-/// retry starts from the best possible state, then return a stable code only.
+/// Inverse of persist: restore the generated pool row. Reverse live switch
+/// only when this saga actually refreshed current (`switched_live`).
 fn rollback_bridge_projection(
     hub: &AgentHub,
     core_guard: &ProviderLiveSagaGuard<'_>,
     provider_id: &str,
     snapshot: &BridgeProviderSnapshot,
     created: bool,
+    switched_live: bool,
     target_agent: AgentId,
 ) -> Result<(), &'static str> {
     let mut failed = false;
@@ -637,6 +625,14 @@ fn rollback_bridge_projection(
         failed = true;
     }
 
+    if !switched_live {
+        return if failed {
+            Err("adapter.bridge_rollback")
+        } else {
+            Ok(())
+        };
+    }
+
     if let Some(old_current) = &snapshot.current_provider {
         if hub
             .providers
@@ -649,9 +645,8 @@ fn rollback_bridge_projection(
 
     // A provider switch back to an old current row may backfill a drifted
     // value rather than the byte-exact snapshot captured before this saga.
-    // Always restore the snapshot last, whether or not there was an old
-    // current provider, so failed finalize/switch cannot leave live config
-    // changed.
+    // Restore the snapshot last so failed finalize/switch cannot leave live
+    // config changed.
     if hub
         .providers
         .restore_live_config_snapshot_with_guard(core_guard, &snapshot.live_config)
@@ -920,12 +915,10 @@ pub(crate) async fn ensure_bridge_listener(
         .with_members(members.clone())
         .with_multi_account(multi_account);
     match host.start(preferred).await {
-        Ok(status) => {
-            Ok(EnsuredBridgeListener {
-                owned_by_saga: !had_running,
-                status,
-            })
-        }
+        Ok(status) => Ok(EnsuredBridgeListener {
+            owned_by_saga: !had_running,
+            status,
+        }),
         Err(BridgeHostError::ConflictingStart) => {
             match host.stop(&profile_id).await {
                 Ok(_) | Err(BridgeHostError::NotRunning) => {}
@@ -1029,6 +1022,7 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
                 &provider_id,
                 &snapshot,
                 false,
+                true,
                 target_agent,
             );
             return Err(composite_saga_error(
@@ -1080,6 +1074,7 @@ fn rollback_restored_bridge_port(
             provider_id,
             snapshot,
             false,
+            true,
             target_agent,
         );
     }

@@ -64,7 +64,7 @@ Issues in **AgentHub’s own code** that can cause:
 
 | Topic | Reason |
 |---|---|
-| Missing **at-rest credential encryption** (keyring / AES / master password) | Explicitly **out of product scope**; see [AGENTS.md](AGENTS.md) and plan docs |
+| Missing **at-rest credential encryption** (keyring / AES / master password) | Explicitly **out of product scope**; credentials remain in the current on-disk storage model. Public-facing privacy boundaries: [docs/privacy.md](docs/privacy.md) |
 | Bugs **only** in third-party Agents (Claude / Codex / …) with no AgentHub involvement | Report upstream |
 | Social engineering, physical access, unlocked user session | User environment |
 | Dependency CVEs with no realistic local impact path | Track via normal dependency updates unless exploitable through AgentHub |

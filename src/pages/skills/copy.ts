@@ -16,7 +16,7 @@ export function skillCellTip(
   agentName: string,
   state: SkillSyncState,
   mapStatus: SkillMapStatus,
-  linkKind?: string,
+  _linkKind?: string,
   reason?: string,
 ): string {
   switch (mapStatus) {
@@ -39,9 +39,7 @@ export function skillCellTip(
   }
   switch (state) {
     case 'linked':
-      return linkKind && linkKind !== 'none'
-        ? t('skills.cell.linkedWithKind', { linkKind })
-        : t('skills.cell.linked');
+      return t('skills.cell.linked');
     case 'copied':
       return t('skills.cell.copied');
     case 'absent':

@@ -47,7 +47,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     configWrite: { level: 'full' },
     accountSwitch: { level: 'full' },
     apiKeyAccount: { level: 'full' },
-    skills: { level: 'unsupported', reason: 'Kimi CLI 无技能目录模型' },
+    skills: { level: 'unsupported', reason: 'Kimi 不支持技能目录' },
     liveBackup: { level: 'full' },
     structuredStream: { level: 'full' },
     dangerousMode: {
@@ -84,7 +84,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     apiKeyAccount: {
       level: 'partial',
       reason:
-        '可入池；写回 auth.json 需带官方厂商槽（anthropic/openai/…）；自定义 URL 走 models.json / 供应商切换',
+        '可入池；写回 auth.json 需带官方厂商（anthropic/openai/…）；自定义 URL 走 models.json / 供应商切换',
     },
     skills: { level: 'full' },
     liveBackup: { level: 'full' },

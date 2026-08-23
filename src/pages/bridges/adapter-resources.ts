@@ -240,8 +240,8 @@ export function mergeAdapterProfileLoad(
 
 export function resourceFailureMessage(errors: AdapterResourceErrors): string | null {
   const failed = [
-    errors.accounts ? '账户' : null,
-    errors.providers ? 'Provider' : null,
+    errors.accounts ? '账号' : null,
+    errors.providers ? 'API 配置' : null,
   ].filter(Boolean);
   return failed.length ? `部分连接未能加载：${failed.join('、')}。其余仍可用。` : null;
 }

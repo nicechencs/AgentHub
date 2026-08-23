@@ -11,13 +11,16 @@ use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    attach_persisted_surface, Account, AgentConfig, AgentId, BackupKind,
+    attach_persisted_surface, Account, AdapterProfileFilter, AgentConfig, AgentId, BackupKind,
     Capability, PersistedTicketSurface, Provider, ProviderInput, ProviderSwitchResult,
     TicketSurface,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, extract_probe_url, peek_switch_undo, probe_url_latency_ms,
     record_switch_undo, PROVIDER_UNDO_PREFIX,
+};
+use crate::services::adapter_projection::{
+    classify_provider_config, leftover_live_flag, projection_import_error,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, BackupService, ConnectionService,
@@ -706,6 +709,25 @@ impl ProviderService {
             .map(str::to_owned)
             .unwrap_or_else(|| format!("Imported {}", now_ts()));
         validate_name(&display_name)?;
+
+        let profiles = AdapterProfileRepo::new(self.db.clone()).list_filtered(
+            &AdapterProfileFilter {
+                target_agent_id: Some(agent),
+                ..Default::default()
+            },
+        )?;
+        let providers = self.repo.list(Some(agent))?;
+        if classify_provider_config(
+            agent,
+            &live.raw,
+            &profiles,
+            &providers,
+            leftover_live_flag(agent),
+        )
+        .is_projection()
+        {
+            return Err(projection_import_error());
+        }
 
         // A live config is a single canonical snapshot per agent. Reuse the
         // existing live-import row instead of creating a UUID row on every

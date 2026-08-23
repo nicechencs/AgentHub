@@ -97,24 +97,23 @@ export const CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID = 'claude-subscription-to-code
 
 /** Keep in lockstep with `CLAUDE_SUBSCRIPTION_TO_CODEX_REASON` in agenthub-core. */
 export const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON =
-  'Claude 订阅 → Codex：本机转发方向已开放，规则与 fixtures 未落地，暂不能绑定。';
+  'Claude 订阅接到 Codex 可以走本机转发，但规则还没做完，现在接不上。';
 
 export const CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON = [
-  'Codex / ChatGPT 订阅 → Claude Code：当前不支持。',
-  '尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。',
-  '不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。',
-  '这只表示没有可执行规则，不代表连接失效。',
-  '替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。',
+  'Codex / ChatGPT 订阅现在还接不到 Claude Code。',
+  '不会改配置，也不会开本机转发。',
+  '这不表示现有连接坏了。',
+  '可改用 Claude 自己的官方登录，或改用已支持的 API Key。',
 ].join('');
 
 /** Keep in lockstep with `AGENT_NO_WRITER_REASON` in agenthub-core. */
-export const AGENT_NO_WRITER_REASON = '该 Agent 无配置写入能力，不能作为绑定落点';
+export const AGENT_NO_WRITER_REASON = '这个工具不能写入配置，接不上。';
 
 /** Keep in lockstep with `PROTOCOL_MISMATCH_REASON` in agenthub-core. */
-export const PROTOCOL_MISMATCH_REASON = '这份登录接不到这个 Agent。';
+export const PROTOCOL_MISMATCH_REASON = '这份登录接不到这个工具。';
 
 /** Keep in lockstep with `SAME_PROTOCOL_NO_EDGE_REASON` in agenthub-core. */
-export const SAME_PROTOCOL_NO_EDGE_REASON = '这条接到方式还没做好，暂不能绑定。';
+export const SAME_PROTOCOL_NO_EDGE_REASON = '这条接法还没做好，现在接不上。';
 
 export type TicketProtocol =
   | 'anthropic-messages'
@@ -201,7 +200,7 @@ export function unsupported(
     actions: [],
     limitations: [
       '当前不支持此组合；不会改动来源连接、本机服务或配置。',
-      'plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。',
+      '现在还写不上去；不会改配置，也不会开本机转发。',
     ],
     evidence: evidenceItems,
     ruleId: options?.ruleId ?? null,

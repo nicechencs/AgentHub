@@ -142,7 +142,7 @@ fn kimi_membership_routes_to_all_three_targets_and_plans_without_secret() {
     assert_eq!(codex.changes[0].field, "provider");
     assert_eq!(
         codex.changes[0].value.as_deref(),
-        Some("AgentHub Kimi 本地桥接")
+        Some("AgentHub Kimi 本机路由")
     );
     assert_eq!(codex.changes[1].field, "baseUrl");
     assert_eq!(
@@ -214,9 +214,9 @@ fn kimi_membership_account_uses_provider_edges_but_managed_oauth_stays_closed() 
         assert_eq!(
             plan.analysis.reason,
             match target {
-                AgentId::Claude => "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。",
-                AgentId::Pi => "Kimi Code 会员可预览为 Pi 的配置同步。",
-                AgentId::Codex => "Kimi Code 会员到 Codex 需要本地协议桥接。",
+                AgentId::Claude => "用这份 Kimi Code 会员接到 Claude，只改地址和模型。",
+                AgentId::Pi => "把这份 Kimi Code 会员写进 Pi 认的登录位置。",
+                AgentId::Codex => "Kimi Code 会员接到 Codex 需要本机转发。",
                 _ => unreachable!(),
             }
         );
@@ -591,7 +591,7 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
     );
     assert_eq!(
         xai_grok.analysis.reason,
-        "这条接到方式还没做好，暂不能绑定。"
+        "这条接法还没做好，现在接不上。"
     );
     assert!(!xai_grok.analysis.reason.contains("仅支持预览"));
 }
@@ -705,7 +705,7 @@ fn anthropic_provider_and_account_plan_for_codex_and_stay_closed_for_claude() {
         );
         assert_eq!(
             plan.changes[0].value.as_deref(),
-            Some("AgentHub Anthropic 本地桥接"),
+            Some("AgentHub Anthropic 本机路由"),
             "{source_id}"
         );
         assert_eq!(
@@ -762,7 +762,7 @@ fn openai_provider_and_account_plan_for_codex_local_bridge() {
         );
         assert_eq!(
             plan.changes[0].value.as_deref(),
-            Some("AgentHub OpenAI 本地桥接"),
+            Some("AgentHub OpenAI 本机路由"),
             "{source_id}"
         );
         assert_eq!(
@@ -864,7 +864,7 @@ fn plan_any_ticket_to_cursor_uses_no_writer_reason() {
             "{source_id}"
         );
         assert!(
-            plan.reason.contains("无配置写入"),
+            plan.reason.contains("不能写入配置"),
             "{source_id}: {}",
             plan.reason
         );
@@ -981,8 +981,8 @@ fn unsupported_and_missing_sources_have_no_changes() {
         AdapterSupport::Unsupported
     );
     assert!(!codex_to_claude.can_apply);
-    assert!(codex_to_claude.analysis.reason.contains("当前不支持"));
-    assert!(codex_to_claude.analysis.reason.contains("门禁"));
+    assert!(codex_to_claude.analysis.reason.contains("现在还接不到"));
+    assert!(codex_to_claude.analysis.reason.contains("不会改配置"));
     assert_eq!(
         codex_to_claude.analysis.gate_kind,
         crate::models::AdapterGateKind::SubscriptionCandidate

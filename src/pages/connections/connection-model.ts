@@ -3,6 +3,7 @@
  * 产品层：供应商已并入「API Key」（官方端点 / 自定义端点）；存储仍分表。
  */
 import { formatApiConnectionLabel } from '@/lib/backend/contracts/agent-connection';
+import { probeIsAdapterProjection } from '@/lib/backend/contracts/account-port';
 import type { AuthHealth } from '@/lib/backend/contracts/auth-state';
 import {
   CONNECTION_KIND_FILTERS,
@@ -139,6 +140,7 @@ export type LiveAuthProbeLike = {
   source?: string | null;
   revision?: string | null;
   alsoPresent?: string[] | null;
+  isAdapterProjection?: boolean | null;
 };
 
 export type LiveAuthImportGate = {
@@ -165,6 +167,12 @@ export function liveAuthImportGate(
   }
   if (probe.agentId !== agentId) {
     return { enabled: false, reason: t ? t('connections.list.loginSwitching') : '本机登录态正在切换，已禁用导入' };
+  }
+  if (probeIsAdapterProjection(probe)) {
+    return {
+      enabled: false,
+      reason: t ? t('connections.list.liveIsLocalRoute') : '当前是本机路由写进去的配置，不是一份新登录',
+    };
   }
 
   const kind = probe.kind?.trim().toLowerCase() ?? '';
@@ -204,6 +212,12 @@ export function liveApiKeyImportGate(
   }
   if (probe.agentId !== agentId) {
     return { enabled: false, reason: t ? t('connections.list.authSwitching') : '本机认证方式正在切换，已禁用 API Key 导入' };
+  }
+  if (probeIsAdapterProjection(probe)) {
+    return {
+      enabled: false,
+      reason: t ? t('connections.list.liveIsLocalRoute') : '当前是本机路由写进去的配置，不是一份新登录',
+    };
   }
 
   const kind = probe.kind?.trim().toLowerCase() ?? '';
@@ -262,6 +276,7 @@ export function liveAuthCoexistenceNotice(
   t?: TranslateFn,
 ): string | null {
   if (!probe) return null;
+  if (probeIsAdapterProjection(probe)) return null;
   const kind = liveAuthProbeKind(probe);
   const also = alsoPresentKinds(probe);
   const alsoHasOAuth = also.some(isOAuthLiveAuthKind);

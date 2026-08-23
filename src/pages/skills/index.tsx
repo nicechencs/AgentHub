@@ -41,12 +41,7 @@ import {
 } from '@/lib/api/skill';
 import { useInstalledAgents, type AgentColumn } from '@/lib/hooks/useInstalledAgents';
 import { normalizeOpenPath } from '@/lib/path-open';
-import {
-  privateSkillActiveKey,
-  sharedSkillActiveKey,
-  shouldIgnoreListKeyboard,
-  skillPreviewActiveKey,
-} from '@/lib/skills/preview-keys';
+import { shouldIgnoreListKeyboard } from '@/lib/skills/preview-keys';
 import {
   runImportPrivateSkill,
   runInstallMarketSkill,
@@ -86,10 +81,13 @@ import {
 import {
   catalogRowHasConflict,
   catalogRowHasMapped,
+  catalogRowKey,
   isPrivateSourceRow,
   isSharedCatalogRow,
+  previewTargetFromCatalogRow,
   visibleCatalogRows,
 } from './SkillMatrix';
+import { previewTargetsEqual, resyncPreviewTarget } from './skills-preview-resync';
 import { applyCatalogCellState, cellKey } from './skills-catalog-model';
 import {
   MAIN_WIDTH_FLOOR,
@@ -126,6 +124,23 @@ export default function SkillsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseSkillTab(searchParams.get('tab'));
   const { installedAgents, hiddenIds, loading: agentsLoading } = useInstalledAgents();
+  // 最优列集：仅已安装 Agent（含 Kimi 等无 skills 能力），用后端 mapStatus 解释灰色格
+  // doctor 未完成时先用全量列，避免矩阵空列等待；detect 完成后未安装不占列
+  const matrixAgents: AgentColumn[] = useMemo(
+    () =>
+      installedAgents.length > 0 || !agentsLoading
+        ? installedAgents
+        : AGENTS.filter((a) => !hiddenIds.includes(a.id)),
+    [installedAgents, agentsLoading, hiddenIds],
+  );
+  const installedAgentIds = useMemo(
+    () => matrixAgents.map((a) => a.id),
+    [matrixAgents],
+  );
+  const visibleAgentIdSet = useMemo(
+    () => new Set<string>(installedAgentIds),
+    [installedAgentIds],
+  );
   const [marketQuery, setMarketQuery] = useState('');
   const [installingMarketId, setInstallingMarketId] = useState<string | null>(null);
   const [skillMarketSource, setSkillMarketSource] = useState<SkillMarketSource>('auto');
@@ -379,8 +394,8 @@ export default function SkillsPage() {
   };
 
   const localRows = useMemo(
-    () => (catalog ? visibleCatalogRows(catalog) : []),
-    [catalog],
+    () => (catalog ? visibleCatalogRows(catalog, visibleAgentIdSet) : []),
+    [catalog, visibleAgentIdSet],
   );
 
   const sharedCount = localRows.filter(isSharedCatalogRow).length;
@@ -658,14 +673,6 @@ export default function SkillsPage() {
     }
   };
 
-  // 最优列集：仅已安装 Agent（含 Kimi 等无 skills 能力），用后端 mapStatus 解释灰色格
-  // doctor 未完成时先用全量列，避免矩阵空列等待；detect 完成后未安装不占列
-  const matrixAgents: AgentColumn[] =
-    installedAgents.length > 0 || !agentsLoading
-      ? installedAgents
-      : AGENTS.filter((a) => !hiddenIds.includes(a.id));
-  const installedAgentIds = matrixAgents.map((a) => a.id);
-
   const goLibraryAndHighlight = useCallback(() => {
     const p = new URLSearchParams(searchParams);
     p.delete('tab'); // library 为默认 tab
@@ -729,6 +736,10 @@ export default function SkillsPage() {
   const confirmRemoveFromTool = async () => {
     if (!removeFromTool) return;
     const { skillId, agentId, name } = removeFromTool;
+    const remaining =
+      previewTarget?.skillId === skillId
+        ? (previewTarget.copies ?? []).filter((copy) => copy.agentId !== agentId)
+        : [];
     setDangerBusy(true);
     try {
       await runUninstallSkill(skillId, agentId);
@@ -737,6 +748,19 @@ export default function SkillsPage() {
         variant: 'success',
       });
       setRemoveFromTool(null);
+      if (previewTarget?.skillId === skillId) {
+        if (remaining.length === 0) {
+          requestClosePreview();
+        } else {
+          const next = remaining[0]!;
+          setPreviewTarget({
+            ...previewTarget,
+            copies: remaining,
+            privateAgent: next.agentId,
+            sourceDir: next.sourceDir,
+          });
+        }
+      }
       await load();
     } catch (e) {
       toast({
@@ -748,7 +772,7 @@ export default function SkillsPage() {
     }
   };
 
-  const activeKey = previewTarget ? skillPreviewActiveKey(previewTarget) : null;
+  const activeKey = previewTarget?.rowKey ?? null;
   /** 动画壳宽 = 卡片宽 + 右侧画布 gutter（上下 padding 在壳内，不占横向） */
   const previewShellWidth = previewExpanded
     ? previewWidth + PREVIEW_FRAME_PAD_RIGHT
@@ -757,16 +781,61 @@ export default function SkillsPage() {
     !previewResizing && !reduceMotion ? 'motion-panel-width' : 'transition-none';
 
   const openCatalogPreview = useCallback(
-    (row: InstalledSkillDto) => {
-      requestOpenPreview({
-        skillId: row.id,
-        name: row.name,
-        sourceDir: row.sourceDir,
-        privateAgent: row.origin !== 'shared' ? (row.origin as AgentId) : null,
-      });
+    (row: InstalledSkillDto, agentId?: AgentId) => {
+      requestOpenPreview(previewTargetFromCatalogRow(row, agentId));
     },
     [requestOpenPreview],
   );
+
+  const selectPreviewCopy = useCallback((agentId: AgentId) => {
+    setPreviewTarget((current) => {
+      if (!current) return current;
+      const loc = (current.copies ?? []).find((copy) => copy.agentId === agentId);
+      if (!loc || current.privateAgent === agentId) return current;
+      return { ...current, privateAgent: agentId, sourceDir: loc.sourceDir };
+    });
+  }, []);
+
+  useEffect(() => {
+    const origin = previewTarget?.privateAgent;
+    if (!origin || visibleAgentIdSet.has(origin)) return;
+    const next = (previewTarget.copies ?? []).find((copy) => visibleAgentIdSet.has(copy.agentId));
+    if (next) {
+      setPreviewTarget((current) =>
+        current
+          ? { ...current, privateAgent: next.agentId, sourceDir: next.sourceDir }
+          : current,
+      );
+      return;
+    }
+    requestClosePreview();
+  }, [previewTarget, visibleAgentIdSet, requestClosePreview]);
+
+  useEffect(() => {
+    if (!previewTarget) return;
+    const ignoreAgentId =
+      dangerBusy && removeFromTool?.skillId === previewTarget.skillId
+        ? removeFromTool.agentId
+        : null;
+    const result = resyncPreviewTarget(previewTarget, localRows, {
+      catalogReady: catalog != null,
+      ignoreAgentId,
+    });
+    if (result === 'keep') return;
+    if (result === 'close') {
+      requestClosePreview();
+      return;
+    }
+    if (previewTargetsEqual(result, previewTarget)) return;
+    setPreviewTarget(result);
+  }, [
+    catalog,
+    dangerBusy,
+    localRows,
+    previewTarget,
+    removeFromTool,
+    requestClosePreview,
+  ]);
 
   /** ↑/↓ when preview open: move among currently filtered local rows (shared + private). */
   useEffect(() => {
@@ -779,11 +848,7 @@ export default function SkillsPage() {
       if (filtered.length === 0) return;
 
       e.preventDefault();
-      const keys = filtered.map((row) =>
-        row.origin !== 'shared'
-          ? privateSkillActiveKey(row.origin as AgentId, row.id)
-          : sharedSkillActiveKey(row.id),
-      );
+      const keys = filtered.map((row) => catalogRowKey(row));
       const cur = activeKey;
       let idx = cur ? keys.indexOf(cur) : -1;
       if (idx < 0) idx = e.key === 'ArrowDown' ? -1 : 0;
@@ -824,7 +889,7 @@ export default function SkillsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-canvas">
-      <div className={cn('shrink-0 border-b border-border pt-4 pb-1', pageRhythm.workbenchX)}>
+      <div className={pageRhythm.workbenchHeader}>
         <PageHeader
           size="compact"
           title={t('skills.page.title')}
@@ -849,106 +914,100 @@ export default function SkillsPage() {
             pageRhythm.workbenchY,
           )}
         >
-          <Tabs value={tab} onValueChange={(v) => setTab(parseSkillTab(v))} className="mb-2">
-        <TabsList>
-          <TabsTrigger value="library" className="gap-1.5">
-            {t('skills.tabs.library')}
-            {catalog != null ? (
-              <Tip className={segmentedCountClass} label={t('skills.tabs.libraryBadge', { n: localCount })}>
-                {localCount}
-              </Tip>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="market" className="gap-1.5">
-            <Store className="h-3.5 w-3.5" />
-            {t('skills.tabs.market')}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="library" className="mt-3 space-y-3">
-
-          <SkillsLibraryPanel
-            error={error}
-            loading={loading}
-            onRetry={load}
-            search={search}
-            onSearchChange={setSearch}
-            filter={filter}
-            onFilterChange={setFilter}
-            filterCounts={filterCounts}
-            selected={selected}
-            onClearSelected={() => setSelected(new Set())}
-            batchSyncing={batchSyncing}
-            onBatchEnable={() => void handleBatchEnable()}
-            filtered={filtered}
-            allSelected={allSelected}
-            pendingCells={pendingCells}
-            importingIds={importingIds}
-            onToggleSelect={handleToggleSelect}
-            onToggleSelectAll={handleToggleSelectAll}
-            onCellClick={handleCellClick}
-            onOpenDir={(path) => void handleOpenDir(path)}
-            onPreview={openCatalogPreview}
-            activeKey={activeKey}
-            onAdopt={(skillId, agentId, name) => {
-              void handleImportPrivate(skillId, agentId, name, false);
-            }}
-            onUninstall={(skillId, agentId, name, inLibrary) =>
-              handleUninstallPrivate(skillId, agentId, name, inLibrary)
-            }
-            agents={matrixAgents}
-            installedAgentIds={installedAgentIds}
-          />
-</TabsContent>
-
-        <TabsContent value="market" className="mt-3">
-
-          <SkillsMarketPanel
-            marketQuery={marketQuery}
-            onMarketQueryChange={setMarketQuery}
-            skillMarketSource={skillMarketSource}
-            activeMarketProvider={activeMarketProvider}
-            loading={market.loading}
-            error={market.error}
-            onRetry={market.reload}
-            items={market.data}
-            installingId={installingMarketId}
-            onInstall={(item) => {
-              void (async () => {
-                setInstallingMarketId(item.id);
-                try {
-                  const skill = await runInstallMarketSkill(item.id, false);
-                  const toastCopy = marketInstallOkToast(t, skill.name);
-                  toast({
-                    title: toastCopy.title,
-                    description: toastCopy.description,
-                    variant: 'success',
-                    actionLabel: toastCopy.actionLabel,
-                    onAction: goLibraryAndHighlight,
-                    duration: 8000,
-                  });
-                  void market.reload();
-                  await load();
-                } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e);
-                  if (msg.toLowerCase().includes('already exists')) {
-                    toast({
-                      ...marketExistsToast(t, msg),
-                      variant: 'danger',
-                    });
-                  } else {
-                    toast({
-                      ...installFailedToast(t, msg),
-                      variant: 'danger',
-                    });
-                  }
-                } finally {
-                  setInstallingMarketId(null);
-                }
-              })();
-            }}
-          />
-</TabsContent>
+          <Tabs value={tab} onValueChange={(v) => setTab(parseSkillTab(v))}>
+            <div className={pageRhythm.chrome}>
+              <TabsList>
+                <TabsTrigger value="library" className="gap-1.5">
+                  {t('skills.tabs.library')}
+                  {catalog != null ? (
+                    <Tip className={segmentedCountClass} label={t('skills.tabs.libraryBadge', { n: localCount })}>
+                      {localCount}
+                    </Tip>
+                  ) : null}
+                </TabsTrigger>
+                <TabsTrigger value="market" className="gap-1.5">
+                  <Store className="h-3.5 w-3.5" />
+                  {t('skills.tabs.market')}
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent value="library" className="space-y-3">
+              <SkillsLibraryPanel
+                error={error}
+                loading={loading}
+                onRetry={load}
+                search={search}
+                onSearchChange={setSearch}
+                filter={filter}
+                onFilterChange={setFilter}
+                filterCounts={filterCounts}
+                selected={selected}
+                onClearSelected={() => setSelected(new Set())}
+                batchSyncing={batchSyncing}
+                onBatchEnable={() => void handleBatchEnable()}
+                filtered={filtered}
+                allSelected={allSelected}
+                pendingCells={pendingCells}
+                importingIds={importingIds}
+                onToggleSelect={handleToggleSelect}
+                onToggleSelectAll={handleToggleSelectAll}
+                onCellClick={handleCellClick}
+                onPreview={openCatalogPreview}
+                activeKey={activeKey}
+                onAdopt={(skillId, agentId, name) => {
+                  void handleImportPrivate(skillId, agentId, name, false);
+                }}
+                agents={matrixAgents}
+                installedAgentIds={installedAgentIds}
+              />
+            </TabsContent>
+            <TabsContent value="market">
+              <SkillsMarketPanel
+                marketQuery={marketQuery}
+                onMarketQueryChange={setMarketQuery}
+                skillMarketSource={skillMarketSource}
+                activeMarketProvider={activeMarketProvider}
+                loading={market.loading}
+                error={market.error}
+                onRetry={market.reload}
+                items={market.data}
+                installingId={installingMarketId}
+                onInstall={(item) => {
+                  void (async () => {
+                    setInstallingMarketId(item.id);
+                    try {
+                      const skill = await runInstallMarketSkill(item.id, false);
+                      const toastCopy = marketInstallOkToast(t, skill.name);
+                      toast({
+                        title: toastCopy.title,
+                        description: toastCopy.description,
+                        variant: 'success',
+                        actionLabel: toastCopy.actionLabel,
+                        onAction: goLibraryAndHighlight,
+                        duration: 8000,
+                      });
+                      void market.reload();
+                      await load();
+                    } catch (e) {
+                      const msg = e instanceof Error ? e.message : String(e);
+                      if (msg.toLowerCase().includes('already exists')) {
+                        toast({
+                          ...marketExistsToast(t, msg),
+                          variant: 'danger',
+                        });
+                      } else {
+                        toast({
+                          ...installFailedToast(t, msg),
+                          variant: 'danger',
+                        });
+                      }
+                    } finally {
+                      setInstallingMarketId(null);
+                    }
+                  })();
+                }}
+              />
+            </TabsContent>
           </Tabs>
         </div>
 
@@ -973,7 +1032,7 @@ export default function SkillsPage() {
             />
             {/*
               外层：宽度动画（卡片宽 + 右侧 gutter）。
-              内层：py + pr 形成与画布/右边框的稳定间距；卡片本身 width 固定，右侧永远留白。
+              内层：pr + 底距；顶距由页头 18px 槽承担。卡片 width 固定，右侧永远留白。
             */}
             <div
               className={cn(
@@ -987,7 +1046,7 @@ export default function SkillsPage() {
                 className="box-border flex h-full min-h-0"
                 style={{
                   width: previewWidth + PREVIEW_FRAME_PAD_RIGHT,
-                  paddingTop: PREVIEW_FRAME_PAD_Y,
+                  paddingTop: 0,
                   paddingBottom: PREVIEW_FRAME_PAD_Y,
                   paddingRight: PREVIEW_FRAME_PAD_RIGHT,
                 }}
@@ -998,6 +1057,18 @@ export default function SkillsPage() {
                   width={previewWidth}
                   onClose={requestClosePreview}
                   onOpenDir={(path) => void handleOpenDir(path)}
+                  onSelectCopy={selectPreviewCopy}
+                  onRemoveCopy={
+                    previewTarget.privateAgent
+                      ? () =>
+                          handleUninstallPrivate(
+                            previewTarget.skillId,
+                            previewTarget.privateAgent!,
+                            previewTarget.name,
+                            false,
+                          )
+                      : undefined
+                  }
                   contentRef={previewBodyRef}
                   className="h-full min-w-0 shrink-0"
                 />

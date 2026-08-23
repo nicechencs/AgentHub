@@ -2,7 +2,8 @@
 //!
 //! CLI-imported grants (`auth.json` / `live`) are followed by re-reading the
 //! official file. Hub PKCE grants (`oauth_pkce` / `oauth_refresh`) may hit the
-//! token endpoint and write the account pool only.
+//! token endpoint. Same-identity file write-back after a Hub refresh is
+//! `oauth_file_sync` (row newer than file mtime only).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -126,7 +127,8 @@ impl AccountService {
         };
         let mut matched = None;
         for live in lives {
-            match self.reconcile_live_account(adapter.as_ref(), agent, live) {
+            match self.reconcile_live_account_with_activate(adapter.as_ref(), agent, live, false)
+            {
                 Ok(Some(row)) if row.id == account.id => matched = Some(row),
                 Ok(_) => {}
                 Err(error) => {

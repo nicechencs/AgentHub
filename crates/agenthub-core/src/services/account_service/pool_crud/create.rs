@@ -40,28 +40,29 @@ impl AccountService {
         };
 
         let now = now_ts();
-        let row = Account {
+        let mut row = Account {
             id: format!("{}-acc-{}", input.agent_id.as_str(), Uuid::new_v4()),
             agent_id: input.agent_id,
             kind: input.kind,
-            label: label.clone(),
-            credentials: input.credentials.clone(),
-            extra: extra.clone(),
+            label,
+            credentials: input.credentials,
+            extra,
             status: "active".into(),
             is_current: input.is_current,
             created_at: now.clone(),
             updated_at: now,
         };
-        let row = self.prepare_account_surface(row);
+        row = self.prepare_account_surface(row);
+        let _ = crate::services::account_identity_heal::heal_account_identity(&mut row);
         if let Some(ref ad) = adapter {
             return self
                 .commit_authorization_merge(
                     ad.as_ref(),
                     &row,
                     input.kind,
-                    label,
-                    input.credentials,
-                    extra,
+                    row.label.clone(),
+                    row.credentials.clone(),
+                    row.extra.clone(),
                     input.is_current,
                 )
                 .map(|committed| committed.stored)

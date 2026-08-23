@@ -47,38 +47,37 @@ pub const CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID: &str = "claude-subscription-to-c
 
 /// Closed reason: Grok login is not a supported upstream for Kimi.
 pub const GROK_SUBSCRIPTION_TO_KIMI_REASON: &str =
-    "当前只支持 Codex 官方登录作上游，接下不了这份 Grok 登录。";
+    "Kimi 只认自己的官方 Key，接下不了这份 Grok 登录。";
 
 /// Closed reason: Grok login is not a supported upstream for DSH.
 pub const GROK_SUBSCRIPTION_TO_DSH_REASON: &str =
-    "当前只支持 Codex 官方登录作上游，接下不了这份 Grok 登录。";
+    "DSH 只认 DeepSeek 官方 Key，接下不了这份 Grok 登录。";
 
 /// Claude subscription → Codex is ③-open; bind waits on fixtures.
 pub const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON: &str =
-    "Claude 订阅 → Codex：本机转发方向已开放，规则与 fixtures 未落地，暂不能绑定。";
+    "Claude 订阅接到 Codex 可以走本机转发，但规则还没做完，现在接不上。";
 
 /// Closed fallback reason for Codex subscription shapes without the
 /// `OauthAuthJson` Responses cell.
 pub const CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON: &str = concat!(
-    "Codex / ChatGPT 订阅 → Claude Code：当前不支持。",
-    "尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。",
-    "不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。",
-    "这只表示没有可执行规则，不代表连接失效。",
-    "替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
+    "Codex / ChatGPT 订阅现在还接不到 Claude Code。",
+    "不会改配置，也不会开本机转发。",
+    "这不表示现有连接坏了。",
+    "可改用 Claude 自己的官方登录，或改用已支持的 API Key。",
 );
 
 pub const SUBSCRIPTION_PI_APPLY_LIMITS: &[&str] = &[
-    "会把 OAuth access/refresh 写入 Pi auth.json 对应槽；预览、IPC、日志不传输明文 token。",
-    "写入后由 Pi 刷新该槽；Hub 不双刷同一 refresh token。原 Agent 与 Pi 同时刷新可能互相打翻。",
-    "实验性：应用后会把生成 Provider 设为 Pi 当前连接。",
+    "会把官方登录写进 Pi 认的位置；预览和日志不显示完整令牌。",
+    "写进去之后由 Pi 自己续期；AgentHub 不会再刷一次。原来的工具和 Pi 一起续期可能互相踢下线。",
+    "接上后会把自动生成的配置设成 Pi 当前在用的连接。",
 ];
 
 pub const CLAUDE_SUBSCRIPTION_TO_PI_REASON: &str =
-    "Claude 订阅可写入 Pi 的 anthropic 登录槽（原生订阅复用）。";
+    "把这份 Claude 订阅写进 Pi 认的 Claude 登录。";
 pub const CODEX_SUBSCRIPTION_TO_PI_REASON: &str =
-    "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。";
+    "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。";
 pub const GROK_SUBSCRIPTION_TO_PI_REASON: &str =
-    "Grok / xAI 订阅可写入 Pi 的 xai 登录槽（原生订阅复用）。";
+    "把这份 Grok 订阅写进 Pi 认的 Grok 登录。";
 
 /// Product / origin that owns the selected Connection credentials.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -255,7 +254,7 @@ impl AdapterCapabilityDecision {
             reason,
             limitations: &[
                 "当前不支持此组合；不会改动来源连接、本机服务或配置。",
-                "plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。",
+                "现在还写不上去；不会改配置，也不会开本机转发。",
             ],
             rule_id: None,
             rule_version: None,
@@ -362,15 +361,15 @@ const KIMI_CLAUDE_LIMITS: &[&str] = &[
 ];
 
 pub(super) const KIMI_CODEX_LIMITS: &[&str] = &[
-    "将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。",
+    "将在本机地址启动本机转发，并切换 Codex 到该本地端点。",
     "AgentHub 需保持在托盘运行；退出前会尝试排空监听。",
-    "桥接为实验性协议覆盖；长流与工具调用可能受实现限制。",
+    "本机转发仍是实验性覆盖；长流与工具调用可能受实现限制。",
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
 const CODEX_NATIVE_API_LIMITS: &[&str] = &[
-    "将把 Codex 配置为官方 Responses 端点；不会启动本机 loopback Bridge。",
-    "生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
+    "将把 Codex 配置为官方 Responses 端点；不会开本机转发。",
+    "自动生成的配置只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
     "当前未写入官方 ~/.codex/models.json；使用默认 model 与显式 Provider 配置。",
 ];
 
@@ -384,47 +383,47 @@ const CODEX_OFFICIAL_SELF_LIMITS: &[&str] = &[
 ];
 
 const KIMI_PI_LIMITS: &[&str] = &[
-    "将写入 Pi models.json 的 kimi-for-coding 槽与凭据引用标记；不会在预览中传输明文 Key。",
-    "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
+    "将写入 Pi models.json 的 kimi-for-coding 位置与凭据引用标记；不会在预览中传输明文 Key。",
+    "接上后会把自动生成的配置设成 Pi 当前在用的连接；请确认无其他进行中的配置写入。",
 ];
 
 const ANTHROPIC_PI_LIMITS: &[&str] = &[
-    "将写入 Pi models.json 的 anthropic 槽与凭据引用标记；不会在预览中传输明文 Key。",
-    "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
+    "将写入 Pi models.json 的 anthropic 位置与凭据引用标记；不会在预览中传输明文 Key。",
+    "接上后会把自动生成的配置设成 Pi 当前在用的连接；请确认无其他进行中的配置写入。",
 ];
 
 pub(super) const ANTHROPIC_CODEX_LIMITS: &[&str] = &[
-    "将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。",
+    "将在本机地址启动本机转发，并切换 Codex 到该本地端点。",
     "AgentHub 需保持在托盘运行；退出前会尝试排空监听。",
-    "桥接为实验性协议覆盖：下游 Responses，上游 Anthropic Messages。",
+    "本机转发仍是实验性覆盖：下游 Responses，上游 Anthropic Messages。",
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
 const OPENAI_PI_LIMITS: &[&str] = &[
-    "将写入 Pi models.json 的 openai 槽与凭据引用标记；不会在预览中传输明文 Key。",
-    "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
+    "将写入 Pi models.json 的 openai 位置与凭据引用标记；不会在预览中传输明文 Key。",
+    "接上后会把自动生成的配置设成 Pi 当前在用的连接；请确认无其他进行中的配置写入。",
 ];
 
 pub(super) const OPENAI_CODEX_LIMITS: &[&str] = &[
-    "将在本机 loopback 启动协议桥接，并切换 Codex 到该本地端点。",
+    "将在本机地址启动本机转发，并切换 Codex 到该本地端点。",
     "AgentHub 需保持在托盘运行；退出前会尝试排空监听。",
-    "桥接为实验性协议覆盖：下游 Responses，上游 OpenAI Chat Completions。",
+    "本机转发仍是实验性覆盖：下游 Responses，上游 OpenAI Chat Completions。",
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
 const XAI_PI_LIMITS: &[&str] = &[
-    "将写入 Pi models.json 的 xai 槽与凭据引用标记；不会在预览中传输明文 Key。",
-    "应用后会把该生成 Provider 设为 Pi 当前连接；请确认无其他进行中的配置写入。",
+    "将写入 Pi models.json 的 xai 位置与凭据引用标记；不会在预览中传输明文 Key。",
+    "接上后会把自动生成的配置设成 Pi 当前在用的连接；请确认无其他进行中的配置写入。",
 ];
 
 const GLM_PI_LIMITS: &[&str] = &[
-    "将写入 Pi models.json 的 glm-coding-plan 自定义槽（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。",
-    "生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
+    "将写入 Pi models.json 的 glm-coding-plan 自定义位置（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。",
+    "自动生成的配置只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
 ];
 
 const DEEPSEEK_PI_LIMITS: &[&str] = &[
-    "将写入 Pi models.json 的 deepseek 自定义槽（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。",
-    "生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
+    "将写入 Pi models.json 的 deepseek 自定义位置（baseUrl、api、models）与凭据引用标记；不会在预览中传输明文 Key。",
+    "自动生成的配置只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
 ];
 
 const GLM_CLAUDE_LIMITS: &[&str] = &[
@@ -441,19 +440,19 @@ const DEEPSEEK_CLAUDE_LIMITS: &[&str] = &[
 
 const DEEPSEEK_DSH_LIMITS: &[&str] = &[
     "将写入 DeepSeek Harness 的 home 级 provider 引用与凭据文件；不会把 API Key 写入 cordis.patch.yml。",
-    "应用后会把该生成 Provider 设为 DSH 当前连接；请确认无其他进行中的配置写入。",
+    "接上后会把自动生成的配置设成 DSH 当前在用的连接；请确认无其他进行中的配置写入。",
 ];
 
 pub(super) const CODEX_CLAUDE_LIMITS: &[&str] = &[
-    "会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 token 不进 Claude。",
-    "实验性协议桥接：Claude Messages → Codex Responses；AgentHub 需保持在托盘运行。",
+    "会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机地址；上游 token 不进 Claude。",
+    "实验性本机转发：Claude Messages → Codex Responses；AgentHub 需保持在托盘运行。",
     "Codex access token 过期后需重新同步 Codex 登录；Hub 本轮不自动 refresh。",
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
 
 pub(super) const GROK_CLAUDE_LIMITS: &[&str] = &[
-    "会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机 loopback；上游 xAI OAuth token 不进 Claude。",
-    "实验性协议桥接：Claude Messages → xAI Responses (cli-chat-proxy)；AgentHub 需保持在托盘运行。",
+    "会把 Claude 的 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN 指向本机地址；上游 xAI OAuth token 不进 Claude。",
+    "实验性本机转发：Claude Messages → xAI Responses (cli-chat-proxy)；AgentHub 需保持在托盘运行。",
     "Grok access token 过期后需重新同步 Grok 登录；Hub 本轮不自动 refresh。",
     "固定端口被占用时会尝试重新分配端口并写回配置。",
 ];
@@ -474,14 +473,14 @@ pub(super) const CODEX_CHAT_LIMITS: &[&str] = &[
 
 pub(super) const CLAUDE_CODEX_LIMITS: &[&str] = &[
     "会把 Codex 指到本机路由；上游 Claude 订阅 token 不会写入 Codex。",
-    "实验性协议桥接：下游 Responses，上游 Anthropic Messages OAuth。",
-    "规则与 fixtures 尚未完成取证，暂不能绑定；thinking 无签名时降级关闭。",
+    "实验性本机转发：下游 Responses，上游 Anthropic Messages OAuth。",
+    "规则还没做完，现在接不上；thinking 无签名时降级关闭。",
     "Claude access token 过期后需重新同步登录；Hub 本轮不自动 refresh。",
 ];
 
 const GROK_NATIVE_LIMITS: &[&str] = &[
-    "将写入 Grok config.toml 的 OpenAI Chat Completions 模型槽；不会启动本机 loopback Bridge。",
-    "生成 Provider 只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
+    "将写入 Grok config.toml 的 OpenAI Chat Completions 模型位置；不会开本机转发。",
+    "自动生成的配置只保存凭据引用；live 写入时才 materialize，回填前会 scrub 明文。",
     "仅接受官方 Kimi Code / OpenAI API 标记；Moonshot、自定义中转与仅 agent_id 不会自动升级。",
 ];
 
@@ -503,7 +502,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::NativeEndpoint,
         support: AdapterSupport::Stable,
         can_apply: true,
-        reason: "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。",
+        reason: "用这份 Kimi Code 会员接到 Claude，只改地址和模型。",
         limitations: KIMI_CLAUDE_LIMITS,
         rule_id: "kimi-membership-to-claude-v1",
         verified_at: VERIFIED_AT,
@@ -522,7 +521,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::NativeEndpoint,
         support: AdapterSupport::Experimental,
         can_apply: true,
-        reason: "GLM Coding Plan 官方 Responses 端点可实验直连 Codex。",
+        reason: "用这份 GLM 会员接到 Codex，只改地址和模型。",
         limitations: CODEX_NATIVE_API_LIMITS,
         rule_id: "glm-coding-plan-to-codex-v1",
         verified_at: "2026-08-15",
@@ -541,7 +540,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::NativeEndpoint,
         support: AdapterSupport::Experimental,
         can_apply: true,
-        reason: "DeepSeek API 官方 Responses 端点可实验直连 Codex。",
+        reason: "用这份 DeepSeek Key 接到 Codex，只改地址和模型。",
         limitations: CODEX_NATIVE_API_LIMITS,
         rule_id: "deepseek-api-to-codex-v1",
         verified_at: "2026-08-15",
@@ -561,7 +560,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Stable,
         can_apply: true,
-        reason: "Kimi Code 会员可预览为 Pi 的配置同步。",
+        reason: "把这份 Kimi Code 会员写进 Pi 认的登录位置。",
         limitations: KIMI_PI_LIMITS,
         rule_id: "kimi-membership-to-pi-v1",
         verified_at: VERIFIED_AT,
@@ -580,7 +579,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Stable,
         can_apply: true,
-        reason: "显式 Anthropic API Key 可预览为 Pi 的配置同步。",
+        reason: "把这份 Anthropic API Key 写进 Pi 认的登录位置。",
         limitations: ANTHROPIC_PI_LIMITS,
         rule_id: "anthropic-api-to-pi-v1",
         verified_at: VERIFIED_AT,
@@ -600,7 +599,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Stable,
         can_apply: true,
-        reason: "显式 OpenAI API Key 可预览为 Pi 的配置同步。",
+        reason: "把这份 OpenAI API Key 写进 Pi 认的登录位置。",
         limitations: OPENAI_PI_LIMITS,
         rule_id: "openai-api-to-pi-v1",
         verified_at: VERIFIED_AT,
@@ -620,7 +619,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Stable,
         can_apply: true,
-        reason: "显式 xAI API Key 可预览为 Pi 的配置同步。",
+        reason: "把这份 xAI API Key 写进 Pi 认的登录位置。",
         limitations: XAI_PI_LIMITS,
         rule_id: "xai-api-to-pi-v1",
         verified_at: VERIFIED_AT,
@@ -639,7 +638,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Experimental,
         can_apply: true,
-        reason: "GLM Coding Plan 可实验预览为 Pi 的配置同步。",
+        reason: "把这份 GLM Coding Plan 写进 Pi 认的登录位置。",
         limitations: GLM_PI_LIMITS,
         rule_id: "glm-coding-plan-to-pi-v1",
         verified_at: "2026-08-15",
@@ -658,7 +657,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Experimental,
         can_apply: true,
-        reason: "DeepSeek API 可实验预览为 Pi 的配置同步。",
+        reason: "把这份 DeepSeek API 写进 Pi 认的登录位置。",
         limitations: DEEPSEEK_PI_LIMITS,
         rule_id: "deepseek-api-to-pi-v1",
         verified_at: "2026-08-15",
@@ -677,7 +676,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::NativeEndpoint,
         support: AdapterSupport::Experimental,
         can_apply: true,
-        reason: "GLM Coding Plan 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        reason: "用这份 GLM Coding Plan 接到 Claude，只改地址和模型。",
         limitations: GLM_CLAUDE_LIMITS,
         rule_id: "glm-coding-plan-to-claude-v1",
         verified_at: VERIFIED_AT,
@@ -696,7 +695,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::NativeEndpoint,
         support: AdapterSupport::Experimental,
         can_apply: true,
-        reason: "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        reason: "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
         limitations: DEEPSEEK_CLAUDE_LIMITS,
         rule_id: "deepseek-api-to-claude-v1",
         verified_at: VERIFIED_AT,
@@ -715,7 +714,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::ConfigSync,
         support: AdapterSupport::Stable,
         can_apply: true,
-        reason: "DeepSeek API Key 可预览为 DeepSeek Harness 的配置同步。",
+        reason: "把这份 DeepSeek Key 写进 DeepSeek Harness 认的登录位置。",
         limitations: DEEPSEEK_DSH_LIMITS,
         rule_id: "deepseek-api-to-dsh-v1",
         verified_at: VERIFIED_AT,
@@ -810,7 +809,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::NativeEndpoint,
         support: AdapterSupport::Experimental,
         can_apply: true,
-        reason: "Kimi Code 会员可实验写入 Grok 的 OpenAI Chat Completions 配置。",
+        reason: "用这份 Kimi Code 会员接到 Grok，只改地址和模型。",
         limitations: GROK_NATIVE_LIMITS,
         rule_id: "kimi-membership-to-grok-v1",
         verified_at: "2026-08-15",
@@ -829,7 +828,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
         route: AdapterRoute::NativeEndpoint,
         support: AdapterSupport::Experimental,
         can_apply: true,
-        reason: "OpenAI API 可实验写入 Grok 的官方 OpenAI Chat Completions 配置。",
+        reason: "用这份 OpenAI Key 接到 Grok，只改地址和模型。",
         limitations: GROK_NATIVE_LIMITS,
         rule_id: "openai-api-to-grok-v1",
         verified_at: "2026-08-15",

@@ -715,7 +715,7 @@ export function ProviderEditDialog({
           {/* 固定占位，避免 tomlOpaque 出现时把表单顶高 */}
           <p
             className={cn(
-              'min-h-[2.25rem] rounded-btn border px-2.5 py-2 text-meta',
+              'min-h-[2.25rem] rounded-card border px-2.5 py-2 text-meta',
               tomlOpaque
                 ? 'border-border bg-canvas text-muted'
                 : 'border-transparent text-transparent',
@@ -730,7 +730,7 @@ export function ProviderEditDialog({
           {configError ? (
             <p
               role="alert"
-              className="rounded-btn border border-danger/40 bg-danger/5 px-2.5 py-2 text-meta text-danger"
+              className="rounded-card border border-danger/40 bg-danger/5 px-2.5 py-2 text-meta text-danger"
             >
               {t('connections.providerDialog.configErrorKeep', { error: configError })}
             </p>

@@ -103,7 +103,7 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 | Codex 订阅 → Claude | **本机转发** | Claude 只听自己那套接口；这是本机转发，不是写 Claude 官方登录 |
 | Codex 订阅 → Grok | **本机转发** | Grok 用 `api_backend=responses` 连本机，不是写 Grok 官方登录 |
 
-如果刷新令牌只能用一次，原来的工具和目标工具各自刷新会互相打翻。定死的规矩是**谁登录的，谁续期**：从别的工具同步来的登录，续期归那个工具，AgentHub 只跟着它的文件同步，绝不自己去刷（Grok 是范例——官方 Grok CLI 自己续期 `auth.json`，AgentHub 过期时重读文件，不去碰刷新令牌）；AgentHub 自己发起的登录才由 AgentHub 续期。逐条选「目标自己再登录」或「由 AgentHub 统一刷新，目标只拿引用」。
+如果刷新令牌只能用一次，原来的工具和目标工具各自刷新会互相打翻。定死的规矩是**谁登录的，谁续期**：从别的工具同步来的登录，续期归那个工具，AgentHub 不拿它的刷新令牌去打 token 端点（Grok 是范例——官方 Grok CLI 自己续期 `auth.json`，AgentHub 过期时重读文件）；AgentHub 自己发起的登录才由 AgentHub 续期。连接页打开列表时，同一身份以文件更新覆盖这一行，**不把行写回官方登录文件**。时间撞车且刷新令牌不同则停手。AgentHub 自己续期后，仅当这一行新于文件、且是同一身份时才写回文件。点「同步当前登录」始终以文件为准覆盖这一行。逐条选「目标自己再登录」或「由 AgentHub 统一刷新，目标只拿引用」。
 
 存这份登录时你可以二选一（计划中，见 [provider-api-oauth-adaptation.md §5.1.2](provider-api-oauth-adaptation.md)）：
 
@@ -169,7 +169,7 @@ Kimi 会员 OAuth 接到任何工具：**产品不做**（不写进对方、也�
 
 ## 3. 同一份登录，接到谁，做法可以不同
 
-三种做法不是登录上的固定标签。登录列表只标明这份登录**对上游能说什么**；走哪一种只出现在「接到…」的预览里。
+三种做法不是登录上的固定标签。登录列表只标明这份登录**对上游能说什么**；走哪一种只出现在「分享 / 路由」打开的预览里（分享只出直连 / 写进对方登录，路由只出本机转发）。
 
 | 这份登录 | → Claude | → Pi | → Codex | → Grok |
 |---|---|---|---|---|
@@ -263,7 +263,7 @@ Kimi 会员 OAuth → 任意工具是**产品不做**（不转发、不写进对
 | [connection-binding-model.md](connection-binding-model.md) | 登录 / 绑定 / 规划器的领域名字（票、槽、边） |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | 各家接口与现在能不能写上去；订阅 ≠ 要转发 |
 | [adapter-design.md](adapter-design.md) | 页面与转发运行时；本页只服务本机转发 |
-| [ui-design.md](ui-design.md) | 「接到…」预览按三种做法说明；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；写进对方认的登录时不显示本机服务 |
+| [ui-design.md](ui-design.md) | 「分享 / 路由」预览按三种做法说明；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」；写进对方认的登录时不显示本机服务 |
 | [adding-an-agent.md](adding-an-agent.md) | 新工具必须登记听哪种接口 **和** 认哪套订阅登录 |
 | [architecture.md](architecture.md) | 模块拆分；原则 12 按三种做法解释 `plan()` |
 | [agenthub-plan.md](agenthub-plan.md) | 总方案；§8 是实现清单 |

@@ -35,7 +35,7 @@
 1. **API Key 与 OAuth 分开判断**：支持某厂商 API Key，不等于支持其订阅 OAuth。
 2. **协议必须写全名**：`OpenAI-compatible` 必须进一步区分 Chat Completions 与 Responses。
 3. **同厂商不同产品不得混用**：Base URL、Key、额度和授权范围都可能不同。
-4. **只认显式来源标记**：进口写下 `surface`；不能根据名称、标签或 URL 猜测。未识别标 `unknown`，规划结果是不可行，而不是把「接到…」藏掉。
+4. **只认显式来源标记**：进口写下 `surface`；不能根据名称、标签或 URL 猜测。未识别标 `unknown`，规划结果是不可行，而不是把「分享 / 路由」藏掉。
 5. **默认拒绝写入**：没有代码规则和测试的组合一律不能 `bind`。用户仍看得到原因。
 6. **不复制凭据**：绑定只引用这份登录；真实凭据只在写入 live 或请求上游时短暂解析。自动生成的配置不是新登录，不出现在登录列表。
 7. **国产 OAuth 产品不做**：不为中国产 AI 的 OAuth 开 Adapter 边（直接改配置 / 写进对方认的登录 / 本机转发都不开），也不把这类 OAuth 转成 API Key 或 to-api。**Kimi 会员 OAuth（Kimi CLI `/login`）不得反代给其他 Agent**；Kimi 接到其他 Agent 只用会员 **API Key**（① 直连 / ③ 本机转发均可）。现有国产边只认官方 API Key。见 [product-decisions.md](product-decisions.md) 与根 [AGENTS.md](../AGENTS.md)。
@@ -236,7 +236,7 @@ Responses 已选为本轮上游 transport，并用 fixtures / host health 验证
 
 ### 5.1.2 Grok OAuth 复用：自动 refresh 方案（不与官方 Grok CLI 互踢）
 
-> 状态：**owner 分治 A–C 已在当前工作区实现（2026-08-21）**。`credentials.format=live_ref`（跟随文件、不拷贝 token）**未接线**，账户层仍是拷贝快照 + list reconcile / 401 文件跟随。bridge 遇上游 401：CLI-owned 重读官方 `auth.json`，Hub-owned 走账户池 refresh；token 变了则只换内存上游 bearer 并在首个有效流事件前重试一次；没变则 502 `upstream_error`，CLI-owned 账户健康标 `NeedsLogin`。
+> 状态：**owner 分治 A–C 已在当前工作区实现（2026-08-21）**；**同一身份行与官方登录文件按 rt + mtime 双向覆盖已接线（2026-08-23）**。`credentials.format=live_ref`（跟随文件、不拷贝 token）**未接线**，账户层仍是拷贝快照 + list reconcile / 401 文件跟随。bridge 遇上游 401：CLI-owned 重读官方 `auth.json`，Hub-owned 走账户池 refresh；token 变了则只换内存上游 bearer 并在首个有效流事件前重试一次；没变则 502 `upstream_error`，CLI-owned 账户健康标 `NeedsLogin`。
 
 事实（以代码为准）：
 
@@ -249,9 +249,11 @@ Responses 已选为本轮上游 transport，并用 fixtures / host health 验证
 | 凭据 owner | 判定 | refresh 行为 |
 |---|---|---|
 | 官方 Grok CLI（`extra.source=auth.json` 导入/同步） | 主路径 | **文件跟随同步**：请求前 access JWT `exp` 临期、或上游 401 时，按账户 single-flight（复用 `live_reconcile_lock`）走一次 live reconcile 重读 `auth.json`；token 变了就替换上游 auth 并重试一次（仅限首个有效流事件前，遵守 §5.3 重试边界）；没变则维持 502，账户健康标 `NeedsLogin`，UI 引导「同步当前登录」。**不调 `accounts.x.ai/oauth/token`** |
-| Hub 自己（Hub PKCE 登录产生的 grant，非 live 导入） | `extra.source` 非 `auth.json` | 可做标准按账户 single-flight refresh：轮换只影响 Hub 自己的 token 对，不触碰 CLI 的 `auth.json`，不互踢；刷新结果只写账户池，**不写 CLI live 文件** |
+| Hub 自己（Hub PKCE 登录产生的 grant，非 live 导入） | `extra.source` 为 `oauth_pkce` / `oauth_refresh` | 可做标准按账户 single-flight refresh：轮换只影响 Hub 自己的 token 对。刷新结果写账户池；**仅本进程这次 refresh 成功后**，且这一行与官方登录文件同一身份、`updated_at` 新于文件 mtime 时写回文件。list 不写文件 |
 
-不变式：refresh token 不进 bridge、下游、IPC 或日志；listener 替换上游 auth 时 local bearer 不变（既有测试锚点 `ensure_listener_replaces_upstream_auth_while_keeping_local_bearer`）；文件跟随同步失败不得把其余账户或 token 暴露给调用方；Codex 订阅边继续沿用同一 owner 原则（`auth_json` 导入的 grant 归 Codex CLI 续期，Hub 跟随文件）。
+**同一身份行 ↔ 官方登录文件（Grok / Codex `auth.json`，Claude `.credentials.json`）**：内存比较 refresh token 是否相同（双方都有 `rt` 且相等才算同一谱系；缺 `rt` 不算相同）。再用本行 `updated_at` 与文件 mtime（不是令牌 `expires_at`）决定 list 时谁覆盖**行**：文件更新则覆盖这一行；时间相同且 `rt` 不同则停手（`extra.oauthFileSync=needs_attention`，不改 `updated_at`）。**list / 打开连接页不写 CLI 登录文件**（heal / quota 的 `now_ts()` 不得赢走文件）。写回文件只发生在 **Hub 自己拥有的 grant、且本进程 refresh 成功之后**，并且这一行新于文件、身份对得上；Grok 嵌套 `auth.json` 只补同一 `user_id`/email 的 profile，不改其它槽。身份对不上则永不互写。显式「同步当前登录」（`import_live`）仍**总是以文件为准**覆盖这一行，不走 mtime 双向。API Key 没有 `rt`，通常 no-op。国产 OAuth 仍不开边。
+
+不变式：refresh token 不进 bridge、下游、IPC 或日志；listener 替换上游 auth 时 local bearer 不变（既有测试锚点 `ensure_listener_replaces_upstream_auth_while_keeping_local_bearer`）；文件跟随同步失败不得把其余账户或 token 暴露给调用方；Codex 订阅边继续沿用同一 owner 原则（`auth_json` 导入的 grant 归 Codex CLI 续期，Hub 跟随文件，同一身份则同样按 rt + mtime 对齐）。
 
 **凭据来源两种模式（用户可选，2026-08-21 拍板；跟随模式未接线）**：owner=CLI 的 grant 在账户层规划了两种存放方式，创建账户时由用户选择。现行实现只有**复制一份保存**；`live_ref` 跟随模式尚未落地。这是**凭据来源模式**，不是第四种 route，UI 不得叫「路由」（避免与本机路由混淆）；绑定走哪条边仍由 §4 矩阵与 `plan()` 决定，两种模式下可绑的边完全相同。
 

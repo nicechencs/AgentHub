@@ -14,7 +14,8 @@ use crate::models::{
 };
 use crate::platform::skills::{
     classify_projection, collect_file_index, hash_skill_root_shallow, is_exact_child,
-    read_skill_md_file, read_skill_metadata, validate_skill_id, validate_skills_root,
+    read_skill_md_file, read_skill_metadata, resolve_readable_skill_dir, validate_skill_id,
+    validate_skills_root,
 };
 
 use super::{SkillListCache, SkillService};
@@ -69,7 +70,9 @@ impl SkillService {
     ///
     /// - `private_agent == None` → shared source root (`~/.agents/skills/<id>`).
     /// - `private_agent == Some(agent)` → that agent's private skills dir.
-    /// - Rejects path traversal / unsafe ids; never follows skill-root symlinks.
+    /// - Rejects path traversal / unsafe ids. The skills root itself must not be
+    ///   a link; the **leaf** skill dir may be a junction/symlink (same as catalog
+    ///   scan / Windows projections).
     /// - Body is capped at [`SKILL_MARKDOWN_PREVIEW_CHARS`].
     pub fn read_skill_markdown(
         &self,
@@ -108,29 +111,16 @@ impl SkillService {
             }
         };
 
-        // Skill directory itself must be a real directory (not a symlink root).
-        if !skill_dir.is_dir() {
-            return Err(AppError::NotFound(format!(
-                "skill directory not found: {}",
-                skill_dir.display()
-            )));
-        }
-        let dir_meta = fs::symlink_metadata(&skill_dir)?;
-        if dir_meta.file_type().is_symlink() {
-            return Err(AppError::InvalidArg(format!(
-                "refusing to read skill via symlink directory: {}",
-                skill_dir.display()
-            )));
-        }
+        let read_dir = resolve_readable_skill_dir(&skill_dir)?;
 
-        let skill_md = skill_dir.join("SKILL.md");
+        let skill_md = read_dir.join("SKILL.md");
         if skill_md.is_file() {
-            return read_skill_md_file(skill_id, &skill_dir, &skill_md);
+            return read_skill_md_file(skill_id, &read_dir, &skill_md);
         }
         // Case-insensitive fallback common on Windows installs that wrote skill.md.
-        let alt = skill_dir.join("skill.md");
+        let alt = read_dir.join("skill.md");
         if alt.is_file() {
-            return read_skill_md_file(skill_id, &skill_dir, &alt);
+            return read_skill_md_file(skill_id, &read_dir, &alt);
         }
         Err(AppError::NotFound(format!(
             "SKILL.md not found in {}",

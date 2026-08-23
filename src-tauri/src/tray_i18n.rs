@@ -28,16 +28,16 @@ pub(crate) fn tray_menu_copy(lang: TrayUiLanguage) -> TrayMenuCopy {
     match lang {
         TrayUiLanguage::Zh => TrayMenuCopy {
             show: "打开 AgentHub",
-            open_routes: "打开路由",
-            start_routes: "启动路由",
-            stop_routes: "停止路由",
+            open_routes: "打开本机转发",
+            start_routes: "启动本机转发",
+            stop_routes: "停止本机转发",
             quit: "退出",
         },
         TrayUiLanguage::En => TrayMenuCopy {
             show: "Open AgentHub",
-            open_routes: "Open routes",
-            start_routes: "Start routes",
-            stop_routes: "Stop routes",
+            open_routes: "Open local forward",
+            start_routes: "Start local forward",
+            stop_routes: "Stop local forward",
             quit: "Quit",
         },
     }

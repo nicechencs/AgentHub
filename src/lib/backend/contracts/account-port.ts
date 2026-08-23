@@ -63,7 +63,12 @@ export interface AuthState {
   source?: string | null;
   /** Other live credential families besides `kind` (e.g. `["oauth"]` when kind is api_key). */
   alsoPresent?: string[] | null;
+  /** True when live files are AgentHub's local-route write, not a user login. */
+  isAdapterProjection?: boolean | null;
 }
+
+/** `alsoPresent` marker for the same fact when `isAdapterProjection` is omitted. */
+export const ADAPTER_PROJECTION_KIND = 'adapter_projection';
 
 /** Normalized probe consumed by browser pages; keeps agentId for old callers. */
 export interface LiveAuthProbe {
@@ -77,11 +82,22 @@ export interface LiveAuthProbe {
   source?: string | null;
   /** Other live credential families besides `kind` (e.g. `["oauth"]` when kind is api_key). */
   alsoPresent?: string[] | null;
+  isAdapterProjection?: boolean;
 }
 
 function normalizeAlsoPresent(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((item): item is string => typeof item === 'string');
+}
+
+export function probeIsAdapterProjection(
+  probe: Pick<AuthState, 'isAdapterProjection' | 'alsoPresent'> | null | undefined,
+): boolean {
+  if (!probe) return false;
+  if (probe.isAdapterProjection === true) return true;
+  return normalizeAlsoPresent(probe.alsoPresent).some(
+    (kind) => kind.trim().toLowerCase() === ADAPTER_PROJECTION_KIND,
+  );
 }
 
 /** Accept both current core AuthState (`agent`) and legacy JS probe (`agentId`). */
@@ -90,6 +106,7 @@ export function normalizeAuthState(
   fallbackAgentId: AgentId,
 ): LiveAuthProbe {
   const agentId = raw.agentId ?? raw.agent ?? fallbackAgentId;
+  const alsoPresent = normalizeAlsoPresent(raw.alsoPresent);
   return {
     agentId,
     kind: raw.kind ?? null,
@@ -98,7 +115,11 @@ export function normalizeAuthState(
     revision: raw.revision ?? null,
     health: normalizeAuthHealth(raw.health),
     source: raw.source ?? null,
-    alsoPresent: normalizeAlsoPresent(raw.alsoPresent),
+    alsoPresent,
+    isAdapterProjection: probeIsAdapterProjection({
+      isAdapterProjection: raw.isAdapterProjection,
+      alsoPresent,
+    }),
   };
 }
 
