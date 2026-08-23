@@ -34,7 +34,15 @@ describe('MarkdownView token chrome', () => {
     const table = { tagName: 'table', children: [] };
     const parent = { tagName: 'div', children: [table] };
     wrapMarkdownTable(table, 0, parent);
-    const shell = parent.children[0] as { tagName?: string; properties?: { className?: string[] }; children?: unknown[] };
+    // Structural mirror of MarkdownView's non-exported HastNode so the
+    // shell can be passed back into wrapMarkdownTable below.
+    type TestHastNode = {
+      type?: string;
+      tagName?: string;
+      children?: TestHastNode[];
+      properties?: Record<string, unknown>;
+    };
+    const shell = parent.children[0] as TestHastNode;
     expect(shell.tagName).toBe('div');
     expect(shell.properties?.className).toEqual(['md-table-shell']);
     expect(shell.children).toEqual([table]);
