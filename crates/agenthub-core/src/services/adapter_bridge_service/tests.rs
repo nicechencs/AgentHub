@@ -214,6 +214,57 @@ fn grok_subscription_prepare_codex_uses_xai_chat_and_codex_toml() {
     assert!(!serialized.contains("grok-refresh-secret"));
 }
 
+#[test]
+fn oauth_local_bridge_projection_reuses_source_account_and_stays_non_current() {
+    let cases: [(&str, Account, AdapterBridgePrepareRequest); 3] = [
+        (
+            "grok-claude",
+            grok_subscription_account("grok-subscription", "grok-upstream-secret"),
+            grok_claude_account_request("grok-subscription"),
+        ),
+        (
+            "grok-codex",
+            grok_subscription_account("grok-subscription", "grok-upstream-secret"),
+            grok_codex_account_request("grok-subscription"),
+        ),
+        (
+            "codex-claude",
+            codex_subscription_account("codex-subscription", "codex-upstream-access-secret"),
+            codex_claude_request("codex-subscription"),
+        ),
+    ];
+    for (label, account, request) in cases {
+        let source_id = account.id.clone();
+        let source_agent = account.agent_id;
+        let (_dir, db) = test_db();
+        AccountRepo::new(db.clone()).create(&account).unwrap();
+        let before = AccountRepo::new(db.clone()).list(None).unwrap();
+        assert_eq!(before.len(), 1, "{label}");
+        let service = AdapterBridgeService::new(db.clone());
+        let prepared = service.prepare(&request).unwrap();
+        assert_eq!(prepared.profile().source_id, source_id, "{label}");
+        assert_eq!(
+            prepared.profile().source_kind,
+            AdapterSourceKind::Account,
+            "{label}"
+        );
+        let generated = create_projection(&db, &prepared, 43121);
+        assert!(!generated.is_current, "{label}");
+        service.finalize(&prepared, 43121).unwrap();
+        let after = AccountRepo::new(db.clone()).list(None).unwrap();
+        assert_eq!(after.len(), 1, "{label}");
+        assert_eq!(after[0].id, source_id, "{label}");
+        assert_eq!(after[0].agent_id, source_agent, "{label}");
+        assert_eq!(after[0].kind, AccountKind::Oauth, "{label}");
+        let stored = ProviderRepo::new(db)
+            .get_by_id(&generated.id)
+            .unwrap()
+            .unwrap();
+        assert!(!stored.is_current, "{label}");
+        assert_eq!(stored.agent_id, request.target_agent_id, "{label}");
+    }
+}
+
 fn create_projection(db: &Database, prepared: &AdapterBridgePrepared, port: u16) -> Provider {
     let input = match prepared.provider_projection(port).unwrap() {
         AdapterBridgeProviderProjection::Create(input) => input,

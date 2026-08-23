@@ -41,7 +41,7 @@ import {
   currentTargetAgentId,
   eligibilityOf,
   excludeOwnAgentTargets,
-  isOfficialCodexOauthAccount,
+  keepOwnAgentTarget,
   fanoutRequestsForAgent,
   fanoutRequestsForSource,
   findOption,
@@ -191,16 +191,12 @@ export function ConnectFlowDialog({
     const ids = AGENT_IDS.length > 0 ? [...AGENT_IDS] : uniquePoolAgentIds(pool.accounts, pool.providers);
     return ids.filter((id) => !hiddenSet.has(id));
   }, [pool.accounts, pool.providers, hiddenSet]);
-  const keepOwnCodexTarget = Boolean(
-    entry?.mode === 'for-source'
-    && entry.source.kind === 'account'
-    && isOfficialCodexOauthAccount(pool.accounts.find((item) => item.id === entry.source.id)),
-  );
+  const keepOwnAgent = keepOwnAgentTarget(entry, pool.accounts);
   const allTargetAgentIds = React.useMemo(
     () => (entry?.mode === 'for-source'
-      ? excludeOwnAgentTargets(catalogIds, sourceAgentId, keepOwnCodexTarget)
+      ? excludeOwnAgentTargets(catalogIds, sourceAgentId, keepOwnAgent)
       : []),
-    [entry, catalogIds, sourceAgentId, keepOwnCodexTarget],
+    [entry, catalogIds, sourceAgentId, keepOwnAgent],
   );
   const targetAgentIds = React.useMemo(
     () => (entry?.mode === 'for-source'
@@ -445,7 +441,7 @@ export function ConnectFlowDialog({
                     type: 'select_target',
                     agentId,
                     sourceAgentId,
-                    allowOwnAgent: keepOwnCodexTarget,
+                    allowOwnAgent: keepOwnAgent,
                   })}
                   onRetryEligibility={(request) => fanout?.retry(request)}
                   onRetryResources={retryResources}

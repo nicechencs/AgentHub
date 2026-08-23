@@ -10,14 +10,14 @@ use agenthub_core::bridge::{
 };
 use agenthub_core::error::{AppError, Result as CoreResult};
 use agenthub_core::models::{
-    AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
-    InstallChannel, Provider, RunOptions, RunSpec,
+    Account, AccountKind, AgentConfig, AuthState, Capability, CapabilityState, DetectResult,
+    DetectStatus, InstallChannel, LiveAccount, Provider, RunOptions, RunSpec,
 };
 use agenthub_core::services::{
-    AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
-    AdapterBridgeRuntimeMaterial, ProviderService,
+    AccountService, AdapterBridgePrepareRequest, AdapterBridgePrepared,
+    AdapterBridgeProviderProjection, AdapterBridgeRuntimeMaterial, ProviderService,
 };
-use agenthub_core::storage::{AdapterProfileRepo, ProviderRepo};
+use agenthub_core::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
 use agenthub_core::AgentHub;
 use serde_json::json;
 
@@ -168,7 +168,9 @@ fn ensure_listener_replaces_conflicting_running_spec() {
             "local-bearer-original-value-xxxxxxx",
             "upstream-bearer-original-value-xxxxx",
         );
-        let first_status = ensure_bridge_listener(&host, &first, None, Vec::new(), false).await.unwrap();
+        let first_status = ensure_bridge_listener(&host, &first, None, Vec::new(), false)
+            .await
+            .unwrap();
         assert!(first_status.status.running);
         assert!(first_status.owned_by_saga);
 
@@ -184,11 +186,15 @@ fn ensure_listener_replaces_conflicting_running_spec() {
             BridgeHostError::ConflictingStart
         ));
 
-        let replaced = ensure_bridge_listener(&host, &rotated, None, Vec::new(), false).await.unwrap();
+        let replaced = ensure_bridge_listener(&host, &rotated, None, Vec::new(), false)
+            .await
+            .unwrap();
         assert!(replaced.status.running);
         assert!(replaced.owned_by_saga);
         // Reuse of the same rotated material is not owned by a later saga.
-        let reused = ensure_bridge_listener(&host, &rotated, None, Vec::new(), false).await.unwrap();
+        let reused = ensure_bridge_listener(&host, &rotated, None, Vec::new(), false)
+            .await
+            .unwrap();
         assert!(reused.status.running);
         assert!(!reused.owned_by_saga);
 
@@ -237,7 +243,9 @@ fn ensure_listener_replaces_upstream_auth_while_keeping_local_bearer() {
             LOCAL,
             "upstream-bearer-original-value-xxxxx",
         );
-        let started = ensure_bridge_listener(&host, &first, None, Vec::new(), false).await.unwrap();
+        let started = ensure_bridge_listener(&host, &first, None, Vec::new(), false)
+            .await
+            .unwrap();
         assert!(started.status.running);
         let first_port = started.status.port;
 
@@ -254,7 +262,9 @@ fn ensure_listener_replaces_upstream_auth_while_keeping_local_bearer() {
             BridgeHostError::ConflictingStart
         ));
 
-        let replaced = ensure_bridge_listener(&host, &rotated, None, Vec::new(), false).await.unwrap();
+        let replaced = ensure_bridge_listener(&host, &rotated, None, Vec::new(), false)
+            .await
+            .unwrap();
         assert!(replaced.status.running);
         assert!(replaced.owned_by_saga);
         assert!(
@@ -265,7 +275,9 @@ fn ensure_listener_replaces_upstream_auth_while_keeping_local_bearer() {
         );
 
         // Identical rotated material is reused; local bearer remains the stable loopback token.
-        let reused = ensure_bridge_listener(&host, &rotated, None, Vec::new(), false).await.unwrap();
+        let reused = ensure_bridge_listener(&host, &rotated, None, Vec::new(), false)
+            .await
+            .unwrap();
         assert!(reused.status.running);
         assert!(!reused.owned_by_saga);
         assert_eq!(rotated.start_spec(None).local_token, LOCAL);
@@ -357,13 +369,11 @@ fn stop_is_idempotent_for_an_already_stopped_bridge() {
 }
 
 #[test]
-fn apply_always_switches_current_but_manual_start_preserves_user_choice() {
-    // Initial apply must promote the generated bridge Connection.
-    assert!(should_make_bridge_current(true, false));
-    assert!(should_make_bridge_current(true, true));
-    // Manual start only refreshes live config when the bridge is already current.
-    assert!(should_make_bridge_current(false, true));
-    assert!(!should_make_bridge_current(false, false));
+fn apply_does_not_occupy_target_current_unless_generated_already_current() {
+    // Phase 1: opening a route does not switch the target Agent to loopback.
+    assert!(!should_make_bridge_current(false));
+    // Legacy rows that already occupy current still refresh live config.
+    assert!(should_make_bridge_current(true));
 }
 
 #[test]
@@ -854,4 +864,343 @@ fn realign_restored_bridge_port_rolls_back_when_switch_fails() {
         "127.0.0.1:43155"
     ));
     assert_eq!(adapter.config(), old_live);
+}
+
+struct IsolatedLiveAdapter {
+    agent: AgentId,
+    config: Mutex<AgentConfig>,
+    config_path: PathBuf,
+    auth_path: PathBuf,
+    config_writes: AtomicUsize,
+    auth_writes: AtomicUsize,
+}
+
+impl IsolatedLiveAdapter {
+    fn new(agent: AgentId, config: AgentConfig, config_path: PathBuf, auth_path: PathBuf) -> Self {
+        Self {
+            agent,
+            config: Mutex::new(config),
+            config_path,
+            auth_path,
+            config_writes: AtomicUsize::new(0),
+            auth_writes: AtomicUsize::new(0),
+        }
+    }
+
+    fn config_writes(&self) -> usize {
+        self.config_writes.load(Ordering::SeqCst)
+    }
+
+    fn auth_writes(&self) -> usize {
+        self.auth_writes.load(Ordering::SeqCst)
+    }
+}
+
+impl AgentAdapter for IsolatedLiveAdapter {
+    fn id(&self) -> AgentId {
+        self.agent
+    }
+
+    fn detect(&self) -> DetectResult {
+        DetectResult {
+            agent: self.agent,
+            status: DetectStatus::NotFound,
+            version: None,
+            binary_path: None,
+            channel: None,
+            env_ready: true,
+            notes: vec![],
+        }
+    }
+
+    fn install_channels(&self) -> Vec<InstallChannel> {
+        vec![]
+    }
+
+    fn read_config(&self) -> CoreResult<AgentConfig> {
+        Ok(self.config.lock().unwrap().clone())
+    }
+
+    fn write_config(&self, config: &AgentConfig) -> CoreResult<()> {
+        self.config_writes.fetch_add(1, Ordering::SeqCst);
+        let bytes = serde_json::to_vec(config)?;
+        std::fs::create_dir_all(self.config_path.parent().unwrap()).ok();
+        std::fs::write(&self.config_path, bytes)?;
+        *self.config.lock().unwrap() = config.clone();
+        Ok(())
+    }
+
+    fn read_auth(&self) -> CoreResult<AuthState> {
+        Err(AppError::Unsupported("isolated".into()))
+    }
+
+    fn read_account(&self) -> CoreResult<LiveAccount> {
+        Err(AppError::NotFound("no live auth".into()))
+    }
+
+    fn apply_account(&self, account: &LiveAccount) -> CoreResult<()> {
+        if account.agent != self.agent {
+            return Err(AppError::InvalidArg("account agent mismatch".into()));
+        }
+        self.auth_writes.fetch_add(1, Ordering::SeqCst);
+        std::fs::create_dir_all(self.auth_path.parent().unwrap()).ok();
+        std::fs::write(&self.auth_path, serde_json::to_vec(&account.credentials)?)?;
+        Ok(())
+    }
+
+    fn capability(&self, cap: Capability) -> CapabilityState {
+        match cap {
+            Capability::ConfigWrite | Capability::LiveBackup | Capability::AccountSwitch => {
+                CapabilityState::full()
+            }
+            _ => CapabilityState::unsupported("isolated"),
+        }
+    }
+
+    fn skills_dir(&self) -> Option<PathBuf> {
+        None
+    }
+
+    fn live_backup_paths(&self) -> Vec<PathBuf> {
+        vec![self.config_path.clone(), self.auth_path.clone()]
+    }
+
+    fn build_run_spec(
+        &self,
+        _binary: &Path,
+        _prompt: &str,
+        _opts: &RunOptions,
+    ) -> CoreResult<RunSpec> {
+        Err(AppError::Unsupported("isolated".into()))
+    }
+}
+
+fn grok_oauth_account(id: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label: "Grok subscription".into(),
+        credentials: json!({
+            "format": "oauth",
+            "access_token": "grok-upstream-secret",
+            "refresh_token": "grok-refresh-secret"
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: true,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+fn isolated_route_hub(
+    source: AgentId,
+    target: AgentId,
+) -> (
+    tempfile::TempDir,
+    AgentHub,
+    Arc<IsolatedLiveAdapter>,
+    Arc<IsolatedLiveAdapter>,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = AgentHub::open(Some(dir.path())).unwrap();
+    let source_adapter = Arc::new(IsolatedLiveAdapter::new(
+        source,
+        AgentConfig {
+            agent: source,
+            raw: json!({"source": "live"}),
+        },
+        dir.path().join(format!("{}.config.json", source.as_str())),
+        dir.path().join(format!("{}.auth.json", source.as_str())),
+    ));
+    let target_adapter = Arc::new(IsolatedLiveAdapter::new(
+        target,
+        AgentConfig {
+            agent: target,
+            raw: json!({"target": "live"}),
+        },
+        dir.path().join(format!("{}.config.json", target.as_str())),
+        dir.path().join(format!("{}.auth.json", target.as_str())),
+    ));
+    std::fs::write(&source_adapter.auth_path, b"original-source-auth\n").unwrap();
+    std::fs::write(&target_adapter.auth_path, b"original-target-auth\n").unwrap();
+    std::fs::write(&source_adapter.config_path, b"original-source-config\n").unwrap();
+    std::fs::write(&target_adapter.config_path, b"original-target-config\n").unwrap();
+    let mut registry = AdapterRegistry::new();
+    registry.register(source_adapter.clone());
+    registry.register(target_adapter.clone());
+    let backups = dir.path().join("isolated-backups");
+    hub.providers = ProviderService::with_live(hub.db.clone(), registry.clone(), backups.clone());
+    hub.accounts = AccountService::with_live(hub.db.clone(), registry, backups);
+    (dir, hub, source_adapter, target_adapter)
+}
+
+fn seed_current_target_provider(hub: &AgentHub, target: AgentId) {
+    ProviderRepo::new(hub.db.clone())
+        .create(&Provider {
+            id: "target-current".into(),
+            agent_id: target,
+            name: "existing live".into(),
+            settings_config: json!({}),
+            meta: json!({}),
+            is_current: true,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+}
+
+#[test]
+fn oauth_local_bridge_bind_reuses_login_row_and_does_not_occupy_live() {
+    let cases = [
+        (
+            "grok-claude",
+            AgentId::Grok,
+            AgentId::Claude,
+            AdapterBridgePrepareRequest {
+                source_kind: AdapterSourceKind::Account,
+                source_id: "grok-subscription".into(),
+                target_agent_id: AgentId::Claude,
+                auto_start: true,
+            },
+        ),
+        (
+            "grok-codex",
+            AgentId::Grok,
+            AgentId::Codex,
+            AdapterBridgePrepareRequest {
+                source_kind: AdapterSourceKind::Account,
+                source_id: "grok-subscription".into(),
+                target_agent_id: AgentId::Codex,
+                auto_start: true,
+            },
+        ),
+    ];
+    for (label, source_agent, target_agent, request) in cases {
+        let (_dir, hub, source_adapter, target_adapter) =
+            isolated_route_hub(source_agent, target_agent);
+        AccountRepo::new(hub.db.clone())
+            .create(&grok_oauth_account("grok-subscription"))
+            .unwrap();
+        seed_current_target_provider(&hub, target_agent);
+        let source_auth_before = std::fs::read(&source_adapter.auth_path).unwrap();
+        let source_config_before = std::fs::read(&source_adapter.config_path).unwrap();
+        let target_auth_before = std::fs::read(&target_adapter.auth_path).unwrap();
+        let target_config_before = std::fs::read(&target_adapter.config_path).unwrap();
+
+        let prepared = hub.adapter_bridge.prepare(&request).unwrap();
+        let core_guard = hub.providers.begin_live_saga(target_agent).unwrap();
+        let projection = hub
+            .adapter_bridge
+            .revalidate_provider_projection(&prepared, 43121)
+            .unwrap();
+        let snapshot = capture_provider_snapshot(
+            &hub,
+            &core_guard,
+            prepared.profile().generated_provider_id.as_deref(),
+            target_agent,
+        )
+        .unwrap();
+        let result = persist_bridge_projection_inner(
+            &hub,
+            &core_guard,
+            &prepared,
+            projection,
+            43121,
+            &snapshot,
+        )
+        .unwrap();
+
+        let accounts = AccountRepo::new(hub.db.clone()).list(None).unwrap();
+        assert_eq!(accounts.len(), 1, "{label}");
+        assert_eq!(accounts[0].id, "grok-subscription", "{label}");
+        assert_eq!(accounts[0].agent_id, AgentId::Grok, "{label}");
+        assert_eq!(prepared.profile().source_id, "grok-subscription", "{label}");
+        assert!(!result.provider.is_current, "{label}");
+        let current = hub
+            .providers
+            .repo()
+            .get_current(target_agent)
+            .unwrap()
+            .expect("target still has a current provider");
+        assert_eq!(current.id, "target-current", "{label}");
+        assert_eq!(source_adapter.config_writes(), 0, "{label}");
+        assert_eq!(source_adapter.auth_writes(), 0, "{label}");
+        assert_eq!(target_adapter.config_writes(), 0, "{label}");
+        assert_eq!(target_adapter.auth_writes(), 0, "{label}");
+        assert_eq!(
+            std::fs::read(&source_adapter.auth_path).unwrap(),
+            source_auth_before,
+            "{label}"
+        );
+        assert_eq!(
+            std::fs::read(&source_adapter.config_path).unwrap(),
+            source_config_before,
+            "{label}"
+        );
+        assert_eq!(
+            std::fs::read(&target_adapter.auth_path).unwrap(),
+            target_auth_before,
+            "{label}"
+        );
+        assert_eq!(
+            std::fs::read(&target_adapter.config_path).unwrap(),
+            target_config_before,
+            "{label}"
+        );
+    }
+}
+
+#[test]
+fn apply_local_bridge_from_grok_oauth_does_not_occupy_claude_current() {
+    tauri::async_runtime::block_on(async {
+        let (_dir, hub, source_adapter, target_adapter) =
+            isolated_route_hub(AgentId::Grok, AgentId::Claude);
+        AccountRepo::new(hub.db.clone())
+            .create(&grok_oauth_account("grok-subscription"))
+            .unwrap();
+        seed_current_target_provider(&hub, AgentId::Claude);
+        let source_auth_before = std::fs::read(&source_adapter.auth_path).unwrap();
+        let hub = Arc::new(hub);
+        let host = Arc::new(BridgeRuntimeHost::new());
+        let coordinator = Arc::new(AdapterBridgeSagaCoordinator::new());
+        let exit = crate::exit_coordinator::ExitCoordinator::new();
+        let result = apply_local_bridge(
+            Arc::clone(&hub),
+            Arc::clone(&host),
+            coordinator,
+            exit.lifecycle_barrier(),
+            AdapterBridgePrepareRequest {
+                source_kind: AdapterSourceKind::Account,
+                source_id: "grok-subscription".into(),
+                target_agent_id: AgentId::Claude,
+                auto_start: true,
+            },
+        )
+        .await
+        .unwrap();
+
+        let accounts = AccountRepo::new(hub.db.clone()).list(None).unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].id, "grok-subscription");
+        assert!(!result.provider.is_current);
+        let current = hub
+            .providers
+            .repo()
+            .get_current(AgentId::Claude)
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.id, "target-current");
+        assert_eq!(result.profile.status, AdapterProfileStatus::Active);
+        assert!(result.profile.local_port.is_some());
+        assert_eq!(source_adapter.auth_writes(), 0);
+        assert_eq!(source_adapter.config_writes(), 0);
+        assert_eq!(target_adapter.config_writes(), 0);
+        assert_eq!(
+            std::fs::read(&source_adapter.auth_path).unwrap(),
+            source_auth_before
+        );
+        host.shutdown().await.unwrap();
+    });
 }

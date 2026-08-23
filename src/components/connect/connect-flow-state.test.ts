@@ -32,6 +32,7 @@ import {
   eligibilityOf,
   excludeOwnAgentTargets,
   isOfficialCodexOauthAccount,
+  keepOwnAgentTarget,
   isBoundPlanStale,
   isConnectFlowEntryStale,
   isGeneratedAdapterSource,
@@ -283,6 +284,43 @@ describe('for-source 排除自身 Agent', () => {
     });
     expect(allowed.selectedTargetAgentId).toBe('claude');
     expect(allowed.selectionGeneration).toBe(1);
+  });
+
+  it('purpose=route keeps the source agent instead of dropping it', () => {
+    const grokAccount = account({ id: 'acc-grok', agentId: 'grok', kind: 'oauth' });
+    const entry: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: { kind: 'account', id: 'acc-grok' },
+      purpose: 'route',
+    };
+    expect(keepOwnAgentTarget(entry, [grokAccount])).toBe(true);
+    expect(excludeOwnAgentTargets(['claude', 'grok', 'codex'], 'grok', keepOwnAgentTarget(entry, [grokAccount])))
+      .toEqual(['claude', 'grok', 'codex']);
+
+    const selected = reduceConnectFlow(createConnectFlowState(entry), {
+      type: 'select_target',
+      agentId: 'grok',
+      sourceAgentId: 'grok',
+      allowOwnAgent: keepOwnAgentTarget(entry, [grokAccount]),
+    });
+    expect(selected.selectedTargetAgentId).toBe('grok');
+  });
+
+  it('purpose=share still drops own agent except official Codex oauth', () => {
+    const grokAccount = account({ id: 'acc-grok', agentId: 'grok', kind: 'oauth' });
+    const share: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: { kind: 'account', id: 'acc-grok' },
+      purpose: 'share',
+    };
+    expect(keepOwnAgentTarget(share, [grokAccount])).toBe(false);
+    const blocked = reduceConnectFlow(createConnectFlowState(share), {
+      type: 'select_target',
+      agentId: 'grok',
+      sourceAgentId: 'grok',
+      allowOwnAgent: keepOwnAgentTarget(share, [grokAccount]),
+    });
+    expect(blocked.selectedTargetAgentId).toBeNull();
   });
 });
 

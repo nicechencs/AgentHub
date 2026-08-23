@@ -1,11 +1,13 @@
 //! Desktop-process control plane for Adapter local bridges.
 //!
 //! `agenthub-core` owns profile persistence, source-secret resolution and the
-//! generated target provider projection.  This module deliberately owns the
-//! cross-boundary saga: the loopback listener must bind before the generated
-//! provider is made current, and a failed apply must not leave a newly-started
-//! listener running.  Neither upstream nor local bearer tokens cross the
-//! Tauri command boundary.
+//! generated target provider projection.  This module owns the cross-boundary
+//! saga: the loopback listener must bind before the generated provider is
+//! persisted, and a failed apply must not leave a newly-started listener
+//! running. Phase 1 does not occupy the target (or source) live login — the
+//! generated loopback stays a hidden projection, not the Agent's current
+//! Connection. Neither upstream nor local bearer tokens cross the Tauri
+//! command boundary.
 //!
 //! Process-local profile / target gates and the credential-free status DTO live
 //! in [`agenthub_core::adapter_control`] so commands stay Tauri-neutral.
@@ -19,8 +21,8 @@ use agenthub_core::bridge::{
     BridgeUpstreamStatus, MemberHealth, UpstreamAuthReload,
 };
 use agenthub_core::models::{
-    local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile, AdapterProfileStatus,
-    AdapterRoute, AdapterSourceKind, AgentId, Provider, ProviderInput,
+    local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile,
+    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AgentId, Provider, ProviderInput,
 };
 use agenthub_core::services::{
     oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
@@ -59,8 +61,8 @@ pub(crate) async fn apply_local_bridge(
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let profile_id = bridge_profile_id_for_request(hub.clone(), request.clone()).await?;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
-    // First-time apply must make the generated target Connection current.
-    apply_local_bridge_locked(hub, host, coordinator, request, true).await
+    // Phase 1: start/persist the local route without switching live login.
+    apply_local_bridge_locked(hub, host, coordinator, request).await
 }
 
 async fn apply_local_bridge_locked(
@@ -68,11 +70,6 @@ async fn apply_local_bridge_locked(
     host: Arc<BridgeRuntimeHost>,
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     request: AdapterBridgePrepareRequest,
-    // When true (initial apply), always switch the target Agent to the
-    // generated bridge. Manual start keeps the user's current Connection
-    // unless the generated bridge provider was already current (then refresh
-    // live config only).
-    force_switch_current: bool,
 ) -> Result<AdapterApplyResult, String> {
     let target_agent_id = request.target_agent_id;
     let prepared = with_hub_blocking(hub.clone(), move |hub| {
@@ -102,18 +99,19 @@ async fn apply_local_bridge_locked(
         members,
         local_bridge_multi_account(&prepared.profile().rule_id),
     )
-    .await {
-            Ok(runtime) => runtime,
-            Err(error) => {
-                let code = if matches!(error, BridgeHostError::Bind(_)) {
-                    CODE_BRIDGE_PORT_IN_USE
-                } else {
-                    CODE_BRIDGE_START
-                };
-                mark_retryable(hub, &profile_id, code).await;
-                return Err(map_bridge_host_error(error));
-            }
-        };
+    .await
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            let code = if matches!(error, BridgeHostError::Bind(_)) {
+                CODE_BRIDGE_PORT_IN_USE
+            } else {
+                CODE_BRIDGE_START
+            };
+            mark_retryable(hub, &profile_id, code).await;
+            return Err(map_bridge_host_error(error));
+        }
+    };
     // Own any listener this saga started or replaced. An idempotent reuse of an
     // already-running identical spec is not compensated on later projection failure.
     let owns_listener = runtime.owned_by_saga;
@@ -152,15 +150,7 @@ async fn apply_local_bridge_locked(
         let provider_id = prepared.profile().generated_provider_id.clone();
         let snapshot =
             capture_provider_snapshot(hub, &core_guard, provider_id.as_deref(), target_agent)?;
-        persist_bridge_projection_inner(
-            hub,
-            &core_guard,
-            &prepared,
-            projection,
-            port,
-            &snapshot,
-            force_switch_current,
-        )
+        persist_bridge_projection_inner(hub, &core_guard, &prepared, projection, port, &snapshot)
     })
     .await;
 
@@ -205,8 +195,8 @@ pub(crate) async fn start_local_bridge(
         target_agent_id: profile.target_agent_id,
         auto_start: profile.auto_start,
     };
-    // Manual start must not steal Codex current if the user already switched away.
-    let applied = apply_local_bridge_locked(hub, host.clone(), coordinator, request, false).await?;
+    // Manual start must not steal current login if the user already switched away.
+    let applied = apply_local_bridge_locked(hub, host.clone(), coordinator, request).await?;
     let status = host
         .status(&applied.profile.id)
         .map_err(map_bridge_host_error)?
@@ -442,7 +432,6 @@ fn persist_bridge_projection_inner(
     projection: AdapterBridgeProviderProjection,
     port: u16,
     snapshot: &BridgeProviderSnapshot,
-    force_switch_current: bool,
 ) -> Result<AdapterApplyResult, String> {
     let provider_id = prepared
         .profile()
@@ -478,7 +467,7 @@ fn persist_bridge_projection_inner(
         .as_ref()
         .map(|provider| provider.is_current)
         .unwrap_or(false);
-    let should_switch = should_make_bridge_current(force_switch_current, generated_was_current);
+    let should_switch = should_make_bridge_current(generated_was_current);
 
     let previous_current_id = snapshot
         .current_provider
@@ -567,10 +556,10 @@ fn persist_bridge_projection_inner(
     Ok(AdapterApplyResult { profile, provider })
 }
 
-/// Initial apply always promotes the generated bridge; manual start only
-/// refreshes live config when that bridge was already the current Connection.
-fn should_make_bridge_current(force_switch_current: bool, generated_was_current: bool) -> bool {
-    force_switch_current || generated_was_current
+/// Phase 1: opening a route does not occupy live login. Refresh only when
+/// the generated loopback is already the current Connection.
+fn should_make_bridge_current(generated_was_current: bool) -> bool {
+    generated_was_current
 }
 
 #[derive(Clone)]
@@ -920,12 +909,10 @@ pub(crate) async fn ensure_bridge_listener(
         .with_members(members.clone())
         .with_multi_account(multi_account);
     match host.start(preferred).await {
-        Ok(status) => {
-            Ok(EnsuredBridgeListener {
-                owned_by_saga: !had_running,
-                status,
-            })
-        }
+        Ok(status) => Ok(EnsuredBridgeListener {
+            owned_by_saga: !had_running,
+            status,
+        }),
         Err(BridgeHostError::ConflictingStart) => {
             match host.stop(&profile_id).await {
                 Ok(_) | Err(BridgeHostError::NotRunning) => {}

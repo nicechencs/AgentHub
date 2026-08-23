@@ -170,7 +170,7 @@ export function sourceAgentIdOf(
   return lookupSourceRecord(entry.source, accounts, providers)?.agentId ?? null;
 }
 
-/** for-source 目标网格：排除来源自身所属 Agent。官方 Codex 登录可接到自己。 */
+/** for-source 目标网格：排除来源自身所属 Agent，除非 keepOwnAgent。 */
 export function excludeOwnAgentTargets(
   candidates: readonly AgentId[],
   sourceAgentId: AgentId | null,
@@ -185,6 +185,20 @@ export function isOfficialCodexOauthAccount(
   account: { agentId: AgentId; kind: string } | null | undefined,
 ): boolean {
   return account?.agentId === 'codex' && account.kind === 'oauth';
+}
+
+/**
+ * Route bind does not occupy live login, so self-target is allowed.
+ * Share still hides the source agent except official Codex OAuth self-bind.
+ */
+export function keepOwnAgentTarget(
+  entry: ConnectFlowEntry | null | undefined,
+  accounts: readonly Account[],
+): boolean {
+  if (!entry || entry.mode !== 'for-source') return false;
+  if (entry.purpose === 'route') return true;
+  if (entry.source.kind !== 'account') return false;
+  return isOfficialCodexOauthAccount(accounts.find((item) => item.id === entry.source.id));
 }
 
 export function currentTargetAgentId(state: ConnectFlowState): AgentId | null {
