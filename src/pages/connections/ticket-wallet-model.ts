@@ -51,7 +51,7 @@ export const TICKET_WALLET_FILTERS: Array<{ value: TicketWalletFilter; label: st
 export type TicketAddKind = 'import-login' | 'api-key';
 
 export const TICKET_ADD_ACTIONS: Array<{ kind: TicketAddKind; label: string }> = [
-  { kind: 'import-login', label: '导入当前登录' },
+  { kind: 'import-login', label: '导入当前授权' },
   { kind: 'api-key', label: '添加 API Key' },
 ];
 
@@ -70,7 +70,7 @@ export function ticketWalletFilterLabel(
 
 export function ticketAddActionLabel(kind: TicketAddKind, t?: TranslateFn): string {
   if (!t) {
-    return TICKET_ADD_ACTIONS.find((item) => item.kind === kind)?.label ?? '导入当前登录';
+    return TICKET_ADD_ACTIONS.find((item) => item.kind === kind)?.label ?? '导入当前授权';
   }
   return kind === 'import-login'
     ? t('connections.list.importLogin')
@@ -210,7 +210,7 @@ export function handleMenuDialogSelect(
 }
 
 /**
- * Menu item select for 导入当前登录 / 添加 API Key.
+ * Menu item select for 导入当前授权 / 添加 API Key.
  * preventDefault keeps the menu mounted through the click so the Dialog is
  * not dismissed and the pointer cannot hit the segmented filter underneath.
  */

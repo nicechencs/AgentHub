@@ -226,7 +226,7 @@ export function liveApiKeyImportGate(
     return { enabled: true, reason: '' };
   }
   if (kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json') {
-    return { enabled: false, reason: t ? t('connections.list.isOauthImportLogin') : '当前本机为 OAuth 登录态，请导入当前登录态' };
+    return { enabled: false, reason: t ? t('connections.list.isOauthImportLogin') : '当前本机为 OAuth 登录态，请导入当前授权' };
   }
   if (kind === 'desktop-login') {
     return { enabled: false, reason: t ? t('connections.list.desktopNoApiKey') : '当前为桌面登录态，无法直接导入 API Key' };

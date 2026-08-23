@@ -344,7 +344,7 @@ describe('connection-model', () => {
       });
       expect(liveApiKeyImportGate(oauthAlsoApiKey, false, 'claude')).toEqual({
         enabled: false,
-        reason: '当前本机为 OAuth 登录态，请导入当前登录态',
+        reason: '当前本机为 OAuth 登录态，请导入当前授权',
       });
     });
 
@@ -403,7 +403,7 @@ describe('connection-model', () => {
     });
     expect(
       liveApiKeyImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: true }, false, 'claude'),
-    ).toEqual({ enabled: false, reason: '当前本机为 OAuth 登录态，请导入当前登录态' });
+    ).toEqual({ enabled: false, reason: '当前本机为 OAuth 登录态，请导入当前授权' });
     expect(
       liveApiKeyImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: false }, false, 'claude')
         .enabled,
