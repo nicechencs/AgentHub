@@ -16,6 +16,7 @@ import {
   liveAuthCoexistenceNotice,
   liveAuthDiscoveryKind,
   liveAuthImportGate,
+  liveImportDialogMode,
   mergeConnectionEntries,
   providerToEntry,
 } from './connection-model';
@@ -579,5 +580,18 @@ describe('connection-model', () => {
     });
     expect(accountToEntry(acc({ id: 'same', kind: 'oauth', label: 'acc' })).usage).toBeUndefined();
     expect(providerToEntry(prov({ id: 'same', name: 'prov' })).usage).toBeUndefined();
+  });
+});
+
+describe('liveImportDialogMode', () => {
+  it('picks the api-key variant only for probed api key kinds', () => {
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'api_key', hasCredentials: true })).toBe('api-key');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'API-KEY', hasCredentials: true })).toBe('api-key');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'apikey' })).toBe('api-key');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'oauth', hasCredentials: true })).toBe('login');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'file-auth.json', hasCredentials: true })).toBe('login');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'desktop-login' })).toBe('login');
+    expect(liveImportDialogMode(null)).toBe('login');
+    expect(liveImportDialogMode(undefined)).toBe('login');
   });
 });

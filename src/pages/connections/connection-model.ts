@@ -256,6 +256,21 @@ function isApiKeyLiveAuthKind(kind: string): boolean {
   return kind === 'api_key' || kind === 'api-key' || kind === 'apikey';
 }
 
+/** Which import dialog variant applies for the probed live credential kind. */
+export type LiveImportDialogMode = 'login' | 'api-key';
+
+/**
+ * The import entry point is shared; the probed auth kind decides whether it
+ * reads as an OAuth login import or an API Key import. Anything unknown or
+ * still loading stays on the login variant so behavior is unchanged.
+ */
+export function liveImportDialogMode(
+  probe: LiveAuthProbeLike | null | undefined,
+): LiveImportDialogMode {
+  const kind = probe?.kind?.trim().toLowerCase() ?? '';
+  return isApiKeyLiveAuthKind(kind) ? 'api-key' : 'login';
+}
+
 const GENERIC_LIVE_AUTH_COEXISTENCE_NOTICE =
   '本机同时有 API Key 和官方登录，它们不在同一处。导入只会收入当前检测为生效的那一份；另一份仍留在本机。';
 

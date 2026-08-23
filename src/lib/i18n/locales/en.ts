@@ -891,6 +891,14 @@ export const en = {
       toastOkDesc: "{label} is in the list",
       toastOkCoexist: "{label} is in the list. The other credential on this computer was not imported.",
       toastFail: "Import failed",
+      apiKeyTitle: "Import the local API key?",
+      apiKeyDescription: "Reads the API key in {name}'s local auth.json. AgentHub will not start a new authorization here.",
+      apiKeyConfirm: "Import key",
+    },
+    discovery: {
+      providerBanner: "An API key on this computer for {name} is not in the connection list yet.",
+      accountBanner: "A login on this computer for {name} is not in the connection list yet.",
+      action: "Import",
     },
     delete: {
       title: "Move to trash?",
