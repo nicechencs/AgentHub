@@ -1534,6 +1534,12 @@ pub(crate) fn list_kimi_projects(home: &Path) -> Result<Vec<AgentProject>> {
                 Some(ws.root.clone()),
                 Some(ws.name.clone()),
             ),
+            // Fallback key is workspace-id based (`ws/{wd_id}`), NOT the
+            // cwd-based `cwd_storage_key` used when the workspace resolves.
+            // If a workspace later appears in `workspaces`, the project gets a
+            // different id and any frontend-persisted alias/hide state bound to
+            // `ws/{wd_id}` will not follow. Changing this key risks breaking
+            // existing persisted aliases, so it stays as-is by design.
             None => (format!("ws/{wd_id}"), None, Some(wd_id.clone())),
         };
         let sess_entries = match fs::read_dir(&wd_dir) {
@@ -1659,6 +1665,16 @@ pub(crate) fn list_pi_projects(home: &Path) -> Result<Vec<AgentProject>> {
     Ok(out)
 }
 
+/// Metadata-only accumulator for the "cheap" fast-list paths
+/// (`list_grok_projects` / `list_kimi_projects` / `list_pi_projects`).
+///
+/// Known, intentional tradeoffs vs the full [`aggregate_projects`] path:
+/// - `message_count` stays `None` and `preview` stays `None`: recovering them
+///   would require parsing session files, which defeats the purpose of these
+///   O(stat) fast listings used to keep stale lists responsive while paging.
+/// - `updated_at` derives from file mtimes (`rfc3339_mtime`), not from
+///   session-record timestamps, so it can drift from real activity time when
+///   files are copied/touched.
 struct CheapAcc {
     title: String,
     storage_path: String,

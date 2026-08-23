@@ -6,16 +6,13 @@ import type { UsageOverview } from '@/lib/backend/contracts/usage-types';
 
 import {
   buildUsageDistribution,
-  buildUsageTrend,
   coerceModelFilter,
-  computeUsageMetrics,
   decorateUsageDistribution,
   filterByAgent,
   filterByModel,
   filterHiddenUsageOverview,
   filterWindowUsage,
   isLocalToday,
-  modelsFromRecords,
   overviewToUsageMetrics,
   sortUsageRowsDesc,
   usageWindowBound,
@@ -162,35 +159,14 @@ describe('model filter + shared scoped records', () => {
     }),
   ];
 
-  it('lists distinct models from the current window, sorted', () => {
-    expect(modelsFromRecords(rows)).toEqual(['opus', 'sonnet']);
-    expect(modelsFromRecords(filterByModel(rows, 'opus'))).toEqual(['opus']);
-  });
-
   it('coerces a stale model back to all', () => {
     expect(coerceModelFilter('opus', ['opus', 'sonnet'])).toBe('opus');
     expect(coerceModelFilter('haiku', ['opus', 'sonnet'])).toBe('all');
     expect(coerceModelFilter('all', ['opus'])).toBe('all');
   });
 
-  it('scopes the model list to the selected agent in the time window', () => {
-    const claudeRows = filterByAgent(rows, 'claude');
-    expect(modelsFromRecords(claudeRows)).toEqual(['opus', 'sonnet']);
-    expect(modelsFromRecords(filterByAgent(rows, 'kimi'))).toEqual(['opus']);
-  });
-
-  it('applies agent + model to metrics, trend, distribution, and table together', () => {
+  it('applies agent + model to distribution and table together', () => {
     const scoped = filterByModel(filterByAgent(rows, 'all'), 'opus');
-    const metrics = computeUsageMetrics(scoped);
-    expect(metrics.billableInput).toBe(1300);
-    expect(metrics.output).toBe(130);
-    expect(metrics.cost).toBe(2.5);
-    expect(metrics.cacheHitPct).toBe(Math.round((200 / 1500) * 100));
-
-    expect(buildUsageTrend(scoped)).toEqual([
-      { date: '2026-08-22', claude: 1100 },
-      { date: '2026-08-23', kimi: 330 },
-    ]);
 
     const byAgent = buildUsageDistribution(scoped, 'all', CATALOG);
     expect(byAgent.map((d) => d.key)).toEqual(['claude', 'kimi']);
@@ -229,8 +205,6 @@ describe('model filter + shared scoped records', () => {
     const windowed = filterWindowUsage(localRows, 'today', [], now);
     const scoped = filterByModel(filterByAgent(windowed, 'claude'), 'sonnet');
     expect(scoped.map((r) => r.id)).toEqual(['c-sonnet']);
-    expect(computeUsageMetrics(scoped).billableInput).toBe(500);
-    expect(buildUsageTrend(scoped)[0]?.claude).toBe(550);
   });
 
   it('keeps agent drill-down (distribution by model) inside the model filter', () => {
@@ -246,14 +220,5 @@ describe('model filter + shared scoped records', () => {
         cost: 1,
       },
     ]);
-    expect(buildUsageTrend(scoped)).toEqual([{ date: '2026-08-23', claude: 550 }]);
-  });
-
-  it('matches backend trend formula (input + output, not cache)', () => {
-    const scoped = filterByModel(rows, 'opus');
-    const claude = scoped.find((r) => r.agentId === 'claude')!;
-    expect(buildUsageTrend([claude])[0]?.claude).toBe(
-      claude.inputTokens + claude.outputTokens,
-    );
   });
 });

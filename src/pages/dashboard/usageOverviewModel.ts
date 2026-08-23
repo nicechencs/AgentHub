@@ -4,7 +4,7 @@ import type {
   UsageOverviewDistributionSlice,
   UsageOverviewMetrics,
 } from '@/lib/backend/contracts/usage-types';
-import type { AgentId, UsageRecord, UsageTrendPoint } from '@/lib/types';
+import type { AgentId, UsageRecord } from '@/lib/types';
 import { usageTokenParts } from '@/lib/usage-tokens';
 
 /** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
@@ -106,12 +106,6 @@ export function filterByModel(
   return records.filter((r) => r.model === modelFilter);
 }
 
-export function modelsFromRecords(records: readonly UsageRecord[]): string[] {
-  return [...new Set(records.map((r) => r.model).filter((m) => m.length > 0))].sort((a, b) =>
-    a.localeCompare(b),
-  );
-}
-
 /** 当前模型不在窗口内时回退到全部，避免 Select 值悬空、图表空窗 */
 export function coerceModelFilter(selected: string, available: readonly string[]): string {
   if (selected === 'all' || selected === '') return 'all';
@@ -129,30 +123,6 @@ export interface UsageMetrics {
   fullInput: number;
   cost: number;
   cacheHitPct: number | null;
-}
-
-export function computeUsageMetrics(rows: readonly UsageRecord[]): UsageMetrics {
-  let billableInput = 0;
-  let fullInput = 0;
-  let output = 0;
-  let cacheRead = 0;
-  let cost = 0;
-  for (const r of rows) {
-    const p = usageTokenParts(r);
-    billableInput += p.billableInput;
-    fullInput += p.fullInput;
-    output += r.outputTokens;
-    cacheRead += p.cache;
-    cost += r.costUsd;
-  }
-  return {
-    billableInput,
-    output,
-    cacheRead,
-    fullInput,
-    cost,
-    cacheHitPct: fullInput > 0 ? Math.round((cacheRead / fullInput) * 100) : null,
-  };
 }
 
 export interface UsageDistributionSlice {
@@ -208,18 +178,3 @@ export function buildUsageDistribution(
   return [...byKey.values()].sort((a, b) => b.tokens - a.tokens);
 }
 
-/**
- * 与后端 `usage_trend` 同一公式：按日、按 agent 累加 input+output。
- * 入参应已是时间/Agent/模型/可见性过滤后的 records，这样趋势与指标卡共用一份数据。
- */
-export function buildUsageTrend(rows: readonly UsageRecord[]): UsageTrendPoint[] {
-  const byDay = new Map<string, UsageTrendPoint>();
-  for (const r of rows) {
-    const day = r.timestamp.slice(0, 10);
-    const point = byDay.get(day) ?? { date: day };
-    const prev = typeof point[r.agentId] === 'number' ? (point[r.agentId] as number) : 0;
-    point[r.agentId] = prev + r.inputTokens + r.outputTokens;
-    byDay.set(day, point);
-  }
-  return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
-}
