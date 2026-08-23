@@ -326,9 +326,10 @@ pub fn apply_official_codex_model(body: &mut Value, incoming: &str, configured: 
 /// Prepare a request for the official ChatGPT / Codex Responses upstream.
 ///
 /// The official endpoint requires storage to be disabled for this local
-/// subscription route and rejects `role=system` input items. Keep both
-/// policies next to the model policy so callers cannot accidentally omit
-/// them while leaving the provider-neutral request conversion unchanged.
+/// subscription route, rejects `role=system` input items, and rejects
+/// `max_output_tokens`. Keep these policies next to the model policy so
+/// callers cannot accidentally omit them while leaving the
+/// provider-neutral request conversion unchanged.
 pub fn prepare_official_codex_request(
     body: &mut Value,
     incoming_model: &str,
@@ -337,6 +338,9 @@ pub fn prepare_official_codex_request(
     apply_official_codex_model(body, incoming_model, configured_model);
     body["store"] = Value::Bool(false);
     fold_official_codex_system_items(body);
+    if let Some(object) = body.as_object_mut() {
+        object.remove("max_output_tokens");
+    }
 }
 
 /// Drop leftover `role=system` / `role=developer` input items.

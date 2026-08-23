@@ -275,6 +275,11 @@ fn official_codex_messages_prepare_folds_system_and_forces_store_false() {
         .expect("prepare messages");
     assert_eq!(prepared.body["store"], false);
     assert_no_system_or_developer_items(&prepared.body);
+    assert!(
+        prepared.body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {}",
+        prepared.body
+    );
     let instructions = prepared.body["instructions"]
         .as_str()
         .expect("instructions");
@@ -291,6 +296,7 @@ fn official_codex_messages_prepare_folds_system_and_forces_store_false() {
 fn official_codex_chat_prepare_folds_developer_and_forces_store_false() {
     let body = json!({
         "model": "claude-sonnet-4-20250514",
+        "max_tokens": 32,
         "messages": [
             { "role": "system", "content": "Be brief." },
             { "role": "user", "content": "hello" },
@@ -307,6 +313,11 @@ fn official_codex_chat_prepare_folds_developer_and_forces_store_false() {
         .expect("prepare chat");
     assert_eq!(prepared.body["store"], false);
     assert_no_system_or_developer_items(&prepared.body);
+    assert!(
+        prepared.body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {}",
+        prepared.body
+    );
     let instructions = prepared.body["instructions"]
         .as_str()
         .expect("instructions");
@@ -320,6 +331,9 @@ fn official_codex_chat_prepare_folds_developer_and_forces_store_false() {
 fn official_codex_responses_passthrough_strips_system_items() {
     let body = json!({
         "model": "claude-sonnet-4-20250514",
+        "max_output_tokens": 64,
+        "temperature": 0.2,
+        "top_p": 0.9,
         "input": [
             {
                 "type": "message",
@@ -343,6 +357,13 @@ fn official_codex_responses_passthrough_strips_system_items() {
         .expect("prepare responses");
     assert_eq!(prepared.body["store"], false);
     assert_no_system_or_developer_items(&prepared.body);
+    assert!(
+        prepared.body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {}",
+        prepared.body
+    );
+    assert_eq!(prepared.body["temperature"], 0.2);
+    assert_eq!(prepared.body["top_p"], 0.9);
     let user_text = prepared.body["input"][0]["content"][0]["text"]
         .as_str()
         .expect("user text");

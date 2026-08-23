@@ -703,6 +703,7 @@ fn prepare_official_codex_request_strips_system_items_into_existing_instructions
     let mut body = json!({
         "model": "claude-sonnet-4-20250514",
         "instructions": "Keep going.",
+        "max_output_tokens": 64,
         "input": [
             {
                 "type": "message",
@@ -720,6 +721,10 @@ fn prepare_official_codex_request_strips_system_items_into_existing_instructions
     assert_eq!(body["store"], false);
     assert!(body.get("model").is_none(), "must not invent gpt-* models");
     assert_no_system_input_items(&body);
+    assert!(
+        body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {body}"
+    );
     let instructions = body["instructions"].as_str().expect("instructions");
     assert!(instructions.contains("Keep going."), "{instructions}");
     assert!(
@@ -789,6 +794,42 @@ fn official_codex_messages_path_has_no_system_items_after_prepare() {
     );
     assert!(instructions.contains("Extra system."), "{instructions}");
     assert_eq!(body["input"][0]["role"], "user");
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+    assert!(
+        body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {body}"
+    );
+}
+
+#[test]
+fn prepare_official_codex_request_omits_max_output_tokens_from_passthrough() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 64,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "messages": [
+            { "role": "user", "content": "ping" }
+        ]
+    }))
+    .expect("parse messages");
+    assert_eq!(request.passthrough["max_output_tokens"], 64);
+
+    let mut body = to_responses_request(&request);
+    assert_eq!(body["max_output_tokens"], 64);
+    assert_eq!(body["temperature"], 0.2);
+    assert_eq!(body["top_p"], 0.9);
+
+    prepare_official_codex_request(&mut body, &request.model, Some(""));
+    assert_eq!(body["store"], false);
+    assert!(body.get("model").is_none(), "must not invent gpt-* models");
+    assert_no_system_input_items(&body);
+    assert!(
+        body.get("max_output_tokens").is_none(),
+        "official Codex Responses rejects max_output_tokens: {body}"
+    );
+    assert_eq!(body["temperature"], 0.2);
+    assert_eq!(body["top_p"], 0.9);
     assert_eq!(body["input"][0]["content"][0]["text"], "ping");
 }
 
