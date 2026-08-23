@@ -1243,9 +1243,10 @@ export const en = {
       hidden: "Hidden",
       agentCount: "{n} agents",
       nativeSession: "Linked official session {id}",
-      copyResumeCommand: "Copy official resume command: {command}",
-      resumeCommandCopied: "Resume command copied",
-      noResumeCommand: "No official resume command to copy",
+      copyResumeCommand: "Copy session — paste in the terminal to continue",
+      resumeCommandCopied: "Session copied",
+      resumeCommandCopiedHint: "Paste in the terminal to continue this chat",
+      noResumeCommand: "No session to copy",
     },
     composer: {
       placeholder: "Message an agent… (Shift+Enter for a new line)",

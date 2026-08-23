@@ -162,14 +162,12 @@ export function ChatSessionHeader({
                     () =>
                       toast({
                         title: t('chat.header.resumeCommandCopied'),
-                        description: command,
+                        description: t('chat.header.resumeCommandCopiedHint'),
                       }),
                     () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
                   );
                 }}
-                aria-label={t('chat.header.copyResumeCommand', {
-                  command: conversationResumeCommand(active) ?? active.nativeSessionId,
-                })}
+                aria-label={t('chat.header.copyResumeCommand')}
               >
                 <Terminal className="h-3 w-3 shrink-0" />
                 <span className="truncate">{shortenId(active.nativeSessionId, 10)}</span>

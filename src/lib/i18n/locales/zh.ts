@@ -1238,9 +1238,10 @@ export const zh = {
       hidden: "已隐藏",
       agentCount: "{n} 个 Agent",
       nativeSession: "已关联官方会话 {id}",
-      copyResumeCommand: "复制官方续接命令：{command}",
-      resumeCommandCopied: "续接命令已复制",
-      noResumeCommand: "没有可复制的官方续接命令",
+      copyResumeCommand: "复制会话，粘贴到终端可继续对话",
+      resumeCommandCopied: "已复制会话",
+      resumeCommandCopiedHint: "粘贴到终端即可继续这场对话",
+      noResumeCommand: "没有可复制的会话",
     },
     composer: {
       placeholder: "发送消息给 Agent…（Shift+Enter 换行）",
