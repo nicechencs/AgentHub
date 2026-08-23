@@ -236,7 +236,12 @@ const GROK_DEFAULT_AUTH_SLOT: &str = "https://auth.x.ai::client";
 /// is written as-is (switch/apply of an imported file).
 fn grok_auth_json_body_from_credentials(credentials: &Value, auth_path: &Path) -> Result<Value> {
     if let Some(body) = credentials.get("body") {
-        if is_grok_slot_map(body) && grok_tip_is_unpinned(credentials) {
+        // A stored multi-slot snapshot with no top-level identity is the whole
+        // file. A one-slot body must merge so a sibling profile is not wiped.
+        if is_grok_slot_map(body)
+            && grok_tip_is_unpinned(credentials)
+            && body.as_object().is_some_and(|obj| obj.len() > 1)
+        {
             return Ok(body.clone());
         }
     }
@@ -355,6 +360,111 @@ fn is_grok_slot_map_object(obj: &Map<String, Value>) -> bool {
         && obj
             .keys()
             .all(|key| key.contains("auth.x.ai") || key.contains("://") || key == "xai")
+}
+
+/// Expand nested Grok `auth.json` profiles into one LiveAccount per OAuth slot.
+///
+/// `format=grok_bundle` / API-key snapshots stay a single account so OAuth
+/// people are not identity-merged with the API key row.
+pub(crate) fn expand_grok_auth_to_live_accounts(snapshot: &LiveAccount) -> Vec<LiveAccount> {
+    if snapshot.agent != AgentId::Grok || snapshot.kind != AccountKind::Oauth {
+        return vec![snapshot.clone()];
+    }
+    if snapshot.credentials.get("format").and_then(|v| v.as_str()) != Some("auth_json") {
+        return vec![snapshot.clone()];
+    }
+    let Some(body) = snapshot.credentials.get("body") else {
+        return vec![snapshot.clone()];
+    };
+    if !is_grok_slot_map(body) {
+        return vec![snapshot.clone()];
+    }
+    let Some(obj) = body.as_object() else {
+        return vec![snapshot.clone()];
+    };
+    let mut keys: Vec<String> = obj.keys().cloned().collect();
+    keys.sort();
+    let mut accounts = Vec::new();
+    for key in keys {
+        let Some(slot) = obj.get(&key) else {
+            continue;
+        };
+        if !grok_slot_is_oauth(slot) {
+            continue;
+        }
+        accounts.push(live_account_for_grok_slot(&key, slot));
+    }
+    if accounts.is_empty() {
+        vec![snapshot.clone()]
+    } else {
+        accounts
+    }
+}
+
+fn grok_slot_is_oauth(slot: &Value) -> bool {
+    first_oauth_string(
+        slot,
+        &[
+            "refresh_token",
+            "refreshToken",
+            "refresh",
+            "key",
+            "access_token",
+            "accessToken",
+            "access",
+        ],
+    )
+    .is_some()
+}
+
+fn live_account_for_grok_slot(slot_key: &str, slot: &Value) -> LiveAccount {
+    let mut body = Map::new();
+    body.insert(slot_key.to_string(), slot.clone());
+
+    let mut cred_map = Map::new();
+    cred_map.insert("format".into(), json!("auth_json"));
+    cred_map.insert("body".into(), Value::Object(body));
+
+    // Flatten tokens/identity so authorization_key and apply pin this person
+    // instead of walking a sibling slot.
+    if let Some(access) =
+        first_oauth_string(slot, &["key", "access_token", "accessToken", "access"])
+    {
+        cred_map.insert("access_token".into(), json!(access));
+    }
+    if let Some(refresh) = first_oauth_string(slot, &["refresh_token", "refreshToken", "refresh"]) {
+        cred_map.insert("refresh_token".into(), json!(refresh));
+    }
+    if let Some(email) = first_oauth_string(slot, &["email"]) {
+        cred_map.insert("email".into(), json!(email));
+    }
+    if let Some(user_id) = first_oauth_string(slot, &["user_id", "userId", "sub"]) {
+        cred_map.insert("user_id".into(), json!(user_id));
+    }
+
+    let label = cred_map
+        .get("email")
+        .or_else(|| cred_map.get("user_id"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "grok-oauth".into());
+
+    let mut extra = Map::new();
+    extra.insert("source".into(), json!("auth.json"));
+    if let Some(email) = cred_map.get("email").cloned() {
+        extra.insert("email".into(), email.clone());
+        extra.insert("identityLabel".into(), email);
+    } else {
+        extra.insert("identityLabel".into(), json!(label.clone()));
+    }
+
+    LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: Value::Object(cred_map),
+        label_hint: Some(label),
+        extra: Value::Object(extra),
+    }
 }
 
 fn merge_incoming_grok_profile(existing: &mut Value, incoming: Value, identity: &Value) {

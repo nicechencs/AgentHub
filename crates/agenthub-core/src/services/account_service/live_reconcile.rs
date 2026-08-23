@@ -87,9 +87,9 @@ impl AccountService {
     }
 
     /// Read the live account slots represented by an adapter snapshot. Pi's
-    /// auth.json is a combined file snapshot, so it must be expanded before it
-    /// reaches pool reconciliation; the combined snapshot is only safe for
-    /// backup / complete-file rollback.
+    /// auth.json and Grok's nested OAuth profiles are combined file snapshots,
+    /// so they must be expanded before they reach pool reconciliation; the
+    /// combined snapshot is only safe for backup / complete-file rollback.
     pub(super) fn read_live_accounts(
         &self,
         adapter: &dyn AgentAdapter,
@@ -108,14 +108,18 @@ impl AccountService {
                 "no live account credentials found".into(),
             ));
         }
-        if agent != AgentId::Pi {
-            return Ok(vec![snapshot]);
+        if agent == AgentId::Pi {
+            let body = snapshot.credentials.get("body").ok_or_else(|| {
+                AppError::InvalidArg("Pi combined live account is missing credentials.body".into())
+            })?;
+            return crate::adapters::pi_auth::expand_auth_to_live_accounts(body);
         }
-
-        let body = snapshot.credentials.get("body").ok_or_else(|| {
-            AppError::InvalidArg("Pi combined live account is missing credentials.body".into())
-        })?;
-        crate::adapters::pi_auth::expand_auth_to_live_accounts(body)
+        if agent == AgentId::Grok {
+            return Ok(crate::adapters::expand_grok_auth_to_live_accounts(
+                &snapshot,
+            ));
+        }
+        Ok(vec![snapshot])
     }
 
     /// Reconcile one safe live snapshot into the account pool.

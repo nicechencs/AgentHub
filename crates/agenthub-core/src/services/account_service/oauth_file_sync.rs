@@ -453,7 +453,15 @@ impl AccountService {
         let _file_lock = self.acquire_live_lock(row.agent_id)?;
         let adapter = self.adapter(row.agent_id)?;
         let live = match self.read_live_accounts(adapter.as_ref(), row.agent_id) {
-            Ok(mut lives) => lives.pop(),
+            Ok(lives) => lives.into_iter().find(|live| {
+                live.kind == row.kind
+                    && (accounts_same_authorization(
+                        adapter.as_ref(),
+                        row.kind,
+                        &live.credentials,
+                        row,
+                    ) || accounts_same_oauth_identity(row.kind, &live.credentials, row))
+            }),
             Err(_) => None,
         };
         let Some(live) = live else {

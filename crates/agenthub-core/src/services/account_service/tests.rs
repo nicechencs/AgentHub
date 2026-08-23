@@ -1813,6 +1813,208 @@ fn list_collapses_multiple_same_identity_oauth_grants_to_one_row() {
     assert_eq!(repeated[0].credentials["body"]["key"], "grant-c");
 }
 
+fn grok_two_slot_auth_json(uid1_rt: &str, uid2_rt: &str) -> serde_json::Value {
+    json!({
+        "format": "auth_json",
+        "body": {
+            "https://auth.x.ai::client": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": "at-1",
+                "refresh_token": uid1_rt
+            },
+            "https://auth.x.ai::https://api.x.ai": {
+                "email": "b@example.com",
+                "user_id": "uid-2",
+                "key": "at-2",
+                "refresh_token": uid2_rt
+            }
+        }
+    })
+}
+
+#[test]
+fn list_keeps_two_grok_oauth_people_from_two_slot_auth_json() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    for (index, (uid, email, rt)) in [
+        ("uid-1", "a@example.com", "rt-1"),
+        ("uid-2", "b@example.com", "rt-2"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        svc.repo()
+            .create(&Account {
+                id: format!("grok-{uid}"),
+                agent_id: AgentId::Grok,
+                kind: AccountKind::Oauth,
+                label: email.into(),
+                credentials: json!({
+                    "format": "auth_json",
+                    "body": {
+                        "https://auth.x.ai::client": {
+                            "email": email,
+                            "user_id": uid,
+                            "key": format!("at-{index}"),
+                            "refresh_token": rt
+                        }
+                    }
+                }),
+                extra: json!({"source": "live", "identityLabel": email}),
+                status: "active".into(),
+                is_current: index == 0,
+                created_at: "2026-01-01 00:00:00.000000".into(),
+                updated_at: "2026-01-01 00:00:00.000000".into(),
+            })
+            .unwrap();
+    }
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: grok_two_slot_auth_json("rt-1", "rt-2"),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(rows.len(), 2, "different Grok people stay two pool rows");
+    let uid1 = rows.iter().find(|row| row.id == "grok-uid-1").unwrap();
+    let uid2 = rows.iter().find(|row| row.id == "grok-uid-2").unwrap();
+    assert!(
+        !uid1.credentials.to_string().contains("rt-2"),
+        "uid-1 row must not copy the sibling refresh_token"
+    );
+    assert!(
+        !uid2.credentials.to_string().contains("rt-1"),
+        "uid-2 row must not copy the sibling refresh_token"
+    );
+    assert!(uid1.credentials.to_string().contains("rt-1"));
+    assert!(uid2.credentials.to_string().contains("rt-2"));
+}
+
+#[test]
+fn import_live_expands_grok_two_slot_auth_json_into_two_rows() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: grok_two_slot_auth_json("rt-1", "rt-2"),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(rows.len(), 2, "import_live must create two Grok people");
+    assert!(rows.iter().any(|row| row.id == imported.id));
+    let uid1 = rows
+        .iter()
+        .find(|row| row.credentials.to_string().contains("uid-1"))
+        .unwrap();
+    let uid2 = rows
+        .iter()
+        .find(|row| row.credentials.to_string().contains("uid-2"))
+        .unwrap();
+    assert!(!uid1.credentials.to_string().contains("rt-2"));
+    assert!(!uid2.credentials.to_string().contains("rt-1"));
+}
+
+#[test]
+fn grok_same_person_two_auth_json_slots_collapse_to_one_row() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "https://auth.x.ai::client": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "at-client",
+                    "refresh_token": "rt-client"
+                },
+                "https://auth.x.ai::https://api.x.ai": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "at-api",
+                    "refresh_token": "rt-api"
+                }
+            }
+        }),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+
+    let _ = svc.import_live(AgentId::Grok, None).unwrap();
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        rows.len(),
+        1,
+        "same Grok person across two slots still collapses to one row"
+    );
+    assert_eq!(rows[0].credentials["user_id"], "uid-1");
+}
+
+#[test]
+fn grok_bundle_live_does_not_identity_merge_oauth_people() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    svc.repo()
+        .create(&Account {
+            id: "grok-uid-1".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "https://auth.x.ai::client": {
+                        "email": "a@example.com",
+                        "user_id": "uid-1",
+                        "key": "at-oauth",
+                        "refresh_token": "rt-oauth"
+                    }
+                }
+            }),
+            extra: json!({"source": "live", "identityLabel": "a@example.com"}),
+            status: "active".into(),
+            is_current: true,
+            created_at: "2026-01-01 00:00:00.000000".into(),
+            updated_at: "2026-01-01 00:00:00.000000".into(),
+        })
+        .unwrap();
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "grok_bundle",
+            "api_key": "xai-file-key",
+            "auth": {
+                "https://auth.x.ai::client": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "at-file",
+                    "refresh_token": "rt-file"
+                }
+            }
+        }),
+        label_hint: Some("API Key".into()),
+        extra: json!({"source": "config.toml+auth.json"}),
+    });
+
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    let oauth = rows
+        .iter()
+        .find(|row| row.kind == AccountKind::Oauth)
+        .expect("OAuth person must stay a separate row");
+    assert!(oauth.credentials.to_string().contains("rt-oauth"));
+    assert!(
+        !oauth.credentials.to_string().contains("rt-file"),
+        "API key grok_bundle must not copy OAuth file tokens onto the OAuth row"
+    );
+}
+
 #[test]
 fn list_exposes_live_auth_state_only_on_matching_current_account() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);

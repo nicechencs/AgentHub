@@ -46,18 +46,27 @@ impl AccountService {
 
         let adapter = self.registry.require(agent, Capability::AccountSwitch)?;
         let _lock = self.acquire_live_lock(agent)?;
-        let live = adapter.read_account()?;
-        if live.agent != agent {
-            return Err(AppError::InvalidArg(format!(
-                "adapter returned account for {}, expected {}",
-                live.agent.as_str(),
-                agent.as_str()
-            )));
+        let lives = self.read_live_accounts(adapter.as_ref(), agent)?;
+        if lives.is_empty() {
+            return Err(AppError::NotFound(
+                "no live account credentials found".into(),
+            ));
         }
 
         // 「同步当前登录」is a user override: always copy the live file onto the
         // matching row. Do not run rt/mtime bidirectional overlay here.
-        self.upsert_live_account(adapter.as_ref(), agent, live, name, true)
+        // Grok nested auth.json slots import one row per person, like Pi
+        // providers; the last row stays current for single-current agents.
+        let mut last: Option<Account> = None;
+        let n = lives.len();
+        for (i, live) in lives.into_iter().enumerate() {
+            let is_last = i + 1 == n;
+            let display_name = if is_last { name } else { None };
+            let acc =
+                self.upsert_live_account(adapter.as_ref(), agent, live, display_name, is_last)?;
+            last = Some(acc);
+        }
+        last.ok_or_else(|| AppError::message("account.import", "live import produced no accounts"))
     }
 
     /// Import each Pi auth.json provider as its own pool account.

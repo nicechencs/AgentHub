@@ -7,8 +7,8 @@ use crate::adapters::AgentAdapter;
 use crate::models::{ProcessMode, RunOptions};
 
 use super::{
-    clear_grok_field, grok_auth_state, grok_cli_args, grok_supports_no_auto_update,
-    read_grok_api_key, write_grok_api_key, GrokAdapter,
+    clear_grok_field, expand_grok_auth_to_live_accounts, grok_auth_state, grok_cli_args,
+    grok_supports_no_auto_update, read_grok_api_key, write_grok_api_key, GrokAdapter,
 };
 use crate::models::{AccountKind, AgentConfig, AgentId, LiveAccount};
 
@@ -516,5 +516,147 @@ fn apply_account_writes_two_slot_auth_json_snapshot_without_top_level_identity()
     assert_eq!(
         body["https://auth.x.ai::https://api.x.ai"]["refresh_token"],
         "rt-2"
+    );
+}
+
+#[test]
+fn expand_grok_auth_splits_nested_oauth_slots() {
+    let snapshot = LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: serde_json::json!({
+            "format": "auth_json",
+            "body": {
+                "https://auth.x.ai::https://api.x.ai": {
+                    "email": "b@example.com",
+                    "user_id": "uid-2",
+                    "key": "at-2",
+                    "refresh_token": "rt-2"
+                },
+                "https://auth.x.ai::client": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "at-1",
+                    "refresh_token": "rt-1"
+                }
+            }
+        }),
+        label_hint: Some("grok-oauth".into()),
+        extra: serde_json::json!({ "source": "auth.json" }),
+    };
+    let slots = expand_grok_auth_to_live_accounts(&snapshot);
+    assert_eq!(slots.len(), 2);
+    let uid1 = slots
+        .iter()
+        .find(|slot| slot.credentials["user_id"] == "uid-1")
+        .unwrap();
+    let uid2 = slots
+        .iter()
+        .find(|slot| slot.credentials["user_id"] == "uid-2")
+        .unwrap();
+    assert_eq!(uid1.credentials["refresh_token"], "rt-1");
+    assert_eq!(uid2.credentials["refresh_token"], "rt-2");
+    assert!(uid1.credentials.get("body").is_some_and(|body| {
+        body.get("https://auth.x.ai::client").is_some()
+            && body.get("https://auth.x.ai::https://api.x.ai").is_none()
+    }));
+    assert!(!uid1.credentials.to_string().contains("rt-2"));
+    assert!(!uid2.credentials.to_string().contains("rt-1"));
+}
+
+#[test]
+fn expand_grok_bundle_stays_single_api_key_snapshot() {
+    let snapshot = LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: serde_json::json!({
+            "format": "grok_bundle",
+            "api_key": "xai-file-key",
+            "auth": {
+                "https://auth.x.ai::client": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "at-1",
+                    "refresh_token": "rt-1"
+                },
+                "https://auth.x.ai::https://api.x.ai": {
+                    "email": "b@example.com",
+                    "user_id": "uid-2",
+                    "key": "at-2",
+                    "refresh_token": "rt-2"
+                }
+            }
+        }),
+        label_hint: Some("API Key".into()),
+        extra: serde_json::json!({ "source": "config.toml+auth.json" }),
+    };
+    let slots = expand_grok_auth_to_live_accounts(&snapshot);
+    assert_eq!(slots.len(), 1);
+    assert_eq!(slots[0].kind, AccountKind::ApiKey);
+    assert_eq!(slots[0].credentials["format"], "grok_bundle");
+}
+
+#[test]
+fn apply_account_one_slot_snapshot_does_not_wipe_sibling() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("auth.json"),
+        r#"{
+  "https://auth.x.ai::client": {
+    "email": "a@example.com",
+    "user_id": "uid-1",
+    "key": "old-at-1",
+    "refresh_token": "old-rt-1"
+  },
+  "https://auth.x.ai::https://api.x.ai": {
+    "email": "b@example.com",
+    "user_id": "uid-2",
+    "key": "old-at-2",
+    "refresh_token": "old-rt-2"
+  }
+}"#,
+    )
+    .unwrap();
+    let result = GrokAdapter.apply_account(&LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: serde_json::json!({
+            "format": "auth_json",
+            "access_token": "new-at-1",
+            "refresh_token": "new-rt-1",
+            "user_id": "uid-1",
+            "email": "a@example.com",
+            "body": {
+                "https://auth.x.ai::client": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "new-at-1",
+                    "refresh_token": "new-rt-1"
+                }
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: serde_json::json!({ "source": "auth.json" }),
+    });
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+    let body: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.path().join("auth.json")).unwrap()).unwrap();
+    assert_eq!(body["https://auth.x.ai::client"]["key"], "new-at-1");
+    assert_eq!(
+        body["https://auth.x.ai::client"]["refresh_token"],
+        "new-rt-1"
+    );
+    assert_eq!(
+        body["https://auth.x.ai::https://api.x.ai"]["refresh_token"],
+        "old-rt-2"
     );
 }
