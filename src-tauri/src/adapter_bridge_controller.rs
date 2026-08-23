@@ -4,10 +4,9 @@
 //! generated target provider projection.  This module owns the cross-boundary
 //! saga: the loopback listener must bind before the generated provider is
 //! persisted, and a failed apply must not leave a newly-started listener
-//! running. Phase 1 does not occupy the target (or source) live login — the
-//! generated loopback stays a hidden projection, not the Agent's current
-//! Connection. Neither upstream nor local bearer tokens cross the Tauri
-//! command boundary.
+//! running. Generated loopback is persisted non-current; live config is
+//! refreshed only if that row is already current. Neither upstream nor local
+//! bearer tokens cross the Tauri command boundary.
 //!
 //! Process-local profile / target gates and the credential-free status DTO live
 //! in [`agenthub_core::adapter_control`] so commands stay Tauri-neutral.
@@ -61,7 +60,6 @@ pub(crate) async fn apply_local_bridge(
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let profile_id = bridge_profile_id_for_request(hub.clone(), request.clone()).await?;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
-    // Phase 1: start/persist the local route without switching live login.
     apply_local_bridge_locked(hub, host, coordinator, request).await
 }
 
@@ -195,7 +193,6 @@ pub(crate) async fn start_local_bridge(
         target_agent_id: profile.target_agent_id,
         auto_start: profile.auto_start,
     };
-    // Manual start must not steal current login if the user already switched away.
     let applied = apply_local_bridge_locked(hub, host.clone(), coordinator, request).await?;
     let status = host
         .status(&applied.profile.id)
@@ -496,6 +493,7 @@ fn persist_bridge_projection_inner(
                             &provider_id,
                             snapshot,
                             created,
+                            should_switch,
                             prepared.profile().target_agent_id,
                         );
                         return Err(composite_saga_error(
@@ -513,6 +511,7 @@ fn persist_bridge_projection_inner(
                     &provider_id,
                     snapshot,
                     created,
+                    should_switch,
                     prepared.profile().target_agent_id,
                 );
                 return Err(composite_saga_error(
@@ -544,6 +543,7 @@ fn persist_bridge_projection_inner(
                 &provider_id,
                 snapshot,
                 created,
+                should_switch,
                 prepared.profile().target_agent_id,
             );
             return Err(composite_saga_error(
@@ -556,8 +556,7 @@ fn persist_bridge_projection_inner(
     Ok(AdapterApplyResult { profile, provider })
 }
 
-/// Phase 1: opening a route does not occupy live login. Refresh only when
-/// the generated loopback is already the current Connection.
+/// Refresh live only if the generated loopback is already current.
 fn should_make_bridge_current(generated_was_current: bool) -> bool {
     generated_was_current
 }
@@ -599,15 +598,15 @@ fn capture_provider_snapshot(
     })
 }
 
-/// Restore the persisted provider pool through `ProviderService`; it is the
-/// sole live-config owner.  We intentionally try every inverse action so a
-/// retry starts from the best possible state, then return a stable code only.
+/// Inverse of persist: restore the generated pool row. Reverse live switch
+/// only when this saga actually refreshed current (`switched_live`).
 fn rollback_bridge_projection(
     hub: &AgentHub,
     core_guard: &ProviderLiveSagaGuard<'_>,
     provider_id: &str,
     snapshot: &BridgeProviderSnapshot,
     created: bool,
+    switched_live: bool,
     target_agent: AgentId,
 ) -> Result<(), &'static str> {
     let mut failed = false;
@@ -626,6 +625,14 @@ fn rollback_bridge_projection(
         failed = true;
     }
 
+    if !switched_live {
+        return if failed {
+            Err("adapter.bridge_rollback")
+        } else {
+            Ok(())
+        };
+    }
+
     if let Some(old_current) = &snapshot.current_provider {
         if hub
             .providers
@@ -638,9 +645,8 @@ fn rollback_bridge_projection(
 
     // A provider switch back to an old current row may backfill a drifted
     // value rather than the byte-exact snapshot captured before this saga.
-    // Always restore the snapshot last, whether or not there was an old
-    // current provider, so failed finalize/switch cannot leave live config
-    // changed.
+    // Restore the snapshot last so failed finalize/switch cannot leave live
+    // config changed.
     if hub
         .providers
         .restore_live_config_snapshot_with_guard(core_guard, &snapshot.live_config)
@@ -1016,6 +1022,7 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
                 &provider_id,
                 &snapshot,
                 false,
+                true,
                 target_agent,
             );
             return Err(composite_saga_error(
@@ -1067,6 +1074,7 @@ fn rollback_restored_bridge_port(
             provider_id,
             snapshot,
             false,
+            true,
             target_agent,
         );
     }

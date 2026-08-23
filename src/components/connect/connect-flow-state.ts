@@ -187,10 +187,7 @@ export function isOfficialCodexOauthAccount(
   return account?.agentId === 'codex' && account.kind === 'oauth';
 }
 
-/**
- * Route bind does not occupy live login, so self-target is allowed.
- * Share still hides the source agent except official Codex OAuth self-bind.
- */
+/** Route keeps own agent; share keeps it only for official Codex OAuth. */
 export function keepOwnAgentTarget(
   entry: ConnectFlowEntry | null | undefined,
   accounts: readonly Account[],

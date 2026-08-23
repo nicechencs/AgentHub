@@ -370,9 +370,7 @@ fn stop_is_idempotent_for_an_already_stopped_bridge() {
 
 #[test]
 fn apply_does_not_occupy_target_current_unless_generated_already_current() {
-    // Phase 1: opening a route does not switch the target Agent to loopback.
     assert!(!should_make_bridge_current(false));
-    // Legacy rows that already occupy current still refresh live config.
     assert!(should_make_bridge_current(true));
 }
 
@@ -1150,6 +1148,68 @@ fn oauth_local_bridge_bind_reuses_login_row_and_does_not_occupy_live() {
             "{label}"
         );
     }
+}
+
+#[test]
+fn rollback_skips_live_switch_when_bind_did_not_occupy() {
+    let (_dir, hub, source_adapter, target_adapter) =
+        isolated_route_hub(AgentId::Grok, AgentId::Claude);
+    AccountRepo::new(hub.db.clone())
+        .create(&grok_oauth_account("grok-subscription"))
+        .unwrap();
+    seed_current_target_provider(&hub, AgentId::Claude);
+    let target_config_before = std::fs::read(&target_adapter.config_path).unwrap();
+    let request = AdapterBridgePrepareRequest {
+        source_kind: AdapterSourceKind::Account,
+        source_id: "grok-subscription".into(),
+        target_agent_id: AgentId::Claude,
+        auto_start: true,
+    };
+    let prepared = hub.adapter_bridge.prepare(&request).unwrap();
+    install_sql_trigger(
+        &hub,
+        r#"
+        CREATE TRIGGER fail_bridge_finalize
+        BEFORE UPDATE OF local_port ON adapter_profiles
+        WHEN NEW.local_port = 43121
+        BEGIN
+            SELECT RAISE(ABORT, 'injected finalize failure');
+        END;
+        "#,
+    );
+    let core_guard = hub.providers.begin_live_saga(AgentId::Claude).unwrap();
+    let projection = hub
+        .adapter_bridge
+        .revalidate_provider_projection(&prepared, 43121)
+        .unwrap();
+    let snapshot = capture_provider_snapshot(
+        &hub,
+        &core_guard,
+        prepared.profile().generated_provider_id.as_deref(),
+        AgentId::Claude,
+    )
+    .unwrap();
+    let error =
+        persist_bridge_projection_inner(&hub, &core_guard, &prepared, projection, 43121, &snapshot)
+            .unwrap_err();
+    assert!(error.contains("injected finalize failure"), "{error}");
+    assert!(
+        !error.contains("adapter.bridge_rollback"),
+        "non-occupying rollback must not rewrite live: {error}"
+    );
+    let current = hub
+        .providers
+        .repo()
+        .get_current(AgentId::Claude)
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.id, "target-current");
+    assert_eq!(source_adapter.config_writes(), 0);
+    assert_eq!(target_adapter.config_writes(), 0);
+    assert_eq!(
+        std::fs::read(&target_adapter.config_path).unwrap(),
+        target_config_before
+    );
 }
 
 #[test]

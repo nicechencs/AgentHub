@@ -321,6 +321,25 @@ describe('for-source 排除自身 Agent', () => {
       allowOwnAgent: keepOwnAgentTarget(share, [grokAccount]),
     });
     expect(blocked.selectedTargetAgentId).toBeNull();
+
+    const codexOauth = account({ id: 'acc-codex', agentId: 'codex', kind: 'oauth' });
+    const shareCodex: ConnectFlowEntry = {
+      mode: 'for-source',
+      source: { kind: 'account', id: 'acc-codex' },
+      purpose: 'share',
+    };
+    expect(keepOwnAgentTarget(shareCodex, [codexOauth])).toBe(true);
+    const codexKey = account({ id: 'acc-codex-key', agentId: 'codex', kind: 'apikey' });
+    expect(keepOwnAgentTarget({
+      mode: 'for-source',
+      source: { kind: 'account', id: 'acc-codex-key' },
+      purpose: 'share',
+    }, [codexKey])).toBe(false);
+    expect(keepOwnAgentTarget({
+      mode: 'for-source',
+      source: { kind: 'provider', id: 'prov-codex' },
+      purpose: 'share',
+    }, [codexOauth])).toBe(false);
   });
 });
 
