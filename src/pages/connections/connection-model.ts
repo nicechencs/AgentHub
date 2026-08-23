@@ -347,7 +347,7 @@ export function isLiveAuthDiscoveryDeferred(input: {
 
 export function liveAuthDiscoveryKind(input: {
   poolState: ConnectionPoolDiscoveryState;
-  probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials'> | null;
+  probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials' | 'isAdapterProjection' | 'alsoPresent'> | null;
   accounts: readonly { kind: string }[];
   providers: readonly unknown[];
   accountsFailed?: boolean;
@@ -355,6 +355,7 @@ export function liveAuthDiscoveryKind(input: {
 }): DiscoveredAuthKind | null {
   if (isLiveAuthDiscoveryDeferred(input)) return null;
   if (!input.probe?.hasCredentials) return null;
+  if (probeIsAdapterProjection(input.probe)) return null;
 
   const kind = liveAuthProbeKind(input.probe);
   const hasExistingOAuth = input.accounts.some((account) => account.kind === 'oauth');
