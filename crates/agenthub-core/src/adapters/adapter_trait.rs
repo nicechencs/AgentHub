@@ -66,7 +66,8 @@ pub trait AgentAdapter: Send + Sync {
         default_authorization_key(kind, credentials)
     }
 
-    /// Identity label for UI grouping only — never used for dedupe/delete.
+    /// Identity label. With `label_hint = None` this is the stable person
+    /// (email / user_id / sub) used for same-agent OAuth overwrite.
     fn identity_label(
         &self,
         kind: AccountKind,

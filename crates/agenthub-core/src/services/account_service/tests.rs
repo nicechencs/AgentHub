@@ -386,16 +386,17 @@ fn duplicate_merge_apply_failure_restores_current_source_and_target() {
     adapter.fail_writes_on(&[2]);
 
     let error = svc
-        .update_api_key(
-            AgentId::Claude,
-            &source.id,
-            None,
-            Some("sk-target-key"),
-        )
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert_eq!(error.code(), "test.write");
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
     assert_eq!(
         svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id,
         source.id
@@ -445,18 +446,25 @@ fn duplicate_merge_delete_failure_restores_current_source_target_binding_and_liv
         .unwrap();
 
     let error = svc
-        .update_api_key(
-            AgentId::Claude,
-            &source.id,
-            None,
-            Some("sk-target-key"),
-        )
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert!(error.code().starts_with("db"));
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
-    assert_eq!(svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id, source.id);
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
+    assert_eq!(
+        svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id,
+        source.id
+    );
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before
+    );
     assert_eq!(adapter.read_account().unwrap(), live_before);
 }
 
@@ -512,20 +520,31 @@ fn duplicate_merge_mid_cleanup_failure_restores_all_duplicate_rows() {
         .unwrap();
 
     let error = svc
-        .update_api_key(
-            AgentId::Claude,
-            &source.id,
-            None,
-            Some("sk-target-key"),
-        )
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert!(error.code().starts_with("db"));
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
-    assert_eq!(svc.repo().get_by_id(&duplicate.id).unwrap().unwrap(), duplicate_before);
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&duplicate.id).unwrap().unwrap(),
+        duplicate_before
+    );
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before
+    );
     assert_eq!(adapter.read_account().unwrap(), live_before);
-    assert!(svc.connections.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
+    assert!(svc
+        .connections
+        .list_trash(Some(AgentId::Claude))
+        .unwrap()
+        .is_empty());
 }
 
 fn install_account_mutation_plan_trigger(svc: &AccountService, body: &str) {
@@ -632,7 +651,13 @@ fn duplicate_merge_ignores_duplicate_inserted_after_snapshot() {
     svc.update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap();
     assert!(svc.repo().get_by_id(&source.id).unwrap().is_none());
-    assert!(svc.repo().get_by_id(&target.id).unwrap().unwrap().is_current);
+    assert!(
+        svc.repo()
+            .get_by_id(&target.id)
+            .unwrap()
+            .unwrap()
+            .is_current
+    );
     assert!(
         AccountRepo::new(svc.db.clone())
             .get_by_id("claude-acc-concurrent-dup")
@@ -673,8 +698,14 @@ fn duplicate_merge_source_revision_mismatch_fails_before_db_mutation() {
         .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert_eq!(error.code(), "account.merge.conflict");
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
 }
 
 #[test]
@@ -708,8 +739,14 @@ fn duplicate_merge_target_revision_mismatch_fails_before_db_mutation() {
         .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert_eq!(error.code(), "account.merge.conflict");
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
 }
 
 #[test]
@@ -749,9 +786,18 @@ fn duplicate_merge_source_cas_delete_conflict_is_not_pre_mutation_conflict() {
         .unwrap_err();
     assert_eq!(error.code(), "account.merge.delete.conflict");
     assert_ne!(error.code(), "account.merge.conflict");
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before
+    );
     assert_eq!(adapter.read_account().unwrap(), live_before);
 }
 
@@ -768,8 +814,20 @@ fn duplicate_merge_three_duplicates_mid_cleanup_restores_all_rows() {
         .add_api_key(AgentId::Claude, Some("target-a"), "sk-target-key")
         .unwrap();
     let repo = AccountRepo::new(svc.db.clone());
-    let extra_b = repo.create(&extra_api_key_row("claude-acc-target-b", "target-b", "sk-target-key")).unwrap();
-    let extra_c = repo.create(&extra_api_key_row("claude-acc-target-c", "target-c", "sk-target-key")).unwrap();
+    let extra_b = repo
+        .create(&extra_api_key_row(
+            "claude-acc-target-b",
+            "target-b",
+            "sk-target-key",
+        ))
+        .unwrap();
+    let extra_c = repo
+        .create(&extra_api_key_row(
+            "claude-acc-target-c",
+            "target-c",
+            "sk-target-key",
+        ))
+        .unwrap();
     let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
     let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
     let extra_b_before = svc.repo().get_by_id(&extra_b.id).unwrap().unwrap();
@@ -800,13 +858,32 @@ fn duplicate_merge_three_duplicates_mid_cleanup_restores_all_rows() {
         .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert!(error.code().starts_with("db"));
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
-    assert_eq!(svc.repo().get_by_id(&extra_b.id).unwrap().unwrap(), extra_b_before);
-    assert_eq!(svc.repo().get_by_id(&extra_c.id).unwrap().unwrap(), extra_c_before);
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&extra_b.id).unwrap().unwrap(),
+        extra_b_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&extra_c.id).unwrap().unwrap(),
+        extra_c_before
+    );
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before
+    );
     assert_eq!(adapter.read_account().unwrap(), live_before);
-    assert!(svc.connections.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
+    assert!(svc
+        .connections
+        .list_trash(Some(AgentId::Claude))
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -850,7 +927,10 @@ fn duplicate_merge_live_apply_failure_restores_cross_pool_current_and_binding() 
         .get_by_id(&provider_before.id)
         .unwrap()
         .is_some());
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before
+    );
     assert_eq!(
         adapter.read_account().unwrap().credentials["api_key"],
         "sk-source-key"
@@ -882,7 +962,10 @@ fn account_compensation_fails_closed_when_another_writer_changes_the_row() {
         .unwrap_err();
 
     assert_eq!(error.code(), "account.current.apply.rollback.database");
-    assert_eq!(svc.repo().get_by_id(&original.id).unwrap().unwrap(), external);
+    assert_eq!(
+        svc.repo().get_by_id(&original.id).unwrap().unwrap(),
+        external
+    );
 }
 
 #[test]
@@ -1315,9 +1398,8 @@ fn import_live_loopback_does_not_swallow_oauth() {
 }
 
 #[test]
-fn import_live_keeps_same_identity_different_tokens() {
+fn import_live_overwrites_same_oauth_identity_different_tokens() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);
-    // First authorization
     adapter.set_live(LiveAccount {
         agent: AgentId::Grok,
         kind: AccountKind::Oauth,
@@ -1336,7 +1418,6 @@ fn import_live_keeps_same_identity_different_tokens() {
     });
     let first = svc.import_live(AgentId::Grok, None).unwrap();
 
-    // Second authorization for same person, different ticket
     adapter.set_live(LiveAccount {
         agent: AgentId::Grok,
         kind: AccountKind::Oauth,
@@ -1354,16 +1435,113 @@ fn import_live_keeps_same_identity_different_tokens() {
         extra: json!({}),
     });
     let second = svc.import_live(AgentId::Grok, None).unwrap();
-    assert_ne!(
+    assert_eq!(
         first.id, second.id,
-        "different tokens must remain separate rows"
+        "same Grok OAuth identity must overwrite the existing row"
     );
-    let list = svc.list(Some(AgentId::Grok)).unwrap();
-    assert_eq!(list.len(), 2);
+    assert_eq!(second.credentials["body"]["provider"]["key"], "token-bbb");
     assert!(second.is_current);
-    // older authorization still present
-    assert!(list.iter().any(|a| a.id == first.id));
+    let list = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, first.id);
+    assert_eq!(list[0].credentials["body"]["provider"]["key"], "token-bbb");
     assert!(list.iter().all(|a| a.extra.get("identityLabel").is_some()));
+}
+
+#[test]
+fn import_live_keeps_cross_agent_same_oauth_identity_separate() {
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let grok = Arc::new(FakeAdapter::new(
+        AgentId::Grok,
+        root.path().join("live").join("grok.json"),
+    ));
+    let claude = Arc::new(FakeAdapter::new(
+        AgentId::Claude,
+        root.path().join("live").join("claude.json"),
+    ));
+    let mut registry = AdapterRegistry::new();
+    registry.register(grok.clone());
+    registry.register(claude.clone());
+    let svc = AccountService::with_live(db, registry, root.path().join("backups"));
+
+    grok.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {"email": "a@example.com", "user_id": "uid-1", "key": "grok-token"}
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({}),
+    });
+    claude.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "credentials_json",
+            "body": {
+                "claudeAiOauth": {
+                    "accessToken": "claude-access",
+                    "refreshToken": "claude-refresh"
+                },
+                "email": "a@example.com"
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({}),
+    });
+
+    let grok_row = svc.import_live(AgentId::Grok, None).unwrap();
+    let claude_row = svc.import_live(AgentId::Claude, None).unwrap();
+    assert_ne!(grok_row.id, claude_row.id);
+    assert_eq!(svc.list(Some(AgentId::Grok)).unwrap().len(), 1);
+    assert_eq!(svc.list(Some(AgentId::Claude)).unwrap().len(), 1);
+    let all = svc.list(None).unwrap();
+    assert_eq!(all.len(), 2, "same email on Grok and Claude stays two rows");
+    assert!(all.iter().any(|row| row.agent_id == AgentId::Grok));
+    assert!(all.iter().any(|row| row.agent_id == AgentId::Claude));
+}
+
+#[test]
+fn hub_pkce_and_cli_import_same_grok_identity_overwrite() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let first = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "pkce-token"
+                }
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": "cli-token"
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({}),
+    });
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    assert_eq!(first.id, imported.id);
+    assert_eq!(imported.credentials["body"]["key"], "cli-token");
+    assert_eq!(svc.list(Some(AgentId::Grok)).unwrap().len(), 1);
 }
 
 #[test]
@@ -1457,65 +1635,52 @@ fn list_aligns_current_grok_account_for_different_live_identity() {
 }
 
 #[test]
-fn list_retains_new_grant_without_overwriting_multiple_same_identity_grants() {
+fn list_collapses_multiple_same_identity_oauth_grants_to_one_row() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);
-    let make_live = |key: &str| LiveAccount {
-        agent: AgentId::Grok,
-        kind: AccountKind::Oauth,
-        credentials: json!({
+    let make_creds = |key: &str| {
+        json!({
             "format": "auth_json",
             "body": {"email": "same@example.com", "user_id": "same-user", "key": key}
-        }),
+        })
+    };
+    for (index, key) in ["grant-a", "grant-b", "grant-c"].iter().enumerate() {
+        svc.repo()
+            .create(&Account {
+                id: format!("grok-grant-{index}"),
+                agent_id: AgentId::Grok,
+                kind: AccountKind::Oauth,
+                label: "same@example.com".into(),
+                credentials: make_creds(key),
+                extra: json!({"source": "live", "identityLabel": "same@example.com"}),
+                status: "active".into(),
+                is_current: index == 1,
+                created_at: format!("2026-01-0{} 00:00:00.000000", index + 1),
+                updated_at: format!("2026-01-0{} 00:00:00.000000", index + 1),
+            })
+            .unwrap();
+    }
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: make_creds("grant-c"),
         label_hint: Some("same@example.com".into()),
         extra: json!({}),
-    };
-
-    adapter.set_live(make_live("grant-a"));
-    let first = svc.import_live(AgentId::Grok, None).unwrap();
-    adapter.set_live(make_live("grant-b"));
-    let second = svc.import_live(AgentId::Grok, None).unwrap();
-
-    // A third token for the same identity could be a new grant rather than a
-    // rotation. Reconcile must preserve both existing authorizations while
-    // making the newly observed live grant current for a single-current agent.
-    adapter.set_live(make_live("grant-c"));
+    });
     let rows = svc.list(Some(AgentId::Grok)).unwrap();
-    assert_eq!(rows.len(), 3);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].credentials["body"]["key"], "grant-c");
+    assert!(rows[0].is_current);
     assert_eq!(
-        rows.iter()
-            .find(|row| row.id == first.id)
-            .unwrap()
-            .credentials["body"]["key"],
-        "grant-a"
+        rows[0].id, "grok-grant-1",
+        "collapse keeps the current row and overwrites it with live tokens"
     );
-    assert_eq!(
-        rows.iter()
-            .find(|row| row.id == second.id)
-            .unwrap()
-            .credentials["body"]["key"],
-        "grant-b"
-    );
-    let observed = rows
-        .iter()
-        .find(|row| row.credentials["body"]["key"] == "grant-c")
-        .unwrap();
-    assert!(
-        observed.is_current,
-        "current must match the external live grant"
-    );
-    assert_eq!(rows.iter().filter(|row| row.is_current).count(), 1);
+    assert!(!rows.iter().any(|row| row.id == "grok-grant-0"));
+    assert!(!rows.iter().any(|row| row.id == "grok-grant-2"));
 
-    // The created live grant becomes an exact match; later reads must not
-    // create a duplicate pool row.
     let repeated = svc.list(Some(AgentId::Grok)).unwrap();
-    assert_eq!(repeated.len(), 3);
-    assert_eq!(
-        repeated
-            .iter()
-            .filter(|row| row.credentials["body"]["key"] == "grant-c")
-            .count(),
-        1
-    );
+    assert_eq!(repeated.len(), 1);
+    assert_eq!(repeated[0].credentials["body"]["key"], "grant-c");
 }
 
 #[test]
@@ -1819,22 +1984,22 @@ fn import_live_cleans_only_same_authorization_ticket_dups() {
         created_at: "2026-01-02 00:00:00.000000".into(),
         updated_at: "2026-01-02 00:00:00.000000".into(),
     };
-    // Different authorization for same person — must survive cleanup
+    // Different person — must survive same-identity cleanup.
     let other_auth = Account {
         id: "grok-live-other".into(),
         agent_id: AgentId::Grok,
         kind: AccountKind::Oauth,
-        label: "a@example.com".into(),
+        label: "b@example.com".into(),
         credentials: json!({
             "format": "auth_json",
             "body": {
                 "provider": {
-                    "email": "a@example.com",
+                    "email": "b@example.com",
                     "key": "other-ticket"
                 }
             }
         }),
-        extra: json!({"source": "live", "identityLabel": "a@example.com"}),
+        extra: json!({"source": "live", "identityLabel": "b@example.com"}),
         status: "active".into(),
         is_current: false,
         created_at: "2026-01-03 00:00:00.000000".into(),
@@ -1854,7 +2019,7 @@ fn import_live_cleans_only_same_authorization_ticket_dups() {
     let merged = svc.import_live(AgentId::Grok, None).unwrap();
     assert_eq!(merged.id, "grok-live-new");
     let list = svc.list(Some(AgentId::Grok)).unwrap();
-    assert_eq!(list.len(), 2, "other valid authorization must remain");
+    assert_eq!(list.len(), 2, "a different OAuth identity must remain");
     assert!(list.iter().any(|a| a.id == "grok-live-other"));
     assert!(!list.iter().any(|a| a.id == "grok-live-old"));
 }
@@ -1933,7 +2098,89 @@ fn create_dedupes_same_oauth_ticket() {
     assert_eq!(first.id, second.id);
     assert!(second.is_current);
     assert_eq!(svc.list(Some(AgentId::Codex)).unwrap().len(), 1);
-    assert_eq!(second.credentials["body"]["access_token"], "at-2-rotated");
+    assert_eq!(
+        second
+            .credentials
+            .pointer("/body/tokens/access_token")
+            .or_else(|| second.credentials.get("access_token"))
+            .and_then(|value| value.as_str()),
+        Some("at-2-rotated")
+    );
+}
+
+#[test]
+fn create_overwrites_same_oauth_identity_different_tokens() {
+    let (_root, svc, _) = live_svc(AgentId::Grok);
+    let first = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "email": "a@example.com",
+                    "refresh_token": "rt-1",
+                    "access_token": "at-1"
+                }
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    let second = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "email": "a@example.com",
+                    "refresh_token": "rt-2",
+                    "access_token": "at-2"
+                }
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    assert_eq!(first.id, second.id);
+    assert_eq!(second.credentials["body"]["refresh_token"], "rt-2");
+    assert_eq!(svc.list(Some(AgentId::Grok)).unwrap().len(), 1);
+}
+
+#[test]
+fn create_keeps_unknown_oauth_identity_different_tokens_separate() {
+    let (_root, svc, _) = live_svc(AgentId::Codex);
+    let first = svc
+        .create(AccountInput {
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "Codex · OAuth".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": { "refresh_token": "rt-a", "access_token": "at-a" }
+            }),
+            extra: json!({}),
+            is_current: false,
+        })
+        .unwrap();
+    let second = svc
+        .create(AccountInput {
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "Codex · OAuth".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": { "refresh_token": "rt-b", "access_token": "at-b" }
+            }),
+            extra: json!({}),
+            is_current: false,
+        })
+        .unwrap();
+    assert_ne!(first.id, second.id);
+    assert_eq!(svc.list(Some(AgentId::Codex)).unwrap().len(), 2);
 }
 
 #[test]
@@ -1955,9 +2202,9 @@ fn switch_does_not_delete_other_authorizations() {
         kind: AccountKind::Oauth,
         credentials: json!({
             "format": "auth_json",
-            "body": { "provider": { "email": "a@x.com", "key": "tok-b" } }
+            "body": { "provider": { "email": "b@x.com", "key": "tok-b" } }
         }),
-        label_hint: Some("a@x.com".into()),
+        label_hint: Some("b@x.com".into()),
         extra: json!({}),
     });
     let auth_b = svc.import_live(AgentId::Grok, None).unwrap();
@@ -1973,7 +2220,7 @@ fn switch_does_not_delete_other_authorizations() {
     assert_eq!(
         list.len(),
         2,
-        "other authorization must remain after switch"
+        "a different OAuth identity must remain after switch"
     );
     let b_row = list.iter().find(|a| a.id == auth_b.id).unwrap();
     assert!(!b_row.is_current);
@@ -2670,12 +2917,7 @@ fn stale_snapshot_does_not_overwrite_rotated_key() {
         .unwrap();
     let stale = created.clone();
     let rotated = svc
-        .update_api_key(
-            AgentId::Claude,
-            &created.id,
-            None,
-            Some("sk-new-key-bbbb"),
-        )
+        .update_api_key(AgentId::Claude, &created.id, None, Some("sk-new-key-bbbb"))
         .unwrap();
     assert_eq!(rotated.credentials["api_key"], "sk-new-key-bbbb");
 
@@ -2711,7 +2953,11 @@ fn concurrent_add_api_key_same_authorization_keeps_one_row() {
     let right = right.join().unwrap().unwrap();
     assert_eq!(left.id, right.id);
     let rows = svc.repo().list(Some(AgentId::Claude)).unwrap();
-    assert_eq!(rows.len(), 1, "concurrent add of the same key must keep one row");
+    assert_eq!(
+        rows.len(),
+        1,
+        "concurrent add of the same key must keep one row"
+    );
 }
 
 #[test]

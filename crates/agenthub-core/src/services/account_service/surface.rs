@@ -11,6 +11,7 @@ use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{Account, AccountKind, AgentId, LiveAccount};
+use crate::utils::loopback::credentials_are_loopback;
 
 /// Process-local counterpart to the optional cross-process file lock. Services
 /// built without a backup root have no `lock_dir`, but concurrent UI reads can
@@ -206,12 +207,53 @@ pub(super) fn accounts_same_authorization(
     }
 }
 
+/// Same OAuth person: stable email / user_id / sub, never a display label.
+/// Unknown identity is fail-closed (do not merge by guess).
+pub(super) fn accounts_same_oauth_identity(
+    adapter: &dyn AgentAdapter,
+    kind: AccountKind,
+    incoming_credentials: &Value,
+    existing: &Account,
+) -> bool {
+    if kind != AccountKind::Oauth || existing.kind != AccountKind::Oauth {
+        return false;
+    }
+    match (
+        stable_live_identity(adapter, kind, incoming_credentials),
+        stable_live_identity(adapter, existing.kind, &existing.credentials),
+    ) {
+        (Some(incoming), Some(existing_identity)) => incoming == existing_identity,
+        _ => false,
+    }
+}
+
+/// Same-agent rows to upsert: token fingerprint, loopback slot, or OAuth identity.
+pub(super) fn authorization_duplicates(
+    adapter: &dyn AgentAdapter,
+    agent: AgentId,
+    kind: AccountKind,
+    credentials: &Value,
+    snapshot: &[Account],
+) -> Vec<Account> {
+    let incoming_loopback = credentials_are_loopback(credentials);
+    snapshot
+        .iter()
+        .filter(|candidate| {
+            candidate.kind == kind
+                && same_live_slot(agent, credentials, &candidate.credentials)
+                && if incoming_loopback {
+                    credentials_are_loopback(&candidate.credentials)
+                } else {
+                    !credentials_are_loopback(&candidate.credentials)
+                        && (accounts_same_authorization(adapter, kind, credentials, candidate)
+                            || accounts_same_oauth_identity(adapter, kind, credentials, candidate))
+                }
+        })
+        .cloned()
+        .collect()
+}
+
 /// Compare the serialized live credential payload, not the authorization key.
-///
-/// A Grok CLI refresh rotates the access/refresh token pair while preserving
-/// the same user and grant. Treat that as an update to the current row; the
-/// authorization-key matcher intentionally remains token-sensitive for
-/// explicit imports of separate grants.
 pub(super) fn live_credentials_changed(current: &Account, live: &LiveAccount) -> bool {
     let Some(current_body) = current.credentials.get("body") else {
         return current.credentials != live.credentials;
@@ -325,7 +367,7 @@ pub(super) fn attach_identity_meta(
     extra
 }
 
-/// 同授权指纹的多条历史冗余：优先 current → 更早 created_at → 更小 id。
+/// 同授权或同 OAuth 身份的多条历史冗余：优先 current → 更早 created_at → 更小 id。
 pub(super) fn pick_primary_authorization_match(mut matches: Vec<Account>) -> Option<Account> {
     if matches.is_empty() {
         return None;

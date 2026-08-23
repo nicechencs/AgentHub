@@ -120,10 +120,9 @@ impl AccountService {
 
     /// Reconcile one safe live snapshot into the account pool.
     ///
-    /// Authorization fingerprints are checked before identity. This lets an
-    /// exact token/key rotation update its owning row even when an adapter
-    /// cannot expose a stable identity, while all other unknown/ambiguous
-    /// cases fail closed. No account is ever deleted by this path.
+    /// Exact tokens match first. Same-agent OAuth identity overwrites one row
+    /// and collapses leftover same-identity rows. Unknown identity stays
+    /// fail-closed except for identical credentials.
     pub(super) fn reconcile_live_account(
         &self,
         adapter: &dyn AgentAdapter,
@@ -140,20 +139,28 @@ impl AccountService {
         }
         let rows = self.repo.list(Some(agent))?;
 
-        let authorization_matches = rows
-            .iter()
-            .filter(|row| row.kind == live.kind)
-            .filter(|row| same_live_slot(agent, &live.credentials, &row.credentials))
-            .filter(|row| accounts_same_authorization(adapter, live.kind, &live.credentials, row))
-            .cloned()
-            .collect::<Vec<_>>();
-        if let Some(existing) = pick_primary_authorization_match(authorization_matches) {
+        let matches = authorization_duplicates(adapter, agent, live.kind, &live.credentials, &rows);
+        if let Some(existing) = pick_primary_authorization_match(matches.clone()) {
             let (row, changed) = self.update_live_row(adapter, existing, live);
+            if matches.len() > 1 {
+                let mark_current = agent != AgentId::Pi;
+                return self
+                    .commit_authorization_merge(
+                        adapter,
+                        &row,
+                        row.kind,
+                        row.label.clone(),
+                        row.credentials.clone(),
+                        row.extra.clone(),
+                        mark_current,
+                    )
+                    .map(|committed| Some(committed.stored))
+                    .map_err(|error| error.into_error());
+            }
             return Ok(Some(self.persist_reconciled_live_row(agent, row, changed)?));
         }
 
-        let Some(live_identity) = stable_live_identity(adapter, live.kind, &live.credentials)
-        else {
+        if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
             // API-key / file snapshots often have no email/sub. Exact
             // authorization already matched above; anything else stays
             // fail-closed instead of inventing a pool row.
@@ -163,49 +170,10 @@ impl AccountService {
                 "live account identity is unknown; refusing non-exact reconcile"
             );
             return Ok(None);
-        };
-
-        let identity_matches = rows
-            .iter()
-            .filter(|row| same_live_slot(agent, &live.credentials, &row.credentials))
-            .filter(|row| {
-                stable_live_identity(adapter, row.kind, &row.credentials).as_deref()
-                    == Some(live_identity.as_str())
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if identity_matches.len() > 1 {
-            tracing::warn!(
-                module = targets::ACCOUNT,
-                agent = agent.as_str(),
-                matches = identity_matches.len(),
-                "live identity has multiple grants; retaining the observed grant separately"
-            );
         }
 
-        // A non-exact credential change is a rotation only when it is the one
-        // and only authorization for the stable identity *and* it belongs to
-        // the current live slot. In particular, never choose between multiple
-        // grants for the same identity based on a label or list order.
-        let current = rows.iter().find(|row| {
-            row.is_current && same_live_slot(agent, &live.credentials, &row.credentials)
-        });
-        if let ([existing], Some(current)) = (identity_matches.as_slice(), current) {
-            if existing.id == current.id
-                && stable_live_identity(adapter, current.kind, &current.credentials).as_deref()
-                    == Some(live_identity.as_str())
-            {
-                let (row, changed) = self.update_live_row(adapter, current.clone(), live);
-                return Ok(Some(self.persist_reconciled_live_row(agent, row, changed)?));
-            }
-        }
-
-        // The live authorization is not exact, and is not an unambiguous
-        // rotation of the current row. Retain it as a separate grant. For
-        // single-current agents this is an external live login, so make the
-        // new row current rather than leaving the UI bound to a different
-        // account. Pi is different: each provider shares one auth.json and
-        // reconciling a provider must never choose a global current row.
+        // New identity on this agent (Pi: this live slot). Make it current for
+        // single-current agents; Pi provider slots never take a global current.
         let label = live
             .label_hint
             .clone()
@@ -359,7 +327,8 @@ impl AccountService {
         {
             Ok((updated, _)) => Ok(updated),
             Err(error)
-                if error.code() == "account.merge.conflict" || error.code() == "account.conflict" =>
+                if error.code() == "account.merge.conflict"
+                    || error.code() == "account.conflict" =>
             {
                 self.repo
                     .get_by_id(&row.id)?
