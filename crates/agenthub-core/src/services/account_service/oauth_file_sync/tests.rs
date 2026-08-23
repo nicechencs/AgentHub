@@ -319,6 +319,30 @@ fn api_key_different_string_follows_mtime() {
 }
 
 #[test]
+fn patch_codex_token_only_body_without_identity_fields() {
+    let mut observed = json!({
+        "format": "auth_json",
+        "body": {
+            "auth_mode": "chatgpt",
+            "tokens": {
+                "access_token": "at-old",
+                "refresh_token": "rt-old"
+            },
+            "last_refresh": "keep-me"
+        }
+    });
+    let source = json!({
+        "type": "oauth",
+        "access_token": "at-new",
+        "refresh_token": "rt-new"
+    });
+    assert!(patch_oauth_secrets_into_value(&mut observed, &source));
+    assert_eq!(observed["body"]["tokens"]["access_token"], "at-new");
+    assert_eq!(observed["body"]["tokens"]["refresh_token"], "rt-new");
+    assert_eq!(observed["body"]["last_refresh"], "keep-me");
+}
+
+#[test]
 fn parse_account_timestamp_accepts_pool_and_rfc3339() {
     assert!(parse_account_timestamp("2026-08-21 00:00:00.123456").is_some());
     assert!(parse_account_timestamp("2026-08-21T00:00:00Z").is_some());

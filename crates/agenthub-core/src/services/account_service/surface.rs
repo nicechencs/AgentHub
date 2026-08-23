@@ -231,6 +231,10 @@ pub(super) fn oauth_credentials_same_identity(left: &Value, right: &Value) -> bo
     left.intersects(&right)
 }
 
+pub(super) fn oauth_credentials_identity_unknown(value: &Value) -> bool {
+    collect_oauth_identity_marks(value).is_empty()
+}
+
 const OAUTH_EMAIL_KEYS: &[&str] = &["email", "email_address", "emailAddress"];
 const OAUTH_SUBJECT_KEYS: &[&str] = &[
     "user_id",

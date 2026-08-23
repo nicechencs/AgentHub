@@ -293,10 +293,10 @@ fn find_oauth_profile_key(value: &Value) -> Option<String> {
     None
 }
 
-fn patch_oauth_secrets_into_value(target: &mut Value, source: &Value) {
+fn patch_oauth_secrets_into_value(target: &mut Value, source: &Value) -> bool {
     let access = find_access_token(source);
     let refresh = find_named_string(source, REFRESH_KEYS);
-    patch_matching_profiles(target, source, access.as_deref(), refresh.as_deref());
+    patch_matching_profiles(target, source, access.as_deref(), refresh.as_deref())
 }
 
 fn patch_matching_profiles(
@@ -304,26 +304,34 @@ fn patch_matching_profiles(
     identity: &Value,
     access: Option<&str>,
     refresh: Option<&str>,
-) {
+) -> bool {
     match value {
         Value::Object(map) => {
             if looks_like_oauth_profile(map) {
                 let snapshot = Value::Object(map.clone());
-                if oauth_credentials_same_identity(&snapshot, identity) {
+                // Identity-matching Grok slots, or Codex `tokens` maps with no email/sub.
+                if oauth_credentials_same_identity(&snapshot, identity)
+                    || oauth_credentials_identity_unknown(&snapshot)
+                {
                     apply_secret_fields(map, access, refresh);
+                    return true;
                 }
-                return;
+                return false;
             }
+            let mut patched = false;
             for nested in map.values_mut() {
-                patch_matching_profiles(nested, identity, access, refresh);
+                patched |= patch_matching_profiles(nested, identity, access, refresh);
             }
+            patched
         }
         Value::Array(items) => {
+            let mut patched = false;
             for item in items {
-                patch_matching_profiles(item, identity, access, refresh);
+                patched |= patch_matching_profiles(item, identity, access, refresh);
             }
+            patched
         }
-        _ => {}
+        _ => false,
     }
 }
 
@@ -353,12 +361,20 @@ fn apply_secret_fields(
     }
 }
 
+/// Hub write-back applies **this row's** grant, not the full live snapshot.
+/// Grok/Claude: PKCE / single-profile row so on-disk merge pins email/`user_id`/`sub`.
+/// Codex: patch `body.tokens` on the observed file (token-only, no identity) when
+/// present so extra auth.json keys survive; otherwise write the row.
 fn live_for_cli_write(row: &Account, observed: Option<&LiveAccount>) -> LiveAccount {
+    if matches!(row.agent_id, AgentId::Grok | AgentId::Claude) {
+        return row.to_live();
+    }
     if let Some(observed) = observed {
         let mut live = observed.clone();
-        patch_oauth_secrets_into_value(&mut live.credentials, &row.credentials);
-        live.kind = row.kind;
-        return live;
+        if patch_oauth_secrets_into_value(&mut live.credentials, &row.credentials) {
+            live.kind = row.kind;
+            return live;
+        }
     }
     row.to_live()
 }

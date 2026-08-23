@@ -2906,8 +2906,20 @@ fn spawn_oauth_token_server(access: &str, refresh: &str) -> (u16, std::thread::J
     let refresh = refresh.to_string();
     let handle = std::thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0u8; 4096];
-            let _ = stream.read(&mut buf);
+            let mut acc = Vec::new();
+            loop {
+                let mut buf = [0u8; 1024];
+                match stream.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        acc.extend_from_slice(&buf[..n]);
+                        if acc.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
             let body = format!(
                 r#"{{"access_token":"{access}","refresh_token":"{refresh}","token_type":"Bearer","expires_in":3600}}"#
             );
@@ -2916,6 +2928,8 @@ fn spawn_oauth_token_server(access: &str, refresh: &str) -> (u16, std::thread::J
                 body.len()
             );
             let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+            let _ = stream.shutdown(std::net::Shutdown::Write);
         }
     });
     (port, handle)
@@ -3506,6 +3520,72 @@ fn grok_hub_pkce_refresh_writes_auth_json_when_same_identity_row_is_newer() {
         "same-identity hub refresh must write the CLI login file when the row is newer"
     );
     let live = adapter.read_account().unwrap();
-    assert_eq!(live.credentials["body"]["refresh_token"], "new-refresh");
-    assert_eq!(live.credentials["body"]["key"], "new-access");
+    assert_eq!(live.credentials["refresh_token"], "new-refresh");
+    assert_eq!(live.credentials["access_token"], "new-access");
+}
+
+#[test]
+fn hub_codex_refresh_patches_token_only_auth_json_body() {
+    let (_root, svc, adapter) = live_svc(AgentId::Codex);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Codex,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "email": "41375197@qq.com",
+            "body": {
+                "auth_mode": "chatgpt",
+                "OPENAI_API_KEY": null,
+                "tokens": {
+                    "access_token": "at-file",
+                    "refresh_token": "old-refresh"
+                },
+                "last_refresh": "2026-08-20T00:00:00Z"
+            }
+        }),
+        label_hint: Some("codex".into()),
+        extra: json!({ "source": "auth.json" }),
+    });
+    stamp_file_mtime(
+        &adapter.live_backup_paths()[0],
+        "2020-01-01 00:00:00.000000",
+    );
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "hub-pkce".into(),
+            credentials: json!({
+                "type": "oauth",
+                "provider": "codex",
+                "access_token": "at-hub",
+                "refresh_token": "old-refresh",
+                "email": "41375197@qq.com"
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    let (port, server) = spawn_oauth_token_server("new-access", "new-refresh");
+    let refreshed = crate::oauth::with_token_url_override(
+        format!("http://127.0.0.1:{port}/oauth/token"),
+        || svc.refresh_token(&created.id, AgentId::Codex),
+    )
+    .unwrap();
+    let _ = server.join();
+    assert_eq!(refreshed.credentials["refresh_token"], "new-refresh");
+    assert!(adapter.write_attempts.load(Ordering::SeqCst) >= 1);
+    let live = adapter.read_account().unwrap();
+    assert_eq!(
+        live.credentials["body"]["tokens"]["refresh_token"],
+        "new-refresh"
+    );
+    assert_eq!(
+        live.credentials["body"]["tokens"]["access_token"],
+        "new-access"
+    );
+    assert_eq!(
+        live.credentials["body"]["last_refresh"], "2026-08-20T00:00:00Z",
+        "token-only patch must keep extra Codex auth.json fields"
+    );
 }

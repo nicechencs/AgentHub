@@ -243,7 +243,7 @@ fn grok_auth_json_body_from_credentials(credentials: &Value, auth_path: &Path) -
     } else {
         json!({})
     };
-    merge_incoming_grok_profile(&mut existing, incoming, credentials);
+    merge_incoming_grok_profile(&mut existing, incoming.clone(), &incoming);
     Ok(existing)
 }
 
@@ -301,7 +301,9 @@ fn grok_top_level_grant(credentials: &Value) -> Value {
         }
     }
     if map.is_empty() {
-        return credentials.clone();
+        // Do not return the full tree: a multi-slot `body` would union every
+        // profile identity and match the first slot.
+        return json!({});
     }
     Value::Object(map)
 }
