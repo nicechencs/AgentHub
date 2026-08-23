@@ -739,8 +739,11 @@ describe('liveImportDialogMode', () => {
     expect(liveImportDialogMode({ agentId: 'pi', kind: 'API-KEY', hasCredentials: true })).toBe('api-key');
     expect(liveImportDialogMode({ agentId: 'pi', kind: 'apikey' })).toBe('api-key');
     expect(liveImportDialogMode({ agentId: 'pi', kind: 'oauth', hasCredentials: true })).toBe('login');
+    expect(liveImportDialogMode({ agentId: 'pi', kind: 'file-auth', hasCredentials: true })).toBe('login');
     expect(liveImportDialogMode({ agentId: 'pi', kind: 'file-auth.json', hasCredentials: true })).toBe('login');
     expect(liveImportDialogMode({ agentId: 'pi', kind: 'desktop-login' })).toBe('login');
+    expect(liveImportDialogMode({ agentId: 'codex', kind: 'leftover' })).toBe('login');
+    expect(liveImportDialogMode({ agentId: 'codex', kind: 'unknown' })).toBe('login');
     expect(liveImportDialogMode(null)).toBe('login');
     expect(liveImportDialogMode(undefined)).toBe('login');
   });
@@ -758,6 +761,42 @@ describe('liveImportAction', () => {
     expect(
       liveImportAction(
         liveImportDialogMode({ agentId: 'codex', kind: 'oauth', hasCredentials: true }),
+      ),
+    ).toBe('account');
+  });
+
+  it('imports a provider for api_key and an account for file-auth, leftover, and unknown', () => {
+    expect(
+      liveImportAction(
+        liveImportDialogMode({ agentId: 'codex', kind: 'api_key', hasCredentials: true }),
+      ),
+    ).toBe('provider');
+    expect(
+      liveImportAction(
+        liveImportDialogMode({ agentId: 'codex', kind: 'file-auth', hasCredentials: true }),
+      ),
+    ).toBe('account');
+    expect(
+      liveImportAction(
+        liveImportDialogMode({ agentId: 'codex', kind: 'file-auth.json', hasCredentials: true }),
+      ),
+    ).toBe('account');
+    expect(
+      liveImportAction(
+        liveImportDialogMode({ agentId: 'codex', kind: 'leftover' }),
+      ),
+    ).toBe('account');
+    expect(
+      liveImportAction(
+        liveImportDialogMode({ agentId: 'codex', kind: 'unknown' }),
+      ),
+    ).toBe('account');
+  });
+
+  it('if Codex key-only is still file-auth.json it imports account not provider', () => {
+    expect(
+      liveImportAction(
+        liveImportDialogMode({ agentId: 'codex', kind: 'file-auth.json' }),
       ),
     ).toBe('account');
   });
