@@ -5,7 +5,7 @@ import {
   type CoreParserHealth,
   type CoreUsageRecord,
 } from '@/lib/backend/contracts/usage-map';
-import type { UsageAvailability } from '@/lib/backend/contracts/usage-types';
+import type { UsageAvailability, UsageOverview } from '@/lib/backend/contracts/usage-types';
 import type { ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { invoke } from './invoke';
 
@@ -30,15 +30,34 @@ export function createTauriUsagePort(): UsagePort {
         days: q.days,
         agentId,
         model,
+        limit: q.limit ?? null,
+        since: q.since ?? null,
+        excludeAgentIds: q.excludeAgentIds ?? null,
       });
       return rows.map(mapCoreUsageRecord);
     },
 
-    async usageTrend(days, agentId): Promise<UsageTrendPoint[]> {
+    async usageOverview(q): Promise<UsageOverview> {
+      const agentId = !q.agentId || q.agentId === 'all' ? null : q.agentId;
+      const model = !q.model || q.model === 'all' ? null : q.model;
+      return invoke<UsageOverview>('usage_overview', {
+        days: q.days,
+        agentId,
+        model,
+        since: q.since ?? null,
+        excludeAgentIds: q.excludeAgentIds ?? null,
+      });
+    },
+
+    async usageTrend(days, agentId, model, since, excludeAgentIds): Promise<UsageTrendPoint[]> {
       const id = !agentId || agentId === 'all' ? null : agentId;
+      const modelFilter = !model || model === 'all' ? null : model;
       return invoke<UsageTrendPoint[]>('usage_trend', {
         days,
         agentId: id,
+        model: modelFilter,
+        since: since ?? null,
+        excludeAgentIds: excludeAgentIds ?? null,
       });
     },
 

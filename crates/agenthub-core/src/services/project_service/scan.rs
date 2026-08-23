@@ -8,10 +8,11 @@ use chrono::Utc;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use crate::catalog::limits::{
-    PROJECT_EXCERPT_CHARS as EXCERPT_CHARS, PROJECT_PREVIEW_CHARS as PREVIEW_CHARS,
-    PROJECT_SCAN_BYTES as SCAN_BYTES,
+    PROJECT_EXCERPT_CHARS as EXCERPT_CHARS, PROJECT_LIST_HEAD_BYTES as LIST_HEAD_BYTES,
+    PROJECT_PREVIEW_CHARS as PREVIEW_CHARS, PROJECT_SCAN_BYTES as SCAN_BYTES,
 };
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentProject, AgentProjectExcerpt, AgentSession};
@@ -1208,7 +1209,9 @@ fn project_paths(
                     }
                 };
                 let title = title_from_actual(
-                    actual.as_deref().or((!fwd.is_empty()).then_some(fwd.as_str())),
+                    actual
+                        .as_deref()
+                        .or((!fwd.is_empty()).then_some(fwd.as_str())),
                     key,
                 );
                 // Prefer project-level storage dirs for nested session trees.
@@ -1323,10 +1326,7 @@ pub(crate) fn list_cursor_projects(home: &Path) -> Result<Vec<AgentProject>> {
             .unwrap_or_else(|| Utc::now().to_rfc3339());
         let size = dir_size_shallow(&path).unwrap_or(0);
         let decoded = cursor_actual_path(&name);
-        let actual = decoded
-            .as_ref()
-            .filter(|p| Path::new(p).exists())
-            .cloned();
+        let actual = decoded.as_ref().filter(|p| Path::new(p).exists()).cloned();
         let title = title_from_actual(decoded.as_deref(), &name);
         let rel_str = format!("projects/{name}");
         out.push(AgentProject {
@@ -1347,6 +1347,421 @@ pub(crate) fn list_cursor_projects(home: &Path) -> Result<Vec<AgentProject>> {
     }
     out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     Ok(out)
+}
+
+/// Directory/stat listing for Claude + WorkBuddy. Peeks at most [`LIST_HEAD_BYTES`]
+/// of the newest primary file for cwd/preview — never [`SCAN_BYTES`] × every session.
+pub(crate) fn list_claude_workbuddy_projects(
+    home: &Path,
+    agent: AgentId,
+) -> Result<Vec<AgentProject>> {
+    let root = home.join("projects");
+    if !root.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut out = Vec::new();
+    let entries = match fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(_) => return Ok(vec![]),
+    };
+    for ent in entries.flatten() {
+        let dir = ent.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let encoded = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        if encoded.is_empty() || encoded.starts_with('.') {
+            continue;
+        }
+        let files = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let mut session_count = 0u32;
+        let mut size_bytes = 0u64;
+        let mut newest_mtime: Option<SystemTime> = None;
+        let mut newest_path: Option<PathBuf> = None;
+        for file_ent in files.flatten() {
+            let path = file_ent.path();
+            if !path.is_file() || !is_primary_session_file(agent, &path) {
+                continue;
+            }
+            let Ok(meta) = fs::metadata(&path) else {
+                continue;
+            };
+            session_count = session_count.saturating_add(1);
+            size_bytes = size_bytes.saturating_add(meta.len());
+            if let Ok(mtime) = meta.modified() {
+                if newest_mtime.map(|t| mtime >= t).unwrap_or(true) {
+                    newest_mtime = Some(mtime);
+                    newest_path = Some(path);
+                }
+            } else if newest_path.is_none() {
+                newest_path = Some(path);
+            }
+        }
+        if session_count == 0 {
+            continue;
+        }
+        let decoded = decode_claude_project_dir(&encoded);
+        let mut actual = verified_actual_path(&encoded);
+        let mut preview = None;
+        if let Some(path) = newest_path.as_deref() {
+            let text = read_head(path, LIST_HEAD_BYTES).unwrap_or_default();
+            if actual.is_none() {
+                actual = extract_cwd_from_text(agent, &text)
+                    .filter(|c| !c.is_empty() && Path::new(c).exists());
+            }
+            preview = scan_preview_from_text(&text).0;
+        }
+        actual = native_existing_path(actual);
+        let title = title_from_actual(actual.as_deref().or(decoded.as_deref()), &encoded);
+        out.push(cheap_project(
+            agent,
+            &encoded,
+            title,
+            dir.display().to_string(),
+            actual,
+            format!("projects/{encoded}"),
+            session_count,
+            size_bytes,
+            rfc3339_mtime(newest_mtime),
+            preview,
+        ));
+    }
+    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    Ok(out)
+}
+
+/// Grok: one project per `sessions/<encoded>/` dir. Stats `chat_history.jsonl` only.
+pub(crate) fn list_grok_projects(home: &Path) -> Result<Vec<AgentProject>> {
+    let root = home.join("sessions");
+    if !root.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut out = Vec::new();
+    let entries = match fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(_) => return Ok(vec![]),
+    };
+    for ent in entries.flatten() {
+        let proj_dir = ent.path();
+        if !proj_dir.is_dir() {
+            continue;
+        }
+        let encoded = match proj_dir.file_name().and_then(|n| n.to_str()) {
+            Some(n) if !n.is_empty() && !n.starts_with('.') => n.to_string(),
+            _ => continue,
+        };
+        let (key, cwd_opt) = grok_project_key_from_dir_name(&encoded);
+        let mut session_count = 0u32;
+        let mut size_bytes = 0u64;
+        let mut newest: Option<SystemTime> = None;
+        let session_entries = match fs::read_dir(&proj_dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for sess_ent in session_entries.flatten() {
+            let sess_path = sess_ent.path();
+            if sess_path.is_file() {
+                if is_primary_session_file(AgentId::Grok, &sess_path) {
+                    add_file_stat(&sess_path, &mut session_count, &mut size_bytes, &mut newest);
+                }
+                continue;
+            }
+            if !sess_path.is_dir() {
+                continue;
+            }
+            let session_id_name = sess_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if session_id_name.is_empty() || session_id_name.starts_with('.') {
+                continue;
+            }
+            let chat = sess_path.join("chat_history.jsonl");
+            if chat.is_file() {
+                add_file_stat(&chat, &mut session_count, &mut size_bytes, &mut newest);
+            }
+        }
+        if session_count == 0 {
+            continue;
+        }
+        let actual = native_existing_path(cwd_opt.clone());
+        let title = title_from_actual(actual.as_deref().or(cwd_opt.as_deref()), &key);
+        out.push(cheap_project(
+            AgentId::Grok,
+            &key,
+            title,
+            proj_dir.display().to_string(),
+            actual,
+            format!("sessions/{encoded}"),
+            session_count,
+            size_bytes,
+            rfc3339_mtime(newest),
+            None,
+        ));
+    }
+    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    Ok(out)
+}
+
+/// Kimi: group `sessions/<wd_id>/session_*` dirs using `workspaces.json`. No `wire.jsonl` reads.
+pub(crate) fn list_kimi_projects(home: &Path) -> Result<Vec<AgentProject>> {
+    let root = home.join("sessions");
+    if !root.is_dir() {
+        return Ok(vec![]);
+    }
+    let workspaces = load_kimi_workspaces(home);
+    let mut buckets: BTreeMap<String, CheapAcc> = BTreeMap::new();
+    let entries = match fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(_) => return Ok(vec![]),
+    };
+    for ent in entries.flatten() {
+        let wd_dir = ent.path();
+        if !wd_dir.is_dir() {
+            continue;
+        }
+        let wd_id = match wd_dir.file_name().and_then(|n| n.to_str()) {
+            Some(n) if !n.is_empty() && !n.starts_with('.') => n.to_string(),
+            _ => continue,
+        };
+        let (key, cwd_opt, title_hint) = match workspaces.get(&wd_id) {
+            Some(ws) => (
+                cwd_storage_key(&ws.root),
+                Some(ws.root.clone()),
+                Some(ws.name.clone()),
+            ),
+            None => (format!("ws/{wd_id}"), None, Some(wd_id.clone())),
+        };
+        let sess_entries = match fs::read_dir(&wd_dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let mut session_count = 0u32;
+        let mut size_bytes = 0u64;
+        let mut newest: Option<SystemTime> = None;
+        for sess_ent in sess_entries.flatten() {
+            let sess_path = sess_ent.path();
+            if !sess_path.is_dir() {
+                continue;
+            }
+            let sess_name = sess_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if !sess_name.starts_with("session_") {
+                continue;
+            }
+            session_count = session_count.saturating_add(1);
+            size_bytes = size_bytes.saturating_add(dir_size_shallow(&sess_path).unwrap_or(0));
+            bump_mtime(&mut newest, mtime_of(&sess_path));
+            bump_mtime(&mut newest, mtime_of(&sess_path.join("state.json")));
+        }
+        if session_count == 0 {
+            continue;
+        }
+        let actual = native_existing_path(cwd_opt.clone());
+        let title = title_hint
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| title_from_actual(actual.as_deref().or(cwd_opt.as_deref()), &key));
+        match buckets.get_mut(&key) {
+            Some(acc) => acc.merge(session_count, size_bytes, newest),
+            None => {
+                buckets.insert(
+                    key,
+                    CheapAcc {
+                        title,
+                        storage_path: wd_dir.display().to_string(),
+                        actual_path: actual,
+                        relative_path: format!("sessions/{wd_id}"),
+                        session_count,
+                        size_bytes,
+                        newest,
+                    },
+                );
+            }
+        }
+    }
+    let mut out: Vec<AgentProject> = buckets
+        .into_iter()
+        .map(|(key, acc)| acc.into_project(AgentId::Kimi, &key))
+        .collect();
+    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    Ok(out)
+}
+
+/// Pi: one (or merged) project per encoded dir under `agent/sessions/`. Metadata only.
+pub(crate) fn list_pi_projects(home: &Path) -> Result<Vec<AgentProject>> {
+    let root = home.join("agent").join("sessions");
+    if !root.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut buckets: BTreeMap<String, CheapAcc> = BTreeMap::new();
+    let entries = match fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(_) => return Ok(vec![]),
+    };
+    for ent in entries.flatten() {
+        let proj_dir = ent.path();
+        if !proj_dir.is_dir() {
+            continue;
+        }
+        let encoded = match proj_dir.file_name().and_then(|n| n.to_str()) {
+            Some(n) if !n.is_empty() && !n.starts_with('.') => n.to_string(),
+            _ => continue,
+        };
+        let (key, cwd_opt) = match decode_pi_session_dir(&encoded) {
+            Some(decoded) => (cwd_storage_key(&decoded), Some(decoded)),
+            None => (format!("dir/{encoded}"), None),
+        };
+        let files = match fs::read_dir(&proj_dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let mut session_count = 0u32;
+        let mut size_bytes = 0u64;
+        let mut newest: Option<SystemTime> = None;
+        for file_ent in files.flatten() {
+            let path = file_ent.path();
+            if !path.is_file() || !is_primary_session_file(AgentId::Pi, &path) {
+                continue;
+            }
+            add_file_stat(&path, &mut session_count, &mut size_bytes, &mut newest);
+        }
+        if session_count == 0 {
+            continue;
+        }
+        let actual = native_existing_path(cwd_opt.clone());
+        let title = title_from_actual(actual.as_deref().or(cwd_opt.as_deref()), &key);
+        match buckets.get_mut(&key) {
+            Some(acc) => acc.merge(session_count, size_bytes, newest),
+            None => {
+                buckets.insert(
+                    key,
+                    CheapAcc {
+                        title,
+                        storage_path: proj_dir.display().to_string(),
+                        actual_path: actual,
+                        relative_path: format!("agent/sessions/{encoded}"),
+                        session_count,
+                        size_bytes,
+                        newest,
+                    },
+                );
+            }
+        }
+    }
+    let mut out: Vec<AgentProject> = buckets
+        .into_iter()
+        .map(|(key, acc)| acc.into_project(AgentId::Pi, &key))
+        .collect();
+    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    Ok(out)
+}
+
+struct CheapAcc {
+    title: String,
+    storage_path: String,
+    actual_path: Option<String>,
+    relative_path: String,
+    session_count: u32,
+    size_bytes: u64,
+    newest: Option<SystemTime>,
+}
+
+impl CheapAcc {
+    fn merge(&mut self, session_count: u32, size_bytes: u64, newest: Option<SystemTime>) {
+        self.session_count = self.session_count.saturating_add(session_count);
+        self.size_bytes = self.size_bytes.saturating_add(size_bytes);
+        bump_mtime(&mut self.newest, newest);
+    }
+
+    fn into_project(self, agent: AgentId, key: &str) -> AgentProject {
+        cheap_project(
+            agent,
+            key,
+            self.title,
+            self.storage_path,
+            self.actual_path,
+            self.relative_path,
+            self.session_count,
+            self.size_bytes,
+            rfc3339_mtime(self.newest),
+            None,
+        )
+    }
+}
+
+fn cheap_project(
+    agent: AgentId,
+    key: &str,
+    title: String,
+    storage_path: String,
+    actual_path: Option<String>,
+    relative_path: String,
+    session_count: u32,
+    size_bytes: u64,
+    updated_at: String,
+    preview: Option<String>,
+) -> AgentProject {
+    AgentProject {
+        id: make_project_id(agent, key),
+        agent_id: agent,
+        title,
+        storage_path,
+        actual_path,
+        relative_path,
+        session_count,
+        message_count: None,
+        size_bytes,
+        updated_at,
+        preview,
+        alias: None,
+        hidden: false,
+    }
+}
+
+fn add_file_stat(
+    path: &Path,
+    session_count: &mut u32,
+    size_bytes: &mut u64,
+    newest: &mut Option<SystemTime>,
+) {
+    let Ok(meta) = fs::metadata(path) else {
+        return;
+    };
+    *session_count = session_count.saturating_add(1);
+    *size_bytes = size_bytes.saturating_add(meta.len());
+    bump_mtime(newest, meta.modified().ok());
+}
+
+fn mtime_of(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).ok().and_then(|m| m.modified().ok())
+}
+
+fn bump_mtime(slot: &mut Option<SystemTime>, t: Option<SystemTime>) {
+    let Some(t) = t else {
+        return;
+    };
+    *slot = Some(slot.map_or(t, |cur| cur.max(t)));
+}
+
+fn rfc3339_mtime(t: Option<SystemTime>) -> String {
+    t.map(system_time_to_rfc3339)
+        .unwrap_or_else(|| Utc::now().to_rfc3339())
+}
+
+/// Verified workspace path with native separators when the path exists.
+fn native_existing_path(candidate: Option<String>) -> Option<String> {
+    let a = candidate.filter(|c| !c.is_empty() && Path::new(c).exists())?;
+    #[cfg(windows)]
+    {
+        Some(a.replace('/', "\\"))
+    }
+    #[cfg(not(windows))]
+    {
+        Some(a)
+    }
 }
 
 fn dir_size_shallow(path: &Path) -> Option<u64> {

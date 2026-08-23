@@ -2,17 +2,23 @@ import { describe, expect, it } from 'vitest';
 
 import type { AgentId, UsageRecord } from '@/lib/types';
 
+import type { UsageOverview } from '@/lib/backend/contracts/usage-types';
+
 import {
   buildUsageDistribution,
   buildUsageTrend,
   coerceModelFilter,
   computeUsageMetrics,
+  decorateUsageDistribution,
   filterByAgent,
   filterByModel,
+  filterHiddenUsageOverview,
   filterWindowUsage,
   isLocalToday,
   modelsFromRecords,
+  overviewToUsageMetrics,
   sortUsageRowsDesc,
+  usageWindowBound,
 } from './usageOverviewModel';
 
 function row(
@@ -32,6 +38,70 @@ const CATALOG = {
   claude: { name: 'Claude Code', color: '#c' },
   kimi: { name: 'Kimi', color: '#k' },
 } as const;
+
+describe('usageWindowBound', () => {
+  const now = new Date(2026, 7, 23, 15, 0, 0);
+
+  it('uses local midnight since for today and days-only otherwise', () => {
+    const today = usageWindowBound('today', now);
+    expect(today.days).toBe(1);
+    expect(today.since).toBe(new Date(2026, 7, 23).toISOString());
+    expect(usageWindowBound('24h', now)).toEqual({ days: 1 });
+    expect(usageWindowBound('7d', now)).toEqual({ days: 7 });
+    expect(usageWindowBound('30d', now)).toEqual({ days: 30 });
+  });
+});
+
+describe('filterHiddenUsageOverview', () => {
+  const overview: UsageOverview = {
+    metrics: { billableInput: 1300, output: 130, cache: 200, costUsd: 2.5 },
+    distribution: [
+      {
+        key: 'claude',
+        tokens: 1300,
+        costUsd: 2,
+        billableInput: 1000,
+        output: 100,
+        cache: 200,
+      },
+      {
+        key: 'kimi',
+        tokens: 330,
+        costUsd: 0.5,
+        billableInput: 300,
+        output: 30,
+        cache: 0,
+      },
+    ],
+    models: ['opus', 'sonnet'],
+  };
+
+  it('drops hidden agent slices and re-sums metrics', () => {
+    const next = filterHiddenUsageOverview(overview, ['kimi'], true);
+    expect(next.distribution.map((d) => d.key)).toEqual(['claude']);
+    expect(next.metrics).toEqual({
+      billableInput: 1000,
+      output: 100,
+      cache: 200,
+      costUsd: 2,
+    });
+    const ui = overviewToUsageMetrics(next.metrics);
+    expect(ui.fullInput).toBe(1200);
+    expect(ui.cacheHitPct).toBe(Math.round((200 / 1200) * 100));
+  });
+
+  it('leaves model-grouped slices unchanged', () => {
+    const next = filterHiddenUsageOverview(overview, ['kimi'], false);
+    expect(next.distribution).toHaveLength(2);
+    expect(next.metrics).toEqual(overview.metrics);
+  });
+
+  it('attaches catalog label and color', () => {
+    const labeled = decorateUsageDistribution(overview.distribution, 'all', CATALOG);
+    expect(labeled[0]).toMatchObject({ key: 'claude', label: 'Claude Code', color: '#c' });
+    expect(labeled[1]).toMatchObject({ key: 'kimi', label: 'Kimi', color: '#k', cost: 0.5 });
+  });
+});
 
 describe('filterWindowUsage', () => {
   const now = new Date(2026, 7, 23, 15, 0, 0);

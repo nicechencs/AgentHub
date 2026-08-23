@@ -5,6 +5,35 @@ export interface UsageQuery {
   days: number;
   agentId?: AgentId | 'all';
   model?: string | 'all';
+  /** Soft cap on raw rows (`ORDER BY ts DESC`). Dashboard table uses 2000. */
+  limit?: number;
+  /** RFC3339 lower bound, AND-ed with the days window. */
+  since?: string;
+  /** Hidden agents; applied before LIMIT so the table cap is among visible rows. */
+  excludeAgentIds?: AgentId[];
+}
+
+/** SQL-aggregate totals. `billableInput` = stored input; full prompt = billable + cache. */
+export interface UsageOverviewMetrics {
+  billableInput: number;
+  output: number;
+  cache: number;
+  costUsd: number;
+}
+
+export interface UsageOverviewDistributionSlice {
+  key: string;
+  tokens: number;
+  costUsd: number;
+  billableInput: number;
+  output: number;
+  cache: number;
+}
+
+export interface UsageOverview {
+  metrics: UsageOverviewMetrics;
+  distribution: UsageOverviewDistributionSlice[];
+  models: string[];
 }
 
 /**

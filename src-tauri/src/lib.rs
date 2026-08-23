@@ -195,6 +195,7 @@ pub fn run() {
             commands::usage::usage_collect,
             commands::usage::usage_query,
             commands::usage::usage_trend,
+            commands::usage::usage_overview,
             commands::usage::usage_list_models,
             commands::usage::usage_parser_health,
             commands::usage::usage_missing_pricing,

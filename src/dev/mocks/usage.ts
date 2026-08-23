@@ -1,7 +1,9 @@
 import type { UsagePort } from '@/lib/backend/contracts';
+import type { UsageOverview, UsageQuery } from '@/lib/backend/contracts/usage-types';
 import { delay } from '@/dev/mocks/delay';
 import { isCapabilityUsable } from '@/lib/capability';
 import type { AgentId, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
+import { usageTokenParts } from '@/lib/usage-tokens';
 import { MOCK_CAPABILITIES } from './capabilities';
 
 /**
@@ -66,6 +68,73 @@ const records: UsageRecord[] = (() => {
   return out;
 })();
 
+function inUsageWindow(r: UsageRecord, days: number, since?: string): boolean {
+  const t = new Date(r.timestamp).getTime();
+  const cutoff = Date.now() - days * 24 * 3600 * 1000;
+  if (t < cutoff) return false;
+  if (since) {
+    const bound = new Date(since).getTime();
+    if (!Number.isNaN(bound) && t < bound) return false;
+  }
+  return true;
+}
+
+function matchesUsageQuery(r: UsageRecord, q: UsageQuery, ignoreModel = false): boolean {
+  if (!inUsageWindow(r, q.days, q.since)) return false;
+  if (q.agentId && q.agentId !== 'all' && r.agentId !== q.agentId) return false;
+  if (q.excludeAgentIds?.includes(r.agentId)) return false;
+  if (!ignoreModel && q.model && q.model !== 'all' && r.model !== q.model) return false;
+  return true;
+}
+
+function mockUsageOverview(q: UsageQuery): UsageOverview {
+  const rows = records.filter((r) => matchesUsageQuery(r, q));
+  let billableInput = 0;
+  let output = 0;
+  let cache = 0;
+  let costUsd = 0;
+  const byKey = new Map<
+    string,
+    { key: string; tokens: number; costUsd: number; billableInput: number; output: number; cache: number }
+  >();
+  const groupByAgent = !q.agentId || q.agentId === 'all';
+  for (const r of rows) {
+    const p = usageTokenParts(r);
+    billableInput += p.billableInput;
+    output += r.outputTokens;
+    cache += p.cache;
+    costUsd += r.costUsd;
+    const key = groupByAgent ? r.agentId : r.model;
+    const entry = byKey.get(key) ?? {
+      key,
+      tokens: 0,
+      costUsd: 0,
+      billableInput: 0,
+      output: 0,
+      cache: 0,
+    };
+    entry.tokens += p.billableInput + p.cache + r.outputTokens;
+    entry.costUsd += r.costUsd;
+    entry.billableInput += p.billableInput;
+    entry.output += r.outputTokens;
+    entry.cache += p.cache;
+    byKey.set(key, entry);
+  }
+  const models = [
+    ...new Set(
+      records
+        .filter((r) => matchesUsageQuery(r, q, true))
+        .map((r) => r.model)
+        .filter((m) => m.length > 0),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+  return {
+    metrics: { billableInput, output, cache, costUsd },
+    distribution: [...byKey.values()].sort((a, b) => b.tokens - a.tokens),
+    models,
+  };
+}
+
 export function createMockUsagePort(): UsagePort {
   return {
     async getAvailability() {
@@ -74,23 +143,25 @@ export function createMockUsagePort(): UsagePort {
 
     async queryUsage(q) {
       await delay(200 + Math.random() * 400);
-      const cutoff = Date.now() - q.days * 24 * 3600 * 1000;
-      return records.filter(
-        (r) =>
-          new Date(r.timestamp).getTime() >= cutoff &&
-          (q.agentId === 'all' || !q.agentId || r.agentId === q.agentId) &&
-          (q.model === 'all' || !q.model || r.model === q.model),
-      );
+      const filtered = records
+        .filter((r) => matchesUsageQuery(r, q))
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      return q.limit != null ? filtered.slice(0, q.limit) : filtered;
     },
 
-    async usageTrend(days, agentId) {
-      await delay(200);
-      const cutoff = Date.now() - days * 24 * 3600 * 1000;
+    async usageOverview(q) {
+      await delay(30 + Math.random() * 50);
+      return mockUsageOverview(q);
+    },
+
+    async usageTrend(days, agentId, model, since, excludeAgentIds) {
+      await delay(30 + Math.random() * 50);
       const byDay = new Map<string, UsageTrendPoint>();
       for (const r of records) {
-        const t = new Date(r.timestamp).getTime();
-        if (t < cutoff) continue;
+        if (!inUsageWindow(r, days, since)) continue;
         if (agentId && agentId !== 'all' && r.agentId !== agentId) continue;
+        if (excludeAgentIds?.includes(r.agentId)) continue;
+        if (model && model !== 'all' && r.model !== model) continue;
         const day = r.timestamp.slice(0, 10);
         if (!byDay.has(day)) {
           const point: UsageTrendPoint = { date: day };

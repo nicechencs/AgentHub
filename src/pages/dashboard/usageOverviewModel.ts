@@ -1,9 +1,72 @@
-import { filterVisibleUsage } from '@/lib/agent-visibility';
+import { filterVisibleUsage, toHiddenIdSet } from '@/lib/agent-visibility';
+import type {
+  UsageOverview,
+  UsageOverviewDistributionSlice,
+  UsageOverviewMetrics,
+} from '@/lib/backend/contracts/usage-types';
 import type { AgentId, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { usageTokenParts } from '@/lib/usage-tokens';
 
 /** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
 export type DateRange = 'today' | '24h' | '7d' | '30d';
+
+/** SQL window for overview / trend / table. `today` AND-s local midnight. */
+export function usageWindowBound(
+  dateRange: DateRange,
+  now = new Date(),
+): { days: number; since?: string } {
+  if (dateRange === 'today') {
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return { days: 1, since: midnight.toISOString() };
+  }
+  const days = dateRange === '24h' ? 1 : dateRange === '7d' ? 7 : 30;
+  return { days };
+}
+
+/** Drop hidden-agent slices (all-agents grouping) and re-sum metrics from the rest. */
+export function filterHiddenUsageOverview(
+  overview: UsageOverview,
+  hiddenIds: Iterable<string>,
+  groupedByAgent: boolean,
+): UsageOverview {
+  if (!groupedByAgent) return overview;
+  const hidden = toHiddenIdSet(hiddenIds);
+  if (hidden.size === 0) return overview;
+  const distribution = overview.distribution.filter((slice) => !hidden.has(slice.key));
+  return {
+    metrics: sumOverviewMetrics(distribution),
+    distribution,
+    models: overview.models,
+  };
+}
+
+export function sumOverviewMetrics(
+  slices: readonly UsageOverviewDistributionSlice[],
+): UsageOverviewMetrics {
+  let billableInput = 0;
+  let output = 0;
+  let cache = 0;
+  let costUsd = 0;
+  for (const slice of slices) {
+    billableInput += slice.billableInput;
+    output += slice.output;
+    cache += slice.cache;
+    costUsd += slice.costUsd;
+  }
+  return { billableInput, output, cache, costUsd };
+}
+
+export function overviewToUsageMetrics(metrics: UsageOverviewMetrics): UsageMetrics {
+  const fullInput = metrics.billableInput + metrics.cache;
+  return {
+    billableInput: metrics.billableInput,
+    output: metrics.output,
+    cacheRead: metrics.cache,
+    fullInput,
+    cost: metrics.costUsd,
+    cacheHitPct: fullInput > 0 ? Math.round((metrics.cache / fullInput) * 100) : null,
+  };
+}
 
 export function isLocalToday(iso: string, now = new Date()): boolean {
   const d = new Date(iso);
@@ -101,6 +164,24 @@ export interface UsageDistributionSlice {
 }
 
 const FALLBACK_COLOR = 'var(--text-muted)';
+
+/** Attach catalog name/color to SQL distribution slices. */
+export function decorateUsageDistribution(
+  slices: readonly UsageOverviewDistributionSlice[],
+  agentFilter: AgentId | 'all',
+  catalog: Readonly<Record<string, { name: string; color: string }>>,
+): UsageDistributionSlice[] {
+  return slices.map((slice) => {
+    const meta = catalog[agentFilter === 'all' ? slice.key : agentFilter];
+    return {
+      key: slice.key,
+      label: agentFilter === 'all' ? (meta?.name ?? slice.key) : slice.key,
+      color: meta?.color ?? FALLBACK_COLOR,
+      tokens: slice.tokens,
+      cost: slice.costUsd,
+    };
+  });
+}
 
 /** 全部 Agent 时按 agent 聚合；选中单个 Agent 时按模型聚合 */
 export function buildUsageDistribution(

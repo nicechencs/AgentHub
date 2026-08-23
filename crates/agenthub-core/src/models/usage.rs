@@ -26,12 +26,55 @@ pub struct UsageRecord {
 }
 
 /// Query filter for listing usage rows.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageQuery {
     pub days: u32,
     pub agent_id: Option<AgentId>,
     pub model: Option<String>,
+    /// Soft cap on returned rows (`ORDER BY ts DESC`). `None` → 100_000.
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// RFC3339 lower bound, AND-ed with the `days` window (`ts >= since`).
+    #[serde(default)]
+    pub since: Option<String>,
+    /// Hidden / omitted agents. Applied before LIMIT so the table cap is among visible rows.
+    #[serde(default)]
+    pub exclude_agent_ids: Vec<AgentId>,
+}
+
+/// Dashboard metric totals from SQL aggregates.
+///
+/// `billable_input` is stored `input_tokens` (non-cached). `cache` is stored
+/// `cache_tokens`. Full prompt size is billable + cache.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageMetrics {
+    pub billable_input: i64,
+    pub output: i64,
+    pub cache: i64,
+    pub cost_usd: f64,
+}
+
+/// One distribution bar: by `agent_id` when no agent filter, else by model.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageDistributionSlice {
+    pub key: String,
+    pub tokens: i64,
+    pub cost_usd: f64,
+    pub billable_input: i64,
+    pub output: i64,
+    pub cache: i64,
+}
+
+/// First-paint dashboard payload: totals + distribution + model dropdown.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageOverview {
+    pub metrics: UsageMetrics,
+    pub distribution: Vec<UsageDistributionSlice>,
+    pub models: Vec<String>,
 }
 
 /// Trend chart point: `{ date, claude?: n, codex?: n, ... }` (dynamic agent keys).
