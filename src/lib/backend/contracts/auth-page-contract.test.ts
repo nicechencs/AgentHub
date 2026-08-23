@@ -120,5 +120,16 @@ describe('Tauri auth payload to page contract', () => {
         'claude',
       ).alsoPresent,
     ).toEqual(['oauth']);
+    expect(
+      normalizeAuthState(
+        {
+          agent: 'claude',
+          summary: 'ok',
+          hasCredentials: true,
+          alsoPresent: ['adapter_projection'],
+        },
+        'claude',
+      ).isAdapterProjection,
+    ).toBe(true);
   });
 });

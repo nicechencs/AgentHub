@@ -83,7 +83,7 @@ function explicitTagMatches(tag: string | undefined, accepted: readonly string[]
   return !!tag && accepted.some((item) => item.toLowerCase() === tag.toLowerCase());
 }
 
-const PROJECTION_NOT_A_TICKET = '投影不是登录';
+const PROJECTION_NOT_A_TICKET = '自动生成的配置不是登录';
 
 function persistedSurface(blob: unknown): TicketSurface | undefined {
   const raw = jsonString(blob, 'surface');
@@ -271,6 +271,12 @@ function ticketId(kind: 'account' | 'provider', id: string): string {
 
 const AGENTHUB_BRIDGE_SLUG = /agenthub_[^\s"'\\]*_bridge/i;
 
+function accountIsProjection(account: Account): boolean {
+  const row = account as ClassifiableAccount;
+  const haystack = `${JSON.stringify(row.credentials ?? {})}\n${JSON.stringify(row.extra ?? {})}`;
+  return /\bahb_/.test(haystack) || AGENTHUB_BRIDGE_SLUG.test(haystack);
+}
+
 function providerIsNotATicket(
   provider: Provider,
   generatedIds: ReadonlySet<string>,
@@ -288,6 +294,17 @@ function rejectIfProjection(
   sourceId: string,
   resolver: MockTicketSourceResolver,
 ): void {
+  if (sourceKind === 'account') {
+    const account = resolver.listAccounts().find((row) => row.id === sourceId);
+    if (account && accountIsProjection(account)) {
+      throw adapterCommandError({
+        code: 'invalid_arg',
+        message: `${PROJECTION_NOT_A_TICKET}: ${ticketIdValue}`,
+        retryable: false,
+      });
+    }
+    return;
+  }
   if (sourceKind !== 'provider') return;
   const generated = generatedProviderIds(resolver.listProfiles());
   const provider = resolver.listProviders().find((row) => row.id === sourceId);
@@ -411,7 +428,7 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
   const ticketProviders = allProviders.filter((p) => !providerIsNotATicket(p, generatedIds));
 
   const tickets: TicketView[] = [
-    ...accounts.map(accountToTicket),
+    ...accounts.filter((account) => !accountIsProjection(account)).map(accountToTicket),
     ...ticketProviders.map(providerToTicket),
   ];
   tickets.sort((a, b) => a.id.localeCompare(b.id));
@@ -577,7 +594,7 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
       if (!binding) {
         throw adapterCommandError({
           code: 'invalid_arg',
-          message: '绑定未成为该 Agent 的当前连接',
+          message: '还没有切到这份登录',
           retryable: false,
         });
       }

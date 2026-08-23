@@ -15,7 +15,7 @@
         "applyPath": "native",
         "ruleId": "kimi-membership-to-claude-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reason": "用这份 Kimi Code 会员接到 Claude，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -34,7 +34,7 @@
         "applyPath": "local_bridge",
         "ruleId": "kimi-membership-to-codex-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员到 Codex 需要本地协议桥接。",
+        "reason": "Kimi Code 会员接到 Codex 需要本机转发。",
         "reusePath": "local_bridge"
       }
     },
@@ -53,7 +53,7 @@
         "applyPath": "config_sync",
         "ruleId": "kimi-membership-to-pi-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员可预览为 Pi 的配置同步。",
+        "reason": "把这份 Kimi Code 会员写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -79,7 +79,7 @@
         "applyPath": "native",
         "ruleId": "kimi-membership-to-claude-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员可预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reason": "用这份 Kimi Code 会员接到 Claude，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -103,7 +103,7 @@
         "applyPath": "local_bridge",
         "ruleId": "kimi-membership-to-codex-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员到 Codex 需要本地协议桥接。",
+        "reason": "Kimi Code 会员接到 Codex 需要本机转发。",
         "reusePath": "local_bridge"
       }
     },
@@ -129,7 +129,7 @@
         "applyPath": "config_sync",
         "ruleId": "kimi-membership-to-pi-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员可预览为 Pi 的配置同步。",
+        "reason": "把这份 Kimi Code 会员写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -148,7 +148,7 @@
         "applyPath": "config_sync",
         "ruleId": "anthropic-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "显式 Anthropic API Key 可预览为 Pi 的配置同步。",
+        "reason": "把这份 Anthropic API Key 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -167,7 +167,7 @@
         "applyPath": "local_bridge",
         "ruleId": "anthropic-api-to-codex-v1",
         "gateKind": "none",
-        "reason": "显式 Anthropic API Key 到 Codex 需要本地协议桥接。",
+        "reason": "这份 Anthropic API Key 接到 Codex 需要本机转发。",
         "reusePath": "local_bridge"
       }
     },
@@ -193,7 +193,7 @@
         "applyPath": "local_bridge",
         "ruleId": "anthropic-api-to-codex-v1",
         "gateKind": "none",
-        "reason": "显式 Anthropic API Key 到 Codex 需要本地协议桥接。",
+        "reason": "这份 Anthropic API Key 接到 Codex 需要本机转发。",
         "reusePath": "local_bridge"
       }
     },
@@ -212,7 +212,7 @@
         "applyPath": "native",
         "ruleId": "glm-coding-plan-to-codex-v1",
         "gateKind": "none",
-        "reason": "GLM Coding Plan 官方 Responses 端点可实验直连 Codex。",
+        "reason": "用这份 GLM 会员接到 Codex，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -238,7 +238,7 @@
         "applyPath": "native",
         "ruleId": "glm-coding-plan-to-codex-v1",
         "gateKind": "none",
-        "reason": "GLM Coding Plan 官方 Responses 端点可实验直连 Codex。",
+        "reason": "用这份 GLM 会员接到 Codex，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -257,7 +257,7 @@
         "applyPath": "native",
         "ruleId": "deepseek-api-to-codex-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API 官方 Responses 端点可实验直连 Codex。",
+        "reason": "用这份 DeepSeek Key 接到 Codex，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -283,7 +283,7 @@
         "applyPath": "native",
         "ruleId": "deepseek-api-to-codex-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API 官方 Responses 端点可实验直连 Codex。",
+        "reason": "用这份 DeepSeek Key 接到 Codex，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -403,7 +403,7 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "subscription_candidate",
-        "reason": "Codex / ChatGPT 订阅 → Claude Code：当前不支持。尚未通过上游授权、条款与协议兼容性门禁，plan.canApply=false。不会创建适配、启动 Bridge，也不会把订阅凭据写入 Claude。这只表示没有可执行规则，不代表连接失效。替代路径：在 Claude 使用自身官方登录，或改用已支持的 API Key 来源。",
+        "reason": "Codex / ChatGPT 订阅现在还接不到 Claude Code。不会改配置，也不会开本机转发。这不表示现有连接坏了。可改用 Claude 自己的官方登录，或改用已支持的 API Key。",
         "reusePath": "none"
       }
     },
@@ -441,7 +441,7 @@
         "applyPath": "config_sync",
         "ruleId": "deepseek-api-to-dsh-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API Key 可预览为 DeepSeek Harness 的配置同步。",
+        "reason": "把这份 DeepSeek Key 写进 DeepSeek Harness 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -460,7 +460,7 @@
         "applyPath": "native",
         "ruleId": "deepseek-api-to-claude-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reason": "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -498,7 +498,7 @@
         "applyPath": "config_sync",
         "ruleId": "openai-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "显式 OpenAI API Key 可预览为 Pi 的配置同步。",
+        "reason": "把这份 OpenAI API Key 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -524,7 +524,7 @@
         "applyPath": "config_sync",
         "ruleId": "openai-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "显式 OpenAI API Key 可预览为 Pi 的配置同步。",
+        "reason": "把这份 OpenAI API Key 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -543,7 +543,7 @@
         "applyPath": "config_sync",
         "ruleId": "xai-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "显式 xAI API Key 可预览为 Pi 的配置同步。",
+        "reason": "把这份 xAI API Key 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -569,7 +569,7 @@
         "applyPath": "config_sync",
         "ruleId": "xai-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "显式 xAI API Key 可预览为 Pi 的配置同步。",
+        "reason": "把这份 xAI API Key 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -607,7 +607,7 @@
         "applyPath": "native",
         "ruleId": "glm-coding-plan-to-claude-v1",
         "gateKind": "none",
-        "reason": "GLM Coding Plan 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reason": "用这份 GLM Coding Plan 接到 Claude，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -633,7 +633,7 @@
         "applyPath": "native",
         "ruleId": "glm-coding-plan-to-claude-v1",
         "gateKind": "none",
-        "reason": "GLM Coding Plan 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reason": "用这份 GLM Coding Plan 接到 Claude，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -652,7 +652,7 @@
         "applyPath": "native",
         "ruleId": "deepseek-api-to-claude-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reason": "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -678,7 +678,7 @@
         "applyPath": "native",
         "ruleId": "deepseek-api-to-claude-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API 可实验预览为 Claude 的原生 Anthropic Messages 端点。",
+        "reason": "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -697,7 +697,7 @@
         "applyPath": "config_sync",
         "ruleId": "glm-coding-plan-to-pi-v1",
         "gateKind": "none",
-        "reason": "GLM Coding Plan 可实验预览为 Pi 的配置同步。",
+        "reason": "把这份 GLM Coding Plan 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -716,7 +716,7 @@
         "applyPath": "config_sync",
         "ruleId": "deepseek-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API 可实验预览为 Pi 的配置同步。",
+        "reason": "把这份 DeepSeek API 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -742,7 +742,7 @@
         "applyPath": "config_sync",
         "ruleId": "glm-coding-plan-to-pi-v1",
         "gateKind": "none",
-        "reason": "GLM Coding Plan 可实验预览为 Pi 的配置同步。",
+        "reason": "把这份 GLM Coding Plan 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -768,7 +768,7 @@
         "applyPath": "config_sync",
         "ruleId": "deepseek-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "DeepSeek API 可实验预览为 Pi 的配置同步。",
+        "reason": "把这份 DeepSeek API 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
@@ -787,7 +787,7 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "这条接到方式还没做好，暂不能绑定。",
+        "reason": "这条接法还没做好，现在接不上。",
         "reusePath": "none"
       }
     },
@@ -806,7 +806,7 @@
         "applyPath": "native",
         "ruleId": "openai-api-to-grok-v1",
         "gateKind": "none",
-        "reason": "OpenAI API 可实验写入 Grok 的官方 OpenAI Chat Completions 配置。",
+        "reason": "用这份 OpenAI Key 接到 Grok，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -825,7 +825,7 @@
         "applyPath": "local_bridge",
         "ruleId": "openai-api-to-codex-v1",
         "gateKind": "none",
-        "reason": "显式 OpenAI API Key 到 Codex 需要本地协议桥接。",
+        "reason": "这份 OpenAI API Key 接到 Codex 需要本机转发。",
         "reusePath": "local_bridge"
       }
     },
@@ -851,7 +851,7 @@
         "applyPath": "local_bridge",
         "ruleId": "openai-api-to-codex-v1",
         "gateKind": "none",
-        "reason": "显式 OpenAI API Key 到 Codex 需要本地协议桥接。",
+        "reason": "这份 OpenAI API Key 接到 Codex 需要本机转发。",
         "reusePath": "local_bridge"
       }
     },
@@ -897,7 +897,7 @@
         "applyPath": "rejected",
         "ruleId": "claude-subscription-to-codex-v1",
         "gateKind": "preview_only",
-        "reason": "Claude 订阅 → Codex：本机转发方向已开放，规则与 fixtures 未落地，暂不能绑定。",
+        "reason": "Claude 订阅接到 Codex 可以走本机转发，但规则还没做完，现在接不上。",
         "reusePath": "local_bridge"
       }
     },
@@ -916,7 +916,7 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "该 Agent 无配置写入能力，不能作为绑定落点",
+        "reason": "这个工具不能写入配置，接不上。",
         "reusePath": "none"
       }
     },
@@ -935,7 +935,7 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "该 Agent 无配置写入能力，不能作为绑定落点",
+        "reason": "这个工具不能写入配置，接不上。",
         "reusePath": "none"
       }
     },
@@ -962,7 +962,7 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "该 Agent 无配置写入能力，不能作为绑定落点",
+        "reason": "这个工具不能写入配置，接不上。",
         "reusePath": "none"
       }
     },
@@ -981,7 +981,7 @@
         "applyPath": "native",
         "ruleId": "kimi-membership-to-grok-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员可实验写入 Grok 的 OpenAI Chat Completions 配置。",
+        "reason": "用这份 Kimi Code 会员接到 Grok，只改地址和模型。",
         "reusePath": "api_endpoint"
       }
     },
@@ -1005,7 +1005,7 @@
         "gateKind": "none",
         "reusePath": "native_subscription",
         "ruleId": "claude-subscription-to-pi-v1",
-        "reason": "Claude 订阅可写入 Pi 的 anthropic 登录槽（原生订阅复用）。"
+        "reason": "把这份 Claude 订阅写进 Pi 认的 Claude 登录。"
       }
     },
     {
@@ -1032,7 +1032,7 @@
         "gateKind": "none",
         "reusePath": "native_subscription",
         "ruleId": "codex-subscription-to-pi-v1",
-        "reason": "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。"
+        "reason": "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。"
       }
     },
     {
@@ -1056,7 +1056,7 @@
         "gateKind": "none",
         "reusePath": "native_subscription",
         "ruleId": "codex-subscription-to-pi-v1",
-        "reason": "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。"
+        "reason": "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。"
       }
     },
     {
@@ -1079,7 +1079,7 @@
         "gateKind": "none",
         "reusePath": "native_subscription",
         "ruleId": "codex-subscription-to-pi-v1",
-        "reason": "Codex / ChatGPT 订阅可写入 Pi 的 openai-codex 登录槽（原生订阅复用）。"
+        "reason": "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。"
       }
     },
     {
@@ -1102,7 +1102,7 @@
         "gateKind": "none",
         "reusePath": "native_subscription",
         "ruleId": "grok-subscription-to-pi-v1",
-        "reason": "Grok / xAI 订阅可写入 Pi 的 xai 登录槽（原生订阅复用）。"
+        "reason": "把这份 Grok 订阅写进 Pi 认的 Grok 登录。"
       }
     },
     {
@@ -1121,7 +1121,7 @@
         "ruleId": "claude-subscription-to-codex-v1",
         "gateKind": "preview_only",
         "reusePath": "local_bridge",
-        "reason": "Claude 订阅 → Codex：本机转发方向已开放，规则与 fixtures 未落地，暂不能绑定。"
+        "reason": "Claude 订阅接到 Codex 可以走本机转发，但规则还没做完，现在接不上。"
       }
     },
     {

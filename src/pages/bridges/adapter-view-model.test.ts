@@ -177,7 +177,7 @@ describe('adapter profile source resolution', () => {
 
   it('builds a human-readable flow label for confirmations', () => {
     expect(adapterProfileFlowLabel(bridgeProfile({ sourceKind: 'provider', sourceId: 'row-1' }), entries))
-      .toBe('Provider row → Codex');
+      .toBe('Provider row → http://127.0.0.1:32123/v1/responses');
   });
 });
 
@@ -231,8 +231,8 @@ describe('managed adapter profiles view model', () => {
       lastErrorCode: 'adapter.rollback_incomplete',
     }));
     expect(guide?.summary).toContain('adapter.rollback_incomplete');
-    expect(guide?.steps.some((step) => step.includes('不会修复配置不一致'))).toBe(true);
-    expect(guide?.steps.some((step) => step.includes('解除绑定后，到总览重新连接'))).toBe(true);
+    expect(guide?.steps.some((step) => step.includes('不会修好配置不一致'))).toBe(true);
+    expect(guide?.steps.some((step) => step.includes('停止并还原后，到总览重新连接'))).toBe(true);
 
     const directGuide = adapterProfileRecoveryGuide({
       route: 'native_endpoint',

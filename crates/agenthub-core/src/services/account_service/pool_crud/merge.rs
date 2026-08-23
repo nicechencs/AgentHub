@@ -9,7 +9,6 @@ use crate::storage::{
     account_get_by_id_conn, account_list_for_agent_conn, provider_get_by_id_conn,
     provider_list_for_agent_conn,
 };
-use crate::utils::loopback::credentials_are_loopback;
 
 use super::super::surface::*;
 use super::super::AccountService;
@@ -162,13 +161,8 @@ impl AccountService {
                 let binding = get_binding_row(&tx, agent)?;
                 let trash = list_trash_conn(&tx, agent)?;
 
-                let duplicates = authorization_duplicates(
-                    adapter,
-                    agent,
-                    kind,
-                    &credentials,
-                    &accounts,
-                );
+                let duplicates =
+                    authorization_duplicates(adapter, agent, kind, &credentials, &accounts);
                 let committed = if let Some(target_existing) =
                     pick_primary_authorization_match(duplicates.clone())
                 {
@@ -235,30 +229,6 @@ impl AccountService {
     }
 }
 
-fn authorization_duplicates(
-    adapter: &dyn AgentAdapter,
-    agent: AgentId,
-    kind: AccountKind,
-    credentials: &Value,
-    snapshot: &[Account],
-) -> Vec<Account> {
-    let incoming_loopback = credentials_are_loopback(credentials);
-    snapshot
-        .iter()
-        .filter(|candidate| {
-            candidate.kind == kind
-                && same_live_slot(agent, credentials, &candidate.credentials)
-                && if incoming_loopback {
-                    credentials_are_loopback(&candidate.credentials)
-                } else {
-                    !credentials_are_loopback(&candidate.credentials)
-                        && accounts_same_authorization(adapter, kind, credentials, candidate)
-                }
-        })
-        .cloned()
-        .collect()
-}
-
 fn freeze_account_mutation_plan(
     tx: &Transaction<'_>,
     items: &[(String, String, String)],
@@ -287,9 +257,8 @@ fn revalidate_frozen_account_plan(
     items: &[(String, String, String)],
 ) -> Result<()> {
     for (_role, id, expected) in items {
-        let live = account_get_by_id_conn(conn, id)?.ok_or_else(|| {
-            AppError::NotFound(format!("account not found: {id}"))
-        })?;
+        let live = account_get_by_id_conn(conn, id)?
+            .ok_or_else(|| AppError::NotFound(format!("account not found: {id}")))?;
         if live.updated_at != *expected {
             return Err(AppError::message(
                 "account.merge.conflict",

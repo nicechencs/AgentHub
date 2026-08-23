@@ -15,7 +15,6 @@ import {
   fmtBytes,
   projectDisplayPath,
   relativeTime,
-  shortPath,
   titleHoverLabel,
 } from './project-format';
 import { ProjectPathLink } from './ProjectPathLink';
@@ -131,12 +130,7 @@ export function ProjectTree({
                     onOpen={(e) => onOpenProjectWorkspace(p, e)}
                   />
                 ) : (
-                  <Tip
-                    label={path}
-                    className="min-w-0 flex-1 truncate font-mono text-meta text-muted"
-                  >
-                    {shortPath(path, 40)}
-                  </Tip>
+                  <ProjectPathLink path={path} />
                 )}
               </div>
               <div className="flex shrink-0 gap-1" onClick={(e) => e.stopPropagation()}>

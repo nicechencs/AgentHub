@@ -11,13 +11,13 @@ use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
-    AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
-    TicketSurface,
+    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult, AgentId,
+    BackupKind, Capability, LiveAccount, PersistedTicketSurface, TicketSurface,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
 };
+use crate::services::adapter_projection::projection_import_error;
 use crate::services::{AdapterRouteService, BackupService, ConnectionService};
 use crate::storage::{AccountRepo, Database};
 use crate::utils::agent_lock::AgentWriteLock;
@@ -47,15 +47,58 @@ impl AccountService {
 
         let adapter = self.registry.require(agent, Capability::AccountSwitch)?;
         let _lock = self.acquire_live_lock(agent)?;
-        let live = adapter.read_account()?;
-        if live.agent != agent {
-            return Err(AppError::InvalidArg(format!(
-                "adapter returned account for {}, expected {}",
-                live.agent.as_str(),
-                agent.as_str()
-            )));
+        let lives = self.read_live_accounts(adapter.as_ref(), agent)?;
+        if lives.is_empty() {
+            return Err(AppError::NotFound(
+                "no live account credentials found".into(),
+            ));
         }
 
+        // 「同步当前登录」is a user override: always copy the live file onto the
+        // matching row. Do not run rt/mtime bidirectional overlay here.
+        // Grok nested auth.json slots import one row per person, like Pi
+        // providers. Keep an existing current if that person is still in the
+        // file; otherwise activate the default `::client` slot, not last-sorted.
+        let mut grants = Vec::new();
+        let mut blocked_projection = false;
+        for live in lives {
+            if self.classify_live_account(agent, &live)?.is_projection() {
+                blocked_projection = true;
+                continue;
+            }
+            grants.push(live);
+        }
+        if grants.is_empty() {
+            if blocked_projection {
+                return Err(projection_import_error());
+            }
+            return Err(AppError::message(
+                "account.import",
+                "live import produced no accounts",
+            ));
+        }
+        let current = self.repo.get_current(agent)?;
+        let chosen = self.pick_live_grant_to_activate(
+            adapter.as_ref(),
+            agent,
+            &grants,
+            current.as_ref(),
+        );
+        let mut chosen_live = None;
+        let mut others = Vec::new();
+        for (index, live) in grants.into_iter().enumerate() {
+            if index == chosen {
+                chosen_live = Some(live);
+            } else {
+                others.push(live);
+            }
+        }
+        for live in others {
+            self.upsert_live_account(adapter.as_ref(), agent, live, None, false)?;
+        }
+        let live = chosen_live.ok_or_else(|| {
+            AppError::message("account.import", "live import produced no accounts")
+        })?;
         self.upsert_live_account(adapter.as_ref(), agent, live, name, true)
     }
 
@@ -76,16 +119,42 @@ impl AccountService {
             ));
         }
 
-        let mut last: Option<Account> = None;
-        let n = lives.len();
-        for (i, live) in lives.into_iter().enumerate() {
-            let is_last = i + 1 == n;
-            let display_name = if is_last { name } else { None };
-            let acc =
-                self.upsert_live_account(adapter.as_ref(), AgentId::Pi, live, display_name, false)?;
-            last = Some(acc);
+        let mut grants = Vec::new();
+        let mut blocked_projection = false;
+        for live in lives {
+            if self
+                .classify_live_account(AgentId::Pi, &live)?
+                .is_projection()
+            {
+                blocked_projection = true;
+                continue;
+            }
+            grants.push(live);
         }
-        last.ok_or_else(|| AppError::message("account.import", "Pi import produced no accounts"))
+        if grants.is_empty() {
+            if blocked_projection {
+                return Err(projection_import_error());
+            }
+            return Err(AppError::message(
+                "account.import",
+                "Pi import produced no accounts",
+            ));
+        }
+        let n = grants.len();
+        let mut last = None;
+        for (i, live) in grants.into_iter().enumerate() {
+            let display_name = if i + 1 == n { name } else { None };
+            last = Some(self.upsert_live_account(
+                adapter.as_ref(),
+                AgentId::Pi,
+                live,
+                display_name,
+                false,
+            )?);
+        }
+        last.ok_or_else(|| {
+            AppError::message("account.import", "Pi import produced no accounts")
+        })
     }
 
     pub(super) fn upsert_live_account(
@@ -119,26 +188,27 @@ impl AccountService {
         let extra = attach_identity_meta(adapter, live.kind, &live.credentials, &display, extra);
 
         let now = now_ts();
-        let row = Account {
+        let mut row = Account {
             id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
             agent_id: agent,
             kind: live.kind,
-            label: display.clone(),
-            credentials: live.credentials.clone(),
-            extra: extra.clone(),
+            label: display,
+            credentials: live.credentials,
+            extra,
             status: "active".into(),
             is_current: make_current,
             created_at: now.clone(),
             updated_at: now,
         };
-        let row = self.prepare_account_surface(row);
+        row = self.prepare_account_surface(row);
+        let _ = crate::services::account_identity_heal::heal_account_identity(&mut row);
         self.commit_authorization_merge(
             adapter,
             &row,
             live.kind,
-            display,
-            live.credentials,
-            extra,
+            row.label.clone(),
+            row.credentials.clone(),
+            row.extra.clone(),
             make_current,
         )
         .map(|committed| committed.stored)
@@ -154,10 +224,7 @@ impl AccountService {
             return account;
         }
         let product = AdapterRouteService::classify_account_source_product(&account);
-        attach_persisted_surface(
-            &mut account.extra,
-            TicketSurface::from_product(product),
-        );
+        attach_persisted_surface(&mut account.extra, TicketSurface::from_product(product));
         account
     }
 

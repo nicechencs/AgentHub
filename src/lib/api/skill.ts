@@ -20,6 +20,7 @@ export type {
   CoreSkill,
   SkillSyncReport,
   InstalledSkillDto,
+  SkillCopyLocation,
   SkillListingDto,
   SkillMarkdownPreviewDto,
   SkillProjectResultDto,

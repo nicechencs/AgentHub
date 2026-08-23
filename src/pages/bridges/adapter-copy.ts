@@ -47,14 +47,14 @@ export function adapterTabLabel(tab: AdapterTab | AdapterCredentialFilter): stri
   return adapterCredentialFilterLabel(tab === 'all' ? 'all' : tab);
 }
 
-export const BRIDGES_PAGE_TITLE = '本机路由';
-export const BRIDGES_PAGE_DESCRIPTION = '本机协议转换 · 仅 127.0.0.1';
+export const BRIDGES_PAGE_TITLE = '路由';
+export const BRIDGES_PAGE_DESCRIPTION = '本机转发 · 仅 127.0.0.1 · 含端口';
 export const BRIDGES_PAGE_DESCRIPTION_TIP =
-  '凭据在连接页，不展示不复制。多数连接不需要本机转发。需保持托盘运行。日志不记请求正文。';
+  '登录信息在连接页，不展示不复制。多数连接不需要本机转发。需保持托盘运行。日志不记请求正文。';
 export const BRIDGES_EMPTY_TITLE = '没有本机路由';
 export const BRIDGES_EMPTY_DESCRIPTION =
-  '多数连接不需要本机转发。只有协议对不上时才会在这台电脑上开一层转换。若刚完成需要转发的绑定，到总览看对应工具上的路由状态。';
-export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = '登录列表里有本机路由绑定，但找不到运行时';
+  '多数连接不需要本机转发。只有两边说的话对不上时，才会在这台电脑上开一层转换。若刚接到需要转发的登录，到总览看对应工具上的路由状态。';
+export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = '登录列表里有本机路由，但找不到正在运行的转发';
 export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = '可重试读取。不是「没有本机路由」。';
 export { BRIDGES_NAV_LABEL, BRIDGES_PATH, bridgesHrefForProfile, legacyBridgesRedirectTo };
 

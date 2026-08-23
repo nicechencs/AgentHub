@@ -1,9 +1,10 @@
 use super::*;
 use crate::adapters::AgentAdapter;
 use crate::models::{
-    AuthState, Capability, CapabilityState, DetectResult, DetectStatus, InstallChannel, RunOptions,
-    RunSpec,
+    AuthState, Capability, CapabilityState, DetectResult, DetectStatus, InstallChannel, Provider,
+    RunOptions, RunSpec,
 };
+use crate::storage::ProviderRepo;
 use crate::utils::atomic::atomic_write;
 use serde_json::json;
 use std::path::Path;
@@ -386,16 +387,17 @@ fn duplicate_merge_apply_failure_restores_current_source_and_target() {
     adapter.fail_writes_on(&[2]);
 
     let error = svc
-        .update_api_key(
-            AgentId::Claude,
-            &source.id,
-            None,
-            Some("sk-target-key"),
-        )
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert_eq!(error.code(), "test.write");
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
     assert_eq!(
         svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id,
         source.id
@@ -445,18 +447,25 @@ fn duplicate_merge_delete_failure_restores_current_source_target_binding_and_liv
         .unwrap();
 
     let error = svc
-        .update_api_key(
-            AgentId::Claude,
-            &source.id,
-            None,
-            Some("sk-target-key"),
-        )
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert!(error.code().starts_with("db"));
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
-    assert_eq!(svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id, source.id);
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
+    assert_eq!(
+        svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id,
+        source.id
+    );
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before
+    );
     assert_eq!(adapter.read_account().unwrap(), live_before);
 }
 
@@ -512,20 +521,31 @@ fn duplicate_merge_mid_cleanup_failure_restores_all_duplicate_rows() {
         .unwrap();
 
     let error = svc
-        .update_api_key(
-            AgentId::Claude,
-            &source.id,
-            None,
-            Some("sk-target-key"),
-        )
+        .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert!(error.code().starts_with("db"));
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
-    assert_eq!(svc.repo().get_by_id(&duplicate.id).unwrap().unwrap(), duplicate_before);
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&duplicate.id).unwrap().unwrap(),
+        duplicate_before
+    );
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before
+    );
     assert_eq!(adapter.read_account().unwrap(), live_before);
-    assert!(svc.connections.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
+    assert!(svc
+        .connections
+        .list_trash(Some(AgentId::Claude))
+        .unwrap()
+        .is_empty());
 }
 
 fn install_account_mutation_plan_trigger(svc: &AccountService, body: &str) {
@@ -632,7 +652,13 @@ fn duplicate_merge_ignores_duplicate_inserted_after_snapshot() {
     svc.update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap();
     assert!(svc.repo().get_by_id(&source.id).unwrap().is_none());
-    assert!(svc.repo().get_by_id(&target.id).unwrap().unwrap().is_current);
+    assert!(
+        svc.repo()
+            .get_by_id(&target.id)
+            .unwrap()
+            .unwrap()
+            .is_current
+    );
     assert!(
         AccountRepo::new(svc.db.clone())
             .get_by_id("claude-acc-concurrent-dup")
@@ -673,8 +699,14 @@ fn duplicate_merge_source_revision_mismatch_fails_before_db_mutation() {
         .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert_eq!(error.code(), "account.merge.conflict");
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
 }
 
 #[test]
@@ -708,8 +740,14 @@ fn duplicate_merge_target_revision_mismatch_fails_before_db_mutation() {
         .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert_eq!(error.code(), "account.merge.conflict");
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
 }
 
 #[test]
@@ -749,9 +787,18 @@ fn duplicate_merge_source_cas_delete_conflict_is_not_pre_mutation_conflict() {
         .unwrap_err();
     assert_eq!(error.code(), "account.merge.delete.conflict");
     assert_ne!(error.code(), "account.merge.conflict");
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before
+    );
     assert_eq!(adapter.read_account().unwrap(), live_before);
 }
 
@@ -768,8 +815,20 @@ fn duplicate_merge_three_duplicates_mid_cleanup_restores_all_rows() {
         .add_api_key(AgentId::Claude, Some("target-a"), "sk-target-key")
         .unwrap();
     let repo = AccountRepo::new(svc.db.clone());
-    let extra_b = repo.create(&extra_api_key_row("claude-acc-target-b", "target-b", "sk-target-key")).unwrap();
-    let extra_c = repo.create(&extra_api_key_row("claude-acc-target-c", "target-c", "sk-target-key")).unwrap();
+    let extra_b = repo
+        .create(&extra_api_key_row(
+            "claude-acc-target-b",
+            "target-b",
+            "sk-target-key",
+        ))
+        .unwrap();
+    let extra_c = repo
+        .create(&extra_api_key_row(
+            "claude-acc-target-c",
+            "target-c",
+            "sk-target-key",
+        ))
+        .unwrap();
     let source_before = svc.repo().get_by_id(&source.id).unwrap().unwrap();
     let target_before = svc.repo().get_by_id(&target.id).unwrap().unwrap();
     let extra_b_before = svc.repo().get_by_id(&extra_b.id).unwrap().unwrap();
@@ -800,13 +859,32 @@ fn duplicate_merge_three_duplicates_mid_cleanup_restores_all_rows() {
         .update_api_key(AgentId::Claude, &source.id, None, Some("sk-target-key"))
         .unwrap_err();
     assert!(error.code().starts_with("db"));
-    assert_eq!(svc.repo().get_by_id(&source.id).unwrap().unwrap(), source_before);
-    assert_eq!(svc.repo().get_by_id(&target.id).unwrap().unwrap(), target_before);
-    assert_eq!(svc.repo().get_by_id(&extra_b.id).unwrap().unwrap(), extra_b_before);
-    assert_eq!(svc.repo().get_by_id(&extra_c.id).unwrap().unwrap(), extra_c_before);
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.repo().get_by_id(&source.id).unwrap().unwrap(),
+        source_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&target.id).unwrap().unwrap(),
+        target_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&extra_b.id).unwrap().unwrap(),
+        extra_b_before
+    );
+    assert_eq!(
+        svc.repo().get_by_id(&extra_c.id).unwrap().unwrap(),
+        extra_c_before
+    );
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before
+    );
     assert_eq!(adapter.read_account().unwrap(), live_before);
-    assert!(svc.connections.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
+    assert!(svc
+        .connections
+        .list_trash(Some(AgentId::Claude))
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -850,7 +928,10 @@ fn duplicate_merge_live_apply_failure_restores_cross_pool_current_and_binding() 
         .get_by_id(&provider_before.id)
         .unwrap()
         .is_some());
-    assert_eq!(svc.connections.get_active(AgentId::Claude).unwrap(), binding_before);
+    assert_eq!(
+        svc.connections.get_active(AgentId::Claude).unwrap(),
+        binding_before
+    );
     assert_eq!(
         adapter.read_account().unwrap().credentials["api_key"],
         "sk-source-key"
@@ -882,7 +963,10 @@ fn account_compensation_fails_closed_when_another_writer_changes_the_row() {
         .unwrap_err();
 
     assert_eq!(error.code(), "account.current.apply.rollback.database");
-    assert_eq!(svc.repo().get_by_id(&original.id).unwrap().unwrap(), external);
+    assert_eq!(
+        svc.repo().get_by_id(&original.id).unwrap().unwrap(),
+        external
+    );
 }
 
 #[test]
@@ -920,6 +1004,46 @@ fn updating_current_codex_api_key_account_stays_pool_only() {
         "unsupported API-key live apply must not rewrite Codex auth.json"
     );
     assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
+}
+
+#[test]
+fn import_live_heals_codex_email_from_id_token() {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+
+    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(
+        json!({
+            "email": "imported@example.com",
+            "https://api.openai.com/auth": { "chatgpt_account_id": "acc-1" }
+        })
+        .to_string()
+        .as_bytes(),
+    );
+    let id_token = format!("{header}.{payload}.sig");
+    let (_root, svc, adapter) = live_svc(AgentId::Codex);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Codex,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "tokens": {
+                    "id_token": id_token,
+                    "access_token": "at-imported",
+                    "refresh_token": "rt-imported-secret"
+                }
+            }
+        }),
+        label_hint: None,
+        extra: json!({}),
+    });
+    let imported = svc.import_live(AgentId::Codex, None).unwrap();
+    assert_eq!(imported.label, "imported@example.com");
+    assert_eq!(
+        imported.extra.get("email").and_then(|v| v.as_str()),
+        Some("imported@example.com")
+    );
 }
 
 #[test]
@@ -1275,9 +1399,68 @@ fn import_live_loopback_does_not_swallow_oauth() {
 }
 
 #[test]
-fn import_live_keeps_same_identity_different_tokens() {
+fn import_live_refuses_current_generated_local_route() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    ProviderRepo::new(svc.db.clone())
+        .create(&Provider {
+            id: "claude-gen".into(),
+            agent_id: AgentId::Claude,
+            name: "generated".into(),
+            settings_config: json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "http://127.0.0.1:43081",
+                    "ANTHROPIC_AUTH_TOKEN": "ahb_local"
+                }
+            }),
+            meta: json!({
+                "generatedBy": "adapter",
+                "adapterBridge": { "loopbackOnly": true }
+            }),
+            is_current: true,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "ahb_local",
+            "env_key": "ANTHROPIC_AUTH_TOKEN",
+            "base_url": "http://127.0.0.1:43081"
+        }),
+        label_hint: Some("Claude bridge".into()),
+        extra: json!({}),
+    });
+    let error = svc.import_live(AgentId::Claude, None).unwrap_err();
+    assert_eq!(error.code(), "account.import_projection");
+    assert!(svc.list(Some(AgentId::Claude)).unwrap().is_empty());
+}
+
+#[test]
+fn import_live_refuses_leftover_ahb_bearer_without_current_row() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "ahb_stale_token",
+            "base_url": "http://127.0.0.1:43081"
+        }),
+        label_hint: Some("Claude bridge".into()),
+        extra: json!({}),
+    });
+    let error = svc.import_live(AgentId::Claude, None).unwrap_err();
+    assert_eq!(error.code(), "account.import_projection");
+    assert!(svc.list(Some(AgentId::Claude)).unwrap().is_empty());
+    assert!(svc.live_is_adapter_projection(AgentId::Claude).unwrap());
+}
+
+#[test]
+fn import_live_overwrites_same_oauth_identity_different_tokens() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);
-    // First authorization
     adapter.set_live(LiveAccount {
         agent: AgentId::Grok,
         kind: AccountKind::Oauth,
@@ -1296,7 +1479,6 @@ fn import_live_keeps_same_identity_different_tokens() {
     });
     let first = svc.import_live(AgentId::Grok, None).unwrap();
 
-    // Second authorization for same person, different ticket
     adapter.set_live(LiveAccount {
         agent: AgentId::Grok,
         kind: AccountKind::Oauth,
@@ -1314,16 +1496,243 @@ fn import_live_keeps_same_identity_different_tokens() {
         extra: json!({}),
     });
     let second = svc.import_live(AgentId::Grok, None).unwrap();
-    assert_ne!(
+    assert_eq!(
         first.id, second.id,
-        "different tokens must remain separate rows"
+        "same Grok OAuth identity must overwrite the existing row"
     );
-    let list = svc.list(Some(AgentId::Grok)).unwrap();
-    assert_eq!(list.len(), 2);
+    assert_eq!(second.credentials["body"]["provider"]["key"], "token-bbb");
     assert!(second.is_current);
-    // older authorization still present
-    assert!(list.iter().any(|a| a.id == first.id));
+    let list = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, first.id);
+    assert_eq!(list[0].credentials["body"]["provider"]["key"], "token-bbb");
     assert!(list.iter().all(|a| a.extra.get("identityLabel").is_some()));
+}
+
+#[test]
+fn import_live_keeps_cross_agent_same_oauth_identity_separate() {
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let grok = Arc::new(FakeAdapter::new(
+        AgentId::Grok,
+        root.path().join("live").join("grok.json"),
+    ));
+    let claude = Arc::new(FakeAdapter::new(
+        AgentId::Claude,
+        root.path().join("live").join("claude.json"),
+    ));
+    let mut registry = AdapterRegistry::new();
+    registry.register(grok.clone());
+    registry.register(claude.clone());
+    let svc = AccountService::with_live(db, registry, root.path().join("backups"));
+
+    grok.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {"email": "a@example.com", "user_id": "uid-1", "key": "grok-token"}
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({}),
+    });
+    claude.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "credentials_json",
+            "body": {
+                "claudeAiOauth": {
+                    "accessToken": "claude-access",
+                    "refreshToken": "claude-refresh"
+                },
+                "email": "a@example.com"
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({}),
+    });
+
+    let grok_row = svc.import_live(AgentId::Grok, None).unwrap();
+    let claude_row = svc.import_live(AgentId::Claude, None).unwrap();
+    assert_ne!(grok_row.id, claude_row.id);
+    assert_eq!(svc.list(Some(AgentId::Grok)).unwrap().len(), 1);
+    assert_eq!(svc.list(Some(AgentId::Claude)).unwrap().len(), 1);
+    let all = svc.list(None).unwrap();
+    assert_eq!(all.len(), 2, "same email on Grok and Claude stays two rows");
+    assert!(all.iter().any(|row| row.agent_id == AgentId::Grok));
+    assert!(all.iter().any(|row| row.agent_id == AgentId::Claude));
+}
+
+#[test]
+fn hub_pkce_and_cli_import_same_grok_identity_overwrite() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let first = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "pkce-token"
+                }
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": "cli-token"
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({}),
+    });
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    assert_eq!(first.id, imported.id);
+    assert_eq!(imported.credentials["body"]["key"], "cli-token");
+    assert_eq!(svc.list(Some(AgentId::Grok)).unwrap().len(), 1);
+}
+
+#[test]
+fn hub_pkce_bundle_then_cli_auth_json_same_user_overwrites() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let first = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok · OAuth".into(),
+            credentials: json!({
+                "type": "oauth",
+                "provider": "xai",
+                "access_token": "pkce-access",
+                "refresh_token": "pkce-refresh",
+                "sub": "uid-1"
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "https://auth.x.ai::https://api.x.ai": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "cli-token"
+                }
+            }
+        }),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({}),
+    });
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    assert_eq!(
+        first.id, imported.id,
+        "PKCE sub must match CLI user_id as the same Grok person"
+    );
+    assert_eq!(svc.list(Some(AgentId::Grok)).unwrap().len(), 1);
+    let stored = &svc.list(Some(AgentId::Grok)).unwrap()[0];
+    assert_eq!(
+        stored.credentials["body"]["https://auth.x.ai::https://api.x.ai"]["key"],
+        "cli-token"
+    );
+}
+
+#[test]
+fn oauth_identity_does_not_merge_on_display_label_or_cross_bucket() {
+    let pkce = json!({
+        "type": "oauth",
+        "provider": "xai",
+        "refresh_token": "rt-pkce",
+        "sub": "uid-1"
+    });
+    let cli = Account {
+        id: "cli".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label: "Grok · OAuth".into(),
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "https://auth.x.ai": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1"
+                }
+            }
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t".into(),
+        updated_at: "t".into(),
+    };
+    assert!(accounts_same_oauth_identity(
+        AccountKind::Oauth,
+        &pkce,
+        &cli
+    ));
+
+    let other_email = Account {
+        id: "other".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label: "Grok · OAuth".into(),
+        credentials: json!({
+            "format": "auth_json",
+            "body": { "email": "b@example.com" }
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t".into(),
+        updated_at: "t".into(),
+    };
+    assert!(!accounts_same_oauth_identity(
+        AccountKind::Oauth,
+        &pkce,
+        &other_email
+    ));
+
+    let unlabeled = json!({
+        "type": "oauth",
+        "refresh_token": "rt-a"
+    });
+    let unlabeled_other = Account {
+        id: "none".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label: "Grok · OAuth".into(),
+        credentials: json!({
+            "type": "oauth",
+            "refresh_token": "rt-b"
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t".into(),
+        updated_at: "t".into(),
+    };
+    assert!(!accounts_same_oauth_identity(
+        AccountKind::Oauth,
+        &unlabeled,
+        &unlabeled_other
+    ));
 }
 
 #[test]
@@ -1417,64 +1826,486 @@ fn list_aligns_current_grok_account_for_different_live_identity() {
 }
 
 #[test]
-fn list_retains_new_grant_without_overwriting_multiple_same_identity_grants() {
+fn list_collapses_multiple_same_identity_oauth_grants_to_one_row() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);
-    let make_live = |key: &str| LiveAccount {
+    let make_creds = |key: &str| {
+        json!({
+            "format": "auth_json",
+            "body": {"email": "same@example.com", "user_id": "same-user", "key": key}
+        })
+    };
+    for (index, key) in ["grant-a", "grant-b", "grant-c"].iter().enumerate() {
+        svc.repo()
+            .create(&Account {
+                id: format!("grok-grant-{index}"),
+                agent_id: AgentId::Grok,
+                kind: AccountKind::Oauth,
+                label: "same@example.com".into(),
+                credentials: make_creds(key),
+                extra: json!({"source": "live", "identityLabel": "same@example.com"}),
+                status: "active".into(),
+                is_current: index == 1,
+                created_at: format!("2026-01-0{} 00:00:00.000000", index + 1),
+                updated_at: format!("2026-01-0{} 00:00:00.000000", index + 1),
+            })
+            .unwrap();
+    }
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: make_creds("grant-c"),
+        label_hint: Some("same@example.com".into()),
+        extra: json!({}),
+    });
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].credentials["body"]["key"], "grant-c");
+    assert!(rows[0].is_current);
+    assert_eq!(
+        rows[0].id, "grok-grant-1",
+        "collapse keeps the current row and overwrites it with live tokens"
+    );
+    assert!(!rows.iter().any(|row| row.id == "grok-grant-0"));
+    assert!(!rows.iter().any(|row| row.id == "grok-grant-2"));
+
+    let repeated = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(repeated.len(), 1);
+    assert_eq!(repeated[0].credentials["body"]["key"], "grant-c");
+}
+
+fn grok_two_slot_auth_json(uid1_rt: &str, uid2_rt: &str) -> serde_json::Value {
+    json!({
+        "format": "auth_json",
+        "body": {
+            "https://auth.x.ai::client": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": "at-1",
+                "refresh_token": uid1_rt
+            },
+            "https://auth.x.ai::https://api.x.ai": {
+                "email": "b@example.com",
+                "user_id": "uid-2",
+                "key": "at-2",
+                "refresh_token": uid2_rt
+            }
+        }
+    })
+}
+
+fn grok_two_slot_uid1_and_uid3() -> serde_json::Value {
+    json!({
+        "format": "auth_json",
+        "body": {
+            "https://auth.x.ai::client": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": "at-1",
+                "refresh_token": "rt-1"
+            },
+            "https://auth.x.ai::https://api.x.ai": {
+                "email": "c@example.com",
+                "user_id": "uid-3",
+                "key": "at-3",
+                "refresh_token": "rt-3"
+            }
+        }
+    })
+}
+
+fn seed_two_grok_people(svc: &AccountService, current_uid: &str) {
+    for (index, (uid, email, rt)) in [
+        ("uid-1", "a@example.com", "rt-1"),
+        ("uid-2", "b@example.com", "rt-2"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        svc.repo()
+            .create(&Account {
+                id: format!("grok-{uid}"),
+                agent_id: AgentId::Grok,
+                kind: AccountKind::Oauth,
+                label: email.into(),
+                credentials: json!({
+                    "format": "auth_json",
+                    "body": {
+                        "https://auth.x.ai::client": {
+                            "email": email,
+                            "user_id": uid,
+                            "key": format!("at-{index}"),
+                            "refresh_token": rt
+                        }
+                    }
+                }),
+                extra: json!({"source": "live", "identityLabel": email}),
+                status: "active".into(),
+                is_current: uid == current_uid,
+                created_at: "2026-01-01 00:00:00.000000".into(),
+                updated_at: "2026-01-01 00:00:00.000000".into(),
+            })
+            .unwrap();
+    }
+}
+
+#[test]
+fn list_keeps_two_grok_oauth_people_from_two_slot_auth_json() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    for (index, (uid, email, rt)) in [
+        ("uid-1", "a@example.com", "rt-1"),
+        ("uid-2", "b@example.com", "rt-2"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        svc.repo()
+            .create(&Account {
+                id: format!("grok-{uid}"),
+                agent_id: AgentId::Grok,
+                kind: AccountKind::Oauth,
+                label: email.into(),
+                credentials: json!({
+                    "format": "auth_json",
+                    "body": {
+                        "https://auth.x.ai::client": {
+                            "email": email,
+                            "user_id": uid,
+                            "key": format!("at-{index}"),
+                            "refresh_token": rt
+                        }
+                    }
+                }),
+                extra: json!({"source": "live", "identityLabel": email}),
+                status: "active".into(),
+                is_current: index == 0,
+                created_at: "2026-01-01 00:00:00.000000".into(),
+                updated_at: "2026-01-01 00:00:00.000000".into(),
+            })
+            .unwrap();
+    }
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: grok_two_slot_auth_json("rt-1", "rt-2"),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(rows.len(), 2, "different Grok people stay two pool rows");
+    let uid1 = rows.iter().find(|row| row.id == "grok-uid-1").unwrap();
+    let uid2 = rows.iter().find(|row| row.id == "grok-uid-2").unwrap();
+    assert!(
+        !uid1.credentials.to_string().contains("rt-2"),
+        "uid-1 row must not copy the sibling refresh_token"
+    );
+    assert!(
+        !uid2.credentials.to_string().contains("rt-1"),
+        "uid-2 row must not copy the sibling refresh_token"
+    );
+    assert!(uid1.credentials.to_string().contains("rt-1"));
+    assert!(uid2.credentials.to_string().contains("rt-2"));
+    assert!(
+        uid1.is_current,
+        "list must not steal current from the default ::client person"
+    );
+    assert!(!uid2.is_current);
+}
+
+#[test]
+fn import_live_expands_grok_two_slot_auth_json_into_two_rows() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: grok_two_slot_auth_json("rt-1", "rt-2"),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(rows.len(), 2, "import_live must create two Grok people");
+    assert!(rows.iter().any(|row| row.id == imported.id));
+    let uid1 = rows
+        .iter()
+        .find(|row| row.credentials.to_string().contains("uid-1"))
+        .unwrap();
+    let uid2 = rows
+        .iter()
+        .find(|row| row.credentials.to_string().contains("uid-2"))
+        .unwrap();
+    assert!(!uid1.credentials.to_string().contains("rt-2"));
+    assert!(!uid2.credentials.to_string().contains("rt-1"));
+    assert!(
+        uid1.is_current,
+        "empty-pool import must activate the default ::client slot, not last-sorted"
+    );
+    assert!(!uid2.is_current);
+    assert!(imported.is_current);
+    assert!(imported.credentials.to_string().contains("uid-1"));
+}
+
+#[test]
+fn list_keeps_non_default_grok_current_across_two_slots() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    for (index, (uid, email, rt)) in [
+        ("uid-1", "a@example.com", "rt-1"),
+        ("uid-2", "b@example.com", "rt-2"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        svc.repo()
+            .create(&Account {
+                id: format!("grok-{uid}"),
+                agent_id: AgentId::Grok,
+                kind: AccountKind::Oauth,
+                label: email.into(),
+                credentials: json!({
+                    "format": "auth_json",
+                    "body": {
+                        "https://auth.x.ai::client": {
+                            "email": email,
+                            "user_id": uid,
+                            "key": format!("at-{index}"),
+                            "refresh_token": rt
+                        }
+                    }
+                }),
+                extra: json!({"source": "live", "identityLabel": email}),
+                status: "active".into(),
+                is_current: index == 1,
+                created_at: "2026-01-01 00:00:00.000000".into(),
+                updated_at: "2026-01-01 00:00:00.000000".into(),
+            })
+            .unwrap();
+    }
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: grok_two_slot_auth_json("rt-1", "rt-2"),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    let uid1 = rows.iter().find(|row| row.id == "grok-uid-1").unwrap();
+    let uid2 = rows.iter().find(|row| row.id == "grok-uid-2").unwrap();
+    assert!(
+        uid2.is_current,
+        "list must keep a user-chosen non-default Grok current"
+    );
+    assert!(!uid1.is_current);
+}
+
+#[test]
+fn import_live_two_slot_keeps_existing_non_default_current() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    for (index, (uid, email, rt)) in [
+        ("uid-1", "a@example.com", "rt-1"),
+        ("uid-2", "b@example.com", "rt-2"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        svc.repo()
+            .create(&Account {
+                id: format!("grok-{uid}"),
+                agent_id: AgentId::Grok,
+                kind: AccountKind::Oauth,
+                label: email.into(),
+                credentials: json!({
+                    "format": "auth_json",
+                    "body": {
+                        "https://auth.x.ai::https://api.x.ai": {
+                            "email": email,
+                            "user_id": uid,
+                            "key": format!("at-{index}"),
+                            "refresh_token": rt
+                        }
+                    }
+                }),
+                extra: json!({"source": "live", "identityLabel": email}),
+                status: "active".into(),
+                is_current: index == 1,
+                created_at: "2026-01-01 00:00:00.000000".into(),
+                updated_at: "2026-01-01 00:00:00.000000".into(),
+            })
+            .unwrap();
+    }
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: grok_two_slot_auth_json("rt-1", "rt-2"),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    let uid1 = rows
+        .iter()
+        .find(|row| row.credentials.to_string().contains("uid-1"))
+        .unwrap();
+    let uid2 = rows
+        .iter()
+        .find(|row| row.credentials.to_string().contains("uid-2"))
+        .unwrap();
+    assert_eq!(imported.id, uid2.id);
+    assert!(
+        uid2.is_current,
+        "import_live must keep the existing current person when they are still in auth.json"
+    );
+    assert!(!uid1.is_current);
+}
+
+#[test]
+fn list_activates_default_grok_slot_when_current_person_left_the_file() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    seed_two_grok_people(&svc, "uid-2");
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: grok_two_slot_uid1_and_uid3(),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    let uid1 = rows.iter().find(|row| row.id == "grok-uid-1").unwrap();
+    let uid2 = rows.iter().find(|row| row.id == "grok-uid-2").unwrap();
+    assert!(
+        uid1.is_current,
+        "when the current person leaves auth.json, list must activate ::client"
+    );
+    assert!(!uid2.is_current);
+    assert!(rows.iter().any(|row| row.credentials.to_string().contains("uid-3")));
+}
+
+#[test]
+fn import_live_activates_default_grok_slot_when_current_person_left_the_file() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    seed_two_grok_people(&svc, "uid-2");
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: grok_two_slot_uid1_and_uid3(),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    let uid1 = rows
+        .iter()
+        .find(|row| row.credentials.to_string().contains("uid-1"))
+        .unwrap();
+    let uid2 = rows.iter().find(|row| row.id == "grok-uid-2").unwrap();
+    assert_eq!(imported.id, uid1.id);
+    assert!(
+        uid1.is_current,
+        "when the current person leaves auth.json, import_live must activate ::client"
+    );
+    assert!(!uid2.is_current);
+}
+
+#[test]
+fn grok_same_person_two_auth_json_slots_collapse_to_one_row() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(LiveAccount {
         agent: AgentId::Grok,
         kind: AccountKind::Oauth,
         credentials: json!({
             "format": "auth_json",
-            "body": {"email": "same@example.com", "user_id": "same-user", "key": key}
+            "body": {
+                "https://auth.x.ai::client": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "at-client",
+                    "refresh_token": "rt-client"
+                },
+                "https://auth.x.ai::https://api.x.ai": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "at-api",
+                    "refresh_token": "rt-api"
+                }
+            }
         }),
-        label_hint: Some("same@example.com".into()),
-        extra: json!({}),
-    };
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({"source": "auth.json"}),
+    });
 
-    adapter.set_live(make_live("grant-a"));
-    let first = svc.import_live(AgentId::Grok, None).unwrap();
-    adapter.set_live(make_live("grant-b"));
-    let second = svc.import_live(AgentId::Grok, None).unwrap();
-
-    // A third token for the same identity could be a new grant rather than a
-    // rotation. Reconcile must preserve both existing authorizations while
-    // making the newly observed live grant current for a single-current agent.
-    adapter.set_live(make_live("grant-c"));
+    let _ = svc.import_live(AgentId::Grok, None).unwrap();
     let rows = svc.list(Some(AgentId::Grok)).unwrap();
-    assert_eq!(rows.len(), 3);
     assert_eq!(
-        rows.iter()
-            .find(|row| row.id == first.id)
-            .unwrap()
-            .credentials["body"]["key"],
-        "grant-a"
+        rows.len(),
+        1,
+        "same Grok person across two slots still collapses to one row"
     );
-    assert_eq!(
-        rows.iter()
-            .find(|row| row.id == second.id)
-            .unwrap()
-            .credentials["body"]["key"],
-        "grant-b"
-    );
-    let observed = rows
-        .iter()
-        .find(|row| row.credentials["body"]["key"] == "grant-c")
-        .unwrap();
-    assert!(
-        observed.is_current,
-        "current must match the external live grant"
-    );
-    assert_eq!(rows.iter().filter(|row| row.is_current).count(), 1);
+    assert_eq!(rows[0].credentials["user_id"], "uid-1");
+}
 
-    // The created live grant becomes an exact match; later reads must not
-    // create a duplicate pool row.
-    let repeated = svc.list(Some(AgentId::Grok)).unwrap();
-    assert_eq!(repeated.len(), 3);
-    assert_eq!(
-        repeated
-            .iter()
-            .filter(|row| row.credentials["body"]["key"] == "grant-c")
-            .count(),
-        1
+#[test]
+fn grok_bundle_live_does_not_identity_merge_oauth_people() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    svc.repo()
+        .create(&Account {
+            id: "grok-uid-1".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "https://auth.x.ai::client": {
+                        "email": "a@example.com",
+                        "user_id": "uid-1",
+                        "key": "at-oauth",
+                        "refresh_token": "rt-oauth"
+                    }
+                }
+            }),
+            extra: json!({"source": "live", "identityLabel": "a@example.com"}),
+            status: "active".into(),
+            is_current: true,
+            created_at: "2026-01-01 00:00:00.000000".into(),
+            updated_at: "2026-01-01 00:00:00.000000".into(),
+        })
+        .unwrap();
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "grok_bundle",
+            "api_key": "xai-file-key",
+            "auth": {
+                "https://auth.x.ai::client": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "at-file",
+                    "refresh_token": "rt-file"
+                }
+            }
+        }),
+        label_hint: Some("API Key".into()),
+        extra: json!({"source": "config.toml+auth.json"}),
+    });
+
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    let oauth = rows
+        .iter()
+        .find(|row| row.kind == AccountKind::Oauth)
+        .expect("OAuth person must stay a separate row");
+    assert!(oauth.credentials.to_string().contains("rt-oauth"));
+    assert!(
+        !oauth.credentials.to_string().contains("rt-file"),
+        "API key grok_bundle must not copy OAuth file tokens onto the OAuth row"
     );
 }
 
@@ -1779,22 +2610,22 @@ fn import_live_cleans_only_same_authorization_ticket_dups() {
         created_at: "2026-01-02 00:00:00.000000".into(),
         updated_at: "2026-01-02 00:00:00.000000".into(),
     };
-    // Different authorization for same person — must survive cleanup
+    // Different person — must survive same-identity cleanup.
     let other_auth = Account {
         id: "grok-live-other".into(),
         agent_id: AgentId::Grok,
         kind: AccountKind::Oauth,
-        label: "a@example.com".into(),
+        label: "b@example.com".into(),
         credentials: json!({
             "format": "auth_json",
             "body": {
                 "provider": {
-                    "email": "a@example.com",
+                    "email": "b@example.com",
                     "key": "other-ticket"
                 }
             }
         }),
-        extra: json!({"source": "live", "identityLabel": "a@example.com"}),
+        extra: json!({"source": "live", "identityLabel": "b@example.com"}),
         status: "active".into(),
         is_current: false,
         created_at: "2026-01-03 00:00:00.000000".into(),
@@ -1814,7 +2645,7 @@ fn import_live_cleans_only_same_authorization_ticket_dups() {
     let merged = svc.import_live(AgentId::Grok, None).unwrap();
     assert_eq!(merged.id, "grok-live-new");
     let list = svc.list(Some(AgentId::Grok)).unwrap();
-    assert_eq!(list.len(), 2, "other valid authorization must remain");
+    assert_eq!(list.len(), 2, "a different OAuth identity must remain");
     assert!(list.iter().any(|a| a.id == "grok-live-other"));
     assert!(!list.iter().any(|a| a.id == "grok-live-old"));
 }
@@ -1893,7 +2724,89 @@ fn create_dedupes_same_oauth_ticket() {
     assert_eq!(first.id, second.id);
     assert!(second.is_current);
     assert_eq!(svc.list(Some(AgentId::Codex)).unwrap().len(), 1);
-    assert_eq!(second.credentials["body"]["access_token"], "at-2-rotated");
+    assert_eq!(
+        second
+            .credentials
+            .pointer("/body/tokens/access_token")
+            .or_else(|| second.credentials.get("access_token"))
+            .and_then(|value| value.as_str()),
+        Some("at-2-rotated")
+    );
+}
+
+#[test]
+fn create_overwrites_same_oauth_identity_different_tokens() {
+    let (_root, svc, _) = live_svc(AgentId::Grok);
+    let first = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "email": "a@example.com",
+                    "refresh_token": "rt-1",
+                    "access_token": "at-1"
+                }
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    let second = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "email": "a@example.com",
+                    "refresh_token": "rt-2",
+                    "access_token": "at-2"
+                }
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    assert_eq!(first.id, second.id);
+    assert_eq!(second.credentials["body"]["refresh_token"], "rt-2");
+    assert_eq!(svc.list(Some(AgentId::Grok)).unwrap().len(), 1);
+}
+
+#[test]
+fn create_keeps_unknown_oauth_identity_different_tokens_separate() {
+    let (_root, svc, _) = live_svc(AgentId::Codex);
+    let first = svc
+        .create(AccountInput {
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "Codex · OAuth".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": { "refresh_token": "rt-a", "access_token": "at-a" }
+            }),
+            extra: json!({}),
+            is_current: false,
+        })
+        .unwrap();
+    let second = svc
+        .create(AccountInput {
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "Codex · OAuth".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": { "refresh_token": "rt-b", "access_token": "at-b" }
+            }),
+            extra: json!({}),
+            is_current: false,
+        })
+        .unwrap();
+    assert_ne!(first.id, second.id);
+    assert_eq!(svc.list(Some(AgentId::Codex)).unwrap().len(), 2);
 }
 
 #[test]
@@ -1915,9 +2828,9 @@ fn switch_does_not_delete_other_authorizations() {
         kind: AccountKind::Oauth,
         credentials: json!({
             "format": "auth_json",
-            "body": { "provider": { "email": "a@x.com", "key": "tok-b" } }
+            "body": { "provider": { "email": "b@x.com", "key": "tok-b" } }
         }),
-        label_hint: Some("a@x.com".into()),
+        label_hint: Some("b@x.com".into()),
         extra: json!({}),
     });
     let auth_b = svc.import_live(AgentId::Grok, None).unwrap();
@@ -1933,11 +2846,64 @@ fn switch_does_not_delete_other_authorizations() {
     assert_eq!(
         list.len(),
         2,
-        "other authorization must remain after switch"
+        "a different OAuth identity must remain after switch"
     );
     let b_row = list.iter().find(|a| a.id == auth_b.id).unwrap();
     assert!(!b_row.is_current);
     assert_eq!(b_row.credentials["body"]["provider"]["key"], "tok-b");
+}
+
+#[test]
+fn switch_collapses_same_oauth_identity_leftovers_instead_of_identity_conflict() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let make_row = |id: &str, key: &str, current: bool, ts: &str| Account {
+        id: id.into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label: "same@example.com".into(),
+        credentials: json!({
+            "format": "auth_json",
+            "body": {"email": "same@example.com", "user_id": "same-user", "key": key}
+        }),
+        extra: json!({"source": "live", "identityLabel": "same@example.com"}),
+        status: "active".into(),
+        is_current: current,
+        created_at: ts.into(),
+        updated_at: ts.into(),
+    };
+    svc.repo()
+        .create(&make_row(
+            "grok-grant-a",
+            "grant-a",
+            true,
+            "2026-01-01 00:00:00.000000",
+        ))
+        .unwrap();
+    svc.repo()
+        .create(&make_row(
+            "grok-grant-b",
+            "grant-b",
+            false,
+            "2026-01-02 00:00:00.000000",
+        ))
+        .unwrap();
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {"email": "same@example.com", "user_id": "same-user", "key": "grant-c"}
+        }),
+        label_hint: Some("same@example.com".into()),
+        extra: json!({}),
+    });
+
+    let switched = svc.switch("grok-grant-b", AgentId::Grok).unwrap();
+    assert_eq!(switched.account.credentials["body"]["key"], "grant-c");
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].is_current);
+    assert_eq!(rows[0].credentials["body"]["key"], "grant-c");
 }
 
 #[test]
@@ -2436,8 +3402,20 @@ fn spawn_oauth_token_server(access: &str, refresh: &str) -> (u16, std::thread::J
     let refresh = refresh.to_string();
     let handle = std::thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0u8; 4096];
-            let _ = stream.read(&mut buf);
+            let mut acc = Vec::new();
+            loop {
+                let mut buf = [0u8; 1024];
+                match stream.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        acc.extend_from_slice(&buf[..n]);
+                        if acc.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
             let body = format!(
                 r#"{{"access_token":"{access}","refresh_token":"{refresh}","token_type":"Bearer","expires_in":3600}}"#
             );
@@ -2446,6 +3424,8 @@ fn spawn_oauth_token_server(access: &str, refresh: &str) -> (u16, std::thread::J
                 body.len()
             );
             let _ = stream.write_all(resp.as_bytes());
+            let _ = stream.flush();
+            let _ = stream.shutdown(std::net::Shutdown::Write);
         }
     });
     (port, handle)
@@ -2490,7 +3470,7 @@ fn grok_hub_pkce_refresh_updates_pool_without_writing_auth_json() {
     assert_eq!(
         adapter.write_attempts.load(Ordering::SeqCst),
         0,
-        "hub-owned refresh must not write grok auth.json"
+        "hub-owned refresh with no live CLI file must not write grok auth.json"
     );
 }
 
@@ -2630,12 +3610,7 @@ fn stale_snapshot_does_not_overwrite_rotated_key() {
         .unwrap();
     let stale = created.clone();
     let rotated = svc
-        .update_api_key(
-            AgentId::Claude,
-            &created.id,
-            None,
-            Some("sk-new-key-bbbb"),
-        )
+        .update_api_key(AgentId::Claude, &created.id, None, Some("sk-new-key-bbbb"))
         .unwrap();
     assert_eq!(rotated.credentials["api_key"], "sk-new-key-bbbb");
 
@@ -2671,7 +3646,11 @@ fn concurrent_add_api_key_same_authorization_keeps_one_row() {
     let right = right.join().unwrap().unwrap();
     assert_eq!(left.id, right.id);
     let rows = svc.repo().list(Some(AgentId::Claude)).unwrap();
-    assert_eq!(rows.len(), 1, "concurrent add of the same key must keep one row");
+    assert_eq!(
+        rows.len(),
+        1,
+        "concurrent add of the same key must keep one row"
+    );
 }
 
 #[test]
@@ -2745,7 +3724,7 @@ fn reconcile_does_not_drop_concurrent_refresh_token() {
         .unwrap();
 
     let persisted = svc
-        .persist_reconciled_live_row(AgentId::Grok, created, true)
+        .persist_reconciled_live_row(AgentId::Grok, created, true, true)
         .unwrap();
     assert_eq!(persisted.credentials["body"]["key"], "grant-new");
 }
@@ -2780,5 +3759,329 @@ fn unrecognized_surface_survives_merge_and_reconcile() {
     assert_eq!(
         svc.repo().get_by_id(&added.id).unwrap().unwrap().extra["surface"],
         "future-surface-v9"
+    );
+}
+
+fn stamp_file_mtime(path: &Path, updated_at: &str) {
+    let dt = super::oauth_file_sync::parse_account_timestamp(updated_at).expect("mtime");
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::from(dt))
+        .unwrap();
+}
+
+fn grok_oauth_live(access: &str, refresh: &str) -> LiveAccount {
+    LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": access,
+                "refresh_token": refresh
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({"source": "auth.json"}),
+    }
+}
+
+#[test]
+fn oauth_list_does_not_write_cli_file_when_row_is_newer() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(grok_oauth_live("at-file", "rt-file"));
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let path = adapter.live_backup_paths()[0].clone();
+    stamp_file_mtime(&path, "2020-01-01 00:00:00.000000");
+
+    let mut newer = imported.clone();
+    newer.credentials["body"]["key"] = json!("at-row");
+    newer.credentials["body"]["refresh_token"] = json!("rt-row");
+    svc.repo()
+        .update_healed_fields(&newer, &imported.updated_at, "2099-01-01 00:00:00.000000")
+        .unwrap();
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
+
+    let listed = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].credentials["body"]["refresh_token"], "rt-row");
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["body"]["refresh_token"], "rt-file");
+    assert_eq!(live.credentials["body"]["key"], "at-file");
+    assert_eq!(
+        adapter.write_attempts.load(Ordering::SeqCst),
+        writes_before,
+        "list reconcile must not write the CLI login file"
+    );
+}
+
+#[test]
+fn oauth_cli_file_newer_than_row_updates_row_file_unchanged() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(grok_oauth_live("at-old", "rt-old"));
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
+    adapter.set_live(grok_oauth_live("at-new", "rt-new"));
+
+    let listed = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, imported.id);
+    assert_eq!(listed[0].credentials["body"]["refresh_token"], "rt-new");
+    assert_eq!(listed[0].credentials["body"]["key"], "at-new");
+    assert_eq!(
+        adapter.write_attempts.load(Ordering::SeqCst),
+        writes_before,
+        "newer CLI file must not be overwritten"
+    );
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["body"]["refresh_token"], "rt-new");
+}
+
+#[test]
+fn oauth_same_rt_access_rotated_newer_file_updates_row() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(grok_oauth_live("at-old", "rt-shared"));
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    svc.repo()
+        .update_healed_fields(
+            &imported,
+            &imported.updated_at,
+            "2020-01-01 00:00:00.000000",
+        )
+        .unwrap();
+    adapter.set_live(grok_oauth_live("at-file", "rt-shared"));
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
+
+    let listed = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed[0].credentials["body"]["key"], "at-file");
+    assert_eq!(listed[0].credentials["body"]["refresh_token"], "rt-shared");
+    assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
+}
+
+#[test]
+fn oauth_different_identity_does_not_write_cli_file() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "hub-a".into(),
+            credentials: json!({
+                "type": "oauth",
+                "provider": "xai",
+                "access_token": "at-a",
+                "refresh_token": "rt-a",
+                "email": "a@example.com",
+                "sub": "uid-a"
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "b@example.com",
+                "user_id": "uid-b",
+                "key": "at-b",
+                "refresh_token": "rt-b"
+            }
+        }),
+        label_hint: Some("b@example.com".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+    let path = adapter.live_backup_paths()[0].clone();
+    stamp_file_mtime(&path, "2020-01-01 00:00:00.000000");
+    svc.repo()
+        .update_healed_fields(&created, &created.updated_at, "2099-01-01 00:00:00.000000")
+        .unwrap();
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
+
+    let listed = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        adapter.write_attempts.load(Ordering::SeqCst),
+        writes_before,
+        "different identity must never write across"
+    );
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["body"]["refresh_token"], "rt-b");
+    let stored_a = svc.get(&created.id, Some(AgentId::Grok)).unwrap();
+    assert_eq!(stored_a.credentials["refresh_token"], "rt-a");
+    assert!(
+        listed.iter().any(|row| row.id == created.id),
+        "row A must stay"
+    );
+}
+
+#[test]
+fn oauth_equal_mtime_different_rt_does_not_overwrite() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(grok_oauth_live("at-row", "rt-row-secret"));
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let stamp = "2026-06-15 12:00:00.000000";
+    svc.repo()
+        .update_healed_fields(&imported, &imported.updated_at, stamp)
+        .unwrap();
+    adapter.set_live(grok_oauth_live("at-file", "rt-file-secret"));
+    stamp_file_mtime(&adapter.live_backup_paths()[0], stamp);
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
+
+    let listed = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, imported.id);
+    assert_eq!(
+        listed[0].credentials["body"]["refresh_token"],
+        "rt-row-secret"
+    );
+    assert_eq!(
+        listed[0]
+            .extra
+            .get("oauthFileSync")
+            .and_then(|v| v.as_str()),
+        Some("needs_attention")
+    );
+    assert_eq!(listed[0].updated_at, stamp);
+    assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["body"]["refresh_token"], "rt-file-secret");
+
+    let listed_again = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed_again[0].updated_at, stamp);
+    assert_eq!(
+        listed_again[0].credentials["body"]["refresh_token"],
+        "rt-row-secret"
+    );
+    assert_eq!(
+        listed_again[0]
+            .extra
+            .get("oauthFileSync")
+            .and_then(|v| v.as_str()),
+        Some("needs_attention")
+    );
+    assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
+    let live_again = adapter.read_account().unwrap();
+    assert_eq!(
+        live_again.credentials["body"]["refresh_token"],
+        "rt-file-secret"
+    );
+
+    let dumped = serde_json::to_string(&listed[0].redacted()).unwrap();
+    assert!(
+        !dumped.contains("rt-row-secret") && !dumped.contains("rt-file-secret"),
+        "redacted list/IPC must not include raw refresh tokens: {dumped}"
+    );
+}
+
+#[test]
+fn grok_hub_pkce_refresh_writes_auth_json_when_same_identity_row_is_newer() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(grok_oauth_live("at-file", "old-refresh"));
+    stamp_file_mtime(
+        &adapter.live_backup_paths()[0],
+        "2020-01-01 00:00:00.000000",
+    );
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "hub-pkce".into(),
+            credentials: json!({
+                "type": "oauth",
+                "provider": "xai",
+                "access_token": "old-access",
+                "refresh_token": "old-refresh",
+                "sub": "uid-1"
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    let (port, server) = spawn_oauth_token_server("new-access", "new-refresh");
+    let refreshed = crate::oauth::with_token_url_override(
+        format!("http://127.0.0.1:{port}/oauth/token"),
+        || svc.refresh_token(&created.id, AgentId::Grok),
+    )
+    .unwrap();
+    let _ = server.join();
+    assert_eq!(refreshed.credentials["refresh_token"], "new-refresh");
+    assert!(
+        adapter.write_attempts.load(Ordering::SeqCst) >= 1,
+        "same-identity hub refresh must write the CLI login file when the row is newer"
+    );
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["refresh_token"], "new-refresh");
+    assert_eq!(live.credentials["access_token"], "new-access");
+}
+
+#[test]
+fn hub_codex_refresh_patches_token_only_auth_json_body() {
+    let (_root, svc, adapter) = live_svc(AgentId::Codex);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Codex,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "email": "41375197@qq.com",
+            "body": {
+                "auth_mode": "chatgpt",
+                "OPENAI_API_KEY": null,
+                "tokens": {
+                    "access_token": "at-file",
+                    "refresh_token": "old-refresh"
+                },
+                "last_refresh": "2026-08-20T00:00:00Z"
+            }
+        }),
+        label_hint: Some("codex".into()),
+        extra: json!({ "source": "auth.json" }),
+    });
+    stamp_file_mtime(
+        &adapter.live_backup_paths()[0],
+        "2020-01-01 00:00:00.000000",
+    );
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "hub-pkce".into(),
+            credentials: json!({
+                "type": "oauth",
+                "provider": "codex",
+                "access_token": "at-hub",
+                "refresh_token": "old-refresh",
+                "email": "41375197@qq.com"
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    let (port, server) = spawn_oauth_token_server("new-access", "new-refresh");
+    let refreshed = crate::oauth::with_token_url_override(
+        format!("http://127.0.0.1:{port}/oauth/token"),
+        || svc.refresh_token(&created.id, AgentId::Codex),
+    )
+    .unwrap();
+    let _ = server.join();
+    assert_eq!(refreshed.credentials["refresh_token"], "new-refresh");
+    assert!(adapter.write_attempts.load(Ordering::SeqCst) >= 1);
+    let live = adapter.read_account().unwrap();
+    assert_eq!(
+        live.credentials["body"]["tokens"]["refresh_token"],
+        "new-refresh"
+    );
+    assert_eq!(
+        live.credentials["body"]["tokens"]["access_token"],
+        "new-access"
+    );
+    assert_eq!(
+        live.credentials["body"]["last_refresh"], "2026-08-20T00:00:00Z",
+        "token-only patch must keep extra Codex auth.json fields"
     );
 }

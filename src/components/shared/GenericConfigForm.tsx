@@ -68,7 +68,7 @@ export function GenericConfigForm({
           return (
             <div
               key={field.key}
-              className="rounded-btn border border-border bg-canvas px-2.5 py-2 text-meta text-muted"
+              className="rounded-card border border-border bg-canvas px-2.5 py-2 text-meta text-muted"
             >
               字段 <code className="font-mono">{field.key}</code>（{field.label}）类型不受支持
             </div>

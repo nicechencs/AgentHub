@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { InstalledSkillDto } from '@/lib/api/skill';
 import {
+  catalogRowKey,
   isPrivateSourceRow,
   isSharedCatalogRow,
+  previewTargetFromCatalogRow,
+  privateRowCopies,
   privateRowOriginId,
   sharedRootColumnLabel,
   visibleCatalogRows,
@@ -62,18 +65,107 @@ describe('local tab count', () => {
     expect(visible.filter(isSharedCatalogRow)).toHaveLength(1);
     expect(visible.filter(isPrivateSourceRow)).toHaveLength(1);
   });
+
+  it('drops private-source rows whose origin agent is not in the current list', () => {
+    const rows = [
+      row({ id: 'pdf', origin: 'shared', rootLabel: '~/.agents/skills' }),
+      row({ id: 'pet', origin: 'cursor', mapStatus: 'private_source' }),
+      row({ id: 'sample-review', origin: 'claude', mapStatus: 'private_source' }),
+    ];
+    const visible = visibleCatalogRows(rows, ['claude']);
+    expect(visible.map((item) => `${item.origin}:${item.id}`)).toEqual([
+      'shared:pdf',
+      'claude:sample-review',
+    ]);
+  });
+
+  it('keeps shared rows even when every agent column is gone', () => {
+    const rows = [
+      row({ id: 'pdf', origin: 'shared', rootLabel: '~/.agents/skills' }),
+      row({ id: 'pet', origin: 'cursor', mapStatus: 'private_source' }),
+    ];
+    const visible = visibleCatalogRows(rows, []);
+    expect(visible).toHaveLength(1);
+    expect(visible[0]?.origin).toBe('shared');
+  });
+
+  it('merges identical private copies into one row with multiple locations', () => {
+    const rows = [
+      row({
+        id: 'pet',
+        origin: 'claude',
+        mapStatus: 'private_source',
+        contentHash: 'abc',
+        sourceDir: '/claude/pet',
+      }),
+      row({
+        id: 'pet',
+        origin: 'cursor',
+        mapStatus: 'private_source',
+        contentHash: 'abc',
+        sourceDir: '/cursor/pet',
+      }),
+      row({ id: 'pdf', origin: 'shared', rootLabel: '~/.agents/skills' }),
+    ];
+    const visible = visibleCatalogRows(rows, ['claude', 'cursor']);
+    expect(visible).toHaveLength(2);
+    const pet = visible.find((item) => item.id === 'pet');
+    expect(pet?.origin).toBe('claude');
+    expect(privateRowCopies(pet!).map((copy) => copy.agentId)).toEqual(['claude', 'cursor']);
+    expect(catalogRowKey(pet!)).toBe('private:pet:abc');
+  });
+
+  it('does not merge same-id private copies with different content hashes', () => {
+    const rows = [
+      row({
+        id: 'pet',
+        origin: 'claude',
+        mapStatus: 'private_source',
+        contentHash: 'one',
+      }),
+      row({
+        id: 'pet',
+        origin: 'codex',
+        mapStatus: 'private_source',
+        contentHash: 'two',
+      }),
+    ];
+    const visible = visibleCatalogRows(rows);
+    expect(visible).toHaveLength(2);
+    expect(visible.map((item) => item.origin)).toEqual(['claude', 'codex']);
+  });
+
+  it('drops a hidden agent from a merged identical group', () => {
+    const rows = [
+      row({
+        id: 'pet',
+        origin: 'claude',
+        mapStatus: 'private_source',
+        contentHash: 'abc',
+      }),
+      row({
+        id: 'pet',
+        origin: 'cursor',
+        mapStatus: 'private_source',
+        contentHash: 'abc',
+      }),
+    ];
+    const visible = visibleCatalogRows(rows, ['claude']);
+    expect(visible).toHaveLength(1);
+    expect(privateRowCopies(visible[0]!).map((copy) => copy.agentId)).toEqual(['claude']);
+  });
 });
 
 describe('private row column placement', () => {
   it('keeps Cursor private skills on the cursor column, not claude', () => {
     const cursorPrivate = row({
-      id: 'hatch-pet',
+      id: 'sample-pet',
       origin: 'cursor',
       mapStatus: 'private_source',
       rootLabel: '~/.cursor/skills-cursor',
     });
     const claudePrivate = row({
-      id: 'local-review',
+      id: 'sample-review',
       origin: 'claude',
       mapStatus: 'private_source',
       rootLabel: '~/.claude/skills',
@@ -82,6 +174,32 @@ describe('private row column placement', () => {
     expect(privateRowOriginId(cursorPrivate)).not.toBe('claude');
     expect(privateRowOriginId(claudePrivate)).toBe('claude');
     expect(privateRowOriginId(row({ id: 'pdf', origin: 'shared' }))).toBeNull();
+  });
+
+  it('preview target for a merged group keeps the row key when selecting a copy', () => {
+    const merged = visibleCatalogRows([
+      row({
+        id: 'pet',
+        origin: 'claude',
+        mapStatus: 'private_source',
+        contentHash: 'abc',
+        sourceDir: '/claude/pet',
+      }),
+      row({
+        id: 'pet',
+        origin: 'cursor',
+        mapStatus: 'private_source',
+        contentHash: 'abc',
+        sourceDir: '/cursor/pet',
+      }),
+    ])[0]!;
+    const fromName = previewTargetFromCatalogRow(merged);
+    const fromCell = previewTargetFromCatalogRow(merged, 'cursor');
+    expect(fromName.rowKey).toBe(fromCell.rowKey);
+    expect(fromName.rowKey).toBe('private:pet:abc');
+    expect(fromName.privateAgent).toBe('claude');
+    expect(fromCell.privateAgent).toBe('cursor');
+    expect(fromCell.sourceDir).toBe('/cursor/pet');
   });
 });
 

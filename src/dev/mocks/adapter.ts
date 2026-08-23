@@ -278,7 +278,7 @@ function localBridgeProfile(state: MockAdapterState, profileId: string): Adapter
   if (profile.route !== 'local_bridge') {
     throw adapterCommandError({
       code: 'unsupported',
-      message: '此适配不需要本地桥接',
+      message: '这条接法不需要本机转发',
       retryable: false,
     });
   }

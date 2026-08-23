@@ -198,6 +198,33 @@ describe('connection-model', () => {
     ).toContain('API Key');
     expect(
       liveAuthImportGate(
+        {
+          agentId: 'claude',
+          kind: 'api_key',
+          hasCredentials: true,
+          isAdapterProjection: true,
+        },
+        false,
+        'claude',
+      ),
+    ).toEqual({
+      enabled: false,
+      reason: '当前是本机路由写进去的配置，不是一份新登录',
+    });
+    expect(
+      liveAuthImportGate(
+        {
+          agentId: 'claude',
+          kind: 'api_key',
+          hasCredentials: true,
+          alsoPresent: ['adapter_projection'],
+        },
+        false,
+        'claude',
+      ).enabled,
+    ).toBe(false);
+    expect(
+      liveAuthImportGate(
         { agentId: 'claude', kind: 'desktop-login', hasCredentials: true },
         false,
         'claude',
@@ -235,8 +262,37 @@ describe('connection-model', () => {
     });
   });
 
+  it('disables both import gates when live is a local-route projection', () => {
+    const probe = {
+      agentId: 'claude' as const,
+      kind: 'api_key',
+      hasCredentials: true,
+      isAdapterProjection: true,
+    };
+    expect(liveAuthImportGate(probe, false, 'claude')).toEqual({
+      enabled: false,
+      reason: '当前是本机路由写进去的配置，不是一份新登录',
+    });
+    expect(liveApiKeyImportGate(probe, false, 'claude')).toEqual({
+      enabled: false,
+      reason: '当前是本机路由写进去的配置，不是一份新登录',
+    });
+  });
+
   describe('live-auth coexistence', () => {
     it('does not warn when a second credential family is absent', () => {
+      expect(
+        liveAuthCoexistenceNotice(
+          {
+            agentId: 'claude',
+            kind: 'api_key',
+            hasCredentials: true,
+            alsoPresent: ['oauth', 'adapter_projection'],
+            isAdapterProjection: true,
+          },
+          'claude',
+        ),
+      ).toBeNull();
       expect(
         liveAuthCoexistenceNotice(
           { agentId: 'claude', kind: 'oauth', hasCredentials: true, alsoPresent: [] },

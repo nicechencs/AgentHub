@@ -459,7 +459,7 @@ describe('Ticket Rust wire mappers', () => {
     expect(planEmpty).not.toMatch(/wire|plan_ticket/i);
 
     const unbindBad = thrownMessage(() => mapUnbindTicketResult('nope'));
-    expect(unbindBad).toMatch(/解除绑定结果无法识别/);
+    expect(unbindBad).toMatch(/停止并还原结果无法识别/);
     expect(unbindBad).not.toMatch(/wire|unbind_ticket/i);
 
     expect(mapUnbindTicketResult({})).toBeUndefined();

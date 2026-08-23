@@ -65,8 +65,8 @@ describe('ChatTranscript surfaces', () => {
     const html = renderTranscript([
       { turn: 1, user: userMessage('hello from chat'), agents: [] },
     ]);
-    expect(html).toContain(chatTranscriptSurfaceClass(true));
-    expect(html).not.toContain(`overflow-y-auto ${chatTranscriptSurfaceClass(false)}`);
+    expect(html).toContain(`overflow-y-auto ${chatTranscriptSurfaceClass(false)}`);
+    expect(html).toContain(`rounded-composer ${chatTranscriptSurfaceClass(true)}`);
     expect(html).toContain('hello from chat');
   });
 });

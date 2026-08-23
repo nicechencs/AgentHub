@@ -8,9 +8,9 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
-import { ListSkeleton } from '@/components/ui/skeleton';
+import { TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
-import { resolveAgentMeta, agentDisplayName, type AgentMeta } from '@/config/agents';
+import { agentDisplayName } from '@/config/agents';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { listMcpInventory } from '@/lib/api/mcp';
 import { openPathInFileManager } from '@/lib/api/skill';
@@ -26,7 +26,7 @@ function agentName(id: AgentId): string {
 export default function McpPage() {
   const { t } = useI18n();
   const { toast } = useToast();
-  const { hiddenIds } = useInstalledAgents();
+  const { hiddenIds, installedAgents } = useInstalledAgents();
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const [data, setData] = useState<McpInventory | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,32 +51,24 @@ export default function McpPage() {
     void load();
   }, [load]);
 
-  const filterAgents = useMemo(() => {
-    if (!data) return [] as AgentMeta[];
-    const ids = new Set<AgentId>();
-    for (const s of data.servers) ids.add(s.agent);
-    return [...ids]
-      .filter((id) => !hiddenSet.has(id))
-      .sort((a, b) => a.localeCompare(b))
-      .map((id) => resolveAgentMeta(id));
-  }, [data, hiddenSet]);
-
   useEffect(() => {
-    if (filterAgent !== 'all' && hiddenSet.has(filterAgent)) {
+    if (filterAgent === 'all') return;
+    if (!installedAgents.some((a) => a.id === filterAgent)) {
       setFilterAgent('all');
     }
-  }, [filterAgent, hiddenSet]);
+  }, [filterAgent, installedAgents]);
 
   const agentCounts = useMemo(() => {
     const visibleServers = data?.servers.filter((s) => !hiddenSet.has(s.agent)) ?? [];
     const counts: Partial<Record<AgentTabId, number>> = {
       all: visibleServers.length,
     };
+    for (const a of installedAgents) counts[a.id] = 0;
     for (const s of visibleServers) {
       counts[s.agent] = (counts[s.agent] ?? 0) + 1;
     }
     return counts;
-  }, [data, hiddenSet]);
+  }, [data, hiddenSet, installedAgents]);
 
   const servers = useMemo(() => {
     if (!data) return [] as McpServerEntry[];
@@ -119,54 +111,50 @@ export default function McpPage() {
         }
       />
 
-      {loading && !data ? (
-        <ListSkeleton rows={5} />
-      ) : error && !data ? (
-        <ErrorState error={error} onRetry={() => void load()} />
-      ) : (
-        <>
-          <div className={pageRhythm.chrome}>
-            <AgentTabStrip
-              showAll
-              allLabel={t('kind.all')}
-              value={filterAgent}
-              onChange={setFilterAgent}
-              agents={filterAgents}
-              counts={agentCounts}
-              countMode="defined"
-              countTitle={(id, n) =>
-                id === 'all'
-                  ? t('mcp.page.countAll', { n })
-                  : t('mcp.page.countAgent', { name: agentName(id), n })
-              }
-              emptyLabel={t('mcp.page.emptyTabs')}
-              aria-label={t('mcp.page.filterAria')}
-            />
-          </div>
+      <div className={pageRhythm.chrome}>
+        <AgentTabStrip
+          showAll
+          allLabel={t('kind.all')}
+          value={filterAgent}
+          onChange={setFilterAgent}
+          agents={installedAgents}
+          counts={data ? agentCounts : undefined}
+          countMode="defined"
+          countTitle={(id, n) =>
+            id === 'all'
+              ? t('mcp.page.countAll', { n })
+              : t('mcp.page.countAgent', { name: agentName(id), n })
+          }
+          emptyLabel={t('mcp.page.emptyTabs')}
+          aria-label={t('mcp.page.filterAria')}
+        />
+      </div>
 
-          <PageSection first>
-            {servers.length === 0 ? (
-              <EmptyState
-                icon={Plug}
-                title={t('mcp.empty.title')}
-                description={
-                  filterAgent === 'all'
-                    ? t('mcp.empty.all')
-                    : t('mcp.empty.agent', { name: agentName(filterAgent) })
-                }
-                actionLabel={t('mcp.empty.refresh')}
-                onAction={() => void load()}
-              />
-            ) : (
-              <McpServerTable
-                groups={agentGroups}
-                showAgent={filterAgent === 'all'}
-                onLocate={locateSource}
-              />
-            )}
-          </PageSection>
-        </>
-      )}
+      <PageSection first>
+        {loading && !data ? (
+          <TableSkeleton rows={6} cols={4} />
+        ) : error && !data ? (
+          <ErrorState error={error} onRetry={() => void load()} />
+        ) : servers.length === 0 ? (
+          <EmptyState
+            icon={Plug}
+            title={t('mcp.empty.title')}
+            description={
+              filterAgent === 'all'
+                ? t('mcp.empty.all')
+                : t('mcp.empty.agent', { name: agentName(filterAgent) })
+            }
+            actionLabel={t('mcp.empty.refresh')}
+            onAction={() => void load()}
+          />
+        ) : (
+          <McpServerTable
+            groups={agentGroups}
+            showAgent={filterAgent === 'all'}
+            onLocate={locateSource}
+          />
+        )}
+      </PageSection>
     </div>
   );
 }

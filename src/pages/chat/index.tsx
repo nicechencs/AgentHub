@@ -6,16 +6,18 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { chatComposerChromeClass } from './chat-model';
+import { chatMainColumnClass, chatStageClass } from './chat-model';
 import { ChatComposer } from './ChatComposer';
 import { ChatSessionHeader } from './ChatSessionHeader';
 import { ChatSessionRail } from './ChatSessionRail';
 import { ChatSettingsDialog } from './ChatSettingsDialog';
 import { ChatTranscript } from './ChatTranscript';
+import { useChatComposerSplit } from './use-chat-composer-split';
 import { useChatPage } from './use-chat-page';
 
 export default function ChatPage() {
   const page = useChatPage();
+  const split = useChatComposerSplit();
   const navigate = useNavigate();
   const { t } = useI18n();
 
@@ -81,62 +83,76 @@ export default function ChatPage() {
         <ChatSessionHeader
           active={page.active}
           railOpen={page.railOpen}
-          hiddenIds={page.hiddenIds}
           onExpandRail={() => page.setRailOpen(true)}
           onRename={page.renameTitle}
           onOpenSettings={() => page.setSettingsOpen(true)}
           onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
         />
 
-        <ChatTranscript
-          active={page.active}
-          turns={page.turns}
-          processMap={page.processMap}
-          listLoading={page.listLoading}
-          messagesLoading={page.messagesLoading}
-          sending={page.sending}
-          retryDisabled={page.blockers.length > 0}
-          scrollRef={page.transcriptRef}
-          bottomRef={page.bottomRef}
-          onScroll={page.onTranscriptScroll}
-          onRetry={() => void page.retryLast()}
-        />
-
-        {page.active && (
+        <div className={cn(chatStageClass, pageRhythm.chatChromeX)}>
           <div
-            className={cn(
-              chatComposerChromeClass(page.turns.length > 0),
-              pageRhythm.chatChromeX,
-            )}
+            ref={split.splitRef}
+            className={cn(chatMainColumnClass, 'flex min-h-0 flex-1 flex-col')}
           >
-            <div className="mx-auto w-full max-w-3xl">
-              <ChatComposer
-                draft={page.draft}
-                setDraft={page.setDraft}
-                sending={page.sendingHere}
-                active={page.active}
-                connectionOptions={page.connectionOptions}
-                primaryAgent={page.primaryAgent}
-                agentPickerLabel={page.agentPickerLabel}
-                connectionView={page.connectionView}
-                switchingProvider={page.switchingProvider}
-                hiddenIds={page.hiddenIds}
-                pickerRows={page.pickerRows}
-                agentsReady={page.agentsReady}
-                blockers={page.blockers}
-                connectionCaption={page.connectionCaption}
-                onSend={() => void page.handleSend()}
-                onCancel={() => void page.cancelSending()}
-                onSelectAgent={(id) => void page.selectConversationAgentId(id)}
-                onSwitchProvider={(id) => void page.handleSwitchProvider(id)}
-                onSwitchAccount={(id) => void page.handleSwitchAccount(id)}
-                onOpenSettings={() => page.setSettingsOpen(true)}
-                onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
-                onFocusConversation={page.focusConversation}
-              />
-            </div>
+            <ChatTranscript
+              active={page.active}
+              turns={page.turns}
+              processMap={page.processMap}
+              listLoading={page.listLoading}
+              messagesLoading={page.messagesLoading}
+              sending={page.sending}
+              retryDisabled={page.blockers.length > 0}
+              scrollRef={page.transcriptRef}
+              bottomRef={page.bottomRef}
+              onScroll={page.onTranscriptScroll}
+              onRetry={() => void page.retryLast()}
+            />
+
+            {page.active && (
+              <>
+                <div
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label={t('chat.composer.resizeAria')}
+                  title={t('chat.composer.resizeAria')}
+                  aria-valuenow={split.paneHeight ?? undefined}
+                  aria-valuemin={split.valuemin}
+                  tabIndex={0}
+                  onPointerDown={split.onResizeStart}
+                  onDoubleClick={split.resetHeight}
+                  onKeyDown={split.onSeparatorKeyDown}
+                  className="relative z-10 h-2 shrink-0 cursor-row-resize bg-transparent outline-none"
+                />
+                <ChatComposer
+                  draft={page.draft}
+                  setDraft={page.setDraft}
+                  sending={page.sendingHere}
+                  active={page.active}
+                  connectionOptions={page.connectionOptions}
+                  primaryAgent={page.primaryAgent}
+                  agentPickerLabel={page.agentPickerLabel}
+                  connectionView={page.connectionView}
+                  switchingProvider={page.switchingProvider}
+                  hiddenIds={page.hiddenIds}
+                  pickerRows={page.pickerRows}
+                  agentsReady={page.agentsReady}
+                  blockers={page.blockers}
+                  connectionCaption={page.connectionCaption}
+                  onSend={() => void page.handleSend()}
+                  onCancel={() => void page.cancelSending()}
+                  onSelectAgent={(id) => void page.selectConversationAgentId(id)}
+                  onSwitchConnection={(id) => void page.handleSwitchConnection(id)}
+                  onOpenSettings={() => page.setSettingsOpen(true)}
+                  onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
+                  onFocusConversation={page.focusConversation}
+                  fillHeight={split.paneHeight != null}
+                  paneHeight={split.paneHeight}
+                  paneRef={split.composerPaneRef}
+                />
+              </>
+            )}
           </div>
-        )}
+        </div>
 
         <ChatSettingsDialog
           open={page.settingsOpen}

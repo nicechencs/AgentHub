@@ -1,8 +1,9 @@
 use super::*;
 use crate::models::{
-    parse_ticket_id, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterSourceKind, AdapterSupport, AgentId, PersistedTicketSurface, Ticket, TicketBindingRoute,
-    TicketCredentialClass, TicketProtocol, TicketSurface, PROJECTION_NOT_A_TICKET,
+    parse_ticket_id, Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus,
+    AdapterRoute, AdapterSourceKind, AdapterSupport, AgentId, PersistedTicketSurface, Provider,
+    Ticket, TicketBindingRoute, TicketCredentialClass, TicketPlanRequest, TicketProtocol,
+    TicketSurface, PROJECTION_NOT_A_TICKET,
 };
 use crate::services::ConnectionService;
 use crate::storage::{AccountRepo, ActiveBindingRepo, AdapterProfileRepo, Database, ProviderRepo};
@@ -114,6 +115,92 @@ fn generated_projection_providers_are_excluded_from_tickets() {
             .members
             .iter()
             .all(|member| member.source_id != "proj-claude")));
+}
+
+#[test]
+fn generated_projection_accounts_are_excluded_from_tickets() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "claude-bridge-acc".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "loopback leftover".into(),
+            credentials: serde_json::json!({
+                "format": "api_key",
+                "api_key": "ahb_local",
+                "base_url": "http://127.0.0.1:43081"
+            }),
+            extra: serde_json::json!({"source": "live"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "codex-oauth",
+            AgentId::Codex,
+            AccountKind::Oauth,
+            "me@example.com",
+            false,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, vec!["account:codex-oauth"]);
+
+    let error = TicketReadService::new(db)
+        .plan(&TicketPlanRequest {
+            ticket_id: "account:claude-bridge-acc".into(),
+            target_agent_id: AgentId::Pi,
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains(PROJECTION_NOT_A_TICKET));
+}
+
+#[test]
+fn current_generated_provider_does_not_hide_unrelated_account_tickets() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "claude-oauth",
+            AgentId::Claude,
+            AccountKind::Oauth,
+            "a@x.com",
+            false,
+        ))
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "claude-gen".into(),
+            agent_id: AgentId::Claude,
+            name: "Generated Claude".into(),
+            settings_config: serde_json::json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "http://127.0.0.1:43081",
+                    "ANTHROPIC_AUTH_TOKEN": "ahb_local"
+                }
+            }),
+            meta: serde_json::json!({
+                "generatedBy": "adapter",
+                "adapterBridge": { "loopbackOnly": true }
+            }),
+            is_current: true,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
+    assert!(
+        ids.contains(&"account:claude-oauth"),
+        "source oauth must stay listed while a generated provider is current: {ids:?}"
+    );
+    assert!(!ids.iter().any(|id| *id == "provider:claude-gen"));
 }
 
 #[test]

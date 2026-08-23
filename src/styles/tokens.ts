@@ -85,11 +85,13 @@ export const AGENT_COLORS = {
   dsh: { light: '#4d6bfe', dark: '#6b8cff' },
 } as const satisfies Record<TokenAgentId, { light: string; dark: string }>;
 
-/** Radii → `--radius-sm` / `--radius` / `--radius-lg` */
+/** Radii → `--radius-sm` / `--radius` / `--radius-lg` / `--radius-mark` */
 export const RADIUS = {
   sm: '6px',
   DEFAULT: '8px',
   lg: '12px',
+  /** Product-mark squircle (AppLogo). Not a fourth px step. */
+  mark: '22%',
 } as const;
 
 /**
@@ -222,6 +224,7 @@ function themeDecls(scheme: ThemeScheme): string[] {
     lines.push(`--radius-sm: ${RADIUS.sm};`);
     lines.push(`--radius: ${RADIUS.DEFAULT};`);
     lines.push(`--radius-lg: ${RADIUS.lg};`);
+    lines.push(`--radius-mark: ${RADIUS.mark};`);
     for (const [role, spec] of Object.entries(TYPE_SCALE)) {
       lines.push(`--font-${role}-size: ${spec.size};`);
       lines.push(`--font-${role}-leading: ${spec.lineHeight};`);
@@ -276,6 +279,7 @@ export function buildBootCriticalCss(): string {
     ...lightKeys.map((k) => `--${k}: ${THEME.light[k]};`),
     ...TOKEN_AGENT_IDS.map((id) => `--agent-${id}: ${AGENT_COLORS[id].light};`),
     ...typeScaleLines,
+    `--radius-mark: ${RADIUS.mark};`,
   ];
   const darkLines = [
     ...darkKeys.map((k) => `--${k}: ${THEME.dark[k]};`),

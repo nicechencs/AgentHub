@@ -14,7 +14,7 @@ export const TOOLTIP_SURFACE_CLASS = [
   'max-h-[min(var(--tooltip-max-height),calc(100vh-16px))]',
   'overflow-x-hidden overflow-y-auto',
   'break-words [overflow-wrap:anywhere]',
-  'rounded-btn border border-border bg-panel shadow-sm',
+  'rounded-card border border-border bg-panel shadow-sm',
   'px-[var(--tooltip-pad-x)] py-[var(--tooltip-pad-y)]',
   'text-left font-sans text-meta font-normal leading-[var(--font-meta-leading)] text-primary',
 ].join(' ');
@@ -24,7 +24,7 @@ export function tooltipSurfaceStyle(): React.CSSProperties {
   return {
     backgroundColor: 'var(--bg-panel)',
     border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-sm)',
+    borderRadius: 'var(--radius)',
     boxShadow: 'var(--shadow-sm)',
     color: 'var(--text-primary)',
     fontFamily:
@@ -132,6 +132,8 @@ export function Hint({
 /**
  * 文本/截断路径等非控件节点的悬停提示。
  * 内部包一层 span 再走 Hint，避免浏览器原生 title 黄框。
+ * `className` 作用在触发器上：不要把 `flex-1` 等撑开剩余空间的布局 class 放进来，
+ * 否则气泡按整段空白定位。需要占位时在外层包 `min-w-0 flex-1`。
  */
 export function Tip({
   label,

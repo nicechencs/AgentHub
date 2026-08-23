@@ -3,6 +3,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  type Ref,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -35,6 +36,7 @@ import {
   blockerPrimaryTarget,
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
+  chatShowsUnimportedCurrent,
   COMPOSER_TEXTAREA_MAX_PX,
   COMPOSER_TEXTAREA_MIN_PX,
   composerTextareaMeasuredStyle,
@@ -63,11 +65,13 @@ export function ChatComposer({
   onSend,
   onCancel,
   onSelectAgent,
-  onSwitchProvider,
-  onSwitchAccount,
+  onSwitchConnection,
   onOpenSettings,
   onPickWorkingDirectory,
   onFocusConversation,
+  fillHeight = false,
+  paneHeight = null,
+  paneRef,
 }: {
   draft: string;
   setDraft: (v: string) => void;
@@ -86,11 +90,13 @@ export function ChatComposer({
   onSend: () => void;
   onCancel: () => void;
   onSelectAgent: (id: AgentId) => void;
-  onSwitchProvider: (id: string) => void;
-  onSwitchAccount: (id: string) => void;
+  onSwitchConnection: (ticketId: string) => void;
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   onFocusConversation: (id: string) => void;
+  fillHeight?: boolean;
+  paneHeight?: number | null;
+  paneRef?: Ref<HTMLDivElement>;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -102,19 +108,24 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const syncTextareaHeight = useCallback(() => {
-    if (composerUsesCssFieldSizing()) return;
     const el = textareaRef.current;
     if (!el) return;
+    if (fillHeight) {
+      el.style.height = '';
+      el.style.overflowY = '';
+      return;
+    }
+    if (composerUsesCssFieldSizing()) return;
     el.style.overflowY = 'hidden';
     el.style.height = '0px';
     const layout = composerTextareaMeasuredStyle(el.scrollHeight);
     el.style.height = layout.height;
     el.style.overflowY = layout.overflowY;
-  }, []);
+  }, [fillHeight]);
 
   useLayoutEffect(() => {
     syncTextareaHeight();
-  }, [draft, syncTextareaHeight]);
+  }, [draft, fillHeight, syncTextareaHeight]);
 
   useEffect(() => {
     const onResize = () => syncTextareaHeight();
@@ -147,16 +158,33 @@ export function ChatComposer({
           onCancel={onCancel}
         />
       )}
-      <div className="rounded-composer border border-border bg-panel shadow-xs">
+      <div
+        ref={paneRef}
+        className={cn(
+          'flex min-h-0 flex-col',
+          fillHeight ? 'overflow-hidden' : 'shrink-0',
+        )}
+        style={paneHeight != null ? { height: paneHeight } : undefined}
+      >
+        <div
+          className={cn(
+            'rounded-composer border border-border bg-panel shadow-xs',
+            fillHeight && 'flex min-h-0 flex-1 flex-col overflow-hidden',
+          )}
+        >
         <textarea
           ref={textareaRef}
           className={cn(
             'block w-full resize-none overflow-x-hidden overflow-y-auto break-words bg-transparent',
-            '[field-sizing:content]',
+            fillHeight ? 'min-h-0 flex-1' : '[field-sizing:content]',
             'px-4 pb-2 pt-3 text-body leading-[1.45] outline-none placeholder:text-muted',
             'disabled:cursor-not-allowed disabled:opacity-60',
           )}
-          style={{ minHeight: COMPOSER_TEXTAREA_MIN_PX, maxHeight: COMPOSER_TEXTAREA_MAX_PX }}
+          style={
+            fillHeight
+              ? undefined
+              : { minHeight: COMPOSER_TEXTAREA_MIN_PX, maxHeight: COMPOSER_TEXTAREA_MAX_PX }
+          }
           placeholder={t('chat.composer.placeholder')}
           rows={1}
           value={draft}
@@ -268,8 +296,10 @@ export function ChatComposer({
                 <p className="px-2 pb-1.5 text-meta text-muted">{connectionCaption}</p>
               )}
               <DropdownMenuSeparator />
-              {connectionView.currentLoginTitle &&
-                !connectionOptions.some((option) => option.kind === 'account') && (
+              {chatShowsUnimportedCurrent(
+                connectionOptions,
+                connectionView.currentLoginTitle,
+              ) && (
                 <DropdownMenuItem disabled>
                   <span className="flex min-w-0 flex-1 items-center gap-2">
                     <Check className="h-3.5 w-3.5 shrink-0 text-accent" />
@@ -288,12 +318,9 @@ export function ChatComposer({
                 const isCurrent = option.isCurrent;
                 return (
                   <DropdownMenuItem
-                    key={`${option.kind}:${option.id}`}
+                    key={option.ticketId}
                     disabled={isCurrent || switchingProvider}
-                    onClick={() => {
-                      if (option.kind === 'account') onSwitchAccount(option.id);
-                      else onSwitchProvider(option.id);
-                    }}
+                    onClick={() => onSwitchConnection(option.ticketId)}
                   >
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       {isCurrent ? (
@@ -330,7 +357,15 @@ export function ChatComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <div className="flex-1" />
+          <p
+            className={cn(
+              'min-w-0 flex-1 truncate text-left text-meta leading-none',
+              approveFooter.warning ? 'text-warning/50' : 'text-muted/35',
+            )}
+            title={approveFooter.text}
+          >
+            {approveFooter.text}
+          </p>
 
           {sending ? (
             <Button size="sm" variant="dangerOutline" onClick={onCancel}>
@@ -351,14 +386,7 @@ export function ChatComposer({
           )}
         </div>
       </div>
-      <p
-        className={cn(
-          'mt-2 text-center text-meta',
-          approveFooter.warning ? 'text-warning' : 'text-muted',
-        )}
-      >
-        {approveFooter.text}
-      </p>
+      </div>
     </>
   );
 }

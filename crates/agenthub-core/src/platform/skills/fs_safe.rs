@@ -159,6 +159,40 @@ pub(crate) fn paths_equal_lexical(a: &Path, b: &Path) -> bool {
     normalize_path_components(a) == normalize_path_components(b)
 }
 
+/// Resolve a skill package directory for reading.
+///
+/// The **leaf** may be a junction/symlink (catalog scan and Windows projections
+/// already treat those as installed). Missing / non-dir → NotFound.
+/// Dangling link → InvalidArg. Callers must still ensure `skill_dir` is an
+/// exact child of the skills root so `skill_id` cannot traverse.
+pub(crate) fn resolve_readable_skill_dir(skill_dir: &Path) -> Result<PathBuf> {
+    let meta = match fs::symlink_metadata(skill_dir) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return Err(AppError::NotFound(format!(
+                "skill directory not found: {}",
+                skill_dir.display()
+            )));
+        }
+        Err(e) => return Err(AppError::from(e)),
+        Ok(m) => m,
+    };
+    if is_link_or_reparse(&meta) {
+        return resolve_link_path(skill_dir).ok_or_else(|| {
+            AppError::InvalidArg(format!(
+                "skill directory link is unresolvable: {}",
+                skill_dir.display()
+            ))
+        });
+    }
+    if meta.is_dir() {
+        return Ok(skill_dir.to_path_buf());
+    }
+    Err(AppError::NotFound(format!(
+        "skill directory not found: {}",
+        skill_dir.display()
+    )))
+}
+
 /// `child` must be exactly `root/skill_id` (one Normal component under root).
 pub(crate) fn is_exact_child(child: &Path, root: &Path, skill_id: &str) -> bool {
     if !is_path_inside(child, root) {

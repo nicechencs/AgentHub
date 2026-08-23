@@ -8,6 +8,17 @@ import { cn } from '@/lib/utils';
 
 export type MarkdownViewVariant = 'chat' | 'document';
 
+/** Override @uiw markdown.css 6px / square table chrome with design tokens. */
+export const MARKDOWN_TOKEN_CHROME = [
+  '[&_pre]:!overflow-x-auto [&_pre]:!rounded-card',
+  '[&_pre_.copied]:!rounded-btn',
+  '[&_code]:!rounded-btn [&_tt]:!rounded-btn [&_kbd]:!rounded-btn',
+  // Clip the grid inside a bordered shell so cell edges are not bitten by radius.
+  '[&_.md-table-shell]:my-2.5 [&_.md-table-shell]:w-max [&_.md-table-shell]:max-w-full',
+  '[&_.md-table-shell]:overflow-x-auto [&_.md-table-shell]:rounded-card [&_.md-table-shell]:border [&_.md-table-shell]:border-border [&_.md-table-shell]:bg-panel',
+  '[&_.md-table-shell_table]:!my-0 [&_.md-table-shell_table]:!w-full [&_.md-table-shell_table]:border-collapse [&_.md-table-shell_table]:border-hidden',
+].join(' ');
+
 export interface MarkdownViewProps {
   /** Markdown source. Empty / whitespace-only → render nothing. */
   content: string;
@@ -130,9 +141,28 @@ function stripHeadingPermalink(
   }
 }
 
+function classList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === 'string') return value.split(/\s+/).filter(Boolean);
+  return [];
+}
+
+/** Wrap `<table>` so radius lives on a bordered shell, not on clipped cell borders. */
+export function wrapMarkdownTable(node: HastNode, index?: number, parent?: HastNode) {
+  if (node.tagName !== 'table' || !parent?.children || typeof index !== 'number') return;
+  if (classList(parent.properties?.className).includes('md-table-shell')) return;
+  parent.children[index] = {
+    type: 'element',
+    tagName: 'div',
+    properties: { className: ['md-table-shell'] },
+    children: [node],
+  };
+}
+
 function rewriteMarkdownNode(node: HastNode, index?: number, parent?: HastNode) {
   sanitizeMarkdownNode(node, index, parent);
   stripHeadingPermalink(node, index, parent);
+  wrapMarkdownTable(node, index, parent);
 }
 
 /**
@@ -228,6 +258,7 @@ export function MarkdownView({
         className={cn(
           // Reset library default canvas so it inherits chat/dialog backgrounds.
           '!bg-transparent',
+          MARKDOWN_TOKEN_CHROME,
           variant === 'chat' && 'text-body [&_pre]:text-meta',
           // document：三档字号；! 覆盖 @uiw 默认 2em h1 / 底部分割线，避免压过预览 chrome
           variant === 'document' &&
@@ -244,11 +275,11 @@ export function MarkdownView({
               '[&_h4]:!mt-2.5 [&_h4]:!mb-1 [&_h4]:!text-body [&_h4]:!font-medium [&_h4]:!text-primary',
               '[&_p]:!my-1.5 [&_p]:!text-body [&_p]:!leading-[1.45] [&_p]:!text-primary',
               '[&_ul]:!my-1.5 [&_ol]:!my-1.5 [&_li]:!my-0.5 [&_li]:!text-body',
-              '[&_pre]:!my-2.5 [&_pre]:!max-w-full [&_pre]:!overflow-x-auto [&_pre]:!rounded-btn [&_pre]:!text-meta',
+              '[&_pre]:!my-2.5 [&_pre]:!max-w-full [&_pre]:!text-meta',
               '[&_code]:!text-meta [&_code]:!font-mono',
               '[&_blockquote]:!my-2 [&_blockquote]:!border-l-2 [&_blockquote]:!border-border [&_blockquote]:!pl-3 [&_blockquote]:!text-secondary',
               '[&_hr]:!my-3 [&_hr]:!border-border',
-              '[&_table]:!my-2.5 [&_table]:!w-max [&_table]:!max-w-none [&_table]:!border-collapse',
+              '[&_.md-table-shell]:!my-2.5',
               '[&_th]:!px-2 [&_th]:!py-1.5 [&_th]:!text-left [&_td]:!px-2 [&_td]:!py-1.5',
               '[&_img]:!max-w-full [&_img]:!h-auto',
               // 链接用 accent，避免库默认亮蓝与 indigo 体系打架

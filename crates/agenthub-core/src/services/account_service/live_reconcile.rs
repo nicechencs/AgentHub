@@ -12,13 +12,17 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
     attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
-    AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount,
+    AdapterProfile, AdapterProfileFilter, AdapterSourceKind, AgentId, BackupKind, Capability,
+    LiveAccount, Provider,
+};
+use crate::services::adapter_projection::{
+    classify_account_live, leftover_live_flag, should_skip_live_reconcile, LiveOrigin,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
 };
 use crate::services::{AdapterRouteService, BackupService, ConnectionService};
-use crate::storage::{AccountRepo, Database};
+use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 use crate::utils::agent_lock::AgentWriteLock;
 use crate::utils::redact::mask_secret_preview;
 
@@ -70,11 +74,24 @@ impl AccountService {
                     continue;
                 }
             };
+            let mut grants = Vec::new();
             for live in lives {
-                if self.leftover_live_skips_identity(id) {
+                if self.skip_projection_reconcile(id, &live) {
                     continue;
                 }
-                if let Err(error) = self.reconcile_live_account(adapter.as_ref(), id, live) {
+                grants.push(live);
+            }
+            // One live snapshot is the agent's current login. Nested Grok slots
+            // are concurrent people in one file — update rows in place, then
+            // align current without last-sorted-slot stealing.
+            let activate_each = grants.len() <= 1;
+            for live in grants.iter().cloned() {
+                if let Err(error) = self.reconcile_live_account_with_activate(
+                    adapter.as_ref(),
+                    id,
+                    live,
+                    activate_each,
+                ) {
                     tracing::warn!(
                         module = targets::ACCOUNT,
                         agent = id.as_str(),
@@ -83,13 +100,25 @@ impl AccountService {
                     );
                 }
             }
+            if !activate_each {
+                if let Err(error) =
+                    self.align_current_after_multi_live(adapter.as_ref(), id, &grants)
+                {
+                    tracing::warn!(
+                        module = targets::ACCOUNT,
+                        agent = id.as_str(),
+                        error_code = error.code(),
+                        "failed to align current after multi-slot live sync"
+                    );
+                }
+            }
         }
     }
 
     /// Read the live account slots represented by an adapter snapshot. Pi's
-    /// auth.json is a combined file snapshot, so it must be expanded before it
-    /// reaches pool reconciliation; the combined snapshot is only safe for
-    /// backup / complete-file rollback.
+    /// auth.json and Grok's nested OAuth profiles are combined file snapshots,
+    /// so they must be expanded before they reach pool reconciliation; the
+    /// combined snapshot is only safe for backup / complete-file rollback.
     pub(super) fn read_live_accounts(
         &self,
         adapter: &dyn AgentAdapter,
@@ -108,52 +137,87 @@ impl AccountService {
                 "no live account credentials found".into(),
             ));
         }
-        if agent != AgentId::Pi {
-            return Ok(vec![snapshot]);
+        if agent == AgentId::Pi {
+            let body = snapshot.credentials.get("body").ok_or_else(|| {
+                AppError::InvalidArg("Pi combined live account is missing credentials.body".into())
+            })?;
+            return crate::adapters::pi_auth::expand_auth_to_live_accounts(body);
         }
-
-        let body = snapshot.credentials.get("body").ok_or_else(|| {
-            AppError::InvalidArg("Pi combined live account is missing credentials.body".into())
-        })?;
-        crate::adapters::pi_auth::expand_auth_to_live_accounts(body)
+        if agent == AgentId::Grok {
+            return Ok(crate::adapters::expand_grok_auth_to_live_accounts(
+                &snapshot,
+            ));
+        }
+        Ok(vec![snapshot])
     }
 
     /// Reconcile one safe live snapshot into the account pool.
     ///
-    /// Authorization fingerprints are checked before identity. This lets an
-    /// exact token/key rotation update its owning row even when an adapter
-    /// cannot expose a stable identity, while all other unknown/ambiguous
-    /// cases fail closed. No account is ever deleted by this path.
+    /// Exact tokens match first. Same-agent OAuth identity overwrites one row
+    /// and collapses leftover same-identity rows. Unknown identity stays
+    /// fail-closed except for identical credentials.
     pub(super) fn reconcile_live_account(
         &self,
         adapter: &dyn AgentAdapter,
         agent: AgentId,
         live: LiveAccount,
     ) -> Result<Option<Account>> {
+        self.reconcile_live_account_with_activate(adapter, agent, live, true)
+    }
+
+    pub(super) fn reconcile_live_account_with_activate(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        live: LiveAccount,
+        activate: bool,
+    ) -> Result<Option<Account>> {
         if live.agent != agent || live_account_is_empty(&live) {
             return Ok(None);
         }
-        // Leftover-shaped Codex live is 本机路由 config, not an official grant.
-        // Do not import or re-promote it after 官方登录 activate.
-        if leftover_shaped_codex_live(agent) {
+        if self.skip_projection_reconcile(agent, &live) {
             return Ok(None);
         }
         let rows = self.repo.list(Some(agent))?;
 
-        let authorization_matches = rows
-            .iter()
-            .filter(|row| row.kind == live.kind)
-            .filter(|row| same_live_slot(agent, &live.credentials, &row.credentials))
-            .filter(|row| accounts_same_authorization(adapter, live.kind, &live.credentials, row))
-            .cloned()
-            .collect::<Vec<_>>();
-        if let Some(existing) = pick_primary_authorization_match(authorization_matches) {
+        let matches = authorization_duplicates(adapter, agent, live.kind, &live.credentials, &rows);
+        let match_count = matches.len();
+        if let Some(existing) = pick_primary_authorization_match(matches) {
+            if existing.kind == AccountKind::Oauth
+                && live.kind == AccountKind::Oauth
+                && super::oauth_file_sync::supports_oauth_file_sync(agent)
+            {
+                return self.reconcile_oauth_row_with_cli_file(
+                    adapter,
+                    agent,
+                    existing,
+                    live,
+                    match_count,
+                    activate,
+                );
+            }
             let (row, changed) = self.update_live_row(adapter, existing, live);
-            return Ok(Some(self.persist_reconciled_live_row(agent, row, changed)?));
+            if match_count > 1 {
+                let mark_current = activate && agent != AgentId::Pi;
+                return self
+                    .commit_authorization_merge(
+                        adapter,
+                        &row,
+                        row.kind,
+                        row.label.clone(),
+                        row.credentials.clone(),
+                        row.extra.clone(),
+                        mark_current,
+                    )
+                    .map(|committed| Some(committed.stored))
+                    .map_err(|error| error.into_error());
+            }
+            return Ok(Some(self.persist_reconciled_live_row(
+                agent, row, changed, activate,
+            )?));
         }
 
-        let Some(live_identity) = stable_live_identity(adapter, live.kind, &live.credentials)
-        else {
+        if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
             // API-key / file snapshots often have no email/sub. Exact
             // authorization already matched above; anything else stays
             // fail-closed instead of inventing a pool row.
@@ -163,49 +227,11 @@ impl AccountService {
                 "live account identity is unknown; refusing non-exact reconcile"
             );
             return Ok(None);
-        };
-
-        let identity_matches = rows
-            .iter()
-            .filter(|row| same_live_slot(agent, &live.credentials, &row.credentials))
-            .filter(|row| {
-                stable_live_identity(adapter, row.kind, &row.credentials).as_deref()
-                    == Some(live_identity.as_str())
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if identity_matches.len() > 1 {
-            tracing::warn!(
-                module = targets::ACCOUNT,
-                agent = agent.as_str(),
-                matches = identity_matches.len(),
-                "live identity has multiple grants; retaining the observed grant separately"
-            );
         }
 
-        // A non-exact credential change is a rotation only when it is the one
-        // and only authorization for the stable identity *and* it belongs to
-        // the current live slot. In particular, never choose between multiple
-        // grants for the same identity based on a label or list order.
-        let current = rows.iter().find(|row| {
-            row.is_current && same_live_slot(agent, &live.credentials, &row.credentials)
-        });
-        if let ([existing], Some(current)) = (identity_matches.as_slice(), current) {
-            if existing.id == current.id
-                && stable_live_identity(adapter, current.kind, &current.credentials).as_deref()
-                    == Some(live_identity.as_str())
-            {
-                let (row, changed) = self.update_live_row(adapter, current.clone(), live);
-                return Ok(Some(self.persist_reconciled_live_row(agent, row, changed)?));
-            }
-        }
-
-        // The live authorization is not exact, and is not an unambiguous
-        // rotation of the current row. Retain it as a separate grant. For
-        // single-current agents this is an external live login, so make the
-        // new row current rather than leaving the UI bound to a different
-        // account. Pi is different: each provider shares one auth.json and
-        // reconciling a provider must never choose a global current row.
+        // New identity on this agent (Pi: this live slot). Make it current for
+        // a single live snapshot; nested Grok people stay non-current until
+        // align_current_after_multi_live picks one.
         let label = live
             .label_hint
             .clone()
@@ -218,6 +244,7 @@ impl AccountService {
         }
         let extra = attach_identity_meta(adapter, live.kind, &live.credentials, &label, extra);
         let now = now_ts();
+        let mark_current = activate && agent != AgentId::Pi;
         let row = Account {
             id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
             agent_id: agent,
@@ -226,7 +253,7 @@ impl AccountService {
             credentials: live.credentials.clone(),
             extra: extra.clone(),
             status: "active".into(),
-            is_current: agent != AgentId::Pi,
+            is_current: mark_current,
             created_at: now.clone(),
             updated_at: now,
         };
@@ -239,7 +266,7 @@ impl AccountService {
                 label,
                 live.credentials,
                 extra,
-                row.is_current,
+                mark_current,
             )
             .map(|committed| committed.stored)
             .map_err(|error| error.into_error())?;
@@ -318,6 +345,7 @@ impl AccountService {
         agent: AgentId,
         row: Account,
         changed: bool,
+        activate: bool,
     ) -> Result<Account> {
         let original = row.clone();
         let expected_updated_at = row.updated_at.clone();
@@ -334,7 +362,7 @@ impl AccountService {
                 Err(error) => Err(error),
             };
         }
-        if agent == AgentId::Pi {
+        if agent == AgentId::Pi || !activate {
             return if changed {
                 self.persist_healed_fields(&row, &expected_updated_at)
             } else {
@@ -359,7 +387,8 @@ impl AccountService {
         {
             Ok((updated, _)) => Ok(updated),
             Err(error)
-                if error.code() == "account.merge.conflict" || error.code() == "account.conflict" =>
+                if error.code() == "account.merge.conflict"
+                    || error.code() == "account.conflict" =>
             {
                 self.repo
                     .get_by_id(&row.id)?
@@ -367,6 +396,68 @@ impl AccountService {
             }
             Err(error) => Err(error),
         }
+    }
+
+    pub(super) fn pick_live_grant_to_activate(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        grants: &[LiveAccount],
+        current: Option<&Account>,
+    ) -> usize {
+        if grants.is_empty() {
+            return 0;
+        }
+        if grants.len() == 1 || agent != AgentId::Grok {
+            return 0;
+        }
+        if let Some(current) = current {
+            if let Some(index) = grants
+                .iter()
+                .position(|live| live_grant_matches_account(adapter, live, current))
+            {
+                return index;
+            }
+        }
+        grants
+            .iter()
+            .position(crate::adapters::grok_live_uses_default_auth_slot)
+            .unwrap_or(0)
+    }
+
+    pub(super) fn align_current_after_multi_live(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        grants: &[LiveAccount],
+    ) -> Result<()> {
+        if agent == AgentId::Pi || grants.len() <= 1 {
+            return Ok(());
+        }
+        let rows = self.repo.list(Some(agent))?;
+        if let Some(current) = rows.iter().find(|row| row.is_current) {
+            if grants
+                .iter()
+                .any(|live| live_grant_matches_account(adapter, live, current))
+            {
+                return Ok(());
+            }
+        }
+        let index = self.pick_live_grant_to_activate(adapter, agent, grants, None);
+        let live = &grants[index];
+        let Some(row) = rows
+            .iter()
+            .find(|row| live_grant_matches_account(adapter, live, row))
+        else {
+            return Ok(());
+        };
+        if row.is_current {
+            return Ok(());
+        }
+        let now = now_ts();
+        self.connections
+            .activate_account(agent, &row.id, &row.updated_at, &now)?;
+        Ok(())
     }
 
     /// Add a transient, desensitized AuthState view to the current pool row.
@@ -415,20 +506,95 @@ impl AccountService {
         }
     }
 
-    /// Leftover 本机路由 live must not block switching back to 官方登录.
+    /// Leftover / active 本机路由 live must not block switching back to 官方登录.
     pub(super) fn leftover_live_skips_identity(&self, agent: AgentId) -> bool {
-        if agent != AgentId::Codex {
-            return false;
+        leftover_live_flag(agent) || self.live_is_adapter_projection(agent).unwrap_or(false)
+    }
+
+    pub fn live_is_adapter_projection(&self, agent: AgentId) -> Result<bool> {
+        let (profiles, providers, leftover) = self.projection_snapshots(agent)?;
+        let Ok(adapter) = self.adapter(agent) else {
+            return Ok(false);
+        };
+        let lives = match self.read_live_accounts(adapter.as_ref(), agent) {
+            Ok(lives) => lives,
+            Err(_) => {
+                return Ok(providers.iter().any(|provider| {
+                    provider.agent_id == agent
+                        && provider.is_current
+                        && crate::services::adapter_projection::generated_provider_is_adapter_owned(
+                            provider,
+                        )
+                }));
+            }
+        };
+        if lives.is_empty() {
+            return Ok(false);
         }
-        use crate::integrations::agents::codex::leftover;
-        if leftover::live_config_is_bridge_leftover() {
-            return true;
+        let origins: Vec<_> = lives
+            .iter()
+            .map(|live| {
+                classify_account_live(
+                    agent,
+                    live.kind,
+                    &live.credentials,
+                    &profiles,
+                    &providers,
+                    leftover,
+                )
+            })
+            .collect();
+        if origins
+            .iter()
+            .any(|origin| matches!(origin, LiveOrigin::UserGrant))
+        {
+            return Ok(false);
         }
-        crate::storage::ProviderRepo::new(self.db.clone())
-            .get_current(agent)
-            .ok()
-            .flatten()
-            .is_some_and(|provider| leftover::provider_is_bridge_leftover(&provider))
+        Ok(origins.iter().all(|origin| origin.is_projection()))
+    }
+
+    pub(super) fn classify_live_account(
+        &self,
+        agent: AgentId,
+        live: &LiveAccount,
+    ) -> Result<LiveOrigin> {
+        let (profiles, providers, leftover) = self.projection_snapshots(agent)?;
+        Ok(classify_account_live(
+            agent,
+            live.kind,
+            &live.credentials,
+            &profiles,
+            &providers,
+            leftover,
+        ))
+    }
+
+    pub(super) fn skip_projection_reconcile(&self, agent: AgentId, live: &LiveAccount) -> bool {
+        let Ok((profiles, providers, leftover)) = self.projection_snapshots(agent) else {
+            return leftover_live_flag(agent);
+        };
+        should_skip_live_reconcile(
+            agent,
+            live.kind,
+            &live.credentials,
+            &profiles,
+            &providers,
+            leftover,
+        )
+    }
+
+    fn projection_snapshots(
+        &self,
+        agent: AgentId,
+    ) -> Result<(Vec<AdapterProfile>, Vec<Provider>, bool)> {
+        let profiles = AdapterProfileRepo::new(self.db.clone()).list_filtered(
+            &AdapterProfileFilter {
+                target_agent_id: Some(agent),
+                ..Default::default()
+            },
+        )?;
+        let providers = ProviderRepo::new(self.db.clone()).list(Some(agent))?;
+        Ok((profiles, providers, leftover_live_flag(agent)))
     }
 
     pub(super) fn validate_live_switch_identity(
@@ -441,31 +607,14 @@ impl AccountService {
             return Ok(());
         }
         let rows = self.repo.list(Some(agent))?;
-        let exact = rows.iter().any(|row| {
-            row.kind == live.kind
-                && same_live_slot(agent, &live.credentials, &row.credentials)
-                && accounts_same_authorization(adapter, live.kind, &live.credentials, row)
-        });
-        if exact {
+        if !authorization_duplicates(adapter, agent, live.kind, &live.credentials, &rows).is_empty()
+        {
             return Ok(());
         }
-        let Some(identity) = stable_live_identity(adapter, live.kind, &live.credentials) else {
+        if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
             return Err(AppError::message(
                 "account.identity_conflict",
                 "live account identity is unknown; refusing to backfill or switch",
-            ));
-        };
-        let identity_count = rows
-            .iter()
-            .filter(|row| {
-                stable_live_identity(adapter, row.kind, &row.credentials).as_deref()
-                    == Some(identity.as_str())
-            })
-            .count();
-        if identity_count > 1 {
-            return Err(AppError::message(
-                "account.identity_conflict",
-                "live account identity is ambiguous; refusing to backfill or switch",
             ));
         }
         if rows.iter().any(|row| {
@@ -548,6 +697,15 @@ impl AccountService {
         }
         Ok(())
     }
+}
+
+fn live_grant_matches_account(
+    adapter: &dyn AgentAdapter,
+    live: &LiveAccount,
+    account: &Account,
+) -> bool {
+    accounts_same_authorization(adapter, live.kind, &live.credentials, account)
+        || accounts_same_oauth_identity(live.kind, &live.credentials, account)
 }
 
 fn leftover_shaped_codex_live(agent: AgentId) -> bool {

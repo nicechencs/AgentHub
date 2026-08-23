@@ -4,10 +4,10 @@
 //! scheme (no additional at-rest encryption in this version).
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use super::{AgentId, BackupRecord};
-use crate::utils::redact::redact_json;
+use crate::utils::redact::{api_key_tail, redact_json, refresh_token_preview, refresh_token_tail};
 
 /// How an account authenticates against an agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -93,16 +93,39 @@ pub struct AccountSwitchResult {
     pub backfilled_account_id: Option<String>,
 }
 
+fn insert_extra_string(extra: &mut Value, key: &str, value: String) {
+    if let Value::Object(map) = extra {
+        map.insert(key.into(), json!(value));
+        return;
+    }
+    *extra = json!({ key: value });
+}
+
 impl Account {
     /// Deep-copy with likely secret keys redacted.
     pub fn redacted(&self) -> Self {
+        let credentials = redact_json(&self.credentials);
+        let mut extra = redact_json(&self.extra);
+        if self.kind == AccountKind::Oauth {
+            if let Some(preview) = refresh_token_preview(&self.credentials) {
+                insert_extra_string(&mut extra, "refreshTokenPreview", preview);
+            }
+            if let Some(tail) = refresh_token_tail(&self.credentials) {
+                insert_extra_string(&mut extra, "secretTail", tail);
+            }
+        }
+        if self.kind == AccountKind::ApiKey {
+            if let Some(tail) = api_key_tail(&self.credentials) {
+                insert_extra_string(&mut extra, "secretTail", tail);
+            }
+        }
         Self {
             id: self.id.clone(),
             agent_id: self.agent_id,
             kind: self.kind,
             label: self.label.clone(),
-            credentials: redact_json(&self.credentials),
-            extra: redact_json(&self.extra),
+            credentials,
+            extra,
             status: self.status.clone(),
             is_current: self.is_current,
             created_at: self.created_at.clone(),
@@ -171,6 +194,7 @@ mod tests {
         assert_eq!(r.credentials["api_key"], "***");
         assert_eq!(r.extra["token"], "***");
         assert_eq!(r.extra["note"], "ok");
+        assert_eq!(r.extra["secretTail"], "**alue");
         assert_eq!(a.credentials["api_key"], "xai-secret-value");
     }
 }

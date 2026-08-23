@@ -12,20 +12,20 @@ describe('readSkillMarkdown (browser mock)', () => {
   });
 
   it('returns markdown body for a shared library skill', async () => {
-    const preview = await readSkillMarkdown('dbs-action');
-    expect(preview.skillId).toBe('dbs-action');
+    const preview = await readSkillMarkdown('notes');
+    expect(preview.skillId).toBe('notes');
     expect(preview.name).toBeTruthy();
     expect(preview.content).toContain('#');
-    expect(preview.content).toMatch(/dbs-action|何时使用|步骤/);
+    expect(preview.content).toMatch(/notes|何时使用|步骤/);
     expect(preview.path.toLowerCase()).toContain('skill.md');
     expect(preview.truncated).toBe(false);
   });
 
   it('returns markdown body for a private agent skill', async () => {
-    const preview = await readSkillMarkdown('hatch-pet', 'codex');
-    expect(preview.skillId).toBe('hatch-pet');
-    expect(preview.name).toBe('hatch-pet');
-    expect(preview.content).toContain('hatch-pet');
+    const preview = await readSkillMarkdown('sample-pet', 'codex');
+    expect(preview.skillId).toBe('sample-pet');
+    expect(preview.name).toBe('sample-pet');
+    expect(preview.content).toContain('sample-pet');
     expect(preview.content).toContain('origin');
     expect(preview.truncated).toBe(false);
   });

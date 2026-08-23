@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { FolderOpen, PanelLeftOpen, Settings2, ShieldAlert, Terminal } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
-import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import { Hint } from '@/components/ui/tooltip';
-import { agentDisplayName } from '@/config/agents';
-import type { AgentId, Conversation } from '@/lib/types';
+import type { Conversation } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   autoApproveActive,
@@ -21,7 +19,6 @@ import {
 export function ChatSessionHeader({
   active,
   railOpen,
-  hiddenIds,
   onExpandRail,
   onRename,
   onOpenSettings,
@@ -29,7 +26,6 @@ export function ChatSessionHeader({
 }: {
   active: Conversation | null;
   railOpen: boolean;
-  hiddenIds: Set<AgentId>;
   onExpandRail: () => void;
   onRename: (next: string) => Promise<boolean>;
   onOpenSettings: () => void;
@@ -52,7 +48,6 @@ export function ChatSessionHeader({
     if (editing) inputRef.current?.focus();
   }, [editing]);
 
-  const hasHidden = Boolean(active?.agentIds.some((id) => hiddenIds.has(id)));
   const selectedAgent = active?.agentIds[0] ?? null;
   const approveOn = autoApproveActive(Boolean(active?.allowDangerous), selectedAgent);
 
@@ -127,7 +122,6 @@ export function ChatSessionHeader({
       </div>
       {active && (
         <div className="flex min-w-0 shrink-0 items-center gap-1.5">
-          <AgentChip agentIds={active.agentIds} hasHidden={hasHidden} />
           <Hint label={active.cwd || t('chat.header.pickCwd')}>
             <button
               type="button"
@@ -162,14 +156,12 @@ export function ChatSessionHeader({
                     () =>
                       toast({
                         title: t('chat.header.resumeCommandCopied'),
-                        description: command,
+                        description: t('chat.header.resumeCommandCopiedHint'),
                       }),
                     () => toast({ title: t('chat.bubble.copyFailed'), variant: 'danger' }),
                   );
                 }}
-                aria-label={t('chat.header.copyResumeCommand', {
-                  command: conversationResumeCommand(active) ?? active.nativeSessionId,
-                })}
+                aria-label={t('chat.header.copyResumeCommand')}
               >
                 <Terminal className="h-3 w-3 shrink-0" />
                 <span className="truncate">{shortenId(active.nativeSessionId, 10)}</span>
@@ -206,31 +198,4 @@ export function ChatSessionHeader({
 
 function shortenId(id: string, max: number): string {
   return id.length <= max ? id : `${id.slice(0, max - 1)}…`;
-}
-
-function AgentChip({ agentIds, hasHidden }: { agentIds: AgentId[]; hasHidden: boolean }) {
-  const { t } = useI18n();
-  if (agentIds.length === 0) return null;
-  if (agentIds.length === 1) {
-    return (
-      <span className="inline-flex h-7 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary">
-        <AgentLogo agentId={agentIds[0]} size="sm" />
-        <span className="truncate">{agentDisplayName(agentIds[0])}</span>
-        {hasHidden && <span className="text-muted">{t('chat.header.hidden')}</span>}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex h-7 items-center gap-1.5 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary">
-      <span className="flex items-center">
-        {agentIds.slice(0, 3).map((id, i) => (
-          <span key={id} className={cn(i > 0 && '-ml-1.5')} style={{ zIndex: 3 - i }}>
-            <AgentLogo agentId={id} size="sm" />
-          </span>
-        ))}
-      </span>
-      <span>{t('chat.header.agentCount', { n: agentIds.length })}</span>
-      {hasHidden && <span className="text-muted">{t('chat.header.hidden')}</span>}
-    </span>
-  );
 }

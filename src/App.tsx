@@ -57,7 +57,7 @@ export default function App() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isChat = pathname === '/chat';
-  /** Skills / Projects 左右分栏铺满主区，不受 max-w-content 限制 */
+  /** Skills / Projects 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
   const isSkills = pathname === '/skills';
   const isProjects = pathname === '/projects';
   const fullBleed = isChat || isSkills || isProjects;
@@ -105,13 +105,18 @@ export default function App() {
 
   return (
     <SidebarProvider>
-      <div className="flex h-full bg-canvas">
+      <div className={pageRhythm.shell}>
         <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className={pageRhythm.shellMain}>
           {!isChat && <TopBar />}
-          <main className={cn('flex-1', fullBleed ? 'overflow-hidden' : 'overflow-y-auto')}>
-            {/* max-w-content：普通页桌面阅读宽度；chat/skills/projects 全宽全高 */}
-            <div className={fullBleed ? 'h-full' : pageRhythm.pageShell}>
+          <main
+            className={cn(
+              'min-h-0 flex-1',
+              fullBleed ? 'overflow-hidden' : 'overflow-y-auto',
+            )}
+          >
+            {/* 常规页铺满主列 + 18px inset；chat/skills/projects 全高自管 */}
+            <div className={fullBleed ? 'h-full min-h-0' : pageRhythm.pageShell}>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/chat" element={<ChatPage />} />

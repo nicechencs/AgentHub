@@ -1,6 +1,8 @@
 # AgentHub 文档索引
 
-仓库入口见根目录 [README.md](../README.md)。项目约定见 [AGENTS.md](../AGENTS.md)。漏洞披露见 [SECURITY.md](../SECURITY.md)。
+本目录是**开发与设计文档**，不是产品说明书。对外的产品说明见根目录 [README.md](../README.md) 与 [product-decisions.md](product-decisions.md) 的白话部分。漏洞披露见 [SECURITY.md](../SECURITY.md)。
+
+贡献者开发约定在仓库根目录 [AGENTS.md](../AGENTS.md)。
 
 ## 稳定设计文档
 
@@ -14,13 +16,13 @@
 | [platform-capability-refactor.md](platform-capability-refactor.md) | **平台能力架构改造方案**：解耦边界、稀疏端口、生命周期/Skills/连接/用量；P01-P13 与 R00-R08 已完成 |
 | [platform-capability-remediation.md](platform-capability-remediation.md) | **2026-08-07 审查修正方案**：Active Binding、配置 fail-closed、Skills 安全/原子性、Lifecycle 审计与 AgentKey/OCP 真验证 |
 | [testing.md](testing.md) | **测试约定**：测试与生产分文件、vitest/cargo 命令、mock 边界、Markdown 预览用例索引 |
-| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件；三种做法是直接改配置 / 写进对方认的登录 / 本机转发。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。写进对方认的登录时不显示本机服务 |
+| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件；三种做法是直接改配置 / 写进对方认的登录 / 本机转发。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。Connections 真登录「用到其他工具 / 本机转发」+ AgentTabStrip；侧栏中文「本机转发」永久显示。写进对方认的登录时不显示本机服务 |
 | [ui-component-standard.md](ui-component-standard.md) | **UI 组件与体验标准**（**v1.0**）：现行清单、决策树、提示通道、对照审计与 Phase 3 收口；不替代页面线框 |
 | [connection-binding-model.md](connection-binding-model.md) | 实现用的领域模型（一份登录 / 绑定 / 规划器）。**读模型 + plan/bind/unbind 已落地；sidecar 迁移未做**。读者向说明见 [product-decisions.md](product-decisions.md) |
-| [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1 已实施**（历史）：ConnectFlowDialog；后续以 [connection-binding-model.md](connection-binding-model.md) 为 UI 与领域目标 |
-| [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：用户表面 Routes / 本机路由，模块仍叫 Adapter；本页只服务本机转发；能改配置或写进对方认的登录就不另开程序；创建绑定走 Hub |
-| [bridges-page-redesign.md](bridges-page-redesign.md) | **本机路由页终态 IA**（已落地，表面已改为 Routes / `/routes`）：对象是 loopback 进程；侧栏 Routes 有本机路由才出现；单层健康+端口。稳定文档已回写 ui-design / adapter-design / connection-binding-model |
-| [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | **真机 dogfood**：直接改配置（Kimi→Claude / Anthropic→Pi）；本机转发（Kimi→Codex）。禁止记录密钥 / prompt / 正文 |
+| [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1 已实施**（历史实施记录，§1–§10 不是现行 IA）：ConnectFlowDialog。现行 UI 见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md) |
+| [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：用户表面 Routes / 中文「本机转发」，模块仍叫 Adapter；本页只服务本机转发；创建绑定走 Dashboard「连接/切换」与 Connections「用到其他工具 / 本机转发」 |
+| [bridges-page-redesign.md](bridges-page-redesign.md) | **本机路由页终态 IA**（已落地，表面已改为 Routes / `/routes`）：对象是 loopback 进程；侧栏英文 Local forward、中文「本机转发」永久显示；单层健康+端口。稳定文档已回写 ui-design / adapter-design / connection-binding-model |
+| [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | **真机 dogfood（内部）**：直接改配置（Kimi→Claude / Anthropic→Pi）；本机转发（Kimi→Codex）。禁止记录密钥 / prompt / 正文 |
 | [adapter-sidecar-design.md](adapter-sidecar-design.md) | **Adapter Sidecar 目标架构**：`agenthub-adapterd` 所有权、IPC、状态机、单主/并发、升级恢复与三阶段迁移（目标已决策，当前未迁移） |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | **厂商 / API / OAuth 适配规则**：产品与协议边界、Kimi 双端点、当前路由矩阵和维护方法 |
 | [ui-experience-alignment.md](ui-experience-alignment.md) | **UI 风格/体验对标 Cursor·Codex**：颜色层级、边框、字号、预览与提示体系、分阶段优化方案（**v1.1**） |
@@ -34,8 +36,8 @@
 | [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单；`accepts[]` 须登记 wire 协议 **和** OAuth 契约槽 |
 | [deepseek-harness-integration.md](deepseek-harness-integration.md) | **DeepSeek Harness（`dsh`）**：DeepSeek API 走直接改配置；DSH 不是本机转发。P1–P5 已落地；StructuredStream 仍 Planned |
 | [tray-background-modes.md](tray-background-modes.md) | **托盘后台模式**：低内存后台 vs 隐藏界面；hide 不降内存的原因、三档设置设计与实施要点（**未来优化点，未实施**，不派生当前任务） |
-| [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md) | **路由 × 连接重构任务拆分**（2026-08-22 制定，**未实施**）：对齐 §5.4 表面统一与 §5.5 多账号轮询的四条泳道任务卡与派工波次；完成后回写稳定文档并删除本文 |
-| [multi-account-routing-rfc.md](multi-account-routing-rfc.md) | **C2 多账号轮询设计稿**（2026-08-22，**未拍板、未实施**）：成员存储三选一、AccountPicker、请求边界 FSM、与 A4 两种对接；附录为 D3 写面盘点。产品不变式仍以 [provider-api-oauth-adaptation.md §5.5](provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划) 为准 |
+| [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md) | **路由 × 连接重构任务拆分**（2026-08-22 制定，**未实施 / 内部**）：对齐 §5.4 表面统一与 §5.5 多账号轮询的四条泳道任务卡与派工波次；完成后回写稳定文档并删除本文 |
+| [multi-account-routing-rfc.md](multi-account-routing-rfc.md) | **C2 多账号轮询设计稿**（2026-08-22，**未拍板、未实施 / 内部**）：成员存储三选一、AccountPicker、请求边界 FSM、与 A4 两种对接；附录为 D3 写面盘点。产品不变式仍以 [provider-api-oauth-adaptation.md §5.5](provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划) 为准 |
 | [privacy.md](privacy.md) | **发布与隐私边界**：禁止提交项、截图规范、OAuth 常量勿外泄、docs 写法 |
 
 ## 文档管理规则

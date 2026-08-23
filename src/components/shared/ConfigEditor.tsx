@@ -25,17 +25,19 @@ export function ConfigEditor({
   const cmTheme = resolveTheme(theme) === 'dark' ? 'dark' : 'light';
 
   return (
-    <div className="max-h-80 min-h-24 overflow-auto rounded-card border border-border [&_.cm-editor]:min-h-24 [&_.cm-editor]:bg-canvas [&_.cm-editor]:text-xs [&_.cm-gutters]:bg-canvas [&_.cm-gutters]:text-muted [&_.cm-activeLine]:bg-hover">
-      <CodeMirror
-        value={value}
-        height="auto"
-        minHeight="96px"
-        theme={cmTheme}
-        readOnly={readOnly}
-        extensions={[format === 'json' ? json() : StreamLanguage.define(toml)]}
-        onChange={(v) => onChange?.(v)}
-        basicSetup={{ lineNumbers: true, foldGutter: false, highlightActiveLine: true }}
-      />
+    <div className="max-h-80 min-h-24 overflow-hidden rounded-card border border-border">
+      <div className="max-h-80 min-h-24 overflow-auto [&_.cm-editor]:min-h-24 [&_.cm-editor]:bg-canvas [&_.cm-editor]:text-xs [&_.cm-gutters]:bg-canvas [&_.cm-gutters]:text-muted [&_.cm-activeLine]:bg-hover">
+        <CodeMirror
+          value={value}
+          height="auto"
+          minHeight="96px"
+          theme={cmTheme}
+          readOnly={readOnly}
+          extensions={[format === 'json' ? json() : StreamLanguage.define(toml)]}
+          onChange={(v) => onChange?.(v)}
+          basicSetup={{ lineNumbers: true, foldGutter: false, highlightActiveLine: true }}
+        />
+      </div>
     </div>
   );
 }

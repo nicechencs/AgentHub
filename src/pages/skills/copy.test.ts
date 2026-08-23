@@ -16,13 +16,17 @@ describe('skills copy via createTranslator(zh)', () => {
   it('cell tips stay short and avoid L3 jargon', () => {
     const absent = skillCellTip(t, 'Claude', 'absent', 'available');
     const linked = skillCellTip(t, 'Claude', 'linked', 'available', 'junction');
+    const copied = skillCellTip(t, 'Claude', 'copied', 'available');
     const conflict = skillCellTip(t, 'Codex', 'foreign', 'conflict');
 
     expect(absent).toBe('未启用 · 点击启用');
-    expect(linked).toContain('已启用');
+    expect(linked).toBe('已启用（共用）· 点击取消');
+    expect(copied).toBe('已启用（副本）· 点击取消');
+    expect(linked).not.toBe(copied);
+    expect(linked).not.toMatch(/junction|symlink|hardlink/);
     expect(conflict).toContain('覆盖');
 
-    for (const s of [absent, linked, conflict]) {
+    for (const s of [absent, linked, copied, conflict]) {
       expect(s).not.toMatch(/单向投影/);
       expect(s).not.toMatch(/非双向/);
       expect(s.length).toBeLessThan(40);
@@ -80,7 +84,7 @@ describe('skills copy via createTranslator(zh)', () => {
   });
 
   it('adopt toast stays on the local table', () => {
-    expect(t('skills.toast.adoptOkDesc')).toBe('已可在矩阵中启用');
+    expect(t('skills.toast.adoptOkDesc')).toBe('已可在上方列表启用');
     expect(batchAdoptToast(t, 1, 0, 0)).not.toHaveProperty('actionLabel');
     expect(batchEnableToast(t, 1, 0, []).title).toBe('已启用所选 1 项');
   });

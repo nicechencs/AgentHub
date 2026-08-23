@@ -10,7 +10,7 @@ export const PREVIEW_WIDTH_FLOOR = 240;
 export const MAIN_WIDTH_MIN = 380;
 /** 极窄时左侧可再让一点，避免预览被裁到消失 */
 export const MAIN_WIDTH_FLOOR = 280;
-/** 预览卡片与窗边：水平 24 与 pageShell/workbenchX 一致 */
+/** 预览卡片水平 18 与 pageShell 一致；顶距由页头槽承担，底距用 pageEdgePx.previewY。 */
 export const PREVIEW_FRAME_PAD_RIGHT = pageEdgePx.x;
 export const PREVIEW_FRAME_PAD_Y = pageEdgePx.previewY;
 export const PREVIEW_SEPARATOR_W = pageEdgePx.separator;

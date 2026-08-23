@@ -292,22 +292,22 @@ export function materializeApply(
         ? `adapter-codex-dsh-bridge-${safeId}`
         : `adapter-kimi-codex-bridge-${safeId}`,
       name: codexClaudeBridge
-        ? `Codex → Claude Code 本地桥接 (${safeId})`
+        ? `Codex → Claude Code 本机路由 (${safeId})`
         : grokClaudeBridge
-        ? `Grok → Claude Code 本地桥接 (${safeId})`
+        ? `Grok → Claude Code 本机路由 (${safeId})`
         : grokCodexBridge
         ? `Grok → Codex 本机路由 (${safeId})`
         : anthropicBridge
-        ? `Anthropic → Codex 本地桥接 (${safeId})`
+        ? `Anthropic → Codex 本机路由 (${safeId})`
         : openaiBridge
-        ? `OpenAI → Codex 本地桥接 (${safeId})`
+        ? `OpenAI → Codex 本机路由 (${safeId})`
         : codexGrokBridge
         ? `Codex → Grok 本机路由 (${safeId})`
         : codexKimiBridge
         ? `Codex → Kimi 本机路由 (${safeId})`
         : codexDshBridge
         ? `Codex → DeepSeek Harness 本机路由 (${safeId})`
-        : `Kimi → Codex 本地桥接 (${safeId})`,
+        : `Kimi → Codex 本机路由 (${safeId})`,
       sourceKind: request.sourceKind,
       sourceId: request.sourceId,
       targetAgentId: request.targetAgentId,

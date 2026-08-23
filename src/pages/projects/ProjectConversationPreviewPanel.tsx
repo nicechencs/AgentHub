@@ -17,9 +17,9 @@ function PreviewSkeleton() {
   return (
     <div className="space-y-3 py-1" aria-hidden>
       <div className="ml-auto h-12 w-4/5 max-w-[18rem] animate-pulse rounded-composer bg-hover" />
-      <div className="h-16 w-[92%] animate-pulse rounded-composer bg-hover/80" />
+      <div className="h-16 w-[92%] animate-pulse rounded-btn bg-hover/80" />
       <div className="ml-auto h-10 w-3/5 max-w-[14rem] animate-pulse rounded-composer bg-hover/70" />
-      <div className="h-20 w-[88%] animate-pulse rounded-composer bg-hover/60" />
+      <div className="h-20 w-[88%] animate-pulse rounded-btn bg-hover/60" />
     </div>
   );
 }
@@ -218,8 +218,10 @@ export function ProjectConversationPreviewPanel({
                   <li key={`${index}:${turn.slice(0, 24)}`} className={cn('flex', userish && 'justify-end')}>
                     <div
                       className={cn(
-                        'max-w-[92%] whitespace-pre-wrap rounded-composer px-3 py-2 text-body text-primary',
-                        userish ? 'bg-subtle' : 'border border-border/70 bg-canvas',
+                        'max-w-[92%] whitespace-pre-wrap text-body text-primary',
+                        userish
+                          ? 'rounded-composer bg-subtle px-3 py-2'
+                          : 'leading-relaxed',
                       )}
                     >
                       {turn}

@@ -60,6 +60,149 @@ pub fn mask_secret_preview(secret: &str) -> String {
     format!("{head}-••••{tail}")
 }
 
+/// Last four characters of a secret, prefixed with `**`. None when too short
+/// to show a tail without leaking most of the value.
+pub fn mask_secret_tail(secret: &str) -> Option<String> {
+    let t = secret.trim();
+    if t.is_empty() || t == "***" {
+        return None;
+    }
+    let chars: Vec<char> = t.chars().collect();
+    if chars.len() < 8 {
+        return None;
+    }
+    let tail: String = chars[chars.len() - 4..].iter().collect();
+    Some(format!("**{tail}"))
+}
+
+fn is_refresh_token_key(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "refresh_token" | "refreshtoken"
+    )
+}
+
+fn find_refresh_token(value: &Value) -> Option<&str> {
+    match value {
+        Value::Object(map) => {
+            for key in ["refresh_token", "refreshToken"] {
+                if let Some(secret) = map
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty() && *s != "***")
+                {
+                    return Some(secret);
+                }
+            }
+            if let Some(found) = map.get("tokens").and_then(find_refresh_token) {
+                return Some(found);
+            }
+            if let Some(found) = map.get("body").and_then(find_refresh_token) {
+                return Some(found);
+            }
+            for (key, child) in map {
+                if is_refresh_token_key(key) {
+                    continue;
+                }
+                if let Some(found) = find_refresh_token(child) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        Value::Array(items) => items.iter().find_map(find_refresh_token),
+        _ => None,
+    }
+}
+
+/// Head/tail preview of an OAuth refresh token. Never returns the full secret.
+pub fn refresh_token_preview(credentials: &Value) -> Option<String> {
+    let preview = mask_secret_preview(find_refresh_token(credentials)?);
+    (preview != "••••").then_some(preview)
+}
+
+/// `**XXXX` tail of an OAuth refresh token for list chips.
+pub fn refresh_token_tail(credentials: &Value) -> Option<String> {
+    mask_secret_tail(find_refresh_token(credentials)?)
+}
+
+fn is_api_key_field(key: &str) -> bool {
+    let lower = key.trim().to_ascii_lowercase().replace('-', "_");
+    matches!(
+        lower.as_str(),
+        "api_key" | "apikey" | "anthropic_auth_token"
+    ) || lower.ends_with("_api_key")
+}
+
+fn find_api_key(value: &Value) -> Option<&str> {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                if is_api_key_field(key) {
+                    if let Some(secret) = child
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && *s != "***")
+                    {
+                        return Some(secret);
+                    }
+                }
+            }
+            for preferred in ["auth", "env", "body"] {
+                if let Some(found) = map.get(preferred).and_then(find_api_key) {
+                    return Some(found);
+                }
+            }
+            map.values().find_map(find_api_key)
+        }
+        Value::Array(items) => items.iter().find_map(find_api_key),
+        _ => None,
+    }
+}
+
+fn find_api_key_in_text(text: &str) -> Option<String> {
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some(eq) = line.find('=') else {
+            continue;
+        };
+        if !is_api_key_field(line[..eq].trim()) {
+            continue;
+        }
+        let mut val = line[eq + 1..].trim();
+        if let Some(rest) = val.strip_prefix('"') {
+            val = rest.split('"').next().unwrap_or(rest);
+        } else if let Some(rest) = val.strip_prefix('\'') {
+            val = rest.split('\'').next().unwrap_or(rest);
+        } else if let Some(hash) = val.find('#') {
+            val = val[..hash].trim();
+        }
+        let val = val.trim();
+        if !val.is_empty() && val != "***" {
+            return Some(val.to_string());
+        }
+    }
+    None
+}
+
+/// `**XXXX` tail of an API key for list chips (JSON fields or TOML content).
+pub fn api_key_tail(credentials: &Value) -> Option<String> {
+    if let Some(secret) = find_api_key(credentials) {
+        if let Some(tail) = mask_secret_tail(secret) {
+            return Some(tail);
+        }
+    }
+    let content = credentials
+        .get("content")
+        .or_else(|| credentials.get("config"))
+        .and_then(Value::as_str)?;
+    find_api_key_in_text(content).and_then(|secret| mask_secret_tail(&secret))
+}
+
 /// Redact likely secrets inside free-form text (install logs, errors, chat lines).
 ///
 /// Heuristics (fail closed on matches):
@@ -379,6 +522,60 @@ mod tests {
         assert!(!preview.contains("abcdefghijklmnop"));
         assert!(preview.starts_with("sk-"));
         assert_eq!(mask_secret_preview(""), "••••");
+    }
+
+    #[test]
+    fn refresh_token_preview_uses_head_tail_and_nested_codex_shape() {
+        let flat = json!({ "refresh_token": "rt-abcdefghijklmnopqrstuvwxyz" });
+        let preview = refresh_token_preview(&flat).expect("preview");
+        assert!(preview.contains("••••"));
+        assert!(!preview.contains("abcdefghijklmnopqrstuvwxyz"));
+        assert_eq!(preview, mask_secret_preview("rt-abcdefghijklmnopqrstuvwxyz"));
+
+        let nested = json!({
+            "format": "auth_json",
+            "body": { "tokens": { "access_token": "at-secret", "refresh_token": "rt-nested-secret-value" } }
+        });
+        let nested_preview = refresh_token_preview(&nested).expect("nested preview");
+        assert_eq!(nested_preview, mask_secret_preview("rt-nested-secret-value"));
+        assert!(!nested_preview.contains("rt-nested-secret-value"));
+
+        assert!(refresh_token_preview(&json!({ "refresh_token": "***" })).is_none());
+        assert!(refresh_token_preview(&json!({ "access_token": "only-access" })).is_none());
+    }
+
+    #[test]
+    fn mask_secret_tail_uses_last_four() {
+        assert_eq!(
+            mask_secret_tail("rt-abcdefghijklmnopqrstuvwxyz").as_deref(),
+            Some("**wxyz")
+        );
+        assert_eq!(mask_secret_tail("short"), None);
+        assert_eq!(mask_secret_tail("***"), None);
+        assert_eq!(mask_secret_tail(""), None);
+    }
+
+    #[test]
+    fn refresh_and_api_key_tails_read_nested_shapes() {
+        let rt = json!({
+            "body": { "tokens": { "refresh_token": "rt-abcdefghijklmnopqrstuvwxyz" } }
+        });
+        assert_eq!(refresh_token_tail(&rt).as_deref(), Some("**wxyz"));
+
+        let json_key = json!({ "api_key": "sk-abcdefghijklmnop" });
+        assert_eq!(api_key_tail(&json_key).as_deref(), Some("**mnop"));
+
+        let claude = json!({
+            "env": { "ANTHROPIC_AUTH_TOKEN": "sk-ant-abcdefghijklmnopqrstuvwxyz" }
+        });
+        assert_eq!(api_key_tail(&claude).as_deref(), Some("**wxyz"));
+
+        let toml = json!({
+            "format": "toml",
+            "content": "model = 'grok'\napi_key = 'xai-secret-value-here'\n"
+        });
+        assert_eq!(api_key_tail(&toml).as_deref(), Some("**here"));
+        assert!(api_key_tail(&json!({ "refresh_token": "rt-not-a-key-value" })).is_none());
     }
 
     #[test]

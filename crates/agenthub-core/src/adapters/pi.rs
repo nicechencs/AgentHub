@@ -264,7 +264,7 @@ impl AgentAdapter for PiAdapter {
             | ProjectDelete => CapabilityState::full(),
             ConfigWrite => CapabilityState::full(),
             ApiKeyAccount => CapabilityState::partial(
-                "可入池；写回 auth.json 需带官方厂商槽（anthropic/openai/…）；自定义 URL 走 models.json / 供应商切换",
+                "可入池；写回 auth.json 需带官方厂商（anthropic/openai/…）；自定义 URL 走 models.json / 供应商切换",
             ),
             DangerousMode => CapabilityState::partial("--approve 仅信任项目文件，非完全跳过确认"),
             ProviderPresets => CapabilityState::unsupported("暂无内置 Pi provider 预设"),

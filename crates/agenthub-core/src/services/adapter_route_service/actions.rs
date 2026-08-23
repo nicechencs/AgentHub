@@ -295,7 +295,7 @@ pub(super) fn analysis_from_decision(
     let limitations = if decision.limitations.is_empty() {
         vec![
             "当前不支持此组合；不会改动来源连接、本机服务或配置。".into(),
-            "plan.canApply=false：无 Apply、启动 Bridge 或强制继续入口。".into(),
+            "现在还写不上去；不会改配置，也不会开本机转发。".into(),
         ]
     } else {
         decision
@@ -402,7 +402,7 @@ pub(super) fn actions_for(
             vec![action(
                 "requires_local_bridge",
                 "Codex",
-                "Codex Responses 与 Kimi Chat Completions 需要本地双向协议转换。",
+                "Codex 和 Kimi 说的话对不上，需要本机转发。",
                 None,
                 false,
             )]
@@ -411,7 +411,7 @@ pub(super) fn actions_for(
             vec![action(
                 "requires_local_bridge",
                 "Codex",
-                "Codex Responses 与 Anthropic Messages 需要本地双向协议转换。",
+                "Codex 和 Anthropic 说的话对不上，需要本机转发。",
                 None,
                 false,
             )]
@@ -420,7 +420,7 @@ pub(super) fn actions_for(
             vec![action(
                 "requires_local_bridge",
                 "Codex",
-                "Codex Responses 与 OpenAI Chat Completions 需要本地双向协议转换。",
+                "Codex 和 OpenAI 说的话对不上，需要本机转发。",
                 None,
                 false,
             )]
@@ -479,14 +479,14 @@ pub(super) fn actions_for(
             action(
                 "requires_local_bridge",
                 "Claude Code",
-                "Claude Messages 与 Codex Responses 需要本地双向协议转换。",
+                "Claude 和 Codex 说的话对不上，需要本机转发。",
                 None,
                 false,
             ),
             action(
                 "set_env",
                 "Claude Code",
-                "写入 Claude Code 的 loopback Base URL 与本机 bearer；不会写入上游 OAuth token。",
+                "写入 Claude Code 的本机地址 Base URL 与本机 bearer；不会写入上游 OAuth token。",
                 Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
                 false,
             ),
@@ -496,14 +496,14 @@ pub(super) fn actions_for(
             action(
                 "requires_local_bridge",
                 "Claude Code",
-                "Claude Messages 与 xAI Responses 需要本地双向协议转换。",
+                "Claude 和 Grok 说的话对不上，需要本机转发。",
                 None,
                 false,
             ),
             action(
                 "set_env",
                 "Claude Code",
-                "写入 Claude Code 的 loopback Base URL 与本机 bearer；不会写入上游 OAuth token。",
+                "写入 Claude Code 的本机地址 Base URL 与本机 bearer；不会写入上游 OAuth token。",
                 Some("ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN"),
                 false,
             ),
@@ -643,7 +643,7 @@ pub(super) fn actions_for(
             action(
                 "set_config",
                 "Pi",
-                "写入 Pi 的 GLM Coding Plan 自定义 provider 槽。",
+                "写入 Pi 的 GLM Coding Plan 自定义 provider 位置。",
                 Some(GLM_PI_PROVIDER_SLOT),
                 false,
             ),
@@ -659,7 +659,7 @@ pub(super) fn actions_for(
             action(
                 "set_config",
                 "Pi",
-                "写入 Pi 的 DeepSeek 自定义 provider 槽。",
+                "写入 Pi 的 DeepSeek 自定义 provider 位置。",
                 Some(DEEPSEEK_PI_PROVIDER_SLOT),
                 false,
             ),
@@ -675,7 +675,7 @@ pub(super) fn actions_for(
             action(
                 "set_config",
                 "Pi",
-                "选择 Pi 的 anthropic 登录槽。",
+                "选择 Pi 的 anthropic 登录位置。",
                 Some("anthropic"),
                 false,
             ),
@@ -691,7 +691,7 @@ pub(super) fn actions_for(
             action(
                 "set_config",
                 "Pi",
-                "选择 Pi 的 openai-codex 登录槽。",
+                "选择 Pi 的 openai-codex 登录位置。",
                 Some("openai-codex"),
                 false,
             ),
@@ -707,7 +707,7 @@ pub(super) fn actions_for(
             action(
                 "set_config",
                 "Pi",
-                "选择 Pi 的 xai 登录槽。",
+                "选择 Pi 的 xai 登录位置。",
                 Some("xai"),
                 false,
             ),

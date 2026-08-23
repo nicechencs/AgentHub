@@ -11,6 +11,8 @@ import {
   buildAgentCardView,
   cardAuthStatus,
   dashboardOverviewSkeletonCount,
+  dashboardPageDescription,
+  installedOverviewScope,
   isAgentIssue,
   mergeAgentsInOrder,
   resolveAgentCardInteraction,
@@ -144,6 +146,44 @@ describe('summarizeAgentOverview', () => {
     const s = summarizeAgentOverview(METAS, [status('claude')]);
     expect(s.issueCount).toBe(METAS.length - 1);
     expect(s.readyCount).toBe(1);
+  });
+});
+
+describe('installedOverviewScope', () => {
+  it('keeps installed visible agents in catalog order and drops hidden/uninstalled', () => {
+    const agents = [
+      status('codex'),
+      status('claude', { hidden: true }),
+      status('kimi', { installed: false }),
+      status('grok'),
+    ];
+    const { metas, statuses } = installedOverviewScope(METAS, agents);
+    expect(metas.map((m) => m.id)).toEqual(['codex', 'grok']);
+    expect(statuses.map((s) => s.agentId)).toEqual(['codex', 'grok']);
+  });
+});
+
+describe('dashboardPageDescription', () => {
+  it('keeps the base subtitle when there is no count yet', () => {
+    expect(dashboardPageDescription(null)).toBe('状态与用量');
+    expect(dashboardPageDescription({ total: 0, summaryText: '0/0 就绪' })).toBe('状态与用量');
+  });
+
+  it('folds the ready count into the page subtitle', () => {
+    expect(
+      dashboardPageDescription({ total: 4, summaryText: '4/4 就绪' }),
+    ).toBe('状态与用量（4/4 就绪）');
+    expect(
+      dashboardPageDescription({ total: 4, summaryText: '3/4 就绪 · 1 项待处理' }),
+    ).toBe('状态与用量（3/4 就绪 · 1 项待处理）');
+  });
+
+  it('uses locale copy when a translator is passed', () => {
+    const t = createTranslator('en');
+    expect(dashboardPageDescription(null, t)).toBe('Status and usage');
+    expect(
+      dashboardPageDescription({ total: 4, summaryText: '4/4 ready' }, t),
+    ).toBe('Status and usage (4/4 ready)');
   });
 });
 
@@ -301,7 +341,7 @@ describe('buildAgentCardView', () => {
     );
     expect(view.metaText).toBe('Kimi 会员 · 改配置');
     expect(view.binding).toEqual({ ticketLabel: 'Kimi 会员', routeLabel: '改配置' });
-    expect(view.ariaLabel).toContain('当前绑定 Kimi 会员（改配置）');
+    expect(view.ariaLabel).toContain('当前使用 Kimi 会员（改配置）');
   });
 
   it('maps viaAdapter hit without sourceLabel', () => {

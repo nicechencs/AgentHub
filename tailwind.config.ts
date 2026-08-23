@@ -6,6 +6,15 @@ export default {
   theme: {
     // 覆盖默认 2xl/3xl… 阶，只保留 TYPE_SCALE 三档 + 同像素别名
     fontSize: buildTailwindFontSize(),
+    // 全量替换默认阶，只留语义名；sm/md/lg/xl 不再生成
+    borderRadius: {
+      none: '0px',
+      btn: 'var(--radius-sm)', // 6px：按钮、输入、菜单项、小控件
+      card: 'var(--radius)', // 8px：卡片、弹层、嵌套面板、代码井、列表行
+      composer: 'var(--radius-lg)', // 12px：Chat 输入壳、用户气泡
+      mark: 'var(--radius-mark)', // 22%：仅 AppLogo 产品标
+      full: '9999px',
+    },
     extend: {
       colors: {
         // 设计 token 真源：src/styles/tokens.ts → CSS 变量（docs/ui-design.md §2）
@@ -35,20 +44,6 @@ export default {
         pi: 'var(--agent-pi)',
         workbuddy: 'var(--agent-workbuddy)',
         cursor: 'var(--agent-cursor)',
-      },
-      maxWidth: {
-        content: '1200px',
-      },
-      borderRadius: {
-        // 语义真源：docs/ui-design.md §2 — 6 控件 / 8 卡片 / 12 composer
-        // 优先用 btn | card | composer；sm/md/lg 为兼容别名
-        sm: 'var(--radius-sm)',
-        DEFAULT: 'var(--radius)',
-        md: 'var(--radius)',
-        lg: 'var(--radius-lg)',
-        btn: 'var(--radius-sm)', // 6px：按钮、输入、菜单项、小控件
-        card: 'var(--radius)', // 8px：卡片、弹层、列表行、分段轨
-        composer: 'var(--radius-lg)', // 12px：Chat 输入壳、大气泡等
       },
       boxShadow: {
         xs: 'var(--shadow-xs)',

@@ -19,6 +19,7 @@ use crate::models::{
     TicketBridgeRuntime, TicketCredentialClass, TicketPlanRequest, TicketSurface,
     TicketSurfaceGroup, TicketSurfaceMember, TicketWallet, PROJECTION_NOT_A_TICKET,
 };
+use crate::services::adapter_projection::classify_account_live;
 use crate::services::AdapterRouteService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 
@@ -55,6 +56,18 @@ impl TicketReadService {
 
         let mut tickets = Vec::with_capacity(accounts.len() + providers.len());
         for account in &accounts {
+            if classify_account_live(
+                account.agent_id,
+                account.kind,
+                &account.credentials,
+                &profiles,
+                &providers,
+                false,
+            )
+            .is_projection()
+            {
+                continue;
+            }
             tickets.push(self.ticket_from_account(account)?);
         }
         for provider in &providers {
@@ -103,6 +116,11 @@ impl TicketReadService {
                 "{PROJECTION_NOT_A_TICKET}: {ticket_id}"
             )));
         }
+        if source_kind == AdapterSourceKind::Account && self.is_projection_account(&source_id)? {
+            return Err(AppError::InvalidArg(format!(
+                "{PROJECTION_NOT_A_TICKET}: {ticket_id}"
+            )));
+        }
         Ok((source_kind, source_id))
     }
 
@@ -126,6 +144,23 @@ impl TicketReadService {
             return Ok(true);
         }
         Ok(leftover::provider_is_bridge_leftover(&provider))
+    }
+
+    fn is_projection_account(&self, account_id: &str) -> Result<bool> {
+        let Some(account) = self.accounts.get_by_id(account_id)? else {
+            return Ok(false);
+        };
+        let profiles = self.profiles.list_filtered(&Default::default())?;
+        let providers = self.providers.list(Some(account.agent_id))?;
+        Ok(classify_account_live(
+            account.agent_id,
+            account.kind,
+            &account.credentials,
+            &profiles,
+            &providers,
+            false,
+        )
+        .is_projection())
     }
 
     fn ticket_from_account(&self, account: &Account) -> Result<Ticket> {

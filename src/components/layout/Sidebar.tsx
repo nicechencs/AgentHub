@@ -18,11 +18,8 @@ import { AppLogo } from '@/components/shared/AppLogo';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { AGENTS } from '@/config/agents';
 import {
-  loadBridgePresence,
-  shouldShowBridgesNav,
   useAgentStatusesOptional,
   useAppUpdateAvailable,
-  useBridgePresence,
 } from '@/app/runtime';
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
@@ -156,18 +153,9 @@ export function Sidebar() {
   const { t } = useI18n();
   const { statuses: agents } = useAgentStatusesOptional();
   const appUpdate = useAppUpdateAvailable();
-  const bridgePresence = useBridgePresence();
   const settingsNotice = appUpdate
     ? { label: t('nav.updateAvailable', { version: appUpdate.version }) }
     : null;
-
-  React.useEffect(() => {
-    void loadBridgePresence();
-  }, []);
-
-  const manageItems = NAV_MANAGE.filter((item) => (
-    item.to !== BRIDGES_PATH || shouldShowBridgesNav(bridgePresence)
-  ));
 
   const hiddenIds = React.useMemo(
     () => new Set(agents.filter((a) => a.hidden).map((a) => a.agentId)),
@@ -191,8 +179,9 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex h-full shrink-0 flex-col border-r border-border bg-panel transition-[width] duration-200 ease-in-out',
+        pageRhythm.shellNav,
         collapsed ? 'w-14' : 'w-56',
+        'transition-[width] duration-200 ease-in-out',
       )}
     >
       {/* 品牌 + 折叠按钮 */}
@@ -211,7 +200,7 @@ export function Sidebar() {
               aria-label={t('nav.expandSidebar')}
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-btn transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
-                <AppLogo size={20} className="h-5 w-5 rounded-[22%]" />
+                <AppLogo size={20} className="h-5 w-5" />
               </span>
               <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
                 <PanelLeftOpen className="h-4 w-4" strokeWidth={1.8} />
@@ -222,7 +211,7 @@ export function Sidebar() {
           <>
             <div className="flex min-w-0 items-center gap-2">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn">
-                <AppLogo size={20} className="h-5 w-5 rounded-[22%]" />
+                <AppLogo size={20} className="h-5 w-5" />
               </span>
               <span className="truncate text-sm font-semibold tracking-tight">AgentHub</span>
             </div>
@@ -253,7 +242,7 @@ export function Sidebar() {
           ))}
         </NavGroup>
         <NavGroup label={t('nav.manage')} collapsed={collapsed} className="mt-auto pb-2">
-          {manageItems.map((item) => (
+          {NAV_MANAGE.map((item) => (
             <SidebarNavLink
               key={item.to}
               item={item}

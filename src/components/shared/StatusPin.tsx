@@ -10,6 +10,7 @@ const TONE = {
   success: 'bg-success',
   warning: 'bg-warning',
   danger: 'bg-danger',
+  info: 'bg-info',
   muted: 'bg-muted',
 } as const;
 

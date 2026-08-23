@@ -106,7 +106,7 @@ describe('bridgeMemberRows', () => {
     expect(lead).toMatchObject({
       isolated: false,
       health: 'renewable',
-      reason: '可接单',
+      reason: '可用',
       lead: true,
     });
     expect(memberPinTone(failed!)).toBe('danger');

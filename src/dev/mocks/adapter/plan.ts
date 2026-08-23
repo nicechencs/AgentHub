@@ -91,14 +91,14 @@ export function buildPlan(
               'codex',
               'provider',
               analysis.ruleId === 'anthropic-api-to-codex-v1'
-                ? 'AgentHub Anthropic 本地桥接'
+                ? 'AgentHub Anthropic 本机路由'
                 : analysis.ruleId === 'openai-api-to-codex-v1'
-                  ? 'AgentHub OpenAI 本地桥接'
+                  ? 'AgentHub OpenAI 本机路由'
                   : analysis.ruleId === GROK_CODEX_RULE_ID
                     ? 'AgentHub Grok 本机路由'
                     : analysis.ruleId === CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID
                       ? 'AgentHub Claude 本机路由'
-                      : 'AgentHub Kimi 本地桥接',
+                      : 'AgentHub Kimi 本机路由',
             ),
             change('codex', 'baseUrl', 'http://127.0.0.1:<本机端口>/v1'),
           ]
