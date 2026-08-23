@@ -14,6 +14,13 @@
 
 use super::{AdapterSourceProduct, AdapterTargetProtocol, AgentId};
 
+/// OpenRouter backup Chat Completions model. Do not invent other OpenRouter ids.
+pub const OPENROUTER_BACKUP_MODEL: &str = "stealth/ox-alpha";
+
+pub fn is_openrouter_backup_model(model: &str) -> bool {
+    model.trim().eq_ignore_ascii_case(OPENROUTER_BACKUP_MODEL)
+}
+
 /// Official ChatGPT / Codex Responses 400 leftover / CN model ids.
 /// Kept next to the listing table so `models` does not import `bridge`.
 fn is_leftover_bridge_model(model: &str) -> bool {
@@ -399,6 +406,14 @@ pub fn list_local_bridge_models(
     listed
 }
 
+/// Append the OpenRouter backup model when a custom OpenAI-compat backup exists.
+pub fn with_openrouter_backup_model(mut listed: Vec<String>, include: bool) -> Vec<String> {
+    if include {
+        push_listed_model(&mut listed, OPENROUTER_BACKUP_MODEL, false);
+    }
+    listed
+}
+
 fn nonempty_model(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|model| !model.is_empty())
 }
@@ -418,7 +433,7 @@ pub fn map_edge_model(
     if custom_openai_compat
         && source == AdapterSourceProduct::OpenaiApi
         && matches!(result, AdapterModelMapResult::Missing)
-        && !source_model.trim().is_empty()
+        && is_openrouter_backup_model(source_model)
     {
         return AdapterModelMapResult::Passthrough;
     }
