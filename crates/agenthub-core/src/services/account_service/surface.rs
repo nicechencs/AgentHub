@@ -218,12 +218,17 @@ pub(super) fn accounts_same_oauth_identity(
     if kind != AccountKind::Oauth || existing.kind != AccountKind::Oauth {
         return false;
     }
-    let incoming = collect_oauth_identity_marks(incoming_credentials);
-    let existing_marks = collect_oauth_identity_marks(&existing.credentials);
-    if incoming.is_empty() || existing_marks.is_empty() {
+    oauth_credentials_same_identity(incoming_credentials, &existing.credentials)
+}
+
+/// Emails vs emails, subject-like ids vs subject-like ids. Empty-vs-empty is fail-closed.
+pub(super) fn oauth_credentials_same_identity(left: &Value, right: &Value) -> bool {
+    let left = collect_oauth_identity_marks(left);
+    let right = collect_oauth_identity_marks(right);
+    if left.is_empty() || right.is_empty() {
         return false;
     }
-    incoming.intersects(&existing_marks)
+    left.intersects(&right)
 }
 
 const OAUTH_EMAIL_KEYS: &[&str] = &["email", "email_address", "emailAddress"];

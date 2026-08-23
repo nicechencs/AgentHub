@@ -219,6 +219,49 @@ fn same_rt_without_identity_fields_is_same_lineage() {
 }
 
 #[test]
+fn key_only_different_identities_are_unknown_lineage() {
+    let account = row(
+        "2026-08-20 12:00:00.000000",
+        json!({
+            "format": "auth_json",
+            "body": {"email": "a@example.com", "user_id": "uid-a", "key": "at-a"}
+        }),
+    );
+    let file = json!({
+        "format": "auth_json",
+        "body": {"email": "b@example.com", "user_id": "uid-b", "key": "at-b"}
+    });
+    assert_eq!(
+        decide(&account, &file, ts("2026-08-01 00:00:00.000000")),
+        OauthFileSyncAction::Skip
+    );
+}
+
+#[test]
+fn equal_mtime_same_rt_different_access_is_noop() {
+    let stamp = "2026-08-20 12:00:00.000000";
+    let account = row(
+        stamp,
+        json!({
+            "email": "a@example.com",
+            "user_id": "uid-1",
+            "refresh_token": "rt-shared",
+            "access_token": "at-row"
+        }),
+    );
+    let file = json!({
+        "email": "a@example.com",
+        "user_id": "uid-1",
+        "refresh_token": "rt-shared",
+        "key": "at-file"
+    });
+    assert_eq!(
+        decide(&account, &file, ts(stamp)),
+        OauthFileSyncAction::Noop
+    );
+}
+
+#[test]
 fn grok_key_without_rt_is_not_treated_as_equal() {
     let account = row(
         "2026-01-02 00:00:00.000000",

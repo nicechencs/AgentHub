@@ -11,9 +11,8 @@ use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
-    AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
-    TicketSurface,
+    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult, AgentId,
+    BackupKind, Capability, LiveAccount, PersistedTicketSurface, TicketSurface,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
@@ -56,6 +55,8 @@ impl AccountService {
             )));
         }
 
+        // 「同步当前登录」is a user override: always copy the live file onto the
+        // matching row. Do not run rt/mtime bidirectional overlay here.
         self.upsert_live_account(adapter.as_ref(), agent, live, name, true)
     }
 
@@ -155,10 +156,7 @@ impl AccountService {
             return account;
         }
         let product = AdapterRouteService::classify_account_source_product(&account);
-        attach_persisted_surface(
-            &mut account.extra,
-            TicketSurface::from_product(product),
-        );
+        attach_persisted_surface(&mut account.extra, TicketSurface::from_product(product));
         account
     }
 

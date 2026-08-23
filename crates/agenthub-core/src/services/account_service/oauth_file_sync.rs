@@ -10,12 +10,16 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::{json, Value};
 
 use crate::adapters::AgentAdapter;
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{Account, AccountKind, AgentId, LiveAccount};
 
+use super::oauth_owner::oauth_grant_is_hub_owned;
 use super::surface::*;
 use super::AccountService;
+
+const OAUTH_FILE_SYNC_EXTRA: &str = "oauthFileSync";
+const OAUTH_FILE_SYNC_NEEDS_ATTENTION: &str = "needs_attention";
 
 const REFRESH_KEYS: &[&str] = &["refresh_token", "refreshToken", "refresh"];
 const ACCESS_KEYS: &[&str] = &["access_token", "accessToken", "access"];
@@ -29,7 +33,7 @@ pub(super) enum OauthFileSyncAction {
     WriteFile,
     /// File is newer: copy file secrets onto the row.
     WriteRow,
-    /// Equal mtime with different refresh tokens (or keys): do not auto-overwrite.
+    /// Equal mtime with different or unknown refresh tokens: do not auto-overwrite.
     NeedsAttention,
     /// Different identity / never the same grant: never write across.
     Skip,
@@ -64,22 +68,26 @@ pub(super) fn decide_oauth_file_sync(input: OauthFileSyncInput<'_>) -> OauthFile
         return OauthFileSyncAction::Skip;
     }
 
+    let file_slice = matching_oauth_slice(file_credentials, row).unwrap_or(file_credentials);
     let row_rt = find_named_string(&row.credentials, REFRESH_KEYS);
-    let file_rt = find_named_string(file_credentials, REFRESH_KEYS);
-    let same_rt = match (row_rt.as_deref(), file_rt.as_deref()) {
-        (Some(a), Some(b)) => a == b,
-        (None, None) => true,
-        _ => false,
-    };
-    let same_identity = accounts_same_oauth_identity(row.kind, file_credentials, row);
-    // Same person, or the same refresh token copied into the row from the file.
+    let file_rt = find_named_string(file_slice, REFRESH_KEYS);
+    // Missing rts are unknown lineage, not equal. Same person still matches via identity.
+    let same_rt = matches!((row_rt.as_deref(), file_rt.as_deref()), (Some(a), Some(b)) if a == b);
+    let rts_differ =
+        matches!((row_rt.as_deref(), file_rt.as_deref()), (Some(a), Some(b)) if a != b);
+    let same_identity = accounts_same_oauth_identity(row.kind, file_slice, row)
+        || accounts_same_oauth_identity(row.kind, file_credentials, row);
     if !same_identity && !same_rt {
         return OauthFileSyncAction::Skip;
     }
 
     let row_access = find_access_token(&row.credentials);
-    let file_access = find_access_token(file_credentials);
-    let secrets_equal = same_rt && row_access.as_deref() == file_access.as_deref();
+    let file_access = find_access_token(file_slice);
+    let secrets_equal = (same_rt && row_access.as_deref() == file_access.as_deref())
+        || (row_rt.is_none()
+            && file_rt.is_none()
+            && row_access.is_some()
+            && row_access.as_deref() == file_access.as_deref());
     if secrets_equal {
         return OauthFileSyncAction::Noop;
     }
@@ -90,6 +98,8 @@ pub(super) fn decide_oauth_file_sync(input: OauthFileSyncInput<'_>) -> OauthFile
     match row_ts.cmp(&file_mtime) {
         Ordering::Greater => OauthFileSyncAction::WriteFile,
         Ordering::Less => OauthFileSyncAction::WriteRow,
+        Ordering::Equal if same_rt => OauthFileSyncAction::Noop,
+        Ordering::Equal if rts_differ || !same_rt => OauthFileSyncAction::NeedsAttention,
         Ordering::Equal => OauthFileSyncAction::NeedsAttention,
     }
 }
@@ -188,6 +198,56 @@ fn find_named_string(value: &Value, keys: &[&str]) -> Option<String> {
     }
 }
 
+fn matching_oauth_slice<'a>(file_credentials: &'a Value, row: &Account) -> Option<&'a Value> {
+    fn walk<'a>(value: &'a Value, row: &Account, found: &mut Option<&'a Value>) {
+        if found.is_some() {
+            return;
+        }
+        match value {
+            Value::Object(map) => {
+                if looks_like_oauth_profile(map)
+                    && accounts_same_oauth_identity(AccountKind::Oauth, value, row)
+                {
+                    *found = Some(value);
+                    return;
+                }
+                for nested in map.values() {
+                    walk(nested, row, found);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    walk(item, row, found);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = None;
+    walk(file_credentials, row, &mut found);
+    found
+}
+
+fn looks_like_oauth_profile(map: &serde_json::Map<String, Value>) -> bool {
+    map.keys().any(|key| {
+        matches!(
+            key.to_ascii_lowercase().as_str(),
+            "refresh_token"
+                | "refreshtoken"
+                | "refresh"
+                | "access_token"
+                | "accesstoken"
+                | "access"
+        )
+    }) || (map.contains_key("key")
+        && map.keys().any(|key| {
+            matches!(
+                key.to_ascii_lowercase().as_str(),
+                "email" | "user_id" | "userid" | "sub" | "refresh_token" | "refreshtoken"
+            )
+        }))
+}
+
 fn find_access_token(credentials: &Value) -> Option<String> {
     if let Some(access) = find_named_string(credentials, ACCESS_KEYS) {
         return Some(access);
@@ -236,49 +296,59 @@ fn find_oauth_profile_key(value: &Value) -> Option<String> {
 fn patch_oauth_secrets_into_value(target: &mut Value, source: &Value) {
     let access = find_access_token(source);
     let refresh = find_named_string(source, REFRESH_KEYS);
-    patch_secrets(target, access.as_deref(), refresh.as_deref());
+    patch_matching_profiles(target, source, access.as_deref(), refresh.as_deref());
 }
 
-fn patch_secrets(value: &mut Value, access: Option<&str>, refresh: Option<&str>) {
-    let Value::Object(map) = value else {
-        if let Value::Array(items) = value {
-            for item in items {
-                patch_secrets(item, access, refresh);
+fn patch_matching_profiles(
+    value: &mut Value,
+    identity: &Value,
+    access: Option<&str>,
+    refresh: Option<&str>,
+) {
+    match value {
+        Value::Object(map) => {
+            if looks_like_oauth_profile(map) {
+                let snapshot = Value::Object(map.clone());
+                if oauth_credentials_same_identity(&snapshot, identity) {
+                    apply_secret_fields(map, access, refresh);
+                }
+                return;
+            }
+            for nested in map.values_mut() {
+                patch_matching_profiles(nested, identity, access, refresh);
             }
         }
-        return;
-    };
-    let looks_oauth = map.keys().any(|k| {
-        let lower = k.to_ascii_lowercase();
-        matches!(
-            lower.as_str(),
-            "refresh_token"
-                | "refreshtoken"
-                | "refresh"
-                | "email"
-                | "user_id"
-                | "userid"
-                | "access_token"
-                | "accesstoken"
-        )
-    });
+        Value::Array(items) => {
+            for item in items {
+                patch_matching_profiles(item, identity, access, refresh);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn apply_secret_fields(
+    map: &mut serde_json::Map<String, Value>,
+    access: Option<&str>,
+    refresh: Option<&str>,
+) {
+    let looks_oauth = looks_like_oauth_profile(map);
     for (key, nested) in map.iter_mut() {
-        if nested.is_string() {
-            let lower = key.to_ascii_lowercase();
-            if let Some(rt) = refresh {
-                if lower == "refresh_token" || lower == "refreshtoken" || lower == "refresh" {
-                    *nested = json!(rt);
-                }
+        if !nested.is_string() {
+            continue;
+        }
+        let lower = key.to_ascii_lowercase();
+        if let Some(rt) = refresh {
+            if lower == "refresh_token" || lower == "refreshtoken" || lower == "refresh" {
+                *nested = json!(rt);
             }
-            if let Some(at) = access {
-                if lower == "access_token" || lower == "accesstoken" || lower == "access" {
-                    *nested = json!(at);
-                } else if looks_oauth && lower == "key" {
-                    *nested = json!(at);
-                }
+        }
+        if let Some(at) = access {
+            if lower == "access_token" || lower == "accesstoken" || lower == "access" {
+                *nested = json!(at);
+            } else if looks_oauth && lower == "key" {
+                *nested = json!(at);
             }
-        } else if nested.is_object() || nested.is_array() {
-            patch_secrets(nested, access, refresh);
         }
     }
 }
@@ -325,8 +395,10 @@ impl AccountService {
         };
         log_oauth_file_sync(agent, &existing.id, action);
         match action {
-            OauthFileSyncAction::Skip => {
-                self.finish_live_row_update(adapter, agent, existing, live, match_count)
+            OauthFileSyncAction::Skip | OauthFileSyncAction::WriteFile => {
+                // List never writes the CLI file. Hub refresh write-back is
+                // `sync_refreshed_oauth_row_to_cli_file`. Skip does not copy live secrets.
+                self.keep_existing_oauth_row(adapter, agent, existing, match_count)
             }
             OauthFileSyncAction::Noop => {
                 let existing = self.clear_oauth_file_sync_attention(existing)?;
@@ -335,18 +407,13 @@ impl AccountService {
             OauthFileSyncAction::WriteRow => {
                 self.finish_live_row_update(adapter, agent, existing, live, match_count)
             }
-            OauthFileSyncAction::WriteFile => {
-                self.apply_oauth_row_to_cli_file(adapter, &existing, Some(&live))?;
-                let existing = self.clear_oauth_file_sync_attention(existing)?;
-                self.finish_oauth_sync_row(adapter, agent, existing, match_count)
-            }
             OauthFileSyncAction::NeedsAttention => {
                 tracing::warn!(
                     module = targets::ACCOUNT,
                     op = "oauth_file_sync",
                     agent = agent.as_str(),
                     account_id = %existing.id,
-                    "oauth row and CLI login file have equal mtime but different refresh tokens; leaving both unchanged"
+                    "oauth row and CLI login file conflict (equal mtime with different or unknown refresh tokens); leaving both unchanged"
                 );
                 self.mark_oauth_file_sync_needs_attention(&existing)
                     .map(Some)
@@ -357,7 +424,10 @@ impl AccountService {
     /// After a Hub-owned refresh this process performed: write the official
     /// file only when this row is the same grant and newer than the file.
     pub(super) fn sync_refreshed_oauth_row_to_cli_file(&self, row: &Account) -> Result<()> {
-        if row.kind != AccountKind::Oauth || !supports_oauth_file_sync(row.agent_id) {
+        if row.kind != AccountKind::Oauth
+            || !supports_oauth_file_sync(row.agent_id)
+            || !oauth_grant_is_hub_owned(row)
+        {
             return Ok(());
         }
         let process_lock = live_reconcile_lock(row.agent_id);
@@ -395,7 +465,7 @@ impl AccountService {
                     op = "oauth_file_sync",
                     agent = row.agent_id.as_str(),
                     account_id = %row.id,
-                    "oauth row and CLI login file have equal mtime but different refresh tokens; leaving both unchanged"
+                    "oauth row and CLI login file conflict (equal mtime with different or unknown refresh tokens); leaving both unchanged"
                 );
                 let _ = self.mark_oauth_file_sync_needs_attention(row)?;
             }
@@ -413,8 +483,26 @@ impl AccountService {
         row: &Account,
         observed: Option<&LiveAccount>,
     ) -> Result<()> {
+        if !oauth_grant_is_hub_owned(row) {
+            return Ok(());
+        }
         let live = live_for_cli_write(row, observed);
-        adapter.apply_account(&live)
+        adapter.apply_account(&live)?;
+        let _ = self.clear_oauth_file_sync_attention(row.clone());
+        Ok(())
+    }
+
+    fn keep_existing_oauth_row(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+        row: Account,
+        match_count: usize,
+    ) -> Result<Option<Account>> {
+        if match_count > 1 {
+            return self.collapse_oauth_sync_matches(adapter, agent, row);
+        }
+        Ok(Some(row))
     }
 
     fn finish_live_row_update(
@@ -466,27 +554,64 @@ impl AccountService {
     }
 
     fn mark_oauth_file_sync_needs_attention(&self, account: &Account) -> Result<Account> {
-        let mut row = account.clone();
-        if !row.extra.is_object() {
-            row.extra = json!({});
+        let mut extra = account.extra.clone();
+        if !extra.is_object() {
+            extra = json!({});
         }
-        if let Some(obj) = row.extra.as_object_mut() {
-            obj.insert("health".into(), json!("needs_attention"));
+        if extra.get(OAUTH_FILE_SYNC_EXTRA).and_then(|v| v.as_str())
+            == Some(OAUTH_FILE_SYNC_NEEDS_ATTENTION)
+        {
+            return Ok(account.clone());
         }
-        let expected = row.updated_at.clone();
-        self.persist_healed_fields(&row, &expected)
+        if let Some(obj) = extra.as_object_mut() {
+            obj.insert(
+                OAUTH_FILE_SYNC_EXTRA.into(),
+                json!(OAUTH_FILE_SYNC_NEEDS_ATTENTION),
+            );
+        }
+        self.persist_extra_keep_timestamp(account, extra)
     }
 
-    fn clear_oauth_file_sync_attention(&self, mut row: Account) -> Result<Account> {
-        let Some(obj) = row.extra.as_object_mut() else {
+    fn clear_oauth_file_sync_attention(&self, row: Account) -> Result<Account> {
+        let Some(obj) = row.extra.as_object() else {
             return Ok(row);
         };
-        if obj.get("health").and_then(|v| v.as_str()) != Some("needs_attention") {
+        if obj.get(OAUTH_FILE_SYNC_EXTRA).and_then(|v| v.as_str())
+            != Some(OAUTH_FILE_SYNC_NEEDS_ATTENTION)
+        {
             return Ok(row);
         }
-        obj.remove("health");
-        let expected = row.updated_at.clone();
-        self.persist_healed_fields(&row, &expected)
+        let mut extra = row.extra.clone();
+        if let Some(obj) = extra.as_object_mut() {
+            obj.remove(OAUTH_FILE_SYNC_EXTRA);
+        }
+        self.persist_extra_keep_timestamp(&row, extra)
+    }
+
+    /// Persist extra only. Must not bump `updated_at` or heal/quota clocks win the file.
+    fn persist_extra_keep_timestamp(&self, account: &Account, extra: Value) -> Result<Account> {
+        let extra_json = serde_json::to_string(&extra)?;
+        let changed = self.db.with_conn(|conn| {
+            conn.execute(
+                "UPDATE accounts SET extra = ?2 WHERE id = ?1 AND agent_id = ?3 AND updated_at = ?4",
+                rusqlite::params![
+                    &account.id,
+                    extra_json,
+                    account.agent_id.as_str(),
+                    &account.updated_at,
+                ],
+            )
+            .map_err(AppError::from)
+        })?;
+        if changed != 1 {
+            return self
+                .repo
+                .get_by_id(&account.id)?
+                .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)));
+        }
+        self.repo
+            .get_by_id(&account.id)?
+            .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))
     }
 }
 

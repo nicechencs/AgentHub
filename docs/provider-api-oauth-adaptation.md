@@ -249,9 +249,9 @@ Responses 已选为本轮上游 transport，并用 fixtures / host health 验证
 | 凭据 owner | 判定 | refresh 行为 |
 |---|---|---|
 | 官方 Grok CLI（`extra.source=auth.json` 导入/同步） | 主路径 | **文件跟随同步**：请求前 access JWT `exp` 临期、或上游 401 时，按账户 single-flight（复用 `live_reconcile_lock`）走一次 live reconcile 重读 `auth.json`；token 变了就替换上游 auth 并重试一次（仅限首个有效流事件前，遵守 §5.3 重试边界）；没变则维持 502，账户健康标 `NeedsLogin`，UI 引导「同步当前登录」。**不调 `accounts.x.ai/oauth/token`** |
-| Hub 自己（Hub PKCE 登录产生的 grant，非 live 导入） | `extra.source` 非 `auth.json` | 可做标准按账户 single-flight refresh：轮换只影响 Hub 自己的 token 对。刷新结果写账户池；**仅当连接页这一行与官方登录文件是同一身份、且本行 `updated_at` 新于文件 mtime 时写回文件**（不是令牌 `expires_at`）。不同身份永不互写 |
+| Hub 自己（Hub PKCE 登录产生的 grant，非 live 导入） | `extra.source` 为 `oauth_pkce` / `oauth_refresh` | 可做标准按账户 single-flight refresh：轮换只影响 Hub 自己的 token 对。刷新结果写账户池；**仅本进程这次 refresh 成功后**，且这一行与官方登录文件同一身份、`updated_at` 新于文件 mtime 时写回文件。list 不写文件 |
 
-**同一身份行 ↔ 官方登录文件（Grok / Codex `auth.json`，Claude `.credentials.json`）**：内存比较 refresh token 是否相同（不把 `rt` 打进日志 / IPC），再用本行 `updated_at` 与文件 mtime（或最近一次观察到的写入时间）决定谁覆盖谁。同一谱系（从文件拷来 / 同一身份行）谁新谁赢；`rt` 不同但时间更新的一侧是活着的 grant，写到另一侧。时间相同且 `rt` 不同：**不自动覆盖**，账户健康标 `needs_attention`。身份对不上则永不互写。CLI 自己续期后文件更新，reconcile 仍覆盖这一行。API Key 没有 `rt`，只在 key 字符串不同且时间能分出先后时才写回，通常 no-op。这放宽了「Hub 永不写 CLI 登录文件」，**仅限这一行、且是本进程 refresh 之后行比文件新**。国产 OAuth 仍不开边。
+**同一身份行 ↔ 官方登录文件（Grok / Codex `auth.json`，Claude `.credentials.json`）**：内存比较 refresh token 是否相同（双方都有 `rt` 且相等才算同一谱系；缺 `rt` 不算相同）。再用本行 `updated_at` 与文件 mtime（不是令牌 `expires_at`）决定 list 时谁覆盖**行**：文件更新则覆盖这一行；时间相同且 `rt` 不同则停手（`extra.oauthFileSync=needs_attention`，不改 `updated_at`）。**list / 打开连接页不写 CLI 登录文件**（heal / quota 的 `now_ts()` 不得赢走文件）。写回文件只发生在 **Hub 自己拥有的 grant、且本进程 refresh 成功之后**，并且这一行新于文件、身份对得上；Grok 嵌套 `auth.json` 只补同一 `user_id`/email 的 profile，不改其它槽。身份对不上则永不互写。显式「同步当前登录」（`import_live`）仍**总是以文件为准**覆盖这一行，不走 mtime 双向。API Key 没有 `rt`，通常 no-op。国产 OAuth 仍不开边。
 
 不变式：refresh token 不进 bridge、下游、IPC 或日志；listener 替换上游 auth 时 local bearer 不变（既有测试锚点 `ensure_listener_replaces_upstream_auth_while_keeping_local_bearer`）；文件跟随同步失败不得把其余账户或 token 暴露给调用方；Codex 订阅边继续沿用同一 owner 原则（`auth_json` 导入的 grant 归 Codex CLI 续期，Hub 跟随文件，同一身份则同样按 rt + mtime 对齐）。
 

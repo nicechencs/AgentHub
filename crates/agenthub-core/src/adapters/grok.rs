@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
@@ -227,54 +228,213 @@ impl AgentAdapter for GrokAdapter {
     }
 }
 
-/// Flatten a Hub PKCE bundle into official `auth.json` object shape, patching
-/// an existing nested profile when that file is already the same grant.
+const GROK_DEFAULT_AUTH_SLOT: &str = "https://auth.x.ai::client";
+
+/// Merge this grant into official nested `auth.json`. Patch only the profile
+/// whose email/`user_id` intersects; never copy tokens onto a sibling slot.
 fn grok_auth_json_body_from_credentials(credentials: &Value, auth_path: &Path) -> Result<Value> {
-    if let Some(body) = credentials.get("body").filter(|body| body.is_object()) {
-        return Ok(body.clone());
-    }
-    let access = first_oauth_string(
-        credentials,
-        &["access_token", "accessToken", "access", "key"],
-    );
-    let refresh = first_oauth_string(credentials, &["refresh_token", "refreshToken", "refresh"]);
-    if access.is_none() && refresh.is_none() {
-        return Err(AppError::InvalidArg(
-            "Grok OAuth apply requires access_token or refresh_token".into(),
-        ));
-    }
-    let existing = if auth_path.is_file() {
+    let incoming = extract_incoming_grok_profile(credentials)?;
+    let mut existing = if auth_path.is_file() {
         std::fs::read_to_string(auth_path)
             .ok()
             .and_then(|text| serde_json::from_str::<Value>(&text).ok())
             .filter(|body| body.is_object())
+            .unwrap_or_else(|| json!({}))
     } else {
-        None
+        json!({})
     };
-    if let Some(mut body) = existing {
-        patch_grok_oauth_secrets(&mut body, access.as_deref(), refresh.as_deref());
-        if first_oauth_string(&body, &["refresh_token", "refreshToken", "refresh"]).is_some()
-            || first_oauth_string(&body, &["access_token", "accessToken", "access", "key"])
-                .is_some()
-        {
-            return Ok(body);
+    merge_incoming_grok_profile(&mut existing, incoming, credentials);
+    Ok(existing)
+}
+
+fn extract_incoming_grok_profile(credentials: &Value) -> Result<Value> {
+    let tip = grok_top_level_grant(credentials);
+    if let Some(body) = credentials.get("body").and_then(|body| body.as_object()) {
+        if is_grok_slot_map_object(body) {
+            if let Some(slot) = body
+                .values()
+                .find(|slot| grok_identity_intersects(slot, &tip))
+            {
+                return Ok(normalize_grok_profile(slot));
+            }
+            if body.len() == 1 {
+                if let Some(slot) = body.values().next() {
+                    return Ok(normalize_grok_profile(slot));
+                }
+            }
+        } else {
+            return Ok(normalize_grok_profile(&Value::Object(body.clone())));
         }
     }
-    let mut map = Map::new();
-    if let Some(access) = access {
-        map.insert("access_token".into(), json!(access));
+    let profile = normalize_grok_profile(&tip);
+    if profile.get("key").and_then(|v| v.as_str()).is_none()
+        && profile
+            .get("refresh_token")
+            .and_then(|v| v.as_str())
+            .is_none()
+    {
+        return Err(AppError::InvalidArg(
+            "Grok OAuth apply requires access_token or refresh_token".into(),
+        ));
     }
-    if let Some(refresh) = refresh {
+    Ok(profile)
+}
+
+fn grok_top_level_grant(credentials: &Value) -> Value {
+    let Some(obj) = credentials.as_object() else {
+        return credentials.clone();
+    };
+    let mut map = Map::new();
+    for key in [
+        "email",
+        "user_id",
+        "userId",
+        "sub",
+        "access_token",
+        "refresh_token",
+        "key",
+        "type",
+        "provider",
+    ] {
+        if let Some(value) = obj.get(key) {
+            map.insert(key.into(), value.clone());
+        }
+    }
+    if map.is_empty() {
+        return credentials.clone();
+    }
+    Value::Object(map)
+}
+
+fn normalize_grok_profile(value: &Value) -> Value {
+    let mut map = Map::new();
+    if let Some(access) =
+        first_oauth_string(value, &["key", "access_token", "accessToken", "access"])
+    {
+        map.insert("key".into(), json!(access));
+    }
+    if let Some(refresh) = first_oauth_string(value, &["refresh_token", "refreshToken", "refresh"])
+    {
         map.insert("refresh_token".into(), json!(refresh));
     }
-    for key in ["email", "user_id", "sub"] {
-        if let Some(value) = credentials.get(key).cloned() {
-            if !value.is_null() {
-                map.insert(key.into(), value);
+    if let Some(email) = first_oauth_string(value, &["email"]) {
+        map.insert("email".into(), json!(email));
+    }
+    if let Some(user_id) = first_oauth_string(value, &["user_id", "userId", "sub"]) {
+        map.insert("user_id".into(), json!(user_id));
+    }
+    Value::Object(map)
+}
+
+fn is_grok_slot_map(value: &Value) -> bool {
+    value.as_object().is_some_and(is_grok_slot_map_object)
+}
+
+fn is_grok_slot_map_object(obj: &Map<String, Value>) -> bool {
+    !obj.is_empty()
+        && obj.values().all(|value| value.is_object())
+        && !obj.contains_key("refresh_token")
+        && !obj.contains_key("access_token")
+        && obj
+            .keys()
+            .all(|key| key.contains("auth.x.ai") || key.contains("://") || key == "xai")
+}
+
+fn merge_incoming_grok_profile(existing: &mut Value, incoming: Value, identity: &Value) {
+    if existing.as_object().is_none() {
+        *existing = json!({});
+    }
+    if existing.as_object().is_some_and(|obj| obj.is_empty()) {
+        *existing = json!({ GROK_DEFAULT_AUTH_SLOT: incoming });
+        return;
+    }
+    if is_grok_slot_map(existing) {
+        let obj = existing.as_object_mut().expect("slot map");
+        let matched = obj.iter().find_map(|(key, slot)| {
+            grok_identity_intersects(slot, identity)
+                .then(|| key.clone())
+                .or_else(|| grok_identity_intersects(slot, &incoming).then(|| key.clone()))
+        });
+        if let Some(key) = matched {
+            if let Some(slot) = obj.get_mut(&key) {
+                patch_one_grok_profile(slot, &incoming);
+            }
+            return;
+        }
+        obj.entry(GROK_DEFAULT_AUTH_SLOT.to_string())
+            .or_insert(incoming);
+        return;
+    }
+    let (emails, subjects) = grok_identity_marks(existing);
+    if grok_identity_intersects(existing, identity) || (emails.is_empty() && subjects.is_empty()) {
+        patch_one_grok_profile(existing, &incoming);
+        return;
+    }
+    *existing = json!({ GROK_DEFAULT_AUTH_SLOT: incoming });
+}
+
+fn patch_one_grok_profile(slot: &mut Value, incoming: &Value) {
+    let Some(map) = slot.as_object_mut() else {
+        *slot = incoming.clone();
+        return;
+    };
+    if let Some(key) = incoming.get("key").cloned() {
+        map.insert("key".into(), key);
+    }
+    if let Some(rt) = incoming.get("refresh_token").cloned() {
+        map.insert("refresh_token".into(), rt);
+    }
+}
+
+fn grok_identity_marks(value: &Value) -> (HashSet<String>, HashSet<String>) {
+    let mut emails = HashSet::new();
+    let mut subjects = HashSet::new();
+    collect_grok_identity(value, &mut emails, &mut subjects);
+    (emails, subjects)
+}
+
+fn collect_grok_identity(
+    value: &Value,
+    emails: &mut HashSet<String>,
+    subjects: &mut HashSet<String>,
+) {
+    match value {
+        Value::Object(map) => {
+            for (key, nested) in map {
+                if let Some(raw) = nested.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    let lower = key.to_ascii_lowercase();
+                    if matches!(lower.as_str(), "email" | "email_address" | "emailaddress") {
+                        emails.insert(raw.to_ascii_lowercase());
+                    } else if matches!(
+                        lower.as_str(),
+                        "user_id" | "userid" | "sub" | "subject" | "account_id" | "accountid"
+                    ) {
+                        subjects.insert(raw.to_owned());
+                    }
+                }
+            }
+            for nested in map.values() {
+                if nested.is_object() || nested.is_array() {
+                    collect_grok_identity(nested, emails, subjects);
+                }
             }
         }
+        Value::Array(items) => {
+            for item in items {
+                collect_grok_identity(item, emails, subjects);
+            }
+        }
+        _ => {}
     }
-    Ok(Value::Object(map))
+}
+
+fn grok_identity_intersects(left: &Value, right: &Value) -> bool {
+    let (le, ls) = grok_identity_marks(left);
+    let (re, rs) = grok_identity_marks(right);
+    if (le.is_empty() && ls.is_empty()) || (re.is_empty() && rs.is_empty()) {
+        return false;
+    }
+    !le.is_disjoint(&re) || !ls.is_disjoint(&rs)
 }
 
 fn first_oauth_string(value: &Value, keys: &[&str]) -> Option<String> {
@@ -301,50 +461,6 @@ fn first_oauth_string(value: &Value, keys: &[&str]) -> Option<String> {
         }
         Value::Array(items) => items.iter().find_map(|item| first_oauth_string(item, keys)),
         _ => None,
-    }
-}
-
-fn patch_grok_oauth_secrets(value: &mut Value, access: Option<&str>, refresh: Option<&str>) {
-    let Value::Object(map) = value else {
-        if let Value::Array(items) = value {
-            for item in items {
-                patch_grok_oauth_secrets(item, access, refresh);
-            }
-        }
-        return;
-    };
-    let looks_oauth = map.keys().any(|key| {
-        let lower = key.to_ascii_lowercase();
-        matches!(
-            lower.as_str(),
-            "refresh_token"
-                | "refreshtoken"
-                | "refresh"
-                | "email"
-                | "user_id"
-                | "userid"
-                | "access_token"
-                | "accesstoken"
-        )
-    });
-    for (key, nested) in map.iter_mut() {
-        if nested.is_string() {
-            let lower = key.to_ascii_lowercase();
-            if let Some(rt) = refresh {
-                if lower == "refresh_token" || lower == "refreshtoken" || lower == "refresh" {
-                    *nested = json!(rt);
-                }
-            }
-            if let Some(at) = access {
-                if lower == "access_token" || lower == "accesstoken" || lower == "access" {
-                    *nested = json!(at);
-                } else if looks_oauth && lower == "key" {
-                    *nested = json!(at);
-                }
-            }
-        } else if nested.is_object() || nested.is_array() {
-            patch_grok_oauth_secrets(nested, access, refresh);
-        }
     }
 }
 

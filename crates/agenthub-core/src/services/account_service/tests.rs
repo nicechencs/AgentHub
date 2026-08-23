@@ -2960,7 +2960,7 @@ fn grok_hub_pkce_refresh_updates_pool_without_writing_auth_json() {
     assert_eq!(
         adapter.write_attempts.load(Ordering::SeqCst),
         0,
-        "hub-owned refresh must not write grok auth.json"
+        "hub-owned refresh with no live CLI file must not write grok auth.json"
     );
 }
 
@@ -3281,7 +3281,7 @@ fn grok_oauth_live(access: &str, refresh: &str) -> LiveAccount {
 }
 
 #[test]
-fn oauth_row_newer_than_cli_file_writes_file() {
+fn oauth_list_does_not_write_cli_file_when_row_is_newer() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);
     adapter.set_live(grok_oauth_live("at-file", "rt-file"));
     let imported = svc.import_live(AgentId::Grok, None).unwrap();
@@ -3294,15 +3294,18 @@ fn oauth_row_newer_than_cli_file_writes_file() {
     svc.repo()
         .update_healed_fields(&newer, &imported.updated_at, "2099-01-01 00:00:00.000000")
         .unwrap();
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
 
     let listed = svc.list(Some(AgentId::Grok)).unwrap();
     assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].credentials["body"]["refresh_token"], "rt-row");
     let live = adapter.read_account().unwrap();
-    assert_eq!(live.credentials["body"]["refresh_token"], "rt-row");
-    assert_eq!(live.credentials["body"]["key"], "at-row");
-    assert!(
-        adapter.write_attempts.load(Ordering::SeqCst) >= 1,
-        "newer row must write the CLI login file"
+    assert_eq!(live.credentials["body"]["refresh_token"], "rt-file");
+    assert_eq!(live.credentials["body"]["key"], "at-file");
+    assert_eq!(
+        adapter.write_attempts.load(Ordering::SeqCst),
+        writes_before,
+        "list reconcile must not write the CLI login file"
     );
 }
 
@@ -3329,23 +3332,24 @@ fn oauth_cli_file_newer_than_row_updates_row_file_unchanged() {
 }
 
 #[test]
-fn oauth_same_rt_access_rotated_newer_side_wins() {
+fn oauth_same_rt_access_rotated_newer_file_updates_row() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);
-    adapter.set_live(grok_oauth_live("at-file", "rt-shared"));
+    adapter.set_live(grok_oauth_live("at-old", "rt-shared"));
     let imported = svc.import_live(AgentId::Grok, None).unwrap();
-    let path = adapter.live_backup_paths()[0].clone();
-    stamp_file_mtime(&path, "2020-01-01 00:00:00.000000");
-
-    let mut newer = imported.clone();
-    newer.credentials["body"]["key"] = json!("at-row");
     svc.repo()
-        .update_healed_fields(&newer, &imported.updated_at, "2099-01-01 00:00:00.000000")
+        .update_healed_fields(
+            &imported,
+            &imported.updated_at,
+            "2020-01-01 00:00:00.000000",
+        )
         .unwrap();
+    adapter.set_live(grok_oauth_live("at-file", "rt-shared"));
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
 
-    let _ = svc.list(Some(AgentId::Grok)).unwrap();
-    let live = adapter.read_account().unwrap();
-    assert_eq!(live.credentials["body"]["refresh_token"], "rt-shared");
-    assert_eq!(live.credentials["body"]["key"], "at-row");
+    let listed = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed[0].credentials["body"]["key"], "at-file");
+    assert_eq!(listed[0].credentials["body"]["refresh_token"], "rt-shared");
+    assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
 }
 
 #[test]
@@ -3427,12 +3431,36 @@ fn oauth_equal_mtime_different_rt_does_not_overwrite() {
         "rt-row-secret"
     );
     assert_eq!(
-        listed[0].extra.get("health").and_then(|v| v.as_str()),
+        listed[0]
+            .extra
+            .get("oauthFileSync")
+            .and_then(|v| v.as_str()),
         Some("needs_attention")
     );
+    assert_eq!(listed[0].updated_at, stamp);
     assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
     let live = adapter.read_account().unwrap();
     assert_eq!(live.credentials["body"]["refresh_token"], "rt-file-secret");
+
+    let listed_again = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed_again[0].updated_at, stamp);
+    assert_eq!(
+        listed_again[0].credentials["body"]["refresh_token"],
+        "rt-row-secret"
+    );
+    assert_eq!(
+        listed_again[0]
+            .extra
+            .get("oauthFileSync")
+            .and_then(|v| v.as_str()),
+        Some("needs_attention")
+    );
+    assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
+    let live_again = adapter.read_account().unwrap();
+    assert_eq!(
+        live_again.credentials["body"]["refresh_token"],
+        "rt-file-secret"
+    );
 
     let dumped = serde_json::to_string(&listed[0].redacted()).unwrap();
     assert!(
