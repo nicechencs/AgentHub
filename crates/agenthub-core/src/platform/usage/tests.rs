@@ -831,3 +831,84 @@ fn usage_overview_and_query_exclude_hidden_agents() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].agent_id, AgentId::Claude);
 }
+
+#[test]
+fn usage_trend_days1_rolling_includes_20h_unless_since_clips() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let older = recent_ts(20);
+    let newer = recent_ts(1);
+    repo.insert_batch(&[
+        overview_row(AgentId::Claude, "opus", 20, 2, 0, 0.2, &older, "old"),
+        overview_row(AgentId::Claude, "opus", 100, 10, 0, 1.0, &newer, "new"),
+    ])
+    .unwrap();
+
+    fn claude_tokens(points: &[crate::models::UsageTrendPoint]) -> i64 {
+        points
+            .iter()
+            .map(|p| p.0.get("claude").and_then(|v| v.as_i64()).unwrap_or(0))
+            .sum()
+    }
+
+    fn point_dates(points: &[crate::models::UsageTrendPoint]) -> Vec<String> {
+        points
+            .iter()
+            .filter_map(|p| p.0.get("date").and_then(|v| v.as_str()).map(str::to_string))
+            .collect()
+    }
+
+    fn local_day(ts: &str) -> String {
+        chrono::DateTime::parse_from_rfc3339(ts)
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d")
+            .to_string()
+    }
+
+    let rolling = repo
+        .trend(1, Some(AgentId::Claude), None, None, &[])
+        .unwrap();
+    assert_eq!(
+        claude_tokens(&rolling),
+        132,
+        "days=1 without since is rolling 24h, so a 20h-ago row stays"
+    );
+    for ts in [&older, &newer] {
+        assert!(
+            point_dates(&rolling).contains(&local_day(ts)),
+            "trend day is local %Y-%m-%d of the row, not a UTC prefix"
+        );
+    }
+
+    let since = chrono::Local::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight")
+        .and_local_timezone(chrono::Local)
+        .earliest()
+        .expect("resolvable local midnight")
+        .with_timezone(&chrono::Utc)
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let today = repo
+        .trend(
+            1,
+            Some(AgentId::Claude),
+            None,
+            Some(since.as_str()),
+            &[],
+        )
+        .unwrap();
+    let expected_today = [(&older, 22_i64), (&newer, 110)]
+        .into_iter()
+        .filter(|(ts, _)| *ts >= &since)
+        .map(|(_, tokens)| tokens)
+        .sum::<i64>();
+    assert_eq!(claude_tokens(&today), expected_today);
+    for ts in [&older, &newer] {
+        if ts.as_str() >= since.as_str() {
+            assert!(point_dates(&today).contains(&local_day(ts)));
+        }
+    }
+}
