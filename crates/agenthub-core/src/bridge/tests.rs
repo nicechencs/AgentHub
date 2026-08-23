@@ -3122,10 +3122,7 @@ async fn multi_account_isolates_a_then_b_serves_and_a_returns_after_restore() {
     assert_eq!(body["content"][0]["text"], "hello");
     assert_eq!(
         captured.lock().expect("lock").clone(),
-        vec![
-            "Bearer token-a".to_owned(),
-            "Bearer token-b".to_owned()
-        ]
+        vec!["Bearer token-a".to_owned(), "Bearer token-b".to_owned()]
     );
 
     captured.lock().expect("lock").clear();

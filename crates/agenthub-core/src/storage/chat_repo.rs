@@ -299,9 +299,8 @@ impl ChatRepo {
 }
 
 fn load_sending_ids(conn: &rusqlite::Connection) -> Result<HashSet<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT conversation_id FROM chat_messages WHERE status = 'running'",
-    )?;
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT conversation_id FROM chat_messages WHERE status = 'running'")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     let mut ids = HashSet::new();
     for row in rows {

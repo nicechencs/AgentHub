@@ -239,63 +239,63 @@ pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account>
     let st = store();
     let session = st.take_ready(state)?;
     let result = (|| -> Result<Account> {
-    let code = session
-        .code
-        .clone()
-        .ok_or_else(|| AppError::message("oauth.no_code", "OAuth 回调未包含 code"))?;
+        let code = session
+            .code
+            .clone()
+            .ok_or_else(|| AppError::message("oauth.no_code", "OAuth 回调未包含 code"))?;
 
-    let provider = resolve_pkce_provider(session.agent, session.provider_key.as_deref())
-        .ok_or_else(|| {
-            AppError::Unsupported(format!(
-                "OAuth provider missing for {} ({})",
-                session.agent.as_str(),
-                session.provider_key.as_deref().unwrap_or("-")
-            ))
-        })?;
+        let provider = resolve_pkce_provider(session.agent, session.provider_key.as_deref())
+            .ok_or_else(|| {
+                AppError::Unsupported(format!(
+                    "OAuth provider missing for {} ({})",
+                    session.agent.as_str(),
+                    session.provider_key.as_deref().unwrap_or("-")
+                ))
+            })?;
 
-    let tokens = provider
-        .exchange_code_with_state(
-            &code,
-            &session.verifier,
-            &session.redirect_uri,
-            Some(&session.state),
-        )
-        .map_err(|error| AppError::message(error.code(), "OAuth token exchange failed"))?;
+        let tokens = provider
+            .exchange_code_with_state(
+                &code,
+                &session.verifier,
+                &session.redirect_uri,
+                Some(&session.state),
+            )
+            .map_err(|error| AppError::message(error.code(), "OAuth token exchange failed"))?;
 
-    let account = if session.agent == AgentId::Pi {
-        complete_pi_oauth(accounts, &session, tokens)?
-    } else {
-        // Codex live apply only accepts `format=auth_json` with a full auth.json
-        // body. Convert the generic PKCE token bundle before pool insert so the
-        // account is switchable immediately (not only after import-live).
-        let credentials = if session.agent == AgentId::Codex {
-            crate::adapters::normalize_codex_oauth_credentials(&tokens.credentials)?
+        let account = if session.agent == AgentId::Pi {
+            complete_pi_oauth(accounts, &session, tokens)?
         } else {
-            tokens.credentials
+            // Codex live apply only accepts `format=auth_json` with a full auth.json
+            // body. Convert the generic PKCE token bundle before pool insert so the
+            // account is switchable immediately (not only after import-live).
+            let credentials = if session.agent == AgentId::Codex {
+                crate::adapters::normalize_codex_oauth_credentials(&tokens.credentials)?
+            } else {
+                tokens.credentials
+            };
+            let live = LiveAccount {
+                agent: session.agent,
+                kind: AccountKind::Oauth,
+                credentials,
+                label_hint: tokens.label_hint.clone(),
+                extra: tokens.extra.clone(),
+            };
+
+            let label = tokens
+                .label_hint
+                .unwrap_or_else(|| format!("{} oauth", session.agent.as_str()));
+
+            accounts.create(AccountInput {
+                agent_id: session.agent,
+                kind: AccountKind::Oauth,
+                label,
+                credentials: live.credentials,
+                extra: live.extra,
+                is_current: false,
+            })?
         };
-        let live = LiveAccount {
-            agent: session.agent,
-            kind: AccountKind::Oauth,
-            credentials,
-            label_hint: tokens.label_hint.clone(),
-            extra: tokens.extra.clone(),
-        };
 
-        let label = tokens
-            .label_hint
-            .unwrap_or_else(|| format!("{} oauth", session.agent.as_str()));
-
-        accounts.create(AccountInput {
-            agent_id: session.agent,
-            kind: AccountKind::Oauth,
-            label,
-            credentials: live.credentials,
-            extra: live.extra,
-            is_current: false,
-        })?
-    };
-
-    Ok(account)
+        Ok(account)
     })();
 
     match result {

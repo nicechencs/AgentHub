@@ -11,9 +11,7 @@ mod replay;
 mod session;
 mod tools;
 
-pub use replay::{
-    is_reasoning_decode_failure, strip_encrypted_reasoning, GrokReasoningReplay,
-};
+pub use replay::{is_reasoning_decode_failure, strip_encrypted_reasoning, GrokReasoningReplay};
 pub use session::{extract_prompt_cache_seed, grok_session_id, grok_session_id_for_account};
 pub use tools::{inject_prompt_cache_key, normalize_grok_build_tools};
 
@@ -44,7 +42,10 @@ pub fn grok_cli_identity_header_pairs() -> Vec<(&'static str, String)> {
         ("x-grok-client-version", GROK_CLI_VERSION.to_string()),
         ("x-grok-client-identifier", GROK_CLI_IDENTIFIER.to_string()),
         ("x-grok-client-mode", GROK_CLI_MODE.to_string()),
-        ("x-authenticateresponse", "authenticate-response".to_string()),
+        (
+            "x-authenticateresponse",
+            "authenticate-response".to_string(),
+        ),
         ("User-Agent", grok_cli_user_agent()),
     ]
 }

@@ -72,12 +72,10 @@ pub const SUBSCRIPTION_PI_APPLY_LIMITS: &[&str] = &[
     "接上后会把自动生成的配置设成 Pi 当前在用的连接。",
 ];
 
-pub const CLAUDE_SUBSCRIPTION_TO_PI_REASON: &str =
-    "把这份 Claude 订阅写进 Pi 认的 Claude 登录。";
+pub const CLAUDE_SUBSCRIPTION_TO_PI_REASON: &str = "把这份 Claude 订阅写进 Pi 认的 Claude 登录。";
 pub const CODEX_SUBSCRIPTION_TO_PI_REASON: &str =
     "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。";
-pub const GROK_SUBSCRIPTION_TO_PI_REASON: &str =
-    "把这份 Grok 订阅写进 Pi 认的 Grok 登录。";
+pub const GROK_SUBSCRIPTION_TO_PI_REASON: &str = "把这份 Grok 订阅写进 Pi 认的 Grok 登录。";
 
 /// Product / origin that owns the selected Connection credentials.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

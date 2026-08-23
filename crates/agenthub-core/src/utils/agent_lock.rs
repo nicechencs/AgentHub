@@ -376,9 +376,7 @@ fn ensure_regular_lock_leaf(file: &std::fs::File) -> io::Result<()> {
     if ok == 0 {
         return Err(io::Error::last_os_error());
     }
-    if information.file_attributes
-        & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)
-        != 0
+    if information.file_attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) != 0
         || information.reparse_tag != 0
     {
         return Err(io::Error::new(

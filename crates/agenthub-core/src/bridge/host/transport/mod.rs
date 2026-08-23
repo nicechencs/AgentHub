@@ -318,12 +318,12 @@ pub(super) async fn send_upstream(
             let can_recover = recovery.strips_grok_reasoning()
                 && status == StatusCode::BAD_REQUEST
                 && grok_strip_attempt < 2;
-            let error_body = match read_bounded_upstream_error(response, &state.force_shutdown).await
-            {
-                Ok(body) => body,
-                Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
-                Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
-            };
+            let error_body =
+                match read_bounded_upstream_error(response, &state.force_shutdown).await {
+                    Ok(body) => body,
+                    Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
+                    Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
+                };
             if !can_recover {
                 let detail = extract_upstream_error_detail(&error_body);
                 return Err(map_upstream_http_error(

@@ -49,7 +49,12 @@ fn crud_and_cascade_delete() {
     let c = sample_conv("c1", vec![AgentId::Claude, AgentId::Codex]);
     repo.create_conversation(&c).unwrap();
     assert_eq!(repo.list_conversations().unwrap().len(), 1);
-    assert!(repo.get_conversation("c1").unwrap().unwrap().native_session_id.is_none());
+    assert!(repo
+        .get_conversation("c1")
+        .unwrap()
+        .unwrap()
+        .native_session_id
+        .is_none());
 
     let mut stored = repo.get_conversation("c1").unwrap().unwrap();
     stored.native_session_id = Some("sess-1".into());

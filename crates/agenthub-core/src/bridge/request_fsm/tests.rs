@@ -17,9 +17,7 @@ fn switches_before_first_event() {
 #[test]
 fn refuses_switch_after_first_event() {
     let mut fsm = fsm_on();
-    fsm.observe(&IrEvent::TextDelta {
-        text: "hi".into(),
-    });
+    fsm.observe(&IrEvent::TextDelta { text: "hi".into() });
     assert_eq!(fsm.emission, EmissionState::Emitted);
     assert_eq!(
         fsm.on_failure(true, SwitchClass::AccountFailure, true),

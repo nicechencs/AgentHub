@@ -90,7 +90,10 @@ impl AccountService {
         for row in before.iter().filter(|row| {
             row.is_current
                 && (footprint.affected_account_ids.is_empty()
-                    || footprint.affected_account_ids.iter().any(|id| id == &row.id))
+                    || footprint
+                        .affected_account_ids
+                        .iter()
+                        .any(|id| id == &row.id))
         }) {
             if !affected_ids.iter().any(|id| id == &row.id) {
                 affected_ids.push(row.id.clone());
@@ -193,13 +196,12 @@ impl AccountService {
                     }
                 }
             }
-            let expected_after_binding = if footprint.after_binding.is_some()
-                || footprint.before_binding.is_some()
-            {
-                &footprint.after_binding
-            } else {
-                after_binding
-            };
+            let expected_after_binding =
+                if footprint.after_binding.is_some() || footprint.before_binding.is_some() {
+                    &footprint.after_binding
+                } else {
+                    after_binding
+                };
             let binding_changed =
                 footprint.before_binding.as_ref() != expected_after_binding.as_ref();
             if binding_changed && !footprint.before_providers.is_empty() {
@@ -328,24 +330,22 @@ fn get_account_row(conn: &Connection, id: &str) -> Result<Option<AccountRowSnaps
     .map_err(AppError::from)
 }
 
-fn ensure_account_row_matches(
-    conn: &Connection,
-    expected: &Account,
-) -> Result<()> {
+fn ensure_account_row_matches(conn: &Connection, expected: &Account) -> Result<()> {
     let actual = get_account_row(conn, &expected.id)?;
     let credentials = serde_json::to_string(&expected.credentials)?;
     let extra = serde_json::to_string(&expected.extra)?;
-    let matches = actual == Some((
-        expected.agent_id.as_str().to_string(),
-        expected.kind.as_str().to_string(),
-        expected.label.clone(),
-        credentials,
-        extra,
-        expected.status.clone(),
-        if expected.is_current { 1 } else { 0 },
-        expected.created_at.clone(),
-        expected.updated_at.clone(),
-    ));
+    let matches = actual
+        == Some((
+            expected.agent_id.as_str().to_string(),
+            expected.kind.as_str().to_string(),
+            expected.label.clone(),
+            credentials,
+            extra,
+            expected.status.clone(),
+            if expected.is_current { 1 } else { 0 },
+            expected.created_at.clone(),
+            expected.updated_at.clone(),
+        ));
     if matches {
         Ok(())
     } else {
@@ -360,16 +360,7 @@ fn account_compensation_conflict(id: &str) -> AppError {
     )
 }
 
-type ProviderRowSnapshot = (
-    String,
-    String,
-    String,
-    String,
-    i64,
-    String,
-    String,
-    String,
-);
+type ProviderRowSnapshot = (String, String, String, String, i64, String, String, String);
 
 fn get_provider_row_for_compensation(
     conn: &Connection,
@@ -406,16 +397,17 @@ fn ensure_provider_row_matches_for_compensation(
     let actual = get_provider_row_for_compensation(conn, &expected.id)?;
     let settings = serde_json::to_string(&expected.settings_config)?;
     let meta = serde_json::to_string(&expected.meta)?;
-    let matches = actual == Some((
-        expected.agent_id.as_str().to_string(),
-        expected.name.clone(),
-        settings,
-        meta,
-        if expected.is_current { 1 } else { 0 },
-        expected.created_at.clone(),
-        expected.updated_at.clone(),
-        expected.id.clone(),
-    ));
+    let matches = actual
+        == Some((
+            expected.agent_id.as_str().to_string(),
+            expected.name.clone(),
+            settings,
+            meta,
+            if expected.is_current { 1 } else { 0 },
+            expected.created_at.clone(),
+            expected.updated_at.clone(),
+            expected.id.clone(),
+        ));
     if matches {
         Ok(())
     } else {
@@ -559,7 +551,9 @@ fn remove_new_trash_rows(
             row.agent_id == agent.as_str()
                 && row.source_kind == "account"
                 && !before.iter().any(|old| old.id == row.id)
-                && deleted_rows.iter().any(|deleted| deleted.id == row.source_id)
+                && deleted_rows
+                    .iter()
+                    .any(|deleted| deleted.id == row.source_id)
         })
         .collect::<Vec<_>>();
     if expected.len() != deleted_rows.len() {

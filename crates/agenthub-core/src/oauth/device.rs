@@ -105,13 +105,16 @@ fn purge_locked(sessions: &mut HashMap<String, DeviceSession>, keep: Option<&str
         {
             return true;
         }
-        if matches!(session.status, DeviceOAuthStatus::Failed | DeviceOAuthStatus::Expired) {
+        if matches!(
+            session.status,
+            DeviceOAuthStatus::Failed | DeviceOAuthStatus::Expired
+        ) {
             return false;
         }
         let expires_at = match session.status {
-            DeviceOAuthStatus::Complete | DeviceOAuthStatus::Completing => session
-                .completion_expires_at
-                .unwrap_or(session.expires_at),
+            DeviceOAuthStatus::Complete | DeviceOAuthStatus::Completing => {
+                session.completion_expires_at.unwrap_or(session.expires_at)
+            }
             _ => session.expires_at,
         };
         now < expires_at
@@ -420,8 +423,8 @@ where
                             secs.max(1).min(OAUTH_SESSION_TTL.as_secs().max(1)),
                         );
                     } else {
-                        session.interval = (session.interval + Duration::from_secs(5))
-                            .min(OAUTH_SESSION_TTL);
+                        session.interval =
+                            (session.interval + Duration::from_secs(5)).min(OAUTH_SESSION_TTL);
                     }
                     session.status = DeviceOAuthStatus::SlowDown;
                     Ok(DeviceOAuthPoll {
@@ -430,9 +433,7 @@ where
                         error: None,
                     })
                 }
-                "expired_token" | "expired" => {
-                    Ok(expired_poll(state, session))
-                }
+                "expired_token" | "expired" => Ok(expired_poll(state, session)),
                 _other => {
                     session.status = DeviceOAuthStatus::Failed;
                     session.error = Some("device authorization failed".into());

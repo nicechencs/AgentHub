@@ -212,9 +212,9 @@ impl AccountService {
                     .map(|committed| Some(committed.stored))
                     .map_err(|error| error.into_error());
             }
-            return Ok(Some(self.persist_reconciled_live_row(
-                agent, row, changed, activate,
-            )?));
+            return Ok(Some(
+                self.persist_reconciled_live_row(agent, row, changed, activate)?,
+            ));
         }
 
         if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
@@ -587,12 +587,11 @@ impl AccountService {
         &self,
         agent: AgentId,
     ) -> Result<(Vec<AdapterProfile>, Vec<Provider>, bool)> {
-        let profiles = AdapterProfileRepo::new(self.db.clone()).list_filtered(
-            &AdapterProfileFilter {
+        let profiles =
+            AdapterProfileRepo::new(self.db.clone()).list_filtered(&AdapterProfileFilter {
                 target_agent_id: Some(agent),
                 ..Default::default()
-            },
-        )?;
+            })?;
         let providers = ProviderRepo::new(self.db.clone()).list(Some(agent))?;
         Ok((profiles, providers, leftover_live_flag(agent)))
     }

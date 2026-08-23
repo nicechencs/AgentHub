@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use adapters::{register_all, AdapterRegistry};
 use error::Result;
+use logging::targets;
 use models::{
     AgentId, AgentUpdateInfo, InstallOutcome, MultiRunReport, RunOptions, RuntimeId, Skill,
     SkillListing,
@@ -36,7 +37,6 @@ use services::{
     ProjectService, ProviderService, RunService, SettingsService, SkillService, TicketBindService,
     TicketReadService, UsageService,
 };
-use logging::targets;
 use storage::{ChatRepo, Database};
 use utils::command_exec::SystemCommandExecutor;
 use utils::paths::{
@@ -122,11 +122,8 @@ impl AgentHub {
         }
         let registry = register_all();
         let catalog = AgentCatalogService::from_registry(&registry)?;
-        let lifecycle = LifecycleCoordinator::new_with_data_dir(
-            db.clone(),
-            registry.clone(),
-            data_dir.clone(),
-        );
+        let lifecycle =
+            LifecycleCoordinator::new_with_data_dir(db.clone(), registry.clone(), data_dir.clone());
         let configuration = ConfigurationService::new(db.clone());
         let connections = ConnectionService::new(db.clone());
         // AgentService keeps a cheap Arc clone of the same adapters; do not call register_all twice.

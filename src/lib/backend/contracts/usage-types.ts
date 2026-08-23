@@ -44,11 +44,3 @@ export interface UsageOverview {
 export type UsageAvailability =
   | { status: 'available' }
   | { status: 'unavailable'; reason: string };
-
-/** Collect pass result (camelCase; mirrors core CollectResult). */
-export interface UsageCollectResultDto {
-  inserted: number;
-  skipped: number;
-  failed: number;
-  missingPricingModels?: string[];
-}

@@ -462,7 +462,10 @@ fn durable_prepared_overwrite_recovers_after_first_rename() {
     .unwrap();
 
     recover_skill_commit_journal(&root, Some(&repo)).unwrap();
-    assert_eq!(fs::read_to_string(target.join("SKILL.md")).unwrap(), "# old\n");
+    assert_eq!(
+        fs::read_to_string(target.join("SKILL.md")).unwrap(),
+        "# old\n"
+    );
     assert!(!staging.exists());
     assert!(!backup.exists());
     assert!(!crate::platform::skills::journal::journal_path(&root).exists());
@@ -506,7 +509,10 @@ fn durable_recovery_retries_after_lock_restore_failure_without_deleting_old_live
         load_journal_phase(&root),
         SkillCommitPhase::RollbackLiveRestored
     );
-    assert_eq!(fs::read_to_string(target.join("SKILL.md")).unwrap(), "# old\n");
+    assert_eq!(
+        fs::read_to_string(target.join("SKILL.md")).unwrap(),
+        "# old\n"
+    );
     assert!(!backup.exists());
 
     fs::remove_dir(skill_lock_file(&root)).unwrap();
@@ -580,7 +586,10 @@ fn durable_recovery_retries_after_package_restore_failure_without_repeating_live
         load_journal_phase(&root),
         SkillCommitPhase::RollbackLockRestored
     );
-    assert_eq!(fs::read_to_string(target.join("SKILL.md")).unwrap(), "# old\n");
+    assert_eq!(
+        fs::read_to_string(target.join("SKILL.md")).unwrap(),
+        "# old\n"
+    );
     assert!(!backup.exists());
 
     db.with_conn(|conn| {
@@ -630,7 +639,10 @@ fn durable_recovery_retries_after_helper_cleanup_failure() {
         load_journal_phase(&root),
         SkillCommitPhase::RollbackPackageRestored
     );
-    assert_eq!(fs::read_to_string(target.join("SKILL.md")).unwrap(), "# old\n");
+    assert_eq!(
+        fs::read_to_string(target.join("SKILL.md")).unwrap(),
+        "# old\n"
+    );
     assert!(!backup.exists());
 
     fs::remove_file(&staging).unwrap();
@@ -655,7 +667,10 @@ fn finalize_backup_reports_helper_metadata_errors_without_claiming_cleanup() {
     )
     .unwrap_err();
     assert_eq!(err.code(), "skill.backup");
-    assert!(backup.exists(), "cleanup error must retain the helper evidence");
+    assert!(
+        backup.exists(),
+        "cleanup error must retain the helper evidence"
+    );
 
     fs::remove_file(&backup).unwrap();
     finalize_retained_backup(

@@ -42,12 +42,8 @@ fn run_capture_timeout_returns_timed_out() {
 fn attach_failure_kills_suspended_root_before_waiting() {
     force_attach_failure_for_test();
     let started = Instant::now();
-    let error = run_capture_timeout(
-        "cmd.exe",
-        &["/C", "exit", "0"],
-        Duration::from_secs(1),
-    )
-    .expect_err("injected attach failure should be returned");
+    let error = run_capture_timeout("cmd.exe", &["/C", "exit", "0"], Duration::from_secs(1))
+        .expect_err("injected attach failure should be returned");
 
     assert_eq!(error.kind(), io::ErrorKind::Other);
     assert!(
@@ -520,12 +516,8 @@ fn timeout_kills_descendants_that_hold_output_pipes() {
 #[test]
 fn exited_leader_with_descendant_pipe_is_cleaned_before_reap() {
     let started = Instant::now();
-    let output = run_capture_timeout(
-        "sh",
-        &["-c", "(sleep 30)& exit 0"],
-        Duration::from_secs(2),
-    )
-    .expect("the exited leader should still produce a successful result");
+    let output = run_capture_timeout("sh", &["-c", "(sleep 30)& exit 0"], Duration::from_secs(2))
+        .expect("the exited leader should still produce a successful result");
 
     assert_eq!(output.status.code(), Some(0));
     assert!(
@@ -597,7 +589,9 @@ fn collect_streaming(spec: RunSpec, timeout: Duration, max: usize) -> (AgentRunR
         &CancelToken::new(),
         &|stream, text| {
             if stream == OutputStream::Stdout {
-                live.lock().unwrap_or_else(|e| e.into_inner()).push_str(text);
+                live.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push_str(text);
             }
         },
     );
@@ -754,6 +748,9 @@ fn first_reader_join_timeout_stays_incomplete_after_second_join() {
         &mut child,
         &mut terminated,
     );
-    assert!(incomplete, "second join success must not clear the first timeout");
+    assert!(
+        incomplete,
+        "second join success must not clear the first timeout"
+    );
     let _ = reap_child(&mut child, &process_control);
 }

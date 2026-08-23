@@ -388,14 +388,9 @@ fn update_and_activate_account_rejects_stale_revision() {
 
     next.label = "stale".into();
     next.updated_at = "t3".into();
-    let err = conn
-        .update_and_activate_account(&next, "t1")
-        .unwrap_err();
+    let err = conn.update_and_activate_account(&next, "t1").unwrap_err();
     assert_eq!(err.code(), "account.merge.conflict");
-    let stored = AccountRepo::new(db)
-        .get_by_id("acc-cas")
-        .unwrap()
-        .unwrap();
+    let stored = AccountRepo::new(db).get_by_id("acc-cas").unwrap().unwrap();
     assert_eq!(stored.label, "newer");
 }
 
@@ -1044,9 +1039,6 @@ fn ticket_connection_pointer_stays_when_account_repo_flips_is_current() {
     accounts.update(&b).unwrap();
     assert!(accounts.get_by_id("acc-b").unwrap().unwrap().is_current);
     assert!(!accounts.get_by_id("acc-a").unwrap().unwrap().is_current);
-    let drifted = ActiveBindingRepo::new(db)
-        .get("claude")
-        .unwrap()
-        .unwrap();
+    let drifted = ActiveBindingRepo::new(db).get("claude").unwrap().unwrap();
     assert_eq!(drifted.account_id.as_deref(), Some("acc-a"));
 }

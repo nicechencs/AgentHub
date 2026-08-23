@@ -160,7 +160,7 @@ fn config_purge_rejects_relative_path() {
         std::path::Path::new("relative-config"),
         data_dir.path(),
     )
-        .expect_err("relative purge paths must fail closed");
+    .expect_err("relative purge paths must fail closed");
     assert!(error.to_string().contains("absolute"));
 
     let target = tempfile::tempdir().unwrap();

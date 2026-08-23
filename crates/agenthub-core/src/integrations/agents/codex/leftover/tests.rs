@@ -126,7 +126,8 @@ fn strip_keeps_effort_when_model_key_is_missing() {
 
 #[test]
 fn strip_keeps_custom_provider_grok_model_and_effort() {
-    let custom = "model_provider = \"custom\"\nmodel = \"grok-4\"\nmodel_reasoning_effort = \"high\"\n";
+    let custom =
+        "model_provider = \"custom\"\nmodel = \"grok-4\"\nmodel_reasoning_effort = \"high\"\n";
     let mut doc = custom.parse::<DocumentMut>().unwrap();
     assert!(!toml_is_bridge_leftover(custom));
     assert!(!strip_bridge_leftovers_in_doc(&mut doc));

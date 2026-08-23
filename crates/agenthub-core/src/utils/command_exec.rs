@@ -12,11 +12,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::services::emit_install_log;
 use super::process::{
     configure_process_group, finish_reader, join_reader_bounded, kill_process_tree, poll_child,
     read_pipe_capped, reap_child, reap_child_lossy, ChildPoll, ProcessControl,
 };
+use crate::services::emit_install_log;
 
 /// Request to run an external program with timeout.
 #[derive(Debug, Clone)]

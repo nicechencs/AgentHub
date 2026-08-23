@@ -24,6 +24,7 @@ fn expand_binary_names_adds_windows_suffixes() {
     {
         assert_eq!(names[0], "codex.cmd");
         assert!(names.iter().any(|n| n == "codex.exe"));
+        assert!(names.iter().all(|n| !n.ends_with(".ps1")), ".ps1 must not be probed: CreateProcess cannot spawn PowerShell scripts and is_direct_spawnable rejects them: {names:?}");
         let cmd = names.iter().position(|n| n == "codex.cmd").unwrap();
         let bare = names.iter().position(|n| n == "codex").unwrap();
         assert!(

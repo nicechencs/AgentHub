@@ -2184,7 +2184,9 @@ fn list_activates_default_grok_slot_when_current_person_left_the_file() {
         "when the current person leaves auth.json, list must activate ::client"
     );
     assert!(!uid2.is_current);
-    assert!(rows.iter().any(|row| row.credentials.to_string().contains("uid-3")));
+    assert!(rows
+        .iter()
+        .any(|row| row.credentials.to_string().contains("uid-3")));
 }
 
 #[test]

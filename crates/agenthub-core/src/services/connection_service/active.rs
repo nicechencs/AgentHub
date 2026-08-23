@@ -285,7 +285,6 @@ impl ConnectionService {
         Ok(())
     }
 
-
     /// Deterministic single-choice backfill of **connection** refs from legacy is_current.
     /// Prefers account over provider; preserves existing model/profile on the binding row.
     fn lazy_backfill_conn(

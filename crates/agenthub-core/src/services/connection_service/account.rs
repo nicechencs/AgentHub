@@ -3,10 +3,10 @@ use rusqlite::{Connection, Transaction, TransactionBehavior};
 use crate::error::{AppError, Result};
 use crate::models::{Account, AgentId, ConnectionTrashKind};
 use crate::storage::{
-    account_create_conn, account_delete_if_revision_conn, account_get_by_id_conn,
-    account_list_current_conn, account_update_conn, account_update_if_revision_conn,
-    account_delete_for_agent_conn, binding_set_connection_refs_conn,
-    provider_clear_current_conn, ConnectionTrashRepo,
+    account_create_conn, account_delete_for_agent_conn, account_delete_if_revision_conn,
+    account_get_by_id_conn, account_list_current_conn, account_update_conn,
+    account_update_if_revision_conn, binding_set_connection_refs_conn, provider_clear_current_conn,
+    ConnectionTrashRepo,
 };
 
 use super::{ActiveBinding, ConnectionService};
@@ -83,9 +83,8 @@ impl ConnectionService {
         self.require_current_flag(account.is_current, "account")?;
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-            let existing = account_get_by_id_conn(&tx, &account.id)?.ok_or_else(|| {
-                AppError::NotFound(format!("account not found: {}", account.id))
-            })?;
+            let existing = account_get_by_id_conn(&tx, &account.id)?
+                .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))?;
             if existing.updated_at != expected_target_updated_at {
                 return Err(AppError::message(
                     "account.merge.conflict",
@@ -133,19 +132,18 @@ impl ConnectionService {
         let now = Self::now();
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-            let target = account_get_by_id_conn(&tx, &account.id)?.ok_or_else(|| {
-                AppError::NotFound(format!("account not found: {}", account.id))
-            })?;
+            let target = account_get_by_id_conn(&tx, &account.id)?
+                .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))?;
             if target.updated_at != expected_target_updated_at {
                 return Err(AppError::message(
                     "account.merge.conflict",
                     format!("merge target changed before activation: {}", account.id),
                 ));
             }
-            let source = account_get_by_id_conn(&tx, source_id)?.ok_or_else(|| {
-                AppError::NotFound(format!("account not found: {source_id}"))
-            })?;
-            if source.agent_id != account.agent_id || source.updated_at != expected_source_updated_at
+            let source = account_get_by_id_conn(&tx, source_id)?
+                .ok_or_else(|| AppError::NotFound(format!("account not found: {source_id}")))?;
+            if source.agent_id != account.agent_id
+                || source.updated_at != expected_source_updated_at
             {
                 return Err(AppError::message(
                     "account.merge.conflict",
@@ -195,9 +193,8 @@ impl ConnectionService {
         expected_updated_at: &str,
     ) -> Result<(Account, ActiveBinding)> {
         self.require_current_flag(account.is_current, "account")?;
-        let existing = account_get_by_id_conn(conn, &account.id)?.ok_or_else(|| {
-            AppError::NotFound(format!("account not found: {}", account.id))
-        })?;
+        let existing = account_get_by_id_conn(conn, &account.id)?
+            .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))?;
         if existing.updated_at != expected_updated_at {
             return Err(AppError::message(
                 "account.merge.conflict",
@@ -224,9 +221,8 @@ impl ConnectionService {
         account: &Account,
         expected_updated_at: &str,
     ) -> Result<Account> {
-        let existing = account_get_by_id_conn(conn, &account.id)?.ok_or_else(|| {
-            AppError::NotFound(format!("account not found: {}", account.id))
-        })?;
+        let existing = account_get_by_id_conn(conn, &account.id)?
+            .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))?;
         if existing.updated_at != expected_updated_at {
             return Err(AppError::message(
                 "account.merge.conflict",

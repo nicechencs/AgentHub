@@ -42,7 +42,10 @@ impl GrokReasoningReplay {
             let Ok(guard) = self.entries.lock() else {
                 return;
             };
-            guard.get(&cache_key(model, session)).cloned().unwrap_or_default()
+            guard
+                .get(&cache_key(model, session))
+                .cloned()
+                .unwrap_or_default()
         };
         if items.is_empty() {
             return;
@@ -145,9 +148,11 @@ fn ensure_input_array(object: &mut Map<String, Value>) {
 }
 
 fn extract_reasoning_items(completed: &Value) -> Vec<Value> {
-    let output = completed
-        .get("output")
-        .or_else(|| completed.get("response").and_then(|value| value.get("output")));
+    let output = completed.get("output").or_else(|| {
+        completed
+            .get("response")
+            .and_then(|value| value.get("output"))
+    });
     let Some(Value::Array(items)) = output else {
         return Vec::new();
     };
@@ -176,12 +181,7 @@ fn extract_completed_from_sse(sse: &str) -> Option<Value> {
         };
         let event_type = value.get("type").and_then(Value::as_str).unwrap_or("");
         if event_type == "response.completed" {
-            last = Some(
-                value
-                    .get("response")
-                    .cloned()
-                    .unwrap_or(value),
-            );
+            last = Some(value.get("response").cloned().unwrap_or(value));
         }
     }
     last

@@ -12,9 +12,7 @@ pub mod runtime;
 pub mod session;
 pub mod types;
 
-pub use account::{
-    AccountPicker, BridgeMemberSpec, MemberHealth, MemberHealthSink, PickedMember,
-};
+pub use account::{AccountPicker, BridgeMemberSpec, MemberHealth, MemberHealthSink, PickedMember};
 pub use host::{BridgeHostError, BridgeRuntimeHost};
 pub use request_fsm::{AccountSwitchGate, RequestDecision, RequestFsm, SwitchClass};
 pub use runtime::{

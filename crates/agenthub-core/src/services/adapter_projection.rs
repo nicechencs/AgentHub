@@ -163,7 +163,9 @@ fn live_matches_our_projection(
 }
 
 fn loopback_url_port(raw: &str) -> Option<u16> {
-    reqwest::Url::parse(raw.trim()).ok().and_then(|url| url.port())
+    reqwest::Url::parse(raw.trim())
+        .ok()
+        .and_then(|url| url.port())
 }
 
 fn credentials_have_local_bearer(value: &Value) -> bool {

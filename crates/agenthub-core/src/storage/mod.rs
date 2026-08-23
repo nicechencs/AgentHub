@@ -220,8 +220,7 @@ fn set_wal_journal_mode(conn: &Connection) -> Result<()> {
             Ok(()) => return Ok(()),
             Err(error) => {
                 let error = AppError::from(error);
-                if migrations::is_busy(&error)
-                    && attempt + 1 < migrations::MIGRATION_RETRY_ATTEMPTS
+                if migrations::is_busy(&error) && attempt + 1 < migrations::MIGRATION_RETRY_ATTEMPTS
                 {
                     thread::sleep(migrations::MIGRATION_RETRY_DELAY);
                     continue;

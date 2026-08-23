@@ -33,13 +33,13 @@ pub mod usage_service;
 
 pub use account_service::{oauth_bridge_reload_callback, AccountService};
 pub use adapter_apply_service::AdapterApplyService;
-pub use adapter_projection::{
-    classify_account_live, classify_provider_config, leftover_live_flag, LiveOrigin,
-    ADAPTER_PROJECTION_KIND,
-};
 pub use adapter_bridge_service::{
     AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
     AdapterBridgeRestoreMaterial, AdapterBridgeRuntimeMaterial, AdapterBridgeService,
+};
+pub use adapter_projection::{
+    classify_account_live, classify_provider_config, leftover_live_flag, LiveOrigin,
+    ADAPTER_PROJECTION_KIND,
 };
 pub use adapter_route_service::AdapterRouteService;
 pub use adapter_secret_resolver::AdapterSecretResolver;

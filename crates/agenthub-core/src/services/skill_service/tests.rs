@@ -594,7 +594,8 @@ fn uninstall_skill_removes_shared_source() {
 fn uninstall_private_skill_removes_agent_dir() {
     let (_tmp, _source, claude, _x, _g, svc) = setup_write_fixture();
     write_file(&claude.join("demo").join("SKILL.md"), &skill_md("D", "d"));
-    svc.uninstall_private_skill("demo", AgentId::Claude).unwrap();
+    svc.uninstall_private_skill("demo", AgentId::Claude)
+        .unwrap();
     assert!(!claude.join("demo").exists());
 }
 
@@ -1296,10 +1297,7 @@ fn read_skill_markdown_follows_private_symlink() {
     fs::create_dir_all(&codex).unwrap();
     fs::create_dir_all(&grok).unwrap();
     let real = tmp.path().join("real-skill");
-    write_file(
-        &real.join("SKILL.md"),
-        &skill_md("Linked", "via-symlink"),
-    );
+    write_file(&real.join("SKILL.md"), &skill_md("Linked", "via-symlink"));
     std::os::unix::fs::symlink(&real, codex.join("txn")).unwrap();
     let svc = SkillService::new(source, make_registry(claude, codex, grok));
     let preview = svc
@@ -2000,7 +1998,10 @@ fn list_catalog_identical_private_copies_share_content_hash() {
     let rows: Vec<_> = catalog.iter().filter(|s| s.id == "solo").collect();
     assert_eq!(rows.len(), 2, "catalog still emits one row per agent root");
     assert_eq!(rows[0].content_hash, rows[1].content_hash);
-    assert!(rows[0].content_hash.as_deref().is_some_and(|h| !h.is_empty()));
+    assert!(rows[0]
+        .content_hash
+        .as_deref()
+        .is_some_and(|h| !h.is_empty()));
 }
 
 #[test]

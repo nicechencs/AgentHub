@@ -15,12 +15,12 @@ use crate::models::{
     Capability, PersistedTicketSurface, Provider, ProviderInput, ProviderSwitchResult,
     TicketSurface,
 };
+use crate::services::adapter_projection::{
+    classify_provider_config, leftover_live_flag, projection_import_error,
+};
 use crate::services::switch_undo::{
     clear_switch_undo, extract_probe_url, peek_switch_undo, probe_url_latency_ms,
     record_switch_undo, PROVIDER_UNDO_PREFIX,
-};
-use crate::services::adapter_projection::{
-    classify_provider_config, leftover_live_flag, projection_import_error,
 };
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, BackupService, ConnectionService,
@@ -430,18 +430,15 @@ impl ProviderService {
             }
             let stored = if row.is_current {
                 self.connections
-                    .activate_provider_if_revision_conn(
+                    .activate_provider_if_revision_conn(&tx, &row, expected_updated_at.as_deref())?
+                    .0
+            } else {
+                self.connections
+                    .store_provider_non_current_if_revision_conn(
                         &tx,
                         &row,
                         expected_updated_at.as_deref(),
                     )?
-                    .0
-            } else {
-                self.connections.store_provider_non_current_if_revision_conn(
-                    &tx,
-                    &row,
-                    expected_updated_at.as_deref(),
-                )?
             };
 
             let mut affected_provider_ids = vec![input.id.clone()];
@@ -710,12 +707,11 @@ impl ProviderService {
             .unwrap_or_else(|| format!("Imported {}", now_ts()));
         validate_name(&display_name)?;
 
-        let profiles = AdapterProfileRepo::new(self.db.clone()).list_filtered(
-            &AdapterProfileFilter {
+        let profiles =
+            AdapterProfileRepo::new(self.db.clone()).list_filtered(&AdapterProfileFilter {
                 target_agent_id: Some(agent),
                 ..Default::default()
-            },
-        )?;
+            })?;
         let providers = self.repo.list(Some(agent))?;
         if classify_provider_config(
             agent,
@@ -1479,16 +1475,17 @@ fn ensure_provider_row_matches(conn: &Connection, expected: &Provider) -> Result
     let actual = get_provider_row(conn, &expected.id)?;
     let settings = serde_json::to_string(&expected.settings_config)?;
     let meta = serde_json::to_string(&expected.meta)?;
-    let matches = actual == Some((
-        expected.agent_id.as_str().to_string(),
-        expected.name.clone(),
-        settings,
-        meta,
-        if expected.is_current { 1 } else { 0 },
-        expected.created_at.clone(),
-        expected.updated_at.clone(),
-        expected.id.clone(),
-    ));
+    let matches = actual
+        == Some((
+            expected.agent_id.as_str().to_string(),
+            expected.name.clone(),
+            settings,
+            meta,
+            if expected.is_current { 1 } else { 0 },
+            expected.created_at.clone(),
+            expected.updated_at.clone(),
+            expected.id.clone(),
+        ));
     if matches {
         Ok(())
     } else {
@@ -1580,17 +1577,18 @@ fn ensure_account_row_matches_for_provider_compensation(
     let actual = get_account_row_for_provider_compensation(conn, &expected.id)?;
     let credentials = serde_json::to_string(&expected.credentials)?;
     let extra = serde_json::to_string(&expected.extra)?;
-    let matches = actual == Some((
-        expected.agent_id.as_str().to_string(),
-        expected.kind.as_str().to_string(),
-        expected.label.clone(),
-        credentials,
-        extra,
-        expected.status.clone(),
-        if expected.is_current { 1 } else { 0 },
-        expected.created_at.clone(),
-        expected.updated_at.clone(),
-    ));
+    let matches = actual
+        == Some((
+            expected.agent_id.as_str().to_string(),
+            expected.kind.as_str().to_string(),
+            expected.label.clone(),
+            credentials,
+            extra,
+            expected.status.clone(),
+            if expected.is_current { 1 } else { 0 },
+            expected.created_at.clone(),
+            expected.updated_at.clone(),
+        ));
     if matches {
         Ok(())
     } else {

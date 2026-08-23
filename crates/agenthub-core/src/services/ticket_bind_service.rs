@@ -9,15 +9,13 @@ use std::path::PathBuf;
 
 use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
+use crate::models::CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID;
 use crate::models::{
     parse_ticket_id, AdapterApplyRequest, AdapterApplyResult, AdapterProfile, AdapterRoute,
     AdapterSourceKind, AgentId, TicketBinding, TicketBindingRoute, TicketBridgeRuntime,
     TicketPlanRequest, TicketUnbindRequest,
 };
-use crate::models::CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID;
-use crate::services::{
-    AccountService, AdapterApplyService, ProviderService, TicketReadService,
-};
+use crate::services::{AccountService, AdapterApplyService, ProviderService, TicketReadService};
 use crate::storage::{AdapterProfileRepo, Database};
 
 const HOSTED_BRIDGE_BIND: &str = "ticket.bind_hosted_bridge";

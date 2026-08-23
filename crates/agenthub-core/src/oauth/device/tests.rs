@@ -157,7 +157,10 @@ fn concurrent_poll_claim_does_not_issue_a_second_request() {
     );
 
     release_tx.send(()).expect("release first request");
-    let first = first.join().expect("first poll thread").expect("poll result");
+    let first = first
+        .join()
+        .expect("first poll thread")
+        .expect("poll result");
     assert_eq!(first.status, DeviceOAuthStatus::Pending);
 
     store().lock().expect("device store lock").remove(state);
@@ -241,7 +244,10 @@ fn complete_session_survives_device_code_expiry_until_completion_ttl() {
     })
     .expect("complete session should remain available");
     assert_eq!(poll.status, DeviceOAuthStatus::Complete);
-    assert_eq!(device_oauth_agent(state).expect("agent remains resolvable"), AgentId::Pi);
+    assert_eq!(
+        device_oauth_agent(state).expect("agent remains resolvable"),
+        AgentId::Pi
+    );
 
     store().lock().expect("device store lock").remove(state);
 }
@@ -258,5 +264,8 @@ fn complete_session_is_purged_after_completion_ttl() {
     insert_session(state, value);
 
     purge_locked(&mut store().lock().expect("device store lock"), None);
-    assert!(!store().lock().expect("device store lock").contains_key(state));
+    assert!(!store()
+        .lock()
+        .expect("device store lock")
+        .contains_key(state));
 }
