@@ -236,7 +236,7 @@ Responses 已选为本轮上游 transport，并用 fixtures / host health 验证
 
 ### 5.1.2 Grok OAuth 复用：自动 refresh 方案（不与官方 Grok CLI 互踢）
 
-> 状态：**owner 分治 A–C 已在当前工作区实现（2026-08-21）**。`credentials.format=live_ref`（跟随文件、不拷贝 token）**未接线**，账户层仍是拷贝快照 + list reconcile / 401 文件跟随。bridge 遇上游 401：CLI-owned 重读官方 `auth.json`，Hub-owned 走账户池 refresh；token 变了则只换内存上游 bearer 并在首个有效流事件前重试一次；没变则 502 `upstream_error`，CLI-owned 账户健康标 `NeedsLogin`。
+> 状态：**owner 分治 A–C 已在当前工作区实现（2026-08-21）**；**同一身份行与官方登录文件按 rt + mtime 双向覆盖已接线（2026-08-23）**。`credentials.format=live_ref`（跟随文件、不拷贝 token）**未接线**，账户层仍是拷贝快照 + list reconcile / 401 文件跟随。bridge 遇上游 401：CLI-owned 重读官方 `auth.json`，Hub-owned 走账户池 refresh；token 变了则只换内存上游 bearer 并在首个有效流事件前重试一次；没变则 502 `upstream_error`，CLI-owned 账户健康标 `NeedsLogin`。
 
 事实（以代码为准）：
 
@@ -249,9 +249,11 @@ Responses 已选为本轮上游 transport，并用 fixtures / host health 验证
 | 凭据 owner | 判定 | refresh 行为 |
 |---|---|---|
 | 官方 Grok CLI（`extra.source=auth.json` 导入/同步） | 主路径 | **文件跟随同步**：请求前 access JWT `exp` 临期、或上游 401 时，按账户 single-flight（复用 `live_reconcile_lock`）走一次 live reconcile 重读 `auth.json`；token 变了就替换上游 auth 并重试一次（仅限首个有效流事件前，遵守 §5.3 重试边界）；没变则维持 502，账户健康标 `NeedsLogin`，UI 引导「同步当前登录」。**不调 `accounts.x.ai/oauth/token`** |
-| Hub 自己（Hub PKCE 登录产生的 grant，非 live 导入） | `extra.source` 非 `auth.json` | 可做标准按账户 single-flight refresh：轮换只影响 Hub 自己的 token 对，不触碰 CLI 的 `auth.json`，不互踢；刷新结果只写账户池，**不写 CLI live 文件** |
+| Hub 自己（Hub PKCE 登录产生的 grant，非 live 导入） | `extra.source` 非 `auth.json` | 可做标准按账户 single-flight refresh：轮换只影响 Hub 自己的 token 对。刷新结果写账户池；**仅当连接页这一行与官方登录文件是同一身份、且本行 `updated_at` 新于文件 mtime 时写回文件**（不是令牌 `expires_at`）。不同身份永不互写 |
 
-不变式：refresh token 不进 bridge、下游、IPC 或日志；listener 替换上游 auth 时 local bearer 不变（既有测试锚点 `ensure_listener_replaces_upstream_auth_while_keeping_local_bearer`）；文件跟随同步失败不得把其余账户或 token 暴露给调用方；Codex 订阅边继续沿用同一 owner 原则（`auth_json` 导入的 grant 归 Codex CLI 续期，Hub 跟随文件）。
+**同一身份行 ↔ 官方登录文件（Grok / Codex `auth.json`，Claude `.credentials.json`）**：内存比较 refresh token 是否相同（不把 `rt` 打进日志 / IPC），再用本行 `updated_at` 与文件 mtime（或最近一次观察到的写入时间）决定谁覆盖谁。同一谱系（从文件拷来 / 同一身份行）谁新谁赢；`rt` 不同但时间更新的一侧是活着的 grant，写到另一侧。时间相同且 `rt` 不同：**不自动覆盖**，账户健康标 `needs_attention`。身份对不上则永不互写。CLI 自己续期后文件更新，reconcile 仍覆盖这一行。API Key 没有 `rt`，只在 key 字符串不同且时间能分出先后时才写回，通常 no-op。这放宽了「Hub 永不写 CLI 登录文件」，**仅限这一行、且是本进程 refresh 之后行比文件新**。国产 OAuth 仍不开边。
+
+不变式：refresh token 不进 bridge、下游、IPC 或日志；listener 替换上游 auth 时 local bearer 不变（既有测试锚点 `ensure_listener_replaces_upstream_auth_while_keeping_local_bearer`）；文件跟随同步失败不得把其余账户或 token 暴露给调用方；Codex 订阅边继续沿用同一 owner 原则（`auth_json` 导入的 grant 归 Codex CLI 续期，Hub 跟随文件，同一身份则同样按 rt + mtime 对齐）。
 
 **凭据来源两种模式（用户可选，2026-08-21 拍板；跟随模式未接线）**：owner=CLI 的 grant 在账户层规划了两种存放方式，创建账户时由用户选择。现行实现只有**复制一份保存**；`live_ref` 跟随模式尚未落地。这是**凭据来源模式**，不是第四种 route，UI 不得叫「路由」（避免与本机路由混淆）；绑定走哪条边仍由 §4 矩阵与 `plan()` 决定，两种模式下可绑的边完全相同。
 

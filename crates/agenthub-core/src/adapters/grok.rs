@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use serde_json::{json, Map, Value};
+
 use crate::error::{AppError, Result};
 use crate::models::{
     AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
@@ -144,11 +146,10 @@ impl AgentAdapter for GrokAdapter {
                 verify_grok_field(&home.join("config.toml"), "api_key", key)?;
                 Ok(())
             }
-            "auth_json" => {
-                let body = account.credentials.get("body").cloned().ok_or_else(|| {
-                    AppError::InvalidArg("Grok account credentials.body is required".into())
-                })?;
-                write_verified_json_object(&home.join("auth.json"), &body)?;
+            "auth_json" | "" | "oauth" => {
+                let auth_path = home.join("auth.json");
+                let body = grok_auth_json_body_from_credentials(&account.credentials, &auth_path)?;
+                write_verified_json_object(&auth_path, &body)?;
                 // Official OAuth must win over leftover inline credentials.
                 clear_grok_field(&home.join("config.toml"), "api_key")?;
                 // Relay base_url would keep traffic off official endpoint.
@@ -223,6 +224,127 @@ impl AgentAdapter for GrokAdapter {
             cwd: opts.cwd.clone(),
             env: vec![],
         })
+    }
+}
+
+/// Flatten a Hub PKCE bundle into official `auth.json` object shape, patching
+/// an existing nested profile when that file is already the same grant.
+fn grok_auth_json_body_from_credentials(credentials: &Value, auth_path: &Path) -> Result<Value> {
+    if let Some(body) = credentials.get("body").filter(|body| body.is_object()) {
+        return Ok(body.clone());
+    }
+    let access = first_oauth_string(
+        credentials,
+        &["access_token", "accessToken", "access", "key"],
+    );
+    let refresh = first_oauth_string(credentials, &["refresh_token", "refreshToken", "refresh"]);
+    if access.is_none() && refresh.is_none() {
+        return Err(AppError::InvalidArg(
+            "Grok OAuth apply requires access_token or refresh_token".into(),
+        ));
+    }
+    let existing = if auth_path.is_file() {
+        std::fs::read_to_string(auth_path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .filter(|body| body.is_object())
+    } else {
+        None
+    };
+    if let Some(mut body) = existing {
+        patch_grok_oauth_secrets(&mut body, access.as_deref(), refresh.as_deref());
+        if first_oauth_string(&body, &["refresh_token", "refreshToken", "refresh"]).is_some()
+            || first_oauth_string(&body, &["access_token", "accessToken", "access", "key"])
+                .is_some()
+        {
+            return Ok(body);
+        }
+    }
+    let mut map = Map::new();
+    if let Some(access) = access {
+        map.insert("access_token".into(), json!(access));
+    }
+    if let Some(refresh) = refresh {
+        map.insert("refresh_token".into(), json!(refresh));
+    }
+    for key in ["email", "user_id", "sub"] {
+        if let Some(value) = credentials.get(key).cloned() {
+            if !value.is_null() {
+                map.insert(key.into(), value);
+            }
+        }
+    }
+    Ok(Value::Object(map))
+}
+
+fn first_oauth_string(value: &Value, keys: &[&str]) -> Option<String> {
+    match value {
+        Value::Object(map) => {
+            for key in keys {
+                if let Some(s) = map
+                    .get(*key)
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    return Some(s.to_string());
+                }
+            }
+            for nested in map.values() {
+                if nested.is_object() || nested.is_array() {
+                    if let Some(found) = first_oauth_string(nested, keys) {
+                        return Some(found);
+                    }
+                }
+            }
+            None
+        }
+        Value::Array(items) => items.iter().find_map(|item| first_oauth_string(item, keys)),
+        _ => None,
+    }
+}
+
+fn patch_grok_oauth_secrets(value: &mut Value, access: Option<&str>, refresh: Option<&str>) {
+    let Value::Object(map) = value else {
+        if let Value::Array(items) = value {
+            for item in items {
+                patch_grok_oauth_secrets(item, access, refresh);
+            }
+        }
+        return;
+    };
+    let looks_oauth = map.keys().any(|key| {
+        let lower = key.to_ascii_lowercase();
+        matches!(
+            lower.as_str(),
+            "refresh_token"
+                | "refreshtoken"
+                | "refresh"
+                | "email"
+                | "user_id"
+                | "userid"
+                | "access_token"
+                | "accesstoken"
+        )
+    });
+    for (key, nested) in map.iter_mut() {
+        if nested.is_string() {
+            let lower = key.to_ascii_lowercase();
+            if let Some(rt) = refresh {
+                if lower == "refresh_token" || lower == "refreshtoken" || lower == "refresh" {
+                    *nested = json!(rt);
+                }
+            }
+            if let Some(at) = access {
+                if lower == "access_token" || lower == "accesstoken" || lower == "access" {
+                    *nested = json!(at);
+                } else if looks_oauth && lower == "key" {
+                    *nested = json!(at);
+                }
+            }
+        } else if nested.is_object() || nested.is_array() {
+            patch_grok_oauth_secrets(nested, access, refresh);
+        }
     }
 }
 

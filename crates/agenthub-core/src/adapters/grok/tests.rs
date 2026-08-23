@@ -10,7 +10,9 @@ use super::{
     clear_grok_field, grok_auth_state, grok_cli_args, grok_supports_no_auto_update,
     read_grok_api_key, write_grok_api_key, GrokAdapter,
 };
-use crate::models::{AgentConfig, AgentId};
+use crate::models::{AccountKind, AgentConfig, AgentId, LiveAccount};
+
+static GROK_HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
 fn grok_account_key_reads_and_writes_active_nested_model() {
@@ -95,8 +97,9 @@ fn grok_api_key_and_missing_or_unparseable_auth_leaves_also_present_empty() {
 
 #[test]
 fn grok_write_config_points_base_url_at_loopback_and_drops_leftover_grok_model() {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let dir = tempdir().unwrap();
     let prev = std::env::var_os("GROK_HOME");
     std::env::set_var("GROK_HOME", dir.path());
@@ -162,11 +165,15 @@ fn grok_supports_no_auto_update_gates_old_semver() {
     assert!(grok_supports_no_auto_update(Some("not-a-version")));
     assert!(grok_supports_no_auto_update(Some("0.2.117")));
     assert!(grok_supports_no_auto_update(Some("0.2.118")));
-    assert!(grok_supports_no_auto_update(Some("grok 0.2.118 (1e1687c1cf)")));
+    assert!(grok_supports_no_auto_update(Some(
+        "grok 0.2.118 (1e1687c1cf)"
+    )));
     assert!(grok_supports_no_auto_update(Some("1.0.0")));
     assert!(!grok_supports_no_auto_update(Some("0.2.116")));
     assert!(!grok_supports_no_auto_update(Some("0.2.0")));
-    assert!(!grok_supports_no_auto_update(Some("grok 0.2.116 (deadbeef)")));
+    assert!(!grok_supports_no_auto_update(Some(
+        "grok 0.2.116 (deadbeef)"
+    )));
     assert!(
         !grok_supports_no_auto_update(Some("0.2.117-beta.1")),
         "semver prerelease of the min version is still older than 0.2.117"
@@ -266,4 +273,42 @@ fn build_run_spec_guards_auto_update_and_streams_json() {
     );
     assert_eq!(spec.args, expected);
     assert!(spec.env.is_empty());
+}
+
+#[test]
+fn apply_account_writes_pkce_bundle_into_auth_json() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("auth.json"),
+        r#"{"https://auth.x.ai::client":{"email":"a@example.com","user_id":"uid-1","key":"old-at","refresh_token":"old-rt"}}"#,
+    )
+    .unwrap();
+    let result = GrokAdapter.apply_account(&LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: serde_json::json!({
+            "type": "oauth",
+            "provider": "xai",
+            "access_token": "new-at",
+            "refresh_token": "new-rt",
+            "sub": "uid-1"
+        }),
+        label_hint: Some("hub".into()),
+        extra: serde_json::json!({ "source": "oauth_refresh" }),
+    });
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+    let body: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.path().join("auth.json")).unwrap()).unwrap();
+    assert_eq!(body["https://auth.x.ai::client"]["refresh_token"], "new-rt");
+    assert_eq!(body["https://auth.x.ai::client"]["key"], "new-at");
+    assert_eq!(body["https://auth.x.ai::client"]["email"], "a@example.com");
 }

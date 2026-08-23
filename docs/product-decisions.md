@@ -103,7 +103,7 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 | Codex 订阅 → Claude | **本机转发** | Claude 只听自己那套接口；这是本机转发，不是写 Claude 官方登录 |
 | Codex 订阅 → Grok | **本机转发** | Grok 用 `api_backend=responses` 连本机，不是写 Grok 官方登录 |
 
-如果刷新令牌只能用一次，原来的工具和目标工具各自刷新会互相打翻。定死的规矩是**谁登录的，谁续期**：从别的工具同步来的登录，续期归那个工具，AgentHub 只跟着它的文件同步，绝不自己去刷（Grok 是范例——官方 Grok CLI 自己续期 `auth.json`，AgentHub 过期时重读文件，不去碰刷新令牌）；AgentHub 自己发起的登录才由 AgentHub 续期。逐条选「目标自己再登录」或「由 AgentHub 统一刷新，目标只拿引用」。
+如果刷新令牌只能用一次，原来的工具和目标工具各自刷新会互相打翻。定死的规矩是**谁登录的，谁续期**：从别的工具同步来的登录，续期归那个工具，AgentHub 不拿它的刷新令牌去打 token 端点（Grok 是范例——官方 Grok CLI 自己续期 `auth.json`，AgentHub 过期时重读文件）；AgentHub 自己发起的登录才由 AgentHub 续期。若连接页这一行与官方登录文件是同一身份，用刷新令牌是否相同 + 更新时间（本行 `updated_at` 对文件 mtime，不是令牌过期时间）决定谁覆盖谁：谁新写谁；时间撞车且刷新令牌不同则停手。AgentHub 自己续期后，仅当这一行新于文件时才写回文件。逐条选「目标自己再登录」或「由 AgentHub 统一刷新，目标只拿引用」。
 
 存这份登录时你可以二选一（计划中，见 [provider-api-oauth-adaptation.md §5.1.2](provider-api-oauth-adaptation.md)）：
 

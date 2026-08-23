@@ -11,7 +11,8 @@ use super::super::AccountService;
 
 impl AccountService {
     /// Refresh OAuth tokens for a saved account (uses `refresh_token` grant).
-    /// Updates pool credentials; does not rewrite live files.
+    /// Updates the pool row. If this row is the same identity as the official
+    /// CLI login file and newer than the file, write the file too.
     pub fn refresh_token(&self, id_or_label: &str, agent: AgentId) -> Result<Account> {
         let started = Instant::now();
         let result = self.refresh_token_inner(id_or_label, agent);
@@ -189,12 +190,23 @@ impl AccountService {
         account.status = "active".into();
         account = self.prepare_account_surface(account);
         let adapter = self.adapter(agent).ok();
-        self.persist_refreshed_account(
+        let persisted = self.persist_refreshed_account(
             adapter.as_deref(),
             account,
             &expected_updated_at,
             agent == AgentId::Pi,
-        )
+        )?;
+        if let Err(error) = self.sync_refreshed_oauth_row_to_cli_file(&persisted) {
+            tracing::warn!(
+                module = crate::logging::targets::ACCOUNT,
+                op = "oauth_file_sync",
+                agent = agent.as_str(),
+                account_id = %persisted.id,
+                error_code = error.code(),
+                "hub oauth refresh could not sync the CLI login file"
+            );
+        }
+        Ok(persisted)
     }
 
     fn persist_refreshed_account(

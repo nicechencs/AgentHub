@@ -2,7 +2,8 @@
 //!
 //! CLI-imported grants (`auth.json` / `live`) are followed by re-reading the
 //! official file. Hub PKCE grants (`oauth_pkce` / `oauth_refresh`) may hit the
-//! token endpoint and write the account pool only.
+//! token endpoint. Same-identity file write-back after a Hub refresh is
+//! `oauth_file_sync` (row newer than file mtime only).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};

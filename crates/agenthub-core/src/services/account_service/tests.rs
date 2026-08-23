@@ -3251,3 +3251,233 @@ fn unrecognized_surface_survives_merge_and_reconcile() {
         "future-surface-v9"
     );
 }
+
+fn stamp_file_mtime(path: &Path, updated_at: &str) {
+    let dt = super::oauth_file_sync::parse_account_timestamp(updated_at).expect("mtime");
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::from(dt))
+        .unwrap();
+}
+
+fn grok_oauth_live(access: &str, refresh: &str) -> LiveAccount {
+    LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "a@example.com",
+                "user_id": "uid-1",
+                "key": access,
+                "refresh_token": refresh
+            }
+        }),
+        label_hint: Some("a@example.com".into()),
+        extra: json!({"source": "auth.json"}),
+    }
+}
+
+#[test]
+fn oauth_row_newer_than_cli_file_writes_file() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(grok_oauth_live("at-file", "rt-file"));
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let path = adapter.live_backup_paths()[0].clone();
+    stamp_file_mtime(&path, "2020-01-01 00:00:00.000000");
+
+    let mut newer = imported.clone();
+    newer.credentials["body"]["key"] = json!("at-row");
+    newer.credentials["body"]["refresh_token"] = json!("rt-row");
+    svc.repo()
+        .update_healed_fields(&newer, &imported.updated_at, "2099-01-01 00:00:00.000000")
+        .unwrap();
+
+    let listed = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed.len(), 1);
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["body"]["refresh_token"], "rt-row");
+    assert_eq!(live.credentials["body"]["key"], "at-row");
+    assert!(
+        adapter.write_attempts.load(Ordering::SeqCst) >= 1,
+        "newer row must write the CLI login file"
+    );
+}
+
+#[test]
+fn oauth_cli_file_newer_than_row_updates_row_file_unchanged() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(grok_oauth_live("at-old", "rt-old"));
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
+    adapter.set_live(grok_oauth_live("at-new", "rt-new"));
+
+    let listed = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, imported.id);
+    assert_eq!(listed[0].credentials["body"]["refresh_token"], "rt-new");
+    assert_eq!(listed[0].credentials["body"]["key"], "at-new");
+    assert_eq!(
+        adapter.write_attempts.load(Ordering::SeqCst),
+        writes_before,
+        "newer CLI file must not be overwritten"
+    );
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["body"]["refresh_token"], "rt-new");
+}
+
+#[test]
+fn oauth_same_rt_access_rotated_newer_side_wins() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(grok_oauth_live("at-file", "rt-shared"));
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let path = adapter.live_backup_paths()[0].clone();
+    stamp_file_mtime(&path, "2020-01-01 00:00:00.000000");
+
+    let mut newer = imported.clone();
+    newer.credentials["body"]["key"] = json!("at-row");
+    svc.repo()
+        .update_healed_fields(&newer, &imported.updated_at, "2099-01-01 00:00:00.000000")
+        .unwrap();
+
+    let _ = svc.list(Some(AgentId::Grok)).unwrap();
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["body"]["refresh_token"], "rt-shared");
+    assert_eq!(live.credentials["body"]["key"], "at-row");
+}
+
+#[test]
+fn oauth_different_identity_does_not_write_cli_file() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "hub-a".into(),
+            credentials: json!({
+                "type": "oauth",
+                "provider": "xai",
+                "access_token": "at-a",
+                "refresh_token": "rt-a",
+                "email": "a@example.com",
+                "sub": "uid-a"
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "email": "b@example.com",
+                "user_id": "uid-b",
+                "key": "at-b",
+                "refresh_token": "rt-b"
+            }
+        }),
+        label_hint: Some("b@example.com".into()),
+        extra: json!({"source": "auth.json"}),
+    });
+    let path = adapter.live_backup_paths()[0].clone();
+    stamp_file_mtime(&path, "2020-01-01 00:00:00.000000");
+    svc.repo()
+        .update_healed_fields(&created, &created.updated_at, "2099-01-01 00:00:00.000000")
+        .unwrap();
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
+
+    let listed = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        adapter.write_attempts.load(Ordering::SeqCst),
+        writes_before,
+        "different identity must never write across"
+    );
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["body"]["refresh_token"], "rt-b");
+    let stored_a = svc.get(&created.id, Some(AgentId::Grok)).unwrap();
+    assert_eq!(stored_a.credentials["refresh_token"], "rt-a");
+    assert!(
+        listed.iter().any(|row| row.id == created.id),
+        "row A must stay"
+    );
+}
+
+#[test]
+fn oauth_equal_mtime_different_rt_does_not_overwrite() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(grok_oauth_live("at-row", "rt-row-secret"));
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    let stamp = "2026-06-15 12:00:00.000000";
+    svc.repo()
+        .update_healed_fields(&imported, &imported.updated_at, stamp)
+        .unwrap();
+    adapter.set_live(grok_oauth_live("at-file", "rt-file-secret"));
+    stamp_file_mtime(&adapter.live_backup_paths()[0], stamp);
+    let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
+
+    let listed = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, imported.id);
+    assert_eq!(
+        listed[0].credentials["body"]["refresh_token"],
+        "rt-row-secret"
+    );
+    assert_eq!(
+        listed[0].extra.get("health").and_then(|v| v.as_str()),
+        Some("needs_attention")
+    );
+    assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), writes_before);
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["body"]["refresh_token"], "rt-file-secret");
+
+    let dumped = serde_json::to_string(&listed[0].redacted()).unwrap();
+    assert!(
+        !dumped.contains("rt-row-secret") && !dumped.contains("rt-file-secret"),
+        "redacted list/IPC must not include raw refresh tokens: {dumped}"
+    );
+}
+
+#[test]
+fn grok_hub_pkce_refresh_writes_auth_json_when_same_identity_row_is_newer() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_live(grok_oauth_live("at-file", "old-refresh"));
+    stamp_file_mtime(
+        &adapter.live_backup_paths()[0],
+        "2020-01-01 00:00:00.000000",
+    );
+    let created = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "hub-pkce".into(),
+            credentials: json!({
+                "type": "oauth",
+                "provider": "xai",
+                "access_token": "old-access",
+                "refresh_token": "old-refresh",
+                "sub": "uid-1"
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+    let (port, server) = spawn_oauth_token_server("new-access", "new-refresh");
+    let refreshed = crate::oauth::with_token_url_override(
+        format!("http://127.0.0.1:{port}/oauth/token"),
+        || svc.refresh_token(&created.id, AgentId::Grok),
+    )
+    .unwrap();
+    let _ = server.join();
+    assert_eq!(refreshed.credentials["refresh_token"], "new-refresh");
+    assert!(
+        adapter.write_attempts.load(Ordering::SeqCst) >= 1,
+        "same-identity hub refresh must write the CLI login file when the row is newer"
+    );
+    let live = adapter.read_account().unwrap();
+    assert_eq!(live.credentials["body"]["refresh_token"], "new-refresh");
+    assert_eq!(live.credentials["body"]["key"], "new-access");
+}

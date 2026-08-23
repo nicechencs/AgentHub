@@ -142,6 +142,18 @@ impl AccountService {
         let matches = authorization_duplicates(adapter, agent, live.kind, &live.credentials, &rows);
         let match_count = matches.len();
         if let Some(existing) = pick_primary_authorization_match(matches) {
+            if existing.kind == AccountKind::Oauth
+                && live.kind == AccountKind::Oauth
+                && super::oauth_file_sync::supports_oauth_file_sync(agent)
+            {
+                return self.reconcile_oauth_row_with_cli_file(
+                    adapter,
+                    agent,
+                    existing,
+                    live,
+                    match_count,
+                );
+            }
             let (row, changed) = self.update_live_row(adapter, existing, live);
             if match_count > 1 {
                 let mark_current = agent != AgentId::Pi;
