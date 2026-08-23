@@ -25,6 +25,18 @@ function stripIgnoredCopy(
   if (!ignoreAgentId || !target.copies?.length) return target;
   const copies = target.copies.filter((copy) => copy.agentId !== ignoreAgentId);
   if (copies.length === target.copies.length) return target;
+  if (target.includeShared) {
+    const kept =
+      target.privateAgent && target.privateAgent !== ignoreAgentId
+        ? copies.find((copy) => copy.agentId === target.privateAgent)
+        : undefined;
+    return {
+      ...target,
+      copies,
+      privateAgent: kept?.agentId ?? null,
+      sourceDir: kept?.sourceDir ?? target.libraryDir ?? target.sourceDir,
+    };
+  }
   if (copies.length === 0) return target;
   const selected =
     copies.find((copy) => copy.agentId === target.privateAgent) ?? copies[0]!;
@@ -34,6 +46,59 @@ function stripIgnoredCopy(
     privateAgent: selected.agentId,
     sourceDir: selected.sourceDir,
   };
+}
+
+/** Optimistic preview after deleting one tool folder. Shared library stays open. */
+export function previewAfterRemoveFromTool(
+  preview: SkillPreviewTarget,
+  agentId: string,
+): SkillPreviewTarget | 'close' {
+  const remaining = (preview.copies ?? []).filter((copy) => copy.agentId !== agentId);
+  if (preview.includeShared) {
+    const leaveAgent = preview.privateAgent == null || preview.privateAgent === agentId;
+    const kept = remaining.find((copy) => copy.agentId === preview.privateAgent);
+    return {
+      ...preview,
+      copies: remaining,
+      privateAgent: leaveAgent ? null : (kept?.agentId ?? null),
+      sourceDir: leaveAgent
+        ? (preview.libraryDir ?? preview.sourceDir)
+        : (kept?.sourceDir ?? preview.libraryDir ?? preview.sourceDir),
+    };
+  }
+  if (remaining.length === 0) return 'close';
+  const next =
+    remaining.find((copy) => copy.agentId === preview.privateAgent) ?? remaining[0]!;
+  return {
+    ...preview,
+    copies: remaining,
+    privateAgent: next.agentId,
+    sourceDir: next.sourceDir,
+  };
+}
+
+/**
+ * When a previewed agent is hidden or uninstalled: jump to another visible
+ * copy, or to the shared library tab. Private-only previews close if none remain.
+ */
+export function previewAfterHiddenAgent(
+  preview: SkillPreviewTarget,
+  visibleAgentIds: ReadonlySet<string>,
+): SkillPreviewTarget | 'keep' | 'close' {
+  const origin = preview.privateAgent;
+  if (!origin || visibleAgentIds.has(origin)) return 'keep';
+  const next = (preview.copies ?? []).find((copy) => visibleAgentIds.has(copy.agentId));
+  if (next) {
+    return { ...preview, privateAgent: next.agentId, sourceDir: next.sourceDir };
+  }
+  if (preview.includeShared) {
+    return {
+      ...preview,
+      privateAgent: null,
+      sourceDir: preview.libraryDir ?? preview.sourceDir,
+    };
+  }
+  return 'close';
 }
 
 /**
@@ -70,13 +135,20 @@ export function resyncPreviewTarget(
     const shared = localRows.find(
       (item) => isSharedCatalogRow(item) && item.id === skillId,
     );
-    if (shared) return previewTargetFromCatalogRow(shared);
+    if (shared) {
+      return stripIgnoredCopy(
+        previewTargetFromCatalogRow(shared, agent),
+        ignoreAgentId,
+      );
+    }
     return catalogReady ? 'close' : 'keep';
   }
 
   const shared = localRows.find(
     (item) => isSharedCatalogRow(item) && item.id === skillId,
   );
-  if (shared) return previewTargetFromCatalogRow(shared);
+  if (shared) {
+    return stripIgnoredCopy(previewTargetFromCatalogRow(shared), ignoreAgentId);
+  }
   return catalogReady ? 'close' : 'keep';
 }

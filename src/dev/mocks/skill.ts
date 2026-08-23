@@ -19,6 +19,21 @@ import { loadJson } from '@/lib/ui-preferences';
 /** Browser mock skills always have a shared source directory. */
 type MockSkill = Omit<Skill, 'sourceDir'> & { sourceDir: string };
 
+/** Last explicit projection mode per skill/agent; left-click reuses it (default copy). */
+const lastProjectionMode = new Map<string, 'link' | 'copy'>();
+
+function projectionModeKey(skillId: string, agentId: AgentId): string {
+  return `${skillId}:${agentId}`;
+}
+
+function rememberProjectionMode(skillId: string, agentId: AgentId, mode: 'link' | 'copy') {
+  lastProjectionMode.set(projectionModeKey(skillId, agentId), mode);
+}
+
+function lastStoredProjectionMode(skillId: string, agentId: AgentId): 'link' | 'copy' {
+  return lastProjectionMode.get(projectionModeKey(skillId, agentId)) ?? 'copy';
+}
+
 /** Generic demo catalog — not a personal skill dump. */
 const uniqueNames = [
   'notes', 'pdf', 'pdf-helper', 'git-commit', 'code-review', 'summarize', 'format-json',
@@ -81,6 +96,8 @@ function buildMockSkill(name: string): MockSkill {
       conflicts.push(agentId);
     }
     sync[agentId] = state;
+    if (state === 'linked') rememberProjectionMode(name, agentId, 'link');
+    else if (state === 'copied') rememberProjectionMode(name, agentId, 'copy');
     projections.push({
       agent: agentId,
       state,
@@ -229,18 +246,31 @@ export function createMockSkillPort(): SkillPort {
       }));
     },
 
-    async toggleSkillSync(skillId, agentId, _opts = {}) {
+    async toggleSkillSync(skillId, agentId, opts = {}) {
       await delay(150);
       const skill = mockState.find((s) => s.id === skillId);
       if (!skill || skill.sync[agentId] === 'unsupported') {
         return { state: 'unsupported' as const, conflict: false };
       }
-      const next: SkillSyncState = isMappedState(skill.sync[agentId]) ? 'absent' : 'copied';
+      const current = skill.sync[agentId];
+      const next: SkillSyncState = opts.mode
+        ? opts.mode === 'link'
+          ? 'linked'
+          : 'copied'
+        : isMappedState(current)
+          ? 'absent'
+          : lastStoredProjectionMode(skillId, agentId) === 'link'
+            ? 'linked'
+            : 'copied';
+      if (opts.mode) rememberProjectionMode(skillId, agentId, opts.mode);
       skill.sync[agentId] = next;
       const proj = skill.projections.find((p) => p.agent === agentId);
       if (proj) {
         proj.state = next;
-        proj.linkKind = 'none';
+        proj.linkKind = next === 'linked' ? 'junction' : 'none';
+        if (isMappedState(next) && !proj.targetDir) {
+          proj.targetDir = `~/.mock/${agentId}/skills/${skillId}`;
+        }
       }
       skill.conflicts = skill.conflicts.filter((a) => a !== agentId);
       return { state: next, conflict: false };
@@ -331,7 +361,12 @@ export function createMockSkillPort(): SkillPort {
     async uninstallSkill(skillId, privateAgent) {
       await delay(120);
       if (!privateAgent) {
-        throw unsupportedError('技能卸载（浏览器 mock）');
+        const i = mockState.findIndex((s) => s.id === skillId);
+        if (i < 0) {
+          throw new Error(`技能不存在: ${skillId}`);
+        }
+        mockState.splice(i, 1);
+        return;
       }
       const idx = mockPrivateSkills.findIndex(
         (s) => s.id === skillId && s.origin === privateAgent,

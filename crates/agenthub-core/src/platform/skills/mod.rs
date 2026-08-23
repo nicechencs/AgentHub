@@ -63,7 +63,8 @@ pub(crate) use journal::journal_path as skill_commit_journal_path;
 pub(crate) use lockfile::{skill_lock_load, skill_lock_remove, skill_lock_upsert};
 pub(crate) use ownership::{
     clear_managed_target_for_reproject, finalize_link_projection_ownership,
-    project_copy_with_ownership, record_copy_ownership, unproject_with_ownership,
+    project_copy_with_ownership, record_copy_ownership, recycle_skill_dir,
+    unproject_with_ownership,
 };
 pub(crate) use packages::{materialize_projection, validate_and_collect_source, write_skill_tree};
 pub(crate) use projection_link::create_projection_link;

@@ -35,9 +35,17 @@ export type SkillsLibraryPanelProps = {
   onToggleSelect: (id: string) => void;
   onToggleSelectAll: () => void;
   onCellClick: (skill: Skill, agentId: AgentId) => void;
+  onCellProject?: (
+    skill: Skill,
+    agentId: AgentId,
+    mode: 'link' | 'copy' | 'disable',
+  ) => void;
   onPreview: (row: InstalledSkillDto, agentId?: AgentId) => void;
   activeKey: string | null;
   onAdopt: (skillId: string, agentId: AgentId, name: string) => void;
+  onOpenDir?: (path: string) => void;
+  onDeleteShared?: (row: InstalledSkillDto) => void;
+  onDeleteFromTool?: (skillId: string, agentId: AgentId, name: string) => void;
   agents: AgentColumn[];
   installedAgentIds: Set<AgentId> | AgentId[];
 };
@@ -47,7 +55,7 @@ export function SkillsLibraryPanel(props: SkillsLibraryPanelProps) {
     error, loading, onRetry, search, onSearchChange, filter, onFilterChange,
     filterCounts, selected, onClearSelected, batchSyncing, onBatchEnable,
     filtered, allSelected, pendingCells, importingIds, onToggleSelect, onToggleSelectAll,
-    onCellClick, onPreview, activeKey, onAdopt, agents, installedAgentIds,
+    onCellClick, onCellProject, onPreview, activeKey, onAdopt, onOpenDir, onDeleteShared, onDeleteFromTool, agents, installedAgentIds,
   } = props;
   const { t } = useI18n();
 
@@ -155,9 +163,13 @@ export function SkillsLibraryPanel(props: SkillsLibraryPanelProps) {
           onToggleSelect={onToggleSelect}
           onToggleSelectAll={onToggleSelectAll}
           onCellClick={onCellClick}
+          onCellProject={onCellProject}
           onPreview={onPreview}
           activeKey={activeKey}
           onAdopt={onAdopt}
+          onOpenDir={onOpenDir}
+          onDeleteShared={onDeleteShared}
+          onDeleteFromTool={onDeleteFromTool}
           agents={agents}
           installedAgentIds={installedAgentIds}
         />

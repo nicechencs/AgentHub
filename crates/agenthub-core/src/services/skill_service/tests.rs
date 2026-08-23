@@ -582,6 +582,23 @@ fn setup_write_fixture() -> (
 }
 
 #[test]
+fn uninstall_skill_removes_shared_source() {
+    let (_tmp, source, _c, _x, _g, svc) = setup_write_fixture();
+    write_file(&source.join("demo").join("SKILL.md"), &skill_md("D", "d"));
+    assert!(source.join("demo").is_dir());
+    svc.uninstall_skill("demo", None).unwrap();
+    assert!(!source.join("demo").exists());
+}
+
+#[test]
+fn uninstall_private_skill_removes_agent_dir() {
+    let (_tmp, _source, claude, _x, _g, svc) = setup_write_fixture();
+    write_file(&claude.join("demo").join("SKILL.md"), &skill_md("D", "d"));
+    svc.uninstall_private_skill("demo", AgentId::Claude).unwrap();
+    assert!(!claude.join("demo").exists());
+}
+
+#[test]
 fn sync_happy_path_creates_projection() {
     let (_tmp, source, claude, _codex, _grok, svc) = setup_write_fixture();
     write_file(

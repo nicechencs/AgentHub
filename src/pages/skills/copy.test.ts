@@ -58,8 +58,8 @@ describe('skills copy via createTranslator(zh)', () => {
     expect(skillCellTip(t, 'Claude', 'absent', 'private_source')).toBe(
       privateSkillRowHint(t),
     );
-    expect(privateSkillRowHint(t)).toBe('只在本工具 · 先加入共享库');
-    expect(privateSkillRowHint(t)).toContain('先加入共享库');
+    expect(privateSkillRowHint(t)).toBe('只在本工具 · 可加入共享库');
+    expect(privateSkillRowHint(t)).toContain('可加入共享库');
   });
 
   it('tabs are library + market only', () => {
@@ -69,6 +69,13 @@ describe('skills copy via createTranslator(zh)', () => {
     expect(t('skills.tabs.market')).toBe('技能市场');
     expect(t('skills.tabs.libraryBadge', { n: 12 })).toBe('12 个本地技能');
     expect(t('skills.menu.removePrivate')).toBe('从该工具目录删除');
+    expect(t('skills.menu.enableLink')).toBe('启用为共用');
+    expect(t('skills.menu.enableCopy')).toBe('启用为副本');
+    expect(t('skills.menu.disable')).toBe('取消启用');
+    expect(t('skills.menu.openFolder')).toBe('打开文件夹');
+    expect(t('skills.menu.deleteShared')).toBe('从共享库删除');
+    expect(t('skills.menu.deleteFromTool')).toBe('从该工具目录删除');
+    expect(t('skills.dialog.deleteSharedConfirm')).toBe('删除到回收站');
   });
 
   it('shared-root column names the path and states presence', () => {

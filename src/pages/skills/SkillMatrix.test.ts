@@ -201,6 +201,28 @@ describe('private row column placement', () => {
     expect(fromCell.privateAgent).toBe('cursor');
     expect(fromCell.sourceDir).toBe('/cursor/pet');
   });
+
+  it('shared preview lists mapped agent copies and a library tab', () => {
+    const shared = row({
+      id: 'pdf',
+      origin: 'shared',
+      sourceDir: '/shared/pdf',
+      projections: [
+        { agent: 'claude', state: 'copied', targetDir: '/claude/pdf' },
+        { agent: 'cursor', state: 'linked', targetDir: '/cursor/pdf', linkKind: 'junction' },
+        { agent: 'codex', state: 'absent' },
+      ],
+    });
+    const fromName = previewTargetFromCatalogRow(shared);
+    expect(fromName.includeShared).toBe(true);
+    expect(fromName.privateAgent).toBeNull();
+    expect(fromName.libraryDir).toBe('/shared/pdf');
+    expect(fromName.copies?.map((copy) => copy.agentId)).toEqual(['claude', 'cursor']);
+    const fromCell = previewTargetFromCatalogRow(shared, 'cursor');
+    expect(fromCell.privateAgent).toBe('cursor');
+    expect(fromCell.sourceDir).toBe('/cursor/pdf');
+    expect(fromCell.includeShared).toBe(true);
+  });
 });
 
 describe('shared-root presence', () => {
