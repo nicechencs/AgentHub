@@ -117,10 +117,9 @@ describe('Bridges page', () => {
     expect(CREATE_ROUTE_TARGETS).toEqual(['claude', 'codex', 'grok']);
     expect(canSubmitCreateRoute({
       name: 'OpenRouter',
-      url: 'https://openrouter.ai/api/v1',
       key: 'test-key',
       model: '',
-      targets: ['claude'],
+      clients: [{ target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' }],
     })).toBe(true);
   });
 
