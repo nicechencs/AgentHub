@@ -615,6 +615,12 @@ impl UsageRepo {
     }
 }
 
+/// Appends a `ts >= since` filter comparing RFC3339 strings lexically.
+///
+/// Premise: every collector writes `ts` in the same normalized RFC3339/UTC
+/// format (same offset, same fractional-second precision), so lexicographic
+/// order matches chronological order. Mixed formats (e.g. differing UTC
+/// offsets or precision) can produce boundary inaccuracies at day edges.
 fn push_since_filter(
     sql: &mut String,
     args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,

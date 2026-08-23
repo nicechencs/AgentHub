@@ -53,9 +53,7 @@ fn truncated_structured_result_keeps_captured_stdout() {
 }
 
 fn claude_text_line(text: &str) -> String {
-    format!(
-        r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{text}"}}]}}}}"#
-    )
+    format!(r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{text}"}}]}}}}"#)
 }
 
 fn ok_result(stdout: impl Into<String>) -> AgentRunResult {

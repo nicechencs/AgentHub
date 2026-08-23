@@ -4,11 +4,11 @@ use crate::models::{
     AuthState, Capability, CapabilityState, DetectResult, DetectStatus, InstallChannel, RunOptions,
     RunSpec,
 };
+use crate::services::LiveWriteAuthority;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use crate::services::LiveWriteAuthority;
 use tempfile::tempdir;
 
 struct FakeAdapter {
@@ -1395,7 +1395,10 @@ fn provider_compensation_fails_closed_when_another_writer_changes_the_row() {
         .unwrap_err();
 
     assert_eq!(error.code(), "provider.current.apply.rollback.database");
-    assert_eq!(svc.repo().get_by_id(&original.id).unwrap().unwrap(), external);
+    assert_eq!(
+        svc.repo().get_by_id(&original.id).unwrap().unwrap(),
+        external
+    );
 }
 
 #[test]
@@ -1475,7 +1478,9 @@ fn provider_apply_failure_restores_active_account_counterpart_and_binding() {
         .connections
         .create_and_activate_account(&account)
         .unwrap();
-    let provider_before = svc.create(&input("c1", AgentId::Claude, "Provider", false)).unwrap();
+    let provider_before = svc
+        .create(&input("c1", AgentId::Claude, "Provider", false))
+        .unwrap();
 
     let mut update = input("c1", AgentId::Claude, "Provider", true);
     update.settings_config = json!({"env": {"ANTHROPIC_AUTH_TOKEN": "new-live"}});
@@ -1491,11 +1496,13 @@ fn provider_apply_failure_restores_active_account_counterpart_and_binding() {
         account_repo.get_by_id(&account_before.id).unwrap().unwrap(),
         account_before
     );
-    assert!(account_repo
-        .get_current(AgentId::Claude)
-        .unwrap()
-        .unwrap()
-        .is_current);
+    assert!(
+        account_repo
+            .get_current(AgentId::Claude)
+            .unwrap()
+            .unwrap()
+            .is_current
+    );
     assert_eq!(adapter.config(), live);
 }
 
@@ -1571,7 +1578,14 @@ fn profile_linked_legacy_projection_skips_surface_precompute() {
             raw: json!({"env": {"ANTHROPIC_AUTH_TOKEN": "live"}}),
         },
     );
-    let provider = svc.create(&input("legacy-profile-provider", AgentId::Claude, "Legacy", false)).unwrap();
+    let provider = svc
+        .create(&input(
+            "legacy-profile-provider",
+            AgentId::Claude,
+            "Legacy",
+            false,
+        ))
+        .unwrap();
     let profile = crate::models::AdapterProfile {
         id: "legacy-profile".into(),
         name: "Legacy projection profile".into(),
@@ -1594,13 +1608,14 @@ fn profile_linked_legacy_projection_skips_surface_precompute() {
         .create(&profile)
         .unwrap();
 
-    let updated = svc.upsert(&input(
-        "legacy-profile-provider",
-        AgentId::Claude,
-        "Legacy renamed",
-        false,
-    ))
-    .unwrap();
+    let updated = svc
+        .upsert(&input(
+            "legacy-profile-provider",
+            AgentId::Claude,
+            "Legacy renamed",
+            false,
+        ))
+        .unwrap();
     assert!(updated.meta.get("surface").is_none());
     let stored = svc
         .repo()

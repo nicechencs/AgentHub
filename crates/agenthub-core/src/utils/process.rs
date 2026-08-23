@@ -318,9 +318,8 @@ impl WindowsJob {
     fn attach_and_resume(&self, child: &Child) -> io::Result<()> {
         use std::os::windows::io::AsRawHandle;
 
-        let assigned = unsafe {
-            assign_process_to_job_object(self.handle, child.as_raw_handle() as *mut _)
-        };
+        let assigned =
+            unsafe { assign_process_to_job_object(self.handle, child.as_raw_handle() as *mut _) };
         if assigned == 0 {
             return Err(io::Error::last_os_error());
         }
@@ -412,10 +411,7 @@ unsafe extern "system" {
         information: *const std::ffi::c_void,
         information_length: u32,
     ) -> i32;
-    fn AssignProcessToJobObject(
-        job: *mut std::ffi::c_void,
-        process: *mut std::ffi::c_void,
-    ) -> i32;
+    fn AssignProcessToJobObject(job: *mut std::ffi::c_void, process: *mut std::ffi::c_void) -> i32;
     fn CreateToolhelp32Snapshot(flags: u32, process_id: u32) -> *mut std::ffi::c_void;
     fn Thread32First(snapshot: *mut std::ffi::c_void, entry: *mut ThreadEntry32) -> i32;
     fn Thread32Next(snapshot: *mut std::ffi::c_void, entry: *mut ThreadEntry32) -> i32;
@@ -1468,34 +1464,30 @@ fn run_spec_with_timeout(
             stdout,
             stderr,
             truncated,
-        } => {
-            AgentRunResult {
-                agent: spec.agent,
-                status: RunStatus::Timeout,
-                exit_code: None,
-                duration_ms: started.elapsed().as_millis() as u64,
-                stdout,
-                stderr,
-                command,
-                error: Some(format!("timed out after {}s", timeout.as_secs())),
-                truncated,
-                native_session_id: None,
-            }
-        }
-        WaitOutcome::IoError(e) => {
-            AgentRunResult {
-                agent: spec.agent,
-                status: RunStatus::Failed,
-                exit_code: None,
-                duration_ms: started.elapsed().as_millis() as u64,
-                stdout: String::new(),
-                stderr: String::new(),
-                command,
-                error: Some(format!("wait failed: {e}")),
-                truncated: false,
-                native_session_id: None,
-            }
-        }
+        } => AgentRunResult {
+            agent: spec.agent,
+            status: RunStatus::Timeout,
+            exit_code: None,
+            duration_ms: started.elapsed().as_millis() as u64,
+            stdout,
+            stderr,
+            command,
+            error: Some(format!("timed out after {}s", timeout.as_secs())),
+            truncated,
+            native_session_id: None,
+        },
+        WaitOutcome::IoError(e) => AgentRunResult {
+            agent: spec.agent,
+            status: RunStatus::Failed,
+            exit_code: None,
+            duration_ms: started.elapsed().as_millis() as u64,
+            stdout: String::new(),
+            stderr: String::new(),
+            command,
+            error: Some(format!("wait failed: {e}")),
+            truncated: false,
+            native_session_id: None,
+        },
     }
 }
 
@@ -1610,8 +1602,16 @@ fn wait_with_timeout(
             };
             WaitOutcome::Finished {
                 status,
-                stdout: string_from_acc(&stdout_acc, stdout_trunc.load(Ordering::SeqCst), stdout_incomplete),
-                stderr: string_from_acc(&stderr_acc, stderr_trunc.load(Ordering::SeqCst), stderr_incomplete),
+                stdout: string_from_acc(
+                    &stdout_acc,
+                    stdout_trunc.load(Ordering::SeqCst),
+                    stdout_incomplete,
+                ),
+                stderr: string_from_acc(
+                    &stderr_acc,
+                    stderr_trunc.load(Ordering::SeqCst),
+                    stderr_incomplete,
+                ),
                 truncated: stdout_trunc.load(Ordering::SeqCst)
                     || stderr_trunc.load(Ordering::SeqCst)
                     || stdout_incomplete
@@ -1638,8 +1638,16 @@ fn wait_with_timeout(
                 &mut terminated,
             ) || stderr_read_inc.load(Ordering::SeqCst);
             WaitOutcome::Timeout {
-                stdout: string_from_acc(&stdout_acc, stdout_trunc.load(Ordering::SeqCst), stdout_incomplete),
-                stderr: string_from_acc(&stderr_acc, stderr_trunc.load(Ordering::SeqCst), stderr_incomplete),
+                stdout: string_from_acc(
+                    &stdout_acc,
+                    stdout_trunc.load(Ordering::SeqCst),
+                    stdout_incomplete,
+                ),
+                stderr: string_from_acc(
+                    &stderr_acc,
+                    stderr_trunc.load(Ordering::SeqCst),
+                    stderr_incomplete,
+                ),
                 truncated: stdout_trunc.load(Ordering::SeqCst)
                     || stderr_trunc.load(Ordering::SeqCst)
                     || stdout_incomplete
@@ -1661,7 +1669,10 @@ fn read_capped<R: Read>(stream: Option<R>, max: usize) -> (Vec<u8>, bool) {
     let incomplete = AtomicBool::new(false);
     read_capped_into(stream, max, &acc, &trunc, &incomplete);
     let buf = acc.lock().map(|g| g.clone()).unwrap_or_default();
-    (buf, trunc.load(Ordering::SeqCst) || incomplete.load(Ordering::SeqCst))
+    (
+        buf,
+        trunc.load(Ordering::SeqCst) || incomplete.load(Ordering::SeqCst),
+    )
 }
 
 fn read_capped_into<R: Read>(

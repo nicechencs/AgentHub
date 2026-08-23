@@ -100,11 +100,7 @@ impl LifecycleCoordinator {
     /// `data_dir` is the already-resolved path, including an explicit CLI
     /// override, and is retained immutably for the lifetime of this saga
     /// coordinator.
-    pub fn new_with_data_dir(
-        db: Database,
-        registry: AdapterRegistry,
-        data_dir: PathBuf,
-    ) -> Self {
+    pub fn new_with_data_dir(db: Database, registry: AdapterRegistry, data_dir: PathBuf) -> Self {
         let executor = Arc::new(BuiltinLifecycleInstallExecutor::new(&db, registry));
         Self::with_registries_and_data_dir(
             db,
@@ -134,12 +130,7 @@ impl LifecycleCoordinator {
     ) -> Self {
         let data_dir = normalized_database_data_dir(&db);
         Self::with_registries_and_executor_and_optional_data_dir(
-            db,
-            detectors,
-            installs,
-            executor,
-            data_dir,
-            None,
+            db, detectors, installs, executor, data_dir, None,
         )
     }
 
@@ -417,8 +408,7 @@ impl LifecycleCoordinator {
                     }
                     self.data_dir.as_deref().ok_or_else(|| {
                         AppError::InvalidArg(
-                            "cannot purge config: actual AgentHub data directory is unknown"
-                                .into(),
+                            "cannot purge config: actual AgentHub data directory is unknown".into(),
                         )
                     })?
                 } else {
@@ -426,13 +416,7 @@ impl LifecycleCoordinator {
                     // disabled; retain compatibility for non-purge calls.
                     std::path::Path::new("")
                 };
-                lifecycle_executor.uninstall(
-                    key,
-                    contribution.as_ref(),
-                    purge_config,
-                    data_dir,
-                    ex,
-                )
+                lifecycle_executor.uninstall(key, contribution.as_ref(), purge_config, data_dir, ex)
             },
             executor,
         )

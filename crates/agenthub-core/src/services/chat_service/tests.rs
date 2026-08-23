@@ -250,8 +250,14 @@ fn ensure_default_does_not_merge_titled_or_used_conversations() {
     let titled = chat
         .create_conversation(vec![AgentId::Claude], None)
         .unwrap();
-    chat.update_conversation(&titled.id, Some("real conversation".into()), None, None, None)
-        .unwrap();
+    chat.update_conversation(
+        &titled.id,
+        Some("real conversation".into()),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
 
     let used = chat
         .create_conversation(vec![AgentId::Claude], None)
@@ -534,7 +540,11 @@ fn send_events_include_turn_and_no_running_left() {
             | ChatEvent::AgentFinished { turn: t, .. } => {
                 assert_eq!(*t, turn);
             }
-            ChatEvent::Finished { turn: t, ok, cancelled } => {
+            ChatEvent::Finished {
+                turn: t,
+                ok,
+                cancelled,
+            } => {
                 assert_eq!(*t, turn);
                 assert!(*ok);
                 assert!(!*cancelled);
@@ -877,7 +887,10 @@ fn resume_hard_failure_discards_new_sid_from_results() {
     let db = Database::open(&dir.path().join("t.db")).unwrap();
     let run = Arc::new(RunService::with_runner(
         deterministic_registry(),
-        Arc::new(SidProcessRunner::with_status("fresh-sid", RunStatus::Failed)),
+        Arc::new(SidProcessRunner::with_status(
+            "fresh-sid",
+            RunStatus::Failed,
+        )),
     ));
     let chat = ChatService::new(db.clone(), run);
     let conv = chat

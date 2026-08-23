@@ -11,6 +11,7 @@ use serde_json::Value;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio_util::sync::CancellationToken;
 
+use crate::bridge::account::PickedMember;
 use crate::bridge::protocol::anthropic_messages::{
     anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse, AnthropicStreamToIr,
 };
@@ -18,7 +19,6 @@ use crate::bridge::protocol::chat::{encode_chat_from_ir, encode_chat_sse, ChatSt
 use crate::bridge::protocol::responses::{
     encode_responses_from_ir, responses_output_to_ir, IrToResponsesSse, ResponsesStreamToIr,
 };
-use crate::bridge::account::PickedMember;
 use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError};
 
 use super::http::{

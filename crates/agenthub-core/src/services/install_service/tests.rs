@@ -44,7 +44,7 @@ fn install_runtime_powershell_refuses() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::PowerShell, "winget", &ex).unwrap();
     assert!(!out.ok);
@@ -73,7 +73,7 @@ fn native_sh_install_does_not_probe_powershell() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
 
     // Grok has an allowlisted install.sh URL.  The mock executor prevents any
@@ -127,7 +127,7 @@ fn install_agent_env_not_ready_without_deps() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     // Force path: if env is ready on this machine, the test still asserts shape.
     let out = install_agent(&registry, AgentId::Codex, "npm", false, &ex).unwrap();
@@ -165,7 +165,7 @@ fn install_from_contribution_uses_npm_allowlist_without_agent_id() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
 
     if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
@@ -212,7 +212,7 @@ fn install_agent_with_contribution_prefers_passed_npm_package() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
 
     if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
@@ -345,7 +345,7 @@ fn uninstall_not_installed_fails_without_exec() {
         calls: calls.clone(),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     // Use a unique fake: if all real agents are installed on this machine,
     // still assert failure path for NotFound by checking message shape when
@@ -380,7 +380,7 @@ fn purge_is_excluded_by_a_provider_live_saga_before_uninstall_preflight() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
 
     let error = uninstall_agent(
@@ -401,8 +401,7 @@ fn custom_agent_home_purge_fails_before_external_executor() {
     let _env = crate::utils::test_env::lock_test_env();
     let _codex = crate::integrations::agents::codex::leftover::lock_codex_home();
     let custom = tempfile::tempdir().unwrap();
-    let _codex_home =
-        crate::utils::test_env::EnvVarGuard::set("CODEX_HOME", custom.path());
+    let _codex_home = crate::utils::test_env::EnvVarGuard::set("CODEX_HOME", custom.path());
 
     let calls = Arc::new(Mutex::new(Vec::new()));
     let executor = MockExecutor {
@@ -506,7 +505,7 @@ fn upgrade_not_installed_fails_closed() {
         calls: calls.clone(),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     // Pick agent that is NotFound if any; otherwise skip to avoid network install.
     for agent in AgentId::ALL {
@@ -530,7 +529,7 @@ fn workbuddy_setup_channel_never_reports_success() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     let mut logs = Vec::new();
 
@@ -567,7 +566,7 @@ fn install_runtime_powershell_logs_dual_version_context() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::PowerShell, "winget", &ex).unwrap();
     assert!(!out.ok);
@@ -588,7 +587,7 @@ fn install_runtime_git_uses_winget_git_package() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: "Successfully installed".into(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     // Even if git is already present, we still invoke the platform package
     // manager (then redetect). If it is missing, resolution fails before the
@@ -737,7 +736,7 @@ fn install_runtime_unsupported_channel_is_coded() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     let channel = if cfg!(all(not(windows), not(target_os = "macos"))) {
         "chocolatey"
@@ -778,7 +777,7 @@ fn install_runtime_brew_channel_unsupported_off_macos() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::Git, "brew", &ex).unwrap();
     assert!(!out.ok);
@@ -794,7 +793,7 @@ fn install_runtime_missing_winget_is_env_not_ready() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::Npm, "winget", &ex).unwrap();
     let cmds = calls.lock().unwrap();
@@ -843,7 +842,7 @@ fn install_runtime_missing_brew_is_env_not_ready() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::Git, "brew", &ex).unwrap();
     let cmds = calls.lock().unwrap();
@@ -918,7 +917,7 @@ fn linux_default_runtime_install_is_manual_and_does_not_spawn() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     let out = install_runtime(RuntimeId::NodeJs, "", &ex).unwrap();
     assert!(calls.lock().unwrap().is_empty());
@@ -949,7 +948,7 @@ fn linux_rejects_explicit_winget_and_brew_without_spawning() {
         calls: Arc::new(Mutex::new(Vec::new())),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     for channel in ["winget", "brew"] {
         let out = install_runtime(RuntimeId::Git, channel, &ex).unwrap();
@@ -968,7 +967,7 @@ fn linux_accepts_apt_as_copy_command_channel_without_spawning() {
         calls: Arc::clone(&calls),
         exit_code: 0,
         stdout: String::new(),
-            stderr: String::new(),
+        stderr: String::new(),
     };
     for channel in ["apt", "dnf", "pacman", "zypper", "apk"] {
         let out = install_runtime(RuntimeId::Git, channel, &ex).unwrap();
@@ -1009,13 +1008,24 @@ fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
     let out = install_agent(&registry, AgentId::Codex, "npm", false, &ex).unwrap();
     assert!(!out.ok);
     assert!(out.message.contains("失败"), "msg={}", out.message);
-    assert!(out.message.contains("EACCES") || out.message.contains("权限"), "msg={}", out.message);
+    assert!(
+        out.message.contains("EACCES") || out.message.contains("权限"),
+        "msg={}",
+        out.message
+    );
     let joined = out.logs.join("\n");
     assert!(!joined.contains("可能已成功"), "logs={joined}");
-    assert!(!out.message.contains("重新检测未找到二进制"), "msg={}", out.message);
+    assert!(
+        !out.message.contains("重新检测未找到二进制"),
+        "msg={}",
+        out.message
+    );
     assert!(!out.message.contains("请检查 PATH"), "msg={}", out.message);
     let commands = calls.lock().unwrap();
-    assert!(commands.iter().any(|c| c.contains("--prefix")), "expected prefix, got {commands:?}");
+    assert!(
+        commands.iter().any(|c| c.contains("--prefix")),
+        "expected prefix, got {commands:?}"
+    );
 }
 
 struct StickyNpmAdapter {
@@ -1131,7 +1141,9 @@ fn npm_uninstall_retries_without_prefix_when_detect_still_installed() {
         uninstalls[1]
     );
     assert!(
-        out.logs.iter().any(|l| l.contains("uninstall") && l.contains("--prefix")),
+        out.logs
+            .iter()
+            .any(|l| l.contains("uninstall") && l.contains("--prefix")),
         "logs must record prefix uninstall with actual path: {:?}",
         out.logs
     );

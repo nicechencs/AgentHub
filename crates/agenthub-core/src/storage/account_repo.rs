@@ -433,9 +433,8 @@ pub(crate) fn update_if_revision_conn(
     account: &Account,
     expected_updated_at: &str,
 ) -> Result<Account> {
-    let existing = get_by_id_conn(conn, &account.id)?.ok_or_else(|| {
-        AppError::NotFound(format!("account not found: {}", account.id))
-    })?;
+    let existing = get_by_id_conn(conn, &account.id)?
+        .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))?;
     if existing.agent_id != account.agent_id {
         return Err(AppError::InvalidArg(format!(
             "account agent_id is immutable (id={}, existing={}, requested={})",

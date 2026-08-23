@@ -25,9 +25,7 @@ use crate::runtime;
 use crate::services::{LiveWriteAuthority, LiveWriteGuard};
 use crate::storage::Database;
 use crate::utils::command_exec::{CommandExecutor, ExecRequest, ExecResult, SystemCommandExecutor};
-use crate::utils::paths::{
-    same_path_identity, validate_default_agent_config_purge_target,
-};
+use crate::utils::paths::{same_path_identity, validate_default_agent_config_purge_target};
 use crate::utils::redact::redact_text;
 
 fn elapsed_ms(started: Instant) -> u64 {
@@ -45,9 +43,14 @@ fn ensure_user_npm_prefix() -> Result<PathBuf> {
 }
 
 fn looks_like_permission_failure(res: &ExecResult) -> bool {
-    let blob = format!("{}
+    let blob = format!(
+        "{}
 {}
-{}", res.stderr, res.stdout, res.spawn_error.as_deref().unwrap_or(""));
+{}",
+        res.stderr,
+        res.stdout,
+        res.spawn_error.as_deref().unwrap_or("")
+    );
     let lower = blob.to_ascii_lowercase();
     lower.contains("eacces")
         || lower.contains("eperm")
@@ -69,7 +72,6 @@ fn install_command_failure_message(agent_label: &str, res: &ExecResult) -> Strin
     }
     format!("{agent_label} 安装失败（退出码 {code}）")
 }
-
 
 /// Log start/end for install-family ops. Business failures (`Ok(outcome.ok=false)`)
 /// are ERROR; hard `Err` uses structured app-error helpers.
@@ -924,16 +926,25 @@ pub fn install_agent_with_contribution(
             if setup_guide {
                 logs.push("请在官网完成安装后，完全退出并重启 AgentHub。".into());
             } else {
-                logs.push("诊断：命令已成功退出，但当前进程仍未找到新二进制。请完全退出并重启 AgentHub。".into());
+                logs.push(
+                    "诊断：命令已成功退出，但当前进程仍未找到新二进制。请完全退出并重启 AgentHub。"
+                        .into(),
+                );
             }
             Ok(InstallOutcome {
                 ok: false,
                 action: action.into(),
                 logs,
                 message: if setup_guide {
-                    format!("{} 已打开官网安装页，请完成安装后重启 AgentHub", agent.as_str())
+                    format!(
+                        "{} 已打开官网安装页，请完成安装后重启 AgentHub",
+                        agent.as_str()
+                    )
                 } else {
-                    format!("{} 安装命令已成功退出，但未找到二进制（请重启 AgentHub）", agent.as_str())
+                    format!(
+                        "{} 安装命令已成功退出，但未找到二进制（请重启 AgentHub）",
+                        agent.as_str()
+                    )
                 },
                 agent: Some(detect),
                 runtime: None,
@@ -1738,10 +1749,7 @@ fn uninstall_agent_inner(
             let initial = purge_home
                 .as_deref()
                 .ok_or_else(|| AppError::InvalidArg("missing purge target".into()))?;
-            let revalidated = validate_default_agent_config_purge_target(
-                agent,
-                actual_data_dir,
-            )?;
+            let revalidated = validate_default_agent_config_purge_target(agent, actual_data_dir)?;
             if !same_path_identity(initial, &revalidated)? {
                 return Err(AppError::InvalidArg(format!(
                     "unsafe config purge path {}: target changed during uninstall",
@@ -2005,13 +2013,21 @@ fn run_npm_install(
     };
     let prefix = ensure_user_npm_prefix()?;
     let prefix_text = prefix.display().to_string();
-    push_log(logs, format!("# npm {label} -g --prefix {prefix_text}{extra_note} {pkg}"));
+    push_log(
+        logs,
+        format!("# npm {label} -g --prefix {prefix_text}{extra_note} {pkg}"),
+    );
     push_log(logs, format!("使用 npm： {npm}"));
     push_log(
         logs,
         format!("# 正在通过 npm 下载安装 {pkg}（可能需数分钟，请保持网络畅通）…"),
     );
-    let mut args = vec!["install".into(), "-g".into(), "--prefix".into(), prefix_text.clone()];
+    let mut args = vec![
+        "install".into(),
+        "-g".into(),
+        "--prefix".into(),
+        prefix_text.clone(),
+    ];
     for flag in extra {
         args.push((*flag).into());
     }
@@ -2106,9 +2122,7 @@ fn run_native_setup_guide(
 
     let res = executor.run(&req);
     push_exec_logs(logs, &res, 15);
-    logs.push(
-        "已尝试打开官网安装页。请完成安装后，完全退出并重启 AgentHub。".into(),
-    );
+    logs.push("已尝试打开官网安装页。请完成安装后，完全退出并重启 AgentHub。".into());
     // Always report non-success so install_agent does not claim Installed until redetect.
     Ok(ExecResult {
         command: res.command,

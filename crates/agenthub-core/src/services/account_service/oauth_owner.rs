@@ -127,8 +127,7 @@ impl AccountService {
         };
         let mut matched = None;
         for live in lives {
-            match self.reconcile_live_account_with_activate(adapter.as_ref(), agent, live, false)
-            {
+            match self.reconcile_live_account_with_activate(adapter.as_ref(), agent, live, false) {
                 Ok(Some(row)) if row.id == account.id => matched = Some(row),
                 Ok(_) => {}
                 Err(error) => {

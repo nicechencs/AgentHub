@@ -589,10 +589,7 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
         xai_grok.analysis.reason,
         crate::models::SAME_PROTOCOL_NO_EDGE_REASON
     );
-    assert_eq!(
-        xai_grok.analysis.reason,
-        "这条接法还没做好，现在接不上。"
-    );
+    assert_eq!(xai_grok.analysis.reason, "这条接法还没做好，现在接不上。");
     assert!(!xai_grok.analysis.reason.contains("仅支持预览"));
 }
 

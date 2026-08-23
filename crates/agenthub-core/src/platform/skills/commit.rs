@@ -425,7 +425,10 @@ fn recover_after_live_swap(
 
     if journal.phase == SkillCommitPhase::RollbackLockRestored {
         restore_package(repo, &journal).map_err(|e| {
-            AppError::message("skill.commit_recovery", format!("package restore failed: {e}"))
+            AppError::message(
+                "skill.commit_recovery",
+                format!("package restore failed: {e}"),
+            )
         })?;
         journal.phase = SkillCommitPhase::RollbackPackageRestored;
         write_journal(skills_root, &journal)?;
@@ -433,14 +436,20 @@ fn recover_after_live_swap(
 
     if journal.phase == SkillCommitPhase::RollbackPackageRestored {
         remove_journal_helper(skills_root, &journal.staging).map_err(|e| {
-            AppError::message("skill.commit_recovery", format!("staging cleanup failed: {e}"))
+            AppError::message(
+                "skill.commit_recovery",
+                format!("staging cleanup failed: {e}"),
+            )
         })?;
         if let Some(backup) = journal.backup.as_ref() {
             match fs::symlink_metadata(backup) {
                 Ok(_) => {
                     return Err(AppError::message(
                         "skill.commit_recovery",
-                        format!("live restore left backup helper in place: {}", backup.display()),
+                        format!(
+                            "live restore left backup helper in place: {}",
+                            backup.display()
+                        ),
                     ));
                 }
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}

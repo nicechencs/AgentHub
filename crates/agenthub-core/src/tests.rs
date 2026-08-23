@@ -64,11 +64,7 @@ fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
 fn agent_hub_open_freezes_relative_data_dir_before_lifecycle_use() {
     let cwd = std::env::current_dir().expect("current directory");
     let dir = tempfile::tempdir_in(&cwd).expect("relative data-dir fixture");
-    let relative = Path::new(
-        dir.path()
-            .file_name()
-            .expect("temp directory has a name"),
-    );
+    let relative = Path::new(dir.path().file_name().expect("temp directory has a name"));
 
     let skills = dir.path().join("skills");
     fs::create_dir_all(&skills).expect("isolated skills root");

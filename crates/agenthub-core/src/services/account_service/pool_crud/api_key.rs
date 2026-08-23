@@ -180,7 +180,8 @@ impl AccountService {
             }
 
             let adapter = self.adapter(agent)?;
-            let payload = self.materialize_api_key_update(&adapter, &before, new_label, new_key.as_deref())?;
+            let payload =
+                self.materialize_api_key_update(&adapter, &before, new_label, new_key.as_deref())?;
 
             let live_saga = if before.is_current && key_changed {
                 let backup = self.backup.as_ref();
@@ -363,12 +364,8 @@ impl AccountService {
             .into());
         }
         let adapter = self.adapter(agent)?;
-        let payload = self.materialize_api_key_update(
-            &adapter,
-            &account,
-            new_label,
-            new_key.as_deref(),
-        )?;
+        let payload =
+            self.materialize_api_key_update(&adapter, &account, new_label, new_key.as_deref())?;
         self.commit_api_key_update(
             adapter.as_ref(),
             agent,

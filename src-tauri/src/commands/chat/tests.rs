@@ -38,16 +38,12 @@ fn parse_agent_ids_dedupes_and_rejects_empty() {
 fn create_dedupes_agents_and_update_roundtrip() {
     let dir = tempdir().unwrap();
     let hub = AgentHub::open(Some(dir.path())).unwrap();
-    let conv = create_conversation_inner(&hub, vec!["claude".into(), "claude".into()], None)
-        .unwrap();
+    let conv =
+        create_conversation_inner(&hub, vec!["claude".into(), "claude".into()], None).unwrap();
     assert_eq!(conv.agent_ids, vec![AgentId::Claude]);
 
-    let err = create_conversation_inner(
-        &hub,
-        vec!["claude".into(), "grok".into()],
-        None,
-    )
-    .unwrap_err();
+    let err =
+        create_conversation_inner(&hub, vec!["claude".into(), "grok".into()], None).unwrap_err();
     assert!(err.contains("only one agent"));
 
     let updated = update_conversation_inner(

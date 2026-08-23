@@ -14,10 +14,10 @@ use crate::models::{
     attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult, AgentId,
     BackupKind, Capability, LiveAccount, PersistedTicketSurface, TicketSurface,
 };
+use crate::services::adapter_projection::projection_import_error;
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
 };
-use crate::services::adapter_projection::projection_import_error;
 use crate::services::{AdapterRouteService, BackupService, ConnectionService};
 use crate::storage::{AccountRepo, Database};
 use crate::utils::agent_lock::AgentWriteLock;
@@ -78,12 +78,8 @@ impl AccountService {
             ));
         }
         let current = self.repo.get_current(agent)?;
-        let chosen = self.pick_live_grant_to_activate(
-            adapter.as_ref(),
-            agent,
-            &grants,
-            current.as_ref(),
-        );
+        let chosen =
+            self.pick_live_grant_to_activate(adapter.as_ref(), agent, &grants, current.as_ref());
         let mut chosen_live = None;
         let mut others = Vec::new();
         for (index, live) in grants.into_iter().enumerate() {
@@ -152,9 +148,7 @@ impl AccountService {
                 false,
             )?);
         }
-        last.ok_or_else(|| {
-            AppError::message("account.import", "Pi import produced no accounts")
-        })
+        last.ok_or_else(|| AppError::message("account.import", "Pi import produced no accounts"))
     }
 
     pub(super) fn upsert_live_account(

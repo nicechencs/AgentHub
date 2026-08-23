@@ -197,9 +197,9 @@ impl AgentAdapter for CodexAdapter {
             }
             ApiKeyAccount => CapabilityState::partial("可入池；live 应用仅支持 OAuth auth.json"),
             Usage => CapabilityState::full(),
-            SessionResume => CapabilityState::partial(
-                "Chat 后续轮次走 print+resume；终端可复制官方续接命令",
-            ),
+            SessionResume => {
+                CapabilityState::partial("Chat 后续轮次走 print+resume；终端可复制官方续接命令")
+            }
             Mcp | ModelSelect => CapabilityState::planned("待验证接入"),
         }
     }
@@ -373,8 +373,6 @@ fn extract_settings_openai_api_key(raw: &Value) -> Option<String> {
 fn write_codex_api_key_auth(path: &Path, api_key: &str) -> Result<()> {
     crate::integrations::agents::codex::write_api_key_auth(path, api_key)
 }
-
-
 
 /// Convert generic OAuth token fields into the Codex pool/live shape:
 /// `{ format: "auth_json", body: { auth_mode, OPENAI_API_KEY, tokens, last_refresh }, ... }`.
@@ -719,7 +717,8 @@ wire_api = "responses"
         assert!(!stored.contains("preferred_auth_method"));
         assert!(!stored.contains("127.0.0.1"));
         let auth: Value =
-            serde_json::from_str(&std::fs::read_to_string(codex.join("auth.json")).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(codex.join("auth.json")).unwrap())
+                .unwrap();
         assert_eq!(auth["tokens"]["access_token"], "at-official");
     }
 }

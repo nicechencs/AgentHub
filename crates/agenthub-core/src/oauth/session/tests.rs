@@ -64,12 +64,18 @@ fn completion_claim_is_single_use_and_failure_is_terminal() {
     let state = "single-use-session";
     store.insert(session(state, Instant::now())).unwrap();
     assert_eq!(
-        store.insert(session(state, Instant::now())).unwrap_err().code(),
+        store
+            .insert(session(state, Instant::now()))
+            .unwrap_err()
+            .code(),
         "oauth.state"
     );
     store.set_code(state, "authorization-code".into()).unwrap();
     assert_eq!(
-        store.set_code(state, "replacement-code".into()).unwrap_err().code(),
+        store
+            .set_code(state, "replacement-code".into())
+            .unwrap_err()
+            .code(),
         "oauth.replay"
     );
 

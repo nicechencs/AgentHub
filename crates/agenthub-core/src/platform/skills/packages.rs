@@ -457,10 +457,7 @@ pub(crate) fn swap_staging_keep_backup_at(
 /// Cleanup failure does **not** roll back committed metadata.  The caller can
 /// retain its durable journal and retry when the helper cannot be inspected or
 /// removed.
-pub(crate) fn finalize_retained_backup(
-    skills_root: &Path,
-    swap: RetainedLiveSwap,
-) -> Result<()> {
+pub(crate) fn finalize_retained_backup(skills_root: &Path, swap: RetainedLiveSwap) -> Result<()> {
     if let Some(backup) = swap.backup {
         remove_helper_dir(&backup, skills_root)?;
     }
@@ -628,7 +625,10 @@ fn remove_helper_dir(path: &Path, root: &Path) -> Result<()> {
     if is_link_or_reparse(&root_meta) || !root_meta.is_dir() {
         return Err(AppError::message(
             "skill.backup",
-            format!("refusing to clean helper under unsafe skills root: {}", root.display()),
+            format!(
+                "refusing to clean helper under unsafe skills root: {}",
+                root.display()
+            ),
         ));
     }
     let Some(parent) = path.parent() else {

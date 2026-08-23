@@ -360,15 +360,17 @@ fn current_tray_language<R: Runtime>(app: &AppHandle<R>) -> TrayUiLanguage {
     parse_tray_language(&raw)
 }
 
-fn build_tray_menu<R: Runtime>(
-    app: &AppHandle<R>,
-    copy: &TrayMenuCopy,
-) -> tauri::Result<Menu<R>> {
+fn build_tray_menu<R: Runtime>(app: &AppHandle<R>, copy: &TrayMenuCopy) -> tauri::Result<Menu<R>> {
     let show_i = MenuItem::with_id(app, MENU_SHOW, copy.show, true, None::<&str>)?;
     let open_routes_i =
         MenuItem::with_id(app, MENU_OPEN_ROUTES, copy.open_routes, true, None::<&str>)?;
-    let start_routes_i =
-        MenuItem::with_id(app, MENU_START_ROUTES, copy.start_routes, true, None::<&str>)?;
+    let start_routes_i = MenuItem::with_id(
+        app,
+        MENU_START_ROUTES,
+        copy.start_routes,
+        true,
+        None::<&str>,
+    )?;
     let stop_routes_i =
         MenuItem::with_id(app, MENU_STOP_ROUTES, copy.stop_routes, true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, MENU_QUIT, copy.quit, true, None::<&str>)?;

@@ -2,11 +2,11 @@ use serde_json::Value;
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    adapter_maturity_from_decision, decide_adapter_capability, AccountKind, AdapterAction,
+    adapter_maturity_from_decision, decide_adapter_capability, Account, AccountKind, AdapterAction,
     AdapterApplyPlan, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
     AdapterPlanChange, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
     AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
-    Account, Provider,
+    Provider,
 };
 use crate::services::adapter_route_constants::{
     claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
@@ -36,8 +36,7 @@ impl AdapterRouteService {
             .or_else(|| json_string(&account.extra, "format"));
 
         if account.kind == AccountKind::ApiKey
-            && (explicit_provider
-                .is_some_and(|value| value.eq_ignore_ascii_case("anthropic"))
+            && (explicit_provider.is_some_and(|value| value.eq_ignore_ascii_case("anthropic"))
                 || settings_contain_anthropic_api_endpoint(&account.credentials)
                 || settings_contain_anthropic_api_endpoint(&account.extra))
         {

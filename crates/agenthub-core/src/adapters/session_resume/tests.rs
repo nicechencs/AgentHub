@@ -13,11 +13,31 @@ fn expect_argv(agent: AgentId, session_id: &str, argv: &[&str]) {
 
 #[test]
 fn plans_herdr_compatible_resume_argv() {
-    expect_argv(AgentId::Claude, "claude-session", &["claude", "--resume", "claude-session"]);
-    expect_argv(AgentId::Codex, "codex-session", &["codex", "resume", "codex-session"]);
-    expect_argv(AgentId::Kimi, "kimi-session", &["kimi", "--session", "kimi-session"]);
-    expect_argv(AgentId::Grok, "grok-session", &["grok", "--resume", "grok-session"]);
-    expect_argv(AgentId::Pi, "pi-session", &["pi", "--session", "pi-session"]);
+    expect_argv(
+        AgentId::Claude,
+        "claude-session",
+        &["claude", "--resume", "claude-session"],
+    );
+    expect_argv(
+        AgentId::Codex,
+        "codex-session",
+        &["codex", "resume", "codex-session"],
+    );
+    expect_argv(
+        AgentId::Kimi,
+        "kimi-session",
+        &["kimi", "--session", "kimi-session"],
+    );
+    expect_argv(
+        AgentId::Grok,
+        "grok-session",
+        &["grok", "--resume", "grok-session"],
+    );
+    expect_argv(
+        AgentId::Pi,
+        "pi-session",
+        &["pi", "--session", "pi-session"],
+    );
 }
 
 #[test]
@@ -28,10 +48,7 @@ fn cursor_uses_platform_cli_name() {
     } else {
         "cursor-agent"
     };
-    assert_eq!(
-        plan.argv,
-        vec![expected, "--resume", "cursor-session"]
-    );
+    assert_eq!(plan.argv, vec![expected, "--resume", "cursor-session"]);
 }
 
 #[test]

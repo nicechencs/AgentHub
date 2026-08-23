@@ -87,7 +87,10 @@ mod tests {
             decide_close_action(true, false, true),
             CloseAction::AllowExit
         );
-        assert_eq!(decide_close_action(true, true, true), CloseAction::AllowExit);
+        assert_eq!(
+            decide_close_action(true, true, true),
+            CloseAction::AllowExit
+        );
     }
 
     #[test]

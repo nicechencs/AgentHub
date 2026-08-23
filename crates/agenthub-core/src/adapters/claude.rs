@@ -202,9 +202,9 @@ impl AgentAdapter for ClaudeAdapter {
             | StructuredStream | DangerousMode | ProjectHistory | ProjectDelete
             | ProviderPresets => CapabilityState::full(),
             Usage => CapabilityState::full(),
-            SessionResume => CapabilityState::partial(
-                "Chat 后续轮次走 print+resume；终端可复制官方续接命令",
-            ),
+            SessionResume => {
+                CapabilityState::partial("Chat 后续轮次走 print+resume；终端可复制官方续接命令")
+            }
             Mcp | ModelSelect => CapabilityState::planned("待验证接入"),
         }
     }

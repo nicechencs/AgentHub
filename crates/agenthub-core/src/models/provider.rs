@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::BackupRecord;
 use super::AgentId;
+use super::BackupRecord;
 use crate::utils::redact::{api_key_tail, redact_json};
 
 /// Live config file format for a provider template.

@@ -322,7 +322,11 @@ impl SkillService {
     }
 
     /// Copy mode otherwise no-ops a correct source link; explicit copy must replace it.
-    fn replace_correct_link_with_copy_if_needed(&self, skill_id: &str, agent: AgentId) -> Result<()> {
+    fn replace_correct_link_with_copy_if_needed(
+        &self,
+        skill_id: &str,
+        agent: AgentId,
+    ) -> Result<()> {
         let (source_dir, skills_root, target_dir) =
             self.resolve_projection_paths(skill_id, agent)?;
         match inspect_projection_target(&target_dir)? {

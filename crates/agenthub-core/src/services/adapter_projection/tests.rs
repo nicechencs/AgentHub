@@ -149,14 +149,7 @@ fn leftover_toml_does_not_block_oauth_account_import() {
         "body": { "refresh_token": "rt", "access_token": "at" }
     });
     assert_eq!(
-        classify_account_live(
-            AgentId::Codex,
-            AccountKind::Oauth,
-            &creds,
-            &[],
-            &[],
-            true
-        ),
+        classify_account_live(AgentId::Codex, AccountKind::Oauth, &creds, &[], &[], true),
         LiveOrigin::UserGrant
     );
     assert!(!should_skip_live_reconcile(
@@ -173,14 +166,7 @@ fn leftover_toml_does_not_block_oauth_account_import() {
 fn leftover_toml_marks_non_oauth_live_as_projection() {
     let creds = json!({"format": "api_key", "api_key": "sk-leftover"});
     assert_eq!(
-        classify_account_live(
-            AgentId::Codex,
-            AccountKind::ApiKey,
-            &creds,
-            &[],
-            &[],
-            true
-        ),
+        classify_account_live(AgentId::Codex, AccountKind::ApiKey, &creds, &[], &[], true),
         LiveOrigin::LeftoverProjection
     );
 }

@@ -161,6 +161,11 @@ pub(crate) const NOT_FOUND_FIREFIGHTING_NOTE: &str =
 /// On Windows, CreateProcess-spawnable shims come first. npm always also
 /// writes a Unix shebang `name` (no extension) that is **not** a valid Win32
 /// application; probing it marks the agent Installed with an empty version.
+///
+/// `.ps1` is deliberately not produced: CreateProcess cannot spawn PowerShell
+/// scripts directly (they require a `powershell -File` shim), and every
+/// consumer filters candidates through [`is_direct_spawnable`], which only
+/// allows cmd/bat/exe/com — so a `.ps1` entry could never be selected.
 pub(crate) fn expand_binary_names(base: &str) -> Vec<String> {
     if cfg!(windows)
         && !base.ends_with(".cmd")
@@ -171,7 +176,6 @@ pub(crate) fn expand_binary_names(base: &str) -> Vec<String> {
             format!("{base}.cmd"),
             format!("{base}.exe"),
             base.to_string(),
-            format!("{base}.ps1"),
         ];
     }
     vec![base.to_string()]
@@ -194,10 +198,11 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
         paths.push((dir.join(name), "native"));
     };
     let push_npm = |paths: &mut Vec<(PathBuf, &'static str)>, dir: PathBuf| {
+        // No `{name}.ps1` on Windows: CreateProcess cannot spawn PowerShell
+        // scripts directly, and is_direct_spawnable rejects them anyway.
         #[cfg(windows)]
         {
             paths.push((dir.join(format!("{name}.cmd")), "npm"));
-            paths.push((dir.join(format!("{name}.ps1")), "npm"));
             paths.push((dir.join(format!("{name}.exe")), "npm"));
         }
         paths.push((dir.join(name), "npm"));

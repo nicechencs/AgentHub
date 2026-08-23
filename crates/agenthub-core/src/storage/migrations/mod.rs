@@ -60,9 +60,7 @@ pub fn run(conn: &Connection) -> Result<()> {
     for attempt in 0..MIGRATION_RETRY_ATTEMPTS {
         match run_once(conn, MIGRATIONS) {
             Ok(()) => return Ok(()),
-            Err(error)
-                if is_busy(&error) && attempt + 1 < MIGRATION_RETRY_ATTEMPTS =>
-            {
+            Err(error) if is_busy(&error) && attempt + 1 < MIGRATION_RETRY_ATTEMPTS => {
                 thread::sleep(MIGRATION_RETRY_DELAY);
             }
             Err(error) => return Err(error),
@@ -116,11 +114,7 @@ fn apply_migration(conn: &Connection, version: &str, sql: &str) -> Result<()> {
     Ok(())
 }
 
-fn apply_migration_in_transaction(
-    conn: &Connection,
-    version: &str,
-    sql: &str,
-) -> Result<()> {
+fn apply_migration_in_transaction(conn: &Connection, version: &str, sql: &str) -> Result<()> {
     conn.execute_batch(sql)?;
     conn.execute(
         "INSERT INTO schema_migrations (version) VALUES (?1)",

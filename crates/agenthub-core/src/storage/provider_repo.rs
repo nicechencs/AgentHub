@@ -614,9 +614,8 @@ pub(crate) fn update_if_revision_conn(
     provider: &Provider,
     expected_updated_at: &str,
 ) -> Result<Provider> {
-    let existing = get_by_id_conn(conn, &provider.id)?.ok_or_else(|| {
-        AppError::NotFound(format!("provider not found: {}", provider.id))
-    })?;
+    let existing = get_by_id_conn(conn, &provider.id)?
+        .ok_or_else(|| AppError::NotFound(format!("provider not found: {}", provider.id)))?;
     if existing.agent_id != provider.agent_id {
         return Err(AppError::InvalidArg(format!(
             "provider agent_id is immutable (id={}, existing={}, requested={})",

@@ -15,8 +15,8 @@ use super::stream::{
 use super::surface::DownstreamSurface;
 use super::transport::{send_upstream, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome};
 use super::upstream::join_upstream;
-use crate::bridge::account::PickedMember;
 use super::UPSTREAM_NON_STREAM_TIMEOUT;
+use crate::bridge::account::PickedMember;
 
 pub(super) async fn handle_conversation(
     surface: DownstreamSurface,
@@ -39,7 +39,8 @@ pub(super) async fn handle_conversation(
     if let Some(response) = surface.reject_if_unserved(&state) {
         return response;
     }
-    let mut admitted = match admit_conversation(state, request, surface, request_id, started).await {
+    let mut admitted = match admit_conversation(state, request, surface, request_id, started).await
+    {
         Ok(admitted) => admitted,
         Err(response) => return response,
     };
@@ -102,10 +103,7 @@ async fn forward_upstream(
         Ok(url) => url,
         Err(response) => return response,
     };
-    let UpstreamSendOutcome {
-        response,
-        member,
-    } = match send_upstream(
+    let UpstreamSendOutcome { response, member } = match send_upstream(
         &state,
         url,
         channel,
@@ -159,19 +157,15 @@ fn forward_stream(
     member: PickedMember,
 ) -> Response {
     match surface {
-        DownstreamSurface::Responses if channel.passthrough() => {
-            passthrough_sse_response(
-                state, response, request_id, started, permit, cache_seed, member,
-            )
-        }
+        DownstreamSurface::Responses if channel.passthrough() => passthrough_sse_response(
+            state, response, request_id, started, permit, cache_seed, member,
+        ),
         DownstreamSurface::Responses => {
             stream_response(state, response, request_id, started, permit, member)
         }
-        DownstreamSurface::Messages => {
-            messages_stream_response(
-                state, response, request_id, started, permit, cache_seed, member,
-            )
-        }
+        DownstreamSurface::Messages => messages_stream_response(
+            state, response, request_id, started, permit, cache_seed, member,
+        ),
         DownstreamSurface::ChatCompletions => {
             chat_stream_response(state, response, request_id, started, permit, member)
         }

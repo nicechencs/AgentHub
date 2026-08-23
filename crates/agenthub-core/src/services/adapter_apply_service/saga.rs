@@ -364,12 +364,7 @@ impl AdapterApplyService {
             }
             Err(error) => {
                 if self
-                    .compensate_apply(
-                        &saga_guard,
-                        &spec.provider_id,
-                        spec.target_agent,
-                        &snapshot,
-                    )
+                    .compensate_apply(&saga_guard, &spec.provider_id, spec.target_agent, &snapshot)
                     .is_err()
                 {
                     return Err(self.fail_rollback_incomplete(profile));
@@ -550,8 +545,11 @@ impl AdapterApplyService {
             .filter(|id| !id.is_empty());
         if is_subscription_oauth {
             if let Some(backup_id) = backup_id {
-                self.providers
-                    .restore_named_backup_or_clean_codex(saga_guard, backup_id, target_agent)?;
+                self.providers.restore_named_backup_or_clean_codex(
+                    saga_guard,
+                    backup_id,
+                    target_agent,
+                )?;
             }
         }
         if let Some(previous_id) = previous_id {
@@ -560,7 +558,8 @@ impl AdapterApplyService {
                     self.providers
                         .switch_with_guard(saga_guard, previous_id, target_agent)?;
                     if target_agent == AgentId::Codex {
-                        crate::integrations::agents::codex::leftover::strip_live_bridge_leftovers()?;
+                        crate::integrations::agents::codex::leftover::strip_live_bridge_leftovers(
+                        )?;
                     }
                     return Ok(());
                 }
@@ -569,8 +568,11 @@ impl AdapterApplyService {
             }
         }
         if let Some(backup_id) = backup_id.filter(|_| !is_subscription_oauth) {
-            self.providers
-                .restore_named_backup_or_clean_codex(saga_guard, backup_id, target_agent)?;
+            self.providers.restore_named_backup_or_clean_codex(
+                saga_guard,
+                backup_id,
+                target_agent,
+            )?;
         } else if target_agent == AgentId::Codex {
             crate::integrations::agents::codex::leftover::strip_live_bridge_leftovers()?;
         }

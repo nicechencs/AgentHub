@@ -123,7 +123,10 @@ pub(super) fn list_trash_conn(conn: &Connection, agent: AgentId) -> Result<Vec<T
         .map_err(AppError::from)
 }
 
-pub(super) fn get_binding_row(conn: &Connection, agent: AgentId) -> Result<Option<BindingRowSnapshot>> {
+pub(super) fn get_binding_row(
+    conn: &Connection,
+    agent: AgentId,
+) -> Result<Option<BindingRowSnapshot>> {
     let key = crate::platform::AgentKey::from_agent_id(agent).into_string();
     conn.query_row(
         r#"

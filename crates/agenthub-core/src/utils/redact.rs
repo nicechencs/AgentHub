@@ -530,14 +530,20 @@ mod tests {
         let preview = refresh_token_preview(&flat).expect("preview");
         assert!(preview.contains("••••"));
         assert!(!preview.contains("abcdefghijklmnopqrstuvwxyz"));
-        assert_eq!(preview, mask_secret_preview("rt-abcdefghijklmnopqrstuvwxyz"));
+        assert_eq!(
+            preview,
+            mask_secret_preview("rt-abcdefghijklmnopqrstuvwxyz")
+        );
 
         let nested = json!({
             "format": "auth_json",
             "body": { "tokens": { "access_token": "at-secret", "refresh_token": "rt-nested-secret-value" } }
         });
         let nested_preview = refresh_token_preview(&nested).expect("nested preview");
-        assert_eq!(nested_preview, mask_secret_preview("rt-nested-secret-value"));
+        assert_eq!(
+            nested_preview,
+            mask_secret_preview("rt-nested-secret-value")
+        );
         assert!(!nested_preview.contains("rt-nested-secret-value"));
 
         assert!(refresh_token_preview(&json!({ "refresh_token": "***" })).is_none());

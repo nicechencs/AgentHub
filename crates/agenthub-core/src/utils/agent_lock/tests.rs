@@ -43,8 +43,10 @@ fn leftover_or_malformed_metadata_does_not_block_acquire() {
 
     let _grok = AgentWriteLock::acquire(dir.path(), AgentId::Grok).unwrap();
     let _claude = AgentWriteLock::acquire(dir.path(), AgentId::Claude).unwrap();
-    assert!(LockOwner::parse(&fs::read_to_string(dir.path().join("provider-claude.lock")).unwrap())
-        .is_some());
+    assert!(LockOwner::parse(
+        &fs::read_to_string(dir.path().join("provider-claude.lock")).unwrap()
+    )
+    .is_some());
 }
 
 #[test]

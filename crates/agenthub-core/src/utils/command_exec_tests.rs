@@ -75,9 +75,7 @@ fn consecutive_empty_lines_reach_hook_and_accumulator() {
     let chunks = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let sink = Arc::clone(&chunks);
     let hook: InstallLogHook = Arc::new(move |chunk| {
-        sink.lock()
-            .expect("hook mutex")
-            .push(chunk.to_owned());
+        sink.lock().expect("hook mutex").push(chunk.to_owned());
     });
     let result = with_install_log_hook(hook, || {
         SystemCommandExecutor.run(&ExecRequest {
@@ -127,7 +125,10 @@ fn exited_leader_kills_stdio_closed_descendant() {
     let started = Instant::now();
     let result = SystemCommandExecutor.run(&ExecRequest {
         program: "sh".into(),
-        args: vec!["-c".into(), "sleep 30 >/dev/null 2>&1 & echo $!; exit 0".into()],
+        args: vec![
+            "-c".into(),
+            "sleep 30 >/dev/null 2>&1 & echo $!; exit 0".into(),
+        ],
         timeout: Duration::from_secs(3),
         max_output_bytes: 1024,
     });
@@ -140,7 +141,9 @@ fn exited_leader_kills_stdio_closed_descendant() {
     let pid: i32 = result
         .stdout
         .lines()
-        .find(|line| !line.trim().is_empty() && !line.contains("incomplete") && !line.contains("truncated"))
+        .find(|line| {
+            !line.trim().is_empty() && !line.contains("incomplete") && !line.contains("truncated")
+        })
         .expect("descendant pid")
         .trim()
         .parse()
@@ -161,7 +164,8 @@ fn descendant_holding_output_pipe_marks_incomplete() {
     assert!(
         result.stdout.contains("incomplete") || result.stderr.contains("incomplete"),
         "stdout={:?} stderr={:?}",
-        result.stdout, result.stderr
+        result.stdout,
+        result.stderr
     );
     assert!(
         started.elapsed() < Duration::from_secs(3),

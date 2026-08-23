@@ -1,9 +1,9 @@
 //! Lifecycle coordinator tests (temp DB + fake executor).
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::time::Duration;
-use std::path::PathBuf;
 
 use crate::adapters::register_all;
 use crate::error::{AppError, Result};
@@ -372,7 +372,9 @@ fn invalid_explicit_data_dir_is_reported_when_purge_is_requested() {
         .expect_err("invalid explicit data dir must fail closed");
 
     assert_eq!(error.code(), "invalid_arg");
-    assert!(error.to_string().contains("invalid AgentHub data directory"));
+    assert!(error
+        .to_string()
+        .contains("invalid AgentHub data directory"));
     assert_eq!(executor.calls(), 0, "purge executor must not be called");
 }
 

@@ -105,18 +105,21 @@ impl SessionStore {
             OAuthStatus::Waiting => {
                 let code = code.trim().to_string();
                 if code.is_empty() {
-                    return Err(AppError::message("oauth.code", "OAuth callback code is empty"));
+                    return Err(AppError::message(
+                        "oauth.code",
+                        "OAuth callback code is empty",
+                    ));
                 }
                 s.code = Some(code);
                 s.status = OAuthStatus::CallbackReceived;
                 Ok(())
             }
-            OAuthStatus::CallbackReceived
-            | OAuthStatus::Succeeded
-            | OAuthStatus::Failed => Err(AppError::message(
-                "oauth.replay",
-                "OAuth session is no longer accepting callbacks",
-            )),
+            OAuthStatus::CallbackReceived | OAuthStatus::Succeeded | OAuthStatus::Failed => {
+                Err(AppError::message(
+                    "oauth.replay",
+                    "OAuth session is no longer accepting callbacks",
+                ))
+            }
         }
     }
 

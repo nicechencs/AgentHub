@@ -1,9 +1,9 @@
 use super::*;
 use crate::models::{
-    parse_ticket_id, Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus,
-    AdapterRoute, AdapterSourceKind, AdapterSupport, AgentId, PersistedTicketSurface, Provider,
-    Ticket, TicketBindingRoute, TicketCredentialClass, TicketPlanRequest, TicketProtocol,
-    TicketSurface, PROJECTION_NOT_A_TICKET,
+    parse_ticket_id, Account, AccountKind, AdapterProfile, AdapterProfileMode,
+    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSupport, AgentId,
+    PersistedTicketSurface, Provider, Ticket, TicketBindingRoute, TicketCredentialClass,
+    TicketPlanRequest, TicketProtocol, TicketSurface, PROJECTION_NOT_A_TICKET,
 };
 use crate::services::ConnectionService;
 use crate::storage::{AccountRepo, ActiveBindingRepo, AdapterProfileRepo, Database, ProviderRepo};
@@ -108,13 +108,10 @@ fn generated_projection_providers_are_excluded_from_tickets() {
     let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
     assert_eq!(ids, vec!["provider:kimi-src"]);
     assert!(!ids.iter().any(|id| id.contains("proj-claude")));
-    assert!(wallet
-        .surface_groups
+    assert!(wallet.surface_groups.iter().all(|group| group
+        .members
         .iter()
-        .all(|group| group
-            .members
-            .iter()
-            .all(|member| member.source_id != "proj-claude")));
+        .all(|member| member.source_id != "proj-claude")));
 }
 
 #[test]
@@ -1519,11 +1516,11 @@ fn list_wallet_groups_known_surfaces_and_excludes_unknown_and_projections() {
         .unwrap();
 
     let wallet = TicketReadService::new(db).list_wallet().unwrap();
-    assert!(wallet.tickets.iter().any(|t| t.surface == TicketSurface::Unknown));
-    assert!(!wallet
+    assert!(wallet
         .tickets
         .iter()
-        .any(|t| t.source_id == "proj-claude"));
+        .any(|t| t.surface == TicketSurface::Unknown));
+    assert!(!wallet.tickets.iter().any(|t| t.source_id == "proj-claude"));
     let grok = wallet
         .surface_groups
         .iter()
@@ -1584,10 +1581,7 @@ fn wallet_active_connection_pointer(
     }
 }
 
-fn raw_active_pointer(
-    db: &Database,
-    agent: AgentId,
-) -> (Option<String>, Option<String>) {
+fn raw_active_pointer(db: &Database, agent: AgentId) -> (Option<String>, Option<String>) {
     match ActiveBindingRepo::new(db.clone())
         .get(agent.as_str())
         .unwrap()
