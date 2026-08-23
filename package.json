@@ -37,7 +37,7 @@
     "tauri:build:linux": "tauri build --bundles deb,appimage --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
     "updater:latest-json": "node scripts/build-latest-json.mjs",
     "release:check": "node scripts/release-metadata.mjs",
-    "release:test": "node --test scripts/release-metadata.test.mjs scripts/build-latest-json.test.mjs scripts/check-linux-prereqs.test.mjs",
+    "release:test": "node --test scripts/release-metadata.test.mjs scripts/build-latest-json.test.mjs scripts/check-linux-prereqs.test.mjs scripts/pick-github-release.test.mjs",
     "release:update": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1",
     "release:bump": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpPatch -VersionOnly",
     "release:bump:minor": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpMinor -VersionOnly",
