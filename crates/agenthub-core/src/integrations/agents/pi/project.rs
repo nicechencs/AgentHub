@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crate::error::Result;
 use crate::integrations::shared::projects::{builtin_key, empty_if_missing, finish_sessions};
-use crate::models::{AgentId, AgentProject, AgentSession};
+use crate::models::{AgentProject, AgentSession};
 use crate::platform::projects::{ProjectScanContext, ProjectSource};
-use crate::services::project_service::{aggregate_projects, list_pi_sessions};
+use crate::services::project_service::{list_pi_projects, list_pi_sessions};
 
 struct PiProjectSource;
 
@@ -17,8 +17,7 @@ impl ProjectSource for PiProjectSource {
         if empty_if_missing(ctx.home) {
             return Ok(vec![]);
         }
-        let sessions = self.list_sessions(ctx)?;
-        Ok(aggregate_projects(AgentId::Pi, ctx.home, &sessions))
+        list_pi_projects(ctx.home)
     }
 
     fn list_sessions(&self, ctx: &ProjectScanContext<'_>) -> Result<Vec<AgentSession>> {

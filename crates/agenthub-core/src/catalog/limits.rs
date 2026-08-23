@@ -60,6 +60,9 @@ pub const PROJECT_EXCERPT_CHARS: usize = 6_000;
 pub const PROJECT_MAX_PER_AGENT: usize = 500;
 /// When scanning a large jsonl, only read the first N bytes for preview/excerpt.
 pub const PROJECT_SCAN_BYTES: u64 = 256 * 1024;
+/// Cheap `list_projects` peek of the newest session file (cwd / preview only).
+/// Do not use this in `list_sessions` — that path still uses [`PROJECT_SCAN_BYTES`].
+pub const PROJECT_LIST_HEAD_BYTES: u64 = 16 * 1024;
 
 // --- Runtime / logging / GUI ---
 

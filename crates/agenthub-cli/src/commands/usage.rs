@@ -35,6 +35,7 @@ pub fn stats(
         days: days.max(1),
         agent_id: agent,
         model,
+        ..Default::default()
     })?;
     emit_stats(&rows, days, agent, format)
 }
@@ -49,6 +50,7 @@ pub fn models(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) 
             days: 365,
             agent_id: Some(a),
             model: None,
+            ..Default::default()
         })?;
         let set: std::collections::BTreeSet<_> = rows.into_iter().map(|r| r.model).collect();
         list.retain(|m| set.contains(m));

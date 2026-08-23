@@ -4,7 +4,8 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::error::Result;
 use crate::models::{
-    AgentId, CollectResult, ParserHealth, UsageQuery, UsageRecord, UsageTrendPoint,
+    AgentId, CollectResult, ParserHealth, UsageDistributionSlice, UsageMetrics, UsageOverview,
+    UsageQuery, UsageRecord, UsageTrendPoint,
 };
 use crate::storage::Database;
 
@@ -126,6 +127,7 @@ impl UsageRepo {
 
     pub fn query(&self, q: &UsageQuery) -> Result<Vec<UsageRecord>> {
         let days = q.days.max(1) as i64;
+        let limit = q.limit.unwrap_or(100_000);
         self.db.with_conn(|conn| {
             let mut sql = String::from(
                 r#"
@@ -138,20 +140,11 @@ impl UsageRepo {
             );
             let day_arg = format!("-{days} days");
             let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(day_arg)];
-
-            if let Some(agent) = q.agent_id {
-                sql.push_str(" AND agent_id = ?");
-                args.push(Box::new(agent.as_str().to_string()));
-            }
-            if let Some(ref model) = q.model {
-                if !model.is_empty() && model != "all" {
-                    sql.push_str(" AND model = ?");
-                    args.push(Box::new(model.clone()));
-                }
-            }
-            // Soft cap: dashboard / stats need the full window; keep a high ceiling
-            // so multi-agent heavy weeks are not truncated (was 5000 → undercounted cost).
-            sql.push_str(" ORDER BY ts DESC LIMIT 100000");
+            push_since_filter(&mut sql, &mut args, q.since.as_deref());
+            push_agent_model_filters(&mut sql, &mut args, q.agent_id, q.model.as_deref());
+            push_exclude_agents(&mut sql, &mut args, &q.exclude_agent_ids);
+            sql.push_str(" ORDER BY ts DESC LIMIT ?");
+            args.push(Box::new(limit as i64));
 
             let mut stmt = conn.prepare(&sql)?;
             let params_ref: Vec<&dyn rusqlite::types::ToSql> =
@@ -247,69 +240,175 @@ impl UsageRepo {
         })
     }
 
-    pub fn trend(&self, days: u32, agent: Option<AgentId>) -> Result<Vec<UsageTrendPoint>> {
+    pub fn trend(
+        &self,
+        days: u32,
+        agent: Option<AgentId>,
+        model: Option<&str>,
+        since: Option<&str>,
+        exclude_agent_ids: &[AgentId],
+    ) -> Result<Vec<UsageTrendPoint>> {
         let days = days.max(1) as i64;
         self.db.with_conn(|conn| {
-            let day_arg = format!("-{days} days");
-            let (sql, bind_agent): (String, Option<String>) = match agent {
-                Some(a) => (
-                    r#"
-                    SELECT substr(ts, 1, 10) AS day, agent_id,
-                           SUM(input_tokens + output_tokens) AS tokens
-                    FROM usage_records
-                    WHERE ts >= datetime('now', ?1) AND agent_id = ?2
-                    GROUP BY day, agent_id
-                    ORDER BY day
-                    "#
-                    .into(),
-                    Some(a.as_str().into()),
-                ),
-                None => (
-                    r#"
+            let mut sql = String::from(
+                r#"
                     SELECT substr(ts, 1, 10) AS day, agent_id,
                            SUM(input_tokens + output_tokens) AS tokens
                     FROM usage_records
                     WHERE ts >= datetime('now', ?1)
-                    GROUP BY day, agent_id
-                    ORDER BY day
-                    "#
-                    .into(),
-                    None,
-                ),
-            };
+                "#,
+            );
+            let day_arg = format!("-{days} days");
+            let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(day_arg)];
+            push_since_filter(&mut sql, &mut args, since);
+            push_agent_model_filters(&mut sql, &mut args, agent, model);
+            push_exclude_agents(&mut sql, &mut args, exclude_agent_ids);
+            sql.push_str(" GROUP BY day, agent_id ORDER BY day");
 
             let mut stmt = conn.prepare(&sql)?;
+            let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                args.iter().map(|a| a.as_ref()).collect();
+            let mut rows = stmt.query(params_ref.as_slice())?;
             let mut map: std::collections::BTreeMap<String, UsageTrendPoint> =
                 std::collections::BTreeMap::new();
-
-            if let Some(a) = bind_agent {
-                let mut rows = stmt.query(params![day_arg, a])?;
-                while let Some(row) = rows.next()? {
-                    let day: String = row.get(0)?;
-                    let agent_s: String = row.get(1)?;
-                    let tokens: i64 = row.get(2)?;
-                    let point = map
-                        .entry(day.clone())
-                        .or_insert_with(|| UsageTrendPoint::new(day));
-                    if let Some(aid) = AgentId::parse(&agent_s) {
-                        point.add_tokens(aid, tokens);
-                    }
-                }
-            } else {
-                let mut rows = stmt.query(params![day_arg])?;
-                while let Some(row) = rows.next()? {
-                    let day: String = row.get(0)?;
-                    let agent_s: String = row.get(1)?;
-                    let tokens: i64 = row.get(2)?;
-                    let point = map
-                        .entry(day.clone())
-                        .or_insert_with(|| UsageTrendPoint::new(day));
-                    if let Some(aid) = AgentId::parse(&agent_s) {
-                        point.add_tokens(aid, tokens);
-                    }
+            while let Some(row) = rows.next()? {
+                let day: String = row.get(0)?;
+                let agent_s: String = row.get(1)?;
+                let tokens: i64 = row.get(2)?;
+                let point = map
+                    .entry(day.clone())
+                    .or_insert_with(|| UsageTrendPoint::new(day));
+                if let Some(aid) = AgentId::parse(&agent_s) {
+                    point.add_tokens(aid, tokens);
                 }
             }
             Ok(map.into_values().collect())
+        })
+    }
+
+    /// SQL aggregates for dashboard first paint (metrics + distribution + models).
+    ///
+    /// `models` uses the same window + agent filter but ignores `model` so the
+    /// dropdown stays populated while a model is selected.
+    pub fn overview(
+        &self,
+        days: u32,
+        agent: Option<AgentId>,
+        model: Option<&str>,
+        since: Option<&str>,
+        exclude_agent_ids: &[AgentId],
+    ) -> Result<UsageOverview> {
+        let days = days.max(1) as i64;
+        self.db.with_conn(|conn| {
+            let day_arg = format!("-{days} days");
+
+            let mut metrics_sql = String::from(
+                r#"
+                    SELECT
+                        COALESCE(SUM(input_tokens), 0),
+                        COALESCE(SUM(output_tokens), 0),
+                        COALESCE(SUM(cache_tokens), 0),
+                        COALESCE(SUM(COALESCE(cost_usd, 0)), 0)
+                    FROM usage_records
+                    WHERE ts >= datetime('now', ?1)
+                "#,
+            );
+            let mut metrics_args: Vec<Box<dyn rusqlite::types::ToSql>> =
+                vec![Box::new(day_arg.clone())];
+            push_since_filter(&mut metrics_sql, &mut metrics_args, since);
+            push_agent_model_filters(&mut metrics_sql, &mut metrics_args, agent, model);
+            push_exclude_agents(&mut metrics_sql, &mut metrics_args, exclude_agent_ids);
+
+            let metrics = {
+                let mut stmt = conn.prepare(&metrics_sql)?;
+                let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                    metrics_args.iter().map(|a| a.as_ref()).collect();
+                stmt.query_row(params_ref.as_slice(), |row| {
+                    Ok(UsageMetrics {
+                        billable_input: row.get(0)?,
+                        output: row.get(1)?,
+                        cache: row.get(2)?,
+                        cost_usd: row.get(3)?,
+                    })
+                })?
+            };
+
+            let group_col = if agent.is_none() { "agent_id" } else { "model" };
+            let mut dist_sql = format!(
+                r#"
+                    SELECT {group_col} AS key,
+                           SUM(input_tokens + cache_tokens + output_tokens) AS tokens,
+                           COALESCE(SUM(COALESCE(cost_usd, 0)), 0),
+                           COALESCE(SUM(input_tokens), 0),
+                           COALESCE(SUM(output_tokens), 0),
+                           COALESCE(SUM(cache_tokens), 0)
+                    FROM usage_records
+                    WHERE ts >= datetime('now', ?1)
+                "#
+            );
+            let mut dist_args: Vec<Box<dyn rusqlite::types::ToSql>> =
+                vec![Box::new(day_arg.clone())];
+            push_since_filter(&mut dist_sql, &mut dist_args, since);
+            push_agent_model_filters(&mut dist_sql, &mut dist_args, agent, model);
+            push_exclude_agents(&mut dist_sql, &mut dist_args, exclude_agent_ids);
+            dist_sql.push_str(" GROUP BY key ORDER BY tokens DESC");
+
+            let distribution = {
+                let mut stmt = conn.prepare(&dist_sql)?;
+                let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                    dist_args.iter().map(|a| a.as_ref()).collect();
+                let mut rows = stmt.query(params_ref.as_slice())?;
+                let mut out = Vec::new();
+                while let Some(row) = rows.next()? {
+                    let key: String = row.get(0)?;
+                    if key.is_empty() {
+                        continue;
+                    }
+                    out.push(UsageDistributionSlice {
+                        key,
+                        tokens: row.get(1)?,
+                        cost_usd: row.get(2)?,
+                        billable_input: row.get(3)?,
+                        output: row.get(4)?,
+                        cache: row.get(5)?,
+                    });
+                }
+                out
+            };
+
+            let mut models_sql = String::from(
+                r#"
+                    SELECT DISTINCT model FROM usage_records
+                    WHERE ts >= datetime('now', ?1)
+                      AND model IS NOT NULL AND model != ''
+                "#,
+            );
+            let mut models_args: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(day_arg)];
+            push_since_filter(&mut models_sql, &mut models_args, since);
+            if let Some(a) = agent {
+                models_sql.push_str(" AND agent_id = ?");
+                models_args.push(Box::new(a.as_str().to_string()));
+            }
+            push_exclude_agents(&mut models_sql, &mut models_args, exclude_agent_ids);
+            models_sql.push_str(" ORDER BY model");
+
+            let models = {
+                let mut stmt = conn.prepare(&models_sql)?;
+                let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                    models_args.iter().map(|a| a.as_ref()).collect();
+                let rows = stmt.query_map(params_ref.as_slice(), |row| row.get::<_, String>(0))?;
+                let mut out = Vec::new();
+                for r in rows {
+                    out.push(r?);
+                }
+                out
+            };
+
+            Ok(UsageOverview {
+                metrics,
+                distribution,
+                models,
+            })
         })
     }
 
@@ -513,6 +612,52 @@ impl UsageRepo {
                 }
             })
             .collect()
+    }
+}
+
+fn push_since_filter(
+    sql: &mut String,
+    args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    since: Option<&str>,
+) {
+    if let Some(since) = since.filter(|s| !s.is_empty()) {
+        sql.push_str(" AND ts >= ?");
+        args.push(Box::new(since.to_string()));
+    }
+}
+
+fn push_exclude_agents(
+    sql: &mut String,
+    args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    exclude: &[AgentId],
+) {
+    if exclude.is_empty() {
+        return;
+    }
+    sql.push_str(" AND agent_id NOT IN (");
+    for (i, id) in exclude.iter().enumerate() {
+        if i > 0 {
+            sql.push(',');
+        }
+        sql.push('?');
+        args.push(Box::new(id.as_str().to_string()));
+    }
+    sql.push(')');
+}
+
+fn push_agent_model_filters(
+    sql: &mut String,
+    args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    agent: Option<AgentId>,
+    model: Option<&str>,
+) {
+    if let Some(agent) = agent {
+        sql.push_str(" AND agent_id = ?");
+        args.push(Box::new(agent.as_str().to_string()));
+    }
+    if let Some(model) = model.filter(|m| !m.is_empty() && *m != "all") {
+        sql.push_str(" AND model = ?");
+        args.push(Box::new(model.to_string()));
     }
 }
 
