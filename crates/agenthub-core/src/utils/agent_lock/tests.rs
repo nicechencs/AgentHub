@@ -118,6 +118,11 @@ fn symlink_lock_leaves_fail_closed_without_touching_target() {
     let visible = dir.path().join("provider-claude.lock");
     symlink(&target, &visible).unwrap();
     assert!(AgentWriteLock::acquire(dir.path(), AgentId::Claude).is_err());
+    // The failed acquire must not remove the pre-existing symlink itself.
+    assert!(
+        fs::symlink_metadata(&visible).is_ok(),
+        "failed acquire must not delete the pre-existing lock symlink"
+    );
     assert_eq!(fs::read(&target).unwrap(), b"must remain unchanged");
 
     // The failed acquire must not strand the in-process claim.
@@ -147,6 +152,11 @@ fn reparse_lock_leaves_fail_closed_without_touching_target() {
         panic!("could not create reparse-point fixture: {error}");
     }
     assert!(AgentWriteLock::acquire(dir.path(), AgentId::Claude).is_err());
+    // The failed acquire must not remove the pre-existing reparse point.
+    assert!(
+        fs::symlink_metadata(&visible).is_ok(),
+        "failed acquire must not delete the pre-existing lock reparse point"
+    );
     assert_eq!(fs::read(&target).unwrap(), b"must remain unchanged");
 
     // The failed acquire must not strand the in-process claim.

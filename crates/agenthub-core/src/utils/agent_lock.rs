@@ -258,7 +258,13 @@ impl AgentWriteLock {
             })),
             Err(error) => {
                 release_lock_path(path);
-                let _ = std::fs::remove_file(path);
+                // Deliberately do NOT remove the lock leaf here. The path may
+                // be a foreign symlink or another non-regular file that
+                // open_lock_leaf refused to open; deleting it would touch a
+                // target we do not own, breaking the fail-closed promise.
+                // An empty leftover leaf is harmless: the lock is a
+                // process-local protocol, crash leftovers are reclaimed on
+                // acquire, and the next create(true) open reuses the file.
                 Err(error)
             }
         }
