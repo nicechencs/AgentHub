@@ -1,7 +1,7 @@
 {
   "name": "agenthub",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Multi-agent desktop hub: install runtimes, manage providers/accounts, skills, usage, and chat",
   "license": "MIT",
   "repository": {
