@@ -25,7 +25,7 @@ fn openrouter_claude(profile_id: &str, running: bool) -> ModelSwitchCandidate {
 }
 
 #[test]
-fn custom_openai_passthrough_unknown_models_official_stays_closed() {
+fn custom_openai_passthroughs_only_stealth_ox_alpha() {
     assert_eq!(
         map_edge_model(
             AdapterSourceProduct::OpenaiApi,
@@ -60,7 +60,7 @@ fn custom_openai_passthrough_unknown_models_official_stays_closed() {
             "openai/gpt-4o",
             true,
         ),
-        AdapterModelMapResult::Passthrough
+        AdapterModelMapResult::Missing
     );
 }
 

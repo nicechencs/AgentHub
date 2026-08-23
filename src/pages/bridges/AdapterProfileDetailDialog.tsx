@@ -30,6 +30,7 @@ import type { TicketSurfaceGroupView } from '@/lib/backend/contracts/ticket';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from './adapter-components';
+import { readCreateRouteCapabilities } from './create-route-flow';
 import { bridgeMemberRows, memberPinTone } from './adapter-member-model';
 import {
   adapterBridgeHostPort,
@@ -155,6 +156,15 @@ function ProfileDetailBody({
   const members = isBridge
     ? bridgeMemberRows({ profile, groups: surfaceGroups, entries, t })
     : [];
+  const sourceEntry = entries.find(
+    (entry) => entry.source === profile.sourceKind && entry.id === profile.sourceId,
+  );
+  const capabilities = readCreateRouteCapabilities(sourceEntry?.provider?.configText);
+  const endpointLabels = {
+    claude: t('routes.create.target.claude'),
+    codex: t('routes.create.target.codex'),
+    grok: t('routes.create.target.grok'),
+  };
 
   const copyEndpoint = async () => {
     if (!endpointHref || !endpointParts?.port) return;
@@ -197,6 +207,33 @@ function ProfileDetailBody({
           </div>
         </section>
 
+        {capabilities.endpoints.length > 0 || capabilities.models.length > 0 ? (
+          <section className="space-y-1.5">
+            <h3 className="text-sm font-medium">{t('routes.capabilities.endpoints')}</h3>
+            <div className="space-y-1 rounded-card border border-border bg-subtle p-3 text-sm">
+              {capabilities.endpoints.length > 0 ? (
+                <ul className="space-y-1">
+                  {capabilities.endpoints.map((row) => (
+                    <li key={row.target}>
+                      {row.target === 'claude'
+                        ? t('routes.create.target.claude')
+                        : row.target === 'codex'
+                          ? t('routes.create.target.codex')
+                          : t('routes.create.target.grok')}
+                      {row.url ? <span className="block text-meta text-muted">{row.url}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <p className="text-meta text-muted">
+                {capabilities.models.length > 0
+                  ? `${t('routes.capabilities.modelsOnly')} · ${capabilities.models.join(', ')}`
+                  : t('routes.capabilities.modelsAny')}
+              </p>
+            </div>
+          </section>
+        ) : null}
+
         {members.length > 0 ? (
           <section className="space-y-1.5">
             <h3 className="text-body font-medium">{t('routes.members.title')}</h3>
@@ -233,6 +270,25 @@ function ProfileDetailBody({
             </ul>
           </section>
         ) : null}
+
+        <section className="space-y-1.5">
+          <h3 className="text-sm font-medium">{t('routes.capabilities.endpoints')}</h3>
+          <div className="space-y-2 rounded-card border border-border bg-subtle p-3 text-sm">
+            <p>
+              {capabilities.endpoints.length > 0
+                ? capabilities.endpoints
+                  .map((row) => endpointLabels[row.target])
+                  .join(' · ')
+                : '—'}
+            </p>
+            <DetailRow
+              label={t('routes.capabilities.models')}
+              value={capabilities.models.length > 0
+                ? `${t('routes.capabilities.modelsOnly')} ${capabilities.models.join(', ')}`
+                : t('routes.capabilities.modelsAny')}
+            />
+          </div>
+        </section>
 
         {isBridge ? (
           <section className="space-y-1.5">

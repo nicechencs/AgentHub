@@ -410,6 +410,14 @@ fn first_http_url(value: &Value, pointers: &[&str]) -> Option<String> {
 
 /// Optional model id pinned on a custom OpenAI-compat provider.
 pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
+    if let Some(listed) = blob.get("listedModels").and_then(Value::as_array) {
+        let first = listed.iter().find_map(|item| {
+            item.as_str().map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned)
+        });
+        if first.is_some() {
+            return first;
+        }
+    }
     ["model", "default_model", "defaultModel"]
         .iter()
         .find_map(|key| {
