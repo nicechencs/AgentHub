@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolveProjectFetchAgentId, resolveProjectTabAgents } from './project-tab-agents';
+import {
+  resolveInitialProjectAgentId,
+  resolveProjectFetchAgentId,
+  resolveProjectTabAgents,
+} from './project-tab-agents';
 
 const claude = { id: 'claude', name: 'Claude' };
 const codex = { id: 'codex', name: 'Codex' };
@@ -41,5 +45,27 @@ describe('resolveProjectFetchAgentId', () => {
   it('returns the selected id when it is on the strip', () => {
     expect(resolveProjectFetchAgentId([claude, kimi], 'kimi')).toBe('kimi');
     expect(resolveProjectFetchAgentId([codex], 'codex')).toBe('codex');
+  });
+});
+
+describe('resolveInitialProjectAgentId', () => {
+  it('prefers a url agent that is on the strip', () => {
+    expect(resolveInitialProjectAgentId('kimi', [claude, kimi], 'claude')).toBe('kimi');
+  });
+
+  it('uses the remembered agent when the url is missing or not on the strip', () => {
+    expect(resolveInitialProjectAgentId(null, [claude, kimi], 'kimi')).toBe('kimi');
+    expect(resolveInitialProjectAgentId('codex', [claude, kimi], 'kimi')).toBe('kimi');
+  });
+
+  it('falls back to the first tab when url and remembered are both unusable', () => {
+    expect(resolveInitialProjectAgentId(null, [claude, kimi], 'codex')).toBe('claude');
+    expect(resolveInitialProjectAgentId(null, [claude, kimi], null)).toBe('claude');
+  });
+
+  it('keeps url or remembered while tabs are still empty', () => {
+    expect(resolveInitialProjectAgentId('kimi', [], 'claude')).toBe('kimi');
+    expect(resolveInitialProjectAgentId(null, [], 'claude')).toBe('claude');
+    expect(resolveInitialProjectAgentId(null, [], null)).toBe('');
   });
 });
