@@ -16,7 +16,7 @@
 ### 1.2 核心规则
 
 1. **OAuth：同一 Agent + 同一稳定身份 = 一行**。新 token / 再登录覆盖该行（credentials + `updated_at`），不另开一行。
-2. **身份** = 凭据里的稳定 email / user_id / sub（`stable_live_identity` / `identity_label(..., None)`）。展示标签、token 预览不是身份。身份不明则 fail-closed，不猜测合并；凭据完全相同仍可 upsert。
+2. **身份** = 凭据里的稳定标识集合：email 对 email，subject-like id（`user_id` / `sub` / `account_id` / `account_uuid` / `principal_id`）彼此求交。展示标签、token 预览不是身份。双方都没有这些字段则 fail-closed，不猜测合并；凭据完全相同仍可 upsert。
 3. **跨 Agent 同身份保留各一行**（Claude OAuth 与 Grok OAuth 同一邮箱是两行）。合并只在该 `agent_id` 的池内进行。
 4. **Pi**：仍按 live slot（`same_live_slot` / provider）分行。同一邮箱在 anthropic 槽与 xai 槽是两行。
 5. **API Key：不同密钥 = 不同行**。`authorization_key` 默认仍是 token / key 指纹。本机路由槽 upsert 不变；loopback 不得吞掉官方 OAuth 行。

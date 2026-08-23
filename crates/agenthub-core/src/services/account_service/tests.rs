@@ -1545,6 +1545,136 @@ fn hub_pkce_and_cli_import_same_grok_identity_overwrite() {
 }
 
 #[test]
+fn hub_pkce_bundle_then_cli_auth_json_same_user_overwrites() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let first = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok · OAuth".into(),
+            credentials: json!({
+                "type": "oauth",
+                "provider": "xai",
+                "access_token": "pkce-access",
+                "refresh_token": "pkce-refresh",
+                "sub": "uid-1"
+            }),
+            extra: json!({ "source": "oauth_pkce" }),
+            is_current: false,
+        })
+        .unwrap();
+
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "https://auth.x.ai::https://api.x.ai": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1",
+                    "key": "cli-token"
+                }
+            }
+        }),
+        label_hint: Some("grok-oauth".into()),
+        extra: json!({}),
+    });
+    let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    assert_eq!(
+        first.id, imported.id,
+        "PKCE sub must match CLI user_id as the same Grok person"
+    );
+    assert_eq!(svc.list(Some(AgentId::Grok)).unwrap().len(), 1);
+    let stored = &svc.list(Some(AgentId::Grok)).unwrap()[0];
+    assert_eq!(
+        stored.credentials["body"]["https://auth.x.ai::https://api.x.ai"]["key"],
+        "cli-token"
+    );
+}
+
+#[test]
+fn oauth_identity_does_not_merge_on_display_label_or_cross_bucket() {
+    let pkce = json!({
+        "type": "oauth",
+        "provider": "xai",
+        "refresh_token": "rt-pkce",
+        "sub": "uid-1"
+    });
+    let cli = Account {
+        id: "cli".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label: "Grok · OAuth".into(),
+        credentials: json!({
+            "format": "auth_json",
+            "body": {
+                "https://auth.x.ai": {
+                    "email": "a@example.com",
+                    "user_id": "uid-1"
+                }
+            }
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t".into(),
+        updated_at: "t".into(),
+    };
+    assert!(accounts_same_oauth_identity(
+        AccountKind::Oauth,
+        &pkce,
+        &cli
+    ));
+
+    let other_email = Account {
+        id: "other".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label: "Grok · OAuth".into(),
+        credentials: json!({
+            "format": "auth_json",
+            "body": { "email": "b@example.com" }
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t".into(),
+        updated_at: "t".into(),
+    };
+    assert!(!accounts_same_oauth_identity(
+        AccountKind::Oauth,
+        &pkce,
+        &other_email
+    ));
+
+    let unlabeled = json!({
+        "type": "oauth",
+        "refresh_token": "rt-a"
+    });
+    let unlabeled_other = Account {
+        id: "none".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label: "Grok · OAuth".into(),
+        credentials: json!({
+            "type": "oauth",
+            "refresh_token": "rt-b"
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t".into(),
+        updated_at: "t".into(),
+    };
+    assert!(!accounts_same_oauth_identity(
+        AccountKind::Oauth,
+        &unlabeled,
+        &unlabeled_other
+    ));
+}
+
+#[test]
 fn list_syncs_current_grok_token_rotation_without_creating_account() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);
     adapter.set_live(LiveAccount {
@@ -2225,6 +2355,59 @@ fn switch_does_not_delete_other_authorizations() {
     let b_row = list.iter().find(|a| a.id == auth_b.id).unwrap();
     assert!(!b_row.is_current);
     assert_eq!(b_row.credentials["body"]["provider"]["key"], "tok-b");
+}
+
+#[test]
+fn switch_collapses_same_oauth_identity_leftovers_instead_of_identity_conflict() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let make_row = |id: &str, key: &str, current: bool, ts: &str| Account {
+        id: id.into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label: "same@example.com".into(),
+        credentials: json!({
+            "format": "auth_json",
+            "body": {"email": "same@example.com", "user_id": "same-user", "key": key}
+        }),
+        extra: json!({"source": "live", "identityLabel": "same@example.com"}),
+        status: "active".into(),
+        is_current: current,
+        created_at: ts.into(),
+        updated_at: ts.into(),
+    };
+    svc.repo()
+        .create(&make_row(
+            "grok-grant-a",
+            "grant-a",
+            true,
+            "2026-01-01 00:00:00.000000",
+        ))
+        .unwrap();
+    svc.repo()
+        .create(&make_row(
+            "grok-grant-b",
+            "grant-b",
+            false,
+            "2026-01-02 00:00:00.000000",
+        ))
+        .unwrap();
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "format": "auth_json",
+            "body": {"email": "same@example.com", "user_id": "same-user", "key": "grant-c"}
+        }),
+        label_hint: Some("same@example.com".into()),
+        extra: json!({}),
+    });
+
+    let switched = svc.switch("grok-grant-b", AgentId::Grok).unwrap();
+    assert_eq!(switched.account.credentials["body"]["key"], "grant-c");
+    let rows = svc.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].is_current);
+    assert_eq!(rows[0].credentials["body"]["key"], "grant-c");
 }
 
 #[test]

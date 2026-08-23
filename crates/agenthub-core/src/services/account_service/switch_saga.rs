@@ -73,9 +73,15 @@ impl AccountService {
                 .filter(|live| !live_account_is_empty(live))
             {
                 if !self.leftover_live_skips_identity(agent) {
-                    self.validate_live_switch_identity(adapter.as_ref(), agent, live)?;
                     self.reconcile_live_account(adapter.as_ref(), agent, live.clone())?;
-                    target = self.get(id_or_label, Some(agent))?;
+                    target = match self.get(id_or_label, Some(agent)) {
+                        Ok(next) => next,
+                        Err(error) if error.code() == "not_found" => {
+                            self.repo.get_current(agent)?.ok_or(error)?
+                        }
+                        Err(error) => return Err(error),
+                    };
+                    self.validate_live_switch_identity(adapter.as_ref(), agent, live)?;
                 }
             }
         }

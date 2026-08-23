@@ -1,6 +1,6 @@
 //! Shared account identity / label / authorization helpers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
@@ -207,10 +207,10 @@ pub(super) fn accounts_same_authorization(
     }
 }
 
-/// Same OAuth person: stable email / user_id / sub, never a display label.
-/// Unknown identity is fail-closed (do not merge by guess).
+/// Same OAuth person: emails compared to emails, subject-like ids
+/// (`user_id` / `sub` / `account_id` / …) compared among themselves.
+/// Display labels are not identity. Unknown identity is fail-closed.
 pub(super) fn accounts_same_oauth_identity(
-    adapter: &dyn AgentAdapter,
     kind: AccountKind,
     incoming_credentials: &Value,
     existing: &Account,
@@ -218,12 +218,75 @@ pub(super) fn accounts_same_oauth_identity(
     if kind != AccountKind::Oauth || existing.kind != AccountKind::Oauth {
         return false;
     }
-    match (
-        stable_live_identity(adapter, kind, incoming_credentials),
-        stable_live_identity(adapter, existing.kind, &existing.credentials),
-    ) {
-        (Some(incoming), Some(existing_identity)) => incoming == existing_identity,
-        _ => false,
+    let incoming = collect_oauth_identity_marks(incoming_credentials);
+    let existing_marks = collect_oauth_identity_marks(&existing.credentials);
+    if incoming.is_empty() || existing_marks.is_empty() {
+        return false;
+    }
+    incoming.intersects(&existing_marks)
+}
+
+const OAUTH_EMAIL_KEYS: &[&str] = &["email", "email_address", "emailAddress"];
+const OAUTH_SUBJECT_KEYS: &[&str] = &[
+    "user_id",
+    "userId",
+    "principal_id",
+    "principalId",
+    "sub",
+    "subject",
+    "account_id",
+    "accountId",
+    "account_uuid",
+];
+
+struct OauthIdentityMarks {
+    emails: HashSet<String>,
+    subjects: HashSet<String>,
+}
+
+impl OauthIdentityMarks {
+    fn is_empty(&self) -> bool {
+        self.emails.is_empty() && self.subjects.is_empty()
+    }
+
+    fn intersects(&self, other: &Self) -> bool {
+        !self.emails.is_disjoint(&other.emails) || !self.subjects.is_disjoint(&other.subjects)
+    }
+}
+
+fn collect_oauth_identity_marks(credentials: &Value) -> OauthIdentityMarks {
+    let mut marks = OauthIdentityMarks {
+        emails: HashSet::new(),
+        subjects: HashSet::new(),
+    };
+    collect_oauth_identity_fields(credentials, &mut marks);
+    marks
+}
+
+fn collect_oauth_identity_fields(value: &Value, marks: &mut OauthIdentityMarks) {
+    match value {
+        Value::Object(map) => {
+            for (key, nested) in map {
+                if let Some(raw) = nested.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    if OAUTH_EMAIL_KEYS.iter().any(|k| *k == key) {
+                        marks.emails.insert(raw.to_ascii_lowercase());
+                    } else if OAUTH_SUBJECT_KEYS.iter().any(|k| *k == key) {
+                        marks.subjects.insert(raw.to_owned());
+                    }
+                }
+            }
+            for nested in map.values() {
+                if nested.is_object() || nested.is_array() {
+                    collect_oauth_identity_fields(nested, marks);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_oauth_identity_fields(item, marks);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -246,7 +309,7 @@ pub(super) fn authorization_duplicates(
                 } else {
                     !credentials_are_loopback(&candidate.credentials)
                         && (accounts_same_authorization(adapter, kind, credentials, candidate)
-                            || accounts_same_oauth_identity(adapter, kind, credentials, candidate))
+                            || accounts_same_oauth_identity(kind, credentials, candidate))
                 }
         })
         .cloned()

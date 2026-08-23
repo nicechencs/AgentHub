@@ -140,9 +140,10 @@ impl AccountService {
         let rows = self.repo.list(Some(agent))?;
 
         let matches = authorization_duplicates(adapter, agent, live.kind, &live.credentials, &rows);
-        if let Some(existing) = pick_primary_authorization_match(matches.clone()) {
+        let match_count = matches.len();
+        if let Some(existing) = pick_primary_authorization_match(matches) {
             let (row, changed) = self.update_live_row(adapter, existing, live);
-            if matches.len() > 1 {
+            if match_count > 1 {
                 let mark_current = agent != AgentId::Pi;
                 return self
                     .commit_authorization_merge(
@@ -410,31 +411,14 @@ impl AccountService {
             return Ok(());
         }
         let rows = self.repo.list(Some(agent))?;
-        let exact = rows.iter().any(|row| {
-            row.kind == live.kind
-                && same_live_slot(agent, &live.credentials, &row.credentials)
-                && accounts_same_authorization(adapter, live.kind, &live.credentials, row)
-        });
-        if exact {
+        if !authorization_duplicates(adapter, agent, live.kind, &live.credentials, &rows).is_empty()
+        {
             return Ok(());
         }
-        let Some(identity) = stable_live_identity(adapter, live.kind, &live.credentials) else {
+        if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
             return Err(AppError::message(
                 "account.identity_conflict",
                 "live account identity is unknown; refusing to backfill or switch",
-            ));
-        };
-        let identity_count = rows
-            .iter()
-            .filter(|row| {
-                stable_live_identity(adapter, row.kind, &row.credentials).as_deref()
-                    == Some(identity.as_str())
-            })
-            .count();
-        if identity_count > 1 {
-            return Err(AppError::message(
-                "account.identity_conflict",
-                "live account identity is ambiguous; refusing to backfill or switch",
             ));
         }
         if rows.iter().any(|row| {
