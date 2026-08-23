@@ -432,14 +432,14 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
             AgentId::Pi,
         ))
         .unwrap();
-    assert_eq!(relay.analysis.route, AdapterRoute::Unsupported);
-    assert!(!relay.can_apply);
-    assert!(relay.analysis.rule_id.is_none());
+    assert_eq!(relay.analysis.route, AdapterRoute::ConfigSync);
+    assert!(relay.can_apply);
+    assert_eq!(relay.analysis.rule_id.as_deref(), Some("openai-api-to-pi-v1"));
     assert_eq!(
         service
             .classify_source_product(AdapterSourceKind::Provider, "relay-provider")
             .unwrap(),
-        crate::models::AdapterSourceProduct::Other
+        crate::models::AdapterSourceProduct::OpenaiApi
     );
 
     let glm = service
@@ -561,7 +561,8 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
             AgentId::Claude,
         ))
         .unwrap();
-    assert!(!kimi_claude.can_apply, "unknown relay must not bind Claude");
+    assert!(kimi_claude.can_apply, "openai-compat custom source binds Claude");
+    assert_eq!(kimi_claude.analysis.rule_id.as_deref(), Some("openai-api-to-claude-v1"));
 
     let openai_grok = service
         .plan(&request(
@@ -571,10 +572,10 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
         ))
         .unwrap();
     assert!(openai_grok.can_apply);
-    assert_eq!(openai_grok.analysis.route, AdapterRoute::NativeEndpoint);
+    assert_eq!(openai_grok.analysis.route, AdapterRoute::LocalBridge);
     assert_eq!(
         openai_grok.analysis.rule_id.as_deref(),
-        Some("openai-api-to-grok-v1")
+        Some("openai-api-to-grok-bridge-v1")
     );
 
     let xai_grok = service

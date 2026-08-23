@@ -173,6 +173,20 @@ pub(crate) fn bind_implementation_open(
             AdapterSupport::Experimental,
         )
         | (
+            Some("openai-api-to-claude-v1"),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Claude,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("openai-api-to-grok-bridge-v1"),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Grok,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
             Some("anthropic-api-to-pi-v1") | Some("openai-api-to-pi-v1") | Some("xai-api-to-pi-v1"),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Pi,
@@ -421,6 +435,24 @@ pub(super) fn actions_for(
                 "requires_local_bridge",
                 "Codex",
                 "Codex 和 OpenAI 说的话对不上，需要本机转发。",
+                None,
+                false,
+            )]
+        }
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Claude, AdapterRoute::LocalBridge) => {
+            vec![action(
+                "requires_local_bridge",
+                "Claude Code",
+                "Claude 和这份 OpenAI 兼容登录说的话对不上，需要本机转发。",
+                None,
+                false,
+            )]
+        }
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Grok, AdapterRoute::LocalBridge) => {
+            vec![action(
+                "requires_local_bridge",
+                "Grok",
+                "Grok 和这份 OpenAI 兼容登录说的话对不上，需要本机转发。",
                 None,
                 false,
             )]
@@ -803,8 +835,8 @@ pub(super) fn evidence_for(
         (RouteSourceLabel::AnthropicApiKey, AgentId::Codex) => vec![anthropic_codex_evidence()],
         (RouteSourceLabel::AnthropicApiKey, _) => vec![anthropic_pi_evidence()],
         (RouteSourceLabel::OpenaiApiKey, AgentId::Codex) => vec![openai_codex_evidence()],
-        (RouteSourceLabel::OpenaiApiKey, AgentId::Grok) => {
-            vec![adapter_compatibility_evidence()]
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Claude | AgentId::Grok) => {
+            vec![openai_codex_evidence()]
         }
         (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude | AgentId::Codex) => {
             vec![adapter_compatibility_evidence()]

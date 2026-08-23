@@ -19,6 +19,7 @@ import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { TicketSurfaceGroupView } from '@/lib/backend/contracts/ticket';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
+import { CreateRouteDialog } from './CreateRouteDialog';
 import {
   BRIDGES_PATH,
   resolveBridgesProfileQuery,
@@ -87,6 +88,7 @@ export default function BridgesPage() {
   const [removingProfileId, setRemovingProfileId] = useState<string | null>(null);
   const [profileErrors, setProfileErrors] = useState<Record<string, unknown>>({});
   const [busyProfileIds, setBusyProfileIds] = useState<Record<string, boolean>>({});
+  const [createOpen, setCreateOpen] = useState(false);
 
   const setProfileBusy = (profileId: string, busy: boolean) => {
     setBusyProfileIds((current) => ({ ...current, [profileId]: busy }));
@@ -256,6 +258,9 @@ export default function BridgesPage() {
         title={t('routes.page.title')}
         description={t('routes.page.description')}
         descriptionTip={t('routes.page.descriptionTip')}
+        actions={
+          <Button onClick={() => setCreateOpen(true)}>{t('routes.create.action')}</Button>
+        }
       />
 
       {connectionWarning ? (
@@ -293,6 +298,8 @@ export default function BridgesPage() {
             icon={Boxes}
             title={t('routes.empty.title')}
             description={t('routes.empty.description')}
+            actionLabel={t('routes.create.action')}
+            onAction={() => setCreateOpen(true)}
           />
         ) : null}
         {pageView === 'list' ? (
@@ -324,6 +331,12 @@ export default function BridgesPage() {
           </>
         ) : null}
       </div>
+
+      <CreateRouteDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={() => { void reload(); }}
+      />
 
       <AdapterProfileDetailDialog
         profile={detailProfile}
