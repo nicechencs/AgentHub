@@ -114,7 +114,6 @@ export default function ChatPage() {
                   role="separator"
                   aria-orientation="horizontal"
                   aria-label={t('chat.composer.resizeAria')}
-                  title={t('chat.composer.resizeAria')}
                   aria-valuenow={split.paneHeight ?? undefined}
                   aria-valuemin={split.valuemin}
                   tabIndex={0}
