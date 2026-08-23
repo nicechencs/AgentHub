@@ -3,16 +3,20 @@
  * 不 import React、不碰 lib/api。
  */
 import { agentDisplayName } from '@/config/agents';
-import {
-  formatLocalRouteLabel,
-  isInternalGeneratedName,
-} from '@/lib/backend/contracts/agent-connection';
-import { ticketIdFor } from '@/lib/backend/contracts/ticket';
+import { isInternalGeneratedName } from '@/lib/backend/contracts/agent-connection';
+import type {
+  BindingRoute,
+  TicketView,
+  TicketWallet,
+} from '@/lib/backend/contracts/ticket';
 import type { TranslateFn } from '@/lib/i18n';
 import { processPhaseLabel, type AgentProcessView } from '@/lib/chat-process';
 import { nativeResumeCommand } from '@/lib/session-resume';
+import {
+  activeBindingForAgent,
+  filterTicketsByAgentUsage,
+} from '@/lib/ticket-wallet';
 import type {
-  Account,
   AgentId,
   AgentStatus,
   ChatMessage,
@@ -20,7 +24,7 @@ import type {
   Conversation,
   Provider,
 } from '@/lib/types';
-import { extractModel, type TurnGroup } from './chat-format';
+import type { TurnGroup } from './chat-format';
 
 export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentId[] }
@@ -405,6 +409,10 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
   status?: AgentStatus;
   currentProviderName?: string | null;
   currentProviderModel?: string | null;
+  /** Current wallet login for this Agent; wins over leftover provider names. */
+  activeLogin?: { title: string; subtitle: string | null } | null;
+  leftoverCurrent?: boolean;
+  walletReady?: boolean;
 }): ChatConnectionPickerView {
   if (!input.primaryAgent) {
     return {
@@ -431,14 +439,40 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
     };
   }
 
+  if (input.activeLogin) {
+    return {
+      kind,
+      label: input.activeLogin.title,
+      subtitle: input.activeLogin.subtitle,
+      currentLoginTitle: null,
+      currentLoginSubtitle: null,
+      emptyHint: null,
+      manageLabel: t('chat.connection.manage'),
+    };
+  }
+
+  if (input.leftoverCurrent) {
+    return {
+      kind,
+      label: t('chat.connection.unconfigured'),
+      subtitle: null,
+      currentLoginTitle: null,
+      currentLoginSubtitle: null,
+      emptyHint: null,
+      manageLabel: t('chat.connection.manage'),
+    };
+  }
+
+  const allowUnimported = input.walletReady !== false;
+
   if (kind === 'account') {
     const title = accountConnectionTitle(t, input.status);
     return {
       kind,
       label: title,
       subtitle: null,
-      currentLoginTitle: title,
-      currentLoginSubtitle: t('chat.connection.currentLogin'),
+      currentLoginTitle: allowUnimported ? title : null,
+      currentLoginSubtitle: allowUnimported ? t('chat.connection.currentLogin') : null,
       emptyHint: null,
       manageLabel: t('chat.connection.manage'),
     };
@@ -446,12 +480,13 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
 
   if (kind === 'api') {
     const title = input.currentProviderName?.trim() || input.status?.effectiveLabel?.trim() || 'API';
+    const unimported = allowUnimported && !input.currentProviderName;
     return {
       kind,
       label: title,
       subtitle: input.currentProviderModel?.trim() || null,
-      currentLoginTitle: input.currentProviderName ? null : title,
-      currentLoginSubtitle: input.currentProviderName ? null : 'API',
+      currentLoginTitle: unimported ? title : null,
+      currentLoginSubtitle: unimported ? 'API' : null,
       emptyHint: null,
       manageLabel: t('chat.connection.manage'),
     };
@@ -468,14 +503,17 @@ export function chatConnectionPickerView(t: TranslateFn, input: {
   };
 }
 
-export type ChatConnectionOptionKind = 'account' | 'provider';
+export type ChatConnectionSwitchAction =
+  | { type: 'switch-account'; accountId: string }
+  | { type: 'switch-provider'; providerId: string }
+  | { type: 'bind'; ticketId: string };
 
 export type ChatConnectionOption = {
-  kind: ChatConnectionOptionKind;
-  id: string;
+  ticketId: string;
   title: string;
   subtitle: string | null;
   isCurrent: boolean;
+  action: ChatConnectionSwitchAction;
 };
 
 const AGENTHUB_BRIDGE_SLUG = /agenthub_[^\s"'\\]*_bridge/i;
@@ -489,145 +527,61 @@ export function isLeftoverLocalRouteProvider(
   return haystack.includes('本机路由') || AGENTHUB_BRIDGE_SLUG.test(haystack);
 }
 
-export function officialOauthAccountTitle(account: Pick<Account, 'email' | 'label'>): string {
-  const email = account.email?.trim();
-  if (email) return email;
-  return account.label;
-}
-
-function officialOauthDedupeKey(account: Pick<Account, 'email' | 'identityLabel' | 'label' | 'id'>): string {
-  const key = account.email?.trim() || account.identityLabel?.trim() || account.label.trim() || account.id;
-  return key.toLowerCase();
-}
-
 export function leftoverProviderIsCurrent(providers: readonly Provider[]): boolean {
   return providers.some((provider) => provider.isCurrent && isLeftoverLocalRouteProvider(provider));
 }
 
-/** Prefer leftover current so official oauth stays clickable. */
-export function pickLeftoverLocalRouteProvider(
-  providers: readonly Provider[],
-): Provider | undefined {
-  const leftovers = providers.filter(isLeftoverLocalRouteProvider);
-  if (leftovers.length === 0) return undefined;
-  const current = leftovers.find((provider) => provider.isCurrent);
-  if (current) return current;
-  return leftovers.reduce((best, next) => {
-    const bestAt = best.updatedAt ?? '';
-    const nextAt = next.updatedAt ?? '';
-    if (nextAt !== bestAt) return nextAt > bestAt ? next : best;
-    return next.id.localeCompare(best.id) < 0 ? next : best;
+/** Native pool row → switch; a login born on another Agent → bind. */
+export function chatConnectionSwitchAction(
+  ticket: TicketView,
+  agentId: AgentId,
+): ChatConnectionSwitchAction {
+  if (ticket.agentId === agentId) {
+    if (ticket.sourceKind === 'account') {
+      return { type: 'switch-account', accountId: ticket.sourceId };
+    }
+    return { type: 'switch-provider', providerId: ticket.sourceId };
+  }
+  return { type: 'bind', ticketId: ticket.id };
+}
+
+function chatTicketSubtitle(
+  t: TranslateFn,
+  ticket: TicketView,
+  route: BindingRoute | undefined,
+): string {
+  if (route === 'bridge') return t('kind.route.localRoute');
+  if (ticket.credentialClass === 'oauth') return t('kind.oauth');
+  if (ticket.credentialClass === 'api_key') return t('kind.apikey');
+  return t('connections.list.unrecognized');
+}
+
+/** Leftover generated providers are not tickets and must not appear here. */
+export function chatConnectionOptions(t: TranslateFn, input: {
+  wallet: TicketWallet | null | undefined;
+  agentId: AgentId | null;
+}): ChatConnectionOption[] {
+  if (!input.wallet || !input.agentId) return [];
+  const agentId = input.agentId;
+  const tickets = filterTicketsByAgentUsage(input.wallet, input.wallet.tickets, agentId);
+  const active = activeBindingForAgent(input.wallet, agentId);
+  return tickets.map((ticket) => {
+    const isCurrent = active?.ticket.id === ticket.id;
+    return {
+      ticketId: ticket.id,
+      title: ticket.label,
+      subtitle: chatTicketSubtitle(t, ticket, isCurrent ? active?.binding.route : undefined),
+      isCurrent,
+      action: chatConnectionSwitchAction(ticket, agentId),
+    };
   });
 }
 
-export function leftoverBindTicketId(
-  leftoverProviderId: string,
-  profiles: readonly {
-    generatedProviderId?: string | null;
-    sourceKind: 'account' | 'provider';
-    sourceId: string;
-  }[],
-): string | null {
-  const profile = profiles.find((row) => row.generatedProviderId === leftoverProviderId);
-  if (!profile) return null;
-  return ticketIdFor(profile.sourceKind, profile.sourceId);
-}
-
-export type LeftoverSwitchPlan =
-  | { kind: 'bind'; ticketId: string }
-  | { kind: 'unavailable' }
-  | { kind: 'native' };
-
-/** Clicked leftover first; then any leftover whose id is still a live generated projection. */
-export function leftoverBindTicketIdAmong(
-  leftoverProviderId: string,
-  leftoverProviderIds: readonly string[],
-  profiles: readonly {
-    generatedProviderId?: string | null;
-    sourceKind: 'account' | 'provider';
-    sourceId: string;
-  }[],
-): string | null {
-  const ordered = [
-    leftoverProviderId,
-    ...leftoverProviderIds.filter((id) => id !== leftoverProviderId),
-  ];
-  for (const id of ordered) {
-    const ticketId = leftoverBindTicketId(id, profiles);
-    if (ticketId) return ticketId;
-  }
-  return null;
-}
-
-export function leftoverSwitchPlan(
-  provider: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'> | undefined,
-  leftoverProviderId: string,
-  profiles: readonly {
-    generatedProviderId?: string | null;
-    sourceKind: 'account' | 'provider';
-    sourceId: string;
-  }[],
-  leftoverProviderIds: readonly string[] = [],
-): LeftoverSwitchPlan {
-  if (!provider || !isLeftoverLocalRouteProvider(provider)) {
-    return { kind: 'native' };
-  }
-  const ticketId = leftoverBindTicketIdAmong(leftoverProviderId, leftoverProviderIds, profiles);
-  if (!ticketId) return { kind: 'unavailable' };
-  return { kind: 'bind', ticketId };
-}
-
-
-function officialOauthWinners(accounts: readonly Account[]): Account[] {
-  const winners: Account[] = [];
-  const indexByKey = new Map<string, number>();
-  for (const account of accounts) {
-    if (account.kind !== 'oauth') continue;
-    const key = officialOauthDedupeKey(account);
-    const existing = indexByKey.get(key);
-    if (existing == null) {
-      indexByKey.set(key, winners.length);
-      winners.push(account);
-      continue;
-    }
-    if (account.isCurrent && !winners[existing].isCurrent) {
-      winners[existing] = account;
-    }
-  }
-  return winners;
-}
-
-/** Official oauth plus at most one leftover 本机路由. Leftover current wins the checkmark. */
-export function chatConnectionOptions(t: TranslateFn, input: {
-  accounts: readonly Account[];
-  providers: readonly Provider[];
-  connectionKind?: ChatConnectionPickerKind;
-}): ChatConnectionOption[] {
-  const leftoverCurrent = leftoverProviderIsCurrent(input.providers);
-  const preferAccount = input.connectionKind === 'account' && !leftoverCurrent;
-  const leftoverPick = pickLeftoverLocalRouteProvider(input.providers);
-  const options: ChatConnectionOption[] = [];
-  for (const account of officialOauthWinners(input.accounts)) {
-    options.push({
-      kind: 'account',
-      id: account.id,
-      title: officialOauthAccountTitle(account),
-      subtitle: t('kind.oauth'),
-      isCurrent: leftoverCurrent ? false : account.isCurrent,
-    });
-  }
-  for (const provider of input.providers) {
-    const leftover = isLeftoverLocalRouteProvider(provider);
-    if (leftover && provider.id !== leftoverPick?.id) continue;
-    options.push({
-      kind: 'provider',
-      id: provider.id,
-      title: leftover ? formatLocalRouteLabel(undefined, t) : provider.name,
-      subtitle: leftover ? null : extractModel(provider.configText),
-      isCurrent: leftoverCurrent ? leftover && provider.isCurrent : preferAccount ? false : provider.isCurrent,
-    });
-  }
-  return options;
+export function chatShowsUnimportedCurrent(
+  options: readonly Pick<ChatConnectionOption, 'isCurrent'>[],
+  currentLoginTitle: string | null | undefined,
+): boolean {
+  return Boolean(currentLoginTitle) && !options.some((option) => option.isCurrent);
 }
 
 export function messageStatusLabel(

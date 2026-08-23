@@ -35,6 +35,7 @@ import {
   blockerPrimaryTarget,
   chatAgentPickerEmptyCopy,
   chatAgentPickerEmptyKind,
+  chatShowsUnimportedCurrent,
   COMPOSER_TEXTAREA_MAX_PX,
   COMPOSER_TEXTAREA_MIN_PX,
   composerTextareaMeasuredStyle,
@@ -63,8 +64,7 @@ export function ChatComposer({
   onSend,
   onCancel,
   onSelectAgent,
-  onSwitchProvider,
-  onSwitchAccount,
+  onSwitchConnection,
   onOpenSettings,
   onPickWorkingDirectory,
   onFocusConversation,
@@ -86,8 +86,7 @@ export function ChatComposer({
   onSend: () => void;
   onCancel: () => void;
   onSelectAgent: (id: AgentId) => void;
-  onSwitchProvider: (id: string) => void;
-  onSwitchAccount: (id: string) => void;
+  onSwitchConnection: (ticketId: string) => void;
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   onFocusConversation: (id: string) => void;
@@ -268,8 +267,10 @@ export function ChatComposer({
                 <p className="px-2 pb-1.5 text-meta text-muted">{connectionCaption}</p>
               )}
               <DropdownMenuSeparator />
-              {connectionView.currentLoginTitle &&
-                !connectionOptions.some((option) => option.kind === 'account') && (
+              {chatShowsUnimportedCurrent(
+                connectionOptions,
+                connectionView.currentLoginTitle,
+              ) && (
                 <DropdownMenuItem disabled>
                   <span className="flex min-w-0 flex-1 items-center gap-2">
                     <Check className="h-3.5 w-3.5 shrink-0 text-accent" />
@@ -288,12 +289,9 @@ export function ChatComposer({
                 const isCurrent = option.isCurrent;
                 return (
                   <DropdownMenuItem
-                    key={`${option.kind}:${option.id}`}
+                    key={option.ticketId}
                     disabled={isCurrent || switchingProvider}
-                    onClick={() => {
-                      if (option.kind === 'account') onSwitchAccount(option.id);
-                      else onSwitchProvider(option.id);
-                    }}
+                    onClick={() => onSwitchConnection(option.ticketId)}
                   >
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       {isCurrent ? (

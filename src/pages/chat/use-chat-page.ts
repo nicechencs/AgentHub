@@ -14,15 +14,14 @@ import {
   listConversations,
   updateConversation,
 } from '@/lib/api/chat';
-import { listAccounts, switchAccount } from '@/lib/api/account';
-import { listAdapterProfiles } from '@/lib/api/adapter';
+import { switchAccount } from '@/lib/api/account';
 import { listProviders, switchProvider } from '@/lib/api/provider';
 import { pickDirectory } from '@/lib/api/settings';
-import { bindTicket } from '@/lib/api/tickets';
+import { bindTicket, isActiveBindingForAgent, listTicketWallet } from '@/lib/api/tickets';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
 import { processKey, reduceProcessEvent, type ProcessMap } from '@/lib/chat-process';
+import type { TicketWallet } from '@/lib/backend/contracts/ticket';
 import type {
-  Account,
   AgentId,
   AgentStatus,
   ChatEvent,
@@ -43,8 +42,7 @@ import {
   filterConversations,
   groupConversationsByDay,
   isChatAgentSelectable,
-  isLeftoverLocalRouteProvider,
-  leftoverSwitchPlan,
+  leftoverProviderIsCurrent,
   newConversationDefaults,
   selectConversationAgent,
   retryTarget,
@@ -105,9 +103,9 @@ export function useChatPage() {
   /** listAgents 成功后才为 true；失败/未完成时不得把「未知」当成「没有可用 Agent」 */
   const [agentsReady, setAgentsReady] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [wallet, setWallet] = useState<TicketWallet | null>(null);
   const providersGenRef = useRef(0);
-  const accountsGenRef = useRef(0);
+  const walletGenRef = useRef(0);
   const [error, setError] = useState<unknown>(null);
   /** 会话列表骨架（不再用整页 spinner 挡住消息区） */
   const [listLoading, setListLoading] = useState(true);
@@ -291,15 +289,15 @@ export function useChatPage() {
     }
   }, []);
 
-  const loadAccounts = useCallback(async (agentId: AgentId) => {
-    const gen = ++accountsGenRef.current;
+  const loadWallet = useCallback(async () => {
+    const gen = ++walletGenRef.current;
     try {
-      const list = await listAccounts(agentId);
-      if (gen !== accountsGenRef.current) return;
-      setAccounts(list);
+      const next = await listTicketWallet();
+      if (gen !== walletGenRef.current) return;
+      setWallet(next);
     } catch {
-      if (gen !== accountsGenRef.current) return;
-      setAccounts([]);
+      if (gen !== walletGenRef.current) return;
+      setWallet((prev) => prev ?? { tickets: [], bindings: [], surfaceGroups: [] });
     }
   }, []);
 
@@ -407,16 +405,16 @@ export function useChatPage() {
   useEffect(() => {
     if (!primaryAgent) {
       providersGenRef.current += 1;
-      accountsGenRef.current += 1;
       setProviders([]);
-      setAccounts([]);
       return;
     }
     setProviders([]);
-    setAccounts([]);
     void loadProviders(primaryAgent);
-    void loadAccounts(primaryAgent);
-  }, [primaryAgent, loadProviders, loadAccounts]);
+  }, [primaryAgent, loadProviders]);
+
+  useEffect(() => {
+    void loadWallet();
+  }, [primaryAgent, loadWallet]);
 
   const onTranscriptScroll = useCallback(() => {
     const el = transcriptRef.current;
@@ -476,26 +474,47 @@ export function useChatPage() {
     [agentStatus, primaryAgent],
   );
 
+  const leftoverCurrent = leftoverProviderIsCurrent(providers);
+
+  const connectionOptions = useMemo(
+    () =>
+      chatConnectionOptions(t, {
+        wallet,
+        agentId: primaryAgent,
+      }),
+    [wallet, primaryAgent, t],
+  );
+
+  const activeLogin = connectionOptions.find((option) => option.isCurrent) ?? null;
+
   const connectionView = useMemo(
     () =>
       chatConnectionPickerView(t, {
         primaryAgent,
         switching: switchingProvider,
         status: primaryStatus,
-        currentProviderName: currentProvider?.name ?? null,
-        currentProviderModel: currentProvider ? extractModel(currentProvider.configText) : null,
+        currentProviderName: leftoverCurrent ? null : currentProvider?.name ?? null,
+        currentProviderModel: leftoverCurrent
+          ? null
+          : currentProvider
+            ? extractModel(currentProvider.configText)
+            : null,
+        activeLogin: activeLogin
+          ? { title: activeLogin.title, subtitle: activeLogin.subtitle }
+          : null,
+        leftoverCurrent,
+        walletReady: wallet !== null,
       }),
-    [primaryAgent, switchingProvider, primaryStatus, currentProvider, t],
-  );
-
-  const connectionOptions = useMemo(
-    () =>
-      chatConnectionOptions(t, {
-        accounts,
-        providers,
-        connectionKind: connectionView.kind,
-      }),
-    [accounts, providers, connectionView.kind, t],
+    [
+      primaryAgent,
+      switchingProvider,
+      primaryStatus,
+      leftoverCurrent,
+      currentProvider,
+      activeLogin,
+      wallet,
+      t,
+    ],
   );
 
   const connectionCaption = useMemo(
@@ -630,49 +649,25 @@ export function useChatPage() {
     await patchActive(next);
   }
 
-  async function handleSwitchProvider(providerId: string) {
+  async function handleSwitchConnection(ticketId: string) {
     if (!primaryAgent || switchingProvider || hiddenIds.has(primaryAgent)) return;
+    const option = connectionOptions.find((row) => row.ticketId === ticketId);
+    if (!option || option.isCurrent) return;
     setSwitchingProvider(true);
     try {
-      const provider = providers.find((row) => row.id === providerId);
-      const leftoverIds = providers
-        .filter(isLeftoverLocalRouteProvider)
-        .map((row) => row.id);
-      const profiles =
-        provider && isLeftoverLocalRouteProvider(provider)
-          ? await listAdapterProfiles({ targetAgentId: primaryAgent })
-          : [];
-      const plan = leftoverSwitchPlan(provider, providerId, profiles, leftoverIds);
-      if (plan.kind === 'unavailable') {
-        toast({ title: t('chat.connection.leftoverUnavailable'), variant: 'danger' });
-        return;
-      }
-      if (plan.kind === 'bind') {
-        await bindTicket(plan.ticketId, primaryAgent);
+      if (option.action.type === 'switch-account') {
+        await switchAccount(primaryAgent, option.action.accountId);
+      } else if (option.action.type === 'switch-provider') {
+        await switchProvider(primaryAgent, option.action.providerId);
       } else {
-        await switchProvider(primaryAgent, providerId);
+        const { binding } = await bindTicket(option.action.ticketId, primaryAgent);
+        if (!isActiveBindingForAgent(binding, primaryAgent)) {
+          throw new Error(t('chat.connection.bindNotCurrent'));
+        }
       }
       await Promise.all([
+        loadWallet(),
         loadProviders(primaryAgent),
-        loadAccounts(primaryAgent),
-        refreshAgents({ force: true }).catch(() => []),
-      ]);
-      toast({ title: t('chat.connection.switched'), variant: 'success' });
-    } catch (e) {
-      toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
-    } finally {
-      setSwitchingProvider(false);
-    }
-  }
-
-  async function handleSwitchAccount(accountId: string) {
-    if (!primaryAgent || switchingProvider || hiddenIds.has(primaryAgent)) return;
-    setSwitchingProvider(true);
-    try {
-      await switchAccount(primaryAgent, accountId);
-      await Promise.all([
-        loadProviders(primaryAgent),
-        loadAccounts(primaryAgent),
         refreshAgents({ force: true }).catch(() => []),
       ]);
       toast({ title: t('chat.connection.switched'), variant: 'success' });
@@ -958,8 +953,7 @@ export function useChatPage() {
     pickWorkingDirectory,
     renameTitle,
     selectConversationAgentId,
-    handleSwitchProvider,
-    handleSwitchAccount,
+    handleSwitchConnection,
     handleSend,
     retryLast,
     handleCancel,

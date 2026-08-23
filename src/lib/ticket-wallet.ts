@@ -12,3 +12,16 @@ export function activeBindingForAgent(
   if (!ticket) return null;
   return { ticket, binding };
 }
+
+/** Soft agent filter: tickets that belong to or bind to the agent. */
+export function filterTicketsByAgentUsage(
+  wallet: TicketWallet,
+  tickets: readonly TicketView[],
+  agentId: AgentId | null,
+): TicketView[] {
+  if (!agentId) return [...tickets];
+  const ticketIds = new Set(
+    wallet.bindings.filter((b) => b.agentId === agentId).map((b) => b.ticketId),
+  );
+  return tickets.filter((t) => ticketIds.has(t.id) || t.agentId === agentId);
+}

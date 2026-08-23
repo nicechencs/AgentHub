@@ -431,6 +431,9 @@ describe('ticket detail fields', () => {
     const extras = extrasFromPoolSource(oauth, source);
     expect(extras.identity).toBe('me@example.com');
     expect(extras.accountLabel).toBe('me@example.com');
+    expect(extras.isCurrent).toBe(false);
+    expect(extrasFromPoolSource(oauth, source, undefined, 'account:oauth-1').isCurrent).toBe(true);
+    expect(extrasFromPoolSource(oauth, source, undefined, 'provider:kimi-1').isCurrent).toBe(false);
     expect(extras.canEditKey).toBe(false);
     expect(extras.canEditConfig).toBe(false);
     expect(extras.oauthAction).toEqual({ kind: 'refresh-quota', label: '刷新' });
