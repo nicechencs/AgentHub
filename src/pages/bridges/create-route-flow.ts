@@ -1,5 +1,5 @@
 import { upsertProvider } from '@/lib/api/provider';
-import { bindTicket, ticketIdFor } from '@/lib/api/tickets';
+import { bindTicket, planTicket, ticketIdFor } from '@/lib/api/tickets';
 import type { AgentId, Provider } from '@/lib/types';
 
 export const CREATE_ROUTE_TARGETS = ['claude', 'codex', 'grok'] as const;
@@ -14,6 +14,18 @@ export type CreateRouteInput = {
   /** Empty = bind Claude, Codex, and Grok. */
   targets: readonly CreateRouteTarget[];
   model?: string;
+};
+
+export type CreateRouteDeps = {
+  upsertProvider: typeof upsertProvider;
+  planTicket: typeof planTicket;
+  bindTicket: typeof bindTicket;
+};
+
+const defaultDeps: CreateRouteDeps = {
+  upsertProvider,
+  planTicket,
+  bindTicket,
 };
 
 export function normalizeCreateRouteUrl(url: string): string {
@@ -72,15 +84,23 @@ export function isAlternateRouteRule(ruleId: string | null | undefined): boolean
     || ruleId === 'openai-api-to-grok-bridge-v1';
 }
 
-export async function submitCreateRoute(input: CreateRouteInput): Promise<string[]> {
+/**
+ * Save a custom OpenAI-compat / OpenRouter login, then plan and bind
+ * Claude, Codex, and Grok. Port is assigned by the host saga.
+ */
+export async function submitCreateRoute(
+  input: CreateRouteInput,
+  deps: CreateRouteDeps = defaultDeps,
+): Promise<string[]> {
   if (!canSubmitCreateRoute(input)) {
     throw new Error('required');
   }
-  const provider = await upsertProvider(createRouteProviderDraft(input));
+  const provider = await deps.upsertProvider(createRouteProviderDraft(input));
   const ticketId = ticketIdFor('provider', provider.id);
   const bound: string[] = [];
   for (const target of resolveCreateRouteTargets(input.targets)) {
-    await bindTicket(ticketId, target as AgentId);
+    await deps.planTicket(ticketId, target as AgentId);
+    await deps.bindTicket(ticketId, target as AgentId);
     bound.push(target);
   }
   return bound;
