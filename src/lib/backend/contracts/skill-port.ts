@@ -13,7 +13,7 @@ export interface SkillPort {
   toggleSkillSync(
     skillId: string,
     agentId: AgentId,
-    opts?: { force?: boolean },
+    opts?: { force?: boolean; mode?: 'link' | 'copy' },
   ): Promise<{ state: SkillSyncState; conflict: boolean }>;
   checkConflict(skillId: string, agentId: AgentId): Promise<boolean>;
   syncAll(): Promise<{ synced: number; skipped: number; failed: number }>;

@@ -28,11 +28,12 @@ pub async fn sync_skill(
     skill_id: String,
     agent_id: String,
     force: Option<bool>,
+    mode: Option<String>,
 ) -> Result<(), String> {
     let hub = state.hub_arc()?;
     let force = force.unwrap_or(false);
     with_hub_blocking(hub, move |hub| {
-        sync_skill_inner(hub, &skill_id, &agent_id, force)
+        sync_skill_inner(hub, &skill_id, &agent_id, force, mode.as_deref())
     })
     .await
 }
@@ -259,10 +260,21 @@ fn sync_skill_inner(
     skill_id: &str,
     agent_id: &str,
     force: bool,
+    mode: Option<&str>,
 ) -> Result<(), String> {
     let agent = parse_agent(agent_id)?;
+    let mode = match mode.map(str::trim).filter(|s| !s.is_empty()) {
+        None => None,
+        Some("link") => Some(SkillProjectMode::Link),
+        Some("copy") => Some(SkillProjectMode::Copy),
+        Some(other) => {
+            return Err(format!(
+                "invalid project mode '{other}', expected: link|copy"
+            ));
+        }
+    };
     hub.skills
-        .sync(skill_id, agent, force)
+        .sync_with_mode(skill_id, agent, force, mode)
         .map_err(|e| map_err_string("sync_skill", e))
 }
 

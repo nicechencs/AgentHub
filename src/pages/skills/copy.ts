@@ -233,6 +233,23 @@ export function removeFailedToast(
   return { title: t('skills.toast.removeFailed'), description: reason };
 }
 
+export function deleteSharedOkToast(
+  t: TranslateFn,
+  skillName: string,
+): { title: string; description?: string } {
+  return {
+    title: t('skills.toast.deleteSharedOk'),
+    description: t('skills.toast.deleteSharedOkDesc', { skillName }),
+  };
+}
+
+export function deleteSharedFailedToast(
+  t: TranslateFn,
+  reason: string,
+): { title: string; description?: string } {
+  return { title: t('skills.toast.deleteSharedFailed'), description: reason };
+}
+
 export function marketInstallOkToast(
   t: TranslateFn,
   name: string,

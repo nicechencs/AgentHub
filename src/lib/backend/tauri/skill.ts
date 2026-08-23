@@ -28,7 +28,7 @@ export function createTauriSkillPort(): SkillPort {
         return { state: 'unsupported' as const, conflict: false };
       }
       const wasMapped = isMappedState(current.sync[agentId]);
-      if (wasMapped) {
+      if (wasMapped && !opts.mode) {
         await invoke('disable_skill', { skillId, agentId });
       } else {
         try {
@@ -36,6 +36,7 @@ export function createTauriSkillPort(): SkillPort {
             skillId,
             agentId,
             force: opts.force ?? false,
+            mode: opts.mode ?? null,
           });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);

@@ -490,7 +490,7 @@ export function useSkillMarket(query: string, opts: SkillsQueryOptions = {}) {
 export async function runToggleSkill(
   skillId: string,
   agentId: AgentId,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; mode?: 'link' | 'copy' },
 ) {
   const result = await toggleSkillSync(skillId, agentId, opts);
   invalidateSkills(['skills', 'catalog']);

@@ -12,7 +12,7 @@ use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::AppError;
 use crate::models::{
     AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
-    InstallChannel, RunOptions, RunSpec,
+    InstallChannel, RunOptions, RunSpec, SkillProjectMode,
 };
 use crate::platform::skills::{
     SkillAssignmentService, SkillReconciler, SkillTargetRegistry, StaticSkillTarget,
@@ -334,6 +334,64 @@ fn disable_then_sync_preserves_link_mode_and_recreates_link() {
     let after_sync = repo.get_assignment("demo", "claude").unwrap().unwrap();
     assert_eq!(after_sync.projection_mode, "link");
     assert_eq!(after_sync.observed_status, "applied");
+}
+
+#[test]
+fn sync_with_mode_link_converts_managed_copy() {
+    let (_root, _db_dir, source, claude, db, assign, reconciler, repo) = setup();
+    assign
+        .set_desired_enabled_for_agent("demo", AgentId::Claude, true, Some("copy"), "t0")
+        .unwrap();
+    reconciler
+        .reconcile_one_for_agent("demo", AgentId::Claude, false, "t1")
+        .unwrap();
+    assert!(!is_dir_symlink(&claude.join("demo")));
+
+    let svc = make_svc_db(source, claude.clone(), db);
+    svc.sync_with_mode(
+        "demo",
+        AgentId::Claude,
+        false,
+        Some(SkillProjectMode::Link),
+    )
+    .unwrap();
+    assert!(
+        is_dir_symlink(&claude.join("demo")),
+        "explicit link mode must replace a managed copy"
+    );
+    let row = repo.get_assignment("demo", "claude").unwrap().unwrap();
+    assert_eq!(row.projection_mode, "link");
+}
+
+#[test]
+fn sync_with_mode_copy_replaces_correct_link() {
+    let (_root, _db_dir, source, claude, db, assign, reconciler, repo) = setup();
+    assign
+        .set_desired_enabled_for_agent("demo", AgentId::Claude, true, Some("link"), "t0")
+        .unwrap();
+    reconciler
+        .reconcile_one_for_agent("demo", AgentId::Claude, false, "t1")
+        .unwrap();
+    assert!(
+        is_dir_symlink(&claude.join("demo")),
+        "setup must produce a directory link before copy-replace"
+    );
+
+    let svc = make_svc_db(source, claude.clone(), db);
+    svc.sync_with_mode(
+        "demo",
+        AgentId::Claude,
+        false,
+        Some(SkillProjectMode::Copy),
+    )
+    .unwrap();
+    assert!(
+        !is_dir_symlink(&claude.join("demo")),
+        "explicit copy mode must replace a correct source link"
+    );
+    assert!(claude.join("demo").is_dir());
+    let row = repo.get_assignment("demo", "claude").unwrap().unwrap();
+    assert_eq!(row.projection_mode, "copy");
 }
 
 #[test]

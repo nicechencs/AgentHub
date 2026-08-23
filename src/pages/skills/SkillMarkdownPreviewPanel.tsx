@@ -32,13 +32,13 @@ export type SkillPreviewCopy = {
 export type SkillPreviewTarget = {
   skillId: string;
   name?: string;
-  /** Private agent skill root; omit for shared library. */
+  /** Agent leaf being previewed; omit / null for the shared library. */
   privateAgent?: AgentId | null;
-  /** Optional dir path for “open folder”. */
   sourceDir?: string | null;
-  /** Identical private copies; length ≥ 2 shows an Agent switcher. */
+  libraryDir?: string | null;
   copies?: SkillPreviewCopy[];
-  /** Matrix row key; switching copies does not change this. */
+  /** Adds a library tab; selected tab is `privateAgent == null` vs an agent id. */
+  includeShared?: boolean;
   rowKey?: string;
 };
 
@@ -68,6 +68,7 @@ export function SkillMarkdownPreviewPanel({
   onOpenDir,
   onSelectCopy,
   onRemoveCopy,
+  removeCopyLabel,
   width,
   className,
   contentRef,
@@ -77,8 +78,9 @@ export function SkillMarkdownPreviewPanel({
   open: boolean;
   onClose: () => void;
   onOpenDir?: (path: string) => void;
-  onSelectCopy?: (agentId: AgentId) => void;
+  onSelectCopy?: (agentId: AgentId | null) => void;
   onRemoveCopy?: () => void;
+  removeCopyLabel?: string;
   /** Pixel width when open (parent + resize handle own the split). */
   width?: number;
   className?: string;
@@ -155,10 +157,13 @@ export function SkillMarkdownPreviewPanel({
   if (!open || !target) return null;
 
   const copies = target.copies ?? [];
+  const includeShared = Boolean(target.includeShared);
   const selectedCopy =
-    copies.find((copy) => copy.agentId === target.privateAgent) ?? copies[0] ?? null;
-  const showCopyTabs = copies.length > 1 && Boolean(selectedCopy);
+    copies.find((copy) => copy.agentId === target.privateAgent) ??
+    (includeShared ? null : copies[0] ?? null);
+  const showCopyTabs = includeShared ? copies.length >= 1 : copies.length > 1;
   const copyAgents = copies.map((copy) => resolveAgentMeta(copy.agentId));
+  const tabValue = target.privateAgent ?? (includeShared ? 'all' : selectedCopy?.agentId);
   const openFolderPath =
     selectedCopy?.sourceDir ??
     target.sourceDir ??
@@ -232,13 +237,13 @@ export function SkillMarkdownPreviewPanel({
             </Button>
           ) : null}
 
-          {target.privateAgent && onRemoveCopy ? (
+          {onRemoveCopy ? (
             <Button
               size="icon"
               variant="ghost"
               className="h-7 w-7 shrink-0 text-danger hover:text-danger"
-              title={t('skills.preview.removeCopy')}
-              aria-label={t('skills.preview.removeCopy')}
+              title={removeCopyLabel ?? t('skills.preview.removeCopy')}
+              aria-label={removeCopyLabel ?? t('skills.preview.removeCopy')}
               onClick={onRemoveCopy}
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -256,14 +261,25 @@ export function SkillMarkdownPreviewPanel({
             <PanelRightClose className="h-4 w-4" />
           </Button>
         </div>
-        {showCopyTabs && selectedCopy ? (
+        {showCopyTabs && tabValue ? (
           <div className="px-3 pb-2">
-            <AgentTabStrip
-              value={selectedCopy.agentId}
-              onChange={(id) => onSelectCopy?.(id)}
-              agents={copyAgents}
-              aria-label={t('skills.preview.copyTabs')}
-            />
+            {includeShared ? (
+              <AgentTabStrip
+                showAll
+                allLabel={t('skills.preview.sharedOrigin')}
+                value={tabValue}
+                onChange={(id) => onSelectCopy?.(id === 'all' ? null : id)}
+                agents={copyAgents}
+                aria-label={t('skills.preview.copyTabs')}
+              />
+            ) : (
+              <AgentTabStrip
+                value={tabValue === 'all' ? copyAgents[0]!.id : tabValue}
+                onChange={(id) => onSelectCopy?.(id)}
+                agents={copyAgents}
+                aria-label={t('skills.preview.copyTabs')}
+              />
+            )}
           </div>
         ) : null}
       </header>

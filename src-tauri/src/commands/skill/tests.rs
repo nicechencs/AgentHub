@@ -54,7 +54,7 @@ fn list_skill_catalog_empty_source_is_empty_or_shared_only() {
 #[test]
 fn sync_rejects_invalid_agent() {
     let (_dir, hub) = hub_with_skills(&[]);
-    let err = sync_skill_inner(&hub, "any", "bad-agent", false).unwrap_err();
+    let err = sync_skill_inner(&hub, "any", "bad-agent", false, None).unwrap_err();
     assert!(err.contains("invalid agent"));
 }
 

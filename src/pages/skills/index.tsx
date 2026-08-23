@@ -62,6 +62,8 @@ import {
   adoptOkToast,
   batchEnableToast,
   conflictPromptToast,
+  deleteSharedFailedToast,
+  deleteSharedOkToast,
   disableFailedToast,
   disableOkToast,
   enableFailedToast,
@@ -87,7 +89,12 @@ import {
   previewTargetFromCatalogRow,
   visibleCatalogRows,
 } from './SkillMatrix';
-import { previewTargetsEqual, resyncPreviewTarget } from './skills-preview-resync';
+import {
+  previewAfterHiddenAgent,
+  previewAfterRemoveFromTool,
+  previewTargetsEqual,
+  resyncPreviewTarget,
+} from './skills-preview-resync';
 import { applyCatalogCellState, cellKey } from './skills-catalog-model';
 import {
   MAIN_WIDTH_FLOOR,
@@ -173,6 +180,10 @@ export default function SkillsPage() {
     agentId: AgentId;
     name: string;
     inLibrary: boolean;
+  } | null>(null);
+  const [removeShared, setRemoveShared] = useState<{
+    skillId: string;
+    name: string;
   } | null>(null);
   const [dangerBusy, setDangerBusy] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<SkillPreviewTarget | null>(null);
@@ -467,7 +478,7 @@ export default function SkillsPage() {
     skillId: string,
     agentId: AgentId,
     force = false,
-    meta?: { name?: string; wasMapped?: boolean },
+    meta?: { name?: string; wasMapped?: boolean; mode?: 'link' | 'copy' },
   ) => {
     const key = cellKey(skillId, agentId);
     const agentName = agentDisplayName(agentId);
@@ -477,19 +488,28 @@ export default function SkillsPage() {
       skillId;
     setPendingCells((prev) => new Set(prev).add(key));
     try {
-      const result = await toggleSkillSync(skillId, agentId, { force });
+      const result = await toggleSkillSync(skillId, agentId, {
+        force,
+        mode: meta?.mode,
+      });
       if (result.conflict && !force) {
         toast({
           ...conflictPromptToast(t, agentName, skillName),
           duration: 12_000,
           onAction: () => {
-            void doToggle(skillId, agentId, true, { name: skillName, wasMapped: false });
+            void doToggle(skillId, agentId, true, {
+              name: skillName,
+              wasMapped: false,
+              mode: meta?.mode,
+            });
           },
         });
         return;
       }
       setCatalog((prev) =>
-        prev ? applyCatalogCellState(prev, skillId, agentId, result.state) : prev,
+        prev
+          ? applyCatalogCellState(prev, skillId, agentId, result.state)
+          : prev,
       );
       if (force) {
         toast({
@@ -554,6 +574,40 @@ export default function SkillsPage() {
       }
     }
     void doToggle(skill.id, agentId, false, { name: skill.name, wasMapped: false });
+  };
+
+  const handleCellProject = (
+    skill: Skill,
+    agentId: AgentId,
+    mode: 'link' | 'copy' | 'disable',
+  ) => {
+    const state = skill.sync[agentId];
+    if (state === 'unsupported') return;
+    if (mode === 'disable') {
+      if (!isMappedState(state)) return;
+      void doToggle(skill.id, agentId, false, { name: skill.name, wasMapped: true });
+      return;
+    }
+    if (state === 'foreign' || state === 'conflict' || skill.conflicts.includes(agentId)) {
+      const agentName = agentDisplayName(agentId);
+      toast({
+        ...conflictPromptToast(t, agentName, skill.name),
+        duration: 12_000,
+        onAction: () => {
+          void doToggle(skill.id, agentId, true, {
+            name: skill.name,
+            wasMapped: false,
+            mode,
+          });
+        },
+      });
+      return;
+    }
+    void doToggle(skill.id, agentId, false, {
+      name: skill.name,
+      wasMapped: false,
+      mode,
+    });
   };
 
   const handleInstall = async () => {
@@ -733,13 +787,45 @@ export default function SkillsPage() {
     });
   };
 
+  const handleDeleteFromTool = (skillId: string, agentId: AgentId, name: string) => {
+    const inLibrary = Boolean(
+      catalog?.some((row) => isSharedCatalogRow(row) && row.id === skillId),
+    );
+    handleUninstallPrivate(skillId, agentId, name, inLibrary);
+  };
+
+  const handleDeleteShared = (row: { id: string; name?: string }) => {
+    setRemoveShared({ skillId: row.id, name: row.name ?? row.id });
+  };
+
+  const confirmDeleteShared = async () => {
+    if (!removeShared) return;
+    const { skillId, name } = removeShared;
+    setDangerBusy(true);
+    try {
+      await runUninstallSkill(skillId);
+      toast({
+        ...deleteSharedOkToast(t, name),
+        variant: 'success',
+      });
+      setRemoveShared(null);
+      if (previewTarget?.skillId === skillId) {
+        requestClosePreview();
+      }
+      await load();
+    } catch (e) {
+      toast({
+        ...deleteSharedFailedToast(t, e instanceof Error ? e.message : String(e)),
+        variant: 'danger',
+      });
+    } finally {
+      setDangerBusy(false);
+    }
+  };
+
   const confirmRemoveFromTool = async () => {
     if (!removeFromTool) return;
     const { skillId, agentId, name } = removeFromTool;
-    const remaining =
-      previewTarget?.skillId === skillId
-        ? (previewTarget.copies ?? []).filter((copy) => copy.agentId !== agentId)
-        : [];
     setDangerBusy(true);
     try {
       await runUninstallSkill(skillId, agentId);
@@ -749,17 +835,9 @@ export default function SkillsPage() {
       });
       setRemoveFromTool(null);
       if (previewTarget?.skillId === skillId) {
-        if (remaining.length === 0) {
-          requestClosePreview();
-        } else {
-          const next = remaining[0]!;
-          setPreviewTarget({
-            ...previewTarget,
-            copies: remaining,
-            privateAgent: next.agentId,
-            sourceDir: next.sourceDir,
-          });
-        }
+        const next = previewAfterRemoveFromTool(previewTarget, agentId);
+        if (next === 'close') requestClosePreview();
+        else setPreviewTarget(next);
       }
       await load();
     } catch (e) {
@@ -787,9 +865,17 @@ export default function SkillsPage() {
     [requestOpenPreview],
   );
 
-  const selectPreviewCopy = useCallback((agentId: AgentId) => {
+  const selectPreviewCopy = useCallback((agentId: AgentId | null) => {
     setPreviewTarget((current) => {
       if (!current) return current;
+      if (agentId == null) {
+        if (current.privateAgent == null) return current;
+        return {
+          ...current,
+          privateAgent: null,
+          sourceDir: current.libraryDir ?? current.sourceDir,
+        };
+      }
       const loc = (current.copies ?? []).find((copy) => copy.agentId === agentId);
       if (!loc || current.privateAgent === agentId) return current;
       return { ...current, privateAgent: agentId, sourceDir: loc.sourceDir };
@@ -797,18 +883,14 @@ export default function SkillsPage() {
   }, []);
 
   useEffect(() => {
-    const origin = previewTarget?.privateAgent;
-    if (!origin || visibleAgentIdSet.has(origin)) return;
-    const next = (previewTarget.copies ?? []).find((copy) => visibleAgentIdSet.has(copy.agentId));
-    if (next) {
-      setPreviewTarget((current) =>
-        current
-          ? { ...current, privateAgent: next.agentId, sourceDir: next.sourceDir }
-          : current,
-      );
+    if (!previewTarget) return;
+    const next = previewAfterHiddenAgent(previewTarget, visibleAgentIdSet);
+    if (next === 'keep') return;
+    if (next === 'close') {
+      requestClosePreview();
       return;
     }
-    requestClosePreview();
+    setPreviewTarget(next);
   }, [previewTarget, visibleAgentIdSet, requestClosePreview]);
 
   useEffect(() => {
@@ -952,11 +1034,15 @@ export default function SkillsPage() {
                 onToggleSelect={handleToggleSelect}
                 onToggleSelectAll={handleToggleSelectAll}
                 onCellClick={handleCellClick}
+                onCellProject={handleCellProject}
                 onPreview={openCatalogPreview}
                 activeKey={activeKey}
                 onAdopt={(skillId, agentId, name) => {
                   void handleImportPrivate(skillId, agentId, name, false);
                 }}
+                onOpenDir={(path) => void handleOpenDir(path)}
+                onDeleteShared={(row) => handleDeleteShared(row)}
+                onDeleteFromTool={handleDeleteFromTool}
                 agents={matrixAgents}
                 installedAgentIds={installedAgentIds}
               />
@@ -1059,14 +1145,25 @@ export default function SkillsPage() {
                   onOpenDir={(path) => void handleOpenDir(path)}
                   onSelectCopy={selectPreviewCopy}
                   onRemoveCopy={
-                    previewTarget.privateAgent
+                    previewTarget.includeShared && !previewTarget.privateAgent
                       ? () =>
-                          handleUninstallPrivate(
-                            previewTarget.skillId,
-                            previewTarget.privateAgent!,
-                            previewTarget.name,
-                            false,
-                          )
+                          handleDeleteShared({
+                            id: previewTarget.skillId,
+                            name: previewTarget.name,
+                          })
+                      : previewTarget.privateAgent && !previewTarget.includeShared
+                        ? () =>
+                            handleUninstallPrivate(
+                              previewTarget.skillId,
+                              previewTarget.privateAgent!,
+                              previewTarget.name,
+                              false,
+                            )
+                        : undefined
+                  }
+                  removeCopyLabel={
+                    previewTarget.includeShared && !previewTarget.privateAgent
+                      ? t('skills.preview.removeShared')
                       : undefined
                   }
                   contentRef={previewBodyRef}
@@ -1077,6 +1174,38 @@ export default function SkillsPage() {
           </>
         ) : null}
       </div>
+
+      <Dialog
+        open={removeShared !== null}
+        onOpenChange={(open) => !open && !dangerBusy && setRemoveShared(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('skills.dialog.deleteSharedTitle')}</DialogTitle>
+            <DialogDescription>
+              {removeShared
+                ? t('skills.dialog.deleteSharedBody', { skillName: removeShared.name })
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={dangerBusy}
+              onClick={() => setRemoveShared(null)}
+            >
+              {t('skills.dialog.conflictCancel')}
+            </Button>
+            <Button
+              variant="danger"
+              disabled={dangerBusy}
+              onClick={() => void confirmDeleteShared()}
+            >
+              {dangerBusy ? t('skills.dialog.busy') : t('skills.dialog.deleteSharedConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={removeFromTool !== null}

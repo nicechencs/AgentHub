@@ -5,12 +5,15 @@ use std::time::Instant;
 
 use crate::error::{AppError, Result};
 use crate::logging::targets;
-use crate::models::{AgentId, SkillAction, SkillFailure, SkillSyncReport, SkillSyncState};
+use crate::models::{
+    AgentId, SkillAction, SkillFailure, SkillProjectMode, SkillSyncReport, SkillSyncState,
+};
 use crate::platform::skills::{
     chrono_now, ensure_no_symlink_in_ancestors, ensure_no_symlink_in_existing_prefix,
-    is_exact_child, package_revision, project_copy_with_ownership, reject_source_target_overlap,
-    skill_lock_load, unproject_with_ownership, validate_and_collect_source, validate_skill_id,
-    validate_skills_root, SkillAssignmentService, SkillReconciler,
+    inspect_projection_target, is_exact_child, link_resolves_to_source, package_revision,
+    project_copy_with_ownership, reject_source_target_overlap, skill_lock_load,
+    unproject_with_ownership, validate_and_collect_source, validate_skill_id, validate_skills_root,
+    SkillAssignmentService, SkillReconciler, TargetPresence,
 };
 use crate::platform::AgentKey;
 use crate::storage::SkillRepo;
@@ -34,12 +37,33 @@ impl SkillService {
     /// and projection runs through [`SkillReconciler`] (failure keeps desired +
     /// `last_error`, never claims applied).
     pub fn sync(&self, skill_id: &str, agent: AgentId, force: bool) -> Result<()> {
+        self.sync_with_mode(skill_id, agent, force, None)
+    }
+
+    /// Like [`Self::sync`], but may overwrite `projection_mode`.
+    ///
+    /// `None` keeps the stored mode (new rows still default to copy). `Some(Link)`
+    /// / `Some(Copy)` persist that mode and reconcile. Copy on a correct source
+    /// link removes the link first so the user-requested copy is not a no-op.
+    pub fn sync_with_mode(
+        &self,
+        skill_id: &str,
+        agent: AgentId,
+        force: bool,
+        mode: Option<SkillProjectMode>,
+    ) -> Result<()> {
         let started = Instant::now();
         let result = (|| {
             let skill_id = validate_skill_id(skill_id)?;
             if self.db.is_some() {
-                self.sync_via_assignment(skill_id, agent, force)
+                self.sync_via_assignment(skill_id, agent, force, mode)
+            } else if mode == Some(SkillProjectMode::Link) {
+                self.project_skill(skill_id, agent, SkillProjectMode::Link)
+                    .map(|_| ())
             } else {
+                if mode == Some(SkillProjectMode::Copy) {
+                    self.replace_correct_link_with_copy_if_needed(skill_id, agent)?;
+                }
                 self.sync_projection(skill_id, agent, force)
             }
         })();
@@ -282,6 +306,7 @@ impl SkillService {
         skill_id: &str,
         agent: AgentId,
         force: bool,
+        mode: Option<SkillProjectMode>,
     ) -> Result<()> {
         let now = chrono_now();
         let (assign, reconciler) = self.assignment_stack()?;
@@ -289,8 +314,30 @@ impl SkillService {
         let record = lock.get(skill_id);
         let agent_key = AgentKey::from_agent_id(agent);
         assign.ensure_package(skill_id, record, &now)?;
-        assign.set_desired_enabled(skill_id, &agent_key, true, None, &now)?;
+        if mode == Some(SkillProjectMode::Copy) {
+            self.replace_correct_link_with_copy_if_needed(skill_id, agent)?;
+        }
+        assign.set_desired_enabled(skill_id, &agent_key, true, mode.map(|m| m.as_str()), &now)?;
         reconciler.reconcile_one(skill_id, &agent_key, force, &now)
+    }
+
+    /// Copy mode otherwise no-ops a correct source link; explicit copy must replace it.
+    fn replace_correct_link_with_copy_if_needed(&self, skill_id: &str, agent: AgentId) -> Result<()> {
+        let (source_dir, skills_root, target_dir) =
+            self.resolve_projection_paths(skill_id, agent)?;
+        match inspect_projection_target(&target_dir)? {
+            TargetPresence::Link { .. } if link_resolves_to_source(&target_dir, &source_dir) => {
+                let agent_key = AgentKey::from_agent_id(agent);
+                unproject_with_ownership(
+                    &skills_root,
+                    skill_id,
+                    &source_dir,
+                    &target_dir,
+                    &agent_key,
+                )
+            }
+            _ => Ok(()),
+        }
     }
 
     pub(super) fn disable_via_assignment_key(
