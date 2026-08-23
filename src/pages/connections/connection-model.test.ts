@@ -16,6 +16,7 @@ import {
   liveAuthCoexistenceNotice,
   liveAuthDiscoveryKind,
   liveAuthImportGate,
+  liveImportAction,
   liveImportDialogMode,
   mergeConnectionEntries,
   providerToEntry,
@@ -495,6 +496,111 @@ describe('connection-model', () => {
     })).toBeNull();
   });
 
+  it('still reports api_key discovery when the pool only has leftover 本机路由 providers', () => {
+    const leftoverBridge = {
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      preset: 'custom',
+      configText: 'base_url = "http://127.0.0.1:32123/v1"',
+      configFormat: 'toml' as const,
+    };
+    const leftoverNamed = {
+      id: 'p-leftover',
+      name: 'generated leftover 本机路由',
+      preset: 'custom',
+      configText: '',
+      configFormat: 'json' as const,
+    };
+    const probe = { kind: 'api_key', hasCredentials: true };
+
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [leftoverBridge],
+    })).toBe('provider');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [leftoverBridge, leftoverNamed],
+    })).toBe('provider');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [{ kind: 'oauth' }],
+      providers: [leftoverBridge, leftoverNamed],
+    })).toBe('provider');
+  });
+
+  it('does not treat leftover or adapter-projection providers as an existing Key', () => {
+    const leftover = {
+      id: 'agenthub_codex_bridge',
+      name: 'AgentHub Codex 本机路由',
+      preset: 'custom',
+      configText: '',
+      configFormat: 'json' as const,
+    };
+    const projection = {
+      id: 'p-proj',
+      name: 'relay',
+      preset: 'custom',
+      configText: '',
+      configFormat: 'json' as const,
+      isAdapterProjection: true,
+    };
+    const alsoPresentProjection = {
+      id: 'p-also',
+      name: 'relay-2',
+      alsoPresent: ['adapter_projection'],
+    };
+    const probe = { kind: 'api_key', hasCredentials: true };
+
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [leftover, projection, alsoPresentProjection],
+    })).toBe('provider');
+  });
+
+  it('still suppresses api_key discovery when a real user Key is in the pool', () => {
+    const leftover = {
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      preset: 'custom',
+      configText: '',
+      configFormat: 'json' as const,
+    };
+    const userKey = {
+      id: 'p-openai',
+      name: 'OpenAI',
+      preset: 'openai',
+      configText: JSON.stringify({ env: { OPENAI_API_KEY: '***' } }),
+      configFormat: 'json' as const,
+    };
+    const probe = { kind: 'api_key', hasCredentials: true };
+
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [userKey],
+    })).toBeNull();
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [leftover, userKey],
+    })).toBeNull();
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [{ kind: 'apikey' }],
+      providers: [leftover],
+    })).toBeNull();
+  });
+
   it('reports the probed family when only the other family is already in the pool', () => {
     expect(liveAuthDiscoveryKind({
       poolState: 'ready',
@@ -623,5 +729,22 @@ describe('liveImportDialogMode', () => {
     expect(liveImportDialogMode({ agentId: 'pi', kind: 'desktop-login' })).toBe('login');
     expect(liveImportDialogMode(null)).toBe('login');
     expect(liveImportDialogMode(undefined)).toBe('login');
+  });
+});
+
+describe('liveImportAction', () => {
+  it('imports a provider-pool Key for the api-key dialog and an account otherwise', () => {
+    expect(liveImportAction('api-key')).toBe('provider');
+    expect(liveImportAction('login')).toBe('account');
+    expect(
+      liveImportAction(
+        liveImportDialogMode({ agentId: 'codex', kind: 'api_key', hasCredentials: true }),
+      ),
+    ).toBe('provider');
+    expect(
+      liveImportAction(
+        liveImportDialogMode({ agentId: 'codex', kind: 'oauth', hasCredentials: true }),
+      ),
+    ).toBe('account');
   });
 });
