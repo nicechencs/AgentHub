@@ -6,6 +6,7 @@ import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import {
   activeBindingForAgent,
   buildTicketAddMenu,
+  focusedTicketAddAgent,
   dispatchTicketAddAction,
   armMenuDialogOpen,
   handleMenuDialogSelect,
@@ -425,6 +426,13 @@ describe('buildTicketAddMenu', () => {
     expect(buildTicketAddMenu([])).toEqual([]);
     expect(buildTicketAddMenu(null)).toEqual([]);
     expect(buildTicketAddMenu()).toEqual([]);
+  });
+
+  it('focuses the selected Agent tab so Add skips the picker', () => {
+    const menu = buildTicketAddMenu(['claude', 'kimi']);
+    expect(focusedTicketAddAgent(menu, null)).toBeNull();
+    expect(focusedTicketAddAgent(menu, 'kimi')?.id).toBe('kimi');
+    expect(focusedTicketAddAgent(menu, 'grok')).toBeNull();
   });
 });
 

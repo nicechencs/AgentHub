@@ -4,7 +4,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
-import { TicketDetailPanel, TicketWalletList } from './TicketWalletList';
+import { TicketAddMenu, TicketDetailPanel, TicketWalletList } from './TicketWalletList';
+import { buildTicketAddMenu } from './ticket-wallet-model';
 
 function renderWithTooltip(node: ReactElement): string {
   return renderToStaticMarkup(
@@ -240,7 +241,7 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('没有匹配的票');
   });
 
-  it('keeps 添加 as a menu trigger and does not add a 新 API Key filter chip', () => {
+  it('does not put 添加 in the list chrome when logins exist', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -253,9 +254,39 @@ describe('TicketWalletList details', () => {
         onImportLogin() {},
       }),
     );
-    expect(markup).toContain('添加');
+    expect(markup).not.toContain('添加');
     expect(markup).not.toContain('aria-label="登录类型筛选"');
     expect(markup).not.toContain('新 API Key');
+  });
+
+  it('keeps 添加 on the empty-wallet next action', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: { tickets: [], bindings: [], surfaceGroups: [] },
+        installedAgentIds: ['claude'],
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+        onAddKey() {},
+        onImportLogin() {},
+      }),
+    );
+    expect(markup).toContain('添加');
+    expect(markup).toContain('还没有登录');
+  });
+
+  it('renders a focused Agent Add menu without throwing', () => {
+    expect(() =>
+      renderWithTooltip(
+        createElement(TicketAddMenu, {
+          agents: buildTicketAddMenu(['claude', 'kimi']),
+          focusedAgentId: 'kimi',
+          onAddKey() {},
+          onImportLogin() {},
+        }),
+      ),
+    ).not.toThrow();
   });
 
   it('renders 全部 after an API Key filter without throwing', () => {
@@ -341,14 +372,13 @@ describe('TicketWalletList details', () => {
 });
 
 describe('TicketDetailPanel', () => {
-  it('lays out 用量, 用在哪, and collapsed 更多 without 导入自 or header duplicates', () => {
+  it('lays out 用量 and collapsed 更多 without 用在哪, 导入自, or header duplicates', () => {
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {
         id: 'ticket-detail',
         advanced: [
           { label: '协议', value: 'anthropic-messages' },
         ],
-        bindings: [{ agent: 'Claude', status: '当前使用' }],
         extras: { quota7dPct: 40, quota7dResetIn: '3d', canEditConfig: true, isCurrent: true },
         editLabel: '编辑配置',
         onEdit() {},
@@ -357,13 +387,11 @@ describe('TicketDetailPanel', () => {
     );
     expect(markup).toContain('id="ticket-detail"');
     expect(markup).toContain('用量');
-    expect(markup).toContain('用在哪');
+    expect(markup).not.toContain('用在哪');
     expect(markup).not.toContain('导入自');
     expect(markup).toContain('更多');
     expect(markup).toContain('<details>');
     expect(markup).not.toContain('<details open');
-    expect(markup).toContain('Claude');
-    expect(markup).toContain('当前使用');
     expect(markup).not.toContain('正用于');
     expect(markup).not.toContain('Claude · 改配置 · 当前');
     expect(markup).not.toContain('>类型<');
@@ -384,7 +412,6 @@ describe('TicketDetailPanel', () => {
       createElement(TicketDetailPanel, {
         id: 'oauth-rt-detail',
         advanced: [],
-        bindings: [],
         extras: { refreshTokenPreview: 'rt--••••wxyz' },
         onDelete() {},
       }),
@@ -401,12 +428,11 @@ describe('TicketDetailPanel', () => {
       createElement(TicketDetailPanel, {
         id: 'oauth-grok-detail',
         advanced: [],
-        bindings: [],
         extras: { authLabel: '可续期·未验证' },
         onDelete() {},
       }),
     );
-    expect(markup).toContain('用在哪');
+    expect(markup).not.toContain('用在哪');
     expect(markup).not.toContain('导入自');
     expect(markup).toContain('移入回收站');
     expect(markup).not.toContain('用量');
@@ -423,13 +449,12 @@ describe('TicketDetailPanel', () => {
       createElement(TicketDetailPanel, {
         id: 'oauth-detail',
         advanced: [],
-        bindings: [],
         extras: { authLabel: '可续期·未验证' },
         onDelete() {},
       }),
     );
-    expect(markup).toContain('用在哪');
-    expect(markup).toContain('还没接到任何工具');
+    expect(markup).not.toContain('用在哪');
+    expect(markup).not.toContain('还没接到任何工具');
     expect(markup).not.toContain('导入自');
     expect(markup).not.toContain('登录状态');
     expect(markup).not.toContain('尚未验证');

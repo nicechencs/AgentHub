@@ -38,7 +38,7 @@ Adapter 负责把 **登录列表里已有的登录**接到另一个 Agent。机�
 
 - 推荐：Dashboard「连接/切换」、Connections「分享 / 路由」→ 同一绑定对话框（分享过滤直连/写进对方登录，路由过滤本机转发）。
 - 本页：`/routes` 列出全部 `local_bridge` 运行时（含孤立；start/stop/retry、autoStart、详情、解绑走 unbind）。`/adapter`、`/router`、`/bridges` 永久跳过来。
-- 侧栏：英文 Routes、中文「路由」，永久显示。页标题「本机路由」。Settings → 本机永远有「本机路由」入口。
+- 侧栏：英文 Routes、中文「路由」，永久显示。页标题「本机路由」。
 - 创建绑定只走 Hub：经 `lib/api/tickets` 的 `planTicket` / `bindTicket` / `unbindTicket`；`plan.canApply` 表示现在能写入。目标 UI 见 [ui-design.md §4.3](ui-design.md)。
 
 一次规划只产生以下四种结果之一（括号内为当前实现名）：
@@ -137,7 +137,7 @@ Adapter 负责把 **登录列表里已有的登录**接到另一个 Agent。机�
 以下描述本页（`/routes`）自身，不是 `ConnectFlowDialog`：
 
 - 路由：`/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。
-- 标题：中文「本机路由」。侧栏英文 **Routes**、中文「路由」，永久显示。Settings → 本机永远有「本机路由」入口。列表与详情显示本机 IP（127.0.0.1）和端口；无端口时标「待分配端口」，不复制无端口的地址。
+- 标题：中文「本机路由」。侧栏英文 **Routes**、中文「路由」，永久显示。列表与详情显示本机 IP（127.0.0.1）和端口；无端口时标「待分配端口」，不复制无端口的地址。
 - 页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 - 列出全部 `kind === 'local_bridge'`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。空 `sourceId` 丢弃。
 - 解绑只走 unbind（优先登录 id，否则 `ticketIdFor(sourceId)` + `targetAgentId`）。不提供 `removeAdapter`。

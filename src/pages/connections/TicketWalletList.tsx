@@ -45,17 +45,16 @@ import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   buildTicketAddMenu,
+  focusedTicketAddAgent,
   handleTicketAddMenuSelect,
   buildTicketDetailFields,
   buildTicketWalletRows,
-  formatTicketBindingDetailLines,
   humanizeTicketAuthLabel,
   ticketAddActionLabel,
   ticketCredentialClassChipLabel,
   ticketDetailEditLabel,
   ticketSurfaceChipLabel,
   type TicketAddMenuAgent,
-  type TicketBindingDetailLine,
   type TicketDetailExtras,
   type TicketDetailField,
   type TicketWalletRow,
@@ -93,7 +92,6 @@ const HIDDEN_ADVANCED_LABELS = new Set(['导入自', '登录状态', 'Imported f
 export function TicketDetailPanel({
   id,
   advanced,
-  bindings,
   extras,
   editLabel,
   onEdit,
@@ -101,7 +99,6 @@ export function TicketDetailPanel({
 }: {
   id: string;
   advanced: TicketDetailField[];
-  bindings: TicketBindingDetailLine[];
   extras?: TicketDetailExtras | null;
   editLabel?: string | null;
   onEdit?: () => void;
@@ -119,48 +116,27 @@ export function TicketDetailPanel({
       variant="plain"
       className="mt-3 flex flex-col gap-3 bg-canvas p-3 text-xs"
     >
-      <div className={cn('grid gap-3', hasQuota && 'sm:grid-cols-2')}>
-        {hasQuota ? (
-          <div>
-            <p className="text-meta text-muted">{t('connections.list.usage')}</p>
-            <div className="mt-1.5 flex flex-col gap-1.5">
-              {has7d ? (
-                <QuotaBar
-                  label="7d"
-                  pct={extras?.quota7dPct}
-                  resetIn={extras?.quota7dResetIn}
-                />
-              ) : null}
-              {has5h ? (
-                <QuotaBar
-                  label="5h"
-                  pct={extras?.quota5hPct}
-                  resetIn={extras?.quotaResetIn}
-                />
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
+      {hasQuota ? (
         <div>
-          <p className="text-meta text-muted">{t('connections.list.usedOn')}</p>
-          {bindings.length === 0 ? (
-            <p className="mt-1.5 text-body text-secondary">{t('connections.list.unusedTools')}</p>
-          ) : (
-            <ul className="mt-1.5 space-y-1">
-              {bindings.map((line) => (
-                <li
-                  key={`${line.agent}:${line.status}`}
-                  className="flex items-baseline justify-between gap-3"
-                >
-                  <span className="text-body text-secondary">{line.agent}</span>
-                  <span className="shrink-0 text-meta text-muted">{line.status}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <p className="text-meta text-muted">{t('connections.list.usage')}</p>
+          <div className="mt-1.5 flex flex-col gap-1.5">
+            {has7d ? (
+              <QuotaBar
+                label="7d"
+                pct={extras?.quota7dPct}
+                resetIn={extras?.quota7dResetIn}
+              />
+            ) : null}
+            {has5h ? (
+              <QuotaBar
+                label="5h"
+                pct={extras?.quota5hPct}
+                resetIn={extras?.quotaResetIn}
+              />
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {extras?.refreshTokenPreview ? (
         <DetailRow
@@ -318,7 +294,6 @@ function TicketRow({
         <TicketDetailPanel
           id={detailsId}
           advanced={buildTicketDetailFields(ticket, extras, t).advanced}
-          bindings={formatTicketBindingDetailLines(row.bindings, t)}
           extras={extras}
           editLabel={editLabel}
           onEdit={editLabel ? () => onEdit(ticket) : undefined}
@@ -329,17 +304,37 @@ function TicketRow({
   );
 }
 
-function TicketAddMenu({
+export function TicketAddMenu({
   agents,
+  focusedAgentId = null,
   onImportLogin,
   onAddKey,
 }: {
   agents: TicketAddMenuAgent[];
+  focusedAgentId?: AgentId | null;
   onImportLogin?: (agentId: AgentId) => void;
   onAddKey?: (agentId: AgentId) => void;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = React.useState(false);
+  const focused = focusedTicketAddAgent(agents, focusedAgentId);
+
+  const renderActions = (agent: TicketAddMenuAgent) =>
+    agent.actions.map((action) => (
+      <DropdownMenuItem
+        key={action.kind}
+        disabled={action.kind === 'import-login' ? !onImportLogin : !onAddKey}
+        onSelect={(event) =>
+          handleTicketAddMenuSelect(event, action.kind, agent.id, {
+            onImportLogin,
+            onAddKey,
+            onMenuClose: () => setOpen(false),
+          })
+        }
+      >
+        {ticketAddActionLabel(action.kind, t)}
+      </DropdownMenuItem>
+    ));
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -353,40 +348,39 @@ function TicketAddMenu({
         className="min-w-[12rem]"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <DropdownMenuLabel>{t('connections.list.addAgent')}</DropdownMenuLabel>
         {agents.length === 0 ? (
-          <DropdownMenuItem disabled>{t('connections.list.noAddAgent')}</DropdownMenuItem>
+          <>
+            <DropdownMenuLabel>{t('connections.list.addAgent')}</DropdownMenuLabel>
+            <DropdownMenuItem disabled>{t('connections.list.noAddAgent')}</DropdownMenuItem>
+          </>
+        ) : focused ? (
+          <>
+            <DropdownMenuLabel>
+              <span className="flex min-w-0 items-center gap-2">
+                <AgentDot agentId={focused.id} size="sm" title={null} />
+                <span className="truncate">{focused.name}</span>
+              </span>
+            </DropdownMenuLabel>
+            {renderActions(focused)}
+          </>
         ) : (
-          agents.map((agent) => (
-            <DropdownMenuSub key={agent.id}>
-              <DropdownMenuSubTrigger className="justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-2">
-                  <AgentDot agentId={agent.id} size="sm" title={null} />
-                  <span className="truncate">{agent.name}</span>
-                </span>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent
-                className="min-w-[10rem]"
-              >
-                {agent.actions.map((action) => (
-                  <DropdownMenuItem
-                    key={action.kind}
-                    disabled={action.kind === 'import-login' ? !onImportLogin : !onAddKey}
-                    onSelect={(event) =>
-                      handleTicketAddMenuSelect(event, action.kind, agent.id, {
-                        onImportLogin,
-                        onAddKey,
-                        onMenuClose: () => setOpen(false),
-                      })
-                    }
-                  >
-                    {ticketAddActionLabel(action.kind, t)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          ))
+          <>
+            <DropdownMenuLabel>{t('connections.list.addAgent')}</DropdownMenuLabel>
+            {agents.map((agent) => (
+              <DropdownMenuSub key={agent.id}>
+                <DropdownMenuSubTrigger className="justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <AgentDot agentId={agent.id} size="sm" title={null} />
+                    <span className="truncate">{agent.name}</span>
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-[10rem]">
+                  {renderActions(agent)}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ))}
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -449,6 +443,7 @@ export function TicketWalletList({
   const renderAddMenu = () => (
     <TicketAddMenu
       agents={addAgents}
+      focusedAgentId={agentFilterId}
       onImportLogin={onImportLogin}
       onAddKey={onAddKey}
     />
@@ -456,10 +451,6 @@ export function TicketWalletList({
 
   return (
     <div>
-      <div className={cn(pageRhythm.chromeRow, 'flex-wrap justify-end gap-2')}>
-        <div className="flex items-center gap-2">{renderAddMenu()}</div>
-      </div>
-
       {loading && !wallet ? <ListSkeleton rows={4} /> : null}
 
       {wallet && tickets.length === 0 ? (

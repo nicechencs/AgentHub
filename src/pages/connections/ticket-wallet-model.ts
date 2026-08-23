@@ -126,6 +126,15 @@ export function buildTicketAddMenu(
   }));
 }
 
+/** When an Agent tab is selected, skip the agent picker and use that Agent's actions. */
+export function focusedTicketAddAgent(
+  agents: readonly TicketAddMenuAgent[],
+  focusedAgentId?: AgentId | null,
+): TicketAddMenuAgent | null {
+  if (!focusedAgentId) return null;
+  return agents.find((item) => item.id === focusedAgentId) ?? null;
+}
+
 export function dispatchTicketAddAction(
   kind: TicketAddKind,
   agentId: AgentId,

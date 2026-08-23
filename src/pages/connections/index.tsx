@@ -34,8 +34,9 @@ import type { AgentId } from '@/lib/types';
 import { ApiKeyAccountDialog } from '@/pages/accounts/ApiKeyAccountDialog';
 import { ProviderEditDialog } from '@/pages/providers/ProviderEditDialog';
 import { ConnectionTrashButton } from './ConnectionTrashButton';
-import { TicketWalletList } from './TicketWalletList';
+import { TicketAddMenu, TicketWalletList } from './TicketWalletList';
 import {
+  buildTicketAddMenu,
   extrasFromPoolSource,
   filterTicketsByAgentUsage,
   findTicketPoolSource,
@@ -489,6 +490,14 @@ export default function ConnectionsPage() {
             : t('connections.page.descriptionKinds')
         }
         descriptionTip={t('connections.page.descriptionTip')}
+        actions={
+          <TicketAddMenu
+            agents={buildTicketAddMenu(allowedAgents)}
+            focusedAgentId={filterAgent === 'all' ? null : filterAgent}
+            onImportLogin={(id) => openTicketAdd('import-login', id)}
+            onAddKey={(id) => openTicketAdd('api-key', id)}
+          />
+        }
       />
 
       <div className={pageRhythm.chrome}>

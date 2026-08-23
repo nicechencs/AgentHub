@@ -92,10 +92,6 @@ export const en = {
       skillMarketSummary: 'Skill market {label}',
     },
     data: {
-      routesLabel: 'Local route runtime',
-      routesDescription: 'Always available',
-      routesTip:
-        'Manages local forwarding processes. The sidebar only appears when a local route exists; this entry is always here.',
       dataDirLabel: 'Data directory',
       dataDirDescription: 'Read-only; can open',
       dataDirTip: 'Where config snapshots, backups, and stats live (not editable on desktop).',
@@ -920,8 +916,6 @@ export const en = {
       filterAgentAria: "Filter logins by agent",
       details: "Details",
       usage: "Usage",
-      usedOn: "Used on",
-      unusedTools: "Not connected to any tool yet",
       more: "More",
       refreshToken: "Refresh token",
       moveToTrash: "Move to trash",

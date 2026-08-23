@@ -227,7 +227,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 └────────────────────────────────────────────────────────────┘
 ```
 
-- 顶部 **AgentTabStrip**（含「全部」）；无「官方登录 / API Key / 未识别」类型芯片。OAuth 用人头（账号登录），API Key 用钥匙（密钥授权）。
+- 「添加」在页头标题「连接」同一行右侧（`PageHeader` `actions`）。顶部 **AgentTabStrip**（含「全部」）：选「全部」时添加先选 Agent；选了某个 Agent 后，添加直接给出该 Agent 的「导入当前登录 / 添加 API Key」。无「官方登录 / API Key / 未识别」类型芯片。OAuth 用人头（账号登录），API Key 用钥匙（密钥授权）。
 - 「正用于」来自绑定：native / reshape / bridge，不是手写 account/provider 出身。
 - **每一份真登录都有「分享」和「路由」**：分享打开绑定对话框并只列出直连 / 写进对方登录；路由只列本机转发。接不上、工具不能写入、未识别：对话框内置灰 + 原因，不在行上隐藏动作。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。不要把订阅默认写成转发。
 - **OAuth 刷新**（有 `oauthListAction` 才出现）：Grok「同步当前登录」；Pi「刷新凭据」；Codex / Claude 只探配额（Hub 不刷新 CLI 拥有的 token）；Kimi 不显示刷新。
@@ -235,7 +235,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 - 添加登录时写下它是哪一家。API Key 默认勾选官方端点 → 带出官方 URL + 模型；取消后可填自定义（未识别则标 `unknown`，不假装可接到任意工具）。**Pi 无单一官方 URL**：弹窗选厂商槽，官方槽（anthropic / openai / …）只写 `~/.pi/agent/auth.json`，自定义 URL 写 `models.json`。
 - **已落地（读模型 + 写入）**：跨工具登录列表 + 真登录常驻「分享 / 路由」+ Dashboard 当前绑定；自动生成的配置不出现在登录列表。确认步走 `bind`，成功以该工具的当前绑定为准，见 [connection-binding-model.md](connection-binding-model.md) §6。
 - 导入当前登录时若本机同时有 Key 与官方登录，对话框警告条说明当前会收入哪一份。
-- **详情展开**：不是字段堆。行头在官方登录 / 订阅旁放安静健康 chip（可续期 / 已配置；不写实验 / 未验证）。`sm+` 两栏 **用量**（有配额才出现，QuotaBar 先 7d 再 5h + reset）| **用在哪**（每行一个绑定：左 Agent 名，右「当前使用 / 本机路由运行中 / 本机路由已停止 / 未使用」；空态「还没接到任何工具」）。OAuth 详情显示脱敏 Refresh token（头尾预览，不含明文），方便区分同一身份下的多份授权。**更多**仅在有自定义端点 / 协议时出现（默认折叠）；仅 import + 登录状态时不渲染。页脚只放编辑配置或编辑密钥（若可）+「移入回收站」；行头已有 Agent，不再写「导入自 …」。
+- **详情展开**：不是字段堆。行头在官方登录 / 订阅旁放安静健康 chip（可续期 / 已配置；不写实验 / 未验证）。**用量**有配额才出现（QuotaBar 先 7d 再 5h + reset）；用途已在行上，详情不再列「用在哪」。OAuth 详情显示脱敏 Refresh token（头尾预览，不含明文），方便区分同一身份下的多份授权。**更多**仅在有自定义端点 / 协议时出现（默认折叠）；仅 import + 登录状态时不渲染。页脚只放编辑配置或编辑密钥（若可）+「移入回收站」；行头已有 Agent，不再写「导入自 …」。
 - 实现落点：`TicketWalletList` / `ticket-wallet-model` / `lib/api/tickets`；`reuse-offer` 为登录常驻「分享 / 路由」语义。
 
 #### 4.3.1 mode=providers — API 配置（历史线框 / 过渡形态）
@@ -296,7 +296,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 用户表面是 **本机路由运行时**：协议对不上时在这台电脑上开的一层转发。登录在 Connections，绑定在 Dashboard / ConnectFlow；本页只服务本机转发。内部模块仍叫 Adapter（`lib/api/adapter`），不得漏进侧栏、页标题、空态、确认框、徽标、托盘。
 
-规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Routes**、中文 **「路由」**，永久显示；页标题仍「本机路由」。Settings → 本机有一条永远在的「本机路由」入口。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
+规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏英文 **Routes**、中文 **「路由」**，永久显示；页标题仍「本机路由」。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 
 列出全部 `route=local_bridge`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。行与详情都是**单层**进程健康 + **本机 IP（127.0.0.1）+ 端口**，不画「配置已生效 / 桥接运行中」。无端口时标「待分配端口」，不复制无端口的地址。解绑只走 unbind，不提供 `removeAdapter`。健康空态（profile 与登录列表均已结算且 `bound+orphan===0` 且 last-known 本机路由数为 0）标题「没有本机路由」，**无按钮**——这是对 §1.4 的显式例外。
 
@@ -465,7 +465,7 @@ Settings 子页（`?tab=backups`），**不**占侧栏。页内 tab 中文 **备
 四个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 备份 / 关于**，英文 **Preferences / This device / Backups / About**）：
 
 1. **偏好**（`?tab=preferences`）：语言、主题、开机自启、关闭到托盘、技能市场源、用量采集间隔。
-2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录、本机路由回收链。
+2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录。路由页走侧栏 **Routes**（永久显示）。
 3. **备份**（`?tab=backups`）：各 Agent live 配置快照的查看 / 手动备份 / 恢复 / 删除，见 §4.7。
 4. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
 

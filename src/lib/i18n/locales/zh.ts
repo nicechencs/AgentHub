@@ -90,9 +90,6 @@ export const zh = {
       skillMarketSummary: '技能市场 {label}',
     },
     data: {
-      routesLabel: '本机路由运行时',
-      routesDescription: '永远可打开',
-      routesTip: '管本机转发进程。侧栏只在有本机路由时出现；这里始终可找回。',
       dataDirLabel: '数据目录',
       dataDirDescription: '只读，可打开',
       dataDirTip: '配置快照、备份与统计数据存放位置（桌面端不可改）。',
@@ -914,8 +911,6 @@ export const zh = {
       filterAgentAria: "按 Agent 筛选登录",
       details: "详情",
       usage: "用量",
-      usedOn: "用在哪",
-      unusedTools: "还没接到任何工具",
       more: "更多",
       refreshToken: "Refresh token",
       moveToTrash: "移入回收站",
