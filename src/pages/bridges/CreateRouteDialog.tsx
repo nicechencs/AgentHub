@@ -13,11 +13,33 @@ import { Input } from '@/components/ui/input';
 import { SecretInput } from '@/components/shared/SecretInput';
 import {
   canSubmitCreateRoute,
-  CREATE_ROUTE_TARGETS,
+  CREATE_ROUTE_VENDORS,
   DEFAULT_CREATE_ROUTE_MODEL,
+  defaultCreateRouteClients,
+  isCreateRouteUrlValid,
   submitCreateRoute,
+  urlForVendor,
+  vendorIdForUrl,
+  type CreateRouteClient,
   type CreateRouteTarget,
+  type CreateRouteVendorId,
 } from './create-route-flow';
+
+function targetLabel(
+  t: (key: string) => string,
+  target: CreateRouteTarget,
+): string {
+  if (target === 'claude') return t('routes.create.target.claude');
+  if (target === 'codex') return t('routes.create.target.codex');
+  return t('routes.create.target.grok');
+}
+
+function vendorLabel(
+  t: (key: string) => string,
+  id: CreateRouteVendorId,
+): string {
+  return t(`routes.create.vendor.${id}`);
+}
 
 export function CreateRouteDialog({
   open,
@@ -30,33 +52,30 @@ export function CreateRouteDialog({
 }) {
   const { t } = useI18n();
   const [name, setName] = useState('');
-  const [url, setUrl] = useState('https://openrouter.ai/api/v1');
   const [key, setKey] = useState('');
   const [model, setModel] = useState(DEFAULT_CREATE_ROUTE_MODEL);
-  const [targets, setTargets] = useState<CreateRouteTarget[]>([]);
+  const [clients, setClients] = useState<CreateRouteClient[]>(defaultCreateRouteClients);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reset = () => {
     setName('');
-    setUrl('https://openrouter.ai/api/v1');
     setKey('');
     setModel(DEFAULT_CREATE_ROUTE_MODEL);
-    setTargets([]);
+    setClients(defaultCreateRouteClients());
     setError(null);
   };
 
-  const toggleTarget = (target: CreateRouteTarget) => {
-    setTargets((current) =>
-      current.includes(target)
-        ? current.filter((item) => item !== target)
-        : [...current, target],
+  const patchClient = (target: CreateRouteTarget, patch: Partial<CreateRouteClient>) => {
+    setClients((current) =>
+      current.map((row) => (row.target === target ? { ...row, ...patch } : row)),
     );
   };
 
   const submit = async () => {
-    if (!canSubmitCreateRoute({ name, url, key, targets, model })) {
-      setError(url.trim() && !url.trim().startsWith('http')
+    if (!canSubmitCreateRoute({ name, key, clients, model })) {
+      const invalidEnabled = clients.some((row) => row.enabled && !isCreateRouteUrlValid(row.url));
+      setError(invalidEnabled
         ? t('routes.create.urlInvalid')
         : t('routes.create.required'));
       return;
@@ -66,9 +85,8 @@ export function CreateRouteDialog({
     try {
       await submitCreateRoute({
         name,
-        url,
         key,
-        targets,
+        clients,
         model: model.trim() || DEFAULT_CREATE_ROUTE_MODEL,
       });
       reset();
@@ -101,10 +119,6 @@ export function CreateRouteDialog({
             <Input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted">{t('routes.create.url')}</span>
-            <Input value={url} onChange={(event) => setUrl(event.target.value)} autoComplete="off" spellCheck={false} />
-          </label>
-          <label className="flex flex-col gap-1.5">
             <span className="text-xs text-muted">{t('routes.create.key')}</span>
             <SecretInput value={key} onChange={setKey} />
           </label>
@@ -120,19 +134,47 @@ export function CreateRouteDialog({
           </label>
           <fieldset className="space-y-2">
             <legend className="text-xs text-muted">{t('routes.create.targets')}</legend>
-            {CREATE_ROUTE_TARGETS.map((target) => (
-              <label key={target} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={targets.includes(target)}
-                  onChange={() => toggleTarget(target)}
-                />
-                {target === 'claude'
-                  ? t('routes.create.target.claude')
-                  : target === 'codex'
-                    ? t('routes.create.target.codex')
-                    : t('routes.create.target.grok')}
-              </label>
+            {clients.map((row) => (
+              <div key={row.target} className="space-y-1.5 rounded-md border border-border p-2">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={row.enabled}
+                    onChange={() => patchClient(row.target, { enabled: !row.enabled })}
+                  />
+                  {targetLabel(t, row.target)}
+                </label>
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,8rem)_1fr]">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-muted">{t('routes.create.vendorLabel')}</span>
+                    <select
+                      className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                      value={vendorIdForUrl(row.url)}
+                      disabled={!row.enabled}
+                      onChange={(event) => {
+                        const next = event.target.value as CreateRouteVendorId;
+                        patchClient(row.target, { url: urlForVendor(next, row.url) });
+                      }}
+                    >
+                      {CREATE_ROUTE_VENDORS.map((vendor) => (
+                        <option key={vendor.id} value={vendor.id}>
+                          {vendorLabel(t, vendor.id)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-muted">{t('routes.create.url')}</span>
+                    <Input
+                      value={row.url}
+                      disabled={!row.enabled}
+                      onChange={(event) => patchClient(row.target, { url: event.target.value })}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </label>
+                </div>
+              </div>
             ))}
             <p className="text-meta text-muted">{t('routes.create.targetsHint')}</p>
           </fieldset>
