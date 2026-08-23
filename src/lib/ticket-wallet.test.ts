@@ -161,4 +161,64 @@ describe('ticket-wallet', () => {
       't-codex',
     ]);
   });
+
+  it('uses leftover-inactive filtered length for agent chips and footer; header descriptionCount stays unfiltered', () => {
+    const all: TicketWallet = {
+      tickets: [
+        {
+          id: 't-grok',
+          sourceKind: 'account',
+          sourceId: 'grok-1',
+          agentId: 'grok',
+          label: 'user@x.ai',
+          surface: 'grok-xai-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'grok',
+        },
+        {
+          id: 't-codex',
+          sourceKind: 'account',
+          sourceId: 'codex-1',
+          agentId: 'codex',
+          label: 'me@openai.com',
+          surface: 'codex-chatgpt-subscription',
+          credentialClass: 'oauth',
+          speaks: [],
+          importedFrom: 'codex',
+        },
+      ],
+      bindings: [
+        {
+          ticketId: 't-grok',
+          agentId: 'claude',
+          route: 'native',
+          active: false,
+          profileId: null,
+          bridge: null,
+        },
+        {
+          ticketId: 't-codex',
+          agentId: 'claude',
+          route: 'bridge',
+          active: true,
+          profileId: 'p-claude',
+          bridge: { port: 8123, running: true },
+        },
+      ],
+      surfaceGroups: [],
+    };
+
+    const claudeFiltered = filterTicketsByAgentUsage(all, all.tickets, 'claude');
+    const chipCount = claudeFiltered.length;
+    const footerCount = claudeFiltered.length;
+    expect(claudeFiltered.map((row) => row.id)).toEqual(['t-codex']);
+    expect(chipCount).toBe(1);
+    expect(footerCount).toBe(1);
+
+    // index.tsx header: t('connections.page.descriptionCount', { n: visibleWallet.tickets.length })
+    const descriptionCount = all.tickets.length;
+    expect(descriptionCount).toBe(2);
+    expect(descriptionCount).not.toBe(chipCount);
+  });
 });
