@@ -4,14 +4,31 @@ import type { BindTicketResult } from '@/lib/backend/contracts/ticket';
 import type { Provider } from '@/lib/types';
 import {
   canSubmitCreateRoute,
+  CREATE_ROUTE_VENDORS,
   createRouteProviderDraft,
   DEFAULT_CREATE_ROUTE_MODEL,
+  DEFAULT_CREATE_ROUTE_URL,
+  defaultCreateRouteClients,
+  groupCreateRouteClientsByUrl,
   isAlternateRouteRule,
   isCreateRouteUrlValid,
   isOpenRouterUrl,
   resolveCreateRouteTargets,
   submitCreateRoute,
+  urlForVendor,
+  vendorIdForUrl,
+  type CreateRouteClient,
 } from './create-route-flow';
+
+function clients(
+  rows: Array<Partial<CreateRouteClient> & Pick<CreateRouteClient, 'target'>>,
+): CreateRouteClient[] {
+  return rows.map((row) => ({
+    enabled: row.enabled ?? true,
+    url: row.url ?? DEFAULT_CREATE_ROUTE_URL,
+    target: row.target,
+  }));
+}
 
 function plan(targetAgentId: AdapterApplyPlan['targetAgentId']): AdapterApplyPlan {
   return {
@@ -50,11 +67,10 @@ describe('create-route-flow', () => {
     expect(isCreateRouteUrlValid('openrouter.ai/api/v1')).toBe(false);
     const draft = createRouteProviderDraft({
       name: 'OpenRouter',
-      url: 'https://openrouter.ai/api/v1/',
       key: 'test-key',
-      targets: ['claude'],
+      clients: clients([{ target: 'claude' }]),
       model: 'stealth/ox-alpha',
-    });
+    }, DEFAULT_CREATE_ROUTE_URL, 'claude');
     expect(draft.preset).toBe('openrouter');
     expect(draft.official).toBe(false);
     expect(draft.configText).toContain('https://openrouter.ai/api/v1');
@@ -64,35 +80,84 @@ describe('create-route-flow', () => {
     expect(JSON.parse(draft.configText).model).toBe('stealth/ox-alpha');
   });
 
-  it('binds all three clients when no target is selected', () => {
-    expect(resolveCreateRouteTargets([])).toEqual(['claude', 'codex', 'grok']);
+  it('defaults all three clients checked with the OpenRouter URL', () => {
+    expect(defaultCreateRouteClients()).toEqual([
+      { target: 'claude', enabled: true, url: DEFAULT_CREATE_ROUTE_URL },
+      { target: 'codex', enabled: true, url: DEFAULT_CREATE_ROUTE_URL },
+      { target: 'grok', enabled: true, url: DEFAULT_CREATE_ROUTE_URL },
+    ]);
+  });
+
+  it('does not auto-bind unchecked clients', () => {
+    expect(resolveCreateRouteTargets([])).toEqual([]);
+    expect(resolveCreateRouteTargets(clients([
+      { target: 'claude', enabled: false },
+      { target: 'codex', enabled: true },
+      { target: 'grok', enabled: false },
+    ]))).toEqual(['codex']);
   });
 
   it('rejects a URL that is not http(s)', () => {
     expect(canSubmitCreateRoute({
       name: 'x',
-      url: 'openrouter.ai/api/v1',
       key: 'k',
-      targets: [],
+      clients: clients([{ target: 'claude', url: 'openrouter.ai/api/v1' }]),
+    })).toBe(false);
+  });
+
+  it('requires at least one checked client', () => {
+    expect(canSubmitCreateRoute({
+      name: 'OpenRouter',
+      key: 'test-key',
+      clients: defaultCreateRouteClients().map((row) => ({ ...row, enabled: false })),
     })).toBe(false);
   });
 
   it('defaults omitted model to stealth/ox-alpha', () => {
     expect(canSubmitCreateRoute({
       name: 'OpenRouter',
-      url: 'https://openrouter.ai/api/v1',
       key: 'test-key',
       model: '',
-      targets: ['claude'],
+      clients: clients([{ target: 'claude' }]),
     })).toBe(true);
     const draft = createRouteProviderDraft({
       name: 'OpenRouter',
-      url: 'https://openrouter.ai/api/v1',
       key: 'test-key',
-      targets: [],
-    });
+      clients: defaultCreateRouteClients(),
+    }, DEFAULT_CREATE_ROUTE_URL, 'codex');
     expect(JSON.parse(draft.configText).model).toBe(DEFAULT_CREATE_ROUTE_MODEL);
     expect(DEFAULT_CREATE_ROUTE_MODEL).toBe('stealth/ox-alpha');
+  });
+
+  it('groups shared URLs into one provider and splits when URLs differ', () => {
+    expect(groupCreateRouteClientsByUrl(defaultCreateRouteClients())).toEqual([
+      { url: DEFAULT_CREATE_ROUTE_URL, targets: ['claude', 'codex', 'grok'] },
+    ]);
+    expect(groupCreateRouteClientsByUrl(clients([
+      { target: 'claude', url: DEFAULT_CREATE_ROUTE_URL },
+      { target: 'codex', url: 'https://api.openai.com/v1' },
+      { target: 'grok', enabled: false, url: DEFAULT_CREATE_ROUTE_URL },
+    ]))).toEqual([
+      { url: DEFAULT_CREATE_ROUTE_URL, targets: ['claude'] },
+      { url: 'https://api.openai.com/v1', targets: ['codex'] },
+    ]);
+  });
+
+  it('maps known official OpenAI-compat hosts and leaves others custom', () => {
+    expect(CREATE_ROUTE_VENDORS.map((vendor) => vendor.id)).toEqual([
+      'openrouter',
+      'openai',
+      'xai',
+      'deepseek',
+      'custom',
+    ]);
+    expect(vendorIdForUrl(DEFAULT_CREATE_ROUTE_URL)).toBe('openrouter');
+    expect(vendorIdForUrl('https://api.openai.com/v1/')).toBe('openai');
+    expect(vendorIdForUrl('https://api.x.ai/v1')).toBe('xai');
+    expect(vendorIdForUrl('https://api.deepseek.com')).toBe('deepseek');
+    expect(vendorIdForUrl('https://relay.example.com/v1')).toBe('custom');
+    expect(urlForVendor('openai', DEFAULT_CREATE_ROUTE_URL)).toBe('https://api.openai.com/v1');
+    expect(urlForVendor('custom', 'https://relay.example.com/v1')).toBe('https://relay.example.com/v1');
   });
 
   it('marks openai-compat local-bridge rules as alternate', () => {
@@ -102,7 +167,7 @@ describe('create-route-flow', () => {
     expect(isAlternateRouteRule('kimi-membership-to-codex-v1')).toBe(false);
   });
 
-  it('upserts then plans and binds Claude, Codex, and Grok', async () => {
+  it('upserts one provider then plans and binds only checked clients', async () => {
     const upsertProvider = vi.fn(async (provider: Provider) => provider);
     const planTicket = vi.fn(async (_ticket: string, agent: string) =>
       plan(agent as AdapterApplyPlan['targetAgentId']),
@@ -114,9 +179,8 @@ describe('create-route-flow', () => {
     const bound = await submitCreateRoute(
       {
         name: 'OpenRouter',
-        url: 'https://openrouter.ai/api/v1',
         key: 'test-key',
-        targets: [],
+        clients: defaultCreateRouteClients(),
       },
       { upsertProvider, planTicket, bindTicket },
     );
@@ -138,5 +202,36 @@ describe('create-route-flow', () => {
       expect(bindOrder).toBeDefined();
       expect(planOrder!).toBeLessThan(bindOrder!);
     }
+  });
+
+  it('creates separate providers when checked client URLs differ', async () => {
+    const upsertProvider = vi.fn(async (provider: Provider) => provider);
+    const planTicket = vi.fn(async (_ticket: string, agent: string) =>
+      plan(agent as AdapterApplyPlan['targetAgentId']),
+    );
+    const bindTicket = vi.fn(async (_ticket: string, agent: string) =>
+      bindResult(agent as BindTicketResult['binding']['agentId']),
+    );
+
+    const bound = await submitCreateRoute(
+      {
+        name: 'Backup',
+        key: 'test-key',
+        clients: clients([
+          { target: 'claude', url: DEFAULT_CREATE_ROUTE_URL },
+          { target: 'codex', url: 'https://api.openai.com/v1' },
+          { target: 'grok', enabled: false },
+        ]),
+      },
+      { upsertProvider, planTicket, bindTicket },
+    );
+
+    expect(upsertProvider).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(upsertProvider.mock.calls[0]?.[0].configText ?? '{}').baseURL)
+      .toBe(DEFAULT_CREATE_ROUTE_URL);
+    expect(JSON.parse(upsertProvider.mock.calls[1]?.[0].configText ?? '{}').baseURL)
+      .toBe('https://api.openai.com/v1');
+    expect(planTicket.mock.calls.map((call) => call[1])).toEqual(['claude', 'codex']);
+    expect(bound).toEqual(['claude', 'codex']);
   });
 });
