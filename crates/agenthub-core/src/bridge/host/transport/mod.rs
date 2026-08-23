@@ -542,12 +542,12 @@ fn overwrite_configured_model(body: &mut Value, model: Option<&str>) {
 
 fn overwrite_configured_model_with(body: &mut Value, model: Option<&str>, keep_request_model: bool) {
     if keep_request_model {
-        let has_request = body
+        let request_model = body
             .get("model")
             .and_then(Value::as_str)
             .map(str::trim)
-            .is_some_and(|value| !value.is_empty());
-        if has_request {
+            .unwrap_or("");
+        if crate::models::is_openrouter_backup_model(request_model) {
             return;
         }
     }

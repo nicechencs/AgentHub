@@ -187,6 +187,26 @@ impl Gateway {
         Ok(edge)
     }
 
+    /// List models for GET /v1/models. When a running custom OpenAI-compat
+    /// backup exists for the same target, include stealth/ox-alpha.
+    pub(super) fn listed_models_with_backup(&self, state: &EdgeState) -> Vec<String> {
+        let include = state.custom_openai || self.has_running_custom_openai_backup(state);
+        crate::models::with_openrouter_backup_model(state.listed_models.to_vec(), include)
+    }
+
+    fn has_running_custom_openai_backup(&self, lead: &EdgeState) -> bool {
+        let Ok(registry) = self.lock() else {
+            return false;
+        };
+        registry.runtimes.values().any(|runtime| {
+            let state = &runtime.state;
+            state.custom_openai
+                && state.mapping_target == lead.mapping_target
+                && !state.stopping.load(Ordering::SeqCst)
+                && !state.force_shutdown.is_cancelled()
+        })
+    }
+
     /// After the body model is known: if the lead mapping misses and another
     /// running edge can serve it, switch for this request only.
     pub(super) fn switch_edge_for_model(&self, lead: &EdgeState, model: &str) -> ModelSwitchOutcome {

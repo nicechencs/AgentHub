@@ -8,21 +8,84 @@ export const DEFAULT_CREATE_ROUTE_URL = 'https://openrouter.ai/api/v1';
 
 export type CreateRouteTarget = (typeof CREATE_ROUTE_TARGETS)[number];
 
-export type CreateRouteVendorId = 'openrouter' | 'openai' | 'xai' | 'deepseek' | 'custom';
+export type CreateRouteVendorId =
+  | 'openrouter'
+  | 'openai'
+  | 'glm'
+  | 'kimi'
+  | 'deepseek'
+  | 'grok'
+  | 'claude'
+  | 'custom';
 
-/** Real OpenAI-compat hosts already classified in AgentHub. Do not invent vendors. */
-export const CREATE_ROUTE_VENDORS: readonly {
+export type CreateRouteVendor = {
   id: CreateRouteVendorId;
-  url: string | null;
-}[] = [
-  { id: 'openrouter', url: DEFAULT_CREATE_ROUTE_URL },
-  { id: 'openai', url: 'https://api.openai.com/v1' },
-  { id: 'xai', url: 'https://api.x.ai/v1' },
-  { id: 'deepseek', url: 'https://api.deepseek.com' },
-  { id: 'custom', url: null },
+  url: string;
+  enabled: readonly CreateRouteTarget[];
+  models: readonly string[];
+  endpointUrls?: Partial<Record<CreateRouteTarget, string>>;
+};
+
+export const CREATE_ROUTE_VENDORS: readonly CreateRouteVendor[] = [
+  {
+    id: 'openrouter',
+    url: DEFAULT_CREATE_ROUTE_URL,
+    enabled: ['claude', 'codex', 'grok'],
+    models: [DEFAULT_CREATE_ROUTE_MODEL],
+  },
+  {
+    id: 'openai',
+    url: 'https://api.openai.com/v1',
+    enabled: ['codex', 'grok'],
+    models: [],
+  },
+  {
+    id: 'glm',
+    url: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    enabled: ['claude', 'codex', 'grok'],
+    models: [],
+    endpointUrls: {
+      claude: 'https://open.bigmodel.cn/api/anthropic',
+      codex: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      grok: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    },
+  },
+  {
+    id: 'kimi',
+    url: 'https://api.moonshot.cn/v1',
+    enabled: ['codex', 'grok'],
+    models: [],
+  },
+  {
+    id: 'deepseek',
+    url: 'https://api.deepseek.com',
+    enabled: ['claude', 'codex', 'grok'],
+    models: [],
+    endpointUrls: {
+      claude: 'https://api.deepseek.com/anthropic',
+    },
+  },
+  {
+    id: 'grok',
+    url: 'https://api.x.ai/v1',
+    enabled: ['codex', 'grok'],
+    models: [],
+  },
+  {
+    id: 'claude',
+    url: 'https://api.anthropic.com',
+    enabled: ['claude'],
+    models: [],
+  },
+  {
+    id: 'custom',
+    url: '',
+    enabled: [],
+    models: [],
+  },
 ];
 
-export type CreateRouteClient = {
+export type CreateRouteEndpoint = {
   target: CreateRouteTarget;
   enabled: boolean;
   url: string;
@@ -30,9 +93,17 @@ export type CreateRouteClient = {
 
 export type CreateRouteInput = {
   name: string;
+  url: string;
   key: string;
-  clients: readonly CreateRouteClient[];
-  model?: string;
+  vendor: CreateRouteVendorId;
+  endpoints: readonly CreateRouteTarget[];
+  models?: string;
+};
+
+export type ImportRouteInput = {
+  sourceKind: 'account' | 'provider';
+  sourceId: string;
+  agentId: AgentId;
 };
 
 export type CreateRouteDeps = {
@@ -47,12 +118,8 @@ const defaultDeps: CreateRouteDeps = {
   bindTicket,
 };
 
-export function defaultCreateRouteClients(): CreateRouteClient[] {
-  return CREATE_ROUTE_TARGETS.map((target) => ({
-    target,
-    enabled: true,
-    url: DEFAULT_CREATE_ROUTE_URL,
-  }));
+export function vendorById(id: CreateRouteVendorId): CreateRouteVendor {
+  return CREATE_ROUTE_VENDORS.find((vendor) => vendor.id === id) ?? CREATE_ROUTE_VENDORS[0]!;
 }
 
 export function normalizeCreateRouteUrl(url: string): string {
@@ -68,63 +135,83 @@ export function isCreateRouteUrlValid(url: string): boolean {
   return normalized.startsWith('http://') || normalized.startsWith('https://');
 }
 
-export function vendorIdForUrl(url: string): CreateRouteVendorId {
-  const normalized = normalizeCreateRouteUrl(url).toLowerCase();
-  if (!normalized) return 'openrouter';
-  for (const vendor of CREATE_ROUTE_VENDORS) {
-    if (vendor.url && normalizeCreateRouteUrl(vendor.url).toLowerCase() === normalized) {
-      return vendor.id;
-    }
+export function parseCreateRouteModels(text: string | undefined): string[] {
+  if (!text) return [];
+  return text
+    .split(/[,，\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export function formatCreateRouteModels(models: readonly string[]): string {
+  return models.join(', ');
+}
+
+export function defaultCreateRouteEndpoints(vendor: CreateRouteVendorId): CreateRouteTarget[] {
+  return [...vendorById(vendor).enabled];
+}
+
+export function endpointUrlFor(
+  vendor: CreateRouteVendorId,
+  target: CreateRouteTarget,
+  formUrl: string,
+): string {
+  const spec = vendorById(vendor);
+  const primary = normalizeCreateRouteUrl(spec.url);
+  const current = normalizeCreateRouteUrl(formUrl);
+  const specific = spec.endpointUrls?.[target];
+  if (specific && (!current || current === primary || current === normalizeCreateRouteUrl(specific))) {
+    return specific;
   }
-  return 'custom';
+  return formUrl.trim();
 }
 
-export function urlForVendor(id: CreateRouteVendorId, currentUrl: string): string {
-  const vendor = CREATE_ROUTE_VENDORS.find((item) => item.id === id);
-  if (!vendor?.url) return currentUrl;
-  return vendor.url;
-}
-
-export function enabledCreateRouteClients(
-  clients: readonly CreateRouteClient[],
-): CreateRouteClient[] {
-  return clients.filter((client) => client.enabled);
-}
-
-export function resolveCreateRouteTargets(
-  clients: readonly CreateRouteClient[],
-): CreateRouteTarget[] {
-  return [...new Set(enabledCreateRouteClients(clients).map((client) => client.target))];
+export function buildCreateRouteEndpoints(
+  vendor: CreateRouteVendorId,
+  formUrl: string,
+  enabled: readonly CreateRouteTarget[],
+): CreateRouteEndpoint[] {
+  return CREATE_ROUTE_TARGETS.map((target) => ({
+    target,
+    enabled: enabled.includes(target),
+    url: endpointUrlFor(vendor, target, formUrl),
+  }));
 }
 
 export function canSubmitCreateRoute(input: CreateRouteInput): boolean {
-  if (!input.name.trim() || !input.key.trim()) return false;
-  const enabled = enabledCreateRouteClients(input.clients);
-  if (enabled.length === 0) return false;
-  return enabled.every((client) => isCreateRouteUrlValid(client.url));
+  return Boolean(
+    input.name.trim()
+    && input.key.trim()
+    && isCreateRouteUrlValid(input.url)
+    && input.endpoints.length > 0,
+  );
 }
 
-export function createRouteProviderDraft(
-  input: CreateRouteInput,
-  url: string,
-  owner: CreateRouteTarget,
-): Provider {
-  const normalizedUrl = normalizeCreateRouteUrl(url);
-  const name = input.name.trim();
+export function createRouteOwner(endpoints: readonly CreateRouteTarget[]): CreateRouteTarget {
+  return CREATE_ROUTE_TARGETS.find((target) => endpoints.includes(target)) ?? 'codex';
+}
+
+export function createRouteProviderDraft(input: CreateRouteInput): Provider {
+  const url = normalizeCreateRouteUrl(input.url);
   const key = input.key.trim();
-  const model = input.model?.trim() || DEFAULT_CREATE_ROUTE_MODEL;
+  const models = parseCreateRouteModels(input.models);
+  const endpoints = buildCreateRouteEndpoints(input.vendor, url, input.endpoints)
+    .filter((row) => row.enabled);
   const settings: Record<string, unknown> = {
-    baseURL: normalizedUrl,
-    baseUrl: normalizedUrl,
+    baseURL: url,
+    baseUrl: url,
     apiKey: key,
     api_key: key,
-    model,
+    vendor: input.vendor,
+    endpoints,
+    listedModels: models,
   };
+  if (models[0]) settings.model = models[0];
   return {
     id: `openai-compat-${crypto.randomUUID()}`,
-    agentId: owner,
-    name,
-    preset: isOpenRouterUrl(normalizedUrl) ? 'openrouter' : 'openai-compat',
+    agentId: createRouteOwner(input.endpoints),
+    name: input.name.trim(),
+    preset: isOpenRouterUrl(url) || input.vendor === 'openrouter' ? 'openrouter' : 'openai-compat',
     configText: JSON.stringify(settings, null, 2),
     configFormat: 'json',
     isCurrent: false,
@@ -132,17 +219,37 @@ export function createRouteProviderDraft(
   };
 }
 
-export function groupCreateRouteClientsByUrl(
-  clients: readonly CreateRouteClient[],
-): { url: string; targets: CreateRouteTarget[] }[] {
-  const groups = new Map<string, CreateRouteTarget[]>();
-  for (const client of enabledCreateRouteClients(clients)) {
-    const url = normalizeCreateRouteUrl(client.url);
-    const targets = groups.get(url) ?? [];
-    if (!targets.includes(client.target)) targets.push(client.target);
-    groups.set(url, targets);
+export function readCreateRouteCapabilities(configText: string | undefined): {
+  endpoints: CreateRouteEndpoint[];
+  models: string[];
+} {
+  try {
+    const parsed = JSON.parse(configText ?? '{}') as {
+      listedModels?: unknown;
+      model?: unknown;
+      endpoints?: unknown;
+    };
+    const models = Array.isArray(parsed.listedModels)
+      ? parsed.listedModels.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : parseCreateRouteModels(typeof parsed.model === 'string' ? parsed.model : '');
+    const endpoints = Array.isArray(parsed.endpoints)
+      ? parsed.endpoints.flatMap((row) => {
+          if (!row || typeof row !== 'object') return [];
+          const record = row as { target?: unknown; enabled?: unknown; url?: unknown };
+          if (record.target !== 'claude' && record.target !== 'codex' && record.target !== 'grok') {
+            return [];
+          }
+          return [{
+            target: record.target,
+            enabled: record.enabled !== false,
+            url: typeof record.url === 'string' ? record.url : '',
+          }];
+        })
+      : [];
+    return { endpoints: endpoints.filter((row) => row.enabled), models };
+  } catch {
+    return { endpoints: [], models: [] };
   }
-  return [...groups.entries()].map(([url, targets]) => ({ url, targets }));
 }
 
 export function isAlternateRouteRule(ruleId: string | null | undefined): boolean {
@@ -158,16 +265,27 @@ export async function submitCreateRoute(
   if (!canSubmitCreateRoute(input)) {
     throw new Error('required');
   }
-  const bound: string[] = [];
-  for (const group of groupCreateRouteClientsByUrl(input.clients)) {
-    const owner = group.targets[0] ?? 'codex';
-    const provider = await deps.upsertProvider(createRouteProviderDraft(input, group.url, owner));
-    const ticketId = ticketIdFor('provider', provider.id);
-    for (const target of group.targets) {
-      await deps.planTicket(ticketId, target as AgentId);
-      await deps.bindTicket(ticketId, target as AgentId);
-      bound.push(target);
-    }
-  }
-  return bound;
+  const provider = await deps.upsertProvider(createRouteProviderDraft(input));
+  const owner = createRouteOwner(input.endpoints);
+  const ticketId = ticketIdFor('provider', provider.id);
+  await deps.planTicket(ticketId, owner as AgentId);
+  await deps.bindTicket(ticketId, owner as AgentId);
+  return [owner];
+}
+
+export function importRouteTarget(agentId: AgentId): CreateRouteTarget {
+  return CREATE_ROUTE_TARGETS.includes(agentId as CreateRouteTarget)
+    ? agentId as CreateRouteTarget
+    : 'codex';
+}
+
+export async function submitImportRoute(
+  input: ImportRouteInput,
+  deps: Pick<CreateRouteDeps, 'planTicket' | 'bindTicket'> = defaultDeps,
+): Promise<string> {
+  const ticketId = ticketIdFor(input.sourceKind, input.sourceId);
+  const target = importRouteTarget(input.agentId);
+  await deps.planTicket(ticketId, target as AgentId);
+  await deps.bindTicket(ticketId, target as AgentId);
+  return target;
 }

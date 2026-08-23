@@ -386,8 +386,18 @@ fn listed_models_for_bridge(
     source: AdapterSourceProduct,
     target: AgentId,
     default_model: &str,
+    custom_openai: bool,
 ) -> Vec<String> {
-    list_local_bridge_models(source, target, Some(default_model))
+    let configured = default_model.trim();
+    let listed = list_local_bridge_models(
+        source,
+        target,
+        if configured.is_empty() { None } else { Some(configured) },
+    );
+    crate::models::with_openrouter_backup_model(
+        listed,
+        custom_openai && crate::models::is_openrouter_backup_model(configured),
+    )
 }
 
 /// Safe input for beginning a local bridge saga. It contains no credentials.
@@ -504,11 +514,12 @@ impl AdapterBridgeRuntimeMaterial {
                 local_surface: self.local_surface,
             },
         )
-        .with_listed_models(listed_models_for_bridge(
-            self.source,
-            self.target_agent,
-            &self.upstream_model,
-        ))
+        .with_listed_models({
+            let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(
+                &self.upstream_base_url,
+            );
+            listed_models_for_bridge(self.source, self.target_agent, &self.upstream_model, custom)
+        })
         .with_mapping(
             self.source,
             self.target_agent,

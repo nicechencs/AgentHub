@@ -20,6 +20,7 @@ import type { TicketSurfaceGroupView } from '@/lib/backend/contracts/ticket';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
 import { CreateRouteDialog } from './CreateRouteDialog';
+import { ImportRouteDialog } from './ImportRouteDialog';
 import {
   BRIDGES_PATH,
   resolveBridgesProfileQuery,
@@ -89,6 +90,7 @@ export default function BridgesPage() {
   const [profileErrors, setProfileErrors] = useState<Record<string, unknown>>({});
   const [busyProfileIds, setBusyProfileIds] = useState<Record<string, boolean>>({});
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const setProfileBusy = (profileId: string, busy: boolean) => {
     setBusyProfileIds((current) => ({ ...current, [profileId]: busy }));
@@ -259,7 +261,10 @@ export default function BridgesPage() {
         description={t('routes.page.description')}
         descriptionTip={t('routes.page.descriptionTip')}
         actions={
-          <Button onClick={() => setCreateOpen(true)}>{t('routes.create.action')}</Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setImportOpen(true)}>{t('routes.import.action')}</Button>
+            <Button onClick={() => setCreateOpen(true)}>{t('routes.create.action')}</Button>
+          </div>
         }
       />
 
@@ -336,6 +341,13 @@ export default function BridgesPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={() => { void reload(); }}
+        entries={entries}
+      />
+      <ImportRouteDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        entries={entries}
+        onImported={() => { void reload(); }}
       />
 
       <AdapterProfileDetailDialog
