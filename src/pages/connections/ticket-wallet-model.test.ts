@@ -553,7 +553,7 @@ describe('buildTicketAddMenu', () => {
       ['import-login', 'api-key'],
       ['import-login', 'api-key'],
     ]);
-    expect(menu[0]?.actions.map((a) => a.label)).toEqual(['导入当前登录', '添加 API Key']);
+    expect(menu[0]?.actions.map((a) => a.label)).toEqual(['导入当前授权', '添加 API Key']);
   });
 
   it('is empty when no Agent is installed', () => {
