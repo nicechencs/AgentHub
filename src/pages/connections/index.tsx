@@ -31,7 +31,9 @@ import {
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
 import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import {
+  accountsForAgent,
   getConnectionPoolSnapshot,
+  providersForAgent,
   useConnectionPool,
 } from '@/app/runtime';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
@@ -160,6 +162,8 @@ export default function ConnectionsPage() {
     }
   }, [filterAgent, hiddenSet]);
 
+  const discoveryAgentId: AgentId = filterAgent === 'all' ? addAgentId : filterAgent;
+
   useEffect(() => {
     if (!loginImportOpen) {
       importProbeGen.current += 1;
@@ -169,8 +173,9 @@ export default function ConnectionsPage() {
     }
     const generation = ++importProbeGen.current;
     const agentId = addAgentId;
-    setImportLiveProbe(null);
-    setImportProbeLoading(true);
+    const seed = discoveryProbe?.agentId === agentId ? discoveryProbe : null;
+    setImportLiveProbe(seed);
+    setImportProbeLoading(!seed);
     void probeLiveAuth(agentId, { force: true }).then(
       (probe) => {
         if (importProbeGen.current !== generation) return;
@@ -183,17 +188,18 @@ export default function ConnectionsPage() {
         setImportProbeLoading(false);
       },
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed at open; listing discoveryProbe would re-force
   }, [addAgentId, loginImportOpen]);
 
-  // Discovery banner: cached live-auth probe once a pool snapshot exists.
-  // Explicit-only per product rules — this only surfaces a prompt, never
-  // imports anything on its own.
+  useEffect(() => {
+    setDiscoveryDismissed(false);
+  }, [discoveryAgentId]);
+
   useEffect(() => {
     if (pool.state !== 'ready' && pool.state !== 'partial') return;
-    setDiscoveryDismissed(false);
     const generation = ++discoveryProbeGen.current;
     setDiscoveryLoading(true);
-    void probeLiveAuth(addAgentId).then(
+    void probeLiveAuth(discoveryAgentId).then(
       (probe) => {
         if (discoveryProbeGen.current !== generation) return;
         setDiscoveryProbe(probe);
@@ -205,7 +211,7 @@ export default function ConnectionsPage() {
         setDiscoveryLoading(false);
       },
     );
-  }, [addAgentId, pool.state]);
+  }, [discoveryAgentId, pool.state]);
 
   const walletGeneration = useRef(0);
   const loadWallet = useCallback(async (): Promise<boolean> => {
@@ -523,9 +529,11 @@ export default function ConnectionsPage() {
 
   const discoveryKind = liveAuthDiscoveryKind({
     poolState: pool.state,
-    probe: discoveryProbe,
-    accounts: pool.accounts,
-    providers: pool.providers,
+    probe: discoveryProbe?.agentId === discoveryAgentId ? discoveryProbe : null,
+    accounts: accountsForAgent(pool.accounts, discoveryAgentId),
+    providers: providersForAgent(pool.providers, discoveryAgentId),
+    accountsFailed: Boolean(pool.errors.accounts),
+    providersFailed: Boolean(pool.errors.providers),
   });
   const showDiscoveryBanner =
     !discoveryLoading && !discoveryDismissed && !loginImportOpen && discoveryKind !== null;
@@ -679,12 +687,18 @@ export default function ConnectionsPage() {
           <Notice
             tone="info"
             actionLabel={t('connections.discovery.action')}
-            onAction={() => setLoginImportOpen(true)}
+            onAction={() => {
+              setAddAgentId(discoveryAgentId);
+              if (discoveryProbe?.agentId === discoveryAgentId) {
+                setImportLiveProbe(discoveryProbe);
+              }
+              setLoginImportOpen(true);
+            }}
             onDismiss={() => setDiscoveryDismissed(true)}
           >
             {discoveryKind === 'provider'
-              ? t('connections.discovery.providerBanner', { name: agentDisplayName(addAgentId) })
-              : t('connections.discovery.accountBanner', { name: agentDisplayName(addAgentId) })}
+              ? t('connections.discovery.providerBanner', { name: agentDisplayName(discoveryAgentId) })
+              : t('connections.discovery.accountBanner', { name: agentDisplayName(discoveryAgentId) })}
           </Notice>
         </div>
       ) : null}

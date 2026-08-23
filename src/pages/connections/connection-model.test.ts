@@ -480,6 +480,36 @@ describe('connection-model', () => {
     })).toBe('account');
   });
 
+  it('does not report discovery for an adapter projection', () => {
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe: { kind: 'oauth', hasCredentials: true, isAdapterProjection: true },
+      accounts: [],
+      providers: [],
+    })).toBeNull();
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe: { kind: 'api_key', hasCredentials: true, alsoPresent: ['adapter_projection'] },
+      accounts: [],
+      providers: [],
+    })).toBeNull();
+  });
+
+  it('reports the probed family when only the other family is already in the pool', () => {
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe: { kind: 'oauth', hasCredentials: true },
+      accounts: [{ kind: 'apikey' }],
+      providers: [{}],
+    })).toBe('account');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe: { kind: 'api_key', hasCredentials: true },
+      accounts: [{ kind: 'oauth' }],
+      providers: [],
+    })).toBe('provider');
+  });
+
   it('ignores a stale switch-preview result after the selected agent changes', () => {
     expect(isCurrentSwitchPreviewRequest('claude', 'codex', 1, 2)).toBe(false);
     expect(isCurrentSwitchPreviewRequest('claude', 'claude', 2, 2)).toBe(true);
