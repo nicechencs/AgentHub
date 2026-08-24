@@ -141,20 +141,18 @@ function RouteDetailBody({
             ) : null}
 
             <dl className="grid gap-2 text-sm">
+              {source.baseUrl ? (
               <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                 <dt className="w-12 shrink-0 text-muted">{t('routes.graph.upstreamTitle')}</dt>
                 <dd className="min-w-0">
-                  {source.baseUrl ? (
                     <CopyableEndpoint
                       text={source.baseUrl}
                       url={source.baseUrl}
                       ariaLabel={t('routes.graph.copyUpstream', { endpoint: source.baseUrl })}
                     />
-                  ) : (
-                    <span className="text-muted">{t('routes.graph.upstreamUnknown')}</span>
-                  )}
                 </dd>
               </div>
+              ) : null}
               <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                 <dt className="w-12 shrink-0 text-muted">{t('routes.graph.localTitle')}</dt>
                 <dd className="min-w-0">
