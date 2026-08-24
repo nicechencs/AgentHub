@@ -1079,6 +1079,8 @@ export const en = {
       surfaceMember: "Membership",
       surfaceOfficial: "Official",
       surfaceOpenai: "OpenAI",
+      surfaceOpenrouter: "OpenRouter",
+      surfaceKimi: "Kimi",
       surfaceXai: "xAI",
       surfaceGlm: "GLM",
       surfaceDeepseek: "DeepSeek",
@@ -1127,8 +1129,8 @@ export const en = {
     apiKeyDialog: {
       editTitle: "Edit API Key — {name}",
       addTitle: "Add API Key — {name}",
-      editDesc: "You can change the name. Leave the API Key blank to keep the current secret. Changing the key on the current connection writes local config.",
-      addDesc: "After save, switch it to take effect locally. Secrets are masked by default.",
+      editDesc: "You can change the name. Leave the key blank to keep it.",
+      addDesc: "Fill in the key and save.",
       name: "Name",
       nameOptional: "Name (optional)",
       namePlaceholderEdit: "Display name",
@@ -1175,15 +1177,16 @@ export const en = {
       openDir: "Open folder",
       openDirTitle: "Open local config folder: {dir}",
       useOfficial: "Use official endpoint",
-      useOfficialHint:
-        "When checked, URL / model show {label} defaults and cannot be edited. Uncheck to use a custom relay.",
+      useOfficialHint: "Use {label} default URL and model. Uncheck to enter a custom URL.",
       smartDetect: "Smart detect",
+      smartDetectHint: "Paste config, a key, or a URL, then detect to fill the fields below.",
+      endpoint: "Endpoint",
       smartDetectOfficialOff: "(unavailable in official mode)",
       smartDetectCustom: "(custom relay)",
-      pastePlaceholder:
-        "Paste relay config…\ne.g. JSON / TOML / BASE_URL=… / sk-… / https://…",
+      pastePlaceholder: "Paste config, key, or URL…",
       detectFill: "Detect and fill",
-      namePlaceholderCustom: "Optional; defaults to the host or “API Key”",
+      namePlaceholderCustom: "Optional; defaults to the host",
+      model: "Model",
       tomlOpaque:
         "This TOML is fully masked in the list. Filling URL/Key below rebuilds from the template.",
       configErrorKeep:

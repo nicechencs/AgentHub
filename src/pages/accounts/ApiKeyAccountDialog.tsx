@@ -17,17 +17,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SecretInput } from '@/components/shared/SecretInput';
+import { Hint } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { addApiKeyAccount, updateApiKeyAccount } from '@/lib/api/account';
 import { resolveAgentMeta } from '@/config/agents';
 import type { Account, AgentId } from '@/lib/types';
 
-/** Claude live apply 时写入 settings.json 的 env 字段 */
-const CLAUDE_ENV_KEYS = [
-  { value: 'ANTHROPIC_AUTH_TOKEN', label: 'ANTHROPIC_AUTH_TOKEN（默认 Bearer）' },
-  { value: 'ANTHROPIC_API_KEY', label: 'ANTHROPIC_API_KEY（x-api-key）' },
-] as const;
+const CLAUDE_DEFAULT_ENV = 'ANTHROPIC_AUTH_TOKEN';
 
 export type ApiKeyDialogMode = 'add' | 'edit';
 
@@ -56,7 +53,6 @@ export function ApiKeyAccountDialog({
   const { toast } = useToast();
   const [label, setLabel] = React.useState('');
   const [key, setKey] = React.useState('');
-  const [envKey, setEnvKey] = React.useState<string>('ANTHROPIC_AUTH_TOKEN');
   const [kimiProduct, setKimiProduct] = React.useState<'kimi-code-membership' | 'kimi-api'>(
     'kimi-api',
   );
@@ -71,12 +67,10 @@ export function ApiKeyAccountDialog({
     if (isEdit && account) {
       setLabel(account.label ?? '');
       setKey('');
-      setEnvKey('ANTHROPIC_AUTH_TOKEN');
       setKimiProduct('kimi-api');
     } else {
       setLabel('');
       setKey('');
-      setEnvKey('ANTHROPIC_AUTH_TOKEN');
       setKimiProduct('kimi-api');
     }
   }, [open, isEdit, account]);
@@ -109,7 +103,7 @@ export function ApiKeyAccountDialog({
           agentId,
           key.trim(),
           label.trim() || null,
-          showClaudeEnv ? envKey : null,
+          showClaudeEnv ? CLAUDE_DEFAULT_ENV : null,
           agentId === 'claude'
             ? 'anthropic'
             : agentId === 'codex'
@@ -171,9 +165,11 @@ export function ApiKeyAccountDialog({
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted">
-              {isEdit ? t('connections.apiKeyDialog.keyKeep') : t('connections.apiKeyDialog.key')}
-            </span>
+            <Hint label={isEdit ? t('connections.apiKeyDialog.keyKeep') : undefined}>
+              <span className="text-xs text-muted">
+                {t('connections.apiKeyDialog.key')}
+              </span>
+            </Hint>
             <SecretInput
               value={key}
               onChange={setKey}
@@ -183,29 +179,6 @@ export function ApiKeyAccountDialog({
             />
           </label>
 
-          {showClaudeEnv && !isEdit && (
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted">{t('connections.apiKeyDialog.envField')}</span>
-              <Select value={envKey} onValueChange={setEnvKey}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CLAUDE_ENV_KEYS.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.value === 'ANTHROPIC_AUTH_TOKEN'
-                        ? t('connections.apiKeyDialog.envAuthToken')
-                        : t('connections.apiKeyDialog.envApiKey')}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span className="text-meta text-muted">
-                {t('connections.apiKeyDialog.envHint')}
-              </span>
-            </label>
-          )}
-
           {agentId === 'kimi' && !isEdit && (
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-muted">Kimi Key 类型</span>
@@ -214,13 +187,10 @@ export function ApiKeyAccountDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="kimi-api">Kimi 开放平台 API Key</SelectItem>
-                  <SelectItem value="kimi-code-membership">Kimi Code 会员 Key</SelectItem>
+                  <SelectItem value="kimi-api">开放平台</SelectItem>
+                  <SelectItem value="kimi-code-membership">Code 会员</SelectItem>
                 </SelectContent>
               </Select>
-              <span className="text-meta text-muted">
-                仅选择「Kimi Code 会员 Key」才会进入会员连接边；开放平台 Key 保持为普通 API Key。
-              </span>
             </label>
           )}
         </div>

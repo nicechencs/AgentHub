@@ -670,35 +670,34 @@ export function formFieldVisibility(
   agentId: AgentId,
   _presetId = 'custom',
 ): Record<FormFieldKey, boolean> {
-  const isClaude = agentId === 'claude';
   return {
     baseUrl: true,
     apiKey: true,
     model: true,
-    modelOpus: isClaude,
-    modelSonnet: isClaude,
-    modelHaiku: isClaude,
-    modelFable: isClaude,
-    modelSubagent: isClaude,
-    claudeAuthEnv: isClaude,
-    reasoningEffort: agentId === 'codex',
-    wireApi: agentId === 'codex',
+    modelOpus: false,
+    modelSonnet: false,
+    modelHaiku: false,
+    modelFable: false,
+    modelSubagent: false,
+    claudeAuthEnv: false,
+    reasoningEffort: false,
+    wireApi: false,
     providerSlug: agentId === 'pi',
   };
 }
 
 /** 字段中文标签 */
 export const FORM_FIELD_LABELS: Record<FormFieldKey, string> = {
-  baseUrl: 'Endpoint URL',
+  baseUrl: '服务地址',
   apiKey: 'API Key',
-  model: '主模型 (ANTHROPIC_MODEL)',
-  modelOpus: 'Opus (ANTHROPIC_DEFAULT_OPUS_MODEL)',
-  modelSonnet: 'Sonnet (ANTHROPIC_DEFAULT_SONNET_MODEL)',
-  modelHaiku: 'Haiku (ANTHROPIC_DEFAULT_HAIKU_MODEL)',
-  modelFable: 'Fable (ANTHROPIC_DEFAULT_FABLE_MODEL)',
-  modelSubagent: 'Subagent (CLAUDE_CODE_SUBAGENT_MODEL)',
+  model: '模型',
+  modelOpus: 'Opus',
+  modelSonnet: 'Sonnet',
+  modelHaiku: 'Haiku',
+  modelFable: 'Fable',
+  modelSubagent: 'Subagent',
   claudeAuthEnv: 'Auth 字段',
   reasoningEffort: 'Reasoning effort',
   wireApi: 'Wire API',
-  providerSlug: 'Pi 官方厂商',
+  providerSlug: '厂商',
 };
