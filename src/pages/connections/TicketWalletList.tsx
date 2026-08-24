@@ -253,6 +253,8 @@ function TicketRow({
   const switching = switchingId === ticket.id;
   const switchBusy = switchingId !== null;
   const title = ticketCardTitle(ticket, extras);
+  const surfaceChip = ticketSurfaceChipLabel(ticket.surface, t, extras);
+  const unrecognizedChip = surfaceChip === t('connections.list.unrecognized');
 
   return (
     <ListRow
@@ -267,8 +269,8 @@ function TicketRow({
           <Tip className="truncate text-body font-medium" label={title}>
             {title}
           </Tip>
-          <Badge variant={ticket.surface === 'unknown' ? 'accent' : 'default'}>
-            {ticketSurfaceChipLabel(ticket.surface, t)}
+          <Badge variant={unrecognizedChip ? 'accent' : 'default'}>
+            {surfaceChip}
           </Badge>
           {authChip ? (
             <Badge variant="default" className={authChip.mono ? 'font-mono' : undefined}>

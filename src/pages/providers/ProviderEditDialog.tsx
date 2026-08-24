@@ -6,7 +6,7 @@
  *   仅 configSchemaVersion === null 时走 legacy applyFormVars。
  */
 import * as React from 'react';
-import { ChevronDown, FolderOpen, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -24,10 +24,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ConfigEditor } from '@/components/shared/ConfigEditor';
 import { GenericConfigForm } from '@/components/shared/GenericConfigForm';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SecretInput } from '@/components/shared/SecretInput';
+import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import type { TranslateFn } from '@/lib/i18n';
 import { useAgentCatalogOptional } from '@/app/runtime';
@@ -43,7 +43,6 @@ import {
   PI_PLACEHOLDER_BASE_URL,
   PI_PROVIDER_SLOT_OPTIONS,
   piFormRequiresBaseUrl,
-  piProviderSlotHint,
 } from '@/lib/pi-provider-slots';
 import {
   getAgentConfigSchema,
@@ -51,7 +50,6 @@ import {
   validateAgentConfig,
   type AgentConfigSchemaDto,
 } from '@/lib/api/config';
-import { openAgentConfigDir } from '@/lib/api/install';
 import { upsertProvider } from '@/lib/api/provider';
 import type { AgentId, Provider } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -64,10 +62,8 @@ import {
   FORM_FIELD_LABELS,
   formFieldVisibility,
   initFormFromConfig,
-  liveConfigPaths,
   parseJsonObjectConfig,
   REDACTED_MARKER,
-  smartDetectUrlAndKey,
   type ProviderFormVars,
 } from '@/lib/provider-detect';
 import {
@@ -133,7 +129,6 @@ export function ProviderEditDialog({
   const catalog = useAgentCatalogOptional();
   const isEdit = mode === 'edit';
   const agentName = agentDisplayName(agentId);
-  const livePaths = liveConfigPaths(agentId);
 
   const [name, setName] = React.useState('');
   const [configText, setConfigText] = React.useState('');
@@ -142,7 +137,6 @@ export function ProviderEditDialog({
   const [vars, setVars] = React.useState<ProviderFormVars>({ ...EMPTY_FORM_VARS });
   const [pasteBuf, setPasteBuf] = React.useState('');
   const [detectHints, setDetectHints] = React.useState<string[]>([]);
-  const [showAdvanced, setShowAdvanced] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   /** 默认官方：带出官方 URL / 模型 */
   const [useOfficial, setUseOfficial] = React.useState(true);
@@ -412,19 +406,6 @@ export function ProviderEditDialog({
     runSmartPaste(text, { fillName: true });
   };
 
-  const onConfigTextChange = (text: string) => {
-    setConfigText(text);
-    setConfigError(getConfigTextError(agentId, text, configFormat, t));
-    const extracted = extractFormVars(agentId, text, configFormat);
-    const hit = smartDetectUrlAndKey(text);
-    setVars({
-      ...extracted,
-      baseUrl: extracted.baseUrl || hit.baseUrl || '',
-      apiKey: extracted.apiKey || hit.apiKey || '',
-      model: extracted.model || hit.model || '',
-    });
-  };
-
   const piSlug = vars.providerSlug.trim() || 'custom';
   const piNeedsUrl = agentId === 'pi' && piFormRequiresBaseUrl(piSlug);
 
@@ -435,23 +416,6 @@ export function ProviderEditDialog({
     !configError &&
     (isEdit ? true : Boolean(vars.apiKey.trim())) &&
     (!piNeedsUrl || Boolean(vars.baseUrl.trim()));
-
-  const openLiveDir = async () => {
-    try {
-      const path = await openAgentConfigDir(agentId);
-      toast({
-        title: t('connections.providerDialog.openedConfigDir'),
-        description: path,
-        variant: 'success',
-      });
-    } catch (e) {
-      toast({
-        title: t('connections.providerDialog.openConfigDirFailed'),
-        description: e instanceof Error ? e.message : String(e),
-        variant: 'danger',
-      });
-    }
-  };
 
   const save = async () => {
     if (configError) {
@@ -577,72 +541,27 @@ export function ProviderEditDialog({
               : t('connections.apiKeyDialog.addTitle', { name: agentName })}
           </DialogTitle>
           <DialogDescription>
-            {agentId === 'pi' ? (
-              <>
-                {t('connections.providerDialog.piDescBefore')}
-                <span className="font-mono text-meta"> ~/.pi/agent/auth.json</span>
-                {t('connections.providerDialog.piDescMid')}
-                <span className="font-mono text-meta"> models.json</span>
-                {t('connections.providerDialog.piDescAfter')}
-              </>
-            ) : (
-              <>
-                {t('connections.providerDialog.officialDescBefore')}
-                <span className="font-mono text-meta"> {livePaths.config}</span>
-                {livePaths.auth ? (
-                  <>
-                    {' · '}
-                    <span className="font-mono text-meta">{livePaths.auth}</span>
-                  </>
-                ) : null}
-                {t('connections.providerDialog.officialDescAfter')}
-              </>
-            )}
+            {isEdit
+              ? t('connections.apiKeyDialog.editDesc')
+              : t('connections.apiKeyDialog.addDesc')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-meta text-muted">
-            <div className="min-w-0 flex-1 space-y-0.5">
-              <p>
-                <span className="text-secondary">{t('connections.providerDialog.liveConfig')}</span>
-                <code className="break-all font-mono">{livePaths.config}</code>
-              </p>
-              {livePaths.auth && (
-                <p>
-                  <span className="text-secondary">{t('connections.providerDialog.liveAuth')}</span>
-                  <code className="break-all font-mono">{livePaths.auth}</code>
-                </p>
-              )}
-              <p className="text-muted">{livePaths.hint}</p>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              onClick={() => void openLiveDir()}
-              title={t('connections.providerDialog.openDirTitle', { dir: livePaths.openDir })}
-            >
-              <FolderOpen className="h-3.5 w-3.5" /> {t('connections.providerDialog.openDir')}
-            </Button>
-          </div>
-
           {official ? (
-            <label className="flex cursor-pointer items-start gap-2.5 rounded-card border border-border bg-panel px-3 py-2.5">
-              <input
-                type="checkbox"
-                className="mt-0.5 h-4 w-4 accent-accent"
-                checked={useOfficial}
-                onChange={(e) => onToggleOfficial(e.target.checked)}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-primary">{t('connections.providerDialog.useOfficial')}</span>
-                <span className="mt-0.5 block text-meta text-muted">
-                  {t('connections.providerDialog.useOfficialHint', { label: official.label })}
+            <Hint label={t('connections.providerDialog.useOfficialHint', { label: official.label })}>
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-card border border-border bg-panel px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-accent"
+                  checked={useOfficial}
+                  onChange={(e) => onToggleOfficial(e.target.checked)}
+                />
+                <span className="min-w-0 flex-1 text-sm font-medium text-primary">
+                  {t('connections.providerDialog.useOfficial')}
                 </span>
-              </span>
-            </label>
+              </label>
+            </Hint>
           ) : null}
 
           {/* 布局固定：勾选官方只切换只读/禁用，不卸载区块，避免高度跳动 */}
@@ -653,15 +572,12 @@ export function ProviderEditDialog({
             )}
             aria-disabled={useOfficial || undefined}
           >
-            <span className="flex items-center gap-1 text-xs font-medium text-secondary">
-              <Sparkles className="h-3.5 w-3.5" />
-              {t('connections.providerDialog.smartDetect')}
-              {useOfficial ? (
-                <span className="font-normal text-muted">{t('connections.providerDialog.smartDetectOfficialOff')}</span>
-              ) : (
-                <span className="font-normal text-muted">{t('connections.providerDialog.smartDetectCustom')}</span>
-              )}
-            </span>
+            <Hint label={t('connections.providerDialog.smartDetectHint')}>
+              <span className="flex items-center gap-1 text-xs font-medium text-secondary">
+                <Sparkles className="h-3.5 w-3.5" />
+                {t('connections.providerDialog.smartDetect')}
+              </span>
+            </Hint>
             <textarea
               value={pasteBuf}
               onChange={(e) => {
@@ -804,12 +720,11 @@ export function ProviderEditDialog({
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="text-meta text-muted">{piProviderSlotHint(piSlug)}</span>
                 </label>
               ) : null}
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">
-                  Endpoint URL
+                  {t('connections.providerDialog.endpoint')}
                   {agentId === 'pi' && !piNeedsUrl ? t('connections.providerDialog.optional') : ''}
                 </span>
                 <Input
@@ -857,7 +772,7 @@ export function ProviderEditDialog({
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">
-                  Model
+                  {t('connections.providerDialog.model')}
                   {agentId === 'pi' && !piNeedsUrl ? t('connections.providerDialog.optional') : ''}
                 </span>
                 <Input
@@ -879,33 +794,6 @@ export function ProviderEditDialog({
               </label>
             </>
           ) : null}
-
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              className="flex items-center gap-1 self-start text-xs text-muted hover:text-secondary"
-              onClick={() => setShowAdvanced((v) => !v)}
-            >
-              <ChevronDown
-                className={cn(
-                  'h-3.5 w-3.5 transition-transform',
-                  showAdvanced && 'rotate-180',
-                )}
-              />
-              {t('connections.providerDialog.advanced', { format: configFormat.toUpperCase() })}
-              {useOfficial ? t('connections.providerDialog.advancedReadonly') : ''}
-              {t('connections.providerDialog.advancedClose')}
-            </button>
-            {/* 用 CSS 隐藏而非卸载，避免展开态切换官方时塌缩；折叠时仍按 showAdvanced */}
-            {showAdvanced && (
-              <ConfigEditor
-                value={configText === REDACTED_MARKER ? '' : configText}
-                format={configFormat}
-                onChange={useOfficial ? () => {} : onConfigTextChange}
-                readOnly={useOfficial}
-              />
-            )}
-          </div>
         </div>
 
         <DialogFooter>

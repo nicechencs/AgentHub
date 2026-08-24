@@ -338,6 +338,10 @@ describe('provider-detect fields', () => {
       expect(v.apiKey).toBe(true);
       expect(v.model).toBe(true);
       expect(v.providerSlug).toBe(false);
+      expect(v.claudeAuthEnv).toBe(false);
+      expect(v.modelOpus).toBe(false);
+      expect(v.reasoningEffort).toBe(false);
+      expect(v.wireApi).toBe(false);
     }
   });
 

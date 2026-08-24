@@ -1072,6 +1072,8 @@ export const zh = {
       surfaceMember: "会员",
       surfaceOfficial: "官方",
       surfaceOpenai: "OpenAI",
+      surfaceOpenrouter: "OpenRouter",
+      surfaceKimi: "Kimi",
       surfaceXai: "xAI",
       surfaceGlm: "GLM",
       surfaceDeepseek: "DeepSeek",
@@ -1120,8 +1122,8 @@ export const zh = {
     apiKeyDialog: {
       editTitle: "编辑 API Key — {name}",
       addTitle: "添加 API Key — {name}",
-      editDesc: "可改名称；API Key 留空则保留原密钥。当前连接改密钥会写入本机。",
-      addDesc: "保存后可切换到本机生效。密钥默认脱敏。",
+      editDesc: "可改名称。密钥留空则保持不变。",
+      addDesc: "填好后保存即可。",
       name: "名称",
       nameOptional: "名称（可选）",
       namePlaceholderEdit: "账号显示名",
@@ -1168,15 +1170,16 @@ export const zh = {
       openDir: "打开目录",
       openDirTitle: "打开本机配置目录：{dir}",
       useOfficial: "使用官方端点",
-      useOfficialHint:
-        "勾选后下方 URL / 模型显示 {label} 默认值且不可改；取消后可自定义中转",
+      useOfficialHint: "使用 {label} 的默认地址和模型。取消后可填写自定义地址。",
       smartDetect: "智能识别",
+      smartDetectHint: "粘贴配置、密钥或地址，识别后填入下方。",
+      endpoint: "服务地址",
       smartDetectOfficialOff: "（官方模式下不可用）",
       smartDetectCustom: "（自定义中转）",
-      pastePlaceholder:
-        "粘贴中转配置…\n例如 JSON / TOML / BASE_URL=… / sk-… / https://…",
+      pastePlaceholder: "粘贴配置、密钥或地址…",
       detectFill: "识别并填入",
-      namePlaceholderCustom: "可空，默认用域名或「API Key」",
+      namePlaceholderCustom: "可空，默认用域名",
+      model: "模型",
       tomlOpaque:
         "当前 TOML 在列表中整段脱敏。填写下方 URL/Key 将基于模板重建。",
       configErrorKeep:

@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { SecretInput } from '@/components/shared/SecretInput';
+import { Hint } from '@/components/ui/tooltip';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import type {
   AgentConfigSchemaDto,
   ConfigValidationIssueDto,
@@ -21,6 +23,7 @@ import { SECRET_REDACTED } from '@/lib/backend/contracts/config-types';
 import { cn } from '@/lib/utils';
 import {
   fieldControlKind,
+  isAdvancedProviderFormKey,
   issuesByField,
   type FormValues,
 } from './generic-config-form-map';
@@ -35,6 +38,8 @@ export interface GenericConfigFormProps {
   className?: string;
   /** Optional: hide specific keys (e.g. official mode locks baseUrl/model). */
   readOnlyKeys?: ReadonlySet<string> | string[];
+  /** Extra keys to omit from the form (in addition to advanced provider fields). */
+  hiddenKeys?: ReadonlySet<string> | string[];
 }
 
 export function GenericConfigForm({
@@ -45,12 +50,18 @@ export function GenericConfigForm({
   disabled,
   className,
   readOnlyKeys,
+  hiddenKeys,
 }: GenericConfigFormProps) {
+  const { t } = useI18n();
   const errMap = React.useMemo(() => issuesByField(issues), [issues]);
   const ro = React.useMemo(() => {
     if (!readOnlyKeys) return new Set<string>();
     return readOnlyKeys instanceof Set ? readOnlyKeys : new Set(readOnlyKeys);
   }, [readOnlyKeys]);
+  const hidden = React.useMemo(() => {
+    if (!hiddenKeys) return new Set<string>();
+    return hiddenKeys instanceof Set ? hiddenKeys : new Set(hiddenKeys);
+  }, [hiddenKeys]);
 
   const patch = (key: string, value: unknown) => {
     onChange({ ...values, [key]: value });
@@ -59,6 +70,7 @@ export function GenericConfigForm({
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       {schema.fields.map((field) => {
+        if (hidden.has(field.key) || isAdvancedProviderFormKey(field.key)) return null;
         const kind = fieldControlKind(field);
         const fieldDisabled = disabled || ro.has(field.key);
         const err = errMap[field.key];
@@ -75,12 +87,24 @@ export function GenericConfigForm({
           );
         }
 
+        const visibleLabel =
+          field.key === 'baseUrl'
+            ? t('connections.providerDialog.endpoint')
+            : field.key === 'apiKey'
+              ? t('connections.apiKeyDialog.key')
+              : field.key === 'model'
+                ? t('connections.providerDialog.model')
+                : field.label;
+        const hint = field.help?.trim() || undefined;
+
         return (
           <label key={field.key} className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted">
-              {field.label}
-              {field.required ? <span className="text-danger"> *</span> : null}
-            </span>
+            <Hint label={hint}>
+              <span className="text-xs text-muted">
+                {visibleLabel}
+                {field.required ? <span className="text-danger"> *</span> : null}
+              </span>
+            </Hint>
             {kind === 'secret' ? (
               <SecretInput
                 value={typeof raw === 'string' ? raw : raw == null ? '' : String(raw)}

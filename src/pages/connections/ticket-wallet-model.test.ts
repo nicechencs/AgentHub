@@ -37,6 +37,7 @@ import {
   ticketWalletFilterLabel,
   ticketCredentialClassChipLabel,
   ticketSurfaceChipLabel,
+  endpointVendorLabel,
 } from './ticket-wallet-model';
 
 function sampleWallet(): TicketWallet {
@@ -492,7 +493,7 @@ describe('ticket detail fields', () => {
     expect(labels).not.toContain('Endpoint');
   });
 
-  it('classifies mytokens.cc custom remote as OpenAI 直连, not 未识别', () => {
+  it('classifies mytokens.cc custom remote as 自定义, not OpenAI or 未识别', () => {
     const row = ticket({
       id: 'provider:codex-mytokens',
       sourceId: 'codex-mytokens',
@@ -503,7 +504,10 @@ describe('ticket detail fields', () => {
       speaks: ['openai-chat'],
     });
     expect(isUnrecognizedTicket(row)).toBe(false);
-    expect(ticketSurfaceChipLabel(row.surface)).not.toBe('未识别');
+    expect(ticketSurfaceChipLabel(row.surface, undefined, {
+      endpointMode: 'custom',
+      endpointHost: 'https://mytokens.cc/v1',
+    })).toBe('自定义');
     const { advanced } = buildTicketDetailFields(row, {
       endpointMode: 'custom',
       endpointHost: 'https://mytokens.cc/v1',
@@ -514,6 +518,35 @@ describe('ticket detail fields', () => {
       { label: '协议', value: 'openai-chat' },
     ]));
     expect(advanced.map((field) => field.value).join(' ')).not.toContain('未识别');
+  });
+
+  it('labels OpenRouter / official OpenAI / GLM hosts as the product, not the protocol family', () => {
+    expect(endpointVendorLabel('https://openrouter.ai/api/v1')).toBe('OpenRouter');
+    expect(endpointVendorLabel('openrouter.ai')).toBe('OpenRouter');
+    expect(ticketSurfaceChipLabel('openai-api', undefined, {
+      endpointMode: 'custom',
+      endpointHost: 'https://openrouter.ai/api/v1',
+    })).toBe('OpenRouter');
+    expect(ticketSurfaceChipLabel('unknown', undefined, {
+      endpointMode: 'custom',
+      endpointHost: 'https://openrouter.ai/api/v1',
+    })).toBe('OpenRouter');
+    expect(ticketSurfaceChipLabel('anthropic-api', undefined, {
+      endpointMode: 'custom',
+      endpointHost: 'https://openrouter.ai/api/v1',
+    })).toBe('OpenRouter');
+    expect(ticketSurfaceChipLabel('openai-api')).toBe('OpenAI');
+    expect(ticketSurfaceChipLabel('openai-api', undefined, {
+      endpointMode: 'official',
+      endpointHost: 'https://api.openai.com/v1',
+    })).toBe('OpenAI');
+    expect(ticketSurfaceChipLabel('glm-coding-plan', undefined, {
+      endpointHost: 'https://open.bigmodel.cn/api/anthropic',
+    })).toBe('GLM');
+    expect(ticketSurfaceChipLabel('openai-api', undefined, {
+      endpointMode: 'custom',
+      endpointHost: 'https://relay.example.com/v1',
+    })).toBe('自定义');
   });
 
   it('always shows 端点 / 主机 / 协议 for custom API Key, even when speaks is empty', () => {
@@ -563,7 +596,7 @@ describe('ticket detail fields', () => {
     expect(advanced.map((field) => field.value).join(' ')).not.toContain('anthropic-messages');
   });
 
-  it('adds Claude Agent-facing Messages surface when this login is 本机路由 to Claude', () => {
+  it('does not label OpenRouter official URL as 本机路由 even when bound to Claude', () => {
     const { advanced } = buildTicketDetailFields(
       ticket({
         id: 'provider:or-1',
@@ -583,80 +616,75 @@ describe('ticket detail fields', () => {
     );
     expect(advanced).toEqual(expect.arrayContaining([
       { label: '协议', value: 'openai-chat' },
-      { label: '本机路由', value: 'Messages /v1/messages', mono: true },
+      { label: '主机', value: 'openrouter.ai', mono: true },
     ]));
-    const labels = advanced.map((field) => field.label).join(' ');
-    expect(labels).not.toMatch(/票|钱包|投影|协议桥/);
+    expect(advanced.map((field) => field.label)).not.toContain('本机路由');
+    expect(advanced.map((field) => field.value).join(' ')).not.toContain('Messages /v1/messages');
   });
 
-  it('adds Codex / Grok Responses and Kimi Chat Completions surfaces for 本机路由', () => {
-    const extras = {
-      endpointMode: 'custom' as const,
-      endpointHost: 'https://openrouter.ai/api/v1',
-    };
+  it('adds Codex / Grok Responses and Kimi Chat Completions surfaces for loopback 本机路由', () => {
     expect(buildTicketDetailFields(
-      ticket({ id: 'provider:or-codex', sourceId: 'or-codex', agentId: 'codex', speaks: ['openai-chat'] }),
-      extras,
+      ticket({ id: 'account:oauth-codex', sourceKind: 'account', sourceId: 'oauth-codex', agentId: 'codex', credentialClass: 'oauth', speaks: ['openai-responses'] }),
+      { identity: 'me@example.com' },
       undefined,
-      [bridgeBinding('provider:or-codex', 'codex')],
+      [bridgeBinding('account:oauth-codex', 'codex')],
     ).advanced).toEqual(expect.arrayContaining([
       { label: '本机路由', value: 'Responses /v1/responses', mono: true },
     ]));
     expect(buildTicketDetailFields(
-      ticket({ id: 'provider:or-grok', sourceId: 'or-grok', agentId: 'grok', speaks: ['openai-chat'] }),
-      extras,
+      ticket({ id: 'account:oauth-grok', sourceKind: 'account', sourceId: 'oauth-grok', agentId: 'grok', credentialClass: 'oauth', speaks: ['openai-responses'] }),
+      { identity: 'me@example.com' },
       undefined,
-      [bridgeBinding('provider:or-grok', 'grok')],
+      [bridgeBinding('account:oauth-grok', 'grok')],
     ).advanced).toEqual(expect.arrayContaining([
       { label: '本机路由', value: 'Responses /v1/responses', mono: true },
     ]));
     expect(buildTicketDetailFields(
-      ticket({ id: 'provider:or-kimi', sourceId: 'or-kimi', agentId: 'kimi', speaks: ['openai-chat'] }),
-      extras,
+      ticket({ id: 'account:oauth-codex-kimi', sourceKind: 'account', sourceId: 'oauth-codex-kimi', agentId: 'codex', credentialClass: 'oauth', speaks: ['openai-responses'] }),
+      { identity: 'me@example.com' },
       undefined,
-      [bridgeBinding('provider:or-kimi', 'kimi')],
+      [bridgeBinding('account:oauth-codex-kimi', 'kimi')],
     ).advanced).toEqual(expect.arrayContaining([
       { label: '本机路由', value: 'Chat Completions /v1/chat/completions', mono: true },
     ]));
   });
 
-  it('joins distinct 本机路由 surfaces and still shows one for official OAuth', () => {
+  it('joins distinct 本机路由 surfaces for official OAuth, not OpenRouter URLs', () => {
     const { advanced: mixed } = buildTicketDetailFields(
       ticket({
-        id: 'provider:or-multi',
-        sourceId: 'or-multi',
-        agentId: 'claude',
-        speaks: ['openai-chat'],
+        id: 'account:oauth-multi',
+        sourceKind: 'account',
+        sourceId: 'oauth-multi',
+        agentId: 'codex',
+        credentialClass: 'oauth',
+        speaks: ['openai-responses'],
       }),
-      { endpointMode: 'custom', endpointHost: 'https://openrouter.ai/api/v1' },
+      { identity: 'me@example.com' },
       undefined,
       [
-        bridgeBinding('provider:or-multi', 'claude'),
-        bridgeBinding('provider:or-multi', 'codex', 'p-or-codex'),
+        bridgeBinding('account:oauth-multi', 'claude'),
+        bridgeBinding('account:oauth-multi', 'codex', 'p-codex'),
       ],
     );
     expect(mixed).toEqual(expect.arrayContaining([
       { label: '本机路由', value: 'Messages /v1/messages · Responses /v1/responses', mono: true },
     ]));
 
-    const { advanced: oauth } = buildTicketDetailFields(
+    const { advanced: openrouter } = buildTicketDetailFields(
       ticket({
-        id: 'account:oauth-codex',
-        sourceKind: 'account',
-        sourceId: 'oauth-codex',
-        agentId: 'codex',
-        label: 'me@example.com',
-        surface: 'codex-chatgpt-subscription',
-        credentialClass: 'oauth',
-        speaks: ['openai-responses'],
+        id: 'provider:or-multi',
+        sourceId: 'or-multi',
+        agentId: 'claude',
+        speaks: ['openai-chat'],
       }),
-      { identity: 'me@example.com', endpointMode: 'official' },
+      { endpointMode: 'custom', endpointHost: 'openrouter.ai' },
       undefined,
-      [bridgeBinding('account:oauth-codex', 'kimi')],
+      [
+        bridgeBinding('provider:or-multi', 'claude'),
+        bridgeBinding('provider:or-multi', 'codex', 'p-or-codex'),
+      ],
     );
-    expect(oauth).toEqual([
-      { label: '本机路由', value: 'Chat Completions /v1/chat/completions', mono: true },
-    ]);
+    expect(openrouter.map((field) => field.label)).not.toContain('本机路由');
   });
 
   it('does not add 本机路由 for reshape or native bindings', () => {
