@@ -6,7 +6,7 @@ import { listAdapterProfiles } from '@/lib/api/adapter';
 import * as providerApi from '@/lib/api/provider';
 import {
   bindTicket,
-  isActiveBindingForAgent,
+  isBindSuccessForAgent,
   planTicket,
   ticketIdFor,
 } from '@/lib/api/tickets';
@@ -53,7 +53,7 @@ async function planViaTicket(request: AdapterRouteRequest): Promise<AdapterApply
 async function bindViaTicket(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
   const ticketId = ticketIdFor(request.sourceKind, request.sourceId);
   const { binding } = await bindTicket(ticketId, request.targetAgentId);
-  if (!isActiveBindingForAgent(binding, request.targetAgentId)) {
+  if (!isBindSuccessForAgent(binding, request.targetAgentId)) {
     throw new Error('还没有切到这份登录');
   }
   if (binding.route === 'native' && !binding.profileId) {

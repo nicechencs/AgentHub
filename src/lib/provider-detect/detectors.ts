@@ -24,7 +24,7 @@ const KEY_PATTERNS: RegExp[] = [
 
 const NAMED_KEY_RES: RegExp[] = [
   /"OPENAI_API_KEY"\s*:\s*"([^"]+)"/i,
-  /(?:export\s+|set\s+|\$env:)?OPENAI_API_KEY["']?\s*=\s*["']?([^\s"',}\\]+)/i,
+  /(?:export\s+|set\s+|\$env:)?(?:OPENAI_API_KEY|OPENROUTER_API_KEY|API_KEY)["']?\s*=\s*["']?([^\s"',}\\]+)/i,
   /(?:^|["\s])api_key["']?\s*[=:]\s*["']([^"']+)["']/im,
 ];
 
@@ -105,8 +105,11 @@ function firstModel(text: string): string | undefined {
   const m =
     text.match(/"model"\s*:\s*"([^"]+)"/i) ||
     text.match(/^\s*model\s*=\s*"([^"]+)"/im) ||
-    text.match(/^\s*default_model\s*=\s*"([^"]+)"/im);
-  return m?.[1]?.trim() || undefined;
+    text.match(/^\s*default_model\s*=\s*"([^"]+)"/im) ||
+    text.match(/(?:^|[\s;"'])(?:MODEL|model)\s*=\s*["']?([^\s"',;}]+)/m);
+  const value = m?.[1]?.trim();
+  if (!value || value === '***') return undefined;
+  return value;
 }
 
 function extractClaudeBlock(text: string) {

@@ -24,6 +24,7 @@ export {
   bindingRouteDashboardLabel,
   bindingRouteUsageLabel,
   isActiveBindingForAgent,
+  isBindSuccessForAgent,
   ticketCredentialClassLabel,
   ticketIdFor,
   ticketSurfaceLabel,
