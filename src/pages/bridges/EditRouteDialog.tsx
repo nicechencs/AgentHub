@@ -23,7 +23,10 @@ import {
   endpointUrlFor,
   isCreateRouteUrlValid,
   isEditableRouteSource,
+  readCreateRouteCapabilities,
+  readStoredCreateRouteVendor,
   submitEditRoute,
+  upstreamEndpointPathForTarget,
   type CreateRouteTarget,
   type EditRouteInput,
 } from './create-route-flow';
@@ -35,7 +38,7 @@ function targetLabel(t: TranslateFn, target: CreateRouteTarget): string {
 }
 
 function seedEditForm(provider: Provider | null): EditRouteInput {
-  if (!provider) return { name: '', url: '', key: '', endpoints: [], models: '' };
+  if (!provider) return { name: '', url: '', key: '', endpoints: [], models: '', endpointUrls: {} };
   return editRouteFormFromProvider(provider);
 }
 
@@ -78,6 +81,7 @@ export function EditRouteDialog({
   const [key, setKey] = useState('');
   const [models, setModels] = useState(seed.models ?? '');
   const [endpoints, setEndpoints] = useState<CreateRouteTarget[]>([...seed.endpoints]);
+  const [endpointUrls, setEndpointUrls] = useState<Partial<Record<CreateRouteTarget, string>>>({ ...seed.endpointUrls });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,6 +92,7 @@ export function EditRouteDialog({
     setKey('');
     setModels(seed.models ?? '');
     setEndpoints([...seed.endpoints]);
+    setEndpointUrls({ ...seed.endpointUrls });
     setError(null);
     // Re-seeding on every entries refresh would clobber typing mid-edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,7 +100,8 @@ export function EditRouteDialog({
 
   if (!profile) return null;
 
-  const editInput = { name, url, key, endpoints, models };
+  const storedVendor = readStoredCreateRouteVendor(sourceProvider?.configText);
+  const editInput = { name, url, key, endpoints, models, endpointUrls };
   const canSubmit = editable && canSubmitEditRoute(editInput);
 
   const toggleEndpoint = (target: CreateRouteTarget) => {
@@ -198,24 +204,49 @@ export function EditRouteDialog({
                   <p className="text-meta text-muted">{t('routes.create.modelsHint')}</p>
                 </label>
                 <fieldset className="space-y-2">
-                  <legend className="text-xs text-muted">{t('routes.create.targets')}</legend>
-                  {CREATE_ROUTE_TARGETS.map((target) => (
-                    <label key={target} className="flex items-start gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5"
-                        checked={endpoints.includes(target)}
-                        onChange={() => toggleEndpoint(target)}
-                      />
-                      <span className="min-w-0">
-                        <span className="block">{targetLabel(t, target)}</span>
-                        <span className="block break-all text-meta text-muted">
-                          {endpointUrlFor('custom', target, url)}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                  <p className="text-meta text-muted">{t('routes.create.targetsHint')}</p>
+                  <legend className="text-xs text-muted">{t('routes.create.upstreamEndpoints')}</legend>
+                  {CREATE_ROUTE_TARGETS.map((target) => {
+                    const checked = endpoints.includes(target);
+                    const targetUrl = endpointUrlFor(storedVendor, target, url, endpointUrls);
+                    const upstreamPath = upstreamEndpointPathForTarget(storedVendor, target, url, endpointUrls);
+                    const localPath = target === 'claude' ? '/v1/messages' : '/v1/responses';
+                    const canEditUrl = storedVendor === 'custom';
+                    return (
+                      <div key={target} className="space-y-1.5 rounded-card border border-border bg-subtle/40 p-2">
+                        <label className="flex items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={checked}
+                            onChange={() => toggleEndpoint(target)}
+                          />
+                          <span className="min-w-0">
+                            <span className="block font-medium">{targetLabel(t, target)}</span>
+                            <span className="block text-meta text-muted">
+                              {t('routes.create.upstreamToLocal', { upstream: upstreamPath, local: localPath })}
+                            </span>
+                          </span>
+                        </label>
+                        {checked && canEditUrl ? (
+                          <label className="flex flex-col gap-1 pl-6">
+                            <span className="text-meta text-muted">{t('routes.create.upstreamUrlFor', { target: targetLabel(t, target) })}</span>
+                            <Input
+                              value={endpointUrls[target] ?? url}
+                              onChange={(event) => {
+                                setEndpointUrls((current) => ({ ...current, [target]: event.target.value }));
+                              }}
+                              autoComplete="off"
+                              spellCheck={false}
+                              placeholder={url || 'https://'}
+                            />
+                          </label>
+                        ) : checked ? (
+                          <p className="break-all pl-6 text-meta text-muted">{targetUrl}</p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  <p className="text-meta text-muted">{t('routes.create.upstreamEndpointsHint')}</p>
                 </fieldset>
               </>
             ) : (

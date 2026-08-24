@@ -42,7 +42,7 @@ describe('CreateRouteDialog', () => {
     const markup = renderCreate();
     expect(markup).toContain('确认应用');
     expect(markup).toContain('disabled');
-    expect(markup).toContain('接到');
+    expect(markup).toContain('上游端点');
     expect(markup).toContain(endpointUrlFor('openrouter', 'claude', vendorById('openrouter').url));
     expect(markup).toContain('type="submit"');
   });
@@ -260,7 +260,7 @@ describe('EditRouteDialog', () => {
       [editEntry({ key: 'account:acc-1', source: 'account', id: 'acc-1', provider: undefined })],
     );
     expect(markup).toContain('这条路由的来源不是可编辑的 API 配置');
-    expect(markup).not.toContain('接到');
+    expect(markup).not.toContain('上游端点');
     expect(markup).not.toContain('type="password"');
     expect(markup).toContain('删除路由');
     expect(markup).toContain('取消');
@@ -270,7 +270,7 @@ describe('EditRouteDialog', () => {
     const markup = renderEdit(editProfile(), [editEntry()]);
     expect(markup).toContain('名称');
     expect(markup).toContain('地址');
-    expect(markup).toContain('接到');
+    expect(markup).toContain('上游端点');
     expect(markup).toContain('type="password"');
     expect(markup).toContain('留空沿用现有密钥');
     expect(markup).toContain('type="checkbox"');

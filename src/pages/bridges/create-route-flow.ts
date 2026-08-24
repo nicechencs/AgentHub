@@ -8,6 +8,7 @@ import type { RouteEndpointId } from '@/lib/route-endpoints';
 import { routeEndpointIdForBinding, routeEndpointPath } from '@/lib/route-endpoints';
 import type { AgentId, Provider } from '@/lib/types';
 import { isLeftoverLocalRouteProvider } from '@/pages/chat/chat-model';
+import { detectUpstreamChannelFromUrl } from './adapter-route-detail-model';
 
 export const CREATE_ROUTE_TARGETS = ['claude', 'codex', 'grok'] as const;
 export const DEFAULT_CREATE_ROUTE_MODEL = 'stealth/ox-alpha';
@@ -105,6 +106,8 @@ export type CreateRouteInput = {
   vendor: CreateRouteVendorId;
   endpoints: readonly CreateRouteTarget[];
   models?: string;
+  /** Per-client upstream base URL overrides (custom vendor). */
+  endpointUrls?: Partial<Record<CreateRouteTarget, string>>;
 };
 
 export type ImportRouteInput = {
@@ -342,7 +345,10 @@ export function endpointUrlFor(
   vendor: CreateRouteVendorId,
   target: CreateRouteTarget,
   formUrl: string,
+  overrides?: Partial<Record<CreateRouteTarget, string>>,
 ): string {
+  const override = overrides?.[target]?.trim();
+  if (override) return override;
   const spec = vendorById(vendor);
   const primary = normalizeCreateRouteUrl(spec.url);
   const current = normalizeCreateRouteUrl(formUrl);
@@ -353,15 +359,34 @@ export function endpointUrlFor(
   return formUrl.trim();
 }
 
+/** Upstream API path (e.g. /v1/chat/completions) inferred from a provider base URL. */
+export function upstreamEndpointPathForUrl(url: string): string {
+  const channel = detectUpstreamChannelFromUrl(url);
+  if (channel === 'anthropic_messages') return '/v1/messages';
+  if (channel === 'codex_responses' || channel === 'grok_responses') return '/v1/responses';
+  if (channel === 'openai_chat') return '/v1/chat/completions';
+  return '';
+}
+
+export function upstreamEndpointPathForTarget(
+  vendor: CreateRouteVendorId,
+  target: CreateRouteTarget,
+  formUrl: string,
+  overrides?: Partial<Record<CreateRouteTarget, string>>,
+): string {
+  return upstreamEndpointPathForUrl(endpointUrlFor(vendor, target, formUrl, overrides));
+}
+
 export function buildCreateRouteEndpoints(
   vendor: CreateRouteVendorId,
   formUrl: string,
   enabled: readonly CreateRouteTarget[],
+  overrides?: Partial<Record<CreateRouteTarget, string>>,
 ): CreateRouteEndpoint[] {
   return CREATE_ROUTE_TARGETS.map((target) => ({
     target,
     enabled: enabled.includes(target),
-    url: endpointUrlFor(vendor, target, formUrl),
+    url: endpointUrlFor(vendor, target, formUrl, overrides),
   }));
 }
 
@@ -382,7 +407,7 @@ export function createRouteProviderDraft(input: CreateRouteInput): Provider {
   const url = normalizeCreateRouteUrl(input.url);
   const key = input.key.trim();
   const models = parseCreateRouteModels(input.models);
-  const endpoints = buildCreateRouteEndpoints(input.vendor, url, input.endpoints)
+  const endpoints = buildCreateRouteEndpoints(input.vendor, url, input.endpoints, input.endpointUrls)
     .filter((row) => row.enabled);
   const settings: Record<string, unknown> = {
     baseURL: url,
@@ -569,6 +594,7 @@ export type EditRouteInput = {
   key: string;
   endpoints: readonly CreateRouteTarget[];
   models?: string;
+  endpointUrls?: Partial<Record<CreateRouteTarget, string>>;
 };
 
 function parseRouteConfigObject(configText: string | undefined): Record<string, unknown> | null {
@@ -590,6 +616,11 @@ function storedCreateRouteVendor(configText: string | undefined): CreateRouteVen
   return CREATE_ROUTE_VENDORS.some((item) => item.id === vendor)
     ? vendor as CreateRouteVendorId
     : 'custom';
+}
+
+/** Vendor id stored on a route provider config. */
+export function readStoredCreateRouteVendor(configText: string | undefined): CreateRouteVendorId {
+  return storedCreateRouteVendor(configText);
 }
 
 /** True when this route's source is a provider config this dialog can edit. */
@@ -614,12 +645,18 @@ export function editRouteFormFromProvider(
         listLocalRouteSurfacesFromConfig(provider.configText, { targetAgentId: 'codex' })
           .map((row) => row.target),
       );
+  const endpointUrls = Object.fromEntries(
+    caps.endpoints
+      .filter((row) => row.url.trim())
+      .map((row) => [row.target, row.url.trim()] as const),
+  ) as Partial<Record<CreateRouteTarget, string>>;
   return {
     name: provider.name,
     url: readCreateRouteConfigMeta(provider.configText).baseUrl,
     key: '',
     endpoints,
     models: formatCreateRouteModels(caps.models),
+    endpointUrls,
   };
 }
 
@@ -641,6 +678,7 @@ export function editRouteProviderDraft(provider: Provider, input: EditRouteInput
     storedCreateRouteVendor(provider.configText),
     url,
     input.endpoints,
+    input.endpointUrls,
   ).filter((row) => row.enabled);
   const settings: Record<string, unknown> = {
     ...existing,
