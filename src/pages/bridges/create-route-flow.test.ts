@@ -12,6 +12,8 @@ import {
   createRouteAutoNames,
   defaultCreateRouteEndpoints,
   defaultCreateRouteName,
+  alreadyRoutedSourceKeys,
+  importableConnectionEntries,
   importRouteRowTitle,
   importRouteTarget,
   isAutoCreateRouteName,
@@ -215,5 +217,52 @@ describe('create-route-flow', () => {
     expect(planTicket).toHaveBeenCalledOnce();
     expect(bindTicket).toHaveBeenCalledOnce();
     expect(planTicket.mock.calls[0]?.[0]).toBe('account:acc-1');
+  });
+});
+
+describe('importable vs already routed logins', () => {
+  const entries = [
+    { source: 'account' as const, id: 'acc-1' },
+    { source: 'provider' as const, id: 'prov-1' },
+    { source: 'account' as const, id: 'acc-2' },
+  ];
+
+  it('omits a login that already has a local-bridge profile', () => {
+    const keys = alreadyRoutedSourceKeys([
+      { id: 'p1', sourceKind: 'account', sourceId: 'acc-1', route: 'local_bridge' },
+    ]);
+    expect([...keys]).toEqual(['account:acc-1']);
+    expect(importableConnectionEntries(entries, keys).map((row) => row.id)).toEqual(['prov-1', 'acc-2']);
+  });
+
+  it('does not treat a native_endpoint profile as already routed unless wallet-bound', () => {
+    const unbound = alreadyRoutedSourceKeys([
+      { id: 'p2', sourceKind: 'provider', sourceId: 'prov-1', route: 'native_endpoint' },
+    ]);
+    expect(importableConnectionEntries(entries, unbound)).toEqual(entries);
+
+    const bound = alreadyRoutedSourceKeys(
+      [{ id: 'p2', sourceKind: 'provider', sourceId: 'prov-1', route: 'native_endpoint' }],
+      new Set(['p2']),
+    );
+    expect(importableConnectionEntries(entries, bound).map((row) => row.id)).toEqual(['acc-1', 'acc-2']);
+  });
+
+  it('matches sourceKind+sourceId so account and provider ids do not collide', () => {
+    const keys = alreadyRoutedSourceKeys([
+      { id: 'p3', sourceKind: 'account', sourceId: 'same', route: 'local_bridge' },
+    ]);
+    const mixed = [
+      { source: 'account' as const, id: 'same' },
+      { source: 'provider' as const, id: 'same' },
+    ];
+    expect(importableConnectionEntries(mixed, keys)).toEqual([{ source: 'provider', id: 'same' }]);
+  });
+
+  it('skips empty sourceId', () => {
+    const keys = alreadyRoutedSourceKeys([
+      { id: 'dirty', sourceKind: 'account', sourceId: '   ', route: 'local_bridge' },
+    ]);
+    expect(keys.size).toBe(0);
   });
 });
