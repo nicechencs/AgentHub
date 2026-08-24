@@ -9,6 +9,7 @@ import {
   routeEndpointIdForTargetAgent,
   routeEndpointPath,
   routeEndpointPathForBinding,
+  routeEndpointSurfaceLabel,
 } from './route-endpoints';
 
 describe('unified route endpoints', () => {
@@ -43,6 +44,9 @@ describe('unified route endpoints', () => {
     })).toBe('responses');
     expect(routeEndpointPathForBinding({ agentId: 'claude' })).toBe('/v1/messages');
     expect(routeEndpointPath('chat_completions')).toBe('/v1/chat/completions');
+    expect(routeEndpointSurfaceLabel('messages')).toBe('Messages /v1/messages');
+    expect(routeEndpointSurfaceLabel('responses')).toBe('Responses /v1/responses');
+    expect(routeEndpointSurfaceLabel('chat_completions')).toBe('Chat Completions /v1/chat/completions');
   });
 
   it('builds a full loopback HTTP URL and keeps a pending-port placeholder', () => {

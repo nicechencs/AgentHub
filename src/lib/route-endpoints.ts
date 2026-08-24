@@ -64,6 +64,17 @@ export function routeEndpointPathForBinding(input: {
   return routeEndpointPath(routeEndpointIdForBinding(input));
 }
 
+const SURFACE_LABEL: Record<RouteEndpointId, string> = {
+  messages: 'Messages /v1/messages',
+  responses: 'Responses /v1/responses',
+  chat_completions: 'Chat Completions /v1/chat/completions',
+};
+
+/** Agent-facing local-route surface, e.g. `Messages /v1/messages`. */
+export function routeEndpointSurfaceLabel(id: RouteEndpointId): string {
+  return SURFACE_LABEL[id];
+}
+
 export const ROUTE_ENDPOINT_HOST = '127.0.0.1';
 export const ROUTE_ENDPOINT_PENDING_PORT = '{port}';
 

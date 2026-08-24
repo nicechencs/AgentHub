@@ -564,7 +564,7 @@ describe('TicketWalletList details', () => {
 });
 
 describe('TicketDetailPanel', () => {
-  it('lays out 用量 and collapsed 更多 without 用在哪, 导入自, or header duplicates', () => {
+  it('lays out 用量 and advanced fields without 更多, 用在哪, 导入自, or header duplicates', () => {
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {
         id: 'ticket-detail',
@@ -581,9 +581,9 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('用量');
     expect(markup).not.toContain('用在哪');
     expect(markup).not.toContain('导入自');
-    expect(markup).toContain('更多');
-    expect(markup).toContain('<details>');
-    expect(markup).not.toContain('<details open');
+    expect(markup).not.toContain('更多');
+    expect(markup).not.toContain('<details>');
+    expect(markup).toContain('anthropic-messages');
     expect(markup).not.toContain('正用于');
     expect(markup).not.toContain('Claude · 改配置 · 当前');
     expect(markup).not.toContain('>类型<');
@@ -594,10 +594,10 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('移入回收站');
     expect(markup).toContain('>7d<');
     expect(markup).not.toContain('>5h<');
-    const moreIndex = markup.indexOf('更多');
+    const usageIndex = markup.indexOf('用量');
     const protocolIndex = markup.indexOf('anthropic-messages');
-    expect(moreIndex).toBeGreaterThan(-1);
-    expect(protocolIndex).toBeGreaterThan(moreIndex);
+    expect(usageIndex).toBeGreaterThan(-1);
+    expect(protocolIndex).toBeGreaterThan(usageIndex);
   });
 
   it('shows the Codex 5h quota bar only when upstream returned it', () => {

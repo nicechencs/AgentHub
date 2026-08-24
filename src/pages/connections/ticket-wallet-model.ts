@@ -7,6 +7,7 @@ import {
   formatRouteEndpointHttpUrl,
   routeEndpointIdForBinding,
   routeEndpointPathForBinding,
+  routeEndpointSurfaceLabel,
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
 import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
@@ -489,7 +490,7 @@ export interface TicketDetailField {
 }
 
 export interface TicketDetailSections {
-  /** Non-duplicate facts for the collapsed「更多」block. */
+  /** Extra facts shown once the ticket detail panel is expanded. */
   advanced: TicketDetailField[];
 }
 
@@ -695,13 +696,22 @@ function protocolLabel(speaks: readonly string[], t?: TranslateFn): string {
   return known.join(' · ');
 }
 
-function claudeBridgeSurface(
+function localRouteSurface(
   bindings?: readonly BindingView[] | null,
 ): string | null {
-  if (!bindings?.some((binding) => binding.route === 'bridge' && binding.agentId === 'claude')) {
-    return null;
+  if (!bindings?.length) return null;
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const binding of bindings) {
+    if (binding.route !== 'bridge') continue;
+    const label = routeEndpointSurfaceLabel(
+      routeEndpointIdForBinding({ agentId: binding.agentId }),
+    );
+    if (seen.has(label)) continue;
+    seen.add(label);
+    labels.push(label);
   }
-  return 'Messages /v1/messages';
+  return labels.length > 0 ? labels.join(' · ') : null;
 }
 
 export function buildTicketDetailFields(
@@ -740,7 +750,7 @@ export function buildTicketDetailFields(
     });
   }
 
-  const agentSurface = claudeBridgeSurface(bindings);
+  const agentSurface = localRouteSurface(bindings);
   if (agentSurface) {
     advanced.push({
       label: t ? t('kind.route.localRoute') : '本机路由',

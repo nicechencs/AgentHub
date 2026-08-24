@@ -173,19 +173,16 @@ export function TicketDetailPanel({
       ) : null}
 
       {visibleAdvanced.length > 0 ? (
-        <details>
-          <summary className="cursor-pointer text-meta text-muted">{t('connections.list.more')}</summary>
-          <div className="mt-1.5 grid gap-1.5 text-secondary sm:grid-cols-2">
-            {visibleAdvanced.map((field) => (
-              <DetailRow
-                key={`${field.label}:${field.value}`}
-                label={field.label}
-                value={field.value}
-                mono={field.mono}
-              />
-            ))}
-          </div>
-        </details>
+        <div className="grid gap-1.5 text-secondary sm:grid-cols-2">
+          {visibleAdvanced.map((field) => (
+            <DetailRow
+              key={`${field.label}:${field.value}`}
+              label={field.label}
+              value={field.value}
+              mono={field.mono}
+            />
+          ))}
+        </div>
       ) : null}
 
       <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
