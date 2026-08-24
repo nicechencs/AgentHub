@@ -38,6 +38,24 @@ function renderCreate() {
 }
 
 describe('CreateRouteDialog', () => {
+  it('opens as a right-side inspect panel with a form-linked submit', () => {
+    const markup = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(CreateRouteDialog, {
+        open: true,
+        asPanel: true,
+        onOpenChange: vi.fn(),
+        onCreated: vi.fn(),
+      })),
+    );
+    expect(markup).toContain('data-side-inspect');
+    expect(markup).toContain('form="create-route-form"');
+    expect(markup).toContain('id="create-route-form"');
+    expect(markup).toContain('type="submit"');
+    expect(markup).not.toContain('/v1/messages');
+    expect(markup).not.toContain('/v1/responses');
+    expect(markup).not.toContain('协议桥');
+  });
+
   it('disables 确认应用 until name+url+key+endpoint are filled', () => {
     const markup = renderCreate();
     expect(markup).toContain('确认应用');
@@ -58,6 +76,22 @@ describe('CreateRouteDialog', () => {
 });
 
 describe('ImportRouteDialog', () => {
+  it('opens as a right-side inspect panel with a form-linked submit', () => {
+    const markup = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ImportRouteDialog, {
+        open: true,
+        asPanel: true,
+        onOpenChange: vi.fn(),
+        entries: [],
+        onImported: vi.fn(),
+      })),
+    );
+    expect(markup).toContain('data-side-inspect');
+    expect(markup).toContain('form="import-route-form"');
+    expect(markup).toContain('id="import-route-form"');
+    expect(markup).toContain('type="submit"');
+  });
+
   it('points empty state to 连接', () => {
     const markup = renderToStaticMarkup(
       createElement(TooltipProvider, null, createElement(ImportRouteDialog, {
@@ -254,6 +288,26 @@ function renderEdit(profile: AdapterProfile, entries: readonly ConnectionEntry[]
 }
 
 describe('EditRouteDialog', () => {
+  it('opens as a right-side inspect panel with a form-linked submit', () => {
+    const markup = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(EditRouteDialog, {
+        open: true,
+        asPanel: true,
+        onOpenChange: vi.fn(),
+        profile: editProfile(),
+        entries: [editEntry()],
+        onSaved: vi.fn(),
+        onRequestDelete: vi.fn(),
+      })),
+    );
+    expect(markup).toContain('data-side-inspect');
+    expect(markup).toContain('form="edit-route-form"');
+    expect(markup).toContain('id="edit-route-form"');
+    expect(markup).toContain('type="submit"');
+    expect(markup).not.toContain('/v1/messages');
+    expect(markup).not.toContain('/v1/responses');
+  });
+
   it('shows the unavailable copy for an account-sourced route', () => {
     const markup = renderEdit(
       editProfile({ sourceKind: 'account', sourceId: 'acc-1' }),

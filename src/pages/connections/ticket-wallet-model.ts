@@ -7,7 +7,6 @@ import {
   formatRouteEndpointHttpUrl,
   routeEndpointIdForBinding,
   routeEndpointPathForBinding,
-  routeEndpointSurfaceLabel,
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
 import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
@@ -711,6 +710,14 @@ function protocolLabel(speaks: readonly string[]): string {
   return out.join(' · ');
 }
 
+function localRouteClientLabel(agentId: BindingView['agentId']): string {
+  if (agentId === 'claude') return 'Claude';
+  if (agentId === 'codex') return 'Codex';
+  if (agentId === 'grok') return 'Grok';
+  if (agentId === 'kimi') return 'Kimi';
+  return agentDisplayName(agentId);
+}
+
 function localRouteSurface(
   bindings?: readonly BindingView[] | null,
 ): string | null {
@@ -719,9 +726,7 @@ function localRouteSurface(
   const seen = new Set<string>();
   for (const binding of bindings) {
     if (binding.route !== 'bridge') continue;
-    const label = routeEndpointSurfaceLabel(
-      routeEndpointIdForBinding({ agentId: binding.agentId }),
-    );
+    const label = localRouteClientLabel(binding.agentId);
     if (seen.has(label)) continue;
     seen.add(label);
     labels.push(label);

@@ -45,9 +45,11 @@ const WRITE_COPY = {
   statusNoUpstream: '这条路由未开放 {name} 端点',
   statusHidden: '{name} 已在设置中隐藏',
   statusSourceMissing: '来源登录已删除，无法写入',
-  wireNoteClaude: 'Anthropic Messages · 写 settings.json 的环境变量',
-  wireNoteCodex: 'OpenAI Responses · 写 config.toml 的 wire_api',
-  wireNoteGrok: 'Grok Responses · 写 config.toml 的 api_backend',
+  fieldLocalAddress: '本机地址',
+  fieldLocalToken: '本机令牌',
+  wireNoteClaude: '改 Claude 本机配置',
+  wireNoteCodex: '改 Codex 本机配置',
+  wireNoteGrok: '改 Grok 本机配置',
 } as const;
 
 function applyParams(template: string, params?: MessageParams): string {
@@ -84,7 +86,21 @@ function writeOrigin(host: string, port: number | null): string {
   return `http://${host}:${port ?? ROUTE_ENDPOINT_PENDING_PORT}`;
 }
 
-/** Config file + written fields for one agent on a local bridge. Port-independent shape. */
+function localAddressField(origin: string, t?: TranslateFn): ClientWriteField {
+  return {
+    key: writeText(t, 'routes.write.fieldLocalAddress', WRITE_COPY.fieldLocalAddress),
+    value: origin,
+  };
+}
+
+function localTokenField(t?: TranslateFn): ClientWriteField {
+  return {
+    key: writeText(t, 'routes.write.fieldLocalToken', WRITE_COPY.fieldLocalToken),
+    value: writeText(t, 'routes.write.localToken', WRITE_COPY.localToken),
+  };
+}
+
+/** Config file + preview fields for one agent on a local bridge. Port-independent shape. */
 export function clientWriteTargetSpec(
   agent: CreateRouteTarget,
   input: { host: string; port: number | null; t?: TranslateFn },
@@ -93,30 +109,18 @@ export function clientWriteTargetSpec(
   if (agent === 'claude') {
     return {
       configPath: CLAUDE_CONFIG_PATH,
-      fields: [
-        { key: 'env.ANTHROPIC_BASE_URL', value: origin },
-        {
-          key: 'env.ANTHROPIC_AUTH_TOKEN',
-          value: writeText(input.t, 'routes.write.localToken', WRITE_COPY.localToken),
-        },
-      ],
+      fields: [localAddressField(origin, input.t), localTokenField(input.t)],
     };
   }
   if (agent === 'grok') {
     return {
       configPath: GROK_CONFIG_PATH,
-      fields: [
-        { key: 'base_url', value: `"${origin}/v1"` },
-        { key: 'api_backend', value: '"responses"' },
-      ],
+      fields: [localAddressField(origin, input.t)],
     };
   }
   return {
     configPath: CODEX_CONFIG_PATH,
-    fields: [
-      { key: 'base_url', value: `"${origin}/v1"` },
-      { key: 'wire_api', value: '"responses"' },
-    ],
+    fields: [localAddressField(origin, input.t)],
   };
 }
 
@@ -200,7 +204,7 @@ export function clientWriteStatusLabel(
   return writeText(t, 'routes.write.status.ready', WRITE_COPY.statusReady);
 }
 
-/** Codex and Grok share `/v1/responses`; this line names the field each one writes. */
+/** Beginner-facing note: which client's local config this write updates. */
 export function clientWriteWireNote(agent: CreateRouteTarget, t?: TranslateFn): string {
   if (agent === 'claude') {
     return writeText(t, 'routes.write.wireNote.claude', WRITE_COPY.wireNoteClaude);
