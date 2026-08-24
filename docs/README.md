@@ -23,6 +23,7 @@
 | [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1 已实施**（历史实施记录，§1–§10 不是现行 IA）：ConnectFlowDialog。现行 UI 见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md) |
 | [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：用户表面 Routes / 中文「本机转发」，模块仍叫 Adapter；本页只服务本机转发；创建绑定走 Dashboard「连接/切换」与 Connections「用到其他工具 / 本机转发」 |
 | [bridges-page-redesign.md](bridges-page-redesign.md) | **本机路由页终态 IA**（已落地，表面已改为 Routes / `/routes`）：对象是 loopback 进程；侧栏英文 Local forward、中文「本机转发」永久显示；单层健康+端口。稳定文档已回写 ui-design / adapter-design / connection-binding-model |
+| [route-detail-redesign.md](route-detail-redesign.md) | **路由详情面板重设计**（2026-08-24，**Draft / 未实施**）：去重、三节点链路示意、逐边 Agent 支持判断；不改协议矩阵 / 凭据加密 / 国产 OAuth |
 | [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | **真机 dogfood（内部）**：直接改配置（Kimi→Claude / Anthropic→Pi）；本机转发（Kimi→Codex）。禁止记录密钥 / prompt / 正文 |
 | [adapter-sidecar-design.md](adapter-sidecar-design.md) | **Adapter Sidecar 目标架构**：`agenthub-adapterd` 所有权、IPC、状态机、单主/并发、升级恢复与三阶段迁移（目标已决策，当前未迁移） |
 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | **厂商 / API / OAuth 适配规则**：产品与协议边界、Kimi 双端点、当前路由矩阵和维护方法 |
