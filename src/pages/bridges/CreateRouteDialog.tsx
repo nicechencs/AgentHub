@@ -18,6 +18,8 @@ import {
   CREATE_ROUTE_VENDORS,
   DEFAULT_CREATE_ROUTE_MODEL,
   defaultCreateRouteEndpoints,
+  defaultCreateRouteName,
+  endpointUrlFor,
   formatCreateRouteModels,
   isCreateRouteUrlValid,
   submitCreateRoute,
@@ -72,6 +74,9 @@ export function CreateRouteDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const createInput = { name, url, key, vendor, endpoints, models };
+  const canSubmit = canSubmitCreateRoute(createInput);
+
   const reset = () => {
     setVendor('openrouter');
     setName('');
@@ -85,6 +90,9 @@ export function CreateRouteDialog({
   const applyVendor = (next: CreateRouteVendorId) => {
     const spec = vendorById(next);
     setVendor(next);
+    if (!name.trim()) {
+      setName(defaultCreateRouteName(vendorLabel(t, next), t('routes.create.alternate')));
+    }
     if (next === 'custom') return;
     setUrl(spec.url);
     setEndpoints([...spec.enabled]);
@@ -100,8 +108,8 @@ export function CreateRouteDialog({
   };
 
   const submitCreate = async () => {
-    const input = { name, url, key, vendor, endpoints, models };
-    if (!canSubmitCreateRoute(input)) {
+    if (busy) return;
+    if (!canSubmitCreateRoute(createInput)) {
       setError(url.trim() && !isCreateRouteUrlValid(url)
         ? t('routes.create.urlInvalid')
         : t('routes.create.required'));
@@ -111,7 +119,7 @@ export function CreateRouteDialog({
     setError(null);
     try {
       await submitCreateRoute({
-        ...input,
+        ...createInput,
         models: vendor === 'openrouter' ? (models.trim() || DEFAULT_CREATE_ROUTE_MODEL) : models,
       });
       reset();
@@ -139,80 +147,92 @@ export function CreateRouteDialog({
         onInteractOutside={(event) => event.preventDefault()}
         onFocusOutside={(event) => event.preventDefault()}
       >
-        <DialogHeader className="shrink-0">
-          <DialogTitle>{t('routes.create.title')}</DialogTitle>
-          <DialogDescription>{t('routes.create.description')}</DialogDescription>
-        </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">{t('routes.create.vendorLabel')}</span>
-                <select
-                  className="h-9 rounded-btn border border-border bg-background px-2 text-sm"
-                  value={vendor}
-                  onChange={(event) => applyVendor(event.target.value as CreateRouteVendorId)}
-                >
-                  {CREATE_ROUTE_VENDORS.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {vendorLabel(t, item.id)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">{t('routes.create.name')}</span>
-                <Input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">{t('routes.create.url')}</span>
-                <Input
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </label>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">{t('routes.create.key')}</span>
-                <SecretInput value={key} onChange={setKey} />
-              </div>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">{t('routes.create.models')}</span>
-                <Input
-                  value={models}
-                  onChange={(event) => setModels(event.target.value)}
-                  placeholder={t('routes.create.modelsPlaceholder')}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <p className="text-meta text-muted">{t('routes.create.modelsHint')}</p>
-              </label>
-              <fieldset className="space-y-2">
-                <legend className="text-xs text-muted">{t('routes.create.targets')}</legend>
-                {CREATE_ROUTE_TARGETS.map((target) => (
-                  <label key={target} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={endpoints.includes(target)}
-                      onChange={() => toggleEndpoint(target)}
-                    />
-                    {targetLabel(t, target)}
-                  </label>
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (busy || !canSubmit) return;
+            void submitCreate();
+          }}
+        >
+          <DialogHeader className="shrink-0">
+            <DialogTitle>{t('routes.create.title')}</DialogTitle>
+            <DialogDescription>{t('routes.create.description')}</DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted">{t('routes.create.vendorLabel')}</span>
+              <select
+                className="h-9 rounded-btn border border-border bg-background px-2 text-sm"
+                value={vendor}
+                onChange={(event) => applyVendor(event.target.value as CreateRouteVendorId)}
+              >
+                {CREATE_ROUTE_VENDORS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {vendorLabel(t, item.id)}
+                  </option>
                 ))}
-                <p className="text-meta text-muted">{t('routes.create.targetsHint')}</p>
-              </fieldset>
-          {error ? <p className="text-sm text-danger">{error}</p> : null}
-        </div>
-        <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
-            {t('common.cancel')}
-          </Button>
-          <Button
-            onClick={() => { void submitCreate(); }}
-            disabled={busy}
-          >
-            {busy ? t('routes.create.submitting') : t('routes.create.submit')}
-          </Button>
-        </DialogFooter>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted">{t('routes.create.name')}</span>
+              <Input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted">{t('routes.create.url')}</span>
+              <Input
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted">{t('routes.create.key')}</span>
+              <SecretInput value={key} onChange={setKey} />
+            </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted">{t('routes.create.models')}</span>
+              <Input
+                value={models}
+                onChange={(event) => setModels(event.target.value)}
+                placeholder={t('routes.create.modelsPlaceholder')}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="text-meta text-muted">{t('routes.create.modelsHint')}</p>
+            </label>
+            <fieldset className="space-y-2">
+              <legend className="text-xs text-muted">{t('routes.create.targets')}</legend>
+              {CREATE_ROUTE_TARGETS.map((target) => (
+                <label key={target} className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={endpoints.includes(target)}
+                    onChange={() => toggleEndpoint(target)}
+                  />
+                  <span className="min-w-0">
+                    <span className="block">{targetLabel(t, target)}</span>
+                    <span className="block break-all text-meta text-muted">
+                      {endpointUrlFor(vendor, target, url)}
+                    </span>
+                  </span>
+                </label>
+              ))}
+              <p className="text-meta text-muted">{t('routes.create.targetsHint')}</p>
+            </fieldset>
+            {error ? <p className="text-sm text-danger">{error}</p> : null}
+          </div>
+          <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={busy || !canSubmit}>
+              {busy ? t('routes.create.submitting') : t('routes.create.submit')}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

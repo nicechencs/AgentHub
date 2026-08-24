@@ -10,6 +10,7 @@ import {
   DEFAULT_CREATE_ROUTE_MODEL,
   DEFAULT_CREATE_ROUTE_URL,
   defaultCreateRouteEndpoints,
+  defaultCreateRouteName,
   importRouteTarget,
   isAlternateRouteRule,
   isCreateRouteUrlValid,
@@ -106,6 +107,11 @@ describe('create-route-flow', () => {
     expect(vendorById('kimi').url).toBe('https://api.moonshot.cn/v1');
     expect(vendorById('grok').url).toBe('https://api.x.ai/v1');
     expect(vendorById('claude').url).toBe('https://api.anthropic.com');
+  });
+
+  it('fills a friendly default name from vendor + alternate without extra spaces', () => {
+    expect(defaultCreateRouteName('OpenRouter', '备选')).toBe('OpenRouter 备选');
+    expect(defaultCreateRouteName('  智谱  ', '备选')).toBe('智谱 备选');
   });
 
   it('requires name, key, http(s) URL, and at least one endpoint', () => {
