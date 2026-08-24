@@ -9,6 +9,8 @@ use crate::models::{AgentId, InstallChannel, RuntimeId};
 
 use super::builtin_install_registry;
 
+// ScriptVersionKind re-exported for catalog tests.
+#[allow(unused_imports)]
 pub use super::{OfficialVersionProbe, ScriptVersionKind};
 
 /// Fixed npm packages — façade over install contributions.

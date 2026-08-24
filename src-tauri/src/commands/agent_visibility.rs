@@ -1,6 +1,5 @@
 //! Agent visibility (soft-hide) commands — thin wrappers over agenthub-core.
 
-use agenthub_core::AgentHub;
 use tauri::State;
 
 use crate::commands::{map_err_string, parse_agent, with_hub_blocking};

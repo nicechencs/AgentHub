@@ -60,8 +60,12 @@ const ANTHROPIC_MESSAGES_BASE_URL: &str = "https://api.anthropic.com/v1";
 const OPENAI_CHAT_BASE_URL: &str = crate::services::adapter_route_constants::OPENAI_GROK_BASE_URL;
 const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex/";
 const DEFAULT_MODEL: &str = KIMI_CODEX_EDGE.default_model;
+// Used by `tests.rs` assertions.
+#[allow(dead_code)]
 const ANTHROPIC_DEFAULT_MODEL: &str = ANTHROPIC_CODEX_EDGE.default_model;
+#[allow(dead_code)]
 const OPENAI_DEFAULT_MODEL: &str = OPENAI_CODEX_EDGE.default_model;
+#[allow(dead_code)]
 const CODEX_DEFAULT_MODEL: &str = CODEX_CLAUDE_RESPONSES_EDGE.default_model;
 const PROVIDER_SLUG: &str = "agenthub_kimi_bridge";
 const ANTHROPIC_PROVIDER_SLUG: &str = "agenthub_anthropic_bridge";
@@ -72,7 +76,7 @@ const BRIDGE_HEALTH_TIMEOUT: Duration = Duration::from_secs(4);
 const RETRYABLE_ERROR_PREFIX: &str = "retryable:";
 
 #[derive(Clone, Copy)]
-struct CodexBridgeRule {
+pub(super) struct CodexBridgeRule {
     rule_id: &'static str,
     profile_prefix: &'static str,
     provider_prefix: &'static str,
@@ -363,7 +367,6 @@ mod removal;
 mod rules;
 
 use rules::*;
-pub(super) use rules::*;
 
 #[cfg(test)]
 mod tests;
@@ -376,6 +379,8 @@ pub(super) fn rule_for_id(rule_id: &str) -> Option<CodexBridgeRule> {
 }
 
 /// `(target_agent, rule_id)` for every live local-bridge writer.
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
 pub(crate) fn live_bridge_rule_projections() -> impl Iterator<Item = (AgentId, &'static str)> {
     LIVE_BRIDGE_RULES
         .iter()

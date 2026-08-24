@@ -310,6 +310,8 @@ pub(crate) fn is_openai_api_marker(tag: Option<&str>, blob: &Value) -> bool {
 /// Official OpenAI host is not custom. OpenRouter host and explicit
 /// `openai-compat` / `openrouter` tags are. Opaque leftover
 /// `openai-compatible` fixtures are not.
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
 pub(crate) fn is_custom_openai_compat(tag: Option<&str>, blob: &Value) -> bool {
     if !is_openai_api_marker(tag, blob) {
         return false;
@@ -349,6 +351,8 @@ pub(crate) fn openai_compat_base_url(blob: &Value) -> Option<String> {
 }
 
 /// Custom (non-official, non-other-vendor) OpenAI-compat URL, if any.
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
 pub(crate) fn openai_compat_custom_base_url(blob: &Value) -> Option<String> {
     let url = openai_compat_base_url(blob)?;
     if !looks_like_openai_compat_base_url(&url) {
@@ -357,6 +361,8 @@ pub(crate) fn openai_compat_custom_base_url(blob: &Value) -> Option<String> {
     Some(url)
 }
 
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
 fn has_openai_shaped_secret(blob: &Value) -> bool {
     blob.pointer("/env/OPENAI_API_KEY")
         .and_then(Value::as_str)
@@ -377,6 +383,8 @@ fn has_openai_shaped_secret(blob: &Value) -> bool {
 #[cfg(test)]
 mod tests;
 
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
 fn looks_like_openai_compat_base_url(url: &str) -> bool {
     let trimmed = url.trim();
     if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {

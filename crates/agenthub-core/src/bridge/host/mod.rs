@@ -14,9 +14,11 @@ mod transport;
 mod upstream;
 
 pub use gateway::BridgeHostError;
+// Re-exported for bridge tests.
+#[allow(unused_imports)]
+pub(super) use gateway::CleanupCompletion;
 pub use lifecycle::BridgeRuntimeHost;
 
-pub(super) use gateway::CleanupCompletion;
 #[cfg(test)]
 pub(super) use http::sse_frame_end;
 

@@ -30,6 +30,8 @@ impl AccountService {
         )
     }
 
+    // Referenced only from account_service `tests.rs`.
+    #[allow(dead_code)]
     pub(in crate::services::account_service) fn restore_account_rows(
         &self,
         agent: AgentId,

@@ -49,6 +49,8 @@ pub fn is_close_to_tray_enabled(value: &str) -> bool {
 /// After hide-to-tray the process is still running with a hidden window, so the
 /// system often reports `has_visible_windows = false`. Even when a window is
 /// already visible (minimized / behind others), focusing it is the expected UX.
+// Call site is behind `#[cfg(target_os = "macos")]` in lib.rs.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn should_show_on_reopen(_has_visible_windows: bool) -> bool {
     true
 }

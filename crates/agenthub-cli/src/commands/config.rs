@@ -75,6 +75,8 @@ pub fn get(hub: &AgentHub, key: Option<&str>, format: OutputFormat) -> Result<()
 }
 
 /// Keys `config get` may return (whitelist + read-only).
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
 pub fn visible_config_keys() -> Vec<&'static str> {
     let mut keys = SETTINGS_WHITELIST.to_vec();
     keys.extend_from_slice(SETTINGS_READONLY);

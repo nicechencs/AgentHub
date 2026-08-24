@@ -357,6 +357,8 @@ impl ProviderService {
         Ok(committed.stored)
     }
 
+    // Referenced only from provider_service `tests.rs`.
+    #[allow(dead_code)]
     fn upsert_inner(&self, input: &ProviderInput) -> Result<Provider> {
         Ok(self.commit_provider_mutation(input, true)?.stored)
     }
@@ -1169,6 +1171,8 @@ impl ProviderService {
     /// live write fails. Every restore first compares the complete stored row
     /// (including the surface stamp revision), so unrelated concurrent CRUD
     /// is never overwritten or deleted.
+    // Referenced only from provider_service `tests.rs` in this crate; keep for test coverage.
+    #[allow(dead_code)]
     pub(super) fn restore_provider_rows(
         &self,
         agent: AgentId,
