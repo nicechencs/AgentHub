@@ -690,10 +690,25 @@ export function extrasFromPoolSource(
  * Advanced-only facts for the ticket detail expand.
  * Header already shows type / surface / health chip.
  */
-function protocolLabel(speaks: readonly string[], t?: TranslateFn): string {
-  const known = speaks.map((item) => item.trim()).filter(Boolean);
-  if (known.length === 0) return t ? t('connections.list.unrecognized') : '未识别';
-  return known.join(' · ');
+function protocolLabel(speaks: readonly string[]): string {
+  const names: Record<string, string> = {
+    'openai-chat': 'Chat',
+    'anthropic-messages': 'Claude',
+    'openai-responses': 'Codex',
+    'grok-responses': 'Grok',
+    'xai-device-code': 'Grok',
+  };
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of speaks) {
+    const key = item.trim().toLowerCase();
+    if (!key) continue;
+    const label = names[key];
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    out.push(label);
+  }
+  return out.join(' · ');
 }
 
 function localRouteSurface(
@@ -739,14 +754,11 @@ export function buildTicketDetailFields(
 
   const speaks = Array.isArray(ticket.speaks) ? ticket.speaks : [];
   const customApiKey = ticket.credentialClass === 'api_key' && customEndpoint;
-  const showProtocol =
-    customApiKey
-    || (speaks.map((item) => item.trim()).filter(Boolean).length > 0
-      && (ticket.credentialClass === 'api_key' || customEndpoint));
-  if (showProtocol) {
+  const interfaceLabel = protocolLabel(speaks);
+  if (customApiKey && interfaceLabel) {
     advanced.push({
-      label: t ? t('connections.list.protocol') : '协议',
-      value: protocolLabel(speaks, t),
+      label: t ? t('connections.list.protocol') : '接口',
+      value: interfaceLabel,
     });
   }
 

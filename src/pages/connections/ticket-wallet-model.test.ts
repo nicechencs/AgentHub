@@ -447,7 +447,7 @@ describe('ticket detail fields', () => {
     expect(advanced).toEqual(expect.arrayContaining([
       { label: '端点', value: '自定义' },
       { label: '主机', value: 'relay.example.com', mono: true },
-      { label: '协议', value: 'anthropic-messages' },
+      { label: '接口', value: 'Claude' },
     ]));
     const customLabels = advanced.map((field) => field.label);
     expect(customLabels).not.toContain('导入自');
@@ -511,12 +511,12 @@ describe('ticket detail fields', () => {
     expect(advanced).toEqual(expect.arrayContaining([
       { label: '端点', value: '自定义' },
       { label: '主机', value: 'mytokens.cc', mono: true },
-      { label: '协议', value: 'openai-chat' },
+      { label: '接口', value: 'Chat' },
     ]));
     expect(advanced.map((field) => field.value).join(' ')).not.toContain('未识别');
   });
 
-  it('always shows 端点 / 主机 / 协议 for custom API Key, even when speaks is empty', () => {
+  it('shows 端点 / 主机 for custom API Key, and skips 接口 when speaks is empty', () => {
     const { advanced } = buildTicketDetailFields(
       ticket({
         id: 'provider:unk-1',
@@ -535,11 +535,10 @@ describe('ticket detail fields', () => {
     expect(advanced).toEqual([
       { label: '端点', value: '自定义' },
       { label: '主机', value: 'relay.example.com', mono: true },
-      { label: '协议', value: '未识别' },
     ]);
   });
 
-  it('keeps OpenRouter source protocol openai-chat and does not relabel it anthropic-messages', () => {
+  it('keeps OpenRouter interface as Chat and does not relabel it Claude', () => {
     const { advanced } = buildTicketDetailFields(
       ticket({
         id: 'provider:or-1',
@@ -558,7 +557,7 @@ describe('ticket detail fields', () => {
     expect(advanced).toEqual(expect.arrayContaining([
       { label: '端点', value: '自定义' },
       { label: '主机', value: 'openrouter.ai', mono: true },
-      { label: '协议', value: 'openai-chat' },
+      { label: '接口', value: 'Chat' },
     ]));
     expect(advanced.map((field) => field.value).join(' ')).not.toContain('anthropic-messages');
   });
@@ -582,7 +581,7 @@ describe('ticket detail fields', () => {
       [bridgeBinding('provider:or-1', 'claude')],
     );
     expect(advanced).toEqual(expect.arrayContaining([
-      { label: '协议', value: 'openai-chat' },
+      { label: '接口', value: 'Chat' },
       { label: '主机', value: 'openrouter.ai', mono: true },
     ]));
     expect(advanced).toEqual(expect.arrayContaining([

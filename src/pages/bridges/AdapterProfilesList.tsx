@@ -86,9 +86,9 @@ export function AdapterProfilesList({
   hiddenTargetIds,
 }: AdapterProfilesListProps) {
   const { t } = useI18n();
-  const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
+  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
   const toggleDetail = (profile: AdapterProfile) => {
-    setCollapsedIds((current) => ({ ...current, [profile.id]: !current[profile.id] }));
+    setExpandedIds((current) => ({ ...current, [profile.id]: !current[profile.id] }));
     onShowDetail?.(profile);
   };
   if (loading) {
@@ -135,7 +135,7 @@ export function AdapterProfilesList({
           onRequestWrite={onRequestWrite}
           onRequestEdit={onRequestEdit}
           onToggleDetail={() => toggleDetail(profile)}
-          detailExpanded={collapsedIds[profile.id] !== true}
+          detailExpanded={expandedIds[profile.id] === true}
           targetHidden={hiddenTargetIds?.has(profile.targetAgentId) === true}
           siblingProfiles={profiles}
         />

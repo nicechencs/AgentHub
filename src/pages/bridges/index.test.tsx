@@ -197,12 +197,12 @@ describe('Bridges page', () => {
     expect(markup).toContain('运行中');
     expect(markup).toContain('127.0.0.1:43121');
     expect(markup).toContain('停止');
-    expect(markup).toContain('随 AgentHub 自动启动');
+    expect(markup).not.toContain('随 AgentHub 自动启动');
     expect(markup).not.toContain('仅在 AgentHub 运行时恢复，不是开机自启');
-    expect(markup).toContain('删除路由');
-    expect(markup).toContain('data-route-detail="bridge-1"');
-    expect(markup).toContain('端点映射');
-    expect(markup).toContain('本机入口');
+    expect(markup).toContain('详情');
+    expect(markup).not.toContain('data-route-detail="bridge-1"');
+    expect(markup).not.toContain('上游和本机');
+    expect(markup).toContain('详情');
     expect(markup).not.toContain('本机桥');
     expect(markup).not.toContain('客户端接入');
     expect(markup).not.toContain('目标写入');
@@ -234,7 +234,7 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('钱包');
     expect(markup).not.toContain('投影');
     expect(markup).not.toContain('协议桥');
-    expect((markup.match(/data-route-detail="bridge-1"/g) ?? []).length).toBe(1);
+    expect(markup).not.toContain('data-route-detail="bridge-1"');
   });
 
   it('keeps last-known running as 状态不可用 + 停止 when status read fails', () => {
@@ -251,7 +251,7 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('重试启动');
   });
 
-  it('maps each client endpoint from the upstream path to the loopback path', () => {
+  it('lists who this route connects, without a conversion table', () => {
     const profile = localBridgeProfile();
     const markup = renderDetail({
       profile: { ...profile, targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' },
@@ -264,24 +264,27 @@ describe('Bridges page', () => {
       onSetAutoStart: vi.fn(),
       onRequestRemove: vi.fn(),
     });
-    expect(markup).toContain('端点映射');
-    expect(markup).not.toContain('客户端请求本机端点，AgentHub 按下表转换后转发到上方上游端点');
-    expect(markup).toContain('上游端点');
-    expect(markup).toContain('本机端点');
-    expect(markup).toContain('/v1/chat/completions');
+    expect(markup).toContain('上游和本机');
+    expect(markup).toContain('接到');
+    expect(markup).toContain('上游');
+    expect(markup).toContain('本机入口');
+    expect(markup).toContain('https://openrouter.ai/api/v1');
+    expect(markup).toContain('http://127.0.0.1:43121');
+    expect(markup).toContain('Claude');
+    expect(markup).toContain('Codex');
+    expect(markup).toContain('Grok');
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('/v1/responses');
-    expect(markup).toContain('OpenAI Responses');
-    expect(markup).toContain('Grok Responses');
-    expect(markup).toContain('转换');
-    expect(markup).toContain('data-hop-link="dashed"');
     expect(markup).toContain('复制本机端点 http://127.0.0.1:43121/v1/messages');
-    expect(markup).toContain('复制上游端点 https://openrouter.ai/api/v1/chat/completions');
     expect(markup).toContain('仅放行：stealth/ox-alpha（其余模型将被拒绝）');
-    expect((markup.match(/\/v1\/chat\/completions/g) ?? []).length).toBeLessThanOrEqual(2);
+    expect(markup).not.toContain('转换');
+    expect(markup).not.toContain('data-hop-link');
+    expect(markup).not.toContain('OpenAI Responses');
+    expect(markup).not.toContain('写 settings.json');
+    expect(markup).not.toContain('Anthropic Messages');
   });
 
-  it('draws a passthrough hop as a solid line when the upstream speaks Messages', () => {
+  it('still lists the local Claude address when only that client is open', () => {
     const profile = localBridgeProfile();
     const entry = openRouterEntry(JSON.stringify({
       baseURL: 'https://open.bigmodel.cn/api/coding/paas/v4',
@@ -300,10 +303,13 @@ describe('Bridges page', () => {
       onSetAutoStart: vi.fn(),
       onRequestRemove: vi.fn(),
     });
-    expect(markup).toContain('直通');
-    expect(markup).toContain('data-hop-link="solid"');
-    expect(markup).toContain('复制上游端点 https://open.bigmodel.cn/api/anthropic/v1/messages');
+    expect(markup).toContain('接到');
+    expect(markup).toContain('Claude');
+    expect(markup).toContain('https://open.bigmodel.cn/api/coding/paas/v4');
+    expect(markup).toContain('复制本机端点 http://127.0.0.1:43121/v1/messages');
     expect(markup).toContain('未开放');
+    expect(markup).not.toContain('直通');
+    expect(markup).not.toContain('data-hop-link');
   });
 
   it('renders detail as single-layer runtime without a Connections projection link', () => {
