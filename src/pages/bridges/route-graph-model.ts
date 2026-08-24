@@ -216,3 +216,42 @@ export function routeGraphLinkLabel(hop: RouteHopKind, t?: TranslateFn): string 
   }
   return graphText(t, 'routes.graph.linkForward', GRAPH_COPY.linkForward);
 }
+
+export type RouteMappingGroup = {
+  upstreamBaseUrl: string;
+  upstreamPath: string;
+  upstreamUrl: string;
+  rows: RouteGraphRow[];
+};
+
+/** Group mapping rows that share the same upstream base + path so the UI can show the path once. */
+export function groupRouteGraphRowsByUpstream(rows: readonly RouteGraphRow[]): RouteMappingGroup[] {
+  const groups: RouteMappingGroup[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const row of rows) {
+    const key = `${row.upstreamBaseUrl}\0${row.upstreamPath}`;
+    const existing = indexByKey.get(key);
+    if (existing != null) {
+      groups[existing]!.rows.push(row);
+      continue;
+    }
+    indexByKey.set(key, groups.length);
+    groups.push({
+      upstreamBaseUrl: row.upstreamBaseUrl,
+      upstreamPath: row.upstreamPath,
+      upstreamUrl: row.upstreamUrl,
+      rows: [row],
+    });
+  }
+  return groups;
+}
+
+/** True when every row hits the same upstream endpoint (base URL + path). */
+export function routeGraphSharesUpstreamEndpoint(rows: readonly RouteGraphRow[]): boolean {
+  if (rows.length <= 1) return true;
+  const first = rows[0];
+  if (!first) return true;
+  return rows.every(
+    (row) => row.upstreamPath === first.upstreamPath && row.upstreamBaseUrl === first.upstreamBaseUrl,
+  );
+}

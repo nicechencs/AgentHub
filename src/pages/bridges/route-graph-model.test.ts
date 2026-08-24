@@ -4,9 +4,11 @@ import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { TranslateFn } from '@/lib/i18n';
 import {
   buildRouteGraph,
+  groupRouteGraphRowsByUpstream,
   joinUpstreamUrl,
   routeGraphLinkLabel,
   routeGraphLinkStyle,
+  routeGraphSharesUpstreamEndpoint,
   routeGraphSupportedAgents,
   upstreamPathForChannel,
   type RouteGraphRow,
@@ -297,6 +299,30 @@ describe('routeGraphSupportedAgents', () => {
     expect(routeGraphSupportedAgents(graph.rows)).toEqual(['claude', 'grok']);
     expect(routeGraphSupportedAgents([...graph.rows, ...graph.rows])).toEqual(['claude', 'grok']);
     expect(routeGraphSupportedAgents([])).toEqual([]);
+  });
+});
+
+describe('routeGraphSharesUpstreamEndpoint', () => {
+  it('returns true when every row shares the same upstream endpoint', () => {
+    const graph = buildRouteGraph({
+      profile: profile(),
+      entries: [openRouterEntry()],
+      siblingProfiles: [],
+      port: 26275,
+    });
+    expect(routeGraphSharesUpstreamEndpoint(graph.rows)).toBe(true);
+    expect(groupRouteGraphRowsByUpstream(graph.rows)).toHaveLength(1);
+  });
+
+  it('splits groups when upstream paths differ', () => {
+    const graph = buildRouteGraph({
+      profile: profile({ targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' }),
+      entries: [glmEntry()],
+      siblingProfiles: [],
+      port: 26275,
+    });
+    expect(routeGraphSharesUpstreamEndpoint(graph.rows)).toBe(false);
+    expect(groupRouteGraphRowsByUpstream(graph.rows).length).toBeGreaterThan(1);
   });
 });
 

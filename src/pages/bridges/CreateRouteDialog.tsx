@@ -25,6 +25,7 @@ import {
   formatCreateRouteModels,
   isCreateRouteUrlValid,
   submitCreateRoute,
+  upstreamEndpointPathForTarget,
   vendorById,
   type CreateRouteTarget,
   type CreateRouteVendorId,
@@ -73,10 +74,11 @@ export function CreateRouteDialog({
   const [key, setKey] = useState('');
   const [models, setModels] = useState(formatCreateRouteModels(vendorById('openrouter').models));
   const [endpoints, setEndpoints] = useState<CreateRouteTarget[]>(defaultCreateRouteEndpoints('openrouter'));
+  const [endpointUrls, setEndpointUrls] = useState<Partial<Record<CreateRouteTarget, string>>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const createInput = { name, url, key, vendor, endpoints, models };
+  const createInput = { name, url, key, vendor, endpoints, models, endpointUrls };
   const canSubmit = canSubmitCreateRoute(createInput);
 
   const reset = () => {
@@ -86,6 +88,7 @@ export function CreateRouteDialog({
     setKey('');
     setModels(formatCreateRouteModels(vendorById('openrouter').models));
     setEndpoints(defaultCreateRouteEndpoints('openrouter'));
+    setEndpointUrls({});
     setError(null);
   };
 
@@ -103,6 +106,7 @@ export function CreateRouteDialog({
     if (next === 'custom') return;
     setUrl(spec.url);
     setEndpoints([...spec.enabled]);
+    setEndpointUrls({});
     setModels(formatCreateRouteModels(spec.models));
   };
 
@@ -210,24 +214,48 @@ export function CreateRouteDialog({
               <p className="text-meta text-muted">{t('routes.create.modelsHint')}</p>
             </label>
             <fieldset className="space-y-2">
-              <legend className="text-xs text-muted">{t('routes.create.targets')}</legend>
-              {CREATE_ROUTE_TARGETS.map((target) => (
-                <label key={target} className="flex items-start gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
-                    checked={endpoints.includes(target)}
-                    onChange={() => toggleEndpoint(target)}
-                  />
-                  <span className="min-w-0">
-                    <span className="block">{targetLabel(t, target)}</span>
-                    <span className="block break-all text-meta text-muted">
-                      {endpointUrlFor(vendor, target, url)}
-                    </span>
-                  </span>
-                </label>
-              ))}
-              <p className="text-meta text-muted">{t('routes.create.targetsHint')}</p>
+              <legend className="text-xs text-muted">{t('routes.create.upstreamEndpoints')}</legend>
+              {CREATE_ROUTE_TARGETS.map((target) => {
+                const checked = endpoints.includes(target);
+                const targetUrl = endpointUrlFor(vendor, target, url, endpointUrls);
+                const upstreamPath = upstreamEndpointPathForTarget(vendor, target, url, endpointUrls);
+                const localPath = target === 'claude' ? '/v1/messages' : '/v1/responses';
+                return (
+                  <div key={target} className="space-y-1.5 rounded-card border border-border bg-subtle/40 p-2">
+                    <label className="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={checked}
+                        onChange={() => toggleEndpoint(target)}
+                      />
+                      <span className="min-w-0">
+                        <span className="block font-medium">{targetLabel(t, target)}</span>
+                        <span className="block text-meta text-muted">
+                          {t('routes.create.upstreamToLocal', { upstream: upstreamPath, local: localPath })}
+                        </span>
+                      </span>
+                    </label>
+                    {checked && vendor === 'custom' ? (
+                      <label className="flex flex-col gap-1 pl-6">
+                        <span className="text-meta text-muted">{t('routes.create.upstreamUrlFor', { target: targetLabel(t, target) })}</span>
+                        <Input
+                          value={endpointUrls[target] ?? url}
+                          onChange={(event) => {
+                            setEndpointUrls((current) => ({ ...current, [target]: event.target.value }));
+                          }}
+                          autoComplete="off"
+                          spellCheck={false}
+                          placeholder={url || 'https://'}
+                        />
+                      </label>
+                    ) : checked ? (
+                      <p className="break-all pl-6 text-meta text-muted">{targetUrl}</p>
+                    ) : null}
+                  </div>
+                );
+              })}
+              <p className="text-meta text-muted">{t('routes.create.upstreamEndpointsHint')}</p>
             </fieldset>
             {error ? <p className="text-sm text-danger">{error}</p> : null}
           </div>

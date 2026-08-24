@@ -200,9 +200,8 @@ describe('Bridges page', () => {
     expect(markup).toContain('随 AgentHub 自动启动');
     expect(markup).toContain('删除路由');
     expect(markup).toContain('data-route-detail="bridge-1"');
-    expect(markup).toContain('上游');
-    expect(markup).toContain('本机入口');
     expect(markup).toContain('端点映射');
+    expect(markup).toContain('本机入口');
     expect(markup).not.toContain('本机桥');
     expect(markup).not.toContain('客户端接入');
     expect(markup).not.toContain('目标写入');
@@ -270,11 +269,14 @@ describe('Bridges page', () => {
     expect(markup).toContain('/v1/chat/completions');
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('OpenAI Responses');
+    expect(markup).toContain('Grok Responses');
     expect(markup).toContain('转换');
     expect(markup).toContain('data-hop-link="dashed"');
     expect(markup).toContain('复制本机端点 http://127.0.0.1:43121/v1/messages');
     expect(markup).toContain('复制上游端点 https://openrouter.ai/api/v1/chat/completions');
     expect(markup).toContain('仅放行：stealth/ox-alpha（其余模型将被拒绝）');
+    expect((markup.match(/\/v1\/chat\/completions/g) ?? []).length).toBeLessThanOrEqual(2);
   });
 
   it('draws a passthrough hop as a solid line when the upstream speaks Messages', () => {
@@ -315,8 +317,6 @@ describe('Bridges page', () => {
       onSetAutoStart: vi.fn(),
       onRequestRemove: vi.fn(),
     });
-    expect(markup).toContain('运行中');
-    expect(markup).toContain('本机入口');
     expect(markup).toContain('删除路由');
     expect(markup).toContain('收起');
     expect(markup).toContain('data-route-detail="bridge-1"');
@@ -328,6 +328,8 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('在 Connections 查看');
     expect(markup).not.toContain('删除适配');
     expect(markup).not.toContain('role="dialog"');
+    expect(markup).not.toContain('运行中');
+    expect(markup).toContain('本机入口');
   });
 
   it('preserves successful resources when another pool or bridge status fails', async () => {
