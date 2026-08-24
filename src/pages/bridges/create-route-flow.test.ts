@@ -322,4 +322,98 @@ describe('importable vs already routed logins', () => {
     ]);
     expect(keys.size).toBe(0);
   });
+
+  const liveSourceId = 'openai-compat-0e08e310-97ba-4575-a50b-3e3db6eec38c';
+  const liveTrunc = 'openai-compat-0e08e310-97ba-4575-a50b-3e';
+  const liveBackup = 'openai-compat-openrouter-backup';
+
+  it('omits same-titled leftover OpenRouter 备选 when UUID source is already routed', () => {
+    const profiles = [
+      {
+        id: 'p-claude',
+        name: 'OpenAI → Claude Code Bridge (openai-compat-0e08e310-97ba-4575-a50b-3e)',
+        sourceKind: 'provider' as const,
+        sourceId: liveSourceId,
+        route: 'local_bridge',
+        generatedProviderId: `claude-openai-adapter-bridge-${liveTrunc}-da544ba97deeffbb`,
+      },
+    ];
+    const keys = alreadyRoutedSourceKeys(profiles);
+    expect(keys.has(`provider:${liveSourceId}`)).toBe(true);
+    expect(keys.has(`provider:${liveBackup}`)).toBe(false);
+    const leftover = {
+      source: 'provider' as const,
+      id: liveBackup,
+      title: 'OpenRouter 备选',
+      provider: { id: liveBackup, name: 'OpenRouter 备选', preset: 'openrouter', configText: '{}', configFormat: 'json' as const },
+    };
+    const routedLogin = {
+      source: 'provider' as const,
+      id: liveSourceId,
+      title: 'OpenRouter 备选',
+      provider: { id: liveSourceId, name: 'OpenRouter 备选', preset: 'openrouter', configText: '{}', configFormat: 'json' as const },
+    };
+    const gmail = { source: 'account' as const, id: 'acc-gmail', title: 'cunsen.chen@gmail.com' };
+    const qq = { source: 'account' as const, id: 'acc-qq', title: '41375197@qq.com' };
+    expect(importableConnectionEntries(
+      [leftover, routedLogin, gmail, qq],
+      keys,
+      profiles,
+    ).map((row) => row.id)).toEqual(['acc-gmail', 'acc-qq']);
+  });
+
+  it('omits a provider when profile.name equals entry.title', () => {
+    const profiles = [
+      { id: 'p', name: 'OpenRouter 备选', sourceKind: 'provider' as const, sourceId: liveSourceId, route: 'native_endpoint' },
+    ];
+    const leftover = { source: 'provider' as const, id: liveBackup, title: 'OpenRouter 备选' };
+    expect(importableConnectionEntries([leftover], alreadyRoutedSourceKeys(profiles), profiles)).toEqual([]);
+  });
+
+  it('omits when profile.sourceId is a prefix, suffix, or ticket wrapper of the entry id', () => {
+    const prefixProfile = [
+      { id: 'p', name: 'bridge', sourceKind: 'provider' as const, sourceId: liveTrunc, route: 'local_bridge' },
+    ];
+    const full = { source: 'provider' as const, id: liveSourceId, title: 'OpenRouter 备选' };
+    expect(importableConnectionEntries([full], alreadyRoutedSourceKeys(prefixProfile), prefixProfile)).toEqual([]);
+
+    const wrapped = [
+      { id: 'p2', name: 'bridge', sourceKind: 'provider' as const, sourceId: `provider:${liveSourceId}`, route: 'local_bridge' },
+    ];
+    expect(importableConnectionEntries(
+      [{ source: 'provider' as const, id: liveSourceId, title: 'x' }],
+      alreadyRoutedSourceKeys(wrapped),
+      wrapped,
+    )).toEqual([]);
+  });
+
+  it('omits when entry.provider.id appears in profile sourceId or generatedProviderId', () => {
+    const profiles = [
+      {
+        id: 'p',
+        name: 'bridge',
+        sourceKind: 'account' as const,
+        sourceId: 'acc-1',
+        route: 'local_bridge',
+        generatedProviderId: `claude-openai-adapter-bridge-${liveSourceId}-tail`,
+      },
+    ];
+    const entry = {
+      source: 'provider' as const,
+      id: 'unrelated-row',
+      title: 'other',
+      provider: { id: liveSourceId, name: 'OpenRouter 备选', preset: 'openrouter', configText: '{}', configFormat: 'json' as const },
+    };
+    expect(importableConnectionEntries([entry], alreadyRoutedSourceKeys(profiles), profiles)).toEqual([]);
+  });
+
+  it('does not hide never-routed gmail/qq oauth without a profile', () => {
+    const profiles = [
+      { id: 'p', name: 'OpenRouter 备选', sourceKind: 'provider' as const, sourceId: liveSourceId, route: 'native_endpoint' },
+    ];
+    const gmail = { source: 'account' as const, id: 'acc-gmail', title: 'cunsen.chen@gmail.com' };
+    const qq = { source: 'account' as const, id: 'acc-qq', title: '41375197@qq.com' };
+    expect(importableConnectionEntries([gmail, qq], alreadyRoutedSourceKeys(profiles), profiles).map((row) => row.id))
+      .toEqual(['acc-gmail', 'acc-qq']);
+  });
 });

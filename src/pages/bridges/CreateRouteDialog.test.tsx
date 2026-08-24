@@ -97,7 +97,7 @@ describe('ImportRouteDialog', () => {
     expect(markup).toContain('确认应用');
   });
 
-  it('distinguishes two 本机路由 rows by client and endpoint', () => {
+  it('omits generated 本机路由 logins from import', () => {
     const markup = renderToStaticMarkup(
       createElement(TooltipProvider, null, createElement(ImportRouteDialog, {
         open: true,
@@ -133,10 +133,9 @@ describe('ImportRouteDialog', () => {
         onImported: vi.fn(),
       })),
     );
-    expect(markup).toContain('本机路由 · Claude · 官方端点');
-    expect(markup).toContain('本机路由 · Codex · 自定义端点');
-    expect(markup).toContain('详情');
-    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain('本机路由 · Claude · 官方端点');
+    expect(markup).not.toContain('本机路由 · Codex · 自定义端点');
+    expect(markup).toContain('还没有可导入的登录');
     expect(markup).not.toContain('票');
     expect(markup).not.toContain('钱包');
     expect(markup).not.toContain('投影');
