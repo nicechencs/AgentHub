@@ -3278,6 +3278,111 @@ fn switch_official_from_leftover_live_does_not_identity_conflict() {
     );
 }
 
+/// Click path: official OAuth row (extra.email) + live mytokens API key files
+/// (CodexAdapter::read_account reports Oauth, no identity) + leftover
+/// 本机路由 mention. 切换 must apply official tokens, not identity_conflict.
+#[test]
+fn switch_official_from_apikey_live_with_leftover_mention_does_not_identity_conflict() {
+    let _home = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let root = tempdir().unwrap();
+    let home = root.path().join("home");
+    let codex = home.join(".codex");
+    std::fs::create_dir_all(&codex).unwrap();
+    std::fs::write(
+        codex.join("config.toml"),
+        r#"model_provider = "OpenAI"
+model = "gpt-5.5"
+
+[model_providers.OpenAI]
+name = "OpenAI"
+base_url = "https://mytokens.cc/v1"
+# leftover mention only (official subtitle 本机路由 127.0.0.1:33923); not active
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        codex.join("auth.json"),
+        r#"{ "OPENAI_API_KEY": "sk-mytokens-live" }"#,
+    )
+    .unwrap();
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex);
+
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let registry = crate::adapters::register_all();
+    let svc = AccountService::with_live(db.clone(), registry, root.path().join("backups"));
+
+    let official = svc
+        .repo()
+        .create(&Account {
+            id: "codex-official".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "41375197@qq.com".into(),
+            credentials: official_codex_oauth_credentials(),
+            extra: json!({
+                "email": "41375197@qq.com",
+                "subtitle": "本机路由 127.0.0.1:33923"
+            }),
+            status: "active".into(),
+            is_current: false,
+            created_at: "2026-01-01 00:00:00.000000".into(),
+            updated_at: "2026-01-01 00:00:00.000000".into(),
+        })
+        .unwrap();
+    svc.repo()
+        .create(&Account {
+            id: "codex-mytokens".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::ApiKey,
+            label: "mytokens".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": { "OPENAI_API_KEY": "sk-mytokens-live" }
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: true,
+            created_at: "2026-01-02 00:00:00.000000".into(),
+            updated_at: "2026-01-02 00:00:00.000000".into(),
+        })
+        .unwrap();
+
+    let switched = svc.switch(&official.id, AgentId::Codex);
+    let auth = std::fs::read_to_string(codex.join("auth.json")).unwrap();
+    let listed = svc.list(Some(AgentId::Codex)).unwrap();
+    match prev {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+
+    let switched = switched.expect(
+        "official 切换 from API-key live must not return identity_conflict",
+    );
+    assert!(switched.account.is_current);
+    assert_eq!(switched.account.id, official.id);
+    assert_eq!(
+        switched.account.extra["email"],
+        "41375197@qq.com",
+        "do not overwrite official identity from API-key live"
+    );
+    assert!(
+        auth.contains("at-official"),
+        "switch must apply official tokens to live Codex"
+    );
+    assert!(
+        !auth.contains("sk-mytokens-live"),
+        "API-key live must be replaced by official OAuth"
+    );
+    let official_row = listed.iter().find(|row| row.id == official.id).unwrap();
+    assert!(official_row.is_current);
+    assert_eq!(official_row.extra["email"], "41375197@qq.com");
+    assert_eq!(
+        listed.iter().filter(|row| row.is_current).count(),
+        1
+    );
+}
+
 #[test]
 fn merge_dedup_delete_failure_is_not_reported_as_success() {
     use crate::storage::AccountRepo;

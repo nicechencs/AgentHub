@@ -597,11 +597,16 @@ impl AccountService {
         {
             return Ok(());
         }
-        if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
-            // Custom remote / leftover 本机路由 API keys have no email. Switching
-            // to a known official 登录 must not fail closed — live_for_backfill
-            // already refuses to copy unknown live onto another row.
-            if live.kind == crate::models::AccountKind::ApiKey {
+        // CodexAdapter::read_account always sets kind=Oauth even when the live
+        // file is only OPENAI_API_KEY (no email). The 切换 click path hits this
+        // validator, not a kind==ApiKey branch.
+        let live_anonymous = stable_live_identity(adapter, live.kind, &live.credentials).is_none();
+        let official_identity_known = rows.iter().any(stored_has_known_email);
+        if live_anonymous {
+            if live.kind == crate::models::AccountKind::ApiKey
+                || live_is_api_key_shaped(live)
+                || official_identity_known
+            {
                 return Ok(());
             }
             return Err(AppError::message(
@@ -612,6 +617,9 @@ impl AccountService {
         if rows.iter().any(|row| {
             row.is_current && stable_live_identity(adapter, row.kind, &row.credentials).is_none()
         }) {
+            if official_identity_known || live_is_api_key_shaped(live) {
+                return Ok(());
+            }
             return Err(AppError::message(
                 "account.identity_conflict",
                 "current account identity is unknown; refusing to backfill or switch",
@@ -698,6 +706,43 @@ fn live_grant_matches_account(
 ) -> bool {
     accounts_same_authorization(adapter, live.kind, &live.credentials, account)
         || accounts_same_oauth_identity(live.kind, &live.credentials, account)
+}
+
+/// Live auth.json that is only an API key (Codex still reports Oauth).
+fn live_is_api_key_shaped(live: &LiveAccount) -> bool {
+    let body = live
+        .credentials
+        .get("body")
+        .filter(|value| value.is_object())
+        .unwrap_or(&live.credentials);
+    let has_key = body
+        .get("OPENAI_API_KEY")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .is_some_and(|key| !key.is_empty());
+    let tokens = body.get("tokens");
+    let has_oauth = tokens.is_some_and(|tokens| {
+        ["access_token", "refresh_token"]
+            .iter()
+            .any(|field| {
+                tokens
+                    .get(*field)
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .is_some_and(|token| !token.is_empty())
+            })
+    });
+    has_key && !has_oauth
+}
+
+fn stored_has_known_email(row: &Account) -> bool {
+    row.extra
+        .get("email")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .is_some_and(|email| !email.is_empty())
+        || find_stable_identity_field(&row.credentials)
+            .is_some_and(|identity| identity.contains('@'))
 }
 
 fn leftover_shaped_codex_live(agent: AgentId) -> bool {
