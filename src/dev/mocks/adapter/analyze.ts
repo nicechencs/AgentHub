@@ -97,6 +97,40 @@ export function analyze(
       gateKind: 'none',
     };
   }
+  if (source === 'openai_api_key' && request.targetAgentId === 'claude') {
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: '这份 OpenAI 兼容登录接到 Claude 需要本机转发。',
+      actions: [action('requires_local_bridge', 'Claude', 'Claude 和 OpenAI 兼容接口说的话对不上，需要本机转发。')],
+      limitations: [
+        '将在本机地址启动本机转发，并切换 Claude 到该本地端点。',
+        'AgentHub 需保持在托盘运行；退出前会尝试排空监听。',
+        '本机转发：下游 Messages，上游 OpenAI Chat Completions。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: [evidence('OpenAI Chat Completions API', 'https://platform.openai.com/docs/api-reference/chat')],
+      ruleId: 'openai-api-to-claude-v1',
+      gateKind: 'none',
+    };
+  }
+  if (source === 'openai_api_key' && request.targetAgentId === 'grok') {
+    return {
+      route: 'local_bridge',
+      support: 'experimental',
+      reason: '这份 OpenAI 兼容登录接到 Grok 需要本机转发。',
+      actions: [action('requires_local_bridge', 'Grok', 'Grok 和 OpenAI 兼容接口说的话对不上，需要本机转发。')],
+      limitations: [
+        '将在本机地址启动本机转发，并切换 Grok 到该本地端点。',
+        'AgentHub 需保持在托盘运行；退出前会尝试排空监听。',
+        '本机转发：下游 Responses，上游 OpenAI Chat Completions。',
+        '固定端口被占用时会尝试重新分配端口并写回配置。',
+      ],
+      evidence: [evidence('OpenAI Chat Completions API', 'https://platform.openai.com/docs/api-reference/chat')],
+      ruleId: 'openai-api-to-grok-bridge-v1',
+      gateKind: 'none',
+    };
+  }
   if (source === 'openai_api_key' && request.targetAgentId === 'codex') {
     return {
       route: 'local_bridge',

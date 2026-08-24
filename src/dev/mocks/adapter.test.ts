@@ -813,7 +813,7 @@ describe('mock adapter route preview', () => {
       id: bareId,
       agentId: 'kimi',
       name: 'Bare Kimi',
-      preset: 'openai-compatible',
+      preset: 'custom',
       configText: 'api_key = "must-not-leak"\n',
       configFormat: 'toml',
       isCurrent: false,

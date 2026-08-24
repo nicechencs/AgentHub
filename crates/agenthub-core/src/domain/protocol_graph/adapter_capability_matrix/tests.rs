@@ -51,6 +51,29 @@ fn openai_api_to_codex_is_experimental_local_bridge() {
 }
 
 #[test]
+fn openai_api_to_claude_and_grok_are_local_bridge() {
+    let claude = decide_adapter_capability(
+        AdapterSourceProduct::OpenaiApi,
+        AdapterCredentialClass::ApiKey,
+        AgentId::Claude,
+    )
+    .public_surface();
+    assert_eq!(claude.route, AdapterRoute::LocalBridge);
+    assert!(claude.can_apply);
+    assert_eq!(claude.rule_id, Some("openai-api-to-claude-v1"));
+
+    let grok = decide_adapter_capability(
+        AdapterSourceProduct::OpenaiApi,
+        AdapterCredentialClass::ApiKey,
+        AgentId::Grok,
+    )
+    .public_surface();
+    assert_eq!(grok.route, AdapterRoute::LocalBridge);
+    assert!(grok.can_apply);
+    assert_eq!(grok.rule_id, Some("openai-api-to-grok-bridge-v1"));
+}
+
+#[test]
 fn kimi_claude_and_codex_cells_are_applicable() {
     let claude = decide_adapter_capability(
         AdapterSourceProduct::KimiCodeMembership,
@@ -460,9 +483,9 @@ fn registered_surfaces_have_writable_pi_cells() {
         AgentId::Grok,
     )
     .public_surface();
-    assert_eq!(openai_grok.route, AdapterRoute::NativeEndpoint);
+    assert_eq!(openai_grok.route, AdapterRoute::LocalBridge);
     assert!(openai_grok.can_apply);
-    assert_eq!(openai_grok.rule_id, Some("openai-api-to-grok-v1"));
+    assert_eq!(openai_grok.rule_id, Some("openai-api-to-grok-bridge-v1"));
 
     let xai_grok = decide_adapter_capability(
         AdapterSourceProduct::XaiApi,

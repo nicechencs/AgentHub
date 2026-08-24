@@ -2413,18 +2413,9 @@ fn apply_kimi_membership_and_openai_api_to_grok() {
         "kimi-grok-secret",
     );
 
-    let openai = service
-        .apply(&request("openai-source", AgentId::Grok))
-        .unwrap();
-    assert_grok_apply(
-        &db,
-        fake.as_ref(),
-        &openai,
-        OPENAI_GROK_RULE_ID,
-        "agenthub_openai",
-        OPENAI_GROK_BASE_URL,
-        OPENAI_GROK_DEFAULT_MODEL,
-        "openai-grok-secret",
+    assert!(
+        service.apply(&request("openai-source", AgentId::Grok)).is_err(),
+        "OpenAI → Grok is a local_bridge host saga, not native apply"
     );
 
     let kimi_account_result = service
@@ -2441,18 +2432,11 @@ fn apply_kimi_membership_and_openai_api_to_grok() {
         "kimi-account-secret",
     );
 
-    let openai_account_result = service
-        .apply(&account_request("openai-account", AgentId::Grok))
-        .unwrap();
-    assert_grok_apply(
-        &db,
-        fake.as_ref(),
-        &openai_account_result,
-        OPENAI_GROK_RULE_ID,
-        "agenthub_openai",
-        OPENAI_GROK_BASE_URL,
-        OPENAI_GROK_DEFAULT_MODEL,
-        "openai-account-secret",
+    assert!(
+        service
+            .apply(&account_request("openai-account", AgentId::Grok))
+            .is_err(),
+        "OpenAI account → Grok is a local_bridge host saga"
     );
 }
 
