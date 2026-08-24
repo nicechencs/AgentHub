@@ -13,7 +13,6 @@ import {
   routeHopLabel,
 } from './adapter-route-detail-model';
 
-// Re-export hop via local helper by importing internals through edges.
 function profile(partial: Partial<AdapterProfile> = {}): AdapterProfile {
   return {
     id: 'bridge-1',
@@ -68,13 +67,13 @@ describe('detectUpstreamChannelFromUrl', () => {
     expect(detectUpstreamChannelFromUrl('https://api.anthropic.com')).toBe('anthropic_messages');
   });
 
-  it('treats OpenRouter / openai-compat URLs as OpenAI Chat', () => {
+  it('treats OpenRouter URLs as OpenAI Chat', () => {
     expect(detectUpstreamChannelFromUrl('https://openrouter.ai/api/v1')).toBe('openai_chat');
   });
 });
 
 describe('detectUpstreamChannelFromCredential', () => {
-  it('maps oauth agents to fixed channels', () => {
+  it('maps oauth agents to fixed channels and ignores api mode for codex', () => {
     expect(detectUpstreamChannelFromCredential({ mode: 'oauth', sourceAgentId: 'codex' }))
       .toBe('codex_responses');
     expect(detectUpstreamChannelFromCredential({ mode: 'oauth', sourceAgentId: 'claude' }))
@@ -106,7 +105,7 @@ describe('appliedTargetsFromProfiles', () => {
 });
 
 describe('buildRouteDetailEdges', () => {
-  it('marks applied from siblings and ready for unchecked product targets', () => {
+  it('marks applied from siblings and ready for other product targets', () => {
     const edges = buildRouteDetailEdges({
       profile: profile({ targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' }),
       entries: [entry({
@@ -138,6 +137,7 @@ describe('buildRouteDetailEdges', () => {
         endpoints: [
           { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
           { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
+          { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
         ],
       })],
       siblingProfiles: [],
@@ -148,8 +148,8 @@ describe('buildRouteDetailEdges', () => {
     expect(byTarget.codex?.support).toBe('ready');
   });
 
-  it('emits no_upstream only when endpoints decls exist and target is missing', () => {
-    const withDecls = buildRouteDetailEdges({
+  it('emits no_upstream for declared-endpoint gaps', () => {
+    const edges = buildRouteDetailEdges({
       profile: profile({ targetAgentId: 'claude' }),
       entries: [entry({
         endpoints: [
@@ -158,22 +158,10 @@ describe('buildRouteDetailEdges', () => {
       })],
       siblingProfiles: [],
     });
-    // surfaces only include declared endpoints when present
-    expect(withDecls.every((edge) => edge.support !== 'no_upstream')).toBe(true);
-
-    const openrouterAll = buildRouteDetailEdges({
-      profile: profile({ targetAgentId: 'claude' }),
-      entries: [entry({
-        vendor: 'openrouter',
-        baseURL: 'https://openrouter.ai/api/v1',
-        endpoints: [
-          { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
-        ],
-      })],
-      siblingProfiles: [],
-    });
-    // listLocalRouteSurfacesFromConfig uses endpoints when non-empty → only claude surface
-    expect(openrouterAll.map((e) => e.target)).toEqual(['claude']);
+    const byTarget = Object.fromEntries(edges.map((edge) => [edge.target, edge]));
+    expect(byTarget.claude?.support).toBe('ready');
+    expect(byTarget.codex?.support).toBe('no_upstream');
+    expect(byTarget.grok?.support).toBe('no_upstream');
   });
 
   it('does not emit no_upstream when endpoints field is empty', () => {
@@ -183,10 +171,10 @@ describe('buildRouteDetailEdges', () => {
       siblingProfiles: [],
     });
     expect(edges.some((edge) => edge.support === 'no_upstream')).toBe(false);
-    expect(edges[0]?.support).toBe('ready');
+    expect(edges.every((edge) => edge.support === 'ready' || edge.support === 'applied')).toBe(true);
   });
 
-  it('shows kimi/dsh only when applied sibling exists as runtime_only', () => {
+  it('shows kimi only when applied sibling exists as runtime_only', () => {
     const without = buildRouteDetailEdges({
       profile: profile(),
       entries: [entry({ vendor: 'openrouter', baseURL: 'https://openrouter.ai/api/v1' })],
@@ -230,8 +218,17 @@ describe('buildRouteDetailEdges', () => {
       })],
       siblingProfiles: [],
     });
-    expect(edges[0]?.hop).toBe('passthrough');
-    expect(routeHopLabel(edges[0]!.hop, edges[0]!.upstreamChannel)).toBe('直通上游');
+    const claude = edges.find((edge) => edge.target === 'claude');
+    expect(claude?.hop).toBe('passthrough');
+    expect(routeHopLabel(claude!.hop, claude!.upstreamChannel)).toBe('直通上游');
+  });
+});
+
+describe('hopForTestable', () => {
+  it('uses passthrough / convert / forward from endpoint × channel', () => {
+    expect(hopForTestable('messages', 'anthropic_messages')).toBe('passthrough');
+    expect(hopForTestable('messages', 'openai_chat')).toBe('convert');
+    expect(hopForTestable('messages', 'unknown')).toBe('forward');
   });
 });
 
@@ -273,6 +270,3 @@ describe('bridge helpers', () => {
     }).stoppedHint).toBeNull();
   });
 });
-
-// silence unused import if tree-shaken oddly
-void hopForTestable;
