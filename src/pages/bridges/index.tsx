@@ -14,12 +14,13 @@ import {
   stopAdapterBridge,
 } from '@/lib/api/adapter';
 import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
-import { applyLocalRouteToAgents, type CreateRouteTarget } from './create-route-flow';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
-import type { TicketSurfaceGroupView } from '@/lib/backend/contracts/ticket';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { CreateRouteDialog } from './CreateRouteDialog';
+import { EditRouteDialog } from './EditRouteDialog';
 import { ImportRouteDialog } from './ImportRouteDialog';
+import { WriteClientConfigDialog } from './WriteClientConfigDialog';
+import type { RouteGraphView } from './route-graph-model';
 import {
   resourceFailureMessage,
 } from './adapter-model';
@@ -48,8 +49,10 @@ type WalletSnapshot = {
   settled: boolean;
   lastWalletBridgeCount: number;
   bindingProfileIds: ReadonlySet<string>;
-  surfaceGroups: readonly TicketSurfaceGroupView[];
 };
+
+/** One route plus the endpoint graph its client-config write is derived from. */
+type WriteTarget = { profile: AdapterProfile; graph: RouteGraphView };
 
 /**
  * Local-bridge runtime ops page. Creating bindings lives in Dashboard and
@@ -76,7 +79,6 @@ export default function BridgesPage() {
     settled: false,
     lastWalletBridgeCount: 0,
     bindingProfileIds: new Set(),
-    surfaceGroups: [],
   });
   const [removeConfirm, setRemoveConfirm] = useState<AdapterProfile | null>(null);
   const [stopConfirm, setStopConfirm] = useState<AdapterProfile | null>(null);
@@ -85,6 +87,8 @@ export default function BridgesPage() {
   const [busyProfileIds, setBusyProfileIds] = useState<Record<string, boolean>>({});
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [writeTarget, setWriteTarget] = useState<WriteTarget | null>(null);
+  const [editTarget, setEditTarget] = useState<AdapterProfile | null>(null);
 
   const setProfileBusy = (profileId: string, busy: boolean) => {
     setBusyProfileIds((current) => ({ ...current, [profileId]: busy }));
@@ -148,24 +152,6 @@ export default function BridgesPage() {
     }
   };
 
-  const handleApplyRoute = async (profile: AdapterProfile, agents: readonly CreateRouteTarget[]) => {
-    if (hiddenTargetIds.has(profile.targetAgentId)) return;
-    setProfileBusy(profile.id, true);
-    clearProfileError(profile.id);
-    try {
-      await applyLocalRouteToAgents({
-        sourceKind: profile.sourceKind,
-        sourceId: profile.sourceId,
-        agents,
-      });
-      reloadThenClearProfileErrors();
-    } catch (error) {
-      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
-    } finally {
-      setProfileBusy(profile.id, false);
-    }
-  };
-
   const confirmRemove = async () => {
     if (!removeConfirm || hiddenTargetIds.has(removeConfirm.targetAgentId)) return;
     const profile = removeConfirm;
@@ -201,7 +187,6 @@ export default function BridgesPage() {
               .map((binding) => binding.profileId)
               .filter((id): id is string => typeof id === 'string' && id.length > 0),
           ),
-          surfaceGroups: next.surfaceGroups ?? [],
         });
       })
       .catch(() => {
@@ -253,10 +238,12 @@ export default function BridgesPage() {
     onRequestStopBridge: setStopConfirm,
     onSetAutoStart: handleSetBridgeAutoStart,
     onRequestRemove: setRemoveConfirm,
-    onApplyRoute: handleApplyRoute,
+    onRequestWrite: (profile: AdapterProfile, graph: RouteGraphView) => {
+      setWriteTarget({ profile, graph });
+    },
+    onRequestEdit: setEditTarget,
     onRetry: () => { void reload(); },
     hiddenTargetIds,
-    surfaceGroups: wallet.surfaceGroups,
   };
 
   return (
@@ -355,7 +342,26 @@ export default function BridgesPage() {
         bindingProfileIds={wallet.bindingProfileIds}
         onImported={() => { void reload(); }}
       />
-
+      <WriteClientConfigDialog
+        open={Boolean(writeTarget)}
+        onOpenChange={(open) => { if (!open) setWriteTarget(null); }}
+        profile={writeTarget?.profile ?? null}
+        rows={writeTarget?.graph.rows ?? []}
+        host={writeTarget?.graph.local.host}
+        port={writeTarget?.graph.local.port ?? null}
+        sourceMissing={writeTarget?.graph.source.missing ?? false}
+        hiddenTargetIds={hiddenTargetIds}
+        onWritten={() => { void reload(); }}
+      />
+      <EditRouteDialog
+        open={Boolean(editTarget)}
+        onOpenChange={(open) => { if (!open) setEditTarget(null); }}
+        profile={editTarget}
+        entries={entries}
+        busy={editTarget ? busyProfileIds[editTarget.id] === true : false}
+        onSaved={() => { void reload(); }}
+        onRequestDelete={setRemoveConfirm}
+      />
 
       <Dialog
         open={Boolean(stopConfirm)}

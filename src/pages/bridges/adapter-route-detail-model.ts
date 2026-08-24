@@ -1,19 +1,13 @@
 /**
- * Pure view-model for the route-detail relationship graph.
- * No React, no IO. Dialog UI stays on AdapterProfileDetailDialog.
+ * Pure view-model for the route-detail source node and its upstream channel.
+ * No React, no IO. Endpoint mapping rows live in route-graph-model.
  */
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { MessageKey, MessageParams, TranslateFn } from '@/lib/i18n';
-import { ROUTE_ENDPOINT_PENDING_PORT, routeEndpointPath } from '@/lib/route-endpoints';
+import { ROUTE_ENDPOINT_PENDING_PORT } from '@/lib/route-endpoints';
 import type { AgentId } from '@/lib/types';
-import {
-  CREATE_ROUTE_TARGETS,
-  listLocalRouteSurfacesFromConfig,
-  readCreateRouteCapabilities,
-  surfaceForCreateRouteTarget,
-  type CreateRouteTarget,
-} from './create-route-flow';
+import { readCreateRouteCapabilities, type CreateRouteTarget } from './create-route-flow';
 import { resolveAdapterProfileSource } from './adapter-view-model';
 
 export type UpstreamChannel =
@@ -23,29 +17,13 @@ export type UpstreamChannel =
   | 'grok_responses'
   | 'unknown';
 
-export type RouteEdgeSupport =
-  | 'source_missing'
-  | 'hidden'
-  | 'no_upstream'
-  | 'applied'
-  | 'ready'
-  | 'runtime_only';
-
 export type RouteDetailEdgeTarget = 'claude' | 'codex' | 'grok' | 'kimi' | 'dsh';
 
 export type RouteHopKind = 'passthrough' | 'convert' | 'forward';
 
-const PRODUCT_TARGETS: readonly CreateRouteTarget[] = CREATE_ROUTE_TARGETS;
-const RUNTIME_ONLY_TARGETS = ['kimi', 'dsh'] as const;
 const APPLIED_TARGETS = new Set<string>(['claude', 'codex', 'grok', 'kimi', 'dsh']);
 
 const DETAIL_COPY = {
-  sourceMissing: '来源登录已删除',
-  hidden: '该客户端已在设置中隐藏',
-  noUpstream: '来源未配置此客户端的上游端点',
-  applied: '已写入 {name} 配置',
-  ready: '可一键接入',
-  runtimeOnly: '由后端路由支持，暂不提供界面配置',
   hopPassthrough: '直通上游',
   hopConvert: '转换 → {channel}',
   hopForward: '转发',
@@ -60,7 +38,6 @@ const DETAIL_COPY = {
   portPending: '端口分配中',
   hostPortPending: '127.0.0.1 · 端口分配中',
   sourceDeletedHint: '来源登录已删除，路由仅可查看或解除绑定',
-  applyConfirm: '将勾选项写入客户端配置',
   copyPortPending: '端口分配后可复制',
 } as const;
 
@@ -230,21 +207,8 @@ export function buildRouteDetailSourceView(input: {
   };
 }
 
-export type RouteDetailEdgeView = {
-  target: RouteDetailEdgeTarget;
-  endpointId: 'messages' | 'responses' | 'chat_completions';
-  path: string;
-  support: RouteEdgeSupport;
-  hop: RouteHopKind;
-  /** Upstream channel used for hop labeling; unknown → hop forward */
-  upstreamChannel: UpstreamChannel;
-  /** Per-target upstream URL if different from base / useful on the edge */
-  upstreamUrl: string;
-  selectable: boolean;
-};
-
 function hopFor(
-  endpointId: RouteDetailEdgeView['endpointId'],
+  endpointId: 'messages' | 'responses' | 'chat_completions',
   channel: UpstreamChannel,
 ): RouteHopKind {
   if (channel === 'unknown') return 'forward';
@@ -256,186 +220,12 @@ function hopFor(
   return 'convert';
 }
 
-/** Test/debug alias for hop labeling: messages×anthropic passthrough, unknown → forward. */
+/** Hop for one downstream surface against an upstream channel; unknown → forward. */
 export function hopForTestable(
-  endpointId: RouteDetailEdgeView['endpointId'],
+  endpointId: 'messages' | 'responses' | 'chat_completions',
   channel: UpstreamChannel,
 ): RouteHopKind {
   return hopFor(endpointId, channel);
-}
-
-function resolveProductSupport(input: {
-  missing: boolean;
-  hidden: boolean;
-  noUpstream: boolean;
-  applied: boolean;
-}): RouteEdgeSupport {
-  if (input.missing) return 'source_missing';
-  if (input.hidden) return 'hidden';
-  if (input.noUpstream) return 'no_upstream';
-  if (input.applied) return 'applied';
-  return 'ready';
-}
-
-function resolveRuntimeOnlySupport(input: {
-  missing: boolean;
-  hidden: boolean;
-}): RouteEdgeSupport {
-  if (input.missing) return 'source_missing';
-  if (input.hidden) return 'hidden';
-  return 'runtime_only';
-}
-
-function edgeView(input: {
-  target: RouteDetailEdgeTarget;
-  endpointId: RouteDetailEdgeView['endpointId'];
-  path: string;
-  support: RouteEdgeSupport;
-  channel: UpstreamChannel;
-  upstreamUrl: string;
-}): RouteDetailEdgeView {
-  return {
-    target: input.target,
-    endpointId: input.endpointId,
-    path: input.path,
-    support: input.support,
-    hop: hopFor(input.endpointId, input.channel),
-    upstreamChannel: input.channel,
-    upstreamUrl: input.upstreamUrl,
-    selectable: input.support === 'ready' || input.support === 'applied',
-  };
-}
-
-function productTargetsToEmit(
-  hasDeclaredEndpoints: boolean,
-  surfaces: readonly { target: CreateRouteTarget }[],
-): readonly CreateRouteTarget[] {
-  if (hasDeclaredEndpoints) return PRODUCT_TARGETS;
-  const seen = new Set<CreateRouteTarget>();
-  const targets: CreateRouteTarget[] = [];
-  for (const surface of surfaces) {
-    if (seen.has(surface.target)) continue;
-    seen.add(surface.target);
-    targets.push(surface.target);
-  }
-  return targets;
-}
-
-function perTargetUrl(
-  endpoints: readonly { target: CreateRouteTarget; url: string }[],
-  target: CreateRouteTarget,
-  baseUrl: string,
-): string {
-  const url = endpoints.find((row) => row.target === target)?.url.trim() ?? '';
-  if (!url) return '';
-  return url === baseUrl.trim() ? '' : url;
-}
-
-function channelForEdge(input: {
-  missing: boolean;
-  perTargetUrl: string;
-  sourceChannel: UpstreamChannel;
-}): UpstreamChannel {
-  if (input.missing) return 'unknown';
-  if (isUsableUrl(input.perTargetUrl)) return detectUpstreamChannelFromUrl(input.perTargetUrl);
-  return input.sourceChannel;
-}
-
-/**
- * Build product edges (claude/codex/grok from surfaces) + runtime_only kimi/dsh only when applied sibling exists.
- * Priority for support: source_missing > hidden > no_upstream > applied > ready.
- * no_upstream only when capabilities.endpoints is non-empty AND target missing from enabled endpoints.
- * When capabilities.endpoints empty, do NOT emit no_upstream (follow surfaces fallback).
- * hiddenTargetIds: check edge target id as string.
- */
-export function buildRouteDetailEdges(input: {
-  profile: Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'name' | 'mode' | 'targetAgentId' | 'ruleId' | 'route'>;
-  entries: readonly ConnectionEntry[];
-  siblingProfiles: readonly Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'targetAgentId' | 'generatedProviderId' | 'route'>[];
-  hiddenTargetIds?: ReadonlySet<string>;
-}): RouteDetailEdgeView[] {
-  const source = buildRouteDetailSourceView(input);
-  const entry = matchSourceEntry(input.profile, input.entries);
-  const configText = source.missing ? undefined : entry?.provider?.configText;
-  const caps = readCreateRouteCapabilities(configText);
-  const surfaces = listLocalRouteSurfacesFromConfig(configText, {
-    targetAgentId: input.profile.targetAgentId,
-    ruleId: input.profile.ruleId,
-  });
-  const applied = appliedTargetsFromProfiles(input.siblingProfiles, input.profile);
-  const hiddenTargetIds = input.hiddenTargetIds ?? new Set<string>();
-  const enabledTargets = new Set(caps.endpoints.map((row) => row.target));
-  const hasDeclaredEndpoints = caps.endpoints.length > 0;
-  const edges: RouteDetailEdgeView[] = [];
-
-  for (const target of productTargetsToEmit(hasDeclaredEndpoints, surfaces)) {
-    const surface = surfaces.find((row) => row.target === target) ?? surfaceForCreateRouteTarget(target);
-    const targetUrl = perTargetUrl(caps.endpoints, target, source.baseUrl);
-    const channel = channelForEdge({
-      missing: source.missing,
-      perTargetUrl: targetUrl || caps.endpoints.find((row) => row.target === target)?.url || '',
-      sourceChannel: source.channel,
-    });
-    const support = resolveProductSupport({
-      missing: source.missing,
-      hidden: hiddenTargetIds.has(target),
-      noUpstream: hasDeclaredEndpoints && !enabledTargets.has(target),
-      applied: applied.has(target),
-    });
-    edges.push(edgeView({
-      target,
-      endpointId: surface.endpointId,
-      path: surface.path,
-      support,
-      channel,
-      upstreamUrl: targetUrl,
-    }));
-  }
-
-  for (const target of RUNTIME_ONLY_TARGETS) {
-    if (!applied.has(target)) continue;
-    const support = resolveRuntimeOnlySupport({
-      missing: source.missing,
-      hidden: hiddenTargetIds.has(target),
-    });
-    edges.push(edgeView({
-      target,
-      endpointId: 'chat_completions',
-      path: routeEndpointPath('chat_completions'),
-      support,
-      channel: channelForEdge({
-        missing: source.missing,
-        perTargetUrl: '',
-        sourceChannel: source.channel,
-      }),
-      upstreamUrl: '',
-    }));
-  }
-
-  return edges;
-}
-
-export function routeEdgeSupportLabel(
-  support: RouteEdgeSupport,
-  targetLabel: string,
-  t?: TranslateFn,
-): string {
-  if (support === 'source_missing') {
-    return detailText(t, 'routes.panel.edge.sourceMissing', DETAIL_COPY.sourceMissing);
-  }
-  if (support === 'hidden') {
-    return detailText(t, 'routes.panel.edge.hidden', DETAIL_COPY.hidden);
-  }
-  if (support === 'no_upstream') {
-    return detailText(t, 'routes.panel.edge.noUpstream', DETAIL_COPY.noUpstream);
-  }
-  if (support === 'applied') {
-    return detailText(t, 'routes.panel.edge.applied', DETAIL_COPY.applied, { name: targetLabel });
-  }
-  if (support === 'runtime_only') {
-    return detailText(t, 'routes.panel.edge.runtimeOnly', DETAIL_COPY.runtimeOnly);
-  }
-  return detailText(t, 'routes.panel.edge.ready', DETAIL_COPY.ready);
 }
 
 export function upstreamChannelLabel(channel: UpstreamChannel, t?: TranslateFn): string {
@@ -479,10 +269,6 @@ export function routeSourceDeletedHint(t?: TranslateFn): string {
   return detailText(t, 'routes.panel.sourceDeletedHint', DETAIL_COPY.sourceDeletedHint);
 }
 
-export function routeDetailApplyConfirmLabel(t?: TranslateFn): string {
-  return detailText(t, 'routes.panel.apply.confirm', DETAIL_COPY.applyConfirm);
-}
-
 export function routeCopyPortPendingLabel(t?: TranslateFn): string {
   return detailText(t, 'routes.panel.copyPortPending', DETAIL_COPY.copyPortPending);
 }
@@ -523,26 +309,10 @@ export function bridgeNodeStatusLine(input: {
 }
 
 export function routeDetailTargetLabel(
-  target: RouteDetailEdgeTarget,
+  target: CreateRouteTarget,
   t?: TranslateFn,
 ): string {
   if (target === 'claude') return detailText(t, 'routes.create.target.claude', 'Claude');
-  if (target === 'codex') return detailText(t, 'routes.create.target.codex', 'Codex');
   if (target === 'grok') return detailText(t, 'routes.create.target.grok', 'Grok');
-  if (target === 'kimi') return detailText(t, 'routes.panel.target.kimi', 'Kimi');
-  return detailText(t, 'routes.panel.target.dsh', 'DSH');
-}
-
-export function defaultApplySelection(
-  edges: readonly Pick<RouteDetailEdgeView, 'target' | 'support' | 'selectable'>[],
-): RouteDetailEdgeTarget[] {
-  return edges
-    .filter((edge) => edge.selectable && edge.support === 'applied')
-    .map((edge) => edge.target);
-}
-
-export function selectableProductTargets(
-  selected: readonly RouteDetailEdgeTarget[],
-): CreateRouteTarget[] {
-  return PRODUCT_TARGETS.filter((target) => selected.includes(target));
+  return detailText(t, 'routes.create.target.codex', 'Codex');
 }

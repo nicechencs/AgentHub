@@ -5,20 +5,15 @@ import {
   appliedTargetsFromProfiles,
   bridgeHostPortLabel,
   bridgeNodeStatusLine,
-  buildRouteDetailEdges,
   buildRouteDetailSourceView,
-  defaultApplySelection,
   detectUpstreamChannelFromCredential,
   detectUpstreamChannelFromUrl,
   hopForTestable,
   routeCopyPortPendingLabel,
-  routeDetailApplyConfirmLabel,
   routeDetailTargetLabel,
-  routeEdgeSupportLabel,
   routeHopLabel,
   routeModelsSummary,
   routeSourceDeletedHint,
-  selectableProductTargets,
   upstreamChannelLabel,
 } from './adapter-route-detail-model';
 
@@ -126,131 +121,15 @@ describe('appliedTargetsFromProfiles', () => {
   });
 });
 
-describe('buildRouteDetailEdges', () => {
-  it('marks applied from siblings and ready for other product targets', () => {
-    const edges = buildRouteDetailEdges({
-      profile: profile({ targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' }),
-      entries: [entry({
-        vendor: 'openrouter',
-        baseURL: 'https://openrouter.ai/api/v1',
-        endpoints: [
-          { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
-          { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
-          { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
-        ],
-      })],
-      siblingProfiles: [
-        profile({ targetAgentId: 'claude', generatedProviderId: 'g-claude' }),
-      ],
-    });
-    const byTarget = Object.fromEntries(edges.map((edge) => [edge.target, edge]));
-    expect(byTarget.claude?.support).toBe('applied');
-    expect(byTarget.codex?.support).toBe('ready');
-    expect(byTarget.grok?.support).toBe('ready');
-    expect(byTarget.claude?.hop).toBe('convert');
-    expect(byTarget.claude?.selectable).toBe(true);
-  });
-
-  it('applies hidden per edge target', () => {
-    const edges = buildRouteDetailEdges({
-      profile: profile(),
-      entries: [entry({
-        vendor: 'openrouter',
-        endpoints: [
-          { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
-          { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
-          { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
-        ],
-      })],
-      siblingProfiles: [],
-      hiddenTargetIds: new Set(['claude']),
-    });
-    const byTarget = Object.fromEntries(edges.map((edge) => [edge.target, edge]));
-    expect(byTarget.claude?.support).toBe('hidden');
-    expect(byTarget.codex?.support).toBe('ready');
-  });
-
-  it('emits no_upstream for declared-endpoint gaps', () => {
-    const edges = buildRouteDetailEdges({
-      profile: profile({ targetAgentId: 'claude' }),
-      entries: [entry({
-        endpoints: [
-          { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
-        ],
-      })],
-      siblingProfiles: [],
-    });
-    const byTarget = Object.fromEntries(edges.map((edge) => [edge.target, edge]));
-    expect(byTarget.claude?.support).toBe('ready');
-    expect(byTarget.codex?.support).toBe('no_upstream');
-    expect(byTarget.grok?.support).toBe('no_upstream');
-  });
-
-  it('does not emit no_upstream when endpoints field is empty', () => {
-    const edges = buildRouteDetailEdges({
-      profile: profile({ targetAgentId: 'codex', ruleId: 'bridge' }),
-      entries: [entry({ baseURL: 'https://api.openai.com/v1' })],
-      siblingProfiles: [],
-    });
-    expect(edges.some((edge) => edge.support === 'no_upstream')).toBe(false);
-    expect(edges.every((edge) => edge.support === 'ready' || edge.support === 'applied')).toBe(true);
-  });
-
-  it('shows kimi only when applied sibling exists as runtime_only', () => {
-    const without = buildRouteDetailEdges({
-      profile: profile(),
-      entries: [entry({ vendor: 'openrouter', baseURL: 'https://openrouter.ai/api/v1' })],
-      siblingProfiles: [],
-    });
-    expect(without.some((edge) => edge.target === 'kimi' || edge.target === 'dsh')).toBe(false);
-
-    const withKimi = buildRouteDetailEdges({
-      profile: profile(),
-      entries: [entry({ vendor: 'openrouter', baseURL: 'https://openrouter.ai/api/v1' })],
-      siblingProfiles: [
-        profile({ id: 'k', targetAgentId: 'kimi', generatedProviderId: 'g-kimi' }),
-      ],
-    });
-    const kimi = withKimi.find((edge) => edge.target === 'kimi');
-    expect(kimi?.support).toBe('runtime_only');
-    expect(kimi?.selectable).toBe(false);
-    expect(kimi?.endpointId).toBe('chat_completions');
-  });
-
-  it('marks all edges source_missing when source login is gone', () => {
-    const edges = buildRouteDetailEdges({
-      profile: profile(),
-      entries: [],
-      siblingProfiles: [
-        profile({ generatedProviderId: 'g-codex' }),
-      ],
-    });
-    expect(edges.length).toBeGreaterThan(0);
-    expect(edges.every((edge) => edge.support === 'source_missing')).toBe(true);
-    expect(edges.every((edge) => edge.hop === 'forward')).toBe(true);
-  });
-
-  it('uses passthrough for messages×anthropic', () => {
-    const edges = buildRouteDetailEdges({
-      profile: profile({ targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' }),
-      entries: [entry({
-        endpoints: [
-          { target: 'claude', enabled: true, url: 'https://api.deepseek.com/anthropic' },
-        ],
-      })],
-      siblingProfiles: [],
-    });
-    const claude = edges.find((edge) => edge.target === 'claude');
-    expect(claude?.hop).toBe('passthrough');
-    expect(routeHopLabel(claude!.hop, claude!.upstreamChannel)).toBe('直通上游');
-  });
-});
-
 describe('hopForTestable', () => {
   it('uses passthrough / convert / forward from endpoint × channel', () => {
     expect(hopForTestable('messages', 'anthropic_messages')).toBe('passthrough');
     expect(hopForTestable('messages', 'openai_chat')).toBe('convert');
     expect(hopForTestable('messages', 'unknown')).toBe('forward');
+    expect(hopForTestable('responses', 'codex_responses')).toBe('passthrough');
+    expect(hopForTestable('responses', 'grok_responses')).toBe('passthrough');
+    expect(hopForTestable('responses', 'openai_chat')).toBe('convert');
+    expect(hopForTestable('chat_completions', 'openai_chat')).toBe('passthrough');
   });
 });
 
@@ -335,15 +214,6 @@ describe('bridge helpers', () => {
 });
 
 describe('label helpers', () => {
-  it('maps edge support states to user-facing copy', () => {
-    expect(routeEdgeSupportLabel('source_missing', 'Codex')).toBe('来源登录已删除');
-    expect(routeEdgeSupportLabel('hidden', 'Codex')).toBe('该客户端已在设置中隐藏');
-    expect(routeEdgeSupportLabel('no_upstream', 'Codex')).toBe('来源未配置此客户端的上游端点');
-    expect(routeEdgeSupportLabel('applied', 'Codex')).toBe('已写入 Codex 配置');
-    expect(routeEdgeSupportLabel('ready', 'Codex')).toBe('可一键接入');
-    expect(routeEdgeSupportLabel('runtime_only', 'Kimi')).toBe('由后端路由支持，暂不提供界面配置');
-  });
-
   it('maps upstream channels and hop labels', () => {
     expect(upstreamChannelLabel('openai_chat')).toBe('上游 Chat 接口');
     expect(upstreamChannelLabel('anthropic_messages')).toBe('上游 Messages');
@@ -357,37 +227,12 @@ describe('label helpers', () => {
     expect(routeModelsSummary([])).toBe('跟随客户端请求的模型');
     expect(routeModelsSummary(['gpt-4o', 'claude-3'])).toBe('仅放行：gpt-4o, claude-3（其余模型将被拒绝）');
     expect(routeSourceDeletedHint()).toBe('来源登录已删除，路由仅可查看或解除绑定');
-    expect(routeDetailApplyConfirmLabel()).toBe('将勾选项写入客户端配置');
     expect(routeCopyPortPendingLabel()).toBe('端口分配后可复制');
   });
 
-  it('labels product and runtime targets', () => {
+  it('labels the three client targets', () => {
     expect(routeDetailTargetLabel('claude')).toBe('Claude');
     expect(routeDetailTargetLabel('codex')).toBe('Codex');
     expect(routeDetailTargetLabel('grok')).toBe('Grok');
-    expect(routeDetailTargetLabel('kimi')).toBe('Kimi');
-    expect(routeDetailTargetLabel('dsh')).toBe('DSH');
-  });
-});
-
-describe('apply selection helpers', () => {
-  it('defaults to applied selectable edges only', () => {
-    const edges = buildRouteDetailEdges({
-      profile: profile({ targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' }),
-      entries: [entry({
-        endpoints: [
-          { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
-          { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
-          { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
-        ],
-      })],
-      siblingProfiles: [
-        profile({ targetAgentId: 'claude', generatedProviderId: 'g-claude' }),
-        profile({ id: 'g2', targetAgentId: 'grok', generatedProviderId: 'g-grok' }),
-      ],
-    });
-    expect(defaultApplySelection(edges)).toEqual(['claude', 'grok']);
-    expect(selectableProductTargets(['grok', 'claude'])).toEqual(['claude', 'grok']);
-    expect(selectableProductTargets(['kimi'])).toEqual([]);
   });
 });
