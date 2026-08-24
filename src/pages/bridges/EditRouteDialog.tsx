@@ -23,7 +23,6 @@ import {
   endpointUrlFor,
   isCreateRouteUrlValid,
   isEditableRouteSource,
-  readCreateRouteCapabilities,
   readStoredCreateRouteVendor,
   submitEditRoute,
   upstreamEndpointPathForTarget,
