@@ -291,23 +291,25 @@ pub(crate) fn explicit_provider_tag_matches(tag: Option<&str>, accepted: &[&str]
     })
 }
 
+/// Official OpenAI, OpenRouter host, `openai` / `openai-api`, explicit
+/// `openai-compat` alias, or `openrouter` tag. Catalog leftover
+/// `openai-compatible` without a known host stays unclassified (Unknown).
 pub(crate) fn is_openai_api_marker(tag: Option<&str>, blob: &Value) -> bool {
     explicit_provider_tag_matches(
         tag,
         &[
             OPENAI_API_PRESET,
             "openai-api",
-            OPENAI_COMPAT_PRESET,
             "openai-compat",
-            "openai-compatible",
             OPENROUTER_PRESET,
         ],
     ) || settings_contain_openai_api_endpoint(blob)
         || settings_contain_openrouter_endpoint(blob)
 }
 
-/// Official OpenAI host is not custom. OpenRouter, `openai-compat` / `openrouter`
-/// tags, and generic OpenAI-compat URLs are.
+/// Official OpenAI host is not custom. OpenRouter host and explicit
+/// `openai-compat` / `openrouter` tags are. Opaque leftover
+/// `openai-compatible` fixtures are not.
 pub(crate) fn is_custom_openai_compat(tag: Option<&str>, blob: &Value) -> bool {
     if !is_openai_api_marker(tag, blob) {
         return false;
@@ -315,21 +317,19 @@ pub(crate) fn is_custom_openai_compat(tag: Option<&str>, blob: &Value) -> bool {
     if settings_contain_openai_api_endpoint(blob) {
         return false;
     }
-    explicit_provider_tag_matches(
-        tag,
-        &[OPENAI_COMPAT_PRESET, "openai-compat", "openai-compatible", OPENROUTER_PRESET],
-    )
+    explicit_provider_tag_matches(tag, &["openai-compat", OPENROUTER_PRESET])
         || settings_contain_openrouter_endpoint(blob)
         || openai_compat_custom_base_url(blob).is_some()
 }
 
-/// Host (no credentials) used to decide custom vs official OpenAI-compat mapping.
+/// True only for OpenRouter. Official Grok / ChatGPT / other hosts must not
+/// inherit stealth/ox-alpha listing from "any non-OpenAI URL".
 pub fn is_custom_openai_compat_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     if lower.contains(OPENAI_API_ENDPOINT_NEEDLE) {
         return false;
     }
-    lower.contains(OPENROUTER_API_ENDPOINT_NEEDLE) || looks_like_openai_compat_base_url(url)
+    lower.contains(OPENROUTER_API_ENDPOINT_NEEDLE)
 }
 
 /// First usable OpenAI-compat base URL in a settings / credentials blob.

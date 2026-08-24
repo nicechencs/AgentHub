@@ -935,13 +935,7 @@ fn bind_glm_and_deepseek_to_claude_then_unbind_rejects_unknown_relay() {
         ticket_id: ticket_id(AdapterSourceKind::Provider, "relay-source"),
         target_agent_id: AgentId::Claude,
     });
-    let relay = relay.expect("openai-compat custom URL binds");
-    assert!(relay.active);
-    let relay_profile = AdapterProfileRepo::new(db)
-        .get(relay.profile_id.as_deref().unwrap())
-        .unwrap()
-        .unwrap();
-    assert_eq!(relay_profile.rule_id, "openai-api-to-pi-v1");
+    assert!(relay.is_err(), "unknown custom relay must not bind");
 }
 
 #[test]
