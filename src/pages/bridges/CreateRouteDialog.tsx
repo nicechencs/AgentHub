@@ -17,9 +17,11 @@ import {
   CREATE_ROUTE_TARGETS,
   CREATE_ROUTE_VENDORS,
   DEFAULT_CREATE_ROUTE_MODEL,
+  createRouteAutoNames,
   defaultCreateRouteEndpoints,
   defaultCreateRouteName,
   endpointUrlFor,
+  nextCreateRouteName,
   formatCreateRouteModels,
   isCreateRouteUrlValid,
   submitCreateRoute,
@@ -89,10 +91,17 @@ export function CreateRouteDialog({
 
   const applyVendor = (next: CreateRouteVendorId) => {
     const spec = vendorById(next);
+    const alternate = t('routes.create.alternate');
+    const autoNames = createRouteAutoNames(
+      CREATE_ROUTE_VENDORS.map((item) => vendorLabel(t, item.id)),
+      alternate,
+    );
     setVendor(next);
-    if (!name.trim()) {
-      setName(defaultCreateRouteName(vendorLabel(t, next), t('routes.create.alternate')));
-    }
+    setName(nextCreateRouteName(
+      name,
+      defaultCreateRouteName(vendorLabel(t, next), alternate),
+      autoNames,
+    ));
     if (next === 'custom') return;
     setUrl(spec.url);
     setEndpoints([...spec.enabled]);
@@ -142,7 +151,7 @@ export function CreateRouteDialog({
       }}
     >
       <DialogContent
-        className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden"
+        className="flex max-h-[min(36rem,calc(100vh-2rem))] flex-col overflow-hidden"
         onPointerDownOutside={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
         onFocusOutside={(event) => event.preventDefault()}
@@ -159,7 +168,7 @@ export function CreateRouteDialog({
             <DialogTitle>{t('routes.create.title')}</DialogTitle>
             <DialogDescription>{t('routes.create.description')}</DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1">
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-muted">{t('routes.create.vendorLabel')}</span>
               <select

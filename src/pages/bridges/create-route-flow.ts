@@ -155,6 +155,40 @@ export function defaultCreateRouteName(vendorLabel: string, alternateLabel: stri
   return `${vendorLabel.trim()} ${alternateLabel.trim()}`.replace(/\s+/g, ' ').trim();
 }
 
+export function createRouteAutoNames(vendorLabels: readonly string[], alternateLabel: string): string[] {
+  return vendorLabels.map((label) => defaultCreateRouteName(label, alternateLabel));
+}
+
+export function isAutoCreateRouteName(name: string, autoNames: readonly string[]): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return true;
+  return autoNames.some((item) => item.trim() === trimmed);
+}
+
+export function nextCreateRouteName(
+  current: string,
+  nextAuto: string,
+  autoNames: readonly string[],
+): string {
+  return isAutoCreateRouteName(current, autoNames) ? nextAuto : current;
+}
+
+export function importRouteRowTitle(
+  entry: {
+    title: string;
+    subtitle: string;
+    agentId: string;
+    source: 'account' | 'provider';
+    endpointMode?: 'official' | 'custom';
+  },
+  labels: { agent: string; officialEndpoint: string; customEndpoint: string },
+): string {
+  const bits = [entry.title.trim(), labels.agent.trim()];
+  if (entry.endpointMode === 'custom') bits.push(labels.customEndpoint.trim());
+  else if (entry.endpointMode === 'official') bits.push(labels.officialEndpoint.trim());
+  return bits.filter(Boolean).join(' · ');
+}
+
 export function endpointUrlFor(
   vendor: CreateRouteVendorId,
   target: CreateRouteTarget,
