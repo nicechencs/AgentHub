@@ -1,6 +1,6 @@
 # AgentHub 路由、端点、协议转换与模型能力审计
 
-> 审计日期：2026-08-24　分支：`dev`　修订：2026-08-24 对齐 `ee06d3e`（Anthropic 同协议直通、listedModels 强制执行、多客户端绑定）
+> 审计日期：2026-08-24　分支：`dev`　修订：2026-08-24 对齐 `db153cd`（Chat↔OpenAI Chat 同协议、Chat→Anthropic/Grok IR、surface-aware `passthrough_for`；`ee06d3e` 的 listedModels 与多客户端绑定仍有效）
 >
 > 本文是带日期的审计快照；长期有效的行为说明以 [local-route-endpoints.md](local-route-endpoints.md) 为准。
 >
@@ -13,8 +13,8 @@
 | 页面端点 | 页面统一展示 3 个本机下游协议面：`/v1/messages`、`/v1/responses`、`/v1/chat/completions`。后端另兼容 `/chat/completions`，并提供 `GET /v1/models`、`GET /models`。 |
 | 后端上游 | 4 个固定通道：OpenAI Chat Completions、Anthropic Messages、Codex Responses、Grok/XAI Responses。 |
 | 转换 | 有固定方向的请求/响应转换，核心走 `BridgeRequest`/事件 IR；不是任意 endpoint-to-endpoint 动态转换器。 |
-| 互转 | Responses↔Messages、Responses↔Chat 在全局能力上都能找到两个方向，但依赖不同上游通道；Messages↔Chat 不是完整双向。 |
-| 直接中继 | 有：Responses→Codex/Grok Responses，以及 Messages→Anthropic Messages 同协议直通；均为协议级 passthrough，不是透明 TCP 代理。 |
+| 互转 | Responses↔Messages、Responses↔Chat、Messages↔Chat 在 transport 上都能找到两个方向，但依赖不同上游通道；产品 bind 仍不对称。 |
+| 直接中继 | 有：Responses→Codex/Grok Responses、Messages→Anthropic Messages、Chat→OpenAI Chat；均为协议级 passthrough，不是透明 TCP 代理。 |
 | 模型列表 | 支持，主要是本地静态 mapping + 默认模型合成，不是实时向上游拉取。 |
 | 模型限制 | 支持静态映射、未知模型 fail-closed、同 target/surface 的 edge 切换；自定义 OpenAI 兼容来源支持用户编辑的 `listedModels` 名单并在运行时强制执行。 |
 | 模型绑定 | 目前绑定粒度是 `ticket → Agent → route/profile`，不是 `ticket → 具体 model`。存储层虽预留 `model_id`，产品 bind API 尚未贯通。 |
@@ -46,7 +46,7 @@ flowchart LR
 |---|---|---|---|
 | `messages` | `/v1/messages` | Claude | 已有完整 HTTP 入口；作为下游可转换到 OpenAI Chat、Codex Responses、Grok Responses。 |
 | `responses` | `/v1/responses` | Codex、Grok | 当前最完整：支持 IR 转换，也有 Codex/Grok Responses 的有限 passthrough。 |
-| `chat_completions` | `/v1/chat/completions` | Kimi、DSH，以及未知目标的 fallback | HTTP 入口存在；主要用于 Chat→Responses 转换，当前没有通用 Chat→Chat 直通。 |
+| `chat_completions` | `/v1/chat/completions` | Kimi、DSH，以及未知目标的 fallback | HTTP 入口存在。transport 已开放 Chat→OpenAI Chat 同协议直通，以及 Chat→Anthropic / Codex / Grok 转换。产品 bind 当前用到的 Chat 下游是 Codex→Kimi/DSH（Chat→Responses）；尚无 Chat identity 的可 apply 边。 |
 
 后端还注册了 `/chat/completions` 作为兼容别名；它不是页面 `ROUTE_ENDPOINTS` 中的第四种协议。
 
@@ -121,7 +121,7 @@ sequenceDiagram
 |---|---:|---:|---:|---:|
 | `/v1/responses` | ✓ IR 转 Chat | ✓ 转 Anthropic Messages | △ Responses shape passthrough + 官方字段过滤 | △ Responses shape passthrough + Grok normalization |
 | `/v1/messages` | ✓ IR 转 Chat | △ 同协议直通（仅覆写 model） | ✓ 转 Responses | ✓ 转 Grok Responses |
-| `/v1/chat/completions` | — 同协议分支未开放 | — 不支持 | ✓ 转 Responses | — 不支持 |
+| `/v1/chat/completions` | △ 同协议直通（仅覆写 model） | ✓ IR 转 Anthropic Messages | ✓ 转 Responses | ✓ 转 Grok Responses |
 
 对应代码分支：
 
@@ -169,11 +169,11 @@ sequenceDiagram
 | 协议对 | 是否能找到两个方向 | 实际含义 |
 |---|---|---|
 | Responses ↔ Messages | 是 | Responses→Messages 依赖 Anthropic 上游；Messages→Responses 依赖 Codex/Grok 上游。不是一条任意互转函数。 |
-| Responses ↔ Chat | 是 | Responses→Chat 依赖 OpenAI Chat 上游；Chat→Responses 依赖 Codex Responses 上游。 |
-| Messages ↔ Chat | 否 | Messages→Chat 有 OpenAI Chat 分支；Chat→Messages 没有开放 transport 分支。 |
+| Responses ↔ Chat | 是 | Responses→Chat 依赖 OpenAI Chat 上游；Chat→Responses 依赖 Codex/Grok Responses 上游。 |
+| Messages ↔ Chat | 是（transport） | Messages→Chat 依赖 OpenAI Chat 上游；Chat→Messages 依赖 Anthropic 上游。产品 bind 尚未对称开放。 |
 | Responses ↔ Responses | 有限是 | 只有 Codex/Grok 的 Responses route 进入 passthrough；仍会做鉴权、模型/字段处理。 |
 | Messages ↔ Messages | 是 | Anthropic Messages 上游已开放同协议直通（请求体原样转发，仅按需覆写 model）。 |
-| Chat ↔ Chat | 否 | `OpenAiChatTransport` 对 Chat 下游分支明确 unreachable。 |
+| Chat ↔ Chat | 有限是 | OpenAI Chat 上游已开放同协议直通（请求体原样转发，仅按需覆写 model）。尚无对应可 apply 产品边。 |
 
 因此“相互转换”的正确说法是：**存在若干固定方向的可逆覆盖，不存在任意协议两两动态协商或通用双向注册表。**
 
@@ -193,9 +193,13 @@ sequenceDiagram
 下游 /v1/messages
   -> Anthropic Messages upstream
   -> 原始 Messages JSON/SSE（仅覆写 model）
+
+下游 /v1/chat/completions
+  -> OpenAI Chat Completions upstream
+  -> 原始 Chat JSON/SSE（仅覆写 model）
 ```
 
-代码中的唯一 passthrough 声明是 `UpstreamChannel::CodexResponses | Grok`。流式响应在这个分支直接转发 SSE bytes；其他分支先解码成事件 IR，再编码为下游协议。
+`passthrough_for` 按「上游通道 × 下游 surface」声明同协议直通：`OpenAiChat`+`ChatCompletions`、`Anthropic`+`Messages`、`CodexResponses|Grok`+`Responses`。匹配时非流走 `passthrough_json_response`、流式直接转发 SSE bytes；不匹配时先解码成事件 IR，再编码为下游协议。Responses 上游不得 byte-relay 到 Chat 或 Messages 客户端。
 
 这不是透明反向代理，仍会：
 
@@ -205,7 +209,7 @@ sequenceDiagram
 - Grok 注入/修复 reasoning、cache key、CLI identity；
 - 受 body limit、并发上限、idle timeout、取消和错误包装约束。
 
-所以应称为 **协议级 passthrough**，不能称为“完全不处理的 relay”。Chat 当前没有同等的直接中继。
+所以应称为 **协议级 passthrough**，不能称为“完全不处理的 relay”。Chat→Anthropic / Chat→Grok / Chat→Codex 仍是 IR 转换，不是直通。
 
 ## 7. 当前可应用的本机路由边
 
@@ -224,6 +228,8 @@ sequenceDiagram
 | Codex/ChatGPT subscription | Grok | Responses → Codex Responses | local_bridge / Experimental | 可 apply；Responses passthrough 路径 |
 | Codex/ChatGPT subscription | Kimi | Chat Completions → Codex Responses | local_bridge / Experimental | 可 apply；目标虽不在创建对话框 |
 | Codex/ChatGPT subscription | DSH | Chat Completions → Codex Responses | local_bridge / Experimental | 可 apply；目标虽不在创建对话框 |
+
+transport 已开放、但尚无 `can_apply` 产品边：Chat Completions → OpenAI Chat（同协议）、Chat Completions → Anthropic Messages、Chat Completions → Grok Responses。当前 Chat 下游可 apply 边只有 Codex→Kimi/DSH。
 
 明确关闭的相关边：
 
@@ -347,7 +353,7 @@ flowchart LR
 
 - 将 `downstream_surface`、`upstream_protocol`、`request_converter`、`response_converter`、`stream_codec`、`model_policy`、`credential_class` 纳入一个可审计的 route edge 描述；
 - 用该契约生成 UI 能力摘要，减少 `CREATE_ROUTE_TARGETS` 与 Rust matrix 的双重硬编码；
-- 明确 Messages/Chat 的“同协议不直通”是产品限制还是待补能力。
+- Chat 同协议 / Chat→Anthropic / Chat→Grok 的 transport 已开放；是否做成可 apply 产品边仍待产品决定。
 
 ### P2：补齐模型控制能力
 

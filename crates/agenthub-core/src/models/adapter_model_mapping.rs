@@ -446,9 +446,7 @@ pub fn map_edge_model(
 /// Empty reserved tables (no default, no entries, no passthrough) still send
 /// the request to the lead; they must not trigger a model switch.
 pub fn mapping_table_is_active(table: &AdapterModelMappingTable) -> bool {
-    table.allow_passthrough
-        || table.default_target_model.is_some()
-        || !table.entries.is_empty()
+    table.allow_passthrough || table.default_target_model.is_some() || !table.entries.is_empty()
 }
 
 /// One running (or known) edge the model-switch helper can pick.
@@ -485,12 +483,7 @@ pub fn decide_model_switch(
     model: &str,
     others: &[ModelSwitchCandidate],
 ) -> ModelSwitchDecision {
-    let lead_result = map_edge_model(
-        lead.source,
-        lead.target,
-        model,
-        lead.custom_openai_compat,
-    );
+    let lead_result = map_edge_model(lead.source, lead.target, model, lead.custom_openai_compat);
     if lead_serves(lead, model, lead_result) {
         return ModelSwitchDecision::Stay;
     }

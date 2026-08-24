@@ -209,7 +209,11 @@ impl Gateway {
 
     /// After the body model is known: if the lead mapping misses and another
     /// running edge can serve it, switch for this request only.
-    pub(super) fn switch_edge_for_model(&self, lead: &EdgeState, model: &str) -> ModelSwitchOutcome {
+    pub(super) fn switch_edge_for_model(
+        &self,
+        lead: &EdgeState,
+        model: &str,
+    ) -> ModelSwitchOutcome {
         use crate::models::{decide_model_switch, ModelSwitchCandidate, ModelSwitchDecision};
         let Some(source) = lead.mapping_source else {
             return ModelSwitchOutcome::Stay;
@@ -237,10 +241,14 @@ impl Gateway {
             if state.profile_id.as_ref() == lead.profile_id.as_ref() {
                 continue;
             }
-            let Some(src) = state.mapping_source else { continue };
-            let Some(tgt) = state.mapping_target else { continue };
-            let running = !state.stopping.load(Ordering::SeqCst)
-                && !state.force_shutdown.is_cancelled();
+            let Some(src) = state.mapping_source else {
+                continue;
+            };
+            let Some(tgt) = state.mapping_target else {
+                continue;
+            };
+            let running =
+                !state.stopping.load(Ordering::SeqCst) && !state.force_shutdown.is_cancelled();
             others.push(ModelSwitchCandidate {
                 profile_id: state.profile_id.to_string(),
                 source: src,
