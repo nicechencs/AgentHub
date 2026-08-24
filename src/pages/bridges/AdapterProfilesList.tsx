@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ArrowRight, Boxes } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -12,14 +13,19 @@ import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
 } from '@/lib/backend/contracts/adapter';
-import { routeEndpointIdForBinding, routeEndpointPathForBinding } from '@/lib/route-endpoints';
 import type { ConnectionEntry } from '@/lib/connection-entry';
+import type { TicketSurfaceGroupView } from '@/lib/backend/contracts/ticket';
 import { AdapterErrorLines } from './adapter-components';
+import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
 import {
   adapterBridgeHostPort,
   adapterFailurePresentation,
 } from './adapter-model';
-import { isAlternateRouteRule } from './create-route-flow';
+import {
+  isAlternateRouteRule,
+  listLocalRouteSurfacesFromConfig,
+  type CreateRouteTarget,
+} from './create-route-flow';
 import {
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
@@ -44,9 +50,13 @@ export type AdapterProfilesListProps = {
   removingProfileId: string | null;
   onStartBridge: (profile: AdapterProfile) => void;
   onRequestStopBridge: (profile: AdapterProfile) => void;
-  onShowDetail: (profile: AdapterProfile) => void;
+  onSetAutoStart?: (profile: AdapterProfile, autoStart: boolean) => void;
+  onRequestRemove?: (profile: AdapterProfile) => void;
+  onApplyRoute?: (profile: AdapterProfile, agents: readonly CreateRouteTarget[]) => void;
+  onShowDetail?: (profile: AdapterProfile) => void;
   onRetry: () => void;
   hiddenTargetIds?: ReadonlySet<string>;
+  surfaceGroups?: readonly TicketSurfaceGroupView[];
 };
 
 /**
@@ -65,11 +75,20 @@ export function AdapterProfilesList({
   removingProfileId,
   onStartBridge,
   onRequestStopBridge,
+  onSetAutoStart,
+  onRequestRemove,
+  onApplyRoute,
   onShowDetail,
   onRetry,
   hiddenTargetIds,
+  surfaceGroups = [],
 }: AdapterProfilesListProps) {
   const { t } = useI18n();
+  const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
+  const toggleDetail = (profile: AdapterProfile) => {
+    setCollapsedIds((current) => ({ ...current, [profile.id]: !current[profile.id] }));
+    onShowDetail?.(profile);
+  };
   if (loading) {
     return (
       <div className="space-y-2" aria-live="polite">
@@ -109,7 +128,12 @@ export function AdapterProfilesList({
           error={errors[profile.id]}
           onStartBridge={onStartBridge}
           onRequestStopBridge={onRequestStopBridge}
-          onShowDetail={onShowDetail}
+          onSetAutoStart={onSetAutoStart}
+          onRequestRemove={onRequestRemove}
+          onApplyRoute={onApplyRoute}
+          onToggleDetail={() => toggleDetail(profile)}
+          detailExpanded={collapsedIds[profile.id] !== true}
+          surfaceGroups={surfaceGroups}
           targetHidden={hiddenTargetIds?.has(profile.targetAgentId) === true}
         />
       ))}
@@ -126,7 +150,12 @@ function AdapterProfileRow({
   error,
   onStartBridge,
   onRequestStopBridge,
-  onShowDetail,
+  onSetAutoStart,
+  onRequestRemove,
+  onApplyRoute,
+  onToggleDetail,
+  detailExpanded,
+  surfaceGroups,
   targetHidden,
 }: {
   profile: AdapterProfile;
@@ -137,7 +166,12 @@ function AdapterProfileRow({
   error: unknown;
   onStartBridge: (profile: AdapterProfile) => void;
   onRequestStopBridge: (profile: AdapterProfile) => void;
-  onShowDetail: (profile: AdapterProfile) => void;
+  onSetAutoStart?: (profile: AdapterProfile, autoStart: boolean) => void;
+  onRequestRemove?: (profile: AdapterProfile) => void;
+  onApplyRoute?: (profile: AdapterProfile, agents: readonly CreateRouteTarget[]) => void;
+  onToggleDetail: () => void;
+  detailExpanded: boolean;
+  surfaceGroups: readonly TicketSurfaceGroupView[];
   targetHidden: boolean;
 }) {
   const { t } = useI18n();
@@ -150,18 +184,15 @@ function AdapterProfileRow({
   const endpointParts = profile.route === 'local_bridge'
     ? adapterBridgeHostPort(profile, bridgeStatus)
     : null;
-  const endpointPath = profile.route === 'local_bridge'
-    ? routeEndpointPathForBinding({
-        agentId: profile.targetAgentId,
+  const sourceEntry = entries.find(
+    (entry) => entry.source === profile.sourceKind && entry.id === profile.sourceId,
+  );
+  const surfaces = profile.route === 'local_bridge'
+    ? listLocalRouteSurfacesFromConfig(sourceEntry?.provider?.configText, {
+        targetAgentId: profile.targetAgentId,
         ruleId: profile.ruleId,
       })
-    : null;
-  const endpointId = profile.route === 'local_bridge'
-    ? routeEndpointIdForBinding({
-        agentId: profile.targetAgentId,
-        ruleId: profile.ruleId,
-      })
-    : null;
+    : [];
   const action = adapterProfilePrimaryAction({
     route: profile.route,
     bridgeState: bridgeStatus?.state,
@@ -188,16 +219,29 @@ function AdapterProfileRow({
               </span>
             ) : null}
             <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
-            {endpointPath && endpointId ? (
-              <CopyableRouteEndpointUrl
-                path={endpointPath}
-                port={endpointParts?.port}
-                host={endpointParts?.host}
-                endpointId={endpointId}
-                className="text-xs"
-              />
-            ) : null}
           </div>
+          {surfaces.length > 0 ? (
+            <ul className="space-y-0.5">
+              {surfaces.map((surface) => (
+                <li key={surface.target} className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <span className="w-12 shrink-0 text-xs text-muted">
+                    {surface.target === 'claude'
+                      ? t('routes.create.target.claude')
+                      : surface.target === 'codex'
+                        ? t('routes.create.target.codex')
+                        : t('routes.create.target.grok')}
+                  </span>
+                  <CopyableRouteEndpointUrl
+                    path={surface.path}
+                    port={endpointParts?.port}
+                    host={endpointParts?.host}
+                    endpointId={surface.endpointId}
+                    className="text-xs"
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {endpointParts && !endpointParts.port ? (
               <span className="text-xs text-muted">{t('routes.pendingPort')}</span>
@@ -229,7 +273,20 @@ function AdapterProfileRow({
               {busy ? t('routes.busy') : action.label}
             </Button>
           ) : null}
-          <Button variant="ghost" size="sm" onClick={() => onShowDetail(profile)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || targetHidden || surfaces.length === 0}
+            onClick={() => onApplyRoute?.(profile, surfaces.map((surface) => surface.target))}
+          >
+            {t('routes.quickApply.action')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={detailExpanded}
+            onClick={onToggleDetail}
+          >
             {t('routes.detail')}
           </Button>
         </div>
@@ -244,6 +301,22 @@ function AdapterProfileRow({
           <AdapterErrorLines error={error} fallback={t('routes.mutationFailure')} />
           <p className="text-xs text-secondary">{failure.hint}</p>
         </div>
+      ) : null}
+      {detailExpanded ? (
+        <AdapterProfileDetailDialog
+          profile={profile}
+          bridgeStatus={bridgeStatus}
+          statusUnavailable={statusUnavailable}
+          entries={entries}
+          surfaceGroups={surfaceGroups}
+          busy={busy}
+          error={error}
+          onClose={onToggleDetail}
+          onSetAutoStart={onSetAutoStart ?? (() => undefined)}
+          onRequestRemove={onRequestRemove ?? (() => undefined)}
+          onApplyRoute={onApplyRoute}
+          targetHidden={targetHidden}
+        />
       ) : null}
     </ListRow>
   );
