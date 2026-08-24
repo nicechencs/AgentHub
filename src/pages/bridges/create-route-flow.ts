@@ -539,11 +539,14 @@ export async function submitCreateRoute(
     throw new Error('required');
   }
   const provider = await deps.upsertProvider(createRouteProviderDraft(input));
-  const owner = createRouteOwner(input.endpoints);
-  const ticketId = ticketIdFor('provider', provider.id);
-  await deps.planTicket(ticketId, owner as AgentId);
-  await deps.bindTicket(ticketId, owner as AgentId);
-  return [owner];
+  return applyLocalRouteToAgents(
+    {
+      sourceKind: 'provider',
+      sourceId: provider.id,
+      agents: input.endpoints,
+    },
+    deps,
+  );
 }
 
 export function importRouteTarget(agentId: AgentId): CreateRouteTarget {

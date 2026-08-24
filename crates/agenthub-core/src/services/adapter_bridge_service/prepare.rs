@@ -79,7 +79,7 @@ impl AdapterBridgeService {
             Some(provider) => local_bearer_from_provider(provider)?,
             None => generate_local_bearer()?,
         };
-        let (upstream_base_url, upstream_model) =
+        let (upstream_base_url, upstream_model, configured_listed_models, protocol) =
             openai_source_upstream(self, &rule, request.source_kind, source_id);
         Ok(AdapterBridgePrepared {
             material: AdapterBridgeRuntimeMaterial {
@@ -88,7 +88,8 @@ impl AdapterBridgeService {
                 preferred_port: profile.local_port,
                 upstream_base_url,
                 upstream_model,
-                protocol: rule.protocol,
+                configured_listed_models,
+                protocol,
                 local_surface: rule.local_surface,
                 source: rule.source,
                 target_agent: rule.target_agent,
@@ -293,23 +294,39 @@ pub(super) fn openai_source_upstream(
     rule: &CodexBridgeRule,
     source_kind: AdapterSourceKind,
     source_id: &str,
-) -> (String, String) {
+) -> (String, String, Vec<String>, crate::bridge::BridgeUpstreamProtocol) {
     let mut url = rule.upstream_base_url.to_string();
     let mut model = rule.default_model.to_string();
+    let mut listed = Vec::new();
+    let mut protocol = rule.protocol;
     if rule.source != crate::models::AdapterSourceProduct::OpenaiApi {
-        return (url, model);
+        return (url, model, listed, protocol);
     }
     if source_kind != AdapterSourceKind::Provider {
-        return (url, model);
+        return (url, model, listed, protocol);
     }
     let Ok(Some(provider)) = service.providers.get_by_id(source_id) else {
-        return (url, model);
+        return (url, model, listed, protocol);
     };
-    if let Some(custom) =
+    let target = match rule.target_agent {
+        crate::models::AgentId::Claude => "claude",
+        crate::models::AgentId::Codex => "codex",
+        crate::models::AgentId::Grok => "grok",
+        _ => "",
+    };
+    if let Some(endpoint) = crate::services::adapter_route_constants::openai_compat_endpoint_url(
+        &provider.settings_config,
+        target,
+    ) {
+        url = endpoint;
+    } else if let Some(custom) =
         crate::services::adapter_route_constants::openai_compat_base_url(&provider.settings_config)
     {
         url = custom;
     }
+    listed = crate::services::adapter_route_constants::openai_compat_listed_models(
+        &provider.settings_config,
+    );
     if let Some(pinned) =
         crate::services::adapter_route_constants::openai_compat_pinned_model(
             &provider.settings_config,
@@ -317,5 +334,8 @@ pub(super) fn openai_source_upstream(
     {
         model = pinned;
     }
-    (url, model)
+    if crate::services::adapter_route_constants::looks_like_anthropic_messages_url(&url) {
+        protocol = crate::bridge::BridgeUpstreamProtocol::AnthropicMessages;
+    }
+    (url, model, listed, protocol)
 }

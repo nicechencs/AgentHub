@@ -541,6 +541,12 @@ fn lead_serves(lead: &ModelSwitchCandidate, model: &str, result: AdapterModelMap
             {
                 return true;
             }
+            if lead.custom_openai_compat && lead.listed_models.is_empty() {
+                return true;
+            }
+            if lead.custom_openai_compat && is_openrouter_backup_model(needle) {
+                return true;
+            }
             find_adapter_model_mapping(lead.source, lead.target)
                 .is_none_or(|table| !mapping_table_is_active(table))
                 && lead.listed_models.is_empty()
