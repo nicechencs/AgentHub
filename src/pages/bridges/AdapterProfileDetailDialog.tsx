@@ -8,6 +8,7 @@ import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { openLogsDir } from '@/lib/api/settings';
 import { formatRouteEndpointHttpUrl } from '@/lib/route-endpoints';
@@ -221,9 +222,12 @@ function ProfileDetailBody({
               <p className="text-meta text-muted">{upstreamChannelLabel(source.channel, t)}</p>
             ) : null}
             {!source.missing && source.baseUrl ? (
-              <p className="truncate font-mono text-meta text-secondary" title={source.baseUrl}>
+              <Tip
+                label={source.baseUrl}
+                className="truncate font-mono text-meta text-secondary"
+              >
                 {truncateUrl(source.baseUrl)}
-              </p>
+              </Tip>
             ) : null}
             {source.missing ? (
               <p className="text-sm text-warning">{routeSourceDeletedHint(t)}</p>
@@ -459,40 +463,41 @@ function EdgeRow({
         ) : (
           <span className="text-sm font-medium">{mark} {label}</span>
         )}
-        <button
-          type="button"
-          className="inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left hover:bg-hover disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!canCopy}
-          title={!canCopy ? routeCopyPortPendingLabel(t) : undefined}
-          aria-label={t('routes.copyEndpointAria', { endpoint: href ?? edge.path })}
-          onClick={() => {
-            if (!href || !canCopy) return;
-            void (async () => {
-              try {
-                await navigator.clipboard.writeText(href);
-                toast({ title: t('routes.endpointCopied'), description: href });
-              } catch {
-                toast({ title: t('routes.copyFailed'), variant: 'danger' });
-              }
-            })();
-          }}
-        >
-          <RouteEndpointUrl
-            path={edge.path}
-            port={port}
-            host={host}
-            endpointId={edge.endpointId}
-            className="text-xs"
-          />
-          <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
-        </button>
+        <Hint label={!canCopy ? routeCopyPortPendingLabel(t) : undefined}>
+          <button
+            type="button"
+            className="inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left hover:bg-hover disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!canCopy}
+            aria-label={t('routes.copyEndpointAria', { endpoint: href ?? edge.path })}
+            onClick={() => {
+              if (!href || !canCopy) return;
+              void (async () => {
+                try {
+                  await navigator.clipboard.writeText(href);
+                  toast({ title: t('routes.endpointCopied'), description: href });
+                } catch {
+                  toast({ title: t('routes.copyFailed'), variant: 'danger' });
+                }
+              })();
+            }}
+          >
+            <RouteEndpointUrl
+              path={edge.path}
+              port={port}
+              host={host}
+              endpointId={edge.endpointId}
+              className="text-xs"
+            />
+            <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
+          </button>
+        </Hint>
       </div>
       <p className="text-meta text-muted">{routeHopLabel(edge.hop, edge.upstreamChannel, t)}</p>
       <p className="text-meta text-secondary">{routeEdgeSupportLabel(edge.support, label, t)}</p>
       {edge.upstreamUrl ? (
-        <p className="truncate font-mono text-meta text-muted" title={edge.upstreamUrl}>
+        <Tip label={edge.upstreamUrl} className="truncate font-mono text-meta text-muted">
           {edge.upstreamUrl}
-        </p>
+        </Tip>
       ) : null}
     </li>
   );

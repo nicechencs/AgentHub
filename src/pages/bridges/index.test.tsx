@@ -81,6 +81,18 @@ const emptyListProps = {
   onRetry: vi.fn(),
 };
 
+function renderProfiles(props: Record<string, unknown>) {
+  return renderToStaticMarkup(
+    createElement(TooltipProvider, null, createElement(AdapterProfiles, props)),
+  );
+}
+
+function renderDetail(props: Record<string, unknown>) {
+  return renderToStaticMarkup(
+    createElement(TooltipProvider, null, createElement(AdapterProfileDetailDialog, props)),
+  );
+}
+
 describe('Bridges page', () => {
   it('describes the page as local-bridge runtime ops', () => {
     expect(adapterPageDescription()).toBe('本机转发 · 仅 127.0.0.1 · 含端口');
@@ -100,12 +112,10 @@ describe('Bridges page', () => {
   });
 
   it('renders a healthy empty list without leaving-the-page CTAs', () => {
-    const markup = renderToStaticMarkup(
-      createElement(AdapterProfiles, {
-        ...emptyListProps,
-        profiles: [],
-      }),
-    );
+    const markup = renderProfiles({
+      ...emptyListProps,
+      profiles: [],
+    });
     expect(markup).toContain(BRIDGES_EMPTY_TITLE);
     expect(markup).toContain(BRIDGES_EMPTY_DESCRIPTION);
     expect(markup).not.toContain('去 Dashboard');
@@ -127,31 +137,23 @@ describe('Bridges page', () => {
 
   it('keeps a hidden-target profile stop-only', () => {
     const profile = localBridgeProfile();
-    const markup = renderToStaticMarkup(
-      createElement(
-        TooltipProvider,
-        null,
-        createElement(AdapterProfiles, {
-          ...emptyListProps,
-          profiles: [profile],
-          bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
-          hiddenTargetIds: new Set([profile.targetAgentId]),
-        }),
-      ),
-    );
+    const markup = renderProfiles({
+      ...emptyListProps,
+      profiles: [profile],
+      bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
+      hiddenTargetIds: new Set([profile.targetAgentId]),
+    });
     expect(markup).toContain('目标已隐藏，仅可停止');
     expect(markup).toContain('停止');
   });
 
   it('renders a running bridge as single-layer health plus port', () => {
     const profile = localBridgeProfile();
-    const markup = renderToStaticMarkup(
-      createElement(AdapterProfiles, {
-        ...emptyListProps,
-        profiles: [profile],
-        bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
-      }),
-    );
+    const markup = renderProfiles({
+      ...emptyListProps,
+      profiles: [profile],
+      bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
+    });
     expect(markup).toContain('运行中');
     expect(markup).toContain('127.0.0.1:43121');
     expect(markup).toContain('停止');
@@ -171,43 +173,41 @@ describe('Bridges page', () => {
 
   it('shows Claude, Codex, and Grok local endpoints on one OpenRouter card', () => {
     const profile = localBridgeProfile();
-    const markup = renderToStaticMarkup(
-      createElement(AdapterProfiles, {
-        ...emptyListProps,
-        profiles: [{ ...profile, targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' }],
-        bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
-        entries: [{
-          key: 'provider:kimi-1',
-          source: 'provider',
-          kind: 'apikey',
+    const markup = renderProfiles({
+      ...emptyListProps,
+      profiles: [{ ...profile, targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' }],
+      bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
+      entries: [{
+        key: 'provider:kimi-1',
+        source: 'provider',
+        kind: 'apikey',
+        id: 'kimi-1',
+        agentId: 'claude',
+        title: 'OpenRouter',
+        subtitle: '已配置',
+        isCurrent: true,
+        authStatus: 'valid',
+        authHealth: 'configured',
+        sortKey: '',
+        provider: {
           id: 'kimi-1',
           agentId: 'claude',
-          title: 'OpenRouter',
-          subtitle: '已配置',
-          isCurrent: true,
-          authStatus: 'valid',
-          authHealth: 'configured',
-          sortKey: '',
-          provider: {
-            id: 'kimi-1',
-            agentId: 'claude',
-            name: 'OpenRouter',
-            preset: 'openrouter',
-            configText: JSON.stringify({
-              vendor: 'openrouter',
-              endpoints: [
-                { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
-                { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
-                { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
-              ],
-            }),
-            configFormat: 'json',
-            isCurrent: false,
-            official: false,
-          },
-        }],
-      }),
-    );
+          name: 'OpenRouter',
+          preset: 'openrouter',
+          configText: JSON.stringify({
+            vendor: 'openrouter',
+            endpoints: [
+              { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
+              { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
+              { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
+            ],
+          }),
+          configFormat: 'json',
+          isCurrent: false,
+          official: false,
+        },
+      }],
+    });
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('/v1/responses');
     expect(markup).toContain('Claude');
@@ -226,14 +226,12 @@ describe('Bridges page', () => {
 
   it('keeps last-known running as 状态不可用 + 停止 when status read fails', () => {
     const profile = localBridgeProfile();
-    const markup = renderToStaticMarkup(
-      createElement(AdapterProfiles, {
-        ...emptyListProps,
-        profiles: [profile],
-        bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
-        statusErrors: { [profile.id]: new Error('status read failed') },
-      }),
-    );
+    const markup = renderProfiles({
+      ...emptyListProps,
+      profiles: [profile],
+      bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
+      statusErrors: { [profile.id]: new Error('status read failed') },
+    });
     expect(markup).toContain('状态不可用');
     expect(markup).toContain('停止');
     expect(markup).not.toContain('启动失败');
@@ -242,19 +240,17 @@ describe('Bridges page', () => {
 
   it('renders detail as single-layer runtime without a Connections projection link', () => {
     const profile = localBridgeProfile();
-    const markup = renderToStaticMarkup(
-      createElement(AdapterProfileDetailDialog, {
-        profile,
-        bridgeStatus: runningStatus(profile.id),
-        statusUnavailable: false,
-        entries: [],
-        busy: false,
-        error: null,
-        onClose: vi.fn(),
-        onSetAutoStart: vi.fn(),
-        onRequestRemove: vi.fn(),
-      }),
-    );
+    const markup = renderDetail({
+      profile,
+      bridgeStatus: runningStatus(profile.id),
+      statusUnavailable: false,
+      entries: [],
+      busy: false,
+      error: null,
+      onClose: vi.fn(),
+      onSetAutoStart: vi.fn(),
+      onRequestRemove: vi.fn(),
+    });
     expect(markup).toContain('运行中');
     expect(markup).toContain('本机桥');
     expect(markup).toContain('客户端接入');
@@ -271,69 +267,67 @@ describe('Bridges page', () => {
 
   it('keeps both surface-group members visible and greys the failed row with a reason', () => {
     const profile = localBridgeProfile();
-    const markup = renderToStaticMarkup(
-      createElement(AdapterProfileDetailDialog, {
-        profile,
-        bridgeStatus: runningStatus(profile.id),
-        statusUnavailable: false,
-        entries: [
+    const markup = renderDetail({
+      profile,
+      bridgeStatus: runningStatus(profile.id),
+      statusUnavailable: false,
+      entries: [
+        {
+          key: 'provider:kimi-1',
+          source: 'provider',
+          kind: 'apikey',
+          id: 'kimi-1',
+          agentId: 'kimi',
+          title: 'Kimi Code 会员',
+          subtitle: '已配置',
+          isCurrent: true,
+          authStatus: 'valid',
+          authHealth: 'configured',
+          sortKey: '',
+        },
+        {
+          key: 'account:kimi-stale',
+          source: 'account',
+          kind: 'apikey',
+          id: 'kimi-stale',
+          agentId: 'kimi',
+          title: 'Kimi 会员（失效号）',
+          subtitle: '需要重新登录',
+          isCurrent: false,
+          authStatus: 'expired',
+          authHealth: 'needs_login',
+          identityLabel: 'Kimi 会员（失效号）',
+          sortKey: '',
+        },
+      ],
+      surfaceGroups: [{
+        surface: 'kimi-code-membership',
+        credentialClass: 'api_key',
+        members: [
           {
-            key: 'provider:kimi-1',
-            source: 'provider',
-            kind: 'apikey',
-            id: 'kimi-1',
+            ticketId: 'account:kimi-stale',
+            sourceKind: 'account',
+            sourceId: 'kimi-stale',
             agentId: 'kimi',
-            title: 'Kimi Code 会员',
-            subtitle: '已配置',
-            isCurrent: true,
-            authStatus: 'valid',
-            authHealth: 'configured',
-            sortKey: '',
+            label: 'Kimi 会员（失效号）',
+            health: 'needs_login',
           },
           {
-            key: 'account:kimi-stale',
-            source: 'account',
-            kind: 'apikey',
-            id: 'kimi-stale',
+            ticketId: 'provider:kimi-1',
+            sourceKind: 'provider',
+            sourceId: 'kimi-1',
             agentId: 'kimi',
-            title: 'Kimi 会员（失效号）',
-            subtitle: '需要重新登录',
-            isCurrent: false,
-            authStatus: 'expired',
-            authHealth: 'needs_login',
-            identityLabel: 'Kimi 会员（失效号）',
-            sortKey: '',
+            label: 'Kimi Code 会员',
+            health: 'renewable',
           },
         ],
-        surfaceGroups: [{
-          surface: 'kimi-code-membership',
-          credentialClass: 'api_key',
-          members: [
-            {
-              ticketId: 'account:kimi-stale',
-              sourceKind: 'account',
-              sourceId: 'kimi-stale',
-              agentId: 'kimi',
-              label: 'Kimi 会员（失效号）',
-              health: 'needs_login',
-            },
-            {
-              ticketId: 'provider:kimi-1',
-              sourceKind: 'provider',
-              sourceId: 'kimi-1',
-              agentId: 'kimi',
-              label: 'Kimi Code 会员',
-              health: 'renewable',
-            },
-          ],
-        }],
-        busy: false,
-        error: null,
-        onClose: vi.fn(),
-        onSetAutoStart: vi.fn(),
-        onRequestRemove: vi.fn(),
-      }),
-    );
+      }],
+      busy: false,
+      error: null,
+      onClose: vi.fn(),
+      onSetAutoStart: vi.fn(),
+      onRequestRemove: vi.fn(),
+    });
     expect(markup).toContain('同一类登录');
     expect(markup).toContain('Kimi Code 会员');
     expect(markup).toContain('Kimi 会员（失效号）');
