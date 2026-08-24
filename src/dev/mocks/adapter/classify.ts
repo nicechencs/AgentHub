@@ -40,7 +40,6 @@ export function classify(
       tag?.toLowerCase() === 'openai'
       || tag?.toLowerCase() === 'openai-api'
       || tag?.toLowerCase() === 'openai-compat'
-      || tag?.toLowerCase() === 'openai-compatible'
       || tag?.toLowerCase() === 'openrouter'
       || config.toLowerCase().includes(OPENAI_API_ENDPOINT_NEEDLE)
       || config.toLowerCase().includes('openrouter.ai')
@@ -106,7 +105,6 @@ export function classify(
     && (explicitProvider?.toLowerCase() === 'openai'
       || explicitProvider?.toLowerCase() === 'openai-api'
       || explicitProvider?.toLowerCase() === 'openai-compat'
-      || explicitProvider?.toLowerCase() === 'openai-compatible'
       || explicitProvider?.toLowerCase() === 'openrouter'
       || credentialsText.toLowerCase().includes(OPENAI_API_ENDPOINT_NEEDLE)
       || credentialsText.toLowerCase().includes('openrouter.ai')
