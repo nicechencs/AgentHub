@@ -239,8 +239,9 @@ export function readCreateRouteCapabilities(configText: string | undefined): {
           if (record.target !== 'claude' && record.target !== 'codex' && record.target !== 'grok') {
             return [];
           }
+          const target: CreateRouteTarget = record.target;
           return [{
-            target: record.target,
+            target,
             enabled: record.enabled !== false,
             url: typeof record.url === 'string' ? record.url : '',
           }];

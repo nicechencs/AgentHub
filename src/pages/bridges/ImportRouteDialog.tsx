@@ -81,7 +81,7 @@ export function ImportRouteDialog({
             <ul className="space-y-1">
               {entries.map((entry) => (
                 <li key={entry.key}>
-                  <label className="flex items-start gap-2 rounded-md border border-border p-2 text-sm">
+                  <label className="flex items-start gap-2 rounded-card border border-border p-2 text-sm">
                     <input
                       type="radio"
                       name="import-login"
