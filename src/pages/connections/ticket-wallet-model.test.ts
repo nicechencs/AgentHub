@@ -476,6 +476,86 @@ describe('ticket detail fields', () => {
     expect(labels).not.toContain('Endpoint');
   });
 
+  it('always shows 端点 / 主机 / 协议 for custom API Key, even when speaks is empty', () => {
+    const { advanced } = buildTicketDetailFields(
+      ticket({
+        id: 'provider:unk-1',
+        sourceId: 'unk-1',
+        agentId: 'claude',
+        label: '自定义中转',
+        surface: 'unknown',
+        credentialClass: 'api_key',
+        speaks: [],
+      }),
+      {
+        endpointMode: 'custom',
+        endpointHost: 'https://relay.example.com/v1',
+      },
+    );
+    expect(advanced).toEqual([
+      { label: '端点', value: '自定义' },
+      { label: '主机', value: 'relay.example.com', mono: true },
+      { label: '协议', value: '未识别' },
+    ]);
+  });
+
+  it('keeps OpenRouter source protocol openai-chat and does not relabel it anthropic-messages', () => {
+    const { advanced } = buildTicketDetailFields(
+      ticket({
+        id: 'provider:or-1',
+        sourceId: 'or-1',
+        agentId: 'claude',
+        label: 'OpenRouter',
+        surface: 'unknown',
+        credentialClass: 'api_key',
+        speaks: ['openai-chat'],
+      }),
+      {
+        endpointMode: 'custom',
+        endpointHost: 'https://openrouter.ai/api/v1',
+      },
+    );
+    expect(advanced).toEqual(expect.arrayContaining([
+      { label: '端点', value: '自定义' },
+      { label: '主机', value: 'openrouter.ai', mono: true },
+      { label: '协议', value: 'openai-chat' },
+    ]));
+    expect(advanced.map((field) => field.value).join(' ')).not.toContain('anthropic-messages');
+  });
+
+  it('adds Claude Agent-facing Messages surface when this login is 本机路由 to Claude', () => {
+    const { advanced } = buildTicketDetailFields(
+      ticket({
+        id: 'provider:or-1',
+        sourceId: 'or-1',
+        agentId: 'claude',
+        label: 'OpenRouter',
+        surface: 'unknown',
+        credentialClass: 'api_key',
+        speaks: ['openai-chat'],
+      }),
+      {
+        endpointMode: 'custom',
+        endpointHost: 'https://openrouter.ai/api/v1',
+      },
+      undefined,
+      [{
+        ticketId: 'provider:or-1',
+        agentId: 'claude',
+        route: 'bridge',
+        active: true,
+        profileId: 'p-or',
+        bridge: { port: 43121, running: true },
+      }],
+    );
+    expect(advanced).toEqual(expect.arrayContaining([
+      { label: '协议', value: 'openai-chat' },
+      { label: '本机路由', value: 'Messages /v1/messages', mono: true },
+    ]));
+    const labels = advanced.map((field) => field.label).join(' ');
+    expect(labels).not.toMatch(/票|钱包|投影|协议桥/);
+  });
+
   it('humanizes login health without 未验证', () => {
     expect(humanizeTicketAuthLabel('可续期·未验证')).toBe('可续期');
     expect(humanizeTicketAuthLabel('已配置·未验证')).toBe('已配置');
