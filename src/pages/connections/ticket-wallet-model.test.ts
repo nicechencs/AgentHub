@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 import { agentDisplayName } from '@/config/agents';
 import type { Account, Provider } from '@/lib/types';
-import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
+import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import {
   activeBindingForAgent,
   buildTicketAddMenu,
@@ -384,6 +384,21 @@ describe('buildTicketWalletRows', () => {
   });
 });
 
+function bridgeBinding(
+  ticketId: string,
+  agentId: BindingView['agentId'],
+  profileId = 'p-or',
+): BindingView {
+  return {
+    ticketId,
+    agentId,
+    route: 'bridge',
+    active: true,
+    profileId,
+    bridge: { port: 43121, running: true },
+  };
+}
+
 function ticket(partial: Partial<TicketView> & Pick<TicketView, 'id'>): TicketView {
   return {
     sourceKind: 'provider',
@@ -564,14 +579,7 @@ describe('ticket detail fields', () => {
         endpointHost: 'https://openrouter.ai/api/v1',
       },
       undefined,
-      [{
-        ticketId: 'provider:or-1',
-        agentId: 'claude',
-        route: 'bridge',
-        active: true,
-        profileId: 'p-or',
-        bridge: { port: 43121, running: true },
-      }],
+      [bridgeBinding('provider:or-1', 'claude')],
     );
     expect(advanced).toEqual(expect.arrayContaining([
       { label: '协议', value: 'openai-chat' },
@@ -579,6 +587,104 @@ describe('ticket detail fields', () => {
     ]));
     const labels = advanced.map((field) => field.label).join(' ');
     expect(labels).not.toMatch(/票|钱包|投影|协议桥/);
+  });
+
+  it('adds Codex / Grok Responses and Kimi Chat Completions surfaces for 本机路由', () => {
+    const extras = {
+      endpointMode: 'custom' as const,
+      endpointHost: 'https://openrouter.ai/api/v1',
+    };
+    expect(buildTicketDetailFields(
+      ticket({ id: 'provider:or-codex', sourceId: 'or-codex', agentId: 'codex', speaks: ['openai-chat'] }),
+      extras,
+      undefined,
+      [bridgeBinding('provider:or-codex', 'codex')],
+    ).advanced).toEqual(expect.arrayContaining([
+      { label: '本机路由', value: 'Responses /v1/responses', mono: true },
+    ]));
+    expect(buildTicketDetailFields(
+      ticket({ id: 'provider:or-grok', sourceId: 'or-grok', agentId: 'grok', speaks: ['openai-chat'] }),
+      extras,
+      undefined,
+      [bridgeBinding('provider:or-grok', 'grok')],
+    ).advanced).toEqual(expect.arrayContaining([
+      { label: '本机路由', value: 'Responses /v1/responses', mono: true },
+    ]));
+    expect(buildTicketDetailFields(
+      ticket({ id: 'provider:or-kimi', sourceId: 'or-kimi', agentId: 'kimi', speaks: ['openai-chat'] }),
+      extras,
+      undefined,
+      [bridgeBinding('provider:or-kimi', 'kimi')],
+    ).advanced).toEqual(expect.arrayContaining([
+      { label: '本机路由', value: 'Chat Completions /v1/chat/completions', mono: true },
+    ]));
+  });
+
+  it('joins distinct 本机路由 surfaces and still shows one for official OAuth', () => {
+    const { advanced: mixed } = buildTicketDetailFields(
+      ticket({
+        id: 'provider:or-multi',
+        sourceId: 'or-multi',
+        agentId: 'claude',
+        speaks: ['openai-chat'],
+      }),
+      { endpointMode: 'custom', endpointHost: 'https://openrouter.ai/api/v1' },
+      undefined,
+      [
+        bridgeBinding('provider:or-multi', 'claude'),
+        bridgeBinding('provider:or-multi', 'codex', 'p-or-codex'),
+      ],
+    );
+    expect(mixed).toEqual(expect.arrayContaining([
+      { label: '本机路由', value: 'Messages /v1/messages · Responses /v1/responses', mono: true },
+    ]));
+
+    const { advanced: oauth } = buildTicketDetailFields(
+      ticket({
+        id: 'account:oauth-codex',
+        sourceKind: 'account',
+        sourceId: 'oauth-codex',
+        agentId: 'codex',
+        label: 'me@example.com',
+        surface: 'codex-chatgpt-subscription',
+        credentialClass: 'oauth',
+        speaks: ['openai-responses'],
+      }),
+      { identity: 'me@example.com', endpointMode: 'official' },
+      undefined,
+      [bridgeBinding('account:oauth-codex', 'kimi')],
+    );
+    expect(oauth).toEqual([
+      { label: '本机路由', value: 'Chat Completions /v1/chat/completions', mono: true },
+    ]);
+  });
+
+  it('does not add 本机路由 for reshape or native bindings', () => {
+    const extras = {
+      endpointMode: 'custom' as const,
+      endpointHost: 'https://relay.example.com/v1',
+    };
+    const { advanced } = buildTicketDetailFields(
+      ticket({ id: 'provider:kimi-reshape', sourceId: 'kimi-reshape' }),
+      extras,
+      undefined,
+      [{
+        ticketId: 'provider:kimi-reshape',
+        agentId: 'claude',
+        route: 'reshape',
+        active: true,
+        profileId: 'p-reshape',
+        bridge: null,
+      }, {
+        ticketId: 'provider:kimi-reshape',
+        agentId: 'kimi',
+        route: 'native',
+        active: false,
+        profileId: null,
+        bridge: null,
+      }],
+    );
+    expect(advanced.map((field) => field.label)).not.toContain('本机路由');
   });
 
   it('humanizes login health without 未验证', () => {
