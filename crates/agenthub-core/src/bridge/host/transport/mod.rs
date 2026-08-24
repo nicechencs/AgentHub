@@ -552,7 +552,10 @@ fn overwrite_configured_model_with(
         .map(str::trim)
         .unwrap_or("");
     if !request_model.is_empty() {
-        if listed.iter().any(|item| item.eq_ignore_ascii_case(request_model)) {
+        if listed
+            .iter()
+            .any(|item| item.eq_ignore_ascii_case(request_model))
+        {
             return;
         }
         if keep_request_model {

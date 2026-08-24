@@ -334,15 +334,18 @@ pub fn is_custom_openai_compat_url(url: &str) -> bool {
 
 /// First usable OpenAI-compat base URL in a settings / credentials blob.
 pub(crate) fn openai_compat_base_url(blob: &Value) -> Option<String> {
-    first_http_url(blob, &[
-        "/baseURL",
-        "/baseUrl",
-        "/base_url",
-        "/env/OPENAI_BASE_URL",
-        "/env/OPENAI_API_BASE",
-        "/api_base",
-        "/apiBase",
-    ])
+    first_http_url(
+        blob,
+        &[
+            "/baseURL",
+            "/baseUrl",
+            "/base_url",
+            "/env/OPENAI_BASE_URL",
+            "/env/OPENAI_API_BASE",
+            "/api_base",
+            "/apiBase",
+        ],
+    )
 }
 
 /// Custom (non-official, non-other-vendor) OpenAI-compat URL, if any.
@@ -413,8 +416,15 @@ pub(crate) fn openai_compat_listed_models(blob: &Value) -> Vec<String> {
     let mut listed = Vec::new();
     if let Some(items) = blob.get("listedModels").and_then(Value::as_array) {
         for item in items {
-            if let Some(model) = item.as_str().map(str::trim).filter(|value| !value.is_empty()) {
-                if !listed.iter().any(|existing: &String| existing.eq_ignore_ascii_case(model)) {
+            if let Some(model) = item
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                if !listed
+                    .iter()
+                    .any(|existing: &String| existing.eq_ignore_ascii_case(model))
+                {
                     listed.push(model.to_owned());
                 }
             }
@@ -431,9 +441,14 @@ pub(crate) fn openai_compat_endpoint_url(blob: &Value, target: &str) -> Option<S
         if !target_ok || !enabled {
             continue;
         }
-        if let Some(url) = row.get("url").and_then(Value::as_str).map(str::trim).filter(|value| {
-            !value.is_empty() && (value.starts_with("http://") || value.starts_with("https://"))
-        }) {
+        if let Some(url) = row
+            .get("url")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| {
+                !value.is_empty() && (value.starts_with("http://") || value.starts_with("https://"))
+            })
+        {
             return Some(url.to_owned());
         }
     }
@@ -448,7 +463,10 @@ pub(crate) fn looks_like_anthropic_messages_url(url: &str) -> bool {
 pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
     if let Some(listed) = blob.get("listedModels").and_then(Value::as_array) {
         let first = listed.iter().find_map(|item| {
-            item.as_str().map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned)
+            item.as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
         });
         if first.is_some() {
             return first;

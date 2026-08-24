@@ -7,8 +7,8 @@ use crate::bridge::protocol::responses::to_kimi_chat_request;
 use super::super::admission::AdmittedRequest;
 use super::super::surface::DownstreamSurface;
 use super::{
-    models_surface_unreachable, overwrite_configured_model_with, parse_bridge_request, RecoveryPolicy,
-    UpstreamDecode, UpstreamPrepare, UpstreamTransport,
+    models_surface_unreachable, overwrite_configured_model_with, parse_bridge_request,
+    RecoveryPolicy, UpstreamDecode, UpstreamPrepare, UpstreamTransport,
 };
 
 pub(super) struct OpenAiChatTransport;
