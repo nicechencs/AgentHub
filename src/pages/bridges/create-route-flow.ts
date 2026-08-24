@@ -151,6 +151,10 @@ export function defaultCreateRouteEndpoints(vendor: CreateRouteVendorId): Create
   return [...vendorById(vendor).enabled];
 }
 
+export function defaultCreateRouteName(vendorLabel: string, alternateLabel: string): string {
+  return `${vendorLabel.trim()} ${alternateLabel.trim()}`.replace(/\s+/g, ' ').trim();
+}
+
 export function endpointUrlFor(
   vendor: CreateRouteVendorId,
   target: CreateRouteTarget,

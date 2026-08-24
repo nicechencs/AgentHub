@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +32,7 @@ export function ImportRouteDialog({
   const picked = entries.find((entry) => entry.key === selected) ?? null;
 
   const submit = async () => {
+    if (busy) return;
     if (!picked) {
       setError(t('routes.import.required'));
       return;
@@ -69,6 +71,7 @@ export function ImportRouteDialog({
         className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden"
         onPointerDownOutside={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
+        onFocusOutside={(event) => event.preventDefault()}
       >
         <DialogHeader className="shrink-0">
           <DialogTitle>{t('routes.import.title')}</DialogTitle>
@@ -76,15 +79,21 @@ export function ImportRouteDialog({
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
           {entries.length === 0 ? (
-            <p className="text-sm text-muted">{t('routes.import.empty')}</p>
+            <p className="text-sm text-muted">
+              {t('routes.import.empty')}{' '}
+              <Link to="/connections" className="text-accent underline-offset-2 hover:underline">
+                {t('nav.connections')}
+              </Link>
+            </p>
           ) : (
             <ul className="space-y-1">
               {entries.map((entry) => (
                 <li key={entry.key}>
-                  <label className="flex items-start gap-2 rounded-card border border-border p-2 text-sm">
+                  <label className="flex cursor-pointer items-start gap-2 rounded-card border border-border p-2 text-sm">
                     <input
                       type="radio"
                       name="import-login"
+                      className="mt-0.5"
                       checked={selected === entry.key}
                       onChange={() => setSelected(entry.key)}
                     />
@@ -100,10 +109,10 @@ export function ImportRouteDialog({
           {error ? <p className="text-sm text-danger">{error}</p> : null}
         </div>
         <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={() => void submit()} disabled={busy || !picked}>
+          <Button type="button" onClick={() => void submit()} disabled={busy || !picked}>
             {busy ? t('routes.import.submitting') : t('routes.import.submit')}
           </Button>
         </DialogFooter>
