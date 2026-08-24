@@ -26,6 +26,9 @@ import {
   applyLocalRouteToAgents,
   submitCreateRoute,
   submitImportRoute,
+  endpointUrlFor,
+  upstreamEndpointPathForTarget,
+  upstreamEndpointPathForUrl,
   vendorById,
 } from './create-route-flow';
 
@@ -452,5 +455,47 @@ describe('importable vs already routed logins', () => {
     const qq = { source: 'account' as const, id: 'acc-qq', title: '41375197@qq.com' };
     expect(importableConnectionEntries([gmail, qq], alreadyRoutedSourceKeys(profiles), profiles).map((row) => row.id))
       .toEqual(['acc-gmail', 'acc-qq']);
+  });
+
+  it('infers upstream API paths from provider URLs', () => {
+    expect(upstreamEndpointPathForUrl('https://openrouter.ai/api/v1')).toBe('/v1/chat/completions');
+    expect(upstreamEndpointPathForUrl('https://open.bigmodel.cn/api/anthropic')).toBe('/v1/messages');
+    expect(upstreamEndpointPathForUrl('https://api.x.ai/v1')).toBe('/v1/chat/completions');
+    expect(upstreamEndpointPathForTarget('glm', 'claude', 'https://open.bigmodel.cn/api/coding/paas/v4'))
+      .toBe('/v1/messages');
+    expect(upstreamEndpointPathForTarget('glm', 'codex', 'https://open.bigmodel.cn/api/coding/paas/v4'))
+      .toBe('/v1/chat/completions');
+  });
+
+  it('honours per-client upstream URL overrides when building endpoints', () => {
+    const rows = buildCreateRouteEndpoints(
+      'custom',
+      'https://relay.example.com/v1',
+      ['claude', 'codex'],
+      {
+        claude: 'https://relay.example.com/anthropic',
+      },
+    );
+    expect(rows).toEqual([
+      { target: 'claude', enabled: true, url: 'https://relay.example.com/anthropic' },
+      { target: 'codex', enabled: true, url: 'https://relay.example.com/v1' },
+      { target: 'grok', enabled: false, url: 'https://relay.example.com/v1' },
+    ]);
+    expect(endpointUrlFor('custom', 'claude', 'https://relay.example.com/v1', {
+      claude: 'https://relay.example.com/anthropic',
+    })).toBe('https://relay.example.com/anthropic');
+  });
+
+  it('persists per-client upstream URLs in the provider draft', () => {
+    const draft = createRouteProviderDraft(input({
+      vendor: 'custom',
+      endpointUrls: { claude: 'https://relay.example.com/anthropic' },
+    }));
+    const parsed = JSON.parse(draft.configText);
+    expect(parsed.endpoints).toEqual([
+      { target: 'claude', enabled: true, url: 'https://relay.example.com/anthropic' },
+      { target: 'codex', enabled: true, url: DEFAULT_CREATE_ROUTE_URL },
+      { target: 'grok', enabled: true, url: DEFAULT_CREATE_ROUTE_URL },
+    ]);
   });
 });

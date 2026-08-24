@@ -176,6 +176,23 @@ describe('editRouteProviderDraft', () => {
     expect(draft.configText).toBe(JSON.stringify(parsed, null, 2));
   });
 
+  it('seeds endpointUrls from stored per-client upstream URLs', () => {
+    const form = editRouteFormFromProvider(provider({
+      configText: JSON.stringify({
+        baseURL: 'https://openrouter.ai/api/v1',
+        vendor: 'openrouter',
+        endpoints: [
+          { target: 'claude', enabled: true, url: 'https://open.bigmodel.cn/api/anthropic' },
+          { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
+        ],
+      }),
+    }));
+    expect(form.endpointUrls).toEqual({
+      claude: 'https://open.bigmodel.cn/api/anthropic',
+      codex: 'https://openrouter.ai/api/v1',
+    });
+  });
+
   it('rewrites endpoints to the new selection and drops a stale model', () => {
     const draft = editRouteProviderDraft(
       provider(),
@@ -189,6 +206,21 @@ describe('editRouteProviderDraft', () => {
     expect(parsed.baseUrl).toBe('https://openrouter.ai/api/v1');
     expect(parsed.listedModels).toEqual([]);
     expect('model' in parsed).toBe(false);
+  });
+
+  it('persists per-client upstream URL overrides on edit', () => {
+    const draft = editRouteProviderDraft(
+      provider(),
+      editInput({
+        endpoints: ['claude', 'grok'],
+        endpointUrls: { claude: 'https://open.bigmodel.cn/api/anthropic' },
+      }),
+    );
+    const parsed = JSON.parse(draft.configText);
+    expect(parsed.endpoints).toEqual([
+      { target: 'claude', enabled: true, url: 'https://open.bigmodel.cn/api/anthropic' },
+      { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
+    ]);
   });
 });
 
