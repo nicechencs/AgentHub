@@ -24,6 +24,7 @@ import {
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
+import { filterManageNavItems } from '@/components/layout/sidebar-nav';
 import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
@@ -149,7 +150,7 @@ function agentDotLabel(
 
 /** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
 export function Sidebar() {
-  const { collapsed, toggle } = useSidebar();
+  const { collapsed, toggle, routesNavVisible } = useSidebar();
   const { t } = useI18n();
   const { statuses: agents } = useAgentStatusesOptional();
   const appUpdate = useAppUpdateAvailable();
@@ -175,6 +176,10 @@ export function Sidebar() {
     );
 
   const installedMetas = installedCatalogAgents(AGENTS, agents);
+  const visibleManageNav = React.useMemo(
+    () => filterManageNavItems(NAV_MANAGE, routesNavVisible),
+    [routesNavVisible],
+  );
 
   return (
     <aside
@@ -242,7 +247,7 @@ export function Sidebar() {
           ))}
         </NavGroup>
         <NavGroup label={t('nav.manage')} collapsed={collapsed} className="mt-auto pb-2">
-          {NAV_MANAGE.map((item) => (
+          {visibleManageNav.map((item) => (
             <SidebarNavLink
               key={item.to}
               item={item}
