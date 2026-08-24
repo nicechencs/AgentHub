@@ -191,7 +191,6 @@ function RouteDetailBody({
               </div>
             )}
           </div>
-          <p className="text-meta text-muted">{t('routes.graph.mappingHint')}</p>
           <p className="text-meta text-muted">{routeModelsSummary(capabilities.models, t)}</p>
         </section>
 
@@ -251,10 +250,7 @@ function RouteDetailBody({
       <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         {isBridge ? (
           <label className="flex min-w-0 flex-1 items-center justify-between gap-2 text-sm sm:max-w-xs">
-            <span className="min-w-0">
-              <span className="block">{t('routes.autoStart')}</span>
-              <span className="block text-xs text-muted">{t('routes.autoStartHint')}</span>
-            </span>
+            <span className="min-w-0">{t('routes.autoStart')}</span>
             <Switch
               checked={profile.autoStart}
               disabled={busy || targetHidden}
