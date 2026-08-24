@@ -741,7 +741,7 @@ export const zh = {
       localTitle: "本机入口",
       upstreamBase: "上游",
       localBase: "本机入口",
-      mappingTitle: "端点映射",
+      mappingTitle: "上游和本机",
       agentColumn: "客户端",
       upstreamColumn: "上游端点",
       convertColumn: "转换",
