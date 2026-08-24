@@ -1,4 +1,5 @@
 use super::*;
+use crate::models::{AgentId, Provider};
 
 const LEFTOVER: &str = r#"model_provider = "agenthub_grok_bridge"
 model = "grok-4"
@@ -204,6 +205,48 @@ base_url = "http://127.0.0.1:43121/v1"
 }
 
 #[test]
+fn active_openai_provider_is_not_leftover_when_dead_bridge_table_remains() {
+    let mixed = r#"model_provider = "OpenAI"
+model = "gpt-5.5"
+
+[model_providers.OpenAI]
+name = "OpenAI"
+base_url = "https://mytokens.cc/v1"
+
+[model_providers.agenthub_grok_bridge]
+base_url = "http://127.0.0.1:43121/v1"
+"#;
+    assert!(toml_is_bridge_leftover(mixed));
+    assert!(!toml_active_provider_is_bridge_leftover(mixed));
+    let leftover_row = Provider {
+        id: "codex-live-mixed".into(),
+        agent_id: AgentId::Codex,
+        name: "OpenAI".into(),
+        settings_config: serde_json::json!({
+            "format": "toml",
+            "content": mixed,
+        }),
+        meta: serde_json::json!({ "source": "live" }),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    };
+    assert!(!provider_is_bridge_leftover(&leftover_row));
+}
+
+#[test]
+fn live_import_hint_uses_provider_name_and_model() {
+    let hint = crate::integrations::agents::codex::live_import_hint(&serde_json::json!({
+        "format": "toml",
+        "content": "model_provider = \"OpenAI\"\nmodel = \"gpt-5.5\"\n\n[model_providers.OpenAI]\nname = \"OpenAI\"\nbase_url = \"https://mytokens.cc/v1\"\n",
+    }))
+    .expect("hint");
+    assert!(hint.label.contains("OpenAI"));
+    assert!(hint.label.contains("gpt-5.5"));
+    assert_eq!(hint.preset, "openai-compat");
+}
+
+#[test]
 fn live_config_is_bridge_leftover_reads_codex_home() {
     let _lock = super::lock_codex_home();
     let dir = tempfile::tempdir().unwrap();
@@ -222,4 +265,16 @@ fn live_config_is_bridge_leftover_reads_codex_home() {
     }
     assert!(leftover);
     assert!(!clean);
+}
+
+#[test]
+fn live_import_hint_falls_back_to_host_when_provider_name_missing() {
+    let hint = crate::integrations::agents::codex::live_import_hint(&serde_json::json!({
+        "format": "toml",
+        "content": "model_provider = \"custom\"\nmodel = \"gpt-5.5\"\n\n[model_providers.custom]\nbase_url = \"https://mytokens.cc/v1\"\n",
+    }))
+    .expect("hint");
+    assert!(hint.label.contains("mytokens.cc"), "{}", hint.label);
+    assert!(hint.label.contains("gpt-5.5"), "{}", hint.label);
+    assert_eq!(hint.preset, "openai-compat");
 }

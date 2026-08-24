@@ -31,3 +31,4 @@ pub fn register(ctx: &mut IntegrationContext<'_>) {
 }
 
 pub(crate) use auth::write_api_key_auth;
+pub(crate) use config::live_import_hint;

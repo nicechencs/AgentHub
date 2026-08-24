@@ -65,6 +65,8 @@ export interface AuthState {
   alsoPresent?: string[] | null;
   /** True when live files are AgentHub's local-route write, not a user login. */
   isAdapterProjection?: boolean | null;
+  /** SHA-256 of the live API key. Never the raw secret. */
+  secretHash?: string | null;
 }
 
 /** `alsoPresent` marker for the same fact when `isAdapterProjection` is omitted. */
@@ -83,6 +85,8 @@ export interface LiveAuthProbe {
   /** Other live credential families besides `kind` (e.g. `["oauth"]` when kind is api_key). */
   alsoPresent?: string[] | null;
   isAdapterProjection?: boolean;
+  /** SHA-256 of the live API key. Never the raw secret. */
+  secretHash?: string | null;
 }
 
 function normalizeAlsoPresent(raw: unknown): string[] {
@@ -120,6 +124,9 @@ export function normalizeAuthState(
       isAdapterProjection: raw.isAdapterProjection,
       alsoPresent,
     }),
+    secretHash: typeof raw.secretHash === 'string' && raw.secretHash.trim()
+      ? raw.secretHash.trim()
+      : null,
   };
 }
 

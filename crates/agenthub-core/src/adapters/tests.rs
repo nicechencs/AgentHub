@@ -1274,6 +1274,12 @@ fn codex_api_key_only_leaves_also_present_empty() {
     assert_eq!(state.kind.as_deref(), Some("api_key"));
     assert_also_present_empty(&state);
     assert_auth_state_hides_secrets(&state, &["sk-codex-only-fixture"]);
+    let hash = state.secret_hash.expect("live api key hash");
+    assert_eq!(hash.len(), 64);
+    assert_eq!(
+        hash,
+        crate::utils::redact::secret_sha256_hex("sk-codex-only-fixture")
+    );
 }
 
 #[test]

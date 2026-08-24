@@ -170,6 +170,7 @@ impl AgentAdapter for WorkBuddyAdapter {
                 source: None,
                 revision: None,
                 also_present: Vec::new(),
+                secret_hash: None,
             });
         };
         if !path.is_file() {
@@ -182,6 +183,7 @@ impl AgentAdapter for WorkBuddyAdapter {
                 source: Some("workbuddy:desktop-login-metadata".into()),
                 revision: None,
                 also_present: Vec::new(),
+                secret_hash: None,
             });
         }
         let body = match std::fs::read_to_string(&path)
@@ -199,6 +201,7 @@ impl AgentAdapter for WorkBuddyAdapter {
                     source: Some("workbuddy:desktop-login-metadata".into()),
                     revision: auth_file_revision(&path),
                     also_present: Vec::new(),
+                    secret_hash: None,
                 });
             }
         };
@@ -213,6 +216,7 @@ impl AgentAdapter for WorkBuddyAdapter {
                 source: Some("workbuddy:desktop-login-metadata".into()),
                 revision: auth_file_revision(&path),
                 also_present: Vec::new(),
+                secret_hash: None,
             });
         };
         let health =
@@ -236,6 +240,7 @@ impl AgentAdapter for WorkBuddyAdapter {
             source: Some("workbuddy:desktop-login-metadata".into()),
             revision: auth_file_revision(&path),
             also_present: Vec::new(),
+            secret_hash: None,
         })
     }
 
