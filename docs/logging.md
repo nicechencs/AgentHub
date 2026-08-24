@@ -5,7 +5,11 @@
 > 配置契约交叉引用：[cli-and-config.md](cli-and-config.md) · [architecture.md](architecture.md)  
 > Adapter 字段扩展：[adapter-design.md](adapter-design.md) §8（级别与必打事件以本文为准）
 
+> 本机路由进了哪条路径、转没转：见 [local-route-endpoints.md](local-route-endpoints.md)。
+
 当前版本：**v1.1**（2026-08-21）。相对 v1.0：补上检索口径、必打事件、脱敏缺口、前端边界，以及默认可排障的分期补点。底座（按日文件、settings、helper）仍按 v1.0 已落地部分执行。
+
+2026-08-24 补点（仍属 v1.1）：本机面不匹配 404 打 `code=surface_mismatch`；请求开始 debug；转换后 debug `from`/`to`；模型切换带 `request_id`；名单拒可用 `listed_models_reject` 或 `model_unavailable` 加 `listed`；流式 translator/SSE 失败 warn；`header_timeout` / 连接失败带 `request_id`。本机三条入口见 [local-route-endpoints.md](local-route-endpoints.md)。
 
 ---
 
@@ -110,7 +114,9 @@ flowchart LR
 | 上游 429 | warn | `upstream_status` |
 | 上游 4xx 策略拒（如 store/stream） | warn | `upstream_status` + `upstream_detail` |
 | 上游 5xx / 连接失败 / header 超时 / 非流式超时 | warn | `upstream_status` / `header_timeout` / `unavailable` / `upstream_timeout` |
-| 流式 idle / 截断 / 非法 SSE / 超限 | warn | `stream_idle_timeout` 等 |
+| 流式 idle / 截断 / 非法 SSE / 超限 / translator | warn | `stream_error` / `stream_idle_timeout` 等 |
+| 本机面与请求路径不匹配 | warn | `surface_mismatch` |
+| 模型不在名单或不被映射 | warn | `listed_models_reject` / `model_unavailable` |
 | 上游 401 且 reload 已换新 token 后仍 401，或无法 reload | **error** | `upstream_auth` |
 | 上游 JSON 译成本地协议失败 | **error** | `ProtocolError.code` |
 | apply / 写目标配置 / 补偿失败 | **error** | `adapter.*` |

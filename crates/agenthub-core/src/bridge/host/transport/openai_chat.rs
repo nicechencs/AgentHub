@@ -41,6 +41,7 @@ impl UpstreamTransport for OpenAiChatTransport {
                     &mut body,
                     admitted.state.upstream.model.as_deref(),
                     admitted.state.custom_openai,
+                    &admitted.state.listed_models,
                 );
                 Ok(UpstreamPrepare {
                     path: self.path(),

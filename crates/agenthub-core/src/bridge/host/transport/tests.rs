@@ -373,3 +373,23 @@ fn official_codex_responses_passthrough_strips_system_items() {
     assert!(user_text.contains("You are a coding agent."), "{user_text}");
     assert!(user_text.contains("hello"), "{user_text}");
 }
+
+#[test]
+fn anthropic_prepare_passthroughs_messages_surface() {
+    let body = json!({
+        "model": "claude-sonnet-4",
+        "max_tokens": 16,
+        "messages": [{"role": "user", "content": "hi"}]
+    });
+    let admitted = admitted(
+        BridgeUpstreamProtocol::AnthropicMessages,
+        BridgeLocalSurface::Messages,
+        body.clone(),
+    );
+    let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::AnthropicMessages)
+        .prepare(DownstreamSurface::Messages, &admitted)
+        .expect("messages prepare");
+    assert_eq!(prepared.path, "messages");
+    assert_eq!(prepared.body["model"], "claude-sonnet-4");
+    assert_eq!(prepared.body["max_tokens"], 16);
+}

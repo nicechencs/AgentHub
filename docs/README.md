@@ -9,6 +9,7 @@
 | 文档 | 内容 |
 |---|---|
 | [product-decisions.md](product-decisions.md) | 把已有登录接到另一个编程工具：三种接法、白话图、能接 / 接不上；后半是给实现的对照 |
+| [local-route-endpoints.md](local-route-endpoints.md) | **本机三条入口与转换**：Messages / Responses / Chat 怎么转到各家上游；白话图 |
 | [agenthub-plan.md](agenthub-plan.md) | 产品方案、决策、适配矩阵、模块、路线图、风险（当前 **v1.5**；含平台环境差异与 Adapter sidecar 目标决策） |
 | [architecture.md](architecture.md) | cargo workspace 目录、core/gui/cli 拆分、Service/Adapter；原则 12 按三路解释 `plan()` |
 | [hardcoding-governance.md](hardcoding-governance.md) | **硬编码治理**：安装 allowlist / 定价表 / 路径真源；分层策略与落地状态 |

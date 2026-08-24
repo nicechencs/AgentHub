@@ -225,7 +225,7 @@ describe('create-route-flow', () => {
     expect(isAlternateRouteRule('kimi-membership-to-codex-v1')).toBe(false);
   });
 
-  it('upserts one provider and binds one route', async () => {
+  it('upserts one provider and binds every checked client', async () => {
     const upsertProvider = vi.fn(async (provider: Provider) => provider);
     const planTicket = vi.fn(async (_ticket: string, agent: string) =>
       plan(agent as AdapterApplyPlan['targetAgentId']),
@@ -237,10 +237,10 @@ describe('create-route-flow', () => {
     const bound = await submitCreateRoute(input(), { upsertProvider, planTicket, bindTicket });
 
     expect(upsertProvider).toHaveBeenCalledOnce();
-    expect(planTicket).toHaveBeenCalledOnce();
-    expect(bindTicket).toHaveBeenCalledOnce();
-    expect(bound).toEqual(['claude']);
-    expect(planTicket.mock.calls[0]?.[1]).toBe('claude');
+    expect(planTicket).toHaveBeenCalledTimes(3);
+    expect(bindTicket).toHaveBeenCalledTimes(3);
+    expect(bound).toEqual(['claude', 'codex', 'grok']);
+    expect(bindTicket.mock.calls.map((call) => call[1])).toEqual(['claude', 'codex', 'grok']);
   });
 
   it('imports an existing login with one bind', async () => {

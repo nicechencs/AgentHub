@@ -409,6 +409,42 @@ fn first_http_url(value: &Value, pointers: &[&str]) -> Option<String> {
 }
 
 /// Optional model id pinned on a custom OpenAI-compat provider.
+pub(crate) fn openai_compat_listed_models(blob: &Value) -> Vec<String> {
+    let mut listed = Vec::new();
+    if let Some(items) = blob.get("listedModels").and_then(Value::as_array) {
+        for item in items {
+            if let Some(model) = item.as_str().map(str::trim).filter(|value| !value.is_empty()) {
+                if !listed.iter().any(|existing: &String| existing.eq_ignore_ascii_case(model)) {
+                    listed.push(model.to_owned());
+                }
+            }
+        }
+    }
+    listed
+}
+
+pub(crate) fn openai_compat_endpoint_url(blob: &Value, target: &str) -> Option<String> {
+    let rows = blob.get("endpoints").and_then(Value::as_array)?;
+    for row in rows {
+        let target_ok = row.get("target").and_then(Value::as_str) == Some(target);
+        let enabled = row.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+        if !target_ok || !enabled {
+            continue;
+        }
+        if let Some(url) = row.get("url").and_then(Value::as_str).map(str::trim).filter(|value| {
+            !value.is_empty() && (value.starts_with("http://") || value.starts_with("https://"))
+        }) {
+            return Some(url.to_owned());
+        }
+    }
+    None
+}
+
+pub(crate) fn looks_like_anthropic_messages_url(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    lower.contains("/anthropic") || lower.contains("api.anthropic.com")
+}
+
 pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
     if let Some(listed) = blob.get("listedModels").and_then(Value::as_array) {
         let first = listed.iter().find_map(|item| {
