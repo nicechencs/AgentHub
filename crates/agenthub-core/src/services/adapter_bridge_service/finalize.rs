@@ -229,11 +229,11 @@ impl AdapterBridgeService {
             self.resolve_upstream_auth(&rule, profile.source_kind, &profile.source_id)?;
         let (upstream_base_url, upstream_model, configured_listed_models, protocol) =
             super::prepare::openai_source_upstream(
-            self,
-            &rule,
-            profile.source_kind,
-            &profile.source_id,
-        );
+                self,
+                &rule,
+                profile.source_kind,
+                &profile.source_id,
+            );
         Ok(AdapterBridgeRestoreMaterial {
             material: AdapterBridgeRuntimeMaterial {
                 profile_id: profile.id.clone(),

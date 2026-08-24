@@ -73,7 +73,11 @@ pub(super) async fn handle_conversation(
             admitted.state = switched;
         }
         ModelSwitchOutcome::Unavailable => {
-            let listed_hit = admitted.state.listed_models.iter().any(|item| item.eq_ignore_ascii_case(model));
+            let listed_hit = admitted
+                .state
+                .listed_models
+                .iter()
+                .any(|item| item.eq_ignore_ascii_case(model));
             let listed_restricted = !admitted.state.listed_models.is_empty();
             let code = if listed_restricted && !listed_hit && !model.is_empty() {
                 "listed_models_reject"
