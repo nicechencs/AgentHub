@@ -94,7 +94,6 @@ function RouteDetailBody({
   busy,
   error,
   onClose,
-  onSetAutoStart: _onSetAutoStart,
   onRequestRemove,
   targetHidden,
 }: {
