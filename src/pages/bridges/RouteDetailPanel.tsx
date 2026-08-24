@@ -50,7 +50,7 @@ export function RouteDetailPanel({
   busy,
   error,
   onClose,
-  _onSetAutoStart,
+  onSetAutoStart: _onSetAutoStart,
   onRequestRemove,
   targetHidden = false,
 }: {
@@ -78,7 +78,6 @@ export function RouteDetailPanel({
         busy={busy}
         error={error}
         onClose={onClose}
-        onSetAutoStart={_onSetAutoStart}
         onRequestRemove={onRequestRemove}
         targetHidden={targetHidden}
       />
@@ -95,7 +94,7 @@ function RouteDetailBody({
   busy,
   error,
   onClose,
-  _onSetAutoStart,
+  onSetAutoStart: _onSetAutoStart,
   onRequestRemove,
   targetHidden,
 }: {
@@ -107,7 +106,6 @@ function RouteDetailBody({
   busy: boolean;
   error: unknown;
   onClose: () => void;
-  onSetAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove: (profile: AdapterProfile) => void;
   targetHidden: boolean;
 }) {
