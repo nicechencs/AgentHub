@@ -256,12 +256,10 @@ describe('Bridges page', () => {
     const markup = renderDetail({
       profile: { ...profile, targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' },
       bridgeStatus: runningStatus(profile.id),
-      statusUnavailable: false,
       entries: [openRouterEntry()],
       busy: false,
       error: null,
       onClose: vi.fn(),
-      onSetAutoStart: vi.fn(),
       onRequestRemove: vi.fn(),
     });
     expect(markup).toContain('上游和本机');
@@ -295,12 +293,10 @@ describe('Bridges page', () => {
     const markup = renderDetail({
       profile: { ...profile, targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' },
       bridgeStatus: runningStatus(profile.id),
-      statusUnavailable: false,
       entries: [entry],
       busy: false,
       error: null,
       onClose: vi.fn(),
-      onSetAutoStart: vi.fn(),
       onRequestRemove: vi.fn(),
     });
     expect(markup).toContain('接到');
@@ -317,12 +313,10 @@ describe('Bridges page', () => {
     const markup = renderDetail({
       profile,
       bridgeStatus: runningStatus(profile.id),
-      statusUnavailable: false,
       entries: [],
       busy: false,
       error: null,
       onClose: vi.fn(),
-      onSetAutoStart: vi.fn(),
       onRequestRemove: vi.fn(),
     });
     expect(markup).toContain('删除路由');

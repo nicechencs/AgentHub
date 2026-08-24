@@ -3,14 +3,7 @@ import { Link } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { DialogOrSide } from './dialog-or-side';
 import { agentDisplayName } from '@/config/agents';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
@@ -50,6 +43,7 @@ export function ImportRouteDialog({
   profiles,
   bindingProfileIds,
   onImported,
+  asPanel = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -57,6 +51,7 @@ export function ImportRouteDialog({
   profiles?: readonly (Pick<AdapterProfile, 'id' | 'sourceKind' | 'sourceId' | 'route' | 'generatedProviderId'> & { name?: string })[];
   bindingProfileIds?: ReadonlySet<string>;
   onImported: () => void;
+  asPanel?: boolean;
 }) {
   const { t } = useI18n();
   const [selected, setSelected] = useState<string | null>(null);
@@ -110,7 +105,8 @@ export function ImportRouteDialog({
   };
 
   return (
-    <Dialog
+    <DialogOrSide
+      asPanel={asPanel}
       open={open}
       onOpenChange={(next) => {
         if (busy) return;
@@ -121,18 +117,29 @@ export function ImportRouteDialog({
         }
         onOpenChange(next);
       }}
+      title={t('routes.import.title')}
+      description={t('routes.import.description')}
+      preventDismiss
+      footer={(
+        <>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" form="import-route-form" disabled={busy || !picked}>
+            {busy ? t('routes.import.submitting') : t('routes.import.submit')}
+          </Button>
+        </>
+      )}
     >
-      <DialogContent
-        className="flex max-h-[min(36rem,calc(100vh-2rem))] flex-col overflow-hidden"
-        onPointerDownOutside={(event) => event.preventDefault()}
-        onInteractOutside={(event) => event.preventDefault()}
-        onFocusOutside={(event) => event.preventDefault()}
+      <form
+        id="import-route-form"
+        className="flex min-h-0 flex-1 flex-col space-y-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (busy || !picked) return;
+          void submit();
+        }}
       >
-        <DialogHeader className="shrink-0">
-          <DialogTitle>{t('routes.import.title')}</DialogTitle>
-          <DialogDescription>{t('routes.import.description')}</DialogDescription>
-        </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
           {importable.length === 0 ? (
             <p className="text-sm text-muted">
               {t('routes.import.empty')}{' '}
@@ -204,16 +211,7 @@ export function ImportRouteDialog({
             </ul>
           )}
           {error ? <p className="text-sm text-danger">{error}</p> : null}
-        </div>
-        <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="button" onClick={() => void submit()} disabled={busy || !picked}>
-            {busy ? t('routes.import.submitting') : t('routes.import.submit')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </form>
+    </DialogOrSide>
   );
 }

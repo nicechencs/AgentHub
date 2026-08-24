@@ -9,7 +9,6 @@ import { Notice } from '@/components/shared/Notice';
 import { Button } from '@/components/ui/button';
 import { Boxes } from 'lucide-react';
 import {
-  setAdapterBridgeAutoStart,
   startAdapterBridge,
   stopAdapterBridge,
 } from '@/lib/api/adapter';
@@ -70,7 +69,6 @@ export default function BridgesPage() {
     reload,
     reloadProfiles,
     updateBridgeStatus,
-    updateProfile,
     removeProfile,
   } = useAdapterResources();
   const { hiddenIds } = useInstalledAgents();
@@ -130,20 +128,6 @@ export default function BridgesPage() {
     try {
       updateBridgeStatus(await stopAdapterBridge(profile.id));
       setStopConfirm(null);
-      reloadThenClearProfileErrors();
-    } catch (error) {
-      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
-    } finally {
-      setProfileBusy(profile.id, false);
-    }
-  };
-
-  const handleSetBridgeAutoStart = async (profile: AdapterProfile, autoStart: boolean) => {
-    if (hiddenTargetIds.has(profile.targetAgentId)) return;
-    setProfileBusy(profile.id, true);
-    clearProfileError(profile.id);
-    try {
-      updateProfile(await setAdapterBridgeAutoStart(profile.id, autoStart));
       reloadThenClearProfileErrors();
     } catch (error) {
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
@@ -236,7 +220,6 @@ export default function BridgesPage() {
     removingProfileId,
     onStartBridge: handleStartBridge,
     onRequestStopBridge: setStopConfirm,
-    onSetAutoStart: handleSetBridgeAutoStart,
     onRequestRemove: setRemoveConfirm,
     onRequestWrite: (profile: AdapterProfile, graph: RouteGraphView) => {
       setCreateOpen(false);
@@ -357,6 +340,7 @@ export default function BridgesPage() {
         onCreated={() => { void reload(); }}
       />
       <ImportRouteDialog
+        asPanel
         open={importOpen}
         onOpenChange={setImportOpen}
         entries={entries}
@@ -376,8 +360,8 @@ export default function BridgesPage() {
         hiddenTargetIds={hiddenTargetIds}
         onWritten={() => { void reload(); }}
       />
-      </div>
       <EditRouteDialog
+        asPanel
         open={Boolean(editTarget)}
         onOpenChange={(open) => { if (!open) setEditTarget(null); }}
         profile={editTarget}
@@ -386,6 +370,7 @@ export default function BridgesPage() {
         onSaved={() => { void reload(); }}
         onRequestDelete={setRemoveConfirm}
       />
+      </div>
 
       <Dialog
         open={Boolean(stopConfirm)}

@@ -585,18 +585,18 @@ describe('ticket detail fields', () => {
       { label: '主机', value: 'openrouter.ai', mono: true },
     ]));
     expect(advanced).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Messages /v1/messages', mono: true },
+      { label: '本机路由', value: 'Claude', mono: true },
     ]));
   });
 
-  it('adds Codex / Grok Responses and Kimi Chat Completions surfaces for loopback 本机路由', () => {
+  it('adds Codex / Grok / Kimi client names for loopback 本机路由', () => {
     expect(buildTicketDetailFields(
       ticket({ id: 'account:oauth-codex', sourceKind: 'account', sourceId: 'oauth-codex', agentId: 'codex', credentialClass: 'oauth', speaks: ['openai-responses'] }),
       { identity: 'me@example.com' },
       undefined,
       [bridgeBinding('account:oauth-codex', 'codex')],
     ).advanced).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Responses /v1/responses', mono: true },
+      { label: '本机路由', value: 'Codex', mono: true },
     ]));
     expect(buildTicketDetailFields(
       ticket({ id: 'account:oauth-grok', sourceKind: 'account', sourceId: 'oauth-grok', agentId: 'grok', credentialClass: 'oauth', speaks: ['openai-responses'] }),
@@ -604,7 +604,7 @@ describe('ticket detail fields', () => {
       undefined,
       [bridgeBinding('account:oauth-grok', 'grok')],
     ).advanced).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Responses /v1/responses', mono: true },
+      { label: '本机路由', value: 'Grok', mono: true },
     ]));
     expect(buildTicketDetailFields(
       ticket({ id: 'account:oauth-codex-kimi', sourceKind: 'account', sourceId: 'oauth-codex-kimi', agentId: 'codex', credentialClass: 'oauth', speaks: ['openai-responses'] }),
@@ -612,7 +612,7 @@ describe('ticket detail fields', () => {
       undefined,
       [bridgeBinding('account:oauth-codex-kimi', 'kimi')],
     ).advanced).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Chat Completions /v1/chat/completions', mono: true },
+      { label: '本机路由', value: 'Kimi', mono: true },
     ]));
   });
 
@@ -634,7 +634,7 @@ describe('ticket detail fields', () => {
       ],
     );
     expect(mixed).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Messages /v1/messages · Responses /v1/responses', mono: true },
+      { label: '本机路由', value: 'Claude · Codex', mono: true },
     ]));
 
     const { advanced: openrouter } = buildTicketDetailFields(
@@ -652,7 +652,7 @@ describe('ticket detail fields', () => {
       ],
     );
     expect(openrouter).toEqual(expect.arrayContaining([
-      { label: '本机路由', value: 'Messages /v1/messages · Responses /v1/responses', mono: true },
+      { label: '本机路由', value: 'Claude · Codex', mono: true },
     ]));
   });
 
