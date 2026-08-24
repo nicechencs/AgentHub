@@ -36,6 +36,7 @@ import {
   ticketDetailEditLabel,
   ticketWalletFilterLabel,
   ticketCredentialClassChipLabel,
+  ticketSurfaceChipLabel,
 } from './ticket-wallet-model';
 
 function sampleWallet(): TicketWallet {
@@ -474,6 +475,30 @@ describe('ticket detail fields', () => {
     expect(labels).not.toContain('提供商');
     expect(labels).not.toContain('端点');
     expect(labels).not.toContain('Endpoint');
+  });
+
+  it('classifies mytokens.cc custom remote as OpenAI 直连, not 未识别', () => {
+    const row = ticket({
+      id: 'provider:codex-mytokens',
+      sourceId: 'codex-mytokens',
+      agentId: 'codex',
+      label: 'OpenAI · gpt-5.5',
+      surface: 'openai-api',
+      credentialClass: 'api_key',
+      speaks: ['openai-chat'],
+    });
+    expect(isUnrecognizedTicket(row)).toBe(false);
+    expect(ticketSurfaceChipLabel(row.surface)).not.toBe('未识别');
+    const { advanced } = buildTicketDetailFields(row, {
+      endpointMode: 'custom',
+      endpointHost: 'https://mytokens.cc/v1',
+    });
+    expect(advanced).toEqual(expect.arrayContaining([
+      { label: '端点', value: '自定义' },
+      { label: '主机', value: 'mytokens.cc', mono: true },
+      { label: '协议', value: 'openai-chat' },
+    ]));
+    expect(advanced.map((field) => field.value).join(' ')).not.toContain('未识别');
   });
 
   it('always shows 端点 / 主机 / 协议 for custom API Key, even when speaks is empty', () => {

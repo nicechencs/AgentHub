@@ -598,6 +598,12 @@ impl AccountService {
             return Ok(());
         }
         if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
+            // Custom remote / leftover 本机路由 API keys have no email. Switching
+            // to a known official 登录 must not fail closed — live_for_backfill
+            // already refuses to copy unknown live onto another row.
+            if live.kind == crate::models::AccountKind::ApiKey {
+                return Ok(());
+            }
             return Err(AppError::message(
                 "account.identity_conflict",
                 "live account identity is unknown; refusing to backfill or switch",
@@ -695,8 +701,9 @@ fn live_grant_matches_account(
 }
 
 fn leftover_shaped_codex_live(agent: AgentId) -> bool {
-    agent == AgentId::Codex
-        && crate::integrations::agents::codex::leftover::live_config_is_bridge_leftover()
+    leftover_live_flag(agent)
+        || (agent == AgentId::Codex
+            && crate::integrations::agents::codex::leftover::live_config_is_bridge_leftover())
 }
 
 pub(super) fn compensated_current_account_apply_error_with_db(

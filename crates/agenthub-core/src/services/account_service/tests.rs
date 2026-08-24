@@ -3056,6 +3056,132 @@ fn leftover_shaped_codex_live_does_not_throw_identity_conflict() {
 }
 
 #[test]
+fn custom_remote_api_key_live_does_not_throw_identity_conflict() {
+    let _home = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let root = tempdir().unwrap();
+    let home = root.path().join("home");
+    let codex = home.join(".codex");
+    std::fs::create_dir_all(&codex).unwrap();
+    std::fs::write(
+        codex.join("config.toml"),
+        r#"model_provider = "OpenAI"
+model = "gpt-5.5"
+
+[model_providers.OpenAI]
+name = "OpenAI"
+base_url = "https://mytokens.cc/v1"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        codex.join("auth.json"),
+        r#"{ "OPENAI_API_KEY": "sk-mytokens" }"#,
+    )
+    .unwrap();
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex);
+
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let path = root.path().join("live").join("auth.json");
+    let adapter = Arc::new(FakeAdapter::new(AgentId::Codex, path));
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Codex,
+        kind: AccountKind::ApiKey,
+        credentials: json!({"format": "auth_json", "body": {"OPENAI_API_KEY": "sk-mytokens"}}),
+        label_hint: None,
+        extra: json!({}),
+    });
+    let mut registry = AdapterRegistry::new();
+    registry.register(adapter.clone());
+    let svc = AccountService::with_live(db, registry, root.path().join("backups"));
+    svc.repo()
+        .create(&Account {
+            id: "codex-official".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "41375197@qq.com".into(),
+            credentials: official_codex_oauth_credentials(),
+            extra: json!({"email": "41375197@qq.com"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "2026-01-01 00:00:00.000000".into(),
+            updated_at: "2026-01-01 00:00:00.000000".into(),
+        })
+        .unwrap();
+
+    let live = adapter.read_account().unwrap();
+    let result = svc.validate_live_switch_identity(adapter.as_ref(), AgentId::Codex, &live);
+    match prev {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+    result.expect("custom remote API key live must not throw identity_conflict");
+}
+
+#[test]
+fn leftover_claude_bridge_live_does_not_throw_identity_conflict() {
+    let _home = crate::integrations::agents::codex::leftover::lock_codex_home();
+    let root = tempdir().unwrap();
+    let home = root.path().join("home");
+    let codex = home.join(".codex");
+    std::fs::create_dir_all(&codex).unwrap();
+    std::fs::write(
+        codex.join("config.toml"),
+        r#"model_provider = "agenthub_claude_bridge"
+model = "claude-sonnet-4-20250514"
+
+[model_providers.agenthub_claude_bridge]
+name = "AgentHub Claude Route"
+base_url = "http://127.0.0.1:33923/v1"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        codex.join("auth.json"),
+        r#"{ "OPENAI_API_KEY": "ahb_leftover" }"#,
+    )
+    .unwrap();
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex);
+
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let path = root.path().join("live").join("auth.json");
+    let adapter = Arc::new(FakeAdapter::new(AgentId::Codex, path));
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Codex,
+        kind: AccountKind::ApiKey,
+        credentials: json!({"format": "auth_json", "body": {"OPENAI_API_KEY": "ahb_leftover"}}),
+        label_hint: None,
+        extra: json!({}),
+    });
+    let mut registry = AdapterRegistry::new();
+    registry.register(adapter.clone());
+    let svc = AccountService::with_live(db, registry, root.path().join("backups"));
+    svc.repo()
+        .create(&Account {
+            id: "codex-official".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "41375197@qq.com".into(),
+            credentials: official_codex_oauth_credentials(),
+            extra: json!({"email": "41375197@qq.com"}),
+            status: "active".into(),
+            is_current: true,
+            created_at: "2026-01-01 00:00:00.000000".into(),
+            updated_at: "2026-01-01 00:00:00.000000".into(),
+        })
+        .unwrap();
+
+    let live = adapter.read_account().unwrap();
+    let result = svc.validate_live_switch_identity(adapter.as_ref(), AgentId::Codex, &live);
+    match prev {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+    result.expect("leftover Claude 本机路由 live must not throw identity_conflict");
+}
+
+#[test]
 fn switch_official_from_leftover_live_does_not_identity_conflict() {
     let _home = crate::integrations::agents::codex::leftover::lock_codex_home();
     let root = tempdir().unwrap();
