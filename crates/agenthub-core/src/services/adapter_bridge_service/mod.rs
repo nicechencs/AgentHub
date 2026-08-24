@@ -396,7 +396,10 @@ fn listed_models_for_bridge(
             if model.is_empty() {
                 continue;
             }
-            if listed.iter().any(|existing: &String| existing.eq_ignore_ascii_case(model)) {
+            if listed
+                .iter()
+                .any(|existing: &String| existing.eq_ignore_ascii_case(model))
+            {
                 continue;
             }
             listed.push(model.to_owned());
@@ -410,7 +413,11 @@ fn listed_models_for_bridge(
     list_local_bridge_models(
         source,
         target,
-        if configured.is_empty() { None } else { Some(configured) },
+        if configured.is_empty() {
+            None
+        } else {
+            Some(configured)
+        },
     )
 }
 

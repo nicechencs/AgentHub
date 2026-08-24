@@ -294,7 +294,12 @@ pub(super) fn openai_source_upstream(
     rule: &CodexBridgeRule,
     source_kind: AdapterSourceKind,
     source_id: &str,
-) -> (String, String, Vec<String>, crate::bridge::BridgeUpstreamProtocol) {
+) -> (
+    String,
+    String,
+    Vec<String>,
+    crate::bridge::BridgeUpstreamProtocol,
+) {
     let mut url = rule.upstream_base_url.to_string();
     let mut model = rule.default_model.to_string();
     let mut listed = Vec::new();
@@ -327,11 +332,9 @@ pub(super) fn openai_source_upstream(
     listed = crate::services::adapter_route_constants::openai_compat_listed_models(
         &provider.settings_config,
     );
-    if let Some(pinned) =
-        crate::services::adapter_route_constants::openai_compat_pinned_model(
-            &provider.settings_config,
-        )
-    {
+    if let Some(pinned) = crate::services::adapter_route_constants::openai_compat_pinned_model(
+        &provider.settings_config,
+    ) {
         model = pinned;
     }
     if crate::services::adapter_route_constants::looks_like_anthropic_messages_url(&url) {

@@ -8,8 +8,9 @@ use super::super::admission::AdmittedRequest;
 use super::super::surface::DownstreamSurface;
 use super::super::ANTHROPIC_API_VERSION;
 use super::{
-    models_surface_unreachable, overwrite_configured_model, overwrite_configured_model_with, parse_bridge_request, passthrough_responses_object, RecoveryPolicy,
-    UpstreamDecode, UpstreamPrepare, UpstreamTransport,
+    models_surface_unreachable, overwrite_configured_model, overwrite_configured_model_with,
+    parse_bridge_request, passthrough_responses_object, RecoveryPolicy, UpstreamDecode,
+    UpstreamPrepare, UpstreamTransport,
 };
 
 pub(super) struct AnthropicTransport;
@@ -40,7 +41,11 @@ impl UpstreamTransport for AnthropicTransport {
                 let request = parse_bridge_request(surface, admitted)?;
                 let stream = request.stream;
                 let mut body = to_anthropic_messages_request(&request);
-                overwrite_configured_model(&mut body, admitted.state.upstream.model.as_deref(), &admitted.state.listed_models);
+                overwrite_configured_model(
+                    &mut body,
+                    admitted.state.upstream.model.as_deref(),
+                    &admitted.state.listed_models,
+                );
                 Ok(UpstreamPrepare {
                     path: self.path(),
                     body,

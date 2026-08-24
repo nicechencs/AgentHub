@@ -1833,7 +1833,10 @@ fn start_spec_lists_stealth_ox_alpha_for_custom_openai() {
         local_bearer: "local-secret".into(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
-    assert!(listed.is_empty(), "empty user list follows downstream: {listed:?}");
+    assert!(
+        listed.is_empty(),
+        "empty user list follows downstream: {listed:?}"
+    );
 }
 
 #[test]
@@ -1844,10 +1847,7 @@ fn start_spec_keeps_every_user_listed_model() {
         preferred_port: None,
         upstream_base_url: "https://openrouter.ai/api/v1".into(),
         upstream_model: "openai/gpt-4o".into(),
-        configured_listed_models: vec![
-            "openai/gpt-4o".into(),
-            "anthropic/claude-sonnet-4".into(),
-        ],
+        configured_listed_models: vec!["openai/gpt-4o".into(), "anthropic/claude-sonnet-4".into()],
         protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
@@ -1857,7 +1857,9 @@ fn start_spec_keeps_every_user_listed_model() {
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "openai/gpt-4o"));
-    assert!(listed.iter().any(|model| model == "anthropic/claude-sonnet-4"));
+    assert!(listed
+        .iter()
+        .any(|model| model == "anthropic/claude-sonnet-4"));
     assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
 }
 
@@ -1915,8 +1917,14 @@ fn prepare_glm_claude_uses_anthropic_endpoint() {
         })
         .unwrap();
     let start = prepared.runtime_material().start_spec(None);
-    assert_eq!(start.upstream.base_url, "https://open.bigmodel.cn/api/anthropic");
-    assert_eq!(start.upstream.protocol, BridgeUpstreamProtocol::AnthropicMessages);
+    assert_eq!(
+        start.upstream.base_url,
+        "https://open.bigmodel.cn/api/anthropic"
+    );
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
+    );
     assert!(start.listed_models.iter().any(|model| model == "glm-4.6"));
 }
 
@@ -1952,6 +1960,12 @@ fn prepare_deepseek_claude_uses_anthropic_endpoint() {
         })
         .unwrap();
     let start = prepared.runtime_material().start_spec(None);
-    assert_eq!(start.upstream.base_url, "https://api.deepseek.com/anthropic");
-    assert_eq!(start.upstream.protocol, BridgeUpstreamProtocol::AnthropicMessages);
+    assert_eq!(
+        start.upstream.base_url,
+        "https://api.deepseek.com/anthropic"
+    );
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
+    );
 }

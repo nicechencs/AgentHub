@@ -45,7 +45,11 @@ impl DownstreamSurface {
         }
     }
 
-    pub(super) fn reject_if_unserved(self, state: &EdgeState, request_id: &str) -> Option<Response> {
+    pub(super) fn reject_if_unserved(
+        self,
+        state: &EdgeState,
+        request_id: &str,
+    ) -> Option<Response> {
         if self.served_by(state.upstream.local_surface) {
             None
         } else {
