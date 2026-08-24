@@ -4,18 +4,10 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import {
   closeConfirmationOnOpenChange,
-  preventBusyConfirmationDismissal,
 } from '@/components/shared/busy-confirmation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { DialogOrSide } from './dialog-or-side';
 import { useToast } from '@/components/ui/toast';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import { cn } from '@/lib/utils';
@@ -50,6 +42,7 @@ export function WriteClientConfigDialog({
   sourceMissing,
   hiddenTargetIds,
   onWritten,
+  asPanel = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -61,6 +54,7 @@ export function WriteClientConfigDialog({
   hiddenTargetIds?: ReadonlySet<string>;
   /** Reload the page's route list after a successful write. */
   onWritten: () => void;
+  asPanel?: boolean;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -120,22 +114,26 @@ export function WriteClientConfigDialog({
   };
 
   return (
-    <Dialog
+    <DialogOrSide
+      asPanel={asPanel}
       open={open}
       onOpenChange={(next) => closeConfirmationOnOpenChange(next, busy, () => onOpenChange(false))}
+      title={t('routes.write.title')}
+      description={t('routes.write.description')}
+      preventDismiss
+      footer={(
+        <>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={() => void submit()} disabled={busy || !canWriteClientConfig(selected)}>
+            {busy
+              ? t('routes.write.submitting')
+              : t('routes.write.submit', { count: selected.length })}
+          </Button>
+        </>
+      )}
     >
-      <DialogContent
-        className="flex max-h-[min(36rem,calc(100vh-2rem))] flex-col overflow-hidden"
-        hideClose={busy}
-        onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(busy, event)}
-        onPointerDownOutside={(event) => preventBusyConfirmationDismissal(busy, event)}
-        onInteractOutside={(event) => preventBusyConfirmationDismissal(busy, event)}
-      >
-        <DialogHeader className="shrink-0">
-          <DialogTitle>{t('routes.write.title')}</DialogTitle>
-          <DialogDescription>{t('routes.write.description')}</DialogDescription>
-        </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1">
           {portPending ? <p className="text-meta text-muted">{t('routes.write.portPending')}</p> : null}
           <fieldset className="space-y-2">
             <legend className="text-xs text-muted">{t('routes.write.selectLabel')}</legend>
@@ -157,19 +155,7 @@ export function WriteClientConfigDialog({
             <p className="text-sm text-danger" role="alert">{t('routes.write.required')}</p>
           ) : null}
           {error ? <AdapterErrorLines error={error} fallback={t('routes.write.fallback')} /> : null}
-        </div>
-        <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
-            {t('common.cancel')}
-          </Button>
-          <Button onClick={() => void submit()} disabled={busy || !canWriteClientConfig(selected)}>
-            {busy
-              ? t('routes.write.submitting')
-              : t('routes.write.submit', { count: selected.length })}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </DialogOrSide>
   );
 }
 
