@@ -25,7 +25,7 @@
 | 6 | **可配置、可保留**：`log_level`、`log_retention_days` 落 L1 settings，改后下次启动生效 |
 | 7 | **前端不是生产观测**：`src/lib/logger.ts` 只服务 DEV 控制台；生产排障看文件日志 + UI 文案 |
 
-默认可排障的验收：拿当日 `{logs_dir}/agenthub.YYYY-MM-DD`，不改级别，能回答：
+默认可排障的验收：拿当日 `{logs_dir}/agenthub.YYYY-MM-DD.log`，不改级别，能回答：
 
 - 桥有没有起来（`op=serve` / apply / start）
 - 这次请求的 `profile_id` + `request_id` 失败在哪一层（本机鉴权 / 协议 / 上游 HTTP / 流式中途 / 本机过载）
@@ -70,7 +70,7 @@ agenthub-core::logging
 flowchart LR
   CLI["CLI init_for_app"] --> Init["core logging subscriber"]
   GUI["GUI init_for_app"] --> Init
-  Init --> File["{data_dir}/logs/agenthub.YYYY-MM-DD"]
+  Init --> File["{data_dir}/logs/agenthub.YYYY-MM-DD.log"]
   Init --> Stderr["CLI stderr 可选"]
   FE["logger.ts DEV only"] --> Console["WebView console"]
   Settings["settings log_level"] --> Init
@@ -79,7 +79,7 @@ flowchart LR
 | 层 | 职责 |
 |---|---|
 | **core** | 唯一 subscriber 初始化、文件路径、保留策略、模块常量、埋点 helper |
-| **文件** | `{data_dir}/logs/agenthub.YYYY-MM-DD`（daily rotation） |
+| **文件** | `{data_dir}/logs/agenthub.YYYY-MM-DD.log`（daily rotation） |
 | **stderr** | CLI：默认 `warn` 及以上；`-v` → `debug`。GUI：默认不挂控制台层 |
 | **CLI/GUI 壳** | 启动时调 `logging::init_for_app`；**不得**用壳层日志代替业务 ERROR。GUI `map_err_string` 只打 debug 面包屑，避免与 `log_app_error` 双份 ERROR |
 | **前端 logger** | DEV 辅助；生产静默。设置页「日志级别」**只**影响 core 文件日志 |
@@ -130,13 +130,13 @@ flowchart LR
 | 项 | 约定 |
 |---|---|
 | 目录 | `{data_dir}/logs/`（`config path` 可打印 `logs_dir`） |
-| 命名 | `agenthub.YYYY-MM-DD`（`tracing-appender` daily，prefix=`agenthub`） |
-| 兼容识别 | 保留清理也认 `agenthub.YYYY-MM-DD.log`、`agenthub-2026-08-02.log` |
+| 命名 | `agenthub.YYYY-MM-DD.log`（`tracing-appender` daily，prefix=`agenthub`，suffix=`log`） |
+| 兼容识别 | 保留清理也认无后缀的 `agenthub.YYYY-MM-DD`、以及 `agenthub-YYYY-MM-DD.log` |
 | 轮转 | 按本地日历日 |
 | 保留 | `log_retention_days`（默认 **14**，允许 **1..=365**）；启动时 purge 过期文件 |
 | 编码 | 文本、无 ANSI；含 level、target、字段与消息 |
 
-示例路径（Windows）：`%USERPROFILE%\.agenthub\logs\agenthub.2026-08-21`
+示例路径（Windows）：`%USERPROFILE%\.agenthub\logs\agenthub.2026-08-21.log`
 
 `log_level=debug` 时 `EnvFilter` 是**全局** debug，会带上 `hyper` / `reqwest` 等依赖。排障优先靠默认 `info` 的必打事件；需要 debug 时尽量用 CLI `-v` 做一次复现，不要长期把 GUI 设成 debug。分 target 过滤（`core.adapter=debug`）是 P2，不是现在的能力。
 
@@ -410,7 +410,7 @@ Adapter 详情「最近 5 条结构化事件」是 [adapter-design.md](adapter-d
 
 1. 复现失败，记下 CLI/GUI 展示的 **`code`**（json 的 `code`，或文案里的 `[code]`）
 2. `agenthub config path` 确认 `data_dir` / `logs_dir`（GUI：设置 → 本机 → 打开日志目录）
-3. 打开**当日**文件：`{logs_dir}/agenthub.YYYY-MM-DD`
+3. 打开**当日**文件：`{logs_dir}/agenthub.YYYY-MM-DD.log`
 4. 按域过滤（过渡期两边都搜）：
    - 账号 / 登录：`module=core.oauth`、`module=core.account`
    - 本机路由：`core.adapter`、`core.adapter.protocol`、`profile_id=`

@@ -377,8 +377,8 @@ log_level = "info"              # error | warn | info | debug | trace
 ├── backups/db/
 ├── backups/live/<agent>/<ts>/
 ├── exports/
-└── logs/                      # 按日文件 agenthub.YYYY-MM-DD；保留见 log_retention_days
-    └── agenthub.YYYY-MM-DD    # tracing-appender daily；规范见 logging.md
+└── logs/                      # 按日文件 agenthub.YYYY-MM-DD.log；保留见 log_retention_days
+    └── agenthub.YYYY-MM-DD.log    # tracing-appender daily；规范见 logging.md
 ```
 
 `logs/`：CLI/GUI 共用；启动时按 `log_retention_days`（默认 14）清理过期按日文件。完整约定 → [logging.md](logging.md)。

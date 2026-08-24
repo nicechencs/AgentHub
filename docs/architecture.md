@@ -571,7 +571,7 @@ CLI 与 GUI 共用数据目录与 per-agent 写锁（core 内文件锁，跨进�
 │   └── live/<agent>/<ts>/     # L2 写前快照
 ├── exports/                   # 导出能力预留，按现有存储方案处理
 └── logs/                      # 应用日志（CLI/GUI 共用）
-    └── agenthub.YYYY-MM-DD    # tracing-appender 按日滚动；log_retention_days 启动清理
+    └── agenthub.YYYY-MM-DD.log    # tracing-appender 按日滚动；log_retention_days 启动清理
 ```
 
 `logs/`：core `logging` 写入；默认级别 `info`，保留默认 14 天；完整规范 → [logging.md](logging.md)。

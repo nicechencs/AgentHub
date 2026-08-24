@@ -111,7 +111,7 @@ export const zh = {
       logRetentionTip: '按日日志超过天数后，启动时自动清理（1–365）。',
       logsDirLabel: '日志目录',
       logsDirDescription: '按日文件',
-      logsDirTip: '文件名 agenthub.YYYY-MM-DD；排查问题时可打开此目录。',
+      logsDirTip: '文件名 agenthub.YYYY-MM-DD.log；排查问题时可打开此目录。',
       logsOpened: '已打开日志目录',
       logsOpenFailed: '打开失败',
       usageIntervalLabel: '用量采集间隔',
