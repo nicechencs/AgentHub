@@ -1663,6 +1663,8 @@ enum WaitPoll {
 }
 
 /// Read at most `max` bytes from an optional pipe; mark truncated if more data remains.
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
 fn read_capped<R: Read>(stream: Option<R>, max: usize) -> (Vec<u8>, bool) {
     let acc = Mutex::new(Vec::new());
     let trunc = AtomicBool::new(false);

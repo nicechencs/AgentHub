@@ -1,13 +1,11 @@
-use serde_json::{json, Value};
+use serde_json::Value;
 use toml_edit::DocumentMut;
 
 use super::*;
 use crate::adapters::pi_auth::pi_oauth_entry_from_tokens;
-use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
-use crate::models::{AdapterSourceKind, AgentId, Provider};
+use crate::models::{AgentId, Provider};
 use crate::services::adapter_route_constants::*;
-use crate::storage::{AccountRepo, Database, ProviderRepo};
 
 /// Generated-provider allowlists. Every applyable matrix cell and live
 /// bridge rule must match one of these; the coverage test in `tests.rs`

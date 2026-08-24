@@ -121,6 +121,8 @@ impl UpstreamChannel {
         }
     }
 
+    // Accessors kept for symmetry with the trait-based helpers; unused today.
+    #[allow(dead_code)]
     pub(super) fn protocol(self) -> BridgeUpstreamProtocol {
         match self {
             Self::OpenAiChat => BridgeUpstreamProtocol::OpenAiChatCompletions,
@@ -155,6 +157,7 @@ impl UpstreamChannel {
         UpstreamTransport::recovery(&self)
     }
 
+    #[allow(dead_code)]
     pub(super) fn path(self) -> &'static str {
         UpstreamTransport::path(&self)
     }

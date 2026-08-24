@@ -16,32 +16,45 @@ mod switch_saga;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Instant;
-
-use chrono::Utc;
-use serde_json::{json, Value};
-use uuid::Uuid;
+use std::sync::Arc;
 
 use crate::adapters::{AdapterRegistry, AgentAdapter};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
+// The following imports are kept for the child `tests` module (descendants see
+// the parent's private imports); several are unused in production code.
+#[allow(unused_imports)]
+use chrono::Utc;
+#[allow(unused_imports)]
+use serde_json::{json, Value};
+#[allow(unused_imports)]
+use std::collections::HashMap;
+#[allow(unused_imports)]
+use std::sync::OnceLock;
+#[allow(unused_imports)]
+use std::time::Instant;
+#[allow(unused_imports)]
+use uuid::Uuid;
+
+#[allow(unused_imports)]
 use crate::models::{
     attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
     AdapterSourceKind, AgentId, BackupKind, Capability, LiveAccount, PersistedTicketSurface,
     TicketSurface,
 };
+#[allow(unused_imports)]
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
 };
-use crate::services::{AdapterRouteService, BackupService, ConnectionService};
+use crate::services::{BackupService, ConnectionService};
 use crate::storage::{AccountRepo, Database};
 use crate::utils::agent_lock::AgentWriteLock;
+#[allow(unused_imports)]
 use crate::utils::redact::mask_secret_preview;
 
 // Re-export helpers so `tests` (`use super::*`) keep seeing them.
+#[allow(unused_imports)]
 pub(super) use surface::*;
 
 pub const MAX_ACCOUNT_ID_LEN: usize = 128;

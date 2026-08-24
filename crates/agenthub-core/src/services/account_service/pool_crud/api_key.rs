@@ -334,6 +334,8 @@ impl AccountService {
         }
     }
 
+    // Referenced only from `tests.rs` in this crate; keep for test coverage.
+    #[allow(dead_code)]
     pub(in crate::services::account_service) fn update_api_key_inner(
         &self,
         agent: AgentId,
