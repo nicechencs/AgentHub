@@ -1,6 +1,6 @@
 //! Unified logging for AgentHub (CLI + GUI).
 //!
-//! - File sink: `{data_dir}/logs/agenthub.YYYY-MM-DD` (daily rotation)
+//! - File sink: `{data_dir}/logs/agenthub.YYYY-MM-DD.log` (daily rotation)
 //! - Optional stderr console
 //! - Retention purge by `log_retention_days`
 //! - Module targets under [`targets`]
@@ -52,6 +52,8 @@ pub mod targets {
 const DEFAULT_LEVEL: &str = "info";
 const MIN_RETENTION_DAYS: u32 = 1;
 const MAX_RETENTION_DAYS: u32 = 365;
+const LOG_FILENAME_PREFIX: &str = "agenthub";
+const LOG_FILENAME_SUFFIX: &str = "log";
 
 static LOG_GUARD: OnceLock<Mutex<Option<WorkerGuard>>> = OnceLock::new();
 static INIT_DONE: OnceLock<()> = OnceLock::new();
@@ -206,7 +208,12 @@ pub fn init_logging(cfg: LogConfig) -> Result<()> {
         // Cannot log yet; purge stats go into first boot line via fields below.
     }
 
-    let appender = RollingFileAppender::new(Rotation::DAILY, &logs, "agenthub");
+    let appender = RollingFileAppender::builder()
+        .rotation(Rotation::DAILY)
+        .filename_prefix(LOG_FILENAME_PREFIX)
+        .filename_suffix(LOG_FILENAME_SUFFIX)
+        .build(&logs)
+        .map_err(|e| AppError::message("io", format!("init rolling log: {e}")))?;
     let (non_blocking, guard) = tracing_appender::non_blocking(appender);
 
     let file_filter = EnvFilter::new(format_level_directive(file_level));
@@ -273,7 +280,7 @@ fn format_level_directive(level: Level) -> String {
     LevelFilter::from_level(level).to_string()
 }
 
-/// Delete `agenthub.YYYY-MM-DD` (and legacy dated names) older than retention.
+/// Delete `agenthub.YYYY-MM-DD.log` (and legacy dated names) older than retention.
 pub fn purge_old_logs(logs_dir: &Path, retention_days: u32) -> PurgeStats {
     let mut stats = PurgeStats::default();
     let Ok(entries) = fs::read_dir(logs_dir) else {
@@ -287,7 +294,7 @@ pub fn purge_old_logs(logs_dir: &Path, retention_days: u32) -> PurgeStats {
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        if !name.starts_with("agenthub") {
+        if !name.starts_with(LOG_FILENAME_PREFIX) {
             continue;
         }
         let Some(date) = parse_log_filename_date(name) else {
@@ -307,9 +314,9 @@ pub fn purge_old_logs(logs_dir: &Path, retention_days: u32) -> PurgeStats {
     stats
 }
 
-/// Accept `agenthub.2026-08-02`, `agenthub.2026-08-02.log`, `agenthub-2026-08-02.log`.
+/// Accept `agenthub.2026-08-02.log`, `agenthub.2026-08-02`, `agenthub-2026-08-02.log`.
 fn parse_log_filename_date(name: &str) -> Option<NaiveDate> {
-    let rest = name.strip_prefix("agenthub")?;
+    let rest = name.strip_prefix(LOG_FILENAME_PREFIX)?;
     let rest = rest
         .trim_start_matches(['.', '-', '_'])
         .trim_end_matches(".log");
@@ -362,9 +369,12 @@ pub fn log_debug(module: &'static str, op: &str, msg: &str) {
     tracing::debug!(module = module, op = op, "{msg}");
 }
 
-/// Today's local date string (for tests / doctor).
+/// Today's log file name (for tests / doctor).
 pub fn today_log_stem() -> String {
-    format!("agenthub.{}", Local::now().format("%Y-%m-%d"))
+    format!(
+        "{LOG_FILENAME_PREFIX}.{}.{LOG_FILENAME_SUFFIX}",
+        Local::now().format("%Y-%m-%d")
+    )
 }
 
 #[cfg(test)]
@@ -421,17 +431,22 @@ mod tests {
         writeln!(f, "old").unwrap();
 
         let today = Local::now().format("%Y-%m-%d");
-        let recent = dir.path().join(format!("agenthub.{today}"));
+        let recent = dir.path().join(format!("agenthub.{today}.log"));
         let mut f2 = fs::File::create(&recent).unwrap();
         writeln!(f2, "recent").unwrap();
+
+        let old_log = dir.path().join("agenthub.2020-01-02.log");
+        let mut f3 = fs::File::create(&old_log).unwrap();
+        writeln!(f3, "old log").unwrap();
 
         // non-log file should be ignored (not counted as deleted)
         let other = dir.path().join("readme.txt");
         fs::write(&other, "x").unwrap();
 
         let stats = purge_old_logs(dir.path(), 14);
-        assert_eq!(stats.deleted, 1);
+        assert_eq!(stats.deleted, 2);
         assert!(!old.exists());
+        assert!(!old_log.exists());
         assert!(recent.exists());
         assert!(other.exists());
         assert!(stats.kept >= 1);
@@ -492,6 +507,7 @@ mod tests {
     fn today_log_stem_format() {
         let stem = today_log_stem();
         assert!(stem.starts_with("agenthub."));
-        assert_eq!(stem.len(), "agenthub.YYYY-MM-DD".len());
+        assert!(stem.ends_with(".log"));
+        assert_eq!(stem.len(), "agenthub.YYYY-MM-DD.log".len());
     }
 }

@@ -115,7 +115,7 @@ export const en = {
       logRetentionTip: 'Daily log files older than this are purged on launch (1–365).',
       logsDirLabel: 'Log directory',
       logsDirDescription: 'Daily files',
-      logsDirTip: 'Files are named agenthub.YYYY-MM-DD. Open this folder when debugging.',
+      logsDirTip: 'Files are named agenthub.YYYY-MM-DD.log. Open this folder when debugging.',
       logsOpened: 'Opened log directory',
       logsOpenFailed: "Couldn't open",
       usageIntervalLabel: 'Usage collect interval',
