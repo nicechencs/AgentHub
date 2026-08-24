@@ -6,6 +6,8 @@
 mod saga;
 mod specs;
 
+// Re-exported for adapter_route_service tests.
+#[allow(unused_imports)]
 pub(crate) use specs::apply_request_supported;
 
 #[cfg(test)]
@@ -14,22 +16,22 @@ mod tests;
 use std::path::PathBuf;
 
 use crate::adapters::AdapterRegistry;
-use crate::error::{AppError, Result};
-use crate::models::{
-    AdapterApplyRequest, AdapterApplyResult, AdapterGateKind, AdapterProfile, AdapterProfileFilter,
-    AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteAnalysis,
-    AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
-    Provider, ProviderInput,
-};
-use crate::services::adapter_route_constants::*;
-use crate::services::ProviderLiveSagaGuard;
+use crate::models::{AdapterProfile, AgentId, Provider, ProviderInput};
 use crate::services::{
     AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderService,
 };
 use crate::storage::{AdapterProfileRepo, Database};
-use chrono::Utc;
-use serde_json::json;
 
+#[cfg(test)]
+use crate::error::AppError;
+#[cfg(test)]
+use crate::models::{
+    AdapterApplyRequest, AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
+};
+#[cfg(test)]
+use crate::services::adapter_route_constants::*;
+
+#[cfg(test)]
 pub(super) use specs::*;
 
 /// Pre-switch snapshot used to reverse a successful live switch when profile

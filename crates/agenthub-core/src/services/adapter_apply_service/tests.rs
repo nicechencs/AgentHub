@@ -1,5 +1,6 @@
 use super::*;
 use crate::adapters::AgentAdapter;
+use crate::error::Result;
 use crate::models::{Account, AccountKind, AdapterApplyResult, Provider};
 use crate::models::{
     AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
@@ -8,8 +9,7 @@ use crate::models::{
 use crate::services::adapter_route_constants::{
     DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_PI_PROVIDER_SLOT,
     GLM_CLAUDE_BASE_URL, GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL,
-    KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, KIMI_GROK_RULE_ID, OPENAI_GROK_BASE_URL,
-    OPENAI_GROK_DEFAULT_MODEL, OPENAI_GROK_RULE_ID,
+    KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, KIMI_GROK_RULE_ID,
 };
 use crate::services::LiveWriteAuthority;
 use crate::storage::{AccountRepo, ActiveBindingRepo, ProviderRepo};
@@ -2413,18 +2413,11 @@ fn apply_kimi_membership_and_openai_api_to_grok() {
         "kimi-grok-secret",
     );
 
-    let openai = service
-        .apply(&request("openai-source", AgentId::Grok))
-        .unwrap();
-    assert_grok_apply(
-        &db,
-        fake.as_ref(),
-        &openai,
-        OPENAI_GROK_RULE_ID,
-        "agenthub_openai",
-        OPENAI_GROK_BASE_URL,
-        OPENAI_GROK_DEFAULT_MODEL,
-        "openai-grok-secret",
+    assert!(
+        service
+            .apply(&request("openai-source", AgentId::Grok))
+            .is_err(),
+        "OpenAI → Grok is a local_bridge host saga, not native apply"
     );
 
     let kimi_account_result = service
@@ -2441,18 +2434,11 @@ fn apply_kimi_membership_and_openai_api_to_grok() {
         "kimi-account-secret",
     );
 
-    let openai_account_result = service
-        .apply(&account_request("openai-account", AgentId::Grok))
-        .unwrap();
-    assert_grok_apply(
-        &db,
-        fake.as_ref(),
-        &openai_account_result,
-        OPENAI_GROK_RULE_ID,
-        "agenthub_openai",
-        OPENAI_GROK_BASE_URL,
-        OPENAI_GROK_DEFAULT_MODEL,
-        "openai-account-secret",
+    assert!(
+        service
+            .apply(&account_request("openai-account", AgentId::Grok))
+            .is_err(),
+        "OpenAI account → Grok is a local_bridge host saga"
     );
 }
 

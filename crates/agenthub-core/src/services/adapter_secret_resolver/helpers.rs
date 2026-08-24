@@ -1,13 +1,11 @@
-use serde_json::{json, Value};
+use serde_json::Value;
 use toml_edit::DocumentMut;
 
 use super::*;
 use crate::adapters::pi_auth::pi_oauth_entry_from_tokens;
-use crate::bridge::ResolvedAuth;
 use crate::error::{AppError, Result};
-use crate::models::{AdapterSourceKind, AgentId, Provider};
+use crate::models::{AgentId, Provider};
 use crate::services::adapter_route_constants::*;
-use crate::storage::{AccountRepo, Database, ProviderRepo};
 
 /// Generated-provider allowlists. Every applyable matrix cell and live
 /// bridge rule must match one of these; the coverage test in `tests.rs`
@@ -394,9 +392,11 @@ pub(super) fn is_codex_local_token(provider: &Provider) -> bool {
             )
         ) | (
             AgentId::Claude,
-            Some(CODEX_TO_CLAUDE_BRIDGE_RULE | GROK_CLAUDE_RULE_ID)
-        ) | (AgentId::Grok, Some(CODEX_TO_GROK_BRIDGE_RULE))
-            | (AgentId::Kimi, Some(CODEX_TO_KIMI_BRIDGE_RULE))
+            Some(CODEX_TO_CLAUDE_BRIDGE_RULE | GROK_CLAUDE_RULE_ID | OPENAI_TO_CLAUDE_BRIDGE_RULE)
+        ) | (
+            AgentId::Grok,
+            Some(CODEX_TO_GROK_BRIDGE_RULE | OPENAI_TO_GROK_BRIDGE_RULE)
+        ) | (AgentId::Kimi, Some(CODEX_TO_KIMI_BRIDGE_RULE))
             | (AgentId::Dsh, Some(CODEX_TO_DSH_BRIDGE_RULE))
     ) && provider
         .meta

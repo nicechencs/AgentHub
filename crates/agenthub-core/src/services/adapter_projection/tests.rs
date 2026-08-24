@@ -184,6 +184,18 @@ fn provider_config_with_bridge_slug_is_projection() {
 }
 
 #[test]
+fn provider_config_with_custom_provider_keeps_user_grant_if_dead_bridge_table_remains() {
+    let raw = json!({
+        "format": "toml",
+        "content": "model_provider = \"OpenAI\"\nmodel = \"gpt-5.5\"\n\n[model_providers.OpenAI]\nname = \"OpenAI\"\nbase_url = \"https://mytokens.cc/v1\"\n\n[model_providers.agenthub_grok_bridge]\nbase_url = \"http://127.0.0.1:43121/v1\"\n"
+    });
+    assert_eq!(
+        classify_provider_config(AgentId::Codex, &raw, &[], &[], false),
+        LiveOrigin::UserGrant
+    );
+}
+
+#[test]
 fn current_generated_on_claude_does_not_hide_unrelated_oauth() {
     let oauth = json!({
         "format": "auth_json",

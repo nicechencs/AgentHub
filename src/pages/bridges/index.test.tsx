@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AdapterBridgeRuntimeStatus } from '@/lib/backend/contracts/adapter';
 import { AdapterProfiles } from './adapter-components';
 import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 vi.mock('@/components/ui/dialog', () => {
   const passthrough = ({ children }: { children?: ReactNode }) => children ?? null;
@@ -112,15 +113,31 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('没有已绑定的本机路由');
   });
 
+  it('keeps 新建路由 copy for the create-route action', async () => {
+    const { CREATE_ROUTE_TARGETS, canSubmitCreateRoute } = await import('./create-route-flow');
+    expect(CREATE_ROUTE_TARGETS).toEqual(['claude', 'codex', 'grok']);
+    expect(canSubmitCreateRoute({
+      name: 'OpenRouter',
+      url: 'https://openrouter.ai/api/v1',
+      key: 'test-key',
+      vendor: 'openrouter',
+      endpoints: ['claude'],
+    })).toBe(true);
+  });
+
   it('keeps a hidden-target profile stop-only', () => {
     const profile = localBridgeProfile();
     const markup = renderToStaticMarkup(
-      createElement(AdapterProfiles, {
-        ...emptyListProps,
-        profiles: [profile],
-        bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
-        hiddenTargetIds: new Set([profile.targetAgentId]),
-      }),
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(AdapterProfiles, {
+          ...emptyListProps,
+          profiles: [profile],
+          bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
+          hiddenTargetIds: new Set([profile.targetAgentId]),
+        }),
+      ),
     );
     expect(markup).toContain('目标已隐藏，仅可停止');
     expect(markup).toContain('停止');
@@ -138,9 +155,73 @@ describe('Bridges page', () => {
     expect(markup).toContain('运行中');
     expect(markup).toContain('127.0.0.1:43121');
     expect(markup).toContain('停止');
+    expect(markup).toContain('随 AgentHub 自动启动');
+    expect(markup).toContain('停止并还原');
+    expect(markup).toContain('data-route-detail="bridge-1"');
+    expect(markup).toContain('来源登录');
+    expect(markup).toContain('本机桥');
+    expect(markup).toContain('客户端接入');
+    expect(markup).not.toContain('本机端点');
+    expect(markup).not.toContain('目标写入');
     expect(markup).not.toContain('配置已生效');
     expect(markup).not.toContain('桥接运行中');
     expect(markup).not.toContain('本地协议转换');
+    expect(markup).not.toContain('role="dialog"');
+  });
+
+  it('shows Claude, Codex, and Grok local endpoints on one OpenRouter card', () => {
+    const profile = localBridgeProfile();
+    const markup = renderToStaticMarkup(
+      createElement(AdapterProfiles, {
+        ...emptyListProps,
+        profiles: [{ ...profile, targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' }],
+        bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
+        entries: [{
+          key: 'provider:kimi-1',
+          source: 'provider',
+          kind: 'apikey',
+          id: 'kimi-1',
+          agentId: 'claude',
+          title: 'OpenRouter',
+          subtitle: '已配置',
+          isCurrent: true,
+          authStatus: 'valid',
+          authHealth: 'configured',
+          sortKey: '',
+          provider: {
+            id: 'kimi-1',
+            agentId: 'claude',
+            name: 'OpenRouter',
+            preset: 'openrouter',
+            configText: JSON.stringify({
+              vendor: 'openrouter',
+              endpoints: [
+                { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
+                { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
+                { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
+              ],
+            }),
+            configFormat: 'json',
+            isCurrent: false,
+            official: false,
+          },
+        }],
+      }),
+    );
+    expect(markup).toContain('/v1/messages');
+    expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('Claude');
+    expect(markup).toContain('Codex');
+    expect(markup).toContain('Grok');
+    expect(markup).toContain('一键配置');
+    expect(markup).toContain('将勾选项写入客户端配置');
+    expect(markup).toContain('可一键接入');
+    expect(markup).toContain('转换 → 上游 Chat 接口');
+    expect(markup).not.toContain('票');
+    expect(markup).not.toContain('钱包');
+    expect(markup).not.toContain('投影');
+    expect(markup).not.toContain('协议桥');
+    expect((markup.match(/data-route-detail="bridge-1"/g) ?? []).length).toBe(1);
   });
 
   it('keeps last-known running as 状态不可用 + 停止 when status read fails', () => {
@@ -175,12 +256,17 @@ describe('Bridges page', () => {
       }),
     );
     expect(markup).toContain('运行中');
-    expect(markup).toContain('本机端点');
-    expect(markup).toContain('目标写入');
+    expect(markup).toContain('本机桥');
+    expect(markup).toContain('客户端接入');
+    expect(markup).toContain('将勾选项写入客户端配置');
     expect(markup).toContain('停止并还原');
+    expect(markup).not.toContain('本机端点');
+    expect(markup).not.toContain('目标写入');
     expect(markup).not.toContain('配置已生效');
     expect(markup).not.toContain('在 Connections 查看');
     expect(markup).not.toContain('删除适配');
+    expect(markup).not.toContain('role="dialog"');
+    expect(markup).toContain('data-route-detail="bridge-1"');
   });
 
   it('keeps both surface-group members visible and greys the failed row with a reason', () => {

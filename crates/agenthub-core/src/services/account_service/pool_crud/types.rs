@@ -83,6 +83,8 @@ impl AccountMutationError {
         }
     }
 
+    // Referenced only from `tests.rs` in this crate; keep for test coverage.
+    #[allow(dead_code)]
     pub(in crate::services::account_service) fn code(&self) -> &str {
         self.error.code()
     }

@@ -142,6 +142,7 @@ export type LiveAuthProbeLike = {
   revision?: string | null;
   alsoPresent?: string[] | null;
   isAdapterProjection?: boolean | null;
+  secretHash?: string | null;
 };
 
 export type LiveAuthImportGate = {
@@ -366,6 +367,7 @@ export type DiscoveryProviderLike = {
   configFormat?: string | null;
   isAdapterProjection?: boolean | null;
   alsoPresent?: string[] | null;
+  secretHash?: string | null;
 };
 
 function leftoverOrProjectionProvider(provider: DiscoveryProviderLike): boolean {
@@ -379,14 +381,29 @@ function leftoverOrProjectionProvider(provider: DiscoveryProviderLike): boolean 
   });
 }
 
-function hasUserApiKeyProvider(providers: readonly DiscoveryProviderLike[]): boolean {
-  return providers.some((provider) => !leftoverOrProjectionProvider(provider));
+function normalizeSecretHash(value?: string | null): string {
+  return value?.trim() ?? '';
+}
+
+function poolHasSameLiveSecret(
+  probeHash: string,
+  accounts: readonly { kind?: string; secretHash?: string | null }[],
+  providers: readonly DiscoveryProviderLike[],
+): boolean {
+  if (!probeHash) return false;
+  if (accounts.some((account) => normalizeSecretHash(account.secretHash) === probeHash)) {
+    return true;
+  }
+  return providers.some((provider) => {
+    if (leftoverOrProjectionProvider(provider)) return false;
+    return normalizeSecretHash(provider.secretHash) === probeHash;
+  });
 }
 
 export function liveAuthDiscoveryKind(input: {
   poolState: ConnectionPoolDiscoveryState;
-  probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials' | 'isAdapterProjection' | 'alsoPresent'> | null;
-  accounts: readonly { kind: string }[];
+  probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials' | 'isAdapterProjection' | 'alsoPresent' | 'secretHash'> | null;
+  accounts: readonly { kind: string; secretHash?: string | null }[];
   providers: readonly DiscoveryProviderLike[];
   accountsFailed?: boolean;
   providersFailed?: boolean;
@@ -397,12 +414,14 @@ export function liveAuthDiscoveryKind(input: {
 
   const kind = liveAuthProbeKind(input.probe);
   const hasExistingOAuth = input.accounts.some((account) => account.kind === 'oauth');
-  const hasExistingApiKey =
-    input.accounts.some((account) => account.kind === 'apikey') ||
-    hasUserApiKeyProvider(input.providers);
+  const sameLiveSecret = poolHasSameLiveSecret(
+    normalizeSecretHash(input.probe.secretHash),
+    input.accounts,
+    input.providers,
+  );
 
   if (isOAuthLiveAuthKind(kind) && !hasExistingOAuth) return 'account';
-  if (isApiKeyLiveAuthKind(kind) && !hasExistingApiKey) return 'provider';
+  if (isApiKeyLiveAuthKind(kind) && !sameLiveSecret) return 'provider';
   return null;
 }
 

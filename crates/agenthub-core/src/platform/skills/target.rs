@@ -147,11 +147,10 @@ impl SkillTargetRegistry {
 
 /// Production skill targets from path contributions — no fat adapter registry.
 ///
-/// Membership is filled by `integrations::register_integrations` (Kimi omitted).
+/// Kept as a compatibility wrapper for callers of the former fallible API;
+/// new code should use [`builtin_skill_target_registry`].
 pub fn build_builtin_skill_targets() -> Result<SkillTargetRegistry> {
-    Ok(crate::integrations::production_integrations()
-        .skills
-        .clone())
+    Ok(builtin_skill_target_registry().clone())
 }
 
 /// Process-wide builtin skill target registry.

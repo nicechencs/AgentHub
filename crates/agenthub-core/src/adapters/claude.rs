@@ -280,6 +280,7 @@ pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
                 source: Some("claude:settings.json".into()),
                 revision: auth_file_revision(&settings_path),
                 also_present: Vec::new(),
+                secret_hash: None,
             };
             return Ok(if claude_file_oauth_present(home) {
                 state.with_also_present(["oauth"])
@@ -298,6 +299,7 @@ pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
                 source: Some("claude:settings.json".into()),
                 revision: auth_file_revision(&settings_path),
                 also_present: Vec::new(),
+                secret_hash: None,
             });
         }
     }
@@ -321,6 +323,7 @@ pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
             source: Some(format!("claude:{}", bundle.source.as_str())),
             revision: claude_oauth_revision(&bundle, &credentials_path),
             also_present: Vec::new(),
+            secret_hash: None,
         });
     }
     if credentials_path.is_file() {
@@ -333,6 +336,7 @@ pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
             source: Some("claude:.credentials.json".into()),
             revision: auth_file_revision(&credentials_path),
             also_present: Vec::new(),
+            secret_hash: None,
         });
     }
     Ok(AuthState {
@@ -344,6 +348,7 @@ pub(crate) fn claude_auth_state(home: &Path) -> Result<AuthState> {
         source: Some("claude:settings.json".into()),
         revision: auth_file_revision(&settings_path),
         also_present: Vec::new(),
+        secret_hash: None,
     })
 }
 

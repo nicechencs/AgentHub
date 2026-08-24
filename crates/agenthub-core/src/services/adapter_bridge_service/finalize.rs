@@ -227,14 +227,22 @@ impl AdapterBridgeService {
         })?;
         let upstream_auth =
             self.resolve_upstream_auth(&rule, profile.source_kind, &profile.source_id)?;
+        let (upstream_base_url, upstream_model, configured_listed_models, protocol) =
+            super::prepare::openai_source_upstream(
+                self,
+                &rule,
+                profile.source_kind,
+                &profile.source_id,
+            );
         Ok(AdapterBridgeRestoreMaterial {
             material: AdapterBridgeRuntimeMaterial {
                 profile_id: profile.id.clone(),
                 source_connection_id: profile.source_id.clone(),
                 preferred_port: Some(local_port),
-                upstream_base_url: rule.upstream_base_url.into(),
-                upstream_model: rule.default_model.into(),
-                protocol: rule.protocol,
+                upstream_base_url,
+                upstream_model,
+                configured_listed_models,
+                protocol,
                 local_surface: rule.local_surface,
                 source: rule.source,
                 target_agent: rule.target_agent,

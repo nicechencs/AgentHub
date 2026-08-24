@@ -188,12 +188,21 @@ pub struct AuthState {
     /// Typical values: `oauth`, `api_key`. Empty when only one family exists.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub also_present: Vec<String>,
+    /// SHA-256 of the live API key (trimmed). Never the raw secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_hash: Option<String>,
 }
 
 impl AuthState {
     /// Mark additional live credential families without changing the winning `kind`.
     pub fn with_also_present(mut self, kinds: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.also_present = kinds.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Attach a live API-key fingerprint without changing `kind`.
+    pub fn with_secret_hash(mut self, hash: Option<String>) -> Self {
+        self.secret_hash = hash.filter(|value| !value.is_empty());
         self
     }
 }

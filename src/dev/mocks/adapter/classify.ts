@@ -39,7 +39,10 @@ export function classify(
     if (
       tag?.toLowerCase() === 'openai'
       || tag?.toLowerCase() === 'openai-api'
+      || tag?.toLowerCase() === 'openai-compat'
+      || tag?.toLowerCase() === 'openrouter'
       || config.toLowerCase().includes(OPENAI_API_ENDPOINT_NEEDLE)
+      || config.toLowerCase().includes('openrouter.ai')
     ) {
       return 'openai_api_key';
     }
@@ -101,8 +104,12 @@ export function classify(
     account.kind === 'apikey'
     && (explicitProvider?.toLowerCase() === 'openai'
       || explicitProvider?.toLowerCase() === 'openai-api'
+      || explicitProvider?.toLowerCase() === 'openai-compat'
+      || explicitProvider?.toLowerCase() === 'openrouter'
       || credentialsText.toLowerCase().includes(OPENAI_API_ENDPOINT_NEEDLE)
-      || extraText.toLowerCase().includes(OPENAI_API_ENDPOINT_NEEDLE))
+      || credentialsText.toLowerCase().includes('openrouter.ai')
+      || extraText.toLowerCase().includes(OPENAI_API_ENDPOINT_NEEDLE)
+      || extraText.toLowerCase().includes('openrouter.ai'))
   ) {
     return 'openai_api_key';
   }

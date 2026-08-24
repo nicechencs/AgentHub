@@ -255,6 +255,7 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
                 source: Some("kimi:config.toml".into()),
                 revision: auth_file_revision(config),
                 also_present: Vec::new(),
+                secret_hash: None,
             };
             return if oauth_tokens_present(cred) {
                 state.with_also_present(["oauth"])
@@ -273,6 +274,7 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
                 source: Some("kimi:config.toml".into()),
                 revision: auth_file_revision(config),
                 also_present: Vec::new(),
+                secret_hash: None,
             };
         }
     }
@@ -287,6 +289,7 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
             source: Some("kimi:credentials/kimi-code.json".into()),
             revision: None,
             also_present: Vec::new(),
+            secret_hash: None,
         };
     }
     let body = match std::fs::read_to_string(cred)
@@ -304,6 +307,7 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
                 source: Some("kimi:credentials/kimi-code.json".into()),
                 revision: auth_file_revision(cred),
                 also_present: Vec::new(),
+                secret_hash: None,
             };
         }
     };
@@ -318,6 +322,7 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
             source: Some("kimi:credentials/kimi-code.json".into()),
             revision: auth_file_revision(cred),
             also_present: Vec::new(),
+            secret_hash: None,
         };
     }
     let health = oauth_auth_health(metadata);
@@ -334,6 +339,7 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
         source: Some("kimi:credentials/kimi-code.json".into()),
         revision: auth_file_revision(cred),
         also_present: Vec::new(),
+        secret_hash: None,
     }
 }
 

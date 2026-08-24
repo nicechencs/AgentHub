@@ -236,6 +236,8 @@ fn import_account_live_inner(
     Ok(item.redacted())
 }
 
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
 fn add_api_key_account_inner(
     hub: &AgentHub,
     agent_id: &str,

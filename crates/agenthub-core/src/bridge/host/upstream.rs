@@ -209,13 +209,14 @@ pub(super) async fn read_bounded_upstream_error(
 pub(super) async fn post_upstream(
     state: &EdgeState,
     builder: reqwest::RequestBuilder,
+    request_id: &str,
 ) -> Result<reqwest::Response, Response> {
     let result = tokio::select! {
         _ = state.force_shutdown.cancelled() => return Err(stopping_response()),
         result = tokio::time::timeout(UPSTREAM_RESPONSE_HEADER_TIMEOUT, builder.send()) => match result {
             Ok(result) => result,
             Err(_) => {
-                tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "upstream", code = "header_timeout", status = 504_u16, "bridge upstream response headers timed out");
+                tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "header_timeout", status = 504_u16, "bridge upstream response headers timed out");
                 state.record_upstream_failure();
                 return Err(error_response(
                     StatusCode::GATEWAY_TIMEOUT,
@@ -229,7 +230,7 @@ pub(super) async fn post_upstream(
     match result {
         Ok(response) => Ok(response),
         Err(_) => {
-            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, op = "upstream", code = "unavailable", status = 502_u16, "bridge upstream unavailable");
+            tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unavailable", status = 502_u16, "bridge upstream unavailable");
             state.record_upstream_failure();
             Err(error_response(
                 StatusCode::BAD_GATEWAY,

@@ -117,6 +117,7 @@ impl AgentAdapter for DshAdapter {
                 source: Some("dsh:credentials+env".into()),
                 revision: auth_file_revision(&creds),
                 also_present: Vec::new(),
+                secret_hash: None,
             });
         }
         if env_set {
@@ -129,6 +130,7 @@ impl AgentAdapter for DshAdapter {
                 source: Some("dsh:env".into()),
                 revision: None,
                 also_present: Vec::new(),
+                secret_hash: None,
             });
         }
         if has_file {
@@ -141,6 +143,7 @@ impl AgentAdapter for DshAdapter {
                 source: Some("dsh:credentials".into()),
                 revision: auth_file_revision(&creds),
                 also_present: Vec::new(),
+                secret_hash: None,
             });
         }
         Ok(AuthState {
@@ -152,6 +155,7 @@ impl AgentAdapter for DshAdapter {
             source: Some("dsh:credentials".into()),
             revision: auth_file_revision(&creds),
             also_present: Vec::new(),
+            secret_hash: None,
         })
     }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultConfigScaffold, smartDetectUrlAndKey } from '../index';
+import { applySmartPaste, defaultConfigScaffold, EMPTY_FORM_VARS, smartDetectUrlAndKey } from '../index';
 import { CLAUDE_CODE_BASH_EXPORT_BASIC } from './fixtures/claude-code-samples';
 
 describe('smartDetectUrlAndKey', () => {
@@ -90,3 +90,35 @@ describe('claude-code bash export (smoke from test fixtures only)', () => {
     expect(r.matchedDetectors?.some((id) => id.startsWith('claude-'))).toBe(true);
   });
 });
+
+describe('OpenRouter env-style paste', () => {
+  it('honors MODEL= / model= and API_KEY= alongside a URL', () => {
+    const r = smartDetectUrlAndKey(
+      'https://openrouter.ai/api/v1\nMODEL=stealth/ox-alpha\nAPI_KEY=sk-or-v1-abcdefghijklmnopqrstuv',
+    );
+    expect(r.baseUrl).toBe('https://openrouter.ai/api/v1');
+    expect(r.model).toBe('stealth/ox-alpha');
+    expect(r.apiKey).toMatch(/^sk-or-v1-/);
+  });
+
+  it('reads lowercase model= without overwriting an existing key on merge', async () => {
+    const r = applySmartPaste('codex', 'https://openrouter.ai/api/v1\nmodel=stealth/ox-alpha', {
+      vars: { ...EMPTY_FORM_VARS, apiKey: 'sk-or-v1-already-pasted-abcdefgh' },
+    });
+    expect(r.vars.baseUrl).toBe('https://openrouter.ai/api/v1');
+    expect(r.vars.model).toBe('stealth/ox-alpha');
+    expect(r.vars.apiKey).toBe('sk-or-v1-already-pasted-abcdefgh');
+  });
+
+  it('does not require MODEL= to recognize URL+key (empty model is OK)', () => {
+    const detect = smartDetectUrlAndKey(
+      'https://openrouter.ai/api/v1\nAPI_KEY=sk-or-v1-abcdefghijklmnopqrstuv',
+    );
+    expect(detect.baseUrl).toBe('https://openrouter.ai/api/v1');
+    expect(detect.apiKey).toMatch(/^sk-or-v1-/);
+    expect(detect.model).toBeUndefined();
+    const r = applySmartPaste('codex', 'https://openrouter.ai/api/v1\nAPI_KEY=sk-or-v1-abcdefghijklmnopqrstuv');
+    expect(Boolean(r.vars.apiKey.trim())).toBe(true);
+  });
+});
+

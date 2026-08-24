@@ -167,6 +167,8 @@ export interface Provider {
   official?: boolean;
   /** 脱敏密钥结尾，如 `**JF6Q`，仅展示用 */
   secretTail?: string;
+  /** SHA-256 of the stored API key. Identity only; never the raw secret. */
+  secretHash?: string;
 }
 
 export type AccountKind = 'oauth' | 'apikey';
@@ -230,6 +232,8 @@ export interface Account {
   refreshTokenPreview?: string;
   /** 脱敏密钥结尾，如 `**JF6Q`（OAuth = refresh token，API Key = key） */
   secretTail?: string;
+  /** SHA-256 of a stored API key. Identity only; never the raw secret. */
+  secretHash?: string;
 }
 
 /** 投影状态（与 core SkillSyncState 对齐） */

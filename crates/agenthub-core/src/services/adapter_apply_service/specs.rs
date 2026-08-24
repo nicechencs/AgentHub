@@ -1,15 +1,11 @@
-use std::path::PathBuf;
-
 use chrono::Utc;
 use serde_json::json;
 
-use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::models::{
-    map_adapter_model, AdapterApplyRequest, AdapterApplyResult, AdapterGateKind, AdapterProfile,
-    AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct,
-    AdapterSupport, AgentId, Provider, ProviderInput,
+    map_adapter_model, AdapterGateKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus,
+    AdapterRoute, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId, Provider,
+    ProviderInput,
 };
 use crate::services::adapter_route_constants::{
     claude_native_base_url, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
@@ -23,13 +19,8 @@ use crate::services::adapter_route_constants::{
     KIMI_GROK_DEFAULT_MODEL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT, OPENAI_GROK_BASE_URL,
     OPENAI_GROK_DEFAULT_MODEL, OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
 };
-use crate::services::{
-    AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
-    ProviderService,
-};
-use crate::storage::{AdapterProfileRepo, Database};
 
-use super::{AdapterApplyService, GeneratedApplySpec};
+use super::GeneratedApplySpec;
 
 pub(super) const RULE_ID: &str = KIMI_CLAUDE_RULE_ID;
 pub(super) const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";

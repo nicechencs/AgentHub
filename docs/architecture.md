@@ -8,7 +8,8 @@
 > v1.3：`runtime/` + `env_service` —— 安装 Agent 前的共享运行时（Node/npm 等）检测与引导。  
 > 2026-08-12 同步：Adapter 规则分析/稳定直连、Bridge core 与只读 MCP inventory 的当前工作区结构。
 > 2026-08-12 决策同步：`local_bridge` 的目标宿主确定为用户级 `agenthub-adapterd` sidecar；当前实现仍由 Tauri `AppState` 进程内托管，迁移契约见 [adapter-sidecar-design.md](adapter-sidecar-design.md)。
-> 日志：core 统一 tracing（文件 + 可选 stderr）；必打事件与分期见 [logging.md](logging.md) **v1.1**。  
+> 日志：core 统一 tracing（文件 + 可选 stderr）；必打事件与分期见 [logging.md](logging.md) **v1.1**。
+> 本机三条入口与协议转换见 [local-route-endpoints.md](local-route-endpoints.md)。  
 > **前端 backend 分层（已落地）**：`lib/backend/{contracts,tauri,current}` + `dev/mocks` + `app/runtime`；命令与 adapter 选择见 **§4.1–§4.2**。
 > 2026-08-14：Hub 重构 Phase 1 入口（ConnectFlow）已落地，详见 [hub-redesign-plan.md](hub-redesign-plan.md) / [ui-design.md](ui-design.md)。
 > 2026-08-19：用户看到的是「登录」，不是「票 / 钱包」。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不标圈号。三种做法是直接改配置 / 写进对方认的登录 / 本机转发，见 [product-decisions.md](product-decisions.md)。领域对象仍是票 / 绑定 / 协议图（实现名），见 [connection-binding-model.md](connection-binding-model.md)。当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`；`canApply` 仍按「现在能不能写上去」打开。

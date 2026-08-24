@@ -45,10 +45,25 @@ impl DownstreamSurface {
         }
     }
 
-    pub(super) fn reject_if_unserved(self, state: &EdgeState) -> Option<Response> {
+    pub(super) fn reject_if_unserved(
+        self,
+        state: &EdgeState,
+        request_id: &str,
+    ) -> Option<Response> {
         if self.served_by(state.upstream.local_surface) {
             None
         } else {
+            tracing::warn!(
+                target: "core.adapter",
+                profile_id = %state.profile_id,
+                request_id = %request_id,
+                op = "serve",
+                code = "surface_mismatch",
+                local_surface = ?state.upstream.local_surface,
+                requested = self.op(),
+                status = 404_u16,
+                "local surface does not serve this path"
+            );
             Some(StatusCode::NOT_FOUND.into_response())
         }
     }

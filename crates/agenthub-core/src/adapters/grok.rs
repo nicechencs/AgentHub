@@ -643,6 +643,7 @@ pub(crate) fn grok_auth_state(config: &Path, auth: &Path) -> Result<AuthState> {
             source: Some("grok:config.toml".into()),
             revision: auth_files_revision(&[config, auth]),
             also_present: Vec::new(),
+            secret_hash: None,
         };
         return Ok(if grok_auth_json_has_oauth(auth) {
             state.with_also_present(["oauth"])
@@ -660,6 +661,7 @@ pub(crate) fn grok_auth_state(config: &Path, auth: &Path) -> Result<AuthState> {
             source: Some("grok:auth.json".into()),
             revision: None,
             also_present: Vec::new(),
+            secret_hash: None,
         });
     }
     let body = match std::fs::read_to_string(auth)
@@ -677,6 +679,7 @@ pub(crate) fn grok_auth_state(config: &Path, auth: &Path) -> Result<AuthState> {
                 source: Some("grok:auth.json".into()),
                 revision: auth_file_revision(auth),
                 also_present: Vec::new(),
+                secret_hash: None,
             });
         }
     };
@@ -691,6 +694,7 @@ pub(crate) fn grok_auth_state(config: &Path, auth: &Path) -> Result<AuthState> {
             source: Some("grok:auth.json".into()),
             revision: auth_file_revision(auth),
             also_present: Vec::new(),
+            secret_hash: None,
         });
     }
     let health = oauth_auth_health(metadata);
@@ -707,6 +711,7 @@ pub(crate) fn grok_auth_state(config: &Path, auth: &Path) -> Result<AuthState> {
         source: Some("grok:auth.json".into()),
         revision: auth_file_revision(auth),
         also_present: Vec::new(),
+        secret_hash: None,
     })
 }
 

@@ -44,6 +44,9 @@ fn listener_state(
         grok_replay: Arc::new(GrokReasoningReplay::new()),
         listed_models: Arc::from(Vec::<String>::new()),
         reload_upstream_auth: None,
+        mapping_source: None,
+        mapping_target: None,
+        custom_openai: false,
         account_picker: crate::bridge::runtime::BridgeStartSpec::new(
             "transport-test",
             0,
@@ -116,16 +119,14 @@ fn prepare_selects_upstream_path_by_channel() {
 }
 
 #[test]
-fn passthrough_is_declared_only_for_responses_oauth_channels() {
-    assert_eq!(
-        [
-            UpstreamChannel::OpenAiChat.passthrough(),
-            UpstreamChannel::Anthropic.passthrough(),
-            UpstreamChannel::CodexResponses.passthrough(),
-            UpstreamChannel::Grok.passthrough(),
-        ],
-        [false, false, true, true]
-    );
+fn passthrough_is_declared_only_for_matching_wire_surfaces() {
+    assert!(!UpstreamChannel::OpenAiChat.passthrough_for(DownstreamSurface::Responses));
+    assert!(!UpstreamChannel::Anthropic.passthrough_for(DownstreamSurface::ChatCompletions));
+    assert!(UpstreamChannel::OpenAiChat.passthrough_for(DownstreamSurface::ChatCompletions));
+    assert!(UpstreamChannel::Anthropic.passthrough_for(DownstreamSurface::Messages));
+    assert!(UpstreamChannel::CodexResponses.passthrough_for(DownstreamSurface::Responses));
+    assert!(UpstreamChannel::Grok.passthrough_for(DownstreamSurface::Responses));
+    assert!(!UpstreamChannel::Grok.passthrough_for(DownstreamSurface::Messages));
 }
 
 #[test]
@@ -369,4 +370,87 @@ fn official_codex_responses_passthrough_strips_system_items() {
         .expect("user text");
     assert!(user_text.contains("You are a coding agent."), "{user_text}");
     assert!(user_text.contains("hello"), "{user_text}");
+}
+
+#[test]
+fn anthropic_prepare_passthroughs_messages_surface() {
+    let body = json!({
+        "model": "claude-sonnet-4",
+        "max_tokens": 16,
+        "messages": [{"role": "user", "content": "hi"}]
+    });
+    let admitted = admitted(
+        BridgeUpstreamProtocol::AnthropicMessages,
+        BridgeLocalSurface::Messages,
+        body.clone(),
+    );
+    let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::AnthropicMessages)
+        .prepare(DownstreamSurface::Messages, &admitted)
+        .expect("messages prepare");
+    assert_eq!(prepared.path, "messages");
+    assert_eq!(prepared.body["model"], "claude-sonnet-4");
+    assert_eq!(prepared.body["max_tokens"], 16);
+}
+
+#[test]
+fn openai_chat_prepare_passthroughs_chat_surface() {
+    let body = json!({
+        "model": "gpt-test",
+        "messages": [{"role": "user", "content": "hi"}],
+        "stream": true,
+        "response_format": {"type": "json_object"}
+    });
+    let admitted = admitted(
+        BridgeUpstreamProtocol::OpenAiChatCompletions,
+        BridgeLocalSurface::ChatCompletions,
+        body.clone(),
+    );
+    let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::OpenAiChatCompletions)
+        .prepare(DownstreamSurface::ChatCompletions, &admitted)
+        .expect("chat prepare");
+    assert_eq!(prepared.path, "chat/completions");
+    assert_eq!(prepared.body["model"], "configured-model");
+    assert_eq!(prepared.body["messages"], body["messages"]);
+    assert_eq!(prepared.body["response_format"], body["response_format"]);
+    assert!(prepared.stream);
+}
+
+#[test]
+fn anthropic_prepare_converts_chat_surface() {
+    let admitted = admitted(
+        BridgeUpstreamProtocol::AnthropicMessages,
+        BridgeLocalSurface::ChatCompletions,
+        json!({
+            "model": "gpt-test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 32
+        }),
+    );
+    let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::AnthropicMessages)
+        .prepare(DownstreamSurface::ChatCompletions, &admitted)
+        .expect("chat to messages prepare");
+    assert_eq!(prepared.path, "messages");
+    assert_eq!(prepared.body["model"], "configured-model");
+    assert_eq!(prepared.body["messages"][0]["role"], "user");
+    assert_eq!(prepared.body["max_tokens"], 32);
+}
+
+#[test]
+fn grok_prepare_converts_chat_surface_to_responses() {
+    let admitted = admitted(
+        BridgeUpstreamProtocol::XaiResponsesOauth,
+        BridgeLocalSurface::ChatCompletions,
+        json!({
+            "model": "gpt-test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": false
+        }),
+    );
+    let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::XaiResponsesOauth)
+        .prepare(DownstreamSurface::ChatCompletions, &admitted)
+        .expect("chat to grok responses prepare");
+    assert_eq!(prepared.path, "responses");
+    assert_eq!(prepared.body["model"], "configured-model");
+    assert_eq!(prepared.body["input"][0]["role"], "user");
+    assert_eq!(prepared.body["input"][0]["content"][0]["text"], "hi");
 }

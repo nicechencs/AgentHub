@@ -1,26 +1,18 @@
 use serde_json::Value;
 
-use crate::error::{AppError, Result};
 use crate::models::{
-    adapter_maturity_from_decision, decide_adapter_capability, AccountKind, AdapterAction,
-    AdapterApplyPlan, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
+    AdapterAction, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
     AdapterPlanChange, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
-    AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
+    AdapterSourceKind, AdapterSupport, AgentId,
 };
 use crate::services::adapter_route_constants::{
-    claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
-    is_kimi_code_membership_account, is_kimi_code_membership_source, is_openai_api_marker,
-    is_xai_api_marker, settings_contain_anthropic_api_endpoint, ANTHROPIC_AUTH_TOKEN_ENV,
-    DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL,
-    DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
-    DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL,
-    GLM_CODEX_RULE_ID, GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_BASE_URL,
-    KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, OPENAI_GROK_BASE_URL,
-    OPENAI_GROK_DEFAULT_MODEL,
+    ANTHROPIC_AUTH_TOKEN_ENV, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CLAUDE_RULE_ID,
+    DEEPSEEK_CODEX_BASE_URL, DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT,
+    DEEPSEEK_PI_RULE_ID, DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID,
+    GLM_CODEX_BASE_URL, GLM_CODEX_RULE_ID, GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID,
+    KIMI_CLAUDE_BASE_URL, KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL, OPENAI_GROK_BASE_URL,
 };
-use crate::storage::{AccountRepo, Database, ProviderRepo};
-
-use super::AdapterRouteService;
+use crate::storage::AccountRepo;
 
 pub(super) fn reuse_path_for(
     route: AdapterRoute,
@@ -40,7 +32,7 @@ pub(super) fn reuse_path_for(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum RouteSourceLabel {
+pub(in crate::services) enum RouteSourceLabel {
     KimiMembership,
     AnthropicApiKey,
     OpenaiApiKey,
@@ -169,6 +161,20 @@ pub(crate) fn bind_implementation_open(
             | Some("openai-api-to-codex-v1"),
             AdapterSourceKind::Provider | AdapterSourceKind::Account,
             AgentId::Codex,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("openai-api-to-claude-v1"),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Claude,
+            AdapterRoute::LocalBridge,
+            AdapterSupport::Experimental,
+        )
+        | (
+            Some("openai-api-to-grok-bridge-v1"),
+            AdapterSourceKind::Provider | AdapterSourceKind::Account,
+            AgentId::Grok,
             AdapterRoute::LocalBridge,
             AdapterSupport::Experimental,
         )
@@ -421,6 +427,24 @@ pub(super) fn actions_for(
                 "requires_local_bridge",
                 "Codex",
                 "Codex 和 OpenAI 说的话对不上，需要本机转发。",
+                None,
+                false,
+            )]
+        }
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Claude, AdapterRoute::LocalBridge) => {
+            vec![action(
+                "requires_local_bridge",
+                "Claude Code",
+                "Claude 和这份 OpenAI 兼容登录说的话对不上，需要本机转发。",
+                None,
+                false,
+            )]
+        }
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Grok, AdapterRoute::LocalBridge) => {
+            vec![action(
+                "requires_local_bridge",
+                "Grok",
+                "Grok 和这份 OpenAI 兼容登录说的话对不上，需要本机转发。",
                 None,
                 false,
             )]
@@ -803,8 +827,8 @@ pub(super) fn evidence_for(
         (RouteSourceLabel::AnthropicApiKey, AgentId::Codex) => vec![anthropic_codex_evidence()],
         (RouteSourceLabel::AnthropicApiKey, _) => vec![anthropic_pi_evidence()],
         (RouteSourceLabel::OpenaiApiKey, AgentId::Codex) => vec![openai_codex_evidence()],
-        (RouteSourceLabel::OpenaiApiKey, AgentId::Grok) => {
-            vec![adapter_compatibility_evidence()]
+        (RouteSourceLabel::OpenaiApiKey, AgentId::Claude | AgentId::Grok) => {
+            vec![openai_codex_evidence()]
         }
         (RouteSourceLabel::XaiGrokSubscription, AgentId::Claude | AgentId::Codex) => {
             vec![adapter_compatibility_evidence()]

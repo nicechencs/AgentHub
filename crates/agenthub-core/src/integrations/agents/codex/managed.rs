@@ -21,6 +21,8 @@ pub const PROVIDER_TOML_KEYS: &[&str] = &[
 
 /// Native TOML keys the GenericConfigForm projector writes (not UI field ids).
 /// Must stay ⊆ [`PROVIDER_TOML_KEYS`].
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
 pub const PROJECTOR_TOML_KEYS: &[&str] = &[
     "model",
     "model_provider",

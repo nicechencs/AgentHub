@@ -35,7 +35,7 @@ impl LiveOrigin {
 }
 
 pub fn leftover_live_flag(agent: AgentId) -> bool {
-    agent == AgentId::Codex && leftover::live_config_is_bridge_leftover()
+    agent == AgentId::Codex && leftover::live_active_provider_is_bridge_leftover()
 }
 
 pub fn generated_provider_is_adapter_owned(provider: &Provider) -> bool {
@@ -178,10 +178,24 @@ fn credentials_have_local_bearer(value: &Value) -> bool {
 }
 
 fn credentials_have_agenthub_bridge_marker(value: &Value) -> bool {
+    if let Some(content) = value.get("content").and_then(Value::as_str) {
+        let is_toml = value
+            .get("format")
+            .and_then(Value::as_str)
+            .is_some_and(|format| format.eq_ignore_ascii_case("toml"))
+            || content.contains("model_provider")
+            || content.contains("[model_providers.");
+        if is_toml {
+            return leftover::toml_active_provider_is_bridge_leftover(content);
+        }
+    }
     match value {
         Value::String(text) => text_contains_bridge_slug(text),
         Value::Array(items) => items.iter().any(credentials_have_agenthub_bridge_marker),
-        Value::Object(map) => map.values().any(credentials_have_agenthub_bridge_marker),
+        Value::Object(map) => map
+            .iter()
+            .filter(|(key, _)| *key != "content")
+            .any(|(_, child)| credentials_have_agenthub_bridge_marker(child)),
         _ => false,
     }
 }
