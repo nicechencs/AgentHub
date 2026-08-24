@@ -737,6 +737,14 @@ export const zh = {
       submitting: "接上中…",
       fallback: "无法导入这条登录",
     },
+    quickApply: {
+      action: "一键配置",
+      confirm: "确认应用",
+      hint: "用这份登录接到所选客户端。写入的是本机路由地址。",
+      required: "请至少勾选一个客户端。",
+      fallback: "无法接到所选客户端",
+      success: "已接到所选客户端。",
+    },
     capabilities: {
       endpoints: "支持的客户端",
       models: "模型",

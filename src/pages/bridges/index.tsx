@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -15,15 +14,13 @@ import {
   stopAdapterBridge,
 } from '@/lib/api/adapter';
 import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
+import { applyLocalRouteToAgents, type CreateRouteTarget } from './create-route-flow';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { TicketSurfaceGroupView } from '@/lib/backend/contracts/ticket';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
-import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
 import { CreateRouteDialog } from './CreateRouteDialog';
 import { ImportRouteDialog } from './ImportRouteDialog';
 import {
-  BRIDGES_PATH,
-  resolveBridgesProfileQuery,
   resourceFailureMessage,
 } from './adapter-model';
 import {
@@ -60,8 +57,6 @@ type WalletSnapshot = {
  */
 export default function BridgesPage() {
   const { t } = useI18n();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const {
     entries,
     profiles,
@@ -85,7 +80,6 @@ export default function BridgesPage() {
   });
   const [removeConfirm, setRemoveConfirm] = useState<AdapterProfile | null>(null);
   const [stopConfirm, setStopConfirm] = useState<AdapterProfile | null>(null);
-  const [detailProfileId, setDetailProfileId] = useState<string | null>(null);
   const [removingProfileId, setRemovingProfileId] = useState<string | null>(null);
   const [profileErrors, setProfileErrors] = useState<Record<string, unknown>>({});
   const [busyProfileIds, setBusyProfileIds] = useState<Record<string, boolean>>({});
@@ -146,6 +140,24 @@ export default function BridgesPage() {
     clearProfileError(profile.id);
     try {
       updateProfile(await setAdapterBridgeAutoStart(profile.id, autoStart));
+      reloadThenClearProfileErrors();
+    } catch (error) {
+      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
+    } finally {
+      setProfileBusy(profile.id, false);
+    }
+  };
+
+  const handleApplyRoute = async (profile: AdapterProfile, agents: readonly CreateRouteTarget[]) => {
+    if (hiddenTargetIds.has(profile.targetAgentId)) return;
+    setProfileBusy(profile.id, true);
+    clearProfileError(profile.id);
+    try {
+      await applyLocalRouteToAgents({
+        sourceKind: profile.sourceKind,
+        sourceId: profile.sourceId,
+        agents,
+      });
       reloadThenClearProfileErrors();
     } catch (error) {
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
@@ -216,7 +228,6 @@ export default function BridgesPage() {
   const removeDialogBusy = removingProfileId !== null;
   const listedBridges = useMemo(() => [...bound, ...orphan], [bound, orphan]);
   const fleetSummary = adapterBridgeFleetSummary(listedBridges, bridgeStatuses, t);
-  const profileQuery = searchParams.get('profile');
   const pageView = bridgesPageViewState({
     profileState: loading && profileState !== 'error' ? 'loading' : profileState,
     bound,
@@ -227,18 +238,9 @@ export default function BridgesPage() {
     },
   });
 
-  useEffect(() => {
-    if (pageView !== 'list') return;
-    const resolved = resolveBridgesProfileQuery(profileQuery, listedBridges);
-    if (resolved) setDetailProfileId(resolved);
-  }, [listedBridges, pageView, profileQuery]);
   const removeConfirmIsOrphan = Boolean(
     removeConfirm && orphan.some((profile) => profile.id === removeConfirm.id),
   );
-
-  const detailProfile = detailProfileId
-    ? profiles.find((profile) => profile.id === detailProfileId) ?? null
-    : null;
 
   const listProps = {
     bridgeStatuses,
@@ -249,9 +251,12 @@ export default function BridgesPage() {
     removingProfileId,
     onStartBridge: handleStartBridge,
     onRequestStopBridge: setStopConfirm,
-    onShowDetail: (profile: AdapterProfile) => setDetailProfileId(profile.id),
+    onSetAutoStart: handleSetBridgeAutoStart,
+    onRequestRemove: setRemoveConfirm,
+    onApplyRoute: handleApplyRoute,
     onRetry: () => { void reload(); },
     hiddenTargetIds,
+    surfaceGroups: wallet.surfaceGroups,
   };
 
   return (
@@ -351,27 +356,6 @@ export default function BridgesPage() {
         onImported={() => { void reload(); }}
       />
 
-      <AdapterProfileDetailDialog
-        profile={detailProfile}
-        bridgeStatus={detailProfile ? bridgeStatuses[detailProfile.id] : undefined}
-        statusUnavailable={detailProfile ? Boolean(resourceErrors.bridgeStatuses[detailProfile.id]) : false}
-        entries={entries}
-        surfaceGroups={wallet.surfaceGroups}
-        busy={detailProfile
-          ? busyProfileIds[detailProfile.id] === true || removingProfileId === detailProfile.id
-          : false}
-        error={detailProfile ? profileErrors[detailProfile.id] : null}
-        onClose={() => {
-          setDetailProfileId(null);
-          if (profileQuery) navigate(BRIDGES_PATH, { replace: true });
-        }}
-        onSetAutoStart={handleSetBridgeAutoStart}
-        onRequestRemove={(profile) => {
-          setDetailProfileId(null);
-          setRemoveConfirm(profile);
-        }}
-        targetHidden={detailProfile ? hiddenTargetIds.has(detailProfile.targetAgentId) : false}
-      />
 
       <Dialog
         open={Boolean(stopConfirm)}

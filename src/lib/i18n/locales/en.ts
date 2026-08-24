@@ -742,6 +742,14 @@ export const en = {
       submitting: "Connecting…",
       fallback: "Could not import this login",
     },
+    quickApply: {
+      action: "One-click setup",
+      confirm: "Confirm apply",
+      hint: "Use this login to connect the selected clients. Writes the local route address.",
+      required: "Pick at least one client.",
+      fallback: "Could not connect the selected clients",
+      success: "Connected the selected clients.",
+    },
     capabilities: {
       endpoints: "Supported clients",
       models: "Model",

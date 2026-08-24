@@ -23,6 +23,8 @@ import {
   isOpenRouterUrl,
   parseCreateRouteModels,
   readCreateRouteCapabilities,
+  listLocalRouteSurfacesFromConfig,
+  applyLocalRouteToAgents,
   submitCreateRoute,
   submitImportRoute,
   vendorById,
@@ -176,6 +178,46 @@ describe('create-route-flow', () => {
     expect(caps.models).toEqual(['glm-4']);
     expect(caps.endpoints.map((row) => row.target)).toEqual(['claude', 'codex']);
     expect(caps.endpoints[0]?.url).toBe('https://open.bigmodel.cn/api/anthropic');
+  });
+
+  it('lists Claude messages plus Codex and Grok responses from capabilities', () => {
+    const draft = createRouteProviderDraft(input({
+      endpoints: ['claude', 'codex', 'grok'],
+    }));
+    const surfaces = listLocalRouteSurfacesFromConfig(draft.configText, {
+      targetAgentId: 'claude',
+      ruleId: 'openai-api-to-claude-v1',
+    });
+    expect(surfaces.map((row) => [row.target, row.path])).toEqual([
+      ['claude', '/v1/messages'],
+      ['codex', '/v1/responses'],
+      ['grok', '/v1/responses'],
+    ]);
+  });
+
+  it('falls back to all three surfaces for OpenRouter when endpoints are missing', () => {
+    const surfaces = listLocalRouteSurfacesFromConfig(
+      JSON.stringify({ vendor: 'openrouter', baseURL: 'https://openrouter.ai/api/v1' }),
+      { targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' },
+    );
+    expect(surfaces.map((row) => row.target)).toEqual(['claude', 'codex', 'grok']);
+  });
+
+  it('applies one ticket to each selected agent via plan and bind', async () => {
+    const planTicket = vi.fn(async (_ticket: string, agent: string) =>
+      plan(agent as AdapterApplyPlan['targetAgentId']),
+    );
+    const bindTicket = vi.fn(async (_ticket: string, agent: string) =>
+      bindResult(agent as BindTicketResult['binding']['agentId']),
+    );
+    const applied = await applyLocalRouteToAgents(
+      { sourceKind: 'provider', sourceId: 'or-1', agents: ['claude', 'codex', 'grok'] },
+      { planTicket, bindTicket },
+    );
+    expect(applied).toEqual(['claude', 'codex', 'grok']);
+    expect(planTicket).toHaveBeenCalledTimes(3);
+    expect(bindTicket).toHaveBeenCalledTimes(3);
+    expect(bindTicket.mock.calls.map((call) => call[1])).toEqual(['claude', 'codex', 'grok']);
   });
 
   it('marks openai-compat local-bridge rules as alternate', () => {
