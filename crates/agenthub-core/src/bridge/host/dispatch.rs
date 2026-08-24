@@ -10,7 +10,8 @@ use super::gateway::{Gateway, GatewayAuthError, ModelSwitchOutcome};
 use super::http::{error_response, reject_invalid_local_auth, stopping_response, EdgeState};
 use super::stream::{
     chat_non_stream_response, chat_stream_response, messages_non_stream_response,
-    messages_stream_response, non_stream_response, passthrough_sse_response, stream_response,
+    messages_stream_response, non_stream_response, passthrough_json_response,
+    passthrough_sse_response, stream_response,
 };
 use super::surface::DownstreamSurface;
 use super::transport::{send_upstream, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome};
@@ -196,7 +197,7 @@ async fn forward_upstream(
         _ = force_shutdown.cancelled() => stopping_response(),
         result = tokio::time::timeout(
             UPSTREAM_NON_STREAM_TIMEOUT,
-            forward_non_stream(surface, state.clone(), response, request_id, started, permit, cache_seed, member),
+            forward_non_stream(surface, channel, state.clone(), response, request_id, started, permit, cache_seed, member),
         ) => match result {
             Ok(response) => response,
             Err(_) => {
@@ -223,10 +224,12 @@ fn forward_stream(
     cache_seed: Option<String>,
     member: PickedMember,
 ) -> Response {
-    match surface {
-        DownstreamSurface::Responses if channel.passthrough() => passthrough_sse_response(
+    if channel.passthrough_for(surface) {
+        return passthrough_sse_response(
             state, response, request_id, started, permit, cache_seed, member,
-        ),
+        );
+    }
+    match surface {
         DownstreamSurface::Responses => {
             stream_response(state, response, request_id, started, permit, member)
         }
@@ -244,6 +247,7 @@ fn forward_stream(
 
 async fn forward_non_stream(
     surface: DownstreamSurface,
+    channel: UpstreamChannel,
     state: EdgeState,
     response: reqwest::Response,
     request_id: String,
@@ -252,6 +256,12 @@ async fn forward_non_stream(
     cache_seed: Option<String>,
     member: PickedMember,
 ) -> Response {
+    if channel.passthrough_for(surface) {
+        return passthrough_json_response(
+            state, response, request_id, started, permit, cache_seed, member,
+        )
+        .await;
+    }
     match surface {
         DownstreamSurface::Responses => {
             non_stream_response(

@@ -8,7 +8,8 @@ use super::super::admission::AdmittedRequest;
 use super::super::surface::DownstreamSurface;
 use super::{
     models_surface_unreachable, overwrite_configured_model_with, parse_bridge_request,
-    RecoveryPolicy, UpstreamDecode, UpstreamPrepare, UpstreamTransport,
+    passthrough_responses_object, RecoveryPolicy, UpstreamDecode, UpstreamPrepare,
+    UpstreamTransport,
 };
 
 pub(super) struct OpenAiChatTransport;
@@ -52,9 +53,20 @@ impl UpstreamTransport for OpenAiChatTransport {
                 })
             }
             DownstreamSurface::ChatCompletions => {
-                unreachable!(
-                    "Chat Completions surface is unreachable for OpenAI Chat Completions upstream"
-                )
+                let (mut body, stream) = passthrough_responses_object(admitted.body.clone())?;
+                overwrite_configured_model_with(
+                    &mut body,
+                    admitted.state.upstream.model.as_deref(),
+                    admitted.state.custom_openai,
+                    &admitted.state.listed_models,
+                );
+                Ok(UpstreamPrepare {
+                    path: self.path(),
+                    body,
+                    grok_identity: None,
+                    cache_seed: None,
+                    stream,
+                })
             }
             DownstreamSurface::Models => models_surface_unreachable(),
         }

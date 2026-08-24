@@ -71,7 +71,21 @@ impl UpstreamTransport for AnthropicTransport {
                 })
             }
             DownstreamSurface::ChatCompletions => {
-                unreachable!("Chat Completions surface is unused for Anthropic upstream")
+                let request = parse_bridge_request(surface, admitted)?;
+                let stream = request.stream;
+                let mut body = to_anthropic_messages_request(&request);
+                overwrite_configured_model(
+                    &mut body,
+                    admitted.state.upstream.model.as_deref(),
+                    &admitted.state.listed_models,
+                );
+                Ok(UpstreamPrepare {
+                    path: self.path(),
+                    body,
+                    grok_identity: None,
+                    cache_seed: None,
+                    stream,
+                })
             }
             DownstreamSurface::Models => models_surface_unreachable(),
         }
