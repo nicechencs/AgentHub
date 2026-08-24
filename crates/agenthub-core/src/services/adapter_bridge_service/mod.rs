@@ -38,7 +38,7 @@ use crate::models::{
     AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
     LocalBridgeEdge, Provider, ProviderInput, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE,
     CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE,
-    KIMI_CODEX_EDGE, OPENAI_CODEX_EDGE,
+    KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -46,6 +46,8 @@ use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
 const RULE_ID: &str = KIMI_CODEX_EDGE.rule_id;
 const ANTHROPIC_RULE_ID: &str = ANTHROPIC_CODEX_EDGE.rule_id;
 const OPENAI_RULE_ID: &str = OPENAI_CODEX_EDGE.rule_id;
+const OPENAI_CLAUDE_BRIDGE_RULE_ID: &str = OPENAI_CLAUDE_EDGE.rule_id;
+const OPENAI_GROK_LOCAL_RULE_ID: &str = OPENAI_GROK_BRIDGE_EDGE.rule_id;
 const CODEX_CLAUDE_RULE_ID: &str = CODEX_CLAUDE_RESPONSES_EDGE.rule_id;
 const GROK_CLAUDE_RULE_ID: &str = GROK_CLAUDE_EDGE.rule_id;
 const GROK_CODEX_RULE_ID: &str = GROK_CODEX_EDGE.rule_id;
@@ -187,6 +189,44 @@ const OPENAI_CODEX_RULE: CodexBridgeRule = CodexBridgeRule {
     mode: live_writer_mode(&OPENAI_CODEX_EDGE),
 };
 
+const OPENAI_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: OPENAI_CLAUDE_EDGE.rule_id,
+    profile_prefix: "adapter-openai-claude-bridge",
+    provider_prefix: "claude-openai-adapter-bridge",
+    profile_name: "OpenAI → Claude Code Bridge",
+    provider_name: "OpenAI Bridge",
+    toml_name: "",
+    provider_slug: "",
+    upstream_base_url: OPENAI_CHAT_BASE_URL,
+    default_model: OPENAI_CLAUDE_EDGE.default_model,
+    protocol: upstream_protocol_of(&OPENAI_CLAUDE_EDGE),
+    local_surface: local_surface_of(&OPENAI_CLAUDE_EDGE),
+    bridge_kind: "messages_to_chat_completions",
+    legacy_bridge_kinds: &[],
+    source: OPENAI_CLAUDE_EDGE.source,
+    target_agent: OPENAI_CLAUDE_EDGE.target,
+    mode: live_writer_mode(&OPENAI_CLAUDE_EDGE),
+};
+
+const OPENAI_GROK_BRIDGE_RULE: CodexBridgeRule = CodexBridgeRule {
+    rule_id: OPENAI_GROK_BRIDGE_EDGE.rule_id,
+    profile_prefix: "adapter-openai-grok-bridge",
+    provider_prefix: "grok-openai-adapter-bridge",
+    profile_name: "OpenAI → Grok 本机路由",
+    provider_name: "OpenAI 本机路由",
+    toml_name: "AgentHub OpenAI Route",
+    provider_slug: "agenthub_openai_bridge",
+    upstream_base_url: OPENAI_CHAT_BASE_URL,
+    default_model: OPENAI_GROK_BRIDGE_EDGE.default_model,
+    protocol: upstream_protocol_of(&OPENAI_GROK_BRIDGE_EDGE),
+    local_surface: local_surface_of(&OPENAI_GROK_BRIDGE_EDGE),
+    bridge_kind: "responses_to_chat_completions",
+    legacy_bridge_kinds: &[],
+    source: OPENAI_GROK_BRIDGE_EDGE.source,
+    target_agent: OPENAI_GROK_BRIDGE_EDGE.target,
+    mode: live_writer_mode(&OPENAI_GROK_BRIDGE_EDGE),
+};
+
 const CODEX_CLAUDE_RULE: CodexBridgeRule = CodexBridgeRule {
     rule_id: CODEX_CLAUDE_RESPONSES_EDGE.rule_id,
     profile_prefix: "adapter-codex-claude-bridge",
@@ -307,6 +347,8 @@ const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
     KIMI_CODEX_RULE,
     ANTHROPIC_CODEX_RULE,
     OPENAI_CODEX_RULE,
+    OPENAI_CLAUDE_RULE,
+    OPENAI_GROK_BRIDGE_RULE,
     CODEX_CLAUDE_RULE,
     GROK_CLAUDE_RULE,
     GROK_CODEX_RULE,
@@ -316,7 +358,7 @@ const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
 ];
 
 mod finalize;
-mod prepare;
+pub(super) mod prepare;
 mod removal;
 mod rules;
 
@@ -344,8 +386,15 @@ fn listed_models_for_bridge(
     source: AdapterSourceProduct,
     target: AgentId,
     default_model: &str,
+    custom_openai: bool,
 ) -> Vec<String> {
-    list_local_bridge_models(source, target, Some(default_model))
+    let configured = default_model.trim();
+    let listed = list_local_bridge_models(
+        source,
+        target,
+        if configured.is_empty() { None } else { Some(configured) },
+    );
+    crate::models::with_openrouter_backup_model(listed, custom_openai)
 }
 
 /// Safe input for beginning a local bridge saga. It contains no credentials.
@@ -462,11 +511,19 @@ impl AdapterBridgeRuntimeMaterial {
                 local_surface: self.local_surface,
             },
         )
-        .with_listed_models(listed_models_for_bridge(
+        .with_listed_models({
+            let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(
+                &self.upstream_base_url,
+            );
+            listed_models_for_bridge(self.source, self.target_agent, &self.upstream_model, custom)
+        })
+        .with_mapping(
             self.source,
             self.target_agent,
-            &self.upstream_model,
-        ))
+            crate::services::adapter_route_constants::is_custom_openai_compat_url(
+                &self.upstream_base_url,
+            ),
+        )
     }
 
     /// Verify a freshly bound listener before its generated provider becomes

@@ -112,6 +112,18 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('没有已绑定的本机路由');
   });
 
+  it('keeps 新建路由 copy for the create-route action', async () => {
+    const { CREATE_ROUTE_TARGETS, canSubmitCreateRoute } = await import('./create-route-flow');
+    expect(CREATE_ROUTE_TARGETS).toEqual(['claude', 'codex', 'grok']);
+    expect(canSubmitCreateRoute({
+      name: 'OpenRouter',
+      url: 'https://openrouter.ai/api/v1',
+      key: 'test-key',
+      vendor: 'openrouter',
+      endpoints: ['claude'],
+    })).toBe(true);
+  });
+
   it('keeps a hidden-target profile stop-only', () => {
     const profile = localBridgeProfile();
     const markup = renderToStaticMarkup(

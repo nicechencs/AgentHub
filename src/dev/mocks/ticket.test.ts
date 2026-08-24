@@ -230,6 +230,15 @@ describe('mock ticket wallet', () => {
           isCurrent: false,
         },
         {
+          id: 'opaque',
+          agentId: 'claude',
+          name: 'Opaque custom',
+          preset: 'custom',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+        {
           id: 'proj-claude',
           agentId: 'claude',
           name: 'Generated',
@@ -261,8 +270,9 @@ describe('mock ticket wallet', () => {
       'account:grok-a',
       'account:grok-b',
     ]);
+    expect(wallet.tickets.find((t) => t.id === 'provider:relay')?.surface).toBe('unknown');
     expect(wallet.surfaceGroups.some((g) => g.surface === 'unknown')).toBe(false);
-    expect(wallet.tickets.some((t) => t.surface === 'unknown')).toBe(true);
+    expect(wallet.tickets.some((t) => t.id === 'provider:opaque' && t.surface === 'unknown')).toBe(true);
   });
 
   it('sets speaks and importedFrom lockstep with core TicketSurface rules', () => {

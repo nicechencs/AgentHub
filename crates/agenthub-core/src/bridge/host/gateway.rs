@@ -131,6 +131,9 @@ pub(super) struct EdgeState {
     pub(super) listed_models: Arc<[String]>,
     pub(super) reload_upstream_auth: Option<crate::bridge::UpstreamAuthReload>,
     pub(super) account_picker: AccountPicker,
+    pub(super) mapping_source: Option<crate::models::AdapterSourceProduct>,
+    pub(super) mapping_target: Option<crate::models::AgentId>,
+    pub(super) custom_openai: bool,
 }
 
 pub(super) enum GatewayAuthError {
@@ -183,6 +186,87 @@ impl Gateway {
         }
         Ok(edge)
     }
+
+    /// List models for GET /v1/models. When a running custom OpenAI-compat
+    /// backup exists for the same target, include stealth/ox-alpha.
+    pub(super) fn listed_models_with_backup(&self, state: &EdgeState) -> Vec<String> {
+        let include = state.custom_openai || self.has_running_custom_openai_backup(state);
+        crate::models::with_openrouter_backup_model(state.listed_models.to_vec(), include)
+    }
+
+    fn has_running_custom_openai_backup(&self, lead: &EdgeState) -> bool {
+        let Ok(registry) = self.lock() else {
+            return false;
+        };
+        registry.runtimes.values().any(|runtime| {
+            let state = &runtime.state;
+            state.custom_openai
+                && state.mapping_target == lead.mapping_target
+                && !state.stopping.load(Ordering::SeqCst)
+                && !state.force_shutdown.is_cancelled()
+        })
+    }
+
+    /// After the body model is known: if the lead mapping misses and another
+    /// running edge can serve it, switch for this request only.
+    pub(super) fn switch_edge_for_model(&self, lead: &EdgeState, model: &str) -> ModelSwitchOutcome {
+        use crate::models::{decide_model_switch, ModelSwitchCandidate, ModelSwitchDecision};
+        let Some(source) = lead.mapping_source else {
+            return ModelSwitchOutcome::Stay;
+        };
+        let Some(target) = lead.mapping_target else {
+            return ModelSwitchOutcome::Stay;
+        };
+        let Ok(registry) = self.registry.lock() else {
+            return ModelSwitchOutcome::Unavailable;
+        };
+        let lead_surface = lead.upstream.local_surface;
+        let lead_candidate = ModelSwitchCandidate {
+            profile_id: lead.profile_id.to_string(),
+            source,
+            target,
+            custom_openai_compat: lead.custom_openai,
+            same_surface: true,
+            running: true,
+            listed_models: lead.listed_models.to_vec(),
+        };
+        let mut others = Vec::new();
+        let mut other_states = std::collections::HashMap::new();
+        for runtime in registry.runtimes.values() {
+            let state = &runtime.state;
+            if state.profile_id.as_ref() == lead.profile_id.as_ref() {
+                continue;
+            }
+            let Some(src) = state.mapping_source else { continue };
+            let Some(tgt) = state.mapping_target else { continue };
+            let running = !state.stopping.load(Ordering::SeqCst)
+                && !state.force_shutdown.is_cancelled();
+            others.push(ModelSwitchCandidate {
+                profile_id: state.profile_id.to_string(),
+                source: src,
+                target: tgt,
+                custom_openai_compat: state.custom_openai,
+                same_surface: state.upstream.local_surface == lead_surface,
+                running,
+                listed_models: state.listed_models.to_vec(),
+            });
+            other_states.insert(state.profile_id.to_string(), state.clone());
+        }
+        match decide_model_switch(&lead_candidate, model, &others) {
+            ModelSwitchDecision::Stay => ModelSwitchOutcome::Stay,
+            ModelSwitchDecision::SwitchTo { profile_id } => other_states
+                .remove(&profile_id)
+                .map(ModelSwitchOutcome::Switched)
+                .unwrap_or(ModelSwitchOutcome::Unavailable),
+            ModelSwitchDecision::Unavailable => ModelSwitchOutcome::Unavailable,
+        }
+    }
+}
+
+pub(super) enum ModelSwitchOutcome {
+    Stay,
+    Switched(EdgeState),
+    Unavailable,
 }
 
 impl GatewayRegistry {
@@ -281,6 +365,9 @@ impl EdgeState {
             listed_models: spec.listed_models.clone().into(),
             reload_upstream_auth: spec.reload_upstream_auth.clone(),
             account_picker: spec.account_picker(),
+            mapping_source: spec.mapping_source,
+            mapping_target: spec.mapping_target,
+            custom_openai: spec.custom_openai,
         }
     }
 

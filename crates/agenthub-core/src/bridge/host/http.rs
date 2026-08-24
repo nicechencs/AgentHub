@@ -64,8 +64,9 @@ async fn list_models(State(gateway): State<Gateway>, headers: HeaderMap) -> Resp
         Ok(state) => state,
         Err(response) => return response,
     };
+    let listed = gateway.listed_models_with_backup(&state);
     // Synthesized from the edge mapping table at start; never proxied.
-    if state.listed_models.is_empty() {
+    if listed.is_empty() {
         tracing::info!(
             target: "core.adapter",
             profile_id = %state.profile_id,
@@ -75,8 +76,7 @@ async fn list_models(State(gateway): State<Gateway>, headers: HeaderMap) -> Resp
             "bridge models list is empty"
         );
     }
-    let data: Vec<Value> = state
-        .listed_models
+    let data: Vec<Value> = listed
         .iter()
         .map(|id| json!({ "id": id, "object": "model" }))
         .collect();

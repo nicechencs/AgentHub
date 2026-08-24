@@ -1807,3 +1807,23 @@ fn legacy_toml_with_drifted_port_still_conflicts() {
         "adapter.provider_conflict"
     );
 }
+
+#[test]
+fn start_spec_lists_stealth_ox_alpha_for_custom_openai() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "openrouter-codex-models".into(),
+        source_connection_id: "openrouter".into(),
+        preferred_port: None,
+        upstream_base_url: "https://openrouter.ai/api/v1".into(),
+        upstream_model: OPENAI_DEFAULT_MODEL.into(),
+        protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
+        local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::OpenaiApi,
+        target_agent: AgentId::Codex,
+        upstream_auth: ResolvedAuth::bearer("sk-or-placeholder-test-key"),
+        local_bearer: "local-secret".into(),
+    };
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert!(listed.iter().any(|model| model == "gpt-4o"));
+    assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
+}
