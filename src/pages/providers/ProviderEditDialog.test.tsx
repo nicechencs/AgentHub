@@ -15,9 +15,11 @@ import {
   applyFormVars,
   EMPTY_FORM_VARS,
   REDACTED_MARKER,
+  withDefaultModel,
   type ProviderFormVars,
 } from '@/lib/provider-detect';
 import {
+  canSaveProviderForm,
   canSaveWithSchemaStatus,
   parseJsonConfigBase,
   projectValuesToSchema,
@@ -205,6 +207,53 @@ describe('save gate by schema status', () => {
       expect(canSaveWithSchemaStatus(s)).toBe(false);
       expect(resolveSavePath(s)).toBe('blocked');
     }
+  });
+
+  it('canSave does not require model; fetch failure does not flip it', () => {
+    const gate = {
+      schemaStatus: 'ready' as const,
+      configError: null,
+      isEdit: false,
+      apiKey: 'sk-test-key',
+      piNeedsUrl: false,
+      baseUrl: 'https://mytokens.cc',
+      model: '',
+    };
+    expect(canSaveProviderForm(gate)).toBe(true);
+    expect(canSaveProviderForm({ ...gate, model: undefined })).toBe(true);
+    // fetch status is not an input — a failed listRemoteOpenAiModels cannot flip the gate
+    expect(canSaveProviderForm({ ...gate, model: '   ' })).toBe(true);
+    expect(canSaveProviderForm({ ...gate, apiKey: '' })).toBe(false);
+    expect(
+      canSaveProviderForm({
+        ...gate,
+        piNeedsUrl: true,
+        baseUrl: '',
+        model: 'sonnet',
+      }),
+    ).toBe(false);
+  });
+
+  it('empty model plus withDefaultModel still upserts', async () => {
+    const vars = withDefaultModel(
+      'claude',
+      {
+        ...EMPTY_FORM_VARS,
+        baseUrl: 'https://mytokens.cc',
+        apiKey: 'sk-test-key',
+        model: '',
+      },
+      false,
+    );
+    expect(vars.model).toBe('sonnet');
+    const deps = mockDeps();
+    const result = await runProviderSaveFlow(
+      baseInput({ vars, saveVars: vars, schemaStatus: 'ready' }),
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    expect(deps.upsertProvider).toHaveBeenCalledOnce();
+    expect(deps.materializeAgentConfig.mock.calls[0][1].model).toBe('sonnet');
   });
 
   it('loading/error path does not call materialize, applyFormVars, or upsert', async () => {

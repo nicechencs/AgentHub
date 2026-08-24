@@ -46,6 +46,17 @@ export {
   mergeDetectIntoVars,
 } from './apply';
 
+export {
+  FALLBACK_CUSTOM_MODEL,
+  defaultModelForAgent,
+  maskApiKeyLast4,
+  openaiModelsUrl,
+  parseOpenAiModelList,
+  resolveModelForSave,
+  shouldFetchRemoteModels,
+  withDefaultModel,
+} from './remote-models';
+
 export { extractAllClaudeEnv, pickClaudeDetectFields } from './claudeEnv';
 export {
   extractCodexDetectFields,

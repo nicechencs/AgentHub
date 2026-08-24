@@ -11,4 +11,6 @@ export interface ProviderPort {
   undoSwitch(agentId: AgentId): Promise<boolean>;
   testLatency(agentId: AgentId, providerId: string): Promise<number>;
   listProviderPresets(agentId?: AgentId): Promise<CoreProviderPreset[]>;
+  /** OpenAI-compatible GET {base}/v1/models. Unsaved paste is allowed. */
+  listRemoteOpenAiModels(baseUrl: string, apiKey: string): Promise<string[]>;
 }

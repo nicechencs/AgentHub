@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ConfigEditor } from '@/components/shared/ConfigEditor';
-import { GenericConfigForm } from '@/components/shared/GenericConfigForm';
+import { GenericConfigForm, SuggestableInput } from '@/components/shared/GenericConfigForm';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SecretInput } from '@/components/shared/SecretInput';
 import { Hint } from '@/components/ui/tooltip';
@@ -53,7 +53,7 @@ import {
   type AgentConfigSchemaDto,
 } from '@/lib/api/config';
 import { openAgentConfigDir } from '@/lib/api/install';
-import { upsertProvider } from '@/lib/api/provider';
+import { listRemoteOpenAiModels, upsertProvider } from '@/lib/api/provider';
 import type { AgentId, Provider } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
@@ -68,10 +68,13 @@ import {
   liveConfigPaths,
   parseJsonObjectConfig,
   REDACTED_MARKER,
+  shouldFetchRemoteModels,
   smartDetectUrlAndKey,
+  withDefaultModel,
   type ProviderFormVars,
 } from '@/lib/provider-detect';
 import {
+  canSaveProviderForm,
   canSaveWithSchemaStatus,
   planSchemaLoad,
   resolveProjectorExpectation,
@@ -79,6 +82,8 @@ import {
   schemaErrorMessage,
   type SchemaUiStatus,
 } from './providerSaveFlow';
+
+const REMOTE_MODELS_DEBOUNCE_MS = 400;
 
 export type ProviderDialogMode = 'add' | 'edit';
 
@@ -155,6 +160,10 @@ export function ProviderEditDialog({
   const [schemaError, setSchemaError] = React.useState<string | null>(null);
   /** Bump to re-run schema load without clearing form fields. */
   const [schemaLoadToken, setSchemaLoadToken] = React.useState(0);
+  const [remoteModels, setRemoteModels] = React.useState<string[]>([]);
+  const [remoteModelsHint, setRemoteModelsHint] = React.useState<string | null>(null);
+  const [remoteModelsLoading, setRemoteModelsLoading] = React.useState(false);
+  const remoteModelsSeq = React.useRef(0);
 
   const official = officialApiDefaults(agentId);
 
@@ -431,11 +440,63 @@ export function ProviderEditDialog({
 
   // 新增必须填 Key；编辑可只改名称/官方开关（Key 留空保留）
   // schema idle/loading/error → fail closed，禁止保存
-  const canSave =
-    canSaveWithSchemaStatus(schemaStatus) &&
-    !configError &&
-    (isEdit ? true : Boolean(vars.apiKey.trim())) &&
-    (!piNeedsUrl || Boolean(vars.baseUrl.trim()));
+  // model is optional; empty is filled on save via withDefaultModel
+  const canSave = canSaveProviderForm({
+    schemaStatus,
+    configError,
+    isEdit,
+    apiKey: vars.apiKey,
+    piNeedsUrl,
+    baseUrl: vars.baseUrl,
+    model: vars.model,
+  });
+
+  React.useEffect(() => {
+    if (!open) {
+      remoteModelsSeq.current += 1;
+      setRemoteModels([]);
+      setRemoteModelsHint(null);
+      setRemoteModelsLoading(false);
+      return;
+    }
+    if (
+      !shouldFetchRemoteModels({
+        useOfficial,
+        baseUrl: vars.baseUrl,
+        apiKey: vars.apiKey,
+      })
+    ) {
+      remoteModelsSeq.current += 1;
+      setRemoteModels([]);
+      setRemoteModelsHint(null);
+      setRemoteModelsLoading(false);
+      return;
+    }
+    const seq = ++remoteModelsSeq.current;
+    const handle = window.setTimeout(() => {
+      setRemoteModelsLoading(true);
+      void listRemoteOpenAiModels(vars.baseUrl, vars.apiKey)
+        .then((ids) => {
+          if (seq !== remoteModelsSeq.current) return;
+          setRemoteModels(ids);
+          setRemoteModelsHint(
+            ids.length === 0 ? t('connections.providerDialog.remoteModelsEmpty') : null,
+          );
+        })
+        .catch(() => {
+          if (seq !== remoteModelsSeq.current) return;
+          setRemoteModels([]);
+          setRemoteModelsHint(t('connections.providerDialog.remoteModelsFailed'));
+        })
+        .finally(() => {
+          if (seq !== remoteModelsSeq.current) return;
+          setRemoteModelsLoading(false);
+        });
+    }, REMOTE_MODELS_DEBOUNCE_MS);
+    return () => {
+      window.clearTimeout(handle);
+    };
+  }, [open, useOfficial, vars.baseUrl, vars.apiKey, t]);
 
   const openLiveDir = async () => {
     try {
@@ -483,7 +544,8 @@ export function ProviderEditDialog({
           ? scaffold.text
           : configText;
       // 官方模式强制模型/URL 再写一遍，避免用户半改
-      const saveVars: ProviderFormVars =
+      const saveVars: ProviderFormVars = withDefaultModel(
+        agentId,
         useOfficial && off
           ? {
               ...vars,
@@ -495,7 +557,9 @@ export function ProviderEditDialog({
               modelFable: off.modelFable ?? vars.modelFable,
               modelSubagent: off.modelSubagent ?? vars.modelSubagent,
             }
-          : vars;
+          : vars,
+        useOfficial,
+      );
       const finalFormat = useOfficial && off ? off.format : configFormat;
 
       const result = await runProviderSaveFlow(
@@ -751,6 +815,9 @@ export function ProviderEditDialog({
               }}
               readOnlyKeys={schemaReadOnlyKeys}
               disabled={false}
+              suggestions={
+                !useOfficial && remoteModels.length > 0 ? { model: remoteModels } : undefined
+              }
             />
           ) : schemaStatus === 'unsupported' ? (
             <>
@@ -839,24 +906,31 @@ export function ProviderEditDialog({
                   {t('connections.providerDialog.model')}
                   {agentId === 'pi' && !piNeedsUrl ? t('connections.providerDialog.optional') : ''}
                 </span>
-                <Input
+                <SuggestableInput
                   value={useOfficial ? official?.model || vars.model : vars.model}
-                  onChange={(e) => {
+                  onChange={(v) => {
                     if (useOfficial) return;
-                    patchVars({ model: e.target.value });
+                    patchVars({ model: v });
                   }}
+                  suggestions={!useOfficial ? remoteModels : undefined}
                   placeholder={
                     agentId === 'pi' && !piNeedsUrl
                       ? t('connections.providerDialog.officialBuiltinModel')
                       : t('connections.providerDialog.modelId')
                   }
-                  autoComplete="off"
-                  spellCheck={false}
                   readOnly={useOfficial}
                   className={useOfficial ? 'cursor-default bg-canvas text-secondary' : undefined}
                 />
               </label>
             </>
+          ) : null}
+
+          {!useOfficial && (remoteModelsLoading || remoteModelsHint) ? (
+            <p className="text-meta text-muted">
+              {remoteModelsLoading
+                ? t('connections.providerDialog.remoteModelsLoading')
+                : remoteModelsHint}
+            </p>
           ) : null}
 
           <div className="flex flex-col gap-2">
