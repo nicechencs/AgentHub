@@ -122,6 +122,19 @@ describe('mapCoreAccount', () => {
     );
     expect(key.refreshTokenPreview).toBeUndefined();
     expect(key.secretTail).toBe('**here');
+    expect(key.secretHash).toBeUndefined();
+  });
+
+  it('maps API key secretHash from extra', () => {
+    const key = mapCoreAccount(
+      core({
+        id: 'kimi-hash',
+        agentId: 'kimi',
+        kind: 'apikey',
+        extra: { secretHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      }),
+    );
+    expect(key.secretHash).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   });
 
   it('derives tokenRemainingSec from expiresAt (RFC3339)', () => {

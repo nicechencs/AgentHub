@@ -7,6 +7,7 @@
 use serde_json::Value;
 
 use crate::models::AgentId;
+use crate::utils::loopback::is_loopback_base_url;
 
 /// Official Kimi coding Anthropic-compatible endpoint projected into Claude.
 pub const KIMI_CLAUDE_BASE_URL: &str = "https://api.kimi.com/coding/";
@@ -293,7 +294,9 @@ pub(crate) fn explicit_provider_tag_matches(tag: Option<&str>, accepted: &[&str]
 
 /// Official OpenAI, OpenRouter host, `openai` / `openai-api`, explicit
 /// `openai-compat` alias, or `openrouter` tag. Catalog leftover
-/// `openai-compatible` without a known host stays unclassified (Unknown).
+/// `openai-compatible` without a remote host stays unclassified (Unknown).
+/// A custom remote host (e.g. `https://mytokens.cc/v1` in TOML or JSON)
+/// classifies as OpenAI-compat even when the preset is the catalog id.
 pub(crate) fn is_openai_api_marker(tag: Option<&str>, blob: &Value) -> bool {
     explicit_provider_tag_matches(
         tag,
@@ -305,6 +308,7 @@ pub(crate) fn is_openai_api_marker(tag: Option<&str>, blob: &Value) -> bool {
         ],
     ) || settings_contain_openai_api_endpoint(blob)
         || settings_contain_openrouter_endpoint(blob)
+        || settings_contain_custom_openai_compat_remote(blob)
 }
 
 /// Official OpenAI host is not custom. OpenRouter host and explicit
@@ -351,8 +355,6 @@ pub(crate) fn openai_compat_base_url(blob: &Value) -> Option<String> {
 }
 
 /// Custom (non-official, non-other-vendor) OpenAI-compat URL, if any.
-// Referenced only from `tests.rs` in this crate; keep for test coverage.
-#[allow(dead_code)]
 pub(crate) fn openai_compat_custom_base_url(blob: &Value) -> Option<String> {
     let url = openai_compat_base_url(blob)?;
     if !looks_like_openai_compat_base_url(&url) {
@@ -383,8 +385,6 @@ fn has_openai_shaped_secret(blob: &Value) -> bool {
 #[cfg(test)]
 mod tests;
 
-// Referenced only from `tests.rs` in this crate; keep for test coverage.
-#[allow(dead_code)]
 fn looks_like_openai_compat_base_url(url: &str) -> bool {
     let trimmed = url.trim();
     if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
@@ -489,6 +489,47 @@ pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
         })
+}
+
+/// True when settings/TOML contain a remote (non-loopback) OpenAI-compat URL.
+/// Catalog `openai-compatible` leftovers with only a loopback 本机路由 stay unknown.
+pub(crate) fn settings_contain_custom_openai_compat_remote(blob: &Value) -> bool {
+    blob_strings(blob).iter().any(|text| {
+        http_urls_in(text).into_iter().any(|url| {
+            looks_like_openai_compat_base_url(&url) && !is_loopback_base_url(&url)
+        })
+    })
+}
+
+fn blob_strings(value: &Value) -> Vec<String> {
+    match value {
+        Value::String(text) => vec![text.clone()],
+        Value::Array(items) => items.iter().flat_map(blob_strings).collect(),
+        Value::Object(map) => map.values().flat_map(blob_strings).collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn http_urls_in(text: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest
+        .find("https://")
+        .into_iter()
+        .chain(rest.find("http://"))
+        .min()
+    {
+        let candidate = &rest[start..];
+        let end = candidate
+            .find(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | ',' | ')' | ']' | '}'))
+            .unwrap_or(candidate.len());
+        let url = candidate[..end].trim_end_matches('/').to_owned();
+        if !url.is_empty() {
+            urls.push(url);
+        }
+        rest = &candidate[end.max(1)..];
+    }
+    urls
 }
 
 pub(crate) fn is_xai_api_marker(tag: Option<&str>, blob: &Value) -> bool {

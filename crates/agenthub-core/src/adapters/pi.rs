@@ -366,6 +366,7 @@ pub(crate) fn pi_auth_state(auth: &Path) -> AuthState {
         source: Some("pi:auth.json".into()),
         revision: auth_file_revision(auth),
         also_present: Vec::new(),
+        secret_hash: None,
     };
     if state.kind.as_deref() == Some("mixed") {
         state.with_also_present(["oauth", "api_key"])

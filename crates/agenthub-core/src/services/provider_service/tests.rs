@@ -150,7 +150,7 @@ fn seed(svc: &ProviderService, id: &str, agent: AgentId, name: &str, current: bo
             agent_id: agent,
             name: name.into(),
             settings_config: json!({
-                "api_key": "sk-live-secret",
+                "api_key": format!("sk-{id}-secret"),
                 "base_url": "https://relay.example.com"
             }),
             meta: json!({"token": "meta-secret", "note": "n"}),
@@ -166,7 +166,7 @@ fn input(id: &str, agent: AgentId, name: &str, current: bool) -> ProviderInput {
         id: id.into(),
         agent_id: agent,
         name: name.into(),
-        settings_config: json!({"api_key": "sk-live-secret", "base_url": "https://x"}),
+        settings_config: json!({"api_key": format!("sk-{id}-secret"), "base_url": "https://x"}),
         meta: json!({"note": "n"}),
         is_current: current,
     }
@@ -371,7 +371,7 @@ fn create_update_upsert_delete_crud_and_errors() {
     assert!(created.updated_at >= created.created_at);
     assert_eq!(created.meta["surface"], "unknown");
     // Secrets remain unredacted at service boundary (CLI redacts).
-    assert_eq!(created.settings_config["api_key"], "sk-live-secret");
+    assert_eq!(created.settings_config["api_key"], "sk-p1-secret");
 
     // Duplicate create.
     let err = svc
@@ -491,7 +491,7 @@ fn failed_writes_do_not_mutate_existing_rows() {
     assert_eq!(svc.create(&dup).unwrap_err().code(), "invalid_arg");
     let stored = svc.get("p1", None).unwrap();
     assert_eq!(stored.name, "Keep");
-    assert_eq!(stored.settings_config["api_key"], "sk-live-secret");
+    assert_eq!(stored.settings_config["api_key"], "sk-p1-secret");
     assert!(stored.is_current);
     assert_eq!(stored.updated_at, original.updated_at);
 
@@ -536,7 +536,7 @@ fn delete_is_agent_scoped() {
 }
 
 #[test]
-fn import_live_preserves_full_secrets_and_marks_new_row_current() {
+fn import_live_preserves_full_secrets_without_stealing_current() {
     let live = AgentConfig {
         agent: AgentId::Claude,
         raw: json!({
@@ -557,7 +557,7 @@ fn import_live_preserves_full_secrets_and_marks_new_row_current() {
     assert_eq!(imported.agent_id, AgentId::Claude);
     assert_eq!(imported.name, "Imported live");
     assert!(imported.id.starts_with("claude-live-"));
-    assert!(imported.is_current);
+    assert!(!imported.is_current);
     assert_eq!(imported.settings_config, live.raw);
     assert_eq!(imported.meta["source"], "live");
     assert_eq!(imported.meta["surface"], "unknown");
@@ -573,7 +573,7 @@ fn import_live_preserves_full_secrets_and_marks_new_row_current() {
         imported.redacted().settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
         "***"
     );
-    assert!(!svc.get("old", None).unwrap().is_current);
+    assert!(svc.get("old", None).unwrap().is_current);
 
     // Re-importing the unchanged live snapshot is idempotent: it reuses the
     // same canonical live row instead of creating another UUID row.
@@ -722,7 +722,7 @@ fn import_live_updates_existing_live_row_but_never_manual_provider() {
     assert_eq!(refreshed.id, imported.id);
     assert_eq!(refreshed.settings_config, changed);
     assert_eq!(refreshed.name, "Live snapshot");
-    assert!(refreshed.is_current);
+    assert!(!refreshed.is_current);
 
     let manual_after = svc.get("manual", Some(AgentId::Claude)).unwrap();
     assert_eq!(manual_after.settings_config, manual.settings_config);
@@ -1741,4 +1741,111 @@ fn import_live_does_not_persist_ticket_surface_on_generated_provider_id_projecti
         stored.meta.get("surface").is_none(),
         "legacy surface heal must persist the skip to sqlite, not only the in-memory object"
     );
+}
+
+#[test]
+fn import_live_labels_codex_toml_and_does_not_steal_current() {
+    let toml = r#"model_provider = "OpenAI"
+model = "gpt-5.5"
+
+[model_providers.OpenAI]
+name = "OpenAI"
+base_url = "https://mytokens.cc/v1"
+wire_api = "responses"
+"#;
+    let live = AgentConfig {
+        agent: AgentId::Codex,
+        raw: json!({
+            "format": "toml",
+            "content": toml,
+            "auth": { "OPENAI_API_KEY": "sk-codex-import-fixture" }
+        }),
+    };
+    let (_root, _db, svc, adapter, _backups) = live_svc(AgentId::Codex, live);
+    let mut current = input(
+        "codex-oauth-standin",
+        AgentId::Codex,
+        "41375197@qq.com",
+        true,
+    );
+    current.settings_config =
+        json!({"api_key": "sk-other-oauth-standin", "base_url": "https://api.openai.com/v1"});
+    svc.create(&current).unwrap();
+
+    let imported = svc.import_live(AgentId::Codex, None).unwrap();
+    assert!(imported.name.contains("OpenAI"));
+    assert!(imported.name.contains("gpt-5.5"));
+    assert!(!imported.name.starts_with("Imported "));
+    assert_eq!(imported.meta["preset"], "openai-compat");
+    assert_eq!(imported.meta["surface"], "openai-api");
+    assert!(!imported.is_current);
+    assert!(svc.get("codex-oauth-standin", None).unwrap().is_current);
+    assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn upsert_merges_same_secret_url_and_heals_backup_slug() {
+    let secret = "sk-or-v1-fixture-aaaa6aa9-not-real";
+    let url = "https://openrouter.ai/api/v1";
+    let (_dir, svc) = svc();
+    let mut backup = input(
+        "openai-compat-openrouter-backup",
+        AgentId::Codex,
+        "OpenRouter 备选",
+        false,
+    );
+    backup.settings_config = json!({
+        "baseURL": url,
+        "baseUrl": url,
+        "apiKey": secret,
+        "api_key": secret,
+        "model": "stealth/ox-alpha",
+    });
+    backup.meta = json!({ "preset": "openrouter" });
+    svc.create(&backup).unwrap();
+
+    let mut uuid = input(
+        "openai-compat-0e08e310-97ba-4575-a50b-3e3db6eec38c",
+        AgentId::Codex,
+        "OpenRouter 备选",
+        false,
+    );
+    uuid.settings_config = backup.settings_config.clone();
+    uuid.meta = json!({ "preset": "openrouter" });
+    let stored = svc.upsert(&uuid).unwrap();
+    assert_eq!(
+        stored.id,
+        "openai-compat-0e08e310-97ba-4575-a50b-3e3db6eec38c"
+    );
+    let listed = svc.list(Some(AgentId::Codex)).unwrap();
+    let user_rows: Vec<_> = listed
+        .iter()
+        .filter(|row| row.meta.get("generatedBy").and_then(|v| v.as_str()) != Some("adapter"))
+        .collect();
+    assert_eq!(user_rows.len(), 1);
+    assert_eq!(user_rows[0].id, stored.id);
+    assert!(svc
+        .get("openai-compat-openrouter-backup", Some(AgentId::Codex))
+        .is_err());
+    let hash = stored.meta["secretHash"].as_str().expect("persisted hash");
+    assert_eq!(hash, crate::utils::redact::secret_sha256_hex(secret));
+    assert!(!stored.meta.to_string().contains(secret));
+}
+
+#[test]
+fn last4_collision_does_not_merge_different_secrets() {
+    let (_dir, svc) = svc();
+    let mut a = input("openai-compat-a", AgentId::Codex, "A", false);
+    a.settings_config = json!({
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": "sk-or-v1-fixture-aaaa6aa9-not-real"
+    });
+    let mut b = input("openai-compat-b", AgentId::Codex, "B", false);
+    b.settings_config = json!({
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": "sk-or-v1-fixture-bbbb6aa9-not-real"
+    });
+    svc.create(&a).unwrap();
+    svc.create(&b).unwrap();
+    assert_eq!(svc.list(Some(AgentId::Codex)).unwrap().len(), 2);
 }

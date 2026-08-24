@@ -118,6 +118,9 @@ impl Account {
             if let Some(tail) = api_key_tail(&self.credentials) {
                 insert_extra_string(&mut extra, "secretTail", tail);
             }
+            if let Some(hash) = crate::utils::redact::api_key_secret_hash(&self.credentials) {
+                insert_extra_string(&mut extra, "secretHash", hash);
+            }
         }
         Self {
             id: self.id.clone(),

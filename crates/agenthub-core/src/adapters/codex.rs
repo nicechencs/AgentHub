@@ -15,6 +15,7 @@ use super::{
     api_key_live_account, auth_file_revision, detect_binary, inspect_auth_credentials,
     oauth_auth_health, require_api_key, write_toml_config, AgentAdapter,
 };
+use crate::utils::redact::secret_sha256_hex;
 
 pub struct CodexAdapter;
 
@@ -257,6 +258,7 @@ pub(crate) fn codex_auth_state(auth: &Path) -> AuthState {
             source: Some("codex:auth.json".into()),
             revision: None,
             also_present: Vec::new(),
+            secret_hash: None,
         };
     }
     let body = match std::fs::read_to_string(auth)
@@ -274,17 +276,18 @@ pub(crate) fn codex_auth_state(auth: &Path) -> AuthState {
                 source: Some("codex:auth.json".into()),
                 revision: auth_file_revision(auth),
                 also_present: Vec::new(),
+                secret_hash: None,
             };
         }
     };
-    let has_api_key = body
+    let api_key = body
         .get("OPENAI_API_KEY")
         .and_then(|v| v.as_str())
         .map(str::trim)
-        .is_some_and(|s| !s.is_empty());
+        .filter(|s| !s.is_empty());
     let metadata = inspect_auth_credentials(&body);
     let has_oauth = metadata.has_access_token || metadata.has_refresh_token;
-    if has_api_key {
+    if let Some(api_key) = api_key {
         let state = AuthState {
             agent: AgentId::Codex,
             kind: Some("api_key".into()),
@@ -294,6 +297,7 @@ pub(crate) fn codex_auth_state(auth: &Path) -> AuthState {
             source: Some("codex:auth.json".into()),
             revision: auth_file_revision(auth),
             also_present: Vec::new(),
+            secret_hash: Some(secret_sha256_hex(api_key)),
         };
         return if has_oauth {
             state.with_also_present(["oauth"])
@@ -311,6 +315,7 @@ pub(crate) fn codex_auth_state(auth: &Path) -> AuthState {
             source: Some("codex:auth.json".into()),
             revision: auth_file_revision(auth),
             also_present: Vec::new(),
+            secret_hash: None,
         };
     }
     let health = oauth_auth_health(metadata);
@@ -327,6 +332,7 @@ pub(crate) fn codex_auth_state(auth: &Path) -> AuthState {
         source: Some("codex:auth.json".into()),
         revision: auth_file_revision(auth),
         also_present: Vec::new(),
+        secret_hash: None,
     }
 }
 
