@@ -183,7 +183,7 @@ function AdapterProfileRow({
             {source.agentId ? <AgentDot agentId={source.agentId} size="sm" title={null} /> : null}
             <span className="truncate">{source.title}</span>
             {isAlternateRouteRule(profile.ruleId) ? (
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-secondary">
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-meta font-medium text-secondary">
                 {t('routes.create.alternate')}
               </span>
             ) : null}

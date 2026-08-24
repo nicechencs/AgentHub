@@ -341,7 +341,6 @@ export default function BridgesPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={() => { void reload(); }}
-        entries={entries}
       />
       <ImportRouteDialog
         open={importOpen}
