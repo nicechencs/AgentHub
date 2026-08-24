@@ -10,8 +10,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { agentDisplayName } from '@/config/agents';
 import type { ConnectionEntry } from '@/lib/connection-entry';
-import { submitImportRoute } from './create-route-flow';
+import type { TranslateFn } from '@/lib/i18n';
+import { importRouteRowTitle, submitImportRoute } from './create-route-flow';
+
+function importRowAgentLabel(t: TranslateFn, agentId: ConnectionEntry['agentId']): string {
+  if (agentId === 'claude') return t('routes.create.target.claude');
+  if (agentId === 'codex') return t('routes.create.target.codex');
+  if (agentId === 'grok') return t('routes.create.target.grok');
+  return agentDisplayName(agentId);
+}
 
 export function ImportRouteDialog({
   open,
@@ -68,7 +77,7 @@ export function ImportRouteDialog({
       }}
     >
       <DialogContent
-        className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden"
+        className="flex max-h-[min(36rem,calc(100vh-2rem))] flex-col overflow-hidden"
         onPointerDownOutside={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
         onFocusOutside={(event) => event.preventDefault()}
@@ -98,7 +107,13 @@ export function ImportRouteDialog({
                       onChange={() => setSelected(entry.key)}
                     />
                     <span className="min-w-0">
-                      <span className="block truncate">{entry.title}</span>
+                      <span className="block truncate">
+                        {importRouteRowTitle(entry, {
+                          agent: importRowAgentLabel(t, entry.agentId),
+                          officialEndpoint: t('connections.list.officialEndpoint'),
+                          customEndpoint: t('connections.list.customEndpoint'),
+                        })}
+                      </span>
                       <span className="block text-meta text-muted">{entry.subtitle}</span>
                     </span>
                   </label>
