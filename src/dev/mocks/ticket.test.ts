@@ -270,7 +270,7 @@ describe('mock ticket wallet', () => {
       'account:grok-a',
       'account:grok-b',
     ]);
-    expect(wallet.tickets.find((t) => t.id === 'provider:relay')?.surface).toBe('openai-api');
+    expect(wallet.tickets.find((t) => t.id === 'provider:relay')?.surface).toBe('unknown');
     expect(wallet.surfaceGroups.some((g) => g.surface === 'unknown')).toBe(false);
     expect(wallet.tickets.some((t) => t.id === 'provider:opaque' && t.surface === 'unknown')).toBe(true);
   });
@@ -379,8 +379,8 @@ describe('mock ticket wallet', () => {
     expect(pi?.importedFrom).toBe('pi');
 
     const relay = wallet.tickets.find((t) => t.id === 'provider:relay');
-    expect(relay?.surface).toBe('openai-api');
-    expect(relay?.speaks).toEqual(['openai-chat']);
+    expect(relay?.surface).toBe('unknown');
+    expect(relay?.speaks).toEqual([]);
     expect(relay?.credentialClass).toBe('api_key');
     expect(relay?.importedFrom).toBe('claude');
   });
@@ -472,7 +472,7 @@ describe('mock ticket wallet', () => {
       surface: 'deepseek-api',
       speaks: ['anthropic-messages', 'openai-chat'],
     });
-    expect(wallet.tickets.find((t) => t.id === 'provider:relay')?.surface).toBe('openai-api');
+    expect(wallet.tickets.find((t) => t.id === 'provider:relay')?.surface).toBe('unknown');
   });
 
   it('uses persisted extra.surface / meta.surface when fixture provides them', () => {
@@ -641,9 +641,9 @@ describe('mock ticket wallet', () => {
       configFormat: 'json',
       isCurrent: false,
     });
-    const relayBind = await getBackend().ticket.bind('provider:relay-no-bind', 'pi');
-    expect(relayBind.binding.active).toBe(true);
-    expect(relayBind.binding.agentId).toBe('pi');
+    await expect(getBackend().ticket.bind('provider:relay-no-bind', 'pi')).rejects.toMatchObject({
+      code: 'unsupported',
+    });
   });
 
   it('plan/bind GLM Provider and DeepSeek Account → Claude, and rejects unknown relays', async () => {
@@ -705,9 +705,9 @@ describe('mock ticket wallet', () => {
       configFormat: 'json',
       isCurrent: false,
     });
-    const relayClaude = await getBackend().ticket.bind('provider:relay-no-claude', 'claude');
-    expect(relayClaude.binding.active).toBe(true);
-    expect(relayClaude.binding.route).toBe('bridge');
+    await expect(getBackend().ticket.bind('provider:relay-no-claude', 'claude')).rejects.toMatchObject({
+      code: 'unsupported',
+    });
   });
 
   it('unbind_ticket removes the binding even when the projection is current', async () => {
