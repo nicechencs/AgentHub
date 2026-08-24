@@ -4,7 +4,6 @@ import { DetailRow } from '@/components/shared/DetailRow';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { openLogsDir } from '@/lib/api/settings';
@@ -247,21 +246,7 @@ function RouteDetailBody({
         </details>
       </div>
 
-      <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-        {isBridge ? (
-          <label className="flex min-w-0 flex-1 items-center justify-between gap-2 text-sm sm:max-w-xs">
-            <span className="min-w-0">{t('routes.autoStart')}</span>
-            <Switch
-              checked={profile.autoStart}
-              disabled={busy || targetHidden}
-              aria-label={t('routes.autoStart')}
-              title={targetHidden ? t('routes.targetHiddenHint') : undefined}
-              onCheckedChange={(autoStart) => onSetAutoStart(profile, autoStart)}
-            />
-          </label>
-        ) : (
-          <span />
-        )}
+      <div className="mt-4 flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border pt-4">
         <div className="flex shrink-0 flex-wrap justify-end gap-2">
           <Button
             variant="dangerOutline"

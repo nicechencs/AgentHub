@@ -197,12 +197,12 @@ describe('Bridges page', () => {
     expect(markup).toContain('运行中');
     expect(markup).toContain('127.0.0.1:43121');
     expect(markup).toContain('停止');
-    expect(markup).toContain('随 AgentHub 自动启动');
+    expect(markup).not.toContain('随 AgentHub 自动启动');
     expect(markup).not.toContain('仅在 AgentHub 运行时恢复，不是开机自启');
-    expect(markup).toContain('删除路由');
-    expect(markup).toContain('data-route-detail="bridge-1"');
-    expect(markup).toContain('端点映射');
-    expect(markup).toContain('本机入口');
+    expect(markup).toContain('详情');
+    expect(markup).not.toContain('data-route-detail="bridge-1"');
+    expect(markup).not.toContain('上游和本机');
+    expect(markup).toContain('详情');
     expect(markup).not.toContain('本机桥');
     expect(markup).not.toContain('客户端接入');
     expect(markup).not.toContain('目标写入');
@@ -234,7 +234,7 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('钱包');
     expect(markup).not.toContain('投影');
     expect(markup).not.toContain('协议桥');
-    expect((markup.match(/data-route-detail="bridge-1"/g) ?? []).length).toBe(1);
+    expect(markup).not.toContain('data-route-detail="bridge-1"');
   });
 
   it('keeps last-known running as 状态不可用 + 停止 when status read fails', () => {
@@ -264,7 +264,7 @@ describe('Bridges page', () => {
       onSetAutoStart: vi.fn(),
       onRequestRemove: vi.fn(),
     });
-    expect(markup).toContain('端点映射');
+    expect(markup).toContain('上游和本机');
     expect(markup).not.toContain('客户端请求本机端点，AgentHub 按下表转换后转发到上方上游端点');
     expect(markup).toContain('上游端点');
     expect(markup).toContain('本机端点');

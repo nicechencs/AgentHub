@@ -748,7 +748,7 @@ export const en = {
       localTitle: "Local entry",
       upstreamBase: "Upstream",
       localBase: "Local entry",
-      mappingTitle: "Endpoint mapping",
+      mappingTitle: "Upstream and local",
       agentColumn: "Client",
       upstreamColumn: "Upstream endpoint",
       convertColumn: "Convert",
