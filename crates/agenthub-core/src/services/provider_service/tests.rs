@@ -1690,6 +1690,53 @@ fn import_live_writes_kimi_membership_surface() {
 }
 
 #[test]
+fn import_surface_heal_preserves_persisted_unknown_surface() {
+    let live = AgentConfig {
+        agent: AgentId::Codex,
+        raw: json!({
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "codex-live-key"
+        }),
+    };
+    let (_root, db, svc, _adapter, _backups) = live_svc(AgentId::Codex, live);
+    let imported = svc.import_live(AgentId::Codex, Some("Codex live")).unwrap();
+    assert_eq!(imported.meta["surface"], "openai-api");
+
+    let mut authoritative = imported.clone();
+    authoritative.meta["surface"] = json!("unknown");
+    crate::storage::ProviderRepo::new(db.clone())
+        .update(&authoritative)
+        .unwrap();
+
+    let healed = svc.import_live(AgentId::Codex, Some("Codex live")).unwrap();
+    assert_eq!(healed.meta["surface"], "unknown");
+    assert_eq!(
+        crate::storage::ProviderRepo::new(db.clone())
+            .get_by_id(&imported.id)
+            .unwrap()
+            .unwrap()
+            .meta["surface"],
+        "unknown"
+    );
+
+    let mut authoritative = imported;
+    authoritative.meta["surface"] = json!("future-v9");
+    crate::storage::ProviderRepo::new(db.clone())
+        .update(&authoritative)
+        .unwrap();
+    let future = svc.import_live(AgentId::Codex, Some("Codex live")).unwrap();
+    assert_eq!(future.meta["surface"], "future-v9");
+    assert_eq!(
+        crate::storage::ProviderRepo::new(db)
+            .get_by_id(&future.id)
+            .unwrap()
+            .unwrap()
+            .meta["surface"],
+        "future-v9"
+    );
+}
+
+#[test]
 fn import_live_does_not_persist_ticket_surface_on_generated_provider_id_projection() {
     let live = AgentConfig {
         agent: AgentId::Claude,
@@ -1777,7 +1824,7 @@ wire_api = "responses"
     assert!(imported.name.contains("gpt-5.5"));
     assert!(!imported.name.starts_with("Imported "));
     assert_eq!(imported.meta["preset"], "openai-compat");
-    assert_eq!(imported.meta["surface"], "openai-api");
+    assert_eq!(imported.meta["surface"], "unknown");
     assert!(!imported.is_current);
     assert!(svc.get("codex-oauth-standin", None).unwrap().is_current);
     assert_eq!(adapter.write_attempts.load(Ordering::SeqCst), 0);
@@ -1848,4 +1895,188 @@ fn last4_collision_does_not_merge_different_secrets() {
     svc.create(&a).unwrap();
     svc.create(&b).unwrap();
     assert_eq!(svc.list(Some(AgentId::Codex)).unwrap().len(), 2);
+}
+
+#[test]
+fn provider_service_and_wallet_preserve_authoritative_unknown_surfaces() {
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let svc = ProviderService::new(db.clone());
+
+    let unknown = ProviderInput {
+        id: "persisted-unknown".into(),
+        agent_id: AgentId::Codex,
+        name: "Persisted unknown".into(),
+        settings_config: json!({ "base_url": "https://relay.example/v1" }),
+        meta: json!({ "preset": "openai-compatible", "surface": "unknown" }),
+        is_current: false,
+    };
+    let created_unknown = svc.create(&unknown).unwrap();
+    assert_eq!(created_unknown.meta["surface"], "unknown");
+    let mut updated_unknown = unknown.clone();
+    updated_unknown.name = "Persisted unknown updated".into();
+    updated_unknown.meta = json!({ "preset": "openai-compatible" });
+    assert_eq!(
+        svc.update(&updated_unknown).unwrap().meta["surface"],
+        "unknown"
+    );
+    assert_eq!(
+        svc.upsert(&updated_unknown).unwrap().meta["surface"],
+        "unknown"
+    );
+
+    let unrecognized = ProviderInput {
+        id: "persisted-future".into(),
+        agent_id: AgentId::Codex,
+        name: "Persisted future".into(),
+        settings_config: json!({ "base_url": "https://api.openai.com/v1" }),
+        meta: json!({ "preset": "openai-compatible", "surface": "future-v9" }),
+        is_current: false,
+    };
+    assert_eq!(
+        svc.create(&unrecognized).unwrap().meta["surface"],
+        "future-v9"
+    );
+    let mut updated_unrecognized = unrecognized.clone();
+    updated_unrecognized.name = "Persisted future updated".into();
+    updated_unrecognized.meta = json!({ "preset": "openai-compatible" });
+    assert_eq!(
+        svc.update(&updated_unrecognized).unwrap().meta["surface"],
+        "future-v9"
+    );
+    assert_eq!(
+        svc.upsert(&updated_unrecognized).unwrap().meta["surface"],
+        "future-v9"
+    );
+
+    let legacy_missing = Provider {
+        id: "persisted-missing".into(),
+        agent_id: AgentId::Codex,
+        name: "Persisted missing".into(),
+        settings_config: json!({ "base_url": "https://api.openai.com/v1" }),
+        meta: json!({ "preset": "openai-compatible" }),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    };
+    svc.repo().create(&legacy_missing).unwrap();
+    let legacy_input = ProviderInput {
+        id: legacy_missing.id.clone(),
+        agent_id: legacy_missing.agent_id,
+        name: "Persisted missing updated".into(),
+        settings_config: legacy_missing.settings_config.clone(),
+        meta: json!({ "preset": "openai-compatible" }),
+        is_current: false,
+    };
+    let legacy_updated = svc.update(&legacy_input).unwrap();
+    assert!(legacy_updated.meta.get("surface").is_none());
+    assert!(svc
+        .repo()
+        .get_by_id("persisted-missing")
+        .unwrap()
+        .unwrap()
+        .meta
+        .get("surface")
+        .is_none());
+
+    let wallet = crate::services::TicketReadService::new(db.clone())
+        .list_wallet()
+        .unwrap();
+    for (id, surface) in [
+        ("persisted-unknown", "unknown"),
+        ("persisted-future", "unknown"),
+    ] {
+        let ticket = wallet
+            .tickets
+            .iter()
+            .find(|ticket| ticket.id == format!("provider:{id}"))
+            .unwrap();
+        assert_eq!(ticket.surface.as_str(), surface, "{id}");
+        assert!(ticket.speaks.is_empty(), "{id}");
+    }
+    assert_eq!(
+        svc.repo()
+            .get_by_id("persisted-unknown")
+            .unwrap()
+            .unwrap()
+            .meta["surface"],
+        "unknown"
+    );
+    assert_eq!(
+        svc.repo()
+            .get_by_id("persisted-future")
+            .unwrap()
+            .unwrap()
+            .meta["surface"],
+        "future-v9"
+    );
+}
+
+#[test]
+fn persisted_provider_surface_requires_official_openai_evidence() {
+    use crate::models::{AgentId, Provider, TicketSurface};
+
+    let provider = |meta, settings_config| Provider {
+        id: "relay".into(),
+        agent_id: AgentId::Codex,
+        name: "relay".into(),
+        settings_config,
+        meta,
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    };
+
+    assert_eq!(
+        ProviderService::classify_persisted_provider_surface(&provider(
+            serde_json::json!({ "preset": "openai-compatible" }),
+            serde_json::json!({ "base_url": "https://relay.example/v1" }),
+        )),
+        TicketSurface::Unknown
+    );
+    assert_eq!(
+        ProviderService::classify_persisted_provider_surface(&provider(
+            serde_json::json!({ "preset": "openrouter" }),
+            serde_json::json!({}),
+        )),
+        TicketSurface::Unknown
+    );
+    assert_eq!(
+        ProviderService::classify_persisted_provider_surface(&provider(
+            serde_json::json!({ "preset": "openai-compatible" }),
+            serde_json::json!({ "base_url": "https://api.openai.com/v1" }),
+        )),
+        TicketSurface::OpenaiApi
+    );
+    assert_eq!(
+        ProviderService::classify_persisted_provider_surface(&provider(
+            serde_json::json!({ "preset": "openrouter" }),
+            serde_json::json!({ "base_url": "https://openrouter.ai/api/v1" }),
+        )),
+        TicketSurface::OpenaiApi
+    );
+    assert_eq!(
+        ProviderService::classify_persisted_provider_surface(&provider(
+            serde_json::json!({ "preset": "openai" }),
+            serde_json::json!({ "base_url": "https://openrouter.ai/api/v1" }),
+        )),
+        TicketSurface::Unknown
+    );
+    assert_eq!(
+        ProviderService::classify_persisted_provider_surface(&provider(
+            serde_json::json!({ "preset": "openai-compatible" }),
+            serde_json::json!({
+                "base_url": "https://api.openai.com/v1",
+                "baseUrl": "https://relay.example/v1",
+            }),
+        )),
+        TicketSurface::Unknown
+    );
+    assert_eq!(
+        ProviderService::classify_persisted_provider_surface(&provider(
+            serde_json::json!({ "preset": "openai-compatible" }),
+            serde_json::json!({ "base_url": "https://api.openai.com.evil.example/v1" }),
+        )),
+        TicketSurface::Unknown
+    );
 }

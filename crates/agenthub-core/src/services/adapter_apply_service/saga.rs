@@ -6,7 +6,9 @@ use crate::models::{
     AdapterProfileStatus, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
     AdapterSourceKind, AgentId, Provider, ProviderInput,
 };
-use crate::services::adapter_route_constants::KIMI_CLAUDE_RULE_ID;
+use crate::services::adapter_route_constants::{
+    is_kimi_code_membership_source, KIMI_CLAUDE_RULE_ID,
+};
 use crate::services::ProviderLiveSagaGuard;
 
 use super::{AdapterApplyService, ApplySnapshot, GeneratedApplySpec};
@@ -420,6 +422,7 @@ impl AdapterApplyService {
         &self,
         request: &AdapterApplyRequest,
     ) -> Result<AdapterRouteAnalysis> {
+        self.reject_non_membership_kimi_provider(request)?;
         let analysis = self.routes.analyze(&AdapterRouteRequest {
             source_kind: request.source_kind,
             source_id: request.source_id.clone(),
@@ -439,6 +442,35 @@ impl AdapterApplyService {
                 "adapter apply currently supports Kimi membership Provider/Account -> Claude/Pi/Grok, OpenAI API -> Grok, GLM/DeepSeek ticket -> Claude/Codex, API or subscription Account -> Pi, and DeepSeek API provider -> DSH".into(),
             ))
         }
+    }
+
+    /// Kimi provider rows are not interchangeable with generic OpenAI-compatible
+    /// providers for the Claude/Pi apply surface. Keep this source validation
+    /// before route dispatch so a closed source cannot create a failed profile
+    /// while a later secret/live-config step rejects it.
+    fn reject_non_membership_kimi_provider(&self, request: &AdapterApplyRequest) -> Result<()> {
+        if request.source_kind != AdapterSourceKind::Provider
+            || !matches!(request.target_agent_id, AgentId::Claude | AgentId::Pi)
+        {
+            return Ok(());
+        }
+
+        let source_id = request.source_id.trim();
+        let Some(provider) = self.providers.repo().get_by_id(source_id)? else {
+            return Ok(());
+        };
+        if provider.agent_id == AgentId::Kimi
+            && !is_kimi_code_membership_source(
+                provider.agent_id,
+                &provider.meta,
+                &provider.settings_config,
+            )
+        {
+            return Err(AppError::Unsupported(
+                "adapter apply currently supports Kimi membership providers for Claude/Pi; Moonshot and other non-membership Kimi providers are unsupported".into(),
+            ));
+        }
+        Ok(())
     }
 
     pub(super) fn persist_previous_backup_id(

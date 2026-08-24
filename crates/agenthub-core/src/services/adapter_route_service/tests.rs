@@ -595,6 +595,99 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
 }
 
 #[test]
+fn non_openai_provider_tags_cannot_be_promoted_by_base_urls() {
+    let (_dir, db) = test_db();
+    let providers = ProviderRepo::new(db.clone());
+    for (id, agent_id, preset) in [
+        ("spoofed-anthropic", AgentId::Claude, "anthropic"),
+        ("spoofed-xai", AgentId::Grok, "xai"),
+        ("spoofed-glm", AgentId::Claude, "glm-coding-plan"),
+        ("spoofed-deepseek", AgentId::Claude, "deepseek-api"),
+        ("spoofed-kimi", AgentId::Kimi, "kimi-code-membership"),
+    ] {
+        providers
+            .create(&Provider {
+                id: id.into(),
+                agent_id,
+                name: id.into(),
+                settings_config: serde_json::json!({
+                    "base_url": "https://api.openai.com.evil.example/v1"
+                }),
+                meta: serde_json::json!({ "preset": preset }),
+                is_current: false,
+                created_at: "now".into(),
+                updated_at: "now".into(),
+            })
+            .unwrap();
+    }
+
+    let service = AdapterRouteService::new(db);
+    for (id, expected) in [
+        (
+            "spoofed-anthropic",
+            crate::models::AdapterSourceProduct::AnthropicApi,
+        ),
+        ("spoofed-xai", crate::models::AdapterSourceProduct::XaiApi),
+        (
+            "spoofed-glm",
+            crate::models::AdapterSourceProduct::GlmCodingPlan,
+        ),
+        (
+            "spoofed-deepseek",
+            crate::models::AdapterSourceProduct::DeepseekApi,
+        ),
+        (
+            "spoofed-kimi",
+            crate::models::AdapterSourceProduct::KimiCodeMembership,
+        ),
+    ] {
+        assert_eq!(
+            service
+                .classify_source_product(AdapterSourceKind::Provider, id)
+                .unwrap(),
+            expected,
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn spoofed_official_openai_tags_are_closed_by_plan() {
+    let (_dir, db) = test_db();
+    let providers = ProviderRepo::new(db.clone());
+    for (id, preset, base_url) in [
+        ("spoofed-openai", "openai", "https://relay.example/v1"),
+        (
+            "spoofed-openrouter",
+            "openrouter",
+            "https://api.openai.com/v1",
+        ),
+    ] {
+        providers
+            .create(&Provider {
+                id: id.into(),
+                agent_id: AgentId::Codex,
+                name: id.into(),
+                settings_config: serde_json::json!({ "base_url": base_url }),
+                meta: serde_json::json!({ "preset": preset }),
+                is_current: false,
+                created_at: "now".into(),
+                updated_at: "now".into(),
+            })
+            .unwrap();
+    }
+
+    let service = AdapterRouteService::new(db);
+    for id in ["spoofed-openai", "spoofed-openrouter"] {
+        let plan = service
+            .plan(&request(AdapterSourceKind::Provider, id, AgentId::Pi))
+            .unwrap();
+        assert_eq!(plan.analysis.route, AdapterRoute::Unsupported, "{id}");
+        assert!(!plan.can_apply, "{id}");
+    }
+}
+
+#[test]
 fn claude_subscription_account_to_pi_is_writable_but_same_edge_is_closed() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())

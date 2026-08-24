@@ -102,6 +102,8 @@ describe('provider-map codex dual shape', () => {
       isCurrent: false,
     });
     expect(keep.settingsConfig.auth).toEqual({ OPENAI_API_KEY: '***' });
+    expect(keep.meta).toEqual({ preset: 'openai-compatible' });
+    expect(keep.meta).not.toHaveProperty('surface');
   });
 
   it('toCoreInput omits auth when undefined (new without key)', () => {

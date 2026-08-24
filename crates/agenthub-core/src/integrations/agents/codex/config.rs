@@ -12,6 +12,9 @@ use crate::integrations::agents::codex::leftover::{
 };
 use crate::models::AgentId;
 use crate::platform::AgentKey;
+use crate::services::adapter_route_constants::{
+    normalized_http_host, OPENAI_API_ENDPOINT_NEEDLE, OPENROUTER_API_ENDPOINT_NEEDLE,
+};
 use crate::utils::atomic::atomic_write;
 use crate::utils::loopback::is_loopback_base_url;
 
@@ -129,22 +132,24 @@ impl CodexConfigProjector {
             .to_string()
     }
 
-    fn first_provider_slug(doc: &DocumentMut) -> String {
-        if let Some(providers) = doc.get("model_providers").and_then(|i| i.as_table()) {
-            if let Some((name, _)) = providers.iter().next() {
-                return name.to_string();
-            }
+    fn active_provider_slug(doc: &DocumentMut) -> Option<String> {
+        let top = Self::doc_str(doc, "model_provider");
+        if !top.trim().is_empty() {
+            return Some(top);
         }
-        "custom".into()
+
+        let providers = doc.get("model_providers")?.as_table()?;
+        let mut entries = providers.iter();
+        let (name, _) = entries.next()?;
+        if entries.next().is_none() {
+            Some(name.to_string())
+        } else {
+            None
+        }
     }
 
     fn extract(doc: &DocumentMut, api_key: Option<&str>) -> BTreeMap<String, Value> {
-        let top_slug = Self::doc_str(doc, "model_provider");
-        let slug = if top_slug.is_empty() {
-            Self::first_provider_slug(doc)
-        } else {
-            top_slug
-        };
+        let slug = Self::active_provider_slug(doc).unwrap_or_else(|| "custom".into());
         let mut values = BTreeMap::new();
         values.insert(
             "model".into(),
@@ -294,14 +299,7 @@ impl CodexConfigProjector {
             return None;
         }
         let doc: DocumentMut = content.parse().ok()?;
-        let slug = {
-            let top = Self::doc_str(&doc, "model_provider");
-            if top.is_empty() {
-                Self::first_provider_slug(&doc)
-            } else {
-                top
-            }
-        };
+        let slug = Self::active_provider_slug(&doc)?;
         if is_agenthub_bridge_slug(&slug) {
             return None;
         }
@@ -309,15 +307,16 @@ impl CodexConfigProjector {
         let base_url = Self::provider_table_str(&doc, &slug, "base_url");
         let model = Self::doc_str(&doc, "model");
         let host = host_from_http_url(&base_url);
-        let lower_url = base_url.to_ascii_lowercase();
-        let official_openai = base_url.is_empty() || lower_url.contains("api.openai.com");
+        let official_openai =
+            base_url.is_empty() || host.as_deref() == Some(OPENAI_API_ENDPOINT_NEEDLE);
+        let official_openrouter = host.as_deref() == Some(OPENROUTER_API_ENDPOINT_NEEDLE);
         let loopback = !base_url.is_empty() && is_loopback_base_url(&base_url);
         if loopback {
             return None;
         }
         let preset = if official_openai {
             "openai"
-        } else if lower_url.contains("openrouter.ai") {
+        } else if official_openrouter {
             "openrouter"
         } else {
             "openai-compat"
@@ -357,14 +356,7 @@ pub(crate) fn live_import_hint(raw: &Value) -> Option<CodexLiveImportHint> {
 }
 
 fn host_from_http_url(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    reqwest::Url::parse(trimmed)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_string))
-        .filter(|host| !host.is_empty())
+    normalized_http_host(raw)
 }
 
 impl AgentConfigProjector for CodexConfigProjector {
@@ -516,6 +508,9 @@ impl AgentConfigProjector for CodexConfigProjector {
         Ok(out)
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 pub fn register(ctx: &mut crate::integrations::IntegrationContext<'_>) {
     ctx.config

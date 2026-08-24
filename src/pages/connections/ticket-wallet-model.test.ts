@@ -37,7 +37,6 @@ import {
   ticketWalletFilterLabel,
   ticketCredentialClassChipLabel,
   ticketSurfaceChipLabel,
-  endpointVendorLabel,
 } from './ticket-wallet-model';
 
 function sampleWallet(): TicketWallet {
@@ -493,7 +492,7 @@ describe('ticket detail fields', () => {
     expect(labels).not.toContain('Endpoint');
   });
 
-  it('classifies mytokens.cc custom remote as 自定义, not OpenAI or 未识别', () => {
+  it('classifies mytokens.cc custom remote as a recognized API Key, not 未识别', () => {
     const row = ticket({
       id: 'provider:codex-mytokens',
       sourceId: 'codex-mytokens',
@@ -504,10 +503,7 @@ describe('ticket detail fields', () => {
       speaks: ['openai-chat'],
     });
     expect(isUnrecognizedTicket(row)).toBe(false);
-    expect(ticketSurfaceChipLabel(row.surface, undefined, {
-      endpointMode: 'custom',
-      endpointHost: 'https://mytokens.cc/v1',
-    })).toBe('自定义');
+    expect(ticketSurfaceChipLabel(row.surface)).not.toBe('未识别');
     const { advanced } = buildTicketDetailFields(row, {
       endpointMode: 'custom',
       endpointHost: 'https://mytokens.cc/v1',
@@ -518,35 +514,6 @@ describe('ticket detail fields', () => {
       { label: '协议', value: 'openai-chat' },
     ]));
     expect(advanced.map((field) => field.value).join(' ')).not.toContain('未识别');
-  });
-
-  it('labels OpenRouter / official OpenAI / GLM hosts as the product, not the protocol family', () => {
-    expect(endpointVendorLabel('https://openrouter.ai/api/v1')).toBe('OpenRouter');
-    expect(endpointVendorLabel('openrouter.ai')).toBe('OpenRouter');
-    expect(ticketSurfaceChipLabel('openai-api', undefined, {
-      endpointMode: 'custom',
-      endpointHost: 'https://openrouter.ai/api/v1',
-    })).toBe('OpenRouter');
-    expect(ticketSurfaceChipLabel('unknown', undefined, {
-      endpointMode: 'custom',
-      endpointHost: 'https://openrouter.ai/api/v1',
-    })).toBe('OpenRouter');
-    expect(ticketSurfaceChipLabel('anthropic-api', undefined, {
-      endpointMode: 'custom',
-      endpointHost: 'https://openrouter.ai/api/v1',
-    })).toBe('OpenRouter');
-    expect(ticketSurfaceChipLabel('openai-api')).toBe('OpenAI');
-    expect(ticketSurfaceChipLabel('openai-api', undefined, {
-      endpointMode: 'official',
-      endpointHost: 'https://api.openai.com/v1',
-    })).toBe('OpenAI');
-    expect(ticketSurfaceChipLabel('glm-coding-plan', undefined, {
-      endpointHost: 'https://open.bigmodel.cn/api/anthropic',
-    })).toBe('GLM');
-    expect(ticketSurfaceChipLabel('openai-api', undefined, {
-      endpointMode: 'custom',
-      endpointHost: 'https://relay.example.com/v1',
-    })).toBe('自定义');
   });
 
   it('always shows 端点 / 主机 / 协议 for custom API Key, even when speaks is empty', () => {
@@ -596,7 +563,7 @@ describe('ticket detail fields', () => {
     expect(advanced.map((field) => field.value).join(' ')).not.toContain('anthropic-messages');
   });
 
-  it('does not label OpenRouter official URL as 本机路由 even when bound to Claude', () => {
+  it('shows 本机路由 for an OpenRouter URL when bound to Claude', () => {
     const { advanced } = buildTicketDetailFields(
       ticket({
         id: 'provider:or-1',
@@ -618,8 +585,9 @@ describe('ticket detail fields', () => {
       { label: '协议', value: 'openai-chat' },
       { label: '主机', value: 'openrouter.ai', mono: true },
     ]));
-    expect(advanced.map((field) => field.label)).not.toContain('本机路由');
-    expect(advanced.map((field) => field.value).join(' ')).not.toContain('Messages /v1/messages');
+    expect(advanced).toEqual(expect.arrayContaining([
+      { label: '本机路由', value: 'Messages /v1/messages', mono: true },
+    ]));
   });
 
   it('adds Codex / Grok Responses and Kimi Chat Completions surfaces for loopback 本机路由', () => {
@@ -649,7 +617,7 @@ describe('ticket detail fields', () => {
     ]));
   });
 
-  it('joins distinct 本机路由 surfaces for official OAuth, not OpenRouter URLs', () => {
+  it('joins distinct 本机路由 surfaces for official OAuth and OpenRouter URLs', () => {
     const { advanced: mixed } = buildTicketDetailFields(
       ticket({
         id: 'account:oauth-multi',
@@ -677,14 +645,16 @@ describe('ticket detail fields', () => {
         agentId: 'claude',
         speaks: ['openai-chat'],
       }),
-      { endpointMode: 'custom', endpointHost: 'openrouter.ai' },
+      { endpointMode: 'custom', endpointHost: 'https://openrouter.ai/api/v1' },
       undefined,
       [
         bridgeBinding('provider:or-multi', 'claude'),
         bridgeBinding('provider:or-multi', 'codex', 'p-or-codex'),
       ],
     );
-    expect(openrouter.map((field) => field.label)).not.toContain('本机路由');
+    expect(openrouter).toEqual(expect.arrayContaining([
+      { label: '本机路由', value: 'Messages /v1/messages · Responses /v1/responses', mono: true },
+    ]));
   });
 
   it('does not add 本机路由 for reshape or native bindings', () => {

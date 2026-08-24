@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 
-use crate::models::AgentId;
+use crate::models::{AgentId, Provider};
 use crate::utils::loopback::is_loopback_base_url;
 
 /// Official Kimi coding Anthropic-compatible endpoint projected into Claude.
@@ -134,6 +134,16 @@ pub const OPENAI_API_ENDPOINT_NEEDLE: &str = "api.openai.com";
 /// OpenRouter OpenAI-compat host. Classifies as [`crate::models::AdapterSourceProduct::OpenaiApi`].
 pub const OPENROUTER_API_ENDPOINT_NEEDLE: &str = "openrouter.ai";
 
+const BASE_URL_POINTERS: &[&str] = &[
+    "/baseURL",
+    "/baseUrl",
+    "/base_url",
+    "/env/OPENAI_BASE_URL",
+    "/env/OPENAI_API_BASE",
+    "/api_base",
+    "/apiBase",
+];
+
 /// Preset / extra.provider for a custom OpenAI-compatible endpoint (incl. OpenRouter).
 /// Catalog id is `openai-compatible`; `openai-compat` is accepted as an alias.
 pub const OPENAI_COMPAT_PRESET: &str = "openai-compatible";
@@ -258,12 +268,18 @@ pub(crate) fn settings_contain_anthropic_api_endpoint(value: &Value) -> bool {
 
 /// True when config points at OpenAI's public API host (not a custom relay).
 pub(crate) fn settings_contain_openai_api_endpoint(value: &Value) -> bool {
-    value_contains_needle(value, OPENAI_API_ENDPOINT_NEEDLE)
+    openai_compat_base_url(value)
+        .and_then(|value| normalized_http_host(&value))
+        .as_deref()
+        == Some(OPENAI_API_ENDPOINT_NEEDLE)
 }
 
 /// True when config points at OpenRouter's public API host.
 pub(crate) fn settings_contain_openrouter_endpoint(value: &Value) -> bool {
-    value_contains_needle(value, OPENROUTER_API_ENDPOINT_NEEDLE)
+    openai_compat_base_url(value)
+        .and_then(|value| normalized_http_host(&value))
+        .as_deref()
+        == Some(OPENROUTER_API_ENDPOINT_NEEDLE)
 }
 
 /// True when config points at xAI's public API host (not a custom relay).
@@ -292,23 +308,64 @@ pub(crate) fn explicit_provider_tag_matches(tag: Option<&str>, accepted: &[&str]
     })
 }
 
-/// Official OpenAI, OpenRouter host, `openai` / `openai-api`, explicit
-/// `openai-compat` alias, or `openrouter` tag. Catalog leftover
-/// `openai-compatible` without a remote host stays unclassified (Unknown).
-/// A custom remote host (e.g. `https://mytokens.cc/v1` in TOML or JSON)
-/// classifies as OpenAI-compat even when the preset is the catalog id.
+/// Known provider identities that must never be inferred as OpenAI from a URL.
+///
+/// These tags are product evidence for another vendor. A base URL is still
+/// useful to their own marker helpers, but it cannot override the explicit
+/// product identity in the OpenAI branch.
+pub(crate) fn is_non_openai_provider_tag(tag: Option<&str>) -> bool {
+    tag.is_some_and(|value| {
+        [
+            "anthropic",
+            "anthropic-api",
+            "anthropic-compatible",
+            "deepseek",
+            "deepseek-api",
+            "glm-coding-plan",
+            "kimi",
+            "kimi-api",
+            KIMI_MEMBERSHIP_PRESET,
+            "moonshot",
+            XAI_API_PRESET,
+            "xai-api",
+        ]
+        .iter()
+        .any(|accepted| value.eq_ignore_ascii_case(accepted))
+    })
+}
+
+/// Official OpenAI/OpenRouter host, or a real OpenAI-compatible remote.
+///
+/// A generic compatibility marker is only evidence when an active base URL is
+/// present. Official `openai` / `openrouter` markers are also checked against
+/// that active URL, so a stale marker cannot authorize a different relay.
 pub(crate) fn is_openai_api_marker(tag: Option<&str>, blob: &Value) -> bool {
-    explicit_provider_tag_matches(
-        tag,
-        &[
-            OPENAI_API_PRESET,
-            "openai-api",
-            "openai-compat",
-            OPENROUTER_PRESET,
-        ],
-    ) || settings_contain_openai_api_endpoint(blob)
-        || settings_contain_openrouter_endpoint(blob)
-        || settings_contain_custom_openai_compat_remote(blob)
+    let tag = tag.map(str::trim).filter(|value| !value.is_empty());
+    if is_non_openai_provider_tag(tag) {
+        return false;
+    }
+    let host = openai_compat_base_url(blob).and_then(|url| normalized_http_host(&url));
+    let has_active_base_url = has_active_base_url(blob);
+
+    match tag {
+        Some(value)
+            if value.eq_ignore_ascii_case(OPENAI_API_PRESET)
+                || value.eq_ignore_ascii_case("openai-api") =>
+        {
+            (!has_active_base_url && host.is_none())
+                || host.as_deref() == Some(OPENAI_API_ENDPOINT_NEEDLE)
+        }
+        Some(value) if value.eq_ignore_ascii_case(OPENROUTER_PRESET) => {
+            host.as_deref() == Some(OPENROUTER_API_ENDPOINT_NEEDLE)
+        }
+        Some(value)
+            if value.eq_ignore_ascii_case("openai-compat")
+                || value.eq_ignore_ascii_case(OPENAI_COMPAT_PRESET) =>
+        {
+            host.is_some()
+        }
+        _ => host.as_deref().is_some_and(is_openai_compat_host),
+    }
 }
 
 /// Official OpenAI host is not custom. OpenRouter host and explicit
@@ -331,27 +388,99 @@ pub(crate) fn is_custom_openai_compat(tag: Option<&str>, blob: &Value) -> bool {
 /// True only for OpenRouter. Official Grok / ChatGPT / other hosts must not
 /// inherit stealth/ox-alpha listing from "any non-OpenAI URL".
 pub fn is_custom_openai_compat_url(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
-    if lower.contains(OPENAI_API_ENDPOINT_NEEDLE) {
+    normalized_http_host(url).as_deref() == Some(OPENROUTER_API_ENDPOINT_NEEDLE)
+}
+
+/// True when a provider carries evidence for the official OpenAI/OpenRouter
+/// product, rather than only a generic OpenAI-compatible relay marker.
+pub(crate) fn provider_has_official_openai_api_evidence(provider: &Provider) -> bool {
+    let tag = [
+        provider.meta.get("preset").and_then(Value::as_str),
+        provider.meta.get("provider").and_then(Value::as_str),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|tag| !tag.is_empty());
+    let host = openai_compat_base_url(&provider.settings_config)
+        .and_then(|url| normalized_http_host(&url));
+    let has_active_base_url = has_active_base_url(&provider.settings_config);
+
+    if is_non_openai_provider_tag(tag) || has_ambiguous_active_base_url(&provider.settings_config) {
         return false;
     }
-    lower.contains(OPENROUTER_API_ENDPOINT_NEEDLE)
+
+    match tag {
+        Some(value)
+            if value.eq_ignore_ascii_case(OPENAI_API_PRESET)
+                || value.eq_ignore_ascii_case("openai-api") =>
+        {
+            (!has_active_base_url && host.is_none())
+                || host.as_deref() == Some(OPENAI_API_ENDPOINT_NEEDLE)
+        }
+        Some(value) if value.eq_ignore_ascii_case(OPENROUTER_PRESET) => {
+            host.as_deref() == Some(OPENROUTER_API_ENDPOINT_NEEDLE)
+        }
+        _ => host.as_deref().is_some_and(|value| {
+            value == OPENAI_API_ENDPOINT_NEEDLE || value == OPENROUTER_API_ENDPOINT_NEEDLE
+        }),
+    }
+}
+
+/// True when a provider points at an untrusted custom OpenAI-compatible relay.
+///
+/// Adapter route planning may recognize arbitrary OpenAI-compatible remotes,
+/// but bind must keep those rows closed. This is the single shared guard for
+/// both core bind paths.
+pub(crate) fn is_unknown_custom_relay_provider(provider: &Provider) -> bool {
+    let tag = provider
+        .meta
+        .get("preset")
+        .or_else(|| provider.meta.get("provider"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty());
+
+    let is_non_openai_tag = is_non_openai_provider_tag(tag);
+    let has_active_base_url = has_active_base_url(&provider.settings_config);
+    let host = openai_compat_base_url(&provider.settings_config)
+        .and_then(|url| normalized_http_host(&url));
+
+    if has_ambiguous_active_base_url(&provider.settings_config) {
+        return true;
+    }
+
+    if has_active_base_url {
+        if tag.is_some_and(|tag| {
+            (explicit_provider_tag_matches(Some(tag), &[OPENAI_API_PRESET, "openai-api"])
+                && host.as_deref() != Some(OPENAI_API_ENDPOINT_NEEDLE))
+                || (explicit_provider_tag_matches(Some(tag), &[OPENROUTER_PRESET])
+                    && host.as_deref() != Some(OPENROUTER_API_ENDPOINT_NEEDLE))
+                || (is_non_openai_tag
+                    && host.as_deref().is_some_and(|host| {
+                        host == OPENAI_API_ENDPOINT_NEEDLE || host == OPENROUTER_API_ENDPOINT_NEEDLE
+                    }))
+        }) {
+            return true;
+        }
+
+        if host.is_none() {
+            return true;
+        }
+    }
+
+    if host.as_deref().is_some_and(|host| {
+        host == OPENAI_API_ENDPOINT_NEEDLE || host == OPENROUTER_API_ENDPOINT_NEEDLE
+    }) {
+        return false;
+    }
+
+    settings_contain_custom_openai_compat_remote(&provider.settings_config)
 }
 
 /// First usable OpenAI-compat base URL in a settings / credentials blob.
 pub(crate) fn openai_compat_base_url(blob: &Value) -> Option<String> {
-    first_http_url(
-        blob,
-        &[
-            "/baseURL",
-            "/baseUrl",
-            "/base_url",
-            "/env/OPENAI_BASE_URL",
-            "/env/OPENAI_API_BASE",
-            "/api_base",
-            "/apiBase",
-        ],
-    )
+    first_http_url(blob, BASE_URL_POINTERS)
 }
 
 /// Custom (non-official, non-other-vendor) OpenAI-compat URL, if any.
@@ -386,37 +515,221 @@ fn has_openai_shaped_secret(blob: &Value) -> bool {
 mod tests;
 
 fn looks_like_openai_compat_base_url(url: &str) -> bool {
+    let Some(host) = normalized_http_host(url) else {
+        return false;
+    };
+    is_openai_compat_host(&host)
+}
+
+/// Normalize a single HTTP(S) URL's host without treating arbitrary text as a URL.
+///
+/// Host comparisons intentionally happen after parsing the authority, so
+/// `api.openai.com.evil.example`, comments, and strings containing multiple URLs
+/// cannot prove an official product host.
+pub(crate) fn normalized_http_host(url: &str) -> Option<String> {
     let trimmed = url.trim();
-    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
-        return false;
+    if trimmed.is_empty() || trimmed.chars().any(char::is_whitespace) {
+        return None;
     }
-    let lower = trimmed.to_ascii_lowercase();
-    if lower.contains(OPENAI_API_ENDPOINT_NEEDLE) {
-        return false;
+    let parsed = reqwest::Url::parse(trimmed).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return None;
     }
-    const OTHER_VENDORS: &[&str] = &[
-        KIMI_CODING_ENDPOINT_NEEDLE,
-        ANTHROPIC_API_ENDPOINT_NEEDLE,
-        XAI_API_ENDPOINT_NEEDLE,
-        GLM_CODING_ANTHROPIC_NEEDLE,
-        GLM_CODING_CHAT_NEEDLE,
-        DEEPSEEK_API_ENDPOINT_NEEDLE,
+    parsed.host_str().map(|host| host.to_ascii_lowercase())
+}
+
+fn is_openai_compat_host(host: &str) -> bool {
+    const OTHER_VENDOR_HOSTS: &[&str] = &[
+        "api.kimi.com",
+        "api.anthropic.com",
+        "api.x.ai",
+        "open.bigmodel.cn",
+        "api.deepseek.com",
     ];
-    !OTHER_VENDORS.iter().any(|needle| lower.contains(needle))
+    host == OPENAI_API_ENDPOINT_NEEDLE
+        || host == OPENROUTER_API_ENDPOINT_NEEDLE
+        || !OTHER_VENDOR_HOSTS.contains(&host)
 }
 
 fn first_http_url(value: &Value, pointers: &[&str]) -> Option<String> {
-    pointers.iter().find_map(|pointer| {
+    let is_toml = value
+        .get("format")
+        .and_then(Value::as_str)
+        .is_some_and(|format| format.eq_ignore_ascii_case("toml"));
+    if is_toml {
+        if let Some(content) = value.get("content").and_then(Value::as_str) {
+            return first_toml_http_url(content);
+        }
+    }
+
+    if let Some(url) = pointers.iter().find_map(|pointer| {
         value
             .pointer(pointer)
             .and_then(Value::as_str)
             .map(str::trim)
-            .filter(|candidate| {
-                !candidate.is_empty()
-                    && (candidate.starts_with("http://") || candidate.starts_with("https://"))
-            })
+            .filter(|candidate| normalized_http_host(candidate).is_some())
             .map(str::to_owned)
+    }) {
+        return Some(url);
+    }
+    None
+}
+
+fn first_toml_http_url(content: &str) -> Option<String> {
+    let doc = content.parse::<toml_edit::DocumentMut>().ok()?;
+    let slug = toml_active_provider_slug(&doc)?;
+    let provider_url = doc
+        .get("model_providers")
+        .and_then(|item| item.as_table())
+        .and_then(|providers| providers.get(&slug))
+        .and_then(|provider| provider.get("base_url"))
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    provider_url
+        .or_else(|| {
+            doc.get("base_url")
+                .and_then(|item| item.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        })
+        .filter(|value| normalized_http_host(value).is_some())
+}
+
+fn toml_active_provider_slug(doc: &toml_edit::DocumentMut) -> Option<String> {
+    let top = doc
+        .get("model_provider")
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(top) = top {
+        return Some(top.to_owned());
+    }
+
+    let providers = doc.get("model_providers")?.as_table()?;
+    let mut entries = providers.iter();
+    let (slug, _) = entries.next()?;
+    if entries.next().is_none() {
+        Some(slug.to_string())
+    } else {
+        None
+    }
+}
+
+fn has_active_base_url(blob: &Value) -> bool {
+    let is_toml = blob
+        .get("format")
+        .and_then(Value::as_str)
+        .is_some_and(|format| format.eq_ignore_ascii_case("toml"));
+    if is_toml {
+        if let Some(content) = blob.get("content").and_then(Value::as_str) {
+            let Ok(doc) = content.parse::<toml_edit::DocumentMut>() else {
+                return false;
+            };
+            let Some(slug) = toml_active_provider_slug(&doc) else {
+                return doc
+                    .get("model_providers")
+                    .and_then(|item| item.as_table())
+                    .is_some_and(|providers| {
+                        providers.iter().any(|(_, provider)| {
+                            provider
+                                .get("base_url")
+                                .and_then(|item| item.as_str())
+                                .is_some_and(|value| !value.trim().is_empty())
+                        })
+                    });
+            };
+            return doc
+                .get("model_providers")
+                .and_then(|item| item.as_table())
+                .and_then(|providers| providers.get(&slug))
+                .and_then(|provider| provider.get("base_url"))
+                .and_then(|item| item.as_str())
+                .is_some_and(|value| !value.trim().is_empty())
+                || doc
+                    .get("base_url")
+                    .and_then(|item| item.as_str())
+                    .is_some_and(|value| !value.trim().is_empty());
+        }
+    }
+
+    BASE_URL_POINTERS.iter().any(|pointer| {
+        blob.pointer(pointer)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
     })
+}
+
+/// Multiple distinct active base URL fields are ambiguous and must not prove
+/// an official product. Repeated aliases containing the same URL are allowed;
+/// this preserves provider snapshots that duplicate `baseURL`/`baseUrl`.
+fn has_ambiguous_active_base_url(blob: &Value) -> bool {
+    let is_toml = blob
+        .get("format")
+        .and_then(Value::as_str)
+        .is_some_and(|format| format.eq_ignore_ascii_case("toml"));
+    if is_toml {
+        let Some(content) = blob.get("content").and_then(Value::as_str) else {
+            return false;
+        };
+        let Ok(doc) = content.parse::<toml_edit::DocumentMut>() else {
+            return false;
+        };
+        let Some(slug) = toml_active_provider_slug(&doc) else {
+            return false;
+        };
+        let mut values = Vec::new();
+        if let Some(value) = doc
+            .get("model_providers")
+            .and_then(|item| item.as_table())
+            .and_then(|providers| providers.get(&slug))
+            .and_then(|provider| provider.get("base_url"))
+            .and_then(|item| item.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            values.push(value.to_owned());
+        }
+        if let Some(value) = doc
+            .get("base_url")
+            .and_then(|item| item.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            values.push(value.to_owned());
+        }
+        return has_multiple_distinct_base_urls(values);
+    }
+
+    let values = BASE_URL_POINTERS
+        .iter()
+        .filter_map(|pointer| blob.pointer(pointer))
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    has_multiple_distinct_base_urls(values)
+}
+
+fn has_multiple_distinct_base_urls(values: Vec<String>) -> bool {
+    let mut distinct = Vec::new();
+    for value in values {
+        if !distinct
+            .iter()
+            .any(|existing: &String| existing.eq_ignore_ascii_case(&value))
+        {
+            distinct.push(value);
+        }
+    }
+    distinct.len() > 1
 }
 
 /// Optional model id pinned on a custom OpenAI-compat provider.
@@ -453,9 +766,7 @@ pub(crate) fn openai_compat_endpoint_url(blob: &Value, target: &str) -> Option<S
             .get("url")
             .and_then(Value::as_str)
             .map(str::trim)
-            .filter(|value| {
-                !value.is_empty() && (value.starts_with("http://") || value.starts_with("https://"))
-            })
+            .filter(|value| normalized_http_host(value).is_some())
         {
             return Some(url.to_owned());
         }
@@ -464,8 +775,18 @@ pub(crate) fn openai_compat_endpoint_url(blob: &Value, target: &str) -> Option<S
 }
 
 pub(crate) fn looks_like_anthropic_messages_url(url: &str) -> bool {
-    let lower = url.trim().to_ascii_lowercase();
-    lower.contains("/anthropic") || lower.contains("api.anthropic.com")
+    let Some(host) = normalized_http_host(url) else {
+        return false;
+    };
+    if host == ANTHROPIC_API_ENDPOINT_NEEDLE {
+        return true;
+    }
+    reqwest::Url::parse(url.trim()).ok().is_some_and(|parsed| {
+        parsed
+            .path()
+            .split('/')
+            .any(|segment| segment.eq_ignore_ascii_case("anthropic"))
+    })
 }
 
 pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
@@ -480,6 +801,25 @@ pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
             return first;
         }
     }
+    if blob
+        .get("format")
+        .and_then(Value::as_str)
+        .is_some_and(|format| format.eq_ignore_ascii_case("toml"))
+    {
+        if let Some(content) = blob.get("content").and_then(Value::as_str) {
+            if let Ok(doc) = content.parse::<toml_edit::DocumentMut>() {
+                if let Some(model) = doc
+                    .get("model")
+                    .and_then(|item| item.as_str())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    return Some(model.to_owned());
+                }
+            }
+        }
+    }
+
     ["model", "default_model", "defaultModel"]
         .iter()
         .find_map(|key| {
@@ -494,42 +834,10 @@ pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
 /// True when settings/TOML contain a remote (non-loopback) OpenAI-compat URL.
 /// Catalog `openai-compatible` leftovers with only a loopback 本机路由 stay unknown.
 pub(crate) fn settings_contain_custom_openai_compat_remote(blob: &Value) -> bool {
-    blob_strings(blob).iter().any(|text| {
-        http_urls_in(text).into_iter().any(|url| {
-            looks_like_openai_compat_base_url(&url) && !is_loopback_base_url(&url)
-        })
-    })
-}
-
-fn blob_strings(value: &Value) -> Vec<String> {
-    match value {
-        Value::String(text) => vec![text.clone()],
-        Value::Array(items) => items.iter().flat_map(blob_strings).collect(),
-        Value::Object(map) => map.values().flat_map(blob_strings).collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn http_urls_in(text: &str) -> Vec<String> {
-    let mut urls = Vec::new();
-    let mut rest = text;
-    while let Some(start) = rest
-        .find("https://")
-        .into_iter()
-        .chain(rest.find("http://"))
-        .min()
-    {
-        let candidate = &rest[start..];
-        let end = candidate
-            .find(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | ',' | ')' | ']' | '}'))
-            .unwrap_or(candidate.len());
-        let url = candidate[..end].trim_end_matches('/').to_owned();
-        if !url.is_empty() {
-            urls.push(url);
-        }
-        rest = &candidate[end.max(1)..];
-    }
-    urls
+    let Some(url) = openai_compat_base_url(blob) else {
+        return false;
+    };
+    looks_like_openai_compat_base_url(&url) && !is_loopback_base_url(&url)
 }
 
 pub(crate) fn is_xai_api_marker(tag: Option<&str>, blob: &Value) -> bool {

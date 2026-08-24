@@ -408,7 +408,7 @@ fn unknown_surface_ticket_has_empty_speaks() {
 }
 
 #[test]
-fn mytokens_custom_remote_list_wallet_is_openai_api_not_unknown() {
+fn custom_remote_without_official_evidence_stays_unknown() {
     let (_dir, db) = test_db();
     let mut row = provider(
         "codex-mytokens",
@@ -423,16 +423,55 @@ fn mytokens_custom_remote_list_wallet_is_openai_api_not_unknown() {
     });
     ProviderRepo::new(db.clone()).create(&row).unwrap();
 
-    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
     let ticket = wallet
         .tickets
         .iter()
         .find(|t| t.id == "provider:codex-mytokens")
         .unwrap();
-    assert_eq!(ticket.surface, TicketSurface::OpenaiApi);
-    assert_eq!(ticket.speaks, vec![TicketProtocol::OpenaiChat]);
+    assert_eq!(ticket.surface, TicketSurface::Unknown);
+    assert!(ticket.speaks.is_empty());
     assert_eq!(ticket.credential_class, TicketCredentialClass::ApiKey);
     assert_ne!(ticket.label, "未识别");
+
+    let stored = ProviderRepo::new(db)
+        .get_by_id("codex-mytokens")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.meta["surface"], "unknown");
+}
+
+#[test]
+fn list_wallet_does_not_reclassify_persisted_unknown_provider_surface() {
+    let (_dir, db) = test_db();
+    let mut row = provider(
+        "relay-unknown",
+        AgentId::Codex,
+        "OpenAI-compatible relay",
+        "openai-compatible",
+        false,
+    );
+    row.meta["surface"] = serde_json::json!("unknown");
+    row.settings_config = serde_json::json!({
+        "base_url": "https://api.openai.com.evil.example/v1",
+        "comment": "https://api.openai.com/v1"
+    });
+    ProviderRepo::new(db.clone()).create(&row).unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let ticket = wallet
+        .tickets
+        .iter()
+        .find(|ticket| ticket.id == "provider:relay-unknown")
+        .unwrap();
+    assert_eq!(ticket.surface, TicketSurface::Unknown);
+    assert!(ticket.speaks.is_empty());
+
+    let stored = ProviderRepo::new(db)
+        .get_by_id("relay-unknown")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.meta["surface"], "unknown");
 }
 
 #[test]
