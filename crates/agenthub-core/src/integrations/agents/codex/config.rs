@@ -7,9 +7,13 @@ use serde_json::{json, Value};
 use toml_edit::DocumentMut;
 
 use crate::error::{AppError, Result};
+use crate::integrations::agents::codex::leftover::{
+    is_agenthub_bridge_slug, toml_active_provider_is_bridge_leftover,
+};
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 use crate::utils::atomic::atomic_write;
+use crate::utils::loopback::is_loopback_base_url;
 
 use crate::platform::config::sources::util::{
     field, finish_apply, get_str_map, invalid_toml, plan_from_maps, redact_secrets,
@@ -281,6 +285,86 @@ impl CodexConfigProjector {
     fn write_auth(path: &Path, api_key: &str) -> Result<()> {
         super::write_api_key_auth(path, api_key)
     }
+
+    fn hint_from_toml(content: &str) -> Option<CodexLiveImportHint> {
+        if content.trim().is_empty() {
+            return None;
+        }
+        if toml_active_provider_is_bridge_leftover(content) {
+            return None;
+        }
+        let doc: DocumentMut = content.parse().ok()?;
+        let slug = {
+            let top = Self::doc_str(&doc, "model_provider");
+            if top.is_empty() {
+                Self::first_provider_slug(&doc)
+            } else {
+                top
+            }
+        };
+        if is_agenthub_bridge_slug(&slug) {
+            return None;
+        }
+        let table_name = Self::provider_table_str(&doc, &slug, "name");
+        let base_url = Self::provider_table_str(&doc, &slug, "base_url");
+        let model = Self::doc_str(&doc, "model");
+        let host = host_from_http_url(&base_url);
+        let lower_url = base_url.to_ascii_lowercase();
+        let official_openai = base_url.is_empty() || lower_url.contains("api.openai.com");
+        let loopback = !base_url.is_empty() && is_loopback_base_url(&base_url);
+        if loopback {
+            return None;
+        }
+        let preset = if official_openai {
+            "openai"
+        } else if lower_url.contains("openrouter.ai") {
+            "openrouter"
+        } else {
+            "openai-compat"
+        };
+        let mut label = if !table_name.is_empty() && !table_name.eq_ignore_ascii_case("custom") {
+            table_name
+        } else if let Some(host) = host.filter(|value| {
+            !value.eq_ignore_ascii_case("api.openai.com")
+                && !value.eq_ignore_ascii_case("localhost")
+        }) {
+            host
+        } else if !slug.is_empty() && !slug.eq_ignore_ascii_case("custom") {
+            slug
+        } else {
+            "OpenAI".into()
+        };
+        if !model.is_empty() && !label.contains(&model) {
+            label = format!("{label} · {model}");
+        }
+        Some(CodexLiveImportHint { label, preset })
+    }
+}
+
+/// Human label + classify preset derived from live Codex config.toml.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CodexLiveImportHint {
+    pub label: String,
+    pub preset: &'static str,
+}
+
+pub(crate) fn live_import_hint(raw: &Value) -> Option<CodexLiveImportHint> {
+    let content = raw
+        .get("content")
+        .or_else(|| raw.get("config"))
+        .and_then(Value::as_str)?;
+    CodexConfigProjector::hint_from_toml(content)
+}
+
+fn host_from_http_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    reqwest::Url::parse(trimmed)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .filter(|host| !host.is_empty())
 }
 
 impl AgentConfigProjector for CodexConfigProjector {

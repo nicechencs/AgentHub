@@ -316,6 +316,7 @@ impl AgentAdapter for CursorAdapter {
                 source: Some("env:CURSOR_API_KEY".into()),
                 revision: None,
                 also_present: Vec::new(),
+                secret_hash: None,
             };
             return Ok(if cursor_cli_status_verified() {
                 state.with_also_present(["oauth"])
@@ -342,6 +343,7 @@ impl AgentAdapter for CursorAdapter {
                         source: Some("cursor-agent status".into()),
                         revision: None,
                         also_present: Vec::new(),
+                        secret_hash: None,
                     });
                 }
                 if health == crate::models::AuthHealth::NeedsLogin {
@@ -354,6 +356,7 @@ impl AgentAdapter for CursorAdapter {
                         source: Some("cursor-agent status".into()),
                         revision: None,
                         also_present: Vec::new(),
+            secret_hash: None,
                     });
                 }
                 return Ok(AuthState {
@@ -365,6 +368,7 @@ impl AgentAdapter for CursorAdapter {
                     source: Some("cursor-agent status".into()),
                     revision: None,
                     also_present: Vec::new(),
+                    secret_hash: None,
                 });
             }
         }
@@ -377,6 +381,7 @@ impl AgentAdapter for CursorAdapter {
             source: Some("cursor-agent".into()),
             revision: None,
             also_present: Vec::new(),
+            secret_hash: None,
         })
     }
 
