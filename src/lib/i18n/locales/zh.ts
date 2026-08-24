@@ -751,6 +751,51 @@ export const zh = {
       modelsAny: "按请求决定",
       modelsOnly: "仅这些模型",
     },
+    panel: {
+      sourceTitle: "来源登录",
+      bridgeTitle: "本机桥",
+      clientsTitle: "客户端接入",
+      sourceDeletedHint: "来源登录已删除，路由仅可查看或解除绑定",
+      edge: {
+        sourceMissing: "来源登录已删除",
+        hidden: "该客户端已在设置中隐藏",
+        noUpstream: "来源未配置此客户端的上游端点",
+        applied: "已写入 {name} 配置",
+        ready: "可一键接入",
+        runtimeOnly: "由后端路由支持，暂不提供界面配置",
+      },
+      hop: {
+        passthrough: "直通上游",
+        convert: "转换 → {channel}",
+        forward: "转发",
+      },
+      channel: {
+        openaiChat: "上游 Chat 接口",
+        anthropicMessages: "上游 Messages",
+        codexResponses: "上游 Codex Responses",
+        grokResponses: "上游 Grok Responses",
+        unknown: "上游",
+      },
+      models: {
+        only: "仅放行：{models}（其余模型将被拒绝）",
+        any: "跟随客户端请求的模型",
+      },
+      bridge: {
+        stoppedHint: "已停止——客户端暂时无法使用以下地址",
+        portPending: "端口分配中",
+        hostPortPending: "127.0.0.1 · 端口分配中",
+        statusWithUpstream: "{runtime} · {upstream}",
+      },
+      apply: {
+        confirm: "将勾选项写入客户端配置",
+      },
+      copyPortPending: "端口分配后可复制",
+      upstreamUrl: "上游地址",
+      target: {
+        kimi: "Kimi",
+        dsh: "DSH",
+      },
+    },
   },
   dashboard: {
     range: {

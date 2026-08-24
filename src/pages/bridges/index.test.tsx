@@ -155,10 +155,14 @@ describe('Bridges page', () => {
     expect(markup).toContain('运行中');
     expect(markup).toContain('127.0.0.1:43121');
     expect(markup).toContain('停止');
-    expect(markup).toContain('本机端点');
-    expect(markup).toContain('自动启动');
+    expect(markup).toContain('随 AgentHub 自动启动');
     expect(markup).toContain('停止并还原');
     expect(markup).toContain('data-route-detail="bridge-1"');
+    expect(markup).toContain('来源登录');
+    expect(markup).toContain('本机桥');
+    expect(markup).toContain('客户端接入');
+    expect(markup).not.toContain('本机端点');
+    expect(markup).not.toContain('目标写入');
     expect(markup).not.toContain('配置已生效');
     expect(markup).not.toContain('桥接运行中');
     expect(markup).not.toContain('本地协议转换');
@@ -210,9 +214,9 @@ describe('Bridges page', () => {
     expect(markup).toContain('Codex');
     expect(markup).toContain('Grok');
     expect(markup).toContain('一键配置');
-    expect(markup).toContain('确认应用');
-    expect(markup).toContain('用这份登录');
-    expect(markup).toContain('本机路由');
+    expect(markup).toContain('将勾选项写入客户端配置');
+    expect(markup).toContain('可一键接入');
+    expect(markup).toContain('转换 → 上游 Chat 接口');
     expect(markup).not.toContain('票');
     expect(markup).not.toContain('钱包');
     expect(markup).not.toContain('投影');
@@ -252,9 +256,12 @@ describe('Bridges page', () => {
       }),
     );
     expect(markup).toContain('运行中');
-    expect(markup).toContain('本机端点');
-    expect(markup).toContain('目标写入');
+    expect(markup).toContain('本机桥');
+    expect(markup).toContain('客户端接入');
+    expect(markup).toContain('将勾选项写入客户端配置');
     expect(markup).toContain('停止并还原');
+    expect(markup).not.toContain('本机端点');
+    expect(markup).not.toContain('目标写入');
     expect(markup).not.toContain('配置已生效');
     expect(markup).not.toContain('在 Connections 查看');
     expect(markup).not.toContain('删除适配');
