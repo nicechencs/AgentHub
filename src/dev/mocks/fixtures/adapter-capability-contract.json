@@ -416,14 +416,14 @@
       },
       "target": "claude",
       "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "openai-api-to-claude-v1",
-        "gateKind": "none",
-        "reason": "这份 OpenAI 兼容登录接到 Claude 需要本机转发。",
-        "reusePath": "local_bridge"
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。",
+        "reusePath": "none"
       }
     },
     {
@@ -582,14 +582,14 @@
       },
       "target": "pi",
       "expect": {
-        "route": "config_sync",
-        "support": "stable",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "ruleId": "openai-api-to-pi-v1",
-        "gateKind": "none",
-        "reason": "把这份 OpenAI API Key 写进 Pi 认的登录位置。",
-        "reusePath": "api_endpoint"
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。",
+        "reusePath": "none"
       }
     },
     {
