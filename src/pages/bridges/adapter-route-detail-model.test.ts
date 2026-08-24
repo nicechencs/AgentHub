@@ -7,10 +7,19 @@ import {
   bridgeNodeStatusLine,
   buildRouteDetailEdges,
   buildRouteDetailSourceView,
+  defaultApplySelection,
   detectUpstreamChannelFromCredential,
   detectUpstreamChannelFromUrl,
   hopForTestable,
+  routeCopyPortPendingLabel,
+  routeDetailApplyConfirmLabel,
+  routeDetailTargetLabel,
+  routeEdgeSupportLabel,
   routeHopLabel,
+  routeModelsSummary,
+  routeSourceDeletedHint,
+  selectableProductTargets,
+  upstreamChannelLabel,
 } from './adapter-route-detail-model';
 
 function profile(partial: Partial<AdapterProfile> = {}): AdapterProfile {
@@ -79,6 +88,19 @@ describe('detectUpstreamChannelFromCredential', () => {
     expect(detectUpstreamChannelFromCredential({ mode: 'oauth', sourceAgentId: 'claude' }))
       .toBe('anthropic_messages');
     expect(detectUpstreamChannelFromCredential({ mode: 'api', sourceAgentId: 'codex' }))
+      .toBe('unknown');
+  });
+
+  it('maps grok oauth and kimi/dsh api to expected channels', () => {
+    expect(detectUpstreamChannelFromCredential({ mode: 'oauth', sourceAgentId: 'grok' }))
+      .toBe('grok_responses');
+    expect(detectUpstreamChannelFromCredential({ mode: 'oauth', sourceAgentId: 'xai' }))
+      .toBe('grok_responses');
+    expect(detectUpstreamChannelFromCredential({ mode: 'api', sourceAgentId: 'kimi' }))
+      .toBe('openai_chat');
+    expect(detectUpstreamChannelFromCredential({ mode: 'api', sourceAgentId: 'dsh' }))
+      .toBe('openai_chat');
+    expect(detectUpstreamChannelFromCredential({ mode: 'oauth', sourceAgentId: 'unknown-vendor' }))
       .toBe('unknown');
   });
 });
@@ -249,12 +271,40 @@ describe('buildRouteDetailSourceView', () => {
     expect(view.channel).toBe('openai_chat');
     expect(view.missing).toBe(false);
   });
+
+  it('falls back to oauth credential channel when no usable URL exists', () => {
+    const view = buildRouteDetailSourceView({
+      profile: profile({ sourceKind: 'account', sourceId: 'acct-1', mode: 'oauth' }),
+      entries: [entry({}, {
+        source: 'account',
+        id: 'acct-1',
+        key: 'account:acct-1',
+        agentId: 'codex',
+      })],
+    });
+    expect(view.baseUrl).toBe('');
+    expect(view.channel).toBe('codex_responses');
+    expect(view.missing).toBe(false);
+  });
+
+  it('marks missing source when entry is gone', () => {
+    const view = buildRouteDetailSourceView({
+      profile: profile(),
+      entries: [],
+    });
+    expect(view.missing).toBe(true);
+    expect(view.baseUrl).toBe('');
+    expect(view.upstreamUrls).toEqual([]);
+    expect(view.channel).toBe('unknown');
+  });
 });
 
 describe('bridge helpers', () => {
   it('omits {port} literal when pending', () => {
     expect(bridgeHostPortLabel({ host: '127.0.0.1', port: null })).toBe('127.0.0.1 · 端口分配中');
     expect(bridgeHostPortLabel({ host: '127.0.0.1', port: null })).not.toContain('{port}');
+    expect(bridgeHostPortLabel({ host: '127.0.0.1', port: 43121 })).toBe('127.0.0.1:43121');
+    expect(bridgeHostPortLabel({ host: '0.0.0.0', port: null })).toBe('0.0.0.0 · 端口分配中');
   });
 
   it('shows stopped hint only when stopped', () => {
@@ -268,5 +318,76 @@ describe('bridge helpers', () => {
       upstreamLabel: '已连接',
       bridgeState: 'running',
     }).stoppedHint).toBeNull();
+  });
+
+  it('joins runtime and upstream unless status is unavailable', () => {
+    expect(bridgeNodeStatusLine({
+      runtimeLabel: '运行中',
+      upstreamLabel: '已连接',
+      bridgeState: 'running',
+    }).line).toBe('运行中 · 已连接');
+    expect(bridgeNodeStatusLine({
+      runtimeLabel: '运行中',
+      upstreamLabel: '已连接',
+      statusUnavailable: true,
+    }).line).toBe('运行中');
+  });
+});
+
+describe('label helpers', () => {
+  it('maps edge support states to user-facing copy', () => {
+    expect(routeEdgeSupportLabel('source_missing', 'Codex')).toBe('来源登录已删除');
+    expect(routeEdgeSupportLabel('hidden', 'Codex')).toBe('该客户端已在设置中隐藏');
+    expect(routeEdgeSupportLabel('no_upstream', 'Codex')).toBe('来源未配置此客户端的上游端点');
+    expect(routeEdgeSupportLabel('applied', 'Codex')).toBe('已写入 Codex 配置');
+    expect(routeEdgeSupportLabel('ready', 'Codex')).toBe('可一键接入');
+    expect(routeEdgeSupportLabel('runtime_only', 'Kimi')).toBe('由后端路由支持，暂不提供界面配置');
+  });
+
+  it('maps upstream channels and hop labels', () => {
+    expect(upstreamChannelLabel('openai_chat')).toBe('上游 Chat 接口');
+    expect(upstreamChannelLabel('anthropic_messages')).toBe('上游 Messages');
+    expect(upstreamChannelLabel('codex_responses')).toBe('上游 Codex Responses');
+    expect(upstreamChannelLabel('grok_responses')).toBe('上游 Grok Responses');
+    expect(upstreamChannelLabel('unknown')).toBe('上游');
+    expect(routeHopLabel('convert', 'openai_chat')).toBe('转换 → 上游 Chat 接口');
+  });
+
+  it('summarizes models and static route copy', () => {
+    expect(routeModelsSummary([])).toBe('跟随客户端请求的模型');
+    expect(routeModelsSummary(['gpt-4o', 'claude-3'])).toBe('仅放行：gpt-4o, claude-3（其余模型将被拒绝）');
+    expect(routeSourceDeletedHint()).toBe('来源登录已删除，路由仅可查看或解除绑定');
+    expect(routeDetailApplyConfirmLabel()).toBe('将勾选项写入客户端配置');
+    expect(routeCopyPortPendingLabel()).toBe('端口分配后可复制');
+  });
+
+  it('labels product and runtime targets', () => {
+    expect(routeDetailTargetLabel('claude')).toBe('Claude');
+    expect(routeDetailTargetLabel('codex')).toBe('Codex');
+    expect(routeDetailTargetLabel('grok')).toBe('Grok');
+    expect(routeDetailTargetLabel('kimi')).toBe('Kimi');
+    expect(routeDetailTargetLabel('dsh')).toBe('DSH');
+  });
+});
+
+describe('apply selection helpers', () => {
+  it('defaults to applied selectable edges only', () => {
+    const edges = buildRouteDetailEdges({
+      profile: profile({ targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' }),
+      entries: [entry({
+        endpoints: [
+          { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
+          { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
+          { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
+        ],
+      })],
+      siblingProfiles: [
+        profile({ targetAgentId: 'claude', generatedProviderId: 'g-claude' }),
+        profile({ id: 'g2', targetAgentId: 'grok', generatedProviderId: 'g-grok' }),
+      ],
+    });
+    expect(defaultApplySelection(edges)).toEqual(['claude', 'grok']);
+    expect(selectableProductTargets(['grok', 'claude'])).toEqual(['claude', 'grok']);
+    expect(selectableProductTargets(['kimi'])).toEqual([]);
   });
 });
