@@ -65,12 +65,12 @@ export function routeEndpointPathForBinding(input: {
 }
 
 const SURFACE_LABEL: Record<RouteEndpointId, string> = {
-  messages: 'Messages /v1/messages',
-  responses: 'Responses /v1/responses',
-  chat_completions: 'Chat Completions /v1/chat/completions',
+  messages: 'Claude',
+  responses: 'Codex',
+  chat_completions: 'Kimi',
 };
 
-/** Agent-facing local-route surface, e.g. `Messages /v1/messages`. */
+/** Client-facing local-route name, e.g. `Claude`. */
 export function routeEndpointSurfaceLabel(id: RouteEndpointId): string {
   return SURFACE_LABEL[id];
 }

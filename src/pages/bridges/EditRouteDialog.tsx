@@ -2,14 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SecretInput } from '@/components/shared/SecretInput';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { DialogOrSide } from './dialog-or-side';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
@@ -25,7 +18,6 @@ import {
   isEditableRouteSource,
   readStoredCreateRouteVendor,
   submitEditRoute,
-  upstreamEndpointPathForTarget,
   type CreateRouteTarget,
   type EditRouteInput,
 } from './create-route-flow';
@@ -49,6 +41,7 @@ export function EditRouteDialog({
   busy,
   onSaved,
   onRequestDelete,
+  asPanel = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -59,6 +52,7 @@ export function EditRouteDialog({
   onSaved: () => void;
   /** Hands the delete/停止并还原 confirmation back to the page. */
   onRequestDelete: (profile: AdapterProfile) => void;
+  asPanel?: boolean;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -140,33 +134,53 @@ export function EditRouteDialog({
   };
 
   return (
-    <Dialog
+    <DialogOrSide
+      asPanel={asPanel}
       open={open}
       onOpenChange={(next) => {
         if (submitting) return;
         if (!next) setError(null);
         onOpenChange(next);
       }}
+      title={t('routes.edit.title')}
+      description={t('routes.edit.description')}
+      preventDismiss
+      footer={(
+        <>
+          <Button
+            type="button"
+            variant="dangerOutline"
+            className="sm:mr-auto"
+            onClick={requestDelete}
+            disabled={busy || submitting}
+          >
+            {t('routes.delete.action')}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => onOpenChange(false)}
+            disabled={submitting}
+          >
+            {t('common.cancel')}
+          </Button>
+          {editable ? (
+            <Button type="submit" form="edit-route-form" disabled={submitting || !canSubmit}>
+              {submitting ? t('routes.edit.submitting') : t('routes.edit.submit')}
+            </Button>
+          ) : null}
+        </>
+      )}
     >
-      <DialogContent
-        className="flex max-h-[min(36rem,calc(100vh-2rem))] flex-col overflow-hidden"
-        onPointerDownOutside={(event) => event.preventDefault()}
-        onInteractOutside={(event) => event.preventDefault()}
-        onFocusOutside={(event) => event.preventDefault()}
-      >
         <form
-          className="flex min-h-0 flex-1 flex-col"
+          id="edit-route-form"
+          className="flex min-h-0 flex-1 flex-col space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (submitting || !canSubmit) return;
             void save();
           }}
         >
-          <DialogHeader className="shrink-0">
-            <DialogTitle>{t('routes.edit.title')}</DialogTitle>
-            <DialogDescription>{t('routes.edit.description')}</DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1">
             {editable ? (
               <>
                 <label className="flex flex-col gap-1.5">
@@ -207,8 +221,6 @@ export function EditRouteDialog({
                   {CREATE_ROUTE_TARGETS.map((target) => {
                     const checked = endpoints.includes(target);
                     const targetUrl = endpointUrlFor(storedVendor, target, url, endpointUrls);
-                    const upstreamPath = upstreamEndpointPathForTarget(storedVendor, target, url, endpointUrls);
-                    const localPath = target === 'claude' ? '/v1/messages' : '/v1/responses';
                     const canEditUrl = storedVendor === 'custom';
                     return (
                       <div key={target} className="space-y-1.5 rounded-card border border-border bg-subtle/40 p-2">
@@ -221,9 +233,6 @@ export function EditRouteDialog({
                           />
                           <span className="min-w-0">
                             <span className="block font-medium">{targetLabel(t, target)}</span>
-                            <span className="block text-meta text-muted">
-                              {t('routes.create.upstreamToLocal', { upstream: upstreamPath, local: localPath })}
-                            </span>
                           </span>
                         </label>
                         {checked && canEditUrl ? (
@@ -252,33 +261,7 @@ export function EditRouteDialog({
               <p className="text-sm text-secondary">{t('routes.edit.unavailable')}</p>
             )}
             {error ? <p className="text-sm text-danger">{error}</p> : null}
-          </div>
-          <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
-            <Button
-              type="button"
-              variant="dangerOutline"
-              className="sm:mr-auto"
-              onClick={requestDelete}
-              disabled={busy || submitting}
-            >
-              {t('routes.delete.action')}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => onOpenChange(false)}
-              disabled={submitting}
-            >
-              {t('common.cancel')}
-            </Button>
-            {editable ? (
-              <Button type="submit" disabled={submitting || !canSubmit}>
-                {submitting ? t('routes.edit.submitting') : t('routes.edit.submit')}
-              </Button>
-            ) : null}
-          </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+    </DialogOrSide>
   );
 }

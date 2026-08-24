@@ -44,13 +44,12 @@ export type AdapterProfilesListProps = {
   entries: ConnectionEntry[];
   loading: boolean;
   loadError: unknown;
-  /** Per-profile mutation errors (start/stop/autostart/unbind). */
+  /** Per-profile mutation errors (start/stop/unbind). */
   errors: Record<string, unknown>;
   busyProfileIds: Record<string, boolean>;
   removingProfileId: string | null;
   onStartBridge: (profile: AdapterProfile) => void;
   onRequestStopBridge: (profile: AdapterProfile) => void;
-  onSetAutoStart?: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove?: (profile: AdapterProfile) => void;
   /** Opens the dedicated client-config write dialog for one route. */
   onRequestWrite?: (profile: AdapterProfile, graph: RouteGraphView) => void;
@@ -77,7 +76,6 @@ export function AdapterProfilesList({
   removingProfileId,
   onStartBridge,
   onRequestStopBridge,
-  onSetAutoStart,
   onRequestRemove,
   onRequestWrite,
   onRequestEdit,
@@ -130,7 +128,6 @@ export function AdapterProfilesList({
           error={errors[profile.id]}
           onStartBridge={onStartBridge}
           onRequestStopBridge={onRequestStopBridge}
-          onSetAutoStart={onSetAutoStart}
           onRequestRemove={onRequestRemove}
           onRequestWrite={onRequestWrite}
           onRequestEdit={onRequestEdit}
@@ -153,7 +150,6 @@ function AdapterProfileRow({
   error,
   onStartBridge,
   onRequestStopBridge,
-  onSetAutoStart,
   onRequestRemove,
   onRequestWrite,
   onRequestEdit,
@@ -170,7 +166,6 @@ function AdapterProfileRow({
   error: unknown;
   onStartBridge: (profile: AdapterProfile) => void;
   onRequestStopBridge: (profile: AdapterProfile) => void;
-  onSetAutoStart?: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove?: (profile: AdapterProfile) => void;
   onRequestWrite?: (profile: AdapterProfile, graph: RouteGraphView) => void;
   onRequestEdit?: (profile: AdapterProfile) => void;
@@ -309,12 +304,10 @@ function AdapterProfileRow({
         <RouteDetailPanel
           profile={profile}
           bridgeStatus={bridgeStatus}
-          statusUnavailable={statusUnavailable}
           entries={entries}
           busy={busy}
           error={error}
           onClose={onToggleDetail}
-          onSetAutoStart={onSetAutoStart ?? (() => undefined)}
           onRequestRemove={onRequestRemove ?? (() => undefined)}
           targetHidden={targetHidden}
           siblingProfiles={siblingProfiles}

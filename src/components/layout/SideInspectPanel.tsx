@@ -1,5 +1,6 @@
 import { PanelRightClose } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +23,8 @@ export function SideInspectPanel({
   footer?: ReactNode;
   className?: string;
 }) {
+  const { t } = useI18n();
+  const collapseLabel = t('common.collapse');
   return (
     <aside
       className={cn(
@@ -39,8 +42,8 @@ export function SideInspectPanel({
           size="icon"
           variant="ghost"
           className="h-7 w-7 shrink-0"
-          aria-label="收起"
-          title="收起"
+          aria-label={collapseLabel}
+          title={collapseLabel}
           onClick={onClose}
         >
           <PanelRightClose className="h-4 w-4" />
