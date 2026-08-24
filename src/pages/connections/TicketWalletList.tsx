@@ -341,7 +341,7 @@ function TicketRow({
       {expanded ? (
         <TicketDetailPanel
           id={detailsId}
-          advanced={buildTicketDetailFields(ticket, extras, t).advanced}
+          advanced={buildTicketDetailFields(ticket, extras, t, row.bindings).advanced}
           extras={extras}
           editLabel={editLabel}
           refreshing={refreshingId === ticket.id}
