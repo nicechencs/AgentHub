@@ -1,9 +1,8 @@
 //! Upstream channel: path/body reshape, auth inject, and recovery policy.
 //!
 //! Dispatch matches downstream surface after this module has already chosen
-//! the upstream request. Responses↔Responses passthrough is declared only on
-//! [`UpstreamChannel::passthrough`]. Async send stays on the enum so it does
-//! not need `async-trait` or boxing.
+//! the upstream request. Identity relay is declared explicitly by both the
+//! upstream channel and downstream surface; all other pairs use the neutral IR.
 
 mod anthropic;
 mod codex;
@@ -160,10 +159,19 @@ impl UpstreamChannel {
         UpstreamTransport::path(&self)
     }
 
-    /// Responses↔Responses identity path (Grok↔Codex). Other downstream
-    /// surfaces still map through IR. This is the only passthrough declaration.
-    pub(super) fn passthrough(self) -> bool {
-        matches!(self, Self::CodexResponses | Self::Grok)
+    /// Whether the upstream wire protocol is identical to the requested
+    /// downstream surface. Keep this surface-aware: a Responses upstream must
+    /// never be accidentally relayed to a Messages or Chat client.
+    pub(super) fn passthrough_for(self, surface: DownstreamSurface) -> bool {
+        matches!(
+            (self, surface),
+            (Self::OpenAiChat, DownstreamSurface::ChatCompletions)
+                | (Self::Anthropic, DownstreamSurface::Messages)
+                | (
+                    Self::CodexResponses | Self::Grok,
+                    DownstreamSurface::Responses
+                )
+        )
     }
 }
 
@@ -523,6 +531,9 @@ fn parse_bridge_request(
     }
 }
 
+/// Validate a JSON request object for an identity relay and extract `stream`.
+/// The caller still applies the configured model policy and any provider-
+/// specific safety normalization after this generic validation.
 pub(super) fn passthrough_responses_object(body: Value) -> Result<(Value, bool), Response> {
     if !body.is_object() {
         return Err(error_response(
