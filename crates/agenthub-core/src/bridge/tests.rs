@@ -1670,6 +1670,97 @@ async fn anthropic_protocol_uses_messages_and_x_api_key() {
 }
 
 #[tokio::test]
+async fn chat_surface_relays_openai_chat_without_protocol_conversion() {
+    let (upstream_port, captured, upstream_task) = capturing_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let mut configured = spec("chat-identity", 0, upstream_port);
+    configured.upstream.local_surface = BridgeLocalSurface::ChatCompletions;
+    let status = host.start(configured).await.expect("start");
+    let request_body = json!({
+        "model": "test",
+        "messages": [{ "role": "user", "content": "hello" }],
+        "response_format": { "type": "json_object" }
+    });
+    let response = client()
+        .await
+        .post(format!(
+            "http://127.0.0.1:{}/v1/chat/completions",
+            status.port
+        ))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&request_body)
+        .send()
+        .await
+        .expect("chat request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.json::<Value>().await.expect("chat response");
+    assert_eq!(body["choices"][0]["message"]["content"], "hello");
+    let upstream = captured.lock().expect("lock captured bodies").clone();
+    assert_eq!(upstream, vec![request_body]);
+    host.stop("chat-identity").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn messages_surface_relays_anthropic_messages_without_protocol_conversion() {
+    let (upstream_port, upstream_task) = anthropic_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let mut configured = anthropic_spec("messages-identity", 0, upstream_port);
+    configured.upstream.local_surface = BridgeLocalSurface::Messages;
+    let status = host.start(configured).await.expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header("x-api-key", "local-test-token")
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{
+                "role": "user",
+                "content": [{ "type": "text", "text": "hello" }]
+            }]
+        }))
+        .send()
+        .await
+        .expect("messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.json::<Value>().await.expect("messages response");
+    assert_eq!(body["type"], "message");
+    assert_eq!(body["content"][0]["text"], "你好");
+    host.stop("messages-identity").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn chat_surface_converts_to_and_from_anthropic_messages() {
+    let (upstream_port, upstream_task) = anthropic_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let mut configured = anthropic_spec("chat-anthropic", 0, upstream_port);
+    configured.upstream.local_surface = BridgeLocalSurface::ChatCompletions;
+    let status = host.start(configured).await.expect("start");
+    let response = client()
+        .await
+        .post(format!(
+            "http://127.0.0.1:{}/v1/chat/completions",
+            status.port
+        ))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "gpt-test",
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("chat request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.json::<Value>().await.expect("chat response");
+    assert_eq!(body["choices"][0]["message"]["content"], "你好");
+    assert_eq!(body["choices"][0]["finish_reason"], "stop");
+    host.stop("chat-anthropic").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
 async fn codex_responses_oauth_messages_returns_anthropic_json_and_accepts_both_local_auth_headers()
 {
     let (upstream_port, upstream_task) = codex_responses_upstream().await;

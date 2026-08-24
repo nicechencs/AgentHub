@@ -77,9 +77,7 @@ pub(super) async fn messages_non_stream_response(
         UpstreamDecode::OpenAiResponses => {
             responses_output_to_ir(&upstream_body).and_then(|ir| encode_anthropic_message(&ir))
         }
-        UpstreamDecode::AnthropicMessages => {
-            unreachable!("messages handler does not accept Anthropic upstream")
-        }
+        UpstreamDecode::AnthropicMessages => Ok(upstream_body),
     };
     match translated {
         Ok(value) => {
@@ -119,9 +117,9 @@ pub(super) async fn chat_non_stream_response(
     let translated = match upstream_decode(&state) {
         UpstreamDecode::OpenAiResponses => responses_output_to_ir(&upstream_body)
             .and_then(|ir| encode_chat_from_ir(&ir, Some(&request_id))),
-        UpstreamDecode::ChatCompletions | UpstreamDecode::AnthropicMessages => {
-            unreachable!("chat completions handler owns Codex Responses OAuth")
-        }
+        UpstreamDecode::ChatCompletions => Ok(upstream_body),
+        UpstreamDecode::AnthropicMessages => anthropic_message_to_ir(&upstream_body)
+            .and_then(|ir| encode_chat_from_ir(&ir, Some(&request_id))),
     };
     match translated {
         Ok(value) => {
@@ -219,6 +217,86 @@ async fn read_bounded_upstream_json(
         body.extend_from_slice(&chunk);
     }
     serde_json::from_slice(&body).map_err(|_| UpstreamBodyError::InvalidOrTooLarge)
+}
+
+async fn read_bounded_upstream_body(
+    response: reqwest::Response,
+    force_shutdown: &CancellationToken,
+) -> Result<Vec<u8>, UpstreamBodyError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > BODY_LIMIT_BYTES as u64)
+    {
+        return Err(UpstreamBodyError::InvalidOrTooLarge);
+    }
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = tokio::select! {
+        _ = force_shutdown.cancelled() => return Err(UpstreamBodyError::Stopping),
+        next = tokio::time::timeout(UPSTREAM_BODY_IDLE_TIMEOUT, stream.next()) => match next {
+            Ok(next) => next,
+            Err(_) => return Err(UpstreamBodyError::InvalidOrTooLarge),
+        },
+    } {
+        let chunk = chunk.map_err(|_| UpstreamBodyError::InvalidOrTooLarge)?;
+        if body.len().saturating_add(chunk.len()) > BODY_LIMIT_BYTES {
+            return Err(UpstreamBodyError::InvalidOrTooLarge);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+/// Relay a same-protocol non-stream response without translating its JSON
+/// shape. The body is still bounded and cancellation-aware like converted
+/// responses, while the content type remains the upstream protocol's type.
+pub(super) async fn passthrough_json_response(
+    state: EdgeState,
+    response: reqwest::Response,
+    request_id: String,
+    started: Instant,
+    _permit: OwnedSemaphorePermit,
+    replay_seed: Option<String>,
+    member: PickedMember,
+) -> Response {
+    let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("application/json")
+        .to_owned();
+    let body = match read_bounded_upstream_body(response, &state.force_shutdown).await {
+        Ok(body) => body,
+        Err(UpstreamBodyError::Stopping) => return stopping_response(),
+        Err(UpstreamBodyError::InvalidOrTooLarge) => {
+            state.record_upstream_failure();
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_error",
+                "The upstream model provider returned an invalid response.",
+                None,
+            );
+        }
+    };
+    if let Ok(value) = serde_json::from_slice::<Value>(&body) {
+        capture_grok_completed(
+            &state,
+            replay_seed.as_deref(),
+            partition_account(&state, &member),
+            &value,
+        );
+    }
+    state.record_upstream_success();
+    tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "passthrough", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+    let content_type = HeaderValue::from_str(&content_type)
+        .unwrap_or_else(|_| HeaderValue::from_static("application/json"));
+    (
+        status,
+        [(header::CONTENT_TYPE, content_type)],
+        Body::from(body),
+    )
+        .into_response()
 }
 
 enum StreamCodec {
@@ -525,6 +603,7 @@ pub(super) fn stream_response(
 
 enum MessagesStreamCodec {
     Chat(ChatStreamToIr),
+    Anthropic(AnthropicStreamToIr),
     Responses(ResponsesStreamToIr),
 }
 
@@ -532,16 +611,15 @@ impl MessagesStreamCodec {
     fn new(kind: UpstreamDecode, request_id: String, model: String) -> Self {
         match kind {
             UpstreamDecode::ChatCompletions => Self::Chat(ChatStreamToIr::new(request_id, model)),
+            UpstreamDecode::AnthropicMessages => Self::Anthropic(AnthropicStreamToIr::new()),
             UpstreamDecode::OpenAiResponses => Self::Responses(ResponsesStreamToIr::new()),
-            UpstreamDecode::AnthropicMessages => {
-                unreachable!("messages handler does not accept Anthropic upstream")
-            }
         }
     }
 
     fn push(&mut self, value: &Value) -> Result<Vec<IrEvent>, ProtocolError> {
         match self {
             Self::Chat(translator) => translator.push_event(value),
+            Self::Anthropic(translator) => translator.push_event(value),
             Self::Responses(translator) => translator.push_event(value),
         }
     }
@@ -549,6 +627,7 @@ impl MessagesStreamCodec {
     fn finish(&mut self) -> Vec<IrEvent> {
         match self {
             Self::Chat(translator) => translator.finish(),
+            Self::Anthropic(translator) => translator.finish(),
             Self::Responses(translator) => translator.finish(),
         }
     }
