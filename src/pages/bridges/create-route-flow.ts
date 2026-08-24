@@ -189,6 +189,41 @@ export function importRouteRowTitle(
   return bits.filter(Boolean).join(' · ');
 }
 
+export function connectionSourceKey(
+  source: 'account' | 'provider',
+  id: string,
+): string {
+  return `${source}:${id}`;
+}
+
+/** Keys already attached to a local-bridge profile or a wallet binding. */
+export function alreadyRoutedSourceKeys(
+  profiles: readonly {
+    id: string;
+    sourceKind: 'account' | 'provider';
+    sourceId: string;
+    route: string;
+  }[],
+  bindingProfileIds?: ReadonlySet<string>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const profile of profiles) {
+    const routed = profile.route === 'local_bridge' || bindingProfileIds?.has(profile.id) === true;
+    if (!routed) continue;
+    const sourceId = profile.sourceId.trim();
+    if (!sourceId) continue;
+    keys.add(connectionSourceKey(profile.sourceKind, sourceId));
+  }
+  return keys;
+}
+
+export function importableConnectionEntries<T extends { source: 'account' | 'provider'; id: string }>(
+  entries: readonly T[],
+  routedKeys: ReadonlySet<string>,
+): T[] {
+  return entries.filter((entry) => !routedKeys.has(connectionSourceKey(entry.source, entry.id)));
+}
+
 export function endpointUrlFor(
   vendor: CreateRouteVendorId,
   target: CreateRouteTarget,

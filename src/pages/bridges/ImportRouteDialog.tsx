@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState, type MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,9 +12,24 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { agentDisplayName } from '@/config/agents';
+import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
-import type { TranslateFn } from '@/lib/i18n';
-import { importRouteRowTitle, submitImportRoute } from './create-route-flow';
+import type { MessageKey, TranslateFn } from '@/lib/i18n';
+import type { AuthStatus } from '@/lib/types';
+import { cn } from '@/lib/utils';
+import {
+  alreadyRoutedSourceKeys,
+  importableConnectionEntries,
+  importRouteRowTitle,
+  submitImportRoute,
+} from './create-route-flow';
+
+const AUTH_STATUS_KEY: Record<AuthStatus, MessageKey> = {
+  valid: 'chrome.authStatus.valid',
+  expiring: 'chrome.authStatus.expiring',
+  expired: 'chrome.authStatus.expired',
+  none: 'chrome.authStatus.none',
+};
 
 function importRowAgentLabel(t: TranslateFn, agentId: ConnectionEntry['agentId']): string {
   if (agentId === 'claude') return t('routes.create.target.claude');
@@ -22,23 +38,50 @@ function importRowAgentLabel(t: TranslateFn, agentId: ConnectionEntry['agentId']
   return agentDisplayName(agentId);
 }
 
+function stopRadioSelect(event: MouseEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 export function ImportRouteDialog({
   open,
   onOpenChange,
   entries,
+  profiles,
+  bindingProfileIds,
   onImported,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   entries: readonly ConnectionEntry[];
+  profiles?: readonly Pick<AdapterProfile, 'id' | 'sourceKind' | 'sourceId' | 'route'>[];
+  bindingProfileIds?: ReadonlySet<string>;
   onImported: () => void;
 }) {
   const { t } = useI18n();
   const [selected, setSelected] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const picked = entries.find((entry) => entry.key === selected) ?? null;
+  const importable = useMemo(
+    () => importableConnectionEntries(
+      entries,
+      alreadyRoutedSourceKeys(profiles ?? [], bindingProfileIds),
+    ),
+    [entries, profiles, bindingProfileIds],
+  );
+
+  const picked = importable.find((entry) => entry.key === selected) ?? null;
+
+  const toggleExpanded = (key: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const submit = async () => {
     if (busy) return;
@@ -55,6 +98,7 @@ export function ImportRouteDialog({
         agentId: picked.agentId,
       });
       setSelected(null);
+      setExpanded(new Set());
       onOpenChange(false);
       onImported();
     } catch (cause) {
@@ -71,6 +115,7 @@ export function ImportRouteDialog({
         if (busy) return;
         if (!next) {
           setSelected(null);
+          setExpanded(new Set());
           setError(null);
         }
         onOpenChange(next);
@@ -87,7 +132,7 @@ export function ImportRouteDialog({
           <DialogDescription>{t('routes.import.description')}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-          {entries.length === 0 ? (
+          {importable.length === 0 ? (
             <p className="text-sm text-muted">
               {t('routes.import.empty')}{' '}
               <Link to="/connections" className="text-accent underline-offset-2 hover:underline">
@@ -96,29 +141,65 @@ export function ImportRouteDialog({
             </p>
           ) : (
             <ul className="space-y-1">
-              {entries.map((entry) => (
-                <li key={entry.key}>
-                  <label className="flex cursor-pointer items-start gap-2 rounded-card border border-border p-2 text-sm">
-                    <input
-                      type="radio"
-                      name="import-login"
-                      className="mt-0.5"
-                      checked={selected === entry.key}
-                      onChange={() => setSelected(entry.key)}
-                    />
-                    <span className="min-w-0">
-                      <span className="block truncate">
-                        {importRouteRowTitle(entry, {
-                          agent: importRowAgentLabel(t, entry.agentId),
-                          officialEndpoint: t('connections.list.officialEndpoint'),
-                          customEndpoint: t('connections.list.customEndpoint'),
-                        })}
-                      </span>
-                      <span className="block text-meta text-muted">{entry.subtitle}</span>
-                    </span>
-                  </label>
-                </li>
-              ))}
+              {importable.map((entry) => {
+                const openRow = expanded.has(entry.key);
+                const detailsId = `import-login-details-${entry.key}`;
+                const agent = importRowAgentLabel(t, entry.agentId);
+                const endpointLabel = entry.endpointMode === 'custom'
+                  ? t('connections.list.customEndpoint')
+                  : entry.endpointMode === 'official'
+                    ? t('connections.list.officialEndpoint')
+                    : null;
+                return (
+                  <li key={entry.key} className="rounded-card border border-border p-2 text-sm">
+                    <div className="flex items-start gap-2">
+                      <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2">
+                        <input
+                          type="radio"
+                          name="import-login"
+                          className="mt-0.5"
+                          checked={selected === entry.key}
+                          onChange={() => setSelected(entry.key)}
+                        />
+                        <span className="min-w-0 truncate">
+                          {importRouteRowTitle(entry, {
+                            agent,
+                            officialEndpoint: t('connections.list.officialEndpoint'),
+                            customEndpoint: t('connections.list.customEndpoint'),
+                          })}
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        className="inline-flex shrink-0 items-center gap-1 text-meta text-muted"
+                        aria-expanded={openRow}
+                        aria-controls={detailsId}
+                        onClick={(event) => {
+                          stopRadioSelect(event);
+                          toggleExpanded(entry.key);
+                        }}
+                        onMouseDown={stopRadioSelect}
+                      >
+                        {t('connections.list.details')}
+                        <ChevronDown
+                          className={cn('h-3.5 w-3.5 transition-transform', openRow && 'rotate-180')}
+                          aria-hidden
+                        />
+                      </button>
+                    </div>
+                    {openRow ? (
+                      <div id={detailsId} className="mt-2 space-y-1 pl-6 text-meta text-muted">
+                        {entry.subtitle ? <p>{entry.subtitle}</p> : null}
+                        <p>{agent}</p>
+                        {endpointLabel ? <p>{endpointLabel}</p> : null}
+                        {entry.endpointHost ? <p>{entry.endpointHost}</p> : null}
+                        <p>{t(AUTH_STATUS_KEY[entry.authStatus])}</p>
+                        {entry.identityLabel ? <p>{entry.identityLabel}</p> : null}
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           )}
           {error ? <p className="text-sm text-danger">{error}</p> : null}

@@ -346,6 +346,8 @@ export default function BridgesPage() {
         open={importOpen}
         onOpenChange={setImportOpen}
         entries={entries}
+        profiles={profiles}
+        bindingProfileIds={wallet.bindingProfileIds}
         onImported={() => { void reload(); }}
       />
 

@@ -135,6 +135,57 @@ describe('ImportRouteDialog', () => {
     );
     expect(markup).toContain('本机路由 · Claude · 官方端点');
     expect(markup).toContain('本机路由 · Codex · 自定义端点');
+    expect(markup).toContain('详情');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain('票');
+    expect(markup).not.toContain('钱包');
+    expect(markup).not.toContain('投影');
+    expect(markup).not.toContain('协议桥');
+    expect(markup).not.toContain('PKCE');
+  });
+
+  it('omits logins already attached to a local-bridge profile', () => {
+    const markup = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ImportRouteDialog, {
+        open: true,
+        onOpenChange: vi.fn(),
+        entries: [
+          {
+            key: 'account:acc-1',
+            source: 'account',
+            kind: 'apikey',
+            id: 'acc-1',
+            agentId: 'claude',
+            title: 'Already routed',
+            subtitle: '已配置',
+            endpointMode: 'official',
+            isCurrent: true,
+            authStatus: 'valid',
+            sortKey: '',
+          },
+          {
+            key: 'account:acc-2',
+            source: 'account',
+            kind: 'apikey',
+            id: 'acc-2',
+            agentId: 'codex',
+            title: 'Still free',
+            subtitle: '已配置',
+            endpointMode: 'official',
+            isCurrent: false,
+            authStatus: 'valid',
+            sortKey: '',
+          },
+        ],
+        profiles: [
+          { id: 'prof-1', sourceKind: 'account', sourceId: 'acc-1', route: 'local_bridge' },
+        ],
+        onImported: vi.fn(),
+      })),
+    );
+    expect(markup).not.toContain('Already routed');
+    expect(markup).toContain('Still free · Codex · 官方端点');
+    expect(markup).toContain('type="radio"');
   });
 });
 
