@@ -169,3 +169,41 @@ fn kimi_unknown_model_fail_closed_without_alternate() {
         ModelSwitchDecision::Stay
     );
 }
+
+#[test]
+fn custom_empty_listed_follows_downstream_model() {
+    let lead = ModelSwitchCandidate {
+        profile_id: "or-claude".into(),
+        source: AdapterSourceProduct::OpenaiApi,
+        target: AgentId::Claude,
+        custom_openai_compat: true,
+        same_surface: true,
+        running: true,
+        listed_models: vec![],
+    };
+    assert_eq!(
+        decide_model_switch(&lead, "anthropic/claude-sonnet-4", &[]),
+        ModelSwitchDecision::Stay
+    );
+}
+
+#[test]
+fn custom_listed_models_accept_case_insensitive() {
+    let lead = ModelSwitchCandidate {
+        profile_id: "or-claude".into(),
+        source: AdapterSourceProduct::OpenaiApi,
+        target: AgentId::Claude,
+        custom_openai_compat: true,
+        same_surface: true,
+        running: true,
+        listed_models: vec!["anthropic/claude-sonnet-4".into(), "openai/gpt-4o".into()],
+    };
+    assert_eq!(
+        decide_model_switch(&lead, "Anthropic/Claude-Sonnet-4", &[]),
+        ModelSwitchDecision::Stay
+    );
+    assert_eq!(
+        decide_model_switch(&lead, "not-listed", &[]),
+        ModelSwitchDecision::Unavailable
+    );
+}

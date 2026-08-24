@@ -64,7 +64,7 @@ impl UpstreamTransport for GrokTransport {
                 let stream = request.stream;
                 let mut body = to_grok_responses_request(&request);
                 inject_prompt_cache_key(&mut body, cache_seed.as_deref());
-                overwrite_configured_model(&mut body, admitted.state.upstream.model.as_deref());
+                overwrite_configured_model(&mut body, admitted.state.upstream.model.as_deref(), &admitted.state.listed_models);
                 Ok(UpstreamPrepare {
                     path: self.path(),
                     body,

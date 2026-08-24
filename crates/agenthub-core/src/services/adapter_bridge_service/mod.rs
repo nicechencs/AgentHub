@@ -387,14 +387,31 @@ fn listed_models_for_bridge(
     target: AgentId,
     default_model: &str,
     custom_openai: bool,
+    user_listed: &[String],
 ) -> Vec<String> {
+    if !user_listed.is_empty() {
+        let mut listed = Vec::new();
+        for model in user_listed {
+            let model = model.trim();
+            if model.is_empty() {
+                continue;
+            }
+            if listed.iter().any(|existing: &String| existing.eq_ignore_ascii_case(model)) {
+                continue;
+            }
+            listed.push(model.to_owned());
+        }
+        return crate::models::with_openrouter_backup_model(listed, custom_openai);
+    }
+    if custom_openai {
+        return Vec::new();
+    }
     let configured = default_model.trim();
-    let listed = list_local_bridge_models(
+    list_local_bridge_models(
         source,
         target,
         if configured.is_empty() { None } else { Some(configured) },
-    );
-    crate::models::with_openrouter_backup_model(listed, custom_openai)
+    )
 }
 
 /// Safe input for beginning a local bridge saga. It contains no credentials.
@@ -427,6 +444,7 @@ pub struct AdapterBridgeRuntimeMaterial {
     preferred_port: Option<u16>,
     upstream_base_url: String,
     upstream_model: String,
+    configured_listed_models: Vec<String>,
     protocol: BridgeUpstreamProtocol,
     local_surface: BridgeLocalSurface,
     source: AdapterSourceProduct,
@@ -444,6 +462,7 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
             .field("preferred_port", &self.preferred_port)
             .field("upstream_base_url", &self.upstream_base_url)
             .field("upstream_model", &self.upstream_model)
+            .field("configured_listed_models", &self.configured_listed_models)
             .field("protocol", &self.protocol)
             .field("local_surface", &self.local_surface)
             .field("source", &self.source)
@@ -485,6 +504,7 @@ impl AdapterBridgeRuntimeMaterial {
             preferred_port,
             upstream_base_url: KIMI_CHAT_BASE_URL.into(),
             upstream_model: DEFAULT_MODEL.into(),
+            configured_listed_models: Vec::new(),
             protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
             local_surface: BridgeLocalSurface::Responses,
             source: AdapterSourceProduct::KimiCodeMembership,
@@ -515,7 +535,13 @@ impl AdapterBridgeRuntimeMaterial {
             let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(
                 &self.upstream_base_url,
             );
-            listed_models_for_bridge(self.source, self.target_agent, &self.upstream_model, custom)
+            listed_models_for_bridge(
+                self.source,
+                self.target_agent,
+                &self.upstream_model,
+                custom,
+                &self.configured_listed_models,
+            )
         })
         .with_mapping(
             self.source,

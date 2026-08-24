@@ -286,6 +286,16 @@ impl StreamCodec {
     }
 }
 
+fn warn_stream_fail(request_id: &str, code: &str) {
+    tracing::warn!(
+        target: "core.adapter.protocol",
+        request_id = %request_id,
+        op = "stream",
+        code,
+        "bridge stream translator or SSE failed"
+    );
+}
+
 fn event_stream_response(
     output: impl futures_util::Stream<Item = Result<axum::body::Bytes, Infallible>> + Send + 'static,
 ) -> Response {
@@ -323,6 +333,7 @@ pub(super) fn passthrough_sse_response(
         loop {
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
+                    warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_error_frame());
                     return;
                 }
@@ -330,7 +341,8 @@ pub(super) fn passthrough_sse_response(
                     Ok(next) => next,
                     Err(_) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 },
@@ -338,12 +350,14 @@ pub(super) fn passthrough_sse_response(
             let Some(chunk) = next else { break; };
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
             upstream_bytes += chunk.len();
@@ -391,6 +405,7 @@ pub(super) fn stream_response(
         'upstream: loop {
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
+                    warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_error_frame());
                     return;
                 }
@@ -398,7 +413,8 @@ pub(super) fn stream_response(
                     Ok(next) => next,
                     Err(_) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 },
@@ -406,12 +422,14 @@ pub(super) fn stream_response(
             let Some(chunk) = next else { break; };
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
             upstream_bytes += chunk.len();
@@ -425,7 +443,8 @@ pub(super) fn stream_response(
                     Ok(payload) => payload,
                     Err(()) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 };
@@ -440,6 +459,7 @@ pub(super) fn stream_response(
                 }
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
+                    warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_error_frame());
                     return;
                 };
@@ -448,7 +468,8 @@ pub(super) fn stream_response(
                         let frame = crate::bridge::protocol::chat::sse_frame(&event);
                         if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                             observed.record_upstream_failure();
-                            yield Ok::<_, Infallible>(stream_error_frame());
+                            warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                             return;
                         }
                         output_bytes += frame.len();
@@ -456,7 +477,8 @@ pub(super) fn stream_response(
                     },
                     Err(_) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 }
@@ -470,7 +492,8 @@ pub(super) fn stream_response(
         // distinction matters to response clients, which otherwise persist a truncated answer.
         if !saw_done || !buffer.is_empty() {
             observed.record_upstream_failure();
-            yield Ok::<_, Infallible>(stream_error_frame());
+            warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
             return;
         }
         match translator.finish() {
@@ -479,7 +502,8 @@ pub(super) fn stream_response(
                     let frame = crate::bridge::protocol::chat::sse_frame(&event);
                     if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                     output_bytes += frame.len();
@@ -488,7 +512,8 @@ pub(super) fn stream_response(
             }
             Err(_) => {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
         }
@@ -561,6 +586,7 @@ pub(super) fn messages_stream_response(
         'upstream: loop {
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
+                    warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_error_frame());
                     return;
                 }
@@ -568,7 +594,8 @@ pub(super) fn messages_stream_response(
                     Ok(next) => next,
                     Err(_) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 },
@@ -576,12 +603,14 @@ pub(super) fn messages_stream_response(
             let Some(chunk) = next else { break; };
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
             upstream_bytes += chunk.len();
@@ -598,7 +627,8 @@ pub(super) fn messages_stream_response(
                     Ok(payload) => payload,
                     Err(()) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 };
@@ -613,6 +643,7 @@ pub(super) fn messages_stream_response(
                 }
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
+                    warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_error_frame());
                     return;
                 };
@@ -620,7 +651,8 @@ pub(super) fn messages_stream_response(
                     Ok(events) => events,
                     Err(_) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 };
@@ -632,14 +664,16 @@ pub(super) fn messages_stream_response(
                     Ok(frames) => frames,
                     Err(_) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 };
                 for frame in frames.iter().skip(emitted_frames) {
                     if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                     output_bytes += frame.len();
@@ -654,7 +688,8 @@ pub(super) fn messages_stream_response(
         }
         if !saw_done || !buffer.is_empty() {
             observed.record_upstream_failure();
-            yield Ok::<_, Infallible>(stream_error_frame());
+            warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
             return;
         }
         ir_events.extend(translator.finish());
@@ -662,14 +697,16 @@ pub(super) fn messages_stream_response(
             Ok(frames) => frames,
             Err(_) => {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
         };
         for frame in frames.iter().skip(emitted_frames) {
             if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
             output_bytes += frame.len();
@@ -713,6 +750,7 @@ pub(super) fn chat_stream_response(
         'upstream: loop {
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
+                    warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_error_frame());
                     return;
                 }
@@ -720,7 +758,8 @@ pub(super) fn chat_stream_response(
                     Ok(next) => next,
                     Err(_) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 },
@@ -728,12 +767,14 @@ pub(super) fn chat_stream_response(
             let Some(chunk) = next else { break; };
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
             upstream_bytes += chunk.len();
@@ -747,7 +788,8 @@ pub(super) fn chat_stream_response(
                     Ok(payload) => payload,
                     Err(()) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 };
@@ -758,6 +800,7 @@ pub(super) fn chat_stream_response(
                 }
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
+                    warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(stream_error_frame());
                     return;
                 };
@@ -765,7 +808,8 @@ pub(super) fn chat_stream_response(
                     Ok(events) => events,
                     Err(_) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 };
@@ -777,14 +821,16 @@ pub(super) fn chat_stream_response(
                     Ok(frames) => frames,
                     Err(_) => {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                 };
                 for frame in frames.iter().skip(emitted_frames) {
                     if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                         observed.record_upstream_failure();
-                        yield Ok::<_, Infallible>(stream_error_frame());
+                        warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                         return;
                     }
                     output_bytes += frame.len();
@@ -799,7 +845,8 @@ pub(super) fn chat_stream_response(
         }
         if !saw_done || !buffer.is_empty() {
             observed.record_upstream_failure();
-            yield Ok::<_, Infallible>(stream_error_frame());
+            warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
             return;
         }
         ir_events.extend(translator.finish());
@@ -807,14 +854,16 @@ pub(super) fn chat_stream_response(
             Ok(frames) => frames,
             Err(_) => {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
         };
         for frame in frames.iter().skip(emitted_frames) {
             if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
-                yield Ok::<_, Infallible>(stream_error_frame());
+                warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_error_frame());
                 return;
             }
             output_bytes += frame.len();

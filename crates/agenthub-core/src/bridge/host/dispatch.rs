@@ -36,9 +36,16 @@ pub(super) async fn handle_conversation(
             return stopping_response();
         }
     };
-    if let Some(response) = surface.reject_if_unserved(&state) {
+    if let Some(response) = surface.reject_if_unserved(&state, &request_id) {
         return response;
     }
+    tracing::debug!(
+        target: "core.adapter",
+        profile_id = %state.profile_id,
+        request_id = %request_id,
+        op = surface.op(),
+        "request started"
+    );
     let mut admitted = match admit_conversation(state, request, surface, request_id, started).await
     {
         Ok(admitted) => admitted,
@@ -54,6 +61,7 @@ pub(super) async fn handle_conversation(
         ModelSwitchOutcome::Switched(mut switched) => {
             tracing::info!(
                 target: "core.adapter",
+                request_id = %admitted.request_id,
                 lead_profile_id = %admitted.state.profile_id,
                 switch_profile_id = %switched.profile_id,
                 model,
@@ -65,19 +73,27 @@ pub(super) async fn handle_conversation(
             admitted.state = switched;
         }
         ModelSwitchOutcome::Unavailable => {
+            let listed_hit = admitted.state.listed_models.iter().any(|item| item.eq_ignore_ascii_case(model));
+            let listed_restricted = !admitted.state.listed_models.is_empty();
+            let code = if listed_restricted && !listed_hit && !model.is_empty() {
+                "listed_models_reject"
+            } else {
+                "model_unavailable"
+            };
             tracing::warn!(
                 target: "core.adapter",
                 profile_id = %admitted.state.profile_id,
                 request_id = %admitted.request_id,
                 model,
+                listed = listed_restricted,
                 op = "upstream",
-                code = "model_unavailable",
+                code,
                 status = 400_u16,
                 "lead mapping missed and no running alternate can serve this model"
             );
             return error_response(
                 StatusCode::BAD_REQUEST,
-                "model_unavailable",
+                code,
                 "No running route can serve this model.",
                 None,
             );
@@ -92,6 +108,14 @@ pub(super) async fn handle_conversation(
         Ok(prepared) => prepared,
         Err(response) => return response,
     };
+    tracing::debug!(
+        target: "core.adapter.protocol",
+        request_id = %admitted.request_id,
+        profile_id = %admitted.state.profile_id,
+        from = surface.op(),
+        to = prepared.path,
+        "downstream surface converted to upstream path"
+    );
     forward_upstream(surface, admitted, channel, prepared).await
 }
 
