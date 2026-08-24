@@ -1,6 +1,11 @@
 import { upsertProvider } from '@/lib/api/provider';
 import { bindTicket, planTicket, ticketIdFor } from '@/lib/api/tickets';
+import {
+  isInternalGeneratedProvider,
+  isLoopbackUrl,
+} from '@/lib/backend/contracts/agent-connection';
 import type { AgentId, Provider } from '@/lib/types';
+import { isLeftoverLocalRouteProvider } from '@/pages/chat/chat-model';
 
 export const CREATE_ROUTE_TARGETS = ['claude', 'codex', 'grok'] as const;
 export const DEFAULT_CREATE_ROUTE_MODEL = 'stealth/ox-alpha';
@@ -196,32 +201,64 @@ export function connectionSourceKey(
   return `${source}:${id}`;
 }
 
-/** Keys already attached to a local-bridge profile or a wallet binding. */
+/** Any AdapterProfile occupies its source and generated provider login. */
 export function alreadyRoutedSourceKeys(
   profiles: readonly {
     id: string;
     sourceKind: 'account' | 'provider';
     sourceId: string;
     route: string;
+    generatedProviderId?: string | null;
   }[],
-  bindingProfileIds?: ReadonlySet<string>,
+  _bindingProfileIds?: ReadonlySet<string>,
 ): Set<string> {
   const keys = new Set<string>();
   for (const profile of profiles) {
-    const routed = profile.route === 'local_bridge' || bindingProfileIds?.has(profile.id) === true;
-    if (!routed) continue;
     const sourceId = profile.sourceId.trim();
-    if (!sourceId) continue;
-    keys.add(connectionSourceKey(profile.sourceKind, sourceId));
+    if (sourceId) {
+      keys.add(connectionSourceKey(profile.sourceKind, sourceId));
+    }
+    const generated = profile.generatedProviderId?.trim();
+    if (generated) {
+      keys.add(connectionSourceKey('provider', generated));
+    }
   }
   return keys;
 }
 
-export function importableConnectionEntries<T extends { source: 'account' | 'provider'; id: string }>(
+function isLoopbackHost(host: string | undefined): boolean {
+  const value = host?.trim() ?? '';
+  if (!value) return false;
+  if (isLoopbackUrl(value) || isLoopbackUrl(`http://${value}`)) return true;
+  return /127\.0\.0\.1|localhost|\[?::1\]?/i.test(value);
+}
+
+export function isGeneratedLocalRouteEntry(entry: {
+  title?: string;
+  endpointHost?: string;
+  provider?: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>;
+}): boolean {
+  if ((entry.title ?? '').includes('本机路由')) return true;
+  if (isLoopbackHost(entry.endpointHost)) return true;
+  if (!entry.provider) return false;
+  return isLeftoverLocalRouteProvider(entry.provider)
+    || isInternalGeneratedProvider(entry.provider);
+}
+
+export function importableConnectionEntries<T extends {
+  source: 'account' | 'provider';
+  id: string;
+  title?: string;
+  endpointHost?: string;
+  provider?: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>;
+}>(
   entries: readonly T[],
   routedKeys: ReadonlySet<string>,
 ): T[] {
-  return entries.filter((entry) => !routedKeys.has(connectionSourceKey(entry.source, entry.id)));
+  return entries.filter((entry) => {
+    if (routedKeys.has(connectionSourceKey(entry.source, entry.id))) return false;
+    return !isGeneratedLocalRouteEntry(entry);
+  });
 }
 
 export function endpointUrlFor(

@@ -54,7 +54,7 @@ export function ImportRouteDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   entries: readonly ConnectionEntry[];
-  profiles?: readonly Pick<AdapterProfile, 'id' | 'sourceKind' | 'sourceId' | 'route'>[];
+  profiles?: readonly Pick<AdapterProfile, 'id' | 'sourceKind' | 'sourceId' | 'route' | 'generatedProviderId'>[];
   bindingProfileIds?: ReadonlySet<string>;
   onImported: () => void;
 }) {

@@ -235,17 +235,74 @@ describe('importable vs already routed logins', () => {
     expect(importableConnectionEntries(entries, keys).map((row) => row.id)).toEqual(['prov-1', 'acc-2']);
   });
 
-  it('does not treat a native_endpoint profile as already routed unless wallet-bound', () => {
-    const unbound = alreadyRoutedSourceKeys([
+  it('omits a profile source even when route is native_endpoint', () => {
+    const keys = alreadyRoutedSourceKeys([
       { id: 'p2', sourceKind: 'provider', sourceId: 'prov-1', route: 'native_endpoint' },
     ]);
-    expect(importableConnectionEntries(entries, unbound)).toEqual(entries);
+    expect([...keys]).toEqual(['provider:prov-1']);
+    expect(importableConnectionEntries(entries, keys).map((row) => row.id)).toEqual(['acc-1', 'acc-2']);
+  });
 
-    const bound = alreadyRoutedSourceKeys(
-      [{ id: 'p2', sourceKind: 'provider', sourceId: 'prov-1', route: 'native_endpoint' }],
-      new Set(['p2']),
-    );
-    expect(importableConnectionEntries(entries, bound).map((row) => row.id)).toEqual(['acc-1', 'acc-2']);
+  it('omits generatedProviderId as a provider login', () => {
+    const keys = alreadyRoutedSourceKeys([
+      {
+        id: 'p-gen',
+        sourceKind: 'account',
+        sourceId: 'acc-1',
+        route: 'local_bridge',
+        generatedProviderId: 'gen-local-1',
+      },
+    ]);
+    expect(keys.has('account:acc-1')).toBe(true);
+    expect(keys.has('provider:gen-local-1')).toBe(true);
+    const mixed = [
+      ...entries,
+      { source: 'provider' as const, id: 'gen-local-1' },
+    ];
+    expect(importableConnectionEntries(mixed, keys).map((row) => row.id)).toEqual(['prov-1', 'acc-2']);
+  });
+
+  it('omits a 本机路由 loopback login even without a matching profile key', () => {
+    const leftover = {
+      source: 'provider' as const,
+      id: 'loop-1',
+      title: '本机路由',
+      endpointHost: '127.0.0.1',
+      provider: {
+        id: 'loop-1',
+        name: '本机路由',
+        preset: 'openai-compat',
+        configText: '{"base_url":"http://127.0.0.1:43111/v1"}',
+        configFormat: 'json' as const,
+      },
+    };
+    expect(importableConnectionEntries([leftover, entries[2]!], new Set()).map((row) => row.id)).toEqual(['acc-2']);
+  });
+
+  it('keeps a never-routed oauth account importable', () => {
+    const oauth = { source: 'account' as const, id: 'acc-oauth', title: 'Claude 登录' };
+    const keys = alreadyRoutedSourceKeys([
+      { id: 'p-or', sourceKind: 'provider', sourceId: 'or-1', route: 'native_endpoint' },
+    ]);
+    expect(importableConnectionEntries([oauth, { source: 'provider' as const, id: 'or-1', title: 'OpenRouter 备选' }], keys).map((row) => row.id)).toEqual(['acc-oauth']);
+  });
+
+  it('create-route OpenRouter 备选 id matches the bound profile sourceId', () => {
+    const draft = createRouteProviderDraft(input({ name: 'OpenRouter 备选' }));
+    const keys = alreadyRoutedSourceKeys([
+      {
+        id: 'profile-or',
+        sourceKind: 'provider',
+        sourceId: draft.id,
+        route: 'native_endpoint',
+        generatedProviderId: 'gen-or',
+      },
+    ]);
+    expect(keys.has(`provider:${draft.id}`)).toBe(true);
+    expect(importableConnectionEntries(
+      [{ source: 'provider' as const, id: draft.id, title: 'OpenRouter 备选' }],
+      keys,
+    )).toEqual([]);
   });
 
   it('matches sourceKind+sourceId so account and provider ids do not collide', () => {
