@@ -406,7 +406,9 @@ pub fn list_local_bridge_models(
     listed
 }
 
-/// Append the OpenRouter backup model when a custom OpenAI-compat backup exists.
+/// Append stealth/ox-alpha only when this edge is the OpenRouter / custom
+/// backup that should list it. Callers must not pass `include` for official
+/// Grok / GPT start_specs.
 pub fn with_openrouter_backup_model(mut listed: Vec<String>, include: bool) -> Vec<String> {
     if include {
         push_listed_model(&mut listed, OPENROUTER_BACKUP_MODEL, false);
