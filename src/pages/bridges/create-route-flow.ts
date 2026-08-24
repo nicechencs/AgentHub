@@ -201,27 +201,65 @@ export function connectionSourceKey(
   return `${source}:${id}`;
 }
 
+export type RoutedProfileHint = {
+  id: string;
+  name?: string;
+  sourceKind: 'account' | 'provider';
+  sourceId: string;
+  route: string;
+  generatedProviderId?: string | null;
+};
+
+function unwrapTicketId(source: 'account' | 'provider', id: string): string {
+  const prefix = `${source}:`;
+  return id.startsWith(prefix) ? id.slice(prefix.length) : id;
+}
+
+function occupySourceId(keys: Set<string>, source: 'account' | 'provider', raw: string): void {
+  const id = raw.trim();
+  if (!id) return;
+  const bare = unwrapTicketId(source, id);
+  keys.add(connectionSourceKey(source, id));
+  keys.add(connectionSourceKey(source, bare));
+}
+
+const RELATED_ID_MIN = 16;
+
+/** Prefix, suffix, or ticket-wrapped ids that refer to the same login. */
+export function sourceIdsRelated(left: string, right: string): boolean {
+  const a = left.trim();
+  const b = right.trim();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const aBare = a.includes(':') ? a.slice(a.indexOf(':') + 1) : a;
+  const bBare = b.includes(':') ? b.slice(b.indexOf(':') + 1) : b;
+  if (aBare && aBare === bBare) return true;
+  if (a.length >= RELATED_ID_MIN && b.length >= RELATED_ID_MIN) {
+    if (a.startsWith(b) || b.startsWith(a) || a.endsWith(b) || b.endsWith(a)) return true;
+    if (aBare.startsWith(bBare) || bBare.startsWith(aBare) || aBare.endsWith(bBare) || bBare.endsWith(aBare)) {
+      return aBare.length >= RELATED_ID_MIN && bBare.length >= RELATED_ID_MIN;
+    }
+  }
+  return false;
+}
+
+function idEmbedded(needle: string, haystack: string | null | undefined): boolean {
+  const id = needle.trim();
+  const field = haystack?.trim() ?? '';
+  if (!id || !field || id.length < RELATED_ID_MIN) return false;
+  return field === id || field.includes(id) || id.includes(field);
+}
+
 /** Any AdapterProfile occupies its source and generated provider login. */
 export function alreadyRoutedSourceKeys(
-  profiles: readonly {
-    id: string;
-    sourceKind: 'account' | 'provider';
-    sourceId: string;
-    route: string;
-    generatedProviderId?: string | null;
-  }[],
+  profiles: readonly RoutedProfileHint[],
   _bindingProfileIds?: ReadonlySet<string>,
 ): Set<string> {
   const keys = new Set<string>();
   for (const profile of profiles) {
-    const sourceId = profile.sourceId.trim();
-    if (sourceId) {
-      keys.add(connectionSourceKey(profile.sourceKind, sourceId));
-    }
+    occupySourceId(keys, profile.sourceKind, profile.sourceId);
     const generated = profile.generatedProviderId?.trim();
-    if (generated) {
-      keys.add(connectionSourceKey('provider', generated));
-    }
+    if (generated) occupySourceId(keys, 'provider', generated);
   }
   return keys;
 }
@@ -245,6 +283,27 @@ export function isGeneratedLocalRouteEntry(entry: {
     || isInternalGeneratedProvider(entry.provider);
 }
 
+function entryMatchesRoutedProfile<T extends {
+  source: 'account' | 'provider';
+  id: string;
+  title?: string;
+  provider?: Pick<Provider, 'id' | 'name'>;
+}>(entry: T, profile: RoutedProfileHint): boolean {
+  const title = entry.title?.trim();
+  if (title && profile.name?.trim() === title) return true;
+  if (sourceIdsRelated(entry.id, profile.sourceId)) return true;
+  if (profile.generatedProviderId && sourceIdsRelated(entry.id, profile.generatedProviderId)) return true;
+  const providerId = entry.provider?.id?.trim();
+  if (providerId) {
+    if (idEmbedded(providerId, profile.sourceId) || idEmbedded(providerId, profile.generatedProviderId)) {
+      return true;
+    }
+    if (sourceIdsRelated(providerId, profile.sourceId)) return true;
+    if (profile.generatedProviderId && sourceIdsRelated(providerId, profile.generatedProviderId)) return true;
+  }
+  return false;
+}
+
 export function importableConnectionEntries<T extends {
   source: 'account' | 'provider';
   id: string;
@@ -254,9 +313,25 @@ export function importableConnectionEntries<T extends {
 }>(
   entries: readonly T[],
   routedKeys: ReadonlySet<string>,
+  profiles: readonly RoutedProfileHint[] = [],
 ): T[] {
+  const routedTitles = new Set<string>();
+  for (const entry of entries) {
+    if (entry.source !== 'provider') continue;
+    const title = entry.title?.trim();
+    if (!title) continue;
+    const key = connectionSourceKey(entry.source, entry.id);
+    const occupied = routedKeys.has(key)
+      || profiles.some((profile) => entryMatchesRoutedProfile(entry, profile));
+    if (occupied) routedTitles.add(title);
+  }
   return entries.filter((entry) => {
     if (routedKeys.has(connectionSourceKey(entry.source, entry.id))) return false;
+    if (profiles.some((profile) => entryMatchesRoutedProfile(entry, profile))) return false;
+    if (entry.source === 'provider') {
+      const title = entry.title?.trim();
+      if (title && routedTitles.has(title)) return false;
+    }
     return !isGeneratedLocalRouteEntry(entry);
   });
 }
