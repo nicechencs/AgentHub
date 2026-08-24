@@ -1157,6 +1157,7 @@ fn switch_retries_unstable_revision_then_rolls_back_on_post_backup_race() {
         source: Some("fake-live-auth".into()),
         revision: Some("unused".into()),
         also_present: Vec::new(),
+        secret_hash: None,
     });
     // First stable-read attempt races (r1 -> r2); the second is stable at r2.
     // The revision then changes while the backup runs, before apply_account.
@@ -1200,6 +1201,7 @@ fn switch_reports_failed_db_rollback_after_revision_conflict() {
         source: Some("fake-live-auth".into()),
         revision: Some("unused".into()),
         also_present: Vec::new(),
+        secret_hash: None,
     });
     adapter.set_revision_sequence(&["r1", "r2", "r2", "r2", "r3"]);
 
@@ -2332,6 +2334,7 @@ fn list_exposes_live_auth_state_only_on_matching_current_account() {
         source: Some("fake-live-auth".into()),
         revision: Some("opaque-r1".into()),
         also_present: Vec::new(),
+        secret_hash: None,
     });
 
     let row = svc

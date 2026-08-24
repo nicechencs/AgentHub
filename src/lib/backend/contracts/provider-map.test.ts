@@ -34,6 +34,18 @@ describe('provider-map codex dual shape', () => {
     expect(p.secretTail).toBe('**JF6Q');
   });
 
+  it('maps secretHash from meta without treating it as a secret', () => {
+    const p = mapCoreProvider({
+      id: 'k3',
+      agentId: 'codex',
+      name: 'OpenAI',
+      settingsConfig: { api_key: '***' },
+      meta: { secretHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      isCurrent: false,
+    });
+    expect(p.secretHash).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  });
+
   it('accepts dual-shape config alias', () => {
     const p = mapCoreProvider({
       id: 'c2',

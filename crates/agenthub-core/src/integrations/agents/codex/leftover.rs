@@ -41,12 +41,36 @@ pub fn toml_is_bridge_leftover(content: &str) -> bool {
     leftover
 }
 
+/// True when the *active* `model_provider` is an AgentHub 本机路由 leftover.
+///
+/// A dead `agenthub_*_bridge` table next to a real `OpenAI` / `custom`
+/// provider must not hide that login as leftover.
+pub fn toml_active_provider_is_bridge_leftover(content: &str) -> bool {
+    let Ok(doc) = content.parse::<DocumentMut>() else {
+        return content_has_agenthub_bridge_marker(content);
+    };
+    if model_provider_is_non_leftover_slug(&doc) {
+        return false;
+    }
+    let leftover = leftover_slugs(&doc).next().is_some();
+    leftover
+}
+
 /// True when live `~/.codex/config.toml` still has leftover 本机路由 keys
 /// that official apply would strip.
 pub fn live_config_is_bridge_leftover() -> bool {
     agent_home(AgentId::Codex)
         .ok()
         .is_some_and(|home| toml_file_is_leftover(&home.join("config.toml")))
+}
+
+/// True when live Codex currently *uses* an AgentHub 本机路由 leftover.
+pub fn live_active_provider_is_bridge_leftover() -> bool {
+    agent_home(AgentId::Codex).ok().is_some_and(|home| {
+        std::fs::read_to_string(home.join("config.toml"))
+            .ok()
+            .is_some_and(|text| toml_active_provider_is_bridge_leftover(&text))
+    })
 }
 
 /// Remove AgentHub leftover keys. Returns whether the document changed.
@@ -140,7 +164,7 @@ pub fn provider_is_bridge_leftover(provider: &Provider) -> bool {
         .settings_config
         .get("content")
         .and_then(|value| value.as_str())
-        .is_some_and(toml_is_bridge_leftover)
+        .is_some_and(toml_active_provider_is_bridge_leftover)
 }
 
 /// True when a live snapshot's Codex config.toml is a 本机路由 leftover.

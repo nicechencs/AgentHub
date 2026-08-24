@@ -189,18 +189,36 @@ fn find_api_key_in_text(text: &str) -> Option<String> {
     None
 }
 
-/// `**XXXX` tail of an API key for list chips (JSON fields or TOML content).
-pub fn api_key_tail(credentials: &Value) -> Option<String> {
+/// Full SHA-256 hex of a normalized (trimmed) secret. Identity only — never
+/// log or persist the raw secret as the key.
+pub fn secret_sha256_hex(secret: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(secret.trim().as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Winning API key string from JSON fields or opaque TOML `content` / `config`.
+pub fn api_key_secret(credentials: &Value) -> Option<String> {
     if let Some(secret) = find_api_key(credentials) {
-        if let Some(tail) = mask_secret_tail(secret) {
-            return Some(tail);
-        }
+        return Some(secret.to_string());
     }
     let content = credentials
         .get("content")
         .or_else(|| credentials.get("config"))
         .and_then(Value::as_str)?;
-    find_api_key_in_text(content).and_then(|secret| mask_secret_tail(&secret))
+    find_api_key_in_text(content)
+}
+
+/// SHA-256 of the winning API key. None when no secret is present.
+pub fn api_key_secret_hash(credentials: &Value) -> Option<String> {
+    Some(secret_sha256_hex(&api_key_secret(credentials)?))
+}
+
+/// `**XXXX` tail of an API key for list chips (JSON fields or TOML content).
+pub fn api_key_tail(credentials: &Value) -> Option<String> {
+    mask_secret_tail(&api_key_secret(credentials)?)
 }
 
 /// Redact likely secrets inside free-form text (install logs, errors, chat lines).
@@ -582,6 +600,26 @@ mod tests {
         });
         assert_eq!(api_key_tail(&toml).as_deref(), Some("**here"));
         assert!(api_key_tail(&json!({ "refresh_token": "rt-not-a-key-value" })).is_none());
+    }
+
+    #[test]
+    fn secret_hash_is_stable_and_never_the_raw_secret() {
+        let key = "sk-fixture-openrouter-aaaa6aa9";
+        let hash = secret_sha256_hex(key);
+        assert_eq!(
+            hash,
+            secret_sha256_hex("  sk-fixture-openrouter-aaaa6aa9\n")
+        );
+        assert_eq!(hash.len(), 64);
+        assert!(!hash.contains(key));
+        assert_ne!(hash, secret_sha256_hex("sk-fixture-openrouter-bbbb6aa9"));
+
+        let openai_auth = json!({ "auth": { "OPENAI_API_KEY": key } });
+        assert_eq!(
+            api_key_secret_hash(&openai_auth).as_deref(),
+            Some(hash.as_str())
+        );
+        assert!(api_key_secret_hash(&json!({ "api_key": "***" })).is_none());
     }
 
     #[test]
