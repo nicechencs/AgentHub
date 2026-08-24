@@ -18,7 +18,6 @@ import {
   importRouteTarget,
   isAutoCreateRouteName,
   nextCreateRouteName,
-  isAlternateRouteRule,
   isCreateRouteUrlValid,
   isOpenRouterUrl,
   parseCreateRouteModels,
@@ -117,22 +116,23 @@ describe('create-route-flow', () => {
     expect(vendorById('claude').url).toBe('https://api.anthropic.com');
   });
 
-  it('fills a friendly default name from vendor + alternate without extra spaces', () => {
-    expect(defaultCreateRouteName('OpenRouter', '备选')).toBe('OpenRouter 备选');
-    expect(defaultCreateRouteName('  智谱  ', '备选')).toBe('智谱 备选');
+  it('fills a friendly default name from the vendor label alone', () => {
+    expect(defaultCreateRouteName('OpenRouter')).toBe('OpenRouter');
+    expect(defaultCreateRouteName('  智谱  ')).toBe('智谱');
+    expect(defaultCreateRouteName('  Open  Router  ')).toBe('Open Router');
   });
 
   it('treats empty or any vendor default name as auto and keeps a typed name', () => {
-    const autos = createRouteAutoNames(['OpenRouter', '智谱', '自定义'], '备选');
-    expect(autos).toEqual(['OpenRouter 备选', '智谱 备选', '自定义 备选']);
+    const autos = createRouteAutoNames(['OpenRouter', '智谱', '自定义']);
+    expect(autos).toEqual(['OpenRouter', '智谱', '自定义']);
     expect(isAutoCreateRouteName('', autos)).toBe(true);
-    expect(isAutoCreateRouteName('智谱 备选', autos)).toBe(true);
-    expect(isAutoCreateRouteName('OpenRouter 备选', autos)).toBe(true);
+    expect(isAutoCreateRouteName('智谱', autos)).toBe(true);
+    expect(isAutoCreateRouteName('OpenRouter', autos)).toBe(true);
     expect(isAutoCreateRouteName('家里的备用', autos)).toBe(false);
-    expect(nextCreateRouteName('', '智谱 备选', autos)).toBe('智谱 备选');
-    expect(nextCreateRouteName('OpenRouter 备选', '智谱 备选', autos)).toBe('智谱 备选');
-    expect(nextCreateRouteName('智谱 备选', 'OpenRouter 备选', autos)).toBe('OpenRouter 备选');
-    expect(nextCreateRouteName('家里的备用', 'OpenRouter 备选', autos)).toBe('家里的备用');
+    expect(nextCreateRouteName('', '智谱', autos)).toBe('智谱');
+    expect(nextCreateRouteName('OpenRouter', '智谱', autos)).toBe('智谱');
+    expect(nextCreateRouteName('智谱', 'OpenRouter', autos)).toBe('OpenRouter');
+    expect(nextCreateRouteName('家里的备用', 'OpenRouter', autos)).toBe('家里的备用');
   });
 
   it('builds a distinct import row title from title, client, and endpoint', () => {
@@ -218,11 +218,6 @@ describe('create-route-flow', () => {
     expect(planTicket).toHaveBeenCalledTimes(3);
     expect(bindTicket).toHaveBeenCalledTimes(3);
     expect(bindTicket.mock.calls.map((call) => call[1])).toEqual(['claude', 'codex', 'grok']);
-  });
-
-  it('marks openai-compat local-bridge rules as alternate', () => {
-    expect(isAlternateRouteRule('openai-api-to-claude-v1')).toBe(true);
-    expect(isAlternateRouteRule('kimi-membership-to-codex-v1')).toBe(false);
   });
 
   it('upserts one provider and binds every checked client', async () => {

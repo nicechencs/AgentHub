@@ -158,12 +158,12 @@ export function defaultCreateRouteEndpoints(vendor: CreateRouteVendorId): Create
   return [...vendorById(vendor).enabled];
 }
 
-export function defaultCreateRouteName(vendorLabel: string, alternateLabel: string): string {
-  return `${vendorLabel.trim()} ${alternateLabel.trim()}`.replace(/\s+/g, ' ').trim();
+export function defaultCreateRouteName(vendorLabel: string): string {
+  return vendorLabel.trim().replace(/\s+/g, ' ');
 }
 
-export function createRouteAutoNames(vendorLabels: readonly string[], alternateLabel: string): string[] {
-  return vendorLabels.map((label) => defaultCreateRouteName(label, alternateLabel));
+export function createRouteAutoNames(vendorLabels: readonly string[]): string[] {
+  return vendorLabels.map((label) => defaultCreateRouteName(label));
 }
 
 export function isAutoCreateRouteName(name: string, autoNames: readonly string[]): boolean {
@@ -464,12 +464,14 @@ function readCreateRouteConfigMeta(configText: string | undefined): {
       vendor?: unknown;
       baseURL?: unknown;
       baseUrl?: unknown;
+      base_url?: unknown;
       endpoints?: unknown;
     };
     const vendor = typeof parsed.vendor === 'string' ? parsed.vendor : null;
-    const baseUrl = typeof parsed.baseURL === 'string'
-      ? parsed.baseURL
-      : typeof parsed.baseUrl === 'string' ? parsed.baseUrl : '';
+    const candidates = [parsed.baseURL, parsed.baseUrl, parsed.base_url];
+    const baseUrl = candidates
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .find((value) => value.length > 0) ?? '';
     return {
       vendor,
       baseUrl,
@@ -525,12 +527,6 @@ export async function applyLocalRouteToAgents(
   return selected;
 }
 
-export function isAlternateRouteRule(ruleId: string | null | undefined): boolean {
-  return ruleId === 'openai-api-to-claude-v1'
-    || ruleId === 'openai-api-to-codex-v1'
-    || ruleId === 'openai-api-to-grok-bridge-v1';
-}
-
 export async function submitCreateRoute(
   input: CreateRouteInput,
   deps: CreateRouteDeps = defaultDeps,
@@ -564,4 +560,122 @@ export async function submitImportRoute(
   await deps.planTicket(ticketId, target as AgentId);
   await deps.bindTicket(ticketId, target as AgentId);
   return target;
+}
+
+export type EditRouteInput = {
+  name: string;
+  url: string;
+  /** Blank means "keep the stored key". */
+  key: string;
+  endpoints: readonly CreateRouteTarget[];
+  models?: string;
+};
+
+function parseRouteConfigObject(configText: string | undefined): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(configText ?? '') as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function distinctCreateRouteTargets(targets: readonly CreateRouteTarget[]): CreateRouteTarget[] {
+  return CREATE_ROUTE_TARGETS.filter((target) => targets.includes(target));
+}
+
+function storedCreateRouteVendor(configText: string | undefined): CreateRouteVendorId {
+  const vendor = readCreateRouteConfigMeta(configText).vendor;
+  return CREATE_ROUTE_VENDORS.some((item) => item.id === vendor)
+    ? vendor as CreateRouteVendorId
+    : 'custom';
+}
+
+/** True when this route's source is a provider config this dialog can edit. */
+export function isEditableRouteSource(input: {
+  sourceKind: 'account' | 'provider';
+  provider?: Pick<Provider, 'configText' | 'configFormat'> | null;
+}): boolean {
+  if (input.sourceKind !== 'provider') return false;
+  const provider = input.provider;
+  if (!provider || provider.configFormat !== 'json') return false;
+  return parseRouteConfigObject(provider.configText) !== null;
+}
+
+/** Seed the edit form from the stored provider. `key` is always '' (never echo a secret). */
+export function editRouteFormFromProvider(
+  provider: Pick<Provider, 'name' | 'configText'>,
+): EditRouteInput {
+  const caps = readCreateRouteCapabilities(provider.configText);
+  const endpoints = caps.endpoints.length > 0
+    ? distinctCreateRouteTargets(caps.endpoints.map((row) => row.target))
+    : distinctCreateRouteTargets(
+        listLocalRouteSurfacesFromConfig(provider.configText, { targetAgentId: 'codex' })
+          .map((row) => row.target),
+      );
+  return {
+    name: provider.name,
+    url: readCreateRouteConfigMeta(provider.configText).baseUrl,
+    key: '',
+    endpoints,
+    models: formatCreateRouteModels(caps.models),
+  };
+}
+
+export function canSubmitEditRoute(input: EditRouteInput): boolean {
+  return Boolean(
+    input.name.trim()
+    && isCreateRouteUrlValid(input.url)
+    && input.endpoints.length > 0,
+  );
+}
+
+/** Merged provider row to persist. Preserves id/agentId/preset/isCurrent/official and the stored key when `key` is blank. */
+export function editRouteProviderDraft(provider: Provider, input: EditRouteInput): Provider {
+  const existing = parseRouteConfigObject(provider.configText) ?? {};
+  const url = normalizeCreateRouteUrl(input.url);
+  const key = input.key.trim();
+  const models = parseCreateRouteModels(input.models);
+  const endpoints = buildCreateRouteEndpoints(
+    storedCreateRouteVendor(provider.configText),
+    url,
+    input.endpoints,
+  ).filter((row) => row.enabled);
+  const settings: Record<string, unknown> = {
+    ...existing,
+    baseURL: url,
+    baseUrl: url,
+    endpoints,
+    listedModels: models,
+  };
+  // `extractProviderEndpoint` reads JSON `base_url`, so a stored one must not go stale.
+  if ('base_url' in existing) settings.base_url = url;
+  if (key) {
+    settings.apiKey = key;
+    settings.api_key = key;
+  }
+  if (models[0]) settings.model = models[0];
+  else delete settings.model;
+  return {
+    id: provider.id,
+    agentId: provider.agentId,
+    name: input.name.trim(),
+    preset: provider.preset,
+    configText: JSON.stringify(settings, null, 2),
+    configFormat: 'json',
+    isCurrent: provider.isCurrent,
+    official: provider.official,
+  };
+}
+
+export async function submitEditRoute(
+  provider: Provider,
+  input: EditRouteInput,
+  deps: Pick<CreateRouteDeps, 'upsertProvider'> = defaultDeps,
+): Promise<Provider> {
+  if (!canSubmitEditRoute(input)) {
+    throw new Error('required');
+  }
+  return deps.upsertProvider(editRouteProviderDraft(provider, input));
 }

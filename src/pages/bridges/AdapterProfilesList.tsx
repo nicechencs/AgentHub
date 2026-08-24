@@ -6,32 +6,32 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { ListRow } from '@/components/shared/ListRow';
-import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
 } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
-import type { TicketSurfaceGroupView } from '@/lib/backend/contracts/ticket';
+import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from './adapter-components';
-import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
+import { RouteDetailPanel } from './RouteDetailPanel';
 import {
   adapterBridgeHostPort,
   adapterFailurePresentation,
 } from './adapter-model';
+import { routeDetailTargetLabel } from './adapter-route-detail-model';
 import {
-  isAlternateRouteRule,
-  listLocalRouteSurfacesFromConfig,
-  type CreateRouteTarget,
-} from './create-route-flow';
+  buildRouteGraph,
+  routeGraphSupportedAgents,
+  type RouteGraphView,
+} from './route-graph-model';
 import {
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
   adapterStatusTextClass,
   bridgeRuntimeStatusView,
-  resolveAdapterProfileSource,
   type AdapterStatusView,
 } from './adapter-view-model';
 
@@ -52,16 +52,18 @@ export type AdapterProfilesListProps = {
   onRequestStopBridge: (profile: AdapterProfile) => void;
   onSetAutoStart?: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove?: (profile: AdapterProfile) => void;
-  onApplyRoute?: (profile: AdapterProfile, agents: readonly CreateRouteTarget[]) => void;
+  /** Opens the dedicated client-config write dialog for one route. */
+  onRequestWrite?: (profile: AdapterProfile, graph: RouteGraphView) => void;
+  onRequestEdit?: (profile: AdapterProfile) => void;
   onShowDetail?: (profile: AdapterProfile) => void;
   onRetry: () => void;
   hiddenTargetIds?: ReadonlySet<string>;
-  surfaceGroups?: readonly TicketSurfaceGroupView[];
 };
 
 /**
  * Local-bridge runtimes as a compact service list. Row surface: single-layer
- * health, source → target, endpoint copy, and the state-matched primary action.
+ * health, upstream → loopback flow, the clients this route serves, and the
+ * state-matched primary action.
  */
 export function AdapterProfilesList({
   profiles,
@@ -77,11 +79,11 @@ export function AdapterProfilesList({
   onRequestStopBridge,
   onSetAutoStart,
   onRequestRemove,
-  onApplyRoute,
+  onRequestWrite,
+  onRequestEdit,
   onShowDetail,
   onRetry,
   hiddenTargetIds,
-  surfaceGroups = [],
 }: AdapterProfilesListProps) {
   const { t } = useI18n();
   const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
@@ -130,12 +132,11 @@ export function AdapterProfilesList({
           onRequestStopBridge={onRequestStopBridge}
           onSetAutoStart={onSetAutoStart}
           onRequestRemove={onRequestRemove}
-          onApplyRoute={onApplyRoute}
+          onRequestWrite={onRequestWrite}
+          onRequestEdit={onRequestEdit}
           onToggleDetail={() => toggleDetail(profile)}
           detailExpanded={collapsedIds[profile.id] !== true}
-          surfaceGroups={surfaceGroups}
           targetHidden={hiddenTargetIds?.has(profile.targetAgentId) === true}
-          hiddenTargetIds={hiddenTargetIds}
           siblingProfiles={profiles}
         />
       ))}
@@ -154,12 +155,11 @@ function AdapterProfileRow({
   onRequestStopBridge,
   onSetAutoStart,
   onRequestRemove,
-  onApplyRoute,
+  onRequestWrite,
+  onRequestEdit,
   onToggleDetail,
   detailExpanded,
-  surfaceGroups,
   targetHidden,
-  hiddenTargetIds,
   siblingProfiles,
 }: {
   profile: AdapterProfile;
@@ -172,33 +172,31 @@ function AdapterProfileRow({
   onRequestStopBridge: (profile: AdapterProfile) => void;
   onSetAutoStart?: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove?: (profile: AdapterProfile) => void;
-  onApplyRoute?: (profile: AdapterProfile, agents: readonly CreateRouteTarget[]) => void;
+  onRequestWrite?: (profile: AdapterProfile, graph: RouteGraphView) => void;
+  onRequestEdit?: (profile: AdapterProfile) => void;
   onToggleDetail: () => void;
   detailExpanded: boolean;
-  surfaceGroups: readonly TicketSurfaceGroupView[];
   targetHidden: boolean;
-  hiddenTargetIds?: ReadonlySet<string>;
   siblingProfiles: readonly AdapterProfile[];
 }) {
   const { t } = useI18n();
-  const source = resolveAdapterProfileSource(profile, entries);
+  const endpointParts = profile.route === 'local_bridge'
+    ? adapterBridgeHostPort(profile, bridgeStatus)
+    : null;
+  const graph = buildRouteGraph({
+    profile,
+    entries,
+    siblingProfiles,
+    host: endpointParts?.host,
+    port: endpointParts?.port,
+  });
+  const source = graph.source;
+  const supportedAgents = routeGraphSupportedAgents(graph.rows);
   const runtimeStatus = bridgeRuntimeStatusView({
     route: profile.route,
     bridgeState: bridgeStatus?.state,
     statusUnavailable,
   }, t);
-  const endpointParts = profile.route === 'local_bridge'
-    ? adapterBridgeHostPort(profile, bridgeStatus)
-    : null;
-  const sourceEntry = entries.find(
-    (entry) => entry.source === profile.sourceKind && entry.id === profile.sourceId,
-  );
-  const surfaces = profile.route === 'local_bridge'
-    ? listLocalRouteSurfacesFromConfig(sourceEntry?.provider?.configText, {
-        targetAgentId: profile.targetAgentId,
-        ruleId: profile.ruleId,
-      })
-    : [];
   const action = adapterProfilePrimaryAction({
     route: profile.route,
     bridgeState: bridgeStatus?.state,
@@ -208,6 +206,7 @@ function AdapterProfileRow({
   const transitioning = bridgeStatus?.state === 'starting' || bridgeStatus?.state === 'stopping';
   const recovery = adapterProfileRecoveryGuide(profile, t);
   const failure = error ? adapterFailurePresentation(error, t('routes.mutationFailure'), t) : null;
+  const localLabel = graph.local.origin || t('routes.pendingPort');
 
   return (
     <ListRow className="p-3">
@@ -219,73 +218,71 @@ function AdapterProfileRow({
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-medium">
             {source.agentId ? <AgentDot agentId={source.agentId} size="sm" title={null} /> : null}
             <span className="truncate">{source.title}</span>
-            {isAlternateRouteRule(profile.ruleId) ? (
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-meta font-medium text-secondary">
-                {t('routes.create.alternate')}
-              </span>
-            ) : null}
-            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
           </div>
-          {surfaces.length > 0 ? (
-            <ul className="space-y-0.5">
-              {surfaces.map((surface) => (
-                <li key={surface.target} className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  <span className="w-12 shrink-0 text-xs text-muted">
-                    {surface.target === 'claude'
-                      ? t('routes.create.target.claude')
-                      : surface.target === 'codex'
-                        ? t('routes.create.target.codex')
-                        : t('routes.create.target.grok')}
-                  </span>
-                  <CopyableRouteEndpointUrl
-                    path={surface.path}
-                    port={endpointParts?.port}
-                    host={endpointParts?.host}
-                    endpointId={surface.endpointId}
-                    className="text-xs"
-                  />
-                </li>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 font-mono text-xs text-secondary">
+            <Tip label={source.baseUrl || undefined} className="truncate">
+              {source.baseUrl || t('routes.graph.upstreamUnknown')}
+            </Tip>
+            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden />
+            <span className="truncate">{localLabel}</span>
+          </div>
+          {supportedAgents.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted">{t('routes.supports')}</span>
+              {supportedAgents.map((agent) => (
+                <span
+                  key={agent}
+                  className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-1.5 py-0.5 text-meta font-medium text-secondary"
+                >
+                  <AgentDot agentId={agent} size="sm" title={null} />
+                  {routeDetailTargetLabel(agent, t)}
+                </span>
               ))}
-            </ul>
+            </div>
           ) : null}
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {endpointParts && !endpointParts.port ? (
-              <span className="text-xs text-muted">{t('routes.pendingPort')}</span>
-            ) : null}
             {source.missing ? (
               <span className="text-xs text-warning">{t('routes.sourceDeleted')}</span>
             ) : null}
             {targetHidden ? (
               <span className="text-xs text-muted">{t('routes.targetHidden')}</span>
             ) : null}
-            {isAlternateRouteRule(profile.ruleId) ? (
-              <span className="text-xs text-muted">{t('routes.create.alternate')}</span>
-            ) : null}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {action ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy || transitioning || (targetHidden && action.kind !== 'stop')}
-              title={
+            <Hint
+              label={
                 targetHidden && action.kind !== 'stop'
                   ? t('routes.targetHiddenHint')
                   : undefined
               }
-              onClick={() => (action.kind === 'stop' ? onRequestStopBridge(profile) : onStartBridge(profile))}
             >
-              {busy ? t('routes.busy') : action.label}
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy || transitioning || (targetHidden && action.kind !== 'stop')}
+                onClick={() => (action.kind === 'stop' ? onRequestStopBridge(profile) : onStartBridge(profile))}
+              >
+                {busy ? t('routes.busy') : action.label}
+              </Button>
+            </Hint>
           ) : null}
           <Button
             variant="outline"
             size="sm"
-            disabled={busy || targetHidden || surfaces.length === 0}
-            onClick={() => onApplyRoute?.(profile, surfaces.map((surface) => surface.target))}
+            disabled={busy || targetHidden || graph.rows.length === 0}
+            onClick={() => onRequestWrite?.(profile, graph)}
           >
-            {t('routes.quickApply.action')}
+            {t('routes.write.action')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => onRequestEdit?.(profile)}
+          >
+            {t('routes.edit.action')}
           </Button>
           <Button
             variant="ghost"
@@ -293,7 +290,7 @@ function AdapterProfileRow({
             aria-expanded={detailExpanded}
             onClick={onToggleDetail}
           >
-            {t('routes.detail')}
+            {detailExpanded ? t('routes.collapse') : t('routes.detail')}
           </Button>
         </div>
       </div>
@@ -309,20 +306,17 @@ function AdapterProfileRow({
         </div>
       ) : null}
       {detailExpanded ? (
-        <AdapterProfileDetailDialog
+        <RouteDetailPanel
           profile={profile}
           bridgeStatus={bridgeStatus}
           statusUnavailable={statusUnavailable}
           entries={entries}
-          surfaceGroups={surfaceGroups}
           busy={busy}
           error={error}
           onClose={onToggleDetail}
           onSetAutoStart={onSetAutoStart ?? (() => undefined)}
           onRequestRemove={onRequestRemove ?? (() => undefined)}
-          onApplyRoute={onApplyRoute}
           targetHidden={targetHidden}
-          hiddenTargetIds={hiddenTargetIds}
           siblingProfiles={siblingProfiles}
         />
       ) : null}
@@ -332,7 +326,7 @@ function AdapterProfileRow({
 
 function StatusLine({ view, emphasis = false }: { view: AdapterStatusView; emphasis?: boolean }) {
   return (
-    <span className={emphasis ? 'flex items-center gap-1.5 text-sm' : 'flex items-center gap-1.5 text-xs'}>
+    <span className={cn('flex items-center gap-1.5', emphasis ? 'text-sm' : 'text-xs')}>
       <StatusPin
         tone={view.tone}
         size="md"

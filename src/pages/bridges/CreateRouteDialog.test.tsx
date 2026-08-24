@@ -2,7 +2,10 @@ import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import type { ConnectionEntry } from '@/lib/connection-entry';
 import { CreateRouteDialog } from './CreateRouteDialog';
+import { EditRouteDialog } from './EditRouteDialog';
 import { ImportRouteDialog } from './ImportRouteDialog';
 import { defaultCreateRouteName, endpointUrlFor, vendorById } from './create-route-flow';
 
@@ -188,8 +191,120 @@ describe('ImportRouteDialog', () => {
   });
 });
 
+function editProfile(overrides: Partial<AdapterProfile> = {}): AdapterProfile {
+  return {
+    id: 'prof-1',
+    name: 'OpenRouter',
+    sourceKind: 'provider',
+    sourceId: 'prov-1',
+    targetAgentId: 'codex',
+    route: 'local_bridge',
+    mode: 'api',
+    status: 'active',
+    ruleId: 'openai-api-to-codex-v1',
+    ruleVersion: 'v1',
+    autoStart: true,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function editEntry(overrides: Partial<ConnectionEntry> = {}): ConnectionEntry {
+  return {
+    key: 'provider:prov-1',
+    source: 'provider',
+    kind: 'apikey',
+    id: 'prov-1',
+    agentId: 'codex',
+    title: 'OpenRouter',
+    subtitle: '已配置',
+    isCurrent: false,
+    authStatus: 'valid',
+    sortKey: '',
+    provider: {
+      id: 'prov-1',
+      agentId: 'codex',
+      name: 'OpenRouter',
+      preset: 'openrouter',
+      configFormat: 'json',
+      configText: JSON.stringify({
+        baseURL: 'https://openrouter.ai/api/v1',
+        apiKey: 'stored-key',
+        vendor: 'openrouter',
+        endpoints: [{ target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' }],
+      }),
+      isCurrent: false,
+    },
+    ...overrides,
+  };
+}
+
+function renderEdit(profile: AdapterProfile, entries: readonly ConnectionEntry[]) {
+  return renderToStaticMarkup(
+    createElement(TooltipProvider, null, createElement(EditRouteDialog, {
+      open: true,
+      onOpenChange: vi.fn(),
+      profile,
+      entries,
+      onSaved: vi.fn(),
+      onRequestDelete: vi.fn(),
+    })),
+  );
+}
+
+describe('EditRouteDialog', () => {
+  it('shows the unavailable copy for an account-sourced route', () => {
+    const markup = renderEdit(
+      editProfile({ sourceKind: 'account', sourceId: 'acc-1' }),
+      [editEntry({ key: 'account:acc-1', source: 'account', id: 'acc-1', provider: undefined })],
+    );
+    expect(markup).toContain('这条路由的来源不是可编辑的 API 配置');
+    expect(markup).not.toContain('接到');
+    expect(markup).not.toContain('type="password"');
+    expect(markup).toContain('删除路由');
+    expect(markup).toContain('取消');
+  });
+
+  it('renders name, url, key, and 接到 fields plus 删除路由 for a JSON provider', () => {
+    const markup = renderEdit(editProfile(), [editEntry()]);
+    expect(markup).toContain('名称');
+    expect(markup).toContain('地址');
+    expect(markup).toContain('接到');
+    expect(markup).toContain('type="password"');
+    expect(markup).toContain('留空沿用现有密钥');
+    expect(markup).toContain('type="checkbox"');
+    expect(markup).toContain('type="submit"');
+    expect(markup).toContain('保存');
+    expect(markup).toContain('删除路由');
+    expect(markup).not.toContain('stored-key');
+    expect(markup).not.toContain('这条路由的来源不是可编辑的 API 配置');
+  });
+
+  it('seeds the stored name, url, and checked target on first render', () => {
+    const markup = renderEdit(editProfile(), [editEntry()]);
+    expect(markup).toContain('value="OpenRouter"');
+    expect(markup).toContain('value="https://openrouter.ai/api/v1"');
+    expect(markup).toContain('type="checkbox" class="mt-0.5" checked=""');
+    expect(markup).not.toContain('value="stored-key"');
+  });
+
+  it('renders nothing without a profile', () => {
+    expect(renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(EditRouteDialog, {
+        open: true,
+        onOpenChange: vi.fn(),
+        profile: null,
+        entries: [],
+        onSaved: vi.fn(),
+        onRequestDelete: vi.fn(),
+      })),
+    )).toBe('');
+  });
+});
+
 describe('default create name', () => {
-  it('uses vendor label plus 备选', () => {
-    expect(defaultCreateRouteName('OpenRouter', '备选')).toBe('OpenRouter 备选');
+  it('uses the vendor label alone', () => {
+    expect(defaultCreateRouteName('OpenRouter')).toBe('OpenRouter');
   });
 });

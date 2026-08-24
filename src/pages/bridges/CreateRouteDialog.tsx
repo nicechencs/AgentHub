@@ -91,15 +91,13 @@ export function CreateRouteDialog({
 
   const applyVendor = (next: CreateRouteVendorId) => {
     const spec = vendorById(next);
-    const alternate = t('routes.create.alternate');
     const autoNames = createRouteAutoNames(
       CREATE_ROUTE_VENDORS.map((item) => vendorLabel(t, item.id)),
-      alternate,
     );
     setVendor(next);
     setName(nextCreateRouteName(
       name,
-      defaultCreateRouteName(vendorLabel(t, next), alternate),
+      defaultCreateRouteName(vendorLabel(t, next)),
       autoNames,
     ));
     if (next === 'custom') return;

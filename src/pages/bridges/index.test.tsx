@@ -1,9 +1,9 @@
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { AdapterBridgeRuntimeStatus } from '@/lib/backend/contracts/adapter';
 import { AdapterProfiles } from './adapter-components';
-import { AdapterProfileDetailDialog } from './AdapterProfileDetailDialog';
+import { RouteDetailPanel } from './RouteDetailPanel';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 vi.mock('@/components/ui/dialog', () => {
@@ -33,6 +33,7 @@ import {
   shouldPollAdapterBridgeStatus,
 } from './adapter-model';
 import { startAdapterBridgeStatusPoll } from './use-bridge-resources';
+import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { Account, Provider } from '@/lib/types';
 
 function localBridgeProfile(id = 'bridge-1') {
@@ -66,7 +67,46 @@ function runningStatus(profileId: string): AdapterBridgeRuntimeStatus {
   };
 }
 
-const emptyListProps = {
+/** OpenRouter source declaring all three client endpoints on one base URL. */
+function openRouterEntry(configText?: string): ConnectionEntry {
+  return {
+    key: 'provider:kimi-1',
+    source: 'provider',
+    kind: 'apikey',
+    id: 'kimi-1',
+    agentId: 'claude',
+    title: 'OpenRouter',
+    subtitle: '已配置',
+    isCurrent: true,
+    authStatus: 'valid',
+    authHealth: 'configured',
+    sortKey: '',
+    provider: {
+      id: 'kimi-1',
+      agentId: 'claude',
+      name: 'OpenRouter',
+      preset: 'openrouter',
+      configText: configText ?? JSON.stringify({
+        vendor: 'openrouter',
+        baseURL: 'https://openrouter.ai/api/v1',
+        listedModels: ['stealth/ox-alpha'],
+        endpoints: [
+          { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
+          { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
+          { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
+        ],
+      }),
+      configFormat: 'json',
+      isCurrent: false,
+      official: false,
+    },
+  };
+}
+
+type ProfilesProps = ComponentProps<typeof AdapterProfiles>;
+type DetailProps = ComponentProps<typeof RouteDetailPanel>;
+
+const emptyListProps: Omit<ProfilesProps, 'profiles'> = {
   bridgeStatuses: {},
   statusErrors: {},
   entries: [],
@@ -81,15 +121,15 @@ const emptyListProps = {
   onRetry: vi.fn(),
 };
 
-function renderProfiles(props: Parameters<typeof AdapterProfiles>[0]) {
+function renderProfiles(props: ProfilesProps) {
   return renderToStaticMarkup(
     createElement(TooltipProvider, null, createElement(AdapterProfiles, props)),
   );
 }
 
-function renderDetail(props: Parameters<typeof AdapterProfileDetailDialog>[0]) {
+function renderDetail(props: DetailProps) {
   return renderToStaticMarkup(
-    createElement(TooltipProvider, null, createElement(AdapterProfileDetailDialog, props)),
+    createElement(TooltipProvider, null, createElement(RouteDetailPanel, props)),
   );
 }
 
@@ -158,65 +198,38 @@ describe('Bridges page', () => {
     expect(markup).toContain('127.0.0.1:43121');
     expect(markup).toContain('停止');
     expect(markup).toContain('随 AgentHub 自动启动');
-    expect(markup).toContain('停止并还原');
+    expect(markup).toContain('删除路由');
     expect(markup).toContain('data-route-detail="bridge-1"');
-    expect(markup).toContain('来源登录');
-    expect(markup).toContain('本机桥');
-    expect(markup).toContain('客户端接入');
-    expect(markup).not.toContain('本机端点');
+    expect(markup).toContain('上游');
+    expect(markup).toContain('本机入口');
+    expect(markup).toContain('端点映射');
+    expect(markup).not.toContain('本机桥');
+    expect(markup).not.toContain('客户端接入');
     expect(markup).not.toContain('目标写入');
     expect(markup).not.toContain('配置已生效');
-    expect(markup).not.toContain('桥接运行中');
-    expect(markup).not.toContain('本地协议转换');
     expect(markup).not.toContain('role="dialog"');
   });
 
-  it('shows Claude, Codex, and Grok local endpoints on one OpenRouter card', () => {
+  it('shows the upstream → loopback flow and the clients one OpenRouter route serves', () => {
     const profile = localBridgeProfile();
     const markup = renderProfiles({
       ...emptyListProps,
       profiles: [{ ...profile, targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' }],
       bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
-      entries: [{
-        key: 'provider:kimi-1',
-        source: 'provider',
-        kind: 'apikey',
-        id: 'kimi-1',
-        agentId: 'claude',
-        title: 'OpenRouter',
-        subtitle: '已配置',
-        isCurrent: true,
-        authStatus: 'valid',
-        authHealth: 'configured',
-        sortKey: '',
-        provider: {
-          id: 'kimi-1',
-          agentId: 'claude',
-          name: 'OpenRouter',
-          preset: 'openrouter',
-          configText: JSON.stringify({
-            vendor: 'openrouter',
-            endpoints: [
-              { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
-              { target: 'codex', enabled: true, url: 'https://openrouter.ai/api/v1' },
-              { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
-            ],
-          }),
-          configFormat: 'json',
-          isCurrent: false,
-          official: false,
-        },
-      }],
+      entries: [openRouterEntry()],
     });
-    expect(markup).toContain('/v1/messages');
-    expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('https://openrouter.ai/api/v1');
+    expect(markup).toContain('http://127.0.0.1:43121');
+    expect(markup).toContain('支持');
     expect(markup).toContain('Claude');
     expect(markup).toContain('Codex');
     expect(markup).toContain('Grok');
-    expect(markup).toContain('一键配置');
-    expect(markup).toContain('将勾选项写入客户端配置');
-    expect(markup).toContain('可一键接入');
-    expect(markup).toContain('转换 → 上游 Chat 接口');
+    expect(markup).toContain('写入客户端');
+    expect(markup).toContain('编辑');
+    expect(markup).not.toContain('一键配置');
+    expect(markup).not.toContain('将勾选项写入客户端配置');
+    expect(markup).not.toContain('备选');
+    expect(markup).not.toContain('同一类登录');
     expect(markup).not.toContain('票');
     expect(markup).not.toContain('钱包');
     expect(markup).not.toContain('投影');
@@ -238,6 +251,57 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('重试启动');
   });
 
+  it('maps each client endpoint from the upstream path to the loopback path', () => {
+    const profile = localBridgeProfile();
+    const markup = renderDetail({
+      profile: { ...profile, targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' },
+      bridgeStatus: runningStatus(profile.id),
+      statusUnavailable: false,
+      entries: [openRouterEntry()],
+      busy: false,
+      error: null,
+      onClose: vi.fn(),
+      onSetAutoStart: vi.fn(),
+      onRequestRemove: vi.fn(),
+    });
+    expect(markup).toContain('端点映射');
+    expect(markup).toContain('上游端点');
+    expect(markup).toContain('本机端点');
+    expect(markup).toContain('/v1/chat/completions');
+    expect(markup).toContain('/v1/messages');
+    expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('转换');
+    expect(markup).toContain('data-hop-link="dashed"');
+    expect(markup).toContain('复制本机端点 http://127.0.0.1:43121/v1/messages');
+    expect(markup).toContain('复制上游端点 https://openrouter.ai/api/v1/chat/completions');
+    expect(markup).toContain('仅放行：stealth/ox-alpha（其余模型将被拒绝）');
+  });
+
+  it('draws a passthrough hop as a solid line when the upstream speaks Messages', () => {
+    const profile = localBridgeProfile();
+    const entry = openRouterEntry(JSON.stringify({
+      baseURL: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      endpoints: [
+        { target: 'claude', enabled: true, url: 'https://open.bigmodel.cn/api/anthropic' },
+      ],
+    }));
+    const markup = renderDetail({
+      profile: { ...profile, targetAgentId: 'claude', ruleId: 'openai-api-to-claude-v1' },
+      bridgeStatus: runningStatus(profile.id),
+      statusUnavailable: false,
+      entries: [entry],
+      busy: false,
+      error: null,
+      onClose: vi.fn(),
+      onSetAutoStart: vi.fn(),
+      onRequestRemove: vi.fn(),
+    });
+    expect(markup).toContain('直通');
+    expect(markup).toContain('data-hop-link="solid"');
+    expect(markup).toContain('复制上游端点 https://open.bigmodel.cn/api/anthropic/v1/messages');
+    expect(markup).toContain('未开放');
+  });
+
   it('renders detail as single-layer runtime without a Connections projection link', () => {
     const profile = localBridgeProfile();
     const markup = renderDetail({
@@ -252,93 +316,18 @@ describe('Bridges page', () => {
       onRequestRemove: vi.fn(),
     });
     expect(markup).toContain('运行中');
-    expect(markup).toContain('本机桥');
-    expect(markup).toContain('客户端接入');
-    expect(markup).toContain('将勾选项写入客户端配置');
-    expect(markup).toContain('停止并还原');
-    expect(markup).not.toContain('本机端点');
+    expect(markup).toContain('本机入口');
+    expect(markup).toContain('删除路由');
+    expect(markup).toContain('收起');
+    expect(markup).toContain('data-route-detail="bridge-1"');
+    expect(markup).toContain('来源登录已删除，路由仅可查看或解除绑定');
+    expect(markup).not.toContain('客户端接入');
+    expect(markup).not.toContain('将勾选项写入客户端配置');
+    expect(markup).not.toContain('同一类登录');
     expect(markup).not.toContain('目标写入');
-    expect(markup).not.toContain('配置已生效');
     expect(markup).not.toContain('在 Connections 查看');
     expect(markup).not.toContain('删除适配');
     expect(markup).not.toContain('role="dialog"');
-    expect(markup).toContain('data-route-detail="bridge-1"');
-  });
-
-  it('keeps both surface-group members visible and greys the failed row with a reason', () => {
-    const profile = localBridgeProfile();
-    const markup = renderDetail({
-      profile,
-      bridgeStatus: runningStatus(profile.id),
-      statusUnavailable: false,
-      entries: [
-        {
-          key: 'provider:kimi-1',
-          source: 'provider',
-          kind: 'apikey',
-          id: 'kimi-1',
-          agentId: 'kimi',
-          title: 'Kimi Code 会员',
-          subtitle: '已配置',
-          isCurrent: true,
-          authStatus: 'valid',
-          authHealth: 'configured',
-          sortKey: '',
-        },
-        {
-          key: 'account:kimi-stale',
-          source: 'account',
-          kind: 'apikey',
-          id: 'kimi-stale',
-          agentId: 'kimi',
-          title: 'Kimi 会员（失效号）',
-          subtitle: '需要重新登录',
-          isCurrent: false,
-          authStatus: 'expired',
-          authHealth: 'needs_login',
-          identityLabel: 'Kimi 会员（失效号）',
-          sortKey: '',
-        },
-      ],
-      surfaceGroups: [{
-        surface: 'kimi-code-membership',
-        credentialClass: 'api_key',
-        members: [
-          {
-            ticketId: 'account:kimi-stale',
-            sourceKind: 'account',
-            sourceId: 'kimi-stale',
-            agentId: 'kimi',
-            label: 'Kimi 会员（失效号）',
-            health: 'needs_login',
-          },
-          {
-            ticketId: 'provider:kimi-1',
-            sourceKind: 'provider',
-            sourceId: 'kimi-1',
-            agentId: 'kimi',
-            label: 'Kimi Code 会员',
-            health: 'renewable',
-          },
-        ],
-      }],
-      busy: false,
-      error: null,
-      onClose: vi.fn(),
-      onSetAutoStart: vi.fn(),
-      onRequestRemove: vi.fn(),
-    });
-    expect(markup).toContain('同一类登录');
-    expect(markup).toContain('Kimi Code 会员');
-    expect(markup).toContain('Kimi 会员（失效号）');
-    expect(markup).toContain('需要重新登录');
-    expect(markup).toContain('>可用<');
-    expect(markup).toContain('当前使用');
-    expect(markup).toContain('text-muted');
-    expect(markup).not.toContain('sk-');
-    expect(markup).not.toContain('token');
-    expect(markup.indexOf('Kimi 会员（失效号）')).toBeGreaterThan(-1);
-    expect(markup.indexOf('Kimi Code 会员')).toBeGreaterThan(-1);
   });
 
   it('preserves successful resources when another pool or bridge status fails', async () => {
