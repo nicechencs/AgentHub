@@ -47,17 +47,18 @@ const DETAIL_COPY = {
   ready: '可一键接入',
   runtimeOnly: '由后端路由支持，暂不提供界面配置',
   hopPassthrough: '直通上游',
-  hopConvert: '转换 → 上游 {channel}',
+  hopConvert: '转换 → {channel}',
   hopForward: '转发',
-  channelOpenaiChat: 'Chat 接口',
-  channelAnthropicMessages: 'Messages',
-  channelCodexResponses: 'Codex Responses',
-  channelGrokResponses: 'Grok Responses',
-  channelUnknown: '未知',
+  channelOpenaiChat: '上游 Chat 接口',
+  channelAnthropicMessages: '上游 Messages',
+  channelCodexResponses: '上游 Codex Responses',
+  channelGrokResponses: '上游 Grok Responses',
+  channelUnknown: '上游',
   modelsOnly: '仅放行：{models}（其余模型将被拒绝）',
   modelsAny: '跟随客户端请求的模型',
   stoppedHint: '已停止——客户端暂时无法使用以下地址',
   portPending: '端口分配中',
+  hostPortPending: '127.0.0.1 · 端口分配中',
   sourceDeletedHint: '来源登录已删除，路由仅可查看或解除绑定',
   applyConfirm: '将勾选项写入客户端配置',
   copyPortPending: '端口分配后可复制',
@@ -106,10 +107,14 @@ export function detectUpstreamChannelFromCredential(input: {
   sourceAgentId?: string | null;
 }): UpstreamChannel {
   const agent = input.sourceAgentId?.trim() ?? '';
-  if (agent === 'claude') return 'anthropic_messages';
-  if (agent === 'codex') return 'codex_responses';
-  if (agent === 'grok') return 'grok_responses';
-  if (input.mode === 'api' && (agent === 'kimi' || agent === 'dsh')) return 'openai_chat';
+  if (input.mode === 'oauth') {
+    if (agent === 'claude' || agent === 'anthropic') return 'anthropic_messages';
+    if (agent === 'codex' || agent === 'openai' || agent === 'openai-codex') return 'codex_responses';
+    if (agent === 'grok' || agent === 'xai') return 'grok_responses';
+    if (agent === 'kimi' || agent === 'dsh') return 'openai_chat';
+    return 'unknown';
+  }
+  if (agent === 'kimi' || agent === 'dsh') return 'openai_chat';
   return 'unknown';
 }
 
@@ -249,6 +254,14 @@ function hopFor(
   }
   if (endpointId === 'chat_completions' && channel === 'openai_chat') return 'passthrough';
   return 'convert';
+}
+
+/** Test/debug alias for hop labeling: messages×anthropic passthrough, unknown → forward. */
+export function hopForTestable(
+  endpointId: RouteDetailEdgeView['endpointId'],
+  channel: UpstreamChannel,
+): RouteHopKind {
+  return hopFor(endpointId, channel);
 }
 
 function resolveProductSupport(input: {
@@ -408,70 +421,84 @@ export function routeEdgeSupportLabel(
   t?: TranslateFn,
 ): string {
   if (support === 'source_missing') {
-    return detailText(t, 'routes.detail.edge.sourceMissing', DETAIL_COPY.sourceMissing);
+    return detailText(t, 'routes.panel.edge.sourceMissing', DETAIL_COPY.sourceMissing);
   }
   if (support === 'hidden') {
-    return detailText(t, 'routes.detail.edge.hidden', DETAIL_COPY.hidden);
+    return detailText(t, 'routes.panel.edge.hidden', DETAIL_COPY.hidden);
   }
   if (support === 'no_upstream') {
-    return detailText(t, 'routes.detail.edge.noUpstream', DETAIL_COPY.noUpstream);
+    return detailText(t, 'routes.panel.edge.noUpstream', DETAIL_COPY.noUpstream);
   }
   if (support === 'applied') {
-    return detailText(t, 'routes.detail.edge.applied', DETAIL_COPY.applied, { name: targetLabel });
+    return detailText(t, 'routes.panel.edge.applied', DETAIL_COPY.applied, { name: targetLabel });
   }
   if (support === 'runtime_only') {
-    return detailText(t, 'routes.detail.edge.runtimeOnly', DETAIL_COPY.runtimeOnly);
+    return detailText(t, 'routes.panel.edge.runtimeOnly', DETAIL_COPY.runtimeOnly);
   }
-  return detailText(t, 'routes.detail.edge.ready', DETAIL_COPY.ready);
+  return detailText(t, 'routes.panel.edge.ready', DETAIL_COPY.ready);
 }
 
 export function upstreamChannelLabel(channel: UpstreamChannel, t?: TranslateFn): string {
   if (channel === 'openai_chat') {
-    return detailText(t, 'routes.detail.channel.openaiChat', DETAIL_COPY.channelOpenaiChat);
+    return detailText(t, 'routes.panel.channel.openaiChat', DETAIL_COPY.channelOpenaiChat);
   }
   if (channel === 'anthropic_messages') {
-    return detailText(t, 'routes.detail.channel.anthropicMessages', DETAIL_COPY.channelAnthropicMessages);
+    return detailText(t, 'routes.panel.channel.anthropicMessages', DETAIL_COPY.channelAnthropicMessages);
   }
   if (channel === 'codex_responses') {
-    return detailText(t, 'routes.detail.channel.codexResponses', DETAIL_COPY.channelCodexResponses);
+    return detailText(t, 'routes.panel.channel.codexResponses', DETAIL_COPY.channelCodexResponses);
   }
   if (channel === 'grok_responses') {
-    return detailText(t, 'routes.detail.channel.grokResponses', DETAIL_COPY.channelGrokResponses);
+    return detailText(t, 'routes.panel.channel.grokResponses', DETAIL_COPY.channelGrokResponses);
   }
-  return detailText(t, 'routes.detail.channel.unknown', DETAIL_COPY.channelUnknown);
+  return detailText(t, 'routes.panel.channel.unknown', DETAIL_COPY.channelUnknown);
 }
 
 export function routeHopLabel(hop: RouteHopKind, channel: UpstreamChannel, t?: TranslateFn): string {
   if (hop === 'passthrough') {
-    return detailText(t, 'routes.detail.hop.passthrough', DETAIL_COPY.hopPassthrough);
+    return detailText(t, 'routes.panel.hop.passthrough', DETAIL_COPY.hopPassthrough);
   }
   if (hop === 'convert') {
-    return detailText(t, 'routes.detail.hop.convert', DETAIL_COPY.hopConvert, {
+    return detailText(t, 'routes.panel.hop.convert', DETAIL_COPY.hopConvert, {
       channel: upstreamChannelLabel(channel, t),
     });
   }
-  return detailText(t, 'routes.detail.hop.forward', DETAIL_COPY.hopForward);
+  return detailText(t, 'routes.panel.hop.forward', DETAIL_COPY.hopForward);
 }
 
 export function routeModelsSummary(models: readonly string[], t?: TranslateFn): string {
   if (models.length === 0) {
-    return detailText(t, 'routes.detail.models.any', DETAIL_COPY.modelsAny);
+    return detailText(t, 'routes.panel.models.any', DETAIL_COPY.modelsAny);
   }
-  return detailText(t, 'routes.detail.models.only', DETAIL_COPY.modelsOnly, {
+  return detailText(t, 'routes.panel.models.only', DETAIL_COPY.modelsOnly, {
     models: models.join(', '),
   });
 }
 
 export function routeSourceDeletedHint(t?: TranslateFn): string {
-  return detailText(t, 'routes.detail.source.deletedHint', DETAIL_COPY.sourceDeletedHint);
+  return detailText(t, 'routes.panel.sourceDeletedHint', DETAIL_COPY.sourceDeletedHint);
 }
 
 export function routeDetailApplyConfirmLabel(t?: TranslateFn): string {
-  return detailText(t, 'routes.detail.apply.confirm', DETAIL_COPY.applyConfirm);
+  return detailText(t, 'routes.panel.apply.confirm', DETAIL_COPY.applyConfirm);
 }
 
 export function routeCopyPortPendingLabel(t?: TranslateFn): string {
-  return detailText(t, 'routes.detail.copyPortPending', DETAIL_COPY.copyPortPending);
+  return detailText(t, 'routes.panel.copyPortPending', DETAIL_COPY.copyPortPending);
+}
+
+/** Host:port for the bridge node; pending copy never includes a `{port}` literal. */
+export function bridgeHostPortLabel(input: {
+  host: string;
+  port?: number | null;
+}, t?: TranslateFn): string {
+  const port = typeof input.port === 'number' && input.port > 0 ? input.port : null;
+  if (port != null) return `${input.host}:${port}`;
+  if (input.host === '127.0.0.1') {
+    return detailText(t, 'routes.panel.bridge.hostPortPending', DETAIL_COPY.hostPortPending);
+  }
+  const pending = detailText(t, 'routes.panel.bridge.portPending', DETAIL_COPY.portPending);
+  return withoutPendingPortLiteral(`${input.host} · ${pending}`, pending);
 }
 
 /** Bridge node helper: combine runtime + upstream into one line; port pending copy without `{port}` literal. */
@@ -481,7 +508,7 @@ export function bridgeNodeStatusLine(input: {
   bridgeState?: string;
   statusUnavailable?: boolean;
 }, t?: TranslateFn): { line: string; stoppedHint: string | null } {
-  const pending = detailText(t, 'routes.detail.bridge.portPending', DETAIL_COPY.portPending);
+  const pending = detailText(t, 'routes.panel.bridge.portPending', DETAIL_COPY.portPending);
   const runtime = withoutPendingPortLiteral(input.runtimeLabel, pending);
   const upstream = input.upstreamLabel
     ? withoutPendingPortLiteral(input.upstreamLabel, pending)
@@ -490,7 +517,32 @@ export function bridgeNodeStatusLine(input: {
     ? runtime
     : `${runtime} · ${upstream}`;
   const stoppedHint = !input.statusUnavailable && input.bridgeState === 'stopped'
-    ? detailText(t, 'routes.detail.bridge.stoppedHint', DETAIL_COPY.stoppedHint)
+    ? detailText(t, 'routes.panel.bridge.stoppedHint', DETAIL_COPY.stoppedHint)
     : null;
   return { line, stoppedHint };
+}
+
+export function routeDetailTargetLabel(
+  target: RouteDetailEdgeTarget,
+  t?: TranslateFn,
+): string {
+  if (target === 'claude') return detailText(t, 'routes.create.target.claude', 'Claude');
+  if (target === 'codex') return detailText(t, 'routes.create.target.codex', 'Codex');
+  if (target === 'grok') return detailText(t, 'routes.create.target.grok', 'Grok');
+  if (target === 'kimi') return detailText(t, 'routes.panel.target.kimi', 'Kimi');
+  return detailText(t, 'routes.panel.target.dsh', 'DSH');
+}
+
+export function defaultApplySelection(
+  edges: readonly Pick<RouteDetailEdgeView, 'target' | 'support' | 'selectable'>[],
+): RouteDetailEdgeTarget[] {
+  return edges
+    .filter((edge) => edge.selectable && edge.support === 'applied')
+    .map((edge) => edge.target);
+}
+
+export function selectableProductTargets(
+  selected: readonly RouteDetailEdgeTarget[],
+): CreateRouteTarget[] {
+  return PRODUCT_TARGETS.filter((target) => selected.includes(target));
 }
