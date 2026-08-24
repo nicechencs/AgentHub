@@ -50,7 +50,7 @@ export function RouteDetailPanel({
   busy,
   error,
   onClose,
-  onSetAutoStart,
+  _onSetAutoStart,
   onRequestRemove,
   targetHidden = false,
 }: {
@@ -78,7 +78,7 @@ export function RouteDetailPanel({
         busy={busy}
         error={error}
         onClose={onClose}
-        onSetAutoStart={onSetAutoStart}
+        onSetAutoStart={_onSetAutoStart}
         onRequestRemove={onRequestRemove}
         targetHidden={targetHidden}
       />
@@ -95,7 +95,7 @@ function RouteDetailBody({
   busy,
   error,
   onClose,
-  onSetAutoStart,
+  _onSetAutoStart,
   onRequestRemove,
   targetHidden,
 }: {
