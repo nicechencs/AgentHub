@@ -4,6 +4,8 @@ import {
   isInternalGeneratedProvider,
   isLoopbackUrl,
 } from '@/lib/backend/contracts/agent-connection';
+import type { RouteEndpointId } from '@/lib/route-endpoints';
+import { routeEndpointIdForBinding, routeEndpointPath } from '@/lib/route-endpoints';
 import type { AgentId, Provider } from '@/lib/types';
 import { isLeftoverLocalRouteProvider } from '@/pages/chat/chat-model';
 
@@ -436,6 +438,91 @@ export function readCreateRouteCapabilities(configText: string | undefined): {
   } catch {
     return { endpoints: [], models: [] };
   }
+}
+
+
+export type LocalRouteSurface = {
+  target: CreateRouteTarget;
+  endpointId: RouteEndpointId;
+  path: string;
+};
+
+export function surfaceForCreateRouteTarget(target: CreateRouteTarget): LocalRouteSurface {
+  if (target === 'claude') {
+    return { target, endpointId: 'messages', path: '/v1/messages' };
+  }
+  return { target, endpointId: 'responses', path: '/v1/responses' };
+}
+
+function readCreateRouteConfigMeta(configText: string | undefined): {
+  vendor: string | null;
+  baseUrl: string;
+  hasEndpointsField: boolean;
+} {
+  try {
+    const parsed = JSON.parse(configText ?? '{}') as {
+      vendor?: unknown;
+      baseURL?: unknown;
+      baseUrl?: unknown;
+      endpoints?: unknown;
+    };
+    const vendor = typeof parsed.vendor === 'string' ? parsed.vendor : null;
+    const baseUrl = typeof parsed.baseURL === 'string'
+      ? parsed.baseURL
+      : typeof parsed.baseUrl === 'string' ? parsed.baseUrl : '';
+    return {
+      vendor,
+      baseUrl,
+      hasEndpointsField: Array.isArray(parsed.endpoints),
+    };
+  } catch {
+    return { vendor: null, baseUrl: '', hasEndpointsField: false };
+  }
+}
+
+/** Local client surfaces for one route row (same port). */
+export function listLocalRouteSurfacesFromConfig(
+  configText: string | undefined,
+  fallback: { targetAgentId: AgentId | string; ruleId?: string | null },
+): LocalRouteSurface[] {
+  const caps = readCreateRouteCapabilities(configText);
+  if (caps.endpoints.length > 0) {
+    return caps.endpoints.map((row) => surfaceForCreateRouteTarget(row.target));
+  }
+  const meta = readCreateRouteConfigMeta(configText);
+  if (meta.vendor === 'openrouter' || isOpenRouterUrl(meta.baseUrl) || meta.hasEndpointsField) {
+    return CREATE_ROUTE_TARGETS.map((target) => surfaceForCreateRouteTarget(target));
+  }
+  const endpointId = routeEndpointIdForBinding({
+    agentId: fallback.targetAgentId,
+    ruleId: fallback.ruleId,
+  });
+  const target: CreateRouteTarget = fallback.targetAgentId === 'claude'
+    ? 'claude'
+    : fallback.targetAgentId === 'grok'
+      ? 'grok'
+      : 'codex';
+  return [{ target, endpointId, path: routeEndpointPath(endpointId) }];
+}
+
+export async function applyLocalRouteToAgents(
+  input: {
+    sourceKind: 'account' | 'provider';
+    sourceId: string;
+    agents: readonly CreateRouteTarget[];
+  },
+  deps: Pick<CreateRouteDeps, 'planTicket' | 'bindTicket'> = defaultDeps,
+): Promise<CreateRouteTarget[]> {
+  const selected = CREATE_ROUTE_TARGETS.filter((target) => input.agents.includes(target));
+  if (selected.length === 0) {
+    throw new Error('required');
+  }
+  const ticketId = ticketIdFor(input.sourceKind, input.sourceId);
+  for (const agent of selected) {
+    await deps.planTicket(ticketId, agent);
+    await deps.bindTicket(ticketId, agent);
+  }
+  return selected;
 }
 
 export function isAlternateRouteRule(ruleId: string | null | undefined): boolean {

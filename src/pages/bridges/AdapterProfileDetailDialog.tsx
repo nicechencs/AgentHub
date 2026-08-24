@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ArrowRight, ChevronDown, Copy } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
@@ -5,14 +6,6 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/toast';
 import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
@@ -30,7 +23,11 @@ import type { TicketSurfaceGroupView } from '@/lib/backend/contracts/ticket';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from './adapter-components';
-import { readCreateRouteCapabilities } from './create-route-flow';
+import {
+  listLocalRouteSurfacesFromConfig,
+  readCreateRouteCapabilities,
+  type CreateRouteTarget,
+} from './create-route-flow';
 import { bridgeMemberRows, memberPinTone } from './adapter-member-model';
 import {
   adapterBridgeHostPort,
@@ -49,6 +46,7 @@ import {
  * Read-only runtime detail. AutoStart is the only editable field the backend
  * exposes, so it lives here as a direct switch (no edit mode / dirty state).
  * Unbind is requested from here and confirmed by the page-level dialog.
+ * Rendered inline under the route row — not a Dialog/popup.
  */
 export function AdapterProfileDetailDialog({
   profile,
@@ -61,6 +59,7 @@ export function AdapterProfileDetailDialog({
   onClose,
   onSetAutoStart,
   onRequestRemove,
+  onApplyRoute,
   targetHidden = false,
 }: {
   profile: AdapterProfile | null;
@@ -73,28 +72,27 @@ export function AdapterProfileDetailDialog({
   onClose: () => void;
   onSetAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove: (profile: AdapterProfile) => void;
+  onApplyRoute?: (profile: AdapterProfile, agents: readonly CreateRouteTarget[]) => void;
   targetHidden?: boolean;
 }) {
+  if (!profile) return null;
   return (
-    <Dialog open={Boolean(profile)} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden">
-        {profile ? (
-          <ProfileDetailBody
-            profile={profile}
-            bridgeStatus={bridgeStatus}
-            statusUnavailable={statusUnavailable}
-            entries={entries}
-            surfaceGroups={surfaceGroups}
-            busy={busy}
-            error={error}
-            onClose={onClose}
-            onSetAutoStart={onSetAutoStart}
-            onRequestRemove={onRequestRemove}
-            targetHidden={targetHidden}
-          />
-        ) : null}
-      </DialogContent>
-    </Dialog>
+    <div className="mt-3 space-y-4 border-t border-border pt-3" data-route-detail={profile.id}>
+      <ProfileDetailBody
+        profile={profile}
+        bridgeStatus={bridgeStatus}
+        statusUnavailable={statusUnavailable}
+        entries={entries}
+        surfaceGroups={surfaceGroups}
+        busy={busy}
+        error={error}
+        onClose={onClose}
+        onSetAutoStart={onSetAutoStart}
+        onRequestRemove={onRequestRemove}
+        onApplyRoute={onApplyRoute}
+        targetHidden={targetHidden}
+      />
+    </div>
   );
 }
 
@@ -109,6 +107,7 @@ function ProfileDetailBody({
   onClose,
   onSetAutoStart,
   onRequestRemove,
+  onApplyRoute,
   targetHidden,
 }: {
   profile: AdapterProfile;
@@ -121,6 +120,7 @@ function ProfileDetailBody({
   onClose: () => void;
   onSetAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove: (profile: AdapterProfile) => void;
+  onApplyRoute?: (profile: AdapterProfile, agents: readonly CreateRouteTarget[]) => void;
   targetHidden: boolean;
 }) {
   const { toast } = useToast();
@@ -160,44 +160,60 @@ function ProfileDetailBody({
     (entry) => entry.source === profile.sourceKind && entry.id === profile.sourceId,
   );
   const capabilities = readCreateRouteCapabilities(sourceEntry?.provider?.configText);
+  const surfaces = isBridge
+    ? listLocalRouteSurfacesFromConfig(sourceEntry?.provider?.configText, {
+        targetAgentId: profile.targetAgentId,
+        ruleId: profile.ruleId,
+      })
+    : [];
+  const [applyTargets, setApplyTargets] = useState<CreateRouteTarget[]>(
+    () => surfaces.map((surface) => surface.target),
+  );
   const endpointLabels = {
     claude: t('routes.create.target.claude'),
     codex: t('routes.create.target.codex'),
     grok: t('routes.create.target.grok'),
   };
 
-  const copyEndpoint = async () => {
-    if (!endpointHref || !endpointParts?.port) return;
-    try {
-      await navigator.clipboard.writeText(endpointHref);
-      toast({ title: t('routes.endpointCopied'), description: endpointHref });
-    } catch {
-      toast({ title: t('routes.copyFailed'), variant: 'danger' });
-    }
-  };
-
   return (
     <>
-      <DialogHeader className="shrink-0">
-        <DialogTitle className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="shrink-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-medium">
           {source.agentId ? <AgentDot agentId={source.agentId} size="sm" title={null} /> : null}
           <span className="truncate">{source.title}</span>
           <ArrowRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-          {endpointPath && endpointId ? (
-            <RouteEndpointUrl
-              path={endpointPath}
-              port={endpointParts?.port}
-              host={endpointParts?.host}
-              endpointId={endpointId}
-              className="truncate text-sm"
-            />
-          ) : null}
-        </DialogTitle>
-        <DialogDescription className="flex flex-wrap items-center gap-1.5">
+        </div>
+        {surfaces.length > 0 ? (
+          <ul className="mt-1 space-y-0.5">
+            {surfaces.map((surface) => (
+              <li key={surface.target} className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm">
+                <span className="w-12 shrink-0 text-meta text-muted">
+                  {endpointLabels[surface.target]}
+                </span>
+                <RouteEndpointUrl
+                  path={surface.path}
+                  port={endpointParts?.port}
+                  host={endpointParts?.host}
+                  endpointId={surface.endpointId}
+                  className="truncate text-sm"
+                />
+              </li>
+            ))}
+          </ul>
+        ) : endpointPath && endpointId ? (
+          <RouteEndpointUrl
+            path={endpointPath}
+            port={endpointParts?.port}
+            host={endpointParts?.host}
+            endpointId={endpointId}
+            className="truncate text-sm"
+          />
+        ) : null}
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-secondary">
           <Badge variant="default">{adapterCredentialKindLabel(profile.mode, t)}</Badge>
           {source.missing ? <span className="text-warning">{t('routes.sourceDeleted')}</span> : null}
-        </DialogDescription>
-      </DialogHeader>
+        </div>
+      </div>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
         <section className="space-y-1.5">
@@ -294,25 +310,45 @@ function ProfileDetailBody({
           <section className="space-y-1.5">
             <h3 className="text-sm font-medium">{t('routes.localEndpoint')}</h3>
             <div className="space-y-2 rounded-card border border-border bg-subtle p-3 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="space-y-1">
                 <span className="text-muted">{t('routes.localEndpointLabel')}</span>
-                {endpointPath && endpointId ? (
-                  <button
-                    type="button"
-                    className="inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left hover:bg-hover"
-                    onClick={() => { void copyEndpoint(); }}
-                    aria-label={t('routes.copyEndpointAria', { endpoint: endpointHref ?? endpointPath })}
-                  >
-                    <RouteEndpointUrl
-                      path={endpointPath}
-                      port={endpointParts?.port}
-                      host={endpointParts?.host}
-                      endpointId={endpointId}
-                      className="text-xs"
-                    />
-                    <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
-                  </button>
-                ) : null}
+                {surfaces.map((surface) => {
+                  const href = formatRouteEndpointHttpUrl({
+                    path: surface.path,
+                    port: endpointParts?.port,
+                    host: endpointParts?.host,
+                  });
+                  return (
+                    <div key={surface.target} className="flex flex-wrap items-center gap-2">
+                      <span className="w-12 text-meta text-muted">{endpointLabels[surface.target]}</span>
+                      <button
+                        type="button"
+                        className="inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left hover:bg-hover"
+                        onClick={() => {
+                          if (!href || !endpointParts?.port) return;
+                          void (async () => {
+                            try {
+                              await navigator.clipboard.writeText(href);
+                              toast({ title: t('routes.endpointCopied'), description: href });
+                            } catch {
+                              toast({ title: t('routes.copyFailed'), variant: 'danger' });
+                            }
+                          })();
+                        }}
+                        aria-label={t('routes.copyEndpointAria', { endpoint: href ?? surface.path })}
+                      >
+                        <RouteEndpointUrl
+                          path={surface.path}
+                          port={endpointParts?.port}
+                          host={endpointParts?.host}
+                          endpointId={surface.endpointId}
+                          className="text-xs"
+                        />
+                        <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
               {endpointParts ? (
                 <>
@@ -344,6 +380,40 @@ function ProfileDetailBody({
                   onCheckedChange={(autoStart) => onSetAutoStart(profile, autoStart)}
                 />
               </label>
+            </div>
+          </section>
+        ) : null}
+
+        {surfaces.length > 0 ? (
+          <section className="space-y-1.5">
+            <h3 className="text-sm font-medium">{t('routes.quickApply.action')}</h3>
+            <div className="space-y-2 rounded-card border border-border bg-subtle p-3 text-sm">
+              <p className="text-meta text-muted">{t('routes.quickApply.hint')}</p>
+              <div className="flex flex-wrap gap-3">
+                {surfaces.map((surface) => (
+                  <label key={surface.target} className="inline-flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={applyTargets.includes(surface.target)}
+                      onChange={() => {
+                        setApplyTargets((current) => (
+                          current.includes(surface.target)
+                            ? current.filter((item) => item !== surface.target)
+                            : [...current, surface.target]
+                        ));
+                      }}
+                    />
+                    <span>{endpointLabels[surface.target]}</span>
+                  </label>
+                ))}
+              </div>
+              <Button
+                size="sm"
+                disabled={busy || targetHidden || applyTargets.length === 0}
+                onClick={() => onApplyRoute?.(profile, applyTargets)}
+              >
+                {t('routes.quickApply.confirm')}
+              </Button>
             </div>
           </section>
         ) : null}
@@ -404,7 +474,7 @@ function ProfileDetailBody({
         </details>
       </div>
 
-      <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
+      <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-border pt-4">
         <Button
           variant="dangerOutline"
           disabled={busy || targetHidden}
@@ -414,7 +484,7 @@ function ProfileDetailBody({
           {t('routes.unbind.action')}
         </Button>
         <Button variant="secondary" onClick={onClose}>{t('routes.close')}</Button>
-      </DialogFooter>
+      </div>
     </>
   );
 }
