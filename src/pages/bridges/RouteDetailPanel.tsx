@@ -27,19 +27,14 @@ import {
 } from './adapter-route-detail-model';
 import {
   buildRouteGraph,
-  groupRouteGraphRowsByUpstream,
-  routeGraphLinkLabel,
-  routeGraphSharesUpstreamEndpoint,
   type RouteGraphRow,
-  type RouteMappingGroup,
 } from './route-graph-model';
 import {
   adapterProfileRecoveryGuide,
 } from './adapter-view-model';
 
 /**
- * Route detail: endpoint mapping with upstream/local URLs merged in, plus
- * autoStart in the footer. Writing client config lives in WriteClientConfigDialog.
+ * Route detail: login, local address, who is connected. No protocol graph.
  */
 export function RouteDetailPanel({
   profile,
@@ -50,7 +45,7 @@ export function RouteDetailPanel({
   busy,
   error,
   onClose,
-  onSetAutoStart,
+  onSetAutoStart: _onSetAutoStart,
   onRequestRemove,
   targetHidden = false,
 }: {
@@ -78,7 +73,6 @@ export function RouteDetailPanel({
         busy={busy}
         error={error}
         onClose={onClose}
-        onSetAutoStart={onSetAutoStart}
         onRequestRemove={onRequestRemove}
         targetHidden={targetHidden}
       />
@@ -95,7 +89,6 @@ function RouteDetailBody({
   busy,
   error,
   onClose,
-  onSetAutoStart,
   onRequestRemove,
   targetHidden,
 }: {
@@ -107,7 +100,6 @@ function RouteDetailBody({
   busy: boolean;
   error: unknown;
   onClose: () => void;
-  onSetAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove: (profile: AdapterProfile) => void;
   targetHidden: boolean;
 }) {
@@ -128,8 +120,6 @@ function RouteDetailBody({
     (entry) => entry.source === profile.sourceKind && entry.id === profile.sourceId,
   );
   const capabilities = readCreateRouteCapabilities(sourceEntry?.provider?.configText);
-  const mappingGroups = groupRouteGraphRowsByUpstream(graph.rows);
-  const sharesUpstream = routeGraphSharesUpstreamEndpoint(graph.rows);
 
   return (
     <>
@@ -137,7 +127,7 @@ function RouteDetailBody({
         <section className="space-y-2">
           <h3 className="text-body font-medium">{t('routes.graph.mappingTitle')}</h3>
           <div className={cn(
-            'rounded-card border border-border bg-subtle p-3 space-y-2',
+            'rounded-card border border-border bg-subtle p-3 space-y-3',
             source.missing && 'opacity-70',
           )}
           >
@@ -150,45 +140,50 @@ function RouteDetailBody({
               <p className="text-sm text-warning">{routeSourceDeletedHint(t)}</p>
             ) : null}
 
-            <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1">
-              {source.baseUrl ? (
-                <span className="flex min-w-0 items-center gap-1.5 text-xs">
-                  <span className="shrink-0 text-muted">{t('routes.graph.upstreamBase')}</span>
-                  <CopyableEndpoint
-                    text={source.baseUrl}
-                    url={source.baseUrl}
-                    ariaLabel={t('routes.graph.copyUpstream', { endpoint: source.baseUrl })}
-                  />
-                </span>
-              ) : null}
-              {graph.local.origin ? (
-                <span className="flex min-w-0 items-center gap-1.5 text-xs">
-                  <span className="shrink-0 text-muted">{t('routes.graph.localBase')}</span>
-                  <CopyableEndpoint
-                    text={graph.local.origin}
-                    url={graph.local.origin}
-                    ariaLabel={t('routes.graph.copyLocal', { endpoint: graph.local.origin })}
-                    className="text-sm font-medium"
-                  />
-                </span>
-              ) : null}
-            </div>
-
-            {graph.rows.length === 0 ? (
-              <p className="text-sm text-muted">{t('routes.graph.empty')}</p>
-            ) : sharesUpstream && graph.rows[0]?.upstreamPath ? (
-              <MappingTableSharedUpstream
-                upstreamPath={graph.rows[0].upstreamPath}
-                upstreamUrl={graph.rows[0].upstreamUrl}
-                rows={graph.rows}
-              />
-            ) : (
-              <div className="space-y-3">
-                {mappingGroups.map((group) => (
-                  <MappingTableGroup key={`${group.upstreamBaseUrl}:${group.upstreamPath}`} group={group} />
-                ))}
+            <dl className="grid gap-2 text-sm">
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                <dt className="w-12 shrink-0 text-muted">{t('routes.graph.upstreamTitle')}</dt>
+                <dd className="min-w-0">
+                  {source.baseUrl ? (
+                    <CopyableEndpoint
+                      text={source.baseUrl}
+                      url={source.baseUrl}
+                      ariaLabel={t('routes.graph.copyUpstream', { endpoint: source.baseUrl })}
+                    />
+                  ) : (
+                    <span className="text-muted">{t('routes.graph.upstreamUnknown')}</span>
+                  )}
+                </dd>
               </div>
-            )}
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                <dt className="w-12 shrink-0 text-muted">{t('routes.graph.localTitle')}</dt>
+                <dd className="min-w-0">
+                  {graph.local.origin ? (
+                    <CopyableEndpoint
+                      text={graph.local.origin}
+                      url={graph.local.origin}
+                      ariaLabel={t('routes.graph.copyLocal', { endpoint: graph.local.origin })}
+                      className="text-sm font-medium"
+                    />
+                  ) : (
+                    <span className="text-muted">{routeCopyPortPendingLabel(t)}</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+
+            <div className="space-y-1.5">
+              <h4 className="text-sm font-medium">{t('routes.graph.clientsTitle')}</h4>
+              {graph.rows.length === 0 ? (
+                <p className="text-sm text-muted">{t('routes.graph.empty')}</p>
+              ) : (
+                <ul className="space-y-1">
+                  {graph.rows.map((row) => (
+                    <ClientRow key={row.agent} row={row} />
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
           <p className="text-meta text-muted">{routeModelsSummary(capabilities.models, t)}</p>
         </section>
@@ -263,140 +258,36 @@ function RouteDetailBody({
   );
 }
 
-const MAPPING_GRID = 'lg:grid-cols-[minmax(0,5rem)_minmax(0,7rem)_minmax(0,1fr)]';
-const MAPPING_GRID_WITH_UPSTREAM = 'lg:grid-cols-[minmax(0,5rem)_minmax(0,1fr)_minmax(0,7rem)_minmax(0,1fr)]';
-
-const SOLID_RULE = 'h-px bg-current';
-const DASHED_RULE =
-  'h-px bg-[repeating-linear-gradient(to_right,currentColor_0_4px,transparent_4px_8px)]';
-
-function MappingTableSharedUpstream({
-  upstreamPath,
-  upstreamUrl,
-  rows,
-}: {
-  upstreamPath: string;
-  upstreamUrl: string;
-  rows: readonly RouteGraphRow[];
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="space-y-1.5">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs">
-        <span className="shrink-0 text-muted">{t('routes.graph.upstreamColumn')}</span>
-        <CopyableEndpoint
-          text={upstreamPath}
-          url={upstreamUrl}
-          ariaLabel={t('routes.graph.copyUpstream', { endpoint: upstreamUrl || upstreamPath })}
-        />
-      </div>
-      <div className={cn('hidden gap-2 pb-1.5 text-meta text-muted lg:grid', MAPPING_GRID)}>
-        <span>{t('routes.graph.agentColumn')}</span>
-        <span>{t('routes.graph.convertColumn')}</span>
-        <span>{t('routes.graph.localColumn')}</span>
-      </div>
-      <ul className="space-y-1.5">
-        {rows.map((row) => (
-          <MappingRow key={row.agent} row={row} showUpstream={false} />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function MappingTableGroup({ group }: { group: RouteMappingGroup }) {
-  const { t } = useI18n();
-  return (
-    <div className="space-y-1.5">
-      {group.upstreamPath ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs">
-          <span className="shrink-0 text-muted">{t('routes.graph.upstreamColumn')}</span>
-          <CopyableEndpoint
-            text={group.upstreamPath}
-            url={group.upstreamUrl}
-            ariaLabel={t('routes.graph.copyUpstream', { endpoint: group.upstreamUrl || group.upstreamPath })}
-          />
-        </div>
-      ) : null}
-      <div className={cn('hidden gap-2 pb-1.5 text-meta text-muted lg:grid', MAPPING_GRID)}>
-        <span>{t('routes.graph.agentColumn')}</span>
-        <span>{t('routes.graph.convertColumn')}</span>
-        <span>{t('routes.graph.localColumn')}</span>
-      </div>
-      <ul className="space-y-1.5">
-        {group.rows.map((row) => (
-          <MappingRow key={row.agent} row={row} showUpstream={false} />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function MappingRow({ row, showUpstream }: { row: RouteGraphRow; showUpstream: boolean }) {
+function ClientRow({ row }: { row: RouteGraphRow }) {
   const { t } = useI18n();
   const label = routeDetailTargetLabel(row.agent, t);
-  const wireNote = clientWireNote(row.agent, t);
-  const grid = showUpstream ? MAPPING_GRID_WITH_UPSTREAM : MAPPING_GRID;
+  const url = row.localUrl ?? '';
   return (
-    <li className={cn(
-      'grid grid-cols-1 items-center gap-1 lg:grid lg:gap-2',
-      grid,
-      !row.enabled && 'opacity-70',
-    )}
+    <li
+      className={cn(
+        'flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 py-1',
+        !row.enabled && 'opacity-70',
+      )}
     >
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
-          <AgentDot agentId={row.agent} size="sm" title={null} />
-          <span className="truncate">{label}</span>
-        </span>
-        {wireNote ? <span className="pl-5 text-meta text-muted">{wireNote}</span> : null}
+      <span className="flex min-w-[5.5rem] items-center gap-1.5 text-sm font-medium">
+        <AgentDot agentId={row.agent} size="sm" title={null} />
+        <span className="truncate">{label}</span>
       </span>
-      {showUpstream ? (
-        <span className="flex min-w-0 items-center gap-1.5 lg:justify-end">
-          <CopyableEndpoint
-            text={row.upstreamPath || t('routes.graph.upstreamUnknown')}
-            url={row.upstreamUrl}
-            ariaLabel={t('routes.graph.copyUpstream', { endpoint: row.upstreamUrl || row.upstreamPath })}
-          />
-        </span>
-      ) : null}
-      <HopLink row={row} />
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+      {row.applied ? (
+        <span className="shrink-0 text-meta text-success">{t('routes.graph.applied')}</span>
+      ) : !row.enabled ? (
+        <span className="shrink-0 text-meta text-muted">{t('routes.graph.notEnabled')}</span>
+      ) : (
+        <span className="shrink-0 text-meta text-muted">{t('routes.graph.notWritten')}</span>
+      )}
+      <span className="min-w-0 flex-1">
         <CopyableEndpoint
-          text={row.localPath}
-          url={row.localUrl ?? ''}
-          ariaLabel={t('routes.graph.copyLocal', { endpoint: row.localUrl ?? row.localPath })}
+          text={url || row.localPath}
+          url={url}
+          ariaLabel={t('routes.graph.copyLocal', { endpoint: url || row.localPath })}
         />
-        {row.applied ? (
-          <span className="shrink-0 text-meta text-success">{t('routes.graph.applied')}</span>
-        ) : null}
-        {!row.enabled ? (
-          <span className="shrink-0 text-meta text-muted">{t('routes.graph.notEnabled')}</span>
-        ) : null}
       </span>
     </li>
-  );
-}
-
-function clientWireNote(agent: RouteGraphRow['agent'], t: ReturnType<typeof useI18n>['t']): string | null {
-  if (agent === 'codex') return t('routes.write.wireNote.codex');
-  if (agent === 'grok') return t('routes.write.wireNote.grok');
-  if (agent === 'claude') return t('routes.write.wireNote.claude');
-  return null;
-}
-
-function HopLink({ row }: { row: RouteGraphRow }) {
-  const { t } = useI18n();
-  const line = cn(
-    'hidden min-w-2 flex-1 lg:block',
-    row.link === 'dashed' ? DASHED_RULE : SOLID_RULE,
-  );
-  return (
-    <span className="flex items-center gap-1 text-muted" data-hop-link={row.link}>
-      <span className={line} aria-hidden />
-      <span className="shrink-0 text-meta">{routeGraphLinkLabel(row.hop, t)}</span>
-      <span className={line} aria-hidden />
-    </span>
   );
 }
 
