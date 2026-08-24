@@ -97,46 +97,46 @@ function countOf(markup: string, needle: string): number {
 }
 
 describe('WriteClientConfigDialog', () => {
-  it('shows Codex and Grok on the same /v1/responses endpoint but writes wire_api vs api_backend', () => {
+  it('shows Codex and Grok config files without wire_api or api_backend', () => {
     const markup = render({ rows: [row('claude'), row('codex'), row('grok')] });
 
     expect(markup).toContain(t('routes.write.title'));
     expect(markup).toContain(t('routes.write.description'));
-    expect(markup).toContain('wire_api');
     expect(markup).toContain('~/.codex/config.toml');
-    expect(markup).toContain('api_backend');
     expect(markup).toContain('~/.grok/config.toml');
+    expect(markup).not.toContain('wire_api');
+    expect(markup).not.toContain('api_backend');
 
     const claudeOnly = body(render({ rows: [row('claude')] }));
-    expect(claudeOnly).toContain('/v1/messages');
+    expect(claudeOnly).toContain('http://127.0.0.1:43121/v1/messages');
     expect(claudeOnly).not.toContain('/v1/responses');
     expect(claudeOnly).not.toContain('wire_api');
     expect(claudeOnly).not.toContain('api_backend');
 
     const codexOnly = body(render({ rows: [row('codex')] }));
-    expect(codexOnly).toContain('/v1/responses');
+    expect(codexOnly).toContain('http://127.0.0.1:43121/v1/responses');
     expect(codexOnly).not.toContain('/v1/messages');
-    expect(codexOnly).toContain('wire_api');
     expect(codexOnly).toContain('~/.codex/config.toml');
     expect(codexOnly).not.toContain('api_backend');
     expect(codexOnly).not.toContain('~/.grok/config.toml');
 
     const grokOnly = body(render({ rows: [row('grok')] }));
-    expect(grokOnly).toContain('/v1/responses');
+    expect(grokOnly).toContain('http://127.0.0.1:43121/v1/responses');
     expect(grokOnly).not.toContain('/v1/messages');
-    expect(grokOnly).toContain('api_backend');
     expect(grokOnly).toContain('~/.grok/config.toml');
     expect(grokOnly).not.toContain('wire_api');
     expect(grokOnly).not.toContain('~/.codex/config.toml');
   });
 
-  it('names the Claude settings.json env keys without printing a credential', () => {
+  it('names Claude settings.json with a local address and token, not env keys', () => {
     const markup = render({ rows: [row('claude'), row('codex'), row('grok')] });
 
     expect(markup).toContain('~/.claude/settings.json');
-    expect(markup).toContain('env.ANTHROPIC_BASE_URL');
-    expect(markup).toContain('env.ANTHROPIC_AUTH_TOKEN');
+    expect(markup).toContain(t('routes.write.fieldLocalAddress'));
+    expect(markup).toContain(t('routes.write.fieldLocalToken'));
     expect(markup).toContain(t('routes.write.localToken'));
+    expect(markup).not.toContain('env.ANTHROPIC_BASE_URL');
+    expect(markup).not.toContain('env.ANTHROPIC_AUTH_TOKEN');
     expect(markup).not.toContain('sk-');
     expect(markup).not.toContain('ahb_');
   });

@@ -39,25 +39,21 @@ import {
 export function RouteDetailPanel({
   profile,
   bridgeStatus,
-  statusUnavailable,
   entries,
   siblingProfiles = [],
   busy,
   error,
   onClose,
-  onSetAutoStart: _onSetAutoStart,
   onRequestRemove,
   targetHidden = false,
 }: {
   profile: AdapterProfile | null;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
-  statusUnavailable: boolean;
   entries: ConnectionEntry[];
   siblingProfiles?: readonly AdapterProfile[];
   busy: boolean;
   error: unknown;
   onClose: () => void;
-  onSetAutoStart: (profile: AdapterProfile, autoStart: boolean) => void;
   onRequestRemove: (profile: AdapterProfile) => void;
   targetHidden?: boolean;
 }) {
@@ -67,7 +63,6 @@ export function RouteDetailPanel({
       <RouteDetailBody
         profile={profile}
         bridgeStatus={bridgeStatus}
-        statusUnavailable={statusUnavailable}
         entries={entries}
         siblingProfiles={siblingProfiles}
         busy={busy}
@@ -83,7 +78,6 @@ export function RouteDetailPanel({
 function RouteDetailBody({
   profile,
   bridgeStatus,
-  statusUnavailable: _statusUnavailable,
   entries,
   siblingProfiles,
   busy,
@@ -94,7 +88,6 @@ function RouteDetailBody({
 }: {
   profile: AdapterProfile;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
-  statusUnavailable: boolean;
   entries: ConnectionEntry[];
   siblingProfiles: readonly AdapterProfile[];
   busy: boolean;

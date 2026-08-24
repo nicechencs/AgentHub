@@ -27,6 +27,8 @@ const STUB_MESSAGES: Record<string, string> = {
   'routes.write.status.sourceMissing': 'source login deleted',
   'routes.write.portPending': 'port pending',
   'routes.write.localToken': 'local token',
+  'routes.write.fieldLocalAddress': 'local address',
+  'routes.write.fieldLocalToken': 'local token field',
   'routes.create.target.claude': 'Claude CLI',
   'routes.create.target.codex': 'Codex CLI',
   'routes.create.target.grok': 'Grok CLI',
@@ -87,7 +89,7 @@ function specFor(specs: readonly ClientWriteSpec[], agent: CreateRouteTarget): C
 }
 
 describe('clientWriteTargetSpec', () => {
-  it('writes wire_api for Codex but api_backend for Grok even though both consume /v1/responses', () => {
+  it('previews Codex and Grok with distinct config files and a human local address', () => {
     const specs = buildClientWriteSpecs({
       rows: [row('codex'), row('grok')],
       port: PORT,
@@ -101,25 +103,23 @@ describe('clientWriteTargetSpec', () => {
     expect(codex.endpointId).toBe('responses');
     expect(grok.endpointId).toBe('responses');
 
-    expect(fieldKeys(codex.fields)).toContain('wire_api');
-    expect(fieldKeys(codex.fields)).not.toContain('api_backend');
-    expect(fieldKeys(grok.fields)).toContain('api_backend');
-    expect(fieldKeys(grok.fields)).not.toContain('wire_api');
-
-    expect(fieldValue(codex.fields, 'wire_api')).toBe('"responses"');
-    expect(fieldValue(grok.fields, 'api_backend')).toBe('"responses"');
+    expect(fieldKeys(codex.fields)).toEqual(['本机地址']);
+    expect(fieldKeys(grok.fields)).toEqual(['本机地址']);
+    expect(fieldValue(codex.fields, '本机地址')).toBe(`http://127.0.0.1:${PORT}`);
+    expect(fieldValue(grok.fields, '本机地址')).toBe(`http://127.0.0.1:${PORT}`);
+    expect(fieldKeys(codex.fields).join(' ')).not.toContain('wire_api');
+    expect(fieldKeys(grok.fields).join(' ')).not.toContain('api_backend');
 
     expect(codex.configPath).toBe('~/.codex/config.toml');
     expect(grok.configPath).toBe('~/.grok/config.toml');
     expect(codex.configPath).not.toBe(grok.configPath);
-    expect(codex.fields).not.toEqual(grok.fields);
   });
 
-  it('writes the two env keys into Claude settings.json with a placeholder token', () => {
+  it('previews Claude settings.json with a local address and placeholder token', () => {
     const spec = clientWriteTargetSpec('claude', { host: '127.0.0.1', port: PORT });
 
     expect(spec.configPath).toBe('~/.claude/settings.json');
-    expect(fieldKeys(spec.fields)).toEqual(['env.ANTHROPIC_BASE_URL', 'env.ANTHROPIC_AUTH_TOKEN']);
+    expect(fieldKeys(spec.fields)).toEqual(['本机地址', '本机令牌']);
 
     const baseUrl = spec.fields[0]!.value;
     const token = spec.fields[1]!.value;
@@ -127,12 +127,13 @@ describe('clientWriteTargetSpec', () => {
     expect(token).toBe(LOCAL_TOKEN_LABEL);
     expect(token.startsWith('sk-')).toBe(false);
     expect(token).not.toMatch(/^ahb_/);
+    expect(fieldKeys(spec.fields).join(' ')).not.toContain('ANTHROPIC');
   });
 
-  it('keeps the /v1 suffix on the Codex and Grok base_url values', () => {
+  it('uses the same local-address origin for Codex and Grok', () => {
     for (const agent of ['codex', 'grok'] as const) {
       const spec = clientWriteTargetSpec(agent, { host: '127.0.0.1', port: PORT });
-      expect(fieldValue(spec.fields, 'base_url')).toBe(`"http://127.0.0.1:${PORT}/v1"`);
+      expect(fieldValue(spec.fields, '本机地址')).toBe(`http://127.0.0.1:${PORT}`);
     }
   });
 
@@ -155,12 +156,14 @@ describe('clientWriteTargetSpec', () => {
       }
     }
     const grok = clientWriteTargetSpec('grok', { host: '127.0.0.1', port: null });
-    expect(fieldValue(grok.fields, 'base_url')).toBe(`"http://127.0.0.1:${PENDING_PORT}/v1"`);
+    expect(fieldValue(grok.fields, '本机地址')).toBe(`http://127.0.0.1:${PENDING_PORT}`);
   });
 
   it('uses the translated token label when t is provided', () => {
     const spec = clientWriteTargetSpec('claude', { host: '127.0.0.1', port: null, t: stubT });
+    expect(spec.fields[0]!.key).toBe('local address');
     expect(spec.fields[0]!.value).toBe('http://127.0.0.1:{port}');
+    expect(spec.fields[1]!.key).toBe('local token field');
     expect(spec.fields[1]!.value).toBe('local token');
   });
 });
@@ -325,10 +328,10 @@ describe('clientWriteStatusLabel', () => {
 });
 
 describe('clientWriteWireNote', () => {
-  it('names the differing TOML field for Codex and Grok', () => {
-    expect(clientWriteWireNote('claude')).toBe('Anthropic Messages · 写 settings.json 的环境变量');
-    expect(clientWriteWireNote('codex')).toBe('OpenAI Responses · 写 config.toml 的 wire_api');
-    expect(clientWriteWireNote('grok')).toBe('Grok Responses · 写 config.toml 的 api_backend');
+  it('names the client local config without protocol jargon', () => {
+    expect(clientWriteWireNote('claude')).toBe('改 Claude 本机配置');
+    expect(clientWriteWireNote('codex')).toBe('改 Codex 本机配置');
+    expect(clientWriteWireNote('grok')).toBe('改 Grok 本机配置');
   });
 
   it('uses the translated note when a t is supplied', () => {

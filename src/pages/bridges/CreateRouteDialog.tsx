@@ -18,7 +18,6 @@ import {
   formatCreateRouteModels,
   isCreateRouteUrlValid,
   submitCreateRoute,
-  upstreamEndpointPathForTarget,
   vendorById,
   type CreateRouteTarget,
   type CreateRouteVendorId,
@@ -217,8 +216,6 @@ export function CreateRouteDialog({
               {CREATE_ROUTE_TARGETS.map((target) => {
                 const checked = endpoints.includes(target);
                 const targetUrl = endpointUrlFor(vendor, target, url, endpointUrls);
-                const upstreamPath = upstreamEndpointPathForTarget(vendor, target, url, endpointUrls);
-                const localPath = target === 'claude' ? '/v1/messages' : '/v1/responses';
                 return (
                   <div key={target} className="space-y-1.5 rounded-card border border-border bg-subtle/40 p-2">
                     <label className="flex items-start gap-2 text-sm">
@@ -230,9 +227,6 @@ export function CreateRouteDialog({
                       />
                       <span className="min-w-0">
                         <span className="block font-medium">{targetLabel(t, target)}</span>
-                        <span className="block text-meta text-muted">
-                          {t('routes.create.upstreamToLocal', { upstream: upstreamPath, local: localPath })}
-                        </span>
                       </span>
                     </label>
                     {checked && vendor === 'custom' ? (
