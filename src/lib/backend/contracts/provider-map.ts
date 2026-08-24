@@ -81,6 +81,10 @@ export function mapCoreProvider(p: CoreProvider): Provider {
     p.meta && typeof p.meta.secretTail === 'string' && p.meta.secretTail.trim()
       ? p.meta.secretTail.trim()
       : undefined;
+  const secretHash =
+    p.meta && typeof p.meta.secretHash === 'string' && p.meta.secretHash.trim()
+      ? p.meta.secretHash.trim()
+      : undefined;
 
   return {
     id: p.id,
@@ -94,6 +98,7 @@ export function mapCoreProvider(p: CoreProvider): Provider {
     updatedAt: p.updatedAt,
     official,
     secretTail,
+    secretHash,
   };
 }
 

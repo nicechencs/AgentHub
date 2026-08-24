@@ -1,33 +1,20 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Instant;
-
-use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::json;
 use uuid::Uuid;
 
-use crate::adapters::{AdapterRegistry, AgentAdapter};
+use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
-    AdapterProfile, AdapterProfileFilter, AdapterSourceKind, AgentId, BackupKind, Capability,
+    Account, AccountKind, AdapterProfile, AdapterProfileFilter, AgentId, BackupKind, Capability,
     LiveAccount, Provider,
 };
 use crate::services::adapter_projection::{
     classify_account_live, leftover_live_flag, should_skip_live_reconcile, LiveOrigin,
 };
-use crate::services::switch_undo::{
-    clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
-};
-use crate::services::{AdapterRouteService, BackupService, ConnectionService};
-use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
-use crate::utils::agent_lock::AgentWriteLock;
-use crate::utils::redact::mask_secret_preview;
+use crate::storage::{AdapterProfileRepo, ProviderRepo};
 
 use super::surface::*;
-use super::{AccountService, MAX_ACCOUNT_ID_LEN, MAX_ACCOUNT_LABEL_LEN};
+use super::{AccountService, MAX_ACCOUNT_LABEL_LEN};
 
 impl AccountService {
     pub(super) fn sync_current_live(&self, agent: Option<AgentId>) {
@@ -610,7 +597,18 @@ impl AccountService {
         {
             return Ok(());
         }
-        if stable_live_identity(adapter, live.kind, &live.credentials).is_none() {
+        // CodexAdapter::read_account always sets kind=Oauth even when the live
+        // file is only OPENAI_API_KEY (no email). The 切换 click path hits this
+        // validator, not a kind==ApiKey branch.
+        let live_anonymous = stable_live_identity(adapter, live.kind, &live.credentials).is_none();
+        let official_identity_known = rows.iter().any(stored_has_known_email);
+        if live_anonymous {
+            if live.kind == crate::models::AccountKind::ApiKey
+                || live_is_api_key_shaped(live)
+                || official_identity_known
+            {
+                return Ok(());
+            }
             return Err(AppError::message(
                 "account.identity_conflict",
                 "live account identity is unknown; refusing to backfill or switch",
@@ -619,6 +617,9 @@ impl AccountService {
         if rows.iter().any(|row| {
             row.is_current && stable_live_identity(adapter, row.kind, &row.credentials).is_none()
         }) {
+            if official_identity_known || live_is_api_key_shaped(live) {
+                return Ok(());
+            }
             return Err(AppError::message(
                 "account.identity_conflict",
                 "current account identity is unknown; refusing to backfill or switch",
@@ -707,9 +708,47 @@ fn live_grant_matches_account(
         || accounts_same_oauth_identity(live.kind, &live.credentials, account)
 }
 
+/// Live auth.json that is only an API key (Codex still reports Oauth).
+fn live_is_api_key_shaped(live: &LiveAccount) -> bool {
+    let body = live
+        .credentials
+        .get("body")
+        .filter(|value| value.is_object())
+        .unwrap_or(&live.credentials);
+    let has_key = body
+        .get("OPENAI_API_KEY")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .is_some_and(|key| !key.is_empty());
+    let tokens = body.get("tokens");
+    let has_oauth = tokens.is_some_and(|tokens| {
+        ["access_token", "refresh_token"]
+            .iter()
+            .any(|field| {
+                tokens
+                    .get(*field)
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    .is_some_and(|token| !token.is_empty())
+            })
+    });
+    has_key && !has_oauth
+}
+
+fn stored_has_known_email(row: &Account) -> bool {
+    row.extra
+        .get("email")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .is_some_and(|email| !email.is_empty())
+        || find_stable_identity_field(&row.credentials)
+            .is_some_and(|identity| identity.contains('@'))
+}
+
 fn leftover_shaped_codex_live(agent: AgentId) -> bool {
-    agent == AgentId::Codex
-        && crate::integrations::agents::codex::leftover::live_config_is_bridge_leftover()
+    leftover_live_flag(agent)
+        || (agent == AgentId::Codex
+            && crate::integrations::agents::codex::leftover::live_config_is_bridge_leftover())
 }
 
 pub(super) fn compensated_current_account_apply_error_with_db(

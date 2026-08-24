@@ -64,7 +64,11 @@ impl UpstreamTransport for GrokTransport {
                 let stream = request.stream;
                 let mut body = to_grok_responses_request(&request);
                 inject_prompt_cache_key(&mut body, cache_seed.as_deref());
-                overwrite_configured_model(&mut body, admitted.state.upstream.model.as_deref());
+                overwrite_configured_model(
+                    &mut body,
+                    admitted.state.upstream.model.as_deref(),
+                    &admitted.state.listed_models,
+                );
                 Ok(UpstreamPrepare {
                     path: self.path(),
                     body,
@@ -74,7 +78,24 @@ impl UpstreamTransport for GrokTransport {
                 })
             }
             DownstreamSurface::ChatCompletions => {
-                unreachable!("Chat Completions surface is unreachable for Grok upstream")
+                let grok_identity = grok_identity(admitted);
+                let cache_seed = extract_prompt_cache_seed(&admitted.headers, &admitted.body);
+                let request = parse_bridge_request(surface, admitted)?;
+                let stream = request.stream;
+                let mut body = to_grok_responses_request(&request);
+                inject_prompt_cache_key(&mut body, cache_seed.as_deref());
+                overwrite_configured_model(
+                    &mut body,
+                    admitted.state.upstream.model.as_deref(),
+                    &admitted.state.listed_models,
+                );
+                Ok(UpstreamPrepare {
+                    path: self.path(),
+                    body,
+                    grok_identity: Some(grok_identity),
+                    cache_seed,
+                    stream,
+                })
             }
             DownstreamSurface::Models => models_surface_unreachable(),
         }

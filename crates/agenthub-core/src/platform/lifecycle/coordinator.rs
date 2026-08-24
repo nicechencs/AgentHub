@@ -75,10 +75,13 @@ pub struct LifecycleCoordinator {
 }
 
 impl LifecycleCoordinator {
+    // Referenced only from lifecycle `tests.rs`.
+    #[allow(dead_code)]
     pub(crate) fn data_dir(&self) -> Option<&std::path::Path> {
         self.data_dir.as_deref()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn data_dir_error(&self) -> Option<&str> {
         self.data_dir_error.as_deref()
     }

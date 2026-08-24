@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::AppError;
 use crate::models::{
     Account, AccountKind, AdapterCapabilityDecision, AdapterMaturity, AdapterProfile,
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteAnalysis,
@@ -571,10 +572,10 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
         ))
         .unwrap();
     assert!(openai_grok.can_apply);
-    assert_eq!(openai_grok.analysis.route, AdapterRoute::NativeEndpoint);
+    assert_eq!(openai_grok.analysis.route, AdapterRoute::LocalBridge);
     assert_eq!(
         openai_grok.analysis.rule_id.as_deref(),
-        Some("openai-api-to-grok-v1")
+        Some("openai-api-to-grok-bridge-v1")
     );
 
     let xai_grok = service
@@ -2188,5 +2189,47 @@ fn closed_or_preview_cells_fail_apply_request_supported() {
                 cell.key.target
             );
         }
+    }
+}
+
+#[test]
+fn openrouter_host_classifies_as_openai_api_and_binds_three_clients() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "openrouter".into(),
+            agent_id: AgentId::Codex,
+            name: "OpenRouter".into(),
+            settings_config: serde_json::json!({
+                "baseUrl": "https://openrouter.ai/api/v1",
+                "apiKey": "must-not-leak"
+            }),
+            meta: serde_json::json!({"preset": "openrouter"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    assert_eq!(
+        service
+            .classify_source_product(AdapterSourceKind::Provider, "openrouter")
+            .unwrap(),
+        crate::models::AdapterSourceProduct::OpenaiApi
+    );
+    for (target, rule) in [
+        (AgentId::Claude, "openai-api-to-claude-v1"),
+        (AgentId::Codex, "openai-api-to-codex-v1"),
+        (AgentId::Grok, "openai-api-to-grok-bridge-v1"),
+    ] {
+        let plan = service
+            .plan(&request(AdapterSourceKind::Provider, "openrouter", target))
+            .unwrap();
+        assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge, "{target:?}");
+        assert!(plan.can_apply, "{target:?}");
+        assert_eq!(plan.analysis.rule_id.as_deref(), Some(rule), "{target:?}");
+        assert!(!serde_json::to_string(&plan)
+            .unwrap()
+            .contains("must-not-leak"));
     }
 }

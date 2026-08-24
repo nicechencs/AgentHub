@@ -826,6 +826,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         preferred_port: None,
         upstream_base_url: format!("http://127.0.0.1:{upstream_port}"),
         upstream_model: "kimi-k2.5".into(),
+        configured_listed_models: Vec::new(),
         protocol: crate::bridge::BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::KimiCodeMembership,
@@ -854,6 +855,7 @@ async fn codex_responses_health_probe_does_not_request_models() {
         preferred_port: None,
         upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
         upstream_model: CODEX_DEFAULT_MODEL.into(),
+        configured_listed_models: Vec::new(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
         source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -880,6 +882,7 @@ async fn xai_responses_health_probe_does_not_request_models() {
         preferred_port: None,
         upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
         upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
+        configured_listed_models: Vec::new(),
         protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
         source: AdapterSourceProduct::XaiGrokSubscription,
@@ -906,6 +909,7 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
         preferred_port: None,
         upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
         upstream_model: String::new(),
+        configured_listed_models: Vec::new(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -932,6 +936,7 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
         preferred_port: None,
         upstream_base_url: crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL.into(),
         upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
+        configured_listed_models: Vec::new(),
         protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
         source: AdapterSourceProduct::XaiGrokSubscription,
@@ -953,6 +958,7 @@ fn start_spec_empty_when_mapping_and_default_are_missing() {
         preferred_port: None,
         upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
         upstream_model: String::new(),
+        configured_listed_models: Vec::new(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::ChatCompletions,
         source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -971,6 +977,7 @@ fn start_spec_lists_configured_default_when_mapping_is_missing() {
         preferred_port: None,
         upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
         upstream_model: "gpt-5.4".into(),
+        configured_listed_models: Vec::new(),
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::ChatCompletions,
         source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -992,6 +999,7 @@ fn start_spec_lists_openai_to_codex_without_kimi_ids() {
         preferred_port: None,
         upstream_base_url: OPENAI_CHAT_BASE_URL.into(),
         upstream_model: OPENAI_DEFAULT_MODEL.into(),
+        configured_listed_models: Vec::new(),
         protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
@@ -1805,5 +1813,159 @@ fn legacy_toml_with_drifted_port_still_conflicts() {
             .unwrap_err()
             .code(),
         "adapter.provider_conflict"
+    );
+}
+
+#[test]
+fn start_spec_lists_stealth_ox_alpha_for_custom_openai() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "openrouter-codex-models".into(),
+        source_connection_id: "openrouter".into(),
+        preferred_port: None,
+        upstream_base_url: "https://openrouter.ai/api/v1".into(),
+        upstream_model: OPENAI_DEFAULT_MODEL.into(),
+        configured_listed_models: Vec::new(),
+        protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
+        local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::OpenaiApi,
+        target_agent: AgentId::Codex,
+        upstream_auth: ResolvedAuth::bearer("sk-or-placeholder-test-key"),
+        local_bearer: "local-secret".into(),
+    };
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert!(
+        listed.is_empty(),
+        "empty user list follows downstream: {listed:?}"
+    );
+}
+
+#[test]
+fn start_spec_keeps_every_user_listed_model() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "openrouter-listed".into(),
+        source_connection_id: "openrouter".into(),
+        preferred_port: None,
+        upstream_base_url: "https://openrouter.ai/api/v1".into(),
+        upstream_model: "openai/gpt-4o".into(),
+        configured_listed_models: vec!["openai/gpt-4o".into(), "anthropic/claude-sonnet-4".into()],
+        protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
+        local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::OpenaiApi,
+        target_agent: AgentId::Codex,
+        upstream_auth: ResolvedAuth::bearer("sk-or-placeholder-test-key"),
+        local_bearer: "local-secret".into(),
+    };
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert!(listed.iter().any(|model| model == "openai/gpt-4o"));
+    assert!(listed
+        .iter()
+        .any(|model| model == "anthropic/claude-sonnet-4"));
+    assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
+}
+
+#[test]
+fn start_spec_official_openai_does_not_list_stealth() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "openai-official".into(),
+        source_connection_id: "openai-api".into(),
+        preferred_port: None,
+        upstream_base_url: OPENAI_CHAT_BASE_URL.into(),
+        upstream_model: OPENAI_DEFAULT_MODEL.into(),
+        configured_listed_models: Vec::new(),
+        protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
+        local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::OpenaiApi,
+        target_agent: AgentId::Codex,
+        upstream_auth: ResolvedAuth::bearer("openai-upstream-secret"),
+        local_bearer: "local-secret".into(),
+    };
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert!(!listed.iter().any(|model| model == "stealth/ox-alpha"));
+}
+
+#[test]
+fn prepare_glm_claude_uses_anthropic_endpoint() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "glm-create".into(),
+            agent_id: AgentId::Claude,
+            name: "Zhipu".into(),
+            settings_config: json!({
+                "apiKey": "glm-secret",
+                "baseURL": "https://open.bigmodel.cn/api/coding/paas/v4",
+                "vendor": "zhipu",
+                "listedModels": ["glm-4.6"],
+                "endpoints": [
+                    {"target": "claude", "enabled": true, "url": "https://open.bigmodel.cn/api/anthropic"},
+                    {"target": "codex", "enabled": true, "url": "https://open.bigmodel.cn/api/coding/paas/v4"}
+                ]
+            }),
+            meta: json!({"preset": "openai-compat"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&AdapterBridgePrepareRequest {
+            source_kind: AdapterSourceKind::Provider,
+            source_id: "glm-create".into(),
+            target_agent_id: AgentId::Claude,
+            auto_start: true,
+        })
+        .unwrap();
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(
+        start.upstream.base_url,
+        "https://open.bigmodel.cn/api/anthropic"
+    );
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
+    );
+    assert!(start.listed_models.iter().any(|model| model == "glm-4.6"));
+}
+
+#[test]
+fn prepare_deepseek_claude_uses_anthropic_endpoint() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "ds-create".into(),
+            agent_id: AgentId::Claude,
+            name: "DeepSeek".into(),
+            settings_config: json!({
+                "apiKey": "ds-secret",
+                "baseURL": "https://api.deepseek.com",
+                "vendor": "deepseek",
+                "endpoints": [
+                    {"target": "claude", "enabled": true, "url": "https://api.deepseek.com/anthropic"}
+                ]
+            }),
+            meta: json!({"preset": "openai-compat"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&AdapterBridgePrepareRequest {
+            source_kind: AdapterSourceKind::Provider,
+            source_id: "ds-create".into(),
+            target_agent_id: AgentId::Claude,
+            auto_start: true,
+        })
+        .unwrap();
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(
+        start.upstream.base_url,
+        "https://api.deepseek.com/anthropic"
+    );
+    assert_eq!(
+        start.upstream.protocol,
+        BridgeUpstreamProtocol::AnthropicMessages
     );
 }

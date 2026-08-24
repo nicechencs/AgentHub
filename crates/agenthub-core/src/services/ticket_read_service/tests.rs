@@ -408,6 +408,34 @@ fn unknown_surface_ticket_has_empty_speaks() {
 }
 
 #[test]
+fn mytokens_custom_remote_list_wallet_is_openai_api_not_unknown() {
+    let (_dir, db) = test_db();
+    let mut row = provider(
+        "codex-mytokens",
+        AgentId::Codex,
+        "OpenAI · gpt-5.5",
+        "openai-compatible",
+        false,
+    );
+    row.settings_config = serde_json::json!({
+        "format": "toml",
+        "content": "model_provider = \"OpenAI\"\nmodel = \"gpt-5.5\"\n\n[model_providers.OpenAI]\nname = \"OpenAI\"\nbase_url = \"https://mytokens.cc/v1\"\n"
+    });
+    ProviderRepo::new(db.clone()).create(&row).unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let ticket = wallet
+        .tickets
+        .iter()
+        .find(|t| t.id == "provider:codex-mytokens")
+        .unwrap();
+    assert_eq!(ticket.surface, TicketSurface::OpenaiApi);
+    assert_eq!(ticket.speaks, vec![TicketProtocol::OpenaiChat]);
+    assert_eq!(ticket.credential_class, TicketCredentialClass::ApiKey);
+    assert_ne!(ticket.label, "未识别");
+}
+
+#[test]
 fn applying_or_failed_bridge_without_port_is_hidden_from_usage_lines() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())

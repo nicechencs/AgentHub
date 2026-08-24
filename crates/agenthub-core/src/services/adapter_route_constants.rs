@@ -7,6 +7,7 @@
 use serde_json::Value;
 
 use crate::models::AgentId;
+use crate::utils::loopback::is_loopback_base_url;
 
 /// Official Kimi coding Anthropic-compatible endpoint projected into Claude.
 pub const KIMI_CLAUDE_BASE_URL: &str = "https://api.kimi.com/coding/";
@@ -130,6 +131,29 @@ pub const DEEPSEEK_API_BASE_URL: &str = "https://api.deepseek.com";
 /// Official OpenAI HTTP host. Custom OpenAI-compatible relays must not match.
 pub const OPENAI_API_ENDPOINT_NEEDLE: &str = "api.openai.com";
 
+/// OpenRouter OpenAI-compat host. Classifies as [`crate::models::AdapterSourceProduct::OpenaiApi`].
+pub const OPENROUTER_API_ENDPOINT_NEEDLE: &str = "openrouter.ai";
+
+/// Preset / extra.provider for a custom OpenAI-compatible endpoint (incl. OpenRouter).
+/// Catalog id is `openai-compatible`; `openai-compat` is accepted as an alias.
+pub const OPENAI_COMPAT_PRESET: &str = "openai-compatible";
+
+/// Alternate tag for OpenRouter stored as an OpenAI-compat login.
+pub const OPENROUTER_PRESET: &str = "openrouter";
+
+/// OpenAI-compat Chat Completions / OpenRouter → Claude local-bridge.
+pub const OPENAI_CLAUDE_RULE_ID: &str = "openai-api-to-claude-v1";
+
+/// OpenAI-compat Chat Completions / OpenRouter → Grok local-bridge.
+/// Distinct from NativeEndpoint [`OPENAI_GROK_RULE_ID`].
+pub const OPENAI_GROK_BRIDGE_RULE_ID: &str = "openai-api-to-grok-bridge-v1";
+
+/// OpenAI-compat Chat Completions / OpenRouter → Codex local-bridge.
+pub const OPENAI_CODEX_RULE_ID: &str = "openai-api-to-codex-v1";
+
+/// Env key for a custom OpenAI-compat base URL.
+pub const OPENAI_BASE_URL_ENV: &str = "OPENAI_BASE_URL";
+
 /// Official xAI HTTP host. Custom relays must not match.
 pub const XAI_API_ENDPOINT_NEEDLE: &str = "api.x.ai";
 
@@ -155,6 +179,9 @@ pub const PUBLISHED_ROUTE_RULE_IDS: &[&str] = &[
     DEEPSEEK_CODEX_RULE_ID,
     KIMI_GROK_RULE_ID,
     OPENAI_GROK_RULE_ID,
+    OPENAI_CLAUDE_RULE_ID,
+    OPENAI_GROK_BRIDGE_RULE_ID,
+    OPENAI_CODEX_RULE_ID,
     GROK_CLAUDE_RULE_ID,
     GROK_CODEX_RULE_ID,
     CODEX_GROK_RULE_ID,
@@ -234,6 +261,11 @@ pub(crate) fn settings_contain_openai_api_endpoint(value: &Value) -> bool {
     value_contains_needle(value, OPENAI_API_ENDPOINT_NEEDLE)
 }
 
+/// True when config points at OpenRouter's public API host.
+pub(crate) fn settings_contain_openrouter_endpoint(value: &Value) -> bool {
+    value_contains_needle(value, OPENROUTER_API_ENDPOINT_NEEDLE)
+}
+
 /// True when config points at xAI's public API host (not a custom relay).
 pub(crate) fn settings_contain_xai_api_endpoint(value: &Value) -> bool {
     value_contains_needle(value, XAI_API_ENDPOINT_NEEDLE)
@@ -260,9 +292,244 @@ pub(crate) fn explicit_provider_tag_matches(tag: Option<&str>, accepted: &[&str]
     })
 }
 
+/// Official OpenAI, OpenRouter host, `openai` / `openai-api`, explicit
+/// `openai-compat` alias, or `openrouter` tag. Catalog leftover
+/// `openai-compatible` without a remote host stays unclassified (Unknown).
+/// A custom remote host (e.g. `https://mytokens.cc/v1` in TOML or JSON)
+/// classifies as OpenAI-compat even when the preset is the catalog id.
 pub(crate) fn is_openai_api_marker(tag: Option<&str>, blob: &Value) -> bool {
-    explicit_provider_tag_matches(tag, &[OPENAI_API_PRESET, "openai-api"])
-        || settings_contain_openai_api_endpoint(blob)
+    explicit_provider_tag_matches(
+        tag,
+        &[
+            OPENAI_API_PRESET,
+            "openai-api",
+            "openai-compat",
+            OPENROUTER_PRESET,
+        ],
+    ) || settings_contain_openai_api_endpoint(blob)
+        || settings_contain_openrouter_endpoint(blob)
+        || settings_contain_custom_openai_compat_remote(blob)
+}
+
+/// Official OpenAI host is not custom. OpenRouter host and explicit
+/// `openai-compat` / `openrouter` tags are. Opaque leftover
+/// `openai-compatible` fixtures are not.
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
+pub(crate) fn is_custom_openai_compat(tag: Option<&str>, blob: &Value) -> bool {
+    if !is_openai_api_marker(tag, blob) {
+        return false;
+    }
+    if settings_contain_openai_api_endpoint(blob) {
+        return false;
+    }
+    explicit_provider_tag_matches(tag, &["openai-compat", OPENROUTER_PRESET])
+        || settings_contain_openrouter_endpoint(blob)
+        || openai_compat_custom_base_url(blob).is_some()
+}
+
+/// True only for OpenRouter. Official Grok / ChatGPT / other hosts must not
+/// inherit stealth/ox-alpha listing from "any non-OpenAI URL".
+pub fn is_custom_openai_compat_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    if lower.contains(OPENAI_API_ENDPOINT_NEEDLE) {
+        return false;
+    }
+    lower.contains(OPENROUTER_API_ENDPOINT_NEEDLE)
+}
+
+/// First usable OpenAI-compat base URL in a settings / credentials blob.
+pub(crate) fn openai_compat_base_url(blob: &Value) -> Option<String> {
+    first_http_url(
+        blob,
+        &[
+            "/baseURL",
+            "/baseUrl",
+            "/base_url",
+            "/env/OPENAI_BASE_URL",
+            "/env/OPENAI_API_BASE",
+            "/api_base",
+            "/apiBase",
+        ],
+    )
+}
+
+/// Custom (non-official, non-other-vendor) OpenAI-compat URL, if any.
+pub(crate) fn openai_compat_custom_base_url(blob: &Value) -> Option<String> {
+    let url = openai_compat_base_url(blob)?;
+    if !looks_like_openai_compat_base_url(&url) {
+        return None;
+    }
+    Some(url)
+}
+
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
+fn has_openai_shaped_secret(blob: &Value) -> bool {
+    blob.pointer("/env/OPENAI_API_KEY")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty())
+        || blob
+            .get("apiKey")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty())
+        || blob
+            .get("api_key")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty())
+}
+
+#[cfg(test)]
+mod tests;
+
+fn looks_like_openai_compat_base_url(url: &str) -> bool {
+    let trimmed = url.trim();
+    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+        return false;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.contains(OPENAI_API_ENDPOINT_NEEDLE) {
+        return false;
+    }
+    const OTHER_VENDORS: &[&str] = &[
+        KIMI_CODING_ENDPOINT_NEEDLE,
+        ANTHROPIC_API_ENDPOINT_NEEDLE,
+        XAI_API_ENDPOINT_NEEDLE,
+        GLM_CODING_ANTHROPIC_NEEDLE,
+        GLM_CODING_CHAT_NEEDLE,
+        DEEPSEEK_API_ENDPOINT_NEEDLE,
+    ];
+    !OTHER_VENDORS.iter().any(|needle| lower.contains(needle))
+}
+
+fn first_http_url(value: &Value, pointers: &[&str]) -> Option<String> {
+    pointers.iter().find_map(|pointer| {
+        value
+            .pointer(pointer)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|candidate| {
+                !candidate.is_empty()
+                    && (candidate.starts_with("http://") || candidate.starts_with("https://"))
+            })
+            .map(str::to_owned)
+    })
+}
+
+/// Optional model id pinned on a custom OpenAI-compat provider.
+pub(crate) fn openai_compat_listed_models(blob: &Value) -> Vec<String> {
+    let mut listed = Vec::new();
+    if let Some(items) = blob.get("listedModels").and_then(Value::as_array) {
+        for item in items {
+            if let Some(model) = item
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                if !listed
+                    .iter()
+                    .any(|existing: &String| existing.eq_ignore_ascii_case(model))
+                {
+                    listed.push(model.to_owned());
+                }
+            }
+        }
+    }
+    listed
+}
+
+pub(crate) fn openai_compat_endpoint_url(blob: &Value, target: &str) -> Option<String> {
+    let rows = blob.get("endpoints").and_then(Value::as_array)?;
+    for row in rows {
+        let target_ok = row.get("target").and_then(Value::as_str) == Some(target);
+        let enabled = row.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+        if !target_ok || !enabled {
+            continue;
+        }
+        if let Some(url) = row
+            .get("url")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| {
+                !value.is_empty() && (value.starts_with("http://") || value.starts_with("https://"))
+            })
+        {
+            return Some(url.to_owned());
+        }
+    }
+    None
+}
+
+pub(crate) fn looks_like_anthropic_messages_url(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    lower.contains("/anthropic") || lower.contains("api.anthropic.com")
+}
+
+pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
+    if let Some(listed) = blob.get("listedModels").and_then(Value::as_array) {
+        let first = listed.iter().find_map(|item| {
+            item.as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        });
+        if first.is_some() {
+            return first;
+        }
+    }
+    ["model", "default_model", "defaultModel"]
+        .iter()
+        .find_map(|key| {
+            blob.get(*key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        })
+}
+
+/// True when settings/TOML contain a remote (non-loopback) OpenAI-compat URL.
+/// Catalog `openai-compatible` leftovers with only a loopback 本机路由 stay unknown.
+pub(crate) fn settings_contain_custom_openai_compat_remote(blob: &Value) -> bool {
+    blob_strings(blob).iter().any(|text| {
+        http_urls_in(text).into_iter().any(|url| {
+            looks_like_openai_compat_base_url(&url) && !is_loopback_base_url(&url)
+        })
+    })
+}
+
+fn blob_strings(value: &Value) -> Vec<String> {
+    match value {
+        Value::String(text) => vec![text.clone()],
+        Value::Array(items) => items.iter().flat_map(blob_strings).collect(),
+        Value::Object(map) => map.values().flat_map(blob_strings).collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn http_urls_in(text: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest
+        .find("https://")
+        .into_iter()
+        .chain(rest.find("http://"))
+        .min()
+    {
+        let candidate = &rest[start..];
+        let end = candidate
+            .find(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | ',' | ')' | ']' | '}'))
+            .unwrap_or(candidate.len());
+        let url = candidate[..end].trim_end_matches('/').to_owned();
+        if !url.is_empty() {
+            urls.push(url);
+        }
+        rest = &candidate[end.max(1)..];
+    }
+    urls
 }
 
 pub(crate) fn is_xai_api_marker(tag: Option<&str>, blob: &Value) -> bool {

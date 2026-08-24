@@ -107,6 +107,8 @@ fn run_once(conn: &Connection, migrations: &[(&str, &str)]) -> Result<()> {
 /// change. This helper remains useful for focused migration tests; production
 /// startup uses `run_once`, which wraps the complete pending batch in one
 /// `BEGIN IMMEDIATE` transaction.
+// Referenced only from `tests.rs` in this crate; keep for test coverage.
+#[allow(dead_code)]
 fn apply_migration(conn: &Connection, version: &str, sql: &str) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
     apply_migration_in_transaction(&tx, version, sql)?;

@@ -1,9 +1,8 @@
 //! Upstream channel: path/body reshape, auth inject, and recovery policy.
 //!
 //! Dispatch matches downstream surface after this module has already chosen
-//! the upstream request. Responses↔Responses passthrough is declared only on
-//! [`UpstreamChannel::passthrough`]. Async send stays on the enum so it does
-//! not need `async-trait` or boxing.
+//! the upstream request. Identity relay is declared explicitly by both the
+//! upstream channel and downstream surface; all other pairs use the neutral IR.
 
 mod anthropic;
 mod codex;
@@ -122,6 +121,8 @@ impl UpstreamChannel {
         }
     }
 
+    // Accessors kept for symmetry with the trait-based helpers; unused today.
+    #[allow(dead_code)]
     pub(super) fn protocol(self) -> BridgeUpstreamProtocol {
         match self {
             Self::OpenAiChat => BridgeUpstreamProtocol::OpenAiChatCompletions,
@@ -156,14 +157,24 @@ impl UpstreamChannel {
         UpstreamTransport::recovery(&self)
     }
 
+    #[allow(dead_code)]
     pub(super) fn path(self) -> &'static str {
         UpstreamTransport::path(&self)
     }
 
-    /// Responses↔Responses identity path (Grok↔Codex). Other downstream
-    /// surfaces still map through IR. This is the only passthrough declaration.
-    pub(super) fn passthrough(self) -> bool {
-        matches!(self, Self::CodexResponses | Self::Grok)
+    /// Whether the upstream wire protocol is identical to the requested
+    /// downstream surface. Keep this surface-aware: a Responses upstream must
+    /// never be accidentally relayed to a Messages or Chat client.
+    pub(super) fn passthrough_for(self, surface: DownstreamSurface) -> bool {
+        matches!(
+            (self, surface),
+            (Self::OpenAiChat, DownstreamSurface::ChatCompletions)
+                | (Self::Anthropic, DownstreamSurface::Messages)
+                | (
+                    Self::CodexResponses | Self::Grok,
+                    DownstreamSurface::Responses
+                )
+        )
     }
 }
 
@@ -274,7 +285,7 @@ pub(super) async fn send_upstream(
                 &token,
                 identity.as_ref(),
             );
-            let response = post_upstream(state, builder).await?;
+            let response = post_upstream(state, builder, request_id).await?;
             if response.status().is_success() {
                 log_serving_account(
                     state,
@@ -523,7 +534,10 @@ fn parse_bridge_request(
     }
 }
 
-fn passthrough_responses_object(body: Value) -> Result<(Value, bool), Response> {
+/// Validate a JSON request object for an identity relay and extract `stream`.
+/// The caller still applies the configured model policy and any provider-
+/// specific safety normalization after this generic validation.
+pub(super) fn passthrough_responses_object(body: Value) -> Result<(Value, bool), Response> {
     if !body.is_object() {
         return Err(error_response(
             StatusCode::BAD_REQUEST,
@@ -536,8 +550,33 @@ fn passthrough_responses_object(body: Value) -> Result<(Value, bool), Response> 
     Ok((body, stream_requested))
 }
 
-fn overwrite_configured_model(body: &mut Value, model: Option<&str>) {
-    if let Some(model) = model {
+fn overwrite_configured_model(body: &mut Value, model: Option<&str>, listed: &[String]) {
+    overwrite_configured_model_with(body, model, false, listed);
+}
+
+fn overwrite_configured_model_with(
+    body: &mut Value,
+    model: Option<&str>,
+    keep_request_model: bool,
+    listed: &[String],
+) {
+    let request_model = body
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    if !request_model.is_empty() {
+        if listed
+            .iter()
+            .any(|item| item.eq_ignore_ascii_case(request_model))
+        {
+            return;
+        }
+        if keep_request_model {
+            return;
+        }
+    }
+    if let Some(model) = model.filter(|value| !value.trim().is_empty()) {
         body["model"] = Value::String(model.to_owned());
     }
 }

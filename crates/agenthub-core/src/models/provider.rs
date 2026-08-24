@@ -100,6 +100,13 @@ impl Provider {
                 meta = json!({ "secretTail": tail });
             }
         }
+        if let Some(hash) = crate::utils::redact::api_key_secret_hash(&self.settings_config) {
+            if let Value::Object(map) = &mut meta {
+                map.insert("secretHash".into(), json!(hash));
+            } else {
+                meta = json!({ "secretHash": hash });
+            }
+        }
         Self {
             id: self.id.clone(),
             agent_id: self.agent_id,
@@ -255,6 +262,10 @@ mod tests {
         assert_eq!(redacted.settings_config["format"], "toml");
         assert_eq!(redacted.settings_config["content"], "***");
         assert_eq!(redacted.meta["secretTail"], "**cret");
+        let hash = redacted.meta["secretHash"].as_str().expect("hash");
+        assert_eq!(hash.len(), 64);
+        assert!(!hash.contains("xai-secret"));
+        assert!(!redacted.settings_config.to_string().contains("xai-secret"));
         assert!(p.settings_config["content"]
             .as_str()
             .unwrap()

@@ -42,11 +42,16 @@ use crate::models::{
 };
 #[cfg(test)]
 #[allow(unused_imports)]
+use crate::platform::skills::write_skill_tree;
+#[cfg(test)]
+#[allow(unused_imports)]
+use crate::platform::skills::{collect_regular_files, detect_link_kind, normalize_rel_path};
+#[cfg(test)]
+#[allow(unused_imports)]
 use crate::platform::skills::{
-    collect_regular_files, create_projection_link, detect_link_kind, ensure_skill_md,
-    is_link_or_reparse, materialize_projection, normalize_rel_path, paths_equal_lexical,
-    remove_projection_link, resolve_link_path, skill_lock_load, skill_lock_upsert,
-    validate_and_collect_source, validate_skill_id, validate_skills_root, write_skill_tree,
+    create_projection_link, ensure_skill_md, is_link_or_reparse, materialize_projection,
+    paths_equal_lexical, remove_projection_link, resolve_link_path, skill_lock_load,
+    skill_lock_upsert, validate_and_collect_source, validate_skill_id, validate_skills_root,
     PreparedSkillTree, SkillPackageService, SkillSourceService, TargetPresence,
 };
 #[cfg(test)]

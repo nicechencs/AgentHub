@@ -892,13 +892,7 @@ fn usage_trend_days1_rolling_includes_20h_unless_since_clips() {
         .with_timezone(&chrono::Utc)
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let today = repo
-        .trend(
-            1,
-            Some(AgentId::Claude),
-            None,
-            Some(since.as_str()),
-            &[],
-        )
+        .trend(1, Some(AgentId::Claude), None, Some(since.as_str()), &[])
         .unwrap();
     let expected_today = [(&older, 22_i64), (&newer, 110)]
         .into_iter()

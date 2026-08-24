@@ -7,17 +7,19 @@ mod helpers;
 mod materialize;
 mod validate;
 
-pub(super) use helpers::*;
+#[cfg(test)]
+use helpers::*;
 
 #[cfg(test)]
 mod tests;
 
-use crate::error::{AppError, Result};
+#[cfg(test)]
 use crate::models::{AdapterSourceKind, AgentId, Provider};
 use crate::services::adapter_route_constants::*;
 use crate::storage::{AccountRepo, Database, ProviderRepo};
-use serde_json::{json, Value};
-use toml_edit::DocumentMut;
+
+#[cfg(test)]
+use serde_json::Value;
 
 // Re-export so existing `adapter_secret_resolver::CONNECTION_SECRET_MARKER` paths keep working.
 pub use crate::services::adapter_route_constants::CONNECTION_SECRET_MARKER;
@@ -36,6 +38,8 @@ pub(super) const DEEPSEEK_TO_CODEX_RULE: &str = DEEPSEEK_CODEX_RULE_ID;
 pub(super) const KIMI_TO_CODEX_BRIDGE_RULE: &str = "kimi-membership-to-codex-v1";
 pub(super) const ANTHROPIC_TO_CODEX_BRIDGE_RULE: &str = "anthropic-api-to-codex-v1";
 pub(super) const OPENAI_TO_CODEX_BRIDGE_RULE: &str = "openai-api-to-codex-v1";
+pub(super) const OPENAI_TO_CLAUDE_BRIDGE_RULE: &str = "openai-api-to-claude-v1";
+pub(super) const OPENAI_TO_GROK_BRIDGE_RULE: &str = "openai-api-to-grok-bridge-v1";
 pub(super) const CODEX_TO_CLAUDE_BRIDGE_RULE: &str = "codex-subscription-to-claude-responses-v1";
 pub(super) const CODEX_TO_GROK_BRIDGE_RULE: &str = CODEX_GROK_RULE_ID;
 pub(super) const CODEX_TO_KIMI_BRIDGE_RULE: &str = CODEX_KIMI_RULE_ID;

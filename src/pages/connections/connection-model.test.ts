@@ -135,6 +135,32 @@ describe('connection-model', () => {
     expect(p.endpointMode).toBe('official');
   });
 
+  it('labels imported Codex live API key from config.toml, not leftover 本机路由', () => {
+    const entry = providerToEntry(
+      prov({
+        id: 'codex-live-imported',
+        agentId: 'codex',
+        name: 'OpenAI · gpt-5.5',
+        preset: 'openai-compat',
+        official: false,
+        isCurrent: false,
+        configText:
+          'model_provider = "OpenAI"\nmodel = "gpt-5.5"\n\n[model_providers.OpenAI]\nbase_url = "https://mytokens.cc/v1"\n',
+        configFormat: 'toml',
+        secretHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      }),
+    );
+    expect(entry.title).toContain('OpenAI');
+    expect(entry.title).toContain('gpt-5.5');
+    expect(entry.title).not.toMatch(/^Imported /);
+    expect(entry.title).not.toContain('未识别');
+    expect(entry.title).not.toContain('本机路由');
+    expect(entry.kind).toBe('apikey');
+    expect(entry.isCurrent).toBe(false);
+    expect(entry.endpointHost).toMatch(/mytokens\.cc/i);
+    expect(entry.endpointMode).toBe('custom');
+  });
+
   it('merges pools with current first then newer updatedAt', () => {
     const rows = mergeConnectionEntries(
       [
@@ -578,7 +604,7 @@ describe('connection-model', () => {
     })).toBe('provider');
   });
 
-  it('still suppresses api_key discovery when a real user Key is in the pool', () => {
+  it('still reports api_key discovery when a different user Key is already in the pool', () => {
     const leftover = {
       id: 'agenthub_grok_bridge',
       name: 'AgentHub Grok 本机路由',
@@ -586,31 +612,79 @@ describe('connection-model', () => {
       configText: '',
       configFormat: 'json' as const,
     };
-    const userKey = {
-      id: 'p-openai',
-      name: 'OpenAI',
-      preset: 'openai',
-      configText: JSON.stringify({ env: { OPENAI_API_KEY: '***' } }),
+    const openrouter = {
+      id: 'openai-compat-openrouter-backup',
+      name: 'OpenRouter 备选',
+      preset: 'openrouter',
+      configText: JSON.stringify({ base_url: 'https://openrouter.ai/api/v1', api_key: '***' }),
       configFormat: 'json' as const,
+      secretHash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     };
-    const probe = { kind: 'api_key', hasCredentials: true };
+    const probe = {
+      kind: 'api_key',
+      hasCredentials: true,
+      secretHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    };
 
     expect(liveAuthDiscoveryKind({
       poolState: 'ready',
       probe,
       accounts: [],
-      providers: [userKey],
+      providers: [openrouter],
+    })).toBe('provider');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [leftover, openrouter],
+    })).toBe('provider');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [{ kind: 'apikey', secretHash: openrouter.secretHash }],
+      providers: [leftover],
+    })).toBe('provider');
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe: { kind: 'api_key', hasCredentials: true },
+      accounts: [],
+      providers: [openrouter],
+    })).toBe('provider');
+  });
+
+  it('suppresses api_key discovery only when the same live secret hash is already in the pool', () => {
+    const leftover = {
+      id: 'agenthub_grok_bridge',
+      name: 'AgentHub Grok 本机路由',
+      preset: 'custom',
+      configText: '',
+      configFormat: 'json' as const,
+    };
+    const hash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const sameKey = {
+      id: 'codex-live-imported',
+      name: 'OpenAI · gpt-5.5',
+      preset: 'openai-compat',
+      secretHash: hash,
+    };
+    const probe = { kind: 'api_key', hasCredentials: true, secretHash: hash };
+
+    expect(liveAuthDiscoveryKind({
+      poolState: 'ready',
+      probe,
+      accounts: [],
+      providers: [sameKey],
     })).toBeNull();
     expect(liveAuthDiscoveryKind({
       poolState: 'ready',
       probe,
       accounts: [],
-      providers: [leftover, userKey],
+      providers: [leftover, sameKey],
     })).toBeNull();
     expect(liveAuthDiscoveryKind({
       poolState: 'ready',
       probe,
-      accounts: [{ kind: 'apikey' }],
+      accounts: [{ kind: 'apikey', secretHash: hash }],
       providers: [leftover],
     })).toBeNull();
   });

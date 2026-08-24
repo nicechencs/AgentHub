@@ -18,6 +18,10 @@ use crate::models::{
 use crate::services::adapter_projection::{
     classify_provider_config, leftover_live_flag, projection_import_error,
 };
+use crate::services::provider_identity::{
+    pick_identity_keeper, provider_identity, retarget_profiles_from_loser, stamp_secret_hash,
+    ProviderIdentity,
+};
 use crate::services::switch_undo::{
     clear_switch_undo, extract_probe_url, peek_switch_undo, probe_url_latency_ms,
     record_switch_undo, PROVIDER_UNDO_PREFIX,
@@ -174,6 +178,13 @@ impl ProviderService {
 
     /// Deterministic list: [`AgentId::ALL`] order, then name, then id.
     pub fn list(&self, agent: Option<AgentId>) -> Result<Vec<Provider>> {
+        if let Some(agent) = agent {
+            let _ = self.heal_secret_url_duplicates(agent);
+        } else {
+            for agent in AgentId::ALL {
+                let _ = self.heal_secret_url_duplicates(agent);
+            }
+        }
         let mut items = self.repo.list(agent)?;
         sort_providers(&mut items);
         Ok(items)
@@ -258,7 +269,7 @@ impl ProviderService {
         } else {
             self.repo.create(&row)?
         };
-        Ok(created)
+        self.resolve_after_identity_heal(created)
     }
 
     /// Update an existing provider by id. Core owns `updated_at`; preserves `created_at`.
@@ -354,9 +365,11 @@ impl ProviderService {
         } else {
             self.sync_current_provider_live(&committed.stored, "after provider upsert")?;
         }
-        Ok(committed.stored)
+        self.resolve_after_identity_heal(committed.stored)
     }
 
+    // Referenced only from provider_service `tests.rs`.
+    #[allow(dead_code)]
     fn upsert_inner(&self, input: &ProviderInput) -> Result<Provider> {
         Ok(self.commit_provider_mutation(input, true)?.stored)
     }
@@ -702,8 +715,11 @@ impl ProviderService {
             )));
         }
 
+        let hint = crate::integrations::agents::codex::live_import_hint(&live.raw);
+        let derived_name = hint.as_ref().map(|hint| hint.label.clone());
         let display_name = name
             .map(str::to_owned)
+            .or(derived_name.clone())
             .unwrap_or_else(|| format!("Imported {}", now_ts()));
         validate_name(&display_name)?;
 
@@ -729,38 +745,71 @@ impl ProviderService {
         // existing live-import row instead of creating a UUID row on every
         // refresh. Manual providers are deliberately ignored: only rows whose
         // metadata explicitly identifies `source = live` participate here.
+        // Import adds/updates the pool only. It must not steal the current
+        // official login; 用这份登录 / 切换 writes live via switch().
         let saved = if let Some(existing) = self.find_live_import(agent)? {
-            let desired_name = name.unwrap_or(&existing.name);
+            let desired_name = name
+                .map(str::to_owned)
+                .or_else(|| {
+                    if is_placeholder_import_name(&existing.name) {
+                        derived_name.clone()
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| existing.name.clone());
+            let mut meta = existing.meta.clone();
+            if let Some(hint) = &hint {
+                if meta
+                    .get("preset")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .is_none()
+                {
+                    if let serde_json::Value::Object(map) = &mut meta {
+                        map.insert("preset".into(), serde_json::json!(hint.preset));
+                    }
+                }
+            }
+            stamp_secret_hash(&mut meta, &live.raw);
             if existing.settings_config == live.raw
                 && existing.name == desired_name
-                && existing.is_current
+                && existing.meta == meta
             {
                 self.stamp_provider_surface(existing)?
             } else {
                 let input = ProviderInput {
                     id: existing.id,
                     agent_id: agent,
-                    name: desired_name.to_owned(),
+                    name: desired_name,
                     settings_config: live.raw,
-                    meta: existing.meta,
-                    is_current: true,
+                    meta,
+                    is_current: existing.is_current,
                 };
                 self.update_inner(&input)?
             }
         } else {
+            let mut meta = serde_json::json!({ "source": "live" });
+            if let Some(hint) = &hint {
+                if let serde_json::Value::Object(map) = &mut meta {
+                    map.insert("preset".into(), serde_json::json!(hint.preset));
+                }
+            }
+            stamp_secret_hash(&mut meta, &live.raw);
             let input = ProviderInput {
                 id: format!("{}-live-{}", agent.as_str(), Uuid::new_v4()),
                 agent_id: agent,
                 name: display_name,
                 settings_config: live.raw,
-                meta: serde_json::json!({ "source": "live" }),
-                is_current: true,
+                meta,
+                is_current: false,
             };
             // Use inner create so import is a single log op (not create + import).
             self.create_inner(&input)?
         };
         self.collapse_extra_loopback_providers(agent, &saved)?;
-        Ok(saved)
+        self.resolve_after_identity_heal(saved)
     }
 
     /// After upserting the canonical live row, drop leftover same-agent
@@ -792,6 +841,65 @@ impl ProviderService {
         Ok(())
     }
 
+    fn resolve_after_identity_heal(&self, stored: Provider) -> Result<Provider> {
+        self.heal_secret_url_duplicates(stored.agent_id)?;
+        if self.repo.get_by_id(&stored.id)?.is_some() {
+            return self.repo.get_by_id(&stored.id)?.ok_or_else(|| {
+                AppError::message("db.provider", "provider missing after identity heal")
+            });
+        }
+        let Some(identity) = provider_identity(&stored) else {
+            return Ok(stored);
+        };
+        let keeper = self
+            .repo
+            .list(Some(stored.agent_id))?
+            .into_iter()
+            .find(|row| provider_identity(row).as_ref() == Some(&identity));
+        keeper.ok_or_else(|| {
+            AppError::NotFound(format!(
+                "provider not found after identity heal: {}",
+                stored.id
+            ))
+        })
+    }
+
+    fn heal_secret_url_duplicates(&self, agent: AgentId) -> Result<()> {
+        let rows = self.repo.list(Some(agent))?;
+        let profiles =
+            AdapterProfileRepo::new(self.db.clone()).list_filtered(&Default::default())?;
+        let mut groups: Vec<(ProviderIdentity, Vec<Provider>)> = Vec::new();
+        for row in rows {
+            let Some(identity) = provider_identity(&row) else {
+                continue;
+            };
+            if let Some((_, members)) = groups.iter_mut().find(|(key, _)| *key == identity) {
+                members.push(row);
+            } else {
+                groups.push((identity, vec![row]));
+            }
+        }
+        for (_, members) in groups {
+            if members.len() < 2 {
+                continue;
+            }
+            let Some(keeper) = pick_identity_keeper(&members, &profiles) else {
+                continue;
+            };
+            let keeper_id = keeper.id.clone();
+            let mut profiles = profiles.clone();
+            for loser in members.iter().filter(|row| row.id != keeper_id) {
+                let changed = retarget_profiles_from_loser(&mut profiles, &loser.id, &keeper_id);
+                let profile_repo = AdapterProfileRepo::new(self.db.clone());
+                for index in changed {
+                    profile_repo.update(&profiles[index])?;
+                }
+                self.delete_inner(&loser.id, agent)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Add `meta.surface` to a prospective provider before its first database
     /// mutation. Adapter-generated projections are not tickets.
     fn prepare_provider_surface(&self, mut provider: Provider) -> Result<Provider> {
@@ -805,6 +913,7 @@ impl ProviderService {
         {
             attach_persisted_surface(&mut provider.meta, surface);
         }
+        stamp_secret_hash(&mut provider.meta, &provider.settings_config);
         Ok(provider)
     }
 
@@ -1169,6 +1278,8 @@ impl ProviderService {
     /// live write fails. Every restore first compares the complete stored row
     /// (including the surface stamp revision), so unrelated concurrent CRUD
     /// is never overwritten or deleted.
+    // Referenced only from provider_service `tests.rs` in this crate; keep for test coverage.
+    #[allow(dead_code)]
     pub(super) fn restore_provider_rows(
         &self,
         agent: AgentId,
@@ -1821,6 +1932,11 @@ fn compensated_switch_error(
 
 fn now_ts() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string()
+}
+
+fn is_placeholder_import_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    trimmed.starts_with("Imported ") && trimmed.len() > "Imported ".len()
 }
 
 fn ensure_config_agent(config: &AgentConfig, expected: AgentId) -> Result<()> {

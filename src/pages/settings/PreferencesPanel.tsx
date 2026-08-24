@@ -27,6 +27,7 @@ import {
   clampUsageIntervalMin,
   skillMarketLabel,
 } from './settings-format';
+import { useSidebar } from '@/components/layout/SidebarContext';
 import { SettingsRow } from './settings-shared';
 
 export function PreferencesPanel({
@@ -45,6 +46,7 @@ export function PreferencesPanel({
   const { toast } = useToast();
   const { setTheme } = useTheme();
   const { t, setLanguage } = useI18n();
+  const { routesNavVisible, setRoutesNavVisible } = useSidebar();
   const usageBaselineRef = useRef(settings.usageCollectIntervalMin);
   const persistenceTrackerRef = useRef<ReturnType<typeof createSettingsPersistenceTracker> | null>(null);
 
@@ -179,6 +181,16 @@ export function PreferencesPanel({
               patch({ closeToTray: v });
               void persist({ closeToTray: v });
             }}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.routesNavVisibleLabel')}
+          description={t('settings.general.routesNavVisibleDescription')}
+          descriptionTip={t('settings.general.routesNavVisibleTip')}
+        >
+          <Switch
+            checked={routesNavVisible}
+            onCheckedChange={setRoutesNavVisible}
           />
         </SettingsRow>
         <SettingsRow
