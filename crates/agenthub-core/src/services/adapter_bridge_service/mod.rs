@@ -394,10 +394,7 @@ fn listed_models_for_bridge(
         target,
         if configured.is_empty() { None } else { Some(configured) },
     );
-    crate::models::with_openrouter_backup_model(
-        listed,
-        custom_openai && crate::models::is_openrouter_backup_model(configured),
-    )
+    crate::models::with_openrouter_backup_model(listed, custom_openai)
 }
 
 /// Safe input for beginning a local bridge saga. It contains no credentials.

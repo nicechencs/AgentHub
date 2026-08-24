@@ -12,7 +12,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { SecretInput } from '@/components/shared/SecretInput';
 import type { TranslateFn } from '@/lib/i18n';
-import type { ConnectionEntry } from '@/lib/connection-entry';
 import {
   canSubmitCreateRoute,
   CREATE_ROUTE_TARGETS,
@@ -22,7 +21,6 @@ import {
   formatCreateRouteModels,
   isCreateRouteUrlValid,
   submitCreateRoute,
-  submitImportRoute,
   vendorById,
   type CreateRouteTarget,
   type CreateRouteVendorId,
@@ -59,34 +57,28 @@ export function CreateRouteDialog({
   open,
   onOpenChange,
   onCreated,
-  entries = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
-  entries?: readonly ConnectionEntry[];
 }) {
   const { t } = useI18n();
-  const [mode, setMode] = useState<'create' | 'import'>('create');
   const [vendor, setVendor] = useState<CreateRouteVendorId>('openrouter');
   const [name, setName] = useState('');
   const [url, setUrl] = useState(vendorById('openrouter').url);
   const [key, setKey] = useState('');
   const [models, setModels] = useState(formatCreateRouteModels(vendorById('openrouter').models));
   const [endpoints, setEndpoints] = useState<CreateRouteTarget[]>(defaultCreateRouteEndpoints('openrouter'));
-  const [importKey, setImportKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reset = () => {
-    setMode('create');
     setVendor('openrouter');
     setName('');
     setUrl(vendorById('openrouter').url);
     setKey('');
     setModels(formatCreateRouteModels(vendorById('openrouter').models));
     setEndpoints(defaultCreateRouteEndpoints('openrouter'));
-    setImportKey('');
     setError(null);
   };
 
@@ -132,30 +124,6 @@ export function CreateRouteDialog({
     }
   };
 
-  const submitImport = async () => {
-    const entry = entries.find((item) => item.key === importKey);
-    if (!entry) {
-      setError(t('routes.import.required'));
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await submitImportRoute({
-        sourceKind: entry.source,
-        sourceId: entry.id,
-        agentId: entry.agentId,
-      });
-      reset();
-      onOpenChange(false);
-      onCreated();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t('routes.import.fallback'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <Dialog
       open={open}
@@ -172,40 +140,14 @@ export function CreateRouteDialog({
         onFocusOutside={(event) => event.preventDefault()}
       >
         <DialogHeader className="shrink-0">
-          <DialogTitle>
-            {mode === 'import' ? t('routes.import.title') : t('routes.create.title')}
-          </DialogTitle>
-          <DialogDescription>
-            {mode === 'import' ? t('routes.import.description') : t('routes.create.description')}
-          </DialogDescription>
+          <DialogTitle>{t('routes.create.title')}</DialogTitle>
+          <DialogDescription>{t('routes.create.description')}</DialogDescription>
         </DialogHeader>
-        <div className="flex shrink-0 gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === 'create' ? 'default' : 'secondary'}
-            disabled={busy}
-            onClick={() => { setMode('create'); setError(null); }}
-          >
-            {t('routes.create.action')}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === 'import' ? 'default' : 'secondary'}
-            disabled={busy}
-            onClick={() => { setMode('import'); setError(null); }}
-          >
-            {t('routes.import.action')}
-          </Button>
-        </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-          {mode === 'create' ? (
-            <>
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">{t('routes.create.vendorLabel')}</span>
                 <select
-                  className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                  className="h-9 rounded-btn border border-border bg-background px-2 text-sm"
                   value={vendor}
                   onChange={(event) => applyVendor(event.target.value as CreateRouteVendorId)}
                 >
@@ -258,26 +200,6 @@ export function CreateRouteDialog({
                 ))}
                 <p className="text-meta text-muted">{t('routes.create.targetsHint')}</p>
               </fieldset>
-            </>
-          ) : entries.length === 0 ? (
-            <p className="text-sm text-secondary">{t('routes.import.empty')}</p>
-          ) : (
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted">{t('routes.import.title')}</span>
-              <select
-                className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-                value={importKey}
-                onChange={(event) => setImportKey(event.target.value)}
-              >
-                <option value="">{t('routes.import.required')}</option>
-                {entries.map((entry) => (
-                  <option key={entry.key} value={entry.key}>
-                    {entry.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           {error ? <p className="text-sm text-danger">{error}</p> : null}
         </div>
         <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
@@ -285,12 +207,10 @@ export function CreateRouteDialog({
             {t('common.cancel')}
           </Button>
           <Button
-            onClick={() => { void (mode === 'import' ? submitImport() : submitCreate()); }}
+            onClick={() => { void submitCreate(); }}
             disabled={busy}
           >
-            {busy
-              ? (mode === 'import' ? t('routes.import.submitting') : t('routes.create.submitting'))
-              : (mode === 'import' ? t('routes.import.submit') : t('routes.create.submit'))}
+            {busy ? t('routes.create.submitting') : t('routes.create.submit')}
           </Button>
         </DialogFooter>
       </DialogContent>
