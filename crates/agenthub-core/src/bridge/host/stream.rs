@@ -25,6 +25,7 @@ use super::http::{
     error_response, log_protocol_error, protocol_error_response, sse_data_payload,
     sse_frame_end_deque, stopping_response, stream_error_frame, EdgeState,
 };
+use super::surface::DownstreamSurface;
 use super::transport::{UpstreamChannel, UpstreamDecode};
 use super::upstream::{capture_grok_completed, capture_grok_sse};
 use super::{
@@ -99,6 +100,7 @@ pub(super) async fn chat_non_stream_response(
     request_id: String,
     started: Instant,
     _permit: OwnedSemaphorePermit,
+    replay_seed: Option<String>,
     member: PickedMember,
 ) -> Response {
     let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
@@ -114,6 +116,12 @@ pub(super) async fn chat_non_stream_response(
             );
         }
     };
+    capture_grok_completed(
+        &state,
+        replay_seed.as_deref(),
+        partition_account(&state, &member),
+        &upstream_body,
+    );
     let translated = match upstream_decode(&state) {
         UpstreamDecode::OpenAiResponses => responses_output_to_ir(&upstream_body)
             .and_then(|ir| encode_chat_from_ir(&ir, Some(&request_id))),
@@ -247,9 +255,6 @@ async fn read_bounded_upstream_body(
     Ok(body)
 }
 
-/// Relay a same-protocol non-stream response without translating its JSON
-/// shape. The body is still bounded and cancellation-aware like converted
-/// responses, while the content type remains the upstream protocol's type.
 pub(super) async fn passthrough_json_response(
     state: EdgeState,
     response: reqwest::Response,
@@ -279,16 +284,26 @@ pub(super) async fn passthrough_json_response(
             );
         }
     };
-    if let Ok(value) = serde_json::from_slice::<Value>(&body) {
-        capture_grok_completed(
-            &state,
-            replay_seed.as_deref(),
-            partition_account(&state, &member),
-            &value,
-        );
-    }
+    let value = match serde_json::from_slice::<Value>(&body) {
+        Ok(value) => value,
+        Err(_) => {
+            state.record_upstream_failure();
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_error",
+                "The upstream model provider returned an invalid response.",
+                None,
+            );
+        }
+    };
+    capture_grok_completed(
+        &state,
+        replay_seed.as_deref(),
+        partition_account(&state, &member),
+        &value,
+    );
     state.record_upstream_success();
-    tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "passthrough", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+    tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "passthrough", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
     let content_type = HeaderValue::from_str(&content_type)
         .unwrap_or_else(|_| HeaderValue::from_static("application/json"));
     (
@@ -374,6 +389,164 @@ fn warn_stream_fail(request_id: &str, code: &str) {
     );
 }
 
+fn stream_fail_frame(surface: DownstreamSurface, sequence_number: u64) -> axum::body::Bytes {
+    match surface {
+        DownstreamSurface::ChatCompletions => axum::body::Bytes::from_static(
+            b"data: {\"error\":{\"message\":\"The upstream model provider returned an invalid stream.\",\"type\":\"server_error\",\"code\":\"upstream_error\"}}\n\ndata: [DONE]\n\n",
+        ),
+        DownstreamSurface::Responses => {
+            let data = serde_json::json!({
+                "type": "error",
+                "code": "upstream_error",
+                "message": "The upstream model provider returned an invalid stream.",
+                "param": Value::Null,
+                "sequence_number": sequence_number,
+            });
+            let payload = serde_json::to_string(&data)
+                .expect("Responses stream error frame must be serializable");
+            axum::body::Bytes::from(format!("event: error\ndata: {payload}\n\n"))
+        }
+        DownstreamSurface::Messages | DownstreamSurface::Models => stream_error_frame(),
+    }
+}
+
+fn advance_sequence_number(next_sequence_number: &mut u64, sequence_number: u64) {
+    *next_sequence_number = (*next_sequence_number).max(sequence_number.saturating_add(1));
+}
+
+struct ResponsesSseFrameInfo {
+    has_data: bool,
+    error_like: bool,
+    sequence_number: Option<u64>,
+    terminal: bool,
+}
+
+fn parse_responses_sse_frame(frame: &[u8]) -> Result<ResponsesSseFrameInfo, ()> {
+    let text = std::str::from_utf8(frame).map_err(|_| ())?;
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let event_names = normalized
+        .lines()
+        .filter_map(|line| {
+            let (field, value) = line.split_once(':').unwrap_or((line, ""));
+            (field == "event").then_some(value.strip_prefix(' ').unwrap_or(value))
+        })
+        .collect::<Vec<_>>();
+    let payload = sse_data_payload(frame)?;
+    let Some(payload) = payload else {
+        return Ok(ResponsesSseFrameInfo {
+            has_data: false,
+            error_like: false,
+            sequence_number: None,
+            terminal: false,
+        });
+    };
+    if payload.is_empty() {
+        return Ok(ResponsesSseFrameInfo {
+            has_data: false,
+            error_like: false,
+            sequence_number: None,
+            terminal: false,
+        });
+    }
+    if payload == "[DONE]" {
+        return Err(());
+    }
+    if event_names.len() != 1 || event_names[0].is_empty() {
+        return Err(());
+    }
+
+    let value = serde_json::from_str::<Value>(&payload).map_err(|_| ())?;
+    let object = value.as_object().ok_or(())?;
+    let data_type = object.get("type").and_then(Value::as_str).ok_or(())?;
+    if event_names[0] != data_type || !is_known_responses_event_type(data_type) {
+        return Err(());
+    }
+    let sequence_number = match object.get("sequence_number") {
+        Some(sequence_number) => Some(sequence_number.as_u64().ok_or(())?),
+        None => return Err(()),
+    };
+    let terminal = matches!(
+        data_type,
+        "response.completed" | "response.failed" | "response.incomplete" | "error"
+    );
+
+    Ok(ResponsesSseFrameInfo {
+        has_data: true,
+        error_like: matches!(data_type, "response.failed" | "error"),
+        sequence_number,
+        terminal,
+    })
+}
+
+fn is_known_responses_event_type(kind: &str) -> bool {
+    matches!(
+        kind,
+        "error"
+            | "response.audio.delta"
+            | "response.audio.done"
+            | "response.audio.transcript.delta"
+            | "response.audio.transcript.done"
+            | "response.code_interpreter_call_code.delta"
+            | "response.code_interpreter_call_code.done"
+            | "response.code_interpreter_call.completed"
+            | "response.code_interpreter_call.in_progress"
+            | "response.code_interpreter_call.interpreting"
+            | "response.completed"
+            | "response.content_part.added"
+            | "response.content_part.done"
+            | "response.created"
+            | "response.custom_tool_call_input.delta"
+            | "response.custom_tool_call_input.done"
+            | "response.failed"
+            | "response.file_search_call.completed"
+            | "response.file_search_call.in_progress"
+            | "response.file_search_call.searching"
+            | "response.function_call_arguments.delta"
+            | "response.function_call_arguments.done"
+            | "response.image_generation_call.completed"
+            | "response.image_generation_call.generating"
+            | "response.image_generation_call.in_progress"
+            | "response.image_generation_call.partial_image"
+            | "response.in_progress"
+            | "response.incomplete"
+            | "response.mcp_call_arguments.delta"
+            | "response.mcp_call_arguments.done"
+            | "response.mcp_call.completed"
+            | "response.mcp_call.failed"
+            | "response.mcp_call.in_progress"
+            | "response.mcp_list_tools.completed"
+            | "response.mcp_list_tools.failed"
+            | "response.mcp_list_tools.in_progress"
+            | "response.output_item.added"
+            | "response.output_item.done"
+            | "response.output_text.annotation.added"
+            | "response.output_text.delta"
+            | "response.output_text.done"
+            | "response.queued"
+            | "response.reasoning_summary_part.added"
+            | "response.reasoning_summary_part.done"
+            | "response.reasoning_summary_text.delta"
+            | "response.reasoning_summary_text.done"
+            | "response.reasoning_text.delta"
+            | "response.reasoning_text.done"
+            | "response.refusal.delta"
+            | "response.refusal.done"
+            | "response.shell_call.command.added"
+            | "response.shell_call.command.delta"
+            | "response.shell_call.command.done"
+            | "response.shell_call.output_content.delta"
+            | "response.shell_call.output_content.done"
+            | "response.text.delta"
+            | "response.text.done"
+            | "response.tool_search_call.completed"
+            | "response.tool_search_call.failed"
+            | "response.tool_search_call.in_progress"
+            | "response.web_search_call.completed"
+            | "response.web_search_call.in_progress"
+            | "response.web_search_call.searching"
+    )
+}
+
 fn event_stream_response(
     output: impl futures_util::Stream<Item = Result<axum::body::Bytes, Infallible>> + Send + 'static,
 ) -> Response {
@@ -395,6 +568,7 @@ pub(super) fn passthrough_sse_response(
     permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
     member: PickedMember,
+    surface: DownstreamSurface,
 ) -> Response {
     let profile_id = state.profile_id.clone();
     let account_id = member.source_id.clone();
@@ -403,16 +577,29 @@ pub(super) fn passthrough_sse_response(
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
     let bytes = response.bytes_stream();
+    let op = match surface {
+        DownstreamSurface::ChatCompletions => "chat_passthrough_stream",
+        DownstreamSurface::Messages => "messages_passthrough_stream",
+        _ => "responses_passthrough_stream",
+    };
     let output = stream! {
         let _permit = permit;
         let mut upstream_bytes = 0usize;
         let mut capture = Vec::new();
+        let mut responses_buffer = std::collections::VecDeque::new();
+        let mut next_sequence_number = 0_u64;
+        let mut last_responses_sequence_number = None;
+        let mut saw_responses_terminal = false;
+        let is_responses = surface == DownstreamSurface::Responses;
         futures_util::pin_mut!(bytes);
-        loop {
+        'responses_upstream: loop {
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
+                    if is_responses {
+                        observed.record_upstream_failure();
+                    }
                     warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(surface, next_sequence_number));
                     return;
                 }
                 next = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, bytes.next()) => match next {
@@ -420,7 +607,7 @@ pub(super) fn passthrough_sse_response(
                     Err(_) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(surface, next_sequence_number));
                         return;
                     }
                 },
@@ -429,26 +616,100 @@ pub(super) fn passthrough_sse_response(
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(surface, next_sequence_number));
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(surface, next_sequence_number));
                 return;
             }
             upstream_bytes += chunk.len();
             if capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
                 capture.extend_from_slice(&chunk);
             }
-            yield Ok::<_, Infallible>(chunk);
+            if !is_responses {
+                yield Ok::<_, Infallible>(chunk);
+                continue;
+            }
+
+            responses_buffer.extend(chunk.iter().copied());
+            while let Some((frame_end, delimiter_len)) = sse_frame_end_deque(&responses_buffer) {
+                let frame_len = frame_end + delimiter_len;
+                let frame = responses_buffer.drain(..frame_len).collect::<Vec<_>>();
+                let info = match parse_responses_sse_frame(&frame) {
+                    Ok(info) => info,
+                    Err(()) => {
+                        observed.record_upstream_failure();
+                        warn_stream_fail(&request_id, "stream_error");
+                        yield Ok::<_, Infallible>(stream_fail_frame(
+                            DownstreamSurface::Responses,
+                            next_sequence_number,
+                        ));
+                        return;
+                    }
+                };
+                if saw_responses_terminal && info.has_data {
+                    observed.record_upstream_failure();
+                    warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_fail_frame(
+                        DownstreamSurface::Responses,
+                        next_sequence_number,
+                    ));
+                    return;
+                }
+                if let Some(sequence_number) = info.sequence_number {
+                    if last_responses_sequence_number
+                        .is_some_and(|last| sequence_number <= last)
+                    {
+                        observed.record_upstream_failure();
+                        warn_stream_fail(&request_id, "stream_error");
+                        yield Ok::<_, Infallible>(stream_fail_frame(
+                            DownstreamSurface::Responses,
+                            next_sequence_number,
+                        ));
+                        return;
+                    }
+                    last_responses_sequence_number = Some(sequence_number);
+                    advance_sequence_number(&mut next_sequence_number, sequence_number);
+                }
+                if info.error_like {
+                    observed.record_upstream_failure();
+                    warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(stream_fail_frame(
+                        DownstreamSurface::Responses,
+                        info.sequence_number.expect("validated Responses sequence number"),
+                    ));
+                    return;
+                }
+                let terminal = info.terminal;
+                saw_responses_terminal |= terminal;
+                let trailing_bytes = responses_buffer.len();
+                yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
+                if terminal {
+                    responses_buffer.clear();
+                    if trailing_bytes <= capture.len() {
+                        capture.truncate(capture.len() - trailing_bytes);
+                    }
+                    break 'responses_upstream;
+                }
+            }
+        }
+        if is_responses && (!responses_buffer.is_empty() || !saw_responses_terminal) {
+            observed.record_upstream_failure();
+            warn_stream_fail(&request_id, "stream_error");
+            yield Ok::<_, Infallible>(stream_fail_frame(
+                DownstreamSurface::Responses,
+                next_sequence_number,
+            ));
+            return;
         }
         if let Ok(sse) = std::str::from_utf8(&capture) {
             capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
         }
         observed.record_upstream_success();
-        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "responses_passthrough_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+        tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op, status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
     };
     event_stream_response(output)
 }
@@ -479,12 +740,13 @@ pub(super) fn stream_response(
         let mut output_bytes = 0usize;
         let _permit = permit;
         let mut saw_done = false;
+        let mut next_sequence_number = 0_u64;
         futures_util::pin_mut!(bytes);
         'upstream: loop {
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
                     warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                     return;
                 }
                 next = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, bytes.next()) => match next {
@@ -492,7 +754,7 @@ pub(super) fn stream_response(
                     Err(_) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                         return;
                     }
                 },
@@ -501,13 +763,13 @@ pub(super) fn stream_response(
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                 return;
             }
             upstream_bytes += chunk.len();
@@ -522,7 +784,7 @@ pub(super) fn stream_response(
                     Err(()) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                         return;
                     }
                 };
@@ -538,7 +800,7 @@ pub(super) fn stream_response(
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
                     warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                     return;
                 };
                 match translator.push(&value) {
@@ -547,16 +809,17 @@ pub(super) fn stream_response(
                         if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                             observed.record_upstream_failure();
                             warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                             return;
                         }
                         output_bytes += frame.len();
+                        advance_sequence_number(&mut next_sequence_number, event.sequence_number());
                         yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
                     },
                     Err(_) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                         return;
                     }
                 }
@@ -571,7 +834,7 @@ pub(super) fn stream_response(
         if !saw_done || !buffer.is_empty() {
             observed.record_upstream_failure();
             warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
             return;
         }
         match translator.finish() {
@@ -581,17 +844,18 @@ pub(super) fn stream_response(
                     if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                         return;
                     }
                     output_bytes += frame.len();
+                    advance_sequence_number(&mut next_sequence_number, event.sequence_number());
                     yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
                 }
             }
             Err(_) => {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(stream_fail_frame(DownstreamSurface::Responses, next_sequence_number));
                 return;
             }
         }
@@ -649,6 +913,7 @@ pub(super) fn messages_stream_response(
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
     let bytes = response.bytes_stream();
+    let error_frame = stream_fail_frame(DownstreamSurface::Messages, 0);
     let output = stream! {
         let model = state.upstream.model.clone().unwrap_or_default();
         let decode_kind = upstream_decode(&state);
@@ -666,7 +931,7 @@ pub(super) fn messages_stream_response(
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
                     warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                     return;
                 }
                 next = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, bytes.next()) => match next {
@@ -674,7 +939,7 @@ pub(super) fn messages_stream_response(
                     Err(_) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                         return;
                     }
                 },
@@ -683,13 +948,13 @@ pub(super) fn messages_stream_response(
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             }
             upstream_bytes += chunk.len();
@@ -707,7 +972,7 @@ pub(super) fn messages_stream_response(
                     Err(()) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                         return;
                     }
                 };
@@ -723,7 +988,7 @@ pub(super) fn messages_stream_response(
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
                     warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                     return;
                 };
                 let events = match translator.push(&value) {
@@ -731,7 +996,7 @@ pub(super) fn messages_stream_response(
                     Err(_) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                         return;
                     }
                 };
@@ -744,7 +1009,7 @@ pub(super) fn messages_stream_response(
                     Err(_) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                         return;
                     }
                 };
@@ -752,7 +1017,7 @@ pub(super) fn messages_stream_response(
                     if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                         return;
                     }
                     output_bytes += frame.len();
@@ -768,7 +1033,7 @@ pub(super) fn messages_stream_response(
         if !saw_done || !buffer.is_empty() {
             observed.record_upstream_failure();
             warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
             return;
         }
         ir_events.extend(translator.finish());
@@ -777,7 +1042,7 @@ pub(super) fn messages_stream_response(
             Err(_) => {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             }
         };
@@ -785,7 +1050,7 @@ pub(super) fn messages_stream_response(
             if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             }
             output_bytes += frame.len();
@@ -806,14 +1071,17 @@ pub(super) fn chat_stream_response(
     request_id: String,
     started: Instant,
     permit: OwnedSemaphorePermit,
+    replay_seed: Option<String>,
     member: PickedMember,
 ) -> Response {
     let profile_id = state.profile_id.clone();
     let account_id = member.source_id.clone();
     let ticket_id = member.ticket_id.clone();
+    let partition = partition_account(&state, &member).map(str::to_owned);
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
     let bytes = response.bytes_stream();
+    let error_frame = stream_fail_frame(DownstreamSurface::ChatCompletions, 0);
     let output = stream! {
         let model = state.upstream.model.clone().unwrap_or_default();
         let decode_kind = upstream_decode(&state);
@@ -823,6 +1091,7 @@ pub(super) fn chat_stream_response(
         let mut buffer = std::collections::VecDeque::new();
         let mut upstream_bytes = 0usize;
         let mut output_bytes = 0usize;
+        let mut capture = Vec::new();
         let _permit = permit;
         let mut saw_done = false;
         futures_util::pin_mut!(bytes);
@@ -830,7 +1099,7 @@ pub(super) fn chat_stream_response(
             let next = tokio::select! {
                 _ = force_shutdown.cancelled() => {
                     warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                     return;
                 }
                 next = tokio::time::timeout(UPSTREAM_STREAM_IDLE_TIMEOUT, bytes.next()) => match next {
@@ -838,7 +1107,7 @@ pub(super) fn chat_stream_response(
                     Err(_) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                         return;
                     }
                 },
@@ -847,16 +1116,19 @@ pub(super) fn chat_stream_response(
             let Ok(chunk) = chunk else {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             };
             if upstream_bytes.saturating_add(chunk.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             }
             upstream_bytes += chunk.len();
+            if capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
+                capture.extend_from_slice(&chunk);
+            }
             buffer.extend(chunk.iter().copied());
             while let Some((frame_end, delimiter_len)) = sse_frame_end_deque(&buffer) {
                 let frame = buffer.drain(..frame_end).collect::<Vec<_>>();
@@ -868,7 +1140,7 @@ pub(super) fn chat_stream_response(
                     Err(()) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                         return;
                     }
                 };
@@ -880,7 +1152,7 @@ pub(super) fn chat_stream_response(
                 let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                     observed.record_upstream_failure();
                     warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                     return;
                 };
                 let events = match translator.push(&value) {
@@ -888,7 +1160,7 @@ pub(super) fn chat_stream_response(
                     Err(_) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                         return;
                     }
                 };
@@ -901,7 +1173,7 @@ pub(super) fn chat_stream_response(
                     Err(_) => {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                         return;
                     }
                 };
@@ -909,7 +1181,7 @@ pub(super) fn chat_stream_response(
                     if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                         observed.record_upstream_failure();
                         warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                         return;
                     }
                     output_bytes += frame.len();
@@ -925,7 +1197,7 @@ pub(super) fn chat_stream_response(
         if !saw_done || !buffer.is_empty() {
             observed.record_upstream_failure();
             warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
             return;
         }
         ir_events.extend(translator.finish());
@@ -934,7 +1206,7 @@ pub(super) fn chat_stream_response(
             Err(_) => {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             }
         };
@@ -942,11 +1214,14 @@ pub(super) fn chat_stream_response(
             if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(stream_error_frame());
+                    yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             }
             output_bytes += frame.len();
             yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
+        }
+        if let Ok(sse) = std::str::from_utf8(&capture) {
+            capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "chat_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");

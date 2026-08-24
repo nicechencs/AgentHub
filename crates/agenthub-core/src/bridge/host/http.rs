@@ -137,45 +137,32 @@ pub fn sse_frame_end(buffer: &[u8]) -> Option<(usize, usize)> {
 }
 
 pub fn sse_frame_end_deque(buffer: &std::collections::VecDeque<u8>) -> Option<(usize, usize)> {
-    let mut crlf = None;
-    let mut lf = None;
-    for index in 0..buffer.len() {
-        if crlf.is_none()
-            && index + 4 <= buffer.len()
-            && buffer
-                .iter()
-                .skip(index)
-                .take(4)
-                .copied()
-                .eq(b"\r\n\r\n".iter().copied())
-        {
-            crlf = Some((index, 4));
+    let mut previous_line_end = None;
+    let mut index = 0;
+    while index < buffer.len() {
+        let line_end_len = match buffer.get(index) {
+            Some(b'\r') if buffer.get(index + 1) == Some(&b'\n') => 2,
+            Some(b'\r' | b'\n') => 1,
+            _ => {
+                index += 1;
+                continue;
+            }
+        };
+        if let Some((previous_start, previous_len)) = previous_line_end {
+            if previous_start + previous_len == index {
+                return Some((previous_start, index + line_end_len - previous_start));
+            }
         }
-        if lf.is_none()
-            && index + 2 <= buffer.len()
-            && buffer
-                .iter()
-                .skip(index)
-                .take(2)
-                .copied()
-                .eq(b"\n\n".iter().copied())
-        {
-            lf = Some((index, 2));
-        }
-        if crlf.is_some() && lf.is_some() {
-            break;
-        }
+        previous_line_end = Some((index, line_end_len));
+        index += line_end_len;
     }
-    match (crlf, lf) {
-        (Some(left), Some(right)) => Some(if left.0 <= right.0 { left } else { right }),
-        (Some(frame), None) | (None, Some(frame)) => Some(frame),
-        (None, None) => None,
-    }
+    None
 }
 
 pub(super) fn sse_data_payload(frame: &[u8]) -> Result<Option<String>, ()> {
     let frame = std::str::from_utf8(frame).map_err(|_| ())?;
-    let payload = frame
+    let normalized = frame.replace("\r\n", "\n").replace('\r', "\n");
+    let payload = normalized
         .lines()
         .filter_map(|line| line.strip_prefix("data:"))
         .map(|line| line.strip_prefix(' ').unwrap_or(line))

@@ -2222,11 +2222,7 @@ fn openrouter_host_classifies_as_openai_api_and_binds_three_clients() {
         (AgentId::Grok, "openai-api-to-grok-bridge-v1"),
     ] {
         let plan = service
-            .plan(&request(
-                AdapterSourceKind::Provider,
-                "openrouter",
-                target,
-            ))
+            .plan(&request(AdapterSourceKind::Provider, "openrouter", target))
             .unwrap();
         assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge, "{target:?}");
         assert!(plan.can_apply, "{target:?}");

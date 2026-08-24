@@ -2414,7 +2414,9 @@ fn apply_kimi_membership_and_openai_api_to_grok() {
     );
 
     assert!(
-        service.apply(&request("openai-source", AgentId::Grok)).is_err(),
+        service
+            .apply(&request("openai-source", AgentId::Grok))
+            .is_err(),
         "OpenAI → Grok is a local_bridge host saga, not native apply"
     );
 

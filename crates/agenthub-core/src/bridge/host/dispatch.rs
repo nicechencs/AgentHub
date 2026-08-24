@@ -226,7 +226,7 @@ fn forward_stream(
 ) -> Response {
     if channel.passthrough_for(surface) {
         return passthrough_sse_response(
-            state, response, request_id, started, permit, cache_seed, member,
+            state, response, request_id, started, permit, cache_seed, member, surface,
         );
     }
     match surface {
@@ -236,9 +236,9 @@ fn forward_stream(
         DownstreamSurface::Messages => messages_stream_response(
             state, response, request_id, started, permit, cache_seed, member,
         ),
-        DownstreamSurface::ChatCompletions => {
-            chat_stream_response(state, response, request_id, started, permit, member)
-        }
+        DownstreamSurface::ChatCompletions => chat_stream_response(
+            state, response, request_id, started, permit, cache_seed, member,
+        ),
         DownstreamSurface::Models => {
             unreachable!("models are synthesized by list_models, not handle_conversation")
         }
@@ -276,7 +276,10 @@ async fn forward_non_stream(
             .await
         }
         DownstreamSurface::ChatCompletions => {
-            chat_non_stream_response(state, response, request_id, started, permit, member).await
+            chat_non_stream_response(
+                state, response, request_id, started, permit, cache_seed, member,
+            )
+            .await
         }
         DownstreamSurface::Models => {
             unreachable!("models are synthesized by list_models, not handle_conversation")
