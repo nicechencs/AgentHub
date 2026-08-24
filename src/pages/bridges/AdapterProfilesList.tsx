@@ -135,6 +135,8 @@ export function AdapterProfilesList({
           detailExpanded={collapsedIds[profile.id] !== true}
           surfaceGroups={surfaceGroups}
           targetHidden={hiddenTargetIds?.has(profile.targetAgentId) === true}
+          hiddenTargetIds={hiddenTargetIds}
+          siblingProfiles={profiles}
         />
       ))}
     </div>
@@ -157,6 +159,8 @@ function AdapterProfileRow({
   detailExpanded,
   surfaceGroups,
   targetHidden,
+  hiddenTargetIds,
+  siblingProfiles,
 }: {
   profile: AdapterProfile;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
@@ -173,6 +177,8 @@ function AdapterProfileRow({
   detailExpanded: boolean;
   surfaceGroups: readonly TicketSurfaceGroupView[];
   targetHidden: boolean;
+  hiddenTargetIds?: ReadonlySet<string>;
+  siblingProfiles: readonly AdapterProfile[];
 }) {
   const { t } = useI18n();
   const source = resolveAdapterProfileSource(profile, entries);
@@ -316,6 +322,8 @@ function AdapterProfileRow({
           onRequestRemove={onRequestRemove ?? (() => undefined)}
           onApplyRoute={onApplyRoute}
           targetHidden={targetHidden}
+          hiddenTargetIds={hiddenTargetIds}
+          siblingProfiles={siblingProfiles}
         />
       ) : null}
     </ListRow>

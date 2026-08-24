@@ -756,6 +756,51 @@ export const en = {
       modelsAny: "Follow the request",
       modelsOnly: "Only these models",
     },
+    panel: {
+      sourceTitle: "Source login",
+      bridgeTitle: "Local bridge",
+      clientsTitle: "Client access",
+      sourceDeletedHint: "Source login was deleted. You can only view or unbind this route.",
+      edge: {
+        sourceMissing: "Source login deleted",
+        hidden: "This client is hidden in settings",
+        noUpstream: "Source has no upstream endpoint for this client",
+        applied: "Written to {name} config",
+        ready: "Ready to connect",
+        runtimeOnly: "Supported by the backend route; UI setup is not available yet",
+      },
+      hop: {
+        passthrough: "Passthrough upstream",
+        convert: "Convert → {channel}",
+        forward: "Forward",
+      },
+      channel: {
+        openaiChat: "upstream Chat API",
+        anthropicMessages: "upstream Messages",
+        codexResponses: "upstream Codex Responses",
+        grokResponses: "upstream Grok Responses",
+        unknown: "upstream",
+      },
+      models: {
+        only: "Allow only: {models} (others are rejected)",
+        any: "Follow the client’s requested model",
+      },
+      bridge: {
+        stoppedHint: "Stopped — clients cannot use the addresses below for now",
+        portPending: "Port pending",
+        hostPortPending: "127.0.0.1 · port pending",
+        statusWithUpstream: "{runtime} · {upstream}",
+      },
+      apply: {
+        confirm: "Write selection to client config",
+      },
+      copyPortPending: "Copy after the port is assigned",
+      upstreamUrl: "Upstream URL",
+      target: {
+        kimi: "Kimi",
+        dsh: "DSH",
+      },
+    },
   },
   dashboard: {
     range: {
