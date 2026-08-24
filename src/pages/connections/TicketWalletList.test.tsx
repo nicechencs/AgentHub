@@ -75,6 +75,35 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('编辑 API Key');
   });
 
+  it('does not show an OpenAI product chip on an OpenRouter API Key card', () => {
+    const wallet: TicketWallet = {
+      tickets: [{
+        id: 'provider:or-1',
+        sourceKind: 'provider',
+        sourceId: 'or-1',
+        agentId: 'claude',
+        label: 'OpenRouter',
+        surface: 'openai-api',
+        credentialClass: 'api_key',
+        speaks: ['openai-chat'],
+        importedFrom: null,
+      }],
+      bindings: [],
+      surfaceGroups: [],
+    };
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('OpenRouter');
+    expect(markup).not.toContain('>OpenAI<');
+  });
+
   it('puts usage on the same row and omits a second Codex label', () => {
     const wallet: TicketWallet = {
       tickets: [{

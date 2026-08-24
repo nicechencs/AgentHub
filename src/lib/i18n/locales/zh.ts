@@ -1072,8 +1072,6 @@ export const zh = {
       surfaceMember: "会员",
       surfaceOfficial: "官方",
       surfaceOpenai: "OpenAI",
-      surfaceOpenrouter: "OpenRouter",
-      surfaceKimi: "Kimi",
       surfaceXai: "xAI",
       surfaceGlm: "GLM",
       surfaceDeepseek: "DeepSeek",

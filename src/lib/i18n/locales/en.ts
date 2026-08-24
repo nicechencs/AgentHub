@@ -1079,8 +1079,6 @@ export const en = {
       surfaceMember: "Membership",
       surfaceOfficial: "Official",
       surfaceOpenai: "OpenAI",
-      surfaceOpenrouter: "OpenRouter",
-      surfaceKimi: "Kimi",
       surfaceXai: "xAI",
       surfaceGlm: "GLM",
       surfaceDeepseek: "DeepSeek",

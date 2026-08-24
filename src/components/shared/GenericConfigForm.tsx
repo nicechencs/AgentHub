@@ -23,7 +23,6 @@ import { SECRET_REDACTED } from '@/lib/backend/contracts/config-types';
 import { cn } from '@/lib/utils';
 import {
   fieldControlKind,
-  isAdvancedProviderFormKey,
   issuesByField,
   type FormValues,
 } from './generic-config-form-map';
@@ -38,7 +37,6 @@ export interface GenericConfigFormProps {
   className?: string;
   /** Optional: hide specific keys (e.g. official mode locks baseUrl/model). */
   readOnlyKeys?: ReadonlySet<string> | string[];
-  /** Extra keys to omit from the form (in addition to advanced provider fields). */
   hiddenKeys?: ReadonlySet<string> | string[];
 }
 
@@ -70,7 +68,7 @@ export function GenericConfigForm({
   return (
     <div className={cn('flex flex-col gap-3', className)}>
       {schema.fields.map((field) => {
-        if (hidden.has(field.key) || isAdvancedProviderFormKey(field.key)) return null;
+        if (hidden.has(field.key)) return null;
         const kind = fieldControlKind(field);
         const fieldDisabled = disabled || ro.has(field.key);
         const err = errMap[field.key];

@@ -77,23 +77,6 @@ export function fieldControlKind(
   return field.valueType.kind;
 }
 
-/** Env names, per-role models, and wire slugs — keep off the add/edit API Key form. */
-const ADVANCED_PROVIDER_FORM_KEYS = new Set([
-  'claudeAuthEnv',
-  'modelOpus',
-  'modelSonnet',
-  'modelHaiku',
-  'modelFable',
-  'modelSubagent',
-  'reasoningEffort',
-  'wireApi',
-  'thinking',
-]);
-
-export function isAdvancedProviderFormKey(key: string): boolean {
-  return ADVANCED_PROVIDER_FORM_KEYS.has(key);
-}
-
 /** Convert form values to string-map for provider-detect bridge / apply API. */
 export function formValuesToStringRecord(values: FormValues): Record<string, string> {
   const out: Record<string, string> = {};
