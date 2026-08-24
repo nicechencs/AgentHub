@@ -6,7 +6,7 @@ use axum::response::Response;
 use tokio::sync::OwnedSemaphorePermit;
 
 use super::admission::{admit_conversation, AdmittedRequest};
-use super::gateway::{Gateway, GatewayAuthError};
+use super::gateway::{Gateway, GatewayAuthError, ModelSwitchOutcome};
 use super::http::{error_response, reject_invalid_local_auth, stopping_response, EdgeState};
 use super::stream::{
     chat_non_stream_response, chat_stream_response, messages_non_stream_response,
@@ -44,6 +44,45 @@ pub(super) async fn handle_conversation(
         Ok(admitted) => admitted,
         Err(response) => return response,
     };
+    let model = admitted
+        .body
+        .get("model")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    match gateway.switch_edge_for_model(&admitted.state, model) {
+        ModelSwitchOutcome::Stay => {}
+        ModelSwitchOutcome::Switched(mut switched) => {
+            tracing::info!(
+                target: "core.adapter",
+                lead_profile_id = %admitted.state.profile_id,
+                switch_profile_id = %switched.profile_id,
+                model,
+                "request-scoped model switch after lead mapping miss"
+            );
+            if !model.is_empty() {
+                switched.upstream.model = Some(model.to_owned());
+            }
+            admitted.state = switched;
+        }
+        ModelSwitchOutcome::Unavailable => {
+            tracing::warn!(
+                target: "core.adapter",
+                profile_id = %admitted.state.profile_id,
+                request_id = %admitted.request_id,
+                model,
+                op = "upstream",
+                code = "model_unavailable",
+                status = 400_u16,
+                "lead mapping missed and no running alternate can serve this model"
+            );
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "model_unavailable",
+                "No running route can serve this model.",
+                None,
+            );
+        }
+    }
     let Some(member) = admitted.state.account_picker.pick_new() else {
         return no_eligible_member(&admitted.state, &admitted.request_id, admitted.started);
     };

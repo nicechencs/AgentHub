@@ -170,6 +170,12 @@ export function buildPlan(
       && request.targetAgentId === 'codex'
       && analysis.gateKind === 'none')
     || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
+      && request.targetAgentId === 'claude'
+      && analysis.ruleId === 'openai-api-to-claude-v1')
+    || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
+      && request.targetAgentId === 'grok'
+      && analysis.ruleId === 'openai-api-to-grok-bridge-v1')
+    || (analysis.route === 'local_bridge' && analysis.support === 'experimental'
       && request.sourceKind === 'account'
       && (request.targetAgentId === 'grok' || request.targetAgentId === 'kimi' || request.targetAgentId === 'dsh')
       && !!analysis.ruleId && CODEX_CHAT_BRIDGE_RULE_IDS.has(analysis.ruleId)

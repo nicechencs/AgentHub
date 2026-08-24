@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use super::account::{AccountPicker, BridgeMemberSpec, MemberHealth, PickedMember};
+use crate::models::{AdapterSourceProduct, AgentId};
 
 /// Opaque callback that may rotate the in-memory upstream bearer.
 /// The host must not depend on AccountService types.
@@ -120,6 +121,10 @@ pub struct BridgeStartSpec {
     pub members: Vec<BridgeMemberSpec>,
     /// RFC §7 matrix cell. Closed (default) keeps only the lead even if `members` is longer.
     pub multi_account: bool,
+    /// Mapping identity for request-scoped model switch. Optional for host tests.
+    pub mapping_source: Option<AdapterSourceProduct>,
+    pub mapping_target: Option<AgentId>,
+    pub custom_openai: bool,
 }
 
 impl fmt::Debug for BridgeStartSpec {
@@ -134,6 +139,9 @@ impl fmt::Debug for BridgeStartSpec {
             .field("reload_upstream_auth", &self.reload_upstream_auth.is_some())
             .field("members", &self.members)
             .field("multi_account", &self.multi_account)
+            .field("mapping_source", &self.mapping_source)
+            .field("mapping_target", &self.mapping_target)
+            .field("custom_openai", &self.custom_openai)
             .finish()
     }
 }
@@ -154,6 +162,9 @@ impl BridgeStartSpec {
             reload_upstream_auth: None,
             members: Vec::new(),
             multi_account: false,
+            mapping_source: None,
+            mapping_target: None,
+            custom_openai: false,
         }
     }
 
@@ -164,6 +175,18 @@ impl BridgeStartSpec {
 
     pub fn with_multi_account(mut self, multi_account: bool) -> Self {
         self.multi_account = multi_account;
+        self
+    }
+
+    pub fn with_mapping(
+        mut self,
+        source: AdapterSourceProduct,
+        target: AgentId,
+        custom_openai: bool,
+    ) -> Self {
+        self.mapping_source = Some(source);
+        self.mapping_target = Some(target);
+        self.custom_openai = custom_openai;
         self
     }
 

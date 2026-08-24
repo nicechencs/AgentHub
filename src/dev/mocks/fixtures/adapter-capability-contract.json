@@ -800,14 +800,33 @@
       },
       "target": "grok",
       "expect": {
-        "route": "native_endpoint",
+        "route": "local_bridge",
         "support": "experimental",
         "canApply": true,
-        "applyPath": "native",
-        "ruleId": "openai-api-to-grok-v1",
+        "applyPath": "local_bridge",
+        "ruleId": "openai-api-to-grok-bridge-v1",
         "gateKind": "none",
-        "reason": "用这份 OpenAI Key 接到 Grok，只改地址和模型。",
-        "reusePath": "api_endpoint"
+        "reason": "这份 OpenAI 兼容登录接到 Grok 需要本机转发。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "openai-api-to-claude",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "openai"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "openai-api-to-claude-v1",
+        "gateKind": "none",
+        "reason": "这份 OpenAI 兼容登录接到 Claude 需要本机转发。",
+        "reusePath": "local_bridge"
       }
     },
     {
