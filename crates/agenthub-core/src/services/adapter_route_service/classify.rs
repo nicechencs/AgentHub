@@ -1,25 +1,14 @@
-use serde_json::Value;
-
 use crate::error::{AppError, Result};
 use crate::models::{
-    adapter_maturity_from_decision, decide_adapter_capability, Account, AccountKind, AdapterAction,
-    AdapterApplyPlan, AdapterCapabilityDecision, AdapterCredentialClass, AdapterEvidence,
-    AdapterPlanChange, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
-    AdapterServiceImpact, AdapterSourceKind, AdapterSourceProduct, AdapterSupport, AgentId,
+    decide_adapter_capability, Account, AccountKind, AdapterCapabilityDecision,
+    AdapterCredentialClass, AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct, AgentId,
     Provider,
 };
 use crate::services::adapter_route_constants::{
-    claude_native_base_url, is_deepseek_api_marker, is_glm_coding_plan_marker,
-    is_kimi_code_membership_account, is_kimi_code_membership_source, is_openai_api_marker,
-    is_xai_api_marker, settings_contain_anthropic_api_endpoint, ANTHROPIC_AUTH_TOKEN_ENV,
-    DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL,
-    DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID,
-    DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL,
-    GLM_CODEX_RULE_ID, GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_BASE_URL,
-    KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, OPENAI_GROK_BASE_URL,
-    OPENAI_GROK_DEFAULT_MODEL,
+    is_deepseek_api_marker, is_glm_coding_plan_marker, is_kimi_code_membership_account,
+    is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
+    settings_contain_anthropic_api_endpoint,
 };
-use crate::storage::{AccountRepo, Database, ProviderRepo};
 
 use super::actions::*;
 use super::{AdapterRouteService, ClassifiedRoute};
@@ -366,7 +355,7 @@ impl AdapterRouteService {
     }
 }
 
-struct SourceIdentity {
+pub(super) struct SourceIdentity {
     product: AdapterSourceProduct,
     credential: AdapterCredentialClass,
     label: RouteSourceLabel,

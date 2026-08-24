@@ -208,6 +208,7 @@ impl StreamParser for PiStreamParser {
 }
 
 /// Stateless convenience for unit tests that inspect a single line.
+#[allow(dead_code)]
 pub fn parse_line(line: &str) -> Option<Vec<ProcessStep>> {
     PiStreamParser::new().parse(line)
 }

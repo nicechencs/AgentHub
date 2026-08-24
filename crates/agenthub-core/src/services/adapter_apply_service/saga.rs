@@ -1,82 +1,30 @@
-use std::path::PathBuf;
-
-use chrono::Utc;
 use serde_json::json;
 
-use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
 use crate::models::{
-    map_adapter_model, AdapterApplyRequest, AdapterApplyResult, AdapterGateKind, AdapterProfile,
-    AdapterProfileFilter, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
-    AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct,
-    AdapterSupport, AgentId, Provider, ProviderInput,
+    AdapterApplyRequest, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
+    AdapterProfileStatus, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest,
+    AdapterSourceKind, AgentId, Provider, ProviderInput,
 };
-use crate::services::adapter_route_constants::{
-    claude_native_base_url, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
-    ANTHROPIC_PI_PROVIDER_SLOT, CONNECTION_SECRET_MARKER, DEEPSEEK_API_BASE_URL,
-    DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL, DEEPSEEK_CODEX_DEFAULT_MODEL,
-    DEEPSEEK_CODEX_PROVIDER_PREFIX, DEEPSEEK_CODEX_PROVIDER_SLUG, DEEPSEEK_CODEX_RULE_ID,
-    DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
-    DSH_DEFAULT_MODEL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL, GLM_CODEX_DEFAULT_MODEL,
-    GLM_CODEX_PROVIDER_PREFIX, GLM_CODEX_PROVIDER_SLUG, GLM_CODEX_RULE_ID, GLM_PI_BASE_URL,
-    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL,
-    KIMI_GROK_DEFAULT_MODEL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT, OPENAI_GROK_BASE_URL,
-    OPENAI_GROK_DEFAULT_MODEL, OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
-};
-use crate::services::{
-    AdapterRouteService, AdapterSecretResolver, ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
-    ProviderService,
-};
-use crate::storage::{AdapterProfileRepo, Database};
+use crate::services::adapter_route_constants::KIMI_CLAUDE_RULE_ID;
+use crate::services::ProviderLiveSagaGuard;
 
-use super::specs::*;
 use super::{AdapterApplyService, ApplySnapshot, GeneratedApplySpec};
+
+// Re-exported so `tests` (`use super::*`) keeps seeing specs helpers.
+#[allow(unused_imports)]
+pub(super) use super::specs::*;
 
 pub(super) const RULE_ID: &str = KIMI_CLAUDE_RULE_ID;
 pub(super) const KIMI_PI_RULE_ID: &str = "kimi-membership-to-pi-v1";
-pub(super) const ANTHROPIC_PI_RULE_ID: &str = "anthropic-api-to-pi-v1";
-pub(super) const OPENAI_PI_RULE_ID: &str = "openai-api-to-pi-v1";
-pub(super) const XAI_PI_RULE_ID: &str = "xai-api-to-pi-v1";
-pub(super) const CLAUDE_SUBSCRIPTION_PI_RULE_ID: &str = "claude-subscription-to-pi-v1";
-pub(super) const CODEX_SUBSCRIPTION_PI_RULE_ID: &str = "codex-subscription-to-pi-v1";
-pub(super) const GROK_SUBSCRIPTION_PI_RULE_ID: &str = "grok-subscription-to-pi-v1";
 pub(super) const KIMI_GROK_RULE_ID: &str = "kimi-membership-to-grok-v1";
-pub(super) const OPENAI_GROK_RULE_ID: &str = "openai-api-to-grok-v1";
 pub(super) const DEEPSEEK_DSH_RULE_ID: &str = "deepseek-api-to-dsh-v1";
-pub(super) const RULE_VERSION: &str = "1";
-pub(super) const CLAUDE_PROVIDER_PREFIX: &str = "claude-kimi-adapter";
-pub(super) const CLAUDE_GLM_PROVIDER_PREFIX: &str = "claude-glm-adapter";
-pub(super) const CLAUDE_DEEPSEEK_PROVIDER_PREFIX: &str = "claude-deepseek-adapter";
-pub(super) const CODEX_GLM_PROFILE_PREFIX: &str = "adapter-glm-codex";
-pub(super) const CODEX_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-codex";
-pub(super) const PI_KIMI_PROVIDER_PREFIX: &str = "pi-kimi-adapter";
-pub(super) const PI_ANTHROPIC_PROVIDER_PREFIX: &str = "pi-anthropic-adapter";
-pub(super) const PI_OPENAI_PROVIDER_PREFIX: &str = "pi-openai-adapter";
-pub(super) const PI_XAI_PROVIDER_PREFIX: &str = "pi-xai-adapter";
-pub(super) const PI_GLM_PROVIDER_PREFIX: &str = "pi-glm-adapter";
-pub(super) const PI_DEEPSEEK_PROVIDER_PREFIX: &str = "pi-deepseek-adapter";
-pub(super) const PI_CLAUDE_OAUTH_PROVIDER_PREFIX: &str = "pi-claude-oauth-adapter";
-pub(super) const PI_CODEX_OAUTH_PROVIDER_PREFIX: &str = "pi-codex-oauth-adapter";
-pub(super) const PI_GROK_OAUTH_PROVIDER_PREFIX: &str = "pi-grok-oauth-adapter";
-pub(super) const DSH_DEEPSEEK_PROVIDER_PREFIX: &str = "dsh-deepseek-adapter";
-pub(super) const GROK_KIMI_PROVIDER_PREFIX: &str = "grok-kimi-adapter";
-pub(super) const GROK_OPENAI_PROVIDER_PREFIX: &str = "grok-openai-adapter";
-pub(super) const CLAUDE_PROFILE_PREFIX: &str = "adapter-kimi-claude";
-pub(super) const CLAUDE_GLM_PROFILE_PREFIX: &str = "adapter-glm-claude";
-pub(super) const CLAUDE_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-claude";
-pub(super) const PI_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-pi";
-pub(super) const PI_ANTHROPIC_PROFILE_PREFIX: &str = "adapter-anthropic-pi";
-pub(super) const PI_OPENAI_PROFILE_PREFIX: &str = "adapter-openai-pi";
-pub(super) const PI_XAI_PROFILE_PREFIX: &str = "adapter-xai-pi";
-pub(super) const PI_GLM_PROFILE_PREFIX: &str = "adapter-glm-pi";
-pub(super) const PI_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-pi";
-pub(super) const DSH_DEEPSEEK_PROFILE_PREFIX: &str = "adapter-deepseek-dsh";
-pub(super) const GROK_KIMI_PROFILE_PREFIX: &str = "adapter-kimi-grok";
-pub(super) const GROK_OPENAI_PROFILE_PREFIX: &str = "adapter-openai-grok";
 pub(super) const PREVIOUS_CURRENT_ID: &str = "previousCurrentId";
 pub(super) const PREVIOUS_BACKUP_ID: &str = "previousBackupId";
 
 impl AdapterApplyService {
+    // Only exercised by `adapter_route_service` tests; kept pub(crate) for them.
+    #[allow(dead_code)]
     pub(crate) fn apply_has_arm(
         rule_id: &str,
         source_kind: AdapterSourceKind,

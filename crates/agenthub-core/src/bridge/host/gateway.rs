@@ -129,6 +129,8 @@ pub(super) struct EdgeState {
     pub(super) observed_upstream: Arc<Mutex<BridgeUpstreamStatus>>,
     pub(super) grok_replay: Arc<GrokReasoningReplay>,
     pub(super) listed_models: Arc<[String]>,
+    // Written from the spec; read path currently unused (kept for tests).
+    #[allow(dead_code)]
     pub(super) reload_upstream_auth: Option<crate::bridge::UpstreamAuthReload>,
     pub(super) account_picker: AccountPicker,
     pub(super) mapping_source: Option<crate::models::AdapterSourceProduct>,

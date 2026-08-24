@@ -34,8 +34,8 @@ pub use packages::SkillPackageService;
 pub use reconcile::{observed as skill_observed, SkillReconciler};
 pub use sources::SkillSourceService;
 pub use target::{
-    builtin_skill_target_registry, AdapterSkillTarget, AgentSkillTarget, SkillTargetRegistry,
-    StaticSkillTarget,
+    build_builtin_skill_targets, builtin_skill_target_registry, AdapterSkillTarget,
+    AgentSkillTarget, SkillTargetRegistry, StaticSkillTarget,
 };
 
 // Re-exports used by SkillService façade and its tests.
@@ -49,11 +49,14 @@ pub(crate) use commit::{
     commit_skill_package, recover_skill_commit_journal, PreparedSkillTree, SkillCommitFaults,
 };
 pub(crate) use fs_index::collect_file_index;
+// collect_regular_files / detect_link_kind / normalize_rel_path are re-exported
+// for skill_service tests.
+#[cfg(test)]
+pub(crate) use fs_safe::{collect_regular_files, detect_link_kind, normalize_rel_path};
 pub(crate) use fs_safe::{
-    collect_regular_files, detect_link_kind, ensure_no_symlink_in_ancestors,
-    ensure_no_symlink_in_existing_prefix, inspect_projection_target, is_exact_child,
-    is_link_or_reparse, link_resolves_to_source, normalize_rel_path, paths_equal_lexical,
-    reject_source_target_overlap, remove_projection_link, resolve_link_path,
+    ensure_no_symlink_in_ancestors, ensure_no_symlink_in_existing_prefix,
+    inspect_projection_target, is_exact_child, is_link_or_reparse, link_resolves_to_source,
+    paths_equal_lexical, reject_source_target_overlap, remove_projection_link, resolve_link_path,
     resolve_readable_skill_dir, validate_skill_id, validate_skills_root,
     validate_tree_entries_safe, TargetPresence,
 };
@@ -66,7 +69,9 @@ pub(crate) use ownership::{
     project_copy_with_ownership, record_copy_ownership, recycle_skill_dir,
     unproject_with_ownership,
 };
-pub(crate) use packages::{materialize_projection, validate_and_collect_source, write_skill_tree};
+#[cfg(test)]
+pub(crate) use packages::write_skill_tree;
+pub(crate) use packages::{materialize_projection, validate_and_collect_source};
 pub(crate) use projection_link::create_projection_link;
 pub(crate) use scoped_lock::{acquire_skill_lock, acquire_skill_root_lock};
 pub(crate) use time::chrono_now;

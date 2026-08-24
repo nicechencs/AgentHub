@@ -4,7 +4,7 @@
 //! trait, registry, detect, auth revision, and config writers.
 
 mod adapter_trait;
-mod auth_revision;
+pub(crate) mod auth_revision;
 mod config_write;
 mod detect_binary;
 mod registry;
@@ -38,16 +38,13 @@ pub(crate) use grok::{expand_grok_auth_to_live_accounts, grok_live_uses_default_
 pub use adapter_trait::{default_authorization_key, default_identity_label, AgentAdapter};
 pub(crate) use auth_revision::{
     auth_file_revision, auth_files_revision, inspect_auth_credentials, oauth_auth_health,
-    AuthCredentialMetadata,
 };
 pub(crate) use config_write::{
     api_key_live_account, require_api_key, write_json_config, write_toml_config,
     write_verified_json_object,
 };
 pub(crate) use detect_binary::{
-    agenthub_user_npm_prefix_roots, detect_binary, detect_binary_with_env, expand_binary_names,
-    extract_version_token, first_existing_named_bin, infer_channel,
-    is_under_agenthub_user_npm_prefix, looks_like_version_line, well_known_bin_paths,
+    detect_binary, detect_binary_with_env, extract_version_token, looks_like_version_line,
     NOT_FOUND_FIREFIGHTING_NOTE,
 };
 pub use registry::{

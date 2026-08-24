@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::AppError;
 use crate::models::{
     Account, AccountKind, AdapterCapabilityDecision, AdapterMaturity, AdapterProfile,
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteAnalysis,

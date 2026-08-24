@@ -1,5 +1,6 @@
 use super::*;
 use crate::adapters::AgentAdapter;
+use crate::error::Result;
 use crate::models::{Account, AccountKind, AdapterApplyResult, Provider};
 use crate::models::{
     AgentConfig, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
@@ -8,8 +9,7 @@ use crate::models::{
 use crate::services::adapter_route_constants::{
     DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_PI_PROVIDER_SLOT,
     GLM_CLAUDE_BASE_URL, GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL,
-    KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, KIMI_GROK_RULE_ID, OPENAI_GROK_BASE_URL,
-    OPENAI_GROK_DEFAULT_MODEL, OPENAI_GROK_RULE_ID,
+    KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, KIMI_GROK_RULE_ID,
 };
 use crate::services::LiveWriteAuthority;
 use crate::storage::{AccountRepo, ActiveBindingRepo, ProviderRepo};

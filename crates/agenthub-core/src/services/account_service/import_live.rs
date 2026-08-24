@@ -1,31 +1,19 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
-use chrono::Utc;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::adapters::{AdapterRegistry, AgentAdapter};
+use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
-use crate::logging::targets;
 use crate::models::{
-    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult, AgentId,
-    BackupKind, Capability, LiveAccount, PersistedTicketSurface, TicketSurface,
+    attach_persisted_surface, Account, AgentId, Capability, LiveAccount, PersistedTicketSurface,
+    TicketSurface,
 };
 use crate::services::adapter_projection::projection_import_error;
-use crate::services::switch_undo::{
-    clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
-};
-use crate::services::{AdapterRouteService, BackupService, ConnectionService};
-use crate::storage::{AccountRepo, Database};
-use crate::utils::agent_lock::AgentWriteLock;
-use crate::utils::loopback::credentials_are_loopback;
-use crate::utils::redact::mask_secret_preview;
+use crate::services::AdapterRouteService;
 
 use super::surface::*;
-use super::{AccountService, MAX_ACCOUNT_ID_LEN, MAX_ACCOUNT_LABEL_LEN};
+use super::{AccountService, MAX_ACCOUNT_LABEL_LEN};
 
 impl AccountService {
     pub fn import_live(&self, agent: AgentId, name: Option<&str>) -> Result<Account> {

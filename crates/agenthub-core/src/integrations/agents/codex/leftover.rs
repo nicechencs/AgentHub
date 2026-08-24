@@ -78,7 +78,6 @@ pub fn strip_bridge_leftovers_in_doc(doc: &mut DocumentMut) -> bool {
                 }
             }
             if providers.is_empty() {
-                drop(providers);
                 doc.remove("model_providers");
                 changed = true;
             }

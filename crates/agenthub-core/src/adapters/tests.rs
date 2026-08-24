@@ -1,3 +1,8 @@
+use super::auth_revision::AuthCredentialMetadata;
+use super::detect_binary::{
+    agenthub_user_npm_prefix_roots, detect_binary, expand_binary_names, first_existing_named_bin,
+    infer_channel, is_under_agenthub_user_npm_prefix, well_known_bin_paths,
+};
 use super::*;
 use crate::error::AppError;
 use crate::models::{AccountKind, AgentConfig, AgentId, Capability, CapabilityLevel};
@@ -7,8 +12,11 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+// Only exercised by unix-gated tests below.
+#[cfg_attr(not(unix), allow(dead_code))]
 static DETECT_ENV_LOCK: Mutex<()> = Mutex::new(());
 
+#[cfg_attr(not(unix), allow(dead_code))]
 fn restore_env(key: &str, prev: Option<OsString>) {
     match prev {
         Some(value) => std::env::set_var(key, value),
@@ -24,7 +32,10 @@ fn expand_binary_names_adds_windows_suffixes() {
     {
         assert_eq!(names[0], "codex.cmd");
         assert!(names.iter().any(|n| n == "codex.exe"));
-        assert!(names.iter().all(|n| !n.ends_with(".ps1")), ".ps1 must not be probed: CreateProcess cannot spawn PowerShell scripts and is_direct_spawnable rejects them: {names:?}");
+        assert!(
+            names.iter().all(|n| !n.ends_with(".ps1")),
+            ".ps1 must not be probed: CreateProcess cannot spawn PowerShell scripts and is_direct_spawnable rejects them: {names:?}"
+        );
         let cmd = names.iter().position(|n| n == "codex.cmd").unwrap();
         let bare = names.iter().position(|n| n == "codex").unwrap();
         assert!(

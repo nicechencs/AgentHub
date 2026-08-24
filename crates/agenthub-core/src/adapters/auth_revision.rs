@@ -72,37 +72,64 @@ fn auth_file_identity(_path: &Path, metadata: &std::fs::Metadata) -> String {
 }
 
 #[cfg(windows)]
-fn auth_file_identity(path: &Path, metadata: &std::fs::Metadata) -> String {
-    use std::os::windows::fs::MetadataExt;
-    use std::os::windows::io::AsRawHandle;
-
+mod win_file_info {
     #[repr(C)]
-    struct FileTime {
+    pub(super) struct FileTime {
         low_date_time: u32,
         high_date_time: u32,
     }
 
     #[repr(C)]
-    struct ByHandleFileInformation {
-        file_attributes: u32,
-        creation_time: FileTime,
-        last_access_time: FileTime,
-        last_write_time: FileTime,
-        volume_serial_number: u32,
-        file_size_high: u32,
-        file_size_low: u32,
-        number_of_links: u32,
-        file_index_high: u32,
-        file_index_low: u32,
+    // Mirrors the Win32 `BY_HANDLE_FILE_INFORMATION` layout exactly; adding
+    // or reordering fields shifts the file-index offsets the API writes.
+    pub(crate) struct ByHandleFileInformation {
+        pub(super) file_attributes: u32,
+        pub(super) creation_time: FileTime,
+        pub(super) last_access_time: FileTime,
+        pub(super) last_write_time: FileTime,
+        pub(super) volume_serial_number: u32,
+        pub(super) file_size_high: u32,
+        pub(super) file_size_low: u32,
+        pub(super) number_of_links: u32,
+        pub(super) file_index_high: u32,
+        pub(super) file_index_low: u32,
     }
 
     #[link(name = "kernel32")]
     extern "system" {
-        fn GetFileInformationByHandle(
+        pub(super) fn GetFileInformationByHandle(
             file: *mut std::ffi::c_void,
             information: *mut ByHandleFileInformation,
         ) -> i32;
     }
+}
+
+/// Volume serial number + 64-bit file index for `path`, or `None` when the
+/// handle information cannot be queried. Shared with `backup_service` tests.
+#[cfg(windows)]
+pub(crate) fn windows_file_key(path: &Path) -> Option<(u32, u64)> {
+    use std::os::windows::io::AsRawHandle;
+
+    let file = std::fs::File::open(path).ok()?;
+    let mut information = std::mem::MaybeUninit::<win_file_info::ByHandleFileInformation>::zeroed();
+    // SAFETY: `file` owns a valid handle for the duration of this call and the
+    // buffer is correctly sized for the documented Win32 structure.
+    let ok = unsafe {
+        win_file_info::GetFileInformationByHandle(file.as_raw_handle(), information.as_mut_ptr())
+    };
+    if ok == 0 {
+        return None;
+    }
+    // SAFETY: the API initialized the buffer (non-zero return above).
+    let information = unsafe { information.assume_init() };
+    let file_index =
+        (u64::from(information.file_index_high) << 32) | u64::from(information.file_index_low);
+    Some((information.volume_serial_number, file_index))
+}
+
+#[cfg(windows)]
+fn auth_file_identity(path: &Path, metadata: &std::fs::Metadata) -> String {
+    use std::os::windows::fs::MetadataExt;
 
     let fallback = || {
         format!(
@@ -112,22 +139,12 @@ fn auth_file_identity(path: &Path, metadata: &std::fs::Metadata) -> String {
             metadata.len(),
         )
     };
-    let Ok(file) = std::fs::File::open(path) else {
+    let Some((volume_serial_number, file_index)) = windows_file_key(path) else {
         return fallback();
     };
-    let mut information = std::mem::MaybeUninit::<ByHandleFileInformation>::zeroed();
-    // `file` owns a valid handle for the duration of this call and the buffer
-    // is correctly sized for the documented Win32 structure.
-    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), information.as_mut_ptr()) };
-    if ok == 0 {
-        return fallback();
-    }
-    let information = unsafe { information.assume_init() };
-    let file_index =
-        (u64::from(information.file_index_high) << 32) | u64::from(information.file_index_low);
     format!(
         "windows:{}:{}:{}:{}",
-        information.volume_serial_number,
+        volume_serial_number,
         file_index,
         metadata.creation_time(),
         metadata.last_write_time(),

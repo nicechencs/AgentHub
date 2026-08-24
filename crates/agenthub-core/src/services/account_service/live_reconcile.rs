@@ -1,33 +1,20 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Instant;
-
-use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::json;
 use uuid::Uuid;
 
-use crate::adapters::{AdapterRegistry, AgentAdapter};
+use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    attach_persisted_surface, Account, AccountInput, AccountKind, AccountSwitchResult,
-    AdapterProfile, AdapterProfileFilter, AdapterSourceKind, AgentId, BackupKind, Capability,
+    Account, AccountKind, AdapterProfile, AdapterProfileFilter, AgentId, BackupKind, Capability,
     LiveAccount, Provider,
 };
 use crate::services::adapter_projection::{
     classify_account_live, leftover_live_flag, should_skip_live_reconcile, LiveOrigin,
 };
-use crate::services::switch_undo::{
-    clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
-};
-use crate::services::{AdapterRouteService, BackupService, ConnectionService};
-use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
-use crate::utils::agent_lock::AgentWriteLock;
-use crate::utils::redact::mask_secret_preview;
+use crate::storage::{AdapterProfileRepo, ProviderRepo};
 
 use super::surface::*;
-use super::{AccountService, MAX_ACCOUNT_ID_LEN, MAX_ACCOUNT_LABEL_LEN};
+use super::{AccountService, MAX_ACCOUNT_LABEL_LEN};
 
 impl AccountService {
     pub(super) fn sync_current_live(&self, agent: Option<AgentId>) {
