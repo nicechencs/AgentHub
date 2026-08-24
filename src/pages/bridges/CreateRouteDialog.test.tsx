@@ -83,6 +83,7 @@ describe('ImportRouteDialog', () => {
           agentId: 'claude',
           title: 'Work login',
           subtitle: '已配置',
+          endpointMode: 'official',
           isCurrent: true,
           authStatus: 'valid',
           sortKey: '',
@@ -91,9 +92,49 @@ describe('ImportRouteDialog', () => {
       })),
     );
     expect(markup).toContain('type="radio"');
-    expect(markup).toContain('Work login');
+    expect(markup).toContain('Work login · Claude · 官方端点');
     expect(markup).toContain('cursor-pointer');
     expect(markup).toContain('确认应用');
+  });
+
+  it('distinguishes two 本机路由 rows by client and endpoint', () => {
+    const markup = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(ImportRouteDialog, {
+        open: true,
+        onOpenChange: vi.fn(),
+        entries: [
+          {
+            key: 'provider:p-1',
+            source: 'provider',
+            kind: 'apikey',
+            id: 'p-1',
+            agentId: 'claude',
+            title: '本机路由',
+            subtitle: '已配置 · 官方端点',
+            isCurrent: true,
+            authStatus: 'valid',
+            sortKey: '',
+            endpointMode: 'official',
+          },
+          {
+            key: 'provider:p-2',
+            source: 'provider',
+            kind: 'apikey',
+            id: 'p-2',
+            agentId: 'codex',
+            title: '本机路由',
+            subtitle: '已配置 · 自定义端点',
+            isCurrent: false,
+            authStatus: 'valid',
+            sortKey: '',
+            endpointMode: 'custom',
+          },
+        ],
+        onImported: vi.fn(),
+      })),
+    );
+    expect(markup).toContain('本机路由 · Claude · 官方端点');
+    expect(markup).toContain('本机路由 · Codex · 自定义端点');
   });
 });
 

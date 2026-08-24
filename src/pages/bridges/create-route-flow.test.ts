@@ -9,9 +9,13 @@ import {
   createRouteProviderDraft,
   DEFAULT_CREATE_ROUTE_MODEL,
   DEFAULT_CREATE_ROUTE_URL,
+  createRouteAutoNames,
   defaultCreateRouteEndpoints,
   defaultCreateRouteName,
+  importRouteRowTitle,
   importRouteTarget,
+  isAutoCreateRouteName,
+  nextCreateRouteName,
   isAlternateRouteRule,
   isCreateRouteUrlValid,
   isOpenRouterUrl,
@@ -112,6 +116,33 @@ describe('create-route-flow', () => {
   it('fills a friendly default name from vendor + alternate without extra spaces', () => {
     expect(defaultCreateRouteName('OpenRouter', '备选')).toBe('OpenRouter 备选');
     expect(defaultCreateRouteName('  智谱  ', '备选')).toBe('智谱 备选');
+  });
+
+  it('treats empty or any vendor default name as auto and keeps a typed name', () => {
+    const autos = createRouteAutoNames(['OpenRouter', '智谱', '自定义'], '备选');
+    expect(autos).toEqual(['OpenRouter 备选', '智谱 备选', '自定义 备选']);
+    expect(isAutoCreateRouteName('', autos)).toBe(true);
+    expect(isAutoCreateRouteName('智谱 备选', autos)).toBe(true);
+    expect(isAutoCreateRouteName('OpenRouter 备选', autos)).toBe(true);
+    expect(isAutoCreateRouteName('家里的备用', autos)).toBe(false);
+    expect(nextCreateRouteName('', '智谱 备选', autos)).toBe('智谱 备选');
+    expect(nextCreateRouteName('OpenRouter 备选', '智谱 备选', autos)).toBe('智谱 备选');
+    expect(nextCreateRouteName('智谱 备选', 'OpenRouter 备选', autos)).toBe('OpenRouter 备选');
+    expect(nextCreateRouteName('家里的备用', 'OpenRouter 备选', autos)).toBe('家里的备用');
+  });
+
+  it('builds a distinct import row title from title, client, and endpoint', () => {
+    const a = importRouteRowTitle(
+      { title: '本机路由', subtitle: '已配置', agentId: 'claude', source: 'provider', endpointMode: 'official' },
+      { agent: 'Claude', officialEndpoint: '官方端点', customEndpoint: '自定义端点' },
+    );
+    const b = importRouteRowTitle(
+      { title: '本机路由', subtitle: '已配置', agentId: 'codex', source: 'provider', endpointMode: 'custom' },
+      { agent: 'Codex', officialEndpoint: '官方端点', customEndpoint: '自定义端点' },
+    );
+    expect(a).toBe('本机路由 · Claude · 官方端点');
+    expect(b).toBe('本机路由 · Codex · 自定义端点');
+    expect(a).not.toBe(b);
   });
 
   it('requires name, key, http(s) URL, and at least one endpoint', () => {
