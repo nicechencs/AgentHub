@@ -146,6 +146,7 @@ pub fn run() {
             commands::provider::switch_provider_preview,
             commands::provider::undo_switch_provider,
             commands::provider::test_provider_latency,
+            commands::provider::list_remote_openai_models,
             // Skill
             commands::skill::list_skills,
             commands::skill::list_installed_skills,

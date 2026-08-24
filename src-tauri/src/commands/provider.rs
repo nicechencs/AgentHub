@@ -153,6 +153,16 @@ pub async fn undo_switch_provider(
     .await
 }
 
+/// Invoke: `list_remote_openai_models` — GET {base}/v1/models (unsaved paste OK).
+#[tauri::command]
+pub fn list_remote_openai_models(
+    base_url: String,
+    api_key: String,
+) -> Result<Vec<String>, String> {
+    agenthub_core::utils::remote_openai_models::list_remote_openai_models(&base_url, &api_key)
+        .map_err(|e| map_err_string("list_remote_openai_models", e))
+}
+
 /// Invoke: `test_provider_latency` — probe Base URL RTT in milliseconds.
 #[tauri::command]
 pub async fn test_provider_latency(

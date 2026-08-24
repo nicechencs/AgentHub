@@ -179,6 +179,20 @@ export function createMockProviderPort(): ProviderPort {
         PRESETS[id].map((p) => ({ agent: id, ...p })),
       );
     },
+
+    async listRemoteOpenAiModels(baseUrl, _apiKey) {
+      await delay(randomLatency());
+      if (baseUrl.includes('fail-models')) {
+        throw new Error('remote models failed');
+      }
+      if (baseUrl.includes('empty-models')) {
+        return [];
+      }
+      if (baseUrl.includes('mock-models')) {
+        return ['mock-gpt-4', 'mock-gpt-4o-mini'];
+      }
+      return [];
+    },
   };
 }
 
