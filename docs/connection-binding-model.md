@@ -1,11 +1,11 @@
 # 连接：票、绑定与协议图
 
 > **现行状态（2026-08-19）：** 用户看到的是「登录」，不是「票 / 钱包」。票 / Ticket / 钱包是实现名。Grok→Claude 走本机路由；自动生成的配置不出现在登录列表；sidecar 未迁。预览芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不再标圈号。
-> **2026-08-23 表面：** Connections 顶部 AgentTabStrip（`?agent=` 高亮并把 Tab 落到该 Agent）；行上常驻「分享 / 路由」，无类型芯片（官方登录 / API Key / 未识别）；OAuth 用人头、API Key 用钥匙。侧栏与页标题英文 Routes、中文「路由」，永久显示；列表与详情显示 127.0.0.1 与端口，无端口不复制。
+> **2026-08-23 表面：** Connections 顶部 AgentTabStrip（`?agent=` 高亮并把 Tab 落到该 Agent）；行上常驻「分享 / 路由」，无类型芯片（官方登录 / API Key / 未识别）；OAuth 用人头、API Key 用钥匙。侧栏与页标题英文 Routes、中文「路由」，默认显示；Settings 偏好 `routesNavVisible` 可隐藏侧栏项，隐藏不禁用页面，`/routes` 仍可打开。列表与详情显示 127.0.0.1 与端口，无端口不复制。
 > 状态：**§6 第 1–3 步已落地；§6.4 部分落地（Kimi/OpenAI API → Grok、OpenAI/xAI/GLM/DeepSeek API → Pi 属直接改配置；GLM/DeepSeek API → Codex 属直接改配置；Anthropic API Key → Codex 属本机转发）；§6.5 Claude/Codex bind 已开（GLM/DeepSeek → Claude/Codex 属直接改配置），GLM/DeepSeek → Pi 已可 experimental bind，写进对方认的登录——Claude/Codex/Grok 订阅 → Pi 已可 experimental bind，本机转发——Codex Responses 与 Grok Responses 订阅 → Claude / Codex 已可 experimental bind，Codex 订阅 → Grok 写 `api_backend=responses`；Claude 订阅 → Codex 原「产品不做」已于 2026-08-21 改判为可路由（③ 方向开放，待落地），App Server/OauthOther 仍关闭；dsh writer 已接入（`AgentId::Dsh` + `deepseek-api-to-dsh-v1`）。未做的是 sidecar 迁移**。
 > 日期：2026-08-15。  
 > 本文是实现用的领域模型，不是给最终用户看的说明书。读者向说明（三种接法、白话图）见 [product-decisions.md](product-decisions.md)。页面、Hub 入口、Adapter、厂商规则文档以本文为准改对象名；**当前实现状态**仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 和 [provider-api-oauth-adaptation.md §4](provider-api-oauth-adaptation.md#4-当前实现矩阵) 为准。  
-> 关联：[product-decisions.md](product-decisions.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[hub-redesign-plan.md](hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
+> 关联：[product-decisions.md](product-decisions.md)、[architecture.md](architecture.md)、[ui-design.md](ui-design.md)、[adapter-design.md](adapter-design.md)、[archive/hub-redesign-plan.md](archive/hub-redesign-plan.md)、[provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md)、[account-authorization-pool.md](account-authorization-pool.md)、[adapter-sidecar-design.md](adapter-sidecar-design.md)。
 
 日常说法对照（本文仍用左边，方便和代码对齐）：
 
@@ -237,7 +237,7 @@ OAuth 未完成：引导去补登录，不在对话框里发起新授权。空�
 
 ### 5.5 Routes（本机路由）
 
-规范路由 `/routes`。侧栏与页标题英文 **Routes**、中文「**路由**」，永久显示。
+规范路由 `/routes`。侧栏与页标题英文 **Routes**、中文「**路由**」，默认显示；Settings 偏好 `routesNavVisible` 可隐藏侧栏项，隐藏不禁用页面，`/routes` 仍可打开。
 
 列出全部 `route=local_bridge`（`partitionLocalBridgeRuntimes`）：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进孤立分区。行与详情都是**单层**进程健康 + 本机 IP（127.0.0.1）+ 端口，不画「配置已生效 / 桥接运行中」。无端口时显示「待分配端口」，不提供复制。来源/目标是纯文字，**禁止**链到 `/connections?agent=`（自动生成的配置不得出现在登录列表）。
 

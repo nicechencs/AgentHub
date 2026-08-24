@@ -1,5 +1,5 @@
 /**
- * Connections 钱包行用途反查（docs/hub-redesign-plan.md §3.1C）。
+ * Connections 钱包行用途反查（docs/archive/hub-redesign-plan.md §3.1C）。
  */
 import type { AdapterProfile } from '@/lib/api/adapter';
 import type { Account, Provider } from '@/lib/types';

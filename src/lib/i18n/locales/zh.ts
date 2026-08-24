@@ -79,8 +79,8 @@ export const zh = {
       closeToTrayTip:
         '点击关闭按钮后隐藏到系统托盘，进程保持运行。Windows 可从托盘图标恢复；macOS 可从菜单栏托盘或 Dock 图标恢复。',
       routesNavVisibleLabel: '显示路由页面',
-      routesNavVisibleDescription: '在侧边栏显示路由入口；功能开发中，尚不完善',
-      routesNavVisibleTip: '关闭后仍可通过链接直接访问路由页面。',
+      routesNavVisibleDescription: '在侧栏显示路由入口；关闭后仍可用链接打开。',
+      routesNavVisibleTip: '隐藏侧栏入口不禁用路由页；仍可通过链接打开。',
       skillMarketLabel: '技能市场',
       skillMarketDescription: '远程技能源',
       skillMarketTip: '自动：优先 skills.sh，网络不可达时回退 skillhub.cn。也可固定只用其一。',

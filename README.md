@@ -16,14 +16,14 @@ AgentHub 是一个本地运行的多 Agent 桌面管理工具。它用统一的 
 |---|---|
 | **Dashboard** | 查看 Agent 状态、Token 趋势、成本估算与解析健康度；已安装 Agent 可直接连接/切换 |
 | **Agents** | 检测 Node/npm/Git 等运行环境，安装、升级或卸载 Agent |
-| **Connections** | 跨工具登录列表。顶部按 Agent 筛选；OAuth 用头像、API Key 用钥匙。一份登录接到另一个工具只有三种做法：直连、写进对方登录、本机转发。切换前自动备份当前配置。白话说明见 [产品决策](docs/product-decisions.md) |
-| **Routes** | 本机转发运行时（启停、恢复）；列表与详情显示 127.0.0.1 和端口。日常连接走 Dashboard / Connections |
+| **Connections** | 跨工具登录列表。顶部按 Agent 筛选；OAuth 用头像、API Key 用钥匙。真登录行入口是「分享 / 路由」。一份登录接到另一个工具只有三种做法：直连、写进对方登录、本机转发。切换前自动备份当前配置。白话说明见 [产品决策](docs/product-decisions.md) |
+| **Routes** | 本机转发运行时（启停、恢复）；列表与详情显示 127.0.0.1 和端口。侧栏默认显示，Settings 偏好可隐藏入口（页面仍可打开）。日常连接走 Dashboard / Connections |
 | **Skills** | 以共享目录 `~/.agents/skills` 向各 Agent 同步技能 |
 | **MCP** | 只读查看各工具已配置的额外 MCP 能力（不会改它们的设置） |
-| **Chat** | 在桌面端调用一个或多个本机 Agent，并展示流式过程 |
+| **Chat** | 在桌面端调用本机 Agent（一会话一个），并展示流式过程 |
 | **Projects** | 浏览、整理和汇总各 Agent 的本地项目与会话 |
 | **Settings** | 四个分区：偏好 / 本机 / 备份 / 关于。本机含数据目录与日志；备份是独立分页（`/settings?tab=backups`，`/backups` 会跳过来），不占侧栏 |
-| **CLI** | 提供 doctor、env、agent、provider、account、skill、usage、backup、run 等命令 |
+| **CLI** | 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令 |
 
 当前内置适配：**Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、Cursor Agent、DeepSeek Harness**。各家能力不同，可用以下命令查看：
 
@@ -101,9 +101,9 @@ pnpm dev:mock
 | `pnpm tauri:build:linux` | 构建本地使用的 Linux `.deb` 与 AppImage（未签名；正式包由推送 `v*` tag 的 GitHub Actions 发布） |
 | `./run.sh --check` | 检查 macOS/Linux 源码运行依赖 |
 | `cargo test -p agenthub-core` | 运行 Rust core 测试 |
-| `cargo run -p agenthub-cli -- --help` | 查看 CLI 帮助 |
+| `cargo run -p agenthub-cli -- --help` | 查看 CLI 帮助（含 doctor / env / agent / provider / account / skill / usage / backup / run / config） |
 
-正式 Release 由推送到仓库的 `v*` tag 触发 GitHub Actions 生成和发布（tag 必须指向 `release` 分支上的提交），本地发布命令已禁用。日常 PR 合入 `dev`。要出新版本，须同时 bump `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json`（当前都是 0.2.3；已有 tag `v0.2.2`，workflow 会拒绝覆盖已有 tag），先更新 `release` 分支，再打并推送匹配的 `vX.Y.Z` tag。`dev` 与 `release` 是无关历史（`dev` 于 8 月中改写过），不要把 `dev` 合并进 `release`。
+正式 Release 由推送到仓库的 `v*` tag 触发 GitHub Actions 生成和发布（tag 必须指向 `release` 分支上的提交），本地发布命令已禁用。日常 PR 合入 `dev`。要出新版本，须同时 bump `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json`（当前都是 **0.3.1**），先更新 `release` 分支，再打并推送匹配的 `vX.Y.Z` tag。workflow 会拒绝覆盖已有 tag。`dev` 与 `release` 是无关历史（`dev` 于 8 月中改写过），不要把 `dev` 合并进 `release`。
 
 ## 数据与隐私
 

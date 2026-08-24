@@ -129,7 +129,7 @@ Anthropic Key → Pi、OpenAI Key → Pi 也是同一类：不是「两种接口
 本机转发只在对不上时才转发。  
 **不**默认先开一个一直挂着的兼容服务。
 
-目标工具问「有哪些模型可选」时，由本机转发按这条边能接受的模型来回答（计划中的本机 `GET /models`，见 [provider-api-oauth-adaptation.md §5.1.3](provider-api-oauth-adaptation.md)）。这只是转发自己的清单，不代表那个工具在 AgentHub 里有了模型选择功能。
+目标工具问「有哪些模型可选」时，由本机转发按这条边能接受的模型来回答（本机 `GET /models` **已实现**，见 [provider-api-oauth-adaptation.md §5.1.3](provider-api-oauth-adaptation.md)）。这只是转发自己的清单，不代表那个工具在 AgentHub 里有了模型选择功能。
 
 ## 2. 图：三种做法分别接到谁
 
@@ -164,7 +164,7 @@ flowchart LR
   codexSub["Codex 订阅"] --> fwdCodex["本机转发"] --> codexTargets["Claude · Grok"]
 ```
 
-Claude 订阅接到 Codex：原「产品不做」已于 **2026-08-21 改判为可路由**（③ 本机转发，上游 Anthropic Messages OAuth，见 [provider-api-oauth-adaptation.md §5.4](provider-api-oauth-adaptation.md#54-本机路由下游表面统一规划)）；实现与取证落地前仍不可 bind。  
+Claude 订阅接到 Codex：原「产品不做」已于 **2026-08-21 改判为可路由**（③ 本机转发，上游 Anthropic Messages OAuth，见 [provider-api-oauth-adaptation.md §5.4](provider-api-oauth-adaptation.md#54-本机路由下游表面统一)）；实现与取证落地前仍不可 bind。  
 Kimi 会员 OAuth 接到任何工具：**产品不做**（不写进对方、也不本机转发）。Kimi 接到其他工具只用会员 Key。其他国产 OAuth 同样不开边、不转成 API。
 
 ## 3. 同一份登录，接到谁，做法可以不同
@@ -215,7 +215,7 @@ Kimi 会员 OAuth → 任意工具是**产品不做**（不转发、不写进对
 | 管理面 | 用现有页面做登录、额度、探测、转发启停，不另做多栏工作台 |
 
 本产品不做：公网入口、多人共用一份登录、转售、把转发生成的配置再当成一份新登录、默认一直挂着的兼容服务、**中国产 AI 的 OAuth 开边或转成 API**。  
-本机路由可挂多个**本人**账号做自动轮询与故障切换（2026-08-21 拍板，切换只发生在请求边界/首事件前；负载均衡暂不做），见 [provider-api-oauth-adaptation.md §5.5](provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划)。
+本机路由可挂多个**本人**账号做自动轮询与故障切换（2026-08-21 拍板，切换只发生在请求边界/首事件前；负载均衡暂不做），见 [provider-api-oauth-adaptation.md §5.5](provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换)。
 公开致谢见根 [README.md](../README.md)。把登录存盘后再加密，仍是项目范围外。国产 OAuth 关闭项见根 [AGENTS.md](../AGENTS.md)。
 
 ## 5. 产品要做，实现可以暂时写不上去
@@ -268,7 +268,7 @@ Kimi 会员 OAuth → 任意工具是**产品不做**（不转发、不写进对
 | [architecture.md](architecture.md) | 模块拆分；原则 12 按三种做法解释 `plan()` |
 | [agenthub-plan.md](agenthub-plan.md) | 总方案；§8 是实现清单 |
 | [adapter-sidecar-design.md](adapter-sidecar-design.md) | 只有本机转发依赖独立转发进程 |
-| [hub-redesign-plan.md](hub-redesign-plan.md) | Phase 1 **历史记录** |
+| [archive/hub-redesign-plan.md](archive/hub-redesign-plan.md) | Phase 1 **历史记录** |
 | [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | 直接改配置与本机转发的真机清单 |
 | [deepseek-harness-integration.md](deepseek-harness-integration.md) | DeepSeek API 走直接改配置；DeepSeek 自己的工具不是转发 |
 | [account-authorization-pool.md](account-authorization-pool.md) | 登录去重；不决定走哪一种 |
