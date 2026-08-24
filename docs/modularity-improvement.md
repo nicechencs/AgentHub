@@ -480,3 +480,182 @@ integrations/agents/<agent_key>/
 | 跨页（已收口） | `src/lib/bridges-path.ts` |
 | mock 双真源 | `src/dev/mocks/adapter/`（按域拆文件；非规则真源） |
 | 页面样板 | `src/pages/connections/connection-model.ts`、`src/lib/connect-flow/` |
+
+---
+
+## 11. 2026-08-24 深度模块化问题记录
+
+本节记录本轮对当前工作区的深度复核结果。它补充第 5、6、9 节，不把已经收口的目录拆分、前端 invoke 边界、Ticket 产品写口或 adapter_control in-process 契约重新列为待办。
+
+### 11.1 总体判断
+
+当前项目已经具备健康的模块化单体骨架，但仍处于「结构边界已建立、业务契约尚未完全收口」阶段。下一阶段的主要目标不是继续搬目录，而是：
+
+1. 让同一业务规则只有一个真源；
+2. 让跨域用例拥有明确的协调者；
+3. 让 Tauri、CLI、mock 和前端共享稳定的契约；
+4. 让 local_bridge 的进程边界与 adapter_control 契约一致。
+
+当前最值得关注的不是单个文件行数，而是以下变化原因是否被混在一个模块中：规则决策、事务编排、持久化补偿、传输映射、页面状态和进程生命周期。
+
+### 11.2 三条主要结构矛盾
+
+#### A. 业务规则存在多重真源
+
+重点对象：
+
+- AgentAdapter::install_channels() 与 InstallContribution；
+- 配置写入与 projector 两套 apply 语义；
+- capability matrix、write_gate、apply 三处路线判断；
+- 前端仍可见的 deprecated applyAdapter 与产品 bind/unbind 写入口。
+
+风险：预览结果、实际写入结果和 CLI/GUI 行为可能漂移；新增 Agent 需要修改多个位置；错误会在运行时而不是编译期暴露。
+
+责任边界：
+
+- Agent 差异由 integrations/agents/<key>/ 提供；
+- 路线决策由 domain/protocol_graph/ 负责；
+- 产品写入由 plan / bind / unbind 负责；
+- local_bridge 由 adapter_control 负责运行时控制。
+
+最低风险切口：先建立一套共享 fixture，对每个 rule_id 同时断言 matrix、plan、write gate 和 apply；随后删除重复的 install 渠道字面量，并收缩 applyAdapter 的页面可见性。
+
+验收：修改一个安装包名或一个 bind 规则时，只需修改一个真源和对应契约测试；不存在「plan 可行但 apply 无实现」的 fixture。
+
+#### B. Core service 按技术对象组织，但实际承担跨域 saga
+
+ProviderService 同时持有 ProviderRepo、AdapterRegistry、BackupService、LiveWriteAuthority、ConnectionService 和 SecretResolver，并参与 account 补偿、live 配置写入和连接切换。
+
+这不是简单的 CRUD service，而是多个用例的组合入口：
+
+~~~
+Provider CRUD
+Provider Switch
+Account compensation
+Live configuration write
+Connection binding
+Backup / rollback
+~~~
+
+风险：任何一个 Provider 需求都可能扩大 ProviderService 的职责；跨聚合 SQL 和补偿逻辑难以复用；Provider、Account、Connection 的事务边界不清晰。
+
+建议的目标边界：
+
+~~~
+ProviderCrud
+ProviderSwitchUseCase
+AccountSwitchUseCase
+AdapterPlanUseCase
+AdapterApplyUseCase
+BridgeLifecycleUseCase
+BackupRestoreUseCase
+~~~
+
+最低风险切口：不先重命名全部 service，而是先为 account 补偿、binding 更新、snapshot/rollback 抽出明确 port；保留现有公开 API，先让 ProviderService 通过 port 协调。
+
+验收：ProviderService 不再直接执行其他聚合的补偿 SQL；Provider CRUD 与 Provider Switch 可分别测试；跨域 saga 的补偿责任有唯一 owner。
+
+#### C. 壳层、wire DTO 与 core 模型仍然部分重叠
+
+src-tauri/src/lib.rs 仍同时承担应用组合、插件/tray 初始化、技能监听、bridge recovery 和大量 command 注册；AppState 同时持有 core、bridge、退出和窗口生命周期状态。
+
+命令层虽然大多已经足够薄，但 command 普遍仍返回 Result<T, String>。core 的 Provider、Account 等模型也部分直接作为 Tauri wire DTO 使用。
+
+风险：
+
+- core 模型字段变更会直接波及前端协议；
+- GuiError 的结构化信息到 Tauri 边界后仍被压成字符串；
+- 所有命令依赖整个 AppState，难以识别真正需要的能力；
+- bridge 生命周期与普通业务 command 的状态依赖继续扩大。
+
+最低风险切口：
+
+1. 增加 GuiErrorDto，先迁移只读 command；
+2. 增加 Provider、Account、Backup 的 wire DTO 与映射；
+3. 将 AppState 引入 CoreState、BridgeState、ApplicationState 兼容访问器，分批迁移 command。
+
+验收：core model 不再是新 Tauri 协议的默认 DTO；错误可按 code/message/details 稳定消费；普通 command 不需要依赖 BridgeState。
+
+### 11.3 前端模块化剩余问题
+
+前端 transport 边界已经成立：页面没有直接 invoke，mock 不进入生产构建，boundary-imports.test.ts 与 Vite module graph guard 应继续保留。
+
+仍有四个收口点：
+
+1. lib/api 兼容 façade 与 Backend ports 长期并存；
+2. applyAdapter 虽已 deprecated，仍是可发现的调用入口；
+3. Connections、Dashboard、Bridges 仍在同一页面组合 account/provider/ticket/adapter 多个领域；
+4. 页面和模型直接依赖 backend contracts，后端字段变更容易扩散到 UI。
+
+建议：
+
+- 页面继续保留在 pages/，不做大爆炸目录迁移；
+- 将跨页面的加载、刷新和 mutation 编排收拢到 connect-flow、ticket wallet、adapter view model 等已有逻辑层；
+- 先为 Connections 和 Bridges 输出页面 ViewModel，再逐步减少页面直接读取 backend contract；
+- 将 mock seed/reset 与 Backend port 装配分离；
+- 最终把 lib/api 明确为页面 façade，而不是第二套业务入口。
+
+验收：页面只负责 UI 状态与事件回调；同一个产品写入动作没有两个可见 API；新增 Backend port 时 mock 和 Tauri factory 的遗漏能在 contract test 中立即失败。
+
+### 11.4 测试与架构治理缺口
+
+已有护栏：
+
+- boundary-imports.test.ts：前端 import 方向；
+- Vite production module graph guard：禁止 mock/test 进入生产 bundle；
+- test:contracts、test:bridge、pricing:check：已有专项脚本；
+- Rust core、CLI、GUI 测试已进入 PR CI。
+
+仍应补充：
+
+| 缺口 | 建议 |
+|---|---|
+| mock 与 Tauri 没有统一 Port contract suite | 同一组测试分别运行 mock 与可注入的 Tauri transport stub |
+| Tauri command 缺少统一 manifest / DTO contract | 先覆盖 account、provider、ticket、adapter、config |
+| AdapterPort 全流程契约不足 | 覆盖 analyze → plan → apply/remove → bridge status |
+| ConfigPort 双实现语义缺少契约 | 覆盖 schema、unknownNative、secret redaction、validation、materialize |
+| 静态边界检查主要依赖正则 | 先扩展现有测试；只有规则复杂到无法维护时再引入依赖图工具 |
+| 测试依赖全局 mock singleton reset | 为 contract suite 增加隔离 Backend factory |
+
+不应把「PR CI 没有独立执行专项脚本」误写成「这些测试完全没有执行」：当前 pnpm test 会包含前端测试，Rust crate 测试也会包含相应模块。专项 CI step 的价值主要是更快定位边界失败。
+
+### 11.5 分阶段新增待办
+
+#### P0：正确性和契约收口
+
+- [ ] 建立 Backend contract suite，至少覆盖 Adapter、Config、Ticket 和 feature flags；
+- [ ] 建立 Tauri command manifest 与 wire shape 测试；
+- [ ] 以共享 fixture 固化 matrix ∩ plan ∩ write gate ∩ apply；
+- [ ] 收口 InstallContribution 与 install catalog 的单一真源；
+- [ ] 禁止页面继续使用 applyAdapter，保留兼容实现但缩小可见范围。
+
+#### P1：跨域边界修复
+
+- [ ] 抽取 ProviderService 的 account compensation、binding 和 snapshot ports；
+- [ ] 增加 GuiErrorDto，先迁移低风险只读 command；
+- [ ] 增加 Provider/Account/Backup wire DTO；
+- [ ] 将 AppState 分为 CoreState、BridgeState、ApplicationState，并保留过渡访问器；
+- [ ] 拆分 Skills、Projects、AgentCard 页面中的流程编排；
+- [ ] 为 Connections、Bridges 增加页面 ViewModel，减少 backend contract 向 UI 泄漏。
+
+#### P2：进程边界和厚适配器收口
+
+- [ ] 实现 agenthub-adapterd、IPC client、schema lease 和版本握手；
+- [ ] 让 GUI 与 CLI 通过同一 adapter-control client 管理 local_bridge；
+- [ ] 删除或最小化生产 AgentAdapter 厚 facade，改为 Agent 稀疏 capability；
+- [ ] 消除 catalog 与 agent_catalog 的命名歧义。
+
+### 11.6 本轮建议的前三个 PR
+
+1. **模块边界契约 PR**：BackendContractSuite、command manifest、规则一致性 fixture、CI 专项 step。行为变化最小。
+2. **单一写入语义 PR**：install 单真源、matrix/plan/write_gate/apply 一致性，以及页面 applyAdapter 可见性收口。
+3. **Tauri wire 边界 PR**：GuiErrorDto、Provider/Account/Backup DTO，以及 AppState 三类状态的兼容拆分。
+
+### 11.7 暂缓或明确不做
+
+- 不做微服务、DDD/CQRS、事件总线或动态插件 ABI；
+- 不做 Connections 独立进程；
+- 不做一次性重写全部 Tauri command；
+- 不做纯目录整理或为引入 features/ 而引入 features/；
+- 不把凭据落盘加密列为模块化待办；
+- 不把国产 OAuth 适配、OAuth 转 API 列为模块化待办。

@@ -97,6 +97,12 @@ fn grok_codex_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeSta
     spec
 }
 
+fn grok_chat_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
+    let mut spec = grok_claude_spec(profile_id, port, upstream_port);
+    spec.upstream.local_surface = BridgeLocalSurface::ChatCompletions;
+    spec
+}
+
 async fn upstream() -> (u16, tokio::task::JoinHandle<()>) {
     upstream_at("/chat/completions").await
 }
@@ -189,6 +195,28 @@ async fn sse_upstream(chunks: Vec<&'static [u8]>) -> (u16, tokio::task::JoinHand
     (port, task)
 }
 
+async fn html_success_upstream(path: &'static str) -> (u16, tokio::task::JoinHandle<()>) {
+    async fn html() -> Response {
+        (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html")],
+            "<html>upstream-error-page</html>",
+        )
+            .into_response()
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind html upstream");
+    let port = listener.local_addr().expect("upstream addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(listener, Router::new().route(path, post(html)))
+            .await
+            .expect("serve html upstream");
+    });
+    (port, task)
+}
+
 async fn delayed_sse_upstream(
     delay: Duration,
     chunks: Vec<&'static [u8]>,
@@ -220,6 +248,43 @@ async fn delayed_sse_upstream(
         )
         .await
         .expect("serve delayed mock SSE upstream");
+    });
+    (port, task)
+}
+
+async fn sse_upstream_with_delayed_tail(
+    first: &'static [u8],
+    delay: Duration,
+    tail: &'static [u8],
+) -> (u16, tokio::task::JoinHandle<()>) {
+    async fn responses(
+        State((first, delay, tail)): State<(&'static [u8], Duration, &'static [u8])>,
+    ) -> Response {
+        let output = stream! {
+            yield Ok::<_, Infallible>(axum::body::Bytes::from_static(first));
+            tokio::time::sleep(delay).await;
+            yield Ok::<_, Infallible>(axum::body::Bytes::from_static(tail));
+        };
+        (
+            [(header::CONTENT_TYPE, "text/event-stream")],
+            Body::from_stream(output),
+        )
+            .into_response()
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind delayed-tail mock SSE upstream");
+    let port = listener.local_addr().expect("upstream addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state((first, delay, tail)),
+        )
+        .await
+        .expect("serve delayed-tail mock SSE upstream");
     });
     (port, task)
 }
@@ -568,6 +633,14 @@ fn sse_frame_delimiter_uses_the_earliest_complete_boundary() {
     assert_eq!(super::host::sse_frame_end(buffer), Some((9, 2)));
 }
 
+#[test]
+fn sse_frame_delimiter_accepts_cr_only_line_endings() {
+    assert_eq!(
+        super::host::sse_frame_end(b"data: one\rdata: two\r\r"),
+        Some((19, 2))
+    );
+}
+
 #[tokio::test]
 async fn stream_parser_accepts_crlf_split_multiline_data_and_stops_at_done() {
     let (upstream_port, upstream_task) = sse_upstream(vec![
@@ -624,6 +697,46 @@ async fn malformed_stream_data_returns_generic_error_without_leaking_payload() {
     assert!(body.contains("The upstream model provider returned an invalid stream."));
     assert!(!body.contains("private malformed content"));
     host.stop("bad-sse").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn converted_responses_stream_error_has_exact_protocol_contract() {
+    let (upstream_port, upstream_task) = sse_upstream(vec![
+        b"data: {\"id\":\"chat-stream\",\"model\":\"kimi-test\",\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(spec("responses-converted-error-contract", 0, upstream_port))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"test","input":"hello","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(
+        responses_error_data(&body),
+        json!({
+            "type": "error",
+            "code": "upstream_error",
+            "message": "The upstream model provider returned an invalid stream.",
+            "param": null,
+            "sequence_number": 5,
+        })
+    );
+    assert!(!body.contains("private malformed content"));
+    host.stop("responses-converted-error-contract")
+        .await
+        .expect("stop");
     upstream_task.abort();
 }
 
@@ -1761,6 +1874,63 @@ async fn chat_surface_converts_to_and_from_anthropic_messages() {
 }
 
 #[tokio::test]
+async fn identity_non_stream_rejects_non_json_success_body() {
+    let (upstream_port, upstream_task) = html_success_upstream("/v1/responses").await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec("html-passthrough", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model": "grok-4.5", "input": "hello"}))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body = response.text().await.expect("body");
+    assert!(body.contains("upstream_error"));
+    assert!(!body.contains("upstream-error-page"));
+    host.stop("html-passthrough").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn chat_identity_idle_stream_uses_chat_error_frame() {
+    let (upstream_port, upstream_task) =
+        delayed_sse_upstream(Duration::from_millis(200), vec![b"data: [DONE]\n\n"]).await;
+    let host = BridgeRuntimeHost::new();
+    let mut configured = spec("chat-idle", 0, upstream_port);
+    configured.upstream.local_surface = BridgeLocalSurface::ChatCompletions;
+    let status = host.start(configured).await.expect("start");
+    let body = client()
+        .await
+        .post(format!(
+            "http://127.0.0.1:{}/v1/chat/completions",
+            status.port
+        ))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "test",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "stream": true
+        }))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+    assert!(body.contains("The upstream model provider returned an invalid stream."));
+    assert!(body.contains("data: [DONE]"));
+    assert!(!body.contains("event: error"));
+    host.stop("chat-idle").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
 async fn codex_responses_oauth_messages_returns_anthropic_json_and_accepts_both_local_auth_headers()
 {
     let (upstream_port, upstream_task) = codex_responses_upstream().await;
@@ -2443,6 +2613,64 @@ async fn grok_claude_replays_encrypted_reasoning_on_next_turn() {
 }
 
 #[tokio::test]
+async fn grok_chat_replays_encrypted_reasoning_on_next_turn() {
+    let reply = json!({
+        "id": "resp_grok",
+        "object": "response",
+        "created_at": 1,
+        "model": "grok-4.5",
+        "status": "completed",
+        "output": [
+            { "id": "rs_1", "type": "reasoning", "encrypted_content": "enc-turn-1" },
+            {
+                "id": "msg_grok",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{ "type": "output_text", "text": "hello" }]
+            }
+        ],
+        "usage": {
+            "input_tokens": 2,
+            "output_tokens": 3,
+            "total_tokens": 5,
+            "reasoning_tokens": 0,
+            "output_tokens_details": { "reasoning_tokens": 0 }
+        }
+    });
+    let (upstream_port, captured, upstream_task) = capturing_grok_requests_with_reply(reply).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_chat_spec("grok-chat-replay", 0, upstream_port))
+        .await
+        .expect("start");
+    let url = format!("http://127.0.0.1:{}/v1/chat/completions", status.port);
+    for _ in 0..2 {
+        let response = client()
+            .await
+            .post(&url)
+            .header(header::AUTHORIZATION, "Bearer local-test-token")
+            .header("x-session-id", "sess-replay")
+            .json(&json!({
+                "model": "gpt-test",
+                "messages": [{ "role": "user", "content": "hello" }]
+            }))
+            .send()
+            .await
+            .expect("chat request");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+    let captured = captured.lock().expect("lock").clone();
+    assert_eq!(captured.len(), 2);
+    let second_input = captured[1].body["input"].as_array().expect("input");
+    assert_eq!(second_input[0]["type"], "reasoning");
+    assert_eq!(second_input[0]["encrypted_content"], "enc-turn-1");
+
+    host.stop("grok-chat-replay").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
 async fn grok_codex_retries_after_encrypted_reasoning_400() {
     let (upstream_port, captured, upstream_task) = grok_decode_then_ok_upstream().await;
     let host = BridgeRuntimeHost::new();
@@ -2491,6 +2719,18 @@ fn completed_usage_from_responses_sse(body: &str) -> Value {
         .find(|event| event["type"] == "response.completed")
         .expect("completed SSE event")["response"]["usage"]
         .clone()
+}
+
+fn responses_error_data(body: &str) -> Value {
+    body.split("\n\n")
+        .filter(|frame| frame.lines().any(|line| line == "event: error"))
+        .find_map(|frame| {
+            frame
+                .lines()
+                .find_map(|line| line.strip_prefix("data: "))
+                .and_then(|data| serde_json::from_str::<Value>(data).ok())
+        })
+        .expect("Responses error SSE event")
 }
 
 fn assert_codex_completed_usage(usage: &Value) {
@@ -2583,7 +2823,7 @@ async fn grok_responses_sse_upstream(
 #[tokio::test]
 async fn grok_codex_passthrough_sse_forwards_completed_event() {
     let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
-        b"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_stream\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2,\"reasoning_tokens\":0,\"output_tokens_details\":{\"reasoning_tokens\":0}}}}\n\n",
+        b"event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":0,\"response\":{\"id\":\"resp_stream\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2,\"reasoning_tokens\":0,\"output_tokens_details\":{\"reasoning_tokens\":0}}}}\n\n",
     ])
     .await;
     let host = BridgeRuntimeHost::new();
@@ -2612,6 +2852,520 @@ async fn grok_codex_passthrough_sse_forwards_completed_event() {
     assert_eq!(usage["output_tokens"], 1);
     assert_eq!(usage["reasoning_tokens"], 0);
     host.stop("grok-reasoning-tokens-sse").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_stream_error_uses_next_upstream_sequence_number() {
+    let (upstream_port, upstream_task) = sse_upstream_with_delayed_tail(
+        b"event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":7,\"response\":{\"id\":\"resp_stream\"}}\n\nevent: response.in_progress\ndata: {\"type\":\"response.in",
+        Duration::from_millis(200),
+        b"_progress\",\"sequence_number\":8}\n\n",
+    )
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-error-contract",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(
+        responses_error_data(&body),
+        json!({
+            "type": "error",
+            "code": "upstream_error",
+            "message": "The upstream model provider returned an invalid stream.",
+            "param": null,
+            "sequence_number": 8,
+        })
+    );
+    assert!(body.contains("\"sequence_number\":7"));
+    assert!(!body.contains("response.in_progress"));
+    assert!(!body.contains("upstream-private-error"));
+    host.stop("responses-passthrough-error-contract")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_nonterminal_eof_emits_error_frame() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        b"event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":7,\"response\":{\"id\":\"resp_stream\"}}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-nonterminal-eof",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert!(body.contains("response.created"));
+    assert_eq!(
+        responses_error_data(&body),
+        json!({
+            "type": "error",
+            "code": "upstream_error",
+            "message": "The upstream model provider returned an invalid stream.",
+            "param": null,
+            "sequence_number": 8,
+        })
+    );
+    host.stop("responses-passthrough-nonterminal-eof")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_malformed_terminal_emits_error_frame() {
+    let (upstream_port, upstream_task) =
+        grok_responses_sse_upstream(vec![b"event: response.completed\ndata: not-json\n\n"]).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-malformed-terminal",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 0);
+    assert!(!body.contains("response.completed"));
+    host.stop("responses-passthrough-malformed-terminal")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_mismatched_event_emits_error_frame() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        b"event: response.completed\ndata: {\"type\":\"response.in_progress\",\"sequence_number\":7}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-mismatched-event",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 0);
+    assert!(!body.contains("response.in_progress"));
+    host.stop("responses-passthrough-mismatched-event")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_done_marker_emits_error_without_forwarding_it() {
+    let (upstream_port, upstream_task) =
+        grok_responses_sse_upstream(vec![b"data: [DONE]\n\n"]).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-done-marker",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 0);
+    assert!(!body.contains("[DONE]"));
+    host.stop("responses-passthrough-done-marker")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_upstream_error_is_sanitized() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        b"event: error\ndata: {\"type\":\"error\",\"sequence_number\":7,\"code\":\"provider_error\",\"message\":\"upstream-private-error\"}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-sanitized-error",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 7);
+    assert!(!body.contains("upstream-private-error"));
+    host.stop("responses-passthrough-sanitized-error")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_missing_sequence_emits_error_frame() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        b"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_stream\"}}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-missing-sequence",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 0);
+    assert!(!body.contains("response.completed"));
+    host.stop("responses-passthrough-missing-sequence")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_missing_event_emits_error_frame() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        b"data: {\"type\":\"response.completed\",\"sequence_number\":7,\"response\":{\"id\":\"resp_stream\"}}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-missing-event",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 0);
+    assert!(!body.contains("response.completed"));
+    host.stop("responses-passthrough-missing-event")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_unknown_event_type_emits_error_frame() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        b"event: response.private\ndata: {\"type\":\"response.private\",\"sequence_number\":7,\"message\":\"upstream-private-event\"}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-unknown-event",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 0);
+    assert!(!body.contains("upstream-private-event"));
+    host.stop("responses-passthrough-unknown-event")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_bare_event_field_emits_error_frame() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        b"event: response.completed\nevent\ndata: {\"type\":\"response.completed\",\"sequence_number\":7,\"response\":{\"id\":\"resp_stream\"}}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-bare-event",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 0);
+    assert!(!body.contains("response.completed"));
+    host.stop("responses-passthrough-bare-event")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_duplicate_event_field_emits_error_frame() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        b"event: response.completed\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":7,\"response\":{\"id\":\"resp_stream\"}}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-duplicate-event",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 0);
+    assert!(!body.contains("response.completed"));
+    host.stop("responses-passthrough-duplicate-event")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_event_whitespace_emits_error_frame() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        b"event: response.completed \ndata: {\"type\":\"response.completed\",\"sequence_number\":7,\"response\":{\"id\":\"resp_stream\"}}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-event-whitespace",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 0);
+    assert!(!body.contains("response.completed"));
+    host.stop("responses-passthrough-event-whitespace")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_terminal_event_closes_before_upstream_eof() {
+    let (upstream_port, upstream_task) = sse_upstream_with_delayed_tail(
+        b"event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":7,\"response\":{\"id\":\"resp_stream\"}}\n\n",
+        Duration::from_millis(500),
+        b"event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"sequence_number\":8}\n\n",
+    )
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-terminal-close",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request");
+    let body = tokio::time::timeout(Duration::from_millis(250), response.text())
+        .await
+        .expect("terminal stream closes")
+        .expect("stream body");
+
+    assert!(body.contains("response.completed"));
+    assert!(!body.contains("response.in_progress"));
+    assert!(!body.contains("event: error"));
+    host.stop("responses-passthrough-terminal-close")
+        .await
+        .expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn responses_passthrough_non_monotonic_sequence_emits_error_frame() {
+    let (upstream_port, upstream_task) = grok_responses_sse_upstream(vec![
+        b"event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":7,\"response\":{\"id\":\"resp_stream\"}}\n\n",
+        b"event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"sequence_number\":6}\n\n",
+    ])
+    .await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec(
+            "responses-passthrough-non-monotonic-sequence",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+    let body = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({"model":"grok-4.5","input":"ping","stream":true}))
+        .send()
+        .await
+        .expect("stream request")
+        .text()
+        .await
+        .expect("stream body");
+
+    assert_eq!(responses_error_data(&body)["sequence_number"], 8);
+    assert!(body.contains("\"sequence_number\":7"));
+    assert!(!body.contains("\"sequence_number\":6"));
+    host.stop("responses-passthrough-non-monotonic-sequence")
+        .await
+        .expect("stop");
     upstream_task.abort();
 }
 

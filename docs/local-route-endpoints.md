@@ -42,6 +42,7 @@ sequenceDiagram
 - **OpenRouter / 自定义 OpenAI 兼容**：Claude 的 Messages、Codex / Grok 的 Responses 都会转成上游 `chat/completions`。Claude 客户端不会直接打上游的 openai-chat。
 - **官方 Codex / Grok Responses**：本机 `/v1/responses` 对上游 `/responses` 同协议转发。
 - **官方 Anthropic 或厂商 Anthropic 口**（例如智谱 `.../api/anthropic`、DeepSeek `.../anthropic`）：本机 `/v1/messages` 对上游 `/messages` 同协议直通（请求体原样转发，仅按需覆写 `model`）。即使来源登记为自定义 OpenAI 兼容，只要端点 URL 含 `/anthropic` 或指向 `api.anthropic.com`，也会自动识别为 Anthropic Messages 上游。
+- **Kimi / DSH 客户端**：本机 `/v1/chat/completions` 对 Codex Responses 上游做转换。这是当前可 apply 的 Chat 下游边。
 - **模型名单**：用户填了列表则只放行这些模型（去重、大小写不敏感），未命中返回 400 `listed_models_reject`；名单为空时，自定义 OpenAI 兼容 / OpenRouter 跟随客户端请求里的模型；OpenRouter backup 模型始终可被服务。
 
 ## 来源端点与上游选择
@@ -65,6 +66,8 @@ sequenceDiagram
 | Responses | OpenAI Chat Completions | 转换成 `chat/completions` |
 | Responses | Codex / Grok Responses | 同协议到 `/responses` |
 | Responses | Anthropic Messages | 转换成 `/messages` |
-| Chat Completions | （当前本机路由不作为主入口） | 未使用 |
+| Chat Completions | OpenAI Chat Completions | 同协议到 `chat/completions`（仅覆写 model；transport 已开放，尚无对应可 apply 产品边） |
+| Chat Completions | Anthropic Messages | 转换成 `/messages`（transport 已开放，尚无对应可 apply 产品边） |
+| Chat Completions | Codex / Grok Responses | 转换成 `/responses`（Codex→Kimi/DSH 可 apply；Grok 上游尚无对应产品边） |
 
 创建路由时勾选的每个客户端都会各自绑定；旧路由仍需「一键配置」或再应用一次才会刷新。
