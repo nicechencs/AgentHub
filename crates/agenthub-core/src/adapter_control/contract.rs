@@ -9,6 +9,7 @@ use crate::models::{
     parse_ticket_id, AdapterProfile, AdapterRoute, AgentId, TicketBinding, TicketPlanRequest,
     TicketUnbindRequest,
 };
+use crate::services::adapter_route_constants::is_unknown_custom_relay_provider;
 use crate::services::AdapterBridgePrepareRequest;
 use crate::AgentHub;
 
@@ -96,6 +97,7 @@ pub fn resolve_bind_action(
     if !plan.can_apply {
         return Err(AppError::Unsupported(plan.reason));
     }
+    reject_unknown_custom_relay(hub, source_kind, &source_id)?;
     if plan.analysis.route == AdapterRoute::LocalBridge {
         return Ok(BindAction::LocalBridge(AdapterBridgePrepareRequest {
             source_kind,
@@ -108,6 +110,28 @@ pub fn resolve_bind_action(
         ticket_id: ticket_id.to_owned(),
         target_agent_id,
     }))
+}
+
+/// URL-based OpenAI-compatible classification is useful for route preview,
+/// but an unlabelled custom relay is not a bindable ticket. Keep this check
+/// before either host dispatch path: local_bridge does not pass through
+/// [`crate::services::TicketBindService::bind`].
+fn reject_unknown_custom_relay(
+    hub: &AgentHub,
+    source_kind: crate::models::AdapterSourceKind,
+    source_id: &str,
+) -> Result<()> {
+    if source_kind != crate::models::AdapterSourceKind::Provider {
+        return Ok(());
+    }
+
+    let provider = hub.providers.get(source_id, None)?;
+    if is_unknown_custom_relay_provider(&provider) {
+        return Err(AppError::Unsupported(
+            "adapter bind does not support an unknown custom relay provider".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Plan unbind: locate profile, require bridge stop when route is local_bridge.

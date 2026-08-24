@@ -6,8 +6,8 @@ use crate::models::{
 };
 use crate::services::adapter_route_constants::{
     is_deepseek_api_marker, is_glm_coding_plan_marker, is_kimi_code_membership_account,
-    is_kimi_code_membership_source, is_openai_api_marker, is_xai_api_marker,
-    settings_contain_anthropic_api_endpoint,
+    is_kimi_code_membership_source, is_non_openai_provider_tag, is_openai_api_marker,
+    is_xai_api_marker, settings_contain_anthropic_api_endpoint,
 };
 
 use super::actions::*;
@@ -76,8 +76,7 @@ impl AdapterRouteService {
 
     /// Classify a prospective provider without reading it back from SQLite.
     pub fn classify_provider_source_product(provider: &Provider) -> AdapterSourceProduct {
-        let preset = json_string(&provider.meta, "preset");
-        let explicit_tag = preset.or_else(|| json_string(&provider.meta, "provider"));
+        let explicit_tag = provider_classification_tag(&provider.meta);
         if is_kimi_code_membership_source(
             provider.agent_id,
             &provider.meta,
@@ -85,7 +84,7 @@ impl AdapterRouteService {
         ) {
             AdapterSourceProduct::KimiCodeMembership
         } else if provider.agent_id == AgentId::Claude
-            && (preset == Some("anthropic")
+            && (explicit_tag == Some("anthropic")
                 || settings_contain_anthropic_api_endpoint(&provider.settings_config))
         {
             AdapterSourceProduct::AnthropicApi
@@ -151,8 +150,7 @@ impl AdapterRouteService {
                 let provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
                     AppError::NotFound(format!("provider not found: {source_id}"))
                 })?;
-                let preset = json_string(&provider.meta, "preset");
-                let explicit_tag = preset.or_else(|| json_string(&provider.meta, "provider"));
+                let explicit_tag = provider_classification_tag(&provider.meta);
                 // Membership is explicit preset *or* official Kimi coding endpoint in config.
                 // Do not invent membership from agent_id alone (moonshot / custom stay closed).
                 if is_kimi_code_membership_source(
@@ -167,7 +165,7 @@ impl AdapterRouteService {
                         reason_hint: None,
                     })
                 } else if provider.agent_id == AgentId::Claude
-                    && (preset == Some("anthropic")
+                    && (explicit_tag == Some("anthropic")
                         || settings_contain_anthropic_api_endpoint(&provider.settings_config))
                 {
                     Ok(SourceIdentity {
@@ -353,6 +351,21 @@ impl AdapterRouteService {
             }
         }
     }
+}
+
+/// Prefer a known non-OpenAI product tag when legacy rows carry both
+/// `preset` and `provider`. A generic compatibility preset must not mask the
+/// explicit xAI/GLM/DeepSeek/Kimi/Anthropic identity.
+fn provider_classification_tag<'a>(meta: &'a serde_json::Value) -> Option<&'a str> {
+    let preset = json_string(meta, "preset");
+    let provider = json_string(meta, "provider");
+    if preset.is_some_and(|tag| is_non_openai_provider_tag(Some(tag))) {
+        return preset;
+    }
+    if provider.is_some_and(|tag| is_non_openai_provider_tag(Some(tag))) {
+        return provider;
+    }
+    preset.or(provider)
 }
 
 pub(super) struct SourceIdentity {

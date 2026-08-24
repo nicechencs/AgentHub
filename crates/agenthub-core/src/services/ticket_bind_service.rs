@@ -15,6 +15,7 @@ use crate::models::{
     AdapterSourceKind, AgentId, TicketBinding, TicketBindingRoute, TicketBridgeRuntime,
     TicketPlanRequest, TicketUnbindRequest,
 };
+use crate::services::adapter_route_constants::is_unknown_custom_relay_provider;
 use crate::services::{AccountService, AdapterApplyService, ProviderService, TicketReadService};
 use crate::storage::{AdapterProfileRepo, Database};
 
@@ -72,6 +73,7 @@ impl TicketBindService {
         if !plan.can_apply {
             return Err(AppError::Unsupported(plan.reason));
         }
+        self.reject_unknown_custom_relay(source_kind, &source_id)?;
         if plan.analysis.route == AdapterRoute::LocalBridge {
             return Err(AppError::message(
                 HOSTED_BRIDGE_BIND,
@@ -99,6 +101,27 @@ impl TicketBindService {
             target_agent_id: request.target_agent_id,
         })?;
         Ok(ticket_binding_from_apply(&request.ticket_id, &result))
+    }
+
+    /// URL-based OpenAI-compatible classification is useful for route preview,
+    /// but an unlabelled custom relay is not a bindable ticket. Keep this check
+    /// before `AdapterApplyService::apply`, which is the first mutating step.
+    fn reject_unknown_custom_relay(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<()> {
+        if source_kind != AdapterSourceKind::Provider {
+            return Ok(());
+        }
+
+        let provider = self.providers.get(source_id, None)?;
+        if is_unknown_custom_relay_provider(&provider) {
+            return Err(AppError::Unsupported(
+                "adapter bind does not support an unknown custom relay provider".into(),
+            ));
+        }
+        Ok(())
     }
 
     /// Stop is the desktop host's job for `route=bridge`. Core then restores

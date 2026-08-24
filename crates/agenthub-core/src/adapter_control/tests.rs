@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
-use crate::models::AgentId;
+use crate::models::{
+    ticket_id, AdapterRoute, AdapterSourceKind, AgentId, Provider, TicketPlanRequest,
+};
+use crate::storage::{AdapterProfileRepo, ProviderRepo};
+use serde_json::json;
 
-use super::{resolve_bind_action, resolve_unbind_action, AdapterSagaCoordinator};
+use super::{resolve_bind_action, resolve_unbind_action, AdapterSagaCoordinator, BindAction};
 
 #[tokio::test]
 async fn lock_target_serializes_same_agent_and_allows_other_agents() {
@@ -72,5 +76,134 @@ fn resolve_unbind_action_without_profile_skips_bridge_stop() {
     assert_eq!(action.request.agent_id, AgentId::Claude);
 }
 
-// Keep resolve_bind_action covered via TicketBindService integration tests;
-// this module only asserts the unbind planner stays available without a profile.
+#[test]
+fn resolve_bind_action_rejects_unknown_custom_relay_without_persistence() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = crate::AgentHub::open(Some(dir.path())).unwrap();
+    ProviderRepo::new(hub.db.clone())
+        .create(&Provider {
+            id: "relay-source".into(),
+            agent_id: AgentId::Claude,
+            name: "Custom relay".into(),
+            settings_config: json!({
+                "apiKey": "relay-secret",
+                "baseUrl": "https://relay.example/v1"
+            }),
+            meta: json!({"preset": "openai-compatible"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    ProviderRepo::new(hub.db.clone())
+        .create(&Provider {
+            id: "relay-source-pi".into(),
+            agent_id: AgentId::Claude,
+            name: "Custom relay reshape".into(),
+            settings_config: json!({
+                "apiKey": "relay-secret",
+                "baseUrl": "https://relay.example/v1"
+            }),
+            meta: json!({"preset": "openai-compatible"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+
+    let ticket = ticket_id(AdapterSourceKind::Provider, "relay-source");
+    let plan = hub
+        .tickets
+        .plan(&TicketPlanRequest {
+            ticket_id: ticket.clone(),
+            target_agent_id: AgentId::Codex,
+        })
+        .unwrap();
+    assert!(plan.can_apply);
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+
+    let providers = ProviderRepo::new(hub.db.clone());
+    let profiles = AdapterProfileRepo::new(hub.db.clone());
+    let before_provider = providers.get_by_id("relay-source").unwrap().unwrap();
+    let before_provider_count = providers.list(None).unwrap().len();
+    let before_profile_count = profiles.list(None, None, None).unwrap().len();
+
+    let error = resolve_bind_action(&hub, &ticket, AgentId::Codex).unwrap_err();
+
+    assert_eq!(error.code(), "unsupported");
+    assert_eq!(
+        error.to_string(),
+        "unsupported: adapter bind does not support an unknown custom relay provider"
+    );
+    assert_eq!(providers.list(None).unwrap().len(), before_provider_count);
+    assert_eq!(
+        profiles.list(None, None, None).unwrap().len(),
+        before_profile_count
+    );
+    assert_eq!(
+        providers.get_by_id("relay-source").unwrap().unwrap(),
+        before_provider
+    );
+
+    let before_provider_count = providers.list(None).unwrap().len();
+    let before_profile_count = profiles.list(None, None, None).unwrap().len();
+    let reshape_error = resolve_bind_action(
+        &hub,
+        &ticket_id(AdapterSourceKind::Provider, "relay-source-pi"),
+        AgentId::Pi,
+    )
+    .unwrap_err();
+    assert_eq!(reshape_error.code(), "unsupported");
+    assert_eq!(providers.list(None).unwrap().len(), before_provider_count);
+    assert_eq!(
+        profiles.list(None, None, None).unwrap().len(),
+        before_profile_count
+    );
+}
+
+#[test]
+fn resolve_bind_action_keeps_official_openai_and_xai_routes_available() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = crate::AgentHub::open(Some(dir.path())).unwrap();
+    let providers = ProviderRepo::new(hub.db.clone());
+    providers
+        .create(&Provider {
+            id: "openai-source".into(),
+            agent_id: AgentId::Codex,
+            name: "OpenAI API".into(),
+            settings_config: json!({"api_key": "openai-secret"}),
+            meta: json!({"preset": "openai"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    providers
+        .create(&Provider {
+            id: "xai-source".into(),
+            agent_id: AgentId::Grok,
+            name: "xAI API".into(),
+            settings_config: json!({"api_key": "xai-secret"}),
+            meta: json!({"preset": "xai"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+
+    let openai_action = resolve_bind_action(
+        &hub,
+        &ticket_id(AdapterSourceKind::Provider, "openai-source"),
+        AgentId::Codex,
+    )
+    .unwrap();
+    assert!(matches!(openai_action, BindAction::LocalBridge(_)));
+
+    let xai_action = resolve_bind_action(
+        &hub,
+        &ticket_id(AdapterSourceKind::Provider, "xai-source"),
+        AgentId::Pi,
+    )
+    .unwrap();
+    assert!(matches!(xai_action, BindAction::Reshape(_)));
+}

@@ -3,7 +3,6 @@
  * Filter / binding usage lines — pure functions for vitest.
  */
 import { agentDisplayName } from '@/config/agents';
-import { isLoopbackUrl } from '@/lib/backend/contracts/agent-connection';
 import {
   formatRouteEndpointHttpUrl,
   routeEndpointIdForBinding,
@@ -89,43 +88,7 @@ export function ticketCredentialClassChipLabel(
   return t('connections.list.unrecognized');
 }
 
-export type TicketSurfaceChipExtras = {
-  endpointHost?: string;
-  endpointMode?: 'official' | 'custom';
-};
-
-/** Product/vendor chip from the endpoint host — not the wire protocol family. */
-export function endpointVendorLabel(host: string, t?: TranslateFn): string | null {
-  const h = host.trim().toLowerCase();
-  if (!h) return null;
-  if (h.includes('openrouter.ai')) return t ? t('connections.list.surfaceOpenrouter') : 'OpenRouter';
-  if (h.includes('api.openai.com')) return t ? t('connections.list.surfaceOpenai') : 'OpenAI';
-  if (h.includes('api.anthropic.com')) return t ? t('connections.list.surfaceOfficial') : '官方';
-  if (h.includes('api.x.ai')) return t ? t('connections.list.surfaceXai') : 'xAI';
-  if (h.includes('open.bigmodel.cn')) return t ? t('connections.list.surfaceGlm') : 'GLM';
-  if (h.includes('api.deepseek.com')) return t ? t('connections.list.surfaceDeepseek') : 'DeepSeek';
-  if (h.includes('api.kimi.com') || h.includes('api.moonshot.cn')) {
-    return t ? t('connections.list.surfaceKimi') : 'Kimi';
-  }
-  return null;
-}
-
-export function ticketSurfaceChipLabel(
-  surface: TicketSurface,
-  t?: TranslateFn,
-  extras?: TicketSurfaceChipExtras | null,
-): string {
-  const host = extras?.endpointHost?.trim();
-  if (host) {
-    const vendor = endpointVendorLabel(host, t);
-    if (vendor) return vendor;
-    if (extras?.endpointMode === 'custom') {
-      return t ? t('connections.list.custom') : '自定义';
-    }
-  }
-  if (surface === 'openai-api' && extras?.endpointMode === 'custom') {
-    return t ? t('connections.list.custom') : '自定义';
-  }
+export function ticketSurfaceChipLabel(surface: TicketSurface, t?: TranslateFn): string {
   if (!t) return ticketSurfaceLabel(surface);
   if (surface === 'kimi-code-membership') return t('connections.list.surfaceMember');
   if (surface === 'anthropic-api') return t('connections.list.surfaceOfficial');
@@ -733,18 +696,9 @@ function protocolLabel(speaks: readonly string[], t?: TranslateFn): string {
   return known.join(' · ');
 }
 
-function isRemoteTicketEndpoint(extras?: TicketDetailExtras | null): boolean {
-  const host = extras?.endpointHost?.trim();
-  if (!host) return false;
-  const asUrl = /^https?:\/\//i.test(host) ? host : `https://${host}`;
-  return !isLoopbackUrl(asUrl);
-}
-
 function localRouteSurface(
   bindings?: readonly BindingView[] | null,
-  extras?: TicketDetailExtras | null,
 ): string | null {
-  if (isRemoteTicketEndpoint(extras)) return null;
   if (!bindings?.length) return null;
   const labels: string[] = [];
   const seen = new Set<string>();
@@ -796,7 +750,7 @@ export function buildTicketDetailFields(
     });
   }
 
-  const agentSurface = localRouteSurface(bindings, extras);
+  const agentSurface = localRouteSurface(bindings);
   if (agentSurface) {
     advanced.push({
       label: t ? t('kind.route.localRoute') : '本机路由',

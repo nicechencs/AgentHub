@@ -81,13 +81,13 @@ const emptyListProps = {
   onRetry: vi.fn(),
 };
 
-function renderProfiles(props: Record<string, unknown>) {
+function renderProfiles(props: Parameters<typeof AdapterProfiles>[0]) {
   return renderToStaticMarkup(
     createElement(TooltipProvider, null, createElement(AdapterProfiles, props)),
   );
 }
 
-function renderDetail(props: Record<string, unknown>) {
+function renderDetail(props: Parameters<typeof AdapterProfileDetailDialog>[0]) {
   return renderToStaticMarkup(
     createElement(TooltipProvider, null, createElement(AdapterProfileDetailDialog, props)),
   );

@@ -214,9 +214,12 @@ impl TicketReadService {
     }
 
     fn resolve_provider_surface(&self, provider: &Provider) -> Result<TicketSurface> {
-        match TicketSurface::from_persisted_json(&provider.meta) {
-            PersistedTicketSurface::Known(TicketSurface::Unknown)
-            | PersistedTicketSurface::Missing => {}
+        let persisted = TicketSurface::from_persisted_json(&provider.meta);
+        match persisted {
+            PersistedTicketSurface::Known(TicketSurface::Unknown) => {
+                return Ok(TicketSurface::Unknown)
+            }
+            PersistedTicketSurface::Missing => {}
             PersistedTicketSurface::Known(surface) => return Ok(surface),
             PersistedTicketSurface::Unrecognized => return Ok(TicketSurface::Unknown),
         }
@@ -224,7 +227,15 @@ impl TicketReadService {
             .routes
             .classify_source_product(AdapterSourceKind::Provider, &provider.id)?;
         let surface = TicketSurface::from_product(product);
-        if surface != TicketSurface::Unknown {
+        let surface = if surface == TicketSurface::OpenaiApi
+            && !crate::services::adapter_route_constants::provider_has_official_openai_api_evidence(
+                provider,
+            ) {
+            TicketSurface::Unknown
+        } else {
+            surface
+        };
+        if surface != TicketSurface::Unknown || persisted == PersistedTicketSurface::Missing {
             self.best_effort_writeback_provider_surface(provider, surface);
         }
         Ok(surface)

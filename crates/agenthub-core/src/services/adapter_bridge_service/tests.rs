@@ -1969,3 +1969,66 @@ fn prepare_deepseek_claude_uses_anthropic_endpoint() {
         BridgeUpstreamProtocol::AnthropicMessages
     );
 }
+
+#[test]
+fn prepare_openai_toml_uses_the_active_model_provider_base_url() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "openai-toml-active".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex custom relay".into(),
+            settings_config: json!({
+                "apiKey": "sk-openai-toml-active",
+                "format": "toml",
+                "content": "model_provider = \"active\"\nmodel = \"relay-model\"\n\n[model_providers.inactive]\nbase_url = \"https://inactive.example/v1\"\n\n[model_providers.active]\nbase_url = \"https://active.example/v1\"\n"
+            }),
+            meta: json!({"preset": "openai-compatible"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+
+    let prepared = AdapterBridgeService::new(db)
+        .prepare(&openai_request(
+            AdapterSourceKind::Provider,
+            "openai-toml-active",
+        ))
+        .unwrap();
+    let start = prepared.runtime_material().start_spec(None);
+    assert_eq!(start.upstream.base_url, "https://active.example/v1");
+    assert_eq!(start.upstream.model.as_deref(), Some("relay-model"));
+}
+
+#[test]
+fn prepare_rejects_openai_marker_when_active_toml_host_is_not_official() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "openai-toml-bad-host".into(),
+            agent_id: AgentId::Codex,
+            name: "Mislabelled OpenAI".into(),
+            settings_config: json!({
+                "apiKey": "sk-openai-toml-bad-host",
+                "format": "toml",
+                "content": "model_provider = \"active\"\n\n[model_providers.active]\nbase_url = \"https://api.openai.com.evil.example/v1\"\n"
+            }),
+            meta: json!({"preset": "openai"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+
+    assert_eq!(
+        AdapterBridgeService::new(db)
+            .prepare(&openai_request(
+                AdapterSourceKind::Provider,
+                "openai-toml-bad-host",
+            ))
+            .unwrap_err()
+            .code(),
+        "unsupported"
+    );
+}

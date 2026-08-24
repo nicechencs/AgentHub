@@ -319,15 +319,18 @@ pub(super) fn openai_source_upstream(
         crate::models::AgentId::Grok => "grok",
         _ => "",
     };
+    // For Codex TOML, `openai_compat_base_url` resolves the runtime
+    // `model_provider` slug before reading a provider table. Do not let a
+    // document-order provider or a textual host match change the upstream.
     if let Some(endpoint) = crate::services::adapter_route_constants::openai_compat_endpoint_url(
         &provider.settings_config,
         target,
     ) {
         url = endpoint;
-    } else if let Some(custom) =
+    } else if let Some(active_base_url) =
         crate::services::adapter_route_constants::openai_compat_base_url(&provider.settings_config)
     {
-        url = custom;
+        url = active_base_url;
     }
     listed = crate::services::adapter_route_constants::openai_compat_listed_models(
         &provider.settings_config,

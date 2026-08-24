@@ -393,6 +393,10 @@ impl ProviderService {
             created_at: now.clone(),
             updated_at: now.clone(),
         })?;
+        // Projection rows are not tickets. Keep the classification result from
+        // `prepare_provider_surface` but do not restore an old surface below
+        // when a surface-less projection updates an existing row.
+        let generated_projection = self.is_generated_projection(&prepared)?;
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
             let agent = input.agent_id;
@@ -439,6 +443,9 @@ impl ProviderService {
 
             let mut row = prepared.clone();
             if let Some(existing) = &existing {
+                if !generated_projection {
+                    preserve_existing_provider_surface(input, existing, &mut row);
+                }
                 row.created_at = existing.created_at.clone();
             }
             let stored = if row.is_current {
@@ -906,38 +913,19 @@ impl ProviderService {
         if self.is_generated_projection(&provider)? {
             return Ok(provider);
         }
-        let product = AdapterRouteService::classify_provider_source_product(&provider);
-        let surface = TicketSurface::from_product(product);
-        if TicketSurface::from_persisted_json(&provider.meta)
-            != PersistedTicketSurface::Known(surface)
-        {
+        if TicketSurface::from_persisted_json(&provider.meta) == PersistedTicketSurface::Missing {
+            let surface = Self::classify_persisted_provider_surface(&provider);
             attach_persisted_surface(&mut provider.meta, surface);
         }
         stamp_secret_hash(&mut provider.meta, &provider.settings_config);
         Ok(provider)
     }
 
-    /// Repair a legacy row's surface using a narrow optimistic update. This
-    /// path is retained for existing rows/import no-ops; mutation paths use
-    /// `prepare_provider_surface` so surface stamping cannot fail after a
-    /// counterpart transaction has committed.
+    /// Keep an existing import row untouched when the live snapshot itself did
+    /// not create a new provider. Surface classification belongs only to the
+    /// create path; this also keeps legacy Missing rows stable on import no-ops.
     fn stamp_provider_surface(&self, provider: Provider) -> Result<Provider> {
-        if self.is_generated_projection(&provider)? {
-            return Ok(provider);
-        }
-        let product = AdapterRouteService::classify_provider_source_product(&provider);
-        let surface = TicketSurface::from_product(product);
-        if TicketSurface::from_persisted_json(&provider.meta)
-            == PersistedTicketSurface::Known(surface)
-        {
-            return Ok(provider);
-        }
-        let expected_updated_at = provider.updated_at.clone();
-        let mut stamped = provider;
-        attach_persisted_surface(&mut stamped.meta, surface);
-        stamped.updated_at = now_ts();
-        self.repo
-            .update_healed_fields(&stamped, &expected_updated_at, &stamped.updated_at)
+        Ok(provider)
     }
 
     /// Projections are not tickets. Match `generatedBy=adapter` or an existing
@@ -955,6 +943,26 @@ impl ProviderService {
             .list_filtered(&Default::default())?
             .iter()
             .any(|profile| profile.generated_provider_id.as_deref() == Some(provider.id.as_str())))
+    }
+
+    /// Persist a provider surface only when an OpenAI classification has evidence
+    /// of the official product. The route classifier also recognizes arbitrary
+    /// OpenAI-compatible remotes for adapter planning, but a relay alone is not a
+    /// product identity for the provider ticket surface.
+    fn classify_persisted_provider_surface(provider: &Provider) -> TicketSurface {
+        let product = AdapterRouteService::classify_provider_source_product(provider);
+        let surface = TicketSurface::from_product(product);
+        if surface != TicketSurface::OpenaiApi || Self::provider_proves_openai_api(provider) {
+            surface
+        } else {
+            TicketSurface::Unknown
+        }
+    }
+
+    fn provider_proves_openai_api(provider: &Provider) -> bool {
+        crate::services::adapter_route_constants::provider_has_official_openai_api_evidence(
+            provider,
+        )
     }
 
     /// Locate the canonical live-import row for one agent. Older databases may
@@ -1968,6 +1976,30 @@ fn validate_provider_input(input: &ProviderInput) -> Result<()> {
     require_json_object(&input.settings_config, "settings_config")?;
     require_json_object(&input.meta, "meta")?;
     Ok(())
+}
+
+/// Keep persisted surface metadata authoritative when a surface-less caller
+/// updates an existing provider. The UI input intentionally omits this field;
+/// classifying that input before the transaction is only safe for a new row.
+fn preserve_existing_provider_surface(
+    input: &ProviderInput,
+    existing: &Provider,
+    prepared: &mut Provider,
+) {
+    if input.meta.get("surface").is_some() {
+        return;
+    }
+
+    let Some(meta) = prepared.meta.as_object_mut() else {
+        return;
+    };
+    if let Some(surface) = existing.meta.get("surface") {
+        meta.insert("surface".into(), surface.clone());
+    } else {
+        // `prepare_provider_surface` may have classified the prospective row
+        // before the transaction. Existing rows with no key stay Missing.
+        meta.remove("surface");
+    }
 }
 
 fn validate_id(id: &str) -> Result<()> {

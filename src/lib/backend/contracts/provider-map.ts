@@ -136,6 +136,8 @@ export function toCoreInput(p: Provider): CoreProviderInput {
     agentId: p.agentId,
     name: p.name,
     settingsConfig,
+    // Surface is persisted core metadata; surface-less UI updates let core
+    // inherit existing/future values and classify only newly created rows.
     meta: {
       preset: p.preset,
       // 产品：API Key 官方/自定义端点
