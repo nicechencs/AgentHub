@@ -689,10 +689,26 @@ export function extrasFromPoolSource(
  * Advanced-only facts for the ticket detail expand.
  * Header already shows type / surface / health chip.
  */
+function protocolLabel(speaks: readonly string[], t?: TranslateFn): string {
+  const known = speaks.map((item) => item.trim()).filter(Boolean);
+  if (known.length === 0) return t ? t('connections.list.unrecognized') : '未识别';
+  return known.join(' · ');
+}
+
+function claudeBridgeSurface(
+  bindings?: readonly BindingView[] | null,
+): string | null {
+  if (!bindings?.some((binding) => binding.route === 'bridge' && binding.agentId === 'claude')) {
+    return null;
+  }
+  return 'Messages /v1/messages';
+}
+
 export function buildTicketDetailFields(
   ticket: TicketView,
   extras?: TicketDetailExtras | null,
   t?: TranslateFn,
+  bindings?: readonly BindingView[] | null,
 ): TicketDetailSections {
   const advanced: TicketDetailField[] = [];
 
@@ -712,13 +728,24 @@ export function buildTicketDetailFields(
   }
 
   const speaks = Array.isArray(ticket.speaks) ? ticket.speaks : [];
+  const customApiKey = ticket.credentialClass === 'api_key' && customEndpoint;
   const showProtocol =
-    speaks.length > 0
-    && (ticket.credentialClass === 'api_key' || customEndpoint);
+    customApiKey
+    || (speaks.map((item) => item.trim()).filter(Boolean).length > 0
+      && (ticket.credentialClass === 'api_key' || customEndpoint));
   if (showProtocol) {
     advanced.push({
       label: t ? t('connections.list.protocol') : '协议',
-      value: speaks.join(' · '),
+      value: protocolLabel(speaks, t),
+    });
+  }
+
+  const agentSurface = claudeBridgeSurface(bindings);
+  if (agentSurface) {
+    advanced.push({
+      label: t ? t('kind.route.localRoute') : '本机路由',
+      value: agentSurface,
+      mono: true,
     });
   }
 
