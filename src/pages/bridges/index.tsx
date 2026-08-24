@@ -239,9 +239,17 @@ export default function BridgesPage() {
     onSetAutoStart: handleSetBridgeAutoStart,
     onRequestRemove: setRemoveConfirm,
     onRequestWrite: (profile: AdapterProfile, graph: RouteGraphView) => {
+      setCreateOpen(false);
+      setImportOpen(false);
+      setEditTarget(null);
       setWriteTarget({ profile, graph });
     },
-    onRequestEdit: setEditTarget,
+    onRequestEdit: (profile: AdapterProfile) => {
+      setCreateOpen(false);
+      setImportOpen(false);
+      setWriteTarget(null);
+      setEditTarget(profile);
+    },
     onRetry: () => { void reload(); },
     hiddenTargetIds,
   };
@@ -254,12 +262,24 @@ export default function BridgesPage() {
         descriptionTip={t('routes.page.descriptionTip')}
         actions={
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setImportOpen(true)}>{t('routes.import.action')}</Button>
-            <Button onClick={() => setCreateOpen(true)}>{t('routes.create.action')}</Button>
+            <Button variant="secondary" onClick={() => {
+              setCreateOpen(false);
+              setWriteTarget(null);
+              setEditTarget(null);
+              setImportOpen(true);
+            }}>{t('routes.import.action')}</Button>
+            <Button onClick={() => {
+              setImportOpen(false);
+              setWriteTarget(null);
+              setEditTarget(null);
+              setCreateOpen(true);
+            }}>{t('routes.create.action')}</Button>
           </div>
         }
       />
 
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
       {connectionWarning ? (
         <div className={pageRhythm.lead}>
           <Notice tone="warning">{connectionWarning}</Notice>
@@ -329,7 +349,9 @@ export default function BridgesPage() {
         ) : null}
       </div>
 
+        </div>
       <CreateRouteDialog
+        asPanel
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={() => { void reload(); }}
@@ -343,6 +365,7 @@ export default function BridgesPage() {
         onImported={() => { void reload(); }}
       />
       <WriteClientConfigDialog
+        asPanel
         open={Boolean(writeTarget)}
         onOpenChange={(open) => { if (!open) setWriteTarget(null); }}
         profile={writeTarget?.profile ?? null}
@@ -353,6 +376,7 @@ export default function BridgesPage() {
         hiddenTargetIds={hiddenTargetIds}
         onWritten={() => { void reload(); }}
       />
+      </div>
       <EditRouteDialog
         open={Boolean(editTarget)}
         onOpenChange={(open) => { if (!open) setEditTarget(null); }}

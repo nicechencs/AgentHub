@@ -1,14 +1,7 @@
 import { useState } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { DialogOrSide } from './dialog-or-side';
 import { Input } from '@/components/ui/input';
 import { SecretInput } from '@/components/shared/SecretInput';
 import type { TranslateFn } from '@/lib/i18n';
@@ -62,10 +55,12 @@ export function CreateRouteDialog({
   open,
   onOpenChange,
   onCreated,
+  asPanel = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
+  asPanel?: boolean;
 }) {
   const { t } = useI18n();
   const [vendor, setVendor] = useState<CreateRouteVendorId>('openrouter');
@@ -144,33 +139,37 @@ export function CreateRouteDialog({
   };
 
   return (
-    <Dialog
+    <DialogOrSide
+      asPanel={asPanel}
       open={open}
       onOpenChange={(next) => {
         if (busy) return;
         if (!next) reset();
         onOpenChange(next);
       }}
+      title={t('routes.create.title')}
+      description={t('routes.create.description')}
+      preventDismiss
+      footer={(
+        <>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" form="create-route-form" disabled={busy || !canSubmit}>
+            {busy ? t('routes.create.submitting') : t('routes.create.submit')}
+          </Button>
+        </>
+      )}
     >
-      <DialogContent
-        className="flex max-h-[min(36rem,calc(100vh-2rem))] flex-col overflow-hidden"
-        onPointerDownOutside={(event) => event.preventDefault()}
-        onInteractOutside={(event) => event.preventDefault()}
-        onFocusOutside={(event) => event.preventDefault()}
-      >
         <form
-          className="flex min-h-0 flex-1 flex-col"
+          id="create-route-form"
+          className="flex min-h-0 flex-1 flex-col space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (busy || !canSubmit) return;
             void submitCreate();
           }}
         >
-          <DialogHeader className="shrink-0">
-            <DialogTitle>{t('routes.create.title')}</DialogTitle>
-            <DialogDescription>{t('routes.create.description')}</DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1">
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-muted">{t('routes.create.vendorLabel')}</span>
               <select
@@ -258,17 +257,7 @@ export function CreateRouteDialog({
               <p className="text-meta text-muted">{t('routes.create.upstreamEndpointsHint')}</p>
             </fieldset>
             {error ? <p className="text-sm text-danger">{error}</p> : null}
-          </div>
-          <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
-              {t('common.cancel')}
-            </Button>
-            <Button type="submit" disabled={busy || !canSubmit}>
-              {busy ? t('routes.create.submitting') : t('routes.create.submit')}
-            </Button>
-          </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+    </DialogOrSide>
   );
 }
