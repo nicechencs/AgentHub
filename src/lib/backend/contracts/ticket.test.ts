@@ -4,6 +4,7 @@ import {
   bindingRouteUsageLabel,
   groupTicketSurfaceMembers,
   isActiveBindingForAgent,
+  isBindSuccessForAgent,
   mapBindTicketResult,
   mapBindingView,
   mapPlanTicketResult,
@@ -439,6 +440,21 @@ describe('Ticket Rust wire mappers', () => {
     });
     expect(isActiveBindingForAgent(result.binding, 'codex')).toBe(true);
   });
+
+  it('treats hosted local_bridge bind as success even when active is false', () => {
+    const result = mapBindTicketResult({
+      ticketId: 'provider:openrouter-1',
+      agentId: 'claude',
+      route: 'bridge',
+      active: false,
+      profileId: 'prof-or-claude',
+      bridge: { port: 43121, running: true },
+    });
+    expect(isActiveBindingForAgent(result.binding, 'claude')).toBe(false);
+    expect(isBindSuccessForAgent(result.binding, 'claude')).toBe(true);
+    expect(isBindSuccessForAgent(result.binding, 'grok')).toBe(false);
+  });
+
 
   it('rejects a bind result without ticketId/agentId, and accepts empty unbind', () => {
     const bindEmpty = thrownMessage(() => mapBindTicketResult({} as never));

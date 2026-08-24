@@ -1265,7 +1265,7 @@ describe('preview 同步失效与确认占锁', () => {
 });
 
 describe('purpose-gated preview', () => {
-  it('for-source share cannot preview a local_bridge plan', () => {
+  it('for-source share can preview a local_bridge plan (OpenAI-compat → Claude/Grok)', () => {
     const entry: ConnectFlowEntry = {
       mode: 'for-source',
       source: kimiSource,
@@ -1280,7 +1280,7 @@ describe('purpose-gated preview', () => {
     const elig = readyEligibility(true, {
       analysis: analysis({ route: 'local_bridge' }),
     });
-    expect(canEnterPreview(state, null, elig)).toBe(false);
+    expect(canEnterPreview(state, null, elig)).toBe(true);
   });
 
   it('for-source route can preview a local_bridge plan', () => {
@@ -1315,10 +1315,34 @@ describe('visibleTargetsForPurpose', () => {
     ]);
     expect(visibleTargetsForPurpose(['claude', 'codex', 'grok'], kimiSource, map, 'share')).toEqual([
       'claude',
+      'codex',
       'grok',
     ]);
     expect(visibleTargetsForPurpose(['claude', 'codex', 'grok'], kimiSource, map, 'route')).toEqual([
       'codex',
+      'grok',
+    ]);
+  });
+
+  it('share lists OpenAI-compat Claude and Grok local_bridge targets', () => {
+    const source = { kind: 'provider' as const, id: 'or-openai' };
+    const map = new Map<string, PlanEligibility>([
+      [planFanoutKey({ source, targetAgentId: 'pi' }), readyEligibility(true, {
+        analysis: analysis({ route: 'config_sync' }),
+      })],
+      [planFanoutKey({ source, targetAgentId: 'claude' }), readyEligibility(true, {
+        analysis: analysis({ route: 'local_bridge', ruleId: 'openai-api-to-claude-v1' }),
+      })],
+      [planFanoutKey({ source, targetAgentId: 'grok' }), readyEligibility(true, {
+        analysis: analysis({ route: 'local_bridge', ruleId: 'openai-api-to-grok-bridge-v1' }),
+      })],
+      [planFanoutKey({ source, targetAgentId: 'kimi' }), readyEligibility(false, {
+        analysis: analysis({ route: 'unsupported' }),
+      })],
+    ]);
+    expect(visibleTargetsForPurpose(['pi', 'claude', 'grok', 'kimi'], source, map, 'share')).toEqual([
+      'pi',
+      'claude',
       'grok',
     ]);
   });

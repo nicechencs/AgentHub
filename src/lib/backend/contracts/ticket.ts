@@ -423,6 +423,19 @@ export function isActiveBindingForAgent(
   return binding.active === true && binding.agentId === targetAgentId;
 }
 
+/**
+ * Confirm-apply success. Hosted local_bridge persist does not occupy
+ * the target's current provider; bind still succeeded if the profile exists.
+ */
+export function isBindSuccessForAgent(
+  binding: BindingView,
+  targetAgentId: AgentId,
+): boolean {
+  if (binding.agentId !== targetAgentId) return false;
+  if (binding.active === true) return true;
+  return binding.route === 'bridge' && Boolean(binding.profileId);
+}
+
 export interface TicketPort {
   /** Global ticket wallet + bindings (read-only aggregation). */
   listWallet(): Promise<TicketWallet>;

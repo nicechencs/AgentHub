@@ -884,7 +884,8 @@ export function adapterRouteMatchesPurpose(
   purpose: ConnectBindPurpose,
 ): boolean {
   if (purpose === 'route') return route === 'local_bridge';
-  return route === 'native_endpoint' || route === 'config_sync';
+  // 用到其他工具: 直连 / 本机路由 per matrix (OpenAI-compat → Claude/Grok is local_bridge).
+  return route === 'native_endpoint' || route === 'config_sync' || route === 'local_bridge';
 }
 
 /** Route picker binds an existing login onto loopback endpoints; extra import/key CTAs do not apply. */
