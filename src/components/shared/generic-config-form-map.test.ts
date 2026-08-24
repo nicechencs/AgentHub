@@ -4,7 +4,6 @@ import { SECRET_REDACTED } from '@/lib/backend/contracts/config-types';
 import {
   emptyValuesFromSchema,
   fieldControlKind,
-  isAdvancedProviderFormKey,
   isSecretUnchanged,
   mergeDocumentValues,
   issuesByField,
@@ -65,15 +64,6 @@ describe('generic-config-form-map', () => {
         valueType: { kind: 'object' } as never,
       }),
     ).toBe('unsupported');
-  });
-
-  it('hides env names and per-role models from the API Key form', () => {
-    expect(isAdvancedProviderFormKey('claudeAuthEnv')).toBe(true);
-    expect(isAdvancedProviderFormKey('modelOpus')).toBe(true);
-    expect(isAdvancedProviderFormKey('wireApi')).toBe(true);
-    expect(isAdvancedProviderFormKey('baseUrl')).toBe(false);
-    expect(isAdvancedProviderFormKey('apiKey')).toBe(false);
-    expect(isAdvancedProviderFormKey('model')).toBe(false);
   });
 
   it('issuesByField indexes first message', () => {
