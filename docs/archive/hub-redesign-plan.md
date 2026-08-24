@@ -1,9 +1,11 @@
 # Hub 重构 Phase 1 实施方案（Agent 优先信息架构）v2
 
+> **归档（2026-08-24）**。§1–§10 不是现行 IA。现行 UI 见 [../ui-design.md](../ui-design.md) / [../connection-binding-model.md](../connection-binding-model.md)。侧栏 Routes 默认显示，Settings 偏好可隐藏。
+>
 > 状态：**Phase 1 已实施**（2026-08-14），本文保留为当时的实施记录。  
-> **§3.2 过渡冻结已解除**（2026-08-15）：终态 IA 见 [bridges-page-redesign.md](bridges-page-redesign.md)。现行表面是 **Routes / 路由**（`/routes`）；侧栏与页标题英文 Routes、中文「路由」，永久显示。`/adapter`、`/router`、`/bridges` 永久跳过来。页目录仍为 `src/pages/bridges/`。下文 §3.2「不移除 `/adapter`、不改路由结构、侧栏改名『桥与适配』」是当时护栏，不是现行约束。  
+> **§3.2 过渡冻结已解除**（2026-08-15）：终态 IA 见 [../bridges-page-redesign.md](../bridges-page-redesign.md)。表面是 **Routes / 路由**（`/routes`）。`/adapter`、`/router`、`/bridges` 永久跳过来。页目录仍为 `src/pages/bridges/`。下文 §3.2「不移除 `/adapter`、不改路由结构、侧栏改名『桥与适配』」是当时护栏，不是现行约束。  
 > **现行状态（2026-08-23）**：Connections 为**全局登录列表**；页内 Agent 过滤走 **AgentTabStrip**（无「官方登录 / API Key / 未识别」芯片）；OAuth 用人形图标、API Key 用钥匙图标；真登录行入口为「**分享** / **路由**」（OAuth 刷新走 `oauthListAction`）。Dashboard「连接/切换」。ConnectFlow 芯片 **直连 / 用这份登录 / 本机路由 / 当前不支持**（界面不再标 ①②③）。侧栏与页标题英文 Routes、中文「路由」，永久显示；Routes 列表/详情显示 IP+端口。Settings **四栏**（偏好 / 本机 / 备份 / 关于）；托盘菜单 **打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出**；i18n 仅 Settings chrome + 侧栏。下文 **§1–§10 仍是 Phase 1 实施记录**，不是现行 IA。  
-> **领域与现行 UI**以 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md) 为准：票 / 绑定 / 协议图；Connections 全局登录列表；真登录「分享 / 路由」+ AgentTabStrip；侧栏中文「路由」永久显示；生成投影退出列表。**产品方向**以 [product-decisions.md](product-decisions.md) 为准（① API 直连 / ② 原生订阅 / ③ 本机路由）。下文「不改 OAuth 门禁」只约束当时 Phase 1 实施范围，不是「订阅一律不跨 Agent」。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**。
+> **领域与现行 UI**以 [connection-binding-model.md](../connection-binding-model.md) / [ui-design.md](../ui-design.md) 为准：票 / 绑定 / 协议图；Connections 全局登录列表；真登录「分享 / 路由」+ AgentTabStrip；侧栏中文「路由」永久显示；生成投影退出列表。**产品方向**以 [product-decisions.md](../product-decisions.md) 为准（① API 直连 / ② 原生订阅 / ③ 本机路由）。下文「不改 OAuth 门禁」只约束当时 Phase 1 实施范围，不是「订阅一律不跨 Agent」。Phase 1 的对话框外壳仍可复用，**按 Agent tab 分页、行按钮白名单、诊断只放 Dashboard 不再是终态**。
 > 验收：pnpm typecheck / typecheck:test / test（627 用例，含集成 bug 防回归）/ build 全绿；cargo test 79 用例全绿（Rust 未改动）；dev:mock 冒烟通过（空态引导、非空可行性置灰+原因、无控制台错误）。
 > 关联文档同步：docs/ui-design.md、docs/adapter-design.md 正文定位、docs/architecture.md §4.1 目录树（lib/connect-flow、components/connect）与 §4.6、README.md、docs/README.md、docs/agenthub-plan.md、docs/testing.md、docs/adapter-kimi-codex-dogfood.md。
 > v2 修订要点：plan.canApply 为可执行权威；补同 Agent 原生切换分流；用途/徽标改用 profile 联结（不读 provider.meta）；apply 自动切换语义如实；排除 adapter 生成 Provider 作为来源；两层 OAuth 门禁；可注入 helper 保证 Node 环境可测。
@@ -29,7 +31,7 @@
 
 Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 仍按 Agent tab，行按钮只给可 apply 的 Provider。  
 **「Agent tab + 行按钮白名单」已被后续 Connections 全局登录列表取代**（真登录「分享 / 路由」、页内 Agent 过滤走 AgentTabStrip，不可行在对话框置灰 + 原因，不再靠行上藏按钮）。  
-**此后的目标形态**见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md)：全局登录列表、真登录「分享 / 路由」+ AgentTabStrip、侧栏中文「路由」永久显示。下文 §3 是 Phase 1 冻结范围，不是下一轮 UI 约束。
+**此后的目标形态**见 [connection-binding-model.md](../connection-binding-model.md) / [ui-design.md](../ui-design.md)：全局登录列表、真登录「分享 / 路由」+ AgentTabStrip、侧栏中文「路由」永久显示。下文 §3 是 Phase 1 冻结范围，不是下一轮 UI 约束。
 
 ## 3. Phase 1 范围
 
@@ -90,7 +92,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 - **不动 Rust 后端**：analyze/plan/apply/bridge/OAuth/switch 命令与能力矩阵原样使用。若实施中发现必须改后端才能达成目标，停下上报，不得绕过。
 - **不做 AdapterProfile 与 agent_active_bindings 的物理合并**（推迟 Phase 2；本期只做前端读模型聚合）。
 - **不改 OAuth 门禁**：`canApply=false` 的路线保持不可用，UI 呈现为置灰+原因。
-- **不移除 `/adapter` 页与侧栏入口**（**2026-08-15 已解除**：现行规范路由 `/routes`，侧栏英文 Routes 永久显示；见 [bridges-page-redesign.md](bridges-page-redesign.md)）。过渡期职责定位：Dashboard/Connections 为推荐入口，本页只管理桥 runtime；两处 apply 行为同源（同一 lib/api 门面），不允许行为分叉。侧栏文案当时改为「桥与适配」，创建区已收掉。
+- **不移除 `/adapter` 页与侧栏入口**（**2026-08-15 已解除**：现行规范路由 `/routes`，侧栏英文 Routes 永久显示；见 [bridges-page-redesign.md](../bridges-page-redesign.md)）。过渡期职责定位：Dashboard/Connections 为推荐入口，本页只管理桥 runtime；两处 apply 行为同源（同一 lib/api 门面），不允许行为分叉。侧栏文案当时改为「桥与适配」，创建区已收掉。
 - **不重做 OAuth 授权 UI**、不做 ①② 引导跳转的自动弹窗与回跳闭环（Phase 2）。
 - **不重构 Connections 页 tab 信息架构**（全局钱包视图属 Phase 2）。
 - **不修改 `src/lib/api/adapter.ts` 既有行为**（含 apply 后连接池刷新异常被吞的既有语义——对话框通过 `onApplied` 自行补偿刷新并呈现刷新失败）。
@@ -219,7 +221,7 @@ Phase 1 当时的 UI 形态：Dashboard 卡片发起连接/切换；Connections 
 
 ## 10. 后续：票 / 绑定（取代原 Phase 2 展望）
 
-原「Phase 2 再合并 binding / 再做全局钱包」已升格为已决策的目标架构，细节见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md)。不再把全局登录列表和真登录「分享 / 路由」当成可选项。
+原「Phase 2 再合并 binding / 再做全局钱包」已升格为已决策的目标架构，细节见 [connection-binding-model.md](../connection-binding-model.md) / [ui-design.md](../ui-design.md)。不再把全局登录列表和真登录「分享 / 路由」当成可选项。
 
 实施顺序（与目标文档 §6、§8 一致）：
 

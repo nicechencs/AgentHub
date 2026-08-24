@@ -1,5 +1,5 @@
 /**
- * ConnectFlow 共享契约（docs/hub-redesign-plan.md §6）。
+ * ConnectFlow 共享契约（docs/archive/hub-redesign-plan.md §6）。
  *
  * 并行实施规则：C1（lib/connect-flow 实现）、C2（components/connect UI）、
  * C3（dashboard）、C4（connections）只允许依赖本文件与既有 lib/api 门面，

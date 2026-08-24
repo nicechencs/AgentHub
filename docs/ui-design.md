@@ -6,14 +6,14 @@
 > v1.1：Usage 模型筛选语义、Backups 流程、Dashboard/侧栏与当前 agent 集合对齐。  
 > v1.3：Agents / 首次引导增加 **「环境未就绪」** 态；安装链路先 Runtime 再 Agent。  
 > v1.4：环境条/安装预览按宿主平台分流——macOS/Linux 不展示 PowerShell；native 命令预览 Windows=`irm|iex`、macOS/Linux=`curl|bash`；Runtime 修复默认 Windows=`winget`、macOS=`brew`、Linux=`manual`。  
-> 2026-08-23 表面：Connections 顶部 AgentTabStrip（`?agent=` 高亮并把 Tab 落到该 Agent）；行上「分享 / 路由」拆开（分享 = 直连或写进对方登录，路由 = 本机转发）；OAuth 头像 / API Key 钥匙；无登录类型筛选芯片。侧栏与页标题中文「路由」、英文 Routes，永久显示；运行时行显示 127.0.0.1 与端口。MCP 同样顶部 Agent 筛选。  
+> 2026-08-23 表面：Connections 顶部 AgentTabStrip（`?agent=` 高亮并把 Tab 落到该 Agent）；行上「分享 / 路由」拆开（分享 = 直连或写进对方登录，路由 = 本机转发）；OAuth 头像 / API Key 钥匙；无登录类型筛选芯片。侧栏与页标题中文「路由」、英文 Routes，默认显示；Settings 偏好 `routesNavVisible` 可隐藏侧栏项，隐藏不禁用页面，`/routes` 仍可打开。运行时行显示 127.0.0.1 与端口。MCP 同样顶部 Agent 筛选。  
 > 2026-08-14 Hub Phase 1：推荐入口为 Dashboard「连接/切换」与 Connections 登录行，统一 `ConnectFlowDialog`。  
 > 2026-08-15：Connections 全局登录列表与 Dashboard 当前绑定读模型已落地（见 [connection-binding-model.md](connection-binding-model.md) §5–§6 第 1 步）；ConnectFlow 确认步走 `bind`，本机路由解绑走 `unbind`。用户表面是 **Routes / 路由**（`/routes`）；侧栏与页标题中文现为「路由」。内部模块仍叫 Adapter。下文 §4.1 / §4.3 为目标线框。现行界面说「登录」不说「票/钱包」；预览芯片不再标 ①②③。  
 > 把已有登录接到另一个工具的产品模型仍是三种做法：直接改配置 / 写进对方认的登录 / 本机转发，见 [product-decisions.md](product-decisions.md)。**现行界面芯片**是「直连 / 用这份登录 / 本机路由 / 当前不支持」。预览不得把「直接改配置 / 写进对方认的登录」写成「需要本机服务」。
 
 ## 1. 设计原则
 
-1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（永久显示） / Settings）；备份在 Settings `?tab=backups`，不占侧栏。用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。Connections 是跨工具登录列表，顶部 AgentTabStrip 可筛；`?agent=` 高亮并把 Tab 落到该 Agent。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。登录行拆成「分享」（直连 / 写进对方登录）与「路由」（本机转发）；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
+1. **以 Agent 为筛选维度，以功能为导航维度**：侧边导航分为 Workspace（Chat / Agents / Skills / MCP / Projects）与 Manage（Dashboard / Connections / **Routes**（默认显示；Settings 偏好可隐藏侧栏项） / Settings）；备份在 Settings `?tab=backups`，不占侧栏。用量合并进 Dashboard。功能页内部用 AgentTabStrip（随 `AGENTS`）过滤，而不是「先选 app 再选功能」的两层切换。Connections 是跨工具登录列表，顶部 AgentTabStrip 可筛；`?agent=` 高亮并把 Tab 落到该 Agent。底层 accounts/providers 可继续分表，UI 与规划器谈的是登录和绑定。登录行拆成「分享」（直连 / 写进对方登录）与「路由」（本机转发）；`/routes` 只做本机转发运行时（旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。
 2. **危险操作必有前置信息**：切换供应商/账号前展示 backfill 摘要、备份位置、运行中进程警告。
 3. **凭据永不明文回显**：`SecretInput` 统一脱敏回显（`sk-••••3f2a` 一类掩码）；点眼睛切换明文。现行实现无二次确认、无自动再遮蔽。聚焦已遮蔽值会清空以便重新输入。
 4. **空状态给动作**：每个空列表都有明确的下一步按钮（添加供应商/导入账号/安装 Agent / 安装运行环境）。**例外：Routes 健康空态没有按钮**——多数连接不需要本机转发，空是常态，不是待转化漏斗。
@@ -108,7 +108,7 @@ Agent 品牌色（logo 点、图表系列；改 tokens.ts 的 AGENT_COLORS）:
 │ ├─────────────────────┤ │                                  │ │
 │ │ Manage              │ │                                  │ │
 │ │ ▣ Dashboard         │ │                                  │ │
-│ │ ⇄ Connections       │ │ （侧栏永久显示）                 │ │
+│ │ ⇄ Connections       │ │ （Routes 默认显示；偏好可隐藏）  │ │
 │ │ ▦ Routes            │ │                                  │ │
 │ │ ⚙ Settings          │ │                                  │ │
 │ ├─────────────────────┤ │                                  │ │
@@ -322,7 +322,7 @@ Agent 总览区（`AgentOverview`）使用 `auto-fit + minmax(190px, 1fr)` 自�
 
 用户表面是 **本机路由运行时**：协议对不上时在这台电脑上开的一层转发。登录在 Connections，绑定在 Dashboard / ConnectFlow；本页只服务本机转发。内部模块仍叫 Adapter（`lib/api/adapter`），不得漏进侧栏、页标题、空态、确认框、徽标、托盘。
 
-规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏与页标题英文 **Routes**、中文 **「路由」**，永久显示。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
+规范路由 `/routes`。`/adapter`、`/router`、`/bridges` 永久 `replace` 过来（丢弃遗留 `?tab=`）。侧栏与页标题英文 **Routes**、中文 **「路由」**，默认显示；Settings 偏好 `routesNavVisible` 可隐藏侧栏项，隐藏不禁用页面，`/routes` 仍可打开。页头无「去 Dashboard / 去 Connections」。创建区不在本页。
 
 列出全部 `route=local_bridge`：来源仍在或 last-known binding 命中的进主列表；其余非空 `sourceId` 进「孤立本机路由」。行与详情都是**单层**进程健康 + **本机 IP（127.0.0.1）+ 端口**，不画「配置已生效 / 桥接运行中」。无端口时标「待分配端口」，不复制无端口的地址。解绑只走 unbind，不提供 `removeAdapter`。健康空态（profile 与登录列表均已结算且 `bound+orphan===0` 且 last-known 本机路由数为 0）标题「没有本机路由」，**无按钮**——这是对 §1.4 的显式例外。
 
@@ -491,8 +491,8 @@ Settings 子页（`?tab=backups`），**不**占侧栏。页内 tab 中文 **备
 
 四个分区（侧栏英文 **Settings**；页内中文 **偏好 / 本机 / 备份 / 关于**，英文 **Preferences / This device / Backups / About**）：
 
-1. **偏好**（`?tab=preferences`）：语言、主题、开机自启、关闭到托盘、技能市场源、用量采集间隔。
-2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录。路由页走侧栏 **Routes**（永久显示）。
+1. **偏好**（`?tab=preferences`）：语言、主题、开机自启、关闭到托盘、`routesNavVisible`（侧栏是否显示 Routes）、技能市场源、用量采集间隔。
+2. **本机**（`?tab=local`）：数据目录（只读 + 打开）、日志级别 / 保留天数、打开日志目录。路由页走侧栏 **Routes**（默认显示；偏好可隐藏侧栏项，`/routes` 仍可打开）。
 3. **备份**（`?tab=backups`）：各 Agent live 配置快照的查看 / 手动备份 / 恢复 / 删除，见 §4.7。
 4. **关于**（`?tab=about`）：版本、检查/安装更新、GitHub 仓库、标语，以及原「安全」页的两条只读凭据说明（界面脱敏；存储不加密。**不**提供主密码 / keyring UI）。
 
@@ -507,7 +507,8 @@ Chat 会话设置（`ChatSettingsDialog`：cwd / 自动批准）不进 Settings�
 - **用量采集间隔**：在偏好页。已写入 SQLite，**不是**仅 localStorage。`None`=从未写入（前端默认 30）；`0`=仅手动；上限 1440。变更后 `notifyUsageSettingsChanged` 立即重排程（见 §4.6）。
 - **开机自启**（`autoStart`）：OS 登录项（Windows 启动项 / macOS Login Item），不进 L1 白名单。
 - **关闭到托盘**（`closeToTray`）：写 core，并同步 Tauri `AppState`。关窗隐藏到托盘：`close_to_tray` **或** 本机路由正在运行（即使该开关关着）。托盘「退出」会确认。中文托盘菜单：**打开 AgentHub / 打开路由 / 启动路由 / 停止路由 / 退出**（状态字符串仍可写「本机路由正在运行」，那不是菜单项）。
-- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`，第一期覆盖 Settings 四面板与侧栏 chrome。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。业务页分期迁移。
+- **侧栏 Routes**（`routesNavVisible`）：localStorage，默认 true。控制 Manage 侧栏是否显示 Routes 项；关闭后不禁用页面，仍可用 `/routes` 或链接打开。不进 L1 白名单。
+- **语言**：core L1 为权威（`zh-CN` / `en`）。Settings Select 预览并立即 `set_setting`。启动时 `LanguageProvider` 用 localStorage 做首屏缓存，再 `getSettings` 对账；同步 `<html lang>`。**首次启动**（无语言缓存且尚未 seed）按 `navigator.languages` / `navigator.language` 选 zh/en，回落 zh，并一次性写入 core；已有用户选择不覆盖。不引入 i18next；字典在 `src/lib/i18n/locales/{zh,en}.ts`。Settings 四面板、侧栏与多数业务页已接 `useI18n()`，覆盖深度仍在补。导航专有名（Chat / Agents / Skills / MCP / Projects / Dashboard / Connections / Routes / Settings）两种语言同值。
 
 Tab 与 URL `?tab=` 同步。规范 slug：`preferences` / `local` / `backups` / `about`（解析集中在 `src/pages/settings/settings-format.ts` 的 `SETTINGS_TABS` / `parseSettingsTab` / `resolveSettingsLocation`）。非法或缺省值 fallback 到 Preferences。切换使用 `replace`，避免污染浏览器历史。旧 `#backups` / `?tab=local#backups` replace 到 `?tab=backups`。
 

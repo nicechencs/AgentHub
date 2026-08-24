@@ -17,7 +17,7 @@
 允许：
 
 - 生产文件末尾 **一行** 声明：`#[cfg(test)] mod tests;`（实现必须在独立文件）。
-- 前端 `src/test/setup.ts`、`src/test/factories/*` 作为共享测试基础设施（不进生产 bundle；`vite build` 会拦 `src/test`）。
+- 前端 `src/test/setup.ts` 作为共享测试基础设施（不进生产 bundle；`vite build` 会拦 `src/test`）。无 `src/test/factories/`。
 
 禁止：
 
@@ -25,11 +25,17 @@
 - 为方便测试向生产 façade 导出 `__reset*ForTests` 一类 hook（重置逻辑放 `dev/mocks`）。
 - 让 `pnpm build` / 生产 module graph 依赖测试或 mock 文件（见 architecture 生产护栏）。
 
-历史遗留（与本条约不一致，**不要扩大**）：`crates/agenthub-core/src/logging/mod.rs` 仍内嵌 `#[cfg(test)] mod tests { ... }`；部分 GUI commands 仍把测试写在生产文件里（如 `src-tauri/src/commands/chat.rs`、`settings.rs`、`account.rs`、`backup.rs`、`project.rs`，以及 `tray.rs` / `window_policy.rs`）。**新代码必须分文件**。
+历史遗留（与本条约不一致，**不要扩大**）：
+
+- 内嵌测试体：`crates/agenthub-core/src/logging/mod.rs`；GUI `src-tauri/src/commands/backup.rs`、`project.rs`、`settings.rs`，以及 `src-tauri/src/tray.rs`、`window_policy.rs`、`state.rs`；adapters `claude.rs`、`codex.rs`、`cursor.rs`、`pi.rs`、`pi_auth.rs`、`workbuddy.rs`。
+- 已拆（生产侧仅 `#[cfg(test)] mod tests;`）：GUI `commands/account.rs`、`chat.rs`、`adapter.rs`、`skill.rs`、`install.rs`、`provider.rs`；adapters `dsh.rs`、`grok.rs`、`session_resume.rs`。
+- 前端：`src/lib/backend/tauri/dashboard-alerts.ts` 仍导出 `__resetDismissedAlertsForTests`，不要扩大。
+
+**新代码必须分文件**。
 
 ## 2. 运行命令
 
-Agent 协作：跑测试、汇总日志等机械步骤由 subagent 执行，主 Agent 只看结论并验收。见 [AGENTS.md § Agent 协作规则](../AGENTS.md#机械任务必须交给其他 Agent)。
+Agent 协作：跑测试、汇总日志等机械步骤由 subagent 执行，主 Agent 只看结论并验收。见 [AGENTS.md](../AGENTS.md)（「机械任务一律交给 subagent」）。
 
 ```bash
 # 前端（始终走 mock backend：vitest `#backend` alias）
@@ -123,10 +129,10 @@ Hub Phase 1 统一连接流程的测试分文件存放（遵守 §1）；前端 
 
 | 触发 | 工作流 | 内容 |
 |---|---|---|
-| PR / push `dev`·`main` | `.github/workflows/pr-ci.yml` | `pnpm typecheck`、`pnpm typecheck:test`、全量 `pnpm test`、`cargo test -p agenthub-core` |
+| PR / push `dev`·`main` | `.github/workflows/pr-ci.yml` | `pnpm typecheck`、`pnpm typecheck:test`、**`pnpm build`**、Linux prereq script test（`scripts/check-linux-prereqs.test.mjs`）、`pnpm test`、`cargo test -p agenthub-core --locked`、`cargo test -p agenthub-cli --locked`、`cargo test -p agenthub-gui --locked` |
 | push `v*` tag | `.github/workflows/release.yml` | 更严：`pnpm typecheck` + `pnpm typecheck:test` + 全量 `pnpm test` + `cargo test --workspace` + 打包发布元数据；tag 必须指向 `release` 上的提交且与三文件版本一致 |
 
-本地等价：`pnpm test:pr`。
+`pnpm test:pr` **不是** CI 等价（无 `pnpm build`、无 `agenthub-cli` / `agenthub-gui`）。本地可用它跑 typecheck + 前端测试 + core。
 
 Bridge 半 e2e（端口重绑 / 上游轮转 / restore realign）见 `pnpm test:bridge` 与 [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) 自动覆盖对照表。
 

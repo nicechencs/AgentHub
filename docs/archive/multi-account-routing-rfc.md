@@ -1,8 +1,10 @@
 # 多账号轮询与故障切换 RFC（C2 设计稿）
 
-> 状态：**设计稿（2026-08-22）**，待主 Agent 拍板后实施。本文不改运行时。
-> 产品真源：[provider-api-oauth-adaptation.md §5.5](provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划)、[§5.1.2](provider-api-oauth-adaptation.md#512-grok-oauth-复用自动-refresh-方案不与官方-grok-cli-互踢)、[§5.3](provider-api-oauth-adaptation.md#53-codex--claude-code-的目标数据流与语义)。
-> 任务卡：[routing-connection-refactor-plan.md](routing-connection-refactor-plan.md) C2。读模型已在本分支落地（C1 `TicketSurfaceGroup`）。
+> **归档（2026-08-24）**。产品方向仍以 [../provider-api-oauth-adaptation.md §5.5](../provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划) 为准。内核（AccountPicker / 请求边界 FSM）已在 `bridge/account.rs`；`multi_account` 门默认关，不是「零实现」，也还没对用户开闸。
+>
+> 原状态：**设计稿（2026-08-22）**。
+> 产品真源：[../provider-api-oauth-adaptation.md §5.5](../provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划)、[§5.1.2](../provider-api-oauth-adaptation.md#512-grok-oauth-复用自动-refresh-方案不与官方-grok-cli-互踢)、[§5.3](../provider-api-oauth-adaptation.md#53-codex--claude-code-的目标数据流与语义)。
+> 任务卡（历史）：[routing-connection-refactor-plan.md](routing-connection-refactor-plan.md) C2。读模型已落地（C1 `TicketSurfaceGroup`）。
 > 借鉴：one-api / new-api 渠道轮询与自动禁用恢复、nginx upstream 健康剔除、LiteLLM router fallback。**只借故障隔离与有序回退；明确排除权重、压力分配、least-conn、余额调度。**
 
 ## 0. 范围
@@ -156,7 +158,7 @@ loop:
 
 ### 5.1 日志
 
-每请求结束一条（失败必打，成功按 [logging.md](logging.md) 现口径）：
+每请求结束一条（失败必打，成功按 [logging.md](../logging.md) 现口径）：
 
 | 字段 | 值 |
 |---|---|

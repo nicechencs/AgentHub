@@ -1,17 +1,17 @@
 # AgentHub 目录结构与模块拆分
 
-> **现行状态（2026-08-19）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。`agenthub-adapterd` sidecar 是目标、未迁。Chat 没有模型选择；Claude/Codex Chat 后续轮次可走 print+resume。MCP 注入未做。
+> **现行状态（2026-08-24）**：Linux 一等公民；官方船经 `release` 三文件版本 bump 后发布。进程内 Gateway（`bridge/host/gateway.rs`）已落地；`agenthub-adapterd` sidecar 仍是目标、未迁。Chat 没有模型选择；Claude/Codex Chat 后续轮次可走 print+resume。MCP 注入未做。
 > 对应《AgentHub 项目方案 v1.3》第 4 节的落地细化。  
 > 目标 cargo workspace 为三 crate：`agenthub-core`（业务核心）/ `agenthub-gui`（Tauri 壳）/ `agenthub-cli`（命令行）；当前三者均已在仓库中（`src-tauri` = gui）。
 > v1.1 同步：Adapter 接口加厚（skills/backup 路径）、Service 职责表、Usage/模型列表边界。  
 > v1.2：CLI 命令与配置契约详见 [cli-and-config.md](cli-and-config.md)（本文 §5–§6 仅结构摘要）。  
 > v1.3：`runtime/` + `env_service` —— 安装 Agent 前的共享运行时（Node/npm 等）检测与引导。  
 > 2026-08-12 同步：Adapter 规则分析/稳定直连、Bridge core 与只读 MCP inventory 的当前工作区结构。
-> 2026-08-12 决策同步：`local_bridge` 的目标宿主确定为用户级 `agenthub-adapterd` sidecar；当前实现仍由 Tauri `AppState` 进程内托管，迁移契约见 [adapter-sidecar-design.md](adapter-sidecar-design.md)。
+> 2026-08-12 决策同步：`local_bridge` 的目标宿主确定为用户级 `agenthub-adapterd` sidecar；当前实现仍由 Tauri `AppState` 进程内托管（in-process Gateway 已落地），迁移契约见 [adapter-sidecar-design.md](adapter-sidecar-design.md)。
 > 日志：core 统一 tracing（文件 + 可选 stderr）；必打事件与分期见 [logging.md](logging.md) **v1.1**。
 > 本机三条入口与协议转换见 [local-route-endpoints.md](local-route-endpoints.md)。  
 > **前端 backend 分层（已落地）**：`lib/backend/{contracts,tauri,current}` + `dev/mocks` + `app/runtime`；命令与 adapter 选择见 **§4.1–§4.2**。
-> 2026-08-14：Hub 重构 Phase 1 入口（ConnectFlow）已落地，详见 [hub-redesign-plan.md](hub-redesign-plan.md) / [ui-design.md](ui-design.md)。
+> 2026-08-14：Hub 重构 Phase 1 入口（ConnectFlow）已落地，详见 [archive/hub-redesign-plan.md](archive/hub-redesign-plan.md) / [ui-design.md](ui-design.md)。
 > 2026-08-19：用户看到的是「登录」，不是「票 / 钱包」。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，不标圈号。三种做法是直接改配置 / 写进对方认的登录 / 本机转发，见 [product-decisions.md](product-decisions.md)。领域对象仍是票 / 绑定 / 协议图（实现名），见 [connection-binding-model.md](connection-binding-model.md)。当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`；`canApply` 仍按「现在能不能写上去」打开。
 > 2026-08-15：模块化审查结论与分阶段收口见 [modularity-improvement.md](modularity-improvement.md)。目录职责仍以本文为准；生产组合仍偏 Adapter-centric，改进按该文 P0/P1/P2，不另开微服务。
 > 2026-08-16 文档回写：core 现树含 `integrations/` `platform/` `adapter_control/` `domain/`；生产写入走 Ticket；`adapter_control` 契约已落地但仍 in-process。
@@ -53,6 +53,8 @@ AgentHub/
 
 ## 2. `crates/agenthub-core` — 业务核心
 
+目录树是示意，以源码为准，不必每次文件级同步。
+
 ```
 crates/agenthub-core/
 ├── Cargo.toml                 # rusqlite(bundled)/serde/toml_edit/
@@ -92,7 +94,7 @@ crates/agenthub-core/
     │   ├── adapter_trait.rs / registry.rs / detect_binary.rs
     │   ├── claude.rs / codex.rs / kimi.rs / grok.rs / pi.rs
     │   ├── workbuddy.rs / cursor.rs / dsh.rs
-    │   └── config_write.rs / auth_revision.rs / pi_auth.rs
+    │   └── config_write.rs / auth_revision.rs / pi_auth.rs / session_resume.rs
     │                          # 兼容期未整段迁走；integrations/*/adapter_facade 才是空转 façade
     │
     ├── integrations/          # 稀疏端口贡献（并非每家都有全套文件）
@@ -116,14 +118,16 @@ crates/agenthub-core/
     │                          # 的 DesktopAdapterControl 实现；agenthub-adapterd 仍不存在
     │
     ├── bridge/                # loopback host + Responses/Chat 协议转换
-    │   ├── host/              # 已拆：mod / lifecycle / http / dispatch
+    │   ├── host/              # gateway.rs + admission / surface / stream / transport/
+    │   │                      # 另有 lifecycle / http / dispatch
+    │   ├── account.rs / request_fsm.rs / grok_cli.rs
     │   ├── runtime.rs / types.rs / session.rs
     │   └── protocol/          # chat / responses / anthropic_messages
     │
     ├── runtime/               # 共享运行时(与具体 Agent 解耦;安装 Agent 的前置环境)
     │   ├── mod.rs / detect.rs / nodejs.rs / bootstrap.rs
     │
-    ├── services/              # 业务层:组合 adapter + repo,GUI/CLI 只调这一层
+    ├── services/              # 业务层:组合 adapter + repo；多数已是目录
     │   ├── env_service.rs / agent_service.rs / install_service.rs
     │   ├── provider_service.rs / account_service.rs
     │   ├── adapter_route_service/ / adapter_apply_service/
@@ -137,6 +141,7 @@ crates/agenthub-core/
     │   ├── mcp_inventory.rs / project_service.rs
     │   ├── chat_service.rs / run_service.rs
     │   ├── usage_service.rs / backup_service.rs / settings_service.rs
+    │   ├── account_identity_heal.rs / adapter_projection.rs / provider_identity.rs
     │
     ├── usage/                 # 会话日志用量解析（零代理、只读）
     │   ├── session_jsonl.rs / pricing.rs / grok.rs
@@ -150,6 +155,7 @@ crates/agenthub-core/
     └── utils/
         ├── paths.rs / atomic.rs / process.rs / command_exec.rs
         ├── agent_lock.rs / redact.rs / expiry.rs / grok_toml.rs
+        ├── loopback.rs / project_path.rs
         └── stream_parse/      # Chat 结构化流解析（claude/codex/kimi/grok/pi）
 ```
 
@@ -325,6 +331,7 @@ src-tauri/
     ├── adapter_control_host.rs  # DesktopAdapterControl（in-process AdapterControl）
     ├── exit_coordinator.rs
     ├── tray.rs
+    ├── tray_i18n.rs
     ├── skill_watch.rs
     ├── window_policy.rs
     └── commands/              # 薄层:参数校验 + 调 core service + 序列化;每模块一文件
@@ -384,6 +391,7 @@ src/
 │   │   └── current.ts           # 默认生产实现切换点
 │   ├── api/                     # 兼容 façade，页面无需一次全改
 │   ├── i18n/                    # 轻量字典 + t()；zh/en；不引入 i18next
+│   ├── provider-detect/         # 本机配置探测（claude/codex/grok）
 │   ├── connect-flow/            # 统一连接流程逻辑层
 │   ├── hooks/                   # useSkills / useInstalledAgents
 │   ├── ticket-wallet.ts
@@ -419,6 +427,7 @@ src/
 | `test/` | vitest `setup.ts`（约定见 [testing.md](testing.md)；无 factories/） |
 | `lib/api/` | 兼容 façade：现有页面可继续 import，内部逐步委托到 `lib/backend` |
 | `lib/connect-flow/` | 统一连接流程逻辑层（契约/可行性/fan-out/用途反查） |
+| `lib/provider-detect/` | 本机配置探测（claude/codex/grok） |
 | `components/connect/` | ConnectFlowDialog（统一连接流程 UI + 状态机） |
 | `pages/` | 页面与 UI 状态；不直接碰 `invoke` |
 
@@ -511,7 +520,7 @@ DTO / mapper：`lib/backend/contracts/*-map.ts`。错误类型：`contracts/erro
 
 Connections 收拢凭据生命周期。目标领域是 **票（Ticket）+ 绑定（Binding）+ 协议图**，不是「account/provider 出身 × 商品白名单」；完整模型与可重做的 UI 见 [connection-binding-model.md](connection-binding-model.md)。
 
-当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`。日常入口仍是 Dashboard「连接/切换」与 Connections「分享 / 路由」，走 `ConnectFlowDialog`（Connections 入口按分享/路由过滤可见目标；`plan.canApply` 表示**现在能写入**）。预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，见 [product-decisions.md](product-decisions.md)。自动生成的配置不进登录列表。`/routes` 只管理本机转发运行时（侧栏永久显示，中文「路由」、英文 Routes；列表/详情显示 127.0.0.1 + 端口；旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。各家接口与现在能不能写上去仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` **仅**供 `lib/backend/tauri/invoke.ts` fail-closed 使用，页面不得据此选择 mock。
+当前实现：读模型 + 全局登录列表 + `plan_ticket` / `bind` / `unbind`。日常入口仍是 Dashboard「连接/切换」与 Connections「分享 / 路由」，走 `ConnectFlowDialog`（Connections 入口按分享/路由过滤可见目标；`plan.canApply` 表示**现在能写入**）。预览按三种做法说明（直接改配置 / 写进对方认的登录 / 本机转发）；界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」，见 [product-decisions.md](product-decisions.md)。自动生成的配置不进登录列表。`/routes` 只管理本机转发运行时（侧栏默认显示，Settings `routesNavVisible` 可隐藏；关闭后 `/routes` 仍可直达。中文「路由」、英文 Routes；列表/详情显示 127.0.0.1 + 端口；旧 `/adapter`、`/router`、`/bridges` 永久跳过来）。各家接口与现在能不能写上去仍以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。MCP 当前只读展示 inventory。页面仍可 import `@/lib/api/*`（渐进迁移）。`isTauriApp()` 用于 `lib/backend/tauri/invoke.ts` 与 tauri 事件 helper（`install-events.ts` / `skill-events.ts` / `tray-events.ts`）的 fail-closed；页面不得据此选择 mock。
 
 **未迁移 / 有意保留**：
 

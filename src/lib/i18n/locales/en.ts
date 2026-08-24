@@ -81,9 +81,9 @@ export const en = {
         'The close button hides the window to the system tray and keeps the process running. Restore from the tray icon on Windows, or the menu-bar tray / Dock icon on macOS.',
       routesNavVisibleLabel: 'Show Routes in sidebar',
       routesNavVisibleDescription:
-        'Show the Routes entry in the left nav; still under development',
+        'Show the Routes entry in the left nav. Hiding it does not disable the page.',
       routesNavVisibleTip:
-        'Routes is not fully ready yet. When hidden, you can still open Routes via direct links.',
+        'When hidden, you can still open Routes via the URL or direct links.',
       skillMarketLabel: 'Skill market',
       skillMarketDescription: 'Remote skill source',
       skillMarketTip:

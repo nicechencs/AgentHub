@@ -1,61 +1,86 @@
 # AgentHub 文档索引
 
-本目录是**开发与设计文档**，不是产品说明书。对外的产品说明见根目录 [README.md](../README.md) 与 [product-decisions.md](product-decisions.md) 的白话部分。漏洞披露见 [SECURITY.md](../SECURITY.md)。
+本目录是**开发与设计文档**，不是产品说明书。对外说明见根目录 [README.md](../README.md) 与 [product-decisions.md](product-decisions.md) 的白话部分。漏洞披露见 [SECURITY.md](../SECURITY.md)。
 
 贡献者开发约定在仓库根目录 [AGENTS.md](../AGENTS.md)。
 
-## 稳定设计文档
+现行界面：Connections 行入口是「**分享 / 路由**」；侧栏与页标题是 **Routes / 路由**（默认显示，Settings 偏好可隐藏，`/routes` 仍可打开）。「本机转发」是做法名，不是侧栏名。
+
+## 怎么读
+
+| 你要找 | 打开 |
+|---|---|
+| 三种接法（白话） | [product-decisions.md](product-decisions.md) |
+| 票 / 绑定 / `plan`·`bind`·`unbind` | [connection-binding-model.md](connection-binding-model.md) |
+| 现在能不能写上去 | [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) §4 |
+| 本机三条入口与转换 | [local-route-endpoints.md](local-route-endpoints.md) |
+| 目录与分层 | [architecture.md](architecture.md) |
+| 实现清单（已做 / 未做） | [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) |
+| 页面线框 | [ui-design.md](ui-design.md) |
+| 测试约定 | [testing.md](testing.md) |
+| CLI | [cli-and-config.md](cli-and-config.md) |
+
+已落地的实施记录、过期计划稿在 [archive/](archive/README.md)，不要当未完成任务派工。
+
+## 现行契约
 
 | 文档 | 内容 |
 |---|---|
-| [product-decisions.md](product-decisions.md) | 把已有登录接到另一个编程工具：三种接法、白话图、能接 / 接不上；后半是给实现的对照 |
-| [local-route-endpoints.md](local-route-endpoints.md) | **本机三条入口与转换**：Messages / Responses / Chat 怎么转到各家上游；白话图 |
-| [agenthub-plan.md](agenthub-plan.md) | 产品方案、决策、适配矩阵、模块、路线图、风险（当前 **v1.5**；含平台环境差异与 Adapter sidecar 目标决策） |
-| [architecture.md](architecture.md) | cargo workspace 目录、core/gui/cli 拆分、Service/Adapter；原则 12 按三路解释 `plan()` |
-| [hardcoding-governance.md](hardcoding-governance.md) | **硬编码治理**：安装 allowlist / 定价表 / 路径真源；分层策略与落地状态 |
-| [modularity-improvement.md](modularity-improvement.md) | **模块化审查与改进方案**（2026-08-16 回写）：integrations / Ticket 写口 / `adapter_control` 契约已落地；仍待削 Adapter 厚表面与 sidecar 二进制 |
-| [platform-capability-refactor.md](platform-capability-refactor.md) | **平台能力架构改造方案**：解耦边界、稀疏端口、生命周期/Skills/连接/用量；P01-P13 与 R00-R08 已完成 |
-| [platform-capability-remediation.md](platform-capability-remediation.md) | **2026-08-07 审查修正方案**：Active Binding、配置 fail-closed、Skills 安全/原子性、Lifecycle 审计与 AgentKey/OCP 真验证 |
-| [testing.md](testing.md) | **测试约定**：测试与生产分文件、vitest/cargo 命令、mock 边界、Markdown 预览用例索引 |
-| [ui-design.md](ui-design.md) | 前端布局、页面线框、交互与组件；三种做法是直接改配置 / 写进对方认的登录 / 本机转发。界面芯片是「直连 / 用这份登录 / 本机路由 / 当前不支持」。Connections 真登录「用到其他工具 / 本机转发」+ AgentTabStrip；侧栏中文「本机转发」永久显示。写进对方认的登录时不显示本机服务 |
-| [ui-component-standard.md](ui-component-standard.md) | **UI 组件与体验标准**（**v1.0**）：现行清单、决策树、提示通道、对照审计与 Phase 3 收口；不替代页面线框 |
-| [connection-binding-model.md](connection-binding-model.md) | 实现用的领域模型（一份登录 / 绑定 / 规划器）。**读模型 + plan/bind/unbind 已落地；sidecar 迁移未做**。读者向说明见 [product-decisions.md](product-decisions.md) |
-| [hub-redesign-plan.md](hub-redesign-plan.md) | **Hub 重构 Phase 1 已实施**（历史实施记录，§1–§10 不是现行 IA）：ConnectFlowDialog。现行 UI 见 [connection-binding-model.md](connection-binding-model.md) / [ui-design.md](ui-design.md) |
-| [adapter-design.md](adapter-design.md) | **Adapter 设计与进度**：用户表面 Routes / 中文「本机转发」，模块仍叫 Adapter；本页只服务本机转发；创建绑定走 Dashboard「连接/切换」与 Connections「用到其他工具 / 本机转发」 |
-| [bridges-page-redesign.md](bridges-page-redesign.md) | **本机路由页终态 IA**（已落地，表面已改为 Routes / `/routes`）：对象是 loopback 进程；侧栏英文 Local forward、中文「本机转发」永久显示；单层健康+端口。稳定文档已回写 ui-design / adapter-design / connection-binding-model |
-| [route-detail-redesign.md](route-detail-redesign.md) | **路由详情面板重设计**（2026-08-24，**Implemented**）：去重、三节点链路示意、逐边 Agent 支持判断；不改协议矩阵 / 凭据加密 / 国产 OAuth |
-| [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | **真机 dogfood（内部）**：直接改配置（Kimi→Claude / Anthropic→Pi）；本机转发（Kimi→Codex）。禁止记录密钥 / prompt / 正文 |
-| [adapter-sidecar-design.md](adapter-sidecar-design.md) | **Adapter Sidecar 目标架构**：`agenthub-adapterd` 所有权、IPC、状态机、单主/并发、升级恢复与三阶段迁移（目标已决策，当前未迁移） |
-| [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | **厂商 / API / OAuth 适配规则**：产品与协议边界、Kimi 双端点、当前路由矩阵和维护方法 |
-| [ui-experience-alignment.md](ui-experience-alignment.md) | **UI 风格/体验对标 Cursor·Codex**：颜色层级、边框、字号、预览与提示体系、分阶段优化方案（**v1.1**） |
-| [cli-and-config.md](cli-and-config.md) | **CLI 命令树 / 退出码 / GUI 矩阵 / 配置 L0–L3 契约与验收清单**（**v1.4**；doctor/env 宿主 Runtime） |
-| [logging.md](logging.md) | **日志规范**：级别、文件路径、保留、target=module、必打事件、脱敏、排查与分期补点（**v1.1**） |
-| [chat-process-streaming.md](chat-process-streaming.md) | **Chat 过程流式**：Phase 0–2 现行契约；Phase 3 **展示层已落地**；协议侧未做；§12 三条实现缺口已收口 |
-| [chat-page-redesign.md](chat-page-redesign.md) | **Chat 工作台已落地**：会话 rail / header 芯片 / **一会话一 Agent** / 过程面板展示层 / 文件拆分 |
-| [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) | **对照笔记**（2026-08-21，同日按 `d7da2f5` 复核）：AgentHub Chat × DSH Desktop 的 UI↔Agent 机制；§6 逐条深挖，§6.15 代码复核表。**不是** backlog，不派生实施任务 |
-| [capability-matrix.md](capability-matrix.md) | **能力矩阵**：`Capability` 枚举 + 四级状态、现状矩阵、防漂移测试、P0–P4（**v1.0 已落地**） |
-| [account-authorization-pool.md](account-authorization-pool.md) | **账号池身份×授权**：同人可多授权并存；去重仅限同一份登录；与能力矩阵边界（**已落地**） |
-| [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 适配器清单；`accepts[]` 须登记 wire 协议 **和** OAuth 契约槽 |
-| [deepseek-harness-integration.md](deepseek-harness-integration.md) | **DeepSeek Harness（`dsh`）**：DeepSeek API 走直接改配置；DSH 不是本机转发。P1–P5 已落地；StructuredStream 仍 Planned |
-| [tray-background-modes.md](tray-background-modes.md) | **托盘后台模式**：低内存后台 vs 隐藏界面；hide 不降内存的原因、三档设置设计与实施要点（**未来优化点，未实施**，不派生当前任务） |
-| [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md) | **路由 × 连接重构任务拆分**（2026-08-22 制定，**未实施 / 内部**）：对齐 §5.4 表面统一与 §5.5 多账号轮询的四条泳道任务卡与派工波次；完成后回写稳定文档并删除本文 |
-| [multi-account-routing-rfc.md](multi-account-routing-rfc.md) | **C2 多账号轮询设计稿**（2026-08-22，**未拍板、未实施 / 内部**）：成员存储三选一、AccountPicker、请求边界 FSM、与 A4 两种对接；附录为 D3 写面盘点。产品不变式仍以 [provider-api-oauth-adaptation.md §5.5](provider-api-oauth-adaptation.md#55-多账号并发路由轮询与故障切换规划) 为准 |
-| [privacy.md](privacy.md) | **发布与隐私边界**：禁止提交项、截图规范、OAuth 常量勿外泄、docs 写法 |
+| [product-decisions.md](product-decisions.md) | 把已有登录接到另一个工具：直接改配置 / 写进对方认的登录 / 本机转发 |
+| [connection-binding-model.md](connection-binding-model.md) | 领域模型（界面说登录；实现里仍叫票 / 绑定）。`plan` / `bind` / `unbind` 已落地；sidecar 未迁 |
+| [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) | 厂商 / 凭据 / 现在能不能写入。§4 是可执行矩阵；§5.4 进程内统一网关已落地；§5.5 轮询内核已有、边默认关 |
+| [local-route-endpoints.md](local-route-endpoints.md) | 本机 `/v1/messages` · `/v1/responses` · `/v1/chat/completions` 与上游转换；含 `GET /models` |
+| [architecture.md](architecture.md) | workspace、core/gui/cli、前端 `lib/backend` 分层。目录树是示意，以源码为准 |
+| [agenthub-plan.md](agenthub-plan.md) | 产品方案 v1.5。**§8 为实现状态真源**；§7 路线图是历史排期 |
+| [ui-design.md](ui-design.md) | 页面线框与交互。芯片「直连 / 用这份登录 / 本机路由 / 当前不支持」 |
+| [ui-component-standard.md](ui-component-standard.md) | 组件清单与决策树；不替代页面线框 |
+| [adapter-design.md](adapter-design.md) | Routes 页与本机转发运行时（模块名仍叫 Adapter） |
+| [route-detail-redesign.md](route-detail-redesign.md) | 路由详情面板（已落地） |
+| [cli-and-config.md](cli-and-config.md) | CLI 命令树、退出码、配置 L0–L3 |
+| [testing.md](testing.md) | 测试与生产分文件、vitest/cargo、mock 边界、CI |
+| [logging.md](logging.md) | 日志级别、路径、脱敏、必打事件 |
+| [capability-matrix.md](capability-matrix.md) | Agent「自己能不能」；表格以 CLI `agent capabilities` 为准 |
+| [account-authorization-pool.md](account-authorization-pool.md) | 账号池：身份 × 授权去重（已落地） |
+| [adding-an-agent.md](adding-an-agent.md) | 新增 Agent 清单；`accepts[]` 须登记 wire 协议和 OAuth 契约槽 |
+| [deepseek-harness-integration.md](deepseek-harness-integration.md) | DeepSeek Harness（`dsh`）；P1–P5 已落地；StructuredStream 仍 Planned |
+| [chat-process-streaming.md](chat-process-streaming.md) | Chat 过程流式契约；展示层已落地，协议侧未做 |
+| [hardcoding-governance.md](hardcoding-governance.md) | 安装 allowlist / 定价表 / 路径真源 |
+| [privacy.md](privacy.md) | 禁止提交项、截图规范、OAuth 常量勿外泄 |
+
+## 目标 / 未实施
+
+| 文档 | 内容 |
+|---|---|
+| [adapter-sidecar-design.md](adapter-sidecar-design.md) | `agenthub-adapterd` 目标架构。Phase 1 控制契约已落地；sidecar 二进制未开工 |
+| [tray-background-modes.md](tray-background-modes.md) | 托盘低内存后台。**未实施**，不派生当前任务 |
+| [modularity-improvement.md](modularity-improvement.md) | 模块化债：integrations / Ticket 写口 / `adapter_control` 已落地；仍待削 Adapter 厚表面与 sidecar |
+| [adapter-kimi-codex-dogfood.md](adapter-kimi-codex-dogfood.md) | 真机 dogfood 清单（内部）。禁止记录密钥 / prompt / 正文 |
+
+## 已落地、只留约束
+
+| 文档 | 内容 |
+|---|---|
+| [platform-capability-refactor.md](platform-capability-refactor.md) | 平台能力改造方案（P01–P13 已完成） |
+| [platform-capability-remediation.md](platform-capability-remediation.md) | 2026-08-07 审查修正（R00–R08 已完成） |
+| [chat-page-redesign.md](chat-page-redesign.md) | Chat 工作台表面（已落地；一会话一 Agent） |
+| [bridges-page-redesign.md](bridges-page-redesign.md) | Routes 页 IA（已落地；正文多为 `/bridges` 历史用词，现行 chrome 以 ui-design 为准） |
+| [ui-experience-alignment.md](ui-experience-alignment.md) | Cursor/Codex 视觉对标（Phase 0–2 已做） |
+
+## 对照笔记（不是 backlog）
+
+| 文档 | 内容 |
+|---|---|
+| [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) | AgentHub Chat × DSH Desktop。**不派生实施任务** |
 
 ## 文档管理规则
 
-- 本目录只保留当前有效的稳定设计、契约、规范、验收和最终状态文档。
-- 计划类 / 已落地实施记录须在条目上标明状态，避免当未完成任务派工。
-- 一次性派工提示词、阶段任务清单和已替代的审查快照在执行完成后删除；最终结论只回写到稳定文档。
-- 项目实现状态、未实现清单和风险以 [agenthub-plan.md §8](agenthub-plan.md) 为唯一真源。
-- 平台能力改造的最终约束、暂缓项和验证证据以 [platform-capability-remediation.md](platform-capability-remediation.md) 为唯一真源。
-- 模块化债、双真源收口与上帝文件拆分以 [modularity-improvement.md](modularity-improvement.md) 为改进方案真源；不替代 architecture / platform-capability / sidecar 既有决策。
+- 本目录现行区只放有效契约、规范和当前状态。计划类 / 已落地实施记录标状态；一次性派工完成后删或移入 [archive/](archive/README.md)。
+- 项目实现状态、未实现清单和风险以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
+- 把已有登录接到另一个工具的**产品方向**以 [product-decisions.md](product-decisions.md) 为准。旧句「订阅 = 必须转发」作废。
+- 领域模型以 [connection-binding-model.md](connection-binding-model.md) 为准。各家能不能写入以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为准。
+- 日常页面以 [ui-design.md](ui-design.md) 为准；组件以 [ui-component-standard.md](ui-component-standard.md) 为准。
+- `local_bridge` 进程所有权与 sidecar 迁移以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为准；当前仍是 Tauri 进程内 Gateway。
+- 平台能力改造的历史约束见 platform-capability-* 两篇；新增 Agent 走 [adding-an-agent.md](adding-an-agent.md)。模块化债见 [modularity-improvement.md](modularity-improvement.md)。
 - 对外发布、截图与凭据相关表述遵守 [privacy.md](privacy.md)。
-- 把已有登录接到另一个编程工具的**产品方向**（直接改配置 / 写进对方认的登录 / 本机转发）以 [product-decisions.md](product-decisions.md) 为唯一真源。旧句「订阅 = 必须转发」「消费订阅不是产品」作废。
-- 「把已有登录接到另一个工具」的领域模型（界面说登录；实现里仍叫票 / 绑定 / 协议图）以 [connection-binding-model.md](connection-binding-model.md) 为唯一真源。读模型 + `plan` / `bind` / `unbind` 已落地；sidecar 迁移未做。实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
-- 各家接口、凭据类型与现在能不能写上去以 [provider-api-oauth-adaptation.md](provider-api-oauth-adaptation.md) 为规则真源。日常 UI 页面线框与业务交互以 [ui-design.md](ui-design.md) 为准；组件用法、决策树与现行清单以 [ui-component-standard.md](ui-component-standard.md) 为准。Phase 1 实施记录见 [hub-redesign-plan.md](hub-redesign-plan.md)。该文的实现矩阵描述**当前能否写入**，不表示产品否决某一种做法。
-- DeepSeek Harness（Agent `dsh`）的安装、会话、用量、Skills 与模型配置以 [deepseek-harness-integration.md](deepseek-harness-integration.md) 为设计真源；未实现前不得把该文能力表抄进 CLI 矩阵快照。
-- Chat UI↔Agent 与 DSH Desktop 的机制对照以 [chat-ui-agent-mechanism-comparison.md](chat-ui-agent-mechanism-comparison.md) 为笔记；不替代过程契约、Chat IA 与 DSH 接入方案，不派生实施任务。凭据落盘加密与国产 OAuth 仍为范围外。
-- `local_bridge` 的进程所有权、控制面和 sidecar 迁移契约以 [adapter-sidecar-design.md](adapter-sidecar-design.md) 为唯一真源；当前实现状态仍以 [agenthub-plan.md §8](agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
-- 托盘后台内存模式（省电 / 深度低内存）以 [tray-background-modes.md](tray-background-modes.md) 为设计记录；**未实施**，实现前不进入能力矩阵与 CLI 矩阵。
-- 新的一次性任务可以临时创建提示词文件；任务完成后删除提示词和任务拆分，并同步更新对应稳定文档。
+- 凭据落盘加密、国产 OAuth 开边 / 转 API：项目范围外，见根目录 [AGENTS.md](../AGENTS.md)。
+- 新的一次性任务可以临时创建提示词；完成后删除或归档，并回写对应稳定文档。

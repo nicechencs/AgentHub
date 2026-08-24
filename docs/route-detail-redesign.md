@@ -9,7 +9,7 @@
 | 范围 | `/routes` 行内展开详情（`AdapterProfileDetailDialog`）：信息去重、路由关系示意、逐边 Agent 支持判断、Quick Apply 与边状态合体 |
 | 非范围 | 列表行结构大改、创建路由对话框、后端协议矩阵 / `can_apply`、凭据落盘加密（**无必要 / 项目范围外**）、国产 OAuth 开边 / OAuth→API（产品不做）、新增后端字段 |
 
-本文是路由**详情面板**本期重设计的真源，风格与 [bridges-page-redesign.md](bridges-page-redesign.md)、[chat-page-redesign.md](chat-page-redesign.md) 对齐。页面级 IA（Routes / `/routes`、单层健康、启停）以 [bridges-page-redesign.md](bridges-page-redesign.md) 为准；本机三条入口与协议转换以 [local-route-endpoints.md](local-route-endpoints.md) 为准；端点审计快照见 [route-endpoint-audit-2026-08.md](route-endpoint-audit-2026-08.md)。
+本文是路由**详情面板**本期重设计的真源，风格与 [bridges-page-redesign.md](bridges-page-redesign.md)、[chat-page-redesign.md](chat-page-redesign.md) 对齐。页面级 IA（Routes / `/routes`、单层健康、启停）以 [bridges-page-redesign.md](bridges-page-redesign.md) 为准；本机三条入口与协议转换以 [local-route-endpoints.md](local-route-endpoints.md) 为准；端点审计快照见 [archive/route-endpoint-audit-2026-08.md](archive/route-endpoint-audit-2026-08.md)。
 
 > **现行状态**：详情为 `AdapterProfileDetailDialog` 的「来源登录 → 本机桥 → 客户端接入」关系图；边状态与 Quick Apply 合体。本文为已落地规格。
 
@@ -271,7 +271,7 @@
 | `src/pages/bridges/adapter-member-model.ts` | members 行 |
 | `src/lib/route-endpoints.ts` | 下游 surface 路径与绑定映射 |
 | [local-route-endpoints.md](local-route-endpoints.md) | 协议转换真源 |
-| [route-endpoint-audit-2026-08.md](route-endpoint-audit-2026-08.md) | 审计快照 |
+| [archive/route-endpoint-audit-2026-08.md](archive/route-endpoint-audit-2026-08.md) | 审计快照 |
 | [bridges-page-redesign.md](bridges-page-redesign.md) | 页面级 IA |
 
 ---

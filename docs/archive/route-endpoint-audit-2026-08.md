@@ -2,7 +2,7 @@
 
 > 审计日期：2026-08-24　分支：`dev`　修订：2026-08-24 对齐 `db153cd`（Chat↔OpenAI Chat 同协议、Chat→Anthropic/Grok IR、surface-aware `passthrough_for`；`ee06d3e` 的 listedModels 与多客户端绑定仍有效）
 >
-> 本文是带日期的审计快照；长期有效的行为说明以 [local-route-endpoints.md](local-route-endpoints.md) 为准。
+> **归档（2026-08-24）**。带日期的审计快照；长期有效的行为说明以 [../local-route-endpoints.md](../local-route-endpoints.md) 为准。
 >
 > 这份文档回答：路由页面目前展示什么、后端真正支持什么、协议是否能互转、是否有不转换协议的中继、模型列表/限制/绑定做到哪一步，以及参考项目能借鉴什么。
 
@@ -373,7 +373,7 @@ flowchart LR
 | 主题 | 证据 |
 |---|---|
 | 页面三端点、目标映射 | [`src/lib/route-endpoints.ts`](../src/lib/route-endpoints.ts)、[`src/pages/bridges/create-route-flow.ts`](../src/pages/bridges/create-route-flow.ts) |
-| `/routes` 职责 | [`src/pages/bridges/index.tsx`](../src/pages/bridges/index.tsx)、[`docs/adapter-design.md`](adapter-design.md) |
+| `/routes` 职责 | [`src/pages/bridges/index.tsx`](../../src/pages/bridges/index.tsx)、[`docs/adapter-design.md`](../adapter-design.md) |
 | HTTP 入口与 surface | [`crates/agenthub-core/src/bridge/host/http.rs`](../crates/agenthub-core/src/bridge/host/http.rs)、[`surface.rs`](../crates/agenthub-core/src/bridge/host/surface.rs) |
 | 转换矩阵 | [`transport/`](../crates/agenthub-core/src/bridge/host/transport/)、[`protocol/`](../crates/agenthub-core/src/bridge/protocol/) |
 | route edge 与 apply gate | [`local_bridge_edges.rs`](../crates/agenthub-core/src/domain/protocol_graph/adapter_capability_matrix/local_bridge_edges.rs)、[`actions.rs`](../crates/agenthub-core/src/services/adapter_route_service/actions.rs) |

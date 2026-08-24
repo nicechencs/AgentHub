@@ -132,7 +132,7 @@ src/components/connect/   # ConnectFlow / OAuth
 
 | 组件 | 职责 |
 |---|---|
-| `Sidebar` | Workspace：Chat / Agents / Skills / MCP / Projects。Manage：Dashboard / Connections / Routes（英文 Routes、中文「路由」，**永久显示**）/ Settings。备份在 Settings `?tab=backups`，不占侧栏 |
+| `Sidebar` | Workspace：Chat / Agents / Skills / MCP / Projects。Manage：Dashboard / Connections / Routes（英文 Routes、中文「路由」，**默认显示**；Settings 偏好 `routesNavVisible` 可隐藏侧栏项，隐藏不禁用页面，`/routes` 仍可打开）/ Settings。备份在 Settings `?tab=backups`，不占侧栏 |
 | `TopBar` | Chat 不渲染 |
 | `PageHeader` | `default` / `compact`（全高页只收底距）。标题一律 `text-title` |
 | `PageSection` | 段距 / 可选分割线 / 段标题（body + semibold） |
@@ -144,7 +144,7 @@ src/components/connect/   # ConnectFlow / OAuth
 | 组件 | 职责 |
 |---|---|
 | `ConnectFlowDialog` | 绑定。Dashboard 点工具 = 固定选登录；Connections「分享 / 路由」= 登录固定、按目的过滤工具。确认走 `bind` |
-| `OAuthFlowDialog` | 仅已开边 OAuth（Claude / Codex / Gemini / Antigravity 等）。国产 OAuth **不开边** |
+| `OAuthFlowDialog` | 生产仅 Claude / Codex / Grok PKCE（另有 Pi 槽）。Gemini / Antigravity **未开**。国产 OAuth **不开边** |
 
 ---
 

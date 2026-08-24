@@ -3,7 +3,7 @@
 > **现行状态（2026-08-19）**：sidecar 未迁；官方船经 `release` 三文件 bump。Chat 没有模型选择器；Claude/Codex Chat 后续轮次可走 print+resume；Projects 列表不直接调用 `--resume`。MCP 只读 inventory（注入未做）。
 > 对应《项目方案》GUI + CLI 双端与《架构拆分》`agenthub-cli` / 数据目录。  
 > 本文是**可验收契约**：实现 CLI 与配置读写时以本文为准；与 GUI 冲突时以 **core service 行为一致** 为最高原则。  
-> 状态（2026-08-15，以代码为准）：CLI 已覆盖 doctor（含 ⑤ Locks）/ run / env / agent（含 `capabilities`、`outdated`）/ provider（含 `undo`、`test-latency`）/ account（含 `oauth-url`、`refresh`、`delete`、`undo`）/ skill 全树 / usage / backup（含 `delete`）/ config（白名单 + 只读 `app_version`）。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings。Chat 无模型选择器；Projects 不接 `--resume`；MCP 只读 inventory（注入未做）；全站 i18n 未做。Provider/Account **测速与切换撤销** CLI/GUI 均已接线。**备份导出**仍未实现。凭据落盘加密为当前范围外。跨 Agent 复用三路见 [product-decisions.md](product-decisions.md)；本文「代理模式」≠ ③ 本机路由。  
+> 状态（2026-08-15，以代码为准）：CLI 已覆盖 doctor（含 ⑤ Locks）/ run / env / agent（含 `capabilities`、`outdated`）/ provider（含 `undo`、`test-latency`）/ account（含 `oauth-url`、`refresh`、`delete`、`undo`）/ skill 全树 / usage / backup（含 `delete`）/ config（白名单 + 只读 `app_version`）。GUI 已接线 doctor、安装、Provider、Account、OAuth PKCE（Claude/Codex/Grok）、Skill、Usage、Backup、Chat、Projects、Settings。Chat 无模型选择器；Projects 不接 `--resume`；MCP 只读 inventory（注入未做）；Settings + 侧栏 + 多数业务页已接轻量字典；覆盖仍在补；不引入 i18next。Provider/Account **测速与切换撤销** CLI/GUI 均已接线。**备份导出**仍未实现。凭据落盘加密为当前范围外。跨 Agent 复用三路见 [product-decisions.md](product-decisions.md)；本文「代理模式」≠ ③ 本机路由。  
 > **2026-08-16 文档回写**（仍为 v1.4）：对齐 `DoctorReport`、`--days`、`add-apikey [--label]`、L0 仅 `--data-dir` / `AGENTHUB_HOME`；删除 `--show-secrets` 二期主密码表述。
 > v1.1：`doctor` 含 runtimes；新增 `env` 资源；`agent install` 两阶段与 `--install-deps`。  
 > v1.2：平台环境差异——`doctor`/`env list` 仅返回宿主相关 Runtime（macOS 不含 PowerShell）；`env install` 默认 channel 与 `agent install|upgrade` native 底层命令按 Windows/macOS/Linux 分流。
@@ -321,7 +321,7 @@ GUI/CLI 展示 remediations 时必须按宿主平台过滤（Windows 不展示 `
 | Backup 列表/创建/恢复/删除 | ✅ /settings?tab=backups | ✅ list/create/restore/delete | **导出包**未实现 |
 | Chat 多 Agent | ✅ /chat | ❌（用 `run` 一次性 headless） | 过程面板 Phase 0–2 现行契约；Phase 3 展示层已落地。**无 Chat 模型选择器** |
 | Projects | ✅ /projects | ❌ | 列表/删除/摘录；**不接**各家原生 `--resume` |
-| Settings 主题/日志等 | ✅ L1 白名单 + OS 自启 | ✅ config get/set 白名单 | 主题/用量间隔/托盘/语言落 SQLite；`autoStart` 为 OS 登录项；GUI Settings chrome 可切换中/英。**全站 i18n 未做** |
+| Settings 主题/日志等 | ✅ L1 白名单 + OS 自启 | ✅ config get/set 白名单 | 主题/用量间隔/托盘/语言落 SQLite；`autoStart` 为 OS 登录项；GUI Settings chrome 可切换中/英。Settings + 侧栏 + 多数业务页已接轻量字典；覆盖仍在补；不引入 i18next |
 | Doctor / 排障 | ✅ doctor report | ✅ doctor（含 runtimes + locks） | |
 | 官方模型目录 | ❌ | ❌ | 非目标 |
 | 备份导出 / DB 备份 | ❌ | ❌ | 预留目录 |
