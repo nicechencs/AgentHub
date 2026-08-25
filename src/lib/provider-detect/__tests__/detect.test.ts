@@ -42,6 +42,16 @@ OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz012345
     expect(r.apiKey).toMatch(/^sk-/);
   });
 
+  it('detects OpenRouter-style JSON camelCase baseURL', () => {
+    const r = smartDetectUrlAndKey(
+      JSON.stringify({
+        baseURL: 'https://openrouter.ai/api/v1',
+        model: 'stealth/ox-alpha',
+      }),
+    );
+    expect(r.baseUrl).toBe('https://openrouter.ai/api/v1');
+  });
+
   it('detects mixed paste', () => {
     const r = smartDetectUrlAndKey(
       '中转 https://relay.example.com/v1\nkey: sk-ant-api03-abcdefghijklmnopqrst',

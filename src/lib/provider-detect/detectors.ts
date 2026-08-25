@@ -29,6 +29,8 @@ const NAMED_KEY_RES: RegExp[] = [
 ];
 
 const NAMED_URL_RES: RegExp[] = [
+  /"baseURL"\s*:\s*"(https?:\/\/[^"]+)"/,
+  /"baseUrl"\s*:\s*"(https?:\/\/[^"]+)"/,
   /"base_url"\s*:\s*"(https?:\/\/[^"]+)"/i,
   /(?:^|["\s]|export\s+|set\s+)base_url["']?\s*[=:]\s*["']?(https?:\/\/[^\s"',}\\]+)/im,
 ];

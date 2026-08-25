@@ -38,6 +38,98 @@ export interface GenericConfigFormProps {
   /** Optional: hide specific keys (e.g. official mode locks baseUrl/model). */
   readOnlyKeys?: ReadonlySet<string> | string[];
   hiddenKeys?: ReadonlySet<string> | string[];
+  /** Optional picker ids for string fields (e.g. fetched model list). Free-text still allowed. */
+  suggestions?: Readonly<Record<string, readonly string[]>>;
+  /** Status under a string field (shown even when the picker is hidden). */
+  fieldStatus?: Readonly<
+    Record<string, { label?: string | null; onRetry?: () => void }>
+  >;
+}
+
+const CUSTOM_SUGGESTION = '__agenthub_custom__';
+
+/** String input plus an optional convenience picker. Empty / free-text stay allowed. */
+export function SuggestableInput({
+  value,
+  onChange,
+  suggestions,
+  disabled,
+  readOnly,
+  placeholder,
+  className,
+  statusLabel,
+  statusRetry,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  suggestions?: readonly string[];
+  disabled?: boolean;
+  readOnly?: boolean;
+  placeholder?: string;
+  className?: string;
+  /** Shown even when `suggestions` is empty (loading / fail / empty-ok). */
+  statusLabel?: string | null;
+  /** When set, `statusLabel` is the primary retry action. */
+  statusRetry?: () => void;
+}) {
+  const { t } = useI18n();
+  const opts = (suggestions ?? []).map((id) => id.trim()).filter(Boolean);
+  const showPicker = opts.length > 0 && !disabled && !readOnly;
+  const selected = value && opts.includes(value) ? value : CUSTOM_SUGGESTION;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {showPicker ? (
+        <Select
+          value={selected}
+          onValueChange={(next) => {
+            if (next === CUSTOM_SUGGESTION) {
+              onChange('');
+              return;
+            }
+            onChange(next);
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={t('connections.providerDialog.remoteModelsPick')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={CUSTOM_SUGGESTION}>
+              {t('connections.providerDialog.remoteModelsCustom')}
+            </SelectItem>
+            {opts.map((id) => (
+              <SelectItem key={id} value={id}>
+                {id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        readOnly={readOnly}
+        placeholder={placeholder}
+        autoComplete="off"
+        spellCheck={false}
+        className={className}
+      />
+      {statusLabel ? (
+        statusRetry ? (
+          <button
+            type="button"
+            className="self-start text-left text-meta text-accent hover:underline"
+            onClick={statusRetry}
+          >
+            {statusLabel}
+          </button>
+        ) : (
+          <p className="text-meta text-muted">{statusLabel}</p>
+        )
+      ) : null}
+    </div>
+  );
 }
 
 export function GenericConfigForm({
@@ -49,6 +141,8 @@ export function GenericConfigForm({
   className,
   readOnlyKeys,
   hiddenKeys,
+  suggestions,
+  fieldStatus,
 }: GenericConfigFormProps) {
   const { t } = useI18n();
   const errMap = React.useMemo(() => issuesByField(issues), [issues]);
@@ -115,14 +209,15 @@ export function GenericConfigForm({
               />
             ) : null}
             {kind === 'string' ? (
-              <Input
+              <SuggestableInput
                 value={typeof raw === 'string' ? raw : raw == null ? '' : String(raw)}
-                onChange={(e) => patch(field.key, e.target.value)}
+                onChange={(v) => patch(field.key, v)}
+                suggestions={suggestions?.[field.key]}
                 disabled={fieldDisabled}
                 readOnly={fieldDisabled}
-                autoComplete="off"
-                spellCheck={false}
                 className={fieldDisabled ? 'cursor-default bg-canvas text-secondary' : undefined}
+                statusLabel={fieldStatus?.[field.key]?.label}
+                statusRetry={fieldStatus?.[field.key]?.onRetry}
               />
             ) : null}
             {kind === 'number' ? (

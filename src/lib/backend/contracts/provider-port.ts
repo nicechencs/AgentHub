@@ -11,4 +11,11 @@ export interface ProviderPort {
   undoSwitch(agentId: AgentId): Promise<boolean>;
   testLatency(agentId: AgentId, providerId: string): Promise<number>;
   listProviderPresets(agentId?: AgentId): Promise<CoreProviderPreset[]>;
+  /** OpenAI-compatible GET {base}/v1/models. Unsaved paste is allowed. */
+  listRemoteOpenAiModels(baseUrl: string, apiKey: string): Promise<string[]>;
+  /**
+   * GET {base}/v1/models using the hub's unredacted stored secret.
+   * Frontend passes provider id + baseUrl only — never the raw key.
+   */
+  listRemoteOpenAiModelsForProvider(providerId: string, baseUrl: string): Promise<string[]>;
 }
