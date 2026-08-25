@@ -81,14 +81,20 @@ import {
   removeOkToast,
 } from './copy';
 import {
-  catalogRowHasConflict,
-  catalogRowHasMapped,
   catalogRowKey,
   isPrivateSourceRow,
   isSharedCatalogRow,
   previewTargetFromCatalogRow,
   visibleCatalogRows,
 } from './SkillMatrix';
+import {
+  allFilteredSharedSelected,
+  countLibraryFilters,
+  filterLibraryRows,
+  filteredSharedRows,
+  nextSelectedForToggleAll,
+  toggleSelectedSkill,
+} from './skills-library-model';
 import {
   previewAfterHiddenAgent,
   previewAfterRemoveFromTool,
@@ -416,62 +422,26 @@ export default function SkillsPage() {
   const localCount = localRows.length;
 
   /** 筛选角标：全量计数，不受搜索影响 */
-  const filterCounts = useMemo(() => {
-    let mapped = 0;
-    let unmapped = 0;
-    let conflict = 0;
-    let privateRows = 0;
-    for (const row of localRows) {
-      if (isPrivateSourceRow(row) || row.origin !== 'shared') {
-        privateRows++;
-        continue;
-      }
-      if (catalogRowHasMapped(row)) mapped++;
-      else unmapped++;
-      if (catalogRowHasConflict(row)) conflict++;
-    }
-    return {
-      all: localRows.length,
-      private: privateRows,
-      mapped,
-      unmapped,
-      conflict,
-    };
-  }, [localRows]);
+  const filterCounts = useMemo(() => countLibraryFilters(localRows), [localRows]);
 
-  const filtered = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    return localRows.filter((row) => {
-      if (keyword && !row.name.toLowerCase().includes(keyword)) return false;
-      if (filter === 'all') return true;
-      if (filter === 'private') return row.origin !== 'shared';
-      if (!isSharedCatalogRow(row)) return false;
-      if (filter === 'mapped') return catalogRowHasMapped(row);
-      if (filter === 'unmapped') return !catalogRowHasMapped(row);
-      if (filter === 'conflict') return catalogRowHasConflict(row);
-      return true;
-    });
-  }, [localRows, search, filter]);
+  const filtered = useMemo(
+    () => filterLibraryRows(localRows, search, filter),
+    [localRows, search, filter],
+  );
 
   const filteredShared = useMemo(
-    () => filtered.filter(isSharedCatalogRow),
+    () => filteredSharedRows(filtered),
     [filtered],
   );
 
-  const allSelected =
-    filteredShared.length > 0 && filteredShared.every((s) => selected.has(s.id));
+  const allSelected = allFilteredSharedSelected(filteredShared, selected);
 
   const handleToggleSelect = (skillId: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(skillId)) next.delete(skillId);
-      else next.add(skillId);
-      return next;
-    });
+    setSelected((prev) => toggleSelectedSkill(prev, skillId));
   };
 
   const handleToggleSelectAll = () => {
-    setSelected(allSelected ? new Set() : new Set(filteredShared.map((s) => s.id)));
+    setSelected(nextSelectedForToggleAll(filteredShared, allSelected));
   };
 
   const doToggle = async (

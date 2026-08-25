@@ -37,9 +37,10 @@ AgentHub 是模块化单体：GUI 和 CLI 共用 `agenthub-core`。以下边界�
 - 前端已有 backend contracts、Tauri adapter、browser mock、运行时组合层和兼容 façade。
 - `lib/backend/tauri/invoke.ts` 是前端唯一允许导入 Tauri core 并调用 `invoke` 的文件。生产构建不加载 mock；非 Tauri 的生产页面必须明确返回 unavailable。
 - Chat 已拆成页面编排、model/format、hook 和组件，但大 hook 仍是热点。
-- Rust route 测试和 browser mock 已共用 capability fixture；matrix、write gate 和 apply path 也有一致性测试，但 fixture 尚未覆盖全部公开 rule ID。mock 仍独立实现 classify / plan / apply；降为查表投影见 D6。
+- Skills 库筛选/勾选在页面内 `skills-library-model.ts`；Projects 列表可见性与多选在 `projects-list-model.ts`。两页仍由 `index.tsx` 组合 API、toast 和预览壳。
+- Rust route 测试和 browser mock 共用 `adapter-capability-contract.json`。公开非空 rule ID 与 fixture 集合必须一致，漂移时测试失败。classify 不会发出的 sibling ID 以 `documentedRuleId` 进入集合，并断言不是 winner。关闭和仅预览规则有拒绝用例。mock 仍独立实现 classify / plan / apply；降为查表投影见 D6。
 
-当前主要问题是：规则契约覆盖不完整、transport 契约测试分散、wire 边界不统一、部分 service/page/hook 职责过多、兼容 façade 仍偏宽。
+当前主要问题是：transport 契约测试分散、wire 边界不统一、部分 service/page/hook 职责过多、兼容 façade 仍偏宽。
 
 ## 3. 持续约束
 
@@ -72,26 +73,20 @@ AgentHub 是模块化单体：GUI 和 CLI 共用 `agenthub-core`。以下边界�
 7. 页面只做编排。纯判断和功能副作用优先放到本功能的 model/format/hook，再考虑共享层。
 8. 优先提取小而可测的边界。文件大只是调查信号，不是拆分理由。
 
-## 4. 可执行任务
+## 4. 已建立的最小改造
 
-下面三个任务文件范围互不重叠，可以并行执行。
+C1、F1、F2 已落地。当前没有新的可执行任务；下一步仍须先设计（§5）。
 
-### C1：补齐 Adapter 规则契约 — `可执行`
+### C1：Adapter 规则契约 — `已建立`
 
 - **负责人：** capability 与 route 规则。
 - **文件范围：**
   - `crates/agenthub-core/src/services/adapter_route_service/tests.rs`
   - `src/dev/mocks/fixtures/adapter-capability-contract.json`
   - `src/dev/mocks/adapter.test.ts`
-- **目标：** 所有公开生产 rule ID 都进入共享契约；关闭或预览规则也要有明确的拒绝用例；matrix 与 fixture 的 rule ID 集合发生漂移时测试必须失败。
-- **必须保持：** matrix 的 `can_apply` 不是唯一写入条件；私有 write gate、bind 实现、host-only bridge 路径和 fail-closed 行为继续有效。
-- **验收：**
-  - Rust 与 mock 读取同一 fixture。
-  - 公开 rule ID 与 fixture 中非空 rule ID 没有隐式遗漏。
-  - 每个用例校验 route、support、rule ID、gate kind、`canApply` 和实际 apply path。
-  - 关闭和仅预览规则仍被拒绝。
-  - fixture 和报错信息不包含凭据值。
-- **验证命令：**
+- **已落地：** 公开非空 rule ID 进入共享 fixture；`shared_capability_contract_rule_ids_match_matrix` 在集合漂移时失败。Rust 与 mock 读取同一 fixture，并校验真实 classify/plan 的 route、support、rule ID、gate kind、`canApply` 和 apply path。`openai-api-to-grok-v1` 与 `codex-subscription-to-claude-app-server-v0` 以 `documentedRuleId` 进入集合（classify 赢家是 sibling），关闭和仅预览规则仍被拒绝。
+- **必须保持：** matrix 的 `can_apply` 不是唯一写入条件；私有 write gate、bind 实现、host-only bridge 路径和 fail-closed 行为继续有效。fixture 与报错信息不包含凭据值。
+- **保持测试：**
 
   ```text
   cargo test -p agenthub-core --locked shared_capability_contract
@@ -102,23 +97,21 @@ AgentHub 是模块化单体：GUI 和 CLI 共用 `agenthub-core`。以下边界�
 
 C1 只补齐覆盖并让漂移失败，不授权重写 mock 的 classify / plan。mock 改为查表、JSON 改为由 `plan()` 生成，见 [单一内核与查表投影](single-kernel-projections.md)。不得把该提案的切片并入 C1 的文件范围。
 
-### F1：拆出 Skills 页面局部编排 — `可执行`
+### F1：Skills 页面局部编排 — `已建立`
 
 - **负责人：** Skills 前端功能。
 - **文件范围：** `src/pages/skills/**`。
-- **目标：** 从 `SkillsPage` 中选择一条完整的预览、选择或副作用流程，移入页面内的 hook/model；`index.tsx` 只保留组合和布局。
+- **已落地：** `skills-library-model.ts` 承担库筛选计数、过滤和共享行勾选；`index.tsx` 组合这些函数。预览壳、安装、toast 和 backend port 仍在页面。
 - **必须保持：** backend port、共享 Skill 归属、私有来源语义、清理行为、文案和视觉结果不变。
 - **禁止：** 新增全局 store；把业务逻辑放进通用 `utils`；修改 backend contract；同时重写 Skills 领域。
-- **验收：** 新单元有针对性测试；现有 Skills model、hook、cleanup 和 layout 测试通过；`pnpm typecheck` 通过。
 
-### F2：拆出 Projects 页面局部编排 — `可执行`
+### F2：Projects 页面局部编排 — `已建立`
 
 - **负责人：** Projects 前端功能。
 - **文件范围：** `src/pages/projects/**`。
-- **目标：** 将列表、选择或 URL 同步中的一条完整流程提取为页面内纯 model 或 hook，保持现有 project/session API。
-- **必须保持：** session 延迟加载、隐藏项目、删除确认、Chat 跳转、恢复/复制操作和 Agent 能力判断不变。
+- **已落地：** `projects-list-model.ts` 承担列表可见性、会话过滤和多选；`index.tsx` 组合这些函数。session 延迟加载、隐藏项目、删除确认、Chat 跳转、恢复/复制、Agent 能力判断和 URL 同步仍在页面。
+- **必须保持：** 上述页面行为与现有 project/session API 不变。
 - **禁止：** 把项目真相移入前端 store；新增 Agent 硬编码分支；修改 core/Tauri project contract。
-- **验收：** 新单元有针对性测试；现有 Projects model、preview、cleanup 和 hook 测试通过；`pnpm typecheck` 通过。
 
 F1 / F2 以本节已写文件范围为限。不要因为某个页面文件较大，就从本文再派生新的抽取卡；见持续约束 8 与 [单一内核与查表投影](single-kernel-projections.md)。
 
@@ -172,7 +165,7 @@ Provider、Account、Backup 必须分别规划，不能合并成一个重构任�
 
 - **负责人：** capability / route 规则与 browser mock。
 - **设计产物：** [单一内核与查表投影](single-kernel-projections.md)。
-- **限制：** 不得把该方向并入 C1 的文件范围；不得用矩阵格子单独当 `canApply`；不得引入 WASM、napi、类型生成框架或共享 Windows `target/`。C1 补齐覆盖仍按本节可执行任务进行。
+- **限制：** 不得把该方向并入已落地的 C1 文件范围；不得用矩阵格子单独当 `canApply`；不得引入 WASM、napi、类型生成框架或共享 Windows `target/`。
 - **进入开发的条件：** 该提案第 7 节晋升门槛已满足，且首个切片有不与 C1 重叠的文件范围、验证命令和回滚方式。
 
 ## 6. 延期事项

@@ -1157,6 +1157,26 @@ describe('mock adapter route preview', () => {
 
 type ContractCase = (typeof contract.cases)[number];
 
+function caseDocumentedRuleId(item: ContractCase): string | undefined {
+  if (!('documentedRuleId' in item)) return undefined;
+  const value = (item as { documentedRuleId?: unknown }).documentedRuleId;
+  return typeof value === 'string' && value ? value : undefined;
+}
+
+function credentialStringValues(value: unknown, key?: string): string[] {
+  if (typeof value === 'string') {
+    if (!value || key === 'format' || key === 'provider') return [];
+    return [value];
+  }
+  if (Array.isArray(value)) return value.flatMap((item) => credentialStringValues(item, key));
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).flatMap(([childKey, nested]) =>
+      credentialStringValues(nested, childKey),
+    );
+  }
+  return [];
+}
+
 function contractAccount(id: string, source: ContractCase['source']): Account {
   return {
     id,
@@ -1207,6 +1227,17 @@ describe('shared adapter capability contract', () => {
     };
     const analysis = await adapter.analyze(request);
     const plan = await adapter.plan(request);
+    const serialized = `${JSON.stringify(analysis)}${JSON.stringify(plan)}`;
+    expect(serialized).not.toContain('must-not-leak');
+    if ('credentials' in item.source && item.source.credentials) {
+      for (const secret of credentialStringValues(item.source.credentials)) {
+        expect(serialized).not.toContain(secret);
+      }
+    }
+    const documentedRuleId = caseDocumentedRuleId(item);
+    if (documentedRuleId) {
+      expect(analysis.ruleId).not.toBe(documentedRuleId);
+    }
     expect(analysis.route).toBe(item.expect.route);
     expect(analysis.support).toBe(item.expect.support);
     expect(analysis.ruleId ?? null).toBe(item.expect.ruleId);
