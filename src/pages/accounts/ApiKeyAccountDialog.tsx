@@ -3,7 +3,6 @@ import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -152,17 +151,25 @@ export function ApiKeyAccountDialog({
   const title = isEdit
     ? t('connections.apiKeyDialog.editTitle', { name: agentName })
     : t('connections.apiKeyDialog.addTitle', { name: agentName });
-  const description = isEdit
-    ? t('connections.apiKeyDialog.editDesc')
-    : t('connections.apiKeyDialog.addDesc');
+  const cancelButton = (
+    <Button type="button" variant="outline" size="sm" onClick={requestClose} disabled={saving}>
+      {t('common.cancel')}
+    </Button>
+  );
   const saveButton = (
-    <Button disabled={!canSave || saving} onClick={() => void save()} size={asPanel ? 'sm' : 'default'}>
+    <Button disabled={!canSave || saving} onClick={() => void save()} size="sm">
       {saving
         ? t('common.saving')
         : isEdit
           ? t('connections.apiKeyDialog.saveEdit')
           : t('common.save')}
     </Button>
+  );
+  const headerActions = (
+    <>
+      {cancelButton}
+      {saveButton}
+    </>
   );
 
   const form = (
@@ -182,11 +189,9 @@ export function ApiKeyAccountDialog({
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <Hint label={isEdit ? t('connections.apiKeyDialog.keyKeep') : undefined}>
-              <span className="text-xs text-muted">
-                {t('connections.apiKeyDialog.key')}
-              </span>
-            </Hint>
+            <span className="text-xs text-muted">
+              {t('connections.apiKeyDialog.key')}
+            </span>
             <SecretInput
               value={key}
               onChange={setKey}
@@ -194,6 +199,9 @@ export function ApiKeyAccountDialog({
                 ? t('connections.apiKeyDialog.keyPlaceholderEdit')
                 : t('connections.apiKeyDialog.keyPlaceholderAdd')}
             />
+            {isEdit ? (
+              <p className="text-meta text-muted">{t('connections.apiKeyDialog.keyHint')}</p>
+            ) : null}
           </label>
 
           {showClaudeEnv && !isEdit ? (
@@ -240,9 +248,8 @@ export function ApiKeyAccountDialog({
     return (
       <SideInspectPanel
         title={title}
-        description={description}
         onClose={requestClose}
-        headerActions={saveButton}
+        headerActions={headerActions}
         width={width}
       >
         {form}
@@ -261,14 +268,10 @@ export function ApiKeyAccountDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {form}
         <DialogFooter>
-          <Button variant="outline" onClick={requestClose}>
-            {t('common.cancel')}
-          </Button>
-          {saveButton}
+          {headerActions}
         </DialogFooter>
       </DialogContent>
     </Dialog>

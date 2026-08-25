@@ -156,6 +156,7 @@ export function EditRouteDialog({
       danger={(
         <Button
           type="button"
+          size="sm"
           variant="dangerOutline"
           onClick={requestDelete}
           disabled={busy || submitting}
@@ -247,6 +248,7 @@ export function EditRouteDialog({
                     );
                   })}
                   <p className="text-meta text-muted">{t('routes.create.upstreamEndpointsHint')}</p>
+                  <p className="text-meta text-muted">{t('routes.edit.endpointsHint')}</p>
                 </fieldset>
               </>
             ) : (

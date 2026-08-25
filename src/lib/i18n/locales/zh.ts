@@ -671,7 +671,7 @@ export const zh = {
     create: {
       action: "新建路由",
       title: "新建路由",
-      description: "选上游、填登录，勾选这条路由支持的客户端。接上后本页只出现一条本机路由。详情里可看支持的客户端和模型。",
+      description: "选上游、填登录，勾选客户端。",
       name: "名称",
       url: "地址",
       key: "密钥",
@@ -793,8 +793,9 @@ export const zh = {
     edit: {
       action: "编辑",
       title: "编辑路由",
-      description: "改这条路由的名称、上游地址、密钥和开放的客户端端点。若新增了客户端端点，保存后还要「写入客户端」。",
+      description: "改名称、地址和端点。",
       keyHint: "留空表示沿用现有密钥。",
+      endpointsHint: "新增客户端端点后，保存还要「写入客户端」。",
       keyPlaceholder: "留空沿用现有密钥",
       submit: "保存",
       submitting: "保存中…",
@@ -1166,7 +1167,7 @@ export const zh = {
     apiKeyDialog: {
       editTitle: "编辑 API Key — {name}",
       addTitle: "添加 API Key — {name}",
-      editDesc: "可改名称。密钥留空则保持不变。",
+      editDesc: "可改名称。",
       addDesc: "填好后保存即可。",
       name: "名称",
       nameOptional: "名称（可选）",
@@ -1174,6 +1175,7 @@ export const zh = {
       namePlaceholderAdd: "例如：工作号 / 个人号",
       key: "API Key",
       keyKeep: "API Key（留空保留原密钥）",
+      keyHint: "留空则保持不变。",
       keyPlaceholderEdit: "输入新密钥以替换…",
       keyPlaceholderAdd: "sk-…",
       envField: "写入 settings 的字段",

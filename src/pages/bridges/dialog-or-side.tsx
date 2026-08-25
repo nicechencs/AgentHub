@@ -37,6 +37,17 @@ export function DialogOrSide({
   width?: number;
 }) {
   const { t } = useI18n();
+  const cancel = (
+    <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+      {t('common.cancel')}
+    </Button>
+  );
+  const actions = (
+    <>
+      {cancel}
+      {primary}
+    </>
+  );
   if (asPanel) {
     if (!open) return null;
     return (
@@ -44,7 +55,7 @@ export function DialogOrSide({
         title={title}
         description={description}
         onClose={() => onOpenChange(false)}
-        headerActions={primary}
+        headerActions={actions}
         footer={danger}
         width={width}
       >
@@ -67,10 +78,7 @@ export function DialogOrSide({
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1">{children}</div>
         <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
           {danger}
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-            {t('common.cancel')}
-          </Button>
-          {primary}
+          {actions}
         </DialogFooter>
       </DialogContent>
     </Dialog>

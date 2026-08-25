@@ -11,7 +11,6 @@ import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -713,17 +712,26 @@ export function ProviderEditDialog({
   const title = isEdit
     ? t('connections.apiKeyDialog.editTitle', { name: agentName })
     : t('connections.apiKeyDialog.addTitle', { name: agentName });
-  const description = isEdit
-    ? t('connections.apiKeyDialog.editDesc')
-    : t('connections.apiKeyDialog.addDesc');
+  const keyHint = isEdit ? t('connections.apiKeyDialog.keyHint') : undefined;
+  const cancelButton = (
+    <Button type="button" variant="outline" size="sm" onClick={requestClose} disabled={saving}>
+      {t('common.cancel')}
+    </Button>
+  );
   const saveButton = (
-    <Button disabled={!canSave || saving} onClick={() => void save()} size={asPanel ? 'sm' : 'default'}>
+    <Button disabled={!canSave || saving} onClick={() => void save()} size="sm">
       {saving
         ? t('common.saving')
         : isEdit
           ? t('connections.apiKeyDialog.saveEdit')
           : t('connections.providerDialog.add')}
     </Button>
+  );
+  const headerActions = (
+    <>
+      {cancelButton}
+      {saveButton}
+    </>
   );
 
   const form = (
@@ -898,6 +906,7 @@ export function ProviderEditDialog({
                 !useOfficial && remoteStatus.showPicker ? { model: remoteModels } : undefined
               }
               fieldStatus={modelFieldStatus ? { model: modelFieldStatus } : undefined}
+              fieldHints={keyHint ? { apiKey: keyHint } : undefined}
             />
           ) : schemaStatus === 'unsupported' ? (
             <>
@@ -971,7 +980,7 @@ export function ProviderEditDialog({
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">
-                  {isEdit ? t('connections.apiKeyDialog.keyKeep') : t('connections.apiKeyDialog.key')}
+                  {t('connections.apiKeyDialog.key')}
                 </span>
                 <SecretInput
                   value={vars.apiKey}
@@ -980,6 +989,7 @@ export function ProviderEditDialog({
                     ? t('connections.apiKeyDialog.keyPlaceholderEdit')
                     : t('connections.apiKeyDialog.keyPlaceholderAdd')}
                 />
+                {keyHint ? <p className="text-meta text-muted">{keyHint}</p> : null}
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">
@@ -1040,9 +1050,8 @@ export function ProviderEditDialog({
     return (
       <SideInspectPanel
         title={title}
-        description={description}
         onClose={requestClose}
-        headerActions={saveButton}
+        headerActions={headerActions}
         width={width}
       >
         {form}
@@ -1061,14 +1070,10 @@ export function ProviderEditDialog({
       <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {form}
         <DialogFooter>
-          <Button variant="outline" onClick={requestClose}>
-            {t('common.cancel')}
-          </Button>
-          {saveButton}
+          {headerActions}
         </DialogFooter>
       </DialogContent>
     </Dialog>

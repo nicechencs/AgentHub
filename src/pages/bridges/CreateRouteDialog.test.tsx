@@ -52,7 +52,7 @@ describe('CreateRouteDialog', () => {
     expect(markup).toContain('id="create-route-form"');
     expect(markup).toContain('type="submit"');
     expect(markup).toContain('收起');
-    expect(markup).not.toContain('取消');
+    expect(markup).toContain('取消');
     expect(markup).not.toContain('/v1/messages');
     expect(markup).not.toContain('/v1/responses');
     expect(markup).not.toContain('协议桥');
@@ -309,7 +309,7 @@ describe('EditRouteDialog', () => {
     expect(markup).toContain('id="edit-route-form"');
     expect(markup).toContain('type="submit"');
     expect(markup).toContain('收起');
-    expect(markup).not.toContain('取消');
+    expect(markup).toContain('取消');
     expect(markup).not.toContain('/v1/messages');
     expect(markup).not.toContain('/v1/responses');
   });
@@ -333,6 +333,7 @@ describe('EditRouteDialog', () => {
     expect(markup).toContain('上游端点');
     expect(markup).toContain('type="password"');
     expect(markup).toContain('留空沿用现有密钥');
+    expect(markup).toContain('新增客户端端点后，保存还要「写入客户端」。');
     expect(markup).toContain('type="checkbox"');
     expect(markup).toContain('type="submit"');
     expect(markup).toContain('保存');
