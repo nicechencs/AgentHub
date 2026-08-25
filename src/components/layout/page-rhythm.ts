@@ -15,7 +15,7 @@
  * | 贴边列（相对主列内缘） | 18 (`px-[18px]`) | 18 (`py-[18px]`) |
  * | TopBar | 18 (`px-[18px]`) | h-10 |
  * | Skills / Projects / Connections / Routes 页头 | 18 | 四周 18 |
- * | Skills / Projects / Connections / Routes 列表 | 18 (`px-[18px]`) | 顶距 0（页头已 18）；底距 18 |
+ * | Skills / Projects / Connections / Routes 列表 | 18 (`px-[18px]`)；分栏打开时改 `workbenchXSplit` | 顶距 0（页头已 18）；底距 18 |
  * | Chat 全高 | 主区 chrome 16 (`px-4`) | 会话 rail 自管 |
  * | 阅读列（Chat 消息列 / Settings 表单） | `readingColumn` `max-w-3xl` 居中 | — |
  *
@@ -40,6 +40,13 @@ export const pageRhythm = {
   readingColumn: 'mx-auto w-full max-w-3xl',
   /** 全高工作台水平 inset（Skills / Projects / Connections / Routes 列表）— 与常规页水平一致 */
   workbenchX: 'px-[18px]',
+  /**
+   * 分栏打开时的列表水平 inset。
+   * 左 18 与页头对齐；右内边距收到 8，并把 8px 让到滚动条与分隔条之间。
+   * 不要把 18px 右内边距留在 overflow 容器上：那会把空白加在卡片和滚动条之间，
+   * 滚动条仍贴着分隔条（分隔条 hit 区还会叠进滚动条）。
+   */
+  workbenchXSplit: 'pl-[18px] pr-2 mr-2',
   /** 全高页页头：四周 18px，与 pageShell 对齐 */
   workbenchHeader: 'shrink-0 px-[18px] py-[18px]',
   /** 页标题：PageHeader h1 与 Chat 会话名共用 */

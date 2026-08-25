@@ -962,7 +962,7 @@ export default function SkillsPage() {
         <div
           className={cn(
             'min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
-            pageRhythm.workbenchX,
+            previewShellMounted ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX,
             pageRhythm.workbenchY,
           )}
         >

@@ -29,6 +29,12 @@ describe('PageHeader', () => {
     expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
   });
 
+  it('uses the split-list inset when a preview pane is mounted', () => {
+    expect(source('pages/projects/index.tsx')).toContain('workbenchXSplit');
+    expect(source('pages/skills/index.tsx')).toContain('workbenchXSplit');
+    expect(source('components/layout/SideSplit.tsx')).toContain('workbenchXSplit');
+  });
+
   it('keeps workbench header actions in the list column, left of the separator', () => {
     const split = source('components/layout/SideSplit.tsx');
     const pageFn = split.slice(split.indexOf('export function WorkbenchSplitPage'));
