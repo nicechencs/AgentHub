@@ -7,6 +7,7 @@ import {
   openaiModelsUrl,
   parseOpenAiModelList,
   resolveModelForSave,
+  resolveUpstreamBaseUrl,
   isLivePastedApiKey,
   looksLikeLast4Mask,
   shouldFetchRemoteModels,
@@ -127,7 +128,157 @@ describe('default / resolve / withDefaultModel', () => {
   });
 });
 
+const OPENROUTER_JSON_CAMEL = JSON.stringify(
+  {
+    baseURL: 'https://openrouter.ai/api/v1',
+    model: 'stealth/ox-alpha',
+  },
+  null,
+  2,
+);
+
+const OPENROUTER_JSON_SNAKE = JSON.stringify(
+  {
+    base_url: 'https://openrouter.ai/api/v1',
+    model: 'stealth/ox-alpha',
+  },
+  null,
+  2,
+);
+
+const ANTHROPIC_ENV_JSON = JSON.stringify(
+  {
+    env: {
+      ANTHROPIC_BASE_URL: 'https://relay.example/anthropic',
+    },
+    model: 'opus',
+  },
+  null,
+  2,
+);
+
+const CODEX_TOML_PROVIDERS = [
+  'model_provider = "openrouter"',
+  'model = "stealth/ox-alpha"',
+  '',
+  '[model_providers.openrouter]',
+  'base_url = "https://openrouter.ai/api/v1"',
+  'wire_api = "chat"',
+  '',
+].join('\n');
+
+describe('resolveUpstreamBaseUrl', () => {
+  it('reads camelCase JSON baseURL when the simple field is empty', () => {
+    expect(
+      resolveUpstreamBaseUrl({
+        formBaseUrl: '',
+        configText: OPENROUTER_JSON_CAMEL,
+        configFormat: 'json',
+        agentId: 'codex',
+      }),
+    ).toBe('https://openrouter.ai/api/v1');
+  });
+
+  it('reads snake_case JSON base_url', () => {
+    expect(
+      resolveUpstreamBaseUrl({
+        formBaseUrl: '  ',
+        configText: OPENROUTER_JSON_SNAKE,
+        configFormat: 'json',
+        agentId: 'claude',
+      }),
+    ).toBe('https://openrouter.ai/api/v1');
+  });
+
+  it('reads env ANTHROPIC_BASE_URL from JSON', () => {
+    expect(
+      resolveUpstreamBaseUrl({
+        formBaseUrl: '',
+        configText: ANTHROPIC_ENV_JSON,
+        configFormat: 'json',
+        agentId: 'claude',
+      }),
+    ).toBe('https://relay.example/anthropic');
+  });
+
+  it('reads TOML model_providers base_url', () => {
+    expect(
+      resolveUpstreamBaseUrl({
+        formBaseUrl: '',
+        configText: CODEX_TOML_PROVIDERS,
+        configFormat: 'toml',
+        agentId: 'codex',
+      }),
+    ).toBe('https://openrouter.ai/api/v1');
+  });
+
+  it('lets a real form http(s) field win over advanced config', () => {
+    expect(
+      resolveUpstreamBaseUrl({
+        formBaseUrl: 'https://form.example/v1',
+        configText: OPENROUTER_JSON_CAMEL,
+        configFormat: 'json',
+        agentId: 'codex',
+      }),
+    ).toBe('https://form.example/v1');
+  });
+
+  it('falls through a non-http form field to advanced config', () => {
+    expect(
+      resolveUpstreamBaseUrl({
+        formBaseUrl: 'openrouter.ai',
+        configText: OPENROUTER_JSON_CAMEL,
+        configFormat: 'json',
+        agentId: 'codex',
+      }),
+    ).toBe('https://openrouter.ai/api/v1');
+  });
+
+  it('returns empty when nothing real is present (does not invent a placeholder)', () => {
+    expect(
+      resolveUpstreamBaseUrl({
+        formBaseUrl: '',
+        configText: '{}',
+        configFormat: 'json',
+        agentId: 'codex',
+      }),
+    ).toBe('');
+    expect(
+      resolveUpstreamBaseUrl({
+        formBaseUrl: 'not-a-url',
+        configText: '',
+        configFormat: 'toml',
+        agentId: 'codex',
+      }),
+    ).toBe('');
+  });
+});
+
 describe('shouldFetchRemoteModels', () => {
+  it('fetches when the URL lives only in advanced JSON (empty form field)', () => {
+    const baseUrl = resolveUpstreamBaseUrl({
+      formBaseUrl: '',
+      configText: OPENROUTER_JSON_CAMEL,
+      configFormat: 'json',
+      agentId: 'codex',
+    });
+    expect(
+      shouldFetchRemoteModels({
+        useOfficial: false,
+        baseUrl,
+        apiKey: REDACTED_MARKER,
+        hasStoredSecret: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldFetchRemoteModels({
+        useOfficial: false,
+        baseUrl,
+        apiKey: 'sk-live-abcdefgh',
+      }),
+    ).toBe(true);
+  });
+
   it('fetches for a live pasted key on a custom http(s) URL', () => {
     expect(
       shouldFetchRemoteModels({

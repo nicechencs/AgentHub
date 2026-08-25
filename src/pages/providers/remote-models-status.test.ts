@@ -2,7 +2,12 @@
  * Pure view-model for model-field fetch status (node / no jsdom).
  */
 import { describe, expect, it } from 'vitest';
-import { remoteModelsStatusView } from '@/lib/provider-detect';
+import {
+  REDACTED_MARKER,
+  remoteModelsStatusView,
+  resolveUpstreamBaseUrl,
+  shouldFetchRemoteModels,
+} from '@/lib/provider-detect';
 import { canSaveProviderForm } from './providerSaveFlow';
 
 describe('remoteModelsStatusView', () => {
@@ -53,6 +58,66 @@ describe('remoteModelsStatusView', () => {
     expect(view.showRetry).toBe(false);
     expect(view.showPicker).toBe(false);
     expect(view.labelKey).toBeNull();
+  });
+});
+
+describe('status when URL comes from advanced config', () => {
+  const configText = JSON.stringify(
+    {
+      baseURL: 'https://openrouter.ai/api/v1',
+      model: 'stealth/ox-alpha',
+    },
+    null,
+    2,
+  );
+
+  it('loading / fail+retry when form baseUrl is empty but resolved URL is present', () => {
+    const resolved = resolveUpstreamBaseUrl({
+      formBaseUrl: '',
+      configText,
+      configFormat: 'json',
+      agentId: 'codex',
+    });
+    expect(resolved).toBe('https://openrouter.ai/api/v1');
+    const shouldFetch = shouldFetchRemoteModels({
+      useOfficial: false,
+      baseUrl: resolved,
+      apiKey: REDACTED_MARKER,
+      hasStoredSecret: true,
+    });
+    expect(shouldFetch).toBe(true);
+
+    const loading = remoteModelsStatusView({
+      loading: true,
+      error: false,
+      ids: [],
+      active: shouldFetch,
+    });
+    expect(loading.kind).toBe('loading');
+    expect(loading.showRetry).toBe(false);
+    expect(loading.labelKey).toBe('connections.providerDialog.remoteModelsLoading');
+
+    const failed = remoteModelsStatusView({
+      loading: false,
+      error: true,
+      ids: [],
+      active: shouldFetch,
+    });
+    expect(failed.kind).toBe('failed');
+    expect(failed.showRetry).toBe(true);
+    expect(failed.labelKey).toBe('connections.providerDialog.remoteModelsFailed');
+
+    expect(
+      canSaveProviderForm({
+        schemaStatus: 'ready',
+        configError: null,
+        isEdit: true,
+        apiKey: '',
+        piNeedsUrl: false,
+        baseUrl: '',
+        model: '',
+      }),
+    ).toBe(true);
   });
 });
 

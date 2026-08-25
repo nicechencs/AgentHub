@@ -74,11 +74,17 @@ import {
   parseJsonObjectConfig,
   REDACTED_MARKER,
   remoteModelsStatusView,
+  resolveUpstreamBaseUrl,
   shouldFetchRemoteModels,
   smartDetectUrlAndKey,
   withDefaultModel,
   type ProviderFormVars,
 } from '@/lib/provider-detect';
+import {
+  officialToggleNext,
+  type OfficialToggleForm,
+  type OfficialToggleSnapshot,
+} from './official-toggle';
 import {
   canSaveProviderForm,
   canSaveWithSchemaStatus,
@@ -92,6 +98,38 @@ import {
 const REMOTE_MODELS_DEBOUNCE_MS = 400;
 
 export type ProviderDialogMode = 'add' | 'edit';
+
+function officialFormState(agentId: AgentId, keepKey: string): OfficialToggleForm | null {
+  const off = officialApiDefaults(agentId);
+  if (!off) return null;
+  const extracted = extractFormVars(agentId, off.scaffoldText, off.format);
+  const vars: ProviderFormVars = {
+    ...extracted,
+    baseUrl: off.baseUrl,
+    model: off.model,
+    modelOpus: off.modelOpus ?? extracted.modelOpus,
+    modelSonnet: off.modelSonnet ?? extracted.modelSonnet,
+    modelHaiku: off.modelHaiku ?? extracted.modelHaiku,
+    modelFable: off.modelFable ?? extracted.modelFable,
+    modelSubagent: off.modelSubagent ?? extracted.modelSubagent,
+    apiKey: keepKey,
+  };
+  return {
+    vars,
+    configFormat: off.format,
+    configText: applyFormVars(agentId, off.scaffoldText, off.format, {
+      ...extracted,
+      baseUrl: off.baseUrl,
+      model: off.model,
+      modelOpus: off.modelOpus ?? '',
+      modelSonnet: off.modelSonnet ?? '',
+      modelHaiku: off.modelHaiku ?? '',
+      modelFable: off.modelFable ?? '',
+      modelSubagent: off.modelSubagent ?? '',
+      apiKey: keepKey,
+    }),
+  };
+}
 
 function piSlotSelectOptions(slug: string) {
   const id = slug.trim() || 'custom';
@@ -157,6 +195,10 @@ export function ProviderEditDialog({
   const [saving, setSaving] = React.useState(false);
   /** 默认官方：带出官方 URL / 模型 */
   const [useOfficial, setUseOfficial] = React.useState(true);
+  /** Custom URL / model / advanced config to restore after unchecking official. */
+  const [customSnapshot, setCustomSnapshot] = React.useState<OfficialToggleSnapshot | null>(
+    null,
+  );
   const [showAdvanced, setShowAdvanced] = React.useState(true);
   /** Backend config schema when Catalog declares a projector. */
   const [configSchema, setConfigSchema] = React.useState<AgentConfigSchemaDto | null>(
@@ -257,8 +299,8 @@ export function ProviderEditDialog({
 
   const applyOfficialDefaults = React.useCallback(
     (keepKey?: string) => {
-      const off = officialApiDefaults(agentId);
-      if (!off) {
+      const form = officialFormState(agentId, keepKey ?? '');
+      if (!form) {
         const scaffold = defaultConfigScaffold(agentId);
         setConfigText(scaffold.text);
         setConfigFormat(scaffold.format);
@@ -270,35 +312,10 @@ export function ProviderEditDialog({
         });
         return;
       }
-      setConfigFormat(off.format);
-      setConfigText(off.scaffoldText);
+      setConfigFormat(form.configFormat);
+      setConfigText(form.configText);
       setConfigError(null);
-      const extracted = extractFormVars(agentId, off.scaffoldText, off.format);
-      setVars({
-        ...extracted,
-        baseUrl: off.baseUrl,
-        model: off.model,
-        modelOpus: off.modelOpus ?? extracted.modelOpus,
-        modelSonnet: off.modelSonnet ?? extracted.modelSonnet,
-        modelHaiku: off.modelHaiku ?? extracted.modelHaiku,
-        modelFable: off.modelFable ?? extracted.modelFable,
-        modelSubagent: off.modelSubagent ?? extracted.modelSubagent,
-        apiKey: keepKey ?? '',
-      });
-      // 再写回一遍，确保 model/url 进正文
-      setConfigText(
-        applyFormVars(agentId, off.scaffoldText, off.format, {
-          ...extracted,
-          baseUrl: off.baseUrl,
-          model: off.model,
-          modelOpus: off.modelOpus ?? '',
-          modelSonnet: off.modelSonnet ?? '',
-          modelHaiku: off.modelHaiku ?? '',
-          modelFable: off.modelFable ?? '',
-          modelSubagent: off.modelSubagent ?? '',
-          apiKey: keepKey ?? '',
-        }),
-      );
+      setVars(form.vars);
     },
     [agentId],
   );
@@ -307,6 +324,7 @@ export function ProviderEditDialog({
     if (!open) return;
     setPasteBuf('');
     setDetectHints([]);
+    setCustomSnapshot(null);
     if (isEdit && provider) {
       setName(provider.name ?? '');
       setConfigText(provider.configText);
@@ -336,21 +354,20 @@ export function ProviderEditDialog({
   }, [open, isEdit, provider, agentId, applyOfficialDefaults, t]);
 
   const onToggleOfficial = (checked: boolean) => {
+    const next = officialToggleNext({
+      checked,
+      current: { vars, configText, configFormat },
+      snapshot: customSnapshot,
+      official: checked ? officialFormState(agentId, vars.apiKey) : null,
+    });
+    setCustomSnapshot(next.snapshot);
     setUseOfficial(checked);
-    if (checked) {
-      applyOfficialDefaults(vars.apiKey);
-      if (!name.trim() && official) {
-        setName(official.label);
-      }
-    } else {
-      // 切到自定义：保留 key，换中转占位骨架
-      const scaffold = defaultConfigScaffold(agentId);
-      setConfigFormat(scaffold.format);
-      const extracted = extractFormVars(agentId, scaffold.text, scaffold.format);
-      const next = { ...extracted, apiKey: vars.apiKey };
-      setVars(next);
-      setConfigText(applyFormVars(agentId, scaffold.text, scaffold.format, next));
-      setConfigError(null);
+    setVars(next.vars);
+    setConfigText(next.configText);
+    setConfigFormat(next.configFormat);
+    setConfigError(getConfigTextError(agentId, next.configText, next.configFormat, t));
+    if (checked && !name.trim() && official) {
+      setName(official.label);
     }
   };
 
@@ -459,9 +476,15 @@ export function ProviderEditDialog({
   });
 
   const hasStoredSecret = Boolean(provider?.id);
+  const resolvedBaseUrl = resolveUpstreamBaseUrl({
+    formBaseUrl: vars.baseUrl,
+    configText,
+    configFormat,
+    agentId,
+  });
   const shouldFetch = shouldFetchRemoteModels({
     useOfficial,
-    baseUrl: vars.baseUrl,
+    baseUrl: resolvedBaseUrl,
     apiKey: vars.apiKey,
     hasStoredSecret,
   });
@@ -475,7 +498,7 @@ export function ProviderEditDialog({
     setRemoteModelsRetry((token) => token + 1);
   }, []);
   const modelFieldStatus =
-    !useOfficial && remoteStatus.labelKey
+    shouldFetch && remoteStatus.labelKey
       ? {
           label: t(remoteStatus.labelKey),
           onRetry: remoteStatus.showRetry ? retryRemoteModels : undefined,
@@ -502,9 +525,9 @@ export function ProviderEditDialog({
     setRemoteModelsError(false);
     const handle = window.setTimeout(() => {
       const request = isLivePastedApiKey(vars.apiKey)
-        ? listRemoteOpenAiModels(vars.baseUrl, vars.apiKey)
+        ? listRemoteOpenAiModels(resolvedBaseUrl, vars.apiKey)
         : provider?.id
-          ? listRemoteOpenAiModelsForProvider(provider.id, vars.baseUrl)
+          ? listRemoteOpenAiModelsForProvider(provider.id, resolvedBaseUrl)
           : Promise.reject(new Error('no stored secret'));
       void request
         .then((ids) => {
@@ -529,10 +552,12 @@ export function ProviderEditDialog({
     open,
     useOfficial,
     shouldFetch,
-    vars.baseUrl,
+    resolvedBaseUrl,
     vars.apiKey,
     provider?.id,
     remoteModelsRetry,
+    configText,
+    configFormat,
   ]);
 
   const openLiveDir = async () => {

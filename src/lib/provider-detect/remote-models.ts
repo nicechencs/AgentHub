@@ -6,7 +6,8 @@
  */
 import type { AgentId } from '@/lib/types';
 import { officialApiDefaults } from '@/config/official-api';
-import { looksRedactedOrPlaceholder } from './fields';
+import { smartDetectUrlAndKey } from './detect';
+import { extractFormVars, looksRedactedOrPlaceholder } from './fields';
 import { REDACTED_MARKER, type ProviderFormVars } from './types';
 
 /** Agents without an official template (pi / workbuddy / cursor, …). */
@@ -111,6 +112,50 @@ export function isLivePastedApiKey(apiKey: string): boolean {
   return true;
 }
 
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value.trim());
+}
+
+/** Named URL keys in advanced JSON / env / TOML (never invents a placeholder). */
+const ADVANCED_URL_RES: RegExp[] = [
+  /"baseURL"\s*:\s*"(https?:\/\/[^"]+)"/,
+  /"baseUrl"\s*:\s*"(https?:\/\/[^"]+)"/,
+  /"base_url"\s*:\s*"(https?:\/\/[^"]+)"/i,
+  /(?:ANTHROPIC_BASE_URL|OPENAI_BASE_URL)\s*["']?\s*[:=]\s*["']?(https?:\/\/[^\s"',}\\]+)/i,
+  /^\s*base_url\s*=\s*"(https?:\/\/[^"]+)"/im,
+];
+
+function scanAdvancedConfigForBaseUrl(configText: string): string {
+  for (const re of ADVANCED_URL_RES) {
+    const match = configText.match(re);
+    const hit = match?.[1]?.trim() ?? '';
+    if (hit && isHttpUrl(hit)) return hit;
+  }
+  return '';
+}
+
+/**
+ * Upstream URL for a custom login: simple service-address field, else advanced config.
+ * Empty simple field is OK when JSON `baseURL` / TOML `base_url` / env already has http(s).
+ */
+export function resolveUpstreamBaseUrl(args: {
+  formBaseUrl: string;
+  configText: string;
+  configFormat: 'json' | 'toml';
+  agentId: AgentId;
+}): string {
+  const fromForm = args.formBaseUrl.trim();
+  if (isHttpUrl(fromForm)) return fromForm;
+
+  const extracted = extractFormVars(args.agentId, args.configText, args.configFormat).baseUrl.trim();
+  if (isHttpUrl(extracted)) return extracted;
+
+  const detected = (smartDetectUrlAndKey(args.configText).baseUrl ?? '').trim();
+  if (isHttpUrl(detected)) return detected;
+
+  return scanAdvancedConfigForBaseUrl(args.configText);
+}
+
 export function shouldFetchRemoteModels(args: {
   useOfficial: boolean;
   baseUrl: string;
@@ -120,7 +165,7 @@ export function shouldFetchRemoteModels(args: {
 }): boolean {
   if (args.useOfficial) return false;
   const baseUrl = args.baseUrl.trim();
-  if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) return false;
+  if (!baseUrl || !isHttpUrl(baseUrl)) return false;
   if (isLivePastedApiKey(args.apiKey)) return true;
   return Boolean(args.hasStoredSecret);
 }
