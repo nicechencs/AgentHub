@@ -46,7 +46,7 @@ updated: 2026-08-25
 - `agenthub-adapterd` sidecar 目标架构尚未替代当前桌面进程内的路由运行时。
 - 托盘低内存后台模式仍是未实施方案，不从它派生当前任务。
 - `adapter-capability-contract.json` 由 `AdapterRouteService::plan()` 对冻结入参投影生成；Rust 测试在 JSON 与内核输出不一致时失败。browser mock 的 analyze / plan 只解释该 golden；apply 只解释 plan。未知组合 fail-closed 为 unsupported。route / support / ruleId / gateKind / canApply 的产品正确性在 Rust；Vitest 覆盖查表、脱敏、内存 apply 和页面听从 plan。见 [单一内核与查表投影](proposals/single-kernel-projections.md)。
-- 本机未配置 sccache。过滤测试在热 `target/` 上约 3 秒；新 worktree 第一次约 42 秒用于编译依赖。CI 使用 `Swatinem/rust-cache`。Windows worktree 不得共享 `target/`。
+- 本机未配置 sccache。过滤测试在热 `target/` 上约 3.5 秒；新 worktree 第一次约 42 秒用于编译依赖。CI 使用 `Swatinem/rust-cache`。Windows worktree 不得共享 `target/`。不按目录或 DDD 名称把 `agenthub-core` 拆成多个 crate。
 - DeepSeek Harness 的 StructuredStream 仍是规划项；已落地部分以源码和集成文档为准。
 - 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。
 

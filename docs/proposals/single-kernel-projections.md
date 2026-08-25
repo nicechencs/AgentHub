@@ -10,7 +10,7 @@ updated: 2026-08-25
 
 > 状态：提案
 >
-> 本文记录如何降低 Adapter / route 规则改动的结构成本，并说明它与全项目开发内环提速的关系。切片 0–D 已经落地；切片 E 已评估且不落地配置。F 仍是候选，不授权拆 crate 或把 JSON 当规则真源。派工前必须指定负责人、文件范围、必须保持的行为和验证命令。
+> 本文记录如何降低 Adapter / route 规则改动的结构成本，并说明它与全项目开发内环提速的关系。切片 0–D 已经落地；切片 E 已评估且不落地配置。切片 F 已评估：热缓存过滤测试约 3.5 秒，不拆 crate。不授权把 JSON 当规则真源。派工前必须指定负责人、文件范围、必须保持的行为和验证命令。
 
 ## 0. 结论与适用范围
 
@@ -221,9 +221,15 @@ mock 的 analyze / plan 先查 golden；命中则用 expect 覆盖 route / suppo
 
 回滚：无配置可回滚。测量用的独立 worktree 已删除。
 
-### 切片 F：按测量结果考虑拆 crate（可选、最后）
+### 切片 F：按测量结果考虑拆 crate — `已评估，不拆`
 
-仅在切片 A–D 之后、且热缓存过滤测试仍过慢时打开。先对一个叶子 crate 做依赖与重编测量，再决定是否切。
+2026-08-25 在切片 A–D 完成、已用测试名过滤、且 E 已评估不落地 sccache 的前提下，复测热缓存并调查叶子模块。
+
+热缓存、无改文件时：`cargo test -p agenthub-core --locked --offline --no-run adapter_route_service` 约 0.47 s；过滤跑 39 个 `adapter_route_service` 测试约 3.5 s；精确一名 golden 测试约 2.3 s；`domain::protocol_graph` 30 个测试约 0.62 s；`bridge::protocol` 73 个测试约 0.60 s。只改 mtime 后的增量 `--no-run` 约 7.2–7.4 s，仍是整颗 core 测试二进制的增量编译+链接。
+
+叶子结论：`protocol_graph` 依赖 `models` 中的 `AgentId` / `TicketSurface` / `AdapterRoute` 等类型，且已被 `models/mod.rs` `pub use` 全量转口，不是向下叶子。最接近的叶子是 `bridge::protocol` + `bridge::types`（无 GUI/Tauri/ rusqlite），但 GUI/CLI 仍依赖整颗 `agenthub-core`，core 的 host 仍会依赖该叶子；改 rlib 仍带动 core。热缓存过滤测试已够快，不满足「仍过慢才拆」的开门条件。
+
+因此不拆 crate，也不派试点。以后只有热缓存过滤测试经常明显慢于当前 3–4 秒时才重新评估，且 GUI 不得通过 façade 全量 re-export。Windows 仍禁止共享 `target/`。
 
 ## 6. 与模块化提案的关系
 
