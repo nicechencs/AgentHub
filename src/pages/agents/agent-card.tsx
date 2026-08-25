@@ -55,6 +55,7 @@ export function AgentCard({
   onChanged,
   onEnvChanged,
   onRecheckUpdate,
+  sortHandle,
 }: {
   agent: AgentStatus;
   runtimes: RuntimeDetect[];
@@ -62,6 +63,7 @@ export function AgentCard({
   onEnvChanged: () => void;
   /** After upgrade, parent may force-refresh update probe for this agent. */
   onRecheckUpdate?: () => void;
+  sortHandle?: React.ReactNode;
 }) {
   const { t } = useI18n();
   const meta = AGENT_MAP[agent.agentId];
@@ -335,6 +337,7 @@ export function AgentCard({
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
+          {sortHandle}
           <AgentLogo agentId={agent.agentId} size="lg" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">

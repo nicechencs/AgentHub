@@ -22,6 +22,9 @@ export const StorageKey = {
   updateDismissedVersion: `${PREFIX}update-dismissed-version`,
   /** One-shot: localStorage usage interval migrated into SQLite */
   usageIntervalMigrated: `${PREFIX}usage-interval-migrated-v1`,
+  connectionsTicketOrder: `${PREFIX}connections-ticket-order`,
+  routesProfileOrder: `${PREFIX}routes-profile-order`,
+  agentsCatalogOrder: `${PREFIX}agents-catalog-order`,
 } as const;
 
 export function loadJson<T>(key: string, fallback: T): T {

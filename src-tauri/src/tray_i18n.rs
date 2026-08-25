@@ -18,6 +18,7 @@ pub(crate) fn parse_tray_language(raw: &str) -> TrayUiLanguage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TrayMenuCopy {
     pub show: &'static str,
+    pub routes: &'static str,
     pub open_routes: &'static str,
     pub start_routes: &'static str,
     pub stop_routes: &'static str,
@@ -28,16 +29,18 @@ pub(crate) fn tray_menu_copy(lang: TrayUiLanguage) -> TrayMenuCopy {
     match lang {
         TrayUiLanguage::Zh => TrayMenuCopy {
             show: "打开 AgentHub",
-            open_routes: "打开本机转发",
-            start_routes: "启动本机转发",
-            stop_routes: "停止本机转发",
+            routes: "本机路由",
+            open_routes: "打开页面",
+            start_routes: "全部启动",
+            stop_routes: "全部停止",
             quit: "退出",
         },
         TrayUiLanguage::En => TrayMenuCopy {
             show: "Open AgentHub",
-            open_routes: "Open local forward",
-            start_routes: "Start local forward",
-            stop_routes: "Stop local forward",
+            routes: "Local routes",
+            open_routes: "Open page",
+            start_routes: "Start all",
+            stop_routes: "Stop all",
             quit: "Quit",
         },
     }

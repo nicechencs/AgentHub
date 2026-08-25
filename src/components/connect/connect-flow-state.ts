@@ -886,11 +886,6 @@ export function adapterRouteMatchesPurpose(
   return bindRouteMatchesPurpose(route, purpose);
 }
 
-/** Route picker binds an existing login onto loopback endpoints; extra import/key CTAs do not apply. */
-export function shouldShowConnectGuideActions(entry: ConnectFlowEntry): boolean {
-  return entry.mode !== 'for-source' || entry.purpose !== 'route';
-}
-
 /** Keep loading/error rows; drop ready plans that belong to the other purpose. */
 export function visibleTargetsForPurpose(
   targetIds: readonly AgentId[],

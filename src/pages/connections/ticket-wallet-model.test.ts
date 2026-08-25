@@ -14,6 +14,7 @@ import {
   MENU_DIALOG_DISMISS_CLEAR_MS,
   shouldIgnoreMenuDialogDismiss,
   ticketAddDialogState,
+  buildTicketBindingRows,
   buildTicketDetailFields,
   buildTicketWalletRows,
   countTicketsByFilter,
@@ -462,7 +463,7 @@ describe('ticket detail fields', () => {
   });
 
   it('omits import, login status, and protocol for official OAuth', () => {
-    const { advanced } = buildTicketDetailFields(
+    const { advanced, protocol } = buildTicketDetailFields(
       ticket({
         id: 'account:oauth-1',
         sourceKind: 'account',
@@ -484,6 +485,7 @@ describe('ticket detail fields', () => {
     );
     const labels = advanced.map((field) => field.label);
     expect(advanced).toEqual([]);
+    expect(protocol).toBe('Chat · Grok');
     expect(labels).not.toContain('导入自');
     expect(labels).not.toContain('登录状态');
     expect(labels).not.toContain('类型');
@@ -755,6 +757,24 @@ describe('ticket detail fields', () => {
     expect(formatTicketBindingDetailLines(
       wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),
     )).toEqual([{ agent: agentDisplayName('claude'), status: '未使用' }]);
+    expect(buildTicketBindingRows(
+      wallet.bindings.filter((binding) => binding.ticketId === 'provider:kimi-1'),
+    )).toEqual([
+      {
+        agentId: 'claude',
+        agentLabel: agentDisplayName('claude'),
+        status: '当前使用',
+        routeLabel: '改配置',
+        localUrl: null,
+      },
+      {
+        agentId: 'codex',
+        agentLabel: agentDisplayName('codex'),
+        status: '本机路由运行中',
+        routeLabel: '本机路由',
+        localUrl: 'http://127.0.0.1:8123/v1/responses',
+      },
+    ]);
     expect(ticketBindingStatus({
       ticketId: 'provider:kimi-1',
       agentId: 'codex',

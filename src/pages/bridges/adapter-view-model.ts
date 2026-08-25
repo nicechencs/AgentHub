@@ -4,6 +4,7 @@
  */
 import type {
   AdapterBridgeRuntimeState,
+  AdapterBridgeRuntimeStatus,
   AdapterProfile,
 } from '@/lib/backend/contracts/adapter';
 import type { AgentId } from '@/lib/types';
@@ -128,6 +129,77 @@ export function isBoundLocalBridgeRuntime(
 }
 
 /** All `local_bridge` runtimes: bound vs orphan. Dirty rows with empty sourceId are dropped. */
+export function localBridgeSourceKey(
+  profile: Pick<AdapterProfile, 'sourceKind' | 'sourceId'>,
+): string {
+  return `${profile.sourceKind}:${profile.sourceId}`;
+}
+
+export function localBridgeProfilesForSource<T extends AdapterProfile>(
+  profiles: readonly T[],
+  source: Pick<AdapterProfile, 'sourceKind' | 'sourceId'>,
+): T[] {
+  const key = localBridgeSourceKey(source);
+  return profiles.filter((profile) => localBridgeSourceKey(profile) === key);
+}
+
+/** Map a persisted profile id onto its source key so representative swaps keep order. */
+export function canonicalizeLocalBridgeOrderIds(
+  stored: readonly string[],
+  profiles: readonly Pick<AdapterProfile, 'id' | 'sourceKind' | 'sourceId'>[],
+): string[] {
+  const byProfileId = new Map(
+    profiles.map((profile) => [profile.id, localBridgeSourceKey(profile)] as const),
+  );
+  return stored.map((id) => byProfileId.get(id) ?? id);
+}
+
+export function isLocalBridgeCardActive(
+  profile: Pick<AdapterProfile, 'id' | 'sourceKind' | 'sourceId'>,
+  activeProfileId: string | null | undefined,
+  siblings: readonly Pick<AdapterProfile, 'id' | 'sourceKind' | 'sourceId'>[],
+): boolean {
+  if (!activeProfileId) return false;
+  if (profile.id === activeProfileId) return true;
+  const active = siblings.find((row) => row.id === activeProfileId);
+  if (!active) return false;
+  return localBridgeSourceKey(active) === localBridgeSourceKey(profile);
+}
+
+function pickLocalBridgeRepresentative<T extends AdapterProfile>(
+  members: readonly T[],
+  statuses: Record<string, AdapterBridgeRuntimeStatus>,
+): T {
+  const running = members.find((member) => {
+    const state = statuses[member.id]?.state;
+    return state === 'running' || state === 'degraded';
+  });
+  if (running) return running;
+  return [...members].sort((left, right) => {
+    const created = left.createdAt.localeCompare(right.createdAt);
+    return created !== 0 ? created : left.id.localeCompare(right.id);
+  })[0]!;
+}
+
+/**
+ * One list card per upstream source. Binding Claude/Codex/Grok from the same
+ * login writes several profiles; they still share one source, so editing that
+ * login must not look like three independent routes.
+ */
+export function groupLocalBridgeProfiles<T extends AdapterProfile>(
+  profiles: readonly T[],
+  statuses: Record<string, AdapterBridgeRuntimeStatus> = {},
+): T[] {
+  const groups = new Map<string, T[]>();
+  for (const profile of profiles) {
+    const key = localBridgeSourceKey(profile);
+    const members = groups.get(key);
+    if (members) members.push(profile);
+    else groups.set(key, [profile]);
+  }
+  return [...groups.values()].map((members) => pickLocalBridgeRepresentative(members, statuses));
+}
+
 export function partitionLocalBridgeRuntimes<T extends AdapterProfile>(
   profiles: readonly T[],
   input: {

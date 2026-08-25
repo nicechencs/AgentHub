@@ -145,6 +145,18 @@ describe('Bridges page', () => {
     expect(legacyBridgesRedirectTo('?profile=bridge-1')).toBe('/routes?profile=bridge-1');
   });
 
+  it('keeps the grouped card selected when inspect is on a sibling profile', () => {
+    const claude = { ...localBridgeProfile('p-claude'), targetAgentId: 'claude' as const };
+    const codex = { ...localBridgeProfile('p-codex'), targetAgentId: 'codex' as const };
+    const markup = renderProfiles({
+      ...emptyListProps,
+      profiles: [codex],
+      siblingProfiles: [claude, codex],
+      activeProfileId: claude.id,
+    });
+    expect(markup).toContain('data-active="true"');
+  });
+
   it('opens ?profile= only when the runtime exists', () => {
     expect(resolveBridgesProfileQuery('bridge-1', [{ id: 'bridge-1' }])).toBe('bridge-1');
     expect(resolveBridgesProfileQuery('missing', [{ id: 'bridge-1' }])).toBeNull();
@@ -226,6 +238,22 @@ describe('Bridges page', () => {
     expect(markup).toContain('data-active="true"');
     expect(markup).not.toContain('data-route-detail="bridge-1"');
     expect(markup).not.toContain('上游和本机');
+  });
+
+  it('shows a reorder handle when there are two routes and onMove is provided', () => {
+    const first = localBridgeProfile('bridge-1');
+    const second = localBridgeProfile('bridge-2');
+    const markup = renderProfiles({
+      ...emptyListProps,
+      profiles: [first, second],
+      bridgeStatuses: {
+        [first.id]: runningStatus(first.id),
+        [second.id]: runningStatus(second.id),
+      },
+      onMove: vi.fn(),
+    });
+    expect(markup).toContain('拖动排序');
+    expect(markup).toContain('draggable');
   });
 
   it('shows the upstream → loopback flow and the clients one OpenRouter route serves', () => {

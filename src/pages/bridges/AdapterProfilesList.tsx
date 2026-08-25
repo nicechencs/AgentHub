@@ -1,10 +1,13 @@
+import { useCallback, useMemo, type ReactNode } from 'react';
 import { ArrowRight, Boxes, Pencil } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { SortHandle } from '@/components/shared/SortHandle';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { ListRow } from '@/components/shared/ListRow';
+import { useSortableDrag } from '@/components/shared/use-sortable-drag';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Hint, Tip } from '@/components/ui/tooltip';
@@ -30,6 +33,7 @@ import {
   adapterProfileRecoveryGuide,
   adapterStatusTextClass,
   bridgeRuntimeStatusView,
+  isLocalBridgeCardActive,
   type AdapterStatusView,
 } from './adapter-view-model';
 
@@ -54,8 +58,10 @@ export type AdapterProfilesListProps = {
   onShowDetail?: (profile: AdapterProfile) => void;
   /** Profile currently in the inspect pane (detail / edit / write). */
   activeProfileId?: string | null;
+  onMove?: (fromId: string, toId: string) => void;
   onRetry: () => void;
   hiddenTargetIds?: ReadonlySet<string>;
+  siblingProfiles?: readonly AdapterProfile[];
 };
 
 /**
@@ -79,10 +85,21 @@ export function AdapterProfilesList({
   onRequestEdit,
   onShowDetail,
   activeProfileId,
+  onMove,
   onRetry,
   hiddenTargetIds,
+  siblingProfiles,
 }: AdapterProfilesListProps) {
   const { t } = useI18n();
+  const liveIds = useMemo(() => profiles.map((profile) => profile.id), [profiles]);
+  const canReorder = Boolean(onMove) && liveIds.length > 1;
+  const { onDragStartId, rowProps } = useSortableDrag((fromId, toId) => onMove?.(fromId, toId));
+  const moveNeighbor = useCallback((id: string, direction: -1 | 1) => {
+    const index = liveIds.indexOf(id);
+    const next = liveIds[index + direction];
+    if (!next || !onMove) return;
+    onMove(id, next);
+  }, [liveIds, onMove]);
   if (loading) {
     return (
       <div className="space-y-2" aria-live="polite">
@@ -111,25 +128,36 @@ export function AdapterProfilesList({
   }
   return (
     <div className="space-y-2">
-      {profiles.map((profile) => (
-        <AdapterProfileRow
-          key={profile.id}
-          profile={profile}
-          bridgeStatus={profile.route === 'local_bridge' ? bridgeStatuses[profile.id] : undefined}
-          statusUnavailable={Boolean(statusErrors[profile.id])}
-          entries={entries}
-          busy={busyProfileIds[profile.id] === true || removingProfileId === profile.id}
-          error={errors[profile.id]}
-          onStartBridge={onStartBridge}
-          onRequestStopBridge={onRequestStopBridge}
-          onRequestWrite={onRequestWrite}
-          onRequestEdit={onRequestEdit}
-          onShowDetail={onShowDetail}
-          active={activeProfileId === profile.id}
-          targetHidden={hiddenTargetIds?.has(profile.targetAgentId) === true}
-          siblingProfiles={profiles}
-        />
-      ))}
+      {profiles.map((profile) => {
+        const sortable = rowProps(profile.id);
+        return (
+          <div key={profile.id} {...sortable}>
+            <AdapterProfileRow
+              profile={profile}
+              bridgeStatus={profile.route === 'local_bridge' ? bridgeStatuses[profile.id] : undefined}
+              statusUnavailable={Boolean(statusErrors[profile.id])}
+              entries={entries}
+              busy={busyProfileIds[profile.id] === true || removingProfileId === profile.id}
+              error={errors[profile.id]}
+              onStartBridge={onStartBridge}
+              onRequestStopBridge={onRequestStopBridge}
+              onRequestWrite={onRequestWrite}
+              onRequestEdit={onRequestEdit}
+              onShowDetail={onShowDetail}
+              active={isLocalBridgeCardActive(profile, activeProfileId, siblingProfiles ?? profiles)}
+              targetHidden={hiddenTargetIds?.has(profile.targetAgentId) === true}
+              siblingProfiles={siblingProfiles ?? profiles}
+              sortHandle={canReorder ? (
+                <SortHandle
+                  id={profile.id}
+                  onDragStartId={onDragStartId}
+                  onMoveNeighbor={moveNeighbor}
+                />
+              ) : null}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -149,6 +177,7 @@ function AdapterProfileRow({
   active,
   targetHidden,
   siblingProfiles,
+  sortHandle,
 }: {
   profile: AdapterProfile;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
@@ -164,6 +193,7 @@ function AdapterProfileRow({
   active: boolean;
   targetHidden: boolean;
   siblingProfiles: readonly AdapterProfile[];
+  sortHandle?: ReactNode;
 }) {
   const { t } = useI18n();
   const endpointParts = profile.route === 'local_bridge'
@@ -197,6 +227,7 @@ function AdapterProfileRow({
   return (
     <ListRow className="p-3" active={active}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {sortHandle}
         <div className="w-40 shrink-0">
           {runtimeStatus ? <StatusLine view={runtimeStatus} emphasis /> : null}
         </div>

@@ -50,7 +50,6 @@ import {
   resolvePreset,
   settleConfirm,
   shouldRevertPreviewToSelect,
-  shouldShowConnectGuideActions,
   shouldShowPreviewImportHint,
   shouldShowSelectSkeleton,
   sourceAgentIdOf,
@@ -1087,10 +1086,6 @@ describe('首帧 entry 不同步', () => {
     expect(connectFlowEntryKey({ ...forSource, purpose: 'route' })).toBe(
       'for-source:provider:prov-kimi:route',
     );
-    expect(shouldShowConnectGuideActions(forAgent)).toBe(true);
-    expect(shouldShowConnectGuideActions(forSource)).toBe(true);
-    expect(shouldShowConnectGuideActions({ ...forSource, purpose: 'share' })).toBe(true);
-    expect(shouldShowConnectGuideActions({ ...forSource, purpose: 'route' })).toBe(false);
     expect(isConnectFlowEntryStale(forAgent, { mode: 'for-agent', targetAgentId: 'kimi' })).toBe(true);
     expect(isConnectFlowEntryStale(forAgent, forAgent)).toBe(false);
     expect(isConnectFlowEntryStale(forAgent, null)).toBe(true);

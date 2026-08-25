@@ -3,6 +3,7 @@ import {
   closeConfirmationOnOpenChange,
   preventBusyConfirmationDismissal,
 } from '@/components/shared/busy-confirmation';
+import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
@@ -85,6 +86,8 @@ export function ConnectFlowDialog({
   onClose,
   onConnectionChanged,
   onNavigate,
+  asPanel = false,
+  width,
 }: ConnectFlowDialogProps) {
   const open = entry !== null;
   const key = connectFlowEntryKey(entry);
@@ -327,18 +330,6 @@ export function ConnectFlowDialog({
     }));
   }, [guideAgent, navigateTo]);
 
-  const goNewApiKey = React.useCallback(() => {
-    if (!guideAgent) {
-      navigateTo('/connections?mode=providers');
-      return;
-    }
-    navigateTo(buildConnectionsGuideUrl({
-      agentId: guideAgent,
-      intent: 'add-key',
-      resumeAgentId: guideAgent,
-    }));
-  }, [guideAgent, navigateTo]);
-
   const handleConfirm = React.useCallback(() => {
     if (previewInvalid) return;
     if (!tryAcquireConfirmLock(confirmingRef)) return;
@@ -389,6 +380,150 @@ export function ConnectFlowDialog({
           ? t('connect.dialog.titleShare')
           : t('connect.dialog.titleSource');
 
+  const summary = !entry ? null : entry.mode === 'for-agent' ? (
+    <EffectiveSummary
+      agentId={entry.targetAgentId}
+      label={effective.label}
+      authLabel={effective.authHealthLabel}
+    />
+  ) : (
+    <FixedSourceSummary
+      entry={entry}
+      accounts={pool.accounts}
+      providers={pool.providers}
+    />
+  );
+
+  const steps = !entry ? null : (
+    <>
+      {entryStale ? (
+        <SelectLoadingSkeleton />
+      ) : state.step === 'select' ? (
+        <ConnectFlowSelectStep
+          entry={entry}
+          state={state}
+          options={options}
+          eligibilities={eligibilities}
+          targetAgentIds={targetAgentIds}
+          sourceAgentId={sourceAgentId}
+          emptyKind={emptyKind}
+          poolLoading={pool.state === 'idle' || pool.state === 'loading'}
+          profilesReady={profilesReady}
+          onSelectSource={(option) => dispatch({ type: 'select_source', option })}
+          onSelectTarget={(agentId) => dispatch({
+            type: 'select_target',
+            agentId,
+            sourceAgentId,
+            allowOwnAgent: keepOwnAgent,
+          })}
+          onRetryEligibility={(request) => fanout?.retry(request)}
+          onRetryResources={retryResources}
+          onGoImport={goImportLogin}
+          onOauthGuide={(agentId) => navigateTo(`/connections?agent=${agentId}`)}
+        />
+      ) : null}
+
+      {!entryStale && state.step === 'preview' ? (
+        <ConnectFlowPreviewStep
+          state={state}
+          option={selectedOption}
+          previewInvalid={previewInvalid}
+          previewNative={deps.previewNative}
+          onGoImport={goImportLogin}
+          showImportHint={shouldShowPreviewImportHint({
+            entry,
+            option: selectedOption,
+            accounts: pool.accounts,
+            providers: pool.providers,
+          })}
+        />
+      ) : null}
+
+      {!entryStale && state.step === 'result' && state.result ? (
+        <ConnectFlowResultStep result={state.result} />
+      ) : null}
+    </>
+  );
+
+  const actionSize = asPanel ? 'sm' : undefined;
+  const actions = !entry ? null : (
+    <>
+      {entryStale || state.step === 'select' ? (
+        <>
+          <Button type="button" size={actionSize} variant="secondary" disabled={busy} onClick={requestClose}>
+            {t('common.cancel')}
+          </Button>
+          {!entryStale ? (
+            <Button
+              type="button"
+              size={actionSize}
+              disabled={busy || !canEnterPreview(state, selectedOption, selectedEligibility)}
+              onClick={() => dispatch({
+                type: 'enter_preview',
+                option: selectedOption,
+                eligibility: selectedEligibility,
+              })}
+            >
+              {t('connect.dialog.next')}
+            </Button>
+          ) : null}
+        </>
+      ) : null}
+      {!entryStale && state.step === 'preview' ? (
+        <>
+          <Button
+            type="button"
+            size={actionSize}
+            variant="secondary"
+            disabled={busy}
+            onClick={() => dispatch({ type: 'back_to_select' })}
+          >
+            {t('connect.dialog.back')}
+          </Button>
+          <Button
+            type="button"
+            size={actionSize}
+            disabled={!canConfirm(state) || previewInvalid}
+            onClick={handleConfirm}
+          >
+            {busy
+              ? (state.busy === 'switching' ? t('connect.dialog.switching') : t('connect.dialog.applying'))
+              : (state.previewKind === 'switch' ? t('connect.dialog.confirmSwitch') : t('connect.dialog.confirmApply'))}
+          </Button>
+        </>
+      ) : null}
+      {!entryStale && state.step === 'result' ? (
+        <>
+          {canRetry(state) ? (
+            <Button type="button" size={actionSize} onClick={() => dispatch({ type: 'retry_from_result' })}>
+              {t('chrome.error.retry')}
+            </Button>
+          ) : null}
+          <Button type="button" size={actionSize} variant="secondary" onClick={requestClose}>
+            {t('connect.dialog.close')}
+          </Button>
+        </>
+      ) : null}
+    </>
+  );
+
+  if (asPanel) {
+    if (!open || !entry) return null;
+    return (
+      <SideInspectPanel
+        title={title}
+        onClose={requestClose}
+        headerActions={actions}
+        width={width}
+      >
+        <div className="space-y-4">
+          {summary}
+          {steps}
+        </div>
+      </SideInspectPanel>
+    );
+  }
+
   return (
     <Dialog
       open={open}
@@ -405,114 +540,13 @@ export function ConnectFlowDialog({
           <>
             <DialogHeader className="shrink-0">
               <DialogTitle>{title}</DialogTitle>
-              <DialogDescription>
-                {entry.mode === 'for-agent' ? (
-                  <EffectiveSummary
-                    agentId={entry.targetAgentId}
-                    label={effective.label}
-                    authLabel={effective.authHealthLabel}
-                  />
-                ) : (
-                  <FixedSourceSummary
-                    entry={entry}
-                    accounts={pool.accounts}
-                    providers={pool.providers}
-                  />
-                )}
-              </DialogDescription>
+              <DialogDescription>{summary}</DialogDescription>
             </DialogHeader>
-
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-              {entryStale ? (
-                <SelectLoadingSkeleton />
-              ) : state.step === 'select' ? (
-                <ConnectFlowSelectStep
-                  entry={entry}
-                  state={state}
-                  options={options}
-                  eligibilities={eligibilities}
-                  targetAgentIds={targetAgentIds}
-                  sourceAgentId={sourceAgentId}
-                  emptyKind={emptyKind}
-                  poolLoading={pool.state === 'idle' || pool.state === 'loading'}
-                  profilesReady={profilesReady}
-                  onSelectSource={(option) => dispatch({ type: 'select_source', option })}
-                  onSelectTarget={(agentId) => dispatch({
-                    type: 'select_target',
-                    agentId,
-                    sourceAgentId,
-                    allowOwnAgent: keepOwnAgent,
-                  })}
-                  onRetryEligibility={(request) => fanout?.retry(request)}
-                  onRetryResources={retryResources}
-                  onGoImport={goImportLogin}
-                  onGoNewKey={goNewApiKey}
-                  onOauthGuide={(agentId) => navigateTo(`/connections?agent=${agentId}`)}
-                />
-              ) : null}
-
-              {!entryStale && state.step === 'preview' ? (
-                <ConnectFlowPreviewStep
-                  state={state}
-                  option={selectedOption}
-                  previewInvalid={previewInvalid}
-                  previewNative={deps.previewNative}
-                  onGoImport={goImportLogin}
-                  showImportHint={shouldShowPreviewImportHint({
-                    entry,
-                    option: selectedOption,
-                    accounts: pool.accounts,
-                    providers: pool.providers,
-                  })}
-                />
-              ) : null}
-
-              {!entryStale && state.step === 'result' && state.result ? (
-                <ConnectFlowResultStep result={state.result} />
-              ) : null}
+              {steps}
             </div>
-
             <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
-              {entryStale || state.step === 'select' ? (
-                <>
-                  <Button type="button" variant="secondary" disabled={busy} onClick={requestClose}>{t('common.cancel')}</Button>
-                  {!entryStale ? (
-                    <Button
-                      type="button"
-                      disabled={busy || !canEnterPreview(state, selectedOption, selectedEligibility)}
-                      onClick={() => dispatch({
-                        type: 'enter_preview',
-                        option: selectedOption,
-                        eligibility: selectedEligibility,
-                      })}
-                    >
-                      {t('connect.dialog.next')}
-                    </Button>
-                  ) : null}
-                </>
-              ) : null}
-              {!entryStale && state.step === 'preview' ? (
-                <>
-                  <Button type="button" variant="secondary" disabled={busy} onClick={() => dispatch({ type: 'back_to_select' })}>
-                    {t('connect.dialog.back')}
-                  </Button>
-                  <Button type="button" disabled={!canConfirm(state) || previewInvalid} onClick={handleConfirm}>
-                    {busy
-                      ? (state.busy === 'switching' ? t('connect.dialog.switching') : t('connect.dialog.applying'))
-                      : (state.previewKind === 'switch' ? t('connect.dialog.confirmSwitch') : t('connect.dialog.confirmApply'))}
-                  </Button>
-                </>
-              ) : null}
-              {!entryStale && state.step === 'result' ? (
-                <>
-                  {canRetry(state) ? (
-                    <Button type="button" onClick={() => dispatch({ type: 'retry_from_result' })}>
-                      {t('chrome.error.retry')}
-                    </Button>
-                  ) : null}
-                  <Button type="button" variant="secondary" onClick={requestClose}>{t('connect.dialog.close')}</Button>
-                </>
-              ) : null}
+              {actions}
             </DialogFooter>
           </>
         ) : null}

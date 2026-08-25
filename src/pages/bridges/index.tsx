@@ -4,6 +4,9 @@ import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
 import { useSideSplit } from '@/components/layout/use-side-split';
+import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
+import { applyIdOrder } from '@/lib/list-order';
+import { StorageKey } from '@/lib/ui-preferences';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -30,6 +33,10 @@ import {
   adapterBridgeFleetSummary,
   adapterProfileFlowLabel,
   bridgesPageViewState,
+  canonicalizeLocalBridgeOrderIds,
+  groupLocalBridgeProfiles,
+  localBridgeProfilesForSource,
+  localBridgeSourceKey,
   partitionLocalBridgeRuntimes,
 } from './adapter-view-model';
 import { useAdapterResources } from './use-bridge-resources';
@@ -110,6 +117,7 @@ export default function BridgesPage() {
   const [profileErrors, setProfileErrors] = useState<Record<string, unknown>>({});
   const [busyProfileIds, setBusyProfileIds] = useState<Record<string, boolean>>({});
   const inspect = useSideSplit<RouteInspect>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
+  const routeOrder = useStoredIdOrder(StorageKey.routesProfileOrder);
 
   const setProfileBusy = (profileId: string, busy: boolean) => {
     setBusyProfileIds((current) => ({ ...current, [profileId]: busy }));
@@ -130,48 +138,62 @@ export default function BridgesPage() {
   };
 
   const handleStartBridge = async (profile: AdapterProfile) => {
-    if (hiddenTargetIds.has(profile.targetAgentId)) return;
-    setProfileBusy(profile.id, true);
-    clearProfileError(profile.id);
+    const members = localBridgeProfilesForSource(profiles, profile)
+      .filter((member) => !hiddenTargetIds.has(member.targetAgentId));
+    if (members.length === 0) return;
+    for (const member of members) {
+      setProfileBusy(member.id, true);
+      clearProfileError(member.id);
+    }
     try {
-      updateBridgeStatus(await startAdapterBridge(profile.id));
+      for (const member of members) {
+        updateBridgeStatus(await startAdapterBridge(member.id));
+      }
       reloadThenClearProfileErrors();
     } catch (error) {
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
-      setProfileBusy(profile.id, false);
+      for (const member of members) setProfileBusy(member.id, false);
     }
   };
 
   const confirmStopBridge = async () => {
     if (!stopConfirm) return;
     const profile = stopConfirm;
-    setProfileBusy(profile.id, true);
-    clearProfileError(profile.id);
+    const members = localBridgeProfilesForSource(profiles, profile);
+    for (const member of members) {
+      setProfileBusy(member.id, true);
+      clearProfileError(member.id);
+    }
     try {
-      updateBridgeStatus(await stopAdapterBridge(profile.id));
+      for (const member of members) {
+        updateBridgeStatus(await stopAdapterBridge(member.id));
+      }
       setStopConfirm(null);
       reloadThenClearProfileErrors();
     } catch (error) {
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
-      setProfileBusy(profile.id, false);
+      for (const member of members) setProfileBusy(member.id, false);
     }
   };
 
   const confirmRemove = async () => {
     if (!removeConfirm || hiddenTargetIds.has(removeConfirm.targetAgentId)) return;
     const profile = removeConfirm;
+    const members = localBridgeProfilesForSource(profiles, profile);
     const profileId = profile.id;
     setRemovingProfileId(profileId);
     clearProfileError(profileId);
     try {
       const wallet = await listTicketWallet();
-      const binding = wallet.bindings.find((row) => row.profileId === profile.id);
-      const ticketId = binding?.ticketId ?? ticketIdFor(profile.sourceKind, profile.sourceId);
-      const agentId = binding?.agentId ?? profile.targetAgentId;
-      await unbindTicket(ticketId, agentId);
-      removeProfile(profileId);
+      for (const member of members) {
+        const binding = wallet.bindings.find((row) => row.profileId === member.id);
+        const ticketId = binding?.ticketId ?? ticketIdFor(member.sourceKind, member.sourceId);
+        const agentId = binding?.agentId ?? member.targetAgentId;
+        await unbindTicket(ticketId, agentId);
+        removeProfile(member.id);
+      }
       setRemoveConfirm(null);
       reloadThenClearProfileErrors();
     } catch (error) {
@@ -212,18 +234,41 @@ export default function BridgesPage() {
     }),
     [entries, profiles, wallet.bindingProfileIds],
   );
+  const groupedBound = useMemo(
+    () => groupLocalBridgeProfiles(bound, bridgeStatuses),
+    [bound, bridgeStatuses],
+  );
+  const groupedOrphan = useMemo(
+    () => groupLocalBridgeProfiles(orphan, bridgeStatuses),
+    [orphan, bridgeStatuses],
+  );
+  const routeOrderIds = useMemo(
+    () => canonicalizeLocalBridgeOrderIds(routeOrder.stored, profiles),
+    [profiles, routeOrder.stored],
+  );
+  const orderedBound = useMemo(
+    () => applyIdOrder(groupedBound, localBridgeSourceKey, routeOrderIds),
+    [groupedBound, routeOrderIds],
+  );
+  const orderedOrphan = useMemo(
+    () => applyIdOrder(groupedOrphan, localBridgeSourceKey, routeOrderIds),
+    [groupedOrphan, routeOrderIds],
+  );
 
   const connectionWarning = resourceFailureMessage(resourceErrors);
   const stopError = stopConfirm ? profileErrors[stopConfirm.id] : null;
   const removeError = removeConfirm ? profileErrors[removeConfirm.id] : null;
   const stopDialogBusy = Boolean(stopConfirm && busyProfileIds[stopConfirm.id]);
   const removeDialogBusy = removingProfileId !== null;
-  const listedBridges = useMemo(() => [...bound, ...orphan], [bound, orphan]);
+  const listedBridges = useMemo(
+    () => [...groupedBound, ...groupedOrphan],
+    [groupedBound, groupedOrphan],
+  );
   const fleetSummary = adapterBridgeFleetSummary(listedBridges, bridgeStatuses, t);
   const pageView = bridgesPageViewState({
     profileState: loading && profileState !== 'error' ? 'loading' : profileState,
-    bound,
-    orphan,
+    bound: groupedBound,
+    orphan: groupedOrphan,
     wallet: {
       settled: wallet.settled,
       lastWalletBridgeCount: wallet.lastWalletBridgeCount,
@@ -260,7 +305,10 @@ export default function BridgesPage() {
       inspect.open({ kind: 'edit', profile });
     },
     onShowDetail: (profile: AdapterProfile) => {
-      if (inspect.target?.kind === 'detail' && inspect.target.profile.id === profile.id) {
+      if (
+        inspect.target?.kind === 'detail'
+        && localBridgeSourceKey(inspect.target.profile) === localBridgeSourceKey(profile)
+      ) {
         inspect.close();
         return;
       }
@@ -269,7 +317,32 @@ export default function BridgesPage() {
     activeProfileId,
     onRetry: () => { void reload(); },
     hiddenTargetIds,
+    siblingProfiles: profiles,
   };
+  const boundIds = useMemo(
+    () => orderedBound.map(localBridgeSourceKey),
+    [orderedBound],
+  );
+  const orphanIds = useMemo(
+    () => orderedOrphan.map(localBridgeSourceKey),
+    [orderedOrphan],
+  );
+  const moveBound = (fromId: string, toId: string) => {
+    const from = orderedBound.find((profile) => profile.id === fromId);
+    const to = orderedBound.find((profile) => profile.id === toId);
+    if (!from || !to) return;
+    routeOrder.moveInLive(boundIds, localBridgeSourceKey(from), localBridgeSourceKey(to));
+  };
+  const moveOrphan = (fromId: string, toId: string) => {
+    const from = orderedOrphan.find((profile) => profile.id === fromId);
+    const to = orderedOrphan.find((profile) => profile.id === toId);
+    if (!from || !to) return;
+    routeOrder.moveInLive(orphanIds, localBridgeSourceKey(from), localBridgeSourceKey(to));
+  };
+
+  useEffect(() => {
+    routeOrder.seedIfEmpty([...boundIds, ...orphanIds]);
+  }, [boundIds, orphanIds, routeOrder.seedIfEmpty]);
 
   const inspectPanel =
     inspectTarget?.kind === 'create' ? (
@@ -407,22 +480,24 @@ export default function BridgesPage() {
             {fleetSummary ? (
               <p className="text-xs text-secondary">{fleetSummary.label}</p>
             ) : null}
-            {bound.length > 0 ? (
+            {orderedBound.length > 0 ? (
               <AdapterProfiles
                 {...listProps}
-                profiles={bound}
+                profiles={orderedBound}
+                onMove={moveBound}
                 loading={false}
                 loadError={null}
               />
             ) : null}
-            {orphan.length > 0 ? (
+            {orderedOrphan.length > 0 ? (
               <PageSection
                 title={t('routes.orphan.title')}
                 description={t('routes.orphan.description')}
               >
                 <AdapterProfiles
                   {...listProps}
-                  profiles={orphan}
+                  profiles={orderedOrphan}
+                  onMove={moveOrphan}
                   loading={false}
                   loadError={null}
                 />

@@ -20,7 +20,7 @@ describe('routes layout wiring', () => {
     expect(page).not.toContain('flex items-start gap-3');
   });
 
-  it('uses a plain 详情 button on Routes (no chevron; Connections still expands)', () => {
+  it('uses a plain 详情 button on Routes and Connections (no chevron)', () => {
     const list = source('pages/bridges/AdapterProfilesList.tsx');
     expect(list).toContain("t('routes.detail')");
     expect(list).not.toContain('DetailsToggle');
@@ -28,7 +28,7 @@ describe('routes layout wiring', () => {
     expect(list).not.toContain("t('routes.collapse')");
     expect(list).not.toContain('RouteDetailPanel');
     const connections = source('pages/connections/TicketWalletList.tsx');
-    expect(connections).toContain('DetailsToggle');
+    expect(connections).not.toContain('DetailsToggle');
     expect(connections).toContain("t('connections.list.details')");
     const importDialog = source('pages/bridges/ImportRouteDialog.tsx');
     expect(importDialog).toContain('DetailsToggle');
@@ -39,6 +39,15 @@ describe('routes layout wiring', () => {
     expect(detail).toContain("t('routes.edit.action')");
     expect(list).toContain("t('routes.edit.action')");
     expect(list).toContain('variant="outline"');
+  });
+
+  it('groups Claude/Codex/Grok profiles that share one source onto one card', () => {
+    const page = source('pages/bridges/index.tsx');
+    expect(page).toContain('groupLocalBridgeProfiles');
+    expect(page).toContain('localBridgeProfilesForSource');
+    expect(page).toContain('localBridgeSourceKey');
+    const model = source('pages/bridges/adapter-view-model.ts');
+    expect(model).toContain('One list card per upstream source');
   });
 
   it('opens edit and detail in the same right-hand inspect pane', () => {

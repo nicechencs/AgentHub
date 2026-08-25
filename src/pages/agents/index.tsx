@@ -10,8 +10,12 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
-import { sortAgentsForManagePage } from '@/lib/agent-visibility';
+import { SortHandle } from '@/components/shared/SortHandle';
+import { useSortableDrag } from '@/components/shared/use-sortable-drag';
+import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
+import { applyStoredAgentOrder, sortAgentsForManagePage } from '@/lib/agent-visibility';
 import { applyAgentUpdates, checkAgentUpdates } from '@/lib/api/agent';
+import { StorageKey } from '@/lib/ui-preferences';
 import { tryRefreshDoctor } from '@/lib/api/doctor';
 import { listRuntimes, resolveAutoInstallPlan } from '@/lib/api/env';
 import { hasEnvIssues } from '@/lib/env';
@@ -186,7 +190,28 @@ export default function AgentsPage() {
     : runtimes.find((r) => r.status !== 'ok');
 
   const showPagePanel = pageFix != null && hasEnvIssues(runtimes);
-  const orderedAgents = React.useMemo(() => sortAgentsForManagePage(agents), [agents]);
+  const agentOrder = useStoredIdOrder(StorageKey.agentsCatalogOrder);
+  const orderedAgents = React.useMemo(() => {
+    const baseline = sortAgentsForManagePage(agents);
+    return applyStoredAgentOrder(baseline, (row) => row.agentId, agentOrder.stored);
+  }, [agentOrder.stored, agents]);
+  const liveIds = React.useMemo(
+    () => orderedAgents.map((row) => row.agentId),
+    [orderedAgents],
+  );
+  React.useEffect(() => {
+    agentOrder.seedIfEmpty(liveIds);
+  }, [agentOrder.seedIfEmpty, liveIds]);
+  const canReorder = liveIds.length > 1;
+  const { onDragStartId, rowProps } = useSortableDrag((fromId, toId) => {
+    agentOrder.moveInLive(liveIds, fromId, toId);
+  });
+  const moveNeighbor = React.useCallback((id: string, direction: -1 | 1) => {
+    const index = liveIds.indexOf(id);
+    const next = liveIds[index + direction];
+    if (!next) return;
+    agentOrder.moveInLive(liveIds, id, next);
+  }, [agentOrder, liveIds]);
   const showAgentSkeleton = statuses.length === 0 && (state === 'idle' || state === 'loading');
   const pageError =
     statuses.length === 0 ? (state === 'error' ? error : envError) : null;
@@ -252,16 +277,27 @@ export default function AgentsPage() {
         />
       ) : (
         <div className={pageRhythm.stack}>
-          {orderedAgents.map((a) => (
-            <AgentCard
-              key={a.agentId}
-              agent={a}
-              runtimes={runtimes}
-              onChanged={refreshAgents}
-              onEnvChanged={() => void refreshEnv()}
-              onRecheckUpdate={() => refreshAgentUpdate(a.agentId)}
-            />
-          ))}
+          {orderedAgents.map((a) => {
+            const sortable = rowProps(a.agentId);
+            return (
+              <div key={a.agentId} {...sortable}>
+                <AgentCard
+                  agent={a}
+                  runtimes={runtimes}
+                  onChanged={refreshAgents}
+                  onEnvChanged={() => void refreshEnv()}
+                  onRecheckUpdate={() => refreshAgentUpdate(a.agentId)}
+                  sortHandle={canReorder ? (
+                    <SortHandle
+                      id={a.agentId}
+                      onDragStartId={onDragStartId}
+                      onMoveNeighbor={moveNeighbor}
+                    />
+                  ) : null}
+                />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

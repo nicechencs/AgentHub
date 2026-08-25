@@ -53,7 +53,7 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain('aria-expanded');
     expect(markup).toContain('用到其他工具');
     expect(markup).toContain('本机转发');
     expect(markup).not.toContain('接到…');
@@ -75,6 +75,45 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('编辑 API Key');
   });
 
+  it('marks the inspected ticket as selected', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+        activeTicketId: 'provider:kimi-1',
+      }),
+    );
+    expect(markup).toContain('data-active="true"');
+    expect(markup).toContain('border-border-strong');
+  });
+
+  it('shows a reorder handle when there are two logins', () => {
+    const wallet = sampleWallet();
+    wallet.tickets = [
+      wallet.tickets[0]!,
+      {
+        ...wallet.tickets[0]!,
+        id: 'provider:kimi-2',
+        sourceId: 'kimi-2',
+        label: 'Kimi 备用',
+      },
+    ];
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('拖动排序');
+    expect(markup).toContain('draggable');
+  });
+
   it('puts 编辑配置 on the collapsed card, not only inside 详情', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
@@ -86,7 +125,7 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain('aria-expanded');
     expect(markup).toContain('编辑配置');
     expect(markup).not.toContain('移入回收站');
   });
@@ -148,7 +187,6 @@ describe('TicketWalletList details', () => {
         wallet,
         onShareTicket() {},
         onRouteTicket() {},
-        onRefreshTicket() {},
         extrasForTicket: () => ({
           oauthAction: { kind: 'refresh-credentials' as const, label: '刷新' },
           identity: 'user@example.com',
@@ -754,6 +792,45 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('尚未验证');
     expect(markup).not.toContain('未验证');
     expect(markup).not.toContain('可续期·未验证');
+  });
+
+  it('opens as a right-hand inspect pane with clients, protocol, and diagnostics', () => {
+    const ticket = sampleWallet().tickets[0]!;
+    const markup = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'ticket-detail-pane',
+        asPanel: true,
+        open: true,
+        ticket,
+        extras: { canEditConfig: true, endpointMode: 'custom', endpointHost: 'https://relay.example.com/v1' },
+        bindings: [{
+          ticketId: ticket.id,
+          agentId: 'codex',
+          route: 'bridge',
+          active: true,
+          profileId: 'bridge-1',
+          bridge: { port: 43121, running: true },
+        }],
+        onDelete() {},
+        onEdit() {},
+        onOpenChange() {},
+      }),
+    );
+    expect(markup).toContain('data-side-inspect');
+    expect(markup).toContain('登录详情');
+    expect(markup).toContain('取消');
+    expect(markup).toContain('收起');
+    expect(markup).toContain('编辑配置');
+    expect(markup).toContain('接到');
+    expect(markup).toContain('Codex');
+    expect(markup).toContain('本机路由运行中');
+    expect(markup).toContain('http://127.0.0.1:43121');
+    expect(markup).toContain('接口');
+    expect(markup).toContain('Claude');
+    expect(markup).toContain('诊断信息');
+    expect(markup).toContain('provider:kimi-1');
+    expect(markup).toContain('移入回收站');
+    expect(markup).not.toContain('role="dialog"');
   });
 
   it('does not offer edit for OAuth tickets', () => {

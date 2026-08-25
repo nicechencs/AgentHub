@@ -38,7 +38,7 @@ export function ListRow({
       className={cn(
         'relative rounded-card border border-border bg-panel transition-colors',
         !active && 'hover:bg-hover/50',
-        active && 'border-border/80 bg-active',
+        active && 'border-border-strong bg-active',
         className,
       )}
       style={style}
