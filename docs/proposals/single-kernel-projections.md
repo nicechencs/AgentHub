@@ -10,7 +10,7 @@ updated: 2026-08-25
 
 > 状态：提案
 >
-> 本文记录如何降低 Adapter / route 规则改动的结构成本，并说明它与全项目开发内环提速的关系。它不是当前实现契约，也不授权立即改 mock、拆 crate 或改协作流程。派工前必须指定负责人、文件范围、必须保持的行为和验证命令。
+> 本文记录如何降低 Adapter / route 规则改动的结构成本，并说明它与全项目开发内环提速的关系。切片 0（风险分级协作）和切片 A（内核生成 golden）已经落地；B–F 仍是候选，不授权改 mock、拆 crate 或把 JSON 当规则真源。派工前必须指定负责人、文件范围、必须保持的行为和验证命令。
 
 ## 0. 结论与适用范围
 
@@ -31,9 +31,9 @@ AgentHub 仍是模块化单体：GUI 和 CLI 共用 `agenthub-core`。产品写�
 
 规则真源在 Rust：`adapter_capability_matrix` 加上 `AdapterRouteService` 的私有 write gate。`can_apply` 只是矩阵层标志；实际写入还要过 write gate、来源凭据和目标 writer。
 
-浏览器 mock 与 Vitest 目前**重新实现**同一套 classify / plan / apply，并与 core 锁步维护 reason 字符串和投影表。`src/dev/mocks/fixtures/adapter-capability-contract.json` 已被 Rust 与 mock 测试同时读取，用于发现漂移；fixture 尚未覆盖全部公开 rule ID。补齐覆盖属于 [模块化提案](modularity.md) 的 C1，**不等于** mock 已经不再做决策。
+浏览器 mock 与 Vitest 目前**重新实现**同一套 classify / plan / apply，并与 core 锁步维护 reason 字符串和投影表。`src/dev/mocks/fixtures/adapter-capability-contract.json` 是 `AdapterRouteService::plan()` 对冻结入参的只读快照；Rust 测试在快照与内核输出不一致时失败。C1 的公开 rule ID 覆盖仍然有效。这**不等于** mock 已经不再做决策。
 
-验证方面，[测试与验证](../guides/testing-and-validation.md) 已按改动类型给出最小命令；PR CI 仍跑全量 typecheck、Vitest 和三个 Rust crate。协作规则另要求过滤测试之外由测试 subagent 跑完整检查。Grok / Agent worktree 通常没有共享的 `target/` 编译产物；crate.io 与 pnpm store 是全局的，Rust 增量缓存不是。
+验证方面，[测试与验证](../guides/testing-and-validation.md) 已按改动类型给出最小命令，并与 [AGENTS.md](../../AGENTS.md) 使用同一套风险分级：局部改动跑过滤测试，全量门禁留给提交前或 CI。PR CI 仍跑全量 typecheck、Vitest 和三个 Rust crate。Grok / Agent worktree 通常没有共享的 `target/` 编译产物；crate.io 与 pnpm store 是全局的，Rust 增量缓存不是。
 
 `agenthub-core` 仍是单一 crate。把 core 拆成多个 Cargo 包、把 planner 编成 WASM/napi、或引入类型生成框架，都不是当前实现。
 
@@ -70,7 +70,7 @@ AgentHub 仍是模块化单体：GUI 和 CLI 共用 `agenthub-core`。产品写�
 需要区分两个层级的问题：
 
 - **全项目开发耗时：** 主要固定成本来自任务被过早升级为多 Agent 流程、重复传递上下文，以及把提交前或 CI 的全量门禁搬进每次本地改动。它影响页面、文档、纯函数和跨层功能，不由本提案单独解决。
-- **Adapter / route 结构成本：** 主要原因是**同一条产品规则被决定两次**：core 决定一次，mock 再决定一次。JSON 目前是第三份对照，用来抓漂移，但没有取消第二台引擎。
+- **Adapter / route 结构成本：** 主要原因是**同一条产品规则被决定两次**：core 决定一次，mock 再决定一次。JSON 已是内核快照而不再是第三份手写 expect，但 mock 仍是第二台引擎。
 
 第二个问题使一条 route 或一个 plan 字段的改动文件数远大于行为增量；第一个问题又把这个较大的改动面交给多个 Agent 重复探索和验证。两者叠加后，耗时与 diff 不成比例。
 
@@ -137,7 +137,7 @@ Tauri command 的 wire 使用 core 的 serde 形状。`src/lib/backend/contracts
 
 写测试和跑测试拆成两个 Agent，只适合确实可以并行、文件集不重叠且等待时间足以覆盖 Agent 启动成本的任务。单文件小改在同一回合跑过滤测试。reviewer 只检查最终 diff、受影响调用方和对应验证，不重新进行全仓调查。
 
-是否修改 [AGENTS.md](../../AGENTS.md) 的测试 subagent 规则，属于单独批准的流程变更；本提案未批准前不改变现行协作红线。
+切片 0 已把这套风险分级写入 [AGENTS.md](../../AGENTS.md)、[CONTRIBUTING.md](../../CONTRIBUTING.md) 与 [测试与验证](../guides/testing-and-validation.md)。后续切片不要再发明第二套协作规则。
 
 页面抽取 model / hook：仅当不抽就写不了针对性测试，或两处已在复制同一判断时进行。文件大只是调查信号，不是拆分理由。F1 / F2 仍以 [模块化提案](modularity.md) 写明的文件范围为限，不从本文再派生新的页面拆分卡。
 
@@ -182,17 +182,17 @@ Tauri command 的 wire 使用 core 的 serde 形状。`src/lib/backend/contracts
 
 ## 5. 候选切片与顺序
 
-以下是评估切片，不是排期，也不是当前可执行任务。任一切片派工前都要写明文件范围和回滚方式。C1 补齐 fixture 覆盖可以独立继续，**不要把 C1 扩大成本文**。
+切片 0 和 A 已落地；B–F 仍是候选。后续切片必须单独派工，并写明文件范围、进入条件、验证命令和回滚方式。不得把 B–D 并回已经完成的 C1。
 
-### 切片 0：研发内环对齐
+### 切片 0：研发内环对齐 — `已落地`
 
-单独批准 [AGENTS.md](../../AGENTS.md)、[CONTRIBUTING.md](../../CONTRIBUTING.md) 与 [测试与验证](../guides/testing-and-validation.md) 的风险分级规则。局部改动允许主 Agent 在同一回合完成实现与过滤测试；跨层和高风险改动仍保留独立审查与完整验证。
+[AGENTS.md](../../AGENTS.md)、[CONTRIBUTING.md](../../CONTRIBUTING.md) 与 [测试与验证](../guides/testing-and-validation.md) 已使用同一套风险分级。局部改动允许主 Agent 在同一回合完成实现与过滤测试；跨层和高风险改动仍保留独立审查与完整验证。
 
-该切片不修改产品规则、mock 或 Rust。它可以在 A–D 前独立落地，并为后续切片减少固定成本。
+该切片不修改产品规则、mock 或 Rust。
 
-### 切片 A：内核生成 golden
+### 切片 A：内核生成 golden — `已落地`
 
-用冻结入参调用 `AdapterRouteService::plan()`，序列化到现有 `adapter-capability-contract.json`。Rust 测试在 JSON 与内核输出不一致时失败。现有手写 cases 变成内核快照，不降低覆盖。必须包含 write gate 挡住的边，避免 mock 显示错误的 `canApply`。
+冻结入参已经由 `AdapterRouteService::plan()` 投影到 `adapter-capability-contract.json`。Rust 测试在 JSON 与内核输出不一致时失败；快照保留原有覆盖，并包含 write gate 挡住的边。内核输出变化后，用 `UPDATE_ADAPTER_CAPABILITY_CONTRACT=1` 重新生成快照。
 
 ### 切片 B：mock 查表优先
 

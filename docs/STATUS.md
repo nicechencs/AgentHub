@@ -34,6 +34,7 @@ updated: 2026-08-25
 
 ## 验证与发布
 
+- 日常改动按 [AGENTS.md](../AGENTS.md) 的风险分级选择过滤测试；全量 `pnpm test`、完整 Rust crate 矩阵和生产 `pnpm build` 默认留给提交前或 CI。
 - 前端检查包括 `pnpm typecheck`、`pnpm typecheck:test`、`pnpm test` 和 `pnpm build`；贡献者流程见 [测试与验证](guides/testing-and-validation.md)。
 - Rust 核心、CLI 和 GUI 分别由对应 crate 的 `cargo test --locked` 验证。
 - `pnpm check:docs` 检查活跃 Markdown 的本地链接、标题锚点、元数据和已废弃路径标注。
@@ -44,7 +45,7 @@ updated: 2026-08-25
 
 - `agenthub-adapterd` sidecar 目标架构尚未替代当前桌面进程内的路由运行时。
 - 托盘低内存后台模式仍是未实施方案，不从它派生当前任务。
-- browser mock 仍独立实现 route classify / plan / apply，并与 core 锁步维护。把 mock 降为查表投影、由 planner 生成契约 JSON，是提案而不是当前实现；见 [单一内核与查表投影](proposals/single-kernel-projections.md)。
+- `adapter-capability-contract.json` 由 `AdapterRouteService::plan()` 对冻结入参投影生成；Rust 测试在 JSON 与内核输出不一致时失败。browser mock 仍独立实现 classify / plan / apply，尚未改为查表；见 [单一内核与查表投影](proposals/single-kernel-projections.md)。
 - DeepSeek Harness 的 StructuredStream 仍是规划项；已落地部分以源码和集成文档为准。
 - 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。
 

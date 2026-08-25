@@ -1,30 +1,18 @@
 {
   "cases": [
     {
-      "id": "kimi-membership-to-claude",
+      "id": "anthropic-api-account-to-codex",
       "source": {
-        "kind": "provider",
-        "agentId": "kimi",
-        "preset": "kimi-code-membership"
-      },
-      "target": "claude",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "stable",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "kimi-membership-to-claude-v1",
-        "gateKind": "none",
-        "reason": "用这份 Kimi Code 会员接到 Claude，只改地址和模型。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "kimi-membership-to-codex",
-      "source": {
-        "kind": "provider",
-        "agentId": "kimi",
-        "preset": "kimi-code-membership"
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "anthropic"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
       },
       "target": "codex",
       "expect": {
@@ -32,18 +20,56 @@
         "support": "experimental",
         "canApply": true,
         "applyPath": "local_bridge",
-        "ruleId": "kimi-membership-to-codex-v1",
+        "ruleId": "anthropic-api-to-codex-v1",
         "gateKind": "none",
-        "reason": "Kimi Code 会员接到 Codex 需要本机转发。",
+        "reason": "这份 Anthropic API Key 接到 Codex 需要本机转发。",
         "reusePath": "local_bridge"
       }
     },
     {
-      "id": "kimi-membership-to-pi",
+      "id": "anthropic-api-to-codex",
       "source": {
         "kind": "provider",
-        "agentId": "kimi",
-        "preset": "kimi-code-membership"
+        "agentId": "claude",
+        "preset": "anthropic"
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "anthropic-api-to-codex-v1",
+        "gateKind": "none",
+        "reason": "这份 Anthropic API Key 接到 Codex 需要本机转发。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "anthropic-api-to-cursor",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "anthropic"
+      },
+      "target": "cursor",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "这个工具不能写入配置，接不上。",
+        "reusePath": "none"
+      }
+    },
+    {
+      "id": "anthropic-api-to-pi",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "anthropic"
       },
       "target": "pi",
       "expect": {
@@ -51,10 +77,869 @@
         "support": "stable",
         "canApply": true,
         "applyPath": "config_sync",
-        "ruleId": "kimi-membership-to-pi-v1",
+        "ruleId": "anthropic-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "把这份 Kimi Code 会员写进 Pi 认的登录位置。",
+        "reason": "把这份 Anthropic API Key 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "claude-oauth-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "oauth"
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": "claude-subscription-to-codex-v1",
+        "gateKind": "preview_only",
+        "reason": "Claude 订阅接到 Codex 可以走本机转发，但规则还没做完，现在接不上。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "claude-oauth-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "claude-subscription-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 Claude 订阅写进 Pi 认的 Claude 登录。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
+      "id": "claude-subscription-to-codex-preview",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "oauth",
+        "credentials": {
+          "format": "credentials_json",
+          "access_token": "must-not-leak"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": "claude-subscription-to-codex-v1",
+        "gateKind": "preview_only",
+        "reason": "Claude 订阅接到 Codex 可以走本机转发，但规则还没做完，现在接不上。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "codex-oauth-auth-json-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "must-not-leak",
+            "refresh_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "claude",
+      "documentedRuleId": "codex-subscription-to-claude-app-server-v0",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "codex-subscription-to-claude-responses-v1",
+        "gateKind": "none",
+        "reason": "Codex / ChatGPT 订阅会经本机路由接到 Claude Code.",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "codex-oauth-auth-json-to-claude-without-secret",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "",
+            "refresh_token": ""
+          }
+        }
+      },
+      "target": "claude",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": "codex-subscription-to-claude-responses-v1",
+        "gateKind": "none",
+        "reason": "Codex / ChatGPT 订阅会经本机路由接到 Claude Code.",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "codex-oauth-auth-json-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "must-not-leak",
+            "refresh_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "codex-subscription-to-codex-v1",
+        "gateKind": "none",
+        "reason": "用这份官方登录接到 Codex。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
+      "id": "codex-oauth-auth-json-to-cursor",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "must-not-leak",
+            "refresh_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "cursor",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "这个工具不能写入配置，接不上。",
+        "reusePath": "none"
+      }
+    },
+    {
+      "id": "codex-oauth-auth-json-to-dsh",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "must-not-leak",
+            "refresh_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "dsh",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "codex-subscription-to-dsh-v1",
+        "gateKind": "none",
+        "reason": "Codex 官方登录会经本机路由接到 DeepSeek Harness。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "codex-oauth-auth-json-to-grok",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "must-not-leak",
+            "refresh_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "grok",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "codex-subscription-to-grok-v1",
+        "gateKind": "none",
+        "reason": "Codex 官方登录会经本机路由接到 Grok。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "codex-oauth-auth-json-to-kimi",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "must-not-leak",
+            "refresh_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "kimi",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "codex-subscription-to-kimi-v1",
+        "gateKind": "none",
+        "reason": "Codex 官方登录会经本机路由接到 Kimi。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "codex-oauth-auth-json-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentialFormat": "auth_json",
+        "credentials": {
+          "format": "auth_json",
+          "tokens": {
+            "access_token": "must-not-leak",
+            "refresh_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "codex-subscription-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
+      "id": "codex-oauth-other-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "codex-subscription-to-codex-v1",
+        "gateKind": "none",
+        "reason": "用这份官方登录接到 Codex。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
+      "id": "codex-oauth-tokens-blob-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentials": {
+          "tokens": {
+            "access_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "claude",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "codex-subscription-to-claude-responses-v1",
+        "gateKind": "none",
+        "reason": "Codex / ChatGPT 订阅会经本机路由接到 Claude Code.",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "codex-oauth-tokens-blob-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentials": {
+          "tokens": {
+            "access_token": "must-not-leak"
+          }
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "codex-subscription-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
+      "id": "codex-oauth-without-auth-json-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "subscription_candidate",
+        "reason": "Codex / ChatGPT 订阅现在还接不到 Claude Code。不会改配置，也不会开本机转发。这不表示现有连接坏了。可改用 Claude 自己的官方登录，或改用已支持的 API Key。",
+        "reusePath": "none"
+      }
+    },
+    {
+      "id": "codex-oauth-without-auth-json-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "codex",
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "codex-subscription-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
+      "id": "codex-provider-to-claude",
+      "source": {
+        "kind": "provider",
+        "agentId": "codex",
+        "preset": "openai-compatible"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。",
+        "reusePath": "none"
+      }
+    },
+    {
+      "id": "deepseek-api-account-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "deepseek-api"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "claude",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "deepseek-api-to-claude-v1",
+        "gateKind": "none",
+        "reason": "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "deepseek-api-account-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "deepseek-api"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "deepseek-api-to-codex-v1",
+        "gateKind": "none",
+        "reason": "用这份 DeepSeek Key 接到 Codex，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "deepseek-api-account-to-dsh",
+      "source": {
+        "kind": "account",
+        "agentId": "dsh",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "deepseek"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "dsh",
+      "expect": {
+        "route": "config_sync",
+        "support": "stable",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": "deepseek-api-to-dsh-v1",
+        "gateKind": "none",
+        "reason": "把这份 DeepSeek Key 写进 DeepSeek Harness 认的登录位置。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "deepseek-api-account-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "deepseek-api"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "deepseek-api-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 DeepSeek API 写进 Pi 认的登录位置。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "deepseek-api-to-claude",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "deepseek-api"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "deepseek-api-to-claude-v1",
+        "gateKind": "none",
+        "reason": "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "deepseek-api-to-codex",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "deepseek-api"
+      },
+      "target": "codex",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "deepseek-api-to-codex-v1",
+        "gateKind": "none",
+        "reason": "用这份 DeepSeek Key 接到 Codex，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "deepseek-api-to-dsh",
+      "source": {
+        "kind": "provider",
+        "agentId": "dsh",
+        "preset": "deepseek"
+      },
+      "target": "dsh",
+      "expect": {
+        "route": "config_sync",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "deepseek-api-to-dsh-v1",
+        "gateKind": "none",
+        "reason": "把这份 DeepSeek Key 写进 DeepSeek Harness 认的登录位置。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "deepseek-api-to-pi",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "deepseek-api"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "deepseek-api-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 DeepSeek API 写进 Pi 认的登录位置。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "deepseek-preset-alias-to-claude",
+      "source": {
+        "kind": "provider",
+        "agentId": "dsh",
+        "preset": "deepseek"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "deepseek-api-to-claude-v1",
+        "gateKind": "none",
+        "reason": "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "glm-coding-plan-account-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "glm-coding-plan"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "claude",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "glm-coding-plan-to-claude-v1",
+        "gateKind": "none",
+        "reason": "用这份 GLM Coding Plan 接到 Claude，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "glm-coding-plan-account-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "glm-coding-plan"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "glm-coding-plan-to-codex-v1",
+        "gateKind": "none",
+        "reason": "用这份 GLM 会员接到 Codex，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "glm-coding-plan-account-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "glm-coding-plan"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "glm-coding-plan-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 GLM Coding Plan 写进 Pi 认的登录位置。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "glm-coding-plan-to-claude",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "glm-coding-plan"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "glm-coding-plan-to-claude-v1",
+        "gateKind": "none",
+        "reason": "用这份 GLM Coding Plan 接到 Claude，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "glm-coding-plan-to-codex",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "glm-coding-plan"
+      },
+      "target": "codex",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "glm-coding-plan-to-codex-v1",
+        "gateKind": "none",
+        "reason": "用这份 GLM 会员接到 Codex，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "glm-coding-plan-to-pi",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "glm-coding-plan"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "glm-coding-plan-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 GLM Coding Plan 写进 Pi 认的登录位置。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "grok-oauth-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth",
+        "credentials": {
+          "format": "oauth",
+          "access_token": "must-not-leak"
+        }
+      },
+      "target": "claude",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "grok-subscription-to-claude-v1",
+        "gateKind": "none",
+        "reason": "Grok 登录会经本机路由接到 Claude Code。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "grok-oauth-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth",
+        "credentials": {
+          "access_token": "must-not-leak",
+          "refresh_token": "must-not-leak"
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "grok-subscription-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 Grok 订阅写进 Pi 认的 Grok 登录。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
+      "id": "grok-subscription-to-claude",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth",
+        "credentials": {
+          "format": "oauth",
+          "access_token": "must-not-leak"
+        }
+      },
+      "target": "claude",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "grok-subscription-to-claude-v1",
+        "gateKind": "none",
+        "reason": "Grok 登录会经本机路由接到 Claude Code。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "grok-subscription-to-claude-without-secret",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": "grok-subscription-to-claude-v1",
+        "gateKind": "none",
+        "reason": "Grok 登录会经本机路由接到 Claude Code。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "grok-subscription-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth",
+        "credentials": {
+          "format": "oauth",
+          "access_token": "must-not-leak"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "grok-subscription-to-codex-v1",
+        "gateKind": "none",
+        "reason": "Grok 登录会经本机路由接到 Codex。",
+        "reusePath": "local_bridge"
       }
     },
     {
@@ -134,345 +1019,51 @@
       }
     },
     {
-      "id": "anthropic-api-to-pi",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "anthropic"
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "stable",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "ruleId": "anthropic-api-to-pi-v1",
-        "gateKind": "none",
-        "reason": "把这份 Anthropic API Key 写进 Pi 认的登录位置。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "anthropic-api-to-codex",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "anthropic"
-      },
-      "target": "codex",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "anthropic-api-to-codex-v1",
-        "gateKind": "none",
-        "reason": "这份 Anthropic API Key 接到 Codex 需要本机转发。",
-        "reusePath": "local_bridge"
-      }
-    },
-    {
-      "id": "anthropic-api-account-to-codex",
-      "source": {
-        "kind": "account",
-        "agentId": "claude",
-        "accountKind": "apikey",
-        "extra": {
-          "provider": "anthropic"
-        },
-        "credentials": {
-          "format": "api_key",
-          "api_key": "must-not-leak"
-        }
-      },
-      "target": "codex",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "anthropic-api-to-codex-v1",
-        "gateKind": "none",
-        "reason": "这份 Anthropic API Key 接到 Codex 需要本机转发。",
-        "reusePath": "local_bridge"
-      }
-    },
-    {
-      "id": "glm-coding-plan-to-codex",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "glm-coding-plan"
-      },
-      "target": "codex",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "glm-coding-plan-to-codex-v1",
-        "gateKind": "none",
-        "reason": "用这份 GLM 会员接到 Codex，只改地址和模型。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "glm-coding-plan-account-to-codex",
-      "source": {
-        "kind": "account",
-        "agentId": "claude",
-        "accountKind": "apikey",
-        "extra": {
-          "provider": "glm-coding-plan"
-        },
-        "credentials": {
-          "format": "api_key",
-          "api_key": "must-not-leak"
-        }
-      },
-      "target": "codex",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "glm-coding-plan-to-codex-v1",
-        "gateKind": "none",
-        "reason": "用这份 GLM 会员接到 Codex，只改地址和模型。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "deepseek-api-to-codex",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "deepseek-api"
-      },
-      "target": "codex",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "deepseek-api-to-codex-v1",
-        "gateKind": "none",
-        "reason": "用这份 DeepSeek Key 接到 Codex，只改地址和模型。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "deepseek-api-account-to-codex",
-      "source": {
-        "kind": "account",
-        "agentId": "claude",
-        "accountKind": "apikey",
-        "extra": {
-          "provider": "deepseek-api"
-        },
-        "credentials": {
-          "format": "api_key",
-          "api_key": "must-not-leak"
-        }
-      },
-      "target": "codex",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "deepseek-api-to-codex-v1",
-        "gateKind": "none",
-        "reason": "用这份 DeepSeek Key 接到 Codex，只改地址和模型。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "codex-oauth-auth-json-to-claude",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentialFormat": "auth_json",
-        "credentials": {
-          "format": "auth_json",
-          "tokens": {
-            "access_token": "must-not-leak",
-            "refresh_token": "must-not-leak"
-          }
-        }
-      },
-      "target": "claude",
-      "documentedRuleId": "codex-subscription-to-claude-app-server-v0",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "codex-subscription-to-claude-responses-v1",
-        "gateKind": "none",
-        "reason": "Codex / ChatGPT 订阅会经本机路由接到 Claude Code.",
-        "reusePath": "local_bridge"
-      }
-    },
-    {
-      "id": "codex-oauth-tokens-blob-to-claude",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentials": {
-          "tokens": {
-            "access_token": "must-not-leak"
-          }
-        }
-      },
-      "target": "claude",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "codex-subscription-to-claude-responses-v1",
-        "gateKind": "none",
-        "reason": "Codex / ChatGPT 订阅会经本机路由接到 Claude Code.",
-        "reusePath": "local_bridge"
-      }
-    },
-    {
-      "id": "codex-oauth-auth-json-to-codex",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentialFormat": "auth_json",
-        "credentials": {
-          "format": "auth_json",
-          "tokens": {
-            "access_token": "must-not-leak",
-            "refresh_token": "must-not-leak"
-          }
-        }
-      },
-      "target": "codex",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "stable",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "codex-subscription-to-codex-v1",
-        "gateKind": "none",
-        "reason": "用这份官方登录接到 Codex。",
-        "reusePath": "native_subscription"
-      }
-    },
-    {
-      "id": "codex-oauth-other-to-codex",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentials": {
-          "access_token": "must-not-leak",
-          "refresh_token": "must-not-leak"
-        }
-      },
-      "target": "codex",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "stable",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "codex-subscription-to-codex-v1",
-        "gateKind": "none",
-        "reason": "用这份官方登录接到 Codex。",
-        "reusePath": "native_subscription"
-      }
-    },
-    {
-      "id": "codex-oauth-without-auth-json-to-claude",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth"
-      },
-      "target": "claude",
-      "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "subscription_candidate",
-        "reason": "Codex / ChatGPT 订阅现在还接不到 Claude Code。不会改配置，也不会开本机转发。这不表示现有连接坏了。可改用 Claude 自己的官方登录，或改用已支持的 API Key。",
-        "reusePath": "none"
-      }
-    },
-    {
-      "id": "codex-provider-to-claude",
-      "source": {
-        "kind": "provider",
-        "agentId": "codex",
-        "preset": "openai-compatible"
-      },
-      "target": "claude",
-      "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。",
-        "reusePath": "none"
-      }
-    },
-    {
-      "id": "deepseek-api-to-dsh",
-      "source": {
-        "kind": "provider",
-        "agentId": "dsh",
-        "preset": "deepseek"
-      },
-      "target": "dsh",
-      "expect": {
-        "route": "config_sync",
-        "support": "stable",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "ruleId": "deepseek-api-to-dsh-v1",
-        "gateKind": "none",
-        "reason": "把这份 DeepSeek Key 写进 DeepSeek Harness 认的登录位置。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "deepseek-preset-alias-to-claude",
-      "source": {
-        "kind": "provider",
-        "agentId": "dsh",
-        "preset": "deepseek"
-      },
-      "target": "claude",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "deepseek-api-to-claude-v1",
-        "gateKind": "none",
-        "reason": "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "other-to-claude",
+      "id": "kimi-membership-to-claude",
       "source": {
         "kind": "provider",
         "agentId": "kimi",
-        "preset": "moonshot"
+        "preset": "kimi-code-membership"
       },
       "target": "claude",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "kimi-membership-to-claude-v1",
+        "gateKind": "none",
+        "reason": "用这份 Kimi Code 会员接到 Claude，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "kimi-membership-to-codex",
+      "source": {
+        "kind": "provider",
+        "agentId": "kimi",
+        "preset": "kimi-code-membership"
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "kimi-membership-to-codex-v1",
+        "gateKind": "none",
+        "reason": "Kimi Code 会员接到 Codex 需要本机转发。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "kimi-membership-to-cursor",
+      "source": {
+        "kind": "provider",
+        "agentId": "kimi",
+        "preset": "kimi-code-membership"
+      },
+      "target": "cursor",
       "expect": {
         "route": "unsupported",
         "support": "unsupported",
@@ -480,16 +1071,35 @@
         "applyPath": "rejected",
         "ruleId": null,
         "gateKind": "unsupported",
-        "reason": "当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：连接页中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。",
+        "reason": "这个工具不能写入配置，接不上。",
         "reusePath": "none"
       }
     },
     {
-      "id": "openai-api-to-pi",
+      "id": "kimi-membership-to-grok",
       "source": {
         "kind": "provider",
-        "agentId": "codex",
-        "preset": "openai"
+        "agentId": "kimi",
+        "preset": "kimi-code-membership"
+      },
+      "target": "grok",
+      "expect": {
+        "route": "native_endpoint",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "native",
+        "ruleId": "kimi-membership-to-grok-v1",
+        "gateKind": "none",
+        "reason": "用这份 Kimi Code 会员接到 Grok，只改地址和模型。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "kimi-membership-to-pi",
+      "source": {
+        "kind": "provider",
+        "agentId": "kimi",
+        "preset": "kimi-code-membership"
       },
       "target": "pi",
       "expect": {
@@ -497,10 +1107,36 @@
         "support": "stable",
         "canApply": true,
         "applyPath": "config_sync",
-        "ruleId": "openai-api-to-pi-v1",
+        "ruleId": "kimi-membership-to-pi-v1",
         "gateKind": "none",
-        "reason": "把这份 OpenAI API Key 写进 Pi 认的登录位置。",
+        "reason": "把这份 Kimi Code 会员写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "openai-api-account-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "openai"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "openai-api-to-codex-v1",
+        "gateKind": "none",
+        "reason": "这份 OpenAI API Key 接到 Codex 需要本机转发。",
+        "reusePath": "local_bridge"
       }
     },
     {
@@ -527,289 +1163,6 @@
         "gateKind": "none",
         "reason": "把这份 OpenAI API Key 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "xai-api-to-pi",
-      "source": {
-        "kind": "provider",
-        "agentId": "grok",
-        "preset": "xai"
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "stable",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "ruleId": "xai-api-to-pi-v1",
-        "gateKind": "none",
-        "reason": "把这份 xAI API Key 写进 Pi 认的登录位置。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "xai-api-account-to-pi",
-      "source": {
-        "kind": "account",
-        "agentId": "grok",
-        "accountKind": "apikey",
-        "extra": {
-          "provider": "xai"
-        },
-        "credentials": {
-          "format": "api_key",
-          "api_key": "must-not-leak"
-        }
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "stable",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "ruleId": "xai-api-to-pi-v1",
-        "gateKind": "none",
-        "reason": "把这份 xAI API Key 写进 Pi 认的登录位置。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "openai-compatible-relay-to-pi",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "openai-compatible"
-      },
-      "target": "pi",
-      "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。",
-        "reusePath": "none"
-      }
-    },
-    {
-      "id": "glm-coding-plan-to-claude",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "glm-coding-plan"
-      },
-      "target": "claude",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "glm-coding-plan-to-claude-v1",
-        "gateKind": "none",
-        "reason": "用这份 GLM Coding Plan 接到 Claude，只改地址和模型。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "glm-coding-plan-account-to-claude",
-      "source": {
-        "kind": "account",
-        "agentId": "claude",
-        "accountKind": "apikey",
-        "extra": {
-          "provider": "glm-coding-plan"
-        },
-        "credentials": {
-          "format": "api_key",
-          "api_key": "must-not-leak"
-        }
-      },
-      "target": "claude",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "glm-coding-plan-to-claude-v1",
-        "gateKind": "none",
-        "reason": "用这份 GLM Coding Plan 接到 Claude，只改地址和模型。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "deepseek-api-to-claude",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "deepseek-api"
-      },
-      "target": "claude",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "deepseek-api-to-claude-v1",
-        "gateKind": "none",
-        "reason": "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "deepseek-api-account-to-claude",
-      "source": {
-        "kind": "account",
-        "agentId": "claude",
-        "accountKind": "apikey",
-        "extra": {
-          "provider": "deepseek-api"
-        },
-        "credentials": {
-          "format": "api_key",
-          "api_key": "must-not-leak"
-        }
-      },
-      "target": "claude",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "deepseek-api-to-claude-v1",
-        "gateKind": "none",
-        "reason": "用这份 DeepSeek API 接到 Claude，只改地址和模型。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "glm-coding-plan-to-pi",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "glm-coding-plan"
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "ruleId": "glm-coding-plan-to-pi-v1",
-        "gateKind": "none",
-        "reason": "把这份 GLM Coding Plan 写进 Pi 认的登录位置。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "deepseek-api-to-pi",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "deepseek-api"
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "ruleId": "deepseek-api-to-pi-v1",
-        "gateKind": "none",
-        "reason": "把这份 DeepSeek API 写进 Pi 认的登录位置。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "glm-coding-plan-account-to-pi",
-      "source": {
-        "kind": "account",
-        "agentId": "claude",
-        "accountKind": "apikey",
-        "extra": {
-          "provider": "glm-coding-plan"
-        },
-        "credentials": {
-          "format": "api_key",
-          "api_key": "must-not-leak"
-        }
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "ruleId": "glm-coding-plan-to-pi-v1",
-        "gateKind": "none",
-        "reason": "把这份 GLM Coding Plan 写进 Pi 认的登录位置。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "deepseek-api-account-to-pi",
-      "source": {
-        "kind": "account",
-        "agentId": "claude",
-        "accountKind": "apikey",
-        "extra": {
-          "provider": "deepseek-api"
-        },
-        "credentials": {
-          "format": "api_key",
-          "api_key": "must-not-leak"
-        }
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "ruleId": "deepseek-api-to-pi-v1",
-        "gateKind": "none",
-        "reason": "把这份 DeepSeek API 写进 Pi 认的登录位置。",
-        "reusePath": "api_endpoint"
-      }
-    },
-    {
-      "id": "xai-api-to-grok-stays-out-of-matrix",
-      "source": {
-        "kind": "provider",
-        "agentId": "grok",
-        "preset": "xai"
-      },
-      "target": "grok",
-      "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reason": "这条接法还没做好，现在接不上。",
-        "reusePath": "none"
-      }
-    },
-    {
-      "id": "openai-api-to-grok",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "openai"
-      },
-      "target": "grok",
-      "documentedRuleId": "openai-api-to-grok-v1",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "openai-api-to-grok-bridge-v1",
-        "gateKind": "none",
-        "reason": "这份 OpenAI 兼容登录接到 Grok 需要本机转发。",
-        "reusePath": "local_bridge"
       }
     },
     {
@@ -851,425 +1204,144 @@
       }
     },
     {
-      "id": "openai-api-account-to-codex",
+      "id": "openai-api-to-grok",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "openai"
+      },
+      "target": "grok",
+      "documentedRuleId": "openai-api-to-grok-v1",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "openai-api-to-grok-bridge-v1",
+        "gateKind": "none",
+        "reason": "这份 OpenAI 兼容登录接到 Grok 需要本机转发。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "openai-api-to-pi",
+      "source": {
+        "kind": "provider",
+        "agentId": "codex",
+        "preset": "openai"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "openai-api-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 OpenAI API Key 写进 Pi 认的登录位置。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
+      "id": "openai-compatible-relay-to-pi",
+      "source": {
+        "kind": "provider",
+        "agentId": "claude",
+        "preset": "openai-compatible"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "AgentHub 暂未提供此来源到所选目标的适配规则。当前不支持不等于连接失效。",
+        "reusePath": "none"
+      }
+    },
+    {
+      "id": "other-to-claude",
+      "source": {
+        "kind": "provider",
+        "agentId": "kimi",
+        "preset": "moonshot"
+      },
+      "target": "claude",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：连接页中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。",
+        "reusePath": "none"
+      }
+    },
+    {
+      "id": "xai-api-account-to-pi",
       "source": {
         "kind": "account",
-        "agentId": "claude",
+        "agentId": "grok",
         "accountKind": "apikey",
         "extra": {
-          "provider": "openai"
+          "provider": "xai"
         },
         "credentials": {
           "format": "api_key",
           "api_key": "must-not-leak"
         }
       },
-      "target": "codex",
+      "target": "pi",
       "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
+        "route": "config_sync",
+        "support": "stable",
         "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "openai-api-to-codex-v1",
+        "applyPath": "config_sync",
+        "ruleId": "xai-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "这份 OpenAI API Key 接到 Codex 需要本机转发。",
-        "reusePath": "local_bridge"
-      }
-    },
-    {
-      "id": "grok-subscription-to-claude",
-      "source": {
-        "kind": "account",
-        "agentId": "grok",
-        "accountKind": "oauth",
-        "credentials": {
-          "format": "oauth",
-          "access_token": "must-not-leak"
-        }
-      },
-      "target": "claude",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "grok-subscription-to-claude-v1",
-        "gateKind": "none",
-        "reason": "Grok 登录会经本机路由接到 Claude Code。",
-        "reusePath": "local_bridge"
-      }
-    },
-    {
-      "id": "grok-subscription-to-codex",
-      "source": {
-        "kind": "account",
-        "agentId": "grok",
-        "accountKind": "oauth",
-        "credentials": {
-          "format": "oauth",
-          "access_token": "must-not-leak"
-        }
-      },
-      "target": "codex",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "grok-subscription-to-codex-v1",
-        "gateKind": "none",
-        "reason": "Grok 登录会经本机路由接到 Codex。",
-        "reusePath": "local_bridge"
-      }
-    },
-    {
-      "id": "claude-subscription-to-codex-preview",
-      "source": {
-        "kind": "account",
-        "agentId": "claude",
-        "accountKind": "oauth",
-        "credentials": {
-          "format": "credentials_json",
-          "access_token": "must-not-leak"
-        }
-      },
-      "target": "codex",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": "claude-subscription-to-codex-v1",
-        "gateKind": "preview_only",
-        "reason": "Claude 订阅接到 Codex 可以走本机转发，但规则还没做完，现在接不上。",
-        "reusePath": "local_bridge"
-      }
-    },
-    {
-      "id": "kimi-membership-to-cursor",
-      "source": {
-        "kind": "provider",
-        "agentId": "kimi",
-        "preset": "kimi-code-membership"
-      },
-      "target": "cursor",
-      "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reason": "这个工具不能写入配置，接不上。",
-        "reusePath": "none"
-      }
-    },
-    {
-      "id": "anthropic-api-to-cursor",
-      "source": {
-        "kind": "provider",
-        "agentId": "claude",
-        "preset": "anthropic"
-      },
-      "target": "cursor",
-      "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reason": "这个工具不能写入配置，接不上。",
-        "reusePath": "none"
-      }
-    },
-    {
-      "id": "codex-oauth-auth-json-to-cursor",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentialFormat": "auth_json",
-        "credentials": {
-          "format": "auth_json",
-          "tokens": {
-            "access_token": "must-not-leak",
-            "refresh_token": "must-not-leak"
-          }
-        }
-      },
-      "target": "cursor",
-      "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "unsupported",
-        "reason": "这个工具不能写入配置，接不上。",
-        "reusePath": "none"
-      }
-    },
-    {
-      "id": "kimi-membership-to-grok",
-      "source": {
-        "kind": "provider",
-        "agentId": "kimi",
-        "preset": "kimi-code-membership"
-      },
-      "target": "grok",
-      "expect": {
-        "route": "native_endpoint",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "native",
-        "ruleId": "kimi-membership-to-grok-v1",
-        "gateKind": "none",
-        "reason": "用这份 Kimi Code 会员接到 Grok，只改地址和模型。",
+        "reason": "把这份 xAI API Key 写进 Pi 认的登录位置。",
         "reusePath": "api_endpoint"
       }
     },
     {
-      "id": "claude-oauth-to-pi",
+      "id": "xai-api-to-grok-stays-out-of-matrix",
       "source": {
-        "kind": "account",
-        "agentId": "claude",
-        "accountKind": "oauth",
-        "credentials": {
-          "access_token": "must-not-leak",
-          "refresh_token": "must-not-leak"
-        }
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "gateKind": "none",
-        "reusePath": "native_subscription",
-        "ruleId": "claude-subscription-to-pi-v1",
-        "reason": "把这份 Claude 订阅写进 Pi 认的 Claude 登录。"
-      }
-    },
-    {
-      "id": "codex-oauth-auth-json-to-pi",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentialFormat": "auth_json",
-        "credentials": {
-          "format": "auth_json",
-          "tokens": {
-            "access_token": "must-not-leak",
-            "refresh_token": "must-not-leak"
-          }
-        }
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "gateKind": "none",
-        "reusePath": "native_subscription",
-        "ruleId": "codex-subscription-to-pi-v1",
-        "reason": "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。"
-      }
-    },
-    {
-      "id": "codex-oauth-tokens-blob-to-pi",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentials": {
-          "tokens": {
-            "access_token": "must-not-leak"
-          }
-        }
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "gateKind": "none",
-        "reusePath": "native_subscription",
-        "ruleId": "codex-subscription-to-pi-v1",
-        "reason": "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。"
-      }
-    },
-    {
-      "id": "codex-oauth-without-auth-json-to-pi",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentials": {
-          "access_token": "must-not-leak",
-          "refresh_token": "must-not-leak"
-        }
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "gateKind": "none",
-        "reusePath": "native_subscription",
-        "ruleId": "codex-subscription-to-pi-v1",
-        "reason": "把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。"
-      }
-    },
-    {
-      "id": "grok-oauth-to-pi",
-      "source": {
-        "kind": "account",
+        "kind": "provider",
         "agentId": "grok",
-        "accountKind": "oauth",
-        "credentials": {
-          "access_token": "must-not-leak",
-          "refresh_token": "must-not-leak"
-        }
-      },
-      "target": "pi",
-      "expect": {
-        "route": "config_sync",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "config_sync",
-        "gateKind": "none",
-        "reusePath": "native_subscription",
-        "ruleId": "grok-subscription-to-pi-v1",
-        "reason": "把这份 Grok 订阅写进 Pi 认的 Grok 登录。"
-      }
-    },
-    {
-      "id": "claude-oauth-to-codex",
-      "source": {
-        "kind": "account",
-        "agentId": "claude",
-        "accountKind": "oauth"
-      },
-      "target": "codex",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": false,
-        "applyPath": "rejected",
-        "ruleId": "claude-subscription-to-codex-v1",
-        "gateKind": "preview_only",
-        "reusePath": "local_bridge",
-        "reason": "Claude 订阅接到 Codex 可以走本机转发，但规则还没做完，现在接不上。"
-      }
-    },
-    {
-      "id": "grok-oauth-to-claude",
-      "source": {
-        "kind": "account",
-        "agentId": "grok",
-        "accountKind": "oauth",
-        "credentials": {
-          "format": "oauth",
-          "access_token": "must-not-leak"
-        }
-      },
-      "target": "claude",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "grok-subscription-to-claude-v1",
-        "gateKind": "none",
-        "reusePath": "local_bridge",
-        "reason": "Grok 登录会经本机路由接到 Claude Code。"
-      }
-    },
-    {
-      "id": "codex-oauth-auth-json-to-grok",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentialFormat": "auth_json",
-        "credentials": {
-          "format": "auth_json",
-          "tokens": {
-            "access_token": "must-not-leak",
-            "refresh_token": "must-not-leak"
-          }
-        }
+        "preset": "xai"
       },
       "target": "grok",
       "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "codex-subscription-to-grok-v1",
-        "gateKind": "none",
-        "reason": "Codex 官方登录会经本机路由接到 Grok。",
-        "reusePath": "local_bridge"
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "这条接法还没做好，现在接不上。",
+        "reusePath": "none"
       }
     },
     {
-      "id": "codex-oauth-auth-json-to-kimi",
+      "id": "xai-api-to-pi",
       "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentialFormat": "auth_json",
-        "credentials": {
-          "format": "auth_json",
-          "tokens": {
-            "access_token": "must-not-leak",
-            "refresh_token": "must-not-leak"
-          }
-        }
+        "kind": "provider",
+        "agentId": "grok",
+        "preset": "xai"
       },
-      "target": "kimi",
+      "target": "pi",
       "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
+        "route": "config_sync",
+        "support": "stable",
         "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "codex-subscription-to-kimi-v1",
+        "applyPath": "config_sync",
+        "ruleId": "xai-api-to-pi-v1",
         "gateKind": "none",
-        "reason": "Codex 官方登录会经本机路由接到 Kimi。",
-        "reusePath": "local_bridge"
-      }
-    },
-    {
-      "id": "codex-oauth-auth-json-to-dsh",
-      "source": {
-        "kind": "account",
-        "agentId": "codex",
-        "accountKind": "oauth",
-        "credentialFormat": "auth_json",
-        "credentials": {
-          "format": "auth_json",
-          "tokens": {
-            "access_token": "must-not-leak",
-            "refresh_token": "must-not-leak"
-          }
-        }
-      },
-      "target": "dsh",
-      "expect": {
-        "route": "local_bridge",
-        "support": "experimental",
-        "canApply": true,
-        "applyPath": "local_bridge",
-        "ruleId": "codex-subscription-to-dsh-v1",
-        "gateKind": "none",
-        "reason": "Codex 官方登录会经本机路由接到 DeepSeek Harness。",
-        "reusePath": "local_bridge"
+        "reason": "把这份 xAI API Key 写进 Pi 认的登录位置。",
+        "reusePath": "api_endpoint"
       }
     }
   ]
