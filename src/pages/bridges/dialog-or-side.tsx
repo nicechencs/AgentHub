@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
+import { useI18n } from '@/components/shared/LanguageProvider';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -16,8 +18,10 @@ export function DialogOrSide({
   title,
   description,
   children,
-  footer,
+  primary,
+  danger,
   preventDismiss,
+  width,
 }: {
   asPanel?: boolean;
   open: boolean;
@@ -25,13 +29,25 @@ export function DialogOrSide({
   title: string;
   description?: string;
   children: ReactNode;
-  footer: ReactNode;
+  /** Save / submit — header on the panel, footer on the dialog. */
+  primary?: ReactNode;
+  /** Destructive action — footer on both. */
+  danger?: ReactNode;
   preventDismiss?: boolean;
+  width?: number;
 }) {
+  const { t } = useI18n();
   if (asPanel) {
     if (!open) return null;
     return (
-      <SideInspectPanel title={title} description={description} onClose={() => onOpenChange(false)} footer={footer}>
+      <SideInspectPanel
+        title={title}
+        description={description}
+        onClose={() => onOpenChange(false)}
+        headerActions={primary}
+        footer={danger}
+        width={width}
+      >
         {children}
       </SideInspectPanel>
     );
@@ -49,7 +65,13 @@ export function DialogOrSide({
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1">{children}</div>
-        <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">{footer}</DialogFooter>
+        <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
+          {danger}
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          {primary}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

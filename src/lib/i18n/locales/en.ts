@@ -15,6 +15,7 @@ export const en = {
     copied: 'Copied',
     copyMessage: 'Copy message',
     collapse: 'Collapse',
+    resizeSidePanel: 'Resize side panel',
     relativeJustNow: 'Just now',
     relativeMinutes: '{n} min ago',
     relativeHours: '{n} h ago',

@@ -43,6 +43,7 @@ export function WriteClientConfigDialog({
   hiddenTargetIds,
   onWritten,
   asPanel = false,
+  width,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,6 +56,7 @@ export function WriteClientConfigDialog({
   /** Reload the page's route list after a successful write. */
   onWritten: () => void;
   asPanel?: boolean;
+  width?: number;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -116,22 +118,22 @@ export function WriteClientConfigDialog({
   return (
     <DialogOrSide
       asPanel={asPanel}
+      width={width}
       open={open}
       onOpenChange={(next) => closeConfirmationOnOpenChange(next, busy, () => onOpenChange(false))}
       title={t('routes.write.title')}
       description={t('routes.write.description')}
       preventDismiss
-      footer={(
-        <>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
-            {t('common.cancel')}
-          </Button>
-          <Button onClick={() => void submit()} disabled={busy || !canWriteClientConfig(selected)}>
-            {busy
-              ? t('routes.write.submitting')
-              : t('routes.write.submit', { count: selected.length })}
-          </Button>
-        </>
+      primary={(
+        <Button
+          size="sm"
+          onClick={() => void submit()}
+          disabled={busy || !canWriteClientConfig(selected)}
+        >
+          {busy
+            ? t('routes.write.submitting')
+            : t('routes.write.submit', { count: selected.length })}
+        </Button>
       )}
     >
           {portPending ? <p className="text-meta text-muted">{t('routes.write.portPending')}</p> : null}

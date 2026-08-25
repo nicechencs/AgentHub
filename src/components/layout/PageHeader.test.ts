@@ -23,6 +23,10 @@ describe('PageHeader', () => {
     expect(source('components/layout/PageHeader.tsx')).not.toContain('border-b');
     expect(workbenchHeaderWrapper(source('pages/skills/index.tsx'))).not.toContain('border-b');
     expect(workbenchHeaderWrapper(source('pages/projects/index.tsx'))).not.toContain('border-b');
+    expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchHeader');
+    expect(source('components/layout/SideSplit.tsx')).not.toContain('border-b');
+    expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
   });
 
   it('starts non-Chat body flush under the title slot', () => {
@@ -43,9 +47,14 @@ describe('PageHeader', () => {
     expect(header).toContain("description || '\\u00a0'");
     expect(source('pages/skills/index.tsx')).toContain('pageRhythm.workbenchHeader');
     expect(source('pages/projects/index.tsx')).toContain('pageRhythm.workbenchHeader');
+    expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchHeader');
+    expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('App.tsx')).toContain('!isChat && <TopBar');
     expect(source('pages/settings/index.tsx')).not.toMatch(/readingColumn\}>\s*<PageHeader/);
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
     expect(source('pages/chat/ChatSessionHeader.tsx')).not.toContain('pageRhythm.workbenchHeader');
+    expect(source('App.tsx')).toContain("pathname === '/connections'");
+    expect(source('App.tsx')).toContain("pathname === '/routes'");
   });
 });
