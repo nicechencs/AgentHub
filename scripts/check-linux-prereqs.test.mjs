@@ -12,6 +12,7 @@ const launcher = path.join(root, 'run.sh');
 const fixtureRoot = fs.mkdtempSync(path.join(root, '.check-linux-prereqs-test-'));
 const fixtureScript = path.join(fixtureRoot, 'scripts', 'check-linux-prereqs.sh');
 const fixtureLauncher = path.join(fixtureRoot, 'run.sh');
+const hasBash = spawnSync('bash', ['--version'], { stdio: 'ignore' }).status === 0;
 
 function normalizeShell(text) {
   return text.replace(/\r\n?/g, '\n');
@@ -66,7 +67,7 @@ test('linux prereq script exists and is a bash checker', () => {
   assert.match(text, /never uses sudo/i);
 });
 
-test('--print-packages lists Debian, Fedora, and Arch commands', () => {
+test('--print-packages lists Debian, Fedora, and Arch commands', { skip: !hasBash }, () => {
   const result = run(script, ['--print-packages']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /apt-get install/);
@@ -78,7 +79,7 @@ test('--print-packages lists Debian, Fedora, and Arch commands', () => {
   assert.equal(result.stdout.includes('TAURI_SIGNING'), false);
 });
 
-test('--check fails closed on non-Linux hosts', () => {
+test('--check fails closed on non-Linux hosts', { skip: !hasBash }, () => {
   if (os.platform() === 'linux') {
     const result = run(script, ['--check']);
     assert.notEqual(result.status, 2);
@@ -105,14 +106,14 @@ test('--check fails closed on non-Linux hosts', () => {
   assert.equal(fs.readFileSync(fixtureScript, 'utf8').includes('\r'), false);
 });
 
-test('unknown flags fail with usage, not a package-manager mutation', () => {
+test('unknown flags fail with usage, not a package-manager mutation', { skip: !hasBash }, () => {
   const result = run(script, ['--please-install']);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /Unknown argument/);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /^\s*sudo\s/m);
 });
 
-test('run.sh --help documents Linux source-run, Releases, and --check', () => {
+test('run.sh --help documents Linux source-run, Releases, and --check', { skip: !hasBash }, () => {
   const result = run(launcher, ['--help']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /--check/);
