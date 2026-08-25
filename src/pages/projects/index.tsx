@@ -641,7 +641,7 @@ export default function ProjectsPage() {
         <div
           className={cn(
             'min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
-            pageRhythm.workbenchX,
+            preview.previewShellMounted ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX,
             pageRhythm.workbenchY,
           )}
         >

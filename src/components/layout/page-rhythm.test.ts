@@ -29,6 +29,11 @@ describe('pageRhythm (docs/ui-design.md §2 / §3.1)', () => {
     expect(pageRhythm.workbenchX).toBe('px-[18px]');
   });
 
+  it('pulls the split-list scrollbar off the separator instead of padding the cards', () => {
+    expect(pageRhythm.workbenchXSplit).toBe('pl-[18px] pr-2 mr-2');
+    expect(pageRhythm.workbenchXSplit).not.toContain('px-');
+  });
+
   it('locks page titles to one type, two-line height, and 18px inset', () => {
     expect(pageRhythm.workbenchHeader).toContain('px-[18px]');
     expect(pageRhythm.workbenchHeader).toContain('py-[18px]');

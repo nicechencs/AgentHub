@@ -95,7 +95,7 @@ export function WorkbenchSplitPage<T>({
         <div
           className={cn(
             'min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
-            pageRhythm.workbenchX,
+            split.mounted && panel ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX,
             pageRhythm.workbenchY,
           )}
         >
