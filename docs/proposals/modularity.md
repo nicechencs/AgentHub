@@ -95,7 +95,7 @@ C1、F1、F2 已落地。当前没有新的可执行任务；下一步仍须先�
   pnpm exec vitest run src/dev/mocks/adapter.test.ts
   ```
 
-C1 只补齐覆盖并让漂移失败。JSON 已由 `plan()` 生成；切片 C 已删除 mock 第二套引擎。收缩 Vitest 领域套件见 [单一内核与查表投影](single-kernel-projections.md) 切片 D。
+C1 只补齐覆盖并让漂移失败。JSON 已由 `plan()` 生成；mock 第二套引擎已删除。现行契约见 [Adapter 路线内核](../architecture/adapter-route-kernel.md)；历史切片见 [单一内核提案归档](../archive/single-kernel-projections.md)。
 
 ### F1：Skills 页面局部编排 — `已建立`
 
@@ -113,7 +113,7 @@ C1 只补齐覆盖并让漂移失败。JSON 已由 `plan()` 生成；切片 C �
 - **必须保持：** 上述页面行为与现有 project/session API 不变。
 - **禁止：** 把项目真相移入前端 store；新增 Agent 硬编码分支；修改 core/Tauri project contract。
 
-F1 / F2 以本节已写文件范围为限。不要因为某个页面文件较大，就从本文再派生新的抽取卡；见持续约束 8 与 [单一内核与查表投影](single-kernel-projections.md)。
+F1 / F2 以本节已写文件范围为限。不要因为某个页面文件较大，就从本文再派生新的抽取卡；见持续约束 8 与 [Adapter 路线内核](../architecture/adapter-route-kernel.md)。
 
 ## 5. 需要先设计的工作
 
@@ -164,7 +164,7 @@ Provider、Account、Backup 必须分别规划，不能合并成一个重构任�
 ### D6：单一内核与查表投影 — `已关闭`
 
 - **负责人：** capability / route 规则与 browser mock。
-- **设计产物：** [单一内核与查表投影](single-kernel-projections.md)。
+- **设计产物：** 现行契约 [Adapter 路线内核](../architecture/adapter-route-kernel.md)；历史提案与 E/F 评估 [单一内核提案归档](../archive/single-kernel-projections.md)。
 - **当前进度：** 切片 0、A、B、C、D 已落地。切片 E 已评估：不落地 sccache。切片 F 已评估：不拆 crate。本项不再派工。
 - **限制：** 不得用矩阵格子单独当 `canApply`；不得引入 WASM、napi、类型生成框架或共享 Windows `target/`。
 - **进入开发的条件：** 已满足且结论为不实施编译环境改动与拆包。不要从本项再派生开发任务。
@@ -182,7 +182,7 @@ Provider、Account、Backup 必须分别规划，不能合并成一个重构任�
 | 事项 | 主要负责人 | 不得变成 |
 |---|---|---|
 | Agent 差异 | `integrations/agents/<key>/` contribution | 页面中的 Agent 分支表 |
-| capability 与 route 决策 | `domain/protocol_graph/` 与 `AdapterRouteService::plan()` | mock 或 UI 的第二份规则表；落地设计见 [单一内核与查表投影](single-kernel-projections.md) |
+| capability 与 route 决策 | `domain/protocol_graph/` 与 `AdapterRouteService::plan()` | mock 或 UI 的第二份规则表；现行契约见 [Adapter 路线内核](../architecture/adapter-route-kernel.md) |
 | 产品写入 | `plan` / `bind` / `unbind` Use Case | 页面直接调用兼容 apply |
 | active/current 真相 | `ConnectionService` | Account/Provider 各自维护的 best-effort 状态 |
 | 本机 route runtime | 当前进程内 control host；未来仅在正式批准后迁移 sidecar | 凭据仓库或直接 SQL writer |

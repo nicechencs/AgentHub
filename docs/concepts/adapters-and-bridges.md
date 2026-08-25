@@ -38,7 +38,7 @@ startBridge(profile) / stopBridge(profile) / getBridgeStatus(profile)
 | `local_bridge` | source 与 target 协议不相同，但存在受测转换 | 是；仅 loopback |
 | `unsupported` | 没有 writer、转换器或允许的认证契约 | 否 |
 
-`support`、`maturity` 和 `canApply` 分别表达矩阵信心、边的成熟度和今天能否写。预览可存在但不能因此偷偷执行写入。产品三路说明见 [connections-and-routing](connections-and-routing.md)。
+`support`、`maturity` 和 `canApply` 分别表达矩阵信心、边的成熟度和今天能否写。预览可存在但不能因此偷偷执行写入。这些字段由 `AdapterRouteService::plan()` 决定；browser mock 只查 golden，未命中 fail-closed。见 [Adapter 路线内核](../architecture/adapter-route-kernel.md)。产品三路说明见 [connections-and-routing](connections-and-routing.md)。
 
 ## Profile 与 generated Provider
 
@@ -64,6 +64,7 @@ Adapter profile 是一条“source connection → target Agent”的受管投影
 ## 相关页面
 
 - [Connections and routing](connections-and-routing.md)
+- [Adapter 路线内核](../architecture/adapter-route-kernel.md)
 - [Core and runtime](../architecture/core-runtime.md)
 - [Frontend and backend boundary](../architecture/frontend-backend.md)
 - [Sidecar proposal](../proposals/adapter-sidecar.md)

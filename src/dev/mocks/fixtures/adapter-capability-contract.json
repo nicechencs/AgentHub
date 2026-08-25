@@ -152,6 +152,25 @@
       }
     },
     {
+      "id": "claude-oauth-to-pi-without-secret",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "oauth"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": "claude-subscription-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 Claude 订阅写进 Pi 认的 Claude 登录。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
       "id": "claude-subscription-to-codex-preview",
       "source": {
         "kind": "account",
@@ -943,6 +962,25 @@
         "support": "experimental",
         "canApply": true,
         "applyPath": "config_sync",
+        "ruleId": "grok-subscription-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 Grok 订阅写进 Pi 认的 Grok 登录。",
+        "reusePath": "native_subscription"
+      }
+    },
+    {
+      "id": "grok-oauth-to-pi-without-secret",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth"
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "experimental",
+        "canApply": false,
+        "applyPath": "rejected",
         "ruleId": "grok-subscription-to-pi-v1",
         "gateKind": "none",
         "reason": "把这份 Grok 订阅写进 Pi 认的 Grok 登录。",

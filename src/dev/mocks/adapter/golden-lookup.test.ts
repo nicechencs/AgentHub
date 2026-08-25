@@ -38,14 +38,37 @@ const resolver = {
   getProviderById: getMockProviderById,
 };
 
+function frozenAccountHasUsableSecret(source: ContractCase['source']): boolean {
+  if (source.kind === 'provider') return true;
+  const credentials = 'credentials' in source ? source.credentials : undefined;
+  if ((source.accountKind ?? 'oauth') === 'apikey') {
+    return !!credentials
+      && typeof credentials === 'object'
+      && typeof (credentials as { format?: unknown }).format === 'string'
+      && (credentials as { format: string }).format.trim().toLowerCase() === 'api_key'
+      && typeof (credentials as { api_key?: unknown }).api_key === 'string'
+      && Boolean((credentials as { api_key: string }).api_key.trim());
+  }
+  if (!credentials || typeof credentials !== 'object') return false;
+  const record = credentials as Record<string, unknown>;
+  const tokens = record.tokens as Record<string, unknown> | undefined;
+  const bodyTokens = (record.body as Record<string, unknown> | undefined)?.tokens as
+    | Record<string, unknown>
+    | undefined;
+  return [record.access_token, tokens?.access_token, bodyTokens?.access_token]
+    .some((token) => typeof token === 'string' && Boolean(token.trim()));
+}
+
 function contractAccount(id: string, source: ContractCase['source']): Account {
+  const hasSecret = frozenAccountHasUsableSecret(source);
   return {
     id,
     agentId: source.agentId as AgentId,
     kind: (source.accountKind ?? 'oauth') as Account['kind'],
     label: id,
     isCurrent: false,
-    tokenValid: true,
+    tokenValid: hasSecret,
+    authHealth: hasSecret ? 'renewable' : 'needs_login',
     credentialFormat: 'credentialFormat' in source ? source.credentialFormat : undefined,
     credentials: 'credentials' in source ? source.credentials : undefined,
     extra: 'extra' in source ? source.extra : undefined,
@@ -53,6 +76,19 @@ function contractAccount(id: string, source: ContractCase['source']): Account {
     credentials?: Record<string, unknown>;
     extra?: Record<string, unknown>;
   };
+}
+
+function upsertLiveAccount(account: Account): void {
+  upsertMockAccount(account);
+}
+
+async function planFor(
+  sourceKind: 'account' | 'provider',
+  sourceId: string,
+  targetAgentId: AgentId,
+) {
+  const adapter = createMockAdapterPort(resolver);
+  return adapter.plan({ sourceKind, sourceId, targetAgentId });
 }
 
 function seedContractCase(item: ContractCase): string {
@@ -236,5 +272,114 @@ describe('mock golden lookup', () => {
     expect(plan.canApply).toBe(false);
     expect(plan.analysis.route).toBe('unsupported');
     expect(JSON.stringify(plan)).not.toContain('must-not-leak');
+  });
+
+  it('hits golden for a redacted but valid official login', async () => {
+    seedConnectFlowAdapterFixtures({ includeOauthAccount: true });
+    const account = getMockAccountById(CONNECT_FLOW_FIXTURE_IDS.claudeOauth);
+    expect(account).toMatchObject({
+      tokenValid: true,
+      authHealth: 'renewable',
+    });
+    expect(account).not.toHaveProperty('credentials');
+
+    const hit = lookupGoldenExpect(resolver, {
+      sourceKind: 'account',
+      sourceId: CONNECT_FLOW_FIXTURE_IDS.claudeOauth,
+      targetAgentId: 'pi',
+    });
+    expect(hit?.id).toBe('claude-oauth-to-pi');
+    const plan = await planFor('account', CONNECT_FLOW_FIXTURE_IDS.claudeOauth, 'pi');
+    expect(plan.canApply).toBe(true);
+    expect(plan.analysis.ruleId).toBe('claude-subscription-to-pi-v1');
+    expect(JSON.stringify(plan)).not.toContain('must-not-leak');
+  });
+
+  it('does not apply a Kimi membership account with tokenValid false / needs_login', async () => {
+    seedConnectFlowAdapterFixtures();
+    const stale = await planFor(
+      'account',
+      CONNECT_FLOW_FIXTURE_IDS.kimiMembershipStale,
+      'claude',
+    );
+    expect(stale.canApply).toBe(false);
+
+    upsertLiveAccount({
+      id: 'kimi-membership-needs-login',
+      agentId: 'kimi',
+      kind: 'apikey',
+      label: 'Kimi membership needs login',
+      isCurrent: false,
+      tokenValid: false,
+      authHealth: 'needs_login',
+      extra: { provider: 'kimi-code-membership' },
+    } as Account);
+
+    const membership = await planFor('account', 'kimi-membership-needs-login', 'claude');
+    expect(membership.canApply).toBe(false);
+    expect(JSON.stringify({ stale, membership })).not.toContain('must-not-leak');
+  });
+
+  it('does not let a unique secret:true candidate apply Claude/Codex/Grok without a usable token', async () => {
+    upsertLiveAccount({
+      id: 'claude-no-token',
+      agentId: 'claude',
+      kind: 'oauth',
+      label: 'Claude no token',
+      isCurrent: false,
+      tokenValid: false,
+      authHealth: 'needs_login',
+    });
+    upsertLiveAccount({
+      id: 'codex-auth-json-no-token',
+      agentId: 'codex',
+      kind: 'oauth',
+      label: 'Codex no token',
+      isCurrent: false,
+      tokenValid: false,
+      authHealth: 'needs_login',
+      credentialFormat: 'auth_json',
+    });
+    upsertLiveAccount({
+      id: 'grok-no-token',
+      agentId: 'grok',
+      kind: 'oauth',
+      label: 'Grok no token',
+      isCurrent: false,
+      tokenValid: false,
+      authHealth: 'needs_login',
+    });
+
+    const claudePi = await planFor('account', 'claude-no-token', 'pi');
+    const codexGrok = await planFor('account', 'codex-auth-json-no-token', 'grok');
+    const grokPi = await planFor('account', 'grok-no-token', 'pi');
+
+    expect(claudePi.canApply).toBe(false);
+    expect(codexGrok.canApply).toBe(false);
+    expect(grokPi.canApply).toBe(false);
+    expect(JSON.stringify({ claudePi, codexGrok, grokPi })).not.toContain('must-not-leak');
+  });
+
+  it('returns unsupported when credential availability has no exact golden candidate', async () => {
+    upsertLiveAccount({
+      id: 'kimi-membership-no-key',
+      agentId: 'kimi',
+      kind: 'apikey',
+      label: 'Kimi membership no key',
+      isCurrent: false,
+      tokenValid: false,
+      authHealth: 'needs_login',
+      extra: { provider: 'kimi-code-membership' },
+    } as Account);
+
+    const request = {
+      sourceKind: 'account' as const,
+      sourceId: 'kimi-membership-no-key',
+      targetAgentId: 'claude' as AgentId,
+    };
+    expect(lookupGoldenExpect(resolver, request)).toBeNull();
+    const plan = await planFor('account', 'kimi-membership-no-key', 'claude');
+    expect(plan.canApply).toBe(false);
+    expect(plan.analysis.route).toBe('unsupported');
   });
 });

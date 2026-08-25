@@ -32,6 +32,7 @@ updated: 2026-08-25
 - [架构总览](architecture/overview.md)
 - [前端与 Backend 边界](architecture/frontend-backend.md)
 - [Core 与运行时](architecture/core-runtime.md)
+- [Adapter 路线内核](architecture/adapter-route-kernel.md)
 - [Connections、Routes 与绑定](concepts/connections-and-routing.md)
 - [Adapter 与本机路由](concepts/adapters-and-bridges.md)
 - [账号与授权](concepts/accounts-and-authorization.md)
@@ -61,8 +62,8 @@ updated: 2026-08-25
 - [Adapter sidecar](proposals/adapter-sidecar.md)
 - [托盘后台模式](proposals/tray-background-modes.md)
 - [模块化改进](proposals/modularity.md)
-- [单一内核与查表投影](proposals/single-kernel-projections.md)
 - [归档索引](archive/README.md)：不可作为当前契约。
+- [单一内核与查表投影（历史）](archive/single-kernel-projections.md)
 - [旧文档迁移索引](archive/legacy-document-index.md)：旧路径到新真源的完整映射。
 
 ## 文档治理
