@@ -56,6 +56,78 @@ export function resolveOfficialSetupUrl(
   return undefined;
 }
 
+/** Localized extra-copy kind; unknown kinds (npm/native) are shown as-is. */
+export function extraCopyKindLabelKey(kind: string): MessageKey | undefined {
+  switch (kind) {
+    case 'ide':
+      return 'agents.card.extraCopyIde';
+    case 'desktop':
+      return 'agents.card.extraCopyDesktop';
+    case 'leftover-agenthub':
+      return 'agents.card.extraCopyLeftover';
+    default:
+      return undefined;
+  }
+}
+
+export function extraCopyKindLabel(
+  kind: string,
+  t: (key: MessageKey) => string,
+): string {
+  const key = extraCopyKindLabelKey(kind);
+  return key ? t(key) : kind;
+}
+
+/**
+ * Compare one extra copy against the shared remote latest.
+ * Leftover data-dir npm is not an upgrade target — skip the hint.
+ * Upgrade still uses the spawn channel; this is display-only.
+ */
+export type ExtraCopyUpdateHint = 'update_available' | 'up_to_date' | 'unknown';
+
+export function extraCopyUpdateHint(
+  kind: string,
+  copyVersion: string | null | undefined,
+  latestVersion: string | null | undefined,
+): ExtraCopyUpdateHint | undefined {
+  if (kind === 'leftover-agenthub') return undefined;
+  const local = versionCore(copyVersion);
+  const remote = versionCore(latestVersion);
+  if (!local || !remote) return copyVersion?.trim() && latestVersion?.trim()
+    ? 'unknown'
+    : undefined;
+  const cmp = compareVersionCores(local, remote);
+  return cmp < 0 ? 'update_available' : 'up_to_date';
+}
+
+/** Leading x.y.z integers; null if incomparable. Negative if a < b. */
+export function compareLooseVersions(a: string, b: string): number | null {
+  const left = versionCore(a);
+  const right = versionCore(b);
+  if (!left || !right) return null;
+  return compareVersionCores(left, right);
+}
+
+function versionCore(raw?: string | null): [number, number, number] | null {
+  const formatted = formatAgentVersion(raw);
+  if (!formatted) return null;
+  const token = formatted.replace(/^[vV]/, '');
+  const m = token.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2] ?? 0), Number(m[3] ?? 0)];
+}
+
+function compareVersionCores(
+  a: [number, number, number],
+  b: [number, number, number],
+): number {
+  for (let i = 0; i < 3; i++) {
+    const d = a[i]! - b[i]!;
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
 /**
  * Format CLI version for UI: strip name noise so `codex-cli 0.144.5` → `v0.144.5`
  * (avoids the broken `vcodex-cli 0.144.5` when prefixing a raw `v`).

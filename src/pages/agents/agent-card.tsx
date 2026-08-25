@@ -39,6 +39,8 @@ import { shouldIgnoreMenuDialogDismiss } from '@/pages/connections/ticket-wallet
 import { buildAgentInstallPreview, buildEnvInstallPreview } from './install-preview';
 import {
   agentTaskLogTitleKey,
+  extraCopyKindLabel,
+  extraCopyUpdateHint,
   formatAgentVersion,
   isNodeTooOldUpdateNote,
   openAgentCardUninstallConfirm,
@@ -261,6 +263,23 @@ export function AgentCard({
     toast({ title: t('agents.env.commandCopied') });
   };
 
+  const copyInstallPath = (path: string) => {
+    const value = path.trim();
+    if (!value) return;
+    void navigator.clipboard.writeText(value).then(
+      () => {
+        toast({
+          title: t('agents.card.pathCopied'),
+          description: value,
+          variant: 'success',
+        });
+      },
+      () => {
+        toast({ title: t('agents.card.copyPathFailed'), variant: 'danger' });
+      },
+    );
+  };
+
   /** Open agent config home (~/.claude 等) in the OS file manager. */
   const openConfigDir = () => {
     void (async () => {
@@ -378,7 +397,17 @@ export function AgentCard({
 
             {agent.installed ? (
               <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-xs text-muted">
-                <span className="truncate">{agent.binPath}</span>
+                {agent.binPath ? (
+                  <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+                    <span className="truncate">{agent.binPath}</span>
+                    <CopyInstallPathButton
+                      path={agent.binPath}
+                      label={t('agents.card.copyPath')}
+                      title={t('agents.card.copyPathTitle')}
+                      onCopy={copyInstallPath}
+                    />
+                  </span>
+                ) : null}
                 {agent.channel && <Badge>{agent.channel}</Badge>}
               </div>
             ) : (
@@ -449,22 +478,42 @@ export function AgentCard({
             )}
             {agent.extraCopies && agent.extraCopies.length > 0 ? (
               <div className="mt-1 space-y-0.5 font-mono text-xs text-muted">
-                <span>
+                <span title={t('agents.card.extraCopyUpgradeSpawnOnly')}>
                   {t('agents.card.extraCopies', { count: String(agent.extraCopies.length) })}
                 </span>
-                {agent.extraCopies.map((copy) => (
-                  <div key={copy.path} className="truncate pl-2">
-                    {copy.kind === 'ide'
-                      ? t('agents.card.extraCopyIde')
-                      : copy.kind === 'desktop'
-                        ? t('agents.card.extraCopyDesktop')
-                        : copy.kind === 'leftover-agenthub'
-                          ? t('agents.card.extraCopyLeftover')
-                          : copy.kind}
-                    {copy.version ? ` ${copy.version}` : ''}
-                    {` · ${copy.path}`}
-                  </div>
-                ))}
+                {agent.extraCopies.map((copy) => {
+                  const versionLabel = formatAgentVersion(copy.version);
+                  const updateHint = extraCopyUpdateHint(
+                    copy.kind,
+                    copy.version,
+                    latestLabel,
+                  );
+                  return (
+                    <div
+                      key={copy.path}
+                      className="flex min-w-0 items-center gap-1 pl-2"
+                    >
+                      <span className="min-w-0 truncate">
+                        {extraCopyKindLabel(copy.kind, t)}
+                        {versionLabel ? ` ${versionLabel}` : ''}
+                        {updateHint === 'update_available' ? (
+                          <span className="text-success">
+                            {` ${t('agents.card.extraCopyCanUpdate')}`}
+                          </span>
+                        ) : updateHint === 'up_to_date' ? (
+                          <span>{` ${t('agents.card.extraCopyIsLatest')}`}</span>
+                        ) : null}
+                        {` · ${copy.path}`}
+                      </span>
+                      <CopyInstallPathButton
+                        path={copy.path}
+                        label={t('agents.card.copyPath')}
+                        title={t('agents.card.copyPathTitle')}
+                        onCopy={copyInstallPath}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
           </div>
@@ -749,5 +798,29 @@ export function AgentCard({
         }
       />
     </Card>
+  );
+}
+
+function CopyInstallPathButton({
+  path,
+  label,
+  title,
+  onCopy,
+}: {
+  path: string;
+  label: string;
+  title: string;
+  onCopy: (path: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="inline-flex shrink-0 items-center rounded p-0.5 text-muted hover:bg-hover hover:text-primary"
+      aria-label={label}
+      title={title}
+      onClick={() => onCopy(path)}
+    >
+      <Copy className="h-3 w-3" />
+    </button>
   );
 }
