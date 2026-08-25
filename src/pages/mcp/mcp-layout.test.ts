@@ -19,4 +19,11 @@ describe('mcp layout wiring', () => {
     expect(page.indexOf('<AgentTabStrip')).toBeLessThan(page.indexOf('<TableSkeleton'));
     expect(page).toContain('agents={installedAgents}');
   });
+
+  it('uses the shared 详情 toggle (label + chevron)', () => {
+    const table = source('McpServerTable.tsx');
+    expect(table).toContain('DetailsToggle');
+    expect(table).toContain("t('mcp.table.details')");
+    expect(table).not.toContain('h-6 px-1.5 text-xs');
+  });
 });

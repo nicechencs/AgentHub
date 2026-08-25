@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
-import { ChevronDown, FolderOpen } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { DetailsToggle } from '@/components/shared/DetailsToggle';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,6 @@ import { Tip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { McpServerEntry } from '@/lib/backend/contracts/mcp-types';
 import type { AgentId } from '@/lib/types';
-import { cn } from '@/lib/utils';
 import type { TranslateFn } from '@/lib/i18n';
 import type { McpAgentGroup } from './group-servers';
 
@@ -31,7 +31,7 @@ const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = [
   { key: 'name', defaultWidth: 200, minWidth: 120 },
   { key: 'transport', defaultWidth: 88, minWidth: 64 },
   { key: 'endpoint', defaultWidth: 360, minWidth: 160 },
-  { key: 'actions', defaultWidth: 96, minWidth: 80 },
+  { key: 'actions', defaultWidth: 120, minWidth: 96 },
 ];
 
 const COLUMN_KEYS: ColumnKey[] = ['name', 'transport', 'endpoint', 'actions'];
@@ -65,31 +65,6 @@ function displayText(value?: string | null): string | null {
 
 function endpointOf(server: McpServerEntry): string | null {
   return displayText(server.command) ?? displayText(server.url);
-}
-
-function McpDetailsButton({
-  open,
-  detailsId,
-  onToggle,
-}: {
-  open: boolean;
-  detailsId: string;
-  onToggle: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      className="h-6 px-1.5 text-xs"
-      aria-expanded={open}
-      aria-controls={detailsId}
-      onClick={onToggle}
-    >
-      {t('mcp.table.details')}
-      <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
-    </Button>
-  );
 }
 
 function FileGroupHeader({
@@ -166,11 +141,9 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
         </TableCell>
         <TableCell>
           {hasSnippet ? (
-            <McpDetailsButton
-              open={open}
-              detailsId={detailsId}
-              onToggle={() => setOpen((v) => !v)}
-            />
+            <DetailsToggle open={open} controlsId={detailsId} onClick={() => setOpen((v) => !v)}>
+              {t('mcp.table.details')}
+            </DetailsToggle>
           ) : (
             <span className="text-muted">—</span>
           )}

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { DetailsToggle } from '@/components/shared/DetailsToggle';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ListRow } from '@/components/shared/ListRow';
@@ -317,18 +318,13 @@ function TicketRow({
           <Button size="sm" variant="outline" onClick={() => onRoute(ticket)}>
             <Cable className="h-3.5 w-3.5" /> {t('connections.list.route')}
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-expanded={expanded}
-            aria-controls={detailsId}
+          <DetailsToggle
+            open={expanded}
+            controlsId={detailsId}
             onClick={() => setExpanded((open) => !open)}
           >
             {t('connections.list.details')}
-            <ChevronDown
-              className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')}
-            />
-          </Button>
+          </DetailsToggle>
         </div>
       </div>
       {expanded ? (

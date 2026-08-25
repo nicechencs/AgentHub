@@ -134,6 +134,8 @@ describe('ImportRouteDialog', () => {
     expect(markup).toContain('Work login · Claude · 官方端点');
     expect(markup).toContain('cursor-pointer');
     expect(markup).toContain('确认应用');
+    expect(markup).toContain('详情');
+    expect(markup).toContain('aria-expanded="false"');
   });
 
   it('omits generated 本机路由 logins from import', () => {

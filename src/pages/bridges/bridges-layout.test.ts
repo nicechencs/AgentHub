@@ -23,12 +23,20 @@ describe('routes layout wiring', () => {
   it('uses the same 详情 toggle as Connections (label + chevron, not 收起)', () => {
     const list = source('pages/bridges/AdapterProfilesList.tsx');
     expect(list).toContain("t('routes.detail')");
-    expect(list).toContain('ChevronDown');
-    expect(list).toContain('aria-controls={detailsId}');
+    expect(list).toContain('DetailsToggle');
+    expect(list).toContain('controlsId={detailsId}');
     expect(list).not.toContain("t('routes.collapse')");
+    const connections = source('pages/connections/TicketWalletList.tsx');
+    expect(connections).toContain('DetailsToggle');
+    expect(connections).toContain("t('connections.list.details')");
+    const importDialog = source('pages/bridges/ImportRouteDialog.tsx');
+    expect(importDialog).toContain('DetailsToggle');
+    expect(importDialog).toContain("t('connections.list.details')");
     const detail = source('pages/bridges/RouteDetailPanel.tsx');
     expect(detail).not.toContain("t('routes.collapse')");
     expect(detail).toContain('variant="plain"');
+    expect(detail).toContain("t('routes.edit.action')");
+    expect(list).not.toContain("t('routes.edit.action')");
   });
 
   it('puts save in the inspect header and collapse instead of cancel', () => {
