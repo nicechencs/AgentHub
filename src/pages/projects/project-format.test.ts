@@ -9,6 +9,7 @@ import {
   projectDisplayPath,
   titleHoverLabel,
   relativeTime,
+  sessionFileName,
   shortPath,
   shortSessionId,
 } from './project-format';
@@ -114,6 +115,45 @@ describe('fmtBytes', () => {
     expect(fmtBytes(1536)).toBe('1.5 KB');
     expect(fmtBytes(192_000)).toBe('187.5 KB');
     expect(fmtBytes(2 * 1024 * 1024)).toBe('2.0 MB');
+  });
+});
+
+describe('sessionFileName', () => {
+  it('takes the last segment from a Windows or POSIX path', () => {
+    expect(
+      sessionFileName({
+        path: 'C:\\Users\\demo\\.claude\\projects\\-C-Users-demo-app\\sess-a1.jsonl',
+      }),
+    ).toBe('sess-a1.jsonl');
+    expect(sessionFileName({ path: '/home/demo/.claude/projects/app/sess-a2.jsonl' })).toBe(
+      'sess-a2.jsonl',
+    );
+  });
+
+  it('falls back to relativePath when path is empty', () => {
+    expect(sessionFileName({ path: '  ', relativePath: 'projects/app/sess-b.jsonl' })).toBe(
+      'sess-b.jsonl',
+    );
+    expect(sessionFileName({ path: null, relativePath: null })).toBeNull();
+  });
+
+  it('replaces Grok chat_history.jsonl with the session id or parent folder', () => {
+    expect(
+      sessionFileName({
+        path: 'C:\\Users\\demo\\.grok\\sessions\\perf\\019fb8a7\\chat_history.jsonl',
+        sessionId: '019fb8a7',
+      }),
+    ).toBe('019fb8a7');
+    expect(
+      sessionFileName({
+        path: '/home/demo/.grok/sessions/perf/sess-folder/chat_history.jsonl',
+      }),
+    ).toBe('sess-folder');
+    expect(
+      sessionFileName({
+        relativePath: 'sessions/perf/019fc1b2/Chat_History.jsonl',
+      }),
+    ).toBe('019fc1b2');
   });
 });
 

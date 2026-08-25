@@ -1834,6 +1834,7 @@ export const zh = {
       selectSession: "选择 {title}",
       lines: " · ~{n} 行",
       locateRecord: "定位记录文件：{path}",
+      openRecordFolder: "打开文件所在文件夹：{path}",
       copySessionId: "复制 Session ID：{id}",
       copyResumeCommand: "复制官方续接命令：{command}",
       continue: "在 Chat 继续",

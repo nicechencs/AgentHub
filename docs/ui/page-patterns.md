@@ -161,7 +161,7 @@ Both are full-height workbenches with a left inventory and an optional right pre
 
 ### Projects
 
-- The left tree contains projects and expandable sessions; the right panel is a read-only excerpt preview.
+- The left tree is still a stack of collapsible project cards. Sessions under a project align in columns (title, file name, time, size, icon actions) without row dividers. Title opens the right-hand excerpt preview; the file-name field reveals the record in the file manager.
 - Search covers project and session names. Delete and summarize are session actions and require confirmation where supported.
 - A project/session can bootstrap a new Chat conversation through the documented session storage handoff. It does not silently edit the original Agent log.
 - Agent capabilities such as transcript support are explicit. Unsupported actions are hidden or disabled with a hint.
