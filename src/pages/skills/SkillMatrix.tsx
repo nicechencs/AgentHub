@@ -53,6 +53,7 @@ const MATRIX_WIDTH_SPECS: ColumnWidthSpec<'skill' | 'shared' | 'agent'>[] = [
 ];
 
 const LEGEND_STORAGE_KEY = 'agenthub.skills.matrixLegendOpen';
+const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.skills.matrixColumnWidths';
 
 function readLegendOpen(): boolean {
   if (typeof window === 'undefined') return false;
@@ -544,7 +545,10 @@ export function SkillMatrix({
       ? installedAgentIds
       : new Set<AgentId>(installedAgentIds ?? columns.map((a) => a.id));
 
-  const { widths, onResizeStart } = useColumnWidths(MATRIX_WIDTH_SPECS);
+  const { widths, onResizeStart } = useColumnWidths(
+    MATRIX_WIDTH_SPECS,
+    COLUMN_WIDTHS_STORAGE_KEY,
+  );
   const sharedRootLabel = sharedRootColumnLabel(rows, t);
   const tableMinWidth =
     CHECK_COL_W +
