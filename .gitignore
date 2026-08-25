@@ -7,6 +7,12 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Playwright browser smoke (pnpm test:e2e:browser)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
 # IDE / OS
 .idea/
 .vscode/

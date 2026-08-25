@@ -58,6 +58,7 @@ pnpm dev:mock
 | `pnpm typecheck` | 检查前端类型 |
 | `pnpm typecheck:test` | 检查测试类型 |
 | `pnpm test` | 运行前端测试 |
+| `pnpm test:e2e:browser` | 运行 Playwright 浏览器冒烟（仅 `dev:mock`） |
 | `pnpm build` | 运行生产前端构建，强制使用 Tauri adapter |
 | `pnpm tauri:build` | 构建桌面安装包 |
 | `cargo test -p agenthub-core --locked` | 运行 Rust 核心测试 |

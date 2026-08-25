@@ -41,9 +41,10 @@ lib/backend/tauri/<port>.ts
 | `pnpm dev`、`tauri dev`、`pnpm tauri:dev` | `src/lib/backend/tauri/create-backend.ts` | 选择 Tauri adapter；`tauri dev` 启动桌面壳，单独运行 `pnpm dev` 时若没有 Tauri host 则明确 unavailable |
 | `pnpm dev:mock` | `src/dev/mocks/create-backend.ts` | 纯浏览器交互，使用 fixtures 和 mock 状态 |
 | `pnpm test` / Vitest | `src/dev/mocks/create-backend.ts` | 固定 mock backend；测试不得依赖 Tauri |
-| `pnpm build` | Tauri adapter | 生产构建不得把 `src/dev`、测试文件或 mock 实现打入产物 |
+| `pnpm test:e2e:browser` | `src/dev/mocks/create-backend.ts` | Playwright 启动 `pnpm dev:mock`；只覆盖浏览器 DOM，不覆盖 Tauri |
+| `pnpm build` | Tauri adapter | 生产构建不得把 `src/dev`、`e2e/`、测试文件或 mock 实现打入产物 |
 
-生产页面在非 Tauri 环境中必须报告 unavailable 或明确错误，不能为了“让页面能用”静默切到 mock。mock 只服务 `dev:mock` 和测试。Adapter / route 的产品决策来自 `AdapterRouteService::plan()`；mock 只查 golden 并维护内存状态，未命中 fail-closed。见 [Adapter 路线内核](adapter-route-kernel.md)。
+生产页面在非 Tauri 环境中必须报告 unavailable 或明确错误，不能为了“让页面能用”静默切到 mock。mock 只服务 `dev:mock`、Vitest 和 Playwright 浏览器冒烟。Adapter / route 的产品决策来自 `AdapterRouteService::plan()`；mock 只查 golden 并维护内存状态，未命中 fail-closed。见 [Adapter 路线内核](adapter-route-kernel.md)。
 
 ## Contracts 与 port
 

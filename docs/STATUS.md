@@ -35,10 +35,10 @@ updated: 2026-08-25
 ## 验证与发布
 
 - 日常改动按 [AGENTS.md](../AGENTS.md) 的风险分级选择过滤测试；全量 `pnpm test`、完整 Rust crate 矩阵和生产 `pnpm build` 默认留给提交前或 CI。
-- 前端检查包括 `pnpm typecheck`、`pnpm typecheck:test`、`pnpm test` 和 `pnpm build`；贡献者流程见 [测试与验证](guides/testing-and-validation.md)。
+- 前端检查包括 `pnpm typecheck`、`pnpm typecheck:test`、`pnpm test` 和 `pnpm build`；浏览器 DOM 冒烟用 `pnpm test:e2e:browser`，只覆盖 `dev:mock`，不覆盖 Tauri。贡献者流程见 [测试与验证](guides/testing-and-validation.md)。
 - Rust 核心、CLI 和 GUI 分别由对应 crate 的 `cargo test --locked` 验证。
 - `pnpm check:docs` 检查活跃 Markdown 的本地链接、标题锚点、元数据和已废弃路径标注。
-- PR CI 运行前端类型检查、构建、测试和三个 Rust crate 测试；正式发布由 `release` 分支上的 `v*` tag 触发。
+- PR CI 运行前端类型检查、构建、测试、三个 Rust crate 测试，以及独立的 Playwright Chromium 浏览器冒烟 job；正式发布由 `release` 分支上的 `v*` tag 触发。
 - 发布前必须同步 `package.json`、`Cargo.toml` workspace package 和 `src-tauri/tauri.conf.json` 的版本号。
 
 ## 已知边界

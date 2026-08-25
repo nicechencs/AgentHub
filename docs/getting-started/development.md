@@ -59,12 +59,12 @@ cargo test -p agenthub-cli --locked
 pnpm test:pr
 ```
 
-它包含应用和测试 typecheck、Vitest，以及 `agenthub-core` 的 Cargo 测试。测试策略和分域命令见 [testing-and-validation.md](../guides/testing-and-validation.md) 与 [testing.md](../reference/testing.md)。
+它包含应用和测试 typecheck、Vitest，以及 `agenthub-core` 的 Cargo 测试。浏览器 DOM 冒烟使用独立命令 `pnpm test:e2e:browser`，只打 `pnpm dev:mock`，不代表 Tauri。测试策略和分域命令见 [testing-and-validation.md](../guides/testing-and-validation.md) 与 [testing.md](../reference/testing.md)。
 
 ## 编辑边界
 
 - 只有 `src/lib/backend/tauri/` 可以直接调用 Tauri `invoke`。
-- `src/dev/mocks/` 只服务 `pnpm dev:mock` 和 Vitest；页面不能自行判断环境后静默切换 mock。
+- `src/dev/mocks/` 只服务 `pnpm dev:mock`、Vitest 和 Playwright 浏览器冒烟；页面不能自行判断环境后静默切换 mock。
 - 生产代码和测试代码分文件。Rust 生产模块只声明 `#[cfg(test)] mod tests;`，测试实现放在相邻 `tests.rs` 或 `*_tests.rs`；前端测试使用并列 `*.test.ts` / `*.test.tsx`。
 - 产品写入使用 `src/lib/api/tickets` 的 plan/bind/unbind 流程；`src/lib/api/adapter` 只用于预览和本机 Routes 运行时。
 

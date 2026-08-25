@@ -64,6 +64,7 @@ function productionModuleGraphGuard(): Plugin {
   const forbidden = [
     /[\\/]src[\\/]dev[\\/]/,
     /[\\/]src[\\/]test[\\/]/,
+    /[\\/]e2e[\\/]/,
     /\.test\.[cm]?[jt]sx?$/,
     /\.spec\.[cm]?[jt]sx?$/,
   ];
@@ -88,7 +89,7 @@ function productionModuleGraphGuard(): Plugin {
           [
             'Production build includes forbidden modules (dev mock / test):',
             ...unique.map((h) => `  - ${h}`),
-            'Mock must only be selected via pnpm dev:mock / vitest, never pnpm build.',
+            'Mock / e2e must only be selected via pnpm dev:mock / vitest / Playwright, never pnpm build.',
           ].join('\n'),
         );
       }

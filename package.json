@@ -25,6 +25,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:contracts": "vitest run src/dev/mocks/adapter.test.ts src/lib/backend/boundary-imports.test.ts src/lib/api/backend-features.test.ts",
+    "test:e2e:browser": "playwright test",
     "test:bridge": "cargo test -p agenthub-core --locked bridge && cargo test -p agenthub-gui --locked adapter_bridge_controller",
     "test:pr": "pnpm typecheck && pnpm typecheck:test && pnpm test && cargo test -p agenthub-core --locked",
     "check:docs": "node scripts/check-docs.mjs",
@@ -75,6 +76,7 @@
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tauri-apps/cli": "^2",
     "@types/node": "^26.1.1",
     "@types/react": "^18.3.12",
