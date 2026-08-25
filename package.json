@@ -27,6 +27,8 @@
     "test:contracts": "vitest run src/dev/mocks/adapter.test.ts src/lib/backend/boundary-imports.test.ts src/lib/api/backend-features.test.ts",
     "test:bridge": "cargo test -p agenthub-core --locked bridge && cargo test -p agenthub-gui --locked adapter_bridge_controller",
     "test:pr": "pnpm typecheck && pnpm typecheck:test && pnpm test && cargo test -p agenthub-core --locked",
+    "check:docs": "node scripts/check-docs.mjs",
+    "test:docs": "node --test --test-isolation=none scripts/check-docs.test.mjs",
     "pricing:update": "node scripts/update-embedded-pricing.mjs",
     "pricing:check": "node scripts/update-embedded-pricing.mjs --check",
     "icons": "node scripts/generate-desktop-icons.mjs",

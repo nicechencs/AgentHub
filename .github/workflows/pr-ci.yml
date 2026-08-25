@@ -48,6 +48,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check documentation
+        run: pnpm check:docs
+
+      - name: Test documentation checker
+        run: pnpm test:docs
+
       - name: Install Linux GUI build dependencies
         run: |
           sudo apt-get update
