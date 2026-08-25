@@ -201,6 +201,7 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('仅在 AgentHub 运行时恢复，不是开机自启');
     expect(markup).toContain('详情');
     expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain('编辑');
     expect(markup).not.toContain('收起');
     expect(markup).not.toContain('data-route-detail="bridge-1"');
     expect(markup).not.toContain('上游和本机');
@@ -227,7 +228,7 @@ describe('Bridges page', () => {
     expect(markup).toContain('Codex');
     expect(markup).toContain('Grok');
     expect(markup).toContain('写入客户端');
-    expect(markup).toContain('编辑');
+    expect(markup).not.toContain('编辑');
     expect(markup).not.toContain('一键配置');
     expect(markup).not.toContain('将勾选项写入客户端配置');
     expect(markup).not.toContain('备选');
@@ -316,8 +317,10 @@ describe('Bridges page', () => {
       entries: [],
       busy: false,
       error: null,
+      onRequestEdit: vi.fn(),
       onRequestRemove: vi.fn(),
     });
+    expect(markup).toContain('编辑');
     expect(markup).toContain('删除路由');
     expect(markup).not.toContain('收起');
     expect(markup).toContain('data-route-detail="bridge-1"');

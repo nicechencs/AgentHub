@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
-import { ArrowRight, Boxes, ChevronDown } from 'lucide-react';
+import { ArrowRight, Boxes } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { DetailsToggle } from '@/components/shared/DetailsToggle';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -206,7 +207,7 @@ function AdapterProfileRow({
 
   return (
     <ListRow className="p-3">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="w-40 shrink-0">
           {runtimeStatus ? <StatusLine view={runtimeStatus} emphasis /> : null}
         </div>
@@ -245,7 +246,7 @@ function AdapterProfileRow({
             ) : null}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {action ? (
             <Hint
               label={
@@ -272,26 +273,13 @@ function AdapterProfileRow({
           >
             {t('routes.write.action')}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onClick={() => onRequestEdit?.(profile)}
-          >
-            {t('routes.edit.action')}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-expanded={detailExpanded}
-            aria-controls={detailsId}
+          <DetailsToggle
+            open={detailExpanded}
+            controlsId={detailsId}
             onClick={onToggleDetail}
           >
             {t('routes.detail')}
-            <ChevronDown
-              className={cn('h-3.5 w-3.5 transition-transform', detailExpanded && 'rotate-180')}
-            />
-          </Button>
+          </DetailsToggle>
         </div>
       </div>
       {recovery ? (
@@ -313,6 +301,7 @@ function AdapterProfileRow({
           entries={entries}
           busy={busy}
           error={error}
+          onRequestEdit={onRequestEdit}
           onRequestRemove={onRequestRemove ?? (() => undefined)}
           targetHidden={targetHidden}
           siblingProfiles={siblingProfiles}

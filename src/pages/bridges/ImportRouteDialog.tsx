@@ -1,6 +1,6 @@
 import { useMemo, useState, type MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown } from 'lucide-react';
+import { DetailsToggle } from '@/components/shared/DetailsToggle';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { DialogOrSide } from './dialog-or-side';
@@ -9,7 +9,6 @@ import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
 import type { AuthStatus } from '@/lib/types';
-import { cn } from '@/lib/utils';
 import {
   alreadyRoutedSourceKeys,
   importableConnectionEntries,
@@ -175,11 +174,9 @@ export function ImportRouteDialog({
                           })}
                         </span>
                       </label>
-                      <button
-                        type="button"
-                        className="inline-flex shrink-0 items-center gap-1 text-meta text-muted"
-                        aria-expanded={openRow}
-                        aria-controls={detailsId}
+                      <DetailsToggle
+                        open={openRow}
+                        controlsId={detailsId}
                         onClick={(event) => {
                           stopRadioSelect(event);
                           toggleExpanded(entry.key);
@@ -187,11 +184,7 @@ export function ImportRouteDialog({
                         onMouseDown={stopRadioSelect}
                       >
                         {t('connections.list.details')}
-                        <ChevronDown
-                          className={cn('h-3.5 w-3.5 transition-transform', openRow && 'rotate-180')}
-                          aria-hidden
-                        />
-                      </button>
+                      </DetailsToggle>
                     </div>
                     {openRow ? (
                       <div id={detailsId} className="mt-2 space-y-1 pl-6 text-meta text-muted">
