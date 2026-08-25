@@ -2,6 +2,27 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn schema_places_model_after_api_key() {
+    let schema = CodexConfigProjector.schema();
+    let keys: Vec<&str> = schema
+        .fields
+        .iter()
+        .map(|field| field.key.as_str())
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "baseUrl",
+            "apiKey",
+            "model",
+            "reasoningEffort",
+            "wireApi",
+            "providerSlug",
+        ]
+    );
+}
+
+#[test]
 fn live_import_uses_model_provider_instead_of_first_provider() {
     let content = r#"
 model_provider = "active"

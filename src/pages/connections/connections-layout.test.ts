@@ -65,4 +65,11 @@ describe('connections layout wiring', () => {
     expect(account).toContain('variant="secondary"');
     expect(account).toContain('headerActions={headerActions}');
   });
+
+  it('clears the guided-add marker when the provider pane is dismissed', () => {
+    const page = source('index.tsx').replace(/\r\n/g, '\n');
+    expect(page).toContain(
+      'guideOpenedApiKeyRef.current = false;\n            inspect.close();',
+    );
+  });
 });
