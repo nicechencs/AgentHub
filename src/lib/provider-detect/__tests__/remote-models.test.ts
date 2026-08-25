@@ -277,6 +277,34 @@ describe('shouldFetchRemoteModels', () => {
         apiKey: 'sk-live-abcdefgh',
       }),
     ).toBe(true);
+    expect(
+      shouldFetchRemoteModels({
+        useOfficial: true,
+        baseUrl,
+        apiKey: REDACTED_MARKER,
+        hasStoredSecret: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldFetchRemoteModels({
+        useOfficial: false,
+        baseUrl,
+        apiKey: '',
+      }),
+    ).toBe(false);
+  });
+
+  it('reads OPENAI_BASE_URL from env-style JSON', () => {
+    expect(
+      resolveUpstreamBaseUrl({
+        formBaseUrl: '',
+        configText: JSON.stringify({
+          env: { OPENAI_BASE_URL: 'https://openrouter.ai/api/v1' },
+        }),
+        configFormat: 'json',
+        agentId: 'codex',
+      }),
+    ).toBe('https://openrouter.ai/api/v1');
   });
 
   it('fetches for a live pasted key on a custom http(s) URL', () => {
