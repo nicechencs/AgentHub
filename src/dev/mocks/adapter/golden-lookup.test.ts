@@ -125,7 +125,10 @@ describe('mock golden lookup', () => {
     ]);
   });
 
-  it('does not keep a second route engine', () => {
+  it('does not keep a classifier fallback or second route selector', () => {
+    // Proves the old classifier / rule-fixtures path did not return.
+    // project.ts still keys demo materialization by ruleId; this is not a
+    // claim that the full plan has zero TypeScript projection.
     const files = [
       'analyze.ts',
       'plan.ts',
@@ -293,6 +296,122 @@ describe('mock golden lookup', () => {
     expect(plan.canApply).toBe(true);
     expect(plan.analysis.ruleId).toBe('claude-subscription-to-pi-v1');
     expect(JSON.stringify(plan)).not.toContain('must-not-leak');
+  });
+
+  it('hits secret=true golden when credentials are empty but tokenValid is true', async () => {
+    upsertLiveAccount({
+      id: 'claude-empty-bag-valid',
+      agentId: 'claude',
+      kind: 'oauth',
+      label: 'Claude empty bag valid',
+      isCurrent: false,
+      tokenValid: true,
+      authHealth: 'renewable',
+      credentials: {},
+    } as Account);
+
+    const hit = lookupGoldenExpect(resolver, {
+      sourceKind: 'account',
+      sourceId: 'claude-empty-bag-valid',
+      targetAgentId: 'pi',
+    });
+    expect(hit?.id).toBe('claude-oauth-to-pi');
+    const plan = await planFor('account', 'claude-empty-bag-valid', 'pi');
+    expect(plan.canApply).toBe(true);
+    expect(JSON.stringify(plan)).not.toContain('must-not-leak');
+  });
+
+  it('does not apply empty credentials when tokenValid is false', async () => {
+    upsertLiveAccount({
+      id: 'claude-empty-bag-invalid',
+      agentId: 'claude',
+      kind: 'oauth',
+      label: 'Claude empty bag invalid',
+      isCurrent: false,
+      tokenValid: false,
+      credentials: {},
+    } as Account);
+
+    const plan = await planFor('account', 'claude-empty-bag-invalid', 'pi');
+    expect(plan.canApply).toBe(false);
+    expect(JSON.stringify(plan)).not.toContain('must-not-leak');
+  });
+
+  it('fails closed when status is unknown and credentials are empty', async () => {
+    upsertLiveAccount({
+      id: 'kimi-membership-unknown-empty',
+      agentId: 'kimi',
+      kind: 'apikey',
+      label: 'Kimi membership unknown empty',
+      isCurrent: false,
+      extra: { provider: 'kimi-code-membership' },
+      credentials: {},
+    } as Account);
+
+    const request = {
+      sourceKind: 'account' as const,
+      sourceId: 'kimi-membership-unknown-empty',
+      targetAgentId: 'claude' as AgentId,
+    };
+    expect(lookupGoldenExpect(resolver, request)).toBeNull();
+    const plan = await planFor('account', 'kimi-membership-unknown-empty', 'claude');
+    expect(plan.canApply).toBe(false);
+    expect(plan.analysis.route).toBe('unsupported');
+    expect(JSON.stringify(plan)).not.toContain('must-not-leak');
+  });
+
+  it('does not treat an empty token slot as a usable secret when status is unknown', async () => {
+    upsertLiveAccount({
+      id: 'claude-unknown-empty-slot',
+      agentId: 'claude',
+      kind: 'oauth',
+      label: 'Claude unknown empty slot',
+      isCurrent: false,
+      credentials: { access_token: '' },
+    } as Account);
+
+    const plan = await planFor('account', 'claude-unknown-empty-slot', 'pi');
+    expect(plan.canApply).toBe(false);
+    expect(JSON.stringify(plan)).not.toContain('must-not-leak');
+  });
+
+  it('hits golden when status is unknown but credentials contain a usable token', async () => {
+    upsertLiveAccount({
+      id: 'kimi-membership-unknown-with-key',
+      agentId: 'kimi',
+      kind: 'apikey',
+      label: 'Kimi membership unknown with key',
+      isCurrent: false,
+      extra: { provider: 'kimi-code-membership' },
+      credentials: { format: 'api_key', api_key: 'must-not-leak' },
+    } as Account);
+    upsertLiveAccount({
+      id: 'claude-unknown-with-token',
+      agentId: 'claude',
+      kind: 'oauth',
+      label: 'Claude unknown with token',
+      isCurrent: false,
+      credentials: { access_token: 'must-not-leak' },
+    } as Account);
+
+    const kimiHit = lookupGoldenExpect(resolver, {
+      sourceKind: 'account',
+      sourceId: 'kimi-membership-unknown-with-key',
+      targetAgentId: 'claude',
+    });
+    expect(kimiHit?.id).toBe('kimi-membership-account-to-claude');
+    const kimiPlan = await planFor('account', 'kimi-membership-unknown-with-key', 'claude');
+    expect(kimiPlan.canApply).toBe(true);
+
+    const claudeHit = lookupGoldenExpect(resolver, {
+      sourceKind: 'account',
+      sourceId: 'claude-unknown-with-token',
+      targetAgentId: 'pi',
+    });
+    expect(claudeHit?.id).toBe('claude-oauth-to-pi');
+    const claudePlan = await planFor('account', 'claude-unknown-with-token', 'pi');
+    expect(claudePlan.canApply).toBe(true);
+    expect(JSON.stringify({ kimiPlan, claudePlan })).not.toContain('must-not-leak');
   });
 
   it('does not apply a Kimi membership account with tokenValid false / needs_login', async () => {
