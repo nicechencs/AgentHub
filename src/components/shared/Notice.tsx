@@ -67,19 +67,21 @@ export function Notice({
       {(actionLabel && onAction) || onDismiss ? (
         <div className="flex shrink-0 items-center gap-1">
           {actionLabel && onAction && (
-            <Button size="sm" variant="outline" className="h-6 px-2 text-meta" onClick={onAction}>
+            <Button size="sm" variant="outline" onClick={onAction}>
               {actionLabel}
             </Button>
           )}
           {onDismiss && (
-            <button
+            <Button
               type="button"
+              size="icon"
+              variant="ghost"
               onClick={onDismiss}
-              className="rounded-btn p-1 text-muted hover:bg-hover hover:text-primary"
               aria-label={t('common.close')}
+              title={t('common.close')}
             >
               <X className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           )}
         </div>
       ) : null}

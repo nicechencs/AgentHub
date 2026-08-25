@@ -379,6 +379,7 @@ export function ChatComposer({
               className="h-7 w-7 rounded-btn"
               disabled={!canSend}
               onClick={onSend}
+              aria-label={t('chat.composer.send')}
               title={sendHint}
             >
               <SendHorizontal className="h-3.5 w-3.5" />
@@ -419,7 +420,6 @@ function BlockerNotice({
             <Button
               size="sm"
               variant="outline"
-              className="h-6 px-2 text-meta"
               onClick={() => onFocusConversation(blocker.conversationId)}
             >
               {copy.primaryAction}
@@ -427,7 +427,6 @@ function BlockerNotice({
             <Button
               size="sm"
               variant="dangerOutline"
-              className="h-6 px-2 text-meta"
               onClick={onCancel}
             >
               {copy.secondaryAction}

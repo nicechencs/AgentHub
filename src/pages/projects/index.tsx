@@ -615,9 +615,8 @@ export default function ProjectsPage() {
                       {showDelete && (
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="dangerOutline"
                           disabled={busy}
-                          className="text-danger hover:text-danger"
                           onClick={() => setBatchDeleteOpen(true)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />

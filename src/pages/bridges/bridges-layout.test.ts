@@ -35,7 +35,7 @@ describe('routes layout wiring', () => {
     expect(importDialog).toContain("t('connections.list.details')");
     const detail = source('pages/bridges/RouteDetailPanel.tsx');
     expect(detail).toContain('asPanel');
-    expect(detail).toContain('DialogOrSide');
+    expect(detail).toContain('InspectSurface as DialogOrSide');
     expect(detail).toContain("t('routes.edit.action')");
     expect(list).toContain("t('routes.edit.action')");
     expect(list).toContain('variant="outline"');
@@ -60,17 +60,33 @@ describe('routes layout wiring', () => {
     expect(page).toContain('asPanel');
   });
 
-  it('puts cancel + delete + save in the inspect header and collapse beside them', () => {
-    const shell = source('pages/bridges/dialog-or-side.tsx');
+  it('puts cancel on form inspect surfaces; read-only detail omits it', () => {
+    const shell = source('components/layout/InspectSurface.tsx');
     expect(shell).toContain("t('common.cancel')");
     expect(shell).toContain('variant="secondary"');
+    expect(shell).toContain('showCancel');
     expect(shell).toContain('{danger}');
     expect(shell).toContain('{primary}');
     expect(shell).not.toContain('footer={danger}');
     const detail = source('pages/bridges/RouteDetailPanel.tsx');
+    expect(detail).toContain('showCancel={false}');
     expect(detail).toContain('danger={deleteButton}');
+    expect(detail).toContain('variant="outline"');
+    const create = source('pages/bridges/CreateRouteDialog.tsx');
+    expect(create).not.toContain('showCancel={false}');
     const panel = source('components/layout/SideInspectPanel.tsx');
     expect(panel).toContain('PanelRightClose');
     expect(panel).toContain('flex h-10');
+  });
+
+  it('keeps the healthy empty state informational without a second create CTA', () => {
+    const page = source('pages/bridges/index.tsx');
+    const emptyBlock = page.slice(
+      page.indexOf("pageView === 'healthy_empty'"),
+      page.indexOf("pageView === 'list'"),
+    );
+    expect(emptyBlock).toContain("t('routes.empty.title')");
+    expect(emptyBlock).not.toContain('actionLabel');
+    expect(emptyBlock).not.toContain("t('routes.create.action')");
   });
 });

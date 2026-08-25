@@ -15,7 +15,7 @@ import type {
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from './adapter-components';
-import { DialogOrSide } from './dialog-or-side';
+import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { readCreateRouteCapabilities } from './create-route-flow';
 import {
   adapterBridgeHostPort,
@@ -109,8 +109,9 @@ export function RouteDetailPanel({
         }}
         title={t('routes.detailTitle')}
         description={t('routes.detailDescription')}
+        showCancel={false}
         primary={onRequestEdit ? (
-          <Button type="button" size="sm" onClick={() => onRequestEdit(profile)}>
+          <Button type="button" size="sm" variant="outline" onClick={() => onRequestEdit(profile)}>
             {t('routes.edit.action')}
           </Button>
         ) : undefined}

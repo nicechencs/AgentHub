@@ -192,7 +192,13 @@ export function EnvRemediationPanel({
           </p>
         </div>
         {onDismiss && status !== 'running' && (
-          <Button size="icon" variant="ghost" onClick={onDismiss}>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={onDismiss}
+            aria-label={t('common.close')}
+            title={t('common.close')}
+          >
             <X className="h-3.5 w-3.5" />
           </Button>
         )}

@@ -150,10 +150,11 @@ describe('agent-card install confirm', () => {
     expect(dialogs).toContain('onConfirmInstall');
   });
 
-  it('makes retry the primary button after a failed task', () => {
+  it('keeps retry as a secondary card action after a failed task', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
     expect(card).toContain('installFailed');
-    expect(card).toContain("variant={installFailed ? 'default' : 'secondary'}");
+    expect(card).not.toContain("variant={installFailed ? 'default' : 'secondary'}");
+    expect(card).toContain('variant="secondary"');
     expect(card).toContain('agents.card.retry');
     expect(card).toContain('retryAction');
   });

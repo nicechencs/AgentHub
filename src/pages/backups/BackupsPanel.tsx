@@ -80,6 +80,7 @@ export function BackupsPanel() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<BackupMeta | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BackupMeta | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -183,11 +184,14 @@ export function BackupsPanel() {
     }
   };
 
-  const handleDelete = async (bk: BackupMeta) => {
-    setBusyId(bk.id);
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setBusyId(target.id);
     try {
-      await deleteBackup(bk.id);
+      await deleteBackup(target.id);
       toast({ title: t('settings.backups.deleted') });
+      setDeleteTarget(null);
       await refresh();
     } catch (e) {
       toast({ title: t('settings.backups.deleteFailed'), description: e instanceof Error ? e.message : String(e), variant: 'danger' });
@@ -329,19 +333,24 @@ export function BackupsPanel() {
                   <div className="flex shrink-0 flex-col justify-center gap-1.5 sm:flex-row sm:items-center">
                     <Button
                       variant="outline"
-                      size="default"
-                      disabled={busyId !== null}
-                      onClick={() => setRestoreTarget(bk)}
+                      size="sm"
+                      disabled={busyId !== null || restoreTarget !== null || deleteTarget !== null}
+                      onClick={() => {
+                        setDeleteTarget(null);
+                        setRestoreTarget(bk);
+                      }}
                     >
                       <RotateCcw className="h-3.5 w-3.5" />
                       {t('common.restore')}
                     </Button>
                     <Button
-                      variant="ghost"
-                      size="default"
-                      className="hover:text-danger"
-                      disabled={busyId !== null}
-                      onClick={() => void handleDelete(bk)}
+                      variant="dangerOutline"
+                      size="sm"
+                      disabled={busyId !== null || restoreTarget !== null || deleteTarget !== null}
+                      onClick={() => {
+                        setRestoreTarget(null);
+                        setDeleteTarget(bk);
+                      }}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                       {t('common.delete')}
@@ -379,6 +388,36 @@ export function BackupsPanel() {
             </Button>
             <Button disabled={busyId !== null} onClick={() => void handleRestore()}>
               {busyId !== null ? t('settings.backups.restoring') : t('settings.backups.confirmRestore')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && busyId === null && setDeleteTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('settings.backups.deleteTitle')}</DialogTitle>
+            <DialogDescription>
+              {deleteTarget &&
+                t('settings.backups.deleteDesc', {
+                  name: agentDisplayName(deleteTarget.agentId),
+                  when: fmtAbsoluteI18n(deleteTarget.createdAt, lang),
+                  kind: backupKindLabel(deleteTarget.kind, t),
+                })}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-secondary">
+            {t('settings.backups.deleteConfirm')}
+          </p>
+          <DialogFooter>
+            <Button variant="secondary" disabled={busyId !== null} onClick={() => setDeleteTarget(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="danger" disabled={busyId !== null} onClick={() => void handleDelete()}>
+              {busyId !== null ? t('settings.backups.deleting') : t('settings.backups.confirmDelete')}
             </Button>
           </DialogFooter>
         </DialogContent>

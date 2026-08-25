@@ -276,7 +276,7 @@ function AdapterProfileRow({
               }
             >
               <Button
-                variant="outline"
+                variant={action.kind === 'stop' ? 'dangerOutline' : 'outline'}
                 size="sm"
                 disabled={busy || transitioning || (targetHidden && action.kind !== 'stop')}
                 onClick={() => (action.kind === 'stop' ? onRequestStopBridge(profile) : onStartBridge(profile))}
