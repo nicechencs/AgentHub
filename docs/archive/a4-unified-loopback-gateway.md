@@ -1,7 +1,11 @@
 # A4 unified loopback gateway — design (archived)
 
-> **归档（2026-08-24）**。进程内 Gateway 已落地（`crates/agenthub-core/src/bridge/host/gateway.rs`）。现行契约见 [../provider-api-oauth-adaptation.md](../provider-api-oauth-adaptation.md) §5.4 与 [../local-route-endpoints.md](../local-route-endpoints.md)。下文是当时的签核稿，不要按「not implemented」派工。
+> **归档（2026-08-24）**。进程内 Gateway 已落地（`crates/agenthub-core/src/bridge/host/gateway.rs`）。现行契约见 [../reference/route-compatibility.md](../reference/route-compatibility.md) 与 [../reference/local-route-api.md](../reference/local-route-api.md)。下文是当时的签核稿，不要按「not implemented」派工。
 
+> **Archived / 已归档**: Historical design and approval record. Preserve the body for context; do not use it as the current implementation contract, capability switch, or TODO list.
+> **Status**: archived historical record
+> Current behavior is defined by the organized `docs/concepts/`, `docs/decisions/`, `docs/reference/`, and `docs/ui/` documents.
+>
 Status at authoring time: **design only**. A1–A3 had landed on `refactor/bridge-gateway`. Do not treat the freeze notes below as current engineering gates.
 
 Today (after A1–A3): **one profile → one loopback TCP listener → one `BridgeLocalSurface` → one `ResolvedAuth`**. The router already registers all four paths; unmatched conversation endpoints 404 *before* local auth.

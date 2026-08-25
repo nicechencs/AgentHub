@@ -1,8 +1,11 @@
 # AgentHub 路由、端点、协议转换与模型能力审计
 
+> **Archived / 已归档**: Historical record. Do not use as current implementation contract or TODO list.
+> **Status**: archived historical record
+>
 > 审计日期：2026-08-24　分支：`dev`　修订：2026-08-24 对齐 `db153cd`（Chat↔OpenAI Chat 同协议、Chat→Anthropic/Grok IR、surface-aware `passthrough_for`；`ee06d3e` 的 listedModels 与多客户端绑定仍有效）
 >
-> **归档（2026-08-24）**。带日期的审计快照；长期有效的行为说明以 [../local-route-endpoints.md](../local-route-endpoints.md) 为准。
+> **归档（2026-08-24）**。带日期的审计快照；长期有效的行为说明以 [../reference/local-route-api.md](../reference/local-route-api.md) 为准。
 >
 > 这份文档回答：路由页面目前展示什么、后端真正支持什么、协议是否能互转、是否有不转换协议的中继、模型列表/限制/绑定做到哪一步，以及参考项目能借鉴什么。
 
@@ -40,7 +43,7 @@ flowchart LR
 
 ### 2.1 页面层明确展示的端点
 
-定义集中在 [`src/lib/route-endpoints.ts`](../src/lib/route-endpoints.ts)：
+定义集中在 [`src/lib/route-endpoints.ts`](../../src/lib/route-endpoints.ts)：
 
 | endpoint id | 本机路径 | 默认目标映射 | 当前页面/运行时评价 |
 |---|---|---|---|
@@ -102,12 +105,12 @@ sequenceDiagram
 
 关键位置：
 
-- HTTP 路由：[`crates/agenthub-core/src/bridge/host/http.rs`](../crates/agenthub-core/src/bridge/host/http.rs)
-- surface 判定：[`crates/agenthub-core/src/bridge/host/surface.rs`](../crates/agenthub-core/src/bridge/host/surface.rs)
-- 鉴权、模型切边、账号选择、转发：[`crates/agenthub-core/src/bridge/host/dispatch.rs`](../crates/agenthub-core/src/bridge/host/dispatch.rs)
-- 上游通道：[`crates/agenthub-core/src/bridge/host/transport/`](../crates/agenthub-core/src/bridge/host/transport/)
-- 请求/响应协议 IR：[`crates/agenthub-core/src/bridge/protocol/`](../crates/agenthub-core/src/bridge/protocol/)
-- 流式转换：[`crates/agenthub-core/src/bridge/host/stream.rs`](../crates/agenthub-core/src/bridge/host/stream.rs)
+- HTTP 路由：[`crates/agenthub-core/src/bridge/host/http.rs`](../../crates/agenthub-core/src/bridge/host/http.rs)
+- surface 判定：[`crates/agenthub-core/src/bridge/host/surface.rs`](../../crates/agenthub-core/src/bridge/host/surface.rs)
+- 鉴权、模型切边、账号选择、转发：[`crates/agenthub-core/src/bridge/host/dispatch.rs`](../../crates/agenthub-core/src/bridge/host/dispatch.rs)
+- 上游通道：[`crates/agenthub-core/src/bridge/host/transport/`](../../crates/agenthub-core/src/bridge/host/transport/mod.rs)
+- 请求/响应协议 IR：[`crates/agenthub-core/src/bridge/protocol/`](../../crates/agenthub-core/src/bridge/protocol/mod.rs)
+- 流式转换：[`crates/agenthub-core/src/bridge/host/stream.rs`](../../crates/agenthub-core/src/bridge/host/stream.rs)
 
 一个 edge 只有一个 `BridgeLocalSurface`；不匹配的 conversation surface 在鉴权后返回 404。`Models` 是例外：总是由本地 mapping 合成。
 
@@ -125,10 +128,10 @@ sequenceDiagram
 
 对应代码分支：
 
-- OpenAI Chat：[`openai_chat.rs`](../crates/agenthub-core/src/bridge/host/transport/openai_chat.rs)
-- Anthropic Messages：[`anthropic.rs`](../crates/agenthub-core/src/bridge/host/transport/anthropic.rs)
-- Codex Responses：[`codex.rs`](../crates/agenthub-core/src/bridge/host/transport/codex.rs)
-- Grok Responses：[`grok.rs`](../crates/agenthub-core/src/bridge/host/transport/grok.rs)
+- OpenAI Chat：[`openai_chat.rs`](../../crates/agenthub-core/src/bridge/host/transport/openai_chat.rs)
+- Anthropic Messages：[`anthropic.rs`](../../crates/agenthub-core/src/bridge/host/transport/anthropic.rs)
+- Codex Responses：[`codex.rs`](../../crates/agenthub-core/src/bridge/host/transport/codex.rs)
+- Grok Responses：[`grok.rs`](../../crates/agenthub-core/src/bridge/host/transport/grok.rs)
 
 ### 4.2 转换处理的内容
 
@@ -372,11 +375,11 @@ flowchart LR
 
 | 主题 | 证据 |
 |---|---|
-| 页面三端点、目标映射 | [`src/lib/route-endpoints.ts`](../src/lib/route-endpoints.ts)、[`src/pages/bridges/create-route-flow.ts`](../src/pages/bridges/create-route-flow.ts) |
-| `/routes` 职责 | [`src/pages/bridges/index.tsx`](../../src/pages/bridges/index.tsx)、[`docs/adapter-design.md`](../adapter-design.md) |
-| HTTP 入口与 surface | [`crates/agenthub-core/src/bridge/host/http.rs`](../crates/agenthub-core/src/bridge/host/http.rs)、[`surface.rs`](../crates/agenthub-core/src/bridge/host/surface.rs) |
-| 转换矩阵 | [`transport/`](../crates/agenthub-core/src/bridge/host/transport/)、[`protocol/`](../crates/agenthub-core/src/bridge/protocol/) |
-| route edge 与 apply gate | [`local_bridge_edges.rs`](../crates/agenthub-core/src/domain/protocol_graph/adapter_capability_matrix/local_bridge_edges.rs)、[`actions.rs`](../crates/agenthub-core/src/services/adapter_route_service/actions.rs) |
-| 模型 mapping/list/switch | [`adapter_model_mapping.rs`](../crates/agenthub-core/src/models/adapter_model_mapping.rs)、[`bridge/tests.rs`](../crates/agenthub-core/src/bridge/tests.rs) |
-| 模型绑定断点 | [`binding_repo.rs`](../crates/agenthub-core/src/storage/binding_repo.rs)、[`src-tauri/src/commands/adapter.rs`](../src-tauri/src/commands/adapter.rs)、[`src/lib/backend/contracts/ticket.ts`](../src/lib/backend/contracts/ticket.ts) |
+| 页面三端点、目标映射 | [`src/lib/route-endpoints.ts`](../../src/lib/route-endpoints.ts)、[`src/pages/bridges/create-route-flow.ts`](../../src/pages/bridges/create-route-flow.ts) |
+| `/routes` 职责 | [`src/pages/bridges/index.tsx`](../../src/pages/bridges/index.tsx)、[`adapters-and-bridges.md`](../concepts/adapters-and-bridges.md) |
+| HTTP 入口与 surface | [`crates/agenthub-core/src/bridge/host/http.rs`](../../crates/agenthub-core/src/bridge/host/http.rs)、[`surface.rs`](../../crates/agenthub-core/src/bridge/host/surface.rs) |
+| 转换矩阵 | [`transport/mod.rs`](../../crates/agenthub-core/src/bridge/host/transport/mod.rs)、[`protocol/mod.rs`](../../crates/agenthub-core/src/bridge/protocol/mod.rs) |
+| route edge 与 apply gate | [`local_bridge_edges.rs`](../../crates/agenthub-core/src/domain/protocol_graph/adapter_capability_matrix/local_bridge_edges.rs)、[`actions.rs`](../../crates/agenthub-core/src/services/adapter_route_service/actions.rs) |
+| 模型 mapping/list/switch | [`adapter_model_mapping.rs`](../../crates/agenthub-core/src/models/adapter_model_mapping.rs)、[`bridge/tests.rs`](../../crates/agenthub-core/src/bridge/tests.rs) |
+| 模型绑定断点 | [`binding_repo.rs`](../../crates/agenthub-core/src/storage/binding_repo.rs)、[`src-tauri/src/commands/adapter.rs`](../../src-tauri/src/commands/adapter.rs)、[`src/lib/backend/contracts/ticket.ts`](../../src/lib/backend/contracts/ticket.ts) |
 | 参考项目 | `D:\demo_github\AgentHub_Ref\grok2api`、`D:\demo_github\AgentHub_Ref\sub2api`（候选路径） |

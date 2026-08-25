@@ -1,9 +1,12 @@
 # 路由 × 连接重构：任务拆分与派工计划
 
-> **归档（2026-08-24）**。不是现行派工单。A1–A4 / B1 / C1 等已合入；未完项见 [../provider-api-oauth-adaptation.md](../provider-api-oauth-adaptation.md) §5.4（进程内网关已落地）与 §5.5（轮询内核已有、边默认关）。索引见 [../README.md](../README.md)。
+> **Archived / 已归档**: Historical record. Do not use as current implementation contract or TODO list.
+> **Status**: archived historical record
+>
+> **归档（2026-08-24）**。不是现行派工单。A1–A4 / B1 / C1 等已合入；未完项见 [../reference/route-compatibility.md](../reference/route-compatibility.md) 的当前兼容矩阵（历史稿 §5.4、§5.5）。索引见 [../README.md](../README.md)。
 >
 > 原状态：**收尾中（2026-08-22 制定；同日 A1–A4、B1、B2 kernel 腿、C1–C3、D1–D3 全部验收合入 dev；测试债修复与连接域模块化拆分亦已合入）**。未完成：B2 实机取证（等真实 Claude 订阅账号）、C2 遗留小项（健康态回写账号行、启动映射 TryOnce、实机取证后开闸）。
-> 真源关系：**本文只做任务拆分，不新增决策**。产品与协议决策以 [../provider-api-oauth-adaptation.md](../provider-api-oauth-adaptation.md) 为准；领域模型以 [../connection-binding-model.md](../connection-binding-model.md) 为准；模块化债以 [../modularity-improvement.md](../modularity-improvement.md) 为准；sidecar 迁移契约以 [../adapter-sidecar-design.md](../adapter-sidecar-design.md) 为准；实现状态以 [../agenthub-plan.md §8](../agenthub-plan.md#8-当前实现状态以代码与测试为准) 为准。
+> 真源关系：**本文只做任务拆分，不新增决策**。产品与协议决策以 [../reference/route-compatibility.md](../reference/route-compatibility.md) 为准；领域模型以 [../concepts/connections-and-routing.md](../concepts/connections-and-routing.md) 为准；模块化债以 [../proposals/modularity.md](../proposals/modularity.md) 为准；sidecar 迁移契约以 [../proposals/adapter-sidecar.md](../proposals/adapter-sidecar.md) 为准；实现状态以 [../STATUS.md](../STATUS.md) 为准。
 > 依据：2026-08-22 对 `bridge/`、`adapter_route_service/`、`protocol_graph/`、`ticket_*` / `account_service/` / `connection_service` 及相关文档的三路深度审查（结论摘录见 §1–§2；审查为只读，未改代码）。
 
 ## 0. 范围外（先钉死，防止派工跑偏）
@@ -13,7 +16,7 @@
 1. **负载均衡（按压力/余额分配）不做**；多账号只做固定顺序轮询 + 故障切换（§5.5 拍板）。
 2. **国产 OAuth 不开边、不转 API**（AGENTS.md 硬规则）。
 3. **凭据落盘加密范围外**，不列任务、不列风险。
-4. **sidecar（`agenthub-adapterd`）本轮不迁**。先完成运行时分层（泳道 A），再按 [adapter-sidecar-design.md](../adapter-sidecar-design.md) 三阶段推进；本轮任何任务不得引入第二个 host 或 IPC 半成品。
+4. **sidecar（`agenthub-adapterd`）本轮不迁**。先完成运行时分层（泳道 A），再按 [adapter-sidecar.md](../proposals/adapter-sidecar.md) 三阶段推进；本轮任何任务不得引入第二个 host 或 IPC 半成品。
 5. `/v1/embeddings`、`/v1/images/*`、`/v1/realtime` 暂缓（§5.4.1）。
 6. 不监听公网、不导出上游 token、不把生成配置当登录。
 7. 表面统一 ≠ 通用转发：每条边仍走 `plan()` + capability matrix 门禁，本轮不因重构自动打开任何 `canApply`。
@@ -41,8 +44,8 @@
 
 | # | 位置 | 问题 |
 |---|---|---|
-| 1 | [account-authorization-pool.md](../account-authorization-pool.md) §6/§9 vs §8 | §6/§9 仍写「按 identity 分组 UI」验收，§8 又写 Connections 已是登录列表、勿再验收分组——自相矛盾 |
-| 2 | [connection-binding-model.md](../connection-binding-model.md) §4 | 「refresh single-flight 发生在票这一层」与实现不符：实际按 **account 行** single-flight（`oauth_owner` / `live_reconcile`） |
+| 1 | [accounts-and-authorization.md](../concepts/accounts-and-authorization.md) 的历史分组验收说明 | §6/§9 仍写「按 identity 分组 UI」验收，§8 又写 Connections 已是登录列表、勿再验收分组——自相矛盾 |
+| 2 | [connections-and-routing.md](../concepts/connections-and-routing.md) §4 | 「refresh single-flight 发生在票这一层」与实现不符：实际按 **account 行** single-flight（`oauth_owner` / `live_reconcile`） |
 | 3 | 各文档 | `ActiveBinding` / `TicketBinding` / 前端 connection-pool 三套命名缺一张对照表（P0-5 只写了前两个） |
 
 工作区未提交改动（admission 上限 256、429 `Retry-After`、Claude→Codex reason 改判文案，7 文件 +43/−29）已核对与拍板一致，随下一次提交入库即可，不派生任务。
@@ -102,7 +105,7 @@ flowchart LR
 - **状态**：已合入 dev（2026-08-22，`refactor/bridge-gateway`；`dispatch.rs` 降至 ~160 行，见 `bridge/host/surface.rs`）
 - **目标**：消除 `handle_responses` / `handle_messages` / `handle_chat_completions` 三份复制的 鉴权 → shutdown → admission → 读 body → 错误映射 模板；把 path→surface 解析、404 门控、下游 parse/encode 边界从 `dispatch.rs` 挪进独立模块（建议 `bridge/host/surface.rs` 或 `bridge/surface/`）。**行为完全不变**（含错 surface 404 契约）。
 - **文件**：`crates/agenthub-core/src/bridge/host/{dispatch,http,mod}.rs`、新 surface 模块、`bridge/tests.rs`（只允许搬用例，不改断言语义）。
-- **限制**：不改 wire 行为、不改日志字段口径（[logging.md](../logging.md)）、不动 protocol/ 内核、不新增公共 API 暴露 token。测试与生产分文件（[testing.md](../testing.md)）。
+- **限制**：不改 wire 行为、不改日志字段口径（[logging.md](../reference/logging.md)）、不动 protocol/ 内核、不新增公共 API 暴露 token。测试与生产分文件（[testing.md](../reference/testing.md)）。
 - **验收**：`cargo test -p agenthub-core bridge` 全绿；`dispatch.rs` 主路径无三份模板复制（参考目标 ≤800 行）；鉴权只在一处实现、health/models/对话端点共用。
 
 ### A2 抽 UpstreamTransport trait
@@ -171,15 +174,15 @@ flowchart LR
 - **状态**：已合入 dev（2026-08-22，`feature/member-health-ui`：contracts/mock 扩展可选 `health`，Routes 详情成员健康态、Connections 钱包多成员承接展示；vitest 145 文件 / 1246 用例全绿）
 - **目标**：Routes 详情展示同票面成员及健康态；Connections 钱包「正用于」表达多成员承接；不新增页面，不做管理大盘。
 - **文件**：`src/pages/bridges/*`、`src/pages/connections/*`、contracts/mock 对应扩展。
-- **限制**：遵守 [ui-design.md](../ui-design.md) / [ui-component-standard.md](../ui-component-standard.md)；不显示 token 或完整凭据；孤立/失效成员置灰 + 原因，不藏行。
+- **限制**：遵守 [design-system.md](../ui/design-system.md) / [page-patterns.md](../ui/page-patterns.md)；不显示 token 或完整凭据；孤立/失效成员置灰 + 原因，不藏行。
 - **验收**：`pnpm test -- bridges connections` 全绿；mock 下可演示两成员一失效的展示态。
 - **依赖**：C2。
 
 ### D1 文档矛盾修复与命名对照
 
 - **状态**：已合入 dev（2026-08-22，`refactor/connection-cleanup`；三处均带核对日期）
-- **目标**：修 §1.3 三条不一致：① [account-authorization-pool.md](../account-authorization-pool.md) §6/§9 与 §8 的分组验收矛盾（以 §8 为准改写 §6/§9，标注历史）；② [connection-binding-model.md](../connection-binding-model.md) §4 refresh single-flight 层级改为「按 account 行（授权）single-flight」，与 `oauth_owner` 实现对齐；③ 在 connection-binding-model.md §2.4 补第三行命名对照：前端 `connection-pool-store` = accounts+providers 缓存，≠ `ConnectionService`。
-- **文件**：仅上述两个文档（+ 如需 [modularity-improvement.md](../modularity-improvement.md) 对照表补一行）。
+- **目标**：修 §1.3 三条不一致：① [accounts-and-authorization.md](../concepts/accounts-and-authorization.md) 的历史分组验收说明；② [connections-and-routing.md](../concepts/connections-and-routing.md) §4 refresh single-flight 层级改为「按 account 行（授权）single-flight」，与 `oauth_owner` 实现对齐；③ 在 connections-and-routing.md §2.4 补第三行命名对照：前端 `connection-pool-store` = accounts+providers 缓存，≠ `ConnectionService`。
+- **文件**：仅上述两个文档（+ 如需 [modularity.md](../proposals/modularity.md) 对照表补一行）。
 - **限制**：不新增决策、不改产品口径；改动处标注核对日期。
 - **验收**：主 Agent 通读复核；文档间交叉引用不断链。
 
@@ -188,7 +191,7 @@ flowchart LR
 - **状态**：已合入 dev（2026-08-22）。契约在 `ticket_read_service/tests.rs`（`ticket_connection_*`）；写面盘点见 [multi-account-routing-rfc.md 附录 A](multi-account-routing-rfc.md#附录-a-d3-绑定真相写面盘点只盘点不改写入)。不改写入行为。
 - **目标**：「谁在用」当前有三处真相：`TicketBinding`（由 `is_current` + `adapter_profiles` 派生，`derive_bindings`）、`agent_active_bindings`（ActiveBinding）、前端 `connection-pool-store` 缓存——而 `list_wallet` **不读** `agent_active_bindings`。交付两件事：① 一致性契约测试——对同一 DB 状态断言钱包派生绑定与 ActiveBinding 指针一致，故意制造漂移（只改一侧）时测试能红；② 写面盘点——列出仍绕过 `bind_ticket` 的写入口（`AccountService.switch`、import activate、`apply_adapter` 兼容口）及各自是否维持派生一致性，产出结论供主 Agent 决定是否在后续轮收口为 `bind(native)`。**本任务只加测试和盘点报告，不改写入行为。**
 - **文件**：`services/ticket_read_service.rs` 测试区、`services/connection_service` tests、盘点结论回写本文本卡。
-- **限制**：不改 `derive_bindings` 语义、不动 `bind`/`switch` 行为；`pool_crud.rs`（~1913 行）与 `connection_service.rs`（~1026 行）的机械拆分不在本卡（归 [modularity-improvement.md](../modularity-improvement.md) 管辖）。
+- **限制**：不改 `derive_bindings` 语义、不动 `bind`/`switch` 行为；`pool_crud.rs`（~1913 行）与 `connection_service.rs`（~1026 行）的机械拆分不在本卡（归 [modularity.md](../proposals/modularity.md) 管辖）。
 - **验收**：`cargo test -p agenthub-core "ticket_ connection_"` 全绿；漂移场景契约测试在 PR 描述里演示能红后还原；盘点表交主 Agent。
 - **依赖**：C1 合入后动工（同文件测试区，避免冲突）。
 

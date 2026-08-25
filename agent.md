@@ -1,5 +1,5 @@
-# Agent 协作规则
+# AgentHub Agent 入口
 
-本文件为兼容入口。项目约定与协作规则的**唯一真源**是根目录 [AGENTS.md](AGENTS.md)（含「Agent 协作规则」一节）。
+本文件只保留兼容入口。项目约定、架构红线、分支规则和协作要求的唯一真源是根目录 [AGENTS.md](AGENTS.md)。
 
-请直接阅读并遵守 `AGENTS.md`，不要在本文件继续追加规则。
+请直接阅读并遵守 [AGENTS.md](AGENTS.md)；不要在本文件追加规则。
