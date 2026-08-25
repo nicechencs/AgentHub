@@ -45,7 +45,7 @@ updated: 2026-08-25
 
 - `agenthub-adapterd` sidecar 目标架构尚未替代当前桌面进程内的路由运行时。
 - 托盘低内存后台模式仍是未实施方案，不从它派生当前任务。
-- `adapter-capability-contract.json` 由 `AdapterRouteService::plan()` 对冻结入参投影生成；Rust 测试在 JSON 与内核输出不一致时失败。browser mock 仍独立实现 classify / plan / apply，尚未改为查表；见 [单一内核与查表投影](proposals/single-kernel-projections.md)。
+- `adapter-capability-contract.json` 由 `AdapterRouteService::plan()` 对冻结入参投影生成；Rust 测试在 JSON 与内核输出不一致时失败。browser mock 的 analyze / plan 优先查该 golden；未命中回退旧 classify。第二套引擎尚未删除；见 [单一内核与查表投影](proposals/single-kernel-projections.md)。
 - DeepSeek Harness 的 StructuredStream 仍是规划项；已落地部分以源码和集成文档为准。
 - 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。
 

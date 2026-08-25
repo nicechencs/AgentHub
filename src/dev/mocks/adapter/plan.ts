@@ -3,6 +3,7 @@ import type {
   AdapterRouteAnalysis,
   AdapterRouteRequest,
 } from '@/lib/backend/contracts/adapter';
+import { lookupGoldenExpect, overlayPlanFromExpect } from './golden-lookup';
 import { getRuleFixtureById } from './rule-fixtures';
 import {
   CLAUDE_NATIVE_EXPERIMENTAL_RULES,
@@ -303,7 +304,7 @@ export function buildPlan(
     && !accountCodexChatBridge
     ? `${analysis.reason} ${SAME_EDGE_UNWRITABLE_REASON}`
     : analysis.reason;
-  return {
+  const plan: AdapterApplyPlan = {
     analysis,
     targetAgentId: request.targetAgentId,
     canApply,
@@ -313,6 +314,9 @@ export function buildPlan(
     serviceImpact: analysis.route === 'local_bridge' ? 'requires_local_bridge' : 'none',
     changes,
   };
+  const hit = lookupGoldenExpect(resolver, request, { record: false });
+  if (!hit) return plan;
+  return overlayPlanFromExpect(plan, hit.expect);
 }
 
 export function hasCodexAccessToken(
