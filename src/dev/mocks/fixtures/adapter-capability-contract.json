@@ -303,6 +303,7 @@
         }
       },
       "target": "claude",
+      "documentedRuleId": "codex-subscription-to-claude-app-server-v0",
       "expect": {
         "route": "local_bridge",
         "support": "experimental",
@@ -799,6 +800,7 @@
         "preset": "openai"
       },
       "target": "grok",
+      "documentedRuleId": "openai-api-to-grok-v1",
       "expect": {
         "route": "local_bridge",
         "support": "experimental",
@@ -894,6 +896,29 @@
         "ruleId": "grok-subscription-to-claude-v1",
         "gateKind": "none",
         "reason": "Grok 登录会经本机路由接到 Claude Code。",
+        "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "grok-subscription-to-codex",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth",
+        "credentials": {
+          "format": "oauth",
+          "access_token": "must-not-leak"
+        }
+      },
+      "target": "codex",
+      "expect": {
+        "route": "local_bridge",
+        "support": "experimental",
+        "canApply": true,
+        "applyPath": "local_bridge",
+        "ruleId": "grok-subscription-to-codex-v1",
+        "gateKind": "none",
+        "reason": "Grok 登录会经本机路由接到 Codex。",
         "reusePath": "local_bridge"
       }
     },

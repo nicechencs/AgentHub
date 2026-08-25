@@ -9,6 +9,7 @@ use crate::models::{
 use crate::services::adapter_apply_service::apply_request_supported;
 use crate::services::AdapterApplyService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
+use std::collections::BTreeSet;
 
 fn test_db() -> (tempfile::TempDir, Database) {
     let dir = tempfile::tempdir().unwrap();
@@ -1954,6 +1955,9 @@ struct SharedContractCase {
     source: SharedContractSource,
     target: AgentId,
     expect: SharedContractExpect,
+    /// Matrix rule kept in the fixture set even though classify picks a sibling.
+    #[serde(default)]
+    documented_rule_id: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1999,6 +2003,47 @@ fn shared_capability_contract() -> SharedContractFile {
         "../../../../../src/dev/mocks/fixtures/adapter-capability-contract.json"
     ))
     .expect("shared adapter capability contract")
+}
+
+fn collect_credential_strings(value: &serde_json::Value, key: Option<&str>, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::String(text) if !text.is_empty() => {
+            if !matches!(key, Some("format") | Some("provider")) {
+                out.push(text.clone());
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_credential_strings(item, key, out);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (child_key, nested) in map {
+                collect_credential_strings(nested, Some(child_key), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn assert_analyze_plan_hide_credentials(
+    case_id: &str,
+    credentials: Option<&serde_json::Value>,
+    analysis_json: &str,
+    plan_json: &str,
+) {
+    let mut forbidden = vec!["must-not-leak".to_string()];
+    if let Some(credentials) = credentials {
+        collect_credential_strings(credentials, None, &mut forbidden);
+    }
+    for blob in [analysis_json, plan_json] {
+        for secret in &forbidden {
+            assert!(
+                !blob.contains(secret),
+                "{case_id}: analyze/plan leaked credential {secret:?}"
+            );
+        }
+    }
 }
 
 fn assert_apply_path_consistent(case_id: &str, expect: &SharedContractExpect) {
@@ -2072,6 +2117,7 @@ fn shared_capability_contract_matches_classify_and_plan() {
                         credentials: case
                             .source
                             .credentials
+                            .clone()
                             .unwrap_or_else(|| serde_json::json!({})),
                         extra: case.source.extra.unwrap_or_else(|| serde_json::json!({})),
                         status: "active".into(),
@@ -2086,6 +2132,26 @@ fn shared_capability_contract_matches_classify_and_plan() {
         let req = request(case.source.kind, &source_id, case.target);
         let analysis = service.analyze(&req).unwrap();
         let plan = service.plan(&req).unwrap();
+        let analysis_json = serde_json::to_string(&analysis).unwrap();
+        let plan_json = serde_json::to_string(&plan).unwrap();
+        assert_analyze_plan_hide_credentials(
+            &case.id,
+            case.source.credentials.as_ref(),
+            &analysis_json,
+            &plan_json,
+        );
+        if let Some(documented) = case
+            .documented_rule_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+        {
+            assert_ne!(
+                analysis.rule_id.as_deref(),
+                Some(documented),
+                "{}: documented sibling {documented} must not be the classify winner",
+                case.id
+            );
+        }
         assert_eq!(analysis.route, case.expect.route, "{}", case.id);
         assert_eq!(analysis.support, case.expect.support, "{}", case.id);
         assert_eq!(analysis.rule_id, case.expect.rule_id, "{}", case.id);
@@ -2113,6 +2179,35 @@ fn shared_capability_contract_matches_classify_and_plan() {
             }
         }
     }
+}
+
+#[test]
+fn shared_capability_contract_rule_ids_match_matrix() {
+    let matrix_ids: BTreeSet<&str> = ADAPTER_CAPABILITY_MATRIX
+        .iter()
+        .map(|cell| cell.rule_id)
+        .filter(|id| !id.is_empty())
+        .collect();
+    let contract = shared_capability_contract();
+    let mut fixture_ids = BTreeSet::new();
+    for case in &contract.cases {
+        if let Some(rule_id) = case.expect.rule_id.as_deref().filter(|id| !id.is_empty()) {
+            fixture_ids.insert(rule_id);
+        }
+        if let Some(rule_id) = case
+            .documented_rule_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+        {
+            fixture_ids.insert(rule_id);
+        }
+    }
+    let missing: Vec<_> = matrix_ids.difference(&fixture_ids).copied().collect();
+    let extra: Vec<_> = fixture_ids.difference(&matrix_ids).copied().collect();
+    assert_eq!(
+        matrix_ids, fixture_ids,
+        "shared capability contract rule ids drifted from ADAPTER_CAPABILITY_MATRIX; missing={missing:?} extra={extra:?}"
+    );
 }
 
 fn analysis_from_cell(cell: &crate::models::AdapterCapabilityCell) -> AdapterRouteAnalysis {

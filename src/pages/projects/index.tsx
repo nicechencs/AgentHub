@@ -49,9 +49,8 @@ import {
 import { normalizeOpenPath, verifiedProjectWorkspacePath } from '@/lib/path-open';
 import type { AgentId, AgentProject, AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { projectMatches, sessionMatches } from './project-filter';
-import { buildContinuePrompt, buildSummaryPrompt } from './project-prompts';
 import { nativeResumeCommand, nativeSessionId, shortSessionId } from './project-format';
+import { buildContinuePrompt, buildSummaryPrompt } from './project-prompts';
 import {
   resolveInitialProjectAgentId,
   resolveProjectFetchAgentId,
@@ -59,6 +58,14 @@ import {
 } from './project-tab-agents';
 import { ProjectConversationPreviewPanel } from './ProjectConversationPreviewPanel';
 import { ProjectTree } from './ProjectTree';
+import {
+  allVisibleSessionsSelected,
+  collectSelectableSessions,
+  filterVisibleProjects,
+  nextSelectedForToggleAllVisible,
+  toggleSelectedSession,
+  visibleSessionsForProject,
+} from './projects-list-model';
 import {
   PREVIEW_FRAME_PAD_RIGHT,
   PREVIEW_FRAME_PAD_Y,
@@ -327,64 +334,32 @@ export default function ProjectsPage() {
 
   const q = search.trim().toLowerCase();
 
-  const visibleProjects = useMemo(() => {
-    return projects.filter((p) => {
-      if (projectMatches(p, q)) return true;
-      // Keep parent if any loaded child matches search
-      if (!q) return true;
-      const kids = sessionsByProject[p.id];
-      if (!kids) return false;
-      return kids.some((s) => sessionMatches(s, q));
-    });
-  }, [projects, q, sessionsByProject]);
+  const visibleProjects = useMemo(
+    () => filterVisibleProjects(projects, q, sessionsByProject),
+    [projects, q, sessionsByProject],
+  );
 
   const visibleSessions = useCallback(
-    (projectId: string) => {
-      const kids = sessionsByProject[projectId] ?? [];
-      if (!q) return kids;
-      // If project itself matched, show all kids; else only matching kids
-      const proj = projects.find((p) => p.id === projectId);
-      if (proj && projectMatches(proj, q)) return kids;
-      return kids.filter((s) => sessionMatches(s, q));
-    },
+    (projectId: string) =>
+      visibleSessionsForProject(projectId, projects, q, sessionsByProject),
     [sessionsByProject, q, projects],
   );
 
-  const selectableSessions = useMemo(() => {
-    const out: AgentSession[] = [];
-    for (const p of visibleProjects) {
-      if (!expanded.has(p.id)) continue;
-      out.push(...visibleSessions(p.id));
-    }
-    return out;
-  }, [visibleProjects, expanded, visibleSessions]);
+  const selectableSessions = useMemo(
+    () => collectSelectableSessions(visibleProjects, expanded, visibleSessions),
+    [visibleProjects, expanded, visibleSessions],
+  );
 
-  const allVisibleSelected =
-    selectableSessions.length > 0 && selectableSessions.every((s) => selected.has(s.id));
+  const allVisibleSelected = allVisibleSessionsSelected(selectableSessions, selected);
 
   function toggleOne(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setSelected((prev) => toggleSelectedSession(prev, id));
   }
 
   function toggleAllVisible() {
-    if (allVisibleSelected) {
-      setSelected((prev) => {
-        const next = new Set(prev);
-        for (const s of selectableSessions) next.delete(s.id);
-        return next;
-      });
-      return;
-    }
-    setSelected((prev) => {
-      const next = new Set(prev);
-      for (const s of selectableSessions) next.add(s.id);
-      return next;
-    });
+    setSelected((prev) =>
+      nextSelectedForToggleAllVisible(prev, selectableSessions, allVisibleSelected),
+    );
   }
 
   async function handleDeleteOne() {
