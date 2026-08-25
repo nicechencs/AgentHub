@@ -313,6 +313,9 @@ describe('EditRouteDialog', () => {
     expect(markup).toContain('type="submit"');
     expect(markup).toContain('收起');
     expect(markup).toContain('取消');
+    expect(markup).toContain('删除路由');
+    expect(markup.indexOf('取消')).toBeLessThan(markup.indexOf('删除路由'));
+    expect(markup).not.toContain('justify-start gap-2 border-t');
     expect(markup).not.toContain('/v1/messages');
     expect(markup).not.toContain('/v1/responses');
   });

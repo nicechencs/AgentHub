@@ -398,6 +398,9 @@ describe('Bridges page', () => {
     expect(markup).toContain('编辑');
     expect(markup).toContain('收起');
     expect(markup).toContain('删除路由');
+    expect(markup.indexOf('取消')).toBeLessThan(markup.indexOf('删除路由'));
+    expect(markup.indexOf('删除路由')).toBeLessThan(markup.indexOf('编辑'));
+    expect(markup).not.toContain('justify-start gap-2 border-t');
     expect(markup).toContain('路由详情');
     expect(markup).toContain('data-route-detail="bridge-1"');
     expect(markup).not.toContain('role="dialog"');

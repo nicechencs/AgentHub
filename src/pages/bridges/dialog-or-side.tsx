@@ -31,7 +31,7 @@ export function DialogOrSide({
   children: ReactNode;
   /** Save / submit — header on the panel, footer on the dialog. */
   primary?: ReactNode;
-  /** Destructive action — footer on both. */
+  /** Destructive action — header on the panel (with cancel), footer on the dialog. */
   danger?: ReactNode;
   preventDismiss?: boolean;
   width?: number;
@@ -42,12 +42,6 @@ export function DialogOrSide({
       {t('common.cancel')}
     </Button>
   );
-  const actions = (
-    <>
-      {cancel}
-      {primary}
-    </>
-  );
   if (asPanel) {
     if (!open) return null;
     return (
@@ -55,8 +49,13 @@ export function DialogOrSide({
         title={title}
         description={description}
         onClose={() => onOpenChange(false)}
-        headerActions={actions}
-        footer={danger}
+        headerActions={(
+          <>
+            {cancel}
+            {danger}
+            {primary}
+          </>
+        )}
         width={width}
       >
         {children}
@@ -78,7 +77,8 @@ export function DialogOrSide({
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1">{children}</div>
         <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
           {danger}
-          {actions}
+          {cancel}
+          {primary}
         </DialogFooter>
       </DialogContent>
     </Dialog>
