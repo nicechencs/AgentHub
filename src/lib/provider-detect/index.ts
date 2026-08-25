@@ -56,6 +56,7 @@ export {
   parseOpenAiModelList,
   remoteModelsStatusView,
   resolveModelForSave,
+  resolveUpstreamBaseUrl,
   shouldFetchRemoteModels,
   withDefaultModel,
 } from './remote-models';
