@@ -161,6 +161,19 @@ describe('installedOverviewScope', () => {
     expect(metas.map((m) => m.id)).toEqual(['codex', 'grok']);
     expect(statuses.map((s) => s.agentId)).toEqual(['codex', 'grok']);
   });
+
+  it('falls back to detected installed rows when the catalog metas are empty', () => {
+    const agents = [
+      status('codex'),
+      status('claude', { hidden: true }),
+      status('kimi', { installed: false }),
+      status('grok'),
+    ];
+    const { metas, statuses } = installedOverviewScope([], agents);
+    expect(statuses.map((s) => s.agentId)).toEqual(['codex', 'grok']);
+    expect(metas.map((m) => m.id)).toEqual(['codex', 'grok']);
+    expect(metas.map((m) => m.name)).toEqual(['Codex', 'Grok']);
+  });
 });
 
 describe('dashboardPageDescription', () => {

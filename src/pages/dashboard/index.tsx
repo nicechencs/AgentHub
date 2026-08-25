@@ -71,7 +71,12 @@ import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import { consumeConnectResume, parseConnectResumeParam } from '@/lib/connect-flow/connect-intent';
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
 import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
-import { getConnectionPoolSnapshot, providersForAgent, useConnectionPool } from '@/app/runtime';
+import {
+  getConnectionPoolSnapshot,
+  providersForAgent,
+  useAgentCatalogOptional,
+  useConnectionPool,
+} from '@/app/runtime';
 import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { hasEnvIssues } from '@/lib/env';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
@@ -137,6 +142,7 @@ export default function DashboardPage() {
   const usageSync = useUsageSync();
   const usageSectionRef = useRef<HTMLElement>(null);
   const { installedIds } = useInstalledAgents();
+  const catalog = useAgentCatalogOptional();
 
   // —— Agent / runtime（上半）——
   const [agents, setAgents] = useState<AgentStatus[] | null>(null);
@@ -576,9 +582,12 @@ export default function DashboardPage() {
   );
   const pageDescription = useMemo(() => {
     if (!agents) return dashboardPageDescription(null, t);
-    const { metas, statuses } = installedOverviewScope(AGENTS, agents);
+    const { metas, statuses } = installedOverviewScope(
+      catalog.hydrated ? AGENTS : [],
+      agents,
+    );
     return dashboardPageDescription(summarizeAgentOverview(metas, statuses, t), t);
-  }, [agents, t]);
+  }, [agents, catalog.hydrated, t]);
   const envBad = hasEnvIssues(runtimes);
   const showEnvCta = !agentsLoading && agents !== null && installedCount === 0 && envBad;
 

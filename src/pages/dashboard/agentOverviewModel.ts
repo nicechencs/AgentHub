@@ -1,4 +1,4 @@
-import type { AgentMeta } from '@/config/agents';
+import { resolveAgentMeta, type AgentMeta } from '@/config/agents';
 import { authDisplayForAgentStatus } from '@/lib/backend/contracts/auth-state';
 import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
@@ -88,6 +88,13 @@ export function installedOverviewScope(
   agents: readonly AgentStatus[],
 ): { metas: AgentMeta[]; statuses: AgentStatus[] } {
   const statuses = agents.filter((a) => a.installed && !a.hidden);
+  if (agentMetas.length === 0) {
+    // Catalog not hydrated / failed: still show doctor-detected rows.
+    return {
+      metas: statuses.map((row) => resolveAgentMeta(row.agentId)),
+      statuses,
+    };
+  }
   const ids = new Set(statuses.map((a) => a.agentId));
   return {
     metas: agentMetas.filter((m) => ids.has(m.id)),
