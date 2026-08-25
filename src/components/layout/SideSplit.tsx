@@ -72,22 +72,27 @@ export function SideSplitFrame<T>({
 
 /**
  * Full-height workbench: list column (compact header + list) | optional inspect pane.
- * Header stays in the list column so add/new actions sit left of the separator
- * and travel with it while resizing — not the far edge of the page.
+ * Header and optional listFooter stay in the list column so actions sit left
+ * of the separator and travel with it while resizing — not the far edge of
+ * the page.
  */
 export function WorkbenchSplitPage<T>({
   header,
   split,
   resizeAria,
   panel,
+  listFooter,
   children,
 }: {
   header: ReactNode;
   split: SideSplitController<T>;
   resizeAria: string;
   panel?: ReactNode;
+  /** Docked at the list column bottom-right, left of the separator. */
+  listFooter?: ReactNode;
   children: ReactNode;
 }) {
+  const listInset = split.mounted && panel ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX;
   return (
     <div ref={split.splitRef} className="flex h-full min-h-0 overflow-hidden bg-canvas">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -95,12 +100,17 @@ export function WorkbenchSplitPage<T>({
         <div
           className={cn(
             'min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
-            split.mounted && panel ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX,
-            pageRhythm.workbenchY,
+            listInset,
+            listFooter ? undefined : pageRhythm.workbenchY,
           )}
         >
           {children}
         </div>
+        {listFooter ? (
+          <div className={cn('flex shrink-0 justify-end pt-2', listInset, pageRhythm.workbenchY)}>
+            {listFooter}
+          </div>
+        ) : null}
       </div>
       {split.mounted && panel ? (
         <SideSplitFrame split={split} resizeAria={resizeAria}>

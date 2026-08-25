@@ -119,21 +119,19 @@ export function ConnectionTrashButton({
 
   return (
     <>
-      <div className="fixed bottom-4 right-4 z-20">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-2 shadow-md hover:shadow-md"
-          onClick={() => {
-            setOpen(true);
-            void load();
-          }}
-        >
-          <Trash2 className="h-4 w-4" aria-hidden />
-          {t('connections.trash.button')}
-        </Button>
-      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-2"
+        onClick={() => {
+          setOpen(true);
+          void load();
+        }}
+      >
+        <Trash2 className="h-4 w-4" aria-hidden />
+        {t('connections.trash.button')}
+      </Button>
 
       <Dialog
         open={open}
