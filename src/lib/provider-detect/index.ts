@@ -49,12 +49,20 @@ export {
 export {
   FALLBACK_CUSTOM_MODEL,
   defaultModelForAgent,
+  isLivePastedApiKey,
+  looksLikeLast4Mask,
   maskApiKeyLast4,
   openaiModelsUrl,
   parseOpenAiModelList,
+  remoteModelsStatusView,
   resolveModelForSave,
   shouldFetchRemoteModels,
   withDefaultModel,
+} from './remote-models';
+export type {
+  RemoteModelsStatusKind,
+  RemoteModelsStatusLabelKey,
+  RemoteModelsStatusView,
 } from './remote-models';
 
 export { extractAllClaudeEnv, pickClaudeDetectFields } from './claudeEnv';

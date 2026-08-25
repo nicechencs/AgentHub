@@ -53,7 +53,11 @@ import {
   type AgentConfigSchemaDto,
 } from '@/lib/api/config';
 import { openAgentConfigDir } from '@/lib/api/install';
-import { listRemoteOpenAiModels, upsertProvider } from '@/lib/api/provider';
+import {
+  listRemoteOpenAiModels,
+  listRemoteOpenAiModelsForProvider,
+  upsertProvider,
+} from '@/lib/api/provider';
 import type { AgentId, Provider } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
@@ -65,9 +69,11 @@ import {
   FORM_FIELD_LABELS,
   formFieldVisibility,
   initFormFromConfig,
+  isLivePastedApiKey,
   liveConfigPaths,
   parseJsonObjectConfig,
   REDACTED_MARKER,
+  remoteModelsStatusView,
   shouldFetchRemoteModels,
   smartDetectUrlAndKey,
   withDefaultModel,
@@ -161,8 +167,9 @@ export function ProviderEditDialog({
   /** Bump to re-run schema load without clearing form fields. */
   const [schemaLoadToken, setSchemaLoadToken] = React.useState(0);
   const [remoteModels, setRemoteModels] = React.useState<string[]>([]);
-  const [remoteModelsHint, setRemoteModelsHint] = React.useState<string | null>(null);
+  const [remoteModelsError, setRemoteModelsError] = React.useState(false);
   const [remoteModelsLoading, setRemoteModelsLoading] = React.useState(false);
+  const [remoteModelsRetry, setRemoteModelsRetry] = React.useState(0);
   const remoteModelsSeq = React.useRef(0);
 
   const official = officialApiDefaults(agentId);
@@ -451,42 +458,64 @@ export function ProviderEditDialog({
     model: vars.model,
   });
 
+  const hasStoredSecret = Boolean(provider?.id);
+  const shouldFetch = shouldFetchRemoteModels({
+    useOfficial,
+    baseUrl: vars.baseUrl,
+    apiKey: vars.apiKey,
+    hasStoredSecret,
+  });
+  const remoteStatus = remoteModelsStatusView({
+    loading: remoteModelsLoading,
+    error: remoteModelsError,
+    ids: remoteModels,
+    active: open && shouldFetch,
+  });
+  const retryRemoteModels = React.useCallback(() => {
+    setRemoteModelsRetry((token) => token + 1);
+  }, []);
+  const modelFieldStatus =
+    !useOfficial && remoteStatus.labelKey
+      ? {
+          label: t(remoteStatus.labelKey),
+          onRetry: remoteStatus.showRetry ? retryRemoteModels : undefined,
+        }
+      : undefined;
+
   React.useEffect(() => {
     if (!open) {
       remoteModelsSeq.current += 1;
       setRemoteModels([]);
-      setRemoteModelsHint(null);
+      setRemoteModelsError(false);
       setRemoteModelsLoading(false);
       return;
     }
-    if (
-      !shouldFetchRemoteModels({
-        useOfficial,
-        baseUrl: vars.baseUrl,
-        apiKey: vars.apiKey,
-      })
-    ) {
+    if (useOfficial || !shouldFetch) {
       remoteModelsSeq.current += 1;
       setRemoteModels([]);
-      setRemoteModelsHint(null);
+      setRemoteModelsError(false);
       setRemoteModelsLoading(false);
       return;
     }
     const seq = ++remoteModelsSeq.current;
+    setRemoteModelsLoading(true);
+    setRemoteModelsError(false);
     const handle = window.setTimeout(() => {
-      setRemoteModelsLoading(true);
-      void listRemoteOpenAiModels(vars.baseUrl, vars.apiKey)
+      const request = isLivePastedApiKey(vars.apiKey)
+        ? listRemoteOpenAiModels(vars.baseUrl, vars.apiKey)
+        : provider?.id
+          ? listRemoteOpenAiModelsForProvider(provider.id, vars.baseUrl)
+          : Promise.reject(new Error('no stored secret'));
+      void request
         .then((ids) => {
           if (seq !== remoteModelsSeq.current) return;
           setRemoteModels(ids);
-          setRemoteModelsHint(
-            ids.length === 0 ? t('connections.providerDialog.remoteModelsEmpty') : null,
-          );
+          setRemoteModelsError(false);
         })
         .catch(() => {
           if (seq !== remoteModelsSeq.current) return;
           setRemoteModels([]);
-          setRemoteModelsHint(t('connections.providerDialog.remoteModelsFailed'));
+          setRemoteModelsError(true);
         })
         .finally(() => {
           if (seq !== remoteModelsSeq.current) return;
@@ -496,7 +525,15 @@ export function ProviderEditDialog({
     return () => {
       window.clearTimeout(handle);
     };
-  }, [open, useOfficial, vars.baseUrl, vars.apiKey, t]);
+  }, [
+    open,
+    useOfficial,
+    shouldFetch,
+    vars.baseUrl,
+    vars.apiKey,
+    provider?.id,
+    remoteModelsRetry,
+  ]);
 
   const openLiveDir = async () => {
     try {
@@ -816,8 +853,9 @@ export function ProviderEditDialog({
               readOnlyKeys={schemaReadOnlyKeys}
               disabled={false}
               suggestions={
-                !useOfficial && remoteModels.length > 0 ? { model: remoteModels } : undefined
+                !useOfficial && remoteStatus.showPicker ? { model: remoteModels } : undefined
               }
+              fieldStatus={modelFieldStatus ? { model: modelFieldStatus } : undefined}
             />
           ) : schemaStatus === 'unsupported' ? (
             <>
@@ -912,7 +950,7 @@ export function ProviderEditDialog({
                     if (useOfficial) return;
                     patchVars({ model: v });
                   }}
-                  suggestions={!useOfficial ? remoteModels : undefined}
+                  suggestions={!useOfficial && remoteStatus.showPicker ? remoteModels : undefined}
                   placeholder={
                     agentId === 'pi' && !piNeedsUrl
                       ? t('connections.providerDialog.officialBuiltinModel')
@@ -920,17 +958,11 @@ export function ProviderEditDialog({
                   }
                   readOnly={useOfficial}
                   className={useOfficial ? 'cursor-default bg-canvas text-secondary' : undefined}
+                  statusLabel={modelFieldStatus?.label}
+                  statusRetry={modelFieldStatus?.onRetry}
                 />
               </label>
             </>
-          ) : null}
-
-          {!useOfficial && (remoteModelsLoading || remoteModelsHint) ? (
-            <p className="text-meta text-muted">
-              {remoteModelsLoading
-                ? t('connections.providerDialog.remoteModelsLoading')
-                : remoteModelsHint}
-            </p>
           ) : null}
 
           <div className="flex flex-col gap-2">

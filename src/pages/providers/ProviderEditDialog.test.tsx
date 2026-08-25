@@ -223,6 +223,14 @@ describe('save gate by schema status', () => {
     expect(canSaveProviderForm({ ...gate, model: undefined })).toBe(true);
     // fetch status is not an input — a failed listRemoteOpenAiModels cannot flip the gate
     expect(canSaveProviderForm({ ...gate, model: '   ' })).toBe(true);
+    expect(
+      canSaveProviderForm({
+        ...gate,
+        isEdit: true,
+        apiKey: '',
+        model: '',
+      }),
+    ).toBe(true);
     expect(canSaveProviderForm({ ...gate, apiKey: '' })).toBe(false);
     expect(
       canSaveProviderForm({

@@ -4,9 +4,11 @@
 //! Upsert merges preserved secrets when the client sends the redaction marker
 //! `"***"` so a read-edit-save cycle does not wipe real keys.
 
+use agenthub_core::error::AppError;
+use agenthub_core::logging::{self, targets};
 use agenthub_core::models::{Provider, ProviderInput, ProviderPreset, ProviderSwitchResult};
 use agenthub_core::presets;
-use agenthub_core::utils::redact::is_secret_key;
+use agenthub_core::utils::redact::{api_key_secret, is_secret_key, mask_secret_tail};
 use agenthub_core::AgentHub;
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -155,12 +157,24 @@ pub async fn undo_switch_provider(
 
 /// Invoke: `list_remote_openai_models` — GET {base}/v1/models (unsaved paste OK).
 #[tauri::command]
-pub fn list_remote_openai_models(
-    base_url: String,
-    api_key: String,
-) -> Result<Vec<String>, String> {
+pub fn list_remote_openai_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
     agenthub_core::utils::remote_openai_models::list_remote_openai_models(&base_url, &api_key)
         .map_err(|e| map_err_string("list_remote_openai_models", e))
+}
+
+/// Invoke: `list_remote_openai_models_for_provider` — GET {base}/v1/models
+/// using the unredacted stored secret. Never returns the raw key.
+#[tauri::command]
+pub async fn list_remote_openai_models_for_provider(
+    state: State<'_, AppState>,
+    provider_id: String,
+    base_url: String,
+) -> Result<Vec<String>, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        list_remote_openai_models_for_provider_inner(hub, &provider_id, &base_url)
+    })
+    .await
 }
 
 /// Invoke: `test_provider_latency` — probe Base URL RTT in milliseconds.
@@ -325,6 +339,52 @@ fn merge_preserving_secrets(old: &Value, new: &Value) -> Value {
 
 fn is_redacted_leaf(value: &Value) -> bool {
     matches!(value, Value::String(s) if s == REDACTED_MARKER)
+}
+
+/// Load the unredacted hub row and extract the stored API key.
+/// Missing provider / missing key fail without HTTP.
+fn stored_api_key_for_remote_models(hub: &AgentHub, provider_id: &str) -> Result<String, String> {
+    let id = provider_id.trim();
+    if id.is_empty() {
+        return Err(map_err_string(
+            "list_remote_openai_models_for_provider",
+            AppError::InvalidArg("provider id is required".into()),
+        ));
+    }
+    let provider = hub
+        .providers
+        .get(id, None)
+        .map_err(|e| map_err_string("list_remote_openai_models_for_provider", e))?;
+    let Some(key) = api_key_secret(&provider.settings_config) else {
+        return Err(map_err_string(
+            "list_remote_openai_models_for_provider",
+            AppError::InvalidArg("stored API key is missing".into()),
+        ));
+    };
+    let trimmed = key.trim();
+    if trimmed.is_empty() || trimmed == REDACTED_MARKER {
+        return Err(map_err_string(
+            "list_remote_openai_models_for_provider",
+            AppError::InvalidArg("stored API key is missing".into()),
+        ));
+    }
+    Ok(key)
+}
+
+fn list_remote_openai_models_for_provider_inner(
+    hub: &AgentHub,
+    provider_id: &str,
+    base_url: &str,
+) -> Result<Vec<String>, String> {
+    let key = stored_api_key_for_remote_models(hub, provider_id)?;
+    let last4 = mask_secret_tail(&key).unwrap_or_default();
+    logging::log_info(
+        targets::PROVIDER,
+        "list_remote_openai_models_for_provider",
+        &format!("provider_id={provider_id} last4={last4}"),
+    );
+    agenthub_core::utils::remote_openai_models::list_remote_openai_models(base_url, &key)
+        .map_err(|e| map_err_string("list_remote_openai_models_for_provider", e))
 }
 
 #[cfg(test)]

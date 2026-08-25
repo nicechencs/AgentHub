@@ -40,6 +40,10 @@ export interface GenericConfigFormProps {
   hiddenKeys?: ReadonlySet<string> | string[];
   /** Optional picker ids for string fields (e.g. fetched model list). Free-text still allowed. */
   suggestions?: Readonly<Record<string, readonly string[]>>;
+  /** Status under a string field (shown even when the picker is hidden). */
+  fieldStatus?: Readonly<
+    Record<string, { label?: string | null; onRetry?: () => void }>
+  >;
 }
 
 const CUSTOM_SUGGESTION = '__agenthub_custom__';
@@ -53,6 +57,8 @@ export function SuggestableInput({
   readOnly,
   placeholder,
   className,
+  statusLabel,
+  statusRetry,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -61,6 +67,10 @@ export function SuggestableInput({
   readOnly?: boolean;
   placeholder?: string;
   className?: string;
+  /** Shown even when `suggestions` is empty (loading / fail / empty-ok). */
+  statusLabel?: string | null;
+  /** When set, `statusLabel` is the primary retry action. */
+  statusRetry?: () => void;
 }) {
   const { t } = useI18n();
   const opts = (suggestions ?? []).map((id) => id.trim()).filter(Boolean);
@@ -105,6 +115,19 @@ export function SuggestableInput({
         spellCheck={false}
         className={className}
       />
+      {statusLabel ? (
+        statusRetry ? (
+          <button
+            type="button"
+            className="self-start text-left text-meta text-accent hover:underline"
+            onClick={statusRetry}
+          >
+            {statusLabel}
+          </button>
+        ) : (
+          <p className="text-meta text-muted">{statusLabel}</p>
+        )
+      ) : null}
     </div>
   );
 }
@@ -119,6 +142,7 @@ export function GenericConfigForm({
   readOnlyKeys,
   hiddenKeys,
   suggestions,
+  fieldStatus,
 }: GenericConfigFormProps) {
   const { t } = useI18n();
   const errMap = React.useMemo(() => issuesByField(issues), [issues]);
@@ -192,6 +216,8 @@ export function GenericConfigForm({
                 disabled={fieldDisabled}
                 readOnly={fieldDisabled}
                 className={fieldDisabled ? 'cursor-default bg-canvas text-secondary' : undefined}
+                statusLabel={fieldStatus?.[field.key]?.label}
+                statusRetry={fieldStatus?.[field.key]?.onRetry}
               />
             ) : null}
             {kind === 'number' ? (

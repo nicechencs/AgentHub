@@ -182,18 +182,28 @@ export function createMockProviderPort(): ProviderPort {
 
     async listRemoteOpenAiModels(baseUrl, _apiKey) {
       await delay(randomLatency());
-      if (baseUrl.includes('fail-models')) {
-        throw new Error('remote models failed');
-      }
-      if (baseUrl.includes('empty-models')) {
-        return [];
-      }
-      if (baseUrl.includes('mock-models')) {
-        return ['mock-gpt-4', 'mock-gpt-4o-mini'];
-      }
-      return [];
+      return mockRemoteModelIds(baseUrl, '');
+    },
+
+    async listRemoteOpenAiModelsForProvider(providerId, baseUrl) {
+      await delay(randomLatency());
+      return mockRemoteModelIds(baseUrl, providerId);
     },
   };
+}
+
+/** Canned ids from provider id and/or baseUrl. Never requires a raw key. */
+function mockRemoteModelIds(baseUrl: string, providerId: string): string[] {
+  if (providerId.includes('fail') || baseUrl.includes('fail-models')) {
+    throw new Error('remote models failed');
+  }
+  if (providerId.includes('empty') || baseUrl.includes('empty-models')) {
+    return [];
+  }
+  if (providerId.includes('mock') || baseUrl.includes('mock-models')) {
+    return ['mock-gpt-4', 'mock-gpt-4o-mini'];
+  }
+  return [];
 }
 
 export function restoreMockProvider(provider: Provider): void {

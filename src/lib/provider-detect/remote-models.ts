@@ -94,17 +94,87 @@ export function withDefaultModel(
   return { ...vars, model };
 }
 
+/** Last-4 display masks are not a live key (`**abcd` / `****wxyz` / `sk--••••wxyz`). */
+export function looksLikeLast4Mask(value: string): boolean {
+  const t = value.trim();
+  if (!t) return false;
+  if (/^\*{2,}[A-Za-z0-9]{4}$/.test(t)) return true;
+  if (/--[•…]{2,}[A-Za-z0-9]{4}$/.test(t)) return true;
+  return /[•…]/.test(t) && /[A-Za-z0-9]{4}$/.test(t);
+}
+
+/** True when the form holds a newly pasted secret, not `***` / last4 / empty. */
+export function isLivePastedApiKey(apiKey: string): boolean {
+  const key = apiKey.trim();
+  if (!key || key === REDACTED_MARKER) return false;
+  if (looksRedactedOrPlaceholder(key) || looksLikeLast4Mask(key)) return false;
+  return true;
+}
+
 export function shouldFetchRemoteModels(args: {
   useOfficial: boolean;
   baseUrl: string;
   apiKey: string;
+  /** Edit mode: saved provider id is present (secret stays on the hub). */
+  hasStoredSecret?: boolean;
 }): boolean {
   if (args.useOfficial) return false;
   const baseUrl = args.baseUrl.trim();
-  const apiKey = args.apiKey.trim();
   if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) return false;
-  if (!apiKey || apiKey === REDACTED_MARKER || looksRedactedOrPlaceholder(apiKey)) {
-    return false;
+  if (isLivePastedApiKey(args.apiKey)) return true;
+  return Boolean(args.hasStoredSecret);
+}
+
+export type RemoteModelsStatusKind = 'idle' | 'loading' | 'failed' | 'empty' | 'ready';
+
+export type RemoteModelsStatusLabelKey =
+  | 'connections.providerDialog.remoteModelsLoading'
+  | 'connections.providerDialog.remoteModelsFailed'
+  | 'connections.providerDialog.remoteModelsEmpty';
+
+export type RemoteModelsStatusView = {
+  kind: RemoteModelsStatusKind;
+  showRetry: boolean;
+  showPicker: boolean;
+  labelKey: RemoteModelsStatusLabelKey | null;
+};
+
+/**
+ * Pure view-model for the model-field fetch status.
+ * `active: false` is official / gate-closed (idle, no chrome).
+ */
+export function remoteModelsStatusView(args: {
+  loading: boolean;
+  error: boolean;
+  ids: readonly string[];
+  active?: boolean;
+}): RemoteModelsStatusView {
+  if (args.active === false) {
+    return { kind: 'idle', showRetry: false, showPicker: false, labelKey: null };
   }
-  return true;
+  if (args.loading) {
+    return {
+      kind: 'loading',
+      showRetry: false,
+      showPicker: false,
+      labelKey: 'connections.providerDialog.remoteModelsLoading',
+    };
+  }
+  if (args.error) {
+    return {
+      kind: 'failed',
+      showRetry: true,
+      showPicker: false,
+      labelKey: 'connections.providerDialog.remoteModelsFailed',
+    };
+  }
+  if (args.ids.length > 0) {
+    return { kind: 'ready', showRetry: false, showPicker: true, labelKey: null };
+  }
+  return {
+    kind: 'empty',
+    showRetry: false,
+    showPicker: false,
+    labelKey: 'connections.providerDialog.remoteModelsEmpty',
+  };
 }

@@ -176,6 +176,64 @@ fn upsert_preserves_opaque_toml_when_content_is_marker() {
 }
 
 #[test]
+fn stored_api_key_for_remote_models_resolves_without_network() {
+    let (_dir, hub) = hub_tmp();
+
+    let missing = stored_api_key_for_remote_models(&hub, "no-such-provider").unwrap_err();
+    assert!(
+        missing.to_lowercase().contains("not found") || missing.contains("provider"),
+        "{missing}"
+    );
+    assert!(!missing.contains("sk-"));
+
+    upsert_provider_inner(
+        &hub,
+        ProviderInput {
+            id: "p-no-key".into(),
+            agent_id: AgentId::Claude,
+            name: "No Key".into(),
+            settings_config: json!({
+                "env": { "ANTHROPIC_BASE_URL": "https://relay.example.com" }
+            }),
+            meta: json!({}),
+            is_current: false,
+        },
+    )
+    .unwrap();
+    let no_key = stored_api_key_for_remote_models(&hub, "p-no-key").unwrap_err();
+    assert!(no_key.to_lowercase().contains("missing"), "{no_key}");
+    assert!(!no_key.contains("sk-"));
+
+    let created = upsert_provider_inner(
+        &hub,
+        ProviderInput {
+            id: "p-secret".into(),
+            agent_id: AgentId::Claude,
+            name: "Relay".into(),
+            settings_config: json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://relay.example.com",
+                    "ANTHROPIC_AUTH_TOKEN": "sk-live-secret"
+                }
+            }),
+            meta: json!({}),
+            is_current: false,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        created.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+        "***"
+    );
+
+    let stored = hub.providers.get("p-secret", None).unwrap();
+    assert!(agenthub_core::utils::redact::api_key_secret(&stored.settings_config).is_some());
+    let gui = get_provider_inner(&hub, "p-secret", None).unwrap();
+    assert_eq!(gui.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"], "***");
+    assert!(stored_api_key_for_remote_models(&hub, "p-secret").is_ok());
+}
+
+#[test]
 fn delete_and_invalid_agent_map_errors() {
     let (_dir, hub) = hub_tmp();
     let err = delete_provider_inner(&hub, "nope", "x").unwrap_err();
