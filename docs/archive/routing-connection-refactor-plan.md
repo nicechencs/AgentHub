@@ -1,13 +1,35 @@
 # 路由 × 连接重构：任务拆分与派工计划
 
-> **Archived / 已归档**: Historical record. Do not use as current implementation contract or TODO list.
-> **Status**: archived historical record
+> **已归档**：本文是历史记录，不是当前实现契约或待办清单。
+> **状态**：历史计划已归档；当前代码复核见下文“最新代码复核”。
 >
-> **归档（2026-08-24）**。不是现行派工单。A1–A4 / B1 / C1 等已合入；未完项见 [../reference/route-compatibility.md](../reference/route-compatibility.md) 的当前兼容矩阵（历史稿 §5.4、§5.5）。索引见 [../README.md](../README.md)。
+> **归档日期：2026-08-24**。A1–A4、B1、C1、D2、D3 的主体已落地；B2 仍关闭，C2 仍有生产闭环缺口，C3 与 D1 后续出现回退。当前路由能力以 [route-compatibility.md](../reference/route-compatibility.md) 为准，文档索引见 [archive/README.md](README.md)。
 >
-> 原状态：**收尾中（2026-08-22 制定；同日 A1–A4、B1、B2 kernel 腿、C1–C3、D1–D3 全部验收合入 dev；测试债修复与连接域模块化拆分亦已合入）**。未完成：B2 实机取证（等真实 Claude 订阅账号）、C2 遗留小项（健康态回写账号行、启动映射 TryOnce、实机取证后开闸）。
+> **2026-08-22 原状态**：A1–A4、B1、B2 kernel 腿、C1–C3、D1–D3 已合入 `dev`。这里的“已合入”表示当时的实现或文档改动已经进入分支，不等于本文 §6 的整体完成定义已经满足。
 > 真源关系：**本文只做任务拆分，不新增决策**。产品与协议决策以 [../reference/route-compatibility.md](../reference/route-compatibility.md) 为准；领域模型以 [../concepts/connections-and-routing.md](../concepts/connections-and-routing.md) 为准；模块化债以 [../proposals/modularity.md](../proposals/modularity.md) 为准；sidecar 迁移契约以 [../proposals/adapter-sidecar.md](../proposals/adapter-sidecar.md) 为准；实现状态以 [../STATUS.md](../STATUS.md) 为准。
 > 依据：2026-08-22 对 `bridge/`、`adapter_route_service/`、`protocol_graph/`、`ticket_*` / `account_service/` / `connection_service` 及相关文档的三路深度审查（结论摘录见 §1–§2；审查为只读，未改代码）。
+
+## 最新代码复核（2026-08-25）
+
+本节只记录当前代码与历史计划的差异，不把本文重新启用为现行计划。
+
+| 项目 | 当前结论 | 说明 |
+|---|---|---|
+| A1 | 已完成 | 分层目标成立；`dispatch.rs` 当前约 294 行，不是历史状态中的约 160 行，但仍低于 ≤800 行目标 |
+| A2 | 已完成 | `UpstreamTransport` 与各上游 transport 已落地 |
+| A3 | 已完成 | passthrough 仍是单点显式声明；当前方法名为 `passthrough_for(surface)` |
+| A4 | 基本完成 | 当前是单进程共享 `Gateway`；为兼容历史端口，`GatewayRegistry` 仍可维护多个监听 socket，不等于严格单 TCP listener |
+| B1 | 已完成 | `LOCAL_BRIDGE_EDGES` 是重叠字段的声明点，契约测试防止开放边与 live writer 漂移 |
+| B2 | 内核完成，能力关闭 | `claude-subscription-to-codex-v1` 仍是 `can_apply=false`、`all_closed`、`multi_account=false`；反向的 Codex 订阅 → Claude Responses 边已开放，不能作为本边已开放的证据 |
+| C1 | 已完成 | `TicketSurfaceGroup`、前端 contract 和启动时成员解析均已存在 |
+| C2 | 部分完成 | `AccountPicker`、`RequestFsm` 和 `EdgeState` 接线已完成；`MemberHealthSink` 仍未接生产持久化，启动时仍未把 `Unknown/NeedsAttention` 映射为 `TryOnce`，所有 LocalBridge 的 `multi_account` 仍关闭 |
+| C3 | 当前部分完成 | 2026-08-22 曾落地成员健康模型；后续 Routes 重设计删除了实际健康展示。contract/mock 仍保留 `health`，Connections 只显示成员数量，且“可轮换”文案未读取有效 `multi_account` gate |
+| D1 | 当前部分完成 | 三项修复在旧文档中曾落地；迁移到现行概念文档后，`connection-pool-store` 与 `ConnectionService` / `TicketBinding` 的命名对照丢失 |
+| D2 | 已完成 | `AgentHub::open` 通过 `from_parts` 注入共享 `AccountService` |
+| D3 | 基本完成 | 绑定真相一致性测试和写面盘点存在；历史 PR 中“故意制造漂移后还原”的演示无法仅从当前仓库复核 |
+| 整体完成定义 | 未全部满足 | §6 第 3 项未满足；第 4 项按字面也未满足，当前采用归档保留而不是删除本文 |
+
+针对性验证结果：能力矩阵、`AccountPicker`、`RequestFsm`、Ticket/Connection 漂移契约共 42 个 Rust 测试通过；Connections、Routes、ticket contract 等 9 个前端测试文件共 176 个用例通过。未执行完整构建、全量测试或实机 OAuth 取证。
 
 ## 0. 范围外（先钉死，防止派工跑偏）
 
@@ -21,7 +43,9 @@
 6. 不监听公网、不导出上游 token、不把生成配置当登录。
 7. 表面统一 ≠ 通用转发：每条边仍走 `plan()` + capability matrix 门禁，本轮不因重构自动打开任何 `canApply`。
 
-## 1. 现状结论（审查摘要）
+## 1. 历史现状结论（2026-08-22 审查摘要）
+
+> 本节描述重构实施前的历史代码，不代表当前实现。当前差异见“最新代码复核”。
 
 ### 1.1 路由（bridge / 网关）
 
@@ -50,10 +74,10 @@
 
 工作区未提交改动（admission 上限 256、429 `Retry-After`、Claude→Codex reason 改判文案，7 文件 +43/−29）已核对与拍板一致，随下一次提交入库即可，不派生任务。
 
-## 2. 目标结构（对齐拍板，不重复决策原文）
+## 2. 历史目标结构（对齐当时拍板，不重复决策原文）
 
 ```text
-统一 loopback 网关（本轮仍进程内 BridgeRuntimeHost；sidecar 后续轮）
+单进程共享 loopback Gateway（本轮仍进程内 BridgeRuntimeHost；兼容端口可保留独立 socket；sidecar 后续轮）
   → local bearer 鉴权（统一 middleware，bearer 识别边）
   → DownstreamSurface：/v1/messages | /v1/responses | /v1/chat/completions | /v1/models
   → ProtocolKernel IR（纯映射；passthrough 显式化，不再隐式绕过）
@@ -61,7 +85,7 @@
   → AccountPicker（§5.5：同票面有序成员、健康态、请求边界/首事件前切换）
 ```
 
-## 3. 任务泳道（多路并行派工用）
+## 3. 历史任务泳道
 
 四条泳道，泳道间尽量文件不相交、可并行；泳道内串行。**依赖关系**：
 
@@ -96,13 +120,13 @@ flowchart LR
 | 第 4 波 | A4、C2 落地 | A4 是本轮最大改动，需主 Agent 先审设计；C2 依赖 A2 + C1，schema 决策需主 Agent 拍板 |
 | 收尾 | C3、B2 实机取证、全量回归 | — |
 
-## 4. 任务卡
+## 4. 历史任务卡
 
 每张卡按 AGENTS.md 派工约定给出：目标 / 文件 / 限制 / 验收。**跑测试一律另起测试 subagent**，过滤命令写在卡内。
 
 ### A1 统一 handler 模板 + 抽出 DownstreamSurface 层
 
-- **状态**：已合入 dev（2026-08-22，`refactor/bridge-gateway`；`dispatch.rs` 降至 ~160 行，见 `bridge/host/surface.rs`）
+- **状态**：已合入 dev（2026-08-22，历史分支 `refactor/bridge-gateway`）。截至 2026-08-25，`dispatch.rs` 约 294 行，仍满足参考目标 ≤800 行；分层见 `bridge/host/surface.rs`。
 - **目标**：消除 `handle_responses` / `handle_messages` / `handle_chat_completions` 三份复制的 鉴权 → shutdown → admission → 读 body → 错误映射 模板；把 path→surface 解析、404 门控、下游 parse/encode 边界从 `dispatch.rs` 挪进独立模块（建议 `bridge/host/surface.rs` 或 `bridge/surface/`）。**行为完全不变**（含错 surface 404 契约）。
 - **文件**：`crates/agenthub-core/src/bridge/host/{dispatch,http,mod}.rs`、新 surface 模块、`bridge/tests.rs`（只允许搬用例，不改断言语义）。
 - **限制**：不改 wire 行为、不改日志字段口径（[logging.md](../reference/logging.md)）、不动 protocol/ 内核、不新增公共 API 暴露 token。测试与生产分文件（[testing.md](../reference/testing.md)）。
@@ -119,17 +143,17 @@ flowchart LR
 
 ### A3 IR 主路径收口，passthrough 显式化
 
-- **状态**：已合入 dev（2026-08-22，`refactor/bridge-gateway`；passthrough 由 `UpstreamChannel::passthrough()` 单点声明）
+- **状态**：已合入 dev（2026-08-22，历史分支 `refactor/bridge-gateway`）。截至 2026-08-25，passthrough 由 `UpstreamChannel::passthrough_for(surface)` 单点声明。
 - **目标**：Responses↔Responses（Grok→Codex、Codex→Grok）passthrough 从 handler 内 if-else 改为 transport 显式声明的能力（如 `Transport::passthrough() -> bool` 或独立 `IdentityTransport`），并记录决策：passthrough 保留为保真优化，不强制走 IR。其余边确保主路径统一经 `BridgeRequest`/`IrEvent`。
 - **文件**：`bridge/host/{dispatch,transport}.rs`、`bridge/tests.rs`。
 - **限制**：不改 passthrough 的 wire 保真行为（prepare 阶段的改写规则如 `apply_official_codex_model` 保留）。
 - **验收**：`cargo test -p agenthub-core bridge` 全绿；代码内 passthrough 只有一个声明点。
 - **依赖**：A2。
 
-### A4 统一网关 listener（§5.4 落地主件）
+### A4 单进程共享 Gateway（§5.4 落地主件）
 
-- **状态**：已实施合入 dev（2026-08-22，`refactor/gateway-listener`：`Gateway`/`EdgeState` + bearer 唯一 middleware + 401 先于 404 契约改写 + 双听收敛 + per-edge admission，7 个网关契约测试）。`DESIGN.md` 可在收尾时归档删除。
-- **目标**：从「一 profile 一 listener 一 surface」演进为拍板的「一个网关进程内三种对话端点 + `/v1/models`」：多 profile 共享统一 listener，local bearer → 边（profile）识别，端点 → surface 分派；错 surface 404 契约改写为「bearer 对应边不服务该端点」的等价拒绝。设计稿必须回答：端口与已写入目标配置的兼容迁移（存量 profile 写的是各自端口的 loopback URL）、`/v1/models` 按 bearer 合成、health 语义、并发 admission 从 per-listener 改 per-edge。
+- **状态**：已实施合入 dev（2026-08-22，历史分支 `refactor/gateway-listener`：`Gateway`/`EdgeState` + bearer 唯一 middleware + 401 先于 404 契约改写 + 双听收敛 + per-edge admission，7 个网关契约测试）。截至 2026-08-25，运行时是单进程共享 `Gateway`，`GatewayRegistry` 为兼容历史端口仍可维护多个监听 socket。
+- **目标**：从「一 profile 一 listener 一 surface」演进为拍板的「一个网关进程内三种对话端点 + `/v1/models`」：多 profile 共享进程级 Gateway 和路由表，local bearer → 边（profile）识别，端点 → surface 分派；错 surface 404 契约改写为「bearer 对应边不服务该端点」的等价拒绝。端口兼容允许主端口与历史端口 socket 并存；`/v1/models` 按 bearer 合成；并发 admission 从 per-listener 改为 per-edge。
 - **文件**：`bridge/host/{lifecycle,http,dispatch,surface}.rs`、`bridge/runtime.rs`、`adapter_bridge_service`（投影 URL）、`bridge/tests.rs`（契约整体改写）。
 - **限制**：仅 loopback；有绑定才起，不默认常驻；不因表面统一打开任何边的 `canApply`；存量绑定不得因升级失联（需迁移或兼容期双听方案，设计稿里定）。
 - **验收**：设计稿评审通过后：`cargo test -p agenthub-core bridge` 全绿（含改写后的分派/拒绝契约）；同进程三表面并存的集成测；`pnpm test -- bridges` 前端状态页不回归。
@@ -145,9 +169,9 @@ flowchart LR
 
 ### B2 Claude 订阅 → Codex 边落地（③，2026-08-21 改判）
 
-- **状态**：kernel/fixtures 腿已合入 dev（2026-08-22：cell + 登记表行 + protocol fixtures；`canApply` 仍关，gates 全关）。剩余：实机取证后按 §7.1 逐 gate 打开。
+- **状态**：kernel/fixtures 腿已合入 dev（2026-08-22：cell + 登记表行 + protocol fixtures）。截至 2026-08-25，该边仍为 `can_apply=false`、gates 全关、`multi_account=false`；剩余实机取证无法由代码证明，未满足证据门槛前不得开闸。
 - **目标**：按 §5.4 路由开放原则落地首个改判边：下游 Responses（Codex）→ IR → 上游 Anthropic Messages OAuth（Claude 订阅）。交付：matrix 新增 experimental cell（初始 gates 关、`canApply=false`）、上游 transport（Anthropic Messages + PKCE access token 注入，refresh 按 §5.1.2 owner 分治）、正反例 fixtures、登记表新行（live writer 行等 `canApply` 打开后再进 `LIVE_BRIDGE_RULES`）、`decide_adapter_capability` 特判改为查表。取证通过后按 §7.1 门槛逐 gate 打开。
-- **文件**：`adapter_capability_matrix.rs`、`adapter_bridge_service`、`bridge/protocol/fixtures/`、`adapter_route_service` tests、`src/dev/mocks/adapter/*`（reason/contract 锁步）、`provider-api-oauth-adaptation.md` §4 矩阵行。
+- **文件**：`adapter_capability_matrix.rs`、`adapter_bridge_service`、`bridge/protocol/fixtures/`、`adapter_route_service` tests、`src/dev/mocks/adapter/*`（reason/contract 锁步）、历史文档 `provider-api-oauth-adaptation.md` §4 矩阵行。当前能力真相已迁移到 [route-compatibility.md](../reference/route-compatibility.md)。
 - **限制**：fixtures 未取证前 `canApply=false`（reason 保持「规则与 fixtures 未落地」口径）；thinking 无可验证签名时降级关闭；不写 Claude OAuth token 进 Codex 配置。
 - **验收**：`cargo test -p agenthub-core adapter` + `cargo test -p agenthub-core protocol` 全绿；plan 对该边显示 experimental/preview 与正确 reason；mock 契约 JSON 同步（`pnpm test -- adapter`）。
 - **依赖**：A2（transport 抽象省力）、B1（避免双真源再欠账）。
@@ -162,7 +186,7 @@ flowchart LR
 
 ### C2 多账号轮询与故障切换运行时（§5.5 主件）
 
-- **状态**：已实施合入 dev（2026-08-22，`refactor/multi-account-runtime`：`AccountPicker` + `RequestFsm` 挂 `EdgeState`，矩阵 `multi_account` 默认全关；单成员与旧行为等价）。遗留小项：隔离健康态回写账号行（`MemberHealthSink` 未接线）、启动时 account 行 Unknown/NeedsAttention 映射 `TryOnce`、实机取证后开闸。稿内选定成员存储方案 C（运行时纯读模型），矩阵加 `multi_account` 维，RetryGate 与切号闸正交。
+- **状态**：运行时主体已合入 dev（2026-08-22，历史分支 `refactor/multi-account-runtime`：`AccountPicker` + `RequestFsm` 挂 `EdgeState`，单成员与旧行为等价）。截至 2026-08-25，仍未完成：隔离健康态回写账号行（`MemberHealthSink` 生产接线）、启动时 account 行 `Unknown/NeedsAttention` → `TryOnce` 映射、实机取证后按边开闸；所有 LocalBridge 的 `multi_account` 仍为 `false`。稿内选定成员存储方案 C（运行时纯读模型），RetryGate 与切号闸正交。
 - **目标**：`local_bridge` 运行时支持同票面多成员：`BridgeStartSpec` 从单 `ResolvedAuth` 扩展为有序成员列表；新增 AccountPicker（固定顺序轮询游标、成员健康态 `Renewable`/`NeedsLogin`、失效隔离）；请求边界 FSM——新请求在请求边界选号，**切换仅限首个有效流事件前且单请求最多一次**，与既有同账号 401 reload 正交合入；绑定语义扩展（`bind` 后 attach 成员或 profile 多 `source_id`，设计稿定）。每请求日志记**实际承接账号**（`account_id` 字段），上游身份头/会话 seed 按实际承接账号生成。
 - **文件**：`bridge/runtime.rs`、`bridge/host/{dispatch,transport}.rs`、`services/adapter_bridge_service/*`、`storage/`（如需 profile 成员存储）、`src-tauri/adapter_bridge_controller.rs`（secret 解析多成员）、两侧 tests。
 - **限制**：仅本人账号、仅 loopback；负载均衡不做；每成员 refresh 独立 single-flight（owner 分治不变，§5.1.2）；失效只标该成员，不向调用方暴露其余账号；每条边的轮询支持仍需随 fixtures 取证后才开（矩阵可加 multi-account 维度或按边白名单，设计稿定）。
@@ -171,7 +195,7 @@ flowchart LR
 
 ### C3 成员健康 UI 与审计展示
 
-- **状态**：已合入 dev（2026-08-22，`feature/member-health-ui`：contracts/mock 扩展可选 `health`，Routes 详情成员健康态、Connections 钱包多成员承接展示；vitest 145 文件 / 1246 用例全绿）
+- **状态**：2026-08-22 曾合入成员健康 UI：contracts/mock 扩展可选 `health`，Routes 详情展示成员健康态，Connections 展示多成员承接。后续 Routes 重设计删除了实际成员健康展示；截至 2026-08-25，contracts/mock 仍保留 `health`，Connections 只显示成员数，其“可轮换”文案未读取有效 `multi_account` gate。因此当前状态为**部分完成**。
 - **目标**：Routes 详情展示同票面成员及健康态；Connections 钱包「正用于」表达多成员承接；不新增页面，不做管理大盘。
 - **文件**：`src/pages/bridges/*`、`src/pages/connections/*`、contracts/mock 对应扩展。
 - **限制**：遵守 [design-system.md](../ui/design-system.md) / [page-patterns.md](../ui/page-patterns.md)；不显示 token 或完整凭据；孤立/失效成员置灰 + 原因，不藏行。
@@ -180,7 +204,7 @@ flowchart LR
 
 ### D1 文档矛盾修复与命名对照
 
-- **状态**：已合入 dev（2026-08-22，`refactor/connection-cleanup`；三处均带核对日期）
+- **状态**：2026-08-22 已在旧版文档中完成三处修复。后续文档迁移保留了 account 行 single-flight 结论，但现行 [connections-and-routing.md](../concepts/connections-and-routing.md) 丢失了 `connection-pool-store` 与 `ConnectionService` / `TicketBinding` 的命名对照；截至 2026-08-25，当前状态为**部分完成**。
 - **目标**：修 §1.3 三条不一致：① [accounts-and-authorization.md](../concepts/accounts-and-authorization.md) 的历史分组验收说明；② [connections-and-routing.md](../concepts/connections-and-routing.md) §4 refresh single-flight 层级改为「按 account 行（授权）single-flight」，与 `oauth_owner` 实现对齐；③ 在 connections-and-routing.md §2.4 补第三行命名对照：前端 `connection-pool-store` = accounts+providers 缓存，≠ `ConnectionService`。
 - **文件**：仅上述两个文档（+ 如需 [modularity.md](../proposals/modularity.md) 对照表补一行）。
 - **限制**：不新增决策、不改产品口径；改动处标注核对日期。
@@ -203,17 +227,19 @@ flowchart LR
 - **限制**：公开 API 签名不变；`new()` 兼容构造保留给测试。
 - **验收**：`cargo test -p agenthub-core "account_ ticket_"` 全绿；`open` 后无第二套 `AccountService::with_live`（测试除外）。
 
-## 5. 派工与验收约定（本计划专用）
+## 5. 历史派工与验收约定
 
-- 代码类 subagent 按仓库约定使用 grok-4.6 加速；提示词必须包含：任务卡原文、§0 范围外全文、涉及文件清单、验收标准。
+> 本节只保留当时的协作背景。当前 Agent 类型、模型、分支和测试要求以仓库根目录 `AGENTS.md` 与 [testing.md](../reference/testing.md) 为准。
+
+- 当时约定代码类 subagent 使用 grok-4.6；该模型约定已经失效，不得作为当前派工依据。
 - **写测试随任务走，跑测试另起测试 subagent**（AGENTS.md）；每张卡的过滤命令即测试 subagent 的输入。
 - A4 与 C2 是唯二需要**先交设计稿**的任务：设计稿交主 Agent 拍板后才允许动 schema / 契约测试。
-- 每张卡完成后：主 Agent 复核 → 测试 subagent 回报全绿 → 更新本文任务状态 → 涉及行为变化的同步回写稳定文档（§4 矩阵行、agenthub-plan §8、adapter-design §0 等）。
+- 每张卡完成后：主 Agent 复核 → 测试 subagent 回报全绿 → 更新本文任务状态 → 涉及行为变化的同步回写当时的稳定文档。`agenthub-plan.md`、`adapter-design.md` 等旧路径现已迁移或归档，当前路径见 [legacy-document-index.md](legacy-document-index.md)。
 - 泳道 A 期间 `bridge/host/` 文件冲突面大：同一时刻该目录只允许一个 subagent 持有写任务。
 
-## 6. 完成定义（本轮整体）
+## 6. 历史完成定义与当前核对
 
-1. `dispatch.rs` 不再是上帝模块：鉴权/分派/塑形/传输四层各归其位（§2 结构成立）。
-2. 新增一条 `local_bridge` 边只需：matrix cell + transport 实现/复用 + fixtures，一处真源、无 dispatch match 臂扩散。
-3. §5.5 的轮询/故障切换在至少一条已开放订阅边上端到端可演示（fixtures + 集成测），不变量 1–6 全部有测试锚点。
-4. 三条文档不一致清零；本文删除，结论回写稳定文档。
+1. `dispatch.rs` 不再是上帝模块：鉴权/分派/塑形/传输四层各归其位（§2 结构成立）。**当前：满足。**
+2. 新增一条 `local_bridge` 边只需：matrix cell + transport 实现/复用 + fixtures，一处真源、无 dispatch match 臂扩散。**当前：基本满足；`LOCAL_BRIDGE_EDGES` 负责重叠字段，live rule 仍保留 profile、provider、base URL 等运行配置。**
+3. §5.5 的轮询/故障切换在至少一条已开放订阅边上端到端可演示（fixtures + 集成测），不变量 1–6 全部有测试锚点。**当前：未满足；所有 LocalBridge 的 `multi_account` 仍关闭。**
+4. 三条文档不一致清零；本文删除，结论回写稳定文档。**当前：未按字面满足；D1 的一项命名对照在文档迁移后丢失，本文按现行文档治理规则保留为 archive，而不是删除。**
