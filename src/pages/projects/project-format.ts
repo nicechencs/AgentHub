@@ -76,6 +76,38 @@ export function shortPath(p: string, max = 48): string {
   return `…${p.slice(-(max - 1))}`;
 }
 
+function pathSegments(raw?: string | null): string[] {
+  const t = raw?.trim();
+  if (!t) return [];
+  return t.split(/[/\\]/).filter(Boolean);
+}
+
+/**
+ * Last path segment for the session row.
+ * Grok stores every transcript as `chat_history.jsonl`; show the session-id
+ * folder (or native sessionId) instead of that shared file name.
+ */
+export function sessionFileName(s: {
+  path?: string | null;
+  relativePath?: string | null;
+  sessionId?: string | null;
+}): string | null {
+  const parts = pathSegments(s.path);
+  const segs = parts.length > 0 ? parts : pathSegments(s.relativePath);
+  const last = segs[segs.length - 1];
+  if (!last) {
+    const sid = s.sessionId?.trim();
+    return sid || null;
+  }
+  if (last.toLowerCase() === 'chat_history.jsonl') {
+    const sid = s.sessionId?.trim();
+    if (sid) return sid;
+    const folder = segs[segs.length - 2];
+    if (folder && folder !== '.' && folder !== '..') return folder;
+  }
+  return last;
+}
+
 export function nativeSessionId(s: Pick<AgentSession, 'sessionId'>): string | null {
   const sid = s.sessionId?.trim();
   return sid ? sid : null;

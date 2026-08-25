@@ -1841,6 +1841,7 @@ export const en = {
       selectSession: "Select {title}",
       lines: " · ~{n} lines",
       locateRecord: "Locate record file: {path}",
+      openRecordFolder: "Open the folder containing this file: {path}",
       copySessionId: "Copy Session ID: {id}",
       copyResumeCommand: "Copy official resume command: {command}",
       continue: "Continue in Chat",

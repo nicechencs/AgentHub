@@ -640,8 +640,10 @@ export default function ProjectsPage() {
       <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div
           className={cn(
-            'min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
-            preview.previewShellMounted ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX,
+            'min-w-0 flex-1 overflow-y-auto bg-canvas',
+            preview.previewShellMounted
+              ? cn(pageRhythm.workbenchXSplit, 'overflow-x-hidden')
+              : cn(pageRhythm.workbenchX, 'overflow-x-auto'),
             pageRhythm.workbenchY,
           )}
         >

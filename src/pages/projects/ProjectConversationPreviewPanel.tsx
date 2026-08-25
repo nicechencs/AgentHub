@@ -127,14 +127,15 @@ export function ProjectConversationPreviewPanel({
           </div>
         </div>
         <Button
-          size="sm"
-          variant="outline"
-          className="shrink-0"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 shrink-0"
           disabled={busy}
+          aria-label={t('projects.tree.continue')}
+          title={t('projects.tree.continue')}
           onClick={() => onContinue(session)}
         >
           <MessageSquarePlus className="h-3.5 w-3.5" />
-          {t('projects.tree.continue')}
         </Button>
         {record ? (
           <Button

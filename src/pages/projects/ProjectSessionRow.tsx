@@ -11,9 +11,25 @@ import {
   nativeResumeCommand,
   nativeSessionId,
   relativeTime,
+  sessionFileName,
   titleHoverLabel,
 } from './project-format';
-import { ProjectPathLink } from './ProjectPathLink';
+
+const previewTextClass =
+  'block w-full min-w-0 truncate text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60';
+
+/**
+ * Packed tracks plus a shrinking spacer. The action cluster is `auto` so it
+ * never compresses into the file name while the splitter is dragged.
+ */
+export function projectSessionRowGrid(showDelete: boolean): string {
+  return cn(
+    'grid min-w-0 items-center gap-x-2 overflow-hidden',
+    showDelete
+      ? 'grid-cols-[1.25rem_minmax(0,22rem)_minmax(0,10rem)_minmax(0,6.5rem)_minmax(0,4.75rem)_minmax(0,1fr)_auto]'
+      : 'grid-cols-[minmax(0,22rem)_minmax(0,10rem)_minmax(0,6.5rem)_minmax(0,4.75rem)_minmax(0,1fr)_auto]',
+  );
+}
 
 export function ProjectSessionRow({
   session,
@@ -44,11 +60,18 @@ export function ProjectSessionRow({
 }) {
   const { t } = useI18n();
   const record = normalizeOpenPath(session.path);
+  const fileName = sessionFileName(session);
   const sid = nativeSessionId(session);
   const resume = nativeResumeCommand(session);
 
   return (
-    <li className={cn('flex items-center gap-2 px-3 py-2 pl-10', previewOpen && 'bg-active')}>
+    <li
+      className={cn(
+        projectSessionRowGrid(showDelete),
+        'px-3 py-2 pl-10',
+        previewOpen && 'bg-active',
+      )}
+    >
       {showDelete && (
         <input
           type="checkbox"
@@ -58,36 +81,43 @@ export function ProjectSessionRow({
           aria-label={t('projects.tree.selectSession', { title: session.title })}
         />
       )}
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <Tip
-          label={titleHoverLabel(session.title, session.preview)}
-          className="min-w-0 max-w-[22rem] shrink"
+      <Tip label={titleHoverLabel(session.title, session.preview)} className="min-w-0 w-full">
+        <button
+          type="button"
+          className={cn(previewTextClass, 'text-sm text-primary')}
+          aria-current={previewOpen ? 'true' : undefined}
+          aria-label={t('projects.tree.previewAria', { title: session.title })}
+          onClick={() => onPreviewSession(session)}
         >
-          <button
-            type="button"
-            className="block w-full truncate text-left text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-            aria-current={previewOpen ? 'true' : undefined}
-            aria-label={t('projects.tree.previewAria', { title: session.title })}
-            onClick={() => onPreviewSession(session)}
-          >
-            {session.title}
-          </button>
+          {session.title}
+        </button>
+      </Tip>
+      {fileName ? (
+        <Tip label={record ?? fileName} className="min-w-0 w-full">
+          {record ? (
+            <button
+              type="button"
+              className={cn(previewTextClass, 'font-mono text-meta text-muted')}
+              disabled={busy}
+              aria-label={t('projects.tree.openRecordFolder', { path: record })}
+              onClick={(e) => onOpenSessionRecord(session, e)}
+            >
+              {fileName}
+            </button>
+          ) : (
+            <span className="block min-w-0 truncate font-mono text-meta text-muted">{fileName}</span>
+          )}
         </Tip>
-        <span className="shrink-0 text-xs text-muted tabular-nums">
-          {relativeTime(session.updatedAt, t)} · {fmtBytes(session.sizeBytes)}
-          {session.messageCount != null && session.messageCount > 0
-            ? t('projects.tree.lines', { n: session.messageCount })
-            : ''}
-        </span>
-        {record ? (
-          <ProjectPathLink
-            path={record}
-            disabled={busy}
-            ariaLabel={t('projects.tree.locateRecord', { path: record })}
-            onOpen={(e) => onOpenSessionRecord(session, e)}
-          />
-        ) : null}
-      </div>
+      ) : (
+        <span />
+      )}
+      <span className="min-w-0 truncate text-xs text-muted tabular-nums">
+        {relativeTime(session.updatedAt, t)}
+      </span>
+      <span className="min-w-0 truncate text-xs text-muted tabular-nums">
+        {fmtBytes(session.sizeBytes)}
+      </span>
+      <span className="min-w-0" aria-hidden />
       <div className="flex shrink-0 gap-1">
         {sid ? (
           <Button
@@ -113,9 +143,15 @@ export function ProjectSessionRow({
             <Terminal className="h-3.5 w-3.5" />
           </Button>
         ) : null}
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => onGoContinue(session)}>
+        <Button
+          size="icon"
+          variant="ghost"
+          disabled={busy}
+          aria-label={t('projects.tree.continue')}
+          title={t('projects.tree.continue')}
+          onClick={() => onGoContinue(session)}
+        >
           <MessageSquarePlus className="h-3.5 w-3.5" />
-          {t('projects.tree.continue')}
         </Button>
         {showDelete && (
           <Button

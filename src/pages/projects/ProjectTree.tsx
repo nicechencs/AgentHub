@@ -156,7 +156,7 @@ export function ProjectTree({
                     {p.sessionCount === 0 ? t('projects.tree.noSessionFiles') : t('projects.tree.noMatch')}
                   </div>
                 ) : (
-                  <ul className="divide-y divide-border/60">
+                  <ul>
                     {kids.map((s) => (
                       <ProjectSessionRow
                         key={s.id}
