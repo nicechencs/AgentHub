@@ -492,12 +492,24 @@ export interface TicketDetailField {
 export interface TicketDetailSections {
   /** Extra facts shown once the ticket detail panel is expanded. */
   advanced: TicketDetailField[];
+  /** Protocol summary for the inspect pane; omitted from `advanced` when already listed. */
+  protocol: string | null;
+  bindingRows: TicketBindingRowView[];
+  diagnostics: TicketDetailField[];
 }
 
 export interface TicketBindingDetailLine {
   agent: string;
   status: string;
 }
+
+export type TicketBindingRowView = {
+  agentId: AgentId;
+  agentLabel: string;
+  status: string;
+  routeLabel: string;
+  localUrl: string | null;
+};
 
 const AUTH_LABEL_HUMAN: Record<string, string> = {
   '可续期·未验证': '可续期',
@@ -902,7 +914,46 @@ export function buildTicketDetailFields(
     });
   }
 
-  return { advanced };
+  const diagnostics: TicketDetailField[] = [];
+  if (ticket.id.trim()) {
+    diagnostics.push({
+      label: t ? t('connections.list.ticketId') : '记录 ID',
+      value: ticket.id,
+      mono: true,
+    });
+  }
+
+  return {
+    advanced,
+    protocol: interfaceLabel || null,
+    bindingRows: buildTicketBindingRows(bindings, t),
+    diagnostics,
+  };
+}
+
+function bindingRouteLabel(route: BindingRoute, t?: TranslateFn): string {
+  if (route === 'bridge') return t ? t('kind.route.localRoute') : '本机路由';
+  if (route === 'reshape') return t ? t('connections.list.routeReshape') : '改配置';
+  return t ? t('connections.list.routeNative') : '直连';
+}
+
+export function buildTicketBindingRows(
+  bindings: readonly BindingView[] | null | undefined,
+  t?: TranslateFn,
+): TicketBindingRowView[] {
+  if (!bindings?.length) return [];
+  return bindings.map((binding) => ({
+    agentId: binding.agentId,
+    agentLabel: agentDisplayName(binding.agentId),
+    status: ticketBindingStatus(binding, t),
+    routeLabel: bindingRouteLabel(binding.route, t),
+    localUrl: binding.route === 'bridge'
+      ? formatRouteEndpointHttpUrl({
+          path: routeEndpointPathForBinding({ agentId: binding.agentId }),
+          port: binding.bridge?.port ?? null,
+        })
+      : null,
+  }));
 }
 
 export function formatTicketBindingDetailLines(

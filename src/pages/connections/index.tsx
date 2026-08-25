@@ -19,6 +19,7 @@ import {
   bindTicket,
   isActiveBindingForAgent,
   listTicketWallet,
+  ticketIdFor,
   type TicketView,
   type TicketWallet,
 } from '@/lib/api/tickets';
@@ -47,7 +48,7 @@ import type { AgentId } from '@/lib/types';
 import { ApiKeyAccountDialog } from '@/pages/accounts/ApiKeyAccountDialog';
 import { ProviderEditDialog } from '@/pages/providers/ProviderEditDialog';
 import { ConnectionTrashButton } from './ConnectionTrashButton';
-import { TicketAddMenu, TicketWalletList } from './TicketWalletList';
+import { TicketAddMenu, TicketDetailPanel, TicketWalletList } from './TicketWalletList';
 import {
   activeBindingForAgent,
   buildTicketAddMenu,
@@ -57,6 +58,7 @@ import {
   scheduleAfterMenuClose,
   shouldIgnoreMenuDialogDismiss,
   ticketAddDialogState,
+  ticketDetailEditLabel,
   type TicketAddKind,
 } from './ticket-wallet-model';
 import { useTicketBindActions } from './use-ticket-route-actions';
@@ -98,7 +100,24 @@ import type { Account, Provider } from '@/lib/types';
 
 type ConnectionInspect =
   | { kind: 'provider'; agentId: AgentId; mode: 'add' | 'edit'; provider: Provider | null }
-  | { kind: 'account'; agentId: AgentId; account: Account };
+  | { kind: 'account'; agentId: AgentId; account: Account }
+  | { kind: 'detail'; ticketId: string }
+  | { kind: 'connect'; entry: Extract<ConnectFlowEntry, { mode: 'for-source' }> };
+
+function inspectActiveTicketId(target: ConnectionInspect | null): string | null {
+  if (!target) return null;
+  if (target.kind === 'detail') return target.ticketId;
+  if (target.kind === 'connect') {
+    return ticketIdFor(target.entry.source.kind, target.entry.source.id);
+  }
+  if (target.kind === 'provider' && target.mode === 'edit' && target.provider) {
+    return ticketIdFor('provider', target.provider.id);
+  }
+  if (target.kind === 'account') {
+    return ticketIdFor('account', target.account.id);
+  }
+  return null;
+}
 
 const CONNECTIONS_INSPECT_WIDTH_KEY = 'agenthub.connections.inspectWidth';
 
@@ -132,7 +151,6 @@ export default function ConnectionsPage() {
   const [wallet, setWallet] = useState<TicketWallet | null>(null);
   const [walletError, setWalletError] = useState<unknown>(null);
   const [walletLoading, setWalletLoading] = useState(true);
-  const [connectEntry, setConnectEntry] = useState<ConnectFlowEntry | null>(null);
   const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
 
   /** Agent context for add/import dialogs (deep-link or picker). */
@@ -346,21 +364,34 @@ export default function ConnectionsPage() {
     if (resume) navigate(buildResumeConnectUrl(resume));
   }, [navigate, pendingGuide, resumeAgentId]);
 
-  const handleShareTicket = useCallback((ticket: TicketView) => {
-    setConnectEntry({
-      mode: 'for-source',
-      source: { kind: ticket.sourceKind, id: ticket.sourceId },
-      purpose: 'share',
+  const openConnectForTicket = useCallback((ticket: TicketView, purpose: 'share' | 'route') => {
+    setLoginImportOpen(false);
+    if (
+      inspect.target?.kind === 'connect'
+      && inspect.target.entry.purpose === purpose
+      && inspect.target.entry.source.kind === ticket.sourceKind
+      && inspect.target.entry.source.id === ticket.sourceId
+    ) {
+      inspect.close();
+      return;
+    }
+    inspect.open({
+      kind: 'connect',
+      entry: {
+        mode: 'for-source',
+        source: { kind: ticket.sourceKind, id: ticket.sourceId },
+        purpose,
+      },
     });
-  }, []);
+  }, [inspect.close, inspect.open, inspect.target]);
+
+  const handleShareTicket = useCallback((ticket: TicketView) => {
+    openConnectForTicket(ticket, 'share');
+  }, [openConnectForTicket]);
 
   const handleRouteTicket = useCallback((ticket: TicketView) => {
-    setConnectEntry({
-      mode: 'for-source',
-      source: { kind: ticket.sourceKind, id: ticket.sourceId },
-      purpose: 'route',
-    });
-  }, []);
+    openConnectForTicket(ticket, 'route');
+  }, [openConnectForTicket]);
 
   const handleSwitchTicket = useCallback(async (ticket: TicketView) => {
     const targetAgent = filterAgent === 'all' ? ticket.agentId : filterAgent;
@@ -553,6 +584,18 @@ export default function ConnectionsPage() {
     [inspect.open, pool.accounts, pool.providers],
   );
 
+  const handleShowDetail = useCallback(
+    (ticket: TicketView) => {
+      setLoginImportOpen(false);
+      if (inspect.target?.kind === 'detail' && inspect.target.ticketId === ticket.id) {
+        inspect.close();
+        return;
+      }
+      inspect.open({ kind: 'detail', ticketId: ticket.id });
+    },
+    [inspect.close, inspect.open, inspect.target],
+  );
+
   const importCoexistenceNotice = liveAuthCoexistenceNotice(importLiveProbe, addAgentId, t);
   const oauthImportGate = liveAuthImportGate(
     importLiveProbe,
@@ -643,6 +686,12 @@ export default function ConnectionsPage() {
   };
 
   const inspectTarget = inspect.target;
+  const detailTicket = inspectTarget?.kind === 'detail'
+    ? visibleWallet?.tickets.find((ticket) => ticket.id === inspectTarget.ticketId) ?? null
+    : null;
+  const detailBindings = detailTicket && visibleWallet
+    ? visibleWallet.bindings.filter((binding) => binding.ticketId === detailTicket.id)
+    : [];
   const inspectPanel =
     inspectTarget?.kind === 'provider' ? (
       <ProviderEditDialog
@@ -684,6 +733,38 @@ export default function ConnectionsPage() {
           void loadWallet();
           void poolReload();
         }}
+      />
+    ) : inspectTarget?.kind === 'detail' && detailTicket ? (
+      <TicketDetailPanel
+        id={`ticket-detail-${detailTicket.id}`}
+        asPanel
+        open
+        width={inspect.paneWidth}
+        ticket={detailTicket}
+        extras={extrasForTicket(detailTicket)}
+        bindings={detailBindings}
+        refreshing={refreshingTicketId === detailTicket.id}
+        refreshLocked={refreshingTicketId !== null}
+        onRefresh={
+          extrasForTicket(detailTicket)?.oauthAction
+            ? () => void handleRefreshTicket(detailTicket)
+            : undefined
+        }
+        onDelete={() => setDeleteTicket(detailTicket)}
+        onEdit={ticketDetailEditLabel(extrasForTicket(detailTicket), t)
+          ? () => handleEditTicket(detailTicket)
+          : undefined}
+        onOpenChange={(next) => { if (!next) inspect.close(); }}
+      />
+    ) : inspectTarget?.kind === 'connect' ? (
+      <ConnectFlowDialog
+        asPanel
+        width={inspect.paneWidth}
+        entry={inspectTarget.entry}
+        deps={connectDeps}
+        onClose={() => inspect.close()}
+        onConnectionChanged={handleConnectionChanged}
+        onNavigate={(to) => navigate(to)}
       />
     ) : null;
 
@@ -863,12 +944,12 @@ export default function ConnectionsPage() {
             shareActionForTicket={shareActionForTicket}
             routeActionForTicket={routeActionForTicket}
             onSwitchTicket={handleSwitchTicket}
-            onRefreshTicket={handleRefreshTicket}
-            refreshingTicketId={refreshingTicketId}
             switchingTicketId={switchingTicketId}
             extrasForTicket={extrasForTicket}
             onEditTicket={handleEditTicket}
             onDeleteTicket={setDeleteTicket}
+            onShowDetail={handleShowDetail}
+            activeTicketId={inspectActiveTicketId(inspectTarget)}
             onClearAgentFilter={() => setFilterAgent('all')}
             installedAgentIds={allowedAgents}
             onAddKey={(id) => openTicketAdd('api-key', id)}
@@ -881,14 +962,6 @@ export default function ConnectionsPage() {
         <ConnectionTrashButton onChanged={() => void loadWallet()} />
       </div>
     </WorkbenchSplitPage>
-
-      <ConnectFlowDialog
-        entry={connectEntry}
-        deps={connectDeps}
-        onClose={() => setConnectEntry(null)}
-        onConnectionChanged={handleConnectionChanged}
-        onNavigate={(to) => navigate(to)}
-      />
 
       <Dialog
         open={loginImportOpen}

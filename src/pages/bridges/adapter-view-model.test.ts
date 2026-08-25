@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import { applyIdOrder } from '@/lib/list-order';
 import {
   adapterBridgeFleetSummary,
   adapterProfileFlowLabel,
@@ -8,7 +9,12 @@ import {
   adapterServiceStatusView,
   bridgesPageViewState,
   bridgeRuntimeStatusView,
+  canonicalizeLocalBridgeOrderIds,
   filterBoundLocalBridgeRuntimes,
+  groupLocalBridgeProfiles,
+  isLocalBridgeCardActive,
+  localBridgeProfilesForSource,
+  localBridgeSourceKey,
   partitionLocalBridgeRuntimes,
   resolveAdapterProfileSource,
 } from './adapter-view-model';
@@ -178,6 +184,69 @@ describe('adapter profile source resolution', () => {
   it('builds a human-readable flow label for confirmations', () => {
     expect(adapterProfileFlowLabel(bridgeProfile({ sourceKind: 'provider', sourceId: 'row-1' }), entries))
       .toBe('Provider row → http://127.0.0.1:32123/v1/responses');
+  });
+});
+
+describe('local-bridge source grouping', () => {
+  it('collapses Claude/Codex/Grok profiles that share one source onto one card', () => {
+    const grouped = groupLocalBridgeProfiles([
+      bridgeProfile({ id: 'p-claude', targetAgentId: 'claude', createdAt: '2026-08-12T00:00:02Z' }),
+      bridgeProfile({ id: 'p-codex', targetAgentId: 'codex', createdAt: '2026-08-12T00:00:00Z' }),
+      bridgeProfile({ id: 'p-grok', targetAgentId: 'grok', createdAt: '2026-08-12T00:00:01Z' }),
+    ]);
+    expect(grouped.map((item) => item.id)).toEqual(['p-codex']);
+    expect(localBridgeProfilesForSource([
+      bridgeProfile({ id: 'p-claude', targetAgentId: 'claude' }),
+      bridgeProfile({ id: 'p-codex', targetAgentId: 'codex' }),
+      bridgeProfile({ id: 'other', sourceId: 'other-1' }),
+    ], bridgeProfile({ id: 'p-codex' })).map((item) => item.id)).toEqual(['p-claude', 'p-codex']);
+  });
+
+  it('keeps distinct sources as separate cards', () => {
+    const grouped = groupLocalBridgeProfiles([
+      bridgeProfile({ id: 'glm', sourceId: 'glm-1' }),
+      bridgeProfile({ id: 'or', sourceId: 'or-1' }),
+    ]);
+    expect(grouped.map((item) => item.id).sort()).toEqual(['glm', 'or']);
+  });
+
+  it('prefers a running member as the grouped card', () => {
+    const grouped = groupLocalBridgeProfiles(
+      [
+        bridgeProfile({ id: 'stopped', createdAt: '2026-08-12T00:00:00Z' }),
+        bridgeProfile({ id: 'running', createdAt: '2026-08-12T00:00:01Z' }),
+      ],
+      { running: { profileId: 'running', state: 'running' } },
+    );
+    expect(grouped.map((item) => item.id)).toEqual(['running']);
+  });
+
+  it('rewrites stored profile ids to source keys and keeps order when the running card changes', () => {
+    const older = bridgeProfile({ id: 'a-old', sourceId: 'src-a', createdAt: '2026-08-12T00:00:00Z' });
+    const newer = bridgeProfile({ id: 'a-run', sourceId: 'src-a', createdAt: '2026-08-12T00:00:01Z' });
+    const other = bridgeProfile({ id: 'b', sourceId: 'src-b' });
+    const stored = canonicalizeLocalBridgeOrderIds(
+      ['a-old', 'b'],
+      [older, newer, other],
+    );
+    expect(stored).toEqual(['provider:src-a', 'provider:src-b']);
+    const grouped = groupLocalBridgeProfiles(
+      [older, newer, other],
+      { 'a-run': { profileId: 'a-run', state: 'running' } },
+    );
+    expect(applyIdOrder(grouped, localBridgeSourceKey, stored).map((item) => item.id))
+      .toEqual(['a-run', 'b']);
+  });
+
+  it('treats a sibling profile id as the same selected card', () => {
+    const claude = bridgeProfile({ id: 'p-claude', targetAgentId: 'claude' });
+    const codex = bridgeProfile({ id: 'p-codex', targetAgentId: 'codex' });
+    expect(isLocalBridgeCardActive(codex, 'p-claude', [claude, codex])).toBe(true);
+    expect(isLocalBridgeCardActive(
+      bridgeProfile({ id: 'other', sourceId: 'other-1' }),
+      'p-claude',
+      [claude, codex],
+    )).toBe(false);
   });
 });
 

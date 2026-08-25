@@ -37,6 +37,30 @@ describe('connections layout wiring', () => {
     expect(page).not.toContain('<Dialog open={apiKeyDialogOpen}');
   });
 
+  it('opens 详情 in the same right-hand inspect pane as edit', () => {
+    const page = source('index.tsx');
+    const list = source('TicketWalletList.tsx');
+    expect(page).toContain("{ kind: 'detail'; ticketId: string }");
+    expect(page).toContain('onShowDetail');
+    expect(page).toContain('<TicketDetailPanel');
+    expect(list).not.toContain('DetailsToggle');
+    expect(list).toContain('asPanel');
+    expect(list).toContain("t('connections.list.clientsTitle')");
+    expect(list).toContain('SortHandle');
+    expect(page).toContain('inspectActiveTicketId');
+  });
+
+  it('opens 用到其他工具 / 本机转发 in the same right-hand inspect pane', () => {
+    const page = source('index.tsx');
+    expect(page).toContain("{ kind: 'connect'");
+    expect(page).toContain("openConnectForTicket(ticket, 'share')");
+    expect(page).toContain("openConnectForTicket(ticket, 'route')");
+    expect(page).toContain('asPanel');
+    expect(page).toContain('<ConnectFlowDialog');
+    expect(page).not.toContain('const [connectEntry');
+    expect(page).toContain("inspectTarget?.kind === 'connect'");
+  });
+
   it('keeps live config chrome to the path and folder button; hint is hover-only', () => {
     const provider = source('../providers/ProviderEditDialog.tsx');
     expect(provider).toContain('Tip label={livePaths.hint}');

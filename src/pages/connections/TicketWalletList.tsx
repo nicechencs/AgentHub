@@ -1,7 +1,7 @@
 /**
  * Global ticket wallet list UI (Connections).
  * Data from listTicketWallet; per-row 用到其他工具 / 本机转发 for true tickets.
- * 「详情」is a read-only expand; edit stays on the card, delete stays inside details.
+ * 「详情」opens the workbench inspect pane; edit stays on the card.
  */
 import * as React from 'react';
 import { Link } from 'react-router-dom';
@@ -18,11 +18,16 @@ import {
   Trash2,
 } from 'lucide-react';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { AgentDot } from '@/components/shared/AgentDot';
-import { DetailsToggle } from '@/components/shared/DetailsToggle';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ListRow } from '@/components/shared/ListRow';
+import { SortHandle } from '@/components/shared/SortHandle';
+import { useSortableDrag } from '@/components/shared/use-sortable-drag';
+import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
+import { applyIdOrder } from '@/lib/list-order';
+import { StorageKey } from '@/lib/ui-preferences';
 import { QuotaBar } from '@/components/shared/QuotaBar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,7 +47,7 @@ import { Hint, Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
-import type { TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
+import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
@@ -63,6 +68,7 @@ import {
   ticketSwitchDisabledReason,
   type TicketAddMenuAgent,
   type TicketBindAction,
+  type TicketBindingRowView,
   type TicketDetailExtras,
   type TicketDetailField,
   type TicketWalletRow,
@@ -140,27 +146,59 @@ const HIDDEN_ADVANCED_LABELS = new Set(['导入自', '登录状态', 'Imported f
 
 export function TicketDetailPanel({
   id,
-  advanced,
+  advanced = [],
   extras,
+  ticket,
+  bindings,
   refreshing,
   refreshLocked,
   onRefresh,
   onDelete,
+  onEdit,
+  asPanel = false,
+  open = true,
+  onOpenChange,
+  width,
 }: {
   id: string;
-  advanced: TicketDetailField[];
+  advanced?: TicketDetailField[];
   extras?: TicketDetailExtras | null;
+  ticket?: TicketView;
+  bindings?: readonly BindingView[];
   refreshing?: boolean;
   refreshLocked?: boolean;
   onRefresh?: () => void;
   onDelete: () => void;
+  onEdit?: () => void;
+  asPanel?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  width?: number;
 }) {
   const { t } = useI18n();
+  const computed = ticket
+    ? buildTicketDetailFields(ticket, extras, t, bindings)
+    : null;
+  const advancedFields = computed?.advanced ?? advanced;
+  const protocol = computed?.protocol ?? null;
+  const bindingRows = computed?.bindingRows ?? [];
+  const diagnostics = computed?.diagnostics ?? [];
+  const localRouteLabel = t('kind.route.localRoute');
+  const protocolLabelText = t('connections.list.protocol');
+  const visibleAdvanced = advancedFields.filter((field) => {
+    if (HIDDEN_ADVANCED_LABELS.has(field.label)) return false;
+    if (bindingRows.length > 0 && field.label === localRouteLabel) return false;
+    return true;
+  });
+  const overview: TicketDetailField[] = [];
+  if (protocol && !visibleAdvanced.some((field) => field.label === protocolLabelText)) {
+    overview.push({ label: protocolLabelText, value: protocol });
+  }
+  overview.push(...visibleAdvanced);
   // 5h is official-only. Missing quota5hPct hides the bar; never copy 7d into 5h.
   const has7d = hasOfficialQuotaWindow(extras?.quota7dPct);
   const has5h = hasOfficialQuotaWindow(extras?.quota5hPct);
   const hasQuota = has7d || has5h;
-  const visibleAdvanced = advanced.filter((field) => !HIDDEN_ADVANCED_LABELS.has(field.label));
   const isSyncLogin = extras?.oauthAction?.kind === 'sync-current-login';
   const refreshLabel = isSyncLogin
     ? t('connections.list.syncCurrentLogin')
@@ -168,6 +206,89 @@ export function TicketDetailPanel({
   const refreshBusyLabel = isSyncLogin
     ? t('connections.list.syncing')
     : t('connections.list.refreshing');
+  const editLabel = ticketDetailEditLabel(extras, t);
+  const title = ticket
+    ? ticketCardTitle(ticket, extras)
+    : t('connections.detailTitle');
+
+  const requestDelete = () => {
+    if (asPanel) onOpenChange?.(false);
+    onDelete();
+  };
+  const refreshButton = extras?.oauthAction && onRefresh ? (
+    <DisabledReasonButton
+      variant="secondary"
+      disabled={Boolean(refreshLocked || refreshing)}
+      reason={ticketRefreshDisabledReason({
+        refreshing: Boolean(refreshing),
+        refreshLocked: Boolean(refreshLocked),
+        busyLabel: refreshBusyLabel,
+      }, t)}
+      ariaLabel={refreshLabel}
+      onClick={onRefresh}
+    >
+      <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+      {refreshing ? refreshBusyLabel : refreshLabel}
+    </DisabledReasonButton>
+  ) : null;
+  const deleteButton = (
+    <Hint label={extras?.isCurrent ? t('connections.list.moveToTrashCurrentTip') : undefined}>
+      <Button
+        size="sm"
+        variant="dangerOutline"
+        onClick={requestDelete}
+      >
+        <Trash2 className="h-3.5 w-3.5" /> {t('connections.list.moveToTrash')}
+      </Button>
+    </Hint>
+  );
+  const actions = (
+    <div className="flex flex-wrap items-center gap-2">
+      {refreshButton}
+      {deleteButton}
+    </div>
+  );
+  const body = (
+    <TicketDetailBody
+      extras={extras}
+      hasQuota={hasQuota}
+      has7d={has7d}
+      has5h={has5h}
+      overview={overview}
+      bindingRows={ticket ? bindingRows : []}
+      diagnostics={ticket ? diagnostics : []}
+      showClients={Boolean(ticket)}
+    />
+  );
+
+  if (asPanel) {
+    if (!open) return null;
+    return (
+      <SideInspectPanel
+        title={t('connections.detailTitle')}
+        description={title === t('connections.detailTitle') ? t('connections.detailDescription') : title}
+        onClose={() => onOpenChange?.(false)}
+        width={width}
+        headerActions={(
+          <>
+            <Button type="button" variant="secondary" size="sm" onClick={() => onOpenChange?.(false)}>
+              {t('common.cancel')}
+            </Button>
+            {onEdit && editLabel ? (
+              <Button type="button" size="sm" onClick={onEdit}>
+                {editLabel}
+              </Button>
+            ) : null}
+          </>
+        )}
+        footer={actions}
+      >
+        <div id={id} data-ticket-detail={ticket?.id ?? id}>
+          {body}
+        </div>
+      </SideInspectPanel>
+    );
+  }
 
   return (
     <Card
@@ -175,6 +296,36 @@ export function TicketDetailPanel({
       variant="plain"
       className="mt-3 flex flex-col gap-3 bg-canvas p-3 text-xs"
     >
+      {body}
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+        {actions}
+      </div>
+    </Card>
+  );
+}
+
+function TicketDetailBody({
+  extras,
+  hasQuota,
+  has7d,
+  has5h,
+  overview,
+  bindingRows,
+  diagnostics,
+  showClients,
+}: {
+  extras?: TicketDetailExtras | null;
+  hasQuota: boolean;
+  has7d: boolean;
+  has5h: boolean;
+  overview: TicketDetailField[];
+  bindingRows: TicketBindingRowView[];
+  diagnostics: TicketDetailField[];
+  showClients: boolean;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col gap-3 text-xs">
       {hasQuota ? (
         <div>
           <p className="text-meta text-muted">{t('connections.list.usage')}</p>
@@ -197,17 +348,9 @@ export function TicketDetailPanel({
         </div>
       ) : null}
 
-      {extras?.refreshTokenPreview ? (
-        <DetailRow
-          label={t('connections.list.refreshToken')}
-          value={extras.refreshTokenPreview}
-          mono
-        />
-      ) : null}
-
-      {visibleAdvanced.length > 0 ? (
+      {overview.length > 0 ? (
         <div className="grid gap-1.5 text-secondary sm:grid-cols-2">
-          {visibleAdvanced.map((field) => (
+          {overview.map((field) => (
             <DetailRow
               key={`${field.label}:${field.value}`}
               label={field.label}
@@ -218,43 +361,67 @@ export function TicketDetailPanel({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-        <div className="flex flex-wrap items-center gap-2">
-          {extras?.oauthAction && onRefresh ? (
-            <DisabledReasonButton
-              variant="secondary"
-              disabled={Boolean(refreshLocked || refreshing)}
-              reason={ticketRefreshDisabledReason({
-                refreshing: Boolean(refreshing),
-                refreshLocked: Boolean(refreshLocked),
-                busyLabel: refreshBusyLabel,
-              }, t)}
-              ariaLabel={refreshLabel}
-              onClick={onRefresh}
-            >
-              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
-              {refreshing ? refreshBusyLabel : refreshLabel}
-            </DisabledReasonButton>
-          ) : null}
-          <Hint label={extras?.isCurrent ? t('connections.list.moveToTrashCurrentTip') : undefined}>
-            <Button
-              size="sm"
-              variant="dangerOutline"
-              onClick={onDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> {t('connections.list.moveToTrash')}
-            </Button>
-          </Hint>
-        </div>
-      </div>
-    </Card>
+      {showClients ? (
+        <section className="space-y-1.5">
+          <h3 className="text-sm font-medium">{t('connections.list.clientsTitle')}</h3>
+          {bindingRows.length === 0 ? (
+            <p className="text-sm text-muted">{t('connections.list.clientsEmpty')}</p>
+          ) : (
+            <ul className="space-y-1">
+              {bindingRows.map((row) => (
+                <li
+                  key={`${row.agentId}:${row.routeLabel}:${row.localUrl ?? ''}`}
+                  className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 py-1"
+                >
+                  <span className="flex min-w-[5.5rem] items-center gap-1.5 text-sm font-medium">
+                    <AgentDot agentId={row.agentId} size="sm" title={null} />
+                    <span className="truncate">{row.agentLabel}</span>
+                  </span>
+                  <span className="shrink-0 text-meta text-muted">{row.routeLabel}</span>
+                  <span className="shrink-0 text-meta text-secondary">{row.status}</span>
+                  {row.localUrl ? (
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-secondary">{row.localUrl}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
+
+      {extras?.refreshTokenPreview ? (
+        <DetailRow
+          label={t('connections.list.refreshToken')}
+          value={extras.refreshTokenPreview}
+          mono
+        />
+      ) : null}
+
+      {diagnostics.length > 0 ? (
+        <details className="group rounded-card border border-border bg-subtle/60">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-secondary marker:content-none [&::-webkit-details-marker]:hidden">
+            <span>{t('connections.list.diagnostics')}</span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" aria-hidden />
+          </summary>
+          <div className="grid gap-1.5 border-t border-border px-3 py-3 text-xs">
+            {diagnostics.map((field) => (
+              <DetailRow
+                key={`${field.label}:${field.value}`}
+                label={field.label}
+                value={field.value}
+                mono={field.mono}
+              />
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </div>
   );
 }
 
 function TicketRow({
   row,
   extras,
-  refreshingId,
   switchingId,
   nativeSwitch,
   onShare,
@@ -262,13 +429,14 @@ function TicketRow({
   shareAction,
   routeAction,
   onSwitch,
-  onRefresh,
   onEdit,
-  onDelete,
+  onShowDetail,
+  active,
+  suppressHighlight,
+  sortHandle,
 }: {
   row: TicketWalletRow;
   extras: TicketDetailExtras | null;
-  refreshingId: string | null;
   switchingId: string | null;
   nativeSwitch: boolean;
   onShare: (ticket: TicketView) => void;
@@ -276,14 +444,14 @@ function TicketRow({
   shareAction: TicketBindAction;
   routeAction: TicketBindAction;
   onSwitch?: (ticket: TicketView) => void;
-  onRefresh?: (ticket: TicketView) => void;
   onEdit: (ticket: TicketView) => void;
-  onDelete: (ticket: TicketView) => void;
+  onShowDetail?: (ticket: TicketView) => void;
+  active: boolean;
+  suppressHighlight?: boolean;
+  sortHandle?: React.ReactNode;
 }) {
   const { t } = useI18n();
   const { ticket, usageParts, highlighted } = row;
-  const [expanded, setExpanded] = React.useState(false);
-  const detailsId = React.useId();
   const editLabel = ticketDetailEditLabel(extras, t);
   const authChip = ticketAuthChip(extras);
   const switchChip = ticketSwitchChip(extras, t);
@@ -293,11 +461,12 @@ function TicketRow({
 
   return (
     <ListRow
-      active={highlighted}
+      active={active || (highlighted && !suppressHighlight)}
       indicatorColor={resolveAgentMeta(ticket.agentId).color}
       className="p-3"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {sortHandle}
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <AgentDot agentId={ticket.agentId} />
           <CredentialMark cls={ticket.credentialClass} agentId={ticket.agentId} />
@@ -373,26 +542,15 @@ function TicketRow({
               <Pencil className="h-3.5 w-3.5" /> {editLabel}
             </Button>
           ) : null}
-          <DetailsToggle
-            open={expanded}
-            controlsId={detailsId}
-            onClick={() => setExpanded((open) => !open)}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onShowDetail?.(ticket)}
           >
             {t('connections.list.details')}
-          </DetailsToggle>
+          </Button>
         </div>
       </div>
-      {expanded ? (
-        <TicketDetailPanel
-          id={detailsId}
-          advanced={buildTicketDetailFields(ticket, extras, t, row.bindings).advanced}
-          extras={extras}
-          refreshing={refreshingId === ticket.id}
-          refreshLocked={refreshingId !== null}
-          onRefresh={extras?.oauthAction && onRefresh ? () => onRefresh(ticket) : undefined}
-          onDelete={() => onDelete(ticket)}
-        />
-      ) : null}
     </ListRow>
   );
 }
@@ -490,12 +648,11 @@ export function TicketWalletList({
   shareActionForTicket,
   routeActionForTicket,
   onSwitchTicket,
-  onRefreshTicket,
-  refreshingTicketId,
   switchingTicketId,
   extrasForTicket,
   onEditTicket,
-  onDeleteTicket,
+  onShowDetail,
+  activeTicketId,
   onAddKey,
   onImportLogin,
   onClearAgentFilter,
@@ -510,12 +667,12 @@ export function TicketWalletList({
   shareActionForTicket?: (ticket: TicketView) => TicketBindAction;
   routeActionForTicket?: (ticket: TicketView) => TicketBindAction;
   onSwitchTicket?: (ticket: TicketView) => void;
-  onRefreshTicket?: (ticket: TicketView) => void;
-  refreshingTicketId?: string | null;
   switchingTicketId?: string | null;
   extrasForTicket?: (ticket: TicketView) => TicketDetailExtras | null;
   onEditTicket: (ticket: TicketView) => void;
   onDeleteTicket: (ticket: TicketView) => void;
+  onShowDetail?: (ticket: TicketView) => void;
+  activeTicketId?: string | null;
   onAddKey?: (agentId: AgentId) => void;
   onImportLogin?: (agentId: AgentId) => void;
   onClearAgentFilter?: () => void;
@@ -524,18 +681,34 @@ export function TicketWalletList({
   const { t } = useI18n();
 
   const tickets = wallet?.tickets ?? [];
+  const { stored: ticketOrder, moveInLive, seedIfEmpty } = useStoredIdOrder(StorageKey.connectionsTicketOrder);
   const rows = React.useMemo(() => {
     if (!wallet) return [];
     try {
-      return buildTicketWalletRows(wallet, {
+      const built = buildTicketWalletRows(wallet, {
         highlightAgentId: highlightAgentId ?? null,
         agentFilterId,
         t,
       });
+      return applyIdOrder(built, (row) => row.ticket.id, ticketOrder);
     } catch {
       return [];
     }
-  }, [wallet, highlightAgentId, agentFilterId, t]);
+  }, [wallet, highlightAgentId, agentFilterId, t, ticketOrder]);
+  const liveIds = React.useMemo(() => rows.map((row) => row.ticket.id), [rows]);
+  React.useEffect(() => {
+    seedIfEmpty(liveIds);
+  }, [liveIds, seedIfEmpty]);
+  const canReorder = liveIds.length > 1;
+  const { onDragStartId, rowProps } = useSortableDrag((fromId, toId) => {
+    moveInLive(liveIds, fromId, toId);
+  });
+  const moveNeighbor = React.useCallback((id: string, direction: -1 | 1) => {
+    const index = liveIds.indexOf(id);
+    const next = liveIds[index + direction];
+    if (!next) return;
+    moveInLive(liveIds, id, next);
+  }, [liveIds, moveInLive]);
   const addAgents = React.useMemo(
     () => buildTicketAddMenu(installedAgentIds),
     [installedAgentIds],
@@ -585,24 +758,35 @@ export function TicketWalletList({
 
       {rows.length > 0 ? (
         <div className={pageRhythm.stackDense}>
-          {rows.map((row) => (
-            <TicketRow
-              key={row.ticket.id}
-              row={row}
-              extras={extrasForTicket?.(row.ticket) ?? null}
-              refreshingId={refreshingTicketId ?? null}
-              switchingId={switchingTicketId ?? null}
-              nativeSwitch={showsNativeSwitch(row.ticket.agentId, agentFilterId)}
-              onShare={onShareTicket}
-              onRoute={onRouteTicket}
-              shareAction={shareActionForTicket?.(row.ticket) ?? { disabled: false }}
-              routeAction={routeActionForTicket?.(row.ticket) ?? { disabled: false }}
-              onSwitch={onSwitchTicket}
-              onRefresh={onRefreshTicket}
-              onEdit={onEditTicket}
-              onDelete={onDeleteTicket}
-            />
-          ))}
+          {rows.map((row) => {
+            const sortable = rowProps(row.ticket.id);
+            return (
+              <div key={row.ticket.id} {...sortable}>
+                <TicketRow
+                  row={row}
+                  extras={extrasForTicket?.(row.ticket) ?? null}
+                  switchingId={switchingTicketId ?? null}
+                  nativeSwitch={showsNativeSwitch(row.ticket.agentId, agentFilterId)}
+                  onShare={onShareTicket}
+                  onRoute={onRouteTicket}
+                  shareAction={shareActionForTicket?.(row.ticket) ?? { disabled: false }}
+                  routeAction={routeActionForTicket?.(row.ticket) ?? { disabled: false }}
+                  onSwitch={onSwitchTicket}
+                  onEdit={onEditTicket}
+                  onShowDetail={onShowDetail}
+                  active={activeTicketId === row.ticket.id}
+                  suppressHighlight={activeTicketId != null}
+                  sortHandle={canReorder ? (
+                    <SortHandle
+                      id={row.ticket.id}
+                      onDragStartId={onDragStartId}
+                      onMoveNeighbor={moveNeighbor}
+                    />
+                  ) : null}
+                />
+              </div>
+            );
+          })}
         </div>
       ) : null}
 

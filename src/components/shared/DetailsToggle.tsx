@@ -5,8 +5,8 @@ import { cn } from '@/lib/utils';
 
 /**
  * Row 详情 expand/collapse. Same ghost + chevron control on
- * Connections, MCP, and import-login rows. Routes opens a side pane
- * and uses a plain outline button instead.
+ * MCP and import-login rows. Routes and Connections open a side pane
+ * and use a plain outline button instead.
  */
 export function DetailsToggle({
   open,

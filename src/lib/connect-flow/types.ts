@@ -164,7 +164,7 @@ export interface ConnectFlowDeps {
   createPlanFanout(overrides?: Partial<PlanFanoutDeps>): PlanFanoutController;
 }
 
-/** 对话框组件 props（页面挂载契约）。entry=null 表示关闭。 */
+/** 对话框 / 右侧 inspect 组件 props（页面挂载契约）。entry=null 表示关闭。 */
 export interface ConnectFlowDialogProps {
   entry: ConnectFlowEntry | null;
   deps: ConnectFlowDeps;
@@ -177,6 +177,9 @@ export interface ConnectFlowDialogProps {
   onConnectionChanged: (outcome: ConnectOutcome) => void | Promise<void>;
   /** ①/② 引导跳转（跳转前对话框自行关闭）。 */
   onNavigate: (to: string) => void;
+  /** Connections workbench: render in the right inspect pane instead of a modal. */
+  asPanel?: boolean;
+  width?: number;
 }
 
 /** 用途反查（钱包行"正用于哪些 Agent"）。 */

@@ -1,4 +1,4 @@
-import { KeyRound, RefreshCw, Wallet } from 'lucide-react';
+import { RefreshCw, Wallet } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { CurrentBadge } from '@/components/shared/CurrentBadge';
@@ -29,7 +29,6 @@ import {
   planEligibilityAllowsApply,
   representativeAgentForRouteEndpoint,
   resolveEmptyKind,
-  shouldShowConnectGuideActions,
   shouldShowSelectSkeleton,
   splitSourceOptions,
   type ConnectFlowState,
@@ -109,7 +108,6 @@ export function ConnectFlowSelectStep({
   onRetryEligibility,
   onRetryResources,
   onGoImport,
-  onGoNewKey,
   onOauthGuide,
 }: {
   entry: ConnectFlowEntry;
@@ -126,7 +124,6 @@ export function ConnectFlowSelectStep({
   onRetryEligibility: (request: { source: SourceOption['ref']; targetAgentId: AgentId }) => void;
   onRetryResources: () => void;
   onGoImport: () => void;
-  onGoNewKey: () => void;
   onOauthGuide: (agentId: AgentId) => void;
 }) {
   const { t } = useI18n();
@@ -227,10 +224,6 @@ export function ConnectFlowSelectStep({
                 : t('connect.select.allInfeasibleSource')
             : t('connect.select.allInfeasibleAgent')}
         </Notice>
-      ) : null}
-
-      {shouldShowConnectGuideActions(entry) ? (
-        <GuideActions onGoImport={onGoImport} onGoNewKey={onGoNewKey} />
       ) : null}
     </div>
   );
@@ -616,32 +609,4 @@ function EligibilityBody({
     return <p className="mt-1 text-xs text-secondary">{routeLine}</p>;
   }
   return <p className="mt-1 text-xs text-warning">{eligibility.reason ?? routeLine}</p>;
-}
-
-function GuideActions({
-  onGoImport,
-  onGoNewKey,
-}: {
-  onGoImport: () => void;
-  onGoNewKey: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <section className="space-y-2 rounded-card border border-border bg-subtle/60 p-3">
-      <p className="text-xs font-medium text-secondary">{t('connect.select.otherWays')}</p>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" onClick={onGoImport}>
-          <Wallet className="h-3.5 w-3.5" />
-          {t('connect.select.importLogin')}
-        </Button>
-        <Button size="sm" variant="outline" onClick={onGoNewKey}>
-          <KeyRound className="h-3.5 w-3.5" />
-          {t('connect.select.newApiKey')}
-        </Button>
-      </div>
-      <p className="text-xs text-muted">
-        {t('connect.select.otherWaysHint')}
-      </p>
-    </section>
-  );
 }

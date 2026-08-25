@@ -1,4 +1,5 @@
 import { AGENTS, type AgentMeta } from '@/config/agents';
+import { applyIdOrder } from '@/lib/list-order';
 import type { AgentId, AgentStatus, UsageRecord, UsageTrendPoint } from '@/lib/types';
 
 export function isAgentHidden(
@@ -41,6 +42,15 @@ export function sortAgentsForManagePage<T extends { hidden?: boolean }>(agents: 
     else visible.push(agent);
   }
   return [...visible, ...hidden];
+}
+
+/** Apply a remembered id sequence; empty storage keeps the manage-page default. */
+export function applyStoredAgentOrder<T>(
+  items: readonly T[],
+  getId: (item: T) => string,
+  stored: readonly string[],
+): T[] {
+  return applyIdOrder(items, getId, stored);
 }
 
 export function filterVisibleByAgentId<T extends { agentId: string }>(

@@ -1,11 +1,11 @@
-//! System tray: show / open routes / start-stop local bridges / quit.
+//! System tray: show, local-routes submenu (open / start all / stop all), quit.
 //! Paired with single-instance focus and optional close-to-tray hide.
 
 use agenthub_core::adapter_control::AdapterControl;
 use agenthub_core::models::{AdapterProfileFilter, AdapterRoute};
 use serde::Serialize;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Runtime,
 };
@@ -23,6 +23,7 @@ use crate::tray_i18n::{
 
 const TRAY_ID: &str = "main";
 pub(crate) const MENU_SHOW: &str = "tray-show";
+pub(crate) const MENU_ROUTES: &str = "tray-routes";
 pub(crate) const MENU_OPEN_ROUTES: &str = "tray-open-routes";
 pub(crate) const MENU_START_ROUTES: &str = "tray-start-routes";
 pub(crate) const MENU_STOP_ROUTES: &str = "tray-stop-routes";
@@ -68,6 +69,7 @@ pub(crate) fn tray_menu_action(id: &str) -> TrayMenuAction {
         MENU_START_ROUTES => TrayMenuAction::StartRoutes,
         MENU_STOP_ROUTES => TrayMenuAction::StopRoutes,
         MENU_QUIT => TrayMenuAction::Quit,
+        MENU_ROUTES => TrayMenuAction::Ignore,
         _ => TrayMenuAction::Ignore,
     }
 }
@@ -373,16 +375,19 @@ fn build_tray_menu<R: Runtime>(app: &AppHandle<R>, copy: &TrayMenuCopy) -> tauri
     )?;
     let stop_routes_i =
         MenuItem::with_id(app, MENU_STOP_ROUTES, copy.stop_routes, true, None::<&str>)?;
+    let routes_i = Submenu::with_id_and_items(
+        app,
+        MENU_ROUTES,
+        copy.routes,
+        true,
+        &[&open_routes_i, &start_routes_i, &stop_routes_i],
+    )?;
     let quit_i = MenuItem::with_id(app, MENU_QUIT, copy.quit, true, None::<&str>)?;
+    let before_routes = PredefinedMenuItem::separator(app)?;
+    let before_quit = PredefinedMenuItem::separator(app)?;
     Menu::with_items(
         app,
-        &[
-            &show_i,
-            &open_routes_i,
-            &start_routes_i,
-            &stop_routes_i,
-            &quit_i,
-        ],
+        &[&show_i, &before_routes, &routes_i, &before_quit, &quit_i],
     )
 }
 
@@ -488,6 +493,7 @@ mod tests {
             TrayMenuAction::StopRoutes
         );
         assert_eq!(tray_menu_action(MENU_QUIT), TrayMenuAction::Quit);
+        assert_eq!(tray_menu_action(MENU_ROUTES), TrayMenuAction::Ignore);
         assert_eq!(tray_menu_action("unknown"), TrayMenuAction::Ignore);
         assert_eq!(tray_menu_action(""), TrayMenuAction::Ignore);
     }
@@ -565,9 +571,10 @@ mod tests {
         use crate::tray_i18n::tray_menu_copy;
         let copy = tray_menu_copy(TrayUiLanguage::Zh);
         assert_eq!(copy.show, "打开 AgentHub");
-        assert_eq!(copy.open_routes, "打开本机转发");
-        assert_eq!(copy.start_routes, "启动本机转发");
-        assert_eq!(copy.stop_routes, "停止本机转发");
+        assert_eq!(copy.routes, "本机路由");
+        assert_eq!(copy.open_routes, "打开页面");
+        assert_eq!(copy.start_routes, "全部启动");
+        assert_eq!(copy.stop_routes, "全部停止");
         assert_eq!(copy.quit, "退出");
     }
 
@@ -576,9 +583,10 @@ mod tests {
         use crate::tray_i18n::tray_menu_copy;
         let copy = tray_menu_copy(TrayUiLanguage::En);
         assert_eq!(copy.show, "Open AgentHub");
-        assert_eq!(copy.open_routes, "Open local forward");
-        assert_eq!(copy.start_routes, "Start local forward");
-        assert_eq!(copy.stop_routes, "Stop local forward");
+        assert_eq!(copy.routes, "Local routes");
+        assert_eq!(copy.open_routes, "Open page");
+        assert_eq!(copy.start_routes, "Start all");
+        assert_eq!(copy.stop_routes, "Stop all");
         assert_eq!(copy.quit, "Quit");
     }
 
