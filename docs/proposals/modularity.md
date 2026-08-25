@@ -37,7 +37,7 @@ AgentHub 是模块化单体：GUI 和 CLI 共用 `agenthub-core`。以下边界�
 - 前端已有 backend contracts、Tauri adapter、browser mock、运行时组合层和兼容 façade。
 - `lib/backend/tauri/invoke.ts` 是前端唯一允许导入 Tauri core 并调用 `invoke` 的文件。生产构建不加载 mock；非 Tauri 的生产页面必须明确返回 unavailable。
 - Chat 已拆成页面编排、model/format、hook 和组件，但大 hook 仍是热点。
-- Rust route 测试和 browser mock 已共用 capability fixture；matrix、write gate 和 apply path 也有一致性测试，但 fixture 尚未覆盖全部公开 rule ID。
+- Rust route 测试和 browser mock 已共用 capability fixture；matrix、write gate 和 apply path 也有一致性测试，但 fixture 尚未覆盖全部公开 rule ID。mock 仍独立实现 classify / plan / apply；降为查表投影见 D6。
 
 当前主要问题是：规则契约覆盖不完整、transport 契约测试分散、wire 边界不统一、部分 service/page/hook 职责过多、兼容 façade 仍偏宽。
 
@@ -100,6 +100,8 @@ AgentHub 是模块化单体：GUI 和 CLI 共用 `agenthub-core`。以下边界�
   pnpm exec vitest run src/dev/mocks/adapter.test.ts
   ```
 
+C1 只补齐覆盖并让漂移失败，不授权重写 mock 的 classify / plan。mock 改为查表、JSON 改为由 `plan()` 生成，见 [单一内核与查表投影](single-kernel-projections.md)。不得把该提案的切片并入 C1 的文件范围。
+
 ### F1：拆出 Skills 页面局部编排 — `可执行`
 
 - **负责人：** Skills 前端功能。
@@ -117,6 +119,8 @@ AgentHub 是模块化单体：GUI 和 CLI 共用 `agenthub-core`。以下边界�
 - **必须保持：** session 延迟加载、隐藏项目、删除确认、Chat 跳转、恢复/复制操作和 Agent 能力判断不变。
 - **禁止：** 把项目真相移入前端 store；新增 Agent 硬编码分支；修改 core/Tauri project contract。
 - **验收：** 新单元有针对性测试；现有 Projects model、preview、cleanup 和 hook 测试通过；`pnpm typecheck` 通过。
+
+F1 / F2 以本节已写文件范围为限。不要因为某个页面文件较大，就从本文再派生新的抽取卡；见持续约束 8 与 [单一内核与查表投影](single-kernel-projections.md)。
 
 ## 5. 需要先设计的工作
 
@@ -164,6 +168,13 @@ Provider、Account、Backup 必须分别规划，不能合并成一个重构任�
 - **限制：** registry 仍有基于 `AgentId` 的封闭兼容路径，不得声称已经具备动态插件 ABI，也不得改变 Agent 行为。
 - **进入开发的条件：** 某一组方法可以迁入现有 port，且调用方和契约测试完整。
 
+### D6：单一内核与查表投影 — `先设计`
+
+- **负责人：** capability / route 规则与 browser mock。
+- **设计产物：** [单一内核与查表投影](single-kernel-projections.md)。
+- **限制：** 不得把该方向并入 C1 的文件范围；不得用矩阵格子单独当 `canApply`；不得引入 WASM、napi、类型生成框架或共享 Windows `target/`。C1 补齐覆盖仍按本节可执行任务进行。
+- **进入开发的条件：** 该提案第 7 节晋升门槛已满足，且首个切片有不与 C1 重叠的文件范围、验证命令和回滚方式。
+
 ## 6. 延期事项
 
 ### Sidecar 与统一控制客户端 — `延期`
@@ -177,7 +188,7 @@ Provider、Account、Backup 必须分别规划，不能合并成一个重构任�
 | 事项 | 主要负责人 | 不得变成 |
 |---|---|---|
 | Agent 差异 | `integrations/agents/<key>/` contribution | 页面中的 Agent 分支表 |
-| capability 与 route 决策 | `domain/protocol_graph/` | mock 或 UI 的第二份规则表 |
+| capability 与 route 决策 | `domain/protocol_graph/` 与 `AdapterRouteService::plan()` | mock 或 UI 的第二份规则表；落地设计见 [单一内核与查表投影](single-kernel-projections.md) |
 | 产品写入 | `plan` / `bind` / `unbind` Use Case | 页面直接调用兼容 apply |
 | active/current 真相 | `ConnectionService` | Account/Provider 各自维护的 best-effort 状态 |
 | 本机 route runtime | 当前进程内 control host；未来仅在正式批准后迁移 sidecar | 凭据仓库或直接 SQL writer |
