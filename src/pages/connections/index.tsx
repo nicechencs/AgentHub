@@ -642,7 +642,10 @@ export default function ConnectionsPage() {
         provider={inspectTarget.provider}
         onOpenChange={(v) => {
           if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, v)) return;
-          if (!v) inspect.close();
+          if (!v) {
+            guideOpenedApiKeyRef.current = false;
+            inspect.close();
+          }
         }}
         onSaved={() => {
           const fromGuide = guideOpenedApiKeyRef.current;
