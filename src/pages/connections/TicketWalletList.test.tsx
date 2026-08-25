@@ -75,6 +75,22 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('编辑 API Key');
   });
 
+  it('puts 编辑配置 on the collapsed card, not only inside 详情', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        extrasForTicket: () => ({ canEditConfig: true }),
+        onShareTicket() {},
+        onRouteTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain('编辑配置');
+    expect(markup).not.toContain('移入回收站');
+  });
+
   it('does not show an OpenAI product chip on an OpenRouter API Key card', () => {
     const wallet: TicketWallet = {
       tickets: [{
@@ -601,8 +617,6 @@ describe('TicketDetailPanel', () => {
           { label: '协议', value: 'anthropic-messages' },
         ],
         extras: { quota7dPct: 40, quota7dResetIn: '3d', canEditConfig: true, isCurrent: true },
-        editLabel: '编辑配置',
-        onEdit() {},
         onDelete() {},
       }),
     );
@@ -619,7 +633,7 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('>来源<');
     expect(markup).not.toContain('>所属<');
     expect(markup).not.toContain('官方账号');
-    expect(markup).toContain('编辑配置');
+    expect(markup).not.toContain('编辑配置');
     expect(markup).toContain('移入回收站');
     expect(markup).toContain('>7d<');
     expect(markup).not.toContain('>5h<');

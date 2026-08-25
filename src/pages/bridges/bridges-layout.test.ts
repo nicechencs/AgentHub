@@ -35,8 +35,8 @@ describe('routes layout wiring', () => {
     const detail = source('pages/bridges/RouteDetailPanel.tsx');
     expect(detail).not.toContain("t('routes.collapse')");
     expect(detail).toContain('variant="plain"');
-    expect(detail).toContain("t('routes.edit.action')");
-    expect(list).not.toContain("t('routes.edit.action')");
+    expect(detail).not.toContain("t('routes.edit.action')");
+    expect(list).toContain("t('routes.edit.action')");
   });
 
   it('puts save in the inspect header and collapse instead of cancel', () => {
