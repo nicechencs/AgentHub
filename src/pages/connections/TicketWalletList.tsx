@@ -1,7 +1,7 @@
 /**
  * Global ticket wallet list UI (Connections).
  * Data from listTicketWallet; per-row 用到其他工具 / 本机转发 for true tickets.
- * 「详情」is a read-only expand; edit/delete stay secondary actions inside it.
+ * 「详情」is a read-only expand; edit stays on the card, delete stays inside details.
  */
 import * as React from 'react';
 import { Link } from 'react-router-dom';
@@ -105,21 +105,17 @@ export function TicketDetailPanel({
   id,
   advanced,
   extras,
-  editLabel,
   refreshing,
   refreshLocked,
   onRefresh,
-  onEdit,
   onDelete,
 }: {
   id: string;
   advanced: TicketDetailField[];
   extras?: TicketDetailExtras | null;
-  editLabel?: string | null;
   refreshing?: boolean;
   refreshLocked?: boolean;
   onRefresh?: () => void;
-  onEdit?: () => void;
   onDelete: () => void;
 }) {
   const { t } = useI18n();
@@ -197,11 +193,6 @@ export function TicketDetailPanel({
             >
               <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
               {refreshing ? refreshBusyLabel : refreshLabel}
-            </Button>
-          ) : null}
-          {editLabel && onEdit ? (
-            <Button size="sm" variant="secondary" onClick={onEdit}>
-              <Pencil className="h-3.5 w-3.5" /> {editLabel}
             </Button>
           ) : null}
           <Button
@@ -318,6 +309,11 @@ function TicketRow({
           <Button size="sm" variant="outline" onClick={() => onRoute(ticket)}>
             <Cable className="h-3.5 w-3.5" /> {t('connections.list.route')}
           </Button>
+          {editLabel ? (
+            <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
+              <Pencil className="h-3.5 w-3.5" /> {editLabel}
+            </Button>
+          ) : null}
           <DetailsToggle
             open={expanded}
             controlsId={detailsId}
@@ -332,11 +328,9 @@ function TicketRow({
           id={detailsId}
           advanced={buildTicketDetailFields(ticket, extras, t, row.bindings).advanced}
           extras={extras}
-          editLabel={editLabel}
           refreshing={refreshingId === ticket.id}
           refreshLocked={refreshingId !== null}
           onRefresh={extras?.oauthAction && onRefresh ? () => onRefresh(ticket) : undefined}
-          onEdit={editLabel ? () => onEdit(ticket) : undefined}
           onDelete={() => onDelete(ticket)}
         />
       ) : null}

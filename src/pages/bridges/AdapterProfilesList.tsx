@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { ArrowRight, Boxes } from 'lucide-react';
+import { ArrowRight, Boxes, Pencil } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailsToggle } from '@/components/shared/DetailsToggle';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -273,6 +273,16 @@ function AdapterProfileRow({
           >
             {t('routes.write.action')}
           </Button>
+          {onRequestEdit ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => onRequestEdit(profile)}
+            >
+              <Pencil className="h-3.5 w-3.5" /> {t('routes.edit.action')}
+            </Button>
+          ) : null}
           <DetailsToggle
             open={detailExpanded}
             controlsId={detailsId}
@@ -301,7 +311,6 @@ function AdapterProfileRow({
           entries={entries}
           busy={busy}
           error={error}
-          onRequestEdit={onRequestEdit}
           onRequestRemove={onRequestRemove ?? (() => undefined)}
           targetHidden={targetHidden}
           siblingProfiles={siblingProfiles}

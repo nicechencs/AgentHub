@@ -1,4 +1,4 @@
-import { ChevronDown, Copy, Pencil } from 'lucide-react';
+import { ChevronDown, Copy } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -45,7 +45,6 @@ export function RouteDetailPanel({
   siblingProfiles = [],
   busy,
   error,
-  onRequestEdit,
   onRequestRemove,
   targetHidden = false,
 }: {
@@ -56,7 +55,6 @@ export function RouteDetailPanel({
   siblingProfiles?: readonly AdapterProfile[];
   busy: boolean;
   error: unknown;
-  onRequestEdit?: (profile: AdapterProfile) => void;
   onRequestRemove: (profile: AdapterProfile) => void;
   targetHidden?: boolean;
 }) {
@@ -75,7 +73,6 @@ export function RouteDetailPanel({
         siblingProfiles={siblingProfiles}
         busy={busy}
         error={error}
-        onRequestEdit={onRequestEdit}
         onRequestRemove={onRequestRemove}
         targetHidden={targetHidden}
       />
@@ -90,7 +87,6 @@ function RouteDetailBody({
   siblingProfiles,
   busy,
   error,
-  onRequestEdit,
   onRequestRemove,
   targetHidden,
 }: {
@@ -100,7 +96,6 @@ function RouteDetailBody({
   siblingProfiles: readonly AdapterProfile[];
   busy: boolean;
   error: unknown;
-  onRequestEdit?: (profile: AdapterProfile) => void;
   onRequestRemove: (profile: AdapterProfile) => void;
   targetHidden: boolean;
 }) {
@@ -241,16 +236,6 @@ function RouteDetailBody({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-        {onRequestEdit ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={busy}
-            onClick={() => onRequestEdit(profile)}
-          >
-            <Pencil className="h-3.5 w-3.5" /> {t('routes.edit.action')}
-          </Button>
-        ) : null}
         <Button
           size="sm"
           variant="dangerOutline"
