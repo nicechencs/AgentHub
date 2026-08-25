@@ -1,7 +1,5 @@
-import { useId, useState } from 'react';
 import { ArrowRight, Boxes, Pencil } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
-import { DetailsToggle } from '@/components/shared/DetailsToggle';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -17,7 +15,6 @@ import type {
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from './adapter-components';
-import { RouteDetailPanel } from './RouteDetailPanel';
 import {
   adapterBridgeHostPort,
   adapterFailurePresentation,
@@ -51,11 +48,12 @@ export type AdapterProfilesListProps = {
   removingProfileId: string | null;
   onStartBridge: (profile: AdapterProfile) => void;
   onRequestStopBridge: (profile: AdapterProfile) => void;
-  onRequestRemove?: (profile: AdapterProfile) => void;
   /** Opens the dedicated client-config write dialog for one route. */
   onRequestWrite?: (profile: AdapterProfile, graph: RouteGraphView) => void;
   onRequestEdit?: (profile: AdapterProfile) => void;
   onShowDetail?: (profile: AdapterProfile) => void;
+  /** Profile currently in the inspect pane (detail / edit / write). */
+  activeProfileId?: string | null;
   onRetry: () => void;
   hiddenTargetIds?: ReadonlySet<string>;
 };
@@ -77,19 +75,14 @@ export function AdapterProfilesList({
   removingProfileId,
   onStartBridge,
   onRequestStopBridge,
-  onRequestRemove,
   onRequestWrite,
   onRequestEdit,
   onShowDetail,
+  activeProfileId,
   onRetry,
   hiddenTargetIds,
 }: AdapterProfilesListProps) {
   const { t } = useI18n();
-  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
-  const toggleDetail = (profile: AdapterProfile) => {
-    setExpandedIds((current) => ({ ...current, [profile.id]: !current[profile.id] }));
-    onShowDetail?.(profile);
-  };
   if (loading) {
     return (
       <div className="space-y-2" aria-live="polite">
@@ -129,11 +122,10 @@ export function AdapterProfilesList({
           error={errors[profile.id]}
           onStartBridge={onStartBridge}
           onRequestStopBridge={onRequestStopBridge}
-          onRequestRemove={onRequestRemove}
           onRequestWrite={onRequestWrite}
           onRequestEdit={onRequestEdit}
-          onToggleDetail={() => toggleDetail(profile)}
-          detailExpanded={expandedIds[profile.id] === true}
+          onShowDetail={onShowDetail}
+          active={activeProfileId === profile.id}
           targetHidden={hiddenTargetIds?.has(profile.targetAgentId) === true}
           siblingProfiles={profiles}
         />
@@ -151,11 +143,10 @@ function AdapterProfileRow({
   error,
   onStartBridge,
   onRequestStopBridge,
-  onRequestRemove,
   onRequestWrite,
   onRequestEdit,
-  onToggleDetail,
-  detailExpanded,
+  onShowDetail,
+  active,
   targetHidden,
   siblingProfiles,
 }: {
@@ -167,16 +158,14 @@ function AdapterProfileRow({
   error: unknown;
   onStartBridge: (profile: AdapterProfile) => void;
   onRequestStopBridge: (profile: AdapterProfile) => void;
-  onRequestRemove?: (profile: AdapterProfile) => void;
   onRequestWrite?: (profile: AdapterProfile, graph: RouteGraphView) => void;
   onRequestEdit?: (profile: AdapterProfile) => void;
-  onToggleDetail: () => void;
-  detailExpanded: boolean;
+  onShowDetail?: (profile: AdapterProfile) => void;
+  active: boolean;
   targetHidden: boolean;
   siblingProfiles: readonly AdapterProfile[];
 }) {
   const { t } = useI18n();
-  const detailsId = useId();
   const endpointParts = profile.route === 'local_bridge'
     ? adapterBridgeHostPort(profile, bridgeStatus)
     : null;
@@ -206,7 +195,7 @@ function AdapterProfileRow({
   const localLabel = graph.local.origin || t('routes.pendingPort');
 
   return (
-    <ListRow className="p-3">
+    <ListRow className="p-3" active={active}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="w-40 shrink-0">
           {runtimeStatus ? <StatusLine view={runtimeStatus} emphasis /> : null}
@@ -283,13 +272,13 @@ function AdapterProfileRow({
               <Pencil className="h-3.5 w-3.5" /> {t('routes.edit.action')}
             </Button>
           ) : null}
-          <DetailsToggle
-            open={detailExpanded}
-            controlsId={detailsId}
-            onClick={onToggleDetail}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onShowDetail?.(profile)}
           >
             {t('routes.detail')}
-          </DetailsToggle>
+          </Button>
         </div>
       </div>
       {recovery ? (
@@ -302,19 +291,6 @@ function AdapterProfileRow({
           <AdapterErrorLines error={error} fallback={t('routes.mutationFailure')} />
           <p className="text-xs text-secondary">{failure.hint}</p>
         </div>
-      ) : null}
-      {detailExpanded ? (
-        <RouteDetailPanel
-          id={detailsId}
-          profile={profile}
-          bridgeStatus={bridgeStatus}
-          entries={entries}
-          busy={busy}
-          error={error}
-          onRequestRemove={onRequestRemove ?? (() => undefined)}
-          targetHidden={targetHidden}
-          siblingProfiles={siblingProfiles}
-        />
       ) : null}
     </ListRow>
   );

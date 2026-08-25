@@ -648,6 +648,8 @@ export const en = {
     targetHiddenHint: "The target tool is hidden; you can only stop a running forwarder",
     busy: "Working…",
     detail: "Details",
+    detailTitle: "Route details",
+    detailDescription: "Upstream, local entry, and connected clients.",
     supports: "Supports",
     collapse: "Collapse",
     endpointCopied: "Endpoint copied",

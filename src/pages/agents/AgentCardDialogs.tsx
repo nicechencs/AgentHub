@@ -61,7 +61,7 @@ export function AgentCardDialogs({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => onClose()} disabled={uninstalling}>
+            <Button variant="secondary" onClick={() => onClose()} disabled={uninstalling}>
               {t('common.cancel')}
             </Button>
             <Button variant="danger" onClick={() => onUninstall(false)} disabled={uninstalling}>
@@ -85,7 +85,7 @@ export function AgentCardDialogs({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => onClose()} disabled={busy}>
+            <Button variant="secondary" onClick={() => onClose()} disabled={busy}>
               {t('common.cancel')}
             </Button>
             <Button
@@ -130,7 +130,7 @@ export function AgentCardDialogs({
             disabled={uninstalling}
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => onClose()} disabled={uninstalling}>
+            <Button variant="secondary" onClick={() => onClose()} disabled={uninstalling}>
               {t('common.cancel')}
             </Button>
             <Button
@@ -153,7 +153,7 @@ export function AgentCardDialogs({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => onClose()} disabled={busy}>
+            <Button variant="secondary" onClick={() => onClose()} disabled={busy}>
               {t('common.cancel')}
             </Button>
             <Button
@@ -179,7 +179,7 @@ export function AgentCardDialogs({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => onClose()} disabled={busy}>
+            <Button variant="secondary" onClick={() => onClose()} disabled={busy}>
               {t('common.cancel')}
             </Button>
             <Button

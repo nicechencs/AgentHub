@@ -175,7 +175,7 @@ export function OAuthFlowDialog({
               </Button>
             </>
           ) : (
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="secondary" onClick={() => onOpenChange(false)}>
               取消
             </Button>
           )}

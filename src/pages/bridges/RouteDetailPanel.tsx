@@ -15,6 +15,7 @@ import type {
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from './adapter-components';
+import { DialogOrSide } from './dialog-or-side';
 import { readCreateRouteCapabilities } from './create-route-flow';
 import {
   adapterBridgeHostPort,
@@ -36,6 +37,7 @@ import {
 
 /**
  * Route detail: login, local address, who is connected. No protocol graph.
+ * `asPanel` uses the same inspect chrome as create / edit / write.
  */
 export function RouteDetailPanel({
   id,
@@ -46,7 +48,12 @@ export function RouteDetailPanel({
   busy,
   error,
   onRequestRemove,
+  onRequestEdit,
   targetHidden = false,
+  asPanel = false,
+  open = true,
+  onOpenChange,
+  width,
 }: {
   id?: string;
   profile: AdapterProfile | null;
@@ -56,9 +63,66 @@ export function RouteDetailPanel({
   busy: boolean;
   error: unknown;
   onRequestRemove: (profile: AdapterProfile) => void;
+  onRequestEdit?: (profile: AdapterProfile) => void;
   targetHidden?: boolean;
+  asPanel?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  width?: number;
 }) {
+  const { t } = useI18n();
   if (!profile) return null;
+
+  const requestDelete = () => {
+    if (asPanel) onOpenChange?.(false);
+    onRequestRemove(profile);
+  };
+  const deleteButton = (
+    <Button
+      size="sm"
+      variant="dangerOutline"
+      disabled={busy || targetHidden}
+      title={targetHidden ? t('routes.targetHiddenHint') : undefined}
+      onClick={requestDelete}
+    >
+      {t('routes.delete.action')}
+    </Button>
+  );
+  const body = (
+    <RouteDetailBody
+      profile={profile}
+      bridgeStatus={bridgeStatus}
+      entries={entries}
+      siblingProfiles={siblingProfiles}
+      error={error}
+    />
+  );
+
+  if (asPanel) {
+    return (
+      <DialogOrSide
+        asPanel
+        width={width}
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) onOpenChange?.(false);
+        }}
+        title={t('routes.detailTitle')}
+        description={t('routes.detailDescription')}
+        primary={onRequestEdit ? (
+          <Button type="button" size="sm" onClick={() => onRequestEdit(profile)}>
+            {t('routes.edit.action')}
+          </Button>
+        ) : undefined}
+        danger={deleteButton}
+      >
+        <div id={id} data-route-detail={profile.id}>
+          {body}
+        </div>
+      </DialogOrSide>
+    );
+  }
+
   return (
     <Card
       id={id}
@@ -66,16 +130,10 @@ export function RouteDetailPanel({
       className="mt-3 flex flex-col gap-3 bg-canvas p-3"
       data-route-detail={profile.id}
     >
-      <RouteDetailBody
-        profile={profile}
-        bridgeStatus={bridgeStatus}
-        entries={entries}
-        siblingProfiles={siblingProfiles}
-        busy={busy}
-        error={error}
-        onRequestRemove={onRequestRemove}
-        targetHidden={targetHidden}
-      />
+      {body}
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+        {deleteButton}
+      </div>
     </Card>
   );
 }
@@ -85,19 +143,13 @@ function RouteDetailBody({
   bridgeStatus,
   entries,
   siblingProfiles,
-  busy,
   error,
-  onRequestRemove,
-  targetHidden,
 }: {
   profile: AdapterProfile;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
   entries: ConnectionEntry[];
   siblingProfiles: readonly AdapterProfile[];
-  busy: boolean;
   error: unknown;
-  onRequestRemove: (profile: AdapterProfile) => void;
-  targetHidden: boolean;
 }) {
   const { toast } = useToast();
   const { t } = useI18n();
@@ -233,18 +285,6 @@ function RouteDetailBody({
             </div>
           </div>
         </details>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-        <Button
-          size="sm"
-          variant="dangerOutline"
-          disabled={busy || targetHidden}
-          title={targetHidden ? t('routes.targetHiddenHint') : undefined}
-          onClick={() => onRequestRemove(profile)}
-        >
-          {t('routes.delete.action')}
-        </Button>
       </div>
     </>
   );
