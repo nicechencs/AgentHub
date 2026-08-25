@@ -36,6 +36,8 @@ const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = [
 
 const COLUMN_KEYS: ColumnKey[] = ['name', 'transport', 'endpoint', 'actions'];
 
+const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.mcp.columnWidths';
+
 function columnLabels(t: TranslateFn): Record<ColumnKey, string> {
   return {
     name: t('mcp.table.name'),
@@ -176,7 +178,10 @@ export function McpServerTable({
 }) {
   const { t } = useI18n();
   const labels = columnLabels(t);
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(WIDTH_SPECS);
+  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+    WIDTH_SPECS,
+    COLUMN_WIDTHS_STORAGE_KEY,
+  );
   return (
     <TableShell>
       <Table className="table-fixed" style={{ minWidth: totalWidth }}>

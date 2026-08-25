@@ -64,6 +64,8 @@ const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = COLUMNS.map(
   ({ key, defaultWidth, minWidth }) => ({ key, defaultWidth, minWidth }),
 );
 
+const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.dashboard.usageColumnWidths';
+
 function fmtTime(iso: string): string {
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, '0');
@@ -90,7 +92,10 @@ export function buildPageItems(current: number, total: number): Array<number | '
 
 export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
   const { t } = useI18n();
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(WIDTH_SPECS);
+  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+    WIDTH_SPECS,
+    COLUMN_WIDTHS_STORAGE_KEY,
+  );
   const [page, setPage] = useState(1);
 
   const total = rows.length;

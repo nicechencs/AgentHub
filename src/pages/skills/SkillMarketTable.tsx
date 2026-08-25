@@ -31,6 +31,8 @@ const WIDTH_SPECS: ColumnWidthSpec<ColumnKey>[] = [
 
 const COLUMN_KEYS: ColumnKey[] = ['name', 'provider', 'version', 'actions'];
 
+const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.skills.marketColumnWidths';
+
 /** Resolve market detail page URL (backend-provided, with client fallback). */
 export function resolveMarketDetailUrl(item: SkillListingDto): string | null {
   const fromApi = item.detailUrl?.trim();
@@ -81,7 +83,10 @@ export function SkillMarketTable({
 }) {
   const { toast } = useToast();
   const { t } = useI18n();
-  const { widths, onResizeStart, totalWidth } = useColumnWidths(WIDTH_SPECS);
+  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+    WIDTH_SPECS,
+    COLUMN_WIDTHS_STORAGE_KEY,
+  );
   const columnLabels: Record<ColumnKey, string> = {
     name: t('skills.market.colName'),
     provider: t('skills.market.colProvider'),

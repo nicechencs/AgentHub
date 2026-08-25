@@ -2,6 +2,10 @@ import * as React from 'react';
 import { Card } from '@/components/ui/card';
 import { Hint } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import {
+  persistColumnWidths,
+  readStoredColumnWidths,
+} from './table-column-model';
 
 /**
  * 全站表格视觉协议。
@@ -66,8 +70,11 @@ export type ColumnWidthSpec<K extends string = string> = {
   minWidth: number;
 };
 
-/** 多列表头拖拽调宽（table-fixed + colgroup 消费 widths） */
-export function useColumnWidths<K extends string>(specs: ColumnWidthSpec<K>[]) {
+/** 多列表头拖拽调宽（table-fixed + colgroup 消费 widths）；列宽按 storageKey 记住。 */
+export function useColumnWidths<K extends string>(
+  specs: ColumnWidthSpec<K>[],
+  storageKey: string,
+) {
   const defaults = React.useMemo(
     () =>
       Object.fromEntries(specs.map((s) => [s.key, s.defaultWidth])) as Record<K, number>,
@@ -81,7 +88,11 @@ export function useColumnWidths<K extends string>(specs: ColumnWidthSpec<K>[]) {
     [specs.map((s) => `${s.key}:${s.minWidth}`).join('|')],
   );
 
-  const [widths, setWidths] = React.useState<Record<K, number>>(defaults);
+  const [widths, setWidths] = React.useState<Record<K, number>>(() =>
+    readStoredColumnWidths(storageKey, defaults, minByKey),
+  );
+  const widthsRef = React.useRef(widths);
+  widthsRef.current = widths;
   const dragRef = React.useRef<{
     key: K;
     startX: number;
@@ -105,7 +116,7 @@ export function useColumnWidths<K extends string>(specs: ColumnWidthSpec<K>[]) {
       dragRef.current = {
         key,
         startX: e.clientX,
-        startWidth: widths[key],
+        startWidth: widthsRef.current[key],
         minWidth: minByKey[key] ?? 48,
         pointerId,
         cleanup: () => undefined,
@@ -116,8 +127,12 @@ export function useColumnWidths<K extends string>(specs: ColumnWidthSpec<K>[]) {
       const applyMove = (clientX: number) => {
         const drag = dragRef.current;
         if (!drag) return;
-        const next = Math.max(drag.minWidth, drag.startWidth + (clientX - drag.startX));
-        setWidths((prev) => (prev[drag.key] === next ? prev : { ...prev, [drag.key]: next }));
+        const nextW = Math.max(drag.minWidth, drag.startWidth + (clientX - drag.startX));
+        const prev = widthsRef.current;
+        if (prev[drag.key] === nextW) return;
+        const next = { ...prev, [drag.key]: nextW };
+        widthsRef.current = next;
+        setWidths(next);
       };
 
       const onPointerMove = (ev: PointerEvent) => {
@@ -128,6 +143,11 @@ export function useColumnWidths<K extends string>(specs: ColumnWidthSpec<K>[]) {
       let cleanup: () => void;
       const onPointerUp = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
+        applyMove(ev.clientX);
+        cleanup();
+      };
+      const onMouseUp = (ev: MouseEvent) => {
+        applyMove(ev.clientX);
         cleanup();
       };
       const onPointerCancel = (ev: PointerEvent) => {
@@ -137,6 +157,7 @@ export function useColumnWidths<K extends string>(specs: ColumnWidthSpec<K>[]) {
       cleanup = createIdempotentCleanup(() => {
         if (dragRef.current?.cleanup !== cleanup) return;
         dragRef.current = null;
+        persistColumnWidths(storageKey, widthsRef.current);
         document.body.style.cursor = previousCursor;
         document.body.style.userSelect = previousUserSelect;
         window.removeEventListener('blur', cleanup);
@@ -151,7 +172,7 @@ export function useColumnWidths<K extends string>(specs: ColumnWidthSpec<K>[]) {
           }
         } else {
           document.removeEventListener('mousemove', onMouseMove);
-          document.removeEventListener('mouseup', cleanup);
+          document.removeEventListener('mouseup', onMouseUp);
         }
       });
       dragRef.current.cleanup = cleanup;
@@ -168,10 +189,10 @@ export function useColumnWidths<K extends string>(specs: ColumnWidthSpec<K>[]) {
         }
       } else {
         document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', cleanup);
+        document.addEventListener('mouseup', onMouseUp);
       }
     },
-    [minByKey, widths],
+    [minByKey, storageKey],
   );
 
   React.useEffect(
