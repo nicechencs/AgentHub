@@ -27,6 +27,32 @@
       }
     },
     {
+      "id": "anthropic-api-account-to-pi",
+      "source": {
+        "kind": "account",
+        "agentId": "claude",
+        "accountKind": "apikey",
+        "extra": {
+          "provider": "anthropic"
+        },
+        "credentials": {
+          "format": "api_key",
+          "api_key": "must-not-leak"
+        }
+      },
+      "target": "pi",
+      "expect": {
+        "route": "config_sync",
+        "support": "stable",
+        "canApply": true,
+        "applyPath": "config_sync",
+        "ruleId": "anthropic-api-to-pi-v1",
+        "gateKind": "none",
+        "reason": "把这份 Anthropic API Key 写进 Pi 认的登录位置。",
+        "reusePath": "api_endpoint"
+      }
+    },
+    {
       "id": "anthropic-api-to-codex",
       "source": {
         "kind": "provider",
@@ -852,6 +878,52 @@
         "gateKind": "none",
         "reason": "Grok 登录会经本机路由接到 Claude Code。",
         "reusePath": "local_bridge"
+      }
+    },
+    {
+      "id": "grok-oauth-to-dsh",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth",
+        "credentials": {
+          "format": "oauth",
+          "access_token": "must-not-leak"
+        }
+      },
+      "target": "dsh",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "DSH 只认 DeepSeek 官方 Key，接下不了这份 Grok 登录。",
+        "reusePath": "none"
+      }
+    },
+    {
+      "id": "grok-oauth-to-kimi",
+      "source": {
+        "kind": "account",
+        "agentId": "grok",
+        "accountKind": "oauth",
+        "credentials": {
+          "format": "oauth",
+          "access_token": "must-not-leak"
+        }
+      },
+      "target": "kimi",
+      "expect": {
+        "route": "unsupported",
+        "support": "unsupported",
+        "canApply": false,
+        "applyPath": "rejected",
+        "ruleId": null,
+        "gateKind": "unsupported",
+        "reason": "Kimi 只认自己的官方 Key，接下不了这份 Grok 登录。",
+        "reusePath": "none"
       }
     },
     {

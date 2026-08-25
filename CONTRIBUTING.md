@@ -24,7 +24,7 @@ pnpm tauri:dev        # 真实 Tauri 桌面端
 
 ## 验证
 
-先运行与改动风险匹配的检查，见 [AGENTS.md](AGENTS.md) 的风险分级和 [测试与验证](docs/guides/testing-and-validation.md)。局部 UI、文案、纯函数和单文件改动只跑对应过滤测试；跨层或共享契约改动再扩大范围。全量测试和生产 build 默认留给提交前或 CI：
+风险分级以 [AGENTS.md](AGENTS.md) 为准，命令选择见 [测试与验证](docs/guides/testing-and-validation.md)。日常改动先跑过滤测试；提交前按改动面从下列命令中选择，CI 执行完整矩阵：
 
 ```bash
 pnpm typecheck

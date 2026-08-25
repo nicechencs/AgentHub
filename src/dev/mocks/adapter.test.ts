@@ -1,18 +1,16 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AdapterCommandError } from '@/lib/backend/contracts/adapter';
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account } from '@/lib/types';
 import {
-  CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
-  CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
   createMockAdapterPort,
+  resetGoldenLookupStats,
   resetMockAdapters,
 } from './adapter';
-import { getMockAccountById, upsertMockAccount } from './account';
+import { getMockAccountById } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
   seedConnectFlowAdapterFixtures,
 } from './connect-flow-fixtures';
-import contract from './fixtures/adapter-capability-contract.json';
 import {
   createMockProviderPort,
   getMockProviderById,
@@ -21,7 +19,7 @@ import {
   upsertMockProvider,
 } from './provider';
 
-describe('mock adapter route preview', () => {
+describe('mock adapter projection', () => {
   const resolver = {
     getAccountById: getMockAccountById,
     getProviderById: getMockProviderById,
@@ -32,9 +30,10 @@ describe('mock adapter route preview', () => {
   beforeEach(() => {
     resetMockAdapters();
     resetMockProviders();
+    resetGoldenLookupStats();
   });
 
-  it('classifies a randomly named saved provider and keeps secrets out of analysis and plan', async () => {
+  it('keeps secrets out of analyze, plan, and apply', async () => {
     const sourceId = `kimi-provider-${Date.now()}-${Math.random()}`;
     await createMockProviderPort().upsertProvider({
       id: sourceId,
@@ -49,20 +48,9 @@ describe('mock adapter route preview', () => {
     const adapter = createMockAdapterPort(resolver);
 
     const native = await adapter.analyze({ sourceKind: 'provider', sourceId, targetAgentId: 'claude' });
-    const local = await adapter.analyze({ sourceKind: 'provider', sourceId, targetAgentId: 'codex' });
     const sync = await adapter.plan({ sourceKind: 'provider', sourceId, targetAgentId: 'pi' });
-    expect(native.route).toBe('native_endpoint');
-    expect(local.route).toBe('local_bridge');
-    expect(sync.analysis.route).toBe('config_sync');
-    expect(sync.canApply).toBe(true);
-    expect(sync.analysis.gateKind).toBe('none');
-    expect(sync.analysis.limitations.join('\n')).not.toMatch(/仅预览|Phase 0/);
-    expect(sync.changes).toEqual([
-      { target: 'pi', field: 'provider', value: 'kimi-for-coding', secret: false },
-      { target: 'pi', field: 'apiKey', secret: true },
-    ]);
-    expect(JSON.stringify({ native, sync })).not.toContain('must-not-leak');
     expect(native.actions.find((item) => item.secret)).not.toHaveProperty('value');
+    expect(JSON.stringify({ native, sync })).not.toContain('must-not-leak');
 
     const applied = await adapter.apply({ sourceKind: 'provider', sourceId, targetAgentId: 'claude' });
     const repeated = await adapter.apply({ sourceKind: 'provider', sourceId, targetAgentId: 'claude' });
@@ -72,82 +60,7 @@ describe('mock adapter route preview', () => {
     expect(JSON.stringify(applied)).not.toContain('must-not-leak');
   });
 
-  it('classifies and applies a Kimi membership Account on all three provider edges', async () => {
-    const sourceId = `kimi-account-${Date.now()}-${Math.random()}`;
-    upsertMockAccount({
-      id: sourceId,
-      agentId: 'kimi',
-      kind: 'apikey',
-      label: 'Kimi Code membership',
-      isCurrent: false,
-      tokenValid: true,
-      credentials: {
-        format: 'api_key',
-        api_key: 'must-not-leak',
-        provider: 'kimi-code-membership',
-      },
-      extra: {},
-    } as Account & {
-      credentials: Record<string, unknown>;
-      extra: Record<string, unknown>;
-    });
-    const adapter = createMockAdapterPort(resolver);
-
-    for (const targetAgentId of ['claude', 'pi', 'codex'] as const) {
-      const plan = await adapter.plan({
-        sourceKind: 'account',
-        sourceId,
-        targetAgentId,
-      });
-      expect(plan.canApply).toBe(true);
-      const applied = await adapter.apply({
-        sourceKind: 'account',
-        sourceId,
-        targetAgentId,
-      });
-      expect(applied.profile.sourceKind).toBe('account');
-      expect(applied.profile.ruleId).toBe(
-        targetAgentId === 'claude'
-          ? 'kimi-membership-to-claude-v1'
-          : targetAgentId === 'pi'
-            ? 'kimi-membership-to-pi-v1'
-            : 'kimi-membership-to-codex-v1',
-      );
-      expect(JSON.stringify(applied)).not.toContain('must-not-leak');
-    }
-
-    const bareId = `${sourceId}-bare`;
-    upsertMockAccount({
-      id: bareId,
-      agentId: 'kimi',
-      kind: 'apikey',
-      label: 'Kimi API',
-      isCurrent: false,
-      tokenValid: true,
-    });
-    const oauthId = `${sourceId}-oauth`;
-    upsertMockAccount({
-      id: oauthId,
-      agentId: 'kimi',
-      kind: 'oauth',
-      label: 'Kimi managed OAuth',
-      isCurrent: false,
-      tokenValid: true,
-    });
-    expect((await adapter.plan({
-      sourceKind: 'account',
-      sourceId: bareId,
-      targetAgentId: 'claude',
-    })).canApply).toBe(false);
-    expect((await adapter.plan({
-      sourceKind: 'account',
-      sourceId: oauthId,
-      targetAgentId: 'pi',
-    })).canApply).toBe(false);
-  });
-
   it('applies a local bridge, exposes its generated Codex Connection, and controls status without tokens', async () => {
-    resetMockAdapters();
     const sourceId = `kimi-bridge-${Date.now()}-${Math.random()}`;
     await createMockProviderPort().upsertProvider({
       id: sourceId,
@@ -160,14 +73,13 @@ describe('mock adapter route preview', () => {
     });
     const adapter = createMockAdapterPort(resolver);
     const plan = await adapter.plan({ sourceKind: 'provider', sourceId, targetAgentId: 'codex' });
-    expect(plan.canApply).toBe(true);
     expect(plan.serviceImpact).toBe('requires_local_bridge');
 
     const applied = await adapter.apply({ sourceKind: 'provider', sourceId, targetAgentId: 'codex' });
     const visible = await createMockProviderPort().listProviders('codex');
     expect(visible.find((provider) => provider.id === applied.provider.id)).toMatchObject({ isCurrent: true });
-    // Desktop apply forces opt-in auto-start; mock must not invent true.
     expect(applied.profile.autoStart).toBe(false);
+    expect(applied.profile.ruleId).toBe(plan.analysis.ruleId);
     expect(await adapter.getBridgeStatus(applied.profile.id)).toMatchObject({ state: 'running', port: 32123 });
     expect(await adapter.stopBridge(applied.profile.id)).toMatchObject({ state: 'stopped' });
     expect(await adapter.startBridge(applied.profile.id)).toMatchObject({ state: 'running' });
@@ -220,7 +132,7 @@ describe('mock adapter route preview', () => {
     expect(await freshAdapter.listProfiles()).toEqual([]);
   });
 
-  it('keeps Codex OAuth without auth_json as a closed Claude subscription surface', async () => {
+  it('rejects apply when the plan is closed and does not leak credentials', async () => {
     const accountId = 'codex-oauth-account';
     const adapter = createMockAdapterPort({
       getAccountById: (id) => (id === accountId
@@ -235,39 +147,22 @@ describe('mock adapter route preview', () => {
         : getMockAccountById(id)),
       getProviderById: getMockProviderById,
     });
-
-    const analysis = await adapter.analyze({
-      sourceKind: 'account',
-      sourceId: accountId,
-      targetAgentId: 'claude',
-    });
     const plan = await adapter.plan({
       sourceKind: 'account',
       sourceId: accountId,
       targetAgentId: 'claude',
     });
-
-    expect(analysis.route).toBe('unsupported');
-    expect(analysis.support).toBe('unsupported');
-    expect(analysis.gateKind).toBe('subscription_candidate');
-    expect(analysis.ruleId).toBeNull();
-    expect(analysis.reason).toContain('现在还接不到');
-    expect(analysis.reason).toContain('不会改配置');
-    expect(analysis.reason).toMatch(/Claude/);
-    expect(analysis.reason).toMatch(/API Key|官方登录/);
     expect(plan.canApply).toBe(false);
-    expect(plan.reusePath).toBe('none');
-    expect(plan.changes).toEqual([]);
     await expect(adapter.apply({
       sourceKind: 'account',
       sourceId: accountId,
       targetAgentId: 'claude',
     })).rejects.toThrow(/不可应用|不支持|canApply/i);
-    expect(JSON.stringify({ analysis, plan })).not.toMatch(/sk-|access_token|refresh_token|bearer/i);
-    expect(plan.reason).not.toContain('同边但暂不可写');
+    expect(await adapter.listProfiles()).toEqual([]);
+    expect(JSON.stringify(plan)).not.toMatch(/sk-|access_token|refresh_token|bearer/i);
   });
 
-  it('opens Codex auth_json into the experimental Claude local bridge', async () => {
+  it('applies an oauth local-bridge plan into memory without leaking tokens', async () => {
     const accountId = 'codex-auth-json-claude';
     const account = {
       id: accountId,
@@ -288,43 +183,19 @@ describe('mock adapter route preview', () => {
     const adapter = createMockAdapterPort({
       getAccountById: (id) => id === accountId ? account : getMockAccountById(id),
       getProviderById: getMockProviderById,
+      upsertGeneratedProvider: upsertMockProvider,
+      removeGeneratedProvider: removeMockProvider,
     });
     const request = {
       sourceKind: 'account' as const,
       sourceId: accountId,
       targetAgentId: 'claude' as const,
     };
-
     const plan = await adapter.plan(request);
-    expect(plan).toMatchObject({
-      canApply: true,
-      reusePath: 'local_bridge',
-      serviceImpact: 'requires_local_bridge',
-      analysis: {
-        route: 'local_bridge',
-        support: 'experimental',
-        ruleId: 'codex-subscription-to-claude-responses-v1',
-        gateKind: 'none',
-      },
-    });
-    expect(plan.changes).toEqual([
-      {
-        target: 'claude',
-        field: 'ANTHROPIC_BASE_URL',
-        value: 'http://127.0.0.1:<本机端口>',
-        secret: false,
-      },
-      { target: 'claude', field: 'ANTHROPIC_AUTH_TOKEN', secret: true },
-    ]);
-    expect(plan.reason).toBe(CODEX_SUBSCRIPTION_TO_CLAUDE_REASON);
-
     const applied = await adapter.apply(request);
-    expect(applied.profile).toMatchObject({
-      targetAgentId: 'claude',
-      route: 'local_bridge',
-      mode: 'oauth',
-      ruleId: 'codex-subscription-to-claude-responses-v1',
-    });
+    expect(applied.profile.route).toBe(plan.analysis.route);
+    expect(applied.profile.ruleId).toBe(plan.analysis.ruleId);
+    expect(applied.profile.mode).toBe('oauth');
     expect(JSON.parse(applied.provider.configText)).toEqual({
       env: {
         ANTHROPIC_BASE_URL: 'http://127.0.0.1:32123',
@@ -334,7 +205,7 @@ describe('mock adapter route preview', () => {
     expect(JSON.stringify({ plan, applied })).not.toContain('must-not-leak');
   });
 
-  it('opens Claude, Codex, and Grok OAuth reuse into Pi for experimental bind', async () => {
+  it('applies oauth reuse into Pi as memory profiles without leaking tokens', async () => {
     const accounts = new Map<string, Account>([
       ['claude-subscription', {
         id: 'claude-subscription',
@@ -353,286 +224,24 @@ describe('mock adapter route preview', () => {
         tokenValid: true,
         credentialFormat: 'auth_json',
       }],
-      ['codex-oauth-other', {
-        id: 'codex-oauth-other',
-        agentId: 'codex',
-        kind: 'oauth',
-        label: 'Codex OAuth',
-        isCurrent: false,
-        tokenValid: true,
-      }],
-      ['grok-subscription', {
-        id: 'grok-subscription',
-        agentId: 'grok',
-        kind: 'oauth',
-        label: 'Grok subscription',
-        isCurrent: false,
-        tokenValid: true,
-      }],
     ]);
     const adapter = createMockAdapterPort({
       getAccountById: (id) => accounts.get(id),
       getProviderById: getMockProviderById,
+      upsertGeneratedProvider: upsertMockProvider,
+      removeGeneratedProvider: removeMockProvider,
     });
-    const cases = [
-      {
-        sourceId: 'claude-subscription',
-        value: 'anthropic',
-        ruleId: 'claude-subscription-to-pi-v1',
-        reason: '把这份 Claude 订阅写进 Pi 认的 Claude 登录。',
-      },
-      {
-        sourceId: 'codex-auth-json',
-        value: 'openai-codex',
-        ruleId: 'codex-subscription-to-pi-v1',
-        reason: '把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。',
-      },
-      {
-        sourceId: 'codex-oauth-other',
-        value: 'openai-codex',
-        ruleId: 'codex-subscription-to-pi-v1',
-        reason: '把这份 Codex / ChatGPT 订阅写进 Pi 认的 Codex 登录。',
-      },
-      {
-        sourceId: 'grok-subscription',
-        value: 'xai',
-        ruleId: 'grok-subscription-to-pi-v1',
-        reason: '把这份 Grok 订阅写进 Pi 认的 Grok 登录。',
-      },
-    ] as const;
-
-    for (const item of cases) {
-      const plan = await adapter.plan({
-        sourceKind: 'account',
-        sourceId: item.sourceId,
-        targetAgentId: 'pi',
-      });
-      expect(plan).toMatchObject({
-        analysis: {
-          route: 'config_sync',
-          support: 'experimental',
-          gateKind: 'none',
-          ruleId: item.ruleId,
-          reason: item.reason,
-          actions: [
-            {
-              kind: 'set_config',
-              target: 'Pi',
-              value: item.value,
-              secret: false,
-            },
-            {
-              kind: 'reference_connection_secret',
-              target: 'Pi',
-              description: '从已选 Connection 引用授权（OAuth）；不会读取或显示 token。',
-              secret: true,
-            },
-          ],
-          limitations: [
-            '会把官方登录写进 Pi 认的位置；预览和日志不显示完整令牌。',
-            '写进去之后由 Pi 自己续期；AgentHub 不会再刷一次。原来的工具和 Pi 一起续期可能互相踢下线。',
-            '接上后会把自动生成的配置设成 Pi 当前在用的连接。',
-          ],
-        },
-        canApply: true,
-        maturity: 'experimental',
-        reusePath: 'native_subscription',
-        serviceImpact: 'none',
-        changes: [
-          { target: 'pi', field: 'provider', value: item.value, secret: false },
-          { target: 'pi', field: 'auth', secret: true },
-        ],
-      });
+    for (const sourceId of ['claude-subscription', 'codex-auth-json'] as const) {
       const applied = await adapter.apply({
         sourceKind: 'account',
-        sourceId: item.sourceId,
+        sourceId,
         targetAgentId: 'pi',
       });
       expect(applied.profile.mode).toBe('oauth');
+      expect(applied.provider.agentId).toBe('pi');
       expect(applied.provider.configText).not.toContain('must-not-leak');
     }
-    expect((await adapter.listProfiles()).length).toBe(4);
-  });
-
-  it('keeps Claude subscription → Codex unwritable until fixtures land', async () => {
-    const accounts = new Map<string, Account>([
-      ['claude-subscription', {
-        id: 'claude-subscription',
-        agentId: 'claude',
-        kind: 'oauth',
-        label: 'Claude subscription',
-        isCurrent: false,
-        tokenValid: true,
-      }],
-    ]);
-    const adapter = createMockAdapterPort({
-      getAccountById: (id) => accounts.get(id),
-      getProviderById: getMockProviderById,
-    });
-    const claudeToCodex = await adapter.plan({
-      sourceKind: 'account',
-      sourceId: 'claude-subscription',
-      targetAgentId: 'codex',
-    });
-    expect(claudeToCodex).toMatchObject({
-      analysis: {
-        route: 'local_bridge',
-        support: 'experimental',
-        reason: CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
-        ruleId: 'claude-subscription-to-codex-v1',
-        gateKind: 'preview_only',
-      },
-      canApply: false,
-      maturity: 'preview',
-      reusePath: 'local_bridge',
-    });
-  });
-
-  it('opens Grok subscription → Claude as an experimental local bridge', async () => {
-    const accountId = 'grok-subscription';
-    const accounts = new Map<string, Account>([
-      [accountId, {
-        id: accountId,
-        agentId: 'grok',
-        kind: 'oauth',
-        label: 'Grok subscription',
-        isCurrent: false,
-        tokenValid: true,
-        credentials: { access_token: 'must-not-leak' },
-      } as Account & { credentials: Record<string, unknown> }],
-    ]);
-    const adapter = createMockAdapterPort({
-      getAccountById: (id) => accounts.get(id),
-      getProviderById: getMockProviderById,
-    });
-    const grokToClaude = await adapter.plan({
-      sourceKind: 'account',
-      sourceId: accountId,
-      targetAgentId: 'claude',
-    });
-    expect(grokToClaude).toMatchObject({
-      analysis: { route: 'local_bridge', ruleId: 'grok-subscription-to-claude-v1' },
-      canApply: true,
-      reusePath: 'local_bridge',
-    });
-    accounts.set('grok-subscription-no-token', {
-      id: 'grok-subscription-no-token',
-      agentId: 'grok',
-      kind: 'oauth',
-      label: 'Grok subscription without token',
-      isCurrent: false,
-      tokenValid: false,
-    });
-    const noToken = await adapter.plan({
-      sourceKind: 'account',
-      sourceId: 'grok-subscription-no-token',
-      targetAgentId: 'claude',
-    });
-    expect(noToken.canApply).toBe(false);
-  });
-
-  it('opens Grok subscription → Codex as a local route and keeps Kimi/DSH closed', async () => {
-    const accountId = 'grok-subscription';
-    const accounts = new Map<string, Account>([
-      [accountId, {
-        id: accountId,
-        agentId: 'grok',
-        kind: 'oauth',
-        label: 'Grok subscription',
-        isCurrent: false,
-        tokenValid: true,
-        credentials: { access_token: 'must-not-leak' },
-      } as Account & { credentials: Record<string, unknown> }],
-    ]);
-    const adapter = createMockAdapterPort({
-      getAccountById: (id) => accounts.get(id),
-      getProviderById: getMockProviderById,
-    });
-    const grokToCodex = await adapter.plan({
-      sourceKind: 'account',
-      sourceId: accountId,
-      targetAgentId: 'codex',
-    });
-    expect(grokToCodex).toMatchObject({
-      analysis: { route: 'local_bridge', ruleId: 'grok-subscription-to-codex-v1' },
-      canApply: true,
-      reusePath: 'local_bridge',
-    });
-    expect(grokToCodex.reason).toBe('Grok 登录会经本机路由接到 Codex。');
-
-    const kimi = await adapter.plan({
-      sourceKind: 'account',
-      sourceId: accountId,
-      targetAgentId: 'kimi',
-    });
-    expect(kimi.canApply).toBe(false);
-    expect(kimi.analysis.reason).toBe('Kimi 只认自己的官方 Key，接下不了这份 Grok 登录。');
-
-    const dsh = await adapter.plan({
-      sourceKind: 'account',
-      sourceId: accountId,
-      targetAgentId: 'dsh',
-    });
-    expect(dsh.canApply).toBe(false);
-    expect(dsh.analysis.reason).toBe('DSH 只认 DeepSeek 官方 Key，接下不了这份 Grok 登录。');
-  });
-
-  it('Account Anthropic → Pi is writable on the implemented bind path', async () => {
-    const accountId = 'anthropic-account-same-edge';
-    const adapter = createMockAdapterPort({
-      getAccountById: (id) => (id === accountId
-        ? {
-            id: accountId,
-            agentId: 'claude',
-            kind: 'apikey',
-            label: 'Anthropic key',
-            isCurrent: false,
-            tokenValid: true,
-            extra: { provider: 'anthropic' },
-          } as Account
-        : getMockAccountById(id)),
-      getProviderById: getMockProviderById,
-    });
-
-    const sameEdge = await adapter.plan({
-      sourceKind: 'account',
-      sourceId: accountId,
-      targetAgentId: 'pi',
-    });
-    expect(sameEdge.canApply).toBe(true);
-    expect(sameEdge.analysis.route).toBe('config_sync');
-    expect(sameEdge.reason).toBe(sameEdge.analysis.reason);
-    expect(sameEdge.reason).not.toContain('同边但暂不可写');
-
-    const closed = await adapter.plan({
-      sourceKind: 'account',
-      sourceId: accountId,
-      targetAgentId: 'claude',
-    });
-    expect(closed.canApply).toBe(false);
-    expect(closed.analysis.route).toBe('unsupported');
-    expect(closed.reason).toBe(closed.analysis.reason);
-    expect(closed.reason).not.toContain('同边但暂不可写');
-
-    const applied = await adapter.apply({
-      sourceKind: 'account',
-      sourceId: accountId,
-      targetAgentId: 'pi',
-    });
-    expect(applied.profile.ruleId).toBe('anthropic-api-to-pi-v1');
-    expect(applied.provider.agentId).toBe('pi');
-    expect(applied.provider.isCurrent).toBe(true);
-
-    const codex = await adapter.plan({
-      sourceKind: 'account',
-      sourceId: accountId,
-      targetAgentId: 'codex',
-    });
-    expect(codex.canApply).toBe(true);
-    expect(codex.analysis.route).toBe('local_bridge');
-    expect(codex.analysis.ruleId).toBe('anthropic-api-to-codex-v1');
-    expect(codex.changes[0].value).toBe('AgentHub Anthropic 本机路由');
-    expect(codex.reason).not.toContain('同边但暂不可写');
+    expect((await adapter.listProfiles()).length).toBe(2);
   });
 
   it('throws AdapterCommandError with a structured not-retryable shape', async () => {
@@ -665,22 +274,6 @@ describe('mock adapter route preview', () => {
     });
   });
 
-  it('persists the same local-bridge ruleId used by production AdapterBridgeService', async () => {
-    const sourceId = `kimi-ruleid-${Date.now()}-${Math.random()}`;
-    await createMockProviderPort().upsertProvider({
-      id: sourceId,
-      agentId: 'kimi',
-      name: 'Kimi membership',
-      preset: 'kimi-code-membership',
-      configText: 'api_key = "must-not-leak"',
-      configFormat: 'toml',
-      isCurrent: false,
-    });
-    const adapter = createMockAdapterPort(resolver);
-    const applied = await adapter.apply({ sourceKind: 'provider', sourceId, targetAgentId: 'codex' });
-    expect(applied.profile.ruleId).toBe('kimi-membership-to-codex-v1');
-  });
-
   it('applies Kimi membership → Pi via config_sync without leaking secrets', async () => {
     const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
     const adapter = createMockAdapterPort(resolver);
@@ -690,16 +283,11 @@ describe('mock adapter route preview', () => {
       targetAgentId: 'pi' as const,
     };
     const plan = await adapter.plan(request);
-    expect(plan.canApply).toBe(true);
-    expect(plan.analysis.route).toBe('config_sync');
-    expect(plan.analysis.gateKind).toBe('none');
-    expect(plan.analysis.ruleId).toBe('kimi-membership-to-pi-v1');
-
     const applied = await adapter.apply(request);
     const repeated = await adapter.apply(request);
     expect(applied.profile.id).toBe(`adapter-kimi-pi-${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`);
-    expect(applied.profile.route).toBe('config_sync');
-    expect(applied.profile.ruleId).toBe('kimi-membership-to-pi-v1');
+    expect(applied.profile.route).toBe(plan.analysis.route);
+    expect(applied.profile.ruleId).toBe(plan.analysis.ruleId);
     expect(repeated.profile.id).toBe(applied.profile.id);
     expect(await adapter.listProfiles()).toHaveLength(1);
     expect(applied.provider).toMatchObject({
@@ -724,20 +312,11 @@ describe('mock adapter route preview', () => {
       targetAgentId: 'pi' as const,
     };
     const plan = await adapter.plan(request);
-    expect(plan.canApply).toBe(true);
-    expect(plan.analysis.route).toBe('config_sync');
-    expect(plan.analysis.ruleId).toBe('anthropic-api-to-pi-v1');
-
     const applied = await adapter.apply(request);
     const repeated = await adapter.apply(request);
     expect(applied.profile.id).toBe(`adapter-anthropic-pi-${CONNECT_FLOW_FIXTURE_IDS.anthropic}`);
-    expect(applied.profile.route).toBe('config_sync');
-    expect(applied.profile.ruleId).toBe('anthropic-api-to-pi-v1');
+    expect(applied.profile.ruleId).toBe(plan.analysis.ruleId);
     expect(repeated.profile.id).toBe(applied.profile.id);
-    expect(applied.provider).toMatchObject({
-      agentId: 'pi',
-      isCurrent: true,
-    });
     expect(JSON.parse(applied.provider.configText)).toEqual({
       slot: 'anthropic',
       apiKey: '$AGENTHUB_CONNECTION_SECRET$',
@@ -757,19 +336,6 @@ describe('mock adapter route preview', () => {
       isCurrent: false,
     });
     const adapter = createMockAdapterPort(resolver);
-    const claudePlan = await adapter.plan({
-      sourceKind: 'provider',
-      sourceId,
-      targetAgentId: 'claude',
-    });
-    const piPlan = await adapter.plan({
-      sourceKind: 'provider',
-      sourceId,
-      targetAgentId: 'pi',
-    });
-    expect(claudePlan.canApply).toBe(true);
-    expect(piPlan.canApply).toBe(true);
-
     const appliedClaude = await adapter.apply({
       sourceKind: 'provider',
       sourceId,
@@ -780,8 +346,6 @@ describe('mock adapter route preview', () => {
       sourceId,
       targetAgentId: 'pi',
     });
-    expect(appliedClaude.profile.ruleId).toBe('kimi-membership-to-claude-v1');
-    expect(appliedPi.profile.ruleId).toBe('kimi-membership-to-pi-v1');
     expect(JSON.parse(appliedClaude.provider.configText)).toEqual({
       env: {
         ANTHROPIC_BASE_URL: 'https://api.kimi.com/coding/',
@@ -792,7 +356,7 @@ describe('mock adapter route preview', () => {
       slot: 'kimi-for-coding',
       apiKey: '$AGENTHUB_CONNECTION_SECRET$',
     });
-    expect(JSON.stringify({ claudePlan, piPlan, appliedClaude, appliedPi })).not.toContain('must-not-leak');
+    expect(JSON.stringify({ appliedClaude, appliedPi })).not.toContain('must-not-leak');
     expect(getMockProviderById(appliedClaude.provider.id)?.configText).not.toContain('must-not-leak');
     expect(getMockProviderById(appliedPi.provider.id)?.configText).not.toContain('must-not-leak');
   });
@@ -835,7 +399,7 @@ describe('mock adapter route preview', () => {
     expect((await createMockProviderPort().listProviders('pi'))).toEqual([]);
   });
 
-  it('plans and applies GLM / DeepSeek → Claude with rule-specific URLs', async () => {
+  it('applies GLM / DeepSeek → Claude with projected URLs without leaking secrets', async () => {
     await createMockProviderPort().upsertProvider({
       id: 'glm-src',
       agentId: 'claude',
@@ -863,20 +427,11 @@ describe('mock adapter route preview', () => {
       removeGeneratedProvider: removeMockProvider,
     });
 
-    const glmPlan = await adapter.plan({
-      sourceKind: 'provider',
-      sourceId: 'glm-src',
-      targetAgentId: 'claude',
-    });
-    expect(glmPlan.canApply).toBe(true);
-    expect(glmPlan.analysis.ruleId).toBe('glm-coding-plan-to-claude-v1');
-    expect(glmPlan.changes[0].value).toBe('https://open.bigmodel.cn/api/anthropic');
     const glmApplied = await adapter.apply({
       sourceKind: 'provider',
       sourceId: 'glm-src',
       targetAgentId: 'claude',
     });
-    expect(glmApplied.profile.ruleId).toBe('glm-coding-plan-to-claude-v1');
     expect(JSON.parse(glmApplied.provider.configText)).toEqual({
       env: {
         ANTHROPIC_BASE_URL: 'https://open.bigmodel.cn/api/anthropic',
@@ -884,27 +439,17 @@ describe('mock adapter route preview', () => {
       },
     });
 
-    const deepseekPlan = await adapter.plan({
-      sourceKind: 'account',
-      sourceId: 'deepseek-acc',
-      targetAgentId: 'claude',
-    });
-    expect(deepseekPlan.canApply).toBe(true);
-    expect(deepseekPlan.analysis.ruleId).toBe('deepseek-api-to-claude-v1');
-    expect(deepseekPlan.changes[0].value).toBe('https://api.deepseek.com/anthropic');
     const deepseekApplied = await adapter.apply({
       sourceKind: 'account',
       sourceId: 'deepseek-acc',
       targetAgentId: 'claude',
     });
-    expect(deepseekApplied.profile.ruleId).toBe('deepseek-api-to-claude-v1');
     expect(JSON.parse(deepseekApplied.provider.configText).env.ANTHROPIC_BASE_URL)
       .toBe('https://api.deepseek.com/anthropic');
-    expect(JSON.stringify({ glmPlan, deepseekPlan, glmApplied, deepseekApplied }))
-      .not.toContain('must-not-leak');
+    expect(JSON.stringify({ glmApplied, deepseekApplied })).not.toContain('must-not-leak');
   });
 
-  it('plans and applies GLM / DeepSeek → Codex through official Responses endpoints', async () => {
+  it('applies GLM / DeepSeek → Codex Responses config without leaking secrets', async () => {
     await createMockProviderPort().upsertProvider({
       id: 'glm-codex-src',
       agentId: 'claude',
@@ -935,7 +480,6 @@ describe('mock adapter route preview', () => {
       {
         sourceKind: 'provider' as const,
         sourceId: 'glm-codex-src',
-        ruleId: 'glm-coding-plan-to-codex-v1',
         baseUrl: 'https://open.bigmodel.cn/api/v1',
         slug: 'agenthub_glm',
         model: 'glm-5.3',
@@ -943,7 +487,6 @@ describe('mock adapter route preview', () => {
       {
         sourceKind: 'account' as const,
         sourceId: deepseekAccount.id,
-        ruleId: 'deepseek-api-to-codex-v1',
         baseUrl: 'https://api.deepseek.com',
         slug: 'agenthub_deepseek',
         model: 'deepseek-v4-flash',
@@ -953,32 +496,9 @@ describe('mock adapter route preview', () => {
     for (const item of cases) {
       const request = { sourceKind: item.sourceKind, sourceId: item.sourceId, targetAgentId: 'codex' as const };
       const plan = await adapter.plan(request);
-      expect(plan).toMatchObject({
-        canApply: true,
-        reusePath: 'api_endpoint',
-        serviceImpact: 'none',
-        analysis: {
-          route: 'native_endpoint',
-          support: 'experimental',
-          ruleId: item.ruleId,
-          gateKind: 'none',
-        },
-        changes: [
-          { target: 'codex', field: 'provider', secret: false },
-          { target: 'codex', field: 'baseUrl', value: item.baseUrl, secret: false },
-          { target: 'codex', field: 'wireApi', value: 'responses', secret: false },
-        ],
-      });
       const applied = await adapter.apply(request);
-      expect(applied.profile).toMatchObject({
-        route: 'native_endpoint',
-        ruleId: item.ruleId,
-        targetAgentId: 'codex',
-      });
-      expect(applied.provider).toMatchObject({
-        agentId: 'codex',
-        configFormat: 'toml',
-      });
+      expect(applied.profile.route).toBe(plan.analysis.route);
+      expect(applied.profile.ruleId).toBe(plan.analysis.ruleId);
       expect(applied.provider.configText).toContain(`model_provider = "${item.slug}"`);
       expect(applied.provider.configText).toContain(`model = "${item.model}"`);
       expect(applied.provider.configText).toContain(`base_url = "${item.baseUrl}"`);
@@ -988,7 +508,7 @@ describe('mock adapter route preview', () => {
     }
   });
 
-  it('applies GLM / DeepSeek → Pi as custom providers with endpoint contracts', async () => {
+  it('applies GLM / DeepSeek → Pi as custom providers without leaking secrets', async () => {
     await createMockProviderPort().upsertProvider({
       id: 'glm-pi-src',
       agentId: 'claude',
@@ -1019,9 +539,7 @@ describe('mock adapter route preview', () => {
       sourceId: 'glm-pi-src',
       targetAgentId: 'pi',
     });
-    const glmConfig = JSON.parse(glm.provider.configText);
-    expect(glm.profile.ruleId).toBe('glm-coding-plan-to-pi-v1');
-    expect(glmConfig.models.providers['glm-coding-plan']).toEqual({
+    expect(JSON.parse(glm.provider.configText).models.providers['glm-coding-plan']).toEqual({
       baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
       api: 'openai-completions',
       models: [{ id: 'glm-4.6' }],
@@ -1033,9 +551,7 @@ describe('mock adapter route preview', () => {
       sourceId: 'deepseek-pi-src',
       targetAgentId: 'pi',
     });
-    const deepseekConfig = JSON.parse(deepseek.provider.configText);
-    expect(deepseek.profile.ruleId).toBe('deepseek-api-to-pi-v1');
-    expect(deepseekConfig.models.providers.deepseek).toEqual({
+    expect(JSON.parse(deepseek.provider.configText).models.providers.deepseek).toEqual({
       baseUrl: 'https://api.deepseek.com',
       api: 'openai-completions',
       models: [{ id: 'deepseek-chat' }],
@@ -1080,60 +596,32 @@ describe('mock adapter route preview', () => {
     });
     const adapter = createMockAdapterPort(resolver);
 
-    const plan = await adapter.plan({
-      sourceKind: 'provider',
-      sourceId: presetId,
-      targetAgentId: 'dsh',
-    });
-    expect(plan.canApply).toBe(true);
-    expect(plan.analysis.route).toBe('config_sync');
-    expect(plan.analysis.ruleId).toBe('deepseek-api-to-dsh-v1');
-    expect(plan.changes).toEqual([
-      { target: 'dsh', field: 'provider', value: 'deepseek-official', secret: false },
-      { target: 'dsh', field: 'apiKeyEnv', value: 'DEEPSEEK_API_KEY', secret: false },
-      { target: 'dsh', field: 'apiKey', secret: true },
-    ]);
-    expect(JSON.stringify(plan)).not.toContain('must-not-leak');
-
     const applied = await adapter.apply({
       sourceKind: 'provider',
       sourceId: presetId,
       targetAgentId: 'dsh',
     });
-    expect(applied.profile.ruleId).toBe('deepseek-api-to-dsh-v1');
     expect(applied.provider.configText).toContain('$AGENTHUB_CONNECTION_SECRET$');
     expect(JSON.stringify(applied)).not.toContain('must-not-leak');
 
-    const hostPlan = await adapter.plan({
+    const hostApplied = await adapter.apply({
       sourceKind: 'provider',
       sourceId: hostId,
       targetAgentId: 'dsh',
     });
-    expect(hostPlan.canApply).toBe(true);
-    expect(hostPlan.analysis.ruleId).toBe('deepseek-api-to-dsh-v1');
-
-    const claudePlan = await adapter.plan({
-      sourceKind: 'provider',
-      sourceId: presetId,
-      targetAgentId: 'claude',
-    });
-    expect(claudePlan.canApply).toBe(true);
-    expect(claudePlan.analysis.route).toBe('native_endpoint');
-    expect(claudePlan.analysis.support).toBe('experimental');
-    expect(claudePlan.analysis.ruleId).toBe('deepseek-api-to-claude-v1');
+    expect(hostApplied.provider.configText).toContain('$AGENTHUB_CONNECTION_SECRET$');
 
     const claudeApplied = await adapter.apply({
       sourceKind: 'provider',
       sourceId: presetId,
       targetAgentId: 'claude',
     });
-    expect(claudeApplied.profile.ruleId).toBe('deepseek-api-to-claude-v1');
     expect(JSON.parse(claudeApplied.provider.configText).env.ANTHROPIC_BASE_URL)
       .toBe('https://api.deepseek.com/anthropic');
     expect(JSON.stringify(claudeApplied)).not.toContain('must-not-leak');
   });
 
-  it('does not treat agentId=dsh alone as a DeepSeek API ticket', async () => {
+  it('keeps an unknown dsh-only source fail-closed', async () => {
     const sourceId = `dsh-only-${Date.now()}`;
     await createMockProviderPort().upsertProvider({
       id: sourceId,
@@ -1152,120 +640,12 @@ describe('mock adapter route preview', () => {
     });
     expect(plan.canApply).toBe(false);
     expect(plan.analysis.route).toBe('unsupported');
-  });
-});
-
-type ContractCase = (typeof contract.cases)[number];
-
-function caseDocumentedRuleId(item: ContractCase): string | undefined {
-  if (!('documentedRuleId' in item)) return undefined;
-  const value = (item as { documentedRuleId?: unknown }).documentedRuleId;
-  return typeof value === 'string' && value ? value : undefined;
-}
-
-function credentialStringValues(value: unknown, key?: string): string[] {
-  if (typeof value === 'string') {
-    if (!value || key === 'format' || key === 'provider') return [];
-    return [value];
-  }
-  if (Array.isArray(value)) return value.flatMap((item) => credentialStringValues(item, key));
-  if (value && typeof value === 'object') {
-    return Object.entries(value as Record<string, unknown>).flatMap(([childKey, nested]) =>
-      credentialStringValues(nested, childKey),
-    );
-  }
-  return [];
-}
-
-function contractAccount(id: string, source: ContractCase['source']): Account {
-  return {
-    id,
-    agentId: source.agentId as AgentId,
-    kind: (source.accountKind ?? 'oauth') as Account['kind'],
-    label: id,
-    isCurrent: false,
-    tokenValid: true,
-    credentialFormat: 'credentialFormat' in source ? source.credentialFormat : undefined,
-    credentials: 'credentials' in source ? source.credentials : undefined,
-    extra: 'extra' in source ? source.extra : undefined,
-  } as Account & {
-    credentials?: Record<string, unknown>;
-    extra?: Record<string, unknown>;
-  };
-}
-
-describe('shared adapter capability contract', () => {
-  beforeEach(() => {
-    resetMockAdapters();
-    resetMockProviders();
-  });
-
-  it.each(contract.cases)('$id matches Rust analyze/plan surface', async (item) => {
-    const sourceId = `contract-${item.id}`;
-    const accounts = new Map<string, Account>();
-    if (item.source.kind === 'provider') {
-      upsertMockProvider({
-        id: sourceId,
-        agentId: item.source.agentId as AgentId,
-        name: item.id,
-        preset: item.source.preset ?? 'default',
-        configText: '{}',
-        configFormat: 'json',
-        isCurrent: false,
-      } satisfies Provider);
-    } else {
-      accounts.set(sourceId, contractAccount(sourceId, item.source));
-    }
-    const adapter = createMockAdapterPort({
-      getAccountById: (id) => accounts.get(id) ?? getMockAccountById(id),
-      getProviderById: getMockProviderById,
-    });
-    const request = {
-      sourceKind: item.source.kind as 'account' | 'provider',
+    expect(JSON.stringify(plan)).not.toContain('must-not-leak');
+    await expect(adapter.apply({
+      sourceKind: 'provider',
       sourceId,
-      targetAgentId: item.target as AgentId,
-    };
-    const analysis = await adapter.analyze(request);
-    const plan = await adapter.plan(request);
-    const serialized = `${JSON.stringify(analysis)}${JSON.stringify(plan)}`;
-    expect(serialized).not.toContain('must-not-leak');
-    if ('credentials' in item.source && item.source.credentials) {
-      for (const secret of credentialStringValues(item.source.credentials)) {
-        expect(serialized).not.toContain(secret);
-      }
-    }
-    const documentedRuleId = caseDocumentedRuleId(item);
-    if (documentedRuleId) {
-      expect(analysis.ruleId).not.toBe(documentedRuleId);
-    }
-    expect(analysis.route).toBe(item.expect.route);
-    expect(analysis.support).toBe(item.expect.support);
-    expect(analysis.ruleId ?? null).toBe(item.expect.ruleId);
-    expect(analysis.gateKind).toBe(item.expect.gateKind);
-    expect(analysis.reason).toBe(item.expect.reason);
-    expect(plan.canApply).toBe(item.expect.canApply);
-    expect(plan.reusePath).toBe(item.expect.reusePath);
-
-    // applyPath is the production entry surface (native / local_bridge / config_sync / closed).
-    expect(item.expect.applyPath).toBeDefined();
-    if (item.expect.applyPath === 'native') {
-      expect(item.expect.canApply).toBe(true);
-      expect(item.expect.route).toBe('native_endpoint');
-      expect(analysis.route).toBe('native_endpoint');
-    } else if (item.expect.applyPath === 'local_bridge') {
-      expect(item.expect.canApply).toBe(true);
-      expect(item.expect.route).toBe('local_bridge');
-      expect(analysis.route).toBe('local_bridge');
-    } else if (item.expect.applyPath === 'config_sync') {
-      expect(item.expect.canApply).toBe(true);
-      expect(item.expect.route).toBe('config_sync');
-      expect(analysis.route).toBe('config_sync');
-      expect(plan.canApply).toBe(true);
-    } else {
-      expect(item.expect.applyPath).toBe('rejected');
-      expect(item.expect.canApply).toBe(false);
-      expect(plan.canApply).toBe(false);
-      await expect(adapter.apply(request)).rejects.toThrow(/不可应用|不支持|canApply/i);
-    }
+      targetAgentId: 'dsh',
+    })).rejects.toThrow(/不可应用|不支持|canApply/i);
+    expect(await adapter.listProfiles()).toEqual([]);
   });
 });

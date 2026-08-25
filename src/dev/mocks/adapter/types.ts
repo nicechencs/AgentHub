@@ -1,6 +1,5 @@
 /**
- * mock 不是规则真源。规则真源是 core 的 `ADAPTER_CAPABILITY_MATRIX` /
- * `AdapterRouteService` / `AdapterApplyService`。
+ * mock adapter helpers. Not a route planner: product decisions come from golden.
  */
 import {
   type AdapterAction,
@@ -8,11 +7,11 @@ import {
   type AdapterEvidence,
   type AdapterPlanChange,
   type AdapterProfile,
-  type AdapterRouteAnalysis,
 } from '@/lib/backend/contracts/adapter';
 import type { Account, Provider } from '@/lib/types';
 
 const verifiedAt = '2026-08-12';
+
 export interface MockAdapterState {
   profiles: AdapterProfile[];
   bridgeStatuses: Map<string, AdapterBridgeRuntimeStatus>;
@@ -23,11 +22,14 @@ export interface MockAdapterState {
 export interface MockAdapterSourceResolver {
   getAccountById(id: string): Account | undefined;
   getProviderById(id: string): Provider | undefined;
-  /** Optional to keep focused route tests independent of mock Connection storage. */
   upsertGeneratedProvider?(provider: Provider): Provider;
-  /** Removes only the Adapter-created Connection during reset or a successful remove. */
   removeGeneratedProvider?(provider: Provider): void;
 }
+
+export type ClassifiableAccount = Account & {
+  extra?: Record<string, unknown>;
+  credentials?: Record<string, unknown>;
+};
 
 export function evidence(label: string, url: string): AdapterEvidence {
   return { label, url, verifiedAt };
@@ -54,190 +56,6 @@ export function secretChange(target: string, field: string): AdapterPlanChange {
   return { target, field, secret: true };
 }
 
-/** Keep in lockstep with `CODEX_SUBSCRIPTION_TO_CLAUDE_REASON` in agenthub-core. */
-export const CODEX_SUBSCRIPTION_TO_CLAUDE_REASON =
-  'Codex / ChatGPT 订阅会经本机路由接到 Claude Code.';
-
-/** Keep in lockstep with `GROK_SUBSCRIPTION_TO_CLAUDE_REASON` in agenthub-core. */
-export const GROK_SUBSCRIPTION_TO_CLAUDE_REASON =
-  'Grok 登录会经本机路由接到 Claude Code。';
-
-/** Keep in lockstep with `GROK_SUBSCRIPTION_TO_CODEX_REASON` in agenthub-core. */
-export const GROK_SUBSCRIPTION_TO_CODEX_REASON =
-  'Grok 登录会经本机路由接到 Codex。';
-
-/** Keep in lockstep with `CODEX_SUBSCRIPTION_TO_CODEX_REASON` in agenthub-core. */
-export const CODEX_SUBSCRIPTION_TO_CODEX_REASON = '用这份官方登录接到 Codex。';
-export const CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID = 'codex-subscription-to-codex-v1';
-
-export const CODEX_SUBSCRIPTION_TO_GROK_REASON = 'Codex 官方登录会经本机路由接到 Grok。';
-export const CODEX_SUBSCRIPTION_TO_KIMI_REASON = 'Codex 官方登录会经本机路由接到 Kimi。';
-export const CODEX_SUBSCRIPTION_TO_DSH_REASON =
-  'Codex 官方登录会经本机路由接到 DeepSeek Harness。';
-export const CODEX_GROK_RULE_ID = 'codex-subscription-to-grok-v1';
-export const CODEX_KIMI_RULE_ID = 'codex-subscription-to-kimi-v1';
-export const CODEX_DSH_RULE_ID = 'codex-subscription-to-dsh-v1';
-/** Codex subscription → Grok/Kimi/DSH local-bridge rules (Grok local is Responses; Kimi/DSH stay Chat). */
-export const CODEX_CHAT_BRIDGE_RULE_IDS = new Set([
-  CODEX_GROK_RULE_ID,
-  CODEX_KIMI_RULE_ID,
-  CODEX_DSH_RULE_ID,
-]);
-
-/** Keep in lockstep with `GROK_SUBSCRIPTION_TO_KIMI_REASON` in agenthub-core. */
-export const GROK_SUBSCRIPTION_TO_KIMI_REASON =
-  'Kimi 只认自己的官方 Key，接下不了这份 Grok 登录。';
-
-/** Keep in lockstep with `GROK_SUBSCRIPTION_TO_DSH_REASON` in agenthub-core. */
-export const GROK_SUBSCRIPTION_TO_DSH_REASON =
-  'DSH 只认 DeepSeek 官方 Key，接下不了这份 Grok 登录。';
-
-/** Keep in lockstep with `CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID` in agenthub-core. */
-export const CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID = 'claude-subscription-to-codex-v1';
-
-/** Keep in lockstep with `CLAUDE_SUBSCRIPTION_TO_CODEX_REASON` in agenthub-core. */
-export const CLAUDE_SUBSCRIPTION_TO_CODEX_REASON =
-  'Claude 订阅接到 Codex 可以走本机转发，但规则还没做完，现在接不上。';
-
-export const CODEX_SUBSCRIPTION_TO_CLAUDE_CANDIDATE_REASON = [
-  'Codex / ChatGPT 订阅现在还接不到 Claude Code。',
-  '不会改配置，也不会开本机转发。',
-  '这不表示现有连接坏了。',
-  '可改用 Claude 自己的官方登录，或改用已支持的 API Key。',
-].join('');
-
-/** Keep in lockstep with `AGENT_NO_WRITER_REASON` in agenthub-core. */
-export const AGENT_NO_WRITER_REASON = '这个工具不能写入配置，接不上。';
-
-/** Keep in lockstep with `PROTOCOL_MISMATCH_REASON` in agenthub-core. */
-export const PROTOCOL_MISMATCH_REASON = '这份登录接不到这个工具。';
-
-/** Keep in lockstep with `SAME_PROTOCOL_NO_EDGE_REASON` in agenthub-core. */
-export const SAME_PROTOCOL_NO_EDGE_REASON = '这条接法还没做好，现在接不上。';
-
-export type TicketProtocol =
-  | 'anthropic-messages'
-  | 'anthropic-pkce'
-  | 'openai-chat'
-  | 'openai-responses'
-  | 'openai-codex-pkce'
-  | 'xai-device-code';
-
-/** Keep in lockstep with `agent_bind_capability` in agenthub-core. */
-export function agentBindCapability(id: string): { accepts: TicketProtocol[]; writer: boolean } {
-  switch (id) {
-    case 'claude':
-      return { accepts: ['anthropic-messages'], writer: true };
-    case 'codex':
-      return { accepts: ['openai-responses'], writer: true };
-    case 'pi':
-      return {
-        accepts: [
-          'anthropic-messages',
-          'openai-chat',
-          'anthropic-pkce',
-          'openai-codex-pkce',
-          'xai-device-code',
-        ],
-        writer: true,
-      };
-    case 'grok':
-      return { accepts: ['openai-responses', 'openai-chat', 'anthropic-messages'], writer: true };
-    case 'kimi':
-      return { accepts: ['openai-chat'], writer: true };
-    case 'dsh':
-      return { accepts: ['openai-chat'], writer: true };
-    case 'workbuddy':
-      return { accepts: [], writer: true };
-    case 'cursor':
-      return { accepts: [], writer: false };
-    default:
-      return { accepts: [], writer: false };
-  }
-}
-
-export function sourceSpeaks(source: RouteSourceLabel): TicketProtocol[] {
-  switch (source) {
-    case 'kimi_membership':
-    case 'glm_coding_plan':
-    case 'deepseek_api':
-      return ['anthropic-messages', 'openai-chat'];
-    case 'anthropic_api_key':
-      return ['anthropic-messages'];
-    case 'openai_api_key':
-      return ['openai-chat'];
-    case 'xai_api_key':
-      return ['openai-responses', 'openai-chat'];
-    case 'codex_subscription':
-    case 'codex_subscription_oauth_other':
-      return ['openai-responses', 'openai-codex-pkce'];
-    case 'claude_subscription':
-      return ['anthropic-messages', 'anthropic-pkce'];
-    case 'grok_xai_subscription':
-      return ['openai-responses', 'openai-chat', 'xai-device-code'];
-    default:
-      return [];
-  }
-}
-
-export function unsupportedReasonFromGraph(source: RouteSourceLabel, targetAgentId: string): string {
-  const cap = agentBindCapability(targetAgentId);
-  if (!cap.writer) return AGENT_NO_WRITER_REASON;
-  const speaks = sourceSpeaks(source);
-  const overlap = speaks.some((protocol) => cap.accepts.includes(protocol));
-  return overlap ? SAME_PROTOCOL_NO_EDGE_REASON : PROTOCOL_MISMATCH_REASON;
-}
-
-export function unsupported(
-  reason: string,
-  evidenceItems: AdapterEvidence[],
-  options?: { gateKind?: AdapterRouteAnalysis['gateKind']; ruleId?: string | null },
-): AdapterRouteAnalysis {
-  return {
-    route: 'unsupported',
-    support: 'unsupported',
-    reason,
-    actions: [],
-    limitations: [
-      '当前不支持此组合；不会改动来源连接、本机服务或配置。',
-      '现在还写不上去；不会改配置，也不会开本机转发。',
-    ],
-    evidence: evidenceItems,
-    ruleId: options?.ruleId ?? null,
-    gateKind: options?.gateKind ?? 'unsupported',
-  };
-}
-
-/** Optional classify-only fields that mirror core Account.extra / credentials. */
-export type ClassifiableAccount = Account & {
-  extra?: Record<string, unknown>;
-  credentials?: Record<string, unknown>;
-};
-
-export type RouteSourceLabel =
-  | 'kimi_membership'
-  | 'kimi_non_membership'
-  | 'anthropic_api_key'
-  | 'openai_api_key'
-  | 'xai_api_key'
-  | 'glm_coding_plan'
-  | 'deepseek_api'
-  | 'codex_subscription'
-  | 'codex_subscription_oauth_other'
-  | 'claude_subscription'
-  | 'grok_xai_subscription'
-  | 'other'
-  | 'not_found';
-
-/** Keep lockstep with core `SAME_EDGE_UNWRITABLE_REASON`. */
-export const SAME_EDGE_UNWRITABLE_REASON =
-  '同边但暂不可写：写入仍只接受 Provider 行，下一步 bind 打通。';
-
-/** Keep lockstep with core `KIMI_NON_MEMBERSHIP_REASON`. */
-export const KIMI_NON_MEMBERSHIP_REASON =
-  '当前 Kimi 连接不是「Kimi Code 会员」来源。跨 Agent 适配仅支持会员：连接页中选择 preset「Kimi Code 会员」，或配置端点包含 api.kimi.com/coding。开放平台（moonshot）与任意兼容 API 不会自动升级。当前不支持不等于连接失效。';
-
-/** Keep lockstep with core `KIMI_MEMBERSHIP_PRESET` / `KIMI_CODING_ENDPOINT_NEEDLE`. */
 export const KIMI_MEMBERSHIP_PRESET = 'kimi-code-membership';
 export const KIMI_CODING_ENDPOINT_NEEDLE = 'api.kimi.com/coding';
 export const OPENAI_API_ENDPOINT_NEEDLE = 'api.openai.com';
@@ -246,56 +64,6 @@ export const GLM_CODING_ANTHROPIC_NEEDLE = 'open.bigmodel.cn/api/anthropic';
 export const GLM_CODING_CHAT_NEEDLE = 'open.bigmodel.cn/api/coding';
 export const GLM_CODING_RESPONSES_NEEDLE = 'open.bigmodel.cn/api/v1';
 export const DEEPSEEK_API_ENDPOINT_NEEDLE = 'api.deepseek.com';
-export const KIMI_CLAUDE_BASE_URL = 'https://api.kimi.com/coding/';
-export const GLM_CLAUDE_BASE_URL = 'https://open.bigmodel.cn/api/anthropic';
-export const DEEPSEEK_CLAUDE_BASE_URL = 'https://api.deepseek.com/anthropic';
-export const GLM_PI_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4';
-export const DEEPSEEK_PI_BASE_URL = 'https://api.deepseek.com';
-export const GLM_CODEX_BASE_URL = 'https://open.bigmodel.cn/api/v1';
-export const DEEPSEEK_CODEX_BASE_URL = 'https://api.deepseek.com';
-export const GLM_CODEX_RULE_ID = 'glm-coding-plan-to-codex-v1';
-export const DEEPSEEK_CODEX_RULE_ID = 'deepseek-api-to-codex-v1';
-export const GLM_CODEX_PROVIDER_SLUG = 'agenthub_glm';
-export const DEEPSEEK_CODEX_PROVIDER_SLUG = 'agenthub_deepseek';
-export const GLM_CLAUDE_RULE_ID = 'glm-coding-plan-to-claude-v1';
-export const DEEPSEEK_CLAUDE_RULE_ID = 'deepseek-api-to-claude-v1';
-export const CLAUDE_NATIVE_EXPERIMENTAL_RULES = new Set([
-  GLM_CLAUDE_RULE_ID,
-  DEEPSEEK_CLAUDE_RULE_ID,
-]);
-export const EXPLICIT_API_TO_PI_RULES = new Set([
-  'anthropic-api-to-pi-v1',
-  'openai-api-to-pi-v1',
-  'xai-api-to-pi-v1',
-  'glm-coding-plan-to-pi-v1',
-  'deepseek-api-to-pi-v1',
-]);
-export const OPENAI_CODEX_RULE_ID = 'openai-api-to-codex-v1';
-export const EXPLICIT_API_TO_CODEX_RULES = new Set([
-  'anthropic-api-to-codex-v1',
-  OPENAI_CODEX_RULE_ID,
-  GLM_CODEX_RULE_ID,
-  DEEPSEEK_CODEX_RULE_ID,
-]);
-export const KIMI_MEMBERSHIP_RULE_IDS = new Set([
-  'kimi-membership-to-claude-v1',
-  'kimi-membership-to-codex-v1',
-  'kimi-membership-to-pi-v1',
-  'kimi-membership-to-grok-v1',
-]);
-export const NATIVE_SUBSCRIPTION_PI_RULE_IDS = new Set([
-  'claude-subscription-to-pi-v1',
-  'codex-subscription-to-pi-v1',
-  'grok-subscription-to-pi-v1',
-]);
-export const CODEX_CLAUDE_RULE_ID = 'codex-subscription-to-claude-responses-v1';
-export const KIMI_GROK_RULE_ID = 'kimi-membership-to-grok-v1';
-export const OPENAI_GROK_RULE_ID = 'openai-api-to-grok-v1';
-export const GROK_CLAUDE_RULE_ID = 'grok-subscription-to-claude-v1';
-export const GROK_CODEX_RULE_ID = 'grok-subscription-to-codex-v1';
-export const KIMI_GROK_BASE_URL = 'https://api.kimi.com/coding/v1';
-export const OPENAI_GROK_BASE_URL = 'https://api.openai.com/v1';
-export const GROK_NATIVE_RULE_IDS = new Set([KIMI_GROK_RULE_ID, OPENAI_GROK_RULE_ID]);
 
 export function jsonString(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
@@ -305,7 +73,6 @@ export function jsonString(value: unknown, key: string): string | undefined {
   return trimmed || undefined;
 }
 
-/** Mirror `is_codex_auth_json`: format=auth_json OR nested tokens.access_token/refresh_token. */
 export function isCodexAuthJson(format: string | undefined, credentials: unknown): boolean {
   if (format?.toLowerCase() === 'auth_json') return true;
   const tokens = credentials && typeof credentials === 'object'
@@ -320,7 +87,6 @@ export function textLooksLikeKimiCoding(text: string | undefined): boolean {
   return typeof text === 'string' && text.toLowerCase().includes(KIMI_CODING_ENDPOINT_NEEDLE);
 }
 
-/** Same rule as core classify/apply: Kimi + (preset or official coding endpoint). */
 export function isKimiMembershipProvider(provider: Pick<Provider, 'agentId' | 'preset' | 'configText'>): boolean {
   return provider.agentId === 'kimi'
     && (provider.preset === KIMI_MEMBERSHIP_PRESET
