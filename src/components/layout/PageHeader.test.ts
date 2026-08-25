@@ -46,6 +46,16 @@ describe('PageHeader', () => {
     expect(listColAt).toBeGreaterThan(splitRefAt);
     expect(headerAt).toBeGreaterThan(listColAt);
     expect(inspectAt).toBeGreaterThan(headerAt);
+
+    const projects = source('pages/projects/index.tsx');
+    const projectsSplit = projects.indexOf('preview.splitRef');
+    const projectsListCol = projects.indexOf('flex min-h-0 min-w-0 flex-1 flex-col');
+    const projectsHeader = projects.indexOf('pageRhythm.workbenchHeader');
+    const projectsSep = projects.indexOf('role="separator"');
+    expect(projectsSplit).toBeGreaterThan(0);
+    expect(projectsListCol).toBeGreaterThan(projectsSplit);
+    expect(projectsHeader).toBeGreaterThan(projectsListCol);
+    expect(projectsSep).toBeGreaterThan(projectsHeader);
   });
 
   it('starts non-Chat body flush under the title slot', () => {

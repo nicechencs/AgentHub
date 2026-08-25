@@ -585,69 +585,70 @@ export default function ProjectsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-canvas">
-      <div className={pageRhythm.workbenchHeader}>
-        <PageHeader
-          size="compact"
-          title={t('projects.page.title')}
-          description={t('projects.page.description')}
-          descriptionTip={t('projects.page.descriptionTip')}
-          actions={
-            <div className="flex items-center gap-2">
-              {selected.size > 0 && (
-                <>
-                  {showSummarize && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => void handleSummarize()}
-                    >
-                      {busy ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-3.5 w-3.5" />
-                      )}
-                      {t('projects.page.summarize', { n: selected.size })}
-                    </Button>
-                  )}
-                  {showDelete && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      className="text-danger hover:text-danger"
-                      onClick={() => setBatchDeleteOpen(true)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      {t('projects.page.delete', { n: selected.size })}
-                    </Button>
-                  )}
-                </>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={showListSkeleton || busy || tabAgents.length === 0}
-                onClick={() => void reloadProjects()}
-              >
-                {t('projects.page.refresh')}
-              </Button>
-            </div>
-          }
-        />
-      </div>
-
       <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div
-          className={cn(
-            'min-w-0 flex-1 overflow-y-auto bg-canvas',
-            preview.previewShellMounted
-              ? cn(pageRhythm.workbenchXSplit, 'overflow-x-hidden')
-              : cn(pageRhythm.workbenchX, 'overflow-x-auto'),
-            pageRhythm.workbenchY,
-          )}
-        >
-          {listPane}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className={pageRhythm.workbenchHeader}>
+            <PageHeader
+              size="compact"
+              title={t('projects.page.title')}
+              description={t('projects.page.description')}
+              descriptionTip={t('projects.page.descriptionTip')}
+              actions={
+                <div className="flex items-center gap-2">
+                  {selected.size > 0 && (
+                    <>
+                      {showSummarize && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => void handleSummarize()}
+                        >
+                          {busy ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
+                          {t('projects.page.summarize', { n: selected.size })}
+                        </Button>
+                      )}
+                      {showDelete && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          className="text-danger hover:text-danger"
+                          onClick={() => setBatchDeleteOpen(true)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {t('projects.page.delete', { n: selected.size })}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={showListSkeleton || busy || tabAgents.length === 0}
+                    onClick={() => void reloadProjects()}
+                  >
+                    {t('projects.page.refresh')}
+                  </Button>
+                </div>
+              }
+            />
+          </div>
+          <div
+            className={cn(
+              'min-h-0 min-w-0 flex-1 overflow-y-auto bg-canvas',
+              preview.previewShellMounted
+                ? cn(pageRhythm.workbenchXSplit, 'overflow-x-hidden')
+                : cn(pageRhythm.workbenchX, 'overflow-x-auto'),
+              pageRhythm.workbenchY,
+            )}
+          >
+            {listPane}
+          </div>
         </div>
 
         {preview.previewShellMounted && preview.session ? (
