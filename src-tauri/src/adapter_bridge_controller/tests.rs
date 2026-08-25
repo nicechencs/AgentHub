@@ -736,7 +736,7 @@ impl AgentAdapter for IsolatedCodexAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![],
+            notes: vec![], extra_copies: Vec::new(),
         }
     }
 
@@ -907,7 +907,7 @@ impl AgentAdapter for IsolatedLiveAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![],
+            notes: vec![], extra_copies: Vec::new(),
         }
     }
 

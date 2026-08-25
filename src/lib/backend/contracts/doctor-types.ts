@@ -33,6 +33,13 @@ export interface DoctorEnvStatus {
   notes?: string[] | null;
 }
 
+export interface DoctorDetectedCopy {
+  path: string;
+  kind: string;
+  version?: string | null;
+  channel?: string | null;
+}
+
 export interface DoctorDetectResult {
   agent: DoctorAgentId;
   status: DoctorDetectStatus;
@@ -41,6 +48,7 @@ export interface DoctorDetectResult {
   channel?: string | null;
   envReady: boolean;
   notes: string[];
+  extraCopies?: DoctorDetectedCopy[];
 }
 
 export interface DoctorCapabilityState {

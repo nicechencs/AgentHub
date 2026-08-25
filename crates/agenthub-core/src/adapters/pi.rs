@@ -1091,6 +1091,7 @@ mod tests {
             channel: Some("npm".into()),
             env_ready: true,
             notes: vec![],
+            extra_copies: Vec::new(),
         };
         let out = apply_pi_node_requirement(detect, false);
         assert!(!out.env_ready, "env must not be ready without Node 22");
@@ -1115,6 +1116,7 @@ mod tests {
             channel: Some("npm".into()),
             env_ready: true,
             notes: vec![],
+            extra_copies: Vec::new(),
         };
         let out = apply_pi_node_requirement(detect, true);
         assert!(out.env_ready);

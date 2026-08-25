@@ -103,6 +103,14 @@ export interface AgentStatus {
   latestVersion?: string;
   channel?: InstallChannel;
   binPath?: string;
+  /** Other on-disk copies besides binPath (Codex IDE / desktop / leftover npm). */
+  extraCopies?: Array<{
+    path: string;
+    kind: string;
+    version?: string | null;
+    channel?: string | null;
+  }>;
+  notes?: string[];
   authStatus: AuthStatus;
   authLabel: string; // 如 "已登录" / "API" / "未配置"
   /** Semantic six-state auth health (optional for old backend/doctor rows). */

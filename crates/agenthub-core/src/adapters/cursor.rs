@@ -206,6 +206,7 @@ pub(crate) fn detect_installation() -> DetectResult {
             channel: Some(channel.into()),
             env_ready,
             notes,
+            extra_copies: Vec::new(),
         };
     }
 
@@ -243,6 +244,7 @@ pub(crate) fn detect_installation() -> DetectResult {
         channel: None,
         env_ready,
         notes,
+        extra_copies: Vec::new(),
     }
 }
 

@@ -183,11 +183,11 @@ fn install_from_contribution_uses_npm_allowlist_without_agent_id() {
         commands.iter().any(|c| {
             c.contains("install")
                 && c.contains("-g")
-                && c.contains("--prefix")
+                && !c.contains("--prefix")
                 && c.contains("--ignore-scripts")
                 && c.contains("@agenthub/p1-2-fake-npm")
         }),
-        "expected contribution npm install command, got {commands:?}"
+        "expected contribution npm install without data-dir prefix, got {commands:?}"
     );
 }
 
@@ -986,8 +986,8 @@ fn linux_accepts_apt_as_copy_command_channel_without_spawning() {
 }
 
 #[test]
-fn user_npm_prefix_is_under_agenthub_data_dir() {
-    let prefix = user_npm_prefix().unwrap();
+fn leftover_agenthub_npm_prefix_is_under_data_dir() {
+    let prefix = leftover_agenthub_npm_prefix().unwrap();
     let data = crate::utils::paths::resolve_data_dir(None).unwrap();
     assert_eq!(prefix, data.join("npm"));
 }
@@ -1023,8 +1023,8 @@ fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
     assert!(!out.message.contains("请检查 PATH"), "msg={}", out.message);
     let commands = calls.lock().unwrap();
     assert!(
-        commands.iter().any(|c| c.contains("--prefix")),
-        "expected prefix, got {commands:?}"
+        commands.iter().any(|c| c.contains("install") && c.contains("-g") && !c.contains("--prefix")),
+        "expected global npm install without data-dir prefix, got {commands:?}"
     );
 }
 
@@ -1055,7 +1055,7 @@ impl AgentAdapter for StickyNpmAdapter {
             binary_path: installed.then(|| PathBuf::from("/tmp/fake-npm-agent")),
             channel: Some("npm".into()),
             env_ready: true,
-            notes: vec![],
+            notes: vec![], extra_copies: Vec::new(),
         }
     }
 
@@ -1107,7 +1107,7 @@ fn uninstall_calls_for(
 }
 
 #[test]
-fn npm_uninstall_retries_without_prefix_when_detect_still_installed() {
+fn npm_uninstall_uses_global_then_optional_leftover_prefix() {
     if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
         return;
     }
@@ -1118,40 +1118,32 @@ fn npm_uninstall_retries_without_prefix_when_detect_still_installed() {
         stdout: String::new(),
         stderr: String::new(),
     };
-    // detect 0 preflight Installed; after prefix still Installed → second uninstall.
     let (out, commands) = uninstall_calls_for(usize::MAX, &ex);
     let uninstalls: Vec<_> = commands
         .iter()
         .filter(|c| c.contains("uninstall"))
         .cloned()
         .collect();
-    assert_eq!(
-        uninstalls.len(),
-        2,
-        "prefix success + still Installed must retry legacy global; got {commands:?}"
+    assert!(
+        !uninstalls.is_empty(),
+        "expected at least a global npm uninstall; got {commands:?}"
     );
     assert!(
-        uninstalls[0].contains("--prefix"),
-        "first uninstall must use user prefix: {}",
+        uninstalls[0].contains("uninstall") && !uninstalls[0].contains("--prefix"),
+        "first uninstall must be real npm global: {}",
         uninstalls[0]
     );
-    assert!(
-        !uninstalls[1].contains("--prefix"),
-        "second uninstall must be legacy global: {}",
-        uninstalls[1]
-    );
-    assert!(
-        out.logs
-            .iter()
-            .any(|l| l.contains("uninstall") && l.contains("--prefix")),
-        "logs must record prefix uninstall with actual path: {:?}",
-        out.logs
-    );
+    if leftover_agenthub_npm_prefix_present().is_some() {
+        assert!(
+            uninstalls.iter().any(|c| c.contains("--prefix")),
+            "leftover data-dir npm must also be uninstalled: {uninstalls:?}"
+        );
+    }
     assert!(
         out.logs
             .iter()
             .any(|l| l.contains("# npm uninstall -g ") && !l.contains("--prefix")),
-        "logs must record legacy uninstall: {:?}",
+        "logs must record global uninstall: {:?}",
         out.logs
     );
     assert!(
@@ -1162,7 +1154,7 @@ fn npm_uninstall_retries_without_prefix_when_detect_still_installed() {
 }
 
 #[test]
-fn npm_uninstall_skips_legacy_when_prefix_clears_detect() {
+fn npm_uninstall_always_emits_global_uninstall() {
     if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
         return;
     }
@@ -1173,19 +1165,18 @@ fn npm_uninstall_skips_legacy_when_prefix_clears_detect() {
         stdout: String::new(),
         stderr: String::new(),
     };
-    // detect 0 preflight Installed; after prefix (detect 1) NotFound → no retry.
     let (_out, commands) = uninstall_calls_for(1, &ex);
     let uninstalls: Vec<_> = commands
         .iter()
         .filter(|c| c.contains("uninstall"))
         .cloned()
         .collect();
-    assert_eq!(
-        uninstalls.len(),
-        1,
-        "clean prefix uninstall must not emit legacy global; got {commands:?}"
+    assert!(
+        uninstalls
+            .iter()
+            .any(|c| c.contains("uninstall") && !c.contains("--prefix")),
+        "global uninstall required: {uninstalls:?}"
     );
-    assert!(uninstalls[0].contains("--prefix"), "{}", uninstalls[0]);
 }
 
 #[test]
@@ -1219,13 +1210,12 @@ fn contribution_uninstall_retries_legacy_global_without_prefix() {
         .filter(|c| c.contains("uninstall"))
         .cloned()
         .collect();
-    assert_eq!(
-        uninstalls.len(),
-        2,
-        "contribution uninstall has no detect; must try prefix then legacy: {commands:?}"
+    assert!(
+        uninstalls
+            .iter()
+            .any(|c| c.contains("uninstall") && !c.contains("--prefix")),
+        "contribution uninstall must use real npm global: {commands:?}"
     );
-    assert!(uninstalls[0].contains("--prefix"), "{}", uninstalls[0]);
-    assert!(!uninstalls[1].contains("--prefix"), "{}", uninstalls[1]);
     assert!(out.ok, "msg={}", out.message);
     assert!(
         out.logs.iter().all(|l| !l.contains("~/.agenthub/npm")),

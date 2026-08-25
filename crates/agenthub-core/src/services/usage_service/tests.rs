@@ -80,7 +80,7 @@ fn detect_row(agent: AgentId, installed: bool) -> DetectResult {
         binary_path: None,
         channel: None,
         env_ready: installed,
-        notes: Vec::new(),
+        notes: Vec::new(), extra_copies: Vec::new(),
     }
 }
 

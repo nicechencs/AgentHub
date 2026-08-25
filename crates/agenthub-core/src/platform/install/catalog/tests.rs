@@ -102,6 +102,16 @@ fn list_install_catalog_commands_reference_allowlist() {
             if ch.id == "npm" {
                 let pkg = npm_package(entry.agent_id).expect("npm channel needs package");
                 assert!(ch.command.contains(pkg));
+                assert!(
+                    !ch.command.contains("--prefix"),
+                    "npm catalog must not install into AgentHub data dir: {}",
+                    ch.command
+                );
+                assert!(
+                    !ch.command.contains(".agenthub"),
+                    "npm catalog must not mention .agenthub: {}",
+                    ch.command
+                );
             }
             if ch.id == "native" {
                 if let Some(url) = native_setup_url(entry.agent_id) {

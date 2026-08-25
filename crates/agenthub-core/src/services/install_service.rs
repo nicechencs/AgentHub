@@ -32,14 +32,44 @@ fn elapsed_ms(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
-pub(crate) fn user_npm_prefix() -> Result<PathBuf> {
+/// Leftover AgentHub data-dir npm prefix (`<data>/npm`). **Not an install target.**
+///
+/// Installs use the user's real npm global (`npm i -g`). This path is only
+/// probed so uninstall can clean copies written by older AgentHub versions.
+pub(crate) fn leftover_agenthub_npm_prefix() -> Result<PathBuf> {
     Ok(crate::utils::paths::resolve_data_dir(None)?.join("npm"))
 }
 
-fn ensure_user_npm_prefix() -> Result<PathBuf> {
-    let prefix = user_npm_prefix()?;
-    std::fs::create_dir_all(&prefix)?;
-    Ok(prefix)
+fn leftover_agenthub_npm_prefix_candidates() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(prefix) = leftover_agenthub_npm_prefix() {
+        out.push(prefix);
+    }
+    if let Ok(home) = crate::utils::paths::home_dir() {
+        let fallback = home.join(".agenthub").join("npm");
+        if !out.iter().any(|p| p == &fallback) {
+            out.push(fallback);
+        }
+    }
+    out
+}
+
+fn leftover_prefix_populated(prefix: &Path) -> bool {
+    prefix.join("node_modules").is_dir()
+        || prefix.join("lib").join("node_modules").is_dir()
+}
+
+/// Prefixes that still contain packages written by older AgentHub versions.
+pub(crate) fn leftover_agenthub_npm_prefixes_present() -> Vec<PathBuf> {
+    leftover_agenthub_npm_prefix_candidates()
+        .into_iter()
+        .filter(|p| leftover_prefix_populated(p))
+        .collect()
+}
+
+/// True when an older AgentHub actually wrote packages under a leftover prefix.
+pub(crate) fn leftover_agenthub_npm_prefix_present() -> Option<PathBuf> {
+    leftover_agenthub_npm_prefixes_present().into_iter().next()
 }
 
 fn looks_like_permission_failure(res: &ExecResult) -> bool {
@@ -1655,14 +1685,7 @@ fn uninstall_agent_inner(
         let mut removed_program = false;
         if is_npm {
             if let Some(pkg) = contribution.npm_package() {
-                removed_program = npm_uninstall_user_then_legacy(pkg, executor, &mut logs, || {
-                    runtime::invalidate_cache();
-                    crate::services::agent_service::invalidate_detect_cache();
-                    registry
-                        .get(agent)
-                        .map(|a| a.detect().status == DetectStatus::Installed)
-                        .unwrap_or(false)
-                })?;
+                removed_program = npm_uninstall_global_then_leftover(pkg, executor, &mut logs)?;
             }
         } else {
             // 1) Prefer official silent uninstaller when allowlisted (e.g. WorkBuddy).
@@ -1861,7 +1884,7 @@ pub fn uninstall_from_contribution(
         let removed_program;
         if let Some(pkg) = contribution.npm_package() {
             // Contribution path has no adapter detect; always try legacy global too.
-            removed_program = npm_uninstall_user_then_legacy(pkg, executor, &mut logs, || true)?;
+            removed_program = npm_uninstall_global_then_leftover(pkg, executor, &mut logs)?;
         } else {
             let mut any_removed = false;
             let mut any_found = false;
@@ -1931,31 +1954,31 @@ pub fn uninstall_from_contribution(
     result
 }
 
-fn npm_uninstall_user_then_legacy(
+fn npm_uninstall_global_then_leftover(
     pkg: &str,
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
-    still_installed: impl Fn() -> bool,
 ) -> Result<bool> {
-    let prefix_res = npm_uninstall_with_prefix(pkg, executor, logs)?;
-    let mut removed = prefix_res.success();
-    if still_installed() {
-        let legacy_res = npm_uninstall_legacy_global(pkg, executor, logs)?;
-        removed = removed || legacy_res.success();
+    let global_res = npm_uninstall_legacy_global(pkg, executor, logs)?;
+    let mut removed = global_res.success();
+    // Older AgentHub versions wrote into `<data>/npm`. Never create that dir here.
+    for prefix in leftover_agenthub_npm_prefixes_present() {
+        let leftover_res = npm_uninstall_leftover_prefix(pkg, &prefix, executor, logs)?;
+        removed = removed || leftover_res.success();
     }
     Ok(removed)
 }
 
-fn npm_uninstall_with_prefix(
+fn npm_uninstall_leftover_prefix(
     pkg: &str,
+    prefix: &Path,
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
-    let prefix = ensure_user_npm_prefix()?;
     let prefix_text = prefix.display().to_string();
     push_log(
         logs,
-        format!("# npm uninstall -g --prefix {prefix_text} {pkg}"),
+        format!("# npm uninstall -g --prefix {prefix_text} {pkg} (leftover AgentHub data-dir copy)"),
     );
     let npm = resolve_bin(&["npm", "npm.cmd"])?;
     let req = ExecRequest {
@@ -2011,23 +2034,16 @@ fn run_npm_install(
     } else {
         format!(" {}", extra.join(" "))
     };
-    let prefix = ensure_user_npm_prefix()?;
-    let prefix_text = prefix.display().to_string();
     push_log(
         logs,
-        format!("# npm {label} -g --prefix {prefix_text}{extra_note} {pkg}"),
+        format!("# npm {label} -g{extra_note} {pkg}"),
     );
     push_log(logs, format!("使用 npm： {npm}"));
     push_log(
         logs,
         format!("# 正在通过 npm 下载安装 {pkg}（可能需数分钟，请保持网络畅通）…"),
     );
-    let mut args = vec![
-        "install".into(),
-        "-g".into(),
-        "--prefix".into(),
-        prefix_text.clone(),
-    ];
+    let mut args = vec!["install".into(), "-g".into()];
     for flag in extra {
         args.push((*flag).into());
     }

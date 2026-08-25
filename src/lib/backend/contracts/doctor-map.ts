@@ -127,6 +127,8 @@ export function mapDoctorDetectResult(
     version: d.version ?? undefined,
     channel: installed ? channel : undefined,
     binPath: d.binaryPath ?? undefined,
+    extraCopies: d.extraCopies?.length ? d.extraCopies.map((c) => ({ ...c })) : undefined,
+    notes: d.notes?.length ? [...d.notes] : undefined,
     // Doctor 只做安装检测；登录/API 由 listAgents 合并账号池与供应商池后覆盖
     authStatus: 'none',
     authLabel: installed ? '未检测登录态' : '未配置',
