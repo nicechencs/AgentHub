@@ -67,7 +67,7 @@ describe('connections layout wiring', () => {
   });
 
   it('clears the guided-add marker when the provider pane is dismissed', () => {
-    const page = source('index.tsx');
+    const page = source('index.tsx').replace(/\r\n/g, '\n');
     expect(page).toContain(
       'guideOpenedApiKeyRef.current = false;\n            inspect.close();',
     );
