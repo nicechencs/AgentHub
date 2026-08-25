@@ -10,11 +10,11 @@ updated: 2026-08-25
 
 # Adapter 路线内核与查表投影
 
-`AdapterRouteService::plan()` 是 Adapter / route 产品规则的唯一决策者。Tauri 传输内核结果；`adapter-capability-contract.json` 是对冻结入参的只读投影；browser mock 只按来源特征查表，并维护内存 profile / 假 bridge 状态。页面不重新决定路线。
+`AdapterRouteService::plan()` 是 Adapter / route 产品规则的唯一决策者。Tauri 传输内核结果；`adapter-capability-contract.json` 是对冻结入参的只读投影，携带内核生成的路线决策结果；browser mock 按来源特征查表，并按 `ruleId` 在 `project.ts` 里维护演示所需的内存投影。页面不重新决定路线。
 
 ## 唯一内核
 
-`plan()` 的输出才是真源：route、support、公开 rule ID、gate kind、`canApply`、reason、reuse path 和 apply path。矩阵格子上的 `can_apply` 不够：Account 等被私有 write gate 挡住的边，演示里也必须显示不可写。
+`plan()` 的输出才是真源：`route`、`support`、`ruleId`、`gateKind`、`canApply`、`reason`、reuse path 和 apply path。矩阵格子上的 `can_apply` 不够：Account 等被私有 write gate 挡住的边，演示里也必须显示不可写。
 
 冻结入参使用已有的 preset、accountKind、extra 等种子形状，不写入真实密钥。Rust 测试要求工作区 JSON 等于刚跑出来的 `plan()` 结果；内核变化或手改 expect 都会失败。更新快照只允许：
 
@@ -22,19 +22,28 @@ updated: 2026-08-25
 UPDATE_ADAPTER_CAPABILITY_CONTRACT=1 cargo test -p agenthub-core --locked shared_capability_contract_is_kernel_plan_projection
 ```
 
-reason 字符串与公开 rule ID 只出现在 Rust。mock 与前端不得复制一套决策常量。不得把 JSON 当成规则真源，也不得引入 WASM、napi 或类型生成框架来“再跑一遍 planner”。
+不得把 JSON 当成规则真源，也不得引入 WASM、napi 或类型生成框架来“再跑一遍 planner”。mock 与前端不得复制 classifier fallback 或第二套路由选择器。`ruleId` 会随 golden.expect 进入 mock；`project.ts` 仍按 `ruleId` 生成演示用的 materialization、actions、changes、maturity、serviceImpact。这不是第二套路由决策，也不等于完整 plan 已经没有任何 TypeScript 投影。
 
 ## mock 只查表
 
-`pnpm dev:mock` 和 Vitest 需要可演示的状态和可编排的内存写入，不需要第二套协议图。
+`pnpm dev:mock` 和 Vitest 需要可演示的状态和可编排的内存写入，不需要 classifier fallback 或第二套路由选择器。
 
 - 种子账号/供应商继续带 preset 或等价特征。
 - 查表键是 `(来源 kind, ticket 特征, target, 凭据是否可用)`。
 - 凭据可用性必须精确匹配：只参与打分不够，候选唯一也不能忽略不匹配。
 - 未命中 fail-closed 为 `unsupported`，不得回退启发式 classify。
-- `apply` 只解释 expect：`canApply` 为假则拒绝；为真则按 route / ruleId 写入内存 profile 和假 bridge。不重新 classify，不重放 write gate。
+- `apply` 只解释 expect：`canApply` 为假则拒绝；为真则按 route / `ruleId` 写入内存 profile 和假 bridge。不重新 classify，不重放 write gate。
 
-mock Account 可能已经脱敏，不能把“没有原始 credentials”直接当成无凭据。现场账号优先看 `tokenValid`、`authHealth` / `liveAuthHealth`；只有 frozen/test 行才用 credentials 内容辅助判断有无可用密钥。需要“路线可预览但不可写”时，补充由 `plan()` 生成的无凭据 golden 行，不在 TypeScript 手写规则。
+live mock Account 可能已经脱敏。凭据是否可用以状态字段为准，优先级如下：
+
+1. `tokenValid === false` 或负面 `authHealth` / `liveAuthHealth`（`needs_login`、`missing`）→ 无可用凭据
+2. `tokenValid === true` 或正面 `authHealth` / `liveAuthHealth`（`verified`、`renewable`、`configured`）→ 有可用凭据
+3. 状态未知时才检查 credentials 内容
+4. `credentials: {}` 且状态未知 → 无可用凭据
+5. 明确存在有效 API Key 或 access token → 有可用凭据
+6. 明确存在空 token slot → 无可用凭据
+
+冻结/测试行没有 `tokenValid` / `authHealth`，golden 索引只看 credentials 内容。需要“路线可预览但不可写”时，补充由 `plan()` 生成的无凭据 golden 行，不在 TypeScript 手写规则。
 
 页面测试只断言“给定一份 plan，界面是否听从”。路线本身对不对只在 Rust 测试。已知演示种子必须命中，且 plan / apply 不泄漏凭据占位值。
 

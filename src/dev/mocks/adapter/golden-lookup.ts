@@ -182,7 +182,6 @@ function extraString(extra: unknown, key: string): string | undefined {
 
 const POSITIVE_AUTH_HEALTH = new Set(['verified', 'renewable', 'configured']);
 const NEGATIVE_AUTH_HEALTH = new Set(['needs_login', 'missing']);
-const CREDENTIAL_METADATA_KEYS = new Set(['format', 'provider', 'preset']);
 
 function credentialsHaveAccessToken(credentials: unknown): boolean {
   if (!credentials || typeof credentials !== 'object') return false;
@@ -196,26 +195,6 @@ function credentialsHaveAccessToken(credentials: unknown): boolean {
   return candidates.some((token) => typeof token === 'string' && Boolean(token.trim()));
 }
 
-function credentialsHaveTokenSlot(credentials: Record<string, unknown>): boolean {
-  if (Object.prototype.hasOwnProperty.call(credentials, 'access_token')) return true;
-  const tokens = credentials.tokens;
-  if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
-    const bag = tokens as Record<string, unknown>;
-    return Object.prototype.hasOwnProperty.call(bag, 'access_token')
-      || Object.prototype.hasOwnProperty.call(bag, 'refresh_token');
-  }
-  const body = credentials.body;
-  if (body && typeof body === 'object' && !Array.isArray(body)) {
-    return credentialsHaveTokenSlot(body as Record<string, unknown>);
-  }
-  return false;
-}
-
-function isCredentialMetadataOnly(credentials: Record<string, unknown>): boolean {
-  const keys = Object.keys(credentials);
-  return keys.length > 0 && keys.every((key) => CREDENTIAL_METADATA_KEYS.has(key));
-}
-
 /**
  * Frozen JSON rows have no tokenValid/authHealth. Index secret from credential
  * contents only; empty or missing bags are "no secret".
@@ -226,31 +205,24 @@ function frozenAccountHasUsableSecret(account: ClassifiableAccount): boolean {
 }
 
 /**
- * Live mock accounts may already be redacted. Prefer tokenValid / authHealth;
- * inspect credential contents only for frozen/test rows that still carry them.
+ * Live mock accounts may already be redacted. Status fields are the authority
+ * for credential availability; inspect the bag only when they are unknown.
  */
 function liveAccountHasUsableSecret(account: ClassifiableAccount): boolean {
   const health = account.liveAuthHealth ?? account.authHealth;
   if (account.tokenValid === false || (health != null && NEGATIVE_AUTH_HEALTH.has(health))) {
     return false;
   }
-
-  const credentials = account.credentials;
-  if (credentials && typeof credentials === 'object') {
-    const bag = credentials as Record<string, unknown>;
-    if (Object.keys(bag).length === 0) {
-      return false;
-    } else if (account.kind === 'apikey') {
-      if (hasAccountApiKey(account)) return true;
-      if (!isCredentialMetadataOnly(bag)) return false;
-    } else if (credentialsHaveAccessToken(bag)) {
-      return true;
-    } else if (credentialsHaveTokenSlot(bag) || !isCredentialMetadataOnly(bag)) {
-      return false;
-    }
+  if (account.tokenValid === true || (health != null && POSITIVE_AUTH_HEALTH.has(health))) {
+    return true;
   }
 
-  return account.tokenValid === true || (health != null && POSITIVE_AUTH_HEALTH.has(health));
+  const credentials = account.credentials;
+  if (!credentials || typeof credentials !== 'object') return false;
+  const bag = credentials as Record<string, unknown>;
+  if (Object.keys(bag).length === 0) return false;
+  if (account.kind === 'apikey') return hasAccountApiKey(account);
+  return credentialsHaveAccessToken(bag);
 }
 
 function goldenAccount(item: ContractCase): ClassifiableAccount {
