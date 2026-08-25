@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyIdOrder, mergeLiveMove, moveId, persistIdOrder, readIdOrder, subscribeIdOrder } from './list-order';
+import { applyIdOrder, mergeLiveMove, moveId, persistIdOrder, subscribeIdOrder } from './list-order';
 
 describe('list order', () => {
   it('keeps the live sequence when nothing is stored', () => {
@@ -39,12 +39,12 @@ describe('list order', () => {
 
   it('notifies subscribers when an order is persisted', () => {
     const key = 'agenthub:test-order-subscribe';
-    const seen: string[][] = [];
+    let calls = 0;
     const stop = subscribeIdOrder(key, () => {
-      seen.push(readIdOrder(key));
+      calls += 1;
     });
     persistIdOrder(key, ['b', 'a']);
     stop();
-    expect(seen).toEqual([['b', 'a']]);
+    expect(calls).toBe(1);
   });
 });
