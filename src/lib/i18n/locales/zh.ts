@@ -1257,6 +1257,12 @@ export const zh = {
       add: "添加授权",
       configMustBeObject: "配置必须是一段 JSON 对象",
       configParseFailed: "配置没法解析：{detail}",
+      configTomlParseFailed: "配置 TOML 没法解析：{detail}",
+      configExpectToml: "这个工具的配置是 TOML，不能用 JSON 对象",
+      configClaudeEnvObject: "Claude settings.json 的 env 必须是对象",
+      configClaudeEnvString: "Claude settings.json 的 env.{key} 必须是字符串",
+      configClaudeForeignKeys:
+        "这不是 Claude Code 的 settings.json。服务地址请写在 env.ANTHROPIC_BASE_URL，不要并用 {keys}",
       unsupportedField: "这个字段暂时不能编辑（{label}）",
       secretConfigured: "已保存，留空表示不改",
       fields: {

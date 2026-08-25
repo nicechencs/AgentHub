@@ -47,17 +47,23 @@ export function extractProviderEndpoint(
         parsed.env && typeof parsed.env === 'object' && !Array.isArray(parsed.env)
           ? (parsed.env as Record<string, unknown>)
           : parsed;
-      for (const key of [
-        'ANTHROPIC_BASE_URL',
-        'OPENAI_BASE_URL',
-        'OPENAI_API_BASE',
-        'base_url',
-        'BASE_URL',
-        'api_base',
-      ]) {
-        const v = env[key];
-        if (typeof v === 'string' && /^https?:\/\//i.test(v.trim())) {
-          return v.trim();
+      const bags: Record<string, unknown>[] = env === parsed ? [env] : [env, parsed];
+      for (const bag of bags) {
+        for (const key of [
+          'ANTHROPIC_BASE_URL',
+          'OPENAI_BASE_URL',
+          'OPENAI_API_BASE',
+          'baseURL',
+          'baseUrl',
+          'base_url',
+          'BASE_URL',
+          'api_base',
+          'apiBase',
+        ]) {
+          const v = bag[key];
+          if (typeof v === 'string' && /^https?:\/\//i.test(v.trim())) {
+            return v.trim();
+          }
         }
       }
     } catch {

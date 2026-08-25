@@ -1264,6 +1264,12 @@ export const en = {
       add: "Add authorization",
       configMustBeObject: "Config must be a JSON object",
       configParseFailed: "Couldn't parse the config: {detail}",
+      configTomlParseFailed: "Couldn't parse the TOML config: {detail}",
+      configExpectToml: "This tool uses TOML, not a JSON object",
+      configClaudeEnvObject: "Claude settings.json env must be an object",
+      configClaudeEnvString: "Claude settings.json env.{key} must be a string",
+      configClaudeForeignKeys:
+        "This is not Claude Code settings.json. Put the URL in env.ANTHROPIC_BASE_URL; don't also set {keys}",
       unsupportedField: "This field can't be edited yet ({label})",
       secretConfigured: "Already saved; leave blank to keep it",
       fields: {

@@ -39,6 +39,13 @@ export {
   parseJsonObjectConfig,
 } from './fields';
 export type { JsonObjectParseResult } from './fields';
+export {
+  CLAUDE_FOREIGN_ROOT_KEYS,
+  nativeConfigIssueMessage,
+  stripClaudeForeignRootKeys,
+  validateNativeConfigText,
+} from './native-config';
+export type { NativeConfigIssue } from './native-config';
 
 export {
   applySmartPaste,

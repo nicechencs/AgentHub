@@ -65,6 +65,13 @@ describe('extractProviderEndpoint', () => {
     expect(extractProviderEndpoint(text, 'json')).toBe('https://api.relay.test/v1');
   });
 
+  it('reads JSON baseURL when env is absent', () => {
+    const text = JSON.stringify({
+      baseURL: 'https://openrouter.ai/api/v1',
+    });
+    expect(extractProviderEndpoint(text, 'json')).toBe('https://openrouter.ai/api/v1');
+  });
+
   it('reads base_url from TOML', () => {
     const text = 'model = "x"\nbase_url = "https://openai.compat.test/v1"\n';
     expect(extractProviderEndpoint(text, 'toml')).toBe('https://openai.compat.test/v1');

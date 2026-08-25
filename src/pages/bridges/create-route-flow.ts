@@ -426,9 +426,7 @@ export function createRouteProviderDraft(input: CreateRouteInput): Provider {
     .filter((row) => row.enabled);
   const settings: Record<string, unknown> = {
     baseURL: url,
-    baseUrl: url,
     apiKey: key,
-    api_key: key,
     vendor: input.vendor,
     endpoints,
     listedModels: models,
@@ -717,16 +715,18 @@ export function editRouteProviderDraft(provider: Provider, input: EditRouteInput
   const settings: Record<string, unknown> = {
     ...existing,
     baseURL: url,
-    baseUrl: url,
     endpoints,
     listedModels: models,
   };
-  // `extractProviderEndpoint` reads JSON `base_url`, so a stored one must not go stale.
-  if ('base_url' in existing) settings.base_url = url;
   if (key) {
     settings.apiKey = key;
-    settings.api_key = key;
+  } else if (typeof settings.apiKey !== 'string' || !settings.apiKey.trim()) {
+    const snakeKey = settings.api_key;
+    if (typeof snakeKey === 'string' && snakeKey.trim()) settings.apiKey = snakeKey;
   }
+  delete settings.baseUrl;
+  delete settings.base_url;
+  delete settings.api_key;
   if (models[0]) settings.model = models[0];
   else delete settings.model;
   if (input.contextWindow !== undefined) {

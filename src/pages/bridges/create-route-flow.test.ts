@@ -86,8 +86,13 @@ describe('create-route-flow', () => {
     expect(draft.configText).toContain('test-key');
     expect(draft.configText).not.toContain('ahb_');
     expect(draft.configText).not.toMatch(/sk-or-/);
-    expect(JSON.parse(draft.configText).model).toBe('stealth/ox-alpha');
-    expect(JSON.parse(draft.configText).contextWindowTokens).toBeUndefined();
+    const parsed = JSON.parse(draft.configText);
+    expect(parsed.model).toBe('stealth/ox-alpha');
+    expect(parsed.baseURL).toBe('https://openrouter.ai/api/v1');
+    expect('baseUrl' in parsed).toBe(false);
+    expect(parsed.apiKey).toBe('test-key');
+    expect('api_key' in parsed).toBe(false);
+    expect(parsed.contextWindowTokens).toBeUndefined();
     expect(readCreateRouteCapabilities(draft.configText).contextWindow).toBe('auto');
   });
 

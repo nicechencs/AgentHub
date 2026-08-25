@@ -15,6 +15,30 @@ describe('applySmartPaste', () => {
     expect(r.configFormat).toBe('json');
     expect(r.configText).toContain('ANTHROPIC_BASE_URL');
     expect(r.suggestedName).toBe('relay.example.com');
+    expect(r.configText).not.toContain('"baseURL"');
+    expect(r.configText).not.toContain('"baseUrl"');
+  });
+
+  it('turns OpenRouter-style JSON into Claude settings.json env', () => {
+    const r = applySmartPaste(
+      'claude',
+      JSON.stringify({
+        baseURL: 'https://openrouter.ai/api/v1',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiKey: 'sk-abcdefghijklmnopqrst',
+      }),
+    );
+    const parsed = JSON.parse(r.configText) as {
+      env: Record<string, string>;
+      baseURL?: unknown;
+      baseUrl?: unknown;
+      apiKey?: unknown;
+    };
+    expect(parsed.env.ANTHROPIC_BASE_URL).toBe('https://openrouter.ai/api/v1');
+    expect(parsed.env.ANTHROPIC_AUTH_TOKEN).toBe('sk-abcdefghijklmnopqrst');
+    expect(parsed.baseURL).toBeUndefined();
+    expect(parsed.baseUrl).toBeUndefined();
+    expect(parsed.apiKey).toBeUndefined();
   });
 
   it('parses pasted Claude window env onto the form choice', () => {

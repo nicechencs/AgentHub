@@ -71,13 +71,15 @@ import {
   isLiveFilePath,
   isLivePastedApiKey,
   liveConfigPaths,
-  parseJsonObjectConfig,
   REDACTED_MARKER,
   remoteModelsStatusView,
   resolveUpstreamBaseUrl,
   shouldFetchRemoteModels,
   smartDetectUrlAndKey,
+  validateNativeConfigText,
+  nativeConfigIssueMessage,
   withDefaultModel,
+  type NativeConfigIssue,
   type ProviderFormVars,
 } from '@/lib/provider-detect';
 import {
@@ -139,28 +141,37 @@ function piSlotSelectOptions(slug: string) {
   return [...PI_PROVIDER_SLOT_OPTIONS, { id, label: id }];
 }
 
+function translateNativeConfigIssue(issue: NativeConfigIssue, t: TranslateFn): string {
+  switch (issue.code) {
+    case 'json_must_be_object':
+      return t('connections.providerDialog.configMustBeObject');
+    case 'json_parse':
+      return t('connections.providerDialog.configParseFailed', { detail: issue.detail ?? '' });
+    case 'toml_parse':
+      return t('connections.providerDialog.configTomlParseFailed', { detail: issue.detail ?? '' });
+    case 'expect_toml':
+      return t('connections.providerDialog.configExpectToml');
+    case 'claude_env_object':
+      return t('connections.providerDialog.configClaudeEnvObject');
+    case 'claude_env_string':
+      return t('connections.providerDialog.configClaudeEnvString', { key: issue.detail ?? '' });
+    case 'claude_foreign_keys':
+      return t('connections.providerDialog.configClaudeForeignKeys', {
+        keys: issue.keys?.join('、') ?? '',
+      });
+  }
+}
+
 export function getConfigTextError(
   agentId: AgentId,
   configText: string,
   configFormat: 'json' | 'toml',
   t?: TranslateFn,
 ): string | null {
-  if (configFormat !== 'json' && agentId !== 'claude') return null;
-  const trimmed = configText.trim();
-  if (!trimmed || trimmed === REDACTED_MARKER) return null;
-  const parsed = parseJsonObjectConfig(configText);
-  if (parsed.ok) return null;
-  if (!t) return parsed.message;
-  if (parsed.message === '配置 JSON 必须是对象') {
-    return t('connections.providerDialog.configMustBeObject');
-  }
-  const prefix = '配置 JSON 解析失败：';
-  if (parsed.message.startsWith(prefix)) {
-    return t('connections.providerDialog.configParseFailed', {
-      detail: parsed.message.slice(prefix.length),
-    });
-  }
-  return parsed.message;
+  const issue = validateNativeConfigText(agentId, configText, configFormat);
+  if (!issue) return null;
+  if (!t) return nativeConfigIssueMessage(issue);
+  return translateNativeConfigIssue(issue, t);
 }
 
 export function ProviderEditDialog({
@@ -342,6 +353,17 @@ export function ProviderEditDialog({
         provider.authApiKey,
       );
       setVars(nextVars);
+      const normalized = applyFormVars(
+        agentId,
+        provider.configText,
+        provider.configFormat,
+        nextVars,
+      );
+      const normalizedError = getConfigTextError(agentId, normalized, provider.configFormat, t);
+      if (!normalizedError) {
+        setConfigText(normalized);
+        setConfigError(null);
+      }
       const resolvedOnOpen = resolveUpstreamBaseUrl({
         formBaseUrl: nextVars.baseUrl,
         configText: provider.configText,
