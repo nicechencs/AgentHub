@@ -1,14 +1,64 @@
 /**
  * Visual turns from a project excerpt.
- * Core joins scanned pieces with a `---` line; a single blob is one turn.
+ *
+ * Core now emits role-tagged blocks (`---turn:user---` / `---turn:assistant---`)
+ * so markdown horizontal rules inside a reply are not treated as turn splits.
+ * Legacy excerpts still join pieces with a `---` line; even index is user.
  */
-export function splitExcerptTurns(excerpt: string): string[] {
+
+export type ExcerptTurnRole = 'user' | 'assistant';
+
+export type ExcerptTurn = {
+  role: ExcerptTurnRole;
+  text: string;
+};
+
+const ROLE_MARKER = /^---turn:(user|assistant)---\s*$/;
+
+export function splitExcerptTurns(excerpt: string): ExcerptTurn[] {
   const text = excerpt.replace(/\r\n/g, '\n').trim();
   if (!text) return [];
+  if (hasRoleMarkers(text)) {
+    return splitRoleTaggedTurns(text);
+  }
   return text
     .split(/^\s*---\s*$/m)
     .map((part) => part.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((part, index) => ({
+      role: (index % 2 === 0 ? 'user' : 'assistant') as ExcerptTurnRole,
+      text: part,
+    }));
+}
+
+function hasRoleMarkers(text: string): boolean {
+  return text.split('\n').some((line) => ROLE_MARKER.test(line));
+}
+
+function splitRoleTaggedTurns(text: string): ExcerptTurn[] {
+  const turns: ExcerptTurn[] = [];
+  let role: ExcerptTurnRole | null = null;
+  const buf: string[] = [];
+  const flush = () => {
+    if (!role) {
+      buf.length = 0;
+      return;
+    }
+    const body = buf.join('\n').trim();
+    buf.length = 0;
+    if (body) turns.push({ role, text: body });
+  };
+  for (const line of text.split('\n')) {
+    const marked = line.match(ROLE_MARKER);
+    if (marked) {
+      flush();
+      role = marked[1] as ExcerptTurnRole;
+      continue;
+    }
+    buf.push(line);
+  }
+  flush();
+  return turns;
 }
 
 export type ExcerptLoadResult =

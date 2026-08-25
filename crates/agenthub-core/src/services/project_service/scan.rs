@@ -1986,21 +1986,18 @@ fn scan_preview_from_text(text: &str) -> (Option<String>, Option<u32>) {
             continue;
         }
         if let Some(p) = extract_userish_text(line) {
-            // Skip obvious system blobs that drown real previews.
-            if is_noisy_preview(&p) {
-                continue;
+            if let Some(visible) = visible_transcript_text(&p) {
+                preview = Some(truncate_chars(&visible, PREVIEW_CHARS));
             }
-            preview = Some(truncate_chars(&p, PREVIEW_CHARS));
         }
     }
     if preview.is_none() {
         for line in text.lines().take(20) {
             if let Some(p) = extract_any_text(line.trim()) {
-                if is_noisy_preview(&p) {
-                    continue;
+                if let Some(visible) = visible_transcript_text(&p) {
+                    preview = Some(truncate_chars(&visible, PREVIEW_CHARS));
+                    break;
                 }
-                preview = Some(truncate_chars(&p, PREVIEW_CHARS));
-                break;
             }
         }
     }
@@ -2011,11 +2008,209 @@ fn is_noisy_preview(text: &str) -> bool {
     let t = text.trim();
     t.starts_with("<user_info>")
         || t.starts_with("<system-reminder>")
+        || t.starts_with("<git_status>")
+        || t.starts_with("<rules>")
         || t.starts_with("You are Grok")
         || t.starts_with("You are Codex")
         || t.starts_with("You are Claude")
         || t.contains("base_instructions")
         || t.len() > 4000 && t.contains("<agent_skills>")
+}
+
+/// Prefer `<user_query>` inner text (Grok chat_history wraps the real prompt).
+fn visible_transcript_text(text: &str) -> Option<String> {
+    if let Some(q) = unwrap_tagged_block(text, "user_query") {
+        return Some(q);
+    }
+    if is_noisy_preview(text) {
+        return None;
+    }
+    let t = text.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
+fn unwrap_tagged_block(text: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = text.find(&open)?;
+    let rest = &text[start + open.len()..];
+    let end = rest.find(&close)?;
+    let inner = rest[..end].trim();
+    if inner.is_empty() {
+        None
+    } else {
+        Some(inner.to_string())
+    }
+}
+
+struct ExcerptTurn {
+    role: &'static str,
+    text: String,
+}
+
+fn extract_jsonl_transcript_turns(text: &str) -> Vec<ExcerptTurn> {
+    let mut turns = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(turn) = extract_transcript_turn_from_line(line) {
+            turns.push(turn);
+        }
+    }
+    turns
+}
+
+fn extract_transcript_turn_from_line(line: &str) -> Option<ExcerptTurn> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    if v.get("synthetic_reason")
+        .and_then(|x| x.as_str())
+        .is_some_and(|s| !s.is_empty())
+    {
+        return None;
+    }
+    if let Some(t) = extract_userish_text(line) {
+        let visible = visible_transcript_text(&t)?;
+        return Some(ExcerptTurn {
+            role: "user",
+            text: visible,
+        });
+    }
+    extract_assistant_turn(&v)
+}
+
+fn extract_assistant_turn(v: &serde_json::Value) -> Option<ExcerptTurn> {
+    let ty = v
+        .get("type")
+        .or_else(|| v.get("role"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if matches!(
+        ty.as_str(),
+        "system"
+            | "reasoning"
+            | "tool_result"
+            | "tool_calls"
+            | "function_call"
+            | "tool"
+            | "hook_execution"
+    ) {
+        return None;
+    }
+    let role = v
+        .get("role")
+        .and_then(|r| r.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let payload_role = v
+        .pointer("/payload/role")
+        .and_then(|r| r.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let is_assistant = ty.contains("assistant")
+        || ty == "agent"
+        || role == "assistant"
+        || payload_role == "assistant";
+    if !is_assistant {
+        return None;
+    }
+    let text = extract_text_from_value(v)?;
+    let t = text.trim();
+    if t.is_empty() {
+        return None;
+    }
+    Some(ExcerptTurn {
+        role: "assistant",
+        text: t.to_string(),
+    })
+}
+
+/// Grok `updates.jsonl`: stitch streamed user/agent message chunks.
+fn extract_grok_update_turns(text: &str) -> Vec<ExcerptTurn> {
+    let mut turns: Vec<ExcerptTurn> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((role, piece)) = grok_update_chunk(line) else {
+            continue;
+        };
+        if piece.is_empty() {
+            continue;
+        }
+        if let Some(last) = turns.last_mut() {
+            if last.role == role {
+                last.text.push_str(&piece);
+                continue;
+            }
+        }
+        turns.push(ExcerptTurn { role, text: piece });
+    }
+    turns
+}
+
+fn grok_update_chunk(line: &str) -> Option<(&'static str, String)> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let update = v
+        .pointer("/params/update")
+        .or_else(|| v.get("update"))
+        .unwrap_or(&v);
+    let su = update
+        .get("sessionUpdate")
+        .or_else(|| update.get("session_update"))
+        .and_then(|x| x.as_str())?;
+    let role = match su {
+        "user_message_chunk" | "user_message" => "user",
+        "agent_message_chunk" | "agent_message" | "assistant_message_chunk" => "assistant",
+        _ => return None,
+    };
+    let piece = update
+        .pointer("/content/text")
+        .and_then(|x| x.as_str())
+        .or_else(|| update.get("content").and_then(|x| x.as_str()))
+        .or_else(|| update.get("text").and_then(|x| x.as_str()))
+        .unwrap_or("")
+        .to_string();
+    if piece.is_empty() {
+        None
+    } else {
+        Some((role, piece))
+    }
+}
+
+/// Role-tagged turns so markdown `---` inside a reply is not a splitter.
+fn format_excerpt_turns(turns: &[ExcerptTurn]) -> String {
+    let mut body = String::new();
+    for t in turns {
+        let text = t.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let used = body.chars().count();
+        if used >= EXCERPT_CHARS {
+            break;
+        }
+        let header = format!("---turn:{}---\n", t.role);
+        let header_len = header.chars().count();
+        let remaining = EXCERPT_CHARS.saturating_sub(used.saturating_add(header_len + 1));
+        if remaining == 0 {
+            break;
+        }
+        let piece = truncate_chars(text, remaining);
+        if !body.is_empty() {
+            body.push('\n');
+        }
+        body.push_str(&header);
+        body.push_str(&piece);
+    }
+    body
 }
 
 pub(crate) fn make_project_id(agent: AgentId, storage_key: &str) -> String {
@@ -2058,24 +2253,23 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
         }
     });
     let text = read_head(&abs_path, SCAN_BYTES * 2).unwrap_or_default();
-    let mut body = String::new();
-    for line in text.lines() {
-        if let Some(t) = extract_userish_text(line.trim()).or_else(|| extract_any_text(line.trim()))
-        {
-            if !body.is_empty() {
-                body.push_str("\n---\n");
-            }
-            body.push_str(&t);
-            if body.chars().count() >= EXCERPT_CHARS {
-                break;
+    let mut turns = Vec::new();
+    if agent == AgentId::Grok {
+        let updates = abs_path.with_file_name("updates.jsonl");
+        if updates.is_file() {
+            if let Some(u) = read_head(&updates, SCAN_BYTES * 2) {
+                turns = extract_grok_update_turns(&u);
             }
         }
     }
-    if body.is_empty() {
-        body = truncate_chars(&text, EXCERPT_CHARS);
-    } else {
-        body = truncate_chars(&body, EXCERPT_CHARS);
+    if turns.is_empty() {
+        turns = extract_jsonl_transcript_turns(&text);
     }
+    let body = if turns.is_empty() {
+        String::new()
+    } else {
+        format_excerpt_turns(&turns)
+    };
     Ok(AgentProjectExcerpt {
         id: rec.id,
         agent_id: rec.agent_id,

@@ -7,13 +7,13 @@ describe('splitExcerptTurns', () => {
     expect(splitExcerptTurns('   \n  ')).toEqual([]);
   });
 
-  it('keeps a single blob as one turn', () => {
+  it('keeps a single blob as one user turn', () => {
     expect(splitExcerptTurns('修复登录页 token 过期问题')).toEqual([
-      '修复登录页 token 过期问题',
+      { role: 'user', text: '修复登录页 token 过期问题' },
     ]);
   });
 
-  it('splits core excerpt separators into visual turns', () => {
+  it('splits legacy excerpt separators into visual turns', () => {
     expect(
       splitExcerptTurns(
         [
@@ -25,16 +25,38 @@ describe('splitExcerptTurns', () => {
         ].join('\n'),
       ),
     ).toEqual([
-      '帮我检查 refresh 流程',
-      '先看登录页有没有把过期 token 清掉。',
-      '然后补一条失败用例。',
+      { role: 'user', text: '帮我检查 refresh 流程' },
+      { role: 'assistant', text: '先看登录页有没有把过期 token 清掉。' },
+      { role: 'user', text: '然后补一条失败用例。' },
     ]);
   });
 
-  it('ignores blank pieces and normalizes CRLF', () => {
+  it('ignores blank pieces and normalizes CRLF in the legacy format', () => {
     expect(splitExcerptTurns('hello\r\n---\r\n\r\n---\r\nworld\n')).toEqual([
-      'hello',
-      'world',
+      { role: 'user', text: 'hello' },
+      { role: 'assistant', text: 'world' },
+    ]);
+  });
+
+  it('keeps markdown horizontal rules inside a role-tagged assistant turn', () => {
+    const excerpt = [
+      '---turn:user---',
+      '把这段 markdown 预览出来',
+      '---turn:assistant---',
+      '## 结论',
+      '',
+      '先改解析。',
+      '',
+      '---',
+      '',
+      '再渲染正文。',
+    ].join('\n');
+    expect(splitExcerptTurns(excerpt)).toEqual([
+      { role: 'user', text: '把这段 markdown 预览出来' },
+      {
+        role: 'assistant',
+        text: '## 结论\n\n先改解析。\n\n---\n\n再渲染正文。',
+      },
     ]);
   });
 });

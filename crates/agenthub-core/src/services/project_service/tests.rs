@@ -59,6 +59,29 @@ fn write_session(path: &Path, lines: &[&str]) {
     }
 }
 
+fn write_jsonl(path: &Path, lines: &[serde_json::Value]) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    let mut f = fs::File::create(path).unwrap();
+    for line in lines {
+        writeln!(f, "{line}").unwrap();
+    }
+}
+
+fn grok_acp_chunk(session_update: &str, text: Option<&str>) -> serde_json::Value {
+    let mut update = serde_json::json!({ "sessionUpdate": session_update });
+    if let Some(text) = text {
+        update["content"] = serde_json::json!({ "type": "text", "text": text });
+    } else {
+        update["title"] = serde_json::json!("read");
+    }
+    serde_json::json!({
+        "method": "session/update",
+        "params": { "update": update }
+    })
+}
+
 #[test]
 fn project_service_uses_injected_source_for_unknown_agent_key() {
     let key = AgentKey::parse("future-agent").unwrap();
@@ -1017,6 +1040,158 @@ fn grok_delete_removes_session_directory() {
     assert!(list_sessions_for_agent_home(AgentId::Grok, &home, None)
         .unwrap()
         .is_empty());
+}
+
+#[test]
+fn grok_preview_unwraps_user_query_and_skips_system_wrapper() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".grok");
+    let encoded = "D%3A%5Cwork%5Cpreview";
+    let sess = home
+        .join("sessions")
+        .join(encoded)
+        .join("019f-preview-md");
+    write_jsonl(
+        &sess.join("chat_history.jsonl"),
+        &[
+            serde_json::json!({"type":"system","content":"You are Grok released by xAI. Format replies as markdown."}),
+            serde_json::json!({"type":"user","content":[{"type":"text","text":"<user_info>\nOS: windows\n</user_info>\n<user_query>\nfix markdown preview\n</user_query>"}]}),
+            serde_json::json!({"type":"user","content":[{"type":"text","text":"<system-reminder>\nMCP connected\n</system-reminder>"}],"synthetic_reason":"system_reminder"}),
+            serde_json::json!({"type":"assistant","content":"## 结论\n\n---\n\n已修好。"}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Grok, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let preview = rows[0].preview.as_deref().unwrap_or("");
+    assert!(
+        preview.contains("fix markdown preview"),
+        "preview={preview}"
+    );
+    assert!(!preview.contains("user_info"), "preview={preview}");
+    assert!(!preview.contains("You are Grok"), "preview={preview}");
+}
+
+#[test]
+fn grok_excerpt_parses_chat_history_markdown_and_skips_wrappers() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".grok");
+    let encoded = "D%3A%5Cwork%5Cexcerpt";
+    let sess = home
+        .join("sessions")
+        .join(encoded)
+        .join("019f-excerpt-md");
+    write_jsonl(
+        &sess.join("chat_history.jsonl"),
+        &[
+            serde_json::json!({"type":"system","content":"You are Grok released by xAI. Format replies as markdown."}),
+            serde_json::json!({"type":"user","content":[{"type":"text","text":"<user_info>\nOS: windows\n</user_info>\n<user_query>\nfix markdown preview\n</user_query>"}]}),
+            serde_json::json!({"type":"user","content":[{"type":"text","text":"<system-reminder>\nMCP connected\n</system-reminder>"}],"synthetic_reason":"system_reminder"}),
+            serde_json::json!({"type":"assistant","content":"## 结论\n\n---\n\n已修好。"}),
+            serde_json::json!({"type":"tool_result","content":"secret tool dump"}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Grok, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("---turn:user---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("---turn:assistant---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("fix markdown preview"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("## 结论"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("---\n\n已修好。"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("You are Grok"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("secret tool dump"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("<user_info>"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn grok_excerpt_prefers_updates_jsonl_chunks_over_wrapped_chat_history() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".grok");
+    let encoded = "D%3A%5Cwork%5Cupdates";
+    let sess = home
+        .join("sessions")
+        .join(encoded)
+        .join("019f-updates-md");
+    write_session(
+        &sess.join("chat_history.jsonl"),
+        &[
+            r#"{"type":"system","content":"You are Grok released by xAI."}"#,
+            r#"{"type":"user","content":[{"type":"text","text":"<user_query>\nwrapped should lose\n</user_query>"}]}"#,
+        ],
+    );
+    write_jsonl(
+        &sess.join("updates.jsonl"),
+        &[
+            grok_acp_chunk("user_message_chunk", Some("clean user prompt")),
+            grok_acp_chunk("agent_thought_chunk", Some("thinking")),
+            grok_acp_chunk("agent_message_chunk", Some("## 结论\n\n")),
+            grok_acp_chunk("tool_call", None),
+            grok_acp_chunk("agent_message_chunk", Some("---\n\n已修好。")),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Grok, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("clean user prompt"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("wrapped should lose"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("thinking"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("## 结论"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("---\n\n已修好。"),
+        "excerpt={}",
+        ex.excerpt
+    );
 }
 
 #[test]

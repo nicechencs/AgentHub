@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { FolderOpen, MessageSquarePlus, PanelRightClose } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
 import { AGENT_MAP } from '@/config/agents';
@@ -213,18 +214,21 @@ export function ProjectConversationPreviewPanel({
             <p className="text-meta text-muted">{t('projects.preview.turns', { n: turns.length })}</p>
             <ol className="space-y-2">
               {turns.map((turn, index) => {
-                const userish = index % 2 === 0;
+                const userish = turn.role === 'user';
                 return (
-                  <li key={`${index}:${turn.slice(0, 24)}`} className={cn('flex', userish && 'justify-end')}>
+                  <li
+                    key={`${index}:${turn.role}:${turn.text.slice(0, 24)}`}
+                    className={cn('flex', userish && 'justify-end')}
+                  >
                     <div
                       className={cn(
-                        'max-w-[92%] whitespace-pre-wrap text-body text-primary',
+                        'min-w-0 max-w-[92%] text-body text-primary',
                         userish
                           ? 'rounded-composer bg-subtle px-3 py-2'
                           : 'leading-relaxed',
                       )}
                     >
-                      {turn}
+                      <MarkdownView content={turn.text} variant="chat" />
                     </div>
                   </li>
                 );
