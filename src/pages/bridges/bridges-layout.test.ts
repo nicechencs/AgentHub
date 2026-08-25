@@ -60,12 +60,15 @@ describe('routes layout wiring', () => {
     expect(page).toContain('asPanel');
   });
 
-  it('puts cancel + save in the inspect header and collapse beside them', () => {
+  it('puts cancel + delete + save in the inspect header and collapse beside them', () => {
     const shell = source('pages/bridges/dialog-or-side.tsx');
-    expect(shell).toContain('headerActions={actions}');
     expect(shell).toContain("t('common.cancel')");
     expect(shell).toContain('variant="secondary"');
-    expect(shell).toContain('footer={danger}');
+    expect(shell).toContain('{danger}');
+    expect(shell).toContain('{primary}');
+    expect(shell).not.toContain('footer={danger}');
+    const detail = source('pages/bridges/RouteDetailPanel.tsx');
+    expect(detail).toContain('danger={deleteButton}');
     const panel = source('components/layout/SideInspectPanel.tsx');
     expect(panel).toContain('PanelRightClose');
     expect(panel).toContain('flex h-10');
