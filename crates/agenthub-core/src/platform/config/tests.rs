@@ -436,6 +436,45 @@ fn materialize_claude_pool_settings_preserves_unknown() {
 }
 
 #[test]
+fn materialize_claude_rewrites_openai_compat_aliases_into_settings_env() {
+    let svc = test_configuration_service();
+    let base = json!({
+        "baseURL": "https://openrouter.ai/api/v1",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "apiKey": "sk-or-test",
+        "api_key": "sk-or-test",
+        "vendor": "openrouter",
+        "endpoints": [{"target": "claude", "enabled": true}],
+        "listedModels": ["stealth/ox-alpha"],
+    });
+    let mut desired = BTreeMap::new();
+    desired.insert("baseUrl".into(), json!("https://openrouter.ai/api/v1"));
+    desired.insert("apiKey".into(), json!("sk-or-test"));
+    desired.insert("claudeAuthEnv".into(), json!("ANTHROPIC_AUTH_TOKEN"));
+    desired.insert("model".into(), json!(""));
+    desired.insert("modelOpus".into(), json!(""));
+    desired.insert("modelSonnet".into(), json!(""));
+    desired.insert("modelHaiku".into(), json!(""));
+    desired.insert("modelFable".into(), json!(""));
+    desired.insert("modelSubagent".into(), json!(""));
+    let raw = svc
+        .materialize_settings_config(AgentId::Claude, &desired, Some(&base))
+        .unwrap();
+    assert_eq!(
+        raw["env"]["ANTHROPIC_BASE_URL"],
+        "https://openrouter.ai/api/v1"
+    );
+    assert_eq!(raw["env"]["ANTHROPIC_AUTH_TOKEN"], "sk-or-test");
+    assert!(raw.get("baseURL").is_none());
+    assert!(raw.get("baseUrl").is_none());
+    assert!(raw.get("apiKey").is_none());
+    assert!(raw.get("api_key").is_none());
+    assert!(raw.get("vendor").is_none());
+    assert!(raw.get("endpoints").is_none());
+    assert!(raw.get("listedModels").is_none());
+}
+
+#[test]
 fn claude_apply_writes_and_clears_context_window_env() {
     let dir = tempdir().unwrap();
     let home = dir.path();

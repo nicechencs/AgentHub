@@ -256,6 +256,38 @@ describe('provider-detect fields', () => {
     expect(parsed.model).toBe('new-model');
   });
 
+  it('rewrites OpenRouter-style aliases into Claude settings.json env', () => {
+    const src = JSON.stringify({
+      baseURL: 'https://openrouter.ai/api/v1',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: 'sk-or-test',
+      api_key: 'sk-or-test',
+      vendor: 'openrouter',
+      endpoints: [{ target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' }],
+      listedModels: ['stealth/ox-alpha'],
+    });
+    const vars = extractFormVars('claude', src, 'json');
+    expect(vars.baseUrl).toBe('https://openrouter.ai/api/v1');
+    expect(vars.apiKey).toBe('sk-or-test');
+    expect(vars.claudeAuthEnv).toBe('ANTHROPIC_AUTH_TOKEN');
+
+    const out = JSON.parse(applyFormVars('claude', src, 'json', vars)) as {
+      env: Record<string, string>;
+      baseURL?: unknown;
+      baseUrl?: unknown;
+      apiKey?: unknown;
+      vendor?: unknown;
+      endpoints?: unknown;
+    };
+    expect(out.env.ANTHROPIC_BASE_URL).toBe('https://openrouter.ai/api/v1');
+    expect(out.env.ANTHROPIC_AUTH_TOKEN).toBe('sk-or-test');
+    expect(out.baseURL).toBeUndefined();
+    expect(out.baseUrl).toBeUndefined();
+    expect(out.apiKey).toBeUndefined();
+    expect(out.vendor).toBeUndefined();
+    expect(out.endpoints).toBeUndefined();
+  });
+
   it('extracts and applies WorkBuddy models.json fields', () => {
     const source = JSON.stringify({
       models: [

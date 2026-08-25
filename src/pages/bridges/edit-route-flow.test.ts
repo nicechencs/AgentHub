@@ -167,11 +167,11 @@ describe('editRouteProviderDraft', () => {
   it('keeps the stored key when the input key is blank and replaces it when supplied', () => {
     const kept = JSON.parse(editRouteProviderDraft(provider(), editInput({ key: '  ' })).configText);
     expect(kept.apiKey).toBe('stored-key');
-    expect(kept.api_key).toBe('stored-key');
+    expect('api_key' in kept).toBe(false);
 
     const replaced = JSON.parse(editRouteProviderDraft(provider(), editInput({ key: ' next-key ' })).configText);
     expect(replaced.apiKey).toBe('next-key');
-    expect(replaced.api_key).toBe('next-key');
+    expect('api_key' in replaced).toBe(false);
   });
 
   it('leaves the key absent when neither the config nor the input has one', () => {
@@ -184,12 +184,15 @@ describe('editRouteProviderDraft', () => {
     expect('api_key' in parsed).toBe(false);
   });
 
-  it('refreshes a stored snake_case base_url and never invents one', () => {
+  it('normalizes stored snake_case base_url to baseURL', () => {
     const withSnake = editRouteProviderDraft(
       provider({ configText: JSON.stringify({ base_url: 'https://old.example/v1' }) }),
       editInput({ url: 'https://new.example/v1' }),
     );
-    expect(JSON.parse(withSnake.configText).base_url).toBe('https://new.example/v1');
+    const parsedSnake = JSON.parse(withSnake.configText);
+    expect(parsedSnake.baseURL).toBe('https://new.example/v1');
+    expect('base_url' in parsedSnake).toBe(false);
+    expect('baseUrl' in parsedSnake).toBe(false);
 
     const withoutSnake = editRouteProviderDraft(provider(), editInput());
     expect('base_url' in JSON.parse(withoutSnake.configText)).toBe(false);
@@ -250,7 +253,7 @@ describe('editRouteProviderDraft', () => {
       { target: 'grok', enabled: true, url: 'https://openrouter.ai/api/v1' },
     ]);
     expect(parsed.baseURL).toBe('https://openrouter.ai/api/v1');
-    expect(parsed.baseUrl).toBe('https://openrouter.ai/api/v1');
+    expect('baseUrl' in parsed).toBe(false);
     expect(parsed.listedModels).toEqual([]);
     expect('model' in parsed).toBe(false);
   });

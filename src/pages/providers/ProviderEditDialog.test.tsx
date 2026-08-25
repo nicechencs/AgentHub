@@ -364,6 +364,13 @@ describe('projector path fail-closed', () => {
       }),
     ).toBe(malformed);
     expect(getConfigTextError('claude', '{"unknown":true}', 'json')).toBeNull();
+    expect(
+      getConfigTextError(
+        'claude',
+        '{"baseURL":"https://openrouter.ai/api/v1","baseUrl":"https://openrouter.ai/api/v1"}',
+        'json',
+      ),
+    ).toMatch(/ANTHROPIC_BASE_URL/);
   });
 
   it('validate ok=false does not materialize or upsert', async () => {

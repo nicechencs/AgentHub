@@ -13,6 +13,10 @@ import {
   parseContextWindowChoice,
 } from '@/lib/claude-client-env';
 import {
+  firstNonEmptyString,
+  stripClaudeForeignRootKeys,
+} from './native-config';
+import {
   CLAUDE_MODEL_ROLE_ENV,
   EMPTY_FORM_VARS,
   REDACTED_MARKER,
@@ -387,37 +391,41 @@ export function extractFormVars(
       return { ...EMPTY_FORM_VARS };
     }
     try {
-      const root = JSON.parse(configText || '{}') as {
-        env?: Record<string, unknown>;
-        model?: unknown;
-      };
+      const root = JSON.parse(configText || '{}') as Record<string, unknown>;
       if (agentId === 'pi') return extractPiProviderVars(root);
       if (agentId === 'workbuddy') return extractWorkBuddyModelVars(root);
 
-      const env = root.env && typeof root.env === 'object' ? root.env : {};
-      const token = String(env.ANTHROPIC_AUTH_TOKEN ?? '');
-      const apiKey = String(env.ANTHROPIC_API_KEY ?? '');
+      const env =
+        root.env && typeof root.env === 'object' && !Array.isArray(root.env)
+          ? (root.env as Record<string, unknown>)
+          : {};
+      const token = firstNonEmptyString(env.ANTHROPIC_AUTH_TOKEN);
+      const apiKey = firstNonEmptyString(env.ANTHROPIC_API_KEY, root.apiKey, root.api_key);
       const authEnv: ProviderFormVars['claudeAuthEnv'] = token
         ? 'ANTHROPIC_AUTH_TOKEN'
-        : apiKey
+        : firstNonEmptyString(env.ANTHROPIC_API_KEY)
           ? 'ANTHROPIC_API_KEY'
           : 'ANTHROPIC_AUTH_TOKEN';
       const rawKey = token || apiKey;
-      const model =
-        (typeof root.model === 'string' && root.model) ||
-        String(env.ANTHROPIC_MODEL ?? '') ||
-        '';
+      const model = firstNonEmptyString(root.model, env.ANTHROPIC_MODEL);
       return {
         ...EMPTY_FORM_VARS,
-        baseUrl: String(env.ANTHROPIC_BASE_URL ?? ''),
+        baseUrl: firstNonEmptyString(
+          env.ANTHROPIC_BASE_URL,
+          root.baseURL,
+          root.baseUrl,
+          root.base_url,
+        ),
         apiKey: sanitizeSecretForForm(rawKey),
         model,
-        modelOpus: String(env.ANTHROPIC_DEFAULT_OPUS_MODEL ?? ''),
-        modelSonnet: String(env.ANTHROPIC_DEFAULT_SONNET_MODEL ?? ''),
-        modelHaiku: String(env.ANTHROPIC_DEFAULT_HAIKU_MODEL ?? ''),
-        modelFable: String(env.ANTHROPIC_DEFAULT_FABLE_MODEL ?? ''),
-        modelSubagent: String(env.CLAUDE_CODE_SUBAGENT_MODEL ?? ''),
-        contextWindow: parseContextWindowChoice(String(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS ?? '')),
+        modelOpus: firstNonEmptyString(env.ANTHROPIC_DEFAULT_OPUS_MODEL),
+        modelSonnet: firstNonEmptyString(env.ANTHROPIC_DEFAULT_SONNET_MODEL),
+        modelHaiku: firstNonEmptyString(env.ANTHROPIC_DEFAULT_HAIKU_MODEL),
+        modelFable: firstNonEmptyString(env.ANTHROPIC_DEFAULT_FABLE_MODEL),
+        modelSubagent: firstNonEmptyString(env.CLAUDE_CODE_SUBAGENT_MODEL),
+        contextWindow: parseContextWindowChoice(
+          firstNonEmptyString(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, root.contextWindowTokens),
+        ),
         claudeAuthEnv: authEnv,
       };
     } catch {
@@ -492,9 +500,13 @@ export function applyFormVars(
         ? { ok: true as const, value: {} }
         : parseJsonObjectConfig(configText);
     if (!parsed.ok) return configText;
-    const root: Record<string, unknown> = { ...parsed.value };
-    if (agentId === 'pi') return applyPiProviderVars(root, vars);
-    if (agentId === 'workbuddy') return applyWorkBuddyModelVars(root, vars);
+    if (agentId === 'pi') return applyPiProviderVars({ ...parsed.value }, vars);
+    if (agentId === 'workbuddy') return applyWorkBuddyModelVars({ ...parsed.value }, vars);
+
+    const root: Record<string, unknown> =
+      agentId === 'claude'
+        ? stripClaudeForeignRootKeys({ ...parsed.value })
+        : { ...parsed.value };
 
     const envRaw = root.env;
     const env: Record<string, unknown> =
