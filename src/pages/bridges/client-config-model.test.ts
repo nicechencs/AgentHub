@@ -130,6 +130,17 @@ describe('clientWriteTargetSpec', () => {
     expect(fieldKeys(spec.fields).join(' ')).not.toContain('ANTHROPIC');
   });
 
+  it('previews Claude model and 1M window when the route pins ox-alpha', () => {
+    const spec = clientWriteTargetSpec('claude', {
+      host: '127.0.0.1',
+      port: PORT,
+      model: 'stealth/ox-alpha',
+      contextWindowTokens: 1_048_576,
+    });
+    expect(fieldValue(spec.fields, '主模型')).toBe('stealth/ox-alpha');
+    expect(fieldValue(spec.fields, '上下文窗口')).toBe('1M');
+  });
+
   it('uses the same local-address origin for Codex and Grok', () => {
     for (const agent of ['codex', 'grok'] as const) {
       const spec = clientWriteTargetSpec(agent, { host: '127.0.0.1', port: PORT });

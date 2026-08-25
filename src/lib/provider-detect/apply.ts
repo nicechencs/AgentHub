@@ -2,6 +2,7 @@
  * 一站式：粘贴识别 + 合并表单 + 写回配置正文。
  * UI 只调此函数即可完成「智能识别并填入」。
  */
+import { parseContextWindowChoice } from '@/lib/claude-client-env';
 import type { AgentId } from '@/lib/types';
 import { smartDetectUrlAndKey } from './detect';
 import { applyFormVars, extractFormVars } from './fields';
@@ -59,6 +60,12 @@ export function mergeDetectIntoVars(
     modelHaiku: pickRole(CLAUDE_MODEL_ROLE_ENV.haiku, vars.modelHaiku),
     modelFable: pickRole(CLAUDE_MODEL_ROLE_ENV.fable, vars.modelFable),
     modelSubagent: pickRole(CLAUDE_MODEL_ROLE_ENV.subagent, vars.modelSubagent),
+    contextWindow:
+      keep && vars.contextWindow.trim()
+        ? vars.contextWindow
+        : extra.CLAUDE_CODE_MAX_CONTEXT_TOKENS != null
+          ? parseContextWindowChoice(extra.CLAUDE_CODE_MAX_CONTEXT_TOKENS)
+          : vars.contextWindow,
     claudeAuthEnv: detect.claudeAuthEnv ?? vars.claudeAuthEnv,
   };
 }

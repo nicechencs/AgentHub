@@ -79,7 +79,54 @@ describe('editRouteFormFromProvider', () => {
     expect(form.url).toBe('https://openrouter.ai/api/v1');
     expect(form.endpoints).toEqual(['claude', 'codex']);
     expect(form.models).toBe('stealth/ox-alpha');
+    expect(form.contextWindow).toBe('auto');
     expect(JSON.stringify(form)).not.toContain('stored-key');
+  });
+
+  it('round-trips a stored window and does not infer one from the model id', () => {
+    const withWindow = editRouteFormFromProvider(provider({
+      configText: JSON.stringify({
+        baseURL: 'https://openrouter.ai/api/v1',
+        vendor: 'openrouter',
+        listedModels: ['stealth/ox-alpha'],
+        model: 'stealth/ox-alpha',
+        contextWindowTokens: 1_048_576,
+        endpoints: [
+          { target: 'claude', enabled: true, url: 'https://openrouter.ai/api/v1' },
+        ],
+      }),
+    }));
+    expect(withWindow.contextWindow).toBe('1048576');
+    expect(withWindow.models).toBe('stealth/ox-alpha');
+
+    const kept = JSON.parse(editRouteProviderDraft(
+      provider({
+        configText: JSON.stringify({
+          baseURL: 'https://openrouter.ai/api/v1',
+          listedModels: ['stealth/ox-alpha'],
+          contextWindowTokens: 1_048_576,
+        }),
+      }),
+      editInput(),
+    ).configText);
+    expect(kept.contextWindowTokens).toBe(1_048_576);
+
+    const written = JSON.parse(editRouteProviderDraft(
+      provider(),
+      editInput({ contextWindow: '1048576' }),
+    ).configText);
+    expect(written.contextWindowTokens).toBe(1_048_576);
+
+    const cleared = JSON.parse(editRouteProviderDraft(
+      provider({
+        configText: JSON.stringify({
+          baseURL: 'https://openrouter.ai/api/v1',
+          contextWindowTokens: 1_048_576,
+        }),
+      }),
+      editInput({ contextWindow: 'auto' }),
+    ).configText);
+    expect('contextWindowTokens' in cleared).toBe(false);
   });
 
   it('reads the base URL from baseURL, baseUrl, or base_url', () => {

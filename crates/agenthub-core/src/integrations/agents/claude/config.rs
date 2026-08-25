@@ -114,6 +114,16 @@ impl ClaudeConfigProjector {
                     false,
                     None,
                 ),
+                field(
+                    "contextWindow",
+                    "Context window",
+                    ConfigValueType::Enum {
+                        options: vec!["auto".into(), "200000".into(), "1048576".into()],
+                    },
+                    false,
+                    false,
+                    Some("auto omits window env. 200000 or 1048576 writes MAX_CONTEXT and AUTO_COMPACT."),
+                ),
             ],
         }
     }
@@ -158,6 +168,16 @@ impl ClaudeConfigProjector {
         values.insert("apiKey".into(), string_val(Some(raw_key)));
         values.insert("claudeAuthEnv".into(), string_val(Some(auth_env)));
         values.insert("model".into(), string_val(Some(model)));
+        let context_window = env
+            .get(crate::models::CLAUDE_CODE_MAX_CONTEXT_TOKENS)
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        values.insert(
+            "contextWindow".into(),
+            string_val(Some(crate::models::claude_context_window_choice(
+                context_window,
+            ))),
+        );
         for (field_key, env_key) in ROLE_ENV {
             values.insert(
                 (*field_key).into(),
@@ -178,6 +198,7 @@ impl ClaudeConfigProjector {
             "modelHaiku",
             "modelFable",
             "modelSubagent",
+            "contextWindow",
         ]
         .into_iter()
         .collect()
@@ -268,8 +289,35 @@ impl ClaudeConfigProjector {
                 root.remove("model");
                 env.remove("ANTHROPIC_MODEL");
             } else {
-                root.insert("model".into(), Value::String(t.to_string()));
-                env.insert("ANTHROPIC_MODEL".into(), Value::String(t.to_string()));
+                let id = crate::models::strip_claude_context_marker(t);
+                root.insert("model".into(), Value::String(id.to_string()));
+                env.insert("ANTHROPIC_MODEL".into(), Value::String(id.to_string()));
+            }
+        }
+
+        if desired.contains_key("contextWindow") || desired.contains_key("model") {
+            let model = get_str_map(desired, "model")
+                .or_else(|| get_str_map(current, "model"))
+                .unwrap_or_default();
+            let override_tokens = get_str_map(desired, "contextWindow")
+                .or_else(|| get_str_map(current, "contextWindow"))
+                .and_then(|raw| crate::models::parse_claude_context_window_override(&raw));
+            match crate::models::claude_context_window_for(&model, override_tokens) {
+                Some(tokens) => {
+                    let value = tokens.to_string();
+                    env.insert(
+                        crate::models::CLAUDE_CODE_MAX_CONTEXT_TOKENS.into(),
+                        Value::String(value.clone()),
+                    );
+                    env.insert(
+                        crate::models::CLAUDE_CODE_AUTO_COMPACT_WINDOW.into(),
+                        Value::String(value),
+                    );
+                }
+                None => {
+                    env.remove(crate::models::CLAUDE_CODE_MAX_CONTEXT_TOKENS);
+                    env.remove(crate::models::CLAUDE_CODE_AUTO_COMPACT_WINDOW);
+                }
             }
         }
 

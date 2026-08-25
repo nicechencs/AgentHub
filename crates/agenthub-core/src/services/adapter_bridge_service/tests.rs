@@ -827,6 +827,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         upstream_base_url: format!("http://127.0.0.1:{upstream_port}"),
         upstream_model: "kimi-k2.5".into(),
         configured_listed_models: Vec::new(),
+        context_window_tokens: None,
         protocol: crate::bridge::BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::KimiCodeMembership,
@@ -856,6 +857,7 @@ async fn codex_responses_health_probe_does_not_request_models() {
         upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
         upstream_model: CODEX_DEFAULT_MODEL.into(),
         configured_listed_models: Vec::new(),
+        context_window_tokens: None,
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
         source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -883,6 +885,7 @@ async fn xai_responses_health_probe_does_not_request_models() {
         upstream_base_url: "http://127.0.0.1:9/should-not-be-called".into(),
         upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
         configured_listed_models: Vec::new(),
+        context_window_tokens: None,
         protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
         source: AdapterSourceProduct::XaiGrokSubscription,
@@ -910,6 +913,7 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
         upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
         upstream_model: String::new(),
         configured_listed_models: Vec::new(),
+        context_window_tokens: None,
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -937,6 +941,7 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
         upstream_base_url: crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL.into(),
         upstream_model: crate::bridge::grok_cli::GROK_CLI_DEFAULT_MODEL.into(),
         configured_listed_models: Vec::new(),
+        context_window_tokens: None,
         protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
         local_surface: BridgeLocalSurface::Messages,
         source: AdapterSourceProduct::XaiGrokSubscription,
@@ -959,6 +964,7 @@ fn start_spec_empty_when_mapping_and_default_are_missing() {
         upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
         upstream_model: String::new(),
         configured_listed_models: Vec::new(),
+        context_window_tokens: None,
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::ChatCompletions,
         source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -978,6 +984,7 @@ fn start_spec_lists_configured_default_when_mapping_is_missing() {
         upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
         upstream_model: "gpt-5.4".into(),
         configured_listed_models: Vec::new(),
+        context_window_tokens: None,
         protocol: BridgeUpstreamProtocol::CodexResponsesOauth,
         local_surface: BridgeLocalSurface::ChatCompletions,
         source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -1000,6 +1007,7 @@ fn start_spec_lists_openai_to_codex_without_kimi_ids() {
         upstream_base_url: OPENAI_CHAT_BASE_URL.into(),
         upstream_model: OPENAI_DEFAULT_MODEL.into(),
         configured_listed_models: Vec::new(),
+        context_window_tokens: None,
         protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
@@ -1319,10 +1327,16 @@ fn prepare_codex_subscription_projects_only_claude_loopback_env() {
         other => panic!("expected create projection, got {other:?}"),
     };
     assert_eq!(input.agent_id, AgentId::Claude);
+    assert_eq!(input.settings_config["model"], "gpt-5.4");
     assert_eq!(
         input.settings_config["env"]["ANTHROPIC_BASE_URL"],
         "http://127.0.0.1:43144"
     );
+    assert_eq!(
+        input.settings_config["env"]["ANTHROPIC_MODEL"],
+        "gpt-5.4"
+    );
+    assert!(input.settings_config["env"].get("CLAUDE_CODE_MAX_CONTEXT_TOKENS").is_none());
     assert!(input.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"]
         .as_str()
         .is_some_and(|token| token.starts_with("ahb_")));
@@ -1825,6 +1839,7 @@ fn start_spec_lists_stealth_ox_alpha_for_custom_openai() {
         upstream_base_url: "https://openrouter.ai/api/v1".into(),
         upstream_model: OPENAI_DEFAULT_MODEL.into(),
         configured_listed_models: Vec::new(),
+        context_window_tokens: None,
         protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
@@ -1848,6 +1863,7 @@ fn start_spec_keeps_every_user_listed_model() {
         upstream_base_url: "https://openrouter.ai/api/v1".into(),
         upstream_model: "openai/gpt-4o".into(),
         configured_listed_models: vec!["openai/gpt-4o".into(), "anthropic/claude-sonnet-4".into()],
+        context_window_tokens: None,
         protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
@@ -1864,6 +1880,28 @@ fn start_spec_keeps_every_user_listed_model() {
 }
 
 #[test]
+fn start_spec_strips_claude_1m_marker_from_listed_models() {
+    let material = AdapterBridgeRuntimeMaterial {
+        profile_id: "openrouter-1m".into(),
+        source_connection_id: "openrouter".into(),
+        preferred_port: None,
+        upstream_base_url: "https://openrouter.ai/api/v1".into(),
+        upstream_model: "stealth/ox-alpha".into(),
+        configured_listed_models: vec!["stealth/ox-alpha[1m]".into()],
+        context_window_tokens: Some(1_048_576),
+        protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
+        local_surface: BridgeLocalSurface::Responses,
+        source: AdapterSourceProduct::OpenaiApi,
+        target_agent: AgentId::Claude,
+        upstream_auth: ResolvedAuth::bearer("sk-or-placeholder-test-key"),
+        local_bearer: "local-secret".into(),
+    };
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
+    assert!(!listed.iter().any(|model| model.contains('[')));
+}
+
+#[test]
 fn start_spec_official_openai_does_not_list_stealth() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "openai-official".into(),
@@ -1872,6 +1910,7 @@ fn start_spec_official_openai_does_not_list_stealth() {
         upstream_base_url: OPENAI_CHAT_BASE_URL.into(),
         upstream_model: OPENAI_DEFAULT_MODEL.into(),
         configured_listed_models: Vec::new(),
+        context_window_tokens: None,
         protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
@@ -1926,6 +1965,66 @@ fn prepare_glm_claude_uses_anthropic_endpoint() {
         BridgeUpstreamProtocol::AnthropicMessages
     );
     assert!(start.listed_models.iter().any(|model| model == "glm-4.6"));
+    let input = match prepared.provider_projection(43150).unwrap() {
+        AdapterBridgeProviderProjection::Create(input) => input,
+        other => panic!("expected create projection, got {other:?}"),
+    };
+    assert_eq!(input.settings_config["model"], "glm-4.6");
+    assert_eq!(
+        input.settings_config["env"]["ANTHROPIC_MODEL"],
+        "glm-4.6"
+    );
+    assert!(input.settings_config["env"].get("CLAUDE_CODE_MAX_CONTEXT_TOKENS").is_none());
+}
+
+#[test]
+fn prepare_openrouter_claude_pins_ox_alpha_and_1m_window() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "or-create".into(),
+            agent_id: AgentId::Claude,
+            name: "OpenRouter".into(),
+            settings_config: json!({
+                "apiKey": "sk-or-test",
+                "baseURL": "https://openrouter.ai/api/v1",
+                "vendor": "openrouter",
+                "listedModels": ["stealth/ox-alpha"],
+                "model": "stealth/ox-alpha",
+                "contextWindowTokens": 1_048_576
+            }),
+            meta: json!({"preset": "openrouter"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&AdapterBridgePrepareRequest {
+            source_kind: AdapterSourceKind::Provider,
+            source_id: "or-create".into(),
+            target_agent_id: AgentId::Claude,
+            auto_start: true,
+        })
+        .unwrap();
+    let input = match prepared.provider_projection(43151).unwrap() {
+        AdapterBridgeProviderProjection::Create(input) => input,
+        other => panic!("expected create projection, got {other:?}"),
+    };
+    assert_eq!(input.settings_config["model"], "stealth/ox-alpha");
+    assert_eq!(
+        input.settings_config["env"]["ANTHROPIC_MODEL"],
+        "stealth/ox-alpha"
+    );
+    assert_eq!(
+        input.settings_config["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"],
+        "1048576"
+    );
+    assert_eq!(
+        input.settings_config["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"],
+        "1048576"
+    );
 }
 
 #[test]

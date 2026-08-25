@@ -10,12 +10,15 @@ use crate::models::{
 use crate::services::adapter_route_constants::{
     claude_native_base_url, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_BASE_URL_ENV,
     ANTHROPIC_PI_PROVIDER_SLOT, CONNECTION_SECRET_MARKER, DEEPSEEK_API_BASE_URL,
-    DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL, DEEPSEEK_CODEX_DEFAULT_MODEL,
+    DEEPSEEK_CLAUDE_DEFAULT_MODEL, DEEPSEEK_CLAUDE_RULE_ID, DEEPSEEK_CODEX_BASE_URL,
+    DEEPSEEK_CODEX_DEFAULT_MODEL,
     DEEPSEEK_CODEX_PROVIDER_PREFIX, DEEPSEEK_CODEX_PROVIDER_SLUG, DEEPSEEK_CODEX_RULE_ID,
     DEEPSEEK_PI_PROVIDER_SLOT, DEEPSEEK_PI_RULE_ID, DSH_API_KEY_ENV, DSH_DEEPSEEK_PROVIDER_SLOT,
-    DSH_DEFAULT_MODEL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL, GLM_CODEX_DEFAULT_MODEL,
+    DSH_DEFAULT_MODEL, GLM_CLAUDE_DEFAULT_MODEL, GLM_CLAUDE_RULE_ID, GLM_CODEX_BASE_URL,
+    GLM_CODEX_DEFAULT_MODEL,
     GLM_CODEX_PROVIDER_PREFIX, GLM_CODEX_PROVIDER_SLUG, GLM_CODEX_RULE_ID, GLM_PI_BASE_URL,
-    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_RULE_ID, KIMI_GROK_BASE_URL,
+    GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID, KIMI_CLAUDE_DEFAULT_MODEL, KIMI_CLAUDE_RULE_ID,
+    KIMI_GROK_BASE_URL,
     KIMI_GROK_DEFAULT_MODEL, KIMI_PI_BASE_URL, KIMI_PI_PROVIDER_SLOT, OPENAI_GROK_BASE_URL,
     OPENAI_GROK_DEFAULT_MODEL, OPENAI_PI_PROVIDER_SLOT, XAI_PI_PROVIDER_SLOT,
 };
@@ -295,6 +298,40 @@ pub(super) fn claude_native_layout(
     }
 }
 
+fn claude_native_default_model(rule_id: &str) -> Option<&'static str> {
+    match rule_id {
+        RULE_ID => map_adapter_model(
+            AdapterSourceProduct::KimiCodeMembership,
+            AgentId::Claude,
+            "",
+        )
+        .or(Some(KIMI_CLAUDE_DEFAULT_MODEL)),
+        GLM_CLAUDE_RULE_ID => Some(GLM_CLAUDE_DEFAULT_MODEL),
+        DEEPSEEK_CLAUDE_RULE_ID => Some(DEEPSEEK_CLAUDE_DEFAULT_MODEL),
+        _ => None,
+    }
+}
+
+pub(super) fn claude_native_settings_config(rule_id: &str, base_url: &str) -> serde_json::Value {
+    let mut env = serde_json::Map::new();
+    env.insert(ANTHROPIC_BASE_URL_ENV.into(), json!(base_url));
+    env.insert(
+        ANTHROPIC_AUTH_TOKEN_ENV.into(),
+        json!(CONNECTION_SECRET_MARKER),
+    );
+    if let Some(model) = claude_native_default_model(rule_id) {
+        crate::models::apply_claude_live_model_env(&mut env, model, None);
+    }
+    let mut settings = json!({ "env": env });
+    if let Some(model) = claude_native_default_model(rule_id) {
+        settings
+            .as_object_mut()
+            .expect("object")
+            .insert("model".into(), json!(model));
+    }
+    settings
+}
+
 pub(super) fn claude_native_spec(
     source_kind: AdapterSourceKind,
     source_id: &str,
@@ -329,10 +366,7 @@ pub(super) fn claude_native_spec(
             id: provider_id,
             agent_id: AgentId::Claude,
             name: format!("{display} ({})", safe_label(source_id)),
-            settings_config: json!({"env": {
-                ANTHROPIC_BASE_URL_ENV: base_url,
-                ANTHROPIC_AUTH_TOKEN_ENV: CONNECTION_SECRET_MARKER,
-            }}),
+            settings_config: claude_native_settings_config(rule_id, base_url),
             meta: generated_meta(
                 rule_id,
                 &profile_id,

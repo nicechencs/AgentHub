@@ -7,9 +7,10 @@ use crate::models::{
     InstallChannel, RunOptions, RunSpec,
 };
 use crate::services::adapter_route_constants::{
-    DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_PI_PROVIDER_SLOT,
-    GLM_CLAUDE_BASE_URL, GLM_PI_BASE_URL, GLM_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL,
-    KIMI_GROK_BASE_URL, KIMI_GROK_DEFAULT_MODEL, KIMI_GROK_RULE_ID,
+    DEEPSEEK_API_BASE_URL, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CLAUDE_DEFAULT_MODEL,
+    DEEPSEEK_PI_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_DEFAULT_MODEL, GLM_PI_BASE_URL,
+    GLM_PI_PROVIDER_SLOT, KIMI_CLAUDE_BASE_URL, KIMI_CLAUDE_DEFAULT_MODEL, KIMI_GROK_BASE_URL,
+    KIMI_GROK_DEFAULT_MODEL, KIMI_GROK_RULE_ID,
 };
 use crate::services::LiveWriteAuthority;
 use crate::storage::{AccountRepo, ActiveBindingRepo, ProviderRepo};
@@ -216,10 +217,7 @@ fn generated_provider(profile_id: &str, source_id: &str, current: bool) -> Provi
         id: stable_id("claude-kimi-adapter", source_id),
         agent_id: AgentId::Claude,
         name: format!("Kimi Code ({})", safe_label(source_id)),
-        settings_config: json!({"env": {
-            "ANTHROPIC_BASE_URL": KIMI_CLAUDE_BASE_URL,
-            "ANTHROPIC_AUTH_TOKEN": CONNECTION_SECRET_MARKER,
-        }}),
+        settings_config: claude_native_settings_config(RULE_ID, KIMI_CLAUDE_BASE_URL),
         meta: json!({
             "preset": "anthropic-compatible",
             "generatedBy": "adapter",
@@ -1875,6 +1873,13 @@ fn glm_and_deepseek_claude_apply_writes_rule_base_url_and_keeps_kimi_url() {
         CONNECTION_SECRET_MARKER
     );
     assert_eq!(
+        glm_stored.settings_config["env"]["ANTHROPIC_MODEL"],
+        GLM_CLAUDE_DEFAULT_MODEL
+    );
+    assert!(glm_stored.settings_config["env"]
+        .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+        .is_none());
+    assert_eq!(
         fake.read_config().unwrap().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
         "glm-secret"
     );
@@ -1897,6 +1902,10 @@ fn glm_and_deepseek_claude_apply_writes_rule_base_url_and_keeps_kimi_url() {
         deepseek_stored.settings_config["env"]["ANTHROPIC_BASE_URL"],
         DEEPSEEK_CLAUDE_BASE_URL
     );
+    assert_eq!(
+        deepseek_stored.settings_config["env"]["ANTHROPIC_MODEL"],
+        DEEPSEEK_CLAUDE_DEFAULT_MODEL
+    );
     assert_eq!(deepseek_stored.meta["adapterSourceRef"]["kind"], "account");
     assert!(!serde_json::to_string(&deepseek)
         .unwrap()
@@ -1914,6 +1923,17 @@ fn glm_and_deepseek_claude_apply_writes_rule_base_url_and_keeps_kimi_url() {
         kimi_stored.settings_config["env"]["ANTHROPIC_BASE_URL"],
         KIMI_CLAUDE_BASE_URL
     );
+    assert_eq!(
+        kimi_stored.settings_config["env"]["ANTHROPIC_MODEL"],
+        KIMI_CLAUDE_DEFAULT_MODEL
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["env"]["ANTHROPIC_MODEL"],
+        KIMI_CLAUDE_DEFAULT_MODEL
+    );
+    assert!(kimi_stored.settings_config["env"]
+        .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+        .is_none());
 
     assert!(service
         .apply(&request("relay-source", AgentId::Claude))
@@ -2290,6 +2310,10 @@ fn deepseek_preset_alias_applies_to_claude() {
     assert_eq!(
         fake.read_config().unwrap().raw["env"]["ANTHROPIC_AUTH_TOKEN"],
         "sk-deepseek-secret"
+    );
+    assert_eq!(
+        fake.read_config().unwrap().raw["env"]["ANTHROPIC_MODEL"],
+        DEEPSEEK_CLAUDE_DEFAULT_MODEL
     );
     assert!(!serde_json::to_string(&result)
         .unwrap()

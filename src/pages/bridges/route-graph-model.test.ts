@@ -136,6 +136,34 @@ describe('joinUpstreamUrl', () => {
 });
 
 describe('buildRouteGraph', () => {
+  it('reads listed models and window from stored config, not a model catalog', () => {
+    const withWindow = buildRouteGraph({
+      profile: profile(),
+      entries: [entry({
+        vendor: 'openrouter',
+        listedModels: ['stealth/ox-alpha'],
+        contextWindowTokens: 1_048_576,
+        endpoints: [
+          { target: 'claude', enabled: true, url: OPENROUTER_URL },
+          { target: 'codex', enabled: true, url: OPENROUTER_URL },
+        ],
+      })],
+      siblingProfiles: [],
+      port: 26275,
+    });
+    expect(withWindow.listedModels).toEqual(['stealth/ox-alpha']);
+    expect(withWindow.contextWindowTokens).toBe(1_048_576);
+
+    const omitted = buildRouteGraph({
+      profile: profile(),
+      entries: [openRouterEntry()],
+      siblingProfiles: [],
+      port: 26275,
+    });
+    expect(omitted.listedModels).toEqual([]);
+    expect(omitted.contextWindowTokens).toBeNull();
+  });
+
   it('maps an OpenRouter source to three converting rows', () => {
     const graph = buildRouteGraph({
       profile: profile(),

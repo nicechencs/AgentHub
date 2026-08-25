@@ -14,6 +14,9 @@ import {
   type UpstreamChannel,
 } from './adapter-route-detail-model';
 import {
+  contextWindowTokensFromChoice,
+} from '@/lib/claude-client-env';
+import {
   CREATE_ROUTE_TARGETS,
   listLocalRouteSurfacesFromConfig,
   readCreateRouteCapabilities,
@@ -55,6 +58,8 @@ export type RouteGraphView = {
     origin: string;
   };
   rows: RouteGraphRow[];
+  listedModels: string[];
+  contextWindowTokens: number | null;
 };
 
 const GRAPH_COPY = {
@@ -192,6 +197,8 @@ export function buildRouteGraph(input: {
       origin: port != null ? `http://${host}:${port}` : '',
     },
     rows,
+    listedModels: caps.models,
+    contextWindowTokens: contextWindowTokensFromChoice(caps.contextWindow),
   };
 }
 

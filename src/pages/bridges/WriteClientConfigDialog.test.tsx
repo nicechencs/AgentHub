@@ -67,6 +67,8 @@ function render(props: {
   port?: number | null;
   sourceMissing?: boolean;
   hiddenTargetIds?: ReadonlySet<string>;
+  listedModels?: readonly string[];
+  contextWindowTokens?: number | null;
 }): string {
   return renderToStaticMarkup(
     createElement(TooltipProvider, null, createElement(WriteClientConfigDialog, {
@@ -78,6 +80,8 @@ function render(props: {
       port: props.port === undefined ? PORT : props.port,
       sourceMissing: props.sourceMissing ?? false,
       hiddenTargetIds: props.hiddenTargetIds,
+      listedModels: props.listedModels,
+      contextWindowTokens: props.contextWindowTokens,
       onWritten: vi.fn(),
     })),
   );
@@ -126,6 +130,18 @@ describe('WriteClientConfigDialog', () => {
     expect(grokOnly).toContain('~/.grok/config.toml');
     expect(grokOnly).not.toContain('wire_api');
     expect(grokOnly).not.toContain('~/.codex/config.toml');
+  });
+
+  it('previews Claude model and 1M window when the route declares them', () => {
+    const markup = render({
+      rows: [row('claude')],
+      listedModels: ['stealth/ox-alpha'],
+      contextWindowTokens: 1_048_576,
+    });
+    expect(markup).toContain(t('routes.write.fieldModel'));
+    expect(markup).toContain('stealth/ox-alpha');
+    expect(markup).toContain(t('routes.write.fieldContextWindow'));
+    expect(markup).toContain('1M');
   });
 
   it('names Claude settings.json with a local address and token, not env keys', () => {

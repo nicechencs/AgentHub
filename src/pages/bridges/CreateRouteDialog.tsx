@@ -5,6 +5,7 @@ import { DialogOrSide } from './dialog-or-side';
 import { Input } from '@/components/ui/input';
 import { SecretInput } from '@/components/shared/SecretInput';
 import type { TranslateFn } from '@/lib/i18n';
+import type { ClaudeContextWindowChoice } from '@/lib/claude-client-env';
 import {
   canSubmitCreateRoute,
   CREATE_ROUTE_TARGETS,
@@ -69,12 +70,15 @@ export function CreateRouteDialog({
   const [url, setUrl] = useState(vendorById('openrouter').url);
   const [key, setKey] = useState('');
   const [models, setModels] = useState(formatCreateRouteModels(vendorById('openrouter').models));
+  const [contextWindow, setContextWindow] = useState<ClaudeContextWindowChoice>(
+    vendorById('openrouter').defaultContextWindow ?? 'auto',
+  );
   const [endpoints, setEndpoints] = useState<CreateRouteTarget[]>(defaultCreateRouteEndpoints('openrouter'));
   const [endpointUrls, setEndpointUrls] = useState<Partial<Record<CreateRouteTarget, string>>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const createInput = { name, url, key, vendor, endpoints, models, endpointUrls };
+  const createInput = { name, url, key, vendor, endpoints, models, contextWindow, endpointUrls };
   const canSubmit = canSubmitCreateRoute(createInput);
 
   const reset = () => {
@@ -83,6 +87,7 @@ export function CreateRouteDialog({
     setUrl(vendorById('openrouter').url);
     setKey('');
     setModels(formatCreateRouteModels(vendorById('openrouter').models));
+    setContextWindow(vendorById('openrouter').defaultContextWindow ?? 'auto');
     setEndpoints(defaultCreateRouteEndpoints('openrouter'));
     setEndpointUrls({});
     setError(null);
@@ -104,6 +109,7 @@ export function CreateRouteDialog({
     setEndpoints([...spec.enabled]);
     setEndpointUrls({});
     setModels(formatCreateRouteModels(spec.models));
+    setContextWindow(spec.defaultContextWindow ?? 'auto');
   };
 
   const toggleEndpoint = (target: CreateRouteTarget) => {
@@ -208,6 +214,19 @@ export function CreateRouteDialog({
                 spellCheck={false}
               />
               <p className="text-meta text-muted">{t('routes.create.modelsHint')}</p>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted">{t('routes.create.contextWindow')}</span>
+              <select
+                className="h-9 rounded-btn border border-border bg-background px-2 text-sm"
+                value={contextWindow}
+                onChange={(event) => setContextWindow(event.target.value as ClaudeContextWindowChoice)}
+              >
+                <option value="auto">{t('routes.create.contextWindowAuto')}</option>
+                <option value="200000">{t('routes.create.contextWindow200k')}</option>
+                <option value="1048576">{t('routes.create.contextWindow1m')}</option>
+              </select>
+              <p className="text-meta text-muted">{t('routes.create.contextWindowHint')}</p>
             </label>
             <fieldset className="space-y-2">
               <legend className="text-xs text-muted">{t('routes.create.upstreamEndpoints')}</legend>

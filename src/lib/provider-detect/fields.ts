@@ -8,6 +8,11 @@ import {
   isPiAuthJsonSlot,
 } from '@/lib/pi-provider-slots';
 import {
+  claudeContextWindowFor,
+  contextWindowTokensFromChoice,
+  parseContextWindowChoice,
+} from '@/lib/claude-client-env';
+import {
   CLAUDE_MODEL_ROLE_ENV,
   EMPTY_FORM_VARS,
   REDACTED_MARKER,
@@ -412,6 +417,7 @@ export function extractFormVars(
         modelHaiku: String(env.ANTHROPIC_DEFAULT_HAIKU_MODEL ?? ''),
         modelFable: String(env.ANTHROPIC_DEFAULT_FABLE_MODEL ?? ''),
         modelSubagent: String(env.CLAUDE_CODE_SUBAGENT_MODEL ?? ''),
+        contextWindow: parseContextWindowChoice(String(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS ?? '')),
         claudeAuthEnv: authEnv,
       };
     } catch {
@@ -542,8 +548,25 @@ export function applyFormVars(
       ...Object.values(CLAUDE_MODEL_ROLE_ENV),
       'ANTHROPIC_MODEL',
     ]);
+    const windowTokens = claudeContextWindowFor(
+      vars.model,
+      contextWindowTokensFromChoice(parseContextWindowChoice(vars.contextWindow)),
+    );
+    if (windowTokens) {
+      env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(windowTokens);
+      env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(windowTokens);
+    } else {
+      delete env.CLAUDE_CODE_MAX_CONTEXT_TOKENS;
+      delete env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+    }
+
     if (opts?.extraEnv) {
       for (const [k, v] of Object.entries(opts.extraEnv)) {
+        if (
+          k === 'CLAUDE_CODE_MAX_CONTEXT_TOKENS' || k === 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'
+        ) {
+          continue;
+        }
         if (roleEnvKeys.has(k)) {
           // 仅当表单对应位为空时才用 extraEnv 填
           const formHas =
@@ -680,6 +703,7 @@ export function formFieldVisibility(
     modelHaiku: isClaude,
     modelFable: isClaude,
     modelSubagent: isClaude,
+    contextWindow: isClaude,
     claudeAuthEnv: isClaude,
     reasoningEffort: agentId === 'codex',
     wireApi: agentId === 'codex',
@@ -697,6 +721,7 @@ export const FORM_FIELD_LABELS: Record<FormFieldKey, string> = {
   modelHaiku: 'Haiku (ANTHROPIC_DEFAULT_HAIKU_MODEL)',
   modelFable: 'Fable (ANTHROPIC_DEFAULT_FABLE_MODEL)',
   modelSubagent: 'Subagent (CLAUDE_CODE_SUBAGENT_MODEL)',
+  contextWindow: '上下文窗口',
   claudeAuthEnv: 'Auth 字段',
   reasoningEffort: 'Reasoning effort',
   wireApi: 'Wire API',

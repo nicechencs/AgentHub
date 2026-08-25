@@ -79,6 +79,8 @@ export interface ProviderFormVars {
   modelHaiku: string;
   modelFable: string;
   modelSubagent: string;
+  /** `auto` / `200000` / `1048576` — empty means auto. */
+  contextWindow: string;
   claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY';
   reasoningEffort: string;
   wireApi: string;
@@ -94,6 +96,7 @@ export const EMPTY_FORM_VARS: ProviderFormVars = {
   modelHaiku: '',
   modelFable: '',
   modelSubagent: '',
+  contextWindow: '',
   claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
   reasoningEffort: '',
   wireApi: '',
@@ -109,6 +112,7 @@ export type FormFieldKey =
   | 'modelHaiku'
   | 'modelFable'
   | 'modelSubagent'
+  | 'contextWindow'
   | 'claudeAuthEnv'
   | 'reasoningEffort'
   | 'wireApi'

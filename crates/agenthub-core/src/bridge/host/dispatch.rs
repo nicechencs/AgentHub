@@ -52,6 +52,12 @@ pub(super) async fn handle_conversation(
         Ok(admitted) => admitted,
         Err(response) => return response,
     };
+    if let Some(serde_json::Value::String(model)) = admitted.body.get_mut("model") {
+        let stripped = crate::models::strip_claude_context_marker(model).to_owned();
+        if stripped != *model {
+            *model = stripped;
+        }
+    }
     let model = admitted
         .body
         .get("model")
@@ -78,7 +84,7 @@ pub(super) async fn handle_conversation(
                 .state
                 .listed_models
                 .iter()
-                .any(|item| item.eq_ignore_ascii_case(model));
+                .any(|item| crate::models::listed_model_matches(item, model));
             let listed_restricted = !admitted.state.listed_models.is_empty();
             let code = if listed_restricted && !listed_hit && !model.is_empty() {
                 "listed_models_reject"

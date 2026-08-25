@@ -7,6 +7,11 @@ import type {
   NormalizedConfigDocumentDto,
 } from '@/lib/backend/contracts/config-types';
 import { SECRET_REDACTED } from '@/lib/backend/contracts/config-types';
+import {
+  claudeContextWindowFor,
+  contextWindowTokensFromChoice,
+  parseContextWindowChoice,
+} from '@/lib/claude-client-env';
 
 const SCHEMAS: Record<string, AgentConfigSchemaDto> = {
   claude: {
@@ -36,6 +41,11 @@ const SCHEMAS: Record<string, AgentConfigSchemaDto> = {
       { key: 'modelHaiku', label: 'Haiku model', valueType: { kind: 'string' } },
       { key: 'modelFable', label: 'Fable model', valueType: { kind: 'string' } },
       { key: 'modelSubagent', label: 'Subagent model', valueType: { kind: 'string' } },
+      {
+        key: 'contextWindow',
+        label: 'Context window',
+        valueType: { kind: 'enum', options: ['auto', '200000', '1048576'] },
+      },
     ],
   },
   codex: {
@@ -117,6 +127,7 @@ let mockValues: Record<string, Record<string, unknown>> = {
     modelHaiku: '',
     modelFable: '',
     modelSubagent: '',
+    contextWindow: 'auto',
   },
 };
 
@@ -132,6 +143,7 @@ export function resetMockConfig() {
       modelHaiku: '',
       modelFable: '',
       modelSubagent: '',
+      contextWindow: 'auto',
     },
   };
 }
@@ -231,6 +243,24 @@ export function createMockConfigPort(): ConfigPort {
         if (typeof values.model === 'string' && values.model) {
           base.model = values.model;
           env.ANTHROPIC_MODEL = values.model;
+        }
+        if (typeof values.contextWindow === 'string' || typeof values.model === 'string') {
+          const model = typeof values.model === 'string' ? values.model : String(base.model ?? '');
+          const override = contextWindowTokensFromChoice(
+            parseContextWindowChoice(
+              typeof values.contextWindow === 'string'
+                ? values.contextWindow
+                : String(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS ?? ''),
+            ),
+          );
+          const windowTokens = claudeContextWindowFor(model, override);
+          if (windowTokens) {
+            env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(windowTokens);
+            env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(windowTokens);
+          } else {
+            delete env.CLAUDE_CODE_MAX_CONTEXT_TOKENS;
+            delete env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+          }
         }
         if (
           typeof values.apiKey === 'string' &&

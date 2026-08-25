@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
+import type { ClaudeContextWindowChoice } from '@/lib/claude-client-env';
 import type { TranslateFn } from '@/lib/i18n';
 import type { Provider } from '@/lib/types';
 import {
@@ -29,7 +30,9 @@ function targetLabel(t: TranslateFn, target: CreateRouteTarget): string {
 }
 
 function seedEditForm(provider: Provider | null): EditRouteInput {
-  if (!provider) return { name: '', url: '', key: '', endpoints: [], models: '', endpointUrls: {} };
+  if (!provider) {
+    return { name: '', url: '', key: '', endpoints: [], models: '', contextWindow: 'auto', endpointUrls: {} };
+  }
   return editRouteFormFromProvider(provider);
 }
 
@@ -75,6 +78,7 @@ export function EditRouteDialog({
   const [url, setUrl] = useState(seed.url);
   const [key, setKey] = useState('');
   const [models, setModels] = useState(seed.models ?? '');
+  const [contextWindow, setContextWindow] = useState<ClaudeContextWindowChoice>(seed.contextWindow ?? 'auto');
   const [endpoints, setEndpoints] = useState<CreateRouteTarget[]>([...seed.endpoints]);
   const [endpointUrls, setEndpointUrls] = useState<Partial<Record<CreateRouteTarget, string>>>({ ...seed.endpointUrls });
   const [submitting, setSubmitting] = useState(false);
@@ -86,6 +90,7 @@ export function EditRouteDialog({
     setUrl(seed.url);
     setKey('');
     setModels(seed.models ?? '');
+    setContextWindow(seed.contextWindow ?? 'auto');
     setEndpoints([...seed.endpoints]);
     setEndpointUrls({ ...seed.endpointUrls });
     setError(null);
@@ -96,7 +101,7 @@ export function EditRouteDialog({
   if (!profile) return null;
 
   const storedVendor = readStoredCreateRouteVendor(sourceProvider?.configText);
-  const editInput = { name, url, key, endpoints, models, endpointUrls };
+  const editInput = { name, url, key, endpoints, models, contextWindow, endpointUrls };
   const canSubmit = editable && canSubmitEditRoute(editInput);
 
   const toggleEndpoint = (target: CreateRouteTarget) => {
@@ -208,6 +213,19 @@ export function EditRouteDialog({
                     spellCheck={false}
                   />
                   <p className="text-meta text-muted">{t('routes.create.modelsHint')}</p>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted">{t('routes.create.contextWindow')}</span>
+                  <select
+                    className="h-9 rounded-btn border border-border bg-background px-2 text-sm"
+                    value={contextWindow}
+                    onChange={(event) => setContextWindow(event.target.value as ClaudeContextWindowChoice)}
+                  >
+                    <option value="auto">{t('routes.create.contextWindowAuto')}</option>
+                    <option value="200000">{t('routes.create.contextWindow200k')}</option>
+                    <option value="1048576">{t('routes.create.contextWindow1m')}</option>
+                  </select>
+                  <p className="text-meta text-muted">{t('routes.create.contextWindowHint')}</p>
                 </label>
                 <fieldset className="space-y-2">
                   <legend className="text-xs text-muted">{t('routes.create.upstreamEndpoints')}</legend>

@@ -295,6 +295,7 @@ export function ProviderEditDialog({
       'modelHaiku',
       'modelFable',
       'modelSubagent',
+      'contextWindow',
       'reasoningEffort',
       'wireApi',
       'providerSlug',

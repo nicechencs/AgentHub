@@ -52,6 +52,11 @@ const TEST_CLAUDE_SCHEMA: AgentConfigSchemaDto = {
     { key: 'modelHaiku', label: 'Haiku', valueType: { kind: 'string' } },
     { key: 'modelFable', label: 'Fable', valueType: { kind: 'string' } },
     { key: 'modelSubagent', label: 'Subagent', valueType: { kind: 'string' } },
+    {
+      key: 'contextWindow',
+      label: 'Context window',
+      valueType: { kind: 'enum', options: ['auto', '200000', '1048576'] },
+    },
   ],
 };
 

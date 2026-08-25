@@ -87,11 +87,15 @@ describe('create-route-flow', () => {
     expect(draft.configText).not.toContain('ahb_');
     expect(draft.configText).not.toMatch(/sk-or-/);
     expect(JSON.parse(draft.configText).model).toBe('stealth/ox-alpha');
+    expect(JSON.parse(draft.configText).contextWindowTokens).toBeUndefined();
+    expect(readCreateRouteCapabilities(draft.configText).contextWindow).toBe('auto');
   });
 
   it('defaults OpenRouter to all three endpoints and stealth/ox-alpha', () => {
     expect(defaultCreateRouteEndpoints('openrouter')).toEqual(['claude', 'codex', 'grok']);
     expect(vendorById('openrouter').models).toEqual([DEFAULT_CREATE_ROUTE_MODEL]);
+    expect(vendorById('openrouter').defaultContextWindow).toBe('1048576');
+    expect(vendorById('openai').defaultContextWindow).toBeUndefined();
     expect(CREATE_ROUTE_VENDORS.map((vendor) => vendor.id)).toEqual([
       'openrouter', 'openai', 'glm', 'kimi', 'deepseek', 'grok', 'claude', 'custom',
     ]);
@@ -165,9 +169,15 @@ describe('create-route-flow', () => {
       'stealth/ox-alpha',
       'other/model',
     ]);
+    expect(parseCreateRouteModels('stealth/ox-alpha[1m], stealth/ox-alpha')).toEqual([
+      'stealth/ox-alpha',
+    ]);
     const empty = createRouteProviderDraft(input({ vendor: 'openai', url: 'https://api.openai.com/v1', models: '' }));
     expect(JSON.parse(empty.configText).listedModels).toEqual([]);
     expect(JSON.parse(empty.configText).model).toBeUndefined();
+    const withWindow = createRouteProviderDraft(input({ contextWindow: '1048576' }));
+    expect(JSON.parse(withWindow.configText).contextWindowTokens).toBe(1_048_576);
+    expect(readCreateRouteCapabilities(withWindow.configText).contextWindow).toBe('1048576');
   });
 
   it('stores enabled endpoints and listed models on the one provider', () => {
