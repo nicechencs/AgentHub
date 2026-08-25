@@ -17,6 +17,12 @@ describe('dashboard layout wiring', () => {
     expect(page).not.toContain("description={t('dashboard.page.description')}");
   });
 
+  it('applies the remembered Agent catalog order to overview cards', () => {
+    const overview = source('AgentOverview.tsx');
+    expect(overview).toContain('applyStoredAgentOrder');
+    expect(overview).toContain('StorageKey.agentsCatalogOrder');
+  });
+
   it('does not repeat Agent 总览 or a Manage button above the cards', () => {
     const overview = source('AgentOverview.tsx');
     expect(overview).not.toContain("t('dashboard.overview.title')");
