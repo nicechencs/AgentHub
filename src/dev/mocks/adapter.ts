@@ -14,17 +14,8 @@ import {
 import { delay } from './delay';
 import { analyze } from './adapter/analyze';
 import { materializeApply } from './adapter/apply';
-import { buildPlan, hasCodexAccessToken } from './adapter/plan';
-import {
-  CODEX_CLAUDE_RULE_ID,
-  KIMI_MEMBERSHIP_RULE_IDS,
-  hasAccountApiKey,
-  isKimiMembershipAccount,
-  isKimiMembershipProvider,
-  type ClassifiableAccount,
-  type MockAdapterSourceResolver,
-  type MockAdapterState,
-} from './adapter/types';
+import { buildPlan } from './adapter/plan';
+import type { MockAdapterSourceResolver, MockAdapterState } from './adapter/types';
 
 const adapterStates = new Set<MockAdapterState>();
 
@@ -124,7 +115,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     },
     async plan(request) {
       await delay(20);
-      return buildPlan(resolver, request, analyze(resolver, request));
+      return buildPlan(resolver, request);
     },
     async listProfiles(filter: AdapterProfileFilter = {}) {
       await delay(20);
@@ -140,38 +131,11 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     },
     async apply(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
       await delay(20);
-      const plan = buildPlan(resolver, request, analyze(resolver, request));
+      const plan = buildPlan(resolver, request);
       if (!plan.canApply) {
         throw adapterCommandError({
           code: 'unsupported',
           message: '当前适配路径尚不可应用',
-          retryable: false,
-        });
-      }
-      // Re-validate source secrets independently of plan.canApply (same rule as core).
-      if (plan.analysis.ruleId && KIMI_MEMBERSHIP_RULE_IDS.has(plan.analysis.ruleId)) {
-        const providerSource = request.sourceKind === 'provider'
-          ? resolver.getProviderById(request.sourceId)
-          : undefined;
-        const accountSource = request.sourceKind === 'account'
-          ? resolver.getAccountById(request.sourceId) as ClassifiableAccount | undefined
-          : undefined;
-        const valid = request.sourceKind === 'provider'
-          ? !!providerSource && isKimiMembershipProvider(providerSource)
-          : isKimiMembershipAccount(accountSource) && hasAccountApiKey(accountSource);
-        if (!valid) {
-          throw adapterCommandError({
-            code: 'invalid_arg',
-            message: 'invalid adapter secret reference',
-            retryable: false,
-          });
-        }
-      }
-      if (plan.analysis.ruleId === CODEX_CLAUDE_RULE_ID
-        && !hasCodexAccessToken(resolver, request.sourceId)) {
-        throw adapterCommandError({
-          code: 'invalid_arg',
-          message: 'invalid adapter secret reference',
           retryable: false,
         });
       }
@@ -299,14 +263,6 @@ function runningBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeStatu
 
 
 export type { MockAdapterSourceResolver } from './adapter/types';
-export {
-  AGENT_NO_WRITER_REASON,
-  CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
-  CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
-  GROK_SUBSCRIPTION_TO_CLAUDE_REASON,
-  PROTOCOL_MISMATCH_REASON,
-  SAME_PROTOCOL_NO_EDGE_REASON,
-} from './adapter/types';
 export {
   DEV_MOCK_KNOWN_SEED_IDS,
   getGoldenLookupStats,

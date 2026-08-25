@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Account, AgentId, Provider } from '@/lib/types';
 import {
@@ -20,13 +23,15 @@ import {
   upsertMockProvider,
 } from '../provider';
 import {
-  classifyLiveSource,
-  goldenTargetsForIdentity,
+  goldenTargetsForTicket,
   lookupGoldenExpect,
+  ticketKeyForRequest,
 } from './golden-lookup';
-import type { RouteSourceLabel } from './types';
+import type { SourceTicketKey } from './source-ticket';
 
 type ContractCase = (typeof contract.cases)[number];
+
+const adapterDir = path.dirname(fileURLToPath(import.meta.url));
 
 const resolver = {
   getAccountById: getMockAccountById,
@@ -84,6 +89,31 @@ describe('mock golden lookup', () => {
     ]);
   });
 
+  it('does not keep a second route engine', () => {
+    const files = [
+      'analyze.ts',
+      'plan.ts',
+      'apply.ts',
+      'project.ts',
+      'golden-lookup.ts',
+      'adapter.ts',
+    ].map((name) => {
+      const file = name === 'adapter.ts'
+        ? path.join(adapterDir, '..', 'adapter.ts')
+        : path.join(adapterDir, name);
+      return readFileSync(file, 'utf8');
+    });
+    const blob = files.join('\n');
+    expect(blob).not.toMatch(/analyzeFromClassifier/);
+    expect(blob).not.toMatch(/from '\.\/classify'/);
+    expect(blob).not.toMatch(/from '\.\/rule-fixtures'/);
+    expect(blob).not.toMatch(/Keep in lockstep with/);
+    expect(blob).not.toMatch(/SAME_EDGE_UNWRITABLE/);
+    expect(blob).not.toMatch(/unsupportedReasonFromGraph/);
+    expect(blob).not.toMatch(/findRuleFixture/);
+    expect(blob).not.toMatch(/MOCK_RULE_FIXTURES/);
+  });
+
   it('hits golden.expect for every shared contract case and reports zero known-seed misses', async () => {
     const adapter = createMockAdapterPort(resolver);
     const leaked: string[] = [];
@@ -116,12 +146,11 @@ describe('mock golden lookup', () => {
     const stats = getGoldenLookupStats();
     expect(stats.knownSeedMisses).toBe(0);
     expect(stats.misses).toBe(0);
-    expect(stats.fallbacks).toBe(0);
     expect(stats.knownSeedHits).toBeGreaterThan(0);
     expect(stats.hits).toBe(stats.lookups);
   });
 
-  it('hits golden for known dev:mock seeds on every covered target', async () => {
+  it('hits golden for known dev:mock seeds on every covered target and never misses', async () => {
     seedConnectFlowAdapterFixtures({
       includeUnknown: true,
       includeOauthAccount: true,
@@ -137,15 +166,15 @@ describe('mock golden lookup', () => {
     ];
 
     for (const seed of seeds) {
-      const classified = classifyLiveSource(resolver, {
+      const ticketKey = ticketKeyForRequest(resolver, {
         sourceKind: seed.sourceKind,
         sourceId: seed.sourceId,
         targetAgentId: 'claude',
       });
-      expect(classified).not.toBe('not_found');
-      const targets = goldenTargetsForIdentity(
+      expect(ticketKey).not.toBe('missing');
+      const targets = goldenTargetsForTicket(
         seed.sourceKind,
-        classified as Exclude<RouteSourceLabel, 'not_found'>,
+        ticketKey as Exclude<SourceTicketKey, 'missing'>,
       );
       expect(targets.length, `${seed.sourceId} must have golden targets`).toBeGreaterThan(0);
       for (const target of targets) {
@@ -166,10 +195,9 @@ describe('mock golden lookup', () => {
     const stats = getGoldenLookupStats();
     expect(stats.knownSeedMisses).toBe(0);
     expect(stats.misses).toBe(0);
-    expect(stats.fallbacks).toBe(0);
   });
 
-  it('falls back to the old classifier for identities absent from golden and counts the miss', async () => {
+  it('returns unsupported for identities absent from golden and counts the miss', async () => {
     const sourceId = 'dsh-only-no-golden';
     await createMockProviderPort().upsertProvider({
       id: sourceId,
@@ -193,7 +221,6 @@ describe('mock golden lookup', () => {
     expect(JSON.stringify(plan)).not.toContain('must-not-leak');
     const stats = getGoldenLookupStats();
     expect(stats.misses).toBeGreaterThan(0);
-    expect(stats.fallbacks).toBe(stats.misses);
     expect(stats.knownSeedMisses).toBe(0);
   });
 

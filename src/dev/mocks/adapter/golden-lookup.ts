@@ -1,32 +1,33 @@
 /**
- * Slice B: mock analyze/plan lookup golden.expect first.
+ * Slice C: mock analyze/plan only read golden.expect.
  *
- * Not a second planner. route / support / ruleId / gateKind / canApply /
- * reason / reusePath come from AdapterRouteService::plan() snapshots.
- * Unknown identities fall back to the existing classifier (strangler).
+ * Source features join a frozen AdapterRouteService::plan() row. Misses are
+ * fail-closed unsupported — there is no classifier fallback.
  * Must not enter the production bundle.
  */
 import type {
-  AdapterApplyPlan,
   AdapterGateKind,
   AdapterReusePath,
   AdapterRoute,
-  AdapterRouteAnalysis,
   AdapterRouteRequest,
   AdapterSourceKind,
   AdapterSupport,
 } from '@/lib/backend/contracts/adapter';
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, Provider } from '@/lib/types';
 import contract from '../fixtures/adapter-capability-contract.json';
-import { classify } from './classify';
+import {
+  ticketKeyForRequest,
+  ticketKeyFromAccount,
+  ticketKeyFromProvider,
+  type SourceTicketKey,
+} from './source-ticket';
 import {
   hasAccountApiKey,
   type ClassifiableAccount,
   type MockAdapterSourceResolver,
-  type RouteSourceLabel,
 } from './types';
 
-/** Keep in lockstep with CONNECT_FLOW_FIXTURE_IDS; do not import that module (cycle). */
+/** IDs of pnpm dev:mock connect-flow seeds. Duplicated to avoid an import cycle. */
 export const DEV_MOCK_KNOWN_SEED_IDS = [
   'kimi-code-membership',
   'anthropic-api',
@@ -55,7 +56,7 @@ export interface GoldenLookupMissDetail {
   sourceId: string;
   sourceKind: AdapterSourceKind;
   target: string;
-  classified: RouteSourceLabel;
+  ticketKey: SourceTicketKey;
   knownSeed: boolean;
 }
 
@@ -63,7 +64,6 @@ export interface GoldenLookupStats {
   lookups: number;
   hits: number;
   misses: number;
-  fallbacks: number;
   knownSeedLookups: number;
   knownSeedHits: number;
   knownSeedMisses: number;
@@ -76,7 +76,7 @@ interface IndexedGoldenCase {
   id: string;
   kind: AdapterSourceKind;
   target: string;
-  classified: Exclude<RouteSourceLabel, 'not_found'>;
+  ticketKey: Exclude<SourceTicketKey, 'missing'>;
   secret: boolean;
   preset?: string;
   extraProvider?: string;
@@ -94,7 +94,6 @@ function emptyStats(): GoldenLookupStats {
     lookups: 0,
     hits: 0,
     misses: 0,
-    fallbacks: 0,
     knownSeedLookups: 0,
     knownSeedHits: 0,
     knownSeedMisses: 0,
@@ -226,34 +225,9 @@ function goldenProvider(item: ContractCase): Provider {
   };
 }
 
-function classifyGoldenCase(item: ContractCase): RouteSourceLabel {
-  const kind = item.source.kind as AdapterSourceKind;
-  if (kind === 'provider') {
-    const provider = goldenProvider(item);
-    return classify(
-      {
-        getAccountById: () => undefined,
-        getProviderById: (id) => (id === GOLDEN_SOURCE_ID ? provider : undefined),
-      },
-      {
-        sourceKind: 'provider',
-        sourceId: GOLDEN_SOURCE_ID,
-        targetAgentId: item.target as AgentId,
-      },
-    );
-  }
-  const account = goldenAccount(item);
-  return classify(
-    {
-      getAccountById: (id) => (id === GOLDEN_SOURCE_ID ? account : undefined),
-      getProviderById: () => undefined,
-    },
-    {
-      sourceKind: 'account',
-      sourceId: GOLDEN_SOURCE_ID,
-      targetAgentId: item.target as AgentId,
-    },
-  );
+function goldenTicketKey(item: ContractCase): Exclude<SourceTicketKey, 'missing'> {
+  if (item.source.kind === 'provider') return ticketKeyFromProvider(goldenProvider(item));
+  return ticketKeyFromAccount(goldenAccount(item));
 }
 
 function goldenHasUsableSecret(item: ContractCase): boolean {
@@ -265,10 +239,6 @@ function goldenHasUsableSecret(item: ContractCase): boolean {
 
 function indexGoldenCases(): IndexedGoldenCase[] {
   return contract.cases.map((item) => {
-    const classified = classifyGoldenCase(item);
-    if (classified === 'not_found') {
-      throw new Error(`golden case ${item.id} classified as not_found`);
-    }
     const source = item.source as {
       kind: AdapterSourceKind;
       preset?: string;
@@ -280,7 +250,7 @@ function indexGoldenCases(): IndexedGoldenCase[] {
       id: item.id,
       kind: source.kind,
       target: item.target,
-      classified,
+      ticketKey: goldenTicketKey(item),
       secret: goldenHasUsableSecret(item),
       preset: source.preset,
       extraProvider: extraString(source.extra, 'provider'),
@@ -311,8 +281,7 @@ function livePreset(
   request: AdapterRouteRequest,
 ): string | undefined {
   if (request.sourceKind !== 'provider') return undefined;
-  const provider = resolver.getProviderById(request.sourceId);
-  return provider?.preset?.trim() || undefined;
+  return resolver.getProviderById(request.sourceId)?.preset?.trim() || undefined;
 }
 
 function liveAccountFeatures(
@@ -337,14 +306,14 @@ function liveAccountFeatures(
 
 function isKnownMockSeed(
   request: AdapterRouteRequest,
-  classified: Exclude<RouteSourceLabel, 'not_found'>,
+  ticketKey: Exclude<SourceTicketKey, 'missing'>,
 ): boolean {
   if ((DEV_MOCK_KNOWN_SEED_IDS as readonly string[]).includes(request.sourceId)) return true;
   if (request.sourceId.startsWith('contract-')) return true;
   return GOLDEN_INDEX.some(
     (entry) =>
       entry.kind === request.sourceKind
-      && entry.classified === classified
+      && entry.ticketKey === ticketKey
       && entry.target === request.targetAgentId,
   );
 }
@@ -391,7 +360,7 @@ function pickBest(
 
 function recordLookup(
   request: AdapterRouteRequest,
-  classified: Exclude<RouteSourceLabel, 'not_found'>,
+  ticketKey: Exclude<SourceTicketKey, 'missing'>,
   knownSeed: boolean,
   hit: IndexedGoldenCase | undefined,
 ): void {
@@ -403,13 +372,12 @@ function recordLookup(
     return;
   }
   stats.misses += 1;
-  stats.fallbacks += 1;
   if (knownSeed) stats.knownSeedMisses += 1;
   stats.missDetails.push({
     sourceId: request.sourceId,
     sourceKind: request.sourceKind,
     target: request.targetAgentId,
-    classified,
+    ticketKey,
     knownSeed,
   });
 }
@@ -419,12 +387,12 @@ export function lookupGoldenExpect(
   request: AdapterRouteRequest,
   options?: { record?: boolean },
 ): GoldenLookupHit | null {
-  const classified = classify(resolver, request);
-  if (classified === 'not_found') return null;
+  const ticketKey = ticketKeyForRequest(resolver, request);
+  if (ticketKey === 'missing') return null;
   const candidates = GOLDEN_INDEX.filter(
     (entry) =>
       entry.kind === request.sourceKind
-      && entry.classified === classified
+      && entry.ticketKey === ticketKey
       && entry.target === request.targetAgentId,
   );
   const secret = liveHasUsableSecret(resolver, request);
@@ -435,54 +403,22 @@ export function lookupGoldenExpect(
     : candidates.length === 1
       ? candidates[0]
       : pickBest(candidates, secret, preset, account);
-  const knownSeed = isKnownMockSeed(request, classified);
+  const knownSeed = isKnownMockSeed(request, ticketKey);
   if (options?.record !== false) {
-    recordLookup(request, classified, knownSeed, hit);
+    recordLookup(request, ticketKey, knownSeed, hit);
   }
   return hit ? { id: hit.id, expect: hit.expect } : null;
 }
 
-export function overlayAnalysisFromExpect(
-  analysis: AdapterRouteAnalysis,
-  expect: GoldenExpect,
-): AdapterRouteAnalysis {
-  return {
-    ...analysis,
-    route: expect.route,
-    support: expect.support,
-    reason: expect.reason,
-    ruleId: expect.ruleId,
-    gateKind: expect.gateKind,
-  };
-}
-
-export function overlayPlanFromExpect(
-  plan: AdapterApplyPlan,
-  expect: GoldenExpect,
-): AdapterApplyPlan {
-  return {
-    ...plan,
-    analysis: overlayAnalysisFromExpect(plan.analysis, expect),
-    canApply: expect.canApply,
-    reusePath: expect.reusePath,
-    reason: expect.reason,
-  };
-}
-
-export function goldenTargetsForIdentity(
+export function goldenTargetsForTicket(
   kind: AdapterSourceKind,
-  classified: Exclude<RouteSourceLabel, 'not_found'>,
+  ticketKey: Exclude<SourceTicketKey, 'missing'>,
 ): string[] {
   const targets = new Set<string>();
   for (const entry of GOLDEN_INDEX) {
-    if (entry.kind === kind && entry.classified === classified) targets.add(entry.target);
+    if (entry.kind === kind && entry.ticketKey === ticketKey) targets.add(entry.target);
   }
   return [...targets].sort();
 }
 
-export function classifyLiveSource(
-  resolver: MockAdapterSourceResolver,
-  request: AdapterRouteRequest,
-): RouteSourceLabel {
-  return classify(resolver, request);
-}
+export { ticketKeyForRequest };
