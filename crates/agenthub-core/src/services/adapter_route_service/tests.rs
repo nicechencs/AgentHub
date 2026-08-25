@@ -1,15 +1,16 @@
 use super::*;
 use crate::error::AppError;
 use crate::models::{
-    Account, AccountKind, AdapterCapabilityDecision, AdapterMaturity, AdapterProfile,
-    AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteAnalysis,
-    AdapterRouteRequest, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId,
-    Provider, ADAPTER_CAPABILITY_MATRIX,
+    Account, AccountKind, AdapterApplyPlan, AdapterCapabilityDecision, AdapterGateKind,
+    AdapterMaturity, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath,
+    AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterServiceImpact,
+    AdapterSourceKind, AdapterSupport, AgentId, Provider, ADAPTER_CAPABILITY_MATRIX,
 };
 use crate::services::adapter_apply_service::apply_request_supported;
 use crate::services::AdapterApplyService;
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 
 fn test_db() -> (tempfile::TempDir, Database) {
     let dir = tempfile::tempdir().unwrap();
@@ -1942,40 +1943,44 @@ fn glm_and_deepseek_codex_provider_and_account_plans_are_native_and_writable() {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SharedContractFile {
     cases: Vec<SharedContractCase>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SharedContractCase {
     id: String,
     source: SharedContractSource,
     target: AgentId,
-    expect: SharedContractExpect,
     /// Matrix rule kept in the fixture set even though classify picks a sibling.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     documented_rule_id: Option<String>,
+    expect: SharedContractExpect,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SharedContractSource {
     kind: AdapterSourceKind,
     agent_id: AgentId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     preset: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     account_kind: Option<AccountKind>,
-    #[allow(dead_code)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     credential_format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     extra: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     credentials: Option<serde_json::Value>,
 }
 
 /// Production apply entry for a route surface. Distinct from `canApply`:
 /// `local_bridge` is plan-open but must not go through `AdapterApplyService`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum SharedContractApplyPath {
     Native,
@@ -1984,25 +1989,152 @@ enum SharedContractApplyPath {
     Rejected,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SharedContractExpect {
     route: AdapterRoute,
     support: AdapterSupport,
     can_apply: bool,
-    #[serde(default)]
-    reuse_path: Option<crate::models::AdapterReusePath>,
     apply_path: SharedContractApplyPath,
     rule_id: Option<String>,
-    gate_kind: crate::models::AdapterGateKind,
+    gate_kind: AdapterGateKind,
     reason: String,
+    reuse_path: AdapterReusePath,
+}
+
+const ADAPTER_CAPABILITY_CONTRACT_WATCH: &str =
+    include_str!("../../../../../src/dev/mocks/fixtures/adapter-capability-contract.json");
+
+fn adapter_capability_contract_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../src/dev/mocks/fixtures/adapter-capability-contract.json")
 }
 
 fn shared_capability_contract() -> SharedContractFile {
-    serde_json::from_str(include_str!(
-        "../../../../../src/dev/mocks/fixtures/adapter-capability-contract.json"
-    ))
-    .expect("shared adapter capability contract")
+    let path = adapter_capability_contract_path();
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|err| {
+        panic!(
+            "read adapter-capability-contract.json from {}: {err}",
+            path.display()
+        )
+    });
+    let _ = ADAPTER_CAPABILITY_CONTRACT_WATCH;
+    serde_json::from_str(&text).expect("shared adapter capability contract")
+}
+
+fn seed_shared_contract_source(db: &Database, case: &SharedContractCase, source_id: &str) {
+    match case.source.kind {
+        AdapterSourceKind::Provider => {
+            ProviderRepo::new(db.clone())
+                .create(&provider(
+                    source_id,
+                    case.source.agent_id,
+                    case.source.preset.as_deref().unwrap_or("default"),
+                ))
+                .unwrap();
+        }
+        AdapterSourceKind::Account => {
+            AccountRepo::new(db.clone())
+                .create(&Account {
+                    id: source_id.into(),
+                    agent_id: case.source.agent_id,
+                    kind: case.source.account_kind.unwrap_or(AccountKind::Oauth),
+                    label: case.id.clone(),
+                    credentials: case
+                        .source
+                        .credentials
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({})),
+                    extra: case
+                        .source
+                        .extra
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({})),
+                    status: "active".into(),
+                    is_current: false,
+                    created_at: "now".into(),
+                    updated_at: "now".into(),
+                })
+                .unwrap();
+        }
+    }
+}
+
+fn plan_shared_contract_case(case: &SharedContractCase) -> AdapterApplyPlan {
+    let (_dir, db) = test_db();
+    let source_id = format!("contract-{}", case.id);
+    seed_shared_contract_source(&db, case, &source_id);
+    AdapterRouteService::new(db)
+        .plan(&request(case.source.kind, &source_id, case.target))
+        .unwrap_or_else(|err| panic!("{}: plan() failed: {err}", case.id))
+}
+
+fn apply_path_from_plan(plan: &AdapterApplyPlan) -> SharedContractApplyPath {
+    if !plan.can_apply {
+        return SharedContractApplyPath::Rejected;
+    }
+    match plan.analysis.route {
+        AdapterRoute::NativeEndpoint => SharedContractApplyPath::Native,
+        AdapterRoute::LocalBridge => SharedContractApplyPath::LocalBridge,
+        AdapterRoute::ConfigSync => SharedContractApplyPath::ConfigSync,
+        AdapterRoute::Unsupported => SharedContractApplyPath::Rejected,
+    }
+}
+
+fn expect_from_plan(plan: &AdapterApplyPlan) -> SharedContractExpect {
+    SharedContractExpect {
+        route: plan.analysis.route,
+        support: plan.analysis.support,
+        can_apply: plan.can_apply,
+        apply_path: apply_path_from_plan(plan),
+        rule_id: plan.analysis.rule_id.clone(),
+        gate_kind: plan.analysis.gate_kind,
+        reason: plan.reason.clone(),
+        reuse_path: plan.reuse_path,
+    }
+}
+
+fn project_shared_capability_contract(inputs: &SharedContractFile) -> SharedContractFile {
+    let mut cases: Vec<SharedContractCase> = inputs
+        .cases
+        .iter()
+        .map(|case| SharedContractCase {
+            id: case.id.clone(),
+            source: case.source.clone(),
+            target: case.target,
+            documented_rule_id: case
+                .documented_rule_id
+                .as_deref()
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned),
+            expect: expect_from_plan(&plan_shared_contract_case(case)),
+        })
+        .collect();
+    cases.sort_by(|left, right| left.id.cmp(&right.id));
+    SharedContractFile { cases }
+}
+
+fn canonical_contract_json(file: &SharedContractFile) -> String {
+    let mut text = serde_json::to_string_pretty(file).expect("serialize capability contract");
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text
+}
+
+fn normalize_newlines(text: &str) -> String {
+    text.replace("\r\n", "\n")
+}
+
+fn update_adapter_capability_contract_requested() -> bool {
+    // Run only `shared_capability_contract_is_kernel_plan_projection` when writing;
+    // other tests may still be reading the same fixture.
+    matches!(
+        std::env::var("UPDATE_ADAPTER_CAPABILITY_CONTRACT")
+            .ok()
+            .as_deref(),
+        Some("1") | Some("true")
+    )
 }
 
 fn collect_credential_strings(value: &serde_json::Value, key: Option<&str>, out: &mut Vec<String>) {
@@ -2097,37 +2229,7 @@ fn shared_capability_contract_matches_classify_and_plan() {
         assert_apply_path_consistent(&case.id, &case.expect);
         let (_dir, db) = test_db();
         let source_id = format!("contract-{}", case.id);
-        match case.source.kind {
-            AdapterSourceKind::Provider => {
-                ProviderRepo::new(db.clone())
-                    .create(&provider(
-                        &source_id,
-                        case.source.agent_id,
-                        case.source.preset.as_deref().unwrap_or("default"),
-                    ))
-                    .unwrap();
-            }
-            AdapterSourceKind::Account => {
-                AccountRepo::new(db.clone())
-                    .create(&Account {
-                        id: source_id.clone(),
-                        agent_id: case.source.agent_id,
-                        kind: case.source.account_kind.unwrap_or(AccountKind::Oauth),
-                        label: case.id.clone(),
-                        credentials: case
-                            .source
-                            .credentials
-                            .clone()
-                            .unwrap_or_else(|| serde_json::json!({})),
-                        extra: case.source.extra.unwrap_or_else(|| serde_json::json!({})),
-                        status: "active".into(),
-                        is_current: false,
-                        created_at: "now".into(),
-                        updated_at: "now".into(),
-                    })
-                    .unwrap();
-            }
-        }
+        seed_shared_contract_source(&db, &case, &source_id);
         let service = AdapterRouteService::new(db);
         let req = request(case.source.kind, &source_id, case.target);
         let analysis = service.analyze(&req).unwrap();
@@ -2158,9 +2260,14 @@ fn shared_capability_contract_matches_classify_and_plan() {
         assert_eq!(analysis.gate_kind, case.expect.gate_kind, "{}", case.id);
         assert_eq!(analysis.reason, case.expect.reason, "{}", case.id);
         assert_eq!(plan.can_apply, case.expect.can_apply, "{}", case.id);
-        if let Some(reuse_path) = case.expect.reuse_path {
-            assert_eq!(plan.reuse_path, reuse_path, "{}", case.id);
-        }
+        assert_eq!(plan.reuse_path, case.expect.reuse_path, "{}", case.id);
+        assert_eq!(plan.reason, case.expect.reason, "{}", case.id);
+        assert_eq!(
+            apply_path_from_plan(&plan),
+            case.expect.apply_path,
+            "{}",
+            case.id
+        );
 
         // applyPath documents production entry: local_bridge is plan-open but
         // never goes through AdapterApplyService (native config write only).
@@ -2207,6 +2314,91 @@ fn shared_capability_contract_rule_ids_match_matrix() {
     assert_eq!(
         matrix_ids, fixture_ids,
         "shared capability contract rule ids drifted from ADAPTER_CAPABILITY_MATRIX; missing={missing:?} extra={extra:?}"
+    );
+}
+
+#[test]
+fn shared_capability_contract_is_kernel_plan_projection() {
+    let committed = shared_capability_contract();
+    let projected = project_shared_capability_contract(&committed);
+    let generated = canonical_contract_json(&projected);
+    let path = adapter_capability_contract_path();
+    if update_adapter_capability_contract_requested() {
+        std::fs::write(&path, &generated).unwrap_or_else(|err| {
+            panic!("write {} failed: {err}", path.display());
+        });
+    }
+    let on_disk = std::fs::read_to_string(&path).unwrap_or_else(|err| {
+        panic!("read {} failed: {err}", path.display());
+    });
+    assert_eq!(
+        normalize_newlines(&on_disk),
+        generated,
+        "adapter-capability-contract.json must equal AdapterRouteService::plan() on frozen inputs; re-run with UPDATE_ADAPTER_CAPABILITY_CONTRACT=1"
+    );
+
+    let mut seen_write_gate_block = false;
+    for case in &projected.cases {
+        assert_apply_path_consistent(&case.id, &case.expect);
+        let plan = plan_shared_contract_case(case);
+        let plan_json = serde_json::to_string(&plan).unwrap();
+        let analysis_json = serde_json::to_string(&plan.analysis).unwrap();
+        assert_analyze_plan_hide_credentials(
+            &case.id,
+            case.source.credentials.as_ref(),
+            &analysis_json,
+            &plan_json,
+        );
+        let expect_json = serde_json::to_string(&case.expect).unwrap();
+        assert!(
+            !expect_json.contains("must-not-leak"),
+            "{}: plan() expect must not contain credential placeholders",
+            case.id
+        );
+        assert_eq!(
+            serde_json::to_value(&case.expect).unwrap(),
+            serde_json::to_value(&expect_from_plan(&plan)).unwrap(),
+            "{}: committed expect must equal plan() output",
+            case.id
+        );
+        if case.expect.route != AdapterRoute::Unsupported
+            && case.expect.support != AdapterSupport::Unsupported
+            && case.expect.gate_kind == AdapterGateKind::None
+            && !case.expect.can_apply
+            && case.expect.apply_path == SharedContractApplyPath::Rejected
+        {
+            seen_write_gate_block = true;
+        }
+    }
+    assert!(
+        seen_write_gate_block,
+        "golden must include at least one write-gate blocked edge (route open, gateKind=none, canApply=false)"
+    );
+}
+
+#[test]
+fn shared_capability_contract_projection_is_deterministic() {
+    let committed = shared_capability_contract();
+    let first = canonical_contract_json(&project_shared_capability_contract(&committed));
+    let second = canonical_contract_json(&project_shared_capability_contract(&committed));
+    assert_eq!(first, second);
+}
+
+#[test]
+fn shared_capability_contract_hand_edited_expect_does_not_match_plan() {
+    let mut tampered = shared_capability_contract();
+    let case = tampered
+        .cases
+        .iter_mut()
+        .find(|case| case.expect.can_apply)
+        .expect("open golden case");
+    case.expect.can_apply = !case.expect.can_apply;
+    case.expect.apply_path = SharedContractApplyPath::Rejected;
+    let projected = project_shared_capability_contract(&tampered);
+    assert_ne!(
+        canonical_contract_json(&tampered),
+        canonical_contract_json(&projected),
+        "hand-edited expect must not equal kernel plan() projection"
     );
 }
 
