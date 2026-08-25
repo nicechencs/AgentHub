@@ -337,10 +337,16 @@ export function ProviderEditDialog({
         provider.authApiKey,
       );
       setVars(nextVars);
+      const resolvedOnOpen = resolveUpstreamBaseUrl({
+        formBaseUrl: nextVars.baseUrl,
+        configText: provider.configText,
+        configFormat: provider.configFormat,
+        agentId,
+      });
       const inferredOfficial =
         provider.official === true ||
         (provider.official !== false &&
-          looksLikeOfficialEndpoint(agentId, nextVars.baseUrl));
+          looksLikeOfficialEndpoint(agentId, nextVars.baseUrl || resolvedOnOpen));
       setUseOfficial(inferredOfficial);
       setShowAdvanced(true);
       return;
