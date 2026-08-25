@@ -1172,6 +1172,41 @@ fn codex_auth_json_account_to_claude_is_writable_local_bridge() {
 }
 
 #[test]
+fn official_codex_oauth_without_auth_json_to_claude_stays_closed() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "codex-oauth".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "ChatGPT subscription".into(),
+            credentials: serde_json::json!({}),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let plan = AdapterRouteService::new(db)
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "codex-oauth",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
+    assert_eq!(plan.analysis.support, AdapterSupport::Unsupported);
+    assert_eq!(
+        plan.analysis.gate_kind,
+        crate::models::AdapterGateKind::SubscriptionCandidate
+    );
+    assert!(plan.analysis.rule_id.is_none());
+    assert!(!plan.can_apply);
+    assert!(plan.changes.is_empty());
+}
+
+#[test]
 fn subscriptions_are_native_pi_reuse_with_opening_bind() {
     let (_dir, db) = test_db();
     let accounts = AccountRepo::new(db.clone());
@@ -1624,6 +1659,34 @@ fn grok_subscription_to_claude_is_writable_local_bridge() {
         Some("http://127.0.0.1:<本机端口>")
     );
     assert!(plan.changes[1].secret);
+}
+
+#[test]
+fn grok_subscription_to_claude_without_access_token_is_unwritable() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-subscription".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok subscription".into(),
+            credentials: serde_json::json!({"format": "oauth"}),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let plan = AdapterRouteService::new(db)
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "grok-subscription",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+    assert!(!plan.can_apply);
 }
 
 #[test]

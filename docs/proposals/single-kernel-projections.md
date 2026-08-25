@@ -10,7 +10,7 @@ updated: 2026-08-25
 
 > 状态：提案
 >
-> 本文记录如何降低 Adapter / route 规则改动的结构成本，并说明它与全项目开发内环提速的关系。切片 0（风险分级协作）、切片 A（内核生成 golden）和切片 B（mock 查表优先）已经落地；C–F 仍是候选，不授权删除旧 classifier、拆 crate 或把 JSON 当规则真源。派工前必须指定负责人、文件范围、必须保持的行为和验证命令。
+> 本文记录如何降低 Adapter / route 规则改动的结构成本，并说明它与全项目开发内环提速的关系。切片 0–D 已经落地；切片 E 已评估且不落地配置。F 仍是候选，不授权拆 crate 或把 JSON 当规则真源。派工前必须指定负责人、文件范围、必须保持的行为和验证命令。
 
 ## 0. 结论与适用范围
 
@@ -31,7 +31,7 @@ AgentHub 仍是模块化单体：GUI 和 CLI 共用 `agenthub-core`。产品写�
 
 规则真源在 Rust：`adapter_capability_matrix` 加上 `AdapterRouteService` 的私有 write gate。`can_apply` 只是矩阵层标志；实际写入还要过 write gate、来源凭据和目标 writer。
 
-浏览器 mock 的 analyze / plan 对已知种子优先查询 golden.expect；未命中仍回退到独立 classify / plan，并与 core 锁步维护 reason 字符串和投影表。`src/dev/mocks/fixtures/adapter-capability-contract.json` 是 `AdapterRouteService::plan()` 对冻结入参的只读快照；Rust 测试在快照与内核输出不一致时失败。C1 的公开 rule ID 覆盖仍然有效。旧 classifier 尚未删除，这**不等于** mock 已经不再做决策。
+浏览器 mock 的 analyze / plan 只读取 golden.expect；未命中 fail-closed 为 `unsupported`。`src/dev/mocks/fixtures/adapter-capability-contract.json` 是 `AdapterRouteService::plan()` 对冻结入参的只读快照；Rust 测试在快照与内核输出不一致时失败。C1 的公开 rule ID 覆盖仍然有效。apply 只解释 plan 写入内存 profile / 假 bridge，不再 classify，也不重放 write gate。
 
 验证方面，[测试与验证](../guides/testing-and-validation.md) 已按改动类型给出最小命令，并与 [AGENTS.md](../../AGENTS.md) 使用同一套风险分级：局部改动跑过滤测试，全量门禁留给提交前或 CI。PR CI 仍跑全量 typecheck、Vitest 和三个 Rust crate。Grok / Agent worktree 通常没有共享的 `target/` 编译产物；crate.io 与 pnpm store 是全局的，Rust 增量缓存不是。
 
@@ -198,17 +198,28 @@ Tauri command 的 wire 使用 core 的 serde 形状。`src/lib/backend/contracts
 
 mock 的 analyze / plan 先查 golden；命中则用 expect 覆盖 route / support / ruleId / gateKind / canApply / reason / reusePath。未命中暂时走旧 classify（绞杀期）。已知种子必须命中；未命中次数由 `getGoldenLookupStats()` 统计，测试可断言。`dev:mock` 的种子账号行为保持可演示。
 
-### 切片 C：删除第二套引擎
+### 切片 C：删除第二套引擎 — `已落地`
 
-已知种子命中率为 100% 后，删除 mock 的启发式 classify、与 core 锁步的决策常量和 `rule-fixtures` 投影表。留下内存 profile / bridge CRUD。未知来源继续 fail-closed。
+已知种子命中率为 100% 后，已删除 mock 的启发式 classify、与 core 锁步的决策常量和 `rule-fixtures` 投影表。留下内存 profile / bridge CRUD。未知来源继续 fail-closed。
 
-### 切片 D：收缩 Vitest 领域套件
+### 切片 D：收缩 Vitest 领域套件 — `已落地`
 
-`adapter.test.ts` 中断言「这条来源应走哪条 route」的用例迁回或并入 Rust。Vitest 保留：查表、密钥不泄漏、内存 apply、未知 unsupported、界面听从 plan。不得在删除 mock 引擎的同一变更里丢掉 Rust 覆盖。
+`adapter.test.ts` 中断言「这条来源应走哪条 route」的用例已迁回或并入 Rust。Vitest 保留：查表、密钥不泄漏、内存 apply、未知 unsupported、界面听从 plan。不得在删除 mock 引擎的同一变更里丢掉 Rust 覆盖。
 
-### 切片 E：编译环境（可选、可分开批准）
+### 切片 E：编译环境 — `已评估，不落地`
 
-仅在冷 worktree 编译仍是已测量瓶颈时，配置 sccache 或等价内容寻址缓存；确认不共享 Windows `target/`。不在本切片修改产品规则或协作流程。
+2026-08-25 在 Windows、rustc 1.89.0、全局 `~/.cargo` registry 约 173 MB、本机未安装 sccache 的条件下，对 `cargo test -p agenthub-core --locked adapter_route_service` 做了冷/热拆分。两个 worktree 使用各自的 `target/`，并行 `--no-run` 无文件锁。CI 已用 `Swatinem/rust-cache`。
+
+| 场景 | 下载 | 编译+链接 (`--no-run`) | 测试执行 | 墙钟合计 |
+|---|---:|---:|---:|---:|
+| 当前 checkout，热 `target/` | 0（`--offline`） | 0.55–0.68 s | 2.61 s（39 tests） | 约 3.2 s |
+| 新 Agent worktree，空 `target/` | 5.9 s（补缺 crate） | 41.5 s | 2.80 s（随后热跑） | 首次约 50 s |
+| 该新 worktree 第二次 `--no-run` | 0 | 0.49–0.65 s | 2.80 s | 约 3.4 s |
+| 两 worktree 并行热 `--no-run` | 0 | 各约 0.8 s | — | 墙钟 1.1 s，无锁 |
+
+结论：热内环的主要时间是测试执行，不是编译。冷 worktree 第一次会花约 42 s 编依赖，但内容寻址缓存需要安装 `sccache`（系统级工具，本切片未获安装授权），且仓库强制 `RUSTC_WRAPPER` 会让未安装机器和当前 CI 失败。因此不修改 Cargo、CI 或发布配置。若以后要做，应是开发机可选包装，且 Windows 仍禁止共享 `target/`。
+
+回滚：无配置可回滚。测量用的独立 worktree 已删除。
 
 ### 切片 F：按测量结果考虑拆 crate（可选、最后）
 
