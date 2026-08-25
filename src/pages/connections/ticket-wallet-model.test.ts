@@ -37,6 +37,10 @@ import {
   ticketWalletFilterLabel,
   ticketCredentialClassChipLabel,
   ticketSurfaceChipLabel,
+  resolveTicketRouteAction,
+  resolveTicketShareAction,
+  ticketSwitchDisabledReason,
+  ticketRefreshDisabledReason,
 } from './ticket-wallet-model';
 
 function sampleWallet(): TicketWallet {
@@ -1134,5 +1138,119 @@ describe('ticket wallet labels with translator', () => {
     expect(kimi?.usageText).toContain('Rewrite config');
     expect(kimi?.usageText).toContain('Local route');
     expect(kimi?.usageText).not.toContain('改配置');
+  });
+});
+
+describe('resolveTicketRouteAction', () => {
+  it('stays enabled while any target is still pending', () => {
+    expect(resolveTicketRouteAction([
+      { status: 'pending' },
+      { status: 'ready', route: 'config_sync', canApply: true },
+    ])).toEqual({ disabled: false });
+  });
+
+  it('stays enabled when a local_bridge plan can apply', () => {
+    expect(resolveTicketRouteAction([
+      { status: 'ready', route: 'config_sync', canApply: true },
+      { status: 'ready', route: 'local_bridge', canApply: true, reason: '需要本机转发' },
+    ])).toEqual({ disabled: false });
+  });
+
+  it('disables with the local_bridge reason when that edge cannot apply', () => {
+    expect(resolveTicketRouteAction([
+      { status: 'ready', route: 'native_endpoint', canApply: true, reason: '会改配置' },
+      {
+        status: 'ready',
+        route: 'local_bridge',
+        canApply: false,
+        reason: 'Claude 订阅接到 Codex 可以走本机转发，但规则还没做完',
+      },
+    ])).toEqual({
+      disabled: true,
+      reason: 'Claude 订阅接到 Codex 可以走本机转发，但规则还没做完',
+    });
+  });
+
+  it('disables with the oauth reason when login is incomplete', () => {
+    expect(resolveTicketRouteAction([
+      { status: 'blocked_oauth', reason: '官方登录未完成，先到连接页授权。' },
+    ])).toEqual({
+      disabled: true,
+      reason: '官方登录未完成，先到连接页授权。',
+    });
+  });
+
+  it('disables with a generic reason when no target is local_bridge', () => {
+    const t = createTranslator('zh');
+    expect(resolveTicketRouteAction([
+      { status: 'ready', route: 'native_endpoint', canApply: true, reason: '会改配置' },
+      { status: 'ready', route: 'unsupported', canApply: false, reason: '这个工具不能写入' },
+    ], t)).toEqual({
+      disabled: true,
+      reason: '这份登录目前不能走本机转发',
+    });
+  });
+
+  it('stays enabled when every target failed to plan', () => {
+    expect(resolveTicketRouteAction([
+      { status: 'error', reason: 'plan failed' },
+      { status: 'error', reason: 'timeout' },
+    ])).toEqual({ disabled: false });
+  });
+
+  it('disables when there is no target agent', () => {
+    expect(resolveTicketRouteAction([])).toEqual({
+      disabled: true,
+      reason: '没有可转发的目标工具',
+    });
+  });
+});
+
+describe('resolveTicketShareAction', () => {
+  it('stays enabled when a direct or config-sync plan can apply', () => {
+    expect(resolveTicketShareAction([
+      { status: 'ready', route: 'config_sync', canApply: true, reason: '会改配置' },
+      { status: 'ready', route: 'local_bridge', canApply: false, reason: '需要本机转发' },
+    ])).toEqual({ disabled: false });
+  });
+
+  it('disables when the login can only local-forward', () => {
+    const t = createTranslator('zh');
+    expect(resolveTicketShareAction([
+      { status: 'ready', route: 'local_bridge', canApply: true, reason: '需要本机转发' },
+      { status: 'ready', route: 'unsupported', canApply: false },
+    ], t)).toEqual({
+      disabled: true,
+      reason: '这份登录目前不能直接用到其它工具',
+    });
+  });
+
+  it('disables with the matching write-gate reason', () => {
+    expect(resolveTicketShareAction([
+      { status: 'ready', route: 'config_sync', canApply: false, reason: '目标有槽、写入未开' },
+    ])).toEqual({
+      disabled: true,
+      reason: '目标有槽、写入未开',
+    });
+  });
+});
+
+describe('row action disable reasons', () => {
+  it('explains in-use and busy switch', () => {
+    expect(ticketSwitchDisabledReason({ kind: 'in-use', switchBusy: false, canSwitch: true }))
+      .toBe('这份登录已在当前工具使用中');
+    expect(ticketSwitchDisabledReason({ kind: 'switch', switchBusy: true, canSwitch: true }))
+      .toBe('正在切换其他登录');
+    expect(ticketSwitchDisabledReason({ kind: 'switch', switchBusy: false, canSwitch: true }))
+      .toBeUndefined();
+  });
+
+  it('explains refresh lock', () => {
+    expect(ticketRefreshDisabledReason({ refreshing: true, refreshLocked: true }))
+      .toBe('刷新中…');
+    expect(ticketRefreshDisabledReason({ refreshing: false, refreshLocked: true }))
+      .toBe('正在刷新其他登录');
+    expect(ticketRefreshDisabledReason({ refreshing: false, refreshLocked: false }))
+      .toBeUndefined();
   });
 });

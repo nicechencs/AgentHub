@@ -59,7 +59,10 @@ import {
   ticketSwitchChip,
   ticketCredentialClassChipLabel,
   ticketDetailEditLabel,
+  ticketRefreshDisabledReason,
+  ticketSwitchDisabledReason,
   type TicketAddMenuAgent,
+  type TicketBindAction,
   type TicketDetailExtras,
   type TicketDetailField,
   type TicketWalletRow,
@@ -96,6 +99,40 @@ function CredentialMark({
   }
   return (
     <Badge variant="accent">{ticketCredentialClassChipLabel(cls, t)}</Badge>
+  );
+}
+
+function DisabledReasonButton({
+  disabled,
+  reason,
+  ariaLabel,
+  onClick,
+  children,
+  variant = 'outline',
+}: {
+  disabled: boolean;
+  reason?: string;
+  ariaLabel: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  variant?: 'outline' | 'secondary' | 'dangerOutline';
+}) {
+  return (
+    <Hint label={disabled ? reason : undefined}>
+      <Button
+        size="sm"
+        variant={variant}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        onClick={() => {
+          if (disabled) return;
+          onClick();
+        }}
+      >
+        {children}
+        {disabled && reason ? <span className="sr-only">{reason}</span> : null}
+      </Button>
+    </Hint>
   );
 }
 
@@ -184,25 +221,30 @@ export function TicketDetailPanel({
       <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
         <div className="flex flex-wrap items-center gap-2">
           {extras?.oauthAction && onRefresh ? (
-            <Button
-              size="sm"
+            <DisabledReasonButton
               variant="secondary"
-              disabled={refreshLocked || refreshing}
-              aria-label={refreshLabel}
+              disabled={Boolean(refreshLocked || refreshing)}
+              reason={ticketRefreshDisabledReason({
+                refreshing: Boolean(refreshing),
+                refreshLocked: Boolean(refreshLocked),
+                busyLabel: refreshBusyLabel,
+              }, t)}
+              ariaLabel={refreshLabel}
               onClick={onRefresh}
             >
               <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
               {refreshing ? refreshBusyLabel : refreshLabel}
-            </Button>
+            </DisabledReasonButton>
           ) : null}
-          <Button
-            size="sm"
-            variant="dangerOutline"
-            title={extras?.isCurrent ? t('connections.list.moveToTrashCurrentTip') : undefined}
-            onClick={onDelete}
-          >
-            <Trash2 className="h-3.5 w-3.5" /> {t('connections.list.moveToTrash')}
-          </Button>
+          <Hint label={extras?.isCurrent ? t('connections.list.moveToTrashCurrentTip') : undefined}>
+            <Button
+              size="sm"
+              variant="dangerOutline"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> {t('connections.list.moveToTrash')}
+            </Button>
+          </Hint>
         </div>
       </div>
     </Card>
@@ -217,6 +259,8 @@ function TicketRow({
   nativeSwitch,
   onShare,
   onRoute,
+  shareAction,
+  routeAction,
   onSwitch,
   onRefresh,
   onEdit,
@@ -229,6 +273,8 @@ function TicketRow({
   nativeSwitch: boolean;
   onShare: (ticket: TicketView) => void;
   onRoute: (ticket: TicketView) => void;
+  shareAction: TicketBindAction;
+  routeAction: TicketBindAction;
   onSwitch?: (ticket: TicketView) => void;
   onRefresh?: (ticket: TicketView) => void;
   onEdit: (ticket: TicketView) => void;
@@ -290,25 +336,38 @@ function TicketRow({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {nativeSwitch ? (
-            <Button
-              size="sm"
-              variant="outline"
+            <DisabledReasonButton
               disabled={switchChip.kind === 'in-use' || switchBusy || !onSwitch}
-              aria-label={switchChip.label}
+              reason={ticketSwitchDisabledReason({
+                kind: switchChip.kind,
+                switchBusy,
+                canSwitch: Boolean(onSwitch),
+              }, t)}
+              ariaLabel={switchChip.label}
               onClick={() => {
-                if (switchChip.kind === 'in-use' || !onSwitch) return;
+                if (!onSwitch) return;
                 onSwitch(ticket);
               }}
             >
               {switching ? t('connections.list.switching') : switchChip.label}
-            </Button>
+            </DisabledReasonButton>
           ) : null}
-          <Button size="sm" variant="outline" onClick={() => onShare(ticket)}>
+          <DisabledReasonButton
+            disabled={shareAction.disabled}
+            reason={shareAction.disabled ? shareAction.reason : undefined}
+            ariaLabel={t('connections.list.share')}
+            onClick={() => onShare(ticket)}
+          >
             <Share2 className="h-3.5 w-3.5" /> {t('connections.list.share')}
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => onRoute(ticket)}>
+          </DisabledReasonButton>
+          <DisabledReasonButton
+            disabled={routeAction.disabled}
+            reason={routeAction.disabled ? routeAction.reason : undefined}
+            ariaLabel={t('connections.list.route')}
+            onClick={() => onRoute(ticket)}
+          >
             <Cable className="h-3.5 w-3.5" /> {t('connections.list.route')}
-          </Button>
+          </DisabledReasonButton>
           {editLabel ? (
             <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
               <Pencil className="h-3.5 w-3.5" /> {editLabel}
@@ -428,6 +487,8 @@ export function TicketWalletList({
   agentFilterId = null,
   onShareTicket,
   onRouteTicket,
+  shareActionForTicket,
+  routeActionForTicket,
   onSwitchTicket,
   onRefreshTicket,
   refreshingTicketId,
@@ -446,6 +507,8 @@ export function TicketWalletList({
   agentFilterId?: AgentId | null;
   onShareTicket: (ticket: TicketView) => void;
   onRouteTicket: (ticket: TicketView) => void;
+  shareActionForTicket?: (ticket: TicketView) => TicketBindAction;
+  routeActionForTicket?: (ticket: TicketView) => TicketBindAction;
   onSwitchTicket?: (ticket: TicketView) => void;
   onRefreshTicket?: (ticket: TicketView) => void;
   refreshingTicketId?: string | null;
@@ -532,6 +595,8 @@ export function TicketWalletList({
               nativeSwitch={showsNativeSwitch(row.ticket.agentId, agentFilterId)}
               onShare={onShareTicket}
               onRoute={onRouteTicket}
+              shareAction={shareActionForTicket?.(row.ticket) ?? { disabled: false }}
+              routeAction={routeActionForTicket?.(row.ticket) ?? { disabled: false }}
               onSwitch={onSwitchTicket}
               onRefresh={onRefreshTicket}
               onEdit={onEditTicket}

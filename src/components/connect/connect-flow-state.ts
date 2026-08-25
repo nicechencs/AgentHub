@@ -13,7 +13,7 @@ import type {
   PlanEligibility,
   SourceOption,
 } from '@/lib/connect-flow/types';
-import { connectSourceKey, planFanoutKey } from '@/lib/connect-flow/types';
+import { bindRouteMatchesPurpose, connectSourceKey, planFanoutKey } from '@/lib/connect-flow/types';
 import type { AdapterReusePath } from '@/lib/backend/contracts/adapter';
 import type { TranslateFn } from '@/lib/i18n';
 import {
@@ -883,9 +883,7 @@ export function adapterRouteMatchesPurpose(
   route: AdapterApplyPlan['analysis']['route'] | undefined,
   purpose: ConnectBindPurpose,
 ): boolean {
-  if (purpose === 'route') return route === 'local_bridge';
-  // 用到其他工具: 直连 / 本机路由 per matrix (OpenAI-compat → Claude/Grok is local_bridge).
-  return route === 'native_endpoint' || route === 'config_sync' || route === 'local_bridge';
+  return bindRouteMatchesPurpose(route, purpose);
 }
 
 /** Route picker binds an existing login onto loopback endpoints; extra import/key CTAs do not apply. */

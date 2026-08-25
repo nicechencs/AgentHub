@@ -31,6 +31,7 @@ import {
   toCredentialRow,
 } from '@/lib/credential-row';
 import { bridgesHrefForProfile } from '@/lib/bridges-path';
+import { bindRouteMatchesPurpose } from '@/lib/connect-flow/types';
 import type { TranslateFn } from '@/lib/i18n';
 import {
   activeBindingForAgent,
@@ -582,6 +583,131 @@ export function ticketSwitchChip(
     return { kind: 'in-use', label: t ? t('connections.list.inUse') : '使用中' };
   }
   return { kind: 'switch', label: t ? t('connections.list.switch') : '切换' };
+}
+
+/** Settled plan snapshot for row bind buttons. */
+export type TicketRoutePlanHint = {
+  status: 'pending' | 'blocked_oauth' | 'ready' | 'error';
+  route?: 'native_endpoint' | 'local_bridge' | 'config_sync' | 'unsupported';
+  canApply?: boolean;
+  reason?: string;
+};
+
+export type TicketBindPurpose = 'share' | 'route';
+
+export type TicketBindAction =
+  | { disabled: false }
+  | { disabled: true; reason: string };
+
+/** @deprecated use TicketBindAction */
+export type TicketRouteAction = TicketBindAction;
+
+const ROUTE_DISABLED_FALLBACK = '这份登录目前不能走本机转发';
+const ROUTE_NO_TARGET_FALLBACK = '没有可转发的目标工具';
+const SHARE_DISABLED_FALLBACK = '这份登录目前不能直接用到其它工具';
+const SHARE_NO_TARGET_FALLBACK = '没有可接到的目标工具';
+const IN_USE_TIP_FALLBACK = '这份登录已在当前工具使用中';
+const SWITCH_BUSY_TIP_FALLBACK = '正在切换其他登录';
+const REFRESH_BUSY_TIP_FALLBACK = '正在刷新其他登录';
+
+/** Share = 直连 / 写进对方登录. Route = 本机转发 only. */
+export function ticketRouteMatchesPurpose(
+  route: TicketRoutePlanHint['route'],
+  purpose: TicketBindPurpose,
+): boolean {
+  return bindRouteMatchesPurpose(route, purpose);
+}
+
+/** Disable a bind button only after every target settled with no applyable matching route. */
+export function resolveTicketBindAction(
+  hints: readonly TicketRoutePlanHint[],
+  purpose: TicketBindPurpose,
+  t?: TranslateFn,
+): TicketBindAction {
+  const noTarget = purpose === 'route'
+    ? (t ? t('connections.list.routeNoTarget') : ROUTE_NO_TARGET_FALLBACK)
+    : (t ? t('connections.list.shareNoTarget') : SHARE_NO_TARGET_FALLBACK);
+  const generic = purpose === 'route'
+    ? (t ? t('connections.list.routeDisabled') : ROUTE_DISABLED_FALLBACK)
+    : (t ? t('connections.list.shareDisabled') : SHARE_DISABLED_FALLBACK);
+
+  if (hints.length === 0) return { disabled: true, reason: noTarget };
+
+  let pending = false;
+  let sawConclusive = false;
+  let matchingBlockedReason: string | undefined;
+  let oauthReason: string | undefined;
+
+  for (const hint of hints) {
+    if (hint.status === 'pending') {
+      pending = true;
+      continue;
+    }
+    if (hint.status === 'ready' && ticketRouteMatchesPurpose(hint.route, purpose) && hint.canApply) {
+      return { disabled: false };
+    }
+    if (hint.status === 'ready' && ticketRouteMatchesPurpose(hint.route, purpose) && !hint.canApply) {
+      sawConclusive = true;
+      matchingBlockedReason ??= hint.reason;
+      continue;
+    }
+    if (hint.status === 'blocked_oauth') {
+      sawConclusive = true;
+      oauthReason ??= hint.reason;
+      continue;
+    }
+    if (hint.status === 'ready') {
+      sawConclusive = true;
+    }
+  }
+
+  if (pending || !sawConclusive) return { disabled: false };
+  if (matchingBlockedReason) return { disabled: true, reason: matchingBlockedReason };
+  if (oauthReason) return { disabled: true, reason: oauthReason };
+  return { disabled: true, reason: generic };
+}
+
+export function resolveTicketRouteAction(
+  hints: readonly TicketRoutePlanHint[],
+  t?: TranslateFn,
+): TicketBindAction {
+  return resolveTicketBindAction(hints, 'route', t);
+}
+
+export function resolveTicketShareAction(
+  hints: readonly TicketRoutePlanHint[],
+  t?: TranslateFn,
+): TicketBindAction {
+  return resolveTicketBindAction(hints, 'share', t);
+}
+
+export function ticketSwitchDisabledReason(
+  input: { kind: TicketSwitchChip['kind']; switchBusy: boolean; canSwitch: boolean },
+  t?: TranslateFn,
+): string | undefined {
+  if (input.kind === 'in-use') {
+    return t ? t('connections.list.inUseTip') : IN_USE_TIP_FALLBACK;
+  }
+  if (input.switchBusy) {
+    return t ? t('connections.list.switchBusyTip') : SWITCH_BUSY_TIP_FALLBACK;
+  }
+  if (!input.canSwitch) {
+    return t ? t('connections.list.switchBusyTip') : SWITCH_BUSY_TIP_FALLBACK;
+  }
+  return undefined;
+}
+
+export function ticketRefreshDisabledReason(
+  input: { refreshing: boolean; refreshLocked: boolean; busyLabel?: string },
+  t?: TranslateFn,
+): string | undefined {
+  if (input.refreshing) {
+    return input.busyLabel ?? (t ? t('connections.list.refreshing') : '刷新中…');
+  }
+  if (input.refreshLocked) {
+    return t ? t('connections.list.refreshBusyTip') : REFRESH_BUSY_TIP_FALLBACK;
+  }
+  return undefined;
 }
 
 function endpointHostOnly(host: string): string {

@@ -59,6 +59,7 @@ import {
   ticketAddDialogState,
   type TicketAddKind,
 } from './ticket-wallet-model';
+import { useTicketBindActions } from './use-ticket-route-actions';
 import {
   deleteConnectionDialogDescription,
   deleteConnectionToastDescription,
@@ -74,6 +75,7 @@ import {
   preventBusyConfirmationDismissal,
 } from '@/components/shared/busy-confirmation';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/tooltip';
 import {
   Dialog,
   DialogContent,
@@ -476,6 +478,16 @@ export default function ConnectionsPage() {
     }
   }, [loadWallet, pool.accounts, pool.providers, poolReload, t, toast]);
 
+  const { shareActionForTicket, routeActionForTicket } = useTicketBindActions({
+    tickets: visibleWallet?.tickets ?? [],
+    accounts: pool.accounts,
+    providers: pool.providers,
+    hiddenIds,
+    poolReady: pool.state === 'ready' || pool.state === 'partial',
+    deps: connectDeps,
+    t,
+  });
+
   const extrasForTicket = useCallback(
     (ticket: TicketView) => {
       try {
@@ -845,6 +857,8 @@ export default function ConnectionsPage() {
             agentFilterId={filterAgent === 'all' ? null : filterAgent}
             onShareTicket={handleShareTicket}
             onRouteTicket={handleRouteTicket}
+            shareActionForTicket={shareActionForTicket}
+            routeActionForTicket={routeActionForTicket}
             onSwitchTicket={handleSwitchTicket}
             onRefreshTicket={handleRefreshTicket}
             refreshingTicketId={refreshingTicketId}
@@ -916,6 +930,7 @@ export default function ConnectionsPage() {
             >
               {t('common.cancel')}
             </Button>
+            <Hint label={!activeImportGate.enabled ? activeImportGate.reason : undefined}>
             <Button
               disabled={importingAccount || !activeImportGate.enabled}
               onClick={() => void confirmImportLogin()}
@@ -926,6 +941,7 @@ export default function ConnectionsPage() {
                   ? t('connections.import.apiKeyConfirm')
                   : t('connections.import.confirm')}
             </Button>
+            </Hint>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1265,7 +1265,7 @@ describe('preview 同步失效与确认占锁', () => {
 });
 
 describe('purpose-gated preview', () => {
-  it('for-source share can preview a local_bridge plan (OpenAI-compat → Claude/Grok)', () => {
+  it('for-source share cannot preview a local_bridge plan', () => {
     const entry: ConnectFlowEntry = {
       mode: 'for-source',
       source: kimiSource,
@@ -1280,7 +1280,7 @@ describe('purpose-gated preview', () => {
     const elig = readyEligibility(true, {
       analysis: analysis({ route: 'local_bridge' }),
     });
-    expect(canEnterPreview(state, null, elig)).toBe(true);
+    expect(canEnterPreview(state, null, elig)).toBe(false);
   });
 
   it('for-source route can preview a local_bridge plan', () => {
@@ -1315,7 +1315,6 @@ describe('visibleTargetsForPurpose', () => {
     ]);
     expect(visibleTargetsForPurpose(['claude', 'codex', 'grok'], kimiSource, map, 'share')).toEqual([
       'claude',
-      'codex',
       'grok',
     ]);
     expect(visibleTargetsForPurpose(['claude', 'codex', 'grok'], kimiSource, map, 'route')).toEqual([
@@ -1324,7 +1323,7 @@ describe('visibleTargetsForPurpose', () => {
     ]);
   });
 
-  it('share lists OpenAI-compat Claude and Grok local_bridge targets', () => {
+  it('share keeps direct/config-sync targets and leaves local_bridge to 本机转发', () => {
     const source = { kind: 'provider' as const, id: 'or-openai' };
     const map = new Map<string, PlanEligibility>([
       [planFanoutKey({ source, targetAgentId: 'pi' }), readyEligibility(true, {
@@ -1342,6 +1341,8 @@ describe('visibleTargetsForPurpose', () => {
     ]);
     expect(visibleTargetsForPurpose(['pi', 'claude', 'grok', 'kimi'], source, map, 'share')).toEqual([
       'pi',
+    ]);
+    expect(visibleTargetsForPurpose(['pi', 'claude', 'grok', 'kimi'], source, map, 'route')).toEqual([
       'claude',
       'grok',
     ]);

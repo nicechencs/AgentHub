@@ -29,6 +29,15 @@ export function connectSourceKey(ref: ConnectSourceRef): string {
 /** for-source：分享 = 直连 / 写进对方登录；路由 = 本机转发。 */
 export type ConnectBindPurpose = 'share' | 'route';
 
+/** Row buttons and the bind dialog share this split. */
+export function bindRouteMatchesPurpose(
+  route: AdapterApplyPlan['analysis']['route'] | undefined,
+  purpose: ConnectBindPurpose,
+): boolean {
+  if (purpose === 'route') return route === 'local_bridge';
+  return route === 'native_endpoint' || route === 'config_sync';
+}
+
 /** 对话框进入模式（判别联合）。 */
 export type ConnectFlowEntry =
   | { mode: 'for-agent'; targetAgentId: AgentId }
