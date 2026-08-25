@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,8 @@ export function ApiKeyAccountDialog({
   mode = 'add',
   account,
   onSaved,
+  asPanel = false,
+  width,
 }: {
   agentId: AgentId;
   open: boolean;
@@ -51,6 +54,8 @@ export function ApiKeyAccountDialog({
   /** 编辑模式目标账号 */
   account?: Account | null;
   onSaved: (acc: Account) => void;
+  asPanel?: boolean;
+  width?: number;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -84,6 +89,11 @@ export function ApiKeyAccountDialog({
   const canSave = isEdit
     ? Boolean(label.trim() || key.trim())
     : Boolean(key.trim());
+
+  const requestClose = () => {
+    if (saving) return;
+    onOpenChange(false);
+  };
 
   const save = async () => {
     setSaving(true);
@@ -139,22 +149,23 @@ export function ApiKeyAccountDialog({
     }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {isEdit
-              ? t('connections.apiKeyDialog.editTitle', { name: agentName })
-              : t('connections.apiKeyDialog.addTitle', { name: agentName })}
-          </DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? t('connections.apiKeyDialog.editDesc')
-              : t('connections.apiKeyDialog.addDesc')}
-          </DialogDescription>
-        </DialogHeader>
+  const title = isEdit
+    ? t('connections.apiKeyDialog.editTitle', { name: agentName })
+    : t('connections.apiKeyDialog.addTitle', { name: agentName });
+  const description = isEdit
+    ? t('connections.apiKeyDialog.editDesc')
+    : t('connections.apiKeyDialog.addDesc');
+  const saveButton = (
+    <Button disabled={!canSave || saving} onClick={() => void save()} size={asPanel ? 'sm' : 'default'}>
+      {saving
+        ? t('common.saving')
+        : isEdit
+          ? t('connections.apiKeyDialog.saveEdit')
+          : t('common.save')}
+    </Button>
+  );
 
+  const form = (
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
             <span className="text-xs text-muted">
@@ -222,18 +233,42 @@ export function ApiKeyAccountDialog({
             </label>
           ) : null}
         </div>
+  );
 
+  if (asPanel) {
+    if (!open) return null;
+    return (
+      <SideInspectPanel
+        title={title}
+        description={description}
+        onClose={requestClose}
+        headerActions={saveButton}
+        width={width}
+      >
+        {form}
+      </SideInspectPanel>
+    );
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) requestClose();
+        else onOpenChange(true);
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {form}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={requestClose}>
             {t('common.cancel')}
           </Button>
-          <Button disabled={!canSave || saving} onClick={save}>
-            {saving
-              ? t('common.saving')
-              : isEdit
-                ? t('connections.apiKeyDialog.saveEdit')
-                : t('common.save')}
-          </Button>
+          {saveButton}
         </DialogFooter>
       </DialogContent>
     </Dialog>

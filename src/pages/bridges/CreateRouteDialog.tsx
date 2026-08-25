@@ -55,11 +55,13 @@ export function CreateRouteDialog({
   onOpenChange,
   onCreated,
   asPanel = false,
+  width,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
   asPanel?: boolean;
+  width?: number;
 }) {
   const { t } = useI18n();
   const [vendor, setVendor] = useState<CreateRouteVendorId>('openrouter');
@@ -140,6 +142,7 @@ export function CreateRouteDialog({
   return (
     <DialogOrSide
       asPanel={asPanel}
+      width={width}
       open={open}
       onOpenChange={(next) => {
         if (busy) return;
@@ -149,15 +152,10 @@ export function CreateRouteDialog({
       title={t('routes.create.title')}
       description={t('routes.create.description')}
       preventDismiss
-      footer={(
-        <>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" form="create-route-form" disabled={busy || !canSubmit}>
-            {busy ? t('routes.create.submitting') : t('routes.create.submit')}
-          </Button>
-        </>
+      primary={(
+        <Button type="submit" form="create-route-form" disabled={busy || !canSubmit} size="sm">
+          {busy ? t('routes.create.submitting') : t('routes.create.submit')}
+        </Button>
       )}
     >
         <form

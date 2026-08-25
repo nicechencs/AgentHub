@@ -14,6 +14,7 @@ export const zh = {
     copied: '已复制',
     copyMessage: '复制消息',
     collapse: '收起',
+    resizeSidePanel: '调整侧栏宽度',
     relativeJustNow: '刚刚',
     relativeMinutes: '{n} 分钟前',
     relativeHours: '{n} 小时前',

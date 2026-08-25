@@ -42,6 +42,7 @@ export function EditRouteDialog({
   onSaved,
   onRequestDelete,
   asPanel = false,
+  width,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -53,6 +54,7 @@ export function EditRouteDialog({
   /** Hands the delete/停止并还原 confirmation back to the page. */
   onRequestDelete: (profile: AdapterProfile) => void;
   asPanel?: boolean;
+  width?: number;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -136,6 +138,7 @@ export function EditRouteDialog({
   return (
     <DialogOrSide
       asPanel={asPanel}
+      width={width}
       open={open}
       onOpenChange={(next) => {
         if (submitting) return;
@@ -145,31 +148,20 @@ export function EditRouteDialog({
       title={t('routes.edit.title')}
       description={t('routes.edit.description')}
       preventDismiss
-      footer={(
-        <>
-          <Button
-            type="button"
-            variant="dangerOutline"
-            className="sm:mr-auto"
-            onClick={requestDelete}
-            disabled={busy || submitting}
-          >
-            {t('routes.delete.action')}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => onOpenChange(false)}
-            disabled={submitting}
-          >
-            {t('common.cancel')}
-          </Button>
-          {editable ? (
-            <Button type="submit" form="edit-route-form" disabled={submitting || !canSubmit}>
-              {submitting ? t('routes.edit.submitting') : t('routes.edit.submit')}
-            </Button>
-          ) : null}
-        </>
+      primary={editable ? (
+        <Button type="submit" form="edit-route-form" disabled={submitting || !canSubmit} size="sm">
+          {submitting ? t('routes.edit.submitting') : t('routes.edit.submit')}
+        </Button>
+      ) : undefined}
+      danger={(
+        <Button
+          type="button"
+          variant="dangerOutline"
+          onClick={requestDelete}
+          disabled={busy || submitting}
+        >
+          {t('routes.delete.action')}
+        </Button>
       )}
     >
         <form

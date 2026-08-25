@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowRight, Boxes } from 'lucide-react';
+import { useId, useState } from 'react';
+import { ArrowRight, Boxes, ChevronDown } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -175,6 +175,7 @@ function AdapterProfileRow({
   siblingProfiles: readonly AdapterProfile[];
 }) {
   const { t } = useI18n();
+  const detailsId = useId();
   const endpointParts = profile.route === 'local_bridge'
     ? adapterBridgeHostPort(profile, bridgeStatus)
     : null;
@@ -280,12 +281,16 @@ function AdapterProfileRow({
             {t('routes.edit.action')}
           </Button>
           <Button
-            variant="ghost"
             size="sm"
+            variant="ghost"
             aria-expanded={detailExpanded}
+            aria-controls={detailsId}
             onClick={onToggleDetail}
           >
-            {detailExpanded ? t('routes.collapse') : t('routes.detail')}
+            {t('routes.detail')}
+            <ChevronDown
+              className={cn('h-3.5 w-3.5 transition-transform', detailExpanded && 'rotate-180')}
+            />
           </Button>
         </div>
       </div>
@@ -302,12 +307,12 @@ function AdapterProfileRow({
       ) : null}
       {detailExpanded ? (
         <RouteDetailPanel
+          id={detailsId}
           profile={profile}
           bridgeStatus={bridgeStatus}
           entries={entries}
           busy={busy}
           error={error}
-          onClose={onToggleDetail}
           onRequestRemove={onRequestRemove ?? (() => undefined)}
           targetHidden={targetHidden}
           siblingProfiles={siblingProfiles}

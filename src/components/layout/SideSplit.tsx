@@ -1,0 +1,111 @@
+import type { ReactNode } from 'react';
+import { pageRhythm } from '@/components/layout/page-rhythm';
+import { cn } from '@/lib/utils';
+import {
+  SIDE_SPLIT_FRAME_PAD_RIGHT,
+  SIDE_SPLIT_FRAME_PAD_Y,
+} from './side-split-model';
+import type { SideSplitController } from './use-side-split';
+
+const separatorClass = cn(
+  'group relative z-10 w-1.5 shrink-0 cursor-col-resize bg-transparent outline-none',
+  'hover:bg-accent/40 focus-visible:bg-accent/40 active:bg-accent/60',
+  'before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:content-[""]',
+);
+
+export function SideSplitSeparator<T>({
+  split,
+  resizeAria,
+}: {
+  split: SideSplitController<T>;
+  resizeAria: string;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={resizeAria}
+      aria-valuenow={split.paneWidth}
+      aria-valuemin={split.valuemin}
+      tabIndex={split.expanded ? 0 : -1}
+      onPointerDown={split.expanded ? split.onResizeStart : undefined}
+      onDoubleClick={split.expanded ? split.resetWidth : undefined}
+      onKeyDown={split.expanded ? split.onSeparatorKeyDown : undefined}
+      className={cn(separatorClass, !split.expanded && 'pointer-events-none opacity-0')}
+    />
+  );
+}
+
+export function SideSplitFrame<T>({
+  split,
+  resizeAria,
+  children,
+}: {
+  split: SideSplitController<T>;
+  resizeAria: string;
+  children: ReactNode;
+}) {
+  if (!split.mounted) return null;
+  return (
+    <>
+      <SideSplitSeparator split={split} resizeAria={resizeAria} />
+      <div
+        className={cn('h-full min-h-0 shrink-0 overflow-hidden', split.widthTransition)}
+        style={{ width: split.shellWidth }}
+        onTransitionEnd={split.onPaneTransitionEnd}
+      >
+        <div
+          className="box-border flex h-full min-h-0"
+          style={{
+            width: split.paneWidth + SIDE_SPLIT_FRAME_PAD_RIGHT,
+            paddingTop: 0,
+            paddingBottom: SIDE_SPLIT_FRAME_PAD_Y,
+            paddingRight: SIDE_SPLIT_FRAME_PAD_RIGHT,
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Full-height workbench: compact page header + list | optional inspect pane.
+ * Same chrome as Skills / Projects.
+ */
+export function WorkbenchSplitPage<T>({
+  header,
+  split,
+  resizeAria,
+  panel,
+  children,
+}: {
+  header: ReactNode;
+  split: SideSplitController<T>;
+  resizeAria: string;
+  panel?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-canvas">
+      <div className={pageRhythm.workbenchHeader}>{header}</div>
+      <div ref={split.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div
+          className={cn(
+            'min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
+            pageRhythm.workbenchX,
+            pageRhythm.workbenchY,
+          )}
+        >
+          {children}
+        </div>
+        {split.mounted && panel ? (
+          <SideSplitFrame split={split} resizeAria={resizeAria}>
+            {panel}
+          </SideSplitFrame>
+        ) : null}
+      </div>
+    </div>
+  );
+}

@@ -57,10 +57,13 @@ export default function App() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isChat = pathname === '/chat';
-  /** Skills / Projects 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
-  const isSkills = pathname === '/skills';
-  const isProjects = pathname === '/projects';
-  const fullBleed = isChat || isSkills || isProjects;
+  /** Skills / Projects / Connections / Routes 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
+  const isWorkbenchSplit =
+    pathname === '/skills' ||
+    pathname === '/projects' ||
+    pathname === '/connections' ||
+    pathname === '/routes';
+  const fullBleed = isChat || isWorkbenchSplit;
   const updateHandleRef = useRef<UpdatePromptHandle | null>(null);
 
   useEffect(() => {
@@ -115,7 +118,7 @@ export default function App() {
               fullBleed ? 'overflow-hidden' : 'overflow-y-auto',
             )}
           >
-            {/* 常规页铺满主列 + 18px inset；chat/skills/projects 全高自管 */}
+            {/* 常规页铺满主列 + 18px inset；chat 与左右分栏工作台全高自管 */}
             <div className={fullBleed ? 'h-full min-h-0' : pageRhythm.pageShell}>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />

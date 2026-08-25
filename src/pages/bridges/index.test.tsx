@@ -200,6 +200,8 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('随 AgentHub 自动启动');
     expect(markup).not.toContain('仅在 AgentHub 运行时恢复，不是开机自启');
     expect(markup).toContain('详情');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain('收起');
     expect(markup).not.toContain('data-route-detail="bridge-1"');
     expect(markup).not.toContain('上游和本机');
     expect(markup).toContain('详情');
@@ -259,7 +261,6 @@ describe('Bridges page', () => {
       entries: [openRouterEntry()],
       busy: false,
       error: null,
-      onClose: vi.fn(),
       onRequestRemove: vi.fn(),
     });
     expect(markup).toContain('上游和本机');
@@ -296,7 +297,6 @@ describe('Bridges page', () => {
       entries: [entry],
       busy: false,
       error: null,
-      onClose: vi.fn(),
       onRequestRemove: vi.fn(),
     });
     expect(markup).toContain('接到');
@@ -316,11 +316,10 @@ describe('Bridges page', () => {
       entries: [],
       busy: false,
       error: null,
-      onClose: vi.fn(),
       onRequestRemove: vi.fn(),
     });
     expect(markup).toContain('删除路由');
-    expect(markup).toContain('收起');
+    expect(markup).not.toContain('收起');
     expect(markup).toContain('data-route-detail="bridge-1"');
     expect(markup).toContain('来源登录已删除，路由仅可查看或解除绑定');
     expect(markup).not.toContain('客户端接入');

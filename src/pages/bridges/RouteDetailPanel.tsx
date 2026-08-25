@@ -4,6 +4,7 @@ import { DetailRow } from '@/components/shared/DetailRow';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { openLogsDir } from '@/lib/api/settings';
@@ -37,29 +38,34 @@ import {
  * Route detail: login, local address, who is connected. No protocol graph.
  */
 export function RouteDetailPanel({
+  id,
   profile,
   bridgeStatus,
   entries,
   siblingProfiles = [],
   busy,
   error,
-  onClose,
   onRequestRemove,
   targetHidden = false,
 }: {
+  id?: string;
   profile: AdapterProfile | null;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
   entries: ConnectionEntry[];
   siblingProfiles?: readonly AdapterProfile[];
   busy: boolean;
   error: unknown;
-  onClose: () => void;
   onRequestRemove: (profile: AdapterProfile) => void;
   targetHidden?: boolean;
 }) {
   if (!profile) return null;
   return (
-    <div className="mt-3 space-y-4 border-t border-border pt-3" data-route-detail={profile.id}>
+    <Card
+      id={id}
+      variant="plain"
+      className="mt-3 flex flex-col gap-3 bg-canvas p-3"
+      data-route-detail={profile.id}
+    >
       <RouteDetailBody
         profile={profile}
         bridgeStatus={bridgeStatus}
@@ -67,11 +73,10 @@ export function RouteDetailPanel({
         siblingProfiles={siblingProfiles}
         busy={busy}
         error={error}
-        onClose={onClose}
         onRequestRemove={onRequestRemove}
         targetHidden={targetHidden}
       />
-    </div>
+    </Card>
   );
 }
 
@@ -82,7 +87,6 @@ function RouteDetailBody({
   siblingProfiles,
   busy,
   error,
-  onClose,
   onRequestRemove,
   targetHidden,
 }: {
@@ -92,7 +96,6 @@ function RouteDetailBody({
   siblingProfiles: readonly AdapterProfile[];
   busy: boolean;
   error: unknown;
-  onClose: () => void;
   onRequestRemove: (profile: AdapterProfile) => void;
   targetHidden: boolean;
 }) {
@@ -116,7 +119,7 @@ function RouteDetailBody({
 
   return (
     <>
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+      <div className="space-y-4">
         <section className="space-y-2">
           <h3 className="text-body font-medium">{t('routes.graph.mappingTitle')}</h3>
           <div className={cn(
@@ -232,18 +235,16 @@ function RouteDetailBody({
         </details>
       </div>
 
-      <div className="mt-4 flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border pt-4">
-        <div className="flex shrink-0 flex-wrap justify-end gap-2">
-          <Button
-            variant="dangerOutline"
-            disabled={busy || targetHidden}
-            title={targetHidden ? t('routes.targetHiddenHint') : undefined}
-            onClick={() => onRequestRemove(profile)}
-          >
-            {t('routes.delete.action')}
-          </Button>
-          <Button variant="secondary" onClick={onClose}>{t('routes.collapse')}</Button>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+        <Button
+          size="sm"
+          variant="dangerOutline"
+          disabled={busy || targetHidden}
+          title={targetHidden ? t('routes.targetHiddenHint') : undefined}
+          onClick={() => onRequestRemove(profile)}
+        >
+          {t('routes.delete.action')}
+        </Button>
       </div>
     </>
   );

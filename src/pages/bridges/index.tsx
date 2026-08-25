@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -53,6 +55,14 @@ type WalletSnapshot = {
 /** One route plus the endpoint graph its client-config write is derived from. */
 type WriteTarget = { profile: AdapterProfile; graph: RouteGraphView };
 
+type RouteInspect =
+  | { kind: 'create' }
+  | { kind: 'import' }
+  | { kind: 'write'; target: WriteTarget }
+  | { kind: 'edit'; profile: AdapterProfile };
+
+const ROUTES_INSPECT_WIDTH_KEY = 'agenthub.routes.inspectWidth';
+
 /**
  * Local-bridge runtime ops page. Creating bindings lives in Dashboard and
  * Connections ConnectFlow. Do not mount analyze fan-out, plan, or apply here.
@@ -83,10 +93,7 @@ export default function BridgesPage() {
   const [removingProfileId, setRemovingProfileId] = useState<string | null>(null);
   const [profileErrors, setProfileErrors] = useState<Record<string, unknown>>({});
   const [busyProfileIds, setBusyProfileIds] = useState<Record<string, boolean>>({});
-  const [createOpen, setCreateOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [writeTarget, setWriteTarget] = useState<WriteTarget | null>(null);
-  const [editTarget, setEditTarget] = useState<AdapterProfile | null>(null);
+  const inspect = useSideSplit<RouteInspect>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
 
   const setProfileBusy = (profileId: string, busy: boolean) => {
     setBusyProfileIds((current) => ({ ...current, [profileId]: busy }));
@@ -222,47 +229,92 @@ export default function BridgesPage() {
     onRequestStopBridge: setStopConfirm,
     onRequestRemove: setRemoveConfirm,
     onRequestWrite: (profile: AdapterProfile, graph: RouteGraphView) => {
-      setCreateOpen(false);
-      setImportOpen(false);
-      setEditTarget(null);
-      setWriteTarget({ profile, graph });
+      inspect.open({ kind: 'write', target: { profile, graph } });
     },
     onRequestEdit: (profile: AdapterProfile) => {
-      setCreateOpen(false);
-      setImportOpen(false);
-      setWriteTarget(null);
-      setEditTarget(profile);
+      inspect.open({ kind: 'edit', profile });
     },
     onRetry: () => { void reload(); },
     hiddenTargetIds,
   };
 
-  return (
-    <div>
-      <PageHeader
-        title={t('routes.page.title')}
-        description={t('routes.page.description')}
-        descriptionTip={t('routes.page.descriptionTip')}
-        actions={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => {
-              setCreateOpen(false);
-              setWriteTarget(null);
-              setEditTarget(null);
-              setImportOpen(true);
-            }}>{t('routes.import.action')}</Button>
-            <Button onClick={() => {
-              setImportOpen(false);
-              setWriteTarget(null);
-              setEditTarget(null);
-              setCreateOpen(true);
-            }}>{t('routes.create.action')}</Button>
-          </div>
-        }
-      />
+  const inspectTarget = inspect.target;
+  const writeTarget = inspectTarget?.kind === 'write' ? inspectTarget.target : null;
+  const editTarget = inspectTarget?.kind === 'edit' ? inspectTarget.profile : null;
 
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
+  const inspectPanel =
+    inspectTarget?.kind === 'create' ? (
+      <CreateRouteDialog
+        asPanel
+        open
+        width={inspect.paneWidth}
+        onOpenChange={(open) => { if (!open) inspect.close(); }}
+        onCreated={() => { void reload(); }}
+      />
+    ) : inspectTarget?.kind === 'import' ? (
+      <ImportRouteDialog
+        asPanel
+        open
+        width={inspect.paneWidth}
+        onOpenChange={(open) => { if (!open) inspect.close(); }}
+        entries={entries}
+        profiles={profiles}
+        bindingProfileIds={wallet.bindingProfileIds}
+        onImported={() => { void reload(); }}
+      />
+    ) : inspectTarget?.kind === 'write' && writeTarget ? (
+      <WriteClientConfigDialog
+        asPanel
+        open
+        width={inspect.paneWidth}
+        onOpenChange={(open) => { if (!open) inspect.close(); }}
+        profile={writeTarget.profile}
+        rows={writeTarget.graph.rows}
+        host={writeTarget.graph.local.host}
+        port={writeTarget.graph.local.port ?? null}
+        sourceMissing={writeTarget.graph.source.missing}
+        hiddenTargetIds={hiddenTargetIds}
+        onWritten={() => { void reload(); }}
+      />
+    ) : inspectTarget?.kind === 'edit' && editTarget ? (
+      <EditRouteDialog
+        asPanel
+        open
+        width={inspect.paneWidth}
+        onOpenChange={(open) => { if (!open) inspect.close(); }}
+        profile={editTarget}
+        entries={entries}
+        busy={busyProfileIds[editTarget.id] === true}
+        onSaved={() => { void reload(); }}
+        onRequestDelete={setRemoveConfirm}
+      />
+    ) : null;
+
+  return (
+    <>
+    <WorkbenchSplitPage
+      split={inspect}
+      resizeAria={t('common.resizeSidePanel')}
+      panel={inspectPanel}
+      header={(
+        <PageHeader
+          size="compact"
+          title={t('routes.page.title')}
+          description={t('routes.page.description')}
+          descriptionTip={t('routes.page.descriptionTip')}
+          actions={
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => inspect.open({ kind: 'import' })}>
+                {t('routes.import.action')}
+              </Button>
+              <Button onClick={() => inspect.open({ kind: 'create' })}>
+                {t('routes.create.action')}
+              </Button>
+            </div>
+          }
+        />
+      )}
+    >
       {connectionWarning ? (
         <div className={pageRhythm.lead}>
           <Notice tone="warning">{connectionWarning}</Notice>
@@ -299,7 +351,7 @@ export default function BridgesPage() {
             title={t('routes.empty.title')}
             description={t('routes.empty.description')}
             actionLabel={t('routes.create.action')}
-            onAction={() => setCreateOpen(true)}
+            onAction={() => inspect.open({ kind: 'create' })}
           />
         ) : null}
         {pageView === 'list' ? (
@@ -331,46 +383,7 @@ export default function BridgesPage() {
           </>
         ) : null}
       </div>
-
-        </div>
-      <CreateRouteDialog
-        asPanel
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={() => { void reload(); }}
-      />
-      <ImportRouteDialog
-        asPanel
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        entries={entries}
-        profiles={profiles}
-        bindingProfileIds={wallet.bindingProfileIds}
-        onImported={() => { void reload(); }}
-      />
-      <WriteClientConfigDialog
-        asPanel
-        open={Boolean(writeTarget)}
-        onOpenChange={(open) => { if (!open) setWriteTarget(null); }}
-        profile={writeTarget?.profile ?? null}
-        rows={writeTarget?.graph.rows ?? []}
-        host={writeTarget?.graph.local.host}
-        port={writeTarget?.graph.local.port ?? null}
-        sourceMissing={writeTarget?.graph.source.missing ?? false}
-        hiddenTargetIds={hiddenTargetIds}
-        onWritten={() => { void reload(); }}
-      />
-      <EditRouteDialog
-        asPanel
-        open={Boolean(editTarget)}
-        onOpenChange={(open) => { if (!open) setEditTarget(null); }}
-        profile={editTarget}
-        entries={entries}
-        busy={editTarget ? busyProfileIds[editTarget.id] === true : false}
-        onSaved={() => { void reload(); }}
-        onRequestDelete={setRemoveConfirm}
-      />
-      </div>
+    </WorkbenchSplitPage>
 
       <Dialog
         open={Boolean(stopConfirm)}
@@ -430,6 +443,6 @@ export default function BridgesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

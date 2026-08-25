@@ -44,6 +44,7 @@ export function ImportRouteDialog({
   bindingProfileIds,
   onImported,
   asPanel = false,
+  width,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,6 +53,7 @@ export function ImportRouteDialog({
   bindingProfileIds?: ReadonlySet<string>;
   onImported: () => void;
   asPanel?: boolean;
+  width?: number;
 }) {
   const { t } = useI18n();
   const [selected, setSelected] = useState<string | null>(null);
@@ -107,6 +109,7 @@ export function ImportRouteDialog({
   return (
     <DialogOrSide
       asPanel={asPanel}
+      width={width}
       open={open}
       onOpenChange={(next) => {
         if (busy) return;
@@ -120,15 +123,10 @@ export function ImportRouteDialog({
       title={t('routes.import.title')}
       description={t('routes.import.description')}
       preventDismiss
-      footer={(
-        <>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" form="import-route-form" disabled={busy || !picked}>
-            {busy ? t('routes.import.submitting') : t('routes.import.submit')}
-          </Button>
-        </>
+      primary={(
+        <Button type="submit" form="import-route-form" disabled={busy || !picked} size="sm">
+          {busy ? t('routes.import.submitting') : t('routes.import.submit')}
+        </Button>
       )}
     >
       <form

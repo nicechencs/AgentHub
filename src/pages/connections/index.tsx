@@ -6,6 +6,8 @@ import { Cable } from 'lucide-react';
 import { AgentTabStrip, type AgentTabId } from '@/components/layout/AgentTabStrip';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { Notice } from '@/components/shared/Notice';
@@ -92,6 +94,12 @@ import {
 import { deleteProvider, importProviderLive, switchPreview, switchProvider } from '@/lib/api/provider';
 import type { Account, Provider } from '@/lib/types';
 
+type ConnectionInspect =
+  | { kind: 'provider'; agentId: AgentId; mode: 'add' | 'edit'; provider: Provider | null }
+  | { kind: 'account'; agentId: AgentId; account: Account };
+
+const CONNECTIONS_INSPECT_WIDTH_KEY = 'agenthub.connections.inspectWidth';
+
 function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId | null {
   if (raw && allowed.includes(raw as AgentId)) return raw as AgentId;
   return null;
@@ -129,9 +137,7 @@ export default function ConnectionsPage() {
   const [addAgentId, setAddAgentId] = useState<AgentId>(
     () => highlightAgentId ?? allowedAgents[0] ?? 'claude',
   );
-  const [apiKeyDialogOpen, setApiKeyDialogOpen] = useState(false);
-  const [editProvider, setEditProvider] = useState<Provider | null>(null);
-  const [editAccountKey, setEditAccountKey] = useState<Account | null>(null);
+  const inspect = useSideSplit<ConnectionInspect>({ storageKey: CONNECTIONS_INSPECT_WIDTH_KEY });
   const [loginImportOpen, setLoginImportOpen] = useState(false);
   const [importLiveProbe, setImportLiveProbe] = useState<LiveAuthProbe | null>(null);
   const [importProbeLoading, setImportProbeLoading] = useState(false);
@@ -317,8 +323,12 @@ export default function ConnectionsPage() {
     if (!intent) return;
     if (intent === 'add-key') {
       guideOpenedApiKeyRef.current = true;
-      setEditProvider(null);
-      setApiKeyDialogOpen(true);
+      inspect.open({
+        kind: 'provider',
+        mode: 'add',
+        agentId: addAgentId,
+        provider: null,
+      });
       setPendingGuide(null);
       return;
     }
@@ -326,7 +336,7 @@ export default function ConnectionsPage() {
       setLoginImportOpen(true);
       setPendingGuide(null);
     }
-  }, [pendingGuide]);
+  }, [pendingGuide, addAgentId, inspect.open]);
 
   const handleGuideSucceeded = useCallback(() => {
     const resume = pendingGuide?.resumeAgentId ?? resumeAgentId;
@@ -488,28 +498,47 @@ export default function ConnectionsPage() {
   const openTicketAdd = useCallback((kind: TicketAddKind, agentId: AgentId) => {
     const next = ticketAddDialogState(kind, agentId);
     setAddAgentId(next.addAgentId);
-    if (next.clearEditProvider) setEditProvider(null);
     ignoreMenuDialogDismissRef.current = true;
-    if (next.loginImportOpen) setLoginImportOpen(true);
-    if (next.apiKeyDialogOpen) setApiKeyDialogOpen(true);
+    if (next.loginImportOpen) {
+      inspect.close();
+      setLoginImportOpen(true);
+    }
+    if (next.apiKeyDialogOpen) {
+      setLoginImportOpen(false);
+      inspect.open({
+        kind: 'provider',
+        mode: 'add',
+        agentId: next.addAgentId,
+        provider: null,
+      });
+    }
     scheduleAfterMenuClose(() => {
       ignoreMenuDialogDismissRef.current = false;
     }, 100);
-  }, []);
+  }, [inspect.close, inspect.open]);
 
   const handleEditTicket = useCallback(
     (ticket: TicketView) => {
       const source = findTicketPoolSource(ticket, pool.accounts, pool.providers);
+      setLoginImportOpen(false);
       if (source.provider) {
-        setEditProvider(source.provider);
-        setApiKeyDialogOpen(true);
+        inspect.open({
+          kind: 'provider',
+          mode: 'edit',
+          agentId: source.provider.agentId,
+          provider: source.provider,
+        });
         return;
       }
       if (source.account?.kind === 'apikey') {
-        setEditAccountKey(source.account);
+        inspect.open({
+          kind: 'account',
+          agentId: source.account.agentId,
+          account: source.account,
+        });
       }
     },
-    [pool.accounts, pool.providers],
+    [inspect.open, pool.accounts, pool.providers],
   );
 
   const importCoexistenceNotice = liveAuthCoexistenceNotice(importLiveProbe, addAgentId, t);
@@ -601,42 +630,105 @@ export default function ConnectionsPage() {
     }
   };
 
+  const inspectTarget = inspect.target;
+  const inspectPanel =
+    inspectTarget?.kind === 'provider' ? (
+      <ProviderEditDialog
+        asPanel
+        open
+        width={inspect.paneWidth}
+        agentId={inspectTarget.agentId}
+        mode={inspectTarget.mode}
+        provider={inspectTarget.provider}
+        onOpenChange={(v) => {
+          if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, v)) return;
+          if (!v) inspect.close();
+        }}
+        onSaved={() => {
+          const fromGuide = guideOpenedApiKeyRef.current;
+          guideOpenedApiKeyRef.current = false;
+          inspect.close();
+          void loadWallet();
+          void poolReload();
+          if (fromGuide) handleGuideSucceeded();
+        }}
+      />
+    ) : inspectTarget?.kind === 'account' ? (
+      <ApiKeyAccountDialog
+        asPanel
+        open
+        width={inspect.paneWidth}
+        agentId={inspectTarget.agentId}
+        mode="edit"
+        account={inspectTarget.account}
+        onOpenChange={(v) => {
+          if (!v) inspect.close();
+        }}
+        onSaved={() => {
+          inspect.close();
+          void loadWallet();
+          void poolReload();
+        }}
+      />
+    ) : null;
+
   if (loading) {
     return (
-      <div>
-        <PageHeader
-          title={t('connections.page.title')}
-          description={t('connections.page.description')}
-          descriptionTip={t('connections.page.descriptionTipLoading')}
-        />
+      <WorkbenchSplitPage
+        split={inspect}
+        resizeAria={t('common.resizeSidePanel')}
+        panel={inspectPanel}
+        header={(
+          <PageHeader
+            size="compact"
+            title={t('connections.page.title')}
+            description={t('connections.page.description')}
+            descriptionTip={t('connections.page.descriptionTipLoading')}
+          />
+        )}
+      >
         <div className={pageRhythm.chrome}>
           <ListSkeleton rows={4} />
         </div>
-      </div>
+      </WorkbenchSplitPage>
     );
   }
 
   if (state === 'error') {
     return (
-      <div>
-        <PageHeader
-          title={t('connections.page.title')}
-          description={t('connections.page.description')}
-          descriptionTip={t('connections.page.descriptionTipError')}
-        />
+      <WorkbenchSplitPage
+        split={inspect}
+        resizeAria={t('common.resizeSidePanel')}
+        panel={inspectPanel}
+        header={(
+          <PageHeader
+            size="compact"
+            title={t('connections.page.title')}
+            description={t('connections.page.description')}
+            descriptionTip={t('connections.page.descriptionTipError')}
+          />
+        )}
+      >
         <ErrorState error={error} title={t('connections.page.agentStatusError')} onRetry={() => void reload()} />
-      </div>
+      </WorkbenchSplitPage>
     );
   }
 
   if (!loading && installedIds.length === 0) {
     return (
-      <div>
-        <PageHeader
-          title={t('connections.page.title')}
-          description={t('connections.page.description')}
-          descriptionTip={t('connections.page.descriptionTipEmpty')}
-        />
+      <WorkbenchSplitPage
+        split={inspect}
+        resizeAria={t('common.resizeSidePanel')}
+        panel={inspectPanel}
+        header={(
+          <PageHeader
+            size="compact"
+            title={t('connections.page.title')}
+            description={t('connections.page.description')}
+            descriptionTip={t('connections.page.descriptionTipEmpty')}
+          />
+        )}
+      >
         <EmptyState
           icon={Cable}
           title={t('connections.page.emptyTitle')}
@@ -644,29 +736,37 @@ export default function ConnectionsPage() {
           actionLabel={t('connections.page.emptyAction')}
           onAction={() => navigate('/agents')}
         />
-      </div>
+      </WorkbenchSplitPage>
     );
   }
 
   return (
-    <div>
-      <PageHeader
-        title={t('connections.page.title')}
-        description={
-          visibleWallet
-            ? t('connections.page.descriptionCount', { n: visibleWallet.tickets.length })
-            : t('connections.page.descriptionKinds')
-        }
-        descriptionTip={t('connections.page.descriptionTip')}
-        actions={
-          <TicketAddMenu
-            agents={buildTicketAddMenu(allowedAgents)}
-            focusedAgentId={filterAgent === 'all' ? null : filterAgent}
-            onImportLogin={(id) => openTicketAdd('import-login', id)}
-            onAddKey={(id) => openTicketAdd('api-key', id)}
-          />
-        }
-      />
+    <>
+    <WorkbenchSplitPage
+      split={inspect}
+      resizeAria={t('common.resizeSidePanel')}
+      panel={inspectPanel}
+      header={(
+        <PageHeader
+          size="compact"
+          title={t('connections.page.title')}
+          description={
+            visibleWallet
+              ? t('connections.page.descriptionCount', { n: visibleWallet.tickets.length })
+              : t('connections.page.descriptionKinds')
+          }
+          descriptionTip={t('connections.page.descriptionTip')}
+          actions={
+            <TicketAddMenu
+              agents={buildTicketAddMenu(allowedAgents)}
+              focusedAgentId={filterAgent === 'all' ? null : filterAgent}
+              onImportLogin={(id) => openTicketAdd('import-login', id)}
+              onAddKey={(id) => openTicketAdd('api-key', id)}
+            />
+          }
+        />
+      )}
+    >
 
       <div className={pageRhythm.chrome}>
         <AgentTabStrip
@@ -763,6 +863,7 @@ export default function ConnectionsPage() {
       <div className="mt-4">
         <ConnectionTrashButton onChanged={() => void loadWallet()} />
       </div>
+    </WorkbenchSplitPage>
 
       <ConnectFlowDialog
         entry={connectEntry}
@@ -866,42 +967,6 @@ export default function ConnectionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <ApiKeyAccountDialog
-        agentId={editAccountKey?.agentId ?? addAgentId}
-        mode="edit"
-        account={editAccountKey}
-        open={!!editAccountKey}
-        onOpenChange={(v) => !v && setEditAccountKey(null)}
-        onSaved={() => {
-          setEditAccountKey(null);
-          void loadWallet();
-          void poolReload();
-        }}
-      />
-      <ProviderEditDialog
-        agentId={editProvider?.agentId ?? addAgentId}
-        mode={editProvider ? 'edit' : 'add'}
-        provider={editProvider}
-        open={apiKeyDialogOpen}
-        onOpenChange={(v) => {
-          if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, v)) return;
-          setApiKeyDialogOpen(v);
-          if (!v) {
-            setEditProvider(null);
-            guideOpenedApiKeyRef.current = false;
-          }
-        }}
-        onSaved={() => {
-          const fromGuide = guideOpenedApiKeyRef.current;
-          setApiKeyDialogOpen(false);
-          setEditProvider(null);
-          guideOpenedApiKeyRef.current = false;
-          void loadWallet();
-          void poolReload();
-          if (fromGuide) handleGuideSucceeded();
-        }}
-      />
-    </div>
+    </>
   );
 }

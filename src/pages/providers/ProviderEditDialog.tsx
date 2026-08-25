@@ -7,6 +7,7 @@
  */
 import * as React from 'react';
 import { ChevronDown, FolderOpen, Sparkles } from 'lucide-react';
+import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import {
   Dialog,
   DialogContent,
@@ -170,6 +171,8 @@ export function ProviderEditDialog({
   mode = 'add',
   provider,
   onSaved,
+  asPanel = false,
+  width,
 }: {
   agentId: AgentId;
   open: boolean;
@@ -177,6 +180,8 @@ export function ProviderEditDialog({
   mode?: ProviderDialogMode;
   provider?: Provider | null;
   onSaved: (p: Provider) => void;
+  asPanel?: boolean;
+  width?: number;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -583,6 +588,11 @@ export function ProviderEditDialog({
     }
   };
 
+  const requestClose = () => {
+    if (saving) return;
+    onOpenChange(false);
+  };
+
   const save = async () => {
     if (configError) {
       toast({
@@ -700,22 +710,23 @@ export function ProviderEditDialog({
     }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {isEdit
-              ? t('connections.apiKeyDialog.editTitle', { name: agentName })
-              : t('connections.apiKeyDialog.addTitle', { name: agentName })}
-          </DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? t('connections.apiKeyDialog.editDesc')
-              : t('connections.apiKeyDialog.addDesc')}
-          </DialogDescription>
-        </DialogHeader>
+  const title = isEdit
+    ? t('connections.apiKeyDialog.editTitle', { name: agentName })
+    : t('connections.apiKeyDialog.addTitle', { name: agentName });
+  const description = isEdit
+    ? t('connections.apiKeyDialog.editDesc')
+    : t('connections.apiKeyDialog.addDesc');
+  const saveButton = (
+    <Button disabled={!canSave || saving} onClick={() => void save()} size={asPanel ? 'sm' : 'default'}>
+      {saving
+        ? t('common.saving')
+        : isEdit
+          ? t('connections.apiKeyDialog.saveEdit')
+          : t('connections.providerDialog.add')}
+    </Button>
+  );
 
+  const form = (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-start justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-meta text-muted">
             <div className="min-w-0 flex-1 space-y-0.5">
@@ -1022,18 +1033,42 @@ export function ProviderEditDialog({
             ) : null}
           </div>
         </div>
+  );
 
+  if (asPanel) {
+    if (!open) return null;
+    return (
+      <SideInspectPanel
+        title={title}
+        description={description}
+        onClose={requestClose}
+        headerActions={saveButton}
+        width={width}
+      >
+        {form}
+      </SideInspectPanel>
+    );
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) requestClose();
+        else onOpenChange(true);
+      }}
+    >
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {form}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={requestClose}>
             {t('common.cancel')}
           </Button>
-          <Button disabled={!canSave || saving} onClick={() => void save()}>
-            {saving
-              ? t('common.saving')
-              : isEdit
-                ? t('connections.apiKeyDialog.saveEdit')
-                : t('connections.providerDialog.add')}
-          </Button>
+          {saveButton}
         </DialogFooter>
       </DialogContent>
     </Dialog>
