@@ -3,6 +3,7 @@ import {
   type AdapterRouteAnalysis,
   type AdapterRouteRequest,
 } from '@/lib/backend/contracts/adapter';
+import { lookupGoldenExpect, overlayAnalysisFromExpect } from './golden-lookup';
 import { analysisFromFixture, findRuleFixture } from './rule-fixtures';
 import { classify } from './classify';
 import {
@@ -36,6 +37,16 @@ import {
 } from './types';
 
 export function analyze(
+  resolver: MockAdapterSourceResolver,
+  request: AdapterRouteRequest,
+): AdapterRouteAnalysis {
+  const fallback = analyzeFromClassifier(resolver, request);
+  const hit = lookupGoldenExpect(resolver, request);
+  if (!hit) return fallback;
+  return overlayAnalysisFromExpect(fallback, hit.expect);
+}
+
+function analyzeFromClassifier(
   resolver: MockAdapterSourceResolver,
   request: AdapterRouteRequest,
 ): AdapterRouteAnalysis {

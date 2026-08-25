@@ -307,3 +307,8 @@ export {
   PROTOCOL_MISMATCH_REASON,
   SAME_PROTOCOL_NO_EDGE_REASON,
 } from './adapter/types';
+export {
+  DEV_MOCK_KNOWN_SEED_IDS,
+  getGoldenLookupStats,
+  resetGoldenLookupStats,
+} from './adapter/golden-lookup';

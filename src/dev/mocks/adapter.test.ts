@@ -5,6 +5,7 @@ import {
   CLAUDE_SUBSCRIPTION_TO_CODEX_REASON,
   CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
   createMockAdapterPort,
+  resetGoldenLookupStats,
   resetMockAdapters,
 } from './adapter';
 import { getMockAccountById, upsertMockAccount } from './account';
@@ -32,6 +33,7 @@ describe('mock adapter route preview', () => {
   beforeEach(() => {
     resetMockAdapters();
     resetMockProviders();
+    resetGoldenLookupStats();
   });
 
   it('classifies a randomly named saved provider and keeps secrets out of analysis and plan', async () => {
@@ -1198,6 +1200,7 @@ describe('shared adapter capability contract', () => {
   beforeEach(() => {
     resetMockAdapters();
     resetMockProviders();
+    resetGoldenLookupStats();
   });
 
   it.each(contract.cases)('$id matches Rust analyze/plan surface', async (item) => {

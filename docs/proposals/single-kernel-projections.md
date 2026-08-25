@@ -10,7 +10,7 @@ updated: 2026-08-25
 
 > 状态：提案
 >
-> 本文记录如何降低 Adapter / route 规则改动的结构成本，并说明它与全项目开发内环提速的关系。切片 0（风险分级协作）和切片 A（内核生成 golden）已经落地；B–F 仍是候选，不授权改 mock、拆 crate 或把 JSON 当规则真源。派工前必须指定负责人、文件范围、必须保持的行为和验证命令。
+> 本文记录如何降低 Adapter / route 规则改动的结构成本，并说明它与全项目开发内环提速的关系。切片 0（风险分级协作）、切片 A（内核生成 golden）和切片 B（mock 查表优先）已经落地；C–F 仍是候选，不授权删除旧 classifier、拆 crate 或把 JSON 当规则真源。派工前必须指定负责人、文件范围、必须保持的行为和验证命令。
 
 ## 0. 结论与适用范围
 
@@ -31,7 +31,7 @@ AgentHub 仍是模块化单体：GUI 和 CLI 共用 `agenthub-core`。产品写�
 
 规则真源在 Rust：`adapter_capability_matrix` 加上 `AdapterRouteService` 的私有 write gate。`can_apply` 只是矩阵层标志；实际写入还要过 write gate、来源凭据和目标 writer。
 
-浏览器 mock 与 Vitest 目前**重新实现**同一套 classify / plan / apply，并与 core 锁步维护 reason 字符串和投影表。`src/dev/mocks/fixtures/adapter-capability-contract.json` 是 `AdapterRouteService::plan()` 对冻结入参的只读快照；Rust 测试在快照与内核输出不一致时失败。C1 的公开 rule ID 覆盖仍然有效。这**不等于** mock 已经不再做决策。
+浏览器 mock 的 analyze / plan 对已知种子优先查询 golden.expect；未命中仍回退到独立 classify / plan，并与 core 锁步维护 reason 字符串和投影表。`src/dev/mocks/fixtures/adapter-capability-contract.json` 是 `AdapterRouteService::plan()` 对冻结入参的只读快照；Rust 测试在快照与内核输出不一致时失败。C1 的公开 rule ID 覆盖仍然有效。旧 classifier 尚未删除，这**不等于** mock 已经不再做决策。
 
 验证方面，[测试与验证](../guides/testing-and-validation.md) 已按改动类型给出最小命令，并与 [AGENTS.md](../../AGENTS.md) 使用同一套风险分级：局部改动跑过滤测试，全量门禁留给提交前或 CI。PR CI 仍跑全量 typecheck、Vitest 和三个 Rust crate。Grok / Agent worktree 通常没有共享的 `target/` 编译产物；crate.io 与 pnpm store 是全局的，Rust 增量缓存不是。
 
@@ -194,9 +194,9 @@ Tauri command 的 wire 使用 core 的 serde 形状。`src/lib/backend/contracts
 
 用冻结入参调用 `AdapterRouteService::plan()`，序列化到现有 `adapter-capability-contract.json`。Rust 测试在 JSON 与内核输出不一致时失败。现有手写 cases 变成内核快照，不降低覆盖。必须包含 write gate 挡住的边，避免 mock 显示错误的 `canApply`。内核输出变化后，用 `UPDATE_ADAPTER_CAPABILITY_CONTRACT=1` 重新生成快照。
 
-### 切片 B：mock 查表优先
+### 切片 B：mock 查表优先 — `已落地`
 
-mock 的 analyze / plan 先查 golden；命中则返回 expect。未命中暂时走旧 classify（绞杀期）。已知种子必须命中；未命中次数在测试中可见。`dev:mock` 的种子账号行为保持可演示。
+mock 的 analyze / plan 先查 golden；命中则用 expect 覆盖 route / support / ruleId / gateKind / canApply / reason / reusePath。未命中暂时走旧 classify（绞杀期）。已知种子必须命中；未命中次数由 `getGoldenLookupStats()` 统计，测试可断言。`dev:mock` 的种子账号行为保持可演示。
 
 ### 切片 C：删除第二套引擎
 
