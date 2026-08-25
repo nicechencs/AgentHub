@@ -26,6 +26,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [adapter-sidecar.md](adapter-sidecar.md) | proposed | Could a user-level process own the long-lived local route runtime while GUI and CLI remain clients? |
 | [tray-background-modes.md](tray-background-modes.md) | proposed | Could closing the window reduce WebView memory without changing route ownership or exit semantics? |
 | [modularity.md](modularity.md) | proposed | Which single-source and use-case boundaries should be tightened before any larger process change? |
+| [single-kernel-projections.md](single-kernel-projections.md) | proposed | Can route decisions stay in one Rust planner, with mock and JSON as read-only projections, without adding a second toolchain? |
 
 ## Proposal rules
 

@@ -61,6 +61,7 @@ updated: 2026-08-25
 - [Adapter sidecar](proposals/adapter-sidecar.md)
 - [托盘后台模式](proposals/tray-background-modes.md)
 - [模块化改进](proposals/modularity.md)
+- [单一内核与查表投影](proposals/single-kernel-projections.md)
 - [归档索引](archive/README.md)：不可作为当前契约。
 - [旧文档迁移索引](archive/legacy-document-index.md)：旧路径到新真源的完整映射。
 
