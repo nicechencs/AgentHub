@@ -6,6 +6,9 @@ import { shouldIgnoreMenuDialogDismiss } from '@/pages/connections/ticket-wallet
 import { zh } from '@/lib/i18n/locales/zh';
 import {
   agentTaskLogTitleKey,
+  extraCopyKindLabel,
+  extraCopyKindLabelKey,
+  extraCopyUpdateHint,
   isNodeTooOldUpdateNote,
   openAgentCardUninstallConfirm,
 } from './agent-card-model';
@@ -99,6 +102,41 @@ describe('agent-card install log title', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
     expect(card).toContain('needsNode22');
     expect(card).toContain('isNodeTooOldUpdateNote');
+  });
+});
+
+describe('extra copy labels', () => {
+  it('maps known kinds and leaves npm/native as channel ids', () => {
+    expect(extraCopyKindLabelKey('ide')).toBe('agents.card.extraCopyIde');
+    expect(extraCopyKindLabelKey('desktop')).toBe('agents.card.extraCopyDesktop');
+    expect(extraCopyKindLabelKey('leftover-agenthub')).toBe(
+      'agents.card.extraCopyLeftover',
+    );
+    expect(extraCopyKindLabelKey('npm')).toBeUndefined();
+    expect(extraCopyKindLabelKey('native')).toBeUndefined();
+    expect(extraCopyKindLabel('npm', (key) => key)).toBe('npm');
+    expect(extraCopyKindLabel('ide', (key) => key)).toBe('agents.card.extraCopyIde');
+  });
+
+  it('wires copy-path on the primary binary and extra copies', () => {
+    const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
+    expect(card).toContain('copyInstallPath');
+    expect(card).toContain('CopyInstallPathButton');
+    expect(card).toContain('agents.card.copyPath');
+    expect(card).toContain('extraCopyKindLabel');
+    expect(card).toContain('extraCopyUpdateHint');
+    expect(zh.agents.card.copyPath).toBe('复制路径');
+    expect(zh.agents.card.extraCopyDesktop).toBe('桌面应用');
+  });
+
+  it('compares extra copies against the shared remote latest, skipping leftover', () => {
+    expect(extraCopyUpdateHint('npm', '1.0.0', '1.2.0')).toBe('update_available');
+    expect(extraCopyUpdateHint('native', '2.1.50', '2.1.50')).toBe('up_to_date');
+    expect(extraCopyUpdateHint('ide', '0.149.0-alpha.4.3', '0.149.1')).toBe(
+      'update_available',
+    );
+    expect(extraCopyUpdateHint('leftover-agenthub', '0.1.0', '1.0.0')).toBeUndefined();
+    expect(extraCopyUpdateHint('npm', undefined, '1.2.0')).toBeUndefined();
   });
 });
 

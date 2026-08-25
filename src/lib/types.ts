@@ -103,7 +103,7 @@ export interface AgentStatus {
   latestVersion?: string;
   channel?: InstallChannel;
   binPath?: string;
-  /** Other on-disk copies besides binPath (Codex IDE / desktop / leftover npm). */
+  /** Other on-disk copies besides binPath (other channels, IDE, leftover npm). */
   extraCopies?: Array<{
     path: string;
     kind: string;

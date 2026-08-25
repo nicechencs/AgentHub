@@ -1,68 +1,21 @@
-//! Extra Codex CLIs besides the spawn target (IDE, desktop, leftover data-dir npm).
+//! Extra Codex CLIs besides the spawn target (IDE / desktop).
+//!
+//! npm / native well-known copies are attached by shared detect.
 
 use std::path::{Path, PathBuf};
 
-use crate::models::{AgentId, DetectedBinaryCopy, DetectResult};
-use crate::utils::process::{run_capture_with_env, stdout_first_line};
+use crate::models::DetectResult;
 
-use super::detect_binary::{
-    extract_version_token, is_direct_spawnable, is_under_agenthub_user_npm_prefix,
-    looks_like_version_line, well_known_bin_paths,
-};
-
-/// Fill `extra_copies` + a human note. Does not change the spawn `binary_path`.
-/// Leftover `~/.agenthub/npm` is attached by shared detect, not here.
+/// Fill IDE / desktop `extra_copies`. Does not change the spawn `binary_path`.
+/// Leftover `~/.agenthub/npm` and well-known npm/native copies are attached
+/// by shared detect, not here.
 pub(crate) fn attach_codex_extra_copies(result: &mut DetectResult) {
-    let primary = result.binary_path.as_deref();
-    let mut copies = Vec::new();
-    for (path, kind) in codex_extra_copy_candidates() {
-        if !path.is_file() || !is_direct_spawnable(&path) {
-            continue;
-        }
-        if primary.is_some_and(|p| paths_equal(p, &path)) {
-            continue;
-        }
-        if result
-            .extra_copies
-            .iter()
-            .any(|c| paths_equal(&c.path, &path))
-        {
-            continue;
-        }
-        if copies.iter().any(|c: &DetectedBinaryCopy| paths_equal(&c.path, &path)) {
-            continue;
-        }
-        let version = probe_version(&path);
-        let channel = match kind {
-            "ide" | "desktop" => None,
-            other => Some(other.to_string()),
-        };
-        copies.push(DetectedBinaryCopy {
-            path,
-            kind: kind.into(),
-            version,
-            channel,
-        });
-    }
-    if copies.is_empty() {
-        return;
-    }
-    let summary = copies
-        .iter()
-        .map(|c| {
-            format!(
-                "{} {} @ {}",
-                c.kind,
-                c.version.as_deref().unwrap_or("?"),
-                c.path.display()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("；");
-    result
-        .notes
-        .push(format!("另有 {} 份 Codex：{summary}", copies.len()));
-    result.extra_copies.extend(copies);
+    super::detect_binary::attach_extra_binary_copies(
+        result,
+        codex_extra_copy_candidates(),
+        &["--version"],
+        &[],
+    );
 }
 
 pub(crate) fn ide_codex_bins_under(extensions_root: &Path) -> Vec<PathBuf> {
@@ -83,12 +36,6 @@ pub(crate) fn ide_codex_bins_under(extensions_root: &Path) -> Vec<PathBuf> {
 
 fn codex_extra_copy_candidates() -> Vec<(PathBuf, &'static str)> {
     let mut out = Vec::new();
-    for (path, channel) in well_known_bin_paths(AgentId::Codex) {
-        if is_under_agenthub_user_npm_prefix(&path) {
-            continue;
-        }
-        out.push((path, channel));
-    }
     out.extend(ide_codex_bins().into_iter().map(|p| (p, "ide")));
     out.extend(desktop_codex_bins().into_iter().map(|p| (p, "desktop")));
     out
@@ -187,16 +134,4 @@ fn desktop_codex_bins() -> Vec<PathBuf> {
     out
 }
 
-fn probe_version(path: &Path) -> Option<String> {
-    let output = run_capture_with_env(path, &["--version"], &[]).ok()?;
-    stdout_first_line(&output)
-        .filter(|l| looks_like_version_line(l))
-        .map(|l| extract_version_token(&l))
-        .filter(|l| !l.is_empty())
-}
 
-fn paths_equal(a: &Path, b: &Path) -> bool {
-    crate::utils::paths::same_path_identity(a, b).unwrap_or_else(|_| {
-        a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy())
-    })
-}
