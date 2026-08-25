@@ -24,7 +24,7 @@ pnpm tauri:dev        # 真实 Tauri 桌面端
 
 ## 验证
 
-先运行与改动范围匹配的检查；跨层或共享契约改动应扩大验证范围：
+先运行与改动风险匹配的检查，见 [AGENTS.md](AGENTS.md) 的风险分级和 [测试与验证](docs/guides/testing-and-validation.md)。局部 UI、文案、纯函数和单文件改动只跑对应过滤测试；跨层或共享契约改动再扩大范围。全量测试和生产 build 默认留给提交前或 CI：
 
 ```bash
 pnpm typecheck
@@ -35,7 +35,7 @@ cargo test -p agenthub-core --locked
 pnpm check:docs
 ```
 
-Rust CLI 或 GUI 改动分别补跑 `cargo test -p agenthub-cli --locked` 和 `cargo test -p agenthub-gui --locked`。前端 backend 分层、mock 边界和 CI 矩阵见 [测试参考](docs/reference/testing.md)。提交前的机械验证由测试 subagent 执行；失败时保留失败用例和原始错误，不要通过削弱测试来绕过问题。
+Rust CLI 或 GUI 改动分别补跑 `cargo test -p agenthub-cli --locked` 和 `cargo test -p agenthub-gui --locked`。不要为页面或纯函数改动默认编 GUI crate 或跑全部 Rust crate。前端 backend 分层、mock 边界和 CI 矩阵见 [测试参考](docs/reference/testing.md)。失败时保留失败用例和原始错误，不要通过削弱测试来绕过问题。
 
 ## 文档变更
 
