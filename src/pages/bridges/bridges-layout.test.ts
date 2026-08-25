@@ -20,12 +20,13 @@ describe('routes layout wiring', () => {
     expect(page).not.toContain('flex items-start gap-3');
   });
 
-  it('uses the same 详情 toggle as Connections (label + chevron, not 收起)', () => {
+  it('uses a plain 详情 button on Routes (no chevron; Connections still expands)', () => {
     const list = source('pages/bridges/AdapterProfilesList.tsx');
     expect(list).toContain("t('routes.detail')");
-    expect(list).toContain('DetailsToggle');
-    expect(list).toContain('controlsId={detailsId}');
+    expect(list).not.toContain('DetailsToggle');
+    expect(list).not.toContain('ChevronDown');
     expect(list).not.toContain("t('routes.collapse')");
+    expect(list).not.toContain('RouteDetailPanel');
     const connections = source('pages/connections/TicketWalletList.tsx');
     expect(connections).toContain('DetailsToggle');
     expect(connections).toContain("t('connections.list.details')");
@@ -33,10 +34,21 @@ describe('routes layout wiring', () => {
     expect(importDialog).toContain('DetailsToggle');
     expect(importDialog).toContain("t('connections.list.details')");
     const detail = source('pages/bridges/RouteDetailPanel.tsx');
-    expect(detail).not.toContain("t('routes.collapse')");
-    expect(detail).toContain('variant="plain"');
-    expect(detail).not.toContain("t('routes.edit.action')");
+    expect(detail).toContain('asPanel');
+    expect(detail).toContain('DialogOrSide');
+    expect(detail).toContain("t('routes.edit.action')");
     expect(list).toContain("t('routes.edit.action')");
+    expect(list).toContain('variant="outline"');
+  });
+
+  it('opens edit and detail in the same right-hand inspect pane', () => {
+    const page = source('pages/bridges/index.tsx');
+    expect(page).toContain("{ kind: 'edit'; profile: AdapterProfile }");
+    expect(page).toContain("{ kind: 'detail'; profile: AdapterProfile }");
+    expect(page).toContain('onShowDetail');
+    expect(page).toContain("kind: 'detail'");
+    expect(page).toContain('<RouteDetailPanel');
+    expect(page).toContain('asPanel');
   });
 
   it('puts cancel + save in the inspect header and collapse beside them', () => {

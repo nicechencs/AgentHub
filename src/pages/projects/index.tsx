@@ -725,7 +725,7 @@ export default function ProjectsPage() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" disabled={busy} onClick={() => setDeleteTarget(null)}>
+            <Button variant="secondary" disabled={busy} onClick={() => setDeleteTarget(null)}>
               {t('common.cancel')}
             </Button>
             <Button variant="danger" disabled={busy} onClick={() => void handleDeleteOne()}>
@@ -743,7 +743,7 @@ export default function ProjectsPage() {
             <DialogDescription>{t('projects.dialog.batchDesc')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" disabled={busy} onClick={() => setBatchDeleteOpen(false)}>
+            <Button variant="secondary" disabled={busy} onClick={() => setBatchDeleteOpen(false)}>
               {t('common.cancel')}
             </Button>
             <Button variant="danger" disabled={busy} onClick={() => void handleBatchDelete()}>

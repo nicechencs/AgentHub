@@ -73,12 +73,38 @@ describe('buttonVariants (docs/ui-design.md §2 Button)', () => {
   it('keeps hover as fill/color, with a matching press darkening', () => {
     expect(buttonVariants({ variant: 'default' })).toContain('hover:bg-accent/90');
     expect(buttonVariants({ variant: 'default' })).toContain('active:bg-accent/80');
-    expect(buttonVariants({ variant: 'secondary' })).toContain('hover:bg-hover');
+    expect(buttonVariants({ variant: 'secondary' })).toContain('bg-hover');
+    expect(buttonVariants({ variant: 'secondary' })).not.toContain('bg-subtle');
+    expect(buttonVariants({ variant: 'secondary' })).toContain('hover:bg-active');
     expect(buttonVariants({ variant: 'secondary' })).toContain('active:bg-active');
     expect(buttonVariants({ variant: 'ghost' })).toContain('hover:bg-hover');
     expect(buttonVariants({ variant: 'outline' })).toContain('hover:bg-hover');
     expect(buttonVariants({ variant: 'danger' })).toContain('hover:bg-danger/90');
     expect(buttonVariants({ variant: 'dangerOutline' })).toContain('hover:bg-danger/10');
+  });
+});
+
+describe('cancel buttons', () => {
+  it('uses the darker secondary fill for every common.cancel action', () => {
+    const files = walkSourceFiles(srcRoot);
+    const offenders: string[] = [];
+
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8');
+      if (!text.includes("t('common.cancel')")) continue;
+      const chunks = text.split("t('common.cancel')");
+      for (let i = 0; i < chunks.length - 1; i++) {
+        const before = chunks[i];
+        const start = before.lastIndexOf('<Button');
+        if (start < 0) continue;
+        const button = before.slice(start);
+        if (!button.includes('variant="secondary"')) {
+          offenders.push(path.relative(srcRoot, file));
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });
 

@@ -1236,7 +1236,7 @@ export default function SkillsPage() {
             placeholder={t('skills.dialog.installPlaceholder')}
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setInstallOpen(false)}>
+            <Button variant="secondary" onClick={() => setInstallOpen(false)}>
               {t('skills.dialog.conflictCancel')}
             </Button>
             <Button onClick={() => void handleInstall()}>
@@ -1259,7 +1259,7 @@ export default function SkillsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setImportConflict(null)}>
+            <Button variant="secondary" onClick={() => setImportConflict(null)}>
               {t('skills.dialog.conflictCancel')}
             </Button>
             <Button

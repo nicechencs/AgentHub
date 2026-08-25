@@ -641,6 +641,8 @@ export const zh = {
     targetHiddenHint: "目标工具已隐藏，只能停止正在运行的转发",
     busy: "处理中…",
     detail: "详情",
+    detailTitle: "路由详情",
+    detailDescription: "上游、本机入口和已接客户端。",
     supports: "支持",
     collapse: "收起",
     endpointCopied: "端点已复制",

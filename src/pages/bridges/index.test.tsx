@@ -202,7 +202,7 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('随 AgentHub 自动启动');
     expect(markup).not.toContain('仅在 AgentHub 运行时恢复，不是开机自启');
     expect(markup).toContain('详情');
-    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain('aria-expanded');
     expect(markup).not.toContain('收起');
     expect(markup).not.toContain('data-route-detail="bridge-1"');
     expect(markup).not.toContain('上游和本机');
@@ -212,6 +212,20 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('目标写入');
     expect(markup).not.toContain('配置已生效');
     expect(markup).not.toContain('role="dialog"');
+  });
+
+  it('keeps detail off the list and marks the row when the inspect pane is open', () => {
+    const profile = localBridgeProfile();
+    const markup = renderProfiles({
+      ...emptyListProps,
+      profiles: [profile],
+      bridgeStatuses: { [profile.id]: runningStatus(profile.id) },
+      activeProfileId: profile.id,
+    });
+    expect(markup).not.toContain('aria-expanded');
+    expect(markup).toContain('data-active="true"');
+    expect(markup).not.toContain('data-route-detail="bridge-1"');
+    expect(markup).not.toContain('上游和本机');
   });
 
   it('shows the upstream → loopback flow and the clients one OpenRouter route serves', () => {
@@ -335,6 +349,30 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('role="dialog"');
     expect(markup).not.toContain('运行中');
     expect(markup).toContain('本机入口');
+  });
+
+  it('opens detail as the same inspect chrome as edit', () => {
+    const profile = localBridgeProfile();
+    const markup = renderDetail({
+      profile,
+      bridgeStatus: runningStatus(profile.id),
+      entries: [],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+      onRequestEdit: vi.fn(),
+      asPanel: true,
+      open: true,
+      onOpenChange: vi.fn(),
+    });
+    expect(markup).toContain('data-side-inspect');
+    expect(markup).toContain('取消');
+    expect(markup).toContain('编辑');
+    expect(markup).toContain('收起');
+    expect(markup).toContain('删除路由');
+    expect(markup).toContain('路由详情');
+    expect(markup).toContain('data-route-detail="bridge-1"');
+    expect(markup).not.toContain('role="dialog"');
   });
 
   it('preserves successful resources when another pool or bridge status fails', async () => {

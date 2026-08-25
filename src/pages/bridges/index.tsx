@@ -20,6 +20,7 @@ import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { CreateRouteDialog } from './CreateRouteDialog';
 import { EditRouteDialog } from './EditRouteDialog';
 import { ImportRouteDialog } from './ImportRouteDialog';
+import { RouteDetailPanel } from './RouteDetailPanel';
 import { WriteClientConfigDialog } from './WriteClientConfigDialog';
 import type { RouteGraphView } from './route-graph-model';
 import {
@@ -59,7 +60,22 @@ type RouteInspect =
   | { kind: 'create' }
   | { kind: 'import' }
   | { kind: 'write'; target: WriteTarget }
-  | { kind: 'edit'; profile: AdapterProfile };
+  | { kind: 'edit'; profile: AdapterProfile }
+  | { kind: 'detail'; profile: AdapterProfile };
+
+function inspectProfileId(target: RouteInspect | null): string | null {
+  if (!target) return null;
+  if (target.kind === 'edit' || target.kind === 'detail') return target.profile.id;
+  if (target.kind === 'write') return target.target.profile.id;
+  return null;
+}
+
+function liveInspectProfile(
+  snapshot: AdapterProfile,
+  profiles: readonly AdapterProfile[],
+): AdapterProfile {
+  return profiles.find((profile) => profile.id === snapshot.id) ?? snapshot;
+}
 
 const ROUTES_INSPECT_WIDTH_KEY = 'agenthub.routes.inspectWidth';
 
@@ -218,6 +234,16 @@ export default function BridgesPage() {
     removeConfirm && orphan.some((profile) => profile.id === removeConfirm.id),
   );
 
+  const inspectTarget = inspect.target;
+  const writeTarget = inspectTarget?.kind === 'write' ? inspectTarget.target : null;
+  const editTarget = inspectTarget?.kind === 'edit'
+    ? liveInspectProfile(inspectTarget.profile, profiles)
+    : null;
+  const detailTarget = inspectTarget?.kind === 'detail'
+    ? liveInspectProfile(inspectTarget.profile, profiles)
+    : null;
+  const activeProfileId = inspectProfileId(inspectTarget);
+
   const listProps = {
     bridgeStatuses,
     statusErrors: resourceErrors.bridgeStatuses,
@@ -227,20 +253,23 @@ export default function BridgesPage() {
     removingProfileId,
     onStartBridge: handleStartBridge,
     onRequestStopBridge: setStopConfirm,
-    onRequestRemove: setRemoveConfirm,
     onRequestWrite: (profile: AdapterProfile, graph: RouteGraphView) => {
       inspect.open({ kind: 'write', target: { profile, graph } });
     },
     onRequestEdit: (profile: AdapterProfile) => {
       inspect.open({ kind: 'edit', profile });
     },
+    onShowDetail: (profile: AdapterProfile) => {
+      if (inspect.target?.kind === 'detail' && inspect.target.profile.id === profile.id) {
+        inspect.close();
+        return;
+      }
+      inspect.open({ kind: 'detail', profile });
+    },
+    activeProfileId,
     onRetry: () => { void reload(); },
     hiddenTargetIds,
   };
-
-  const inspectTarget = inspect.target;
-  const writeTarget = inspectTarget?.kind === 'write' ? inspectTarget.target : null;
-  const editTarget = inspectTarget?.kind === 'edit' ? inspectTarget.profile : null;
 
   const inspectPanel =
     inspectTarget?.kind === 'create' ? (
@@ -289,6 +318,23 @@ export default function BridgesPage() {
         busy={busyProfileIds[editTarget.id] === true}
         onSaved={() => { void reload(); }}
         onRequestDelete={setRemoveConfirm}
+      />
+    ) : inspectTarget?.kind === 'detail' && detailTarget ? (
+      <RouteDetailPanel
+        id={`route-detail-${detailTarget.id}`}
+        asPanel
+        open
+        width={inspect.paneWidth}
+        onOpenChange={(open) => { if (!open) inspect.close(); }}
+        profile={detailTarget}
+        bridgeStatus={detailTarget.route === 'local_bridge' ? bridgeStatuses[detailTarget.id] : undefined}
+        entries={entries}
+        siblingProfiles={profiles}
+        busy={busyProfileIds[detailTarget.id] === true || removingProfileId === detailTarget.id}
+        error={profileErrors[detailTarget.id]}
+        onRequestRemove={setRemoveConfirm}
+        onRequestEdit={(profile) => inspect.open({ kind: 'edit', profile })}
+        targetHidden={hiddenTargetIds.has(detailTarget.targetAgentId)}
       />
     ) : null;
 
