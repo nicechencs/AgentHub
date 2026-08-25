@@ -1,6 +1,6 @@
 ---
 title: 开发环境
-description: 在本地启动 AgentHub、选择 backend adapter 并运行最小验证。
+description: 在本地启动 AgentHub、选择 backend adapter，并按改动风险运行验证。
 type: getting-started
 audience: contributor
 status: current
@@ -35,6 +35,8 @@ pnpm install
 
 ## 构建和检查
 
+日常改动先跑与风险匹配的过滤测试，见 [测试与验证](../guides/testing-and-validation.md)。下面的组合属于提交前或 CI：
+
 ```text
 pnpm typecheck
 pnpm typecheck:test
@@ -42,7 +44,7 @@ pnpm test
 pnpm build
 ```
 
-`pnpm build` 先运行应用 TypeScript 检查，再运行 `vite build`。Vite 配置在任何 build 中固定解析 `src/lib/backend/tauri/create-backend.ts`，并在生成 bundle 时拒绝 `src/dev`、`src/test` 以及测试文件进入生产模块图；因此不能用 mock 代替生产 build 的验证。
+`pnpm build` 先运行应用 TypeScript 检查，再运行 `vite build`。Vite 配置在任何 build 中固定解析 `src/lib/backend/tauri/create-backend.ts`，并在生成 bundle 时拒绝 `src/dev`、`src/test` 以及测试文件进入生产模块图；因此不能用 mock 代替生产 build 的验证。不要为页面或纯函数改动默认运行 `pnpm build`。
 
 Rust 核心和 CLI 的局部检查：
 
@@ -51,7 +53,7 @@ cargo test -p agenthub-core --locked
 cargo test -p agenthub-cli --locked
 ```
 
-提交前使用仓库脚本跑完整门禁：
+内环应把 Cargo 测试过滤到相关名字。提交前使用仓库脚本跑完整门禁：
 
 ```text
 pnpm test:pr
@@ -71,6 +73,6 @@ pnpm test:pr
 1. 用 `pnpm dev:mock` 先验证页面状态和交互。
 2. 用 `pnpm tauri:dev` 验证真实 Tauri command、文件读写和系统环境。
 3. 为跨边界行为补 contract test；为 Rust service 补相邻测试文件。
-4. 运行 `pnpm typecheck`、`pnpm typecheck:test` 和相关 Vitest/Cargo 过滤测试。
-5. 最后运行 `pnpm build`，确认 mock 没有进入生产模块图。
+4. 运行与改动风险匹配的 Vitest/Cargo 过滤测试；跨层改动再补 `pnpm typecheck` 或 `pnpm typecheck:test`。
+5. 生产边界、依赖或发布改动最后运行 `pnpm build`，确认 mock 没有进入生产模块图。
 

@@ -38,7 +38,7 @@ AgentHub 是模块化单体：GUI 和 CLI 共用 `agenthub-core`。以下边界�
 - `lib/backend/tauri/invoke.ts` 是前端唯一允许导入 Tauri core 并调用 `invoke` 的文件。生产构建不加载 mock；非 Tauri 的生产页面必须明确返回 unavailable。
 - Chat 已拆成页面编排、model/format、hook 和组件，但大 hook 仍是热点。
 - Skills 库筛选/勾选在页面内 `skills-library-model.ts`；Projects 列表可见性与多选在 `projects-list-model.ts`。两页仍由 `index.tsx` 组合 API、toast 和预览壳。
-- Rust route 测试和 browser mock 共用 `adapter-capability-contract.json`。公开非空 rule ID 与 fixture 集合必须一致，漂移时测试失败。classify 不会发出的 sibling ID 以 `documentedRuleId` 进入集合，并断言不是 winner。关闭和仅预览规则有拒绝用例。mock 仍独立实现 classify / plan / apply；降为查表投影见 D6。
+- Rust route 测试和 browser mock 共用 `adapter-capability-contract.json`。该 JSON 的 `expect` 由 `AdapterRouteService::plan()` 投影生成；公开非空 rule ID 与 fixture 集合必须一致，漂移时测试失败。classify 不会发出的 sibling ID 以 `documentedRuleId` 进入集合，并断言不是 winner。关闭、仅预览和 write gate 挡住的边有拒绝用例。mock 仍独立实现 classify / plan / apply；降为查表投影见 D6。
 
 当前主要问题是：transport 契约测试分散、wire 边界不统一、部分 service/page/hook 职责过多、兼容 façade 仍偏宽。
 
@@ -84,7 +84,7 @@ C1、F1、F2 已落地。当前没有新的可执行任务；下一步仍须先�
   - `crates/agenthub-core/src/services/adapter_route_service/tests.rs`
   - `src/dev/mocks/fixtures/adapter-capability-contract.json`
   - `src/dev/mocks/adapter.test.ts`
-- **已落地：** 公开非空 rule ID 进入共享 fixture；`shared_capability_contract_rule_ids_match_matrix` 在集合漂移时失败。Rust 与 mock 读取同一 fixture，并校验真实 classify/plan 的 route、support、rule ID、gate kind、`canApply` 和 apply path。`openai-api-to-grok-v1` 与 `codex-subscription-to-claude-app-server-v0` 以 `documentedRuleId` 进入集合（classify 赢家是 sibling），关闭和仅预览规则仍被拒绝。
+- **已落地：** 公开非空 rule ID 进入共享 fixture；`shared_capability_contract_rule_ids_match_matrix` 在集合漂移时失败。Rust 与 mock 读取同一 fixture，并校验真实 classify/plan 的 route、support、rule ID、gate kind、`canApply`、reason、reuse path 和 apply path。JSON 的 `expect` 由 `plan()` 生成；内核变化或手改 golden 都会失败。`openai-api-to-grok-v1` 与 `codex-subscription-to-claude-app-server-v0` 以 `documentedRuleId` 进入集合（classify 赢家是 sibling），关闭、仅预览和 write gate 挡住的边仍被拒绝。
 - **必须保持：** matrix 的 `can_apply` 不是唯一写入条件；私有 write gate、bind 实现、host-only bridge 路径和 fail-closed 行为继续有效。fixture 与报错信息不包含凭据值。
 - **保持测试：**
 
@@ -95,7 +95,7 @@ C1、F1、F2 已落地。当前没有新的可执行任务；下一步仍须先�
   pnpm exec vitest run src/dev/mocks/adapter.test.ts
   ```
 
-C1 只补齐覆盖并让漂移失败，不授权重写 mock 的 classify / plan。mock 改为查表、JSON 改为由 `plan()` 生成，见 [单一内核与查表投影](single-kernel-projections.md)。不得把该提案的切片并入 C1 的文件范围。
+C1 只补齐覆盖并让漂移失败，不授权重写 mock 的 classify / plan。JSON 已由 `plan()` 生成；mock 改为查表见 [单一内核与查表投影](single-kernel-projections.md) 切片 B。
 
 ### F1：Skills 页面局部编排 — `已建立`
 
@@ -165,8 +165,9 @@ Provider、Account、Backup 必须分别规划，不能合并成一个重构任�
 
 - **负责人：** capability / route 规则与 browser mock。
 - **设计产物：** [单一内核与查表投影](single-kernel-projections.md)。
-- **限制：** 不得把该方向并入已落地的 C1 文件范围；不得用矩阵格子单独当 `canApply`；不得引入 WASM、napi、类型生成框架或共享 Windows `target/`。
-- **进入开发的条件：** 该提案第 7 节晋升门槛已满足，且首个切片有不与 C1 重叠的文件范围、验证命令和回滚方式。
+- **当前进度：** 切片 0 与切片 A 已落地。B 及之后仍须单独派工，不得在本项下改 mock classify / plan / apply。
+- **限制：** 不得用矩阵格子单独当 `canApply`；不得引入 WASM、napi、类型生成框架或共享 Windows `target/`。
+- **进入开发的条件：** 切片 B 需要 golden 已由 `plan()` 生成、write gate 挡住的边已在快照中，且文件范围、验证命令和回滚方式明确。
 
 ## 6. 延期事项
 
