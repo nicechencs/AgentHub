@@ -30,6 +30,7 @@ pnpm tauri:dev        # 真实 Tauri 桌面端
 pnpm typecheck
 pnpm typecheck:test
 pnpm test
+pnpm test:e2e:browser
 pnpm build
 cargo test -p agenthub-core --locked
 pnpm check:docs

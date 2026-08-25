@@ -17,12 +17,13 @@ updated: 2026-08-25
 | `pnpm typecheck:test` | 测试 TypeScript |
 | `pnpm test` | Vitest 全量 |
 | `pnpm test:contracts` | backend、边界和 feature contract 集 |
+| `pnpm test:e2e:browser` | Playwright 浏览器冒烟，只打 `pnpm dev:mock` 的真实 DOM |
 | `pnpm build` | Tauri adapter 生产 build 和 module graph guard |
 | `cargo test -p agenthub-core --locked` | Rust core |
 | `cargo test -p agenthub-cli --locked` | CLI |
 | `pnpm test:pr` | 提交前组合门禁 |
 
-Vitest 由配置固定使用 mock backend；`pnpm dev:mock` 是浏览器演示入口。`pnpm build` 永远选择 Tauri adapter，禁止把 mock 打进生产 bundle。
+Vitest 由配置固定使用 mock backend；`pnpm dev:mock` 是浏览器演示入口。`pnpm test:e2e:browser` 用 Playwright 在独立端口启动 `vite --mode mock`，只覆盖路由、表单、弹层和焦点，不代表真实 Tauri。不要复用本机 `pnpm dev`（5173，Tauri adapter）。`pnpm build` 永远选择 Tauri adapter，禁止把 mock 或 `e2e/` 打进生产 bundle。
 
 ## 验证范围
 
@@ -37,6 +38,7 @@ Vitest 由配置固定使用 mock backend；`pnpm dev:mock` 是浏览器演示�
 
 - Rust：生产文件只声明 `#[cfg(test)] mod tests;`，实现放 `tests.rs` 或 `*_tests.rs`。
 - 前端：测试与生产文件并列，使用 `*.test.ts` 或 `*.test.tsx`。
+- Playwright：独立目录 `e2e/browser/`，不进入 Vitest 与生产 bundle。
 - fixture：使用脱敏、最小、可读的输入；真实网络、真实路径和真实凭据不进仓库。
 - mock reset：放在 `src/dev/mocks`；生产 façade 不暴露测试 reset API。
 
@@ -46,7 +48,8 @@ Vitest 由配置固定使用 mock backend；`pnpm dev:mock` 是浏览器演示�
 2. backend contract：Tauri command、DTO、unsupported/unavailable、adapter 选择。
 3. core service：SQLite、lock、backup、配置写入、能力闸门、安装和解析器。
 4. Routes/协议：loopback HTTP、认证、surface、模型名单、非流式和 SSE 转换。
-5. build boundary：生产模块图不得包含 `src/dev`、`src/test`、测试/规格文件。
+5. build boundary：生产模块图不得包含 `src/dev`、`src/test`、`e2e/`、测试/规格文件。
+6. 浏览器冒烟：Playwright + Chromium 走 `pnpm dev:mock` 的关键用户旅程；不覆盖 Tauri IPC、系统对话框或真实账号。
 
 ## Fixture 规则
 
@@ -56,8 +59,9 @@ fixture README 位于 `src/lib/provider-detect/__tests__/fixtures/README.md`。�
 
 - typecheck 失败：类型契约或 import 边界错误；
 - Vitest 失败：mock/domain 行为或 mapper 回归；
+- Playwright 失败：`dev:mock` 下的路由、表单、弹层或焦点回归；失败时保留 trace 与 HTML report；
 - Cargo 失败：core 逻辑、路径、锁、数据库或 parser 回归；
-- build guard 失败：生产依赖了 dev/mock/test 模块；
+- build guard 失败：生产依赖了 dev/mock/test/e2e 模块；
 - Tauri smoke 失败：真实 runtime、系统命令或 IPC 映射问题。
 
 测试结果必须保留失败用例和原始错误；不要为让套件变绿而放宽安全断言或把真实网络塞进单元测试。

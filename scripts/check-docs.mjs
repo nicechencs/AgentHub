@@ -13,6 +13,8 @@ const skipDirectories = new Set([
   'release-out',
   'temp',
   '.tmp-usage-compare',
+  'playwright-report',
+  'test-results',
 ]);
 
 const allowedTypes = new Set([

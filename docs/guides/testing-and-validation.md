@@ -43,6 +43,7 @@ pnpm build
 - 页面/领域测试文件与生产文件并列：`feature.test.ts` 或 `feature.test.tsx`。
 - domain reset 放在 `src/dev/mocks`；不要把 `__reset*ForTests` 加回生产 façade。
 - mapper、backend contract、error mapping 和 feature flags 优先做纯测试。
+- Playwright（`pnpm test:e2e:browser`）只打 browser mock 的真实 DOM：启动、主导航、Connections / Chat / Projects 旅程，以及 Dialog 的 Escape / Tab / 关闭后焦点恢复。它不覆盖 Tauri、真实网络或用户目录。首批只跑 Chromium。
 
 常用命令：
 
@@ -93,7 +94,7 @@ cargo test -p agenthub-cli --locked
 
 | 改动 | 最小验证 |
 |---|---|
-| 页面样式/交互 | 相关 Vitest + `pnpm typecheck` |
+| 页面样式/交互 | 相关 Vitest + `pnpm typecheck`；涉及路由/弹层/焦点时加 `pnpm test:e2e:browser` |
 | backend contract / façade | contract tests + `pnpm typecheck:test` |
 | Rust service / adapter | 相关 `cargo test -p agenthub-core --locked <filter>` |
 | Adapter capability 契约 JSON | `cargo test -p agenthub-core --locked shared_capability_contract`；内核输出变化后用 `UPDATE_ADAPTER_CAPABILITY_CONTRACT=1` 重新生成 golden，禁止手改 expect |
