@@ -211,7 +211,7 @@ export default function AgentsPage() {
     const next = liveIds[index + direction];
     if (!next) return;
     agentOrder.moveInLive(liveIds, id, next);
-  }, [agentOrder, liveIds]);
+  }, [agentOrder.moveInLive, liveIds]);
   const showAgentSkeleton = statuses.length === 0 && (state === 'idle' || state === 'loading');
   const pageError =
     statuses.length === 0 ? (state === 'error' ? error : envError) : null;
