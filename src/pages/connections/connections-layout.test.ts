@@ -37,6 +37,17 @@ describe('connections layout wiring', () => {
     expect(page).not.toContain('<Dialog open={apiKeyDialogOpen}');
   });
 
+  it('docks the recycle-bin button in the list column, left of the split', () => {
+    const page = source('index.tsx');
+    const button = source('ConnectionTrashButton.tsx');
+    const split = source('../../components/layout/SideSplit.tsx');
+    expect(page).toContain('listFooter={trashDock}');
+    expect(page).toContain('<ConnectionTrashButton');
+    expect(button).not.toContain('fixed bottom-4 right-4');
+    expect(split).toContain('listFooter');
+    expect(split).toContain('flex shrink-0 justify-end');
+  });
+
   it('opens 详情 in the same right-hand inspect pane as edit', () => {
     const page = source('index.tsx');
     const list = source('TicketWalletList.tsx');
@@ -45,6 +56,9 @@ describe('connections layout wiring', () => {
     expect(page).toContain('<TicketDetailPanel');
     expect(list).not.toContain('DetailsToggle');
     expect(list).toContain('asPanel');
+    expect(list).toContain('{refreshButton}');
+    expect(list).toContain('{deleteButton}');
+    expect(list).not.toContain('footer={actions}');
     expect(list).toContain("t('connections.list.clientsTitle')");
     expect(list).toContain('SortHandle');
     expect(page).toContain('inspectActiveTicketId');

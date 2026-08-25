@@ -768,12 +768,17 @@ export default function ConnectionsPage() {
       />
     ) : null;
 
+  const trashDock = (
+    <ConnectionTrashButton onChanged={() => void loadWallet()} />
+  );
+
   if (loading) {
     return (
       <WorkbenchSplitPage
         split={inspect}
         resizeAria={t('common.resizeSidePanel')}
         panel={inspectPanel}
+        listFooter={trashDock}
         header={(
           <PageHeader
             size="compact"
@@ -796,6 +801,7 @@ export default function ConnectionsPage() {
         split={inspect}
         resizeAria={t('common.resizeSidePanel')}
         panel={inspectPanel}
+        listFooter={trashDock}
         header={(
           <PageHeader
             size="compact"
@@ -816,6 +822,7 @@ export default function ConnectionsPage() {
         split={inspect}
         resizeAria={t('common.resizeSidePanel')}
         panel={inspectPanel}
+        listFooter={trashDock}
         header={(
           <PageHeader
             size="compact"
@@ -842,6 +849,7 @@ export default function ConnectionsPage() {
       split={inspect}
       resizeAria={t('common.resizeSidePanel')}
       panel={inspectPanel}
+      listFooter={trashDock}
       header={(
         <PageHeader
           size="compact"
@@ -957,10 +965,6 @@ export default function ConnectionsPage() {
           />
         </>
       )}
-
-      <div className="mt-4">
-        <ConnectionTrashButton onChanged={() => void loadWallet()} />
-      </div>
     </WorkbenchSplitPage>
 
       <Dialog

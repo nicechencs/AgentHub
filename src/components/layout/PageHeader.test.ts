@@ -41,11 +41,14 @@ describe('PageHeader', () => {
     const splitRefAt = pageFn.indexOf('split.splitRef');
     const listColAt = pageFn.indexOf('flex min-h-0 min-w-0 flex-1 flex-col');
     const headerAt = pageFn.indexOf('pageRhythm.workbenchHeader');
-    const inspectAt = pageFn.indexOf('split.mounted && panel');
+    const inspectAt = pageFn.indexOf('<SideSplitFrame');
     expect(splitRefAt).toBeGreaterThan(0);
     expect(listColAt).toBeGreaterThan(splitRefAt);
     expect(headerAt).toBeGreaterThan(listColAt);
     expect(inspectAt).toBeGreaterThan(headerAt);
+    const listFooterAt = pageFn.indexOf('{listFooter ?');
+    expect(listFooterAt).toBeGreaterThan(headerAt);
+    expect(inspectAt).toBeGreaterThan(listFooterAt);
 
     const projects = source('pages/projects/index.tsx');
     const projectsSplit = projects.indexOf('preview.splitRef');

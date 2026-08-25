@@ -274,6 +274,8 @@ export function TicketDetailPanel({
             <Button type="button" variant="secondary" size="sm" onClick={() => onOpenChange?.(false)}>
               {t('common.cancel')}
             </Button>
+            {refreshButton}
+            {deleteButton}
             {onEdit && editLabel ? (
               <Button type="button" size="sm" onClick={onEdit}>
                 {editLabel}
@@ -281,7 +283,6 @@ export function TicketDetailPanel({
             ) : null}
           </>
         )}
-        footer={actions}
       >
         <div id={id} data-ticket-detail={ticket?.id ?? id}>
           {body}
