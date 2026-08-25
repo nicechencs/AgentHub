@@ -36,4 +36,11 @@ describe('connections layout wiring', () => {
     expect(page).toContain('asPanel');
     expect(page).not.toContain('<Dialog open={apiKeyDialogOpen}');
   });
+
+  it('clears the guided-add marker when the provider pane is dismissed', () => {
+    const page = source('index.tsx');
+    expect(page).toContain(
+      'guideOpenedApiKeyRef.current = false;\n            inspect.close();',
+    );
+  });
 });
