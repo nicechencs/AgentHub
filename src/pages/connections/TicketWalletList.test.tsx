@@ -818,7 +818,7 @@ describe('TicketDetailPanel', () => {
     );
     expect(markup).toContain('data-side-inspect');
     expect(markup).toContain('登录详情');
-    expect(markup).toContain('取消');
+    expect(markup).not.toContain('取消');
     expect(markup).toContain('收起');
     expect(markup).toContain('编辑配置');
     expect(markup).toContain('接到');
@@ -830,13 +830,13 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('诊断信息');
     expect(markup).toContain('provider:kimi-1');
     expect(markup).toContain('移入回收站');
-    expect(markup.indexOf('取消')).toBeLessThan(markup.indexOf('移入回收站'));
     expect(markup.indexOf('移入回收站')).toBeLessThan(markup.indexOf('编辑配置'));
+    expect(markup.indexOf('编辑配置')).toBeLessThan(markup.indexOf('收起'));
     expect(markup).not.toContain('justify-start gap-2 border-t');
     expect(markup).not.toContain('role="dialog"');
   });
 
-  it('puts 同步当前登录 and 移入回收站 in the inspect header with 取消', () => {
+  it('puts 同步当前登录 and 移入回收站 in the inspect header without 取消', () => {
     const markup = renderWithTooltip(
       createElement(TicketDetailPanel, {
         id: 'ticket-detail-header-actions',
@@ -849,11 +849,12 @@ describe('TicketDetailPanel', () => {
       }),
     );
     expect(markup).toContain('data-side-inspect');
-    expect(markup).toContain('取消');
+    expect(markup).not.toContain('取消');
     expect(markup).toContain('同步当前登录');
     expect(markup).toContain('移入回收站');
-    expect(markup.indexOf('取消')).toBeLessThan(markup.indexOf('同步当前登录'));
+    expect(markup).toContain('收起');
     expect(markup.indexOf('同步当前登录')).toBeLessThan(markup.indexOf('移入回收站'));
+    expect(markup.indexOf('移入回收站')).toBeLessThan(markup.indexOf('收起'));
     expect(markup).not.toContain('justify-start gap-2 border-t');
   });
 

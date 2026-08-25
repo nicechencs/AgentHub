@@ -6,6 +6,7 @@ import {
   Eye,
   EyeOff,
   FolderOpen,
+  MoreHorizontal,
   Wrench,
   X,
   Zap,
@@ -539,12 +540,7 @@ export function AgentCard({
             <>
               <Button
                 size="icon"
-                variant={upgradable ? 'default' : 'secondary'}
-                className={
-                  upgradable
-                    ? 'bg-success text-white hover:bg-success/90 focus-visible:ring-success/60'
-                    : undefined
-                }
+                variant="secondary"
                 disabled={
                   busy ||
                   checkingUpdate ||
@@ -565,6 +561,7 @@ export function AgentCard({
                 <ArrowUpCircle
                   className={cn(
                     'h-3.5 w-3.5',
+                    upgradable && 'text-success',
                     checkingUpdate && 'animate-pulse opacity-70',
                   )}
                 />
@@ -592,7 +589,7 @@ export function AgentCard({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="icon" variant="outline" disabled={busy} aria-label={t('agents.card.more')}>
-                    ···
+                    <MoreHorizontal className="h-3.5 w-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
@@ -654,7 +651,7 @@ export function AgentCard({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="icon" variant="outline" disabled={busy} aria-label={t('agents.card.more')}>
-                    ···
+                    <MoreHorizontal className="h-3.5 w-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -680,7 +677,7 @@ export function AgentCard({
             <>
               <Button
                 size="sm"
-                variant={installFailed ? 'default' : 'secondary'}
+                variant="secondary"
                 onClick={() => (installFailed ? retryAction() : setConfirmDialog('install'))}
                 disabled={busy}
                 title={installFailed ? t('agents.card.retry') : t('agents.card.installWithChannel', { id: selectedChannel.id })}
@@ -761,7 +758,7 @@ export function AgentCard({
                 <Copy className="h-3.5 w-3.5" /> {t('agents.card.copy')}
               </Button>
               {task.status === 'failed' && (
-                <Button size="sm" variant="default" onClick={retryAction}>
+                <Button size="sm" variant="secondary" onClick={retryAction}>
                   {t('agents.card.retry')}
                 </Button>
               )}
@@ -816,14 +813,16 @@ function CopyInstallPathButton({
   onCopy: (path: string) => void;
 }) {
   return (
-    <button
+    <Button
       type="button"
-      className="inline-flex shrink-0 items-center rounded p-0.5 text-muted hover:bg-hover hover:text-primary"
+      size="icon"
+      variant="ghost"
+      className="shrink-0"
       aria-label={label}
       title={title}
       onClick={() => onCopy(path)}
     >
-      <Copy className="h-3 w-3" />
-    </button>
+      <Copy className="h-3.5 w-3.5" />
+    </Button>
   );
 }

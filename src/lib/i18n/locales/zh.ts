@@ -191,6 +191,11 @@ export const zh = {
       restoreConfirm: '恢复前会先备份当前配置。确定恢复到该备份？',
       restoring: '恢复中…',
       confirmRestore: '确定恢复',
+      deleteTitle: '删除备份',
+      deleteDesc: '将删除 {name} 在 {when} 的备份（{kind}）。',
+      deleteConfirm: '此操作不可恢复。确定删除该备份？',
+      deleting: '删除中…',
+      confirmDelete: '确定删除',
     },
   },
   chrome: {

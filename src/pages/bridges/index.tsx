@@ -471,8 +471,6 @@ export default function BridgesPage() {
             icon={Boxes}
             title={t('routes.empty.title')}
             description={t('routes.empty.description')}
-            actionLabel={t('routes.create.action')}
-            onAction={() => inspect.open({ kind: 'create' })}
           />
         ) : null}
         {pageView === 'list' ? (

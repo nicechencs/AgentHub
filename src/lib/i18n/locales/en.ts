@@ -198,6 +198,11 @@ export const en = {
       restoreConfirm: 'Current config is backed up first. Restore this backup?',
       restoring: 'Restoring…',
       confirmRestore: 'Restore',
+      deleteTitle: 'Delete backup',
+      deleteDesc: "Delete {name}'s backup from {when} ({kind}).",
+      deleteConfirm: 'This cannot be undone. Delete this backup?',
+      deleting: 'Deleting…',
+      confirmDelete: 'Delete',
     },
   },
   chrome: {

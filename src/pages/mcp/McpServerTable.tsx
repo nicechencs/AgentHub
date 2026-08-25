@@ -102,7 +102,7 @@ function FileGroupHeader({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 shrink-0 gap-1 px-1.5 text-xs"
+            className="shrink-0"
             onClick={() => void onLocate(path)}
           >
             <FolderOpen className="h-3 w-3" />

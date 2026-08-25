@@ -941,24 +941,25 @@ export default function SkillsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-canvas">
-      <div className={pageRhythm.workbenchHeader}>
-        <PageHeader
-          size="compact"
-          title={t('skills.page.title')}
-          description={t('skills.page.meta', {
-            shared: catalog == null ? '…' : sharedCount,
-            privateOnly: privateOnlyCount,
-          })}
-          descriptionTip={t('skills.page.descriptionTip')}
-          actions={
-            <Button size="sm" onClick={() => setInstallOpen(true)}>
-              <Plus className="h-3.5 w-3.5" /> {t('skills.page.installCta')}
-            </Button>
-          }
-        />
-      </div>
+      <div ref={splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-canvas">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className={pageRhythm.workbenchHeader}>
+            <PageHeader
+              size="compact"
+              title={t('skills.page.title')}
+              description={t('skills.page.meta', {
+                shared: catalog == null ? '…' : sharedCount,
+                privateOnly: privateOnlyCount,
+              })}
+              descriptionTip={t('skills.page.descriptionTip')}
+              actions={
+                <Button onClick={() => setInstallOpen(true)}>
+                  <Plus className="h-3.5 w-3.5" /> {t('skills.page.installCta')}
+                </Button>
+              }
+            />
+          </div>
 
-      <div ref={splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div
           className={cn(
             'min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
@@ -1066,6 +1067,7 @@ export default function SkillsPage() {
             </TabsContent>
           </Tabs>
         </div>
+        </div>
 
         {previewShellMounted && previewTarget ? (
           <>
@@ -1160,11 +1162,11 @@ export default function SkillsPage() {
           </DialogHeader>
           <DialogFooter>
             <Button
-              variant="outline"
+              variant="secondary"
               disabled={dangerBusy}
               onClick={() => setRemoveShared(null)}
             >
-              {t('skills.dialog.conflictCancel')}
+              {t('common.cancel')}
             </Button>
             <Button
               variant="danger"
@@ -1203,11 +1205,11 @@ export default function SkillsPage() {
           </DialogHeader>
           <DialogFooter>
             <Button
-              variant="outline"
+              variant="secondary"
               disabled={dangerBusy}
               onClick={() => setRemoveFromTool(null)}
             >
-              {t('skills.dialog.conflictCancel')}
+              {t('common.cancel')}
             </Button>
             <Button
               variant="danger"

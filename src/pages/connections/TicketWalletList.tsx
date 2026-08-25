@@ -271,13 +271,10 @@ export function TicketDetailPanel({
         width={width}
         headerActions={(
           <>
-            <Button type="button" variant="secondary" size="sm" onClick={() => onOpenChange?.(false)}>
-              {t('common.cancel')}
-            </Button>
             {refreshButton}
             {deleteButton}
             {onEdit && editLabel ? (
-              <Button type="button" size="sm" onClick={onEdit}>
+              <Button type="button" size="sm" variant="outline" onClick={onEdit}>
                 {editLabel}
               </Button>
             ) : null}
@@ -561,11 +558,13 @@ export function TicketAddMenu({
   focusedAgentId = null,
   onImportLogin,
   onAddKey,
+  variant = 'default',
 }: {
   agents: TicketAddMenuAgent[];
   focusedAgentId?: AgentId | null;
   onImportLogin?: (agentId: AgentId) => void;
   onAddKey?: (agentId: AgentId) => void;
+  variant?: 'default' | 'outline' | 'secondary';
 }) {
   const { t } = useI18n();
   const [open, setOpen] = React.useState(false);
@@ -591,8 +590,8 @@ export function TicketAddMenu({
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4" /> {t('connections.list.add')} <ChevronDown className="h-3.5 w-3.5" />
+        <Button variant={variant}>
+          <Plus className="h-3.5 w-3.5" /> {t('connections.list.add')} <ChevronDown className="h-3.5 w-3.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -715,12 +714,13 @@ export function TicketWalletList({
     [installedAgentIds],
   );
 
-  const renderAddMenu = () => (
+  const renderAddMenu = (variant?: 'default' | 'outline' | 'secondary') => (
     <TicketAddMenu
       agents={addAgents}
       focusedAgentId={agentFilterId}
       onImportLogin={onImportLogin}
       onAddKey={onAddKey}
+      variant={variant}
     />
   );
 
@@ -733,7 +733,7 @@ export function TicketWalletList({
           icon={KeyRound}
           title={t('connections.list.emptyTitle')}
           description={t('connections.list.emptyDesc')}
-          action={renderAddMenu()}
+          action={renderAddMenu('outline')}
         />
       ) : null}
 

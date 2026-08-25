@@ -204,9 +204,8 @@ export function ConnectionTrashButton({
                       </Button>
                       <Button
                         type="button"
-                        variant="ghost"
+                        variant="dangerOutline"
                         size="sm"
-                        className="text-destructive"
                         disabled={trashBusy}
                         onClick={() => setPendingPermanent(item)}
                       >

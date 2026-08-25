@@ -839,18 +839,20 @@ export default function DashboardPage() {
                 </CardHeader>
                 <CardContent className="flex flex-col gap-2">
                   <Button
+                    size="sm"
                     variant="outline"
                     className="justify-start"
                     onClick={openForAgentConnect}
                   >
-                    <ArrowLeftRight className="h-4 w-4" /> {t('dashboard.page.connectSwitch')}
+                    <ArrowLeftRight className="h-3.5 w-3.5" /> {t('dashboard.page.connectSwitch')}
                   </Button>
                   <Button
+                    size="sm"
                     variant="outline"
                     className="justify-start"
                     onClick={handleBackupNow}
                   >
-                    <DatabaseBackup className="h-4 w-4" />
+                    <DatabaseBackup className="h-3.5 w-3.5" />
                     {t('dashboard.page.backupNow')}
                   </Button>
                 </CardContent>

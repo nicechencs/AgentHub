@@ -188,7 +188,7 @@ export function SkillMarketTable({
                     ) : null}
                     <Button
                       size="sm"
-                      variant={item.installed ? 'secondary' : 'secondary'}
+                      variant="secondary"
                       disabled={item.installed || busy || !onInstall}
                       title={
                         item.installed

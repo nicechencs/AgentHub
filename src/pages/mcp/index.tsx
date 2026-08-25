@@ -144,8 +144,16 @@ export default function McpPage() {
                 ? t('mcp.empty.all')
                 : t('mcp.empty.agent', { name: agentName(filterAgent) })
             }
-            actionLabel={t('mcp.empty.refresh')}
-            onAction={() => void load()}
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                onClick={() => void load()}
+              >
+                {t('mcp.empty.refresh')}
+              </Button>
+            }
           />
         ) : (
           <McpServerTable

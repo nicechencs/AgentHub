@@ -394,12 +394,12 @@ describe('Bridges page', () => {
       onOpenChange: vi.fn(),
     });
     expect(markup).toContain('data-side-inspect');
-    expect(markup).toContain('取消');
+    expect(markup).not.toContain('取消');
     expect(markup).toContain('编辑');
     expect(markup).toContain('收起');
     expect(markup).toContain('删除路由');
-    expect(markup.indexOf('取消')).toBeLessThan(markup.indexOf('删除路由'));
     expect(markup.indexOf('删除路由')).toBeLessThan(markup.indexOf('编辑'));
+    expect(markup.indexOf('编辑')).toBeLessThan(markup.indexOf('收起'));
     expect(markup).not.toContain('justify-start gap-2 border-t');
     expect(markup).toContain('路由详情');
     expect(markup).toContain('data-route-detail="bridge-1"');
