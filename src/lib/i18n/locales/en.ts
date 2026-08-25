@@ -678,7 +678,7 @@ export const en = {
     create: {
       action: "New route",
       title: "New route",
-      description: "Pick an upstream, enter the login, and check which clients this route supports. After connect, the list shows one local route. Details list the clients and models.",
+      description: "Pick an upstream, enter the login, and check clients.",
       name: "Name",
       url: "URL",
       key: "Key",
@@ -800,8 +800,9 @@ export const en = {
     edit: {
       action: "Edit",
       title: "Edit route",
-      description: "Change this route's name, upstream URL, key, and enabled client endpoints. If you add a client endpoint, run Write config after saving.",
+      description: "Change the name, URL, and endpoints.",
       keyHint: "Leave empty to keep the current key.",
+      endpointsHint: "After adding a client endpoint, save and then Write config.",
       keyPlaceholder: "Leave empty to keep the current key",
       submit: "Save",
       submitting: "Saving…",
@@ -1173,7 +1174,7 @@ export const en = {
     apiKeyDialog: {
       editTitle: "Edit API Key — {name}",
       addTitle: "Add API Key — {name}",
-      editDesc: "You can change the name. Leave the key blank to keep it.",
+      editDesc: "You can change the name.",
       addDesc: "Fill in the key and save.",
       name: "Name",
       nameOptional: "Name (optional)",
@@ -1181,6 +1182,7 @@ export const en = {
       namePlaceholderAdd: "e.g. Work / Personal",
       key: "API Key",
       keyKeep: "API Key (leave blank to keep)",
+      keyHint: "Leave empty to keep the current key.",
       keyPlaceholderEdit: "Enter a new secret to replace…",
       keyPlaceholderAdd: "sk-…",
       envField: "settings field to write",

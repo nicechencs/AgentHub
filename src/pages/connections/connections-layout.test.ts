@@ -36,4 +36,16 @@ describe('connections layout wiring', () => {
     expect(page).toContain('asPanel');
     expect(page).not.toContain('<Dialog open={apiKeyDialogOpen}');
   });
+
+  it('keeps key hints on the key field and shows cancel in the inspect header', () => {
+    const provider = source('../providers/ProviderEditDialog.tsx');
+    const account = source('../accounts/ApiKeyAccountDialog.tsx');
+    expect(provider).toContain("t('connections.apiKeyDialog.keyHint')");
+    expect(provider).toContain('fieldHints');
+    expect(provider).toContain("t('common.cancel')");
+    expect(provider).toContain('headerActions={headerActions}');
+    expect(account).toContain("t('connections.apiKeyDialog.keyHint')");
+    expect(account).toContain("t('common.cancel')");
+    expect(account).toContain('headerActions={headerActions}');
+  });
 });

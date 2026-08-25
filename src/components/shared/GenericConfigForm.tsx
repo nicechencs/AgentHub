@@ -44,6 +44,8 @@ export interface GenericConfigFormProps {
   fieldStatus?: Readonly<
     Record<string, { label?: string | null; onRetry?: () => void }>
   >;
+  /** Visible hint under a field (overrides schema `help` when both exist). */
+  fieldHints?: Readonly<Record<string, string | undefined>>;
 }
 
 const CUSTOM_SUGGESTION = '__agenthub_custom__';
@@ -143,6 +145,7 @@ export function GenericConfigForm({
   hiddenKeys,
   suggestions,
   fieldStatus,
+  fieldHints,
 }: GenericConfigFormProps) {
   const { t } = useI18n();
   const errMap = React.useMemo(() => issuesByField(issues), [issues]);
@@ -187,7 +190,8 @@ export function GenericConfigForm({
               : field.key === 'model'
                 ? t('connections.providerDialog.model')
                 : field.label;
-        const hint = field.help?.trim() || undefined;
+        const extraHint = fieldHints?.[field.key]?.trim() || undefined;
+        const hint = extraHint || field.help?.trim() || undefined;
 
         return (
           <label key={field.key} className="flex flex-col gap-1.5">
@@ -260,8 +264,8 @@ export function GenericConfigForm({
                 </SelectContent>
               </Select>
             ) : null}
-            {field.help && kind !== 'boolean' ? (
-              <span className="text-meta text-muted">{field.help}</span>
+            {hint && kind !== 'boolean' ? (
+              <span className="text-meta text-muted">{hint}</span>
             ) : null}
             {err ? <span className="text-meta text-danger">{err}</span> : null}
           </label>

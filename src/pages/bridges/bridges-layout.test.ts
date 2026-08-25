@@ -39,9 +39,10 @@ describe('routes layout wiring', () => {
     expect(list).toContain("t('routes.edit.action')");
   });
 
-  it('puts save in the inspect header and collapse instead of cancel', () => {
+  it('puts cancel + save in the inspect header and collapse beside them', () => {
     const shell = source('pages/bridges/dialog-or-side.tsx');
-    expect(shell).toContain('headerActions={primary}');
+    expect(shell).toContain('headerActions={actions}');
+    expect(shell).toContain("t('common.cancel')");
     expect(shell).toContain('footer={danger}');
     const panel = source('components/layout/SideInspectPanel.tsx');
     expect(panel).toContain('PanelRightClose');
