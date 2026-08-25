@@ -4,6 +4,7 @@ import { Bot } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { Badge } from '@/components/ui/badge';
@@ -11,7 +12,9 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
 import { AGENTS } from '@/config/agents';
+import { applyStoredAgentOrder } from '@/lib/agent-visibility';
 import type { AgentId, AgentStatus } from '@/lib/types';
+import { StorageKey } from '@/lib/ui-preferences';
 import { cn } from '@/lib/utils';
 import { bridgesHrefForProfile } from '@/lib/bridges-path';
 
@@ -55,11 +58,17 @@ export function AgentOverview({
 }: AgentOverviewProps) {
   const navigate = useNavigate();
   const { t } = useI18n();
+  const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
   const { metas: installedMetas, statuses: installedStatuses } = installedOverviewScope(
     AGENTS,
     agents,
   );
-  const cards = mergeAgentsInOrder(installedMetas, installedStatuses, badgeInputs, t);
+  const orderedMetas = applyStoredAgentOrder(
+    installedMetas,
+    (meta) => meta.id,
+    agentCatalogOrder,
+  );
+  const cards = mergeAgentsInOrder(orderedMetas, installedStatuses, badgeInputs, t);
 
   return (
     <div>

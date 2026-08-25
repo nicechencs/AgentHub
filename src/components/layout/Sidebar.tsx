@@ -29,7 +29,10 @@ import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
+import { applyStoredAgentOrder } from '@/lib/agent-visibility';
 import { BRIDGES_PATH } from '@/lib/bridges-path';
+import { StorageKey } from '@/lib/ui-preferences';
 
 /** 工作区 */
 const NAV_WORKSPACE = [
@@ -175,7 +178,12 @@ export function Sidebar() {
         : 'text-secondary hover:bg-hover/70 hover:text-primary',
     );
 
-  const installedMetas = installedCatalogAgents(AGENTS, agents);
+  const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
+  const installedMetas = applyStoredAgentOrder(
+    installedCatalogAgents(AGENTS, agents),
+    (meta) => meta.id,
+    agentCatalogOrder,
+  );
   const visibleManageNav = React.useMemo(
     () => filterManageNavItems(NAV_MANAGE, routesNavVisible),
     [routesNavVisible],
