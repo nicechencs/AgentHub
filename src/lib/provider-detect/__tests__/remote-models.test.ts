@@ -7,6 +7,8 @@ import {
   openaiModelsUrl,
   parseOpenAiModelList,
   resolveModelForSave,
+  isLivePastedApiKey,
+  looksLikeLast4Mask,
   shouldFetchRemoteModels,
   withDefaultModel,
 } from '../remote-models';
@@ -126,7 +128,7 @@ describe('default / resolve / withDefaultModel', () => {
 });
 
 describe('shouldFetchRemoteModels', () => {
-  it('requires custom mode, http(s) URL, and a real key', () => {
+  it('fetches for a live pasted key on a custom http(s) URL', () => {
     expect(
       shouldFetchRemoteModels({
         useOfficial: false,
@@ -134,11 +136,42 @@ describe('shouldFetchRemoteModels', () => {
         apiKey: 'sk-live-abcdefgh',
       }),
     ).toBe(true);
+  });
+
+  it('is true for an existing custom login with a redacted or empty key', () => {
+    expect(
+      shouldFetchRemoteModels({
+        useOfficial: false,
+        baseUrl: 'https://mytokens.cc',
+        apiKey: REDACTED_MARKER,
+        hasStoredSecret: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldFetchRemoteModels({
+        useOfficial: false,
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiKey: '',
+        hasStoredSecret: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldFetchRemoteModels({
+        useOfficial: false,
+        baseUrl: 'https://mytokens.cc',
+        apiKey: '**abcd',
+        hasStoredSecret: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('stays false for official, non-http URL, and add-mode empty key', () => {
     expect(
       shouldFetchRemoteModels({
         useOfficial: true,
         baseUrl: 'https://mytokens.cc',
         apiKey: 'sk-live-abcdefgh',
+        hasStoredSecret: true,
       }),
     ).toBe(false);
     expect(
@@ -160,6 +193,21 @@ describe('shouldFetchRemoteModels', () => {
         useOfficial: false,
         baseUrl: 'https://mytokens.cc',
         apiKey: '',
+      }),
+    ).toBe(false);
+  });
+
+  it('treats last4 masks as redacted, not a live key', () => {
+    expect(looksLikeLast4Mask('**abcd')).toBe(true);
+    expect(looksLikeLast4Mask('****wxyz')).toBe(true);
+    expect(looksLikeLast4Mask('sk--••••wxyz')).toBe(true);
+    expect(isLivePastedApiKey('**abcd')).toBe(false);
+    expect(isLivePastedApiKey('sk-live-abcdefgh')).toBe(true);
+    expect(
+      shouldFetchRemoteModels({
+        useOfficial: false,
+        baseUrl: 'https://mytokens.cc',
+        apiKey: '****wxyz',
       }),
     ).toBe(false);
   });

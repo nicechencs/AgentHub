@@ -92,3 +92,11 @@ export async function listRemoteOpenAiModels(
 ): Promise<string[]> {
   return getBackend().provider.listRemoteOpenAiModels(baseUrl, apiKey);
 }
+
+/** GET {base}/v1/models using the stored provider secret. Never send a raw key. */
+export async function listRemoteOpenAiModelsForProvider(
+  providerId: string,
+  baseUrl: string,
+): Promise<string[]> {
+  return getBackend().provider.listRemoteOpenAiModelsForProvider(providerId, baseUrl);
+}
