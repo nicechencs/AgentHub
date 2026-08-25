@@ -12,6 +12,7 @@ pub(crate) mod session_resume;
 
 mod claude;
 mod codex;
+mod codex_copies;
 pub(crate) mod cursor;
 pub(crate) mod dsh;
 mod grok;

@@ -447,6 +447,26 @@ export function AgentCard({
                 )}
               </div>
             )}
+            {agent.extraCopies && agent.extraCopies.length > 0 ? (
+              <div className="mt-1 space-y-0.5 font-mono text-xs text-muted">
+                <span>
+                  {t('agents.card.extraCopies', { count: String(agent.extraCopies.length) })}
+                </span>
+                {agent.extraCopies.map((copy) => (
+                  <div key={copy.path} className="truncate pl-2">
+                    {copy.kind === 'ide'
+                      ? t('agents.card.extraCopyIde')
+                      : copy.kind === 'desktop'
+                        ? t('agents.card.extraCopyDesktop')
+                        : copy.kind === 'leftover-agenthub'
+                          ? t('agents.card.extraCopyLeftover')
+                          : copy.kind}
+                    {copy.version ? ` ${copy.version}` : ''}
+                    {` · ${copy.path}`}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
 

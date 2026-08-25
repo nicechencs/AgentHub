@@ -76,7 +76,7 @@ impl AgentAdapter for DeterministicAgentAdapter {
             binary_path: Some(std::path::PathBuf::from("test-agent")),
             channel: Some("test".into()),
             env_ready: true,
-            notes: Vec::new(),
+            notes: Vec::new(), extra_copies: Vec::new(),
         }
     }
 

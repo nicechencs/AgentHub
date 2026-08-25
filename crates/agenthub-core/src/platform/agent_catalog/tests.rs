@@ -26,7 +26,7 @@ impl AgentAdapter for StubAdapter {
             binary_path: None,
             channel: None,
             env_ready: false,
-            notes: Vec::new(),
+            notes: Vec::new(), extra_copies: Vec::new(),
         }
     }
 

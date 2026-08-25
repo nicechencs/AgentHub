@@ -45,7 +45,7 @@ impl AgentAdapter for FakeClaudeAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![],
+            notes: vec![], extra_copies: Vec::new(),
         }
     }
     fn install_channels(&self) -> Vec<InstallChannel> {
@@ -110,7 +110,7 @@ impl AgentAdapter for FakePiAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![],
+            notes: vec![], extra_copies: Vec::new(),
         }
     }
     fn install_channels(&self) -> Vec<InstallChannel> {
@@ -1024,7 +1024,7 @@ impl AgentAdapter for FakeCodexAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![],
+            notes: vec![], extra_copies: Vec::new(),
         }
     }
     fn install_channels(&self) -> Vec<InstallChannel> {

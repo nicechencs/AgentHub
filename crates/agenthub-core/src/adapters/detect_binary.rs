@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::models::{AgentId, DetectResult};
+use crate::models::{AgentId, DetectedBinaryCopy, DetectResult};
 use crate::utils::redact::redact_text;
 
 /// Shared detect helper used by adapters.
@@ -50,33 +50,13 @@ pub(crate) fn detect_binary_with_env(
         }
     }
 
-    // AgentHub user npm prefix first — PATH may still point at a leftover
-    // 0.2.3 global shim and would otherwise hide ~/.agenthub/npm.
-    if let Some(path) = first_existing_named_bin(&agenthub_user_npm_bin_dirs(), &names) {
-        tracing::debug!(
-            target: crate::logging::targets::DETECT,
-            module = crate::logging::targets::DETECT,
-            op = "detect_binary",
-            agent = agent.as_str(),
-            via = "user_npm_prefix",
-            channel = "npm",
-            path = %path.display(),
-            "agent binary resolved in AgentHub user npm prefix"
-        );
-        return finish_detect(
-            agent,
-            path,
-            version_args,
-            Some("npm"),
-            env_ready,
-            true,
-            extra_env,
-        );
-    }
-
+    let mut result = (|| {
     for name in &names {
         if let Ok(path) = which(name) {
             if !is_direct_spawnable(&path) {
+                continue;
+            }
+            if is_under_agenthub_user_npm_prefix(&path) {
                 continue;
             }
             let channel = infer_channel(&path, channel_hint);
@@ -102,8 +82,9 @@ pub(crate) fn detect_binary_with_env(
         }
     }
 
-    // Remaining well-known dirs (legacy global npm, ~/.local/bin, …).
-    // User-prefix hits were already considered above.
+    // Remaining well-known dirs (OS npm global, ~/.local/bin, …).
+    // Never spawn from leftover `~/.agenthub/npm` — that directory is not
+    // an install target for any agent.
     for (path, channel) in well_known_bin_paths(agent) {
         if is_under_agenthub_user_npm_prefix(&path) {
             continue;
@@ -149,7 +130,73 @@ pub(crate) fn detect_binary_with_env(
         channel: None,
         env_ready,
         notes: vec![NOT_FOUND_FIREFIGHTING_NOTE.into()],
+        extra_copies: Vec::new(),
     }
+    })();
+    attach_leftover_agenthub_npm_copy(&mut result, agent, &names, extra_env);
+    result
+}
+
+/// Observe leftover `<data>/npm` shims without using them as the spawn target.
+fn attach_leftover_agenthub_npm_copy(
+    result: &mut DetectResult,
+    agent: AgentId,
+    names: &[String],
+    extra_env: &[(String, String)],
+) {
+    let Some(path) = first_existing_named_bin(&agenthub_user_npm_bin_dirs(), names) else {
+        return;
+    };
+    if result
+        .binary_path
+        .as_deref()
+        .is_some_and(|primary| leftover_paths_equal(primary, &path))
+    {
+        return;
+    }
+    if result
+        .extra_copies
+        .iter()
+        .any(|c| leftover_paths_equal(&c.path, &path))
+    {
+        return;
+    }
+    let version = leftover_probe_version(&path, extra_env);
+    tracing::debug!(
+        target: crate::logging::targets::DETECT,
+        module = crate::logging::targets::DETECT,
+        op = "detect_binary",
+        agent = agent.as_str(),
+        via = "leftover_agenthub_npm",
+        path = %path.display(),
+        "leftover AgentHub data-dir npm copy observed; not used to spawn"
+    );
+    result.notes.push(format!(
+        "发现数据目录遗留 npm 副本 @ {}（不会用于启动，也不会再往 ~/.agenthub/npm 安装）",
+        path.display()
+    ));
+    result.extra_copies.push(DetectedBinaryCopy {
+        path,
+        kind: "leftover-agenthub".into(),
+        version,
+        channel: Some("npm".into()),
+    });
+}
+
+fn leftover_probe_version(path: &Path, extra_env: &[(String, String)]) -> Option<String> {
+    use crate::utils::process::{run_capture_with_env, stdout_first_line};
+    let output = run_capture_with_env(path, &["--version"], extra_env).ok()?;
+    stdout_first_line(&output)
+        .filter(|l| looks_like_version_line(l))
+        .map(|l| extract_version_token(&l))
+        .filter(|l| !l.is_empty())
+}
+
+fn leftover_paths_equal(a: &Path, b: &Path) -> bool {
+    crate::utils::paths::same_path_identity(a, b).unwrap_or_else(|_| {
+        a.to_string_lossy()
+            .eq_ignore_ascii_case(&b.to_string_lossy())
+    })
 }
 
 /// Surfaced in DetectResult.notes and searchable in doctor / GUI when binary is missing.
@@ -217,13 +264,24 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
             }
         }
         AgentId::Codex => {
-            // Codex is primarily npm; native install may also land under ~/.local/bin.
             for npm_dir in npm_global_bin_dirs(&home) {
                 push_npm(&mut paths, npm_dir);
             }
             push_native(&mut paths, home.join(".local").join("bin"));
-            // Some native/codex layouts
             push_native(&mut paths, home.join(".codex").join("bin"));
+            #[cfg(windows)]
+            {
+                if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                    push_native(
+                        &mut paths,
+                        PathBuf::from(local)
+                            .join("Programs")
+                            .join("OpenAI")
+                            .join("Codex")
+                            .join("bin"),
+                    );
+                }
+            }
         }
         AgentId::Kimi => {
             push_native(&mut paths, home.join(".kimi-code").join("bin"));
@@ -295,9 +353,10 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
     paths
 }
 
-/// AgentHub-managed npm prefix roots (`<data>/npm` and `~/.agenthub/npm`).
+/// Leftover AgentHub data-dir npm prefix roots (`<data>/npm` and `~/.agenthub/npm`).
 ///
-/// These are **not** the OS/global npm prefix (AppData\Roaming\npm, /usr/local).
+/// Not install targets and not the OS/global npm prefix. Detect lists these
+/// as extra copies only; leftover uninstall iterates the same roots.
 pub(crate) fn agenthub_user_npm_prefix_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Ok(data) = crate::utils::paths::resolve_data_dir(None) {
@@ -358,7 +417,7 @@ pub(crate) fn first_existing_named_bin(dirs: &[PathBuf], names: &[String]) -> Op
 /// npm's extensionless `codex` on Windows is `#!/bin/sh` — CreateProcess
 /// fails with "not a valid Win32 application", which used to wipe the
 /// version string while still reporting Installed.
-fn is_direct_spawnable(path: &Path) -> bool {
+pub(crate) fn is_direct_spawnable(path: &Path) -> bool {
     #[cfg(not(windows))]
     {
         let _ = path;
@@ -390,11 +449,7 @@ fn file_starts_with_shebang(path: &Path) -> bool {
 }
 
 fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
-    let mut dirs = agenthub_user_npm_bin_dirs();
-    let home_fallback = npm_prefix_to_bin_dir(home.join(".agenthub").join("npm"));
-    if !dirs.iter().any(|p| p == &home_fallback) {
-        dirs.push(home_fallback);
-    }
+    let mut dirs = Vec::new();
     #[cfg(windows)]
     {
         if let Ok(appdata) = std::env::var("APPDATA") {
@@ -467,6 +522,8 @@ fn infer_channel_from_path(path: &Path) -> Option<&'static str> {
             || s.contains(".agenthub") && s.contains("npm")
         {
             Some("npm")
+        } else if s.contains("programs") && s.contains("openai") && s.contains("codex") {
+            Some("native")
         } else if s.contains(".local")
             || s.contains(".grok")
             || s.contains(".kimi-code")
@@ -676,5 +733,6 @@ fn finish_detect(
         channel,
         env_ready,
         notes,
+        extra_copies: Vec::new(),
     }
 }

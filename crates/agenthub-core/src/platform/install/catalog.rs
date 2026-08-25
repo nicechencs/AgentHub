@@ -142,12 +142,7 @@ fn push_npm(out: &mut Vec<InstallChannelPlan>, agent: AgentId) {
     out.push(InstallChannelPlan {
         id: "npm".into(),
         label: format!("npm {pkg}"),
-        command: format!(
-            "npm i -g --prefix {} {flags}{pkg}",
-            crate::utils::paths::resolve_data_dir(None)
-                .map(|d| d.join("npm").display().to_string())
-                .unwrap_or_else(|_| "~/.agenthub/npm".into())
-        ),
+        command: format!("npm i -g {flags}{pkg}"),
         requires: vec![RuntimeId::NodeJs, RuntimeId::Npm],
     });
 }

@@ -26,13 +26,15 @@ pub(crate) fn detect_installation() -> DetectResult {
         .map(|c| c.requires.clone())
         .unwrap_or_default();
     let env_ready = runtime::is_ready(&requires);
-    detect_binary(
+    let mut result = detect_binary(
         AgentId::Codex,
         &["codex"],
         &["--version"],
         Some("npm"),
         env_ready,
-    )
+    );
+    super::codex_copies::attach_codex_extra_copies(&mut result);
+    result
 }
 
 impl AgentAdapter for CodexAdapter {

@@ -246,6 +246,39 @@ describe('mapDoctorDetectResult', () => {
     expect(claude.capabilities).toBeUndefined();
   });
 
+  it('maps Codex extraCopies and notes', () => {
+    const runtimes = sampleReport.runtimes.map(mapDoctorEnvStatus);
+    const mapped = mapDoctorDetectResult(
+      {
+        agent: 'codex',
+        status: 'installed',
+        version: '0.149.1',
+        binaryPath: 'C:\\Users\\demo\\AppData\\Roaming\\npm\\codex.cmd',
+        channel: 'npm',
+        envReady: true,
+        notes: ['另有 1 份 Codex'],
+        extraCopies: [
+          {
+            path: 'C:\\Users\\demo\\.vscode\\extensions\\openai.chatgpt\\bin\\windows-x86_64\\codex.exe',
+            kind: 'ide',
+            version: '0.149.0-alpha.4.3',
+            channel: null,
+          },
+        ],
+      },
+      runtimes,
+    );
+    expect(mapped.extraCopies).toEqual([
+      {
+        path: 'C:\\Users\\demo\\.vscode\\extensions\\openai.chatgpt\\bin\\windows-x86_64\\codex.exe',
+        kind: 'ide',
+        version: '0.149.0-alpha.4.3',
+        channel: null,
+      },
+    ]);
+    expect(mapped.notes).toEqual(['另有 1 份 Codex']);
+  });
+
   it('attaches doctor capabilities when provided', () => {
     const runtimes = sampleReport.runtimes.map(mapDoctorEnvStatus);
     const claude = mapDoctorDetectResult(sampleReport.agents[0], runtimes, {

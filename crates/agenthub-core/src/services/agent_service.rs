@@ -180,7 +180,7 @@ mod tests {
                 binary_path: Some(PathBuf::from(format!("/bin/{}", self.id.as_str()))),
                 channel: Some("test".into()),
                 env_ready: true,
-                notes: vec![],
+                notes: vec![], extra_copies: Vec::new(),
             }
         }
 

@@ -118,6 +118,17 @@ pub enum DetectStatus {
     NotFound,
 }
 
+/// An additional on-disk copy of an agent CLI (not the spawn target).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectedBinaryCopy {
+    pub path: PathBuf,
+    /// `npm` | `native` | `ide` | `desktop` | `leftover-agenthub`
+    pub kind: String,
+    pub version: Option<String>,
+    pub channel: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectResult {
@@ -129,6 +140,9 @@ pub struct DetectResult {
     /// Whether default install channel's runtimes are ready.
     pub env_ready: bool,
     pub notes: Vec<String>,
+    /// Other copies besides `binary_path`. Empty for agents that only track one binary.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_copies: Vec<DetectedBinaryCopy>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

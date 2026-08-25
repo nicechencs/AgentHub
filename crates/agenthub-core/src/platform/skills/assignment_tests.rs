@@ -37,7 +37,7 @@ impl AgentAdapter for FakeAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![],
+            notes: vec![], extra_copies: Vec::new(),
         }
     }
 

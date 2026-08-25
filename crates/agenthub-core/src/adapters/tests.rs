@@ -1,4 +1,5 @@
 use super::auth_revision::AuthCredentialMetadata;
+use super::codex_copies::ide_codex_bins_under;
 use super::detect_binary::{
     agenthub_user_npm_prefix_roots, detect_binary, expand_binary_names, first_existing_named_bin,
     infer_channel, is_under_agenthub_user_npm_prefix, well_known_bin_paths,
@@ -13,10 +14,8 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 // Only exercised by unix-gated tests below.
-#[cfg_attr(not(unix), allow(dead_code))]
 static DETECT_ENV_LOCK: Mutex<()> = Mutex::new(());
 
-#[cfg_attr(not(unix), allow(dead_code))]
 fn restore_env(key: &str, prev: Option<OsString>) {
     match prev {
         Some(value) => std::env::set_var(key, value),
@@ -109,6 +108,8 @@ fn infer_channel_from_npm_and_native_paths() {
         assert_eq!(infer_channel(&native, None), "native");
         let kimi = PathBuf::from(r"C:\Users\demo\.kimi-code\bin\kimi.exe");
         assert_eq!(infer_channel(&kimi, Some("native")), "native");
+        let official = PathBuf::from(r"C:\Users\demo\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe");
+        assert_eq!(infer_channel(&official, Some("npm")), "native");
     }
     #[cfg(not(windows))]
     {
@@ -216,11 +217,10 @@ fn first_existing_named_bin_prefers_earlier_user_prefix_dir() {
     assert_eq!(found, Some(user_prefix.join("codex")));
 }
 
-/// H4: user-prefix file must beat a different PATH/`which` hit.
-/// Helper-only tests still pass if this early return is deleted.
+/// Leftover `~/.agenthub/npm` must not beat a PATH/`which` hit.
 #[cfg(unix)]
 #[test]
-fn detect_binary_prefers_user_npm_prefix_over_path_which() {
+fn detect_binary_path_wins_over_leftover_agenthub_npm_prefix() {
     use std::os::unix::fs::PermissionsExt;
 
     let _guard = DETECT_ENV_LOCK
@@ -262,18 +262,86 @@ fn detect_binary_prefers_user_npm_prefix_over_path_which() {
     assert_eq!(
         result.status,
         crate::models::DetectStatus::Installed,
-        "user-prefix probe must count as Installed: {:?}",
+        "PATH probe must count as Installed: {:?}",
         result.notes
     );
     assert_eq!(
         result.binary_path.as_deref(),
-        Some(user_probe.as_path()),
-        "PATH/which hit {path_probe:?} must not shadow AgentHub user npm prefix"
+        Some(path_probe.as_path()),
+        "leftover AgentHub npm prefix {user_probe:?} must not shadow PATH/which hit"
     );
     assert_eq!(
         result.version.as_deref(),
-        Some("9.9.9"),
-        "version must come from the user-prefix binary, not PATH"
+        Some("1.0.0"),
+        "version must come from the PATH binary, not leftover data-dir npm"
+    );
+    assert!(
+        result
+            .extra_copies
+            .iter()
+            .any(|c| c.kind == "leftover-agenthub"),
+        "leftover data-dir npm must be listed as extra, not spawned: {:?}",
+        result.extra_copies
+    );
+}
+
+#[test]
+fn leftover_agenthub_npm_is_never_the_spawn_target() {
+    let _guard = DETECT_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    #[cfg(windows)]
+    let leftover_dir = data.join("npm");
+    #[cfg(not(windows))]
+    let leftover_dir = data.join("npm").join("bin");
+    std::fs::create_dir_all(&leftover_dir).unwrap();
+
+    let name = "agenthub-leftover-only-probe";
+    #[cfg(windows)]
+    let leftover = leftover_dir.join(format!("{name}.cmd"));
+    #[cfg(not(windows))]
+    let leftover = leftover_dir.join(name);
+    #[cfg(windows)]
+    std::fs::write(&leftover, "@echo 9.9.9\r\n").unwrap();
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(&leftover, "#!/bin/sh\necho 9.9.9\n").unwrap();
+        std::fs::set_permissions(&leftover, PermissionsExt::from_mode(0o755)).unwrap();
+    }
+
+    let prev_home = std::env::var_os("AGENTHUB_HOME");
+    let prev_path = std::env::var_os("PATH");
+    std::env::set_var("AGENTHUB_HOME", &data);
+    // Leftover must not become the spawn target even when it is on PATH.
+    std::env::set_var("PATH", &leftover_dir);
+
+    let found = std::panic::catch_unwind(|| {
+        // Dsh has no copy on this machine's PATH/npm global; Pi/Codex would
+        // still hit `%APPDATA%\npm` via well-known dirs.
+        detect_binary(AgentId::Dsh, &[name], &["--version"], None, true)
+    });
+    restore_env("AGENTHUB_HOME", prev_home);
+    restore_env("PATH", prev_path);
+    let result = found.expect("detect_binary must not panic");
+
+    assert_eq!(
+        result.status,
+        crate::models::DetectStatus::NotFound,
+        "leftover data-dir npm must not count as installed: {:?}",
+        result.notes
+    );
+    assert!(result.binary_path.is_none());
+    assert!(
+        result
+            .extra_copies
+            .iter()
+            .any(|c| c.kind == "leftover-agenthub" && c.path == leftover),
+        "leftover must be extra_copies only: {:?}",
+        result.extra_copies
     );
 }
 
@@ -1535,4 +1603,42 @@ fn kimi_write_config_points_base_url_at_loopback() {
     assert!(text.contains("http://127.0.0.1:32123/v1"));
     assert!(text.contains("agenthub_codex_bridge"));
     assert!(!text.contains("gpt-"));
+}
+
+#[test]
+fn ide_codex_bins_under_finds_openai_chatgpt_extension() {
+    let dir = tempfile::tempdir().unwrap();
+    let ext = dir
+        .path()
+        .join("openai.chatgpt-26.818.61809-win32-x64")
+        .join("bin");
+    #[cfg(windows)]
+    let bin = ext.join("windows-x86_64").join("codex.exe");
+    #[cfg(target_os = "macos")]
+    let bin = ext.join("darwin-arm64").join("codex");
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let bin = ext.join("linux-x86_64").join("codex");
+    std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+    std::fs::write(&bin, b"fake").unwrap();
+    let found = ide_codex_bins_under(dir.path());
+    assert!(
+        found.iter().any(|p| p == &bin),
+        "expected {bin:?} in {found:?}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn well_known_codex_paths_include_official_native_home() {
+    let paths = well_known_bin_paths(AgentId::Codex);
+    assert!(
+        paths.iter().any(|(p, ch)| {
+            *ch == "native"
+                && p.to_string_lossy()
+                    .replace('/', "\\")
+                    .to_ascii_lowercase()
+                    .contains(r"programs\openai\codex\bin")
+        }),
+        "official Windows native dest missing: {paths:?}"
+    );
 }
