@@ -73,6 +73,11 @@ describe('connections layout wiring', () => {
     expect(page).toContain('<ConnectFlowDialog');
     expect(page).not.toContain('const [connectEntry');
     expect(page).toContain("inspectTarget?.kind === 'connect'");
+    const openerStart = page.indexOf('const openConnectForTicket');
+    const openerEnd = page.indexOf('const handleShareTicket', openerStart);
+    expect(openerStart).toBeGreaterThanOrEqual(0);
+    expect(openerEnd).toBeGreaterThan(openerStart);
+    expect(page.slice(openerStart, openerEnd)).not.toContain('inspect.close()');
   });
 
   it('keeps live config chrome to the path and folder button; hint is hover-only', () => {

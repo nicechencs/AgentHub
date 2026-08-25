@@ -7,7 +7,7 @@ import {
 } from '@/components/shared/busy-confirmation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { DialogOrSide } from './dialog-or-side';
+import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { useToast } from '@/components/ui/toast';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import { cn } from '@/lib/utils';

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { DetailsToggle } from '@/components/shared/DetailsToggle';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
-import { DialogOrSide } from './dialog-or-side';
+import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { agentDisplayName } from '@/config/agents';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
