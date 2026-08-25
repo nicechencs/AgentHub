@@ -1,12 +1,16 @@
 use super::auth_revision::AuthCredentialMetadata;
 use super::codex_copies::ide_codex_bins_under;
 use super::detect_binary::{
-    agenthub_user_npm_prefix_roots, detect_binary, expand_binary_names, first_existing_named_bin,
-    infer_channel, is_under_agenthub_user_npm_prefix, well_known_bin_paths,
+    agenthub_user_npm_prefix_roots, attach_extra_binary_copies, detect_binary, expand_binary_names,
+    first_existing_named_bin, infer_channel, is_under_agenthub_user_npm_prefix,
+    well_known_bin_paths,
 };
 use super::*;
 use crate::error::AppError;
-use crate::models::{AccountKind, AgentConfig, AgentId, Capability, CapabilityLevel};
+use crate::models::{
+    AccountKind, AgentConfig, AgentId, DetectResult, DetectStatus, DetectedBinaryCopy, Capability,
+    CapabilityLevel,
+};
 use crate::utils::atomic::atomic_write;
 use serde_json::json;
 use std::ffi::OsString;
@@ -77,6 +81,173 @@ fn well_known_paths_include_codex_npm_and_native_homes() {
     assert!(grok
         .iter()
         .any(|(p, _)| p.to_string_lossy().contains(".grok")));
+}
+
+#[test]
+fn well_known_paths_include_claude_native_and_legacy_local() {
+    let paths = well_known_bin_paths(AgentId::Claude);
+    assert!(
+        paths.iter().any(|(p, ch)| {
+            *ch == "native"
+                && p.to_string_lossy()
+                    .replace('\\', "/")
+                    .contains(".local/bin/claude")
+        }),
+        "Claude native ~/.local/bin missing: {paths:?}"
+    );
+    assert!(
+        paths.iter().any(|(_, ch)| *ch == "npm"),
+        "Claude should probe npm global bin"
+    );
+    assert!(
+        paths.iter().any(|(p, ch)| {
+            *ch == "npm"
+                && p.to_string_lossy()
+                    .replace('\\', "/")
+                    .contains(".claude/local")
+        }),
+        "Claude legacy ~/.claude/local missing: {paths:?}"
+    );
+}
+
+fn write_spawnable_probe(path: &std::path::Path, version: &str) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    #[cfg(windows)]
+    std::fs::write(path, format!("@echo {version}\r\n")).unwrap();
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(path, format!("#!/bin/sh\necho {version}\n")).unwrap();
+        std::fs::set_permissions(path, PermissionsExt::from_mode(0o755)).unwrap();
+    }
+}
+
+#[test]
+fn attach_extra_binary_copies_skips_primary_leftover_and_duplicates() {
+    let tmp = tempfile::tempdir().unwrap();
+    #[cfg(windows)]
+    let primary = tmp.path().join("primary.cmd");
+    #[cfg(not(windows))]
+    let primary = tmp.path().join("primary");
+    #[cfg(windows)]
+    let extra = tmp.path().join("extra.cmd");
+    #[cfg(not(windows))]
+    let extra = tmp.path().join("extra");
+    #[cfg(windows)]
+    let leftover = tmp.path().join("leftover.cmd");
+    #[cfg(not(windows))]
+    let leftover = tmp.path().join("leftover");
+    write_spawnable_probe(&primary, "1.0.0");
+    write_spawnable_probe(&extra, "2.0.0");
+    write_spawnable_probe(&leftover, "9.9.9");
+
+    let mut result = DetectResult {
+        agent: AgentId::Claude,
+        status: DetectStatus::Installed,
+        version: Some("1.0.0".into()),
+        binary_path: Some(primary.clone()),
+        channel: Some("native".into()),
+        env_ready: true,
+        notes: Vec::new(),
+        extra_copies: vec![DetectedBinaryCopy {
+            path: leftover.clone(),
+            kind: "leftover-agenthub".into(),
+            version: Some("9.9.9".into()),
+            channel: Some("npm".into()),
+        }],
+    };
+    attach_extra_binary_copies(
+        &mut result,
+        vec![
+            (primary.clone(), "native"),
+            (extra.clone(), "npm"),
+            (extra.clone(), "npm"),
+            (leftover.clone(), "npm"),
+        ],
+        &["--version"],
+        &[],
+    );
+
+    assert_eq!(
+        result.binary_path.as_deref(),
+        Some(primary.as_path()),
+        "spawn target must stay the primary"
+    );
+    assert_eq!(
+        result.extra_copies.len(),
+        2,
+        "leftover kept + one extra npm, no primary/dupes: {:?}",
+        result.extra_copies
+    );
+    let extra_row = result
+        .extra_copies
+        .iter()
+        .find(|c| c.kind == "npm")
+        .expect("npm extra copy");
+    assert_eq!(extra_row.path, extra);
+    assert_eq!(extra_row.channel.as_deref(), Some("npm"));
+    if let Some(v) = extra_row.version.as_deref() {
+        assert_eq!(v, "2.0.0");
+    }
+    assert!(
+        result.notes.iter().any(|n| n.contains("另有 1 份 Claude Code")),
+        "channel extra note must name the agent and skip leftover: {:?}",
+        result.notes
+    );
+}
+
+#[test]
+fn attach_extra_binary_copies_refreshes_note_when_ide_copy_is_added() {
+    let tmp = tempfile::tempdir().unwrap();
+    #[cfg(windows)]
+    let npm = tmp.path().join("npm.cmd");
+    #[cfg(not(windows))]
+    let npm = tmp.path().join("npm-copy");
+    #[cfg(windows)]
+    let ide = tmp.path().join("ide.exe");
+    #[cfg(not(windows))]
+    let ide = tmp.path().join("ide-copy");
+    write_spawnable_probe(&npm, "0.1.0");
+    write_spawnable_probe(&ide, "0.2.0");
+
+    let mut result = DetectResult {
+        agent: AgentId::Codex,
+        status: DetectStatus::Installed,
+        version: Some("0.1.0".into()),
+        binary_path: Some(tmp.path().join("primary-missing")),
+        channel: Some("npm".into()),
+        env_ready: true,
+        notes: vec!["另有 1 份 Codex：stale".into()],
+        extra_copies: vec![DetectedBinaryCopy {
+            path: npm.clone(),
+            kind: "npm".into(),
+            version: Some("0.1.0".into()),
+            channel: Some("npm".into()),
+        }],
+    };
+    attach_extra_binary_copies(
+        &mut result,
+        vec![(ide.clone(), "ide")],
+        &["--version"],
+        &[],
+    );
+
+    assert_eq!(result.extra_copies.len(), 2);
+    assert_eq!(result.extra_copies[1].kind, "ide");
+    assert!(result.extra_copies[1].channel.is_none());
+    let extra_notes: Vec<_> = result
+        .notes
+        .iter()
+        .filter(|n| n.starts_with("另有 "))
+        .collect();
+    assert_eq!(extra_notes.len(), 1, "{:?}", result.notes);
+    assert!(
+        extra_notes[0].contains("另有 2 份 Codex"),
+        "second attach must rebuild one combined note: {:?}",
+        result.notes
+    );
 }
 
 #[test]

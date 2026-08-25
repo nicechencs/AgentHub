@@ -52,6 +52,14 @@ function defaultMockAgentStatuses(): Record<AgentId, AgentStatus> {
       latestVersion: '1.2.0',
       channel: 'npm',
       binPath: '~/AppData/Roaming/npm/claude.cmd',
+      extraCopies: [
+        {
+          path: '~/.local/bin/claude.exe',
+          kind: 'native',
+          version: '2.1.50',
+          channel: 'native',
+        },
+      ],
       authStatus: 'none',
       authLabel: '未配置',
       running: false,
@@ -64,6 +72,20 @@ function defaultMockAgentStatuses(): Record<AgentId, AgentStatus> {
       latestVersion: '0.50.0',
       channel: 'npm',
       binPath: '~/AppData/Roaming/npm/codex.cmd',
+      extraCopies: [
+        {
+          path: '~/AppData/Local/Programs/OpenAI/Codex/bin/codex.exe',
+          kind: 'desktop',
+          version: '0.50.0',
+          channel: null,
+        },
+        {
+          path: '~/.vscode/extensions/openai.chatgpt-26.818.61809-win32-x64/bin/windows-x86_64/codex.exe',
+          kind: 'ide',
+          version: '0.49.0',
+          channel: null,
+        },
+      ],
       authStatus: 'none',
       authLabel: '未配置',
       running: false,
@@ -136,6 +158,7 @@ export function resetMockAgentStatuses(): void {
     current.latestVersion = next.latestVersion;
     current.channel = next.channel;
     current.binPath = next.binPath;
+    current.extraCopies = next.extraCopies?.map((copy) => ({ ...copy }));
     current.authStatus = next.authStatus;
     current.authLabel = next.authLabel;
     current.running = next.running;
@@ -331,6 +354,7 @@ export function createMockAgentPort(backend: Backend): AgentPort {
       s.installed = false;
       s.version = undefined;
       s.binPath = undefined;
+      s.extraCopies = undefined;
       s.channel = undefined;
       s.authStatus = 'none';
       s.authLabel = '未配置';

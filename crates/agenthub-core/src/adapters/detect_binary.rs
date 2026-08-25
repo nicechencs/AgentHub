@@ -134,7 +134,103 @@ pub(crate) fn detect_binary_with_env(
     }
     })();
     attach_leftover_agenthub_npm_copy(&mut result, agent, &names, extra_env);
+    attach_extra_binary_copies(
+        &mut result,
+        well_known_bin_paths(agent)
+            .into_iter()
+            .filter(|(path, _)| !is_under_agenthub_user_npm_prefix(path)),
+        version_args,
+        extra_env,
+    );
     result
+}
+
+/// Other on-disk CLIs besides `binary_path` (npm/native well-known, IDE, desktop).
+/// Leftover `~/.agenthub/npm` is attached separately and is not a spawn target.
+/// Does not change the spawn `binary_path`.
+pub(crate) fn attach_extra_binary_copies(
+    result: &mut DetectResult,
+    candidates: impl IntoIterator<Item = (PathBuf, &'static str)>,
+    version_args: &[&str],
+    extra_env: &[(String, String)],
+) {
+    let primary = result.binary_path.as_deref();
+    let mut added = 0usize;
+    for (path, kind) in candidates {
+        if !path.is_file() || !is_direct_spawnable(&path) {
+            continue;
+        }
+        if is_under_agenthub_user_npm_prefix(&path) {
+            continue;
+        }
+        if primary.is_some_and(|p| leftover_paths_equal(p, &path)) {
+            continue;
+        }
+        if result
+            .extra_copies
+            .iter()
+            .any(|c| leftover_paths_equal(&c.path, &path))
+        {
+            continue;
+        }
+        let version = probe_bin_version(&path, version_args, extra_env);
+        let channel = match kind {
+            "ide" | "desktop" => None,
+            other => Some(other.to_string()),
+        };
+        result.extra_copies.push(DetectedBinaryCopy {
+            path,
+            kind: kind.into(),
+            version,
+            channel,
+        });
+        added += 1;
+    }
+    if added > 0 {
+        refresh_channel_extra_copies_note(result);
+    }
+}
+
+fn probe_bin_version(
+    path: &Path,
+    version_args: &[&str],
+    extra_env: &[(String, String)],
+) -> Option<String> {
+    use crate::utils::process::{run_capture_with_env, stdout_first_line};
+    let output = run_capture_with_env(path, version_args, extra_env).ok()?;
+    stdout_first_line(&output)
+        .filter(|l| looks_like_version_line(l))
+        .map(|l| extract_version_token(&l))
+        .filter(|l| !l.is_empty())
+}
+
+fn refresh_channel_extra_copies_note(result: &mut DetectResult) {
+    result.notes.retain(|n| !n.starts_with("另有 "));
+    let copies: Vec<&DetectedBinaryCopy> = result
+        .extra_copies
+        .iter()
+        .filter(|c| c.kind != "leftover-agenthub")
+        .collect();
+    if copies.is_empty() {
+        return;
+    }
+    let summary = copies
+        .iter()
+        .map(|c| {
+            format!(
+                "{} {} @ {}",
+                c.kind,
+                c.version.as_deref().unwrap_or("?"),
+                c.path.display()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("；");
+    result.notes.push(format!(
+        "另有 {} 份 {}：{summary}",
+        copies.len(),
+        result.agent.display_name()
+    ));
 }
 
 /// Observe leftover `<data>/npm` shims without using them as the spawn target.
@@ -161,7 +257,7 @@ fn attach_leftover_agenthub_npm_copy(
     {
         return;
     }
-    let version = leftover_probe_version(&path, extra_env);
+    let version = probe_bin_version(&path, &["--version"], extra_env);
     tracing::debug!(
         target: crate::logging::targets::DETECT,
         module = crate::logging::targets::DETECT,
@@ -181,15 +277,6 @@ fn attach_leftover_agenthub_npm_copy(
         version,
         channel: Some("npm".into()),
     });
-}
-
-fn leftover_probe_version(path: &Path, extra_env: &[(String, String)]) -> Option<String> {
-    use crate::utils::process::{run_capture_with_env, stdout_first_line};
-    let output = run_capture_with_env(path, &["--version"], extra_env).ok()?;
-    stdout_first_line(&output)
-        .filter(|l| looks_like_version_line(l))
-        .map(|l| extract_version_token(&l))
-        .filter(|l| !l.is_empty())
 }
 
 fn leftover_paths_equal(a: &Path, b: &Path) -> bool {
@@ -262,6 +349,12 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
             for npm_dir in npm_global_bin_dirs(&home) {
                 push_npm(&mut paths, npm_dir);
             }
+            // Legacy local npm install from older Claude Code versions.
+            push_npm(&mut paths, home.join(".claude").join("local"));
+            push_npm(
+                &mut paths,
+                home.join(".claude").join("local").join("bin"),
+            );
         }
         AgentId::Codex => {
             for npm_dir in npm_global_bin_dirs(&home) {
