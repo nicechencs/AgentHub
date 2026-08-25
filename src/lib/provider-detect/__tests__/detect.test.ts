@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { applySmartPaste, defaultConfigScaffold, EMPTY_FORM_VARS, smartDetectUrlAndKey } from '../index';
+import {
+  applySmartPaste,
+  defaultConfigScaffold,
+  EMPTY_FORM_VARS,
+  isLiveFilePath,
+  liveConfigPaths,
+  smartDetectUrlAndKey,
+} from '../index';
 import { CLAUDE_CODE_BASH_EXPORT_BASIC } from './fixtures/claude-code-samples';
 
 describe('smartDetectUrlAndKey', () => {
@@ -9,6 +16,10 @@ describe('smartDetectUrlAndKey', () => {
     );
     expect(smartDetectUrlAndKey('sk-live-abcdefghijklmnopqrst').apiKey).toMatch(
       /^sk-/,
+    );
+    expect(smartDetectUrlAndKey('https://any-host.example/api').hints.join(' ')).toMatch(/服务地址/);
+    expect(smartDetectUrlAndKey('https://any-host.example/api').hints.join(' ')).not.toMatch(
+      /Endpoint|env_key|Provider：/,
     );
   });
 
@@ -89,6 +100,33 @@ describe('defaultConfigScaffold', () => {
     expect(pi.providers).toBeDefined();
     expect(workbuddy.models).toHaveLength(1);
     expect(workbuddy.availableModels).toEqual(['custom-model']);
+  });
+});
+
+describe('liveConfigPaths', () => {
+  it('treats only real file paths as auth rows', () => {
+    expect(isLiveFilePath('~/.codex/auth.json')).toBe(true);
+    expect(isLiveFilePath('C:\\Users\\demo\\.grok\\auth.json')).toBe(true);
+    expect(isLiveFilePath('/home/demo/.pi/agent/auth.json')).toBe(true);
+    expect(isLiveFilePath('官方登录态 / 文件型凭据（以 detect 为准）')).toBe(false);
+    expect(isLiveFilePath('CURSOR_API_KEY 或 agent login')).toBe(false);
+  });
+
+  it('keeps Claude chrome to settings.json without detect jargon', () => {
+    const paths = liveConfigPaths('claude');
+    expect(paths.config).toBe('~/.claude/settings.json');
+    expect(paths.auth).toBeUndefined();
+    expect(paths.hint).toMatch(/写进这个文件|Claude/);
+    expect(`${paths.auth ?? ''} ${paths.hint}`).not.toMatch(
+      /detect|文件型凭据|环境变量|未必在单一文件|Endpoint|schema/i,
+    );
+  });
+
+  it('only exposes auth when it is a live file path', () => {
+    for (const agentId of ['claude', 'codex', 'kimi', 'grok', 'pi', 'workbuddy', 'cursor', 'unknown']) {
+      const auth = liveConfigPaths(agentId).auth;
+      if (auth) expect(isLiveFilePath(auth)).toBe(true);
+    }
   });
 });
 

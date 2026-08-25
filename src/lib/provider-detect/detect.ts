@@ -81,27 +81,27 @@ export function smartDetectUrlAndKey(raw: string): SmartDetectResult {
   }
 
   if (matchedDetectors.includes('plain-url') && baseUrl) {
-    hints.push('整段识别为 Endpoint URL');
+    hints.push('识别到：整段都是服务地址');
   } else if (matchedDetectors.includes('plain-api-key') && apiKey) {
-    hints.push('整段识别为 API Key');
+    hints.push('识别到：整段都是密钥');
   } else {
-    if (baseUrl) hints.push(`识别到 URL：${baseUrl}`);
+    if (baseUrl) hints.push(`识别到服务地址：${baseUrl}`);
     if (apiKey) {
       const tail = apiKey.length > 8 ? apiKey.slice(-4) : '';
-      hints.push(`识别到 API Key${tail ? `（…${tail}）` : ''}`);
+      hints.push(`识别到密钥${tail ? `（末尾 ${tail}）` : ''}`);
     }
-    if (model) hints.push(`识别到 Model：${model}`);
-    if (providerSlug) hints.push(`Provider：${providerSlug}`);
-    if (envKey) hints.push(`env_key：${envKey}`);
-    if (reasoningEffort) hints.push(`reasoning：${reasoningEffort}`);
+    if (model) hints.push(`识别到模型：${model}`);
+    if (providerSlug) hints.push(`服务商：${providerSlug}`);
+    if (envKey) hints.push(`密钥字段：${envKey}`);
+    if (reasoningEffort) hints.push(`思考强度：${reasoningEffort}`);
     if (extraEnv && Object.keys(extraEnv).length) {
-      hints.push(`附加 env：${Object.keys(extraEnv).join(', ')}`);
+      hints.push(`额外配置：${Object.keys(extraEnv).join(', ')}`);
     }
-    if (rawConfigText) hints.push('已保留完整 config.toml');
+    if (rawConfigText) hints.push('已保留完整配置文件');
   }
 
   if (!baseUrl && !apiKey && !rawConfigText) {
-    hints.push('未识别到 URL 或 API Key，请手动填写');
+    hints.push('没有识别到服务地址或密钥，请在下方填写');
   }
 
   return {

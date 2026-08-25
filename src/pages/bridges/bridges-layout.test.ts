@@ -43,6 +43,7 @@ describe('routes layout wiring', () => {
     const shell = source('pages/bridges/dialog-or-side.tsx');
     expect(shell).toContain('headerActions={actions}');
     expect(shell).toContain("t('common.cancel')");
+    expect(shell).toContain('variant="secondary"');
     expect(shell).toContain('footer={danger}');
     const panel = source('components/layout/SideInspectPanel.tsx');
     expect(panel).toContain('PanelRightClose');

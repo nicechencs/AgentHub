@@ -45,14 +45,14 @@ export function isPiAuthJsonSlot(id: string): boolean {
 
 /** AgentHub models.json bind slots — not auth.json builtins. */
 const PI_MODELS_JSON_BIND_SLOTS: PiProviderSlot[] = [
-  { id: 'xai', label: 'xAI (models.json)', api: 'openai-completions' },
-  { id: 'kimi-for-coding', label: 'Kimi For Coding (models.json)', api: 'openai-completions' },
+  { id: 'xai', label: 'xAI（自定义）', api: 'openai-completions' },
+  { id: 'kimi-for-coding', label: 'Kimi For Coding（自定义）', api: 'openai-completions' },
 ];
 
 export const PI_PROVIDER_SLOT_OPTIONS: PiProviderSlot[] = [
   ...PI_AUTH_JSON_SLOTS,
   ...PI_MODELS_JSON_BIND_SLOTS,
-  { id: 'custom', label: '自定义 (models.json)', api: 'openai-completions' },
+  { id: 'custom', label: '自定义服务', api: 'openai-completions' },
 ];
 
 export function piProviderSlotById(id: string): PiProviderSlot | undefined {
@@ -76,9 +76,7 @@ export function piFormRequiresBaseUrl(slug: string): boolean {
 export function piProviderSlotHint(id: string): string {
   const slug = id.trim() || 'custom';
   if (isPiAuthJsonSlot(slug)) {
-    const env = piProviderSlotById(slug)?.envVar;
-    const envBit = env ? `（${env}）` : '';
-    return `Key 写入 ~/.pi/agent/auth.json 的 ${slug}${envBit}。不填 URL 时用 Pi 内置端点与模型。`;
+    return `密钥会写到 Pi 的官方登录文件（auth.json / ${slug}）。不填地址时用官方服务和模型。`;
   }
-  return `写入 ~/.pi/agent/models.json 的 ${slug} 槽。需要 Endpoint URL。`;
+  return `会写到 Pi 的自定义服务配置（models.json / ${slug}）。必须填写服务地址。`;
 }

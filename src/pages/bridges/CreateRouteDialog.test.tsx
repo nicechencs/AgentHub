@@ -339,7 +339,7 @@ describe('EditRouteDialog', () => {
     expect(markup).toContain('新增客户端端点后，保存还要「写入客户端」。');
     expect(markup).toContain('type="checkbox"');
     expect(markup).toContain('type="submit"');
-    expect(markup).toContain('保存');
+    expect(markup).toContain('保存修改');
     expect(markup).toContain('删除路由');
     expect(markup).not.toContain('stored-key');
     expect(markup).not.toContain('这条路由的来源不是可编辑的 API 配置');

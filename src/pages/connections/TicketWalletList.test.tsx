@@ -478,7 +478,7 @@ describe('TicketWalletList details', () => {
     expect(allMarkup).toContain('2 份登录');
   });
 
-  it('does not put 添加 in the list chrome when logins exist', () => {
+  it('does not put 添加授权 in the list chrome when logins exist', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -491,12 +491,12 @@ describe('TicketWalletList details', () => {
         onImportLogin() {},
       }),
     );
-    expect(markup).not.toContain('添加');
+    expect(markup).not.toContain('添加授权');
     expect(markup).not.toContain('aria-label="登录类型筛选"');
     expect(markup).not.toContain('新 API Key');
   });
 
-  it('keeps 添加 on the empty-wallet next action', () => {
+  it('keeps 添加授权 on the empty-wallet next action', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: { tickets: [], bindings: [], surfaceGroups: [] },
@@ -509,7 +509,7 @@ describe('TicketWalletList details', () => {
         onImportLogin() {},
       }),
     );
-    expect(markup).toContain('添加');
+    expect(markup).toContain('添加授权');
     expect(markup).toContain('还没有登录');
   });
 

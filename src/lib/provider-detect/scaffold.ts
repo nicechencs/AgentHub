@@ -124,6 +124,13 @@ export function defaultConfigScaffold(agentId: string): {
   }
 }
 
+/** 编辑页「登录凭据」只展示真实路径；说明文字放 hint。 */
+export function isLiveFilePath(value: string | undefined): value is string {
+  if (!value) return false;
+  const trimmed = value.trim();
+  return trimmed.startsWith('~') || trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed);
+}
+
 /**
  * 切换服务 / 账号时相关的本机配置路径（展示用，与 core adapter 对齐）。
  * 打开目录请用 `openAgentConfigDir(agentId)`（会解析 CLAUDE_CONFIG_DIR 等覆盖）。
@@ -144,31 +151,29 @@ export function liveConfigPaths(agentId: string): {
     case 'claude':
       return {
         config: '~/.claude/settings.json',
-        auth: '官方登录态 / 文件型凭据（以 detect 为准）',
         extra: ['~/.claude.json（MCP / 全局）'],
         openDir: '~/.claude（或 CLAUDE_CONFIG_DIR）',
-        hint: 'API/服务配置写入 settings.json 的环境变量；官方登录由工具自身管理，未必在单一文件中',
+        hint: '保存后会写进这个文件。用 Claude 官方账号登录的，由 Claude 自己保管。',
       };
     case 'codex':
       return {
         config: '~/.codex/config.toml',
         auth: '~/.codex/auth.json',
         openDir: '~/.codex',
-        hint: '服务设置写入 config.toml；登录凭据写入 auth 文件',
+        hint: '服务设置写在 config.toml，登录信息写在 auth.json。',
       };
     case 'kimi':
       return {
         config: '~/.kimi-code/config.toml（旧 ~/.kimi）',
-        auth: 'credentials 目录（以 adapter 为准）',
         openDir: '~/.kimi-code 或 ~/.kimi',
-        hint: '服务/API Key 写入 config.toml；官方登录凭据在 credentials 目录',
+        hint: 'API Key 写在这个配置文件里。用官方登录的，凭据在旁边的 credentials 目录。',
       };
     case 'grok':
       return {
         config: '~/.grok/config.toml',
         auth: '~/.grok/auth.json',
         openDir: '~/.grok',
-        hint: 'API Key 可写入 config.toml；官方登录使用 auth 文件',
+        hint: 'API Key 可以写在 config.toml；官方登录写在 auth.json。',
       };
     case 'pi':
       return {
@@ -176,28 +181,26 @@ export function liveConfigPaths(agentId: string): {
         auth: '~/.pi/agent/auth.json',
         extra: ['~/.pi/agent/models.json'],
         openDir: '~/.pi/agent（或 PI_CODING_AGENT_DIR）',
-        hint: '官方厂商的 Key 写回 auth.json；自定义地址+Key 写回 models.json。保存到登录列表后需切换才会写到本机',
+        hint: '官方厂商的密钥写在 auth.json，自己的服务地址写在 models.json。保存到列表后，切换才会写到本机。',
       };
     case 'workbuddy':
       return {
         config: '~/.workbuddy/settings.json',
-        auth: '桌面登录态（不由 AgentHub 切换）',
         extra: ['~/.workbuddy/models.json', '~/.workbuddy/.mcp.json'],
         openDir: '~/.workbuddy（或 WORKBUDDY_CONFIG_DIR）',
-        hint: '服务设置写回 models.json；账号切换暂不支持',
+        hint: '服务设置写在 models.json。暂不支持在这里切换账号。',
       };
     case 'cursor':
       return {
         config: '无稳定 provider 配置文件',
-        auth: 'CURSOR_API_KEY 或 agent login',
         openDir: '~/.cursor',
-        hint: '服务和账号暂不支持写回本机配置；技能目录由工具适配器决定',
+        hint: '暂时不能把连接写回 Cursor 的本机配置。',
       };
     default:
       return {
         config: '（该工具暂无本机服务配置写回）',
         openDir: '~',
-        hint: '仅保存到 AgentHub，不一定写入本机配置',
+        hint: '只会保存在 AgentHub 里，不一定写到本机。',
       };
   }
 }

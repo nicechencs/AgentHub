@@ -218,21 +218,21 @@ describe('connection-model', () => {
   it('shows a Chinese empty reason when 导入当前授权 has no live probe', () => {
     expect(liveAuthImportGate(null, false, 'claude')).toEqual({
       enabled: false,
-      reason: '无法确认本机登录态，已禁用导入',
+      reason: '没法确认这台电脑上的登录，暂时不能导入',
     });
     expect(liveAuthImportGate(undefined, false, 'codex')).toEqual({
       enabled: false,
-      reason: '无法确认本机登录态，已禁用导入',
+      reason: '没法确认这台电脑上的登录，暂时不能导入',
     });
     expect(liveAuthImportGate({ agentId: 'claude' }, false, 'claude').reason).toMatch(
-      /未检测到可导入的 OAuth 登录态/,
+      /没有找到可以导入的官方登录/,
     );
   });
 
   it('only enables current-login import for credentialed OAuth/file-auth probes', () => {
     expect(liveAuthImportGate(undefined, true, 'claude')).toEqual({
       enabled: false,
-      reason: '正在检测本机登录态…',
+      reason: '正在查看这台电脑上的登录…',
     });
     expect(
       liveAuthImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: true }, false, 'claude')
@@ -251,7 +251,7 @@ describe('connection-model', () => {
       ),
     ).toEqual({
       enabled: false,
-      reason: '当前是本机路由写进去的配置，不是一份新登录',
+      reason: '这是本机转发写进去的配置，不是一份新登录',
     });
     expect(
       liveAuthImportGate(
@@ -296,11 +296,11 @@ describe('connection-model', () => {
 
     expect(liveAuthImportGate(previousAgentProbe, false, 'codex')).toEqual({
       enabled: false,
-      reason: '本机登录态正在切换，已禁用导入',
+      reason: '正在切换登录，暂时不能导入',
     });
     expect(liveApiKeyImportGate(previousAgentProbe, false, 'codex')).toEqual({
       enabled: false,
-      reason: '本机认证方式正在切换，已禁用 API Key 导入',
+      reason: '正在切换登录方式，暂时不能导入 API Key',
     });
   });
 
@@ -313,11 +313,11 @@ describe('connection-model', () => {
     };
     expect(liveAuthImportGate(probe, false, 'claude')).toEqual({
       enabled: false,
-      reason: '当前是本机路由写进去的配置，不是一份新登录',
+      reason: '这是本机转发写进去的配置，不是一份新登录',
     });
     expect(liveApiKeyImportGate(probe, false, 'claude')).toEqual({
       enabled: false,
-      reason: '当前是本机路由写进去的配置，不是一份新登录',
+      reason: '这是本机转发写进去的配置，不是一份新登录',
     });
   });
 
@@ -366,7 +366,7 @@ describe('connection-model', () => {
       expect(liveAuthCoexistenceNotice(claudeDual, 'claude')).toContain('Key');
       expect(liveAuthImportGate(claudeDual, false, 'claude')).toEqual({
         enabled: false,
-        reason: '当前本机配置为 API Key，不是 OAuth 登录态',
+        reason: '这台电脑上现在是 API Key，不是官方登录',
       });
       expect(liveApiKeyImportGate(claudeDual, false, 'claude')).toEqual({
         enabled: true,
@@ -385,7 +385,7 @@ describe('connection-model', () => {
       });
       expect(liveApiKeyImportGate(oauthAlsoApiKey, false, 'claude')).toEqual({
         enabled: false,
-        reason: '当前本机为 OAuth 登录态，请导入当前授权',
+        reason: '这台电脑上是官方登录。请改用「导入当前授权」。',
       });
     });
 
@@ -407,13 +407,13 @@ describe('connection-model', () => {
           { agentId: 'codex', kind: 'api_key', hasCredentials: true, alsoPresent: ['oauth'] },
           'codex',
         ),
-      ).toMatch(/ChatGPT|TUI/);
+      ).toMatch(/ChatGPT/);
       expect(
         liveAuthCoexistenceNotice(
           { agentId: 'cursor', kind: 'api_key', hasCredentials: true, alsoPresent: ['oauth'] },
           'cursor',
         ),
-      ).toContain('本机同时有');
+      ).toContain('同时有');
     });
 
     it('treats trimmed file-auth.json in alsoPresent as an oauth family', () => {
@@ -432,7 +432,7 @@ describe('connection-model', () => {
 
     it('still returns the pi notice for kind mixed without alsoPresent', () => {
       const piMixed = { agentId: 'pi' as const, kind: 'mixed', hasCredentials: true };
-      expect(liveAuthCoexistenceNotice(piMixed, 'pi')).toMatch(/auth\.json|provider/);
+      expect(liveAuthCoexistenceNotice(piMixed, 'pi')).toMatch(/服务商|官方登录/);
       expect(liveAuthImportGate(piMixed, false, 'pi').enabled).toBe(false);
     });
   });
@@ -440,11 +440,11 @@ describe('connection-model', () => {
   it('only enables API Key import for credentialed API-key probes', () => {
     expect(liveApiKeyImportGate(undefined, true, 'claude')).toEqual({
       enabled: false,
-      reason: '正在检测本机认证方式…',
+      reason: '正在查看这台电脑怎么登录的…',
     });
     expect(
       liveApiKeyImportGate({ agentId: 'claude', kind: 'oauth', hasCredentials: true }, false, 'claude'),
-    ).toEqual({ enabled: false, reason: '当前本机为 OAuth 登录态，请导入当前授权' });
+    ).toEqual({ enabled: false, reason: '这台电脑上是官方登录。请改用「导入当前授权」。' });
     expect(
       liveApiKeyImportGate({ agentId: 'claude', kind: 'api_key', hasCredentials: false }, false, 'claude')
         .enabled,

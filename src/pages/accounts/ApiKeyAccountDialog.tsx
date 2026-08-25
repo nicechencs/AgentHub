@@ -152,7 +152,7 @@ export function ApiKeyAccountDialog({
     ? t('connections.apiKeyDialog.editTitle', { name: agentName })
     : t('connections.apiKeyDialog.addTitle', { name: agentName });
   const cancelButton = (
-    <Button type="button" variant="outline" size="sm" onClick={requestClose} disabled={saving}>
+    <Button type="button" variant="secondary" size="sm" onClick={requestClose} disabled={saving}>
       {t('common.cancel')}
     </Button>
   );

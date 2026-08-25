@@ -26,6 +26,7 @@ import {
   issuesByField,
   type FormValues,
 } from './generic-config-form-map';
+import { configFieldHint, configFieldLabel, configFieldOptionLabel } from './config-field-copy';
 
 export interface GenericConfigFormProps {
   schema: AgentConfigSchemaDto;
@@ -44,7 +45,7 @@ export interface GenericConfigFormProps {
   fieldStatus?: Readonly<
     Record<string, { label?: string | null; onRetry?: () => void }>
   >;
-  /** Visible hint under a field (overrides schema `help` when both exist). */
+  /** Visible hint under a field (overrides the beginner field hint when both exist). */
   fieldHints?: Readonly<Record<string, string | undefined>>;
 }
 
@@ -177,21 +178,14 @@ export function GenericConfigForm({
               key={field.key}
               className="rounded-card border border-border bg-canvas px-2.5 py-2 text-meta text-muted"
             >
-              字段 <code className="font-mono">{field.key}</code>（{field.label}）类型不受支持
+              {t('connections.providerDialog.unsupportedField', { label: field.label })}
             </div>
           );
         }
 
-        const visibleLabel =
-          field.key === 'baseUrl'
-            ? t('connections.providerDialog.endpoint')
-            : field.key === 'apiKey'
-              ? t('connections.apiKeyDialog.key')
-              : field.key === 'model'
-                ? t('connections.providerDialog.model')
-                : field.label;
+        const visibleLabel = configFieldLabel(field.key, field.label, t);
         const extraHint = fieldHints?.[field.key]?.trim() || undefined;
-        const hint = extraHint || field.help?.trim() || undefined;
+        const hint = configFieldHint(field.key, extraHint, t);
 
         return (
           <label key={field.key} className="flex flex-col gap-1.5">
@@ -207,8 +201,8 @@ export function GenericConfigForm({
                 onChange={(v) => patch(field.key, v)}
                 placeholder={
                   typeof raw === 'string' && raw === SECRET_REDACTED
-                    ? '已配置（留空保留）'
-                    : 'API Key'
+                    ? t('connections.providerDialog.secretConfigured')
+                    : t('connections.apiKeyDialog.key')
                 }
               />
             ) : null}
@@ -243,7 +237,7 @@ export function GenericConfigForm({
                   onCheckedChange={(v) => patch(field.key, v)}
                   disabled={fieldDisabled}
                 />
-                <span className="text-meta text-muted">{field.help ?? ''}</span>
+                <span className="text-meta text-muted">{hint ?? ''}</span>
               </div>
             ) : null}
             {kind === 'enum' && field.valueType.kind === 'enum' ? (
@@ -258,7 +252,7 @@ export function GenericConfigForm({
                 <SelectContent>
                   {field.valueType.options.map((opt) => (
                     <SelectItem key={opt} value={opt}>
-                      {opt}
+                      {configFieldOptionLabel(field.key, opt, t)}
                     </SelectItem>
                   ))}
                 </SelectContent>
