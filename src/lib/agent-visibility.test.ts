@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AGENTS } from '@/config/agents';
 import type { AgentStatus, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import {
+  applyStoredAgentOrder,
   filterVisibleTrend,
   filterVisibleUsage,
   firstVisibleAgentId,
@@ -39,6 +40,20 @@ describe('agent-visibility', () => {
       'claude',
       'kimi',
     ]);
+  });
+
+  it('applies a remembered agent order and keeps hidden rows that are not in storage at the end', () => {
+    const rows = [
+      status('claude', { hidden: true }),
+      status('codex'),
+      status('kimi', { hidden: true }),
+      status('grok'),
+    ];
+    const baseline = sortAgentsForManagePage(rows);
+    expect(applyStoredAgentOrder(baseline, (row) => row.agentId, []).map((row) => row.agentId))
+      .toEqual(['codex', 'grok', 'claude', 'kimi']);
+    expect(applyStoredAgentOrder(baseline, (row) => row.agentId, ['grok', 'codex']).map((row) => row.agentId))
+      .toEqual(['grok', 'codex', 'claude', 'kimi']);
   });
 
   it('treats empty hidden set as identity for usage and trend', () => {

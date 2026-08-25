@@ -23,6 +23,7 @@ import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { Notice } from '@/components/shared/Notice';
 import { UsageParserHealth } from '@/components/shared/UsageParserHealth';
 import { useUsageSync } from '@/components/shared/UsageSyncProvider';
@@ -41,6 +42,7 @@ import { Skeleton, TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 
 import {
+  applyStoredAgentOrder,
   filterVisibleTrend,
   hiddenAgentIdSet,
   visibleCatalogAgents,
@@ -493,7 +495,11 @@ export default function DashboardPage() {
     return () => window.removeEventListener(USAGE_COLLECTED_EVENT, onCollected);
   }, [loadUsage]);
 
-  const visibleAgentMetas = useMemo(() => visibleCatalogAgents(hiddenIds), [hiddenIds]);
+  const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
+  const visibleAgentMetas = useMemo(
+    () => applyStoredAgentOrder(visibleCatalogAgents(hiddenIds), (meta) => meta.id, agentCatalogOrder),
+    [agentCatalogOrder, hiddenIds],
+  );
   const parseVisibleIds = useMemo(
     () => (agents == null ? undefined : visibleInstalledIds(agents)),
     [agents],
