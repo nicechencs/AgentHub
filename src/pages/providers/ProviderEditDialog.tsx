@@ -28,7 +28,7 @@ import { ConfigEditor } from '@/components/shared/ConfigEditor';
 import { GenericConfigForm, SuggestableInput } from '@/components/shared/GenericConfigForm';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SecretInput } from '@/components/shared/SecretInput';
-import { Hint } from '@/components/ui/tooltip';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import type { TranslateFn } from '@/lib/i18n';
 import { useAgentCatalogOptional } from '@/app/runtime';
@@ -66,9 +66,9 @@ import {
   defaultConfigScaffold,
   EMPTY_FORM_VARS,
   extractFormVars,
-  FORM_FIELD_LABELS,
   formFieldVisibility,
   initFormFromConfig,
+  isLiveFilePath,
   isLivePastedApiKey,
   liveConfigPaths,
   parseJsonObjectConfig,
@@ -715,7 +715,7 @@ export function ProviderEditDialog({
     : t('connections.apiKeyDialog.addTitle', { name: agentName });
   const keyHint = isEdit ? t('connections.apiKeyDialog.keyHint') : undefined;
   const cancelButton = (
-    <Button type="button" variant="outline" size="sm" onClick={requestClose} disabled={saving}>
+    <Button type="button" variant="secondary" size="sm" onClick={requestClose} disabled={saving}>
       {t('common.cancel')}
     </Button>
   );
@@ -737,19 +737,20 @@ export function ProviderEditDialog({
 
   const form = (
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-meta text-muted">
-            <div className="min-w-0 flex-1 space-y-0.5">
-              <p>
-                <span className="text-secondary">{t('connections.providerDialog.liveConfig')}</span>
-                <code className="break-all font-mono">{livePaths.config}</code>
-              </p>
-              {livePaths.auth ? (
-                <p>
-                  <span className="text-secondary">{t('connections.providerDialog.liveAuth')}</span>
-                  <code className="break-all font-mono">{livePaths.auth}</code>
-                </p>
-              ) : null}
-              <p className="text-muted">{livePaths.hint}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-meta text-muted">
+            <div className="min-w-0 flex-1">
+              <Tip label={livePaths.hint}>
+                <span className="block">
+                  <span className="text-secondary">{t('connections.providerDialog.liveConfig')}</span>
+                  <code className="break-all font-mono">{livePaths.config}</code>
+                  {isLiveFilePath(livePaths.auth) ? (
+                    <span className="mt-0.5 block">
+                      <span className="text-secondary">{t('connections.providerDialog.liveAuth')}</span>
+                      <code className="break-all font-mono">{livePaths.auth}</code>
+                    </span>
+                  ) : null}
+                </span>
+              </Tip>
             </div>
             <Button
               type="button"
@@ -913,7 +914,7 @@ export function ProviderEditDialog({
             <>
               {formFieldVisibility(agentId).providerSlug ? (
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted">{FORM_FIELD_LABELS.providerSlug}</span>
+                  <span className="text-xs text-muted">{t('connections.providerDialog.fields.providerSlug')}</span>
                   <Select
                     value={vars.providerSlug.trim() || 'custom'}
                     onValueChange={(value) => {

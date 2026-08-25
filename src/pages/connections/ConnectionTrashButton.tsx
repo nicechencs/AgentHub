@@ -253,7 +253,7 @@ export function ConnectionTrashButton({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="secondary"
               disabled={permanentBusy}
               onClick={() => setPendingPermanent(null)}
             >

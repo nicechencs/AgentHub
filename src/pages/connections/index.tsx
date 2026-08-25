@@ -924,7 +924,7 @@ export default function ConnectionsPage() {
           ) : null}
           <DialogFooter>
             <Button
-              variant="outline"
+              variant="secondary"
               disabled={importingAccount}
               onClick={() => setLoginImportOpen(false)}
             >
@@ -970,7 +970,7 @@ export default function ConnectionsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" disabled={deleteBusy} onClick={() => setDeleteTicket(null)}>
+            <Button variant="secondary" disabled={deleteBusy} onClick={() => setDeleteTicket(null)}>
               {t('common.cancel')}
             </Button>
             <Button

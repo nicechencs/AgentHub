@@ -38,7 +38,7 @@ export function DialogOrSide({
 }) {
   const { t } = useI18n();
   const cancel = (
-    <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+    <Button type="button" variant="secondary" size="sm" onClick={() => onOpenChange(false)}>
       {t('common.cancel')}
     </Button>
   );

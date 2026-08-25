@@ -162,18 +162,18 @@ export function liveAuthImportGate(
   t?: TranslateFn,
 ): LiveAuthImportGate {
   if (loading) {
-    return { enabled: false, reason: t ? t('connections.list.detectingLogin') : '正在检测本机登录态…' };
+    return { enabled: false, reason: t ? t('connections.list.detectingLogin') : '正在查看这台电脑上的登录…' };
   }
   if (!probe) {
-    return { enabled: false, reason: t ? t('connections.list.cannotConfirmLogin') : '无法确认本机登录态，已禁用导入' };
+    return { enabled: false, reason: t ? t('connections.list.cannotConfirmLogin') : '没法确认这台电脑上的登录，暂时不能导入' };
   }
   if (probe.agentId !== agentId) {
-    return { enabled: false, reason: t ? t('connections.list.loginSwitching') : '本机登录态正在切换，已禁用导入' };
+    return { enabled: false, reason: t ? t('connections.list.loginSwitching') : '正在切换登录，暂时不能导入' };
   }
   if (probeIsAdapterProjection(probe)) {
     return {
       enabled: false,
-      reason: t ? t('connections.list.liveIsLocalRoute') : '当前是本机路由写进去的配置，不是一份新登录',
+      reason: t ? t('connections.list.liveIsLocalRoute') : '这是本机转发写进去的配置，不是一份新登录',
     };
   }
 
@@ -183,14 +183,14 @@ export function liveAuthImportGate(
     return { enabled: true, reason: '' };
   }
   if (kind === 'api_key' || kind === 'api-key' || kind === 'apikey') {
-    return { enabled: false, reason: t ? t('connections.list.isApiKeyNotOauth') : '当前本机配置为 API Key，不是 OAuth 登录态' };
+    return { enabled: false, reason: t ? t('connections.list.isApiKeyNotOauth') : '这台电脑上现在是 API Key，不是官方登录' };
   }
   if (kind === 'desktop-login') {
-    return { enabled: false, reason: t ? t('connections.list.desktopNotImportable') : '检测到桌面登录，但该登录态不可直接导入' };
+    return { enabled: false, reason: t ? t('connections.list.desktopNotImportable') : '检测到桌面版登录，但没法直接导入' };
   }
   return {
     enabled: false,
-    reason: probe.summary || (t ? t('connections.list.noOauthToImport') : '未检测到可导入的 OAuth 登录态'),
+    reason: probe.summary || (t ? t('connections.list.noOauthToImport') : '没有找到可以导入的官方登录'),
   };
 }
 
@@ -207,18 +207,18 @@ export function liveApiKeyImportGate(
   t?: TranslateFn,
 ): LiveAuthImportGate {
   if (loading) {
-    return { enabled: false, reason: t ? t('connections.list.detectingAuth') : '正在检测本机认证方式…' };
+    return { enabled: false, reason: t ? t('connections.list.detectingAuth') : '正在查看这台电脑怎么登录的…' };
   }
   if (!probe) {
-    return { enabled: false, reason: t ? t('connections.list.cannotConfirmAuth') : '无法确认本机认证方式，已禁用 API Key 导入' };
+    return { enabled: false, reason: t ? t('connections.list.cannotConfirmAuth') : '没法确认登录方式，暂时不能导入 API Key' };
   }
   if (probe.agentId !== agentId) {
-    return { enabled: false, reason: t ? t('connections.list.authSwitching') : '本机认证方式正在切换，已禁用 API Key 导入' };
+    return { enabled: false, reason: t ? t('connections.list.authSwitching') : '正在切换登录方式，暂时不能导入 API Key' };
   }
   if (probeIsAdapterProjection(probe)) {
     return {
       enabled: false,
-      reason: t ? t('connections.list.liveIsLocalRoute') : '当前是本机路由写进去的配置，不是一份新登录',
+      reason: t ? t('connections.list.liveIsLocalRoute') : '这是本机转发写进去的配置，不是一份新登录',
     };
   }
 
@@ -228,14 +228,14 @@ export function liveApiKeyImportGate(
     return { enabled: true, reason: '' };
   }
   if (kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json') {
-    return { enabled: false, reason: t ? t('connections.list.isOauthImportLogin') : '当前本机为 OAuth 登录态，请导入当前授权' };
+    return { enabled: false, reason: t ? t('connections.list.isOauthImportLogin') : '这台电脑上是官方登录。请改用「导入当前授权」。' };
   }
   if (kind === 'desktop-login') {
-    return { enabled: false, reason: t ? t('connections.list.desktopNoApiKey') : '当前为桌面登录态，无法直接导入 API Key' };
+    return { enabled: false, reason: t ? t('connections.list.desktopNoApiKey') : '这是桌面版登录，没法直接导入 API Key' };
   }
   return {
     enabled: false,
-    reason: probe.summary || (t ? t('connections.list.noApiKeyToImport') : '未检测到可导入的 API Key'),
+    reason: probe.summary || (t ? t('connections.list.noApiKeyToImport') : '没有找到可以导入的 API Key'),
   };
 }
 
@@ -282,7 +282,7 @@ export function liveImportAction(mode: LiveImportDialogMode): LiveImportAction {
 }
 
 const GENERIC_LIVE_AUTH_COEXISTENCE_NOTICE =
-  '本机同时有 API Key 和官方登录，它们不在同一处。导入只会收入当前检测为生效的那一份；另一份仍留在本机。';
+  '这台电脑上同时有 API Key 和官方登录，它们不在同一个地方。导入只会收下现在正在用的那一份，另一份还留在本机。';
 
 function alsoPresentKinds(probe?: Pick<LiveAuthProbeLike, 'alsoPresent'> | null): string[] {
   if (!Array.isArray(probe?.alsoPresent)) return [];
@@ -309,27 +309,27 @@ export function liveAuthCoexistenceNotice(
   if (kind !== 'mixed' && !alsoHasOAuth && !alsoHasApiKey) return null;
 
   if (agentId === 'pi' || kind === 'mixed') {
-    return t ? t('connections.list.coexistPi') : 'Pi 的 auth.json 里同时有 API Key 槽和 OAuth 槽。导入会按 provider 分行，不会猜一个全局当前项。';
+    return t ? t('connections.list.coexistPi') : 'Pi 里同时有 API Key 和官方登录。导入会按服务商分行，不会猜一个当前账号。';
   }
   if (agentId === 'claude' && isApiKeyLiveAuthKind(kind) && alsoHasOAuth) {
     return t
       ? t('connections.list.coexistClaude')
-      : '本机同时有 API Key 和官方登录。Claude 会优先用 Key（按 API 计费），订阅登录被压住。导入只会收入当前这份 Key。要用订阅请先去掉 settings/环境里的 Key。';
+      : '这台电脑上同时有 API Key 和官方登录。Claude 会优先用 Key（按接口计费），订阅登录会被压住。导入只会收下这份 Key。要用订阅，请先从本机配置里去掉 Key。';
   }
   if (agentId === 'grok' && isApiKeyLiveAuthKind(kind) && alsoHasOAuth) {
     return t
       ? t('connections.list.coexistGrok')
-      : '本机同时有配置里的 API Key 和 grok login 登录态。写在模型上的 Key 优先于登录态；只有全局 XAI_API_KEY 时登录态才优先。导入按当前检测结果。';
+      : '这台电脑上同时有 API Key 和 grok login。写在模型上的 Key 会优先使用。导入只会收下现在正在用的那一份。';
   }
   if (agentId === 'kimi') {
     return t
       ? t('connections.list.coexistKimi')
-      : '本机同时有 config.toml 里的 API Key 和 /login 登录态。当前用哪一份取决于 default_model / 最后一次 /login。导入只会收入当前检测为生效的那一份。';
+      : '这台电脑上同时有 config.toml 里的 API Key 和官方 /login。导入只会收下现在正在用的那一份。';
   }
   if (agentId === 'codex') {
     return t
       ? t('connections.list.coexistCodex')
-      : '本机同时有 API Key 和 ChatGPT 登录痕迹。交互 TUI 多半仍认登录态；导入按当前检测结果。';
+      : '这台电脑上同时有 API Key 和 ChatGPT 登录。导入会收下现在正在用的那一份。';
   }
   return t ? t('connections.list.coexistGeneric') : GENERIC_LIVE_AUTH_COEXISTENCE_NOTICE;
 }

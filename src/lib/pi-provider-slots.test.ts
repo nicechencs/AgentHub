@@ -42,13 +42,13 @@ describe('pi-provider-slots', () => {
     const ids = PI_PROVIDER_SLOT_OPTIONS.map((slot) => slot.id);
     expect(ids).toEqual([...AUTH_IDS, 'xai', 'kimi-for-coding', 'custom']);
     expect(PI_PROVIDER_SLOT_OPTIONS.find((slot) => slot.id === 'xai')?.label).toBe(
-      'xAI (models.json)',
+      'xAI（自定义）',
     );
     expect(PI_PROVIDER_SLOT_OPTIONS.find((slot) => slot.id === 'kimi-for-coding')?.label).toBe(
-      'Kimi For Coding (models.json)',
+      'Kimi For Coding（自定义）',
     );
     expect(PI_PROVIDER_SLOT_OPTIONS.find((slot) => slot.id === 'custom')?.label).toBe(
-      '自定义 (models.json)',
+      '自定义服务',
     );
   });
 

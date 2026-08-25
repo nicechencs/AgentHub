@@ -37,15 +37,32 @@ describe('connections layout wiring', () => {
     expect(page).not.toContain('<Dialog open={apiKeyDialogOpen}');
   });
 
+  it('keeps live config chrome to the path and folder button; hint is hover-only', () => {
+    const provider = source('../providers/ProviderEditDialog.tsx');
+    expect(provider).toContain('Tip label={livePaths.hint}');
+    expect(provider).toContain('isLiveFilePath(livePaths.auth)');
+    expect(provider).not.toContain('<p className="text-muted">{livePaths.hint}</p>');
+  });
+
+  it('uses beginner field copy instead of schema help text', () => {
+    const form = source('../../components/shared/GenericConfigForm.tsx');
+    expect(form).toContain('configFieldHint');
+    expect(form).toContain('configFieldLabel');
+    expect(form).toContain('configFieldOptionLabel');
+    expect(form).not.toContain('field.help?.trim()');
+  });
+
   it('keeps key hints on the key field and shows cancel in the inspect header', () => {
     const provider = source('../providers/ProviderEditDialog.tsx');
     const account = source('../accounts/ApiKeyAccountDialog.tsx');
     expect(provider).toContain("t('connections.apiKeyDialog.keyHint')");
     expect(provider).toContain('fieldHints');
     expect(provider).toContain("t('common.cancel')");
+    expect(provider).toContain('variant="secondary"');
     expect(provider).toContain('headerActions={headerActions}');
     expect(account).toContain("t('connections.apiKeyDialog.keyHint')");
     expect(account).toContain("t('common.cancel')");
+    expect(account).toContain('variant="secondary"');
     expect(account).toContain('headerActions={headerActions}');
   });
 });

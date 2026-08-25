@@ -28,7 +28,7 @@ export type { ClaudeModelRole } from './types';
 
 export { DETECTORS, registerDetector } from './detectors';
 export { smartDetectUrlAndKey } from './detect';
-export { defaultConfigScaffold, liveConfigPaths } from './scaffold';
+export { defaultConfigScaffold, isLiveFilePath, liveConfigPaths } from './scaffold';
 
 export {
   applyFormVars,
