@@ -831,8 +831,62 @@ describe('TicketWalletList switch action', () => {
     );
     expect(markup).toContain('aria-label="使用中"');
     expect(markup).toContain('>使用中<');
-    expect(markup).toMatch(/disabled[^>]*aria-label="使用中"/);
+    expect(markup).toMatch(/\sdisabled(=""|\s)[^>]*aria-label="使用中"/);
+    expect(markup).toContain('这份登录已在当前工具使用中');
     expect(markup).not.toContain('aria-label="切换"');
+  });
+});
+
+describe('TicketWalletList bind actions', () => {
+  it('disables 用到其他工具 and keeps the disable reason for hover', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        onShareTicket() {},
+        onRouteTicket() {},
+        shareActionForTicket: () => ({
+          disabled: true,
+          reason: '这份登录目前不能直接用到其它工具',
+        }),
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toMatch(/\sdisabled(=""|\s)[^>]*aria-label="用到其他工具"/);
+    expect(markup).toContain('这份登录目前不能直接用到其它工具');
+  });
+
+  it('disables 本机转发 and keeps the disable reason for hover', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        onShareTicket() {},
+        onRouteTicket() {},
+        routeActionForTicket: () => ({
+          disabled: true,
+          reason: '这份登录目前不能走本机转发',
+        }),
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toMatch(/\sdisabled(=""|\s)[^>]*aria-label="本机转发"/);
+    expect(markup).toContain('这份登录目前不能走本机转发');
+  });
+
+  it('keeps 本机转发 enabled when a local_bridge plan can apply', () => {
+    const markup = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet: sampleWallet(),
+        onShareTicket() {},
+        onRouteTicket() {},
+        routeActionForTicket: () => ({ disabled: false }),
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(markup).toContain('aria-label="本机转发"');
+    expect(markup).not.toMatch(/\sdisabled(=""|\s)[^>]*aria-label="本机转发"/);
   });
 });
 
