@@ -8,6 +8,7 @@ pub mod paths;
 pub mod process;
 pub mod project_path;
 pub mod redact;
+pub mod remote_openai_models;
 pub mod stream_parse;
 
 #[cfg(test)]

@@ -84,3 +84,19 @@ export async function undoSwitch(agentId: AgentId): Promise<boolean> {
 export async function testLatency(agentId: AgentId, providerId: string): Promise<number> {
   return getBackend().provider.testLatency(agentId, providerId);
 }
+
+/** OpenAI-compatible GET {base}/v1/models via the desktop HTTP command. */
+export async function listRemoteOpenAiModels(
+  baseUrl: string,
+  apiKey: string,
+): Promise<string[]> {
+  return getBackend().provider.listRemoteOpenAiModels(baseUrl, apiKey);
+}
+
+/** GET {base}/v1/models using the stored provider secret. Never send a raw key. */
+export async function listRemoteOpenAiModelsForProvider(
+  providerId: string,
+  baseUrl: string,
+): Promise<string[]> {
+  return getBackend().provider.listRemoteOpenAiModelsForProvider(providerId, baseUrl);
+}

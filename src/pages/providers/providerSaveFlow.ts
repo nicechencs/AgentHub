@@ -63,6 +63,28 @@ export function canSaveWithSchemaStatus(status: SchemaUiStatus): boolean {
   return status === 'ready' || status === 'unsupported';
 }
 
+/**
+ * Dialog save gate. Model is never required — empty model is filled on save
+ * via `withDefaultModel`. Fetch status does not participate.
+ */
+export function canSaveProviderForm(args: {
+  schemaStatus: SchemaUiStatus;
+  configError: string | null;
+  isEdit: boolean;
+  apiKey: string;
+  piNeedsUrl?: boolean;
+  baseUrl?: string;
+  /** Ignored; model is optional. */
+  model?: string;
+}): boolean {
+  return (
+    canSaveWithSchemaStatus(args.schemaStatus) &&
+    !args.configError &&
+    (args.isEdit ? true : Boolean(args.apiKey.trim())) &&
+    (!args.piNeedsUrl || Boolean((args.baseUrl ?? '').trim()))
+  );
+}
+
 export type SchemaLoadPlan =
   | { action: 'wait' }
   | { action: 'unsupported' }

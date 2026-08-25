@@ -114,5 +114,29 @@ export function createTauriProviderPort(): ProviderPort {
         throw e;
       }
     },
+
+    async listRemoteOpenAiModels(baseUrl, apiKey) {
+      try {
+        return await invoke<string[]>('list_remote_openai_models', {
+          baseUrl,
+          apiKey,
+        });
+      } catch (e) {
+        log.error('list_remote_openai_models failed', e);
+        throw e;
+      }
+    },
+
+    async listRemoteOpenAiModelsForProvider(providerId, baseUrl) {
+      try {
+        return await invoke<string[]>('list_remote_openai_models_for_provider', {
+          providerId,
+          baseUrl,
+        });
+      } catch (e) {
+        log.error('list_remote_openai_models_for_provider failed', e);
+        throw e;
+      }
+    },
   };
 }

@@ -40,6 +40,9 @@ describe('locale key parity', () => {
     expect(keys).toContain('projects.page.title');
     expect(keys).toContain('mcp.page.title');
     expect(keys).toContain('connections.providerDialog.useOfficial');
+    expect(keys).toContain('connections.providerDialog.remoteModelsLoading');
+    expect(keys).toContain('connections.providerDialog.remoteModelsFailed');
+    expect(keys).toContain('connections.providerDialog.remoteModelsEmpty');
   });
 
   it('all user copy avoids banned jargon', () => {
@@ -57,5 +60,23 @@ describe('locale key parity', () => {
     expect(translate('zh', 'connect.select.maturityStable')).toBe('稳定');
     expect(translate('en', 'connect.select.maturityStable')).toBe('Stable');
     expect(translate('en', 'kind.route.localRoute')).toBe('Local route');
+    expect(translate('zh', 'connections.providerDialog.remoteModelsLoading')).toBe(
+      '正在拉取模型…',
+    );
+    expect(translate('en', 'connections.providerDialog.remoteModelsLoading')).toBe(
+      'Fetching models…',
+    );
+    expect(translate('zh', 'connections.providerDialog.remoteModelsFailed')).toBe(
+      '拉取失败，点此重试',
+    );
+    expect(translate('en', 'connections.providerDialog.remoteModelsFailed')).toBe(
+      "Couldn't fetch models. Tap to retry",
+    );
+    expect(translate('zh', 'connections.providerDialog.remoteModelsEmpty')).toBe(
+      '这个地址没有模型列表，可以留空或手填',
+    );
+    expect(translate('en', 'connections.providerDialog.remoteModelsEmpty')).toBe(
+      'This address has no model list. Leave blank or type one',
+    );
   });
 });
