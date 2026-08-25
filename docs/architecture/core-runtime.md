@@ -51,7 +51,7 @@ ticket.bind(source, target)
   → ConnectionService records active binding
 ```
 
-`plan` 只读，`bind`/`unbind` 是产品写入口。桥接 bind 不由 core 的普通 `TicketBindService` 偷开 listener，而由桌面 host 的 saga 负责启动、写目标配置和失败逆序恢复。
+`plan` 只读，`bind`/`unbind` 是产品写入口。`AdapterRouteService::plan()` 是路线、gate 和 `canApply` 的唯一决策者；browser mock 只解释它对冻结入参的 golden 投影。桥接 bind 不由 core 的普通 `TicketBindService` 偷开 listener，而由桌面 host 的 saga 负责启动、写目标配置和失败逆序恢复。详见 [Adapter 路线内核](adapter-route-kernel.md)。
 
 ### Agent 安装与运行
 
@@ -89,6 +89,7 @@ sidecar 只承接 `local_bridge` runtime 和它的 lifecycle；Account、Provide
 ## 相关页面
 
 - [Architecture overview](overview.md)
+- [Adapter 路线内核](adapter-route-kernel.md)
 - [Adapters and bridges](../concepts/adapters-and-bridges.md)
 - [Chat and agents](../concepts/chat-and-agents.md)
 - [Sidecar proposal](../proposals/adapter-sidecar.md)

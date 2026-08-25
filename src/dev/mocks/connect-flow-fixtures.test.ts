@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getBackend } from '@/app/runtime';
+import { resetMockAccounts } from './account';
 import { resetMockAgentStatuses } from './agent';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
@@ -11,6 +12,7 @@ import { createMockProviderPort, getMockProviderById, resetMockProviders } from 
 describe('seedConnectFlowAdapterFixtures', () => {
   beforeEach(() => {
     resetMockProviders();
+    resetMockAccounts();
     resetMockAgentStatuses();
   });
 
@@ -32,6 +34,12 @@ describe('seedConnectFlowAdapterFixtures', () => {
 });
 
 describe('createBackend connect-flow seed policy', () => {
+  beforeEach(() => {
+    resetMockProviders();
+    resetMockAccounts();
+    resetMockAgentStatuses();
+  });
+
   it('keeps an empty pool under vitest after createBackend / getBackend', async () => {
     createBackend();
     const afterFactory = (await createMockProviderPort().listProviders()).map((item) => item.id);
@@ -67,5 +75,27 @@ describe('createBackend connect-flow seed policy', () => {
     expect(kimiClaude.canApply).toBe(true);
     expect(kimiCodex.canApply).toBe(true);
     expect(anthropicPi.canApply).toBe(true);
+  });
+
+  it('plans a redacted official Claude login as apply-ready and rejects the stale Kimi member', async () => {
+    getBackend();
+    seedConnectFlowAdapterFixtures({ includeOauthAccount: true });
+    const adapter = getBackend().adapter;
+
+    const officialPi = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: CONNECT_FLOW_FIXTURE_IDS.claudeOauth,
+      targetAgentId: 'pi',
+    });
+    const staleClaude = await adapter.plan({
+      sourceKind: 'account',
+      sourceId: CONNECT_FLOW_FIXTURE_IDS.kimiMembershipStale,
+      targetAgentId: 'claude',
+    });
+
+    expect(officialPi.canApply).toBe(true);
+    expect(officialPi.analysis.ruleId).toBe('claude-subscription-to-pi-v1');
+    expect(staleClaude.canApply).toBe(false);
+    expect(JSON.stringify({ officialPi, staleClaude })).not.toContain('must-not-leak');
   });
 });

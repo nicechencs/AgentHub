@@ -52,7 +52,7 @@ The destination paths below are the intended organized names. A destination may 
 | `docs/ui-design.md` | `docs/ui/page-patterns.md` | Extract current shells, pages, and interactions |
 | `docs/ui-experience-alignment.md` | `docs/ui/design-system.md` + `docs/archive/README.md` | Keep stable UI constraints current; record the dated comparison only as history |
 
-## Retained archive records (5)
+## Retained archive records (6)
 
 | Archive file | Current destination or explanation |
 |---|---|
@@ -61,7 +61,8 @@ The destination paths below are the intended organized names. A destination may 
 | `docs/archive/multi-account-routing-rfc.md` | Historical multi-account RFC; current runtime/member facts belong in product/reference docs |
 | `docs/archive/route-endpoint-audit-2026-08.md` | Dated audit snapshot; current endpoint facts belong in `docs/reference/local-route-api.md` |
 | `docs/archive/routing-connection-refactor-plan.md` | Historical implementation plan; future process options belong in `docs/proposals/adapter-sidecar.md` and `docs/proposals/modularity.md` |
+| `docs/archive/single-kernel-projections.md` | Completed single-kernel proposal, implementation slices, and dated E/F evaluation; current contract belongs in `docs/architecture/adapter-route-kernel.md` |
 
 ## Coverage check
 
-The flat set is intentionally listed as 31 rows, including the legacy `README.md`. The retained archive set is intentionally listed as 5 rows. When a root file is removed, its row must remain here and the destination document must contain the stable content or an explicit archived explanation. No row authorizes credential encryption work or domestic OAuth/API conversion.
+The flat set is intentionally listed as 31 rows, including the legacy `README.md`. The retained archive set is intentionally listed as 6 rows. When a root file is removed, its row must remain here and the destination document must contain the stable content or an explicit archived explanation. No row authorizes credential encryption work or domestic OAuth/API conversion.

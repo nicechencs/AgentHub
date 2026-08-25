@@ -43,7 +43,7 @@ lib/backend/tauri/<port>.ts
 | `pnpm test` / Vitest | `src/dev/mocks/create-backend.ts` | 固定 mock backend；测试不得依赖 Tauri |
 | `pnpm build` | Tauri adapter | 生产构建不得把 `src/dev`、测试文件或 mock 实现打入产物 |
 
-生产页面在非 Tauri 环境中必须报告 unavailable 或明确错误，不能为了“让页面能用”静默切到 mock。mock 只服务 `dev:mock` 和测试。
+生产页面在非 Tauri 环境中必须报告 unavailable 或明确错误，不能为了“让页面能用”静默切到 mock。mock 只服务 `dev:mock` 和测试。Adapter / route 的产品决策来自 `AdapterRouteService::plan()`；mock 只查 golden 并维护内存状态，未命中 fail-closed。见 [Adapter 路线内核](adapter-route-kernel.md)。
 
 ## Contracts 与 port
 
@@ -68,5 +68,6 @@ Tauri adapter 对非桌面运行时抛出结构化 unavailable 错误；mock 和
 
 - [Architecture overview](overview.md)
 - [Core and runtime](core-runtime.md)
+- [Adapter 路线内核](adapter-route-kernel.md)
 - [Adapters and bridges](../concepts/adapters-and-bridges.md)
 - [Testing reference](../reference/testing.md)

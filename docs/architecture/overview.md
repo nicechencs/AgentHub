@@ -69,5 +69,6 @@ flowchart LR
 
 - [Frontend and backend boundary](frontend-backend.md)：页面到 `#backend`、Tauri/mock 的调用契约。
 - [Core and runtime](core-runtime.md)：core 业务分区、运行时和 local bridge 进程边界。
+- [Adapter 路线内核](adapter-route-kernel.md)：`plan()` 是唯一决策者；golden 是只读投影；mock 只查表。
 - [Connections and routing](../concepts/connections-and-routing.md)：登录、绑定和路线的领域模型。
 - [Product boundaries](../decisions/product-boundaries.md)：不做什么以及术语约束。

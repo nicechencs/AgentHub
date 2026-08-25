@@ -1,8 +1,9 @@
 /**
  * Slice C: mock analyze/plan only read golden.expect.
  *
- * Source features join a frozen AdapterRouteService::plan() row. Misses are
- * fail-closed unsupported — there is no classifier fallback.
+ * Source features join a frozen AdapterRouteService::plan() row. Credential
+ * availability is an exact match, not a score. Misses are fail-closed
+ * unsupported — there is no classifier fallback.
  * Must not enter the production bundle.
  */
 import type {
@@ -179,6 +180,10 @@ function extraString(extra: unknown, key: string): string | undefined {
   return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
 }
 
+const POSITIVE_AUTH_HEALTH = new Set(['verified', 'renewable', 'configured']);
+const NEGATIVE_AUTH_HEALTH = new Set(['needs_login', 'missing']);
+const CREDENTIAL_METADATA_KEYS = new Set(['format', 'provider', 'preset']);
+
 function credentialsHaveAccessToken(credentials: unknown): boolean {
   if (!credentials || typeof credentials !== 'object') return false;
   const record = credentials as Record<string, unknown>;
@@ -189,6 +194,63 @@ function credentialsHaveAccessToken(credentials: unknown): boolean {
       ?.access_token,
   ];
   return candidates.some((token) => typeof token === 'string' && Boolean(token.trim()));
+}
+
+function credentialsHaveTokenSlot(credentials: Record<string, unknown>): boolean {
+  if (Object.prototype.hasOwnProperty.call(credentials, 'access_token')) return true;
+  const tokens = credentials.tokens;
+  if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
+    const bag = tokens as Record<string, unknown>;
+    return Object.prototype.hasOwnProperty.call(bag, 'access_token')
+      || Object.prototype.hasOwnProperty.call(bag, 'refresh_token');
+  }
+  const body = credentials.body;
+  if (body && typeof body === 'object' && !Array.isArray(body)) {
+    return credentialsHaveTokenSlot(body as Record<string, unknown>);
+  }
+  return false;
+}
+
+function isCredentialMetadataOnly(credentials: Record<string, unknown>): boolean {
+  const keys = Object.keys(credentials);
+  return keys.length > 0 && keys.every((key) => CREDENTIAL_METADATA_KEYS.has(key));
+}
+
+/**
+ * Frozen JSON rows have no tokenValid/authHealth. Index secret from credential
+ * contents only; empty or missing bags are "no secret".
+ */
+function frozenAccountHasUsableSecret(account: ClassifiableAccount): boolean {
+  if (account.kind === 'apikey') return hasAccountApiKey(account);
+  return credentialsHaveAccessToken(account.credentials);
+}
+
+/**
+ * Live mock accounts may already be redacted. Prefer tokenValid / authHealth;
+ * inspect credential contents only for frozen/test rows that still carry them.
+ */
+function liveAccountHasUsableSecret(account: ClassifiableAccount): boolean {
+  const health = account.liveAuthHealth ?? account.authHealth;
+  if (account.tokenValid === false || (health != null && NEGATIVE_AUTH_HEALTH.has(health))) {
+    return false;
+  }
+
+  const credentials = account.credentials;
+  if (credentials && typeof credentials === 'object') {
+    const bag = credentials as Record<string, unknown>;
+    if (Object.keys(bag).length === 0) {
+      return false;
+    } else if (account.kind === 'apikey') {
+      if (hasAccountApiKey(account)) return true;
+      if (!isCredentialMetadataOnly(bag)) return false;
+    } else if (credentialsHaveAccessToken(bag)) {
+      return true;
+    } else if (credentialsHaveTokenSlot(bag) || !isCredentialMetadataOnly(bag)) {
+      return false;
+    }
+  }
+
+  return account.tokenValid === true || (health != null && POSITIVE_AUTH_HEALTH.has(health));
 }
 
 function goldenAccount(item: ContractCase): ClassifiableAccount {
@@ -232,9 +294,7 @@ function goldenTicketKey(item: ContractCase): Exclude<SourceTicketKey, 'missing'
 
 function goldenHasUsableSecret(item: ContractCase): boolean {
   if (item.source.kind === 'provider') return true;
-  const account = goldenAccount(item);
-  if (account.kind === 'apikey') return hasAccountApiKey(account);
-  return credentialsHaveAccessToken(account.credentials);
+  return frozenAccountHasUsableSecret(goldenAccount(item));
 }
 
 function indexGoldenCases(): IndexedGoldenCase[] {
@@ -272,8 +332,7 @@ function liveHasUsableSecret(
   if (request.sourceKind === 'provider') return true;
   const account = resolver.getAccountById(request.sourceId) as ClassifiableAccount | undefined;
   if (!account) return false;
-  if (account.kind === 'apikey') return hasAccountApiKey(account);
-  return credentialsHaveAccessToken(account.credentials);
+  return liveAccountHasUsableSecret(account);
 }
 
 function livePreset(
@@ -389,13 +448,14 @@ export function lookupGoldenExpect(
 ): GoldenLookupHit | null {
   const ticketKey = ticketKeyForRequest(resolver, request);
   if (ticketKey === 'missing') return null;
+  const secret = liveHasUsableSecret(resolver, request);
   const candidates = GOLDEN_INDEX.filter(
     (entry) =>
       entry.kind === request.sourceKind
       && entry.ticketKey === ticketKey
-      && entry.target === request.targetAgentId,
+      && entry.target === request.targetAgentId
+      && entry.secret === secret,
   );
-  const secret = liveHasUsableSecret(resolver, request);
   const preset = livePreset(resolver, request);
   const account = liveAccountFeatures(resolver, request);
   const hit = candidates.length === 0

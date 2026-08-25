@@ -7,7 +7,7 @@
 - Read current behavior from the organized docs under `docs/concepts/`, `docs/decisions/`, `docs/architecture/`, `docs/guides/`, `docs/reference/`, and `docs/ui/`.
 - Read future candidates from `docs/proposals/`; every proposal is explicitly marked `Status: proposed`.
 - Historical wording, old route names, old file paths, and “not implemented” statements may be preserved here because they describe the document's authoring context. They do not override the current `/routes`, Routes, 路由 contract.
-- The five records below retain their historical正文. Each begins with a uniform Archived warning and points readers toward the current destination.
+- The records below retain their historical正文. Each begins with a uniform Archived warning and points readers toward the current destination.
 
 ## Retained records
 
@@ -18,6 +18,7 @@
 | [multi-account-routing-rfc.md](multi-account-routing-rfc.md) | RFC for multi-account route runtime and member health | Current routing concept, runtime reference, and Routes page pattern |
 | [hub-redesign-plan.md](hub-redesign-plan.md) | Completed Hub Phase 1 implementation record | `docs/ui/page-patterns.md` and `docs/concepts/connections-and-routing.md` |
 | [route-endpoint-audit-2026-08.md](route-endpoint-audit-2026-08.md) | Dated endpoint audit snapshot | `docs/reference/local-route-api.md` |
+| [single-kernel-projections.md](single-kernel-projections.md) | Completed Adapter single-kernel proposal plus E/F evaluation | Current contract: `docs/architecture/adapter-route-kernel.md` |
 
 ## Removed historical bodies
 

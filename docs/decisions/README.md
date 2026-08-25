@@ -18,6 +18,7 @@ updated: 2026-08-25
 | --- | --- | --- |
 | 用户对象与路线 | UI 说登录、Connections、Routes；三种接法由 planner 派生 | [Connections and routing](../concepts/connections-and-routing.md) |
 | Frontend backend | 页面 → runtime → `#backend` → Tauri/mock；生产不静默 mock；仅 Tauri adapter 调 `invoke` | [Frontend/backend boundary](../architecture/frontend-backend.md) |
+| Adapter 路线内核 | `AdapterRouteService::plan()` 唯一决策；golden 只读投影；mock 只查表；未命中 fail-closed | [Adapter 路线内核](../architecture/adapter-route-kernel.md) |
 | Core 形态 | 模块化单体；GUI/CLI 共享 core；平台能力按端口分区 | [Core and runtime](../architecture/core-runtime.md) |
 | local_bridge | 当前 Tauri 进程内；sidecar 是迁移提案，未部署 | [Adapters and bridges](../concepts/adapters-and-bridges.md) |
 | 写入入口 | 产品写入走 `plan` → `bind` / `unbind`；生成配置不能再当登录 | [Connections and routing](../concepts/connections-and-routing.md) |
@@ -36,6 +37,7 @@ updated: 2026-08-25
 
 - [Architecture overview](../architecture/overview.md)
 - [Frontend/backend boundary](../architecture/frontend-backend.md)
+- [Adapter 路线内核](../architecture/adapter-route-kernel.md)
 - [Core/runtime](../architecture/core-runtime.md)
 - [Connections/routing](../concepts/connections-and-routing.md)
 - [Adapter 与本机路由](../concepts/adapters-and-bridges.md)

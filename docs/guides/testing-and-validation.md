@@ -96,7 +96,7 @@ cargo test -p agenthub-cli --locked
 | 页面样式/交互 | 相关 Vitest + `pnpm typecheck` |
 | backend contract / façade | contract tests + `pnpm typecheck:test` |
 | Rust service / adapter | 相关 `cargo test -p agenthub-core --locked <filter>` |
-| Adapter capability 契约 JSON | `cargo test -p agenthub-core --locked shared_capability_contract`；内核输出变化后用 `UPDATE_ADAPTER_CAPABILITY_CONTRACT=1` 重新生成 golden |
+| Adapter capability 契约 JSON | `cargo test -p agenthub-core --locked shared_capability_contract`；内核输出变化后用 `UPDATE_ADAPTER_CAPABILITY_CONTRACT=1` 重新生成 golden，禁止手改 expect |
 | 运行时安装或配置写入 | core service tests + Tauri contract + mock flow |
 | Routes / 协议转换 | bridge HTTP/SSE tests + 错误码和日志断言 |
 | 生产边界、依赖或发布 | `pnpm build` + `pnpm test:pr` |

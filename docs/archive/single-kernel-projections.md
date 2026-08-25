@@ -1,16 +1,17 @@
 ---
-title: Adapter 单一内核与查表投影
-type: proposal
-status: proposed
+title: Adapter 单一内核与查表投影（历史提案）
+type: archive
+status: historical
 owner: maintainers
 updated: 2026-08-25
 ---
 
 # Adapter 单一内核与查表投影
 
-> 状态：提案
+> **Archived / 已归档**: Historical proposal, completed implementation record, and dated evaluation. Do not use as a current implementation contract or TODO list.
+> **Status**: historical
 >
-> 本文记录如何降低 Adapter / route 规则改动的结构成本，并说明它与全项目开发内环提速的关系。切片 0–D 已经落地；切片 E 已评估且不落地配置。切片 F 已评估：热缓存过滤测试约 3.5 秒，不拆 crate。不授权把 JSON 当规则真源。派工前必须指定负责人、文件范围、必须保持的行为和验证命令。
+> **归档（2026-08-25）**。切片 0–D 已落地；切片 E 已评估且不落地 sccache；切片 F 已评估且不拆 crate。现行契约见 [Adapter 路线内核](../architecture/adapter-route-kernel.md)。下文保留实施切片、历史基准和 E/F 测量，其中的测试数量与墙钟时间是当次快照，不是当前固定规模。不授权把 JSON 当规则真源，也不再从本文派工。
 
 ## 0. 结论与适用范围
 
@@ -23,7 +24,7 @@ updated: 2026-08-25
 
 本文的架构方案只适用于已经确认存在重复决策的 Adapter / route 子系统。不得把“单一内核”推广成所有 UI 状态都进入 Rust，也不得因为两个实现形状相似就建立新的全局内核。普通展示、页面瞬时状态和 mock 内存 CRUD 可以继续留在前端。
 
-实施顺序是：先批准并对齐研发内环，再按 A → B → C → D 消除第二套规则引擎，最后依据热缓存测量决定是否增加编译缓存或拆叶子 crate。
+当时的实施顺序是：先批准并对齐研发内环，再按 A → B → C → D 消除第二套规则引擎，最后依据热缓存测量决定是否增加编译缓存或拆叶子 crate。A–D 已完成；E/F 的测量结论是不落地。
 
 ## 1. 当前基线
 
@@ -37,9 +38,9 @@ AgentHub 仍是模块化单体：GUI 和 CLI 共用 `agenthub-core`。产品写�
 
 `agenthub-core` 仍是单一 crate。把 core 拆成多个 Cargo 包、把 planner 编成 WASM/napi、或引入类型生成框架，都不是当前实现。
 
-### 1.1 2026-08-25 实测基线
+### 1.1 2026-08-25 实测基线（历史快照）
 
-以下数据来自同一现有工作区的热缓存只读基准，用于区分“工具执行时间”和“Agent 工作流时间”，不是跨机器性能承诺：
+以下数据来自同一现有工作区的热缓存只读基准，用于区分“工具执行时间”和“Agent 工作流时间”。它是 2026-08-25 的一次性快照，不是跨机器性能承诺，也不是当前测试规模的固定值：
 
 | 检查 | 当前规模 | 墙钟时间 |
 |---|---:|---:|
@@ -70,7 +71,7 @@ AgentHub 仍是模块化单体：GUI 和 CLI 共用 `agenthub-core`。产品写�
 需要区分两个层级的问题：
 
 - **全项目开发耗时：** 主要固定成本来自任务被过早升级为多 Agent 流程、重复传递上下文，以及把提交前或 CI 的全量门禁搬进每次本地改动。它影响页面、文档、纯函数和跨层功能，不由本提案单独解决。
-- **Adapter / route 结构成本：** 主要原因是**同一条产品规则被决定两次**：core 决定一次，mock 再决定一次。JSON 已是内核快照而不再是第三份手写 expect，但 mock 仍是第二台引擎。
+- **Adapter / route 结构成本：** 提案撰写时的主要原因是**同一条产品规则被决定两次**：core 决定一次，mock 再决定一次。JSON 当时已是内核快照而不再是第三份手写 expect；切片 C 之后 mock 不再是第二台引擎，只查 golden。
 
 第二个问题使一条 route 或一个 plan 字段的改动文件数远大于行为增量；第一个问题又把这个较大的改动面交给多个 Agent 重复探索和验证。两者叠加后，耗时与 diff 不成比例。
 
@@ -139,7 +140,7 @@ Tauri command 的 wire 使用 core 的 serde 形状。`src/lib/backend/contracts
 
 切片 0 已把这套风险分级写入 [AGENTS.md](../../AGENTS.md)、[CONTRIBUTING.md](../../CONTRIBUTING.md) 与 [测试与验证](../guides/testing-and-validation.md)。后续切片不要再发明第二套协作规则。
 
-页面抽取 model / hook：仅当不抽就写不了针对性测试，或两处已在复制同一判断时进行。文件大只是调查信号，不是拆分理由。F1 / F2 仍以 [模块化提案](modularity.md) 写明的文件范围为限，不从本文再派生新的页面拆分卡。
+页面抽取 model / hook：仅当不抽就写不了针对性测试，或两处已在复制同一判断时进行。文件大只是调查信号，不是拆分理由。F1 / F2 仍以 [模块化提案](../proposals/modularity.md) 写明的文件范围为限，不从本文再派生新的页面拆分卡。
 
 ### 3.5 编译缓存先于拆 crate
 
@@ -178,7 +179,7 @@ Tauri command 的 wire 使用 core 的 serde 形状。`src/lib/backend/contracts
 | 取消 mock，测试一律走 Tauri | Vitest 与 `pnpm dev:mock` 绑死桌面，前端内环更慢 |
 | 把每个大页面预拆成 model 当模块化进度 | 行为不变、文件变多；Agent 小改的爆炸半径不降反升 |
 | 引入 Pact 或新的契约框架 | 又多一个要对齐的系统；现有 JSON 只缺「由谁写出」 |
-| 现在上 sidecar 或按进程拆 Connections / Accounts / Providers | 见 [sidecar 提案](adapter-sidecar.md)；改一次变成跨进程，爆炸半径更大 |
+| 现在上 sidecar 或按进程拆 Connections / Accounts / Providers | 见 [sidecar 提案](../proposals/adapter-sidecar.md)；改一次变成跨进程，爆炸半径更大 |
 
 ## 5. 候选切片与顺序
 
@@ -196,7 +197,7 @@ Tauri command 的 wire 使用 core 的 serde 形状。`src/lib/backend/contracts
 
 ### 切片 B：mock 查表优先 — `已落地`
 
-mock 的 analyze / plan 先查 golden；命中则用 expect 覆盖 route / support / ruleId / gateKind / canApply / reason / reusePath。未命中暂时走旧 classify（绞杀期）。已知种子必须命中；未命中次数由 `getGoldenLookupStats()` 统计，测试可断言。`dev:mock` 的种子账号行为保持可演示。
+mock 的 analyze / plan 先查 golden；命中则用 expect 覆盖 route / support / ruleId / gateKind / canApply / reason / reusePath。切片 B 的绞杀期曾允许未命中回退旧 classify；切片 C 已删除该回退，未命中 fail-closed 为 `unsupported`。已知种子必须命中；未命中次数由 `getGoldenLookupStats()` 统计，测试可断言。`dev:mock` 的种子账号行为保持可演示。
 
 ### 切片 C：删除第二套引擎 — `已落地`
 
@@ -233,9 +234,9 @@ mock 的 analyze / plan 先查 golden；命中则用 expect 覆盖 route / suppo
 
 ## 6. 与模块化提案的关系
 
-| [模块化提案](modularity.md) 项 | 关系 |
+| [模块化提案](../proposals/modularity.md) 项 | 关系 |
 |---|---|
-| 持续约束 2（规则一个真源） | 本文是该约束的落地设计；当前 mock 引擎仍违反它 |
+| 持续约束 2（规则一个真源） | 本文是该约束的落地设计；切片 C 之后 mock 不再维护第二份规则表 |
 | C1 补齐契约覆盖 | 仍然有效，且应先做或并行做覆盖。C1 完成后不要把 mock 重写成第二套 planner |
 | F1 / F2 页面局部抽取 | 范围以模块化提案已写文件为限。本文不授权新的 F 类任务 |
 | D1 共享 Backend 契约测试 | 仍是 transport 层设计；不要用它替代内核 golden |
@@ -267,4 +268,4 @@ mock 的 analyze / plan 先查 golden；命中则用 expect 覆盖 route / suppo
 
 ## 8. 非目标
 
-本文不包含：全目录重写、微服务、动态插件 ABI、凭据落盘加密、国产 OAuth 开边或 OAuth 转 API、把 Connections / Accounts / Providers 拆到其他进程、以及 [sidecar 提案](adapter-sidecar.md) 中的运行时进程迁移。这些不得写入本提案的里程碑、前置条件、风险或后续任务。
+本文不包含：全目录重写、微服务、动态插件 ABI、凭据落盘加密、国产 OAuth 开边或 OAuth 转 API、把 Connections / Accounts / Providers 拆到其他进程、以及 [sidecar 提案](../proposals/adapter-sidecar.md) 中的运行时进程迁移。这些不得写入本提案的里程碑、前置条件、风险或后续任务。
