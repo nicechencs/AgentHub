@@ -41,6 +41,8 @@ export interface GenericConfigFormProps {
   hiddenKeys?: ReadonlySet<string> | string[];
   /** Optional picker ids for string fields (e.g. fetched model list). Free-text still allowed. */
   suggestions?: Readonly<Record<string, readonly string[]>>;
+  /** Optional action rendered immediately after a field, outside its label control. */
+  fieldActions?: Readonly<Record<string, React.ReactNode>>;
   /** Status under a string field (shown even when the picker is hidden). */
   fieldStatus?: Readonly<
     Record<string, { label?: string | null; onRetry?: () => void }>
@@ -145,6 +147,7 @@ export function GenericConfigForm({
   readOnlyKeys,
   hiddenKeys,
   suggestions,
+  fieldActions,
   fieldStatus,
   fieldHints,
 }: GenericConfigFormProps) {
@@ -188,81 +191,84 @@ export function GenericConfigForm({
         const hint = configFieldHint(field.key, extraHint, t);
 
         return (
-          <label key={field.key} className="flex flex-col gap-1.5">
-            <Hint label={hint}>
-              <span className="text-xs text-muted">
-                {visibleLabel}
-                {field.required ? <span className="text-danger"> *</span> : null}
-              </span>
-            </Hint>
-            {kind === 'secret' ? (
-              <SecretInput
-                value={typeof raw === 'string' ? raw : raw == null ? '' : String(raw)}
-                onChange={(v) => patch(field.key, v)}
-                placeholder={
-                  typeof raw === 'string' && raw === SECRET_REDACTED
-                    ? t('connections.providerDialog.secretConfigured')
-                    : t('connections.apiKeyDialog.key')
-                }
-              />
-            ) : null}
-            {kind === 'string' ? (
-              <SuggestableInput
-                value={typeof raw === 'string' ? raw : raw == null ? '' : String(raw)}
-                onChange={(v) => patch(field.key, v)}
-                suggestions={suggestions?.[field.key]}
-                disabled={fieldDisabled}
-                readOnly={fieldDisabled}
-                className={fieldDisabled ? 'cursor-default bg-canvas text-secondary' : undefined}
-                statusLabel={fieldStatus?.[field.key]?.label}
-                statusRetry={fieldStatus?.[field.key]?.onRetry}
-              />
-            ) : null}
-            {kind === 'number' ? (
-              <Input
-                type="number"
-                value={raw == null || raw === '' ? '' : String(raw)}
-                onChange={(e) => {
-                  const t = e.target.value;
-                  patch(field.key, t === '' ? '' : Number(t));
-                }}
-                disabled={fieldDisabled}
-                autoComplete="off"
-              />
-            ) : null}
-            {kind === 'boolean' ? (
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={Boolean(raw)}
-                  onCheckedChange={(v) => patch(field.key, v)}
-                  disabled={fieldDisabled}
+          <React.Fragment key={field.key}>
+            <label className="flex flex-col gap-1.5">
+              <Hint label={hint}>
+                <span className="text-xs text-muted">
+                  {visibleLabel}
+                  {field.required ? <span className="text-danger"> *</span> : null}
+                </span>
+              </Hint>
+              {kind === 'secret' ? (
+                <SecretInput
+                  value={typeof raw === 'string' ? raw : raw == null ? '' : String(raw)}
+                  onChange={(v) => patch(field.key, v)}
+                  placeholder={
+                    typeof raw === 'string' && raw === SECRET_REDACTED
+                      ? t('connections.providerDialog.secretConfigured')
+                      : t('connections.apiKeyDialog.key')
+                  }
                 />
-                <span className="text-meta text-muted">{hint ?? ''}</span>
-              </div>
-            ) : null}
-            {kind === 'enum' && field.valueType.kind === 'enum' ? (
-              <Select
-                value={typeof raw === 'string' && raw ? raw : field.valueType.options[0] ?? ''}
-                onValueChange={(v) => patch(field.key, v)}
-                disabled={fieldDisabled}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={field.label} />
-                </SelectTrigger>
-                <SelectContent>
-                  {field.valueType.options.map((opt) => (
-                    <SelectItem key={opt} value={opt}>
-                      {configFieldOptionLabel(field.key, opt, t)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
-            {hint && kind !== 'boolean' ? (
-              <span className="text-meta text-muted">{hint}</span>
-            ) : null}
-            {err ? <span className="text-meta text-danger">{err}</span> : null}
-          </label>
+              ) : null}
+              {kind === 'string' ? (
+                <SuggestableInput
+                  value={typeof raw === 'string' ? raw : raw == null ? '' : String(raw)}
+                  onChange={(v) => patch(field.key, v)}
+                  suggestions={suggestions?.[field.key]}
+                  disabled={fieldDisabled}
+                  readOnly={fieldDisabled}
+                  className={fieldDisabled ? 'cursor-default bg-canvas text-secondary' : undefined}
+                  statusLabel={fieldStatus?.[field.key]?.label}
+                  statusRetry={fieldStatus?.[field.key]?.onRetry}
+                />
+              ) : null}
+              {kind === 'number' ? (
+                <Input
+                  type="number"
+                  value={raw == null || raw === '' ? '' : String(raw)}
+                  onChange={(e) => {
+                    const t = e.target.value;
+                    patch(field.key, t === '' ? '' : Number(t));
+                  }}
+                  disabled={fieldDisabled}
+                  autoComplete="off"
+                />
+              ) : null}
+              {kind === 'boolean' ? (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={Boolean(raw)}
+                    onCheckedChange={(v) => patch(field.key, v)}
+                    disabled={fieldDisabled}
+                  />
+                  <span className="text-meta text-muted">{hint ?? ''}</span>
+                </div>
+              ) : null}
+              {kind === 'enum' && field.valueType.kind === 'enum' ? (
+                <Select
+                  value={typeof raw === 'string' && raw ? raw : field.valueType.options[0] ?? ''}
+                  onValueChange={(v) => patch(field.key, v)}
+                  disabled={fieldDisabled}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={field.label} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {field.valueType.options.map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {configFieldOptionLabel(field.key, opt, t)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+              {hint && kind !== 'boolean' ? (
+                <span className="text-meta text-muted">{hint}</span>
+              ) : null}
+              {err ? <span className="text-meta text-danger">{err}</span> : null}
+            </label>
+            {fieldActions?.[field.key] ?? null}
+          </React.Fragment>
         );
       })}
     </div>

@@ -607,6 +607,18 @@ describe('mock Catalog aligns with mock ConfigPort projector support', () => {
     }
   });
 
+  it('places Codex model after the API key for the guided form', async () => {
+    const schema = await configPort.getAgentConfigSchema('codex');
+    expect(schema.fields.map((field) => field.key)).toEqual([
+      'baseUrl',
+      'apiKey',
+      'model',
+      'reasoningEffort',
+      'wireApi',
+      'providerSlug',
+    ]);
+  });
+
   it('cursor/pi/workbuddy have configSchemaVersion=null and no projector', async () => {
     for (const key of ['cursor', 'pi', 'workbuddy'] as const) {
       const row = MOCK_AGENT_CATALOG.find((e) => e.key === key);

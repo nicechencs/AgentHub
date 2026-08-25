@@ -6,7 +6,7 @@
  *   仅 configSchemaVersion === null 时走 legacy applyFormVars。
  */
 import * as React from 'react';
-import { ChevronDown, FolderOpen, Sparkles } from 'lucide-react';
+import { ChevronDown, FolderOpen, RefreshCw, Sparkles } from 'lucide-react';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import {
   Dialog,
@@ -69,7 +69,6 @@ import {
   formFieldVisibility,
   initFormFromConfig,
   isLiveFilePath,
-  isLivePastedApiKey,
   liveConfigPaths,
   parseJsonObjectConfig,
   REDACTED_MARKER,
@@ -94,6 +93,7 @@ import {
   schemaErrorMessage,
   type SchemaUiStatus,
 } from './providerSaveFlow';
+import { requestRemoteModels } from './remote-models-request';
 
 const REMOTE_MODELS_DEBOUNCE_MS = 400;
 
@@ -216,7 +216,9 @@ export function ProviderEditDialog({
   const [remoteModelsError, setRemoteModelsError] = React.useState(false);
   const [remoteModelsLoading, setRemoteModelsLoading] = React.useState(false);
   const [remoteModelsRetry, setRemoteModelsRetry] = React.useState(0);
+  const [remoteModelsTested, setRemoteModelsTested] = React.useState(false);
   const remoteModelsSeq = React.useRef(0);
+  const remoteModelsInputRef = React.useRef('');
 
   const official = officialApiDefaults(agentId);
 
@@ -499,17 +501,81 @@ export function ProviderEditDialog({
     apiKey: vars.apiKey,
     hasStoredSecret,
   });
+  const remoteModelsInput = `${resolvedBaseUrl}\u0000${vars.apiKey}`;
+
+  const testRemoteModels = React.useCallback(async () => {
+    if (agentId !== 'codex' || useOfficial || !shouldFetch) return;
+    const seq = ++remoteModelsSeq.current;
+    remoteModelsInputRef.current = remoteModelsInput;
+    setRemoteModelsTested(true);
+    setRemoteModels([]);
+    setRemoteModelsError(false);
+    setRemoteModelsLoading(true);
+    try {
+      const ids = await requestRemoteModels(
+        {
+          baseUrl: resolvedBaseUrl,
+          apiKey: vars.apiKey,
+          providerId: provider?.id,
+        },
+        {
+          listRemoteOpenAiModels,
+          listRemoteOpenAiModelsForProvider,
+        },
+      );
+      if (seq !== remoteModelsSeq.current) return;
+      setRemoteModels(ids);
+      setRemoteModelsError(false);
+      toast({
+        title: t('connections.providerDialog.testModelsSuccess'),
+        description:
+          ids.length > 0
+            ? t('connections.providerDialog.testModelsSuccessDesc', { count: ids.length })
+            : t('connections.providerDialog.testModelsEmptyDesc'),
+        variant: 'success',
+      });
+    } catch (e) {
+      if (seq !== remoteModelsSeq.current) return;
+      setRemoteModels([]);
+      setRemoteModelsError(true);
+      toast({
+        title: t('connections.providerDialog.testModelsFailed'),
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    } finally {
+      if (seq === remoteModelsSeq.current) setRemoteModelsLoading(false);
+    }
+  }, [
+    agentId,
+    provider?.id,
+    remoteModelsInput,
+    resolvedBaseUrl,
+    shouldFetch,
+    t,
+    toast,
+    useOfficial,
+    vars.apiKey,
+  ]);
+
   const remoteStatus = remoteModelsStatusView({
     loading: remoteModelsLoading,
     error: remoteModelsError,
     ids: remoteModels,
-    active: open && shouldFetch,
+    active:
+      agentId === 'codex'
+        ? remoteModelsTested || remoteModelsLoading
+        : open && shouldFetch,
   });
   const retryRemoteModels = React.useCallback(() => {
+    if (agentId === 'codex') {
+      void testRemoteModels();
+      return;
+    }
     setRemoteModelsRetry((token) => token + 1);
-  }, []);
+  }, [agentId, testRemoteModels]);
   const modelFieldStatus =
-    shouldFetch && remoteStatus.labelKey
+    (agentId === 'codex' ? remoteModelsTested : shouldFetch) && remoteStatus.labelKey
       ? {
           label: t(remoteStatus.labelKey),
           onRetry: remoteStatus.showRetry ? retryRemoteModels : undefined,
@@ -522,6 +588,17 @@ export function ProviderEditDialog({
       setRemoteModels([]);
       setRemoteModelsError(false);
       setRemoteModelsLoading(false);
+      setRemoteModelsTested(false);
+      remoteModelsInputRef.current = '';
+      return;
+    }
+    if (agentId === 'codex') {
+      remoteModelsSeq.current += 1;
+      setRemoteModels([]);
+      setRemoteModelsError(false);
+      setRemoteModelsLoading(false);
+      setRemoteModelsTested(false);
+      remoteModelsInputRef.current = '';
       return;
     }
     if (useOfficial || !shouldFetch) {
@@ -529,17 +606,25 @@ export function ProviderEditDialog({
       setRemoteModels([]);
       setRemoteModelsError(false);
       setRemoteModelsLoading(false);
+      setRemoteModelsTested(false);
+      remoteModelsInputRef.current = '';
       return;
     }
     const seq = ++remoteModelsSeq.current;
     setRemoteModelsLoading(true);
     setRemoteModelsError(false);
     const handle = window.setTimeout(() => {
-      const request = isLivePastedApiKey(vars.apiKey)
-        ? listRemoteOpenAiModels(resolvedBaseUrl, vars.apiKey)
-        : provider?.id
-          ? listRemoteOpenAiModelsForProvider(provider.id, resolvedBaseUrl)
-          : Promise.reject(new Error('no stored secret'));
+      const request = requestRemoteModels(
+        {
+          baseUrl: resolvedBaseUrl,
+          apiKey: vars.apiKey,
+          providerId: provider?.id,
+        },
+        {
+          listRemoteOpenAiModels,
+          listRemoteOpenAiModelsForProvider,
+        },
+      );
       void request
         .then((ids) => {
           if (seq !== remoteModelsSeq.current) return;
@@ -567,9 +652,43 @@ export function ProviderEditDialog({
     vars.apiKey,
     provider?.id,
     remoteModelsRetry,
-    configText,
-    configFormat,
+    agentId,
   ]);
+
+  React.useEffect(() => {
+    if (!open || agentId !== 'codex' || useOfficial) {
+      remoteModelsInputRef.current = '';
+      return;
+    }
+    if (
+      remoteModelsInputRef.current &&
+      remoteModelsInputRef.current !== remoteModelsInput
+    ) {
+      remoteModelsSeq.current += 1;
+      remoteModelsInputRef.current = '';
+      setRemoteModels([]);
+      setRemoteModelsError(false);
+      setRemoteModelsLoading(false);
+      setRemoteModelsTested(false);
+    }
+  }, [agentId, open, remoteModelsInput, useOfficial]);
+
+  const testModelsAction =
+    agentId === 'codex' && !useOfficial ? (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="self-start"
+        disabled={!shouldFetch || remoteModelsLoading}
+        onClick={() => void testRemoteModels()}
+      >
+        <RefreshCw className={cn('h-3.5 w-3.5', remoteModelsLoading && 'animate-spin')} />
+        {remoteModelsTested
+          ? t('connections.providerDialog.testModelsAgain')
+          : t('connections.providerDialog.testModels')}
+      </Button>
+    ) : null;
 
   const openLiveDir = async () => {
     try {
@@ -908,6 +1027,9 @@ export function ProviderEditDialog({
                 !useOfficial && remoteStatus.showPicker ? { model: remoteModels } : undefined
               }
               fieldStatus={modelFieldStatus ? { model: modelFieldStatus } : undefined}
+              fieldActions={
+                testModelsAction ? { apiKey: testModelsAction } : undefined
+              }
               fieldHints={keyHint ? { apiKey: keyHint } : undefined}
             />
           ) : schemaStatus === 'unsupported' ? (

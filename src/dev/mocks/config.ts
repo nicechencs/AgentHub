@@ -54,7 +54,6 @@ const SCHEMAS: Record<string, AgentConfigSchemaDto> = {
     nativeFormat: 'toml',
     relativePath: 'config.toml',
     fields: [
-      { key: 'model', label: 'Model', valueType: { kind: 'string' } },
       { key: 'baseUrl', label: 'Base URL', valueType: { kind: 'string' } },
       {
         key: 'apiKey',
@@ -62,6 +61,7 @@ const SCHEMAS: Record<string, AgentConfigSchemaDto> = {
         valueType: { kind: 'secret' },
         secret: true,
       },
+      { key: 'model', label: 'Model', valueType: { kind: 'string' } },
       { key: 'reasoningEffort', label: 'Reasoning effort', valueType: { kind: 'string' } },
       { key: 'wireApi', label: 'Wire API', valueType: { kind: 'string' } },
       { key: 'providerSlug', label: 'Provider slug', valueType: { kind: 'string' } },

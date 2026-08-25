@@ -42,14 +42,6 @@ impl CodexConfigProjector {
             relative_path: REL_PATH.into(),
             fields: vec![
                 field(
-                    "model",
-                    "Model",
-                    ConfigValueType::String,
-                    false,
-                    false,
-                    None,
-                ),
-                field(
                     "baseUrl",
                     "Base URL",
                     ConfigValueType::String,
@@ -64,6 +56,14 @@ impl CodexConfigProjector {
                     true,
                     false,
                     Some("auth.json OPENAI_API_KEY (not stored in config.toml)"),
+                ),
+                field(
+                    "model",
+                    "Model",
+                    ConfigValueType::String,
+                    false,
+                    false,
+                    None,
                 ),
                 field(
                     "reasoningEffort",
