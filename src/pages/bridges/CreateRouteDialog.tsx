@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
-import { DialogOrSide } from './dialog-or-side';
+import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { Input } from '@/components/ui/input';
 import { SecretInput } from '@/components/shared/SecretInput';
 import type { TranslateFn } from '@/lib/i18n';

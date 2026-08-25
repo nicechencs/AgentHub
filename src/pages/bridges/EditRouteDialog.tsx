@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { SecretInput } from '@/components/shared/SecretInput';
 import { Button } from '@/components/ui/button';
-import { DialogOrSide } from './dialog-or-side';
+import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';

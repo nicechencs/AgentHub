@@ -372,7 +372,8 @@ export default function ConnectionsPage() {
       && inspect.target.entry.source.kind === ticket.sourceKind
       && inspect.target.entry.source.id === ticket.sourceId
     ) {
-      inspect.close();
+      // Repeated activation is idempotent. The share/route action is an
+      // opener, so clicking it again must not collapse the already-open pane.
       return;
     }
     inspect.open({
