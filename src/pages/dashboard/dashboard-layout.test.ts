@@ -23,6 +23,12 @@ describe('dashboard layout wiring', () => {
     expect(overview).toContain('StorageKey.agentsCatalogOrder');
   });
 
+  it('re-renders overview cards when the runtime catalog hydrates', () => {
+    const overview = source('AgentOverview.tsx');
+    expect(overview).toContain('useAgentCatalogOptional');
+    expect(overview).toContain('catalog.hydrated');
+  });
+
   it('does not repeat Agent 总览 or a Manage button above the cards', () => {
     const overview = source('AgentOverview.tsx');
     expect(overview).not.toContain("t('dashboard.overview.title')");
