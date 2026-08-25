@@ -4,6 +4,8 @@ pub(super) fn projected_provider_input(
     profile: &AdapterProfile,
     local_bearer: &str,
     port: u16,
+    model: &str,
+    context_window_tokens: Option<u32>,
 ) -> Result<ProviderInput> {
     validate_bound_port(port)?;
     let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
@@ -23,6 +25,21 @@ pub(super) fn projected_provider_input(
         ));
     }
     if rule.target_agent == AgentId::Claude {
+        let mut env = serde_json::Map::new();
+        env.insert(
+            "ANTHROPIC_BASE_URL".into(),
+            json!(format!("http://127.0.0.1:{port}")),
+        );
+        env.insert("ANTHROPIC_AUTH_TOKEN".into(), json!(local_bearer));
+        crate::models::apply_claude_live_model_env(&mut env, model, context_window_tokens);
+        let mut settings = json!({ "env": env });
+        let id = crate::models::strip_claude_context_marker(model);
+        if !id.is_empty() {
+            settings
+                .as_object_mut()
+                .expect("object")
+                .insert("model".into(), json!(id));
+        }
         return Ok(ProviderInput {
             id: provider_id.into(),
             agent_id: AgentId::Claude,
@@ -31,12 +48,7 @@ pub(super) fn projected_provider_input(
                 rule.provider_name,
                 safe_label(&profile.source_id)
             ),
-            settings_config: json!({
-                "env": {
-                    "ANTHROPIC_BASE_URL": format!("http://127.0.0.1:{port}"),
-                    "ANTHROPIC_AUTH_TOKEN": local_bearer,
-                },
-            }),
+            settings_config: settings,
             meta: generated_provider_meta(profile, &rule),
             is_current: false,
         });
@@ -418,6 +430,8 @@ pub(super) fn provider_matches_current_projection(
     provider: &Provider,
     profile: &AdapterProfile,
     port: Option<u16>,
+    model: &str,
+    context_window_tokens: Option<u32>,
 ) -> bool {
     let Some(port) = port else {
         return false;
@@ -425,7 +439,9 @@ pub(super) fn provider_matches_current_projection(
     let Ok(local_bearer) = local_bearer_from_provider(provider) else {
         return false;
     };
-    let Ok(projected) = projected_provider_input(profile, &local_bearer, port) else {
+    let Ok(projected) =
+        projected_provider_input(profile, &local_bearer, port, model, context_window_tokens)
+    else {
         return false;
     };
     provider.settings_config == projected.settings_config && provider.meta == projected.meta

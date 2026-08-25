@@ -436,6 +436,60 @@ fn materialize_claude_pool_settings_preserves_unknown() {
 }
 
 #[test]
+fn claude_apply_writes_and_clears_context_window_env() {
+    let dir = tempdir().unwrap();
+    let home = dir.path();
+    let path = home.join("settings.json");
+    std::fs::write(
+        &path,
+        r#"{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://openrouter.ai/api/v1",
+    "ANTHROPIC_AUTH_TOKEN": "sk-secret-token",
+    "ANTHROPIC_MODEL": "stealth/ox-alpha"
+  },
+  "model": "stealth/ox-alpha"
+}
+"#,
+    )
+    .unwrap();
+
+    let svc = test_configuration_service();
+    let mut desired = BTreeMap::new();
+    desired.insert("baseUrl".into(), json!("https://openrouter.ai/api/v1"));
+    desired.insert("apiKey".into(), json!(SECRET_REDACTED));
+    desired.insert("claudeAuthEnv".into(), json!("ANTHROPIC_AUTH_TOKEN"));
+    desired.insert("model".into(), json!("stealth/ox-alpha"));
+    desired.insert("contextWindow".into(), json!("1048576"));
+    desired.insert("modelOpus".into(), json!(""));
+    desired.insert("modelSonnet".into(), json!(""));
+    desired.insert("modelHaiku".into(), json!(""));
+    desired.insert("modelFable".into(), json!(""));
+    desired.insert("modelSubagent".into(), json!(""));
+
+    svc.apply_at(AgentId::Claude, &desired, Some(home)).unwrap();
+    let raw: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(raw["env"]["ANTHROPIC_MODEL"], "stealth/ox-alpha");
+    assert_eq!(raw["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"], "1048576");
+    assert_eq!(raw["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "1048576");
+
+    desired.insert("contextWindow".into(), json!("auto"));
+    svc.apply_at(AgentId::Claude, &desired, Some(home)).unwrap();
+    let cleared: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert!(cleared["env"].get("CLAUDE_CODE_MAX_CONTEXT_TOKENS").is_none());
+    assert!(cleared["env"].get("CLAUDE_CODE_AUTO_COMPACT_WINDOW").is_none());
+    assert_eq!(cleared["env"]["ANTHROPIC_MODEL"], "stealth/ox-alpha");
+
+    desired.insert("model".into(), json!("any/id[1m]"));
+    desired.insert("contextWindow".into(), json!("auto"));
+    svc.apply_at(AgentId::Claude, &desired, Some(home)).unwrap();
+    let marked: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(marked["model"], "any/id");
+    assert_eq!(marked["env"]["ANTHROPIC_MODEL"], "any/id");
+    assert_eq!(marked["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"], "1048576");
+}
+
+#[test]
 fn projector_schema_versions_are_stable() {
     let reg = builtin_config_registry();
     for agent in [

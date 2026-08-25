@@ -41,6 +41,8 @@ export function WriteClientConfigDialog({
   port,
   sourceMissing,
   hiddenTargetIds,
+  listedModels,
+  contextWindowTokens,
   onWritten,
   asPanel = false,
   width,
@@ -53,6 +55,8 @@ export function WriteClientConfigDialog({
   port?: number | null;
   sourceMissing: boolean;
   hiddenTargetIds?: ReadonlySet<string>;
+  listedModels?: readonly string[];
+  contextWindowTokens?: number | null;
   /** Reload the page's route list after a successful write. */
   onWritten: () => void;
   asPanel?: boolean;
@@ -65,7 +69,16 @@ export function WriteClientConfigDialog({
   const [error, setError] = useState<unknown>(null);
   const [missingSelection, setMissingSelection] = useState(false);
 
-  const specs = buildClientWriteSpecs({ rows, host, port, sourceMissing, hiddenTargetIds, t });
+  const specs = buildClientWriteSpecs({
+    rows,
+    host,
+    port,
+    sourceMissing,
+    hiddenTargetIds,
+    listedModels,
+    contextWindowTokens,
+    t,
+  });
   const specsRef = useRef<ClientWriteSpec[]>(specs);
   specsRef.current = specs;
   const profileId = profile?.id ?? null;

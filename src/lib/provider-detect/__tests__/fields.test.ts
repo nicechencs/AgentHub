@@ -31,6 +31,39 @@ describe('provider-detect fields', () => {
     expect(vars.apiKey).toBe('sk-live-secret');
     expect(vars.model).toBe('opus');
     expect(vars.claudeAuthEnv).toBe('ANTHROPIC_AUTH_TOKEN');
+    expect(vars.contextWindow).toBe('auto');
+  });
+
+  it('reads and writes Claude compact window without inferring from the model id', () => {
+    const src = JSON.stringify(
+      {
+        env: {
+          ANTHROPIC_BASE_URL: 'https://openrouter.ai/api/v1',
+          ANTHROPIC_AUTH_TOKEN: 'sk-test',
+          ANTHROPIC_MODEL: 'stealth/ox-alpha',
+          CLAUDE_CODE_MAX_CONTEXT_TOKENS: '1048576',
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: '1048576',
+        },
+        model: 'stealth/ox-alpha',
+      },
+      null,
+      2,
+    );
+    const vars = extractFormVars('claude', src, 'json');
+    expect(vars.model).toBe('stealth/ox-alpha');
+    expect(vars.contextWindow).toBe('1048576');
+
+    const written = JSON.parse(applyFormVars('claude', '{}', 'json', vars)).env as Record<string, string>;
+    expect(written.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe('1048576');
+    expect(written.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('1048576');
+
+    const omitted = JSON.parse(applyFormVars('claude', src, 'json', {
+      ...vars,
+      contextWindow: 'auto',
+    })).env as Record<string, string>;
+    expect(omitted.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBeUndefined();
+    expect(omitted.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBeUndefined();
+    expect(omitted.ANTHROPIC_MODEL).toBe('stealth/ox-alpha');
   });
 
   it('applies Claude fields and writes *** when apiKey empty', () => {
@@ -55,6 +88,7 @@ describe('provider-detect fields', () => {
         modelHaiku: '',
         modelFable: '',
         modelSubagent: '',
+        contextWindow: '',
         claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN' as const,
         reasoningEffort: '',
         wireApi: '',
@@ -286,6 +320,7 @@ describe('provider-detect fields', () => {
       modelHaiku: '',
       modelFable: '',
       modelSubagent: '',
+      contextWindow: '',
       claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
       reasoningEffort: '',
       wireApi: '',
@@ -356,6 +391,7 @@ describe('provider-detect fields', () => {
       modelHaiku: '',
       modelFable: '',
       modelSubagent: '',
+      contextWindow: '',
       claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
       reasoningEffort: '',
       wireApi: '',
@@ -381,6 +417,7 @@ describe('provider-detect fields', () => {
       modelHaiku: '',
       modelFable: '',
       modelSubagent: '',
+      contextWindow: '',
       claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
       reasoningEffort: '',
       wireApi: '',
@@ -409,6 +446,7 @@ describe('provider-detect fields', () => {
       modelHaiku: '',
       modelFable: '',
       modelSubagent: '',
+      contextWindow: '',
       claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
       reasoningEffort: '',
       wireApi: '',

@@ -17,6 +17,23 @@ describe('applySmartPaste', () => {
     expect(r.suggestedName).toBe('relay.example.com');
   });
 
+  it('parses pasted Claude window env onto the form choice', () => {
+    const paste = JSON.stringify({
+      env: {
+        ANTHROPIC_BASE_URL: 'https://openrouter.ai/api/v1',
+        ANTHROPIC_AUTH_TOKEN: 'sk-abcdefghijklmnopqrst',
+        ANTHROPIC_MODEL: 'stealth/ox-alpha',
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS: '1048576',
+      },
+    });
+    const r = applySmartPaste('claude', paste);
+    expect(r.vars.model).toBe('stealth/ox-alpha');
+    expect(r.vars.contextWindow).toBe('1048576');
+    const env = JSON.parse(r.configText).env as Record<string, string>;
+    expect(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe('1048576');
+    expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('1048576');
+  });
+
   it('fills codex toml from mixed paste', () => {
     const r = applySmartPaste(
       'codex',

@@ -18,7 +18,7 @@ use super::{AdapterSourceProduct, AdapterTargetProtocol, AgentId};
 pub const OPENROUTER_BACKUP_MODEL: &str = "stealth/ox-alpha";
 
 pub fn is_openrouter_backup_model(model: &str) -> bool {
-    model.trim().eq_ignore_ascii_case(OPENROUTER_BACKUP_MODEL)
+    super::strip_claude_context_marker(model).eq_ignore_ascii_case(OPENROUTER_BACKUP_MODEL)
 }
 
 /// Official ChatGPT / Codex Responses 400 leftover / CN model ids.
@@ -530,7 +530,7 @@ fn lead_serves(lead: &ModelSwitchCandidate, model: &str, result: AdapterModelMap
                 && lead
                     .listed_models
                     .iter()
-                    .any(|listed| listed.eq_ignore_ascii_case(needle))
+                    .any(|listed| super::listed_model_matches(listed, needle))
             {
                 return true;
             }

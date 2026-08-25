@@ -40,6 +40,9 @@ pub const CODEX_DSH_RULE_ID: &str = "codex-subscription-to-dsh-v1";
 
 pub const GLM_CODEX_DEFAULT_MODEL: &str = "glm-5.3";
 pub const DEEPSEEK_CODEX_DEFAULT_MODEL: &str = "deepseek-v4-flash";
+pub const KIMI_CLAUDE_DEFAULT_MODEL: &str = "kimi-k2.5";
+pub const GLM_CLAUDE_DEFAULT_MODEL: &str = "glm-4.6";
+pub const DEEPSEEK_CLAUDE_DEFAULT_MODEL: &str = "deepseek-chat";
 pub const GLM_CODEX_PROVIDER_PREFIX: &str = "codex-glm-adapter";
 pub const DEEPSEEK_CODEX_PROVIDER_PREFIX: &str = "codex-deepseek-adapter";
 pub const GLM_CODEX_PROVIDER_SLUG: &str = "agenthub_glm";
@@ -737,14 +740,11 @@ pub(crate) fn openai_compat_listed_models(blob: &Value) -> Vec<String> {
     let mut listed = Vec::new();
     if let Some(items) = blob.get("listedModels").and_then(Value::as_array) {
         for item in items {
-            if let Some(model) = item
-                .as_str()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
+            if let Some(model) = item.as_str().map(crate::models::strip_claude_context_marker).filter(|value| !value.is_empty())
             {
                 if !listed
                     .iter()
-                    .any(|existing: &String| existing.eq_ignore_ascii_case(model))
+                    .any(|existing: &String| crate::models::listed_model_matches(existing, model))
                 {
                     listed.push(model.to_owned());
                 }
@@ -789,11 +789,22 @@ pub(crate) fn looks_like_anthropic_messages_url(url: &str) -> bool {
     })
 }
 
+pub(crate) fn openai_compat_context_window_tokens(blob: &Value) -> Option<u32> {
+    blob.get("contextWindowTokens")
+        .and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_str().and_then(|raw| raw.trim().parse().ok()))
+        })
+        .and_then(|tokens| u32::try_from(tokens).ok())
+        .filter(|tokens| *tokens > 0)
+}
+
 pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
     if let Some(listed) = blob.get("listedModels").and_then(Value::as_array) {
         let first = listed.iter().find_map(|item| {
             item.as_str()
-                .map(str::trim)
+                .map(crate::models::strip_claude_context_marker)
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
         });
@@ -811,7 +822,7 @@ pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
                 if let Some(model) = doc
                     .get("model")
                     .and_then(|item| item.as_str())
-                    .map(str::trim)
+                    .map(crate::models::strip_claude_context_marker)
                     .filter(|value| !value.is_empty())
                 {
                     return Some(model.to_owned());
@@ -825,7 +836,7 @@ pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
         .find_map(|key| {
             blob.get(*key)
                 .and_then(Value::as_str)
-                .map(str::trim)
+                .map(crate::models::strip_claude_context_marker)
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
         })

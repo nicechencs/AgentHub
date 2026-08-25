@@ -7,6 +7,12 @@ import {
 import type { RouteEndpointId } from '@/lib/route-endpoints';
 import { routeEndpointIdForBinding, routeEndpointPath } from '@/lib/route-endpoints';
 import type { AgentId, Provider } from '@/lib/types';
+import {
+  contextWindowTokensFromChoice,
+  parseContextWindowChoice,
+  stripClaudeContextMarker,
+  type ClaudeContextWindowChoice,
+} from '@/lib/claude-client-env';
 import { isLeftoverLocalRouteProvider } from '@/pages/chat/chat-model';
 import { detectUpstreamChannelFromUrl } from './adapter-route-detail-model';
 
@@ -31,6 +37,8 @@ export type CreateRouteVendor = {
   url: string;
   enabled: readonly CreateRouteTarget[];
   models: readonly string[];
+  /** Stored on the route; OpenRouter defaults to 1M so Claude Code compact matches typical OR models. */
+  defaultContextWindow?: ClaudeContextWindowChoice;
   endpointUrls?: Partial<Record<CreateRouteTarget, string>>;
 };
 
@@ -40,6 +48,7 @@ export const CREATE_ROUTE_VENDORS: readonly CreateRouteVendor[] = [
     url: DEFAULT_CREATE_ROUTE_URL,
     enabled: ['claude', 'codex', 'grok'],
     models: [DEFAULT_CREATE_ROUTE_MODEL],
+    defaultContextWindow: '1048576',
   },
   {
     id: 'openai',
@@ -106,6 +115,8 @@ export type CreateRouteInput = {
   vendor: CreateRouteVendorId;
   endpoints: readonly CreateRouteTarget[];
   models?: string;
+  /** `auto` omits window env; otherwise a token count written to the client. */
+  contextWindow?: ClaudeContextWindowChoice;
   /** Per-client upstream base URL overrides (custom vendor). */
   endpointUrls?: Partial<Record<CreateRouteTarget, string>>;
 };
@@ -147,10 +158,14 @@ export function isCreateRouteUrlValid(url: string): boolean {
 
 export function parseCreateRouteModels(text: string | undefined): string[] {
   if (!text) return [];
-  return text
-    .split(/[,，\n]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const models: string[] = [];
+  for (const item of text.split(/[,，\n]+/)) {
+    const id = stripClaudeContextMarker(item);
+    if (!id) continue;
+    if (models.some((existing) => existing.toLowerCase() === id.toLowerCase())) continue;
+    models.push(id);
+  }
+  return models;
 }
 
 export function formatCreateRouteModels(models: readonly string[]): string {
@@ -419,6 +434,9 @@ export function createRouteProviderDraft(input: CreateRouteInput): Provider {
     listedModels: models,
   };
   if (models[0]) settings.model = models[0];
+  const windowTokens = contextWindowTokensFromChoice(input.contextWindow ?? 'auto');
+  if (windowTokens) settings.contextWindowTokens = windowTokens;
+  else delete settings.contextWindowTokens;
   return {
     id: `openai-compat-${crypto.randomUUID()}`,
     agentId: createRouteOwner(input.endpoints),
@@ -434,16 +452,29 @@ export function createRouteProviderDraft(input: CreateRouteInput): Provider {
 export function readCreateRouteCapabilities(configText: string | undefined): {
   endpoints: CreateRouteEndpoint[];
   models: string[];
+  contextWindow: ClaudeContextWindowChoice;
 } {
   try {
     const parsed = JSON.parse(configText ?? '{}') as {
       listedModels?: unknown;
       model?: unknown;
       endpoints?: unknown;
+      contextWindowTokens?: unknown;
     };
     const models = Array.isArray(parsed.listedModels)
-      ? parsed.listedModels.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      ? parseCreateRouteModels(
+          parsed.listedModels
+            .filter((item): item is string => typeof item === 'string')
+            .join(','),
+        )
       : parseCreateRouteModels(typeof parsed.model === 'string' ? parsed.model : '');
+    const contextWindow = parseContextWindowChoice(
+      typeof parsed.contextWindowTokens === 'number'
+        ? String(parsed.contextWindowTokens)
+        : typeof parsed.contextWindowTokens === 'string'
+          ? parsed.contextWindowTokens
+          : '',
+    );
     const endpoints = Array.isArray(parsed.endpoints)
       ? parsed.endpoints.flatMap((row) => {
           if (!row || typeof row !== 'object') return [];
@@ -459,9 +490,9 @@ export function readCreateRouteCapabilities(configText: string | undefined): {
           }];
         })
       : [];
-    return { endpoints: endpoints.filter((row) => row.enabled), models };
+    return { endpoints: endpoints.filter((row) => row.enabled), models, contextWindow };
   } catch {
-    return { endpoints: [], models: [] };
+    return { endpoints: [], models: [], contextWindow: 'auto' };
   }
 }
 
@@ -594,6 +625,8 @@ export type EditRouteInput = {
   key: string;
   endpoints: readonly CreateRouteTarget[];
   models?: string;
+  /** Omit to keep a stored window; `auto` clears it. */
+  contextWindow?: ClaudeContextWindowChoice;
   endpointUrls?: Partial<Record<CreateRouteTarget, string>>;
 };
 
@@ -656,6 +689,7 @@ export function editRouteFormFromProvider(
     key: '',
     endpoints,
     models: formatCreateRouteModels(caps.models),
+    contextWindow: caps.contextWindow,
     endpointUrls,
   };
 }
@@ -695,6 +729,11 @@ export function editRouteProviderDraft(provider: Provider, input: EditRouteInput
   }
   if (models[0]) settings.model = models[0];
   else delete settings.model;
+  if (input.contextWindow !== undefined) {
+    const windowTokens = contextWindowTokensFromChoice(input.contextWindow);
+    if (windowTokens) settings.contextWindowTokens = windowTokens;
+    else delete settings.contextWindowTokens;
+  }
   return {
     id: provider.id,
     agentId: provider.agentId,

@@ -5,6 +5,9 @@ import {
   ROUTE_ENDPOINT_PENDING_PORT,
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
+import {
+  formatClaudeContextWindow,
+} from '@/lib/claude-client-env';
 import { CREATE_ROUTE_TARGETS, type CreateRouteTarget } from './create-route-flow';
 import type { RouteGraphRow } from './route-graph-model';
 
@@ -47,6 +50,8 @@ const WRITE_COPY = {
   statusSourceMissing: '来源登录已删除，无法写入',
   fieldLocalAddress: '本机地址',
   fieldLocalToken: '本机令牌',
+  fieldModel: '主模型',
+  fieldContextWindow: '上下文窗口',
   wireNoteClaude: '改 Claude 本机配置',
   wireNoteCodex: '改 Codex 本机配置',
   wireNoteGrok: '改 Grok 本机配置',
@@ -103,13 +108,34 @@ function localTokenField(t?: TranslateFn): ClientWriteField {
 /** Config file + preview fields for one agent on a local bridge. Port-independent shape. */
 export function clientWriteTargetSpec(
   agent: CreateRouteTarget,
-  input: { host: string; port: number | null; t?: TranslateFn },
+  input: {
+    host: string;
+    port: number | null;
+    t?: TranslateFn;
+    model?: string;
+    contextWindowTokens?: number | null;
+  },
 ): { configPath: string; fields: ClientWriteField[] } {
   const origin = writeOrigin(normalizeHost(input.host), normalizePort(input.port));
   if (agent === 'claude') {
+    const fields = [localAddressField(origin, input.t), localTokenField(input.t)];
+    const model = input.model?.trim() ?? '';
+    if (model) {
+      fields.push({
+        key: writeText(input.t, 'routes.write.fieldModel', WRITE_COPY.fieldModel),
+        value: model,
+      });
+    }
+    const windowLabel = formatClaudeContextWindow(input.contextWindowTokens);
+    if (windowLabel) {
+      fields.push({
+        key: writeText(input.t, 'routes.write.fieldContextWindow', WRITE_COPY.fieldContextWindow),
+        value: windowLabel,
+      });
+    }
     return {
       configPath: CLAUDE_CONFIG_PATH,
-      fields: [localAddressField(origin, input.t), localTokenField(input.t)],
+      fields,
     };
   }
   if (agent === 'grok') {
@@ -143,13 +169,22 @@ export function buildClientWriteSpecs(input: {
   port?: number | null;
   sourceMissing: boolean;
   hiddenTargetIds?: ReadonlySet<string>;
+  listedModels?: readonly string[];
+  contextWindowTokens?: number | null;
   t?: TranslateFn;
 }): ClientWriteSpec[] {
   const host = normalizeHost(input.host);
   const port = normalizePort(input.port);
   const hiddenTargetIds = input.hiddenTargetIds ?? new Set<string>();
+  const model = input.listedModels?.find((item) => item.trim())?.trim() ?? '';
   return input.rows.map((row) => {
-    const target = clientWriteTargetSpec(row.agent, { host, port, t: input.t });
+    const target = clientWriteTargetSpec(row.agent, {
+      host,
+      port,
+      t: input.t,
+      model,
+      contextWindowTokens: input.contextWindowTokens,
+    });
     const status = resolveClientWriteStatus({
       sourceMissing: input.sourceMissing,
       hidden: hiddenTargetIds.has(row.agent),

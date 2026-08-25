@@ -397,13 +397,13 @@ fn listed_models_for_bridge(
     if !user_listed.is_empty() {
         let mut listed = Vec::new();
         for model in user_listed {
-            let model = model.trim();
+            let model = crate::models::strip_claude_context_marker(model);
             if model.is_empty() {
                 continue;
             }
             if listed
                 .iter()
-                .any(|existing: &String| existing.eq_ignore_ascii_case(model))
+                .any(|existing: &String| crate::models::listed_model_matches(existing, model))
             {
                 continue;
             }
@@ -457,6 +457,7 @@ pub struct AdapterBridgeRuntimeMaterial {
     upstream_base_url: String,
     upstream_model: String,
     configured_listed_models: Vec<String>,
+    context_window_tokens: Option<u32>,
     protocol: BridgeUpstreamProtocol,
     local_surface: BridgeLocalSurface,
     source: AdapterSourceProduct,
@@ -475,6 +476,7 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
             .field("upstream_base_url", &self.upstream_base_url)
             .field("upstream_model", &self.upstream_model)
             .field("configured_listed_models", &self.configured_listed_models)
+            .field("context_window_tokens", &self.context_window_tokens)
             .field("protocol", &self.protocol)
             .field("local_surface", &self.local_surface)
             .field("source", &self.source)
@@ -517,6 +519,7 @@ impl AdapterBridgeRuntimeMaterial {
             upstream_base_url: KIMI_CHAT_BASE_URL.into(),
             upstream_model: DEFAULT_MODEL.into(),
             configured_listed_models: Vec::new(),
+            context_window_tokens: None,
             protocol: BridgeUpstreamProtocol::OpenAiChatCompletions,
             local_surface: BridgeLocalSurface::Responses,
             source: AdapterSourceProduct::KimiCodeMembership,
@@ -689,7 +692,13 @@ impl AdapterBridgePrepared {
     /// write/switch; this service never writes a live configuration.
     pub fn provider_projection(&self, port: u16) -> Result<AdapterBridgeProviderProjection> {
         validate_bound_port(port)?;
-        let input = projected_provider_input(&self.profile, &self.material.local_bearer, port)?;
+        let input = projected_provider_input(
+            &self.profile,
+            &self.material.local_bearer,
+            port,
+            &self.material.upstream_model,
+            self.material.context_window_tokens,
+        )?;
         if self.generated_provider_exists {
             if self.generated_provider_is_current
                 && self.profile.status == AdapterProfileStatus::Active

@@ -57,12 +57,20 @@ impl AdapterBridgeService {
             ));
         }
 
+        let (upstream_base_url, upstream_model, configured_listed_models, protocol, context_window_tokens) =
+            openai_source_upstream(self, &rule, request.source_kind, source_id);
         let (generated_provider_exists, generated_provider_is_current) =
             if let Some(provider) = existing_provider.as_ref() {
                 validate_generated_provider(provider, &profile, profile.local_port)?;
                 (
                     true,
-                    provider_matches_current_projection(provider, &profile, profile.local_port),
+                    provider_matches_current_projection(
+                        provider,
+                        &profile,
+                        profile.local_port,
+                        &upstream_model,
+                        context_window_tokens,
+                    ),
                 )
             } else {
                 (false, false)
@@ -79,8 +87,6 @@ impl AdapterBridgeService {
             Some(provider) => local_bearer_from_provider(provider)?,
             None => generate_local_bearer()?,
         };
-        let (upstream_base_url, upstream_model, configured_listed_models, protocol) =
-            openai_source_upstream(self, &rule, request.source_kind, source_id);
         Ok(AdapterBridgePrepared {
             material: AdapterBridgeRuntimeMaterial {
                 profile_id: profile.id.clone(),
@@ -89,6 +95,7 @@ impl AdapterBridgeService {
                 upstream_base_url,
                 upstream_model,
                 configured_listed_models,
+                context_window_tokens,
                 protocol,
                 local_surface: rule.local_surface,
                 source: rule.source,
@@ -132,7 +139,13 @@ impl AdapterBridgeService {
                 "bridge profile has no generated provider id",
             )
         })?;
-        let input = projected_provider_input(&profile, &prepared.material.local_bearer, port)?;
+        let input = projected_provider_input(
+            &profile,
+            &prepared.material.local_bearer,
+            port,
+            &prepared.material.upstream_model,
+            prepared.material.context_window_tokens,
+        )?;
         match self.providers.get_by_id(provider_id)? {
             Some(provider) => {
                 validate_generated_provider(&provider, &profile, profile.local_port)?;
@@ -144,7 +157,13 @@ impl AdapterBridgeService {
                 }
                 if profile.status == AdapterProfileStatus::Active
                     && profile.local_port == Some(port)
-                    && provider_matches_current_projection(&provider, &profile, Some(port))
+                    && provider_matches_current_projection(
+                        &provider,
+                        &profile,
+                        Some(port),
+                        &prepared.material.upstream_model,
+                        prepared.material.context_window_tokens,
+                    )
                 {
                     Ok(AdapterBridgeProviderProjection::None)
                 } else {
@@ -299,19 +318,21 @@ pub(super) fn openai_source_upstream(
     String,
     Vec<String>,
     crate::bridge::BridgeUpstreamProtocol,
+    Option<u32>,
 ) {
     let mut url = rule.upstream_base_url.to_string();
     let mut model = rule.default_model.to_string();
     let mut listed = Vec::new();
     let mut protocol = rule.protocol;
+    let mut context_window_tokens = None;
     if rule.source != crate::models::AdapterSourceProduct::OpenaiApi {
-        return (url, model, listed, protocol);
+        return (url, model, listed, protocol, context_window_tokens);
     }
     if source_kind != AdapterSourceKind::Provider {
-        return (url, model, listed, protocol);
+        return (url, model, listed, protocol, context_window_tokens);
     }
     let Ok(Some(provider)) = service.providers.get_by_id(source_id) else {
-        return (url, model, listed, protocol);
+        return (url, model, listed, protocol, context_window_tokens);
     };
     let target = match rule.target_agent {
         crate::models::AgentId::Claude => "claude",
@@ -340,8 +361,12 @@ pub(super) fn openai_source_upstream(
     ) {
         model = pinned;
     }
+    context_window_tokens =
+        crate::services::adapter_route_constants::openai_compat_context_window_tokens(
+            &provider.settings_config,
+        );
     if crate::services::adapter_route_constants::looks_like_anthropic_messages_url(&url) {
         protocol = crate::bridge::BridgeUpstreamProtocol::AnthropicMessages;
     }
-    (url, model, listed, protocol)
+    (url, model, listed, protocol, context_window_tokens)
 }

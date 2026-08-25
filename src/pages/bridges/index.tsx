@@ -273,6 +273,8 @@ export default function BridgesPage() {
         host={writeTarget.graph.local.host}
         port={writeTarget.graph.local.port ?? null}
         sourceMissing={writeTarget.graph.source.missing}
+        listedModels={writeTarget.graph.listedModels}
+        contextWindowTokens={writeTarget.graph.contextWindowTokens}
         hiddenTargetIds={hiddenTargetIds}
         onWritten={() => { void reload(); }}
       />

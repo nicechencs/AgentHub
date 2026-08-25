@@ -65,6 +65,9 @@ describe('CreateRouteDialog', () => {
     expect(markup).toContain('上游端点');
     expect(markup).toContain(endpointUrlFor('openrouter', 'claude', vendorById('openrouter').url));
     expect(markup).toContain('type="submit"');
+    expect(markup).toContain('自动（不写入）');
+    expect(markup).toContain('value="1048576"');
+    expect(markup).toContain('1M');
   });
 
   it('keeps SecretInput and does not invent a second URL field', () => {

@@ -143,7 +143,17 @@ impl AdapterBridgeService {
         })?;
         validate_generated_provider(&provider, &profile, profile.local_port)?;
         let local_bearer = local_bearer_from_provider(&provider)?;
-        let mut input = projected_provider_input(&profile, &local_bearer, bound_port)?;
+        let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
+            AppError::InvalidArg("adapter profile is not a supported local bridge".into())
+        })?;
+        let (_url, model, _listed, _protocol, window) = super::prepare::openai_source_upstream(
+            self,
+            &rule,
+            profile.source_kind,
+            &profile.source_id,
+        );
+        let mut input =
+            projected_provider_input(&profile, &local_bearer, bound_port, &model, window)?;
         input.is_current = false;
         Ok((input, provider.is_current))
     }
@@ -227,7 +237,7 @@ impl AdapterBridgeService {
         })?;
         let upstream_auth =
             self.resolve_upstream_auth(&rule, profile.source_kind, &profile.source_id)?;
-        let (upstream_base_url, upstream_model, configured_listed_models, protocol) =
+        let (upstream_base_url, upstream_model, configured_listed_models, protocol, context_window_tokens) =
             super::prepare::openai_source_upstream(
                 self,
                 &rule,
@@ -240,8 +250,9 @@ impl AdapterBridgeService {
                 source_connection_id: profile.source_id.clone(),
                 preferred_port: Some(local_port),
                 upstream_base_url,
-                upstream_model,
+                upstream_model: upstream_model.clone(),
                 configured_listed_models,
+                context_window_tokens,
                 protocol,
                 local_surface: rule.local_surface,
                 source: rule.source,
@@ -253,6 +264,8 @@ impl AdapterBridgeService {
                 &provider,
                 &profile,
                 Some(local_port),
+                &upstream_model,
+                context_window_tokens,
             ),
             profile,
         })
