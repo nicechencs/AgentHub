@@ -71,8 +71,9 @@ export function SideSplitFrame<T>({
 }
 
 /**
- * Full-height workbench: compact page header + list | optional inspect pane.
- * Same chrome as Skills / Projects.
+ * Full-height workbench: list column (compact header + list) | optional inspect pane.
+ * Header stays in the list column so add/new actions sit left of the separator
+ * and travel with it while resizing — not the far edge of the page.
  */
 export function WorkbenchSplitPage<T>({
   header,
@@ -88,24 +89,24 @@ export function WorkbenchSplitPage<T>({
   children: ReactNode;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-canvas">
-      <div className={pageRhythm.workbenchHeader}>{header}</div>
-      <div ref={split.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+    <div ref={split.splitRef} className="flex h-full min-h-0 overflow-hidden bg-canvas">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className={pageRhythm.workbenchHeader}>{header}</div>
         <div
           className={cn(
-            'min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
+            'min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
             pageRhythm.workbenchX,
             pageRhythm.workbenchY,
           )}
         >
           {children}
         </div>
-        {split.mounted && panel ? (
-          <SideSplitFrame split={split} resizeAria={resizeAria}>
-            {panel}
-          </SideSplitFrame>
-        ) : null}
       </div>
+      {split.mounted && panel ? (
+        <SideSplitFrame split={split} resizeAria={resizeAria}>
+          {panel}
+        </SideSplitFrame>
+      ) : null}
     </div>
   );
 }

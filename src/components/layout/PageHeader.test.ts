@@ -29,6 +29,19 @@ describe('PageHeader', () => {
     expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
   });
 
+  it('keeps workbench header actions in the list column, left of the separator', () => {
+    const split = source('components/layout/SideSplit.tsx');
+    const pageFn = split.slice(split.indexOf('export function WorkbenchSplitPage'));
+    const splitRefAt = pageFn.indexOf('split.splitRef');
+    const listColAt = pageFn.indexOf('flex min-h-0 min-w-0 flex-1 flex-col');
+    const headerAt = pageFn.indexOf('pageRhythm.workbenchHeader');
+    const inspectAt = pageFn.indexOf('split.mounted && panel');
+    expect(splitRefAt).toBeGreaterThan(0);
+    expect(listColAt).toBeGreaterThan(splitRefAt);
+    expect(headerAt).toBeGreaterThan(listColAt);
+    expect(inspectAt).toBeGreaterThan(headerAt);
+  });
+
   it('starts non-Chat body flush under the title slot', () => {
     expect(source('components/layout/PageHeader.tsx')).toContain("compact ? 'mb-0' : 'mb-[18px]'");
     expect(source('components/layout/page-rhythm.ts')).toContain("workbenchY: 'pb-[18px]'");
