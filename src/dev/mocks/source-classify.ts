@@ -4,6 +4,7 @@
  * Unique branches (kimi-non-membership, kimi account membership) stay in each consumer.
  */
 import type { Account, Provider } from '@/lib/types';
+import { SOURCE_CLASSIFY_CONTRACT } from '@/lib/backend/contracts/source-classify-contract';
 
 export type ClassifiableAccount = Account & {
   extra?: Record<string, unknown>;
@@ -27,21 +28,21 @@ export type MockSourceId =
   | 'codex-auth-json'
   | 'codex-oauth';
 
-export const KIMI_MEMBERSHIP_PRESET = 'kimi-code-membership';
-export const KIMI_CODING_ENDPOINT_NEEDLE = 'api.kimi.com/coding';
-export const ANTHROPIC_API_ENDPOINT_NEEDLE = 'api.anthropic.com';
-export const OPENAI_API_ENDPOINT_NEEDLE = 'api.openai.com';
-export const OPENROUTER_ENDPOINT_NEEDLE = 'openrouter.ai';
-export const XAI_API_ENDPOINT_NEEDLE = 'api.x.ai';
-export const GLM_CODING_ANTHROPIC_NEEDLE = 'open.bigmodel.cn/api/anthropic';
-export const GLM_CODING_CHAT_NEEDLE = 'open.bigmodel.cn/api/coding';
-export const GLM_CODING_RESPONSES_NEEDLE = 'open.bigmodel.cn/api/v1';
-export const DEEPSEEK_API_ENDPOINT_NEEDLE = 'api.deepseek.com';
+export const KIMI_MEMBERSHIP_PRESET = SOURCE_CLASSIFY_CONTRACT.presets.kimiMembership;
+export const KIMI_CODING_ENDPOINT_NEEDLE = SOURCE_CLASSIFY_CONTRACT.needles.kimiCoding;
+export const ANTHROPIC_API_ENDPOINT_NEEDLE = SOURCE_CLASSIFY_CONTRACT.needles.anthropicApi;
+export const OPENAI_API_ENDPOINT_NEEDLE = SOURCE_CLASSIFY_CONTRACT.needles.openaiApi;
+export const OPENROUTER_ENDPOINT_NEEDLE = SOURCE_CLASSIFY_CONTRACT.needles.openrouter;
+export const XAI_API_ENDPOINT_NEEDLE = SOURCE_CLASSIFY_CONTRACT.needles.xaiApi;
+export const GLM_CODING_ANTHROPIC_NEEDLE = SOURCE_CLASSIFY_CONTRACT.needles.glmAnthropic;
+export const GLM_CODING_CHAT_NEEDLE = SOURCE_CLASSIFY_CONTRACT.needles.glmChat;
+export const GLM_CODING_RESPONSES_NEEDLE = SOURCE_CLASSIFY_CONTRACT.needles.glmResponses;
+export const DEEPSEEK_API_ENDPOINT_NEEDLE = SOURCE_CLASSIFY_CONTRACT.needles.deepseekApi;
 
-const OPENAI_TAGS = ['openai', 'openai-api', 'openai-compat', 'openrouter'] as const;
-const XAI_TAGS = ['xai', 'xai-api'] as const;
-const GLM_TAGS = ['glm-coding-plan'] as const;
-const DEEPSEEK_TAGS = ['deepseek-api', 'deepseek'] as const;
+const OPENAI_TAGS = SOURCE_CLASSIFY_CONTRACT.tags.openai;
+const XAI_TAGS = SOURCE_CLASSIFY_CONTRACT.tags.xai;
+const GLM_TAGS = SOURCE_CLASSIFY_CONTRACT.tags.glm;
+const DEEPSEEK_TAGS = SOURCE_CLASSIFY_CONTRACT.tags.deepseek;
 
 export function jsonString(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== 'object') return undefined;

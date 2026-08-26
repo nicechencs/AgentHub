@@ -1,0 +1,228 @@
+{
+  "products": [
+    "kimi-code-membership",
+    "anthropic-api",
+    "openai-api",
+    "xai-api",
+    "glm-coding-plan",
+    "deepseek-api",
+    "codex-chatgpt-subscription",
+    "claude-subscription",
+    "grok-xai-subscription",
+    "other"
+  ],
+  "needles": {
+    "kimiCoding": "api.kimi.com/coding",
+    "anthropicApi": "api.anthropic.com",
+    "openaiApi": "api.openai.com",
+    "openrouter": "openrouter.ai",
+    "xaiApi": "api.x.ai",
+    "glmAnthropic": "open.bigmodel.cn/api/anthropic",
+    "glmChat": "open.bigmodel.cn/api/coding",
+    "glmResponses": "open.bigmodel.cn/api/v1",
+    "deepseekApi": "api.deepseek.com"
+  },
+  "tags": {
+    "openai": ["openai", "openai-api", "openai-compat", "openrouter"],
+    "xai": ["xai", "xai-api"],
+    "glm": ["glm-coding-plan"],
+    "deepseek": ["deepseek-api", "deepseek"]
+  },
+  "presets": {
+    "kimiMembership": "kimi-code-membership",
+    "anthropic": "anthropic",
+    "openai": "openai",
+    "xai": "xai",
+    "glmCodingPlan": "glm-coding-plan",
+    "deepseekApi": "deepseek-api"
+  },
+  "mockSourceToProduct": {
+    "kimi-code-membership": "kimi-code-membership",
+    "anthropic": "anthropic-api",
+    "openai": "openai-api",
+    "xai": "xai-api",
+    "glm-coding-plan": "glm-coding-plan",
+    "deepseek-api": "deepseek-api",
+    "claude-oauth": "claude-subscription",
+    "grok-oauth": "grok-xai-subscription",
+    "codex-auth-json": "codex-chatgpt-subscription",
+    "codex-oauth": "codex-chatgpt-subscription"
+  },
+  "cases": [
+    {
+      "id": "anthropic-account-tag",
+      "kind": "account",
+      "agentId": "claude",
+      "accountKind": "apikey",
+      "extra": { "provider": "anthropic" },
+      "credentials": { "format": "api_key" },
+      "expectProduct": "anthropic-api"
+    },
+    {
+      "id": "anthropic-account-endpoint",
+      "kind": "account",
+      "agentId": "claude",
+      "accountKind": "apikey",
+      "extra": {},
+      "credentials": { "format": "api_key", "base_url": "https://api.anthropic.com/v1" },
+      "expectProduct": "anthropic-api"
+    },
+    {
+      "id": "openai-account-tag",
+      "kind": "account",
+      "agentId": "codex",
+      "accountKind": "apikey",
+      "extra": { "provider": "openai" },
+      "credentials": { "format": "api_key" },
+      "expectProduct": "openai-api"
+    },
+    {
+      "id": "xai-account-tag",
+      "kind": "account",
+      "agentId": "grok",
+      "accountKind": "apikey",
+      "extra": { "provider": "xai" },
+      "credentials": { "format": "api_key" },
+      "expectProduct": "xai-api"
+    },
+    {
+      "id": "glm-account-tag",
+      "kind": "account",
+      "agentId": "claude",
+      "accountKind": "apikey",
+      "extra": { "provider": "glm-coding-plan" },
+      "credentials": { "format": "api_key" },
+      "expectProduct": "glm-coding-plan"
+    },
+    {
+      "id": "deepseek-account-tag",
+      "kind": "account",
+      "agentId": "dsh",
+      "accountKind": "apikey",
+      "extra": { "provider": "deepseek-api" },
+      "credentials": { "format": "api_key" },
+      "expectProduct": "deepseek-api"
+    },
+    {
+      "id": "kimi-account-membership-tag",
+      "kind": "account",
+      "agentId": "kimi",
+      "accountKind": "apikey",
+      "extra": { "provider": "kimi-code-membership" },
+      "credentials": { "format": "api_key" },
+      "expectProduct": "kimi-code-membership"
+    },
+    {
+      "id": "kimi-account-membership-endpoint",
+      "kind": "account",
+      "agentId": "kimi",
+      "accountKind": "apikey",
+      "extra": {},
+      "credentials": { "format": "api_key", "base_url": "https://api.kimi.com/coding/v1" },
+      "expectProduct": "kimi-code-membership"
+    },
+    {
+      "id": "kimi-account-non-membership",
+      "kind": "account",
+      "agentId": "kimi",
+      "accountKind": "apikey",
+      "extra": { "provider": "moonshot" },
+      "credentials": { "format": "api_key" },
+      "expectProduct": "other"
+    },
+    {
+      "id": "codex-oauth-auth-json",
+      "kind": "account",
+      "agentId": "codex",
+      "accountKind": "oauth",
+      "extra": {},
+      "credentials": { "format": "auth_json", "tokens": { "access_token": "placeholder" } },
+      "expectProduct": "codex-chatgpt-subscription"
+    },
+    {
+      "id": "codex-oauth-other",
+      "kind": "account",
+      "agentId": "codex",
+      "accountKind": "oauth",
+      "extra": {},
+      "credentials": { "format": "oauth" },
+      "expectProduct": "codex-chatgpt-subscription"
+    },
+    {
+      "id": "claude-oauth",
+      "kind": "account",
+      "agentId": "claude",
+      "accountKind": "oauth",
+      "extra": {},
+      "credentials": { "format": "oauth" },
+      "expectProduct": "claude-subscription"
+    },
+    {
+      "id": "grok-oauth",
+      "kind": "account",
+      "agentId": "grok",
+      "accountKind": "oauth",
+      "extra": {},
+      "credentials": { "format": "oauth" },
+      "expectProduct": "grok-xai-subscription"
+    },
+    {
+      "id": "anthropic-provider-preset",
+      "kind": "provider",
+      "agentId": "claude",
+      "preset": "anthropic",
+      "expectProduct": "anthropic-api"
+    },
+    {
+      "id": "openai-provider-preset",
+      "kind": "provider",
+      "agentId": "codex",
+      "preset": "openai",
+      "expectProduct": "openai-api"
+    },
+    {
+      "id": "xai-provider-preset",
+      "kind": "provider",
+      "agentId": "grok",
+      "preset": "xai",
+      "expectProduct": "xai-api"
+    },
+    {
+      "id": "glm-provider-preset",
+      "kind": "provider",
+      "agentId": "claude",
+      "preset": "glm-coding-plan",
+      "expectProduct": "glm-coding-plan"
+    },
+    {
+      "id": "deepseek-provider-preset",
+      "kind": "provider",
+      "agentId": "dsh",
+      "preset": "deepseek-api",
+      "expectProduct": "deepseek-api"
+    },
+    {
+      "id": "kimi-provider-membership-preset",
+      "kind": "provider",
+      "agentId": "kimi",
+      "preset": "kimi-code-membership",
+      "expectProduct": "kimi-code-membership"
+    },
+    {
+      "id": "kimi-provider-membership-endpoint",
+      "kind": "provider",
+      "agentId": "kimi",
+      "preset": "custom",
+      "configText": "base_url = \"https://api.kimi.com/coding/v1\"",
+      "settings": { "base_url": "https://api.kimi.com/coding/v1" },
+      "expectProduct": "kimi-code-membership"
+    },
+    {
+      "id": "kimi-provider-non-membership",
+      "kind": "provider",
+      "agentId": "kimi",
+      "preset": "moonshot",
+      "expectProduct": "other"
+    }
+  ]
+}
