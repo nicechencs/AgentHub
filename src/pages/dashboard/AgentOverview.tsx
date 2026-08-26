@@ -32,7 +32,7 @@ export type { AgentCardBadgeInput };
 
 export interface AgentOverviewProps {
   agents: AgentStatus[];
-  /** 已安装卡片打开连接流程；未传时 connect 退化为 /connections?agent=X */
+  /** 未传时 connect 退化为 /connections?agent=X，不再打开总览弹窗 */
   onConnectRequest?: (agentId: AgentId) => void;
   /** 调用方提供的 profile 联结 / 桥状态；不传则不渲染徽标 */
   badgeInputs?: Readonly<Partial<Record<AgentId, AgentCardBadgeInput>>>;
