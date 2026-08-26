@@ -1,6 +1,7 @@
 use crate::models::{
     AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
-    AgentId, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    AgentId, FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 use crate::services::RoutePoolService;
 use crate::storage::{AdapterProfileRepo, Database};
@@ -220,6 +221,21 @@ fn index_enabled_requires_both_flags() {
     assert!(service.index_enabled());
     db.set_setting(FEATURE_ROUTE_INDEX_V2, "off").unwrap();
     assert!(!service.index_enabled());
+}
+
+#[test]
+fn pair_adapter_flags_are_independent_and_fail_closed() {
+    let (_dir, db, service, _profiles) = tmp();
+    assert_eq!(service.pair_adapter_flags(), (false, false));
+    db.set_setting(FEATURE_CODEX_INGRESS_GROK_UPSTREAM, "on")
+        .unwrap();
+    assert_eq!(service.pair_adapter_flags(), (true, false));
+    db.set_setting(FEATURE_GROK_INGRESS_CODEX_UPSTREAM, "yes")
+        .unwrap();
+    assert_eq!(service.pair_adapter_flags(), (true, true));
+    db.set_setting(FEATURE_CODEX_INGRESS_GROK_UPSTREAM, "off")
+        .unwrap();
+    assert_eq!(service.pair_adapter_flags(), (false, true));
 }
 
 #[tokio::test]

@@ -836,6 +836,8 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -868,6 +870,8 @@ async fn codex_responses_health_probe_does_not_request_models() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -898,6 +902,8 @@ async fn xai_responses_health_probe_does_not_request_models() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -928,6 +934,8 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.is_empty());
@@ -958,6 +966,8 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
@@ -983,6 +993,8 @@ fn start_spec_empty_when_mapping_and_default_are_missing() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     assert!(material.start_spec(Some(0)).listed_models.is_empty());
 }
@@ -1005,6 +1017,8 @@ fn start_spec_lists_configured_default_when_mapping_is_missing() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
@@ -1030,6 +1044,8 @@ fn start_spec_lists_openai_to_codex_without_kimi_ids() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert_eq!(listed, vec![OPENAI_DEFAULT_MODEL.to_string()]);
@@ -1863,6 +1879,8 @@ fn start_spec_lists_stealth_ox_alpha_for_custom_openai() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(
@@ -1889,6 +1907,8 @@ fn start_spec_keeps_every_user_listed_model() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "openai/gpt-4o"));
@@ -1916,6 +1936,8 @@ fn start_spec_strips_claude_1m_marker_from_listed_models() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
@@ -1940,6 +1962,8 @@ fn start_spec_official_openai_does_not_list_stealth() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.iter().any(|model| model == "stealth/ox-alpha"));

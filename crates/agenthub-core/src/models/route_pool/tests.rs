@@ -1,7 +1,8 @@
 use crate::models::{
     authorization_fingerprint, choose_default_pool_id, feature_flag_enabled, generate_hub_token,
     AdapterSourceKind, AgentId, RouteDownstreamDialect, RouteDownstreamSurface,
-    RouteSchedulePolicy, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    RouteSchedulePolicy, FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 
 #[test]
@@ -15,6 +16,14 @@ fn feature_flags_are_fail_closed() {
     assert!(feature_flag_enabled(Some("ON")));
     assert_eq!(FEATURE_ROUTE_POOL_V2, "feature.route_pool_v2");
     assert_eq!(FEATURE_ROUTE_INDEX_V2, "feature.route_index_v2");
+    assert_eq!(
+        FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
+        "feature.codex_ingress_grok_upstream"
+    );
+    assert_eq!(
+        FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+        "feature.grok_ingress_codex_upstream"
+    );
 }
 
 #[test]

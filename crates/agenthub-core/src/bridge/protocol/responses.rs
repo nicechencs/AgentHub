@@ -364,7 +364,7 @@ pub fn prepare_official_codex_request(
 /// system prompt is not discarded. Official ChatGPT Responses 400s on
 /// system input items; developer is folded here for the same Claude/Chat
 /// conversion path.
-fn fold_official_codex_system_items(body: &mut Value) {
+pub(crate) fn fold_official_codex_system_items(body: &mut Value) {
     let Some(object) = body.as_object_mut() else {
         return;
     };

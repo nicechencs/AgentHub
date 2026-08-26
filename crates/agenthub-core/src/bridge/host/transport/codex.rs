@@ -3,6 +3,7 @@ use reqwest::RequestBuilder;
 use serde_json::Value;
 
 use crate::bridge::grok_cli::GrokCliRequestIdentity;
+use crate::bridge::protocol::pair::adapt_grok_request_for_codex_upstream;
 use crate::bridge::protocol::responses::{prepare_official_codex_request, to_responses_request};
 
 use super::super::admission::AdmittedRequest;
@@ -42,11 +43,22 @@ impl UpstreamTransport for CodexTransport {
                     .unwrap_or_default()
                     .to_owned();
                 let (mut body, stream) = passthrough_responses_object(admitted.body.clone())?;
-                prepare_official_codex_request(
-                    &mut body,
-                    &incoming_model,
-                    admitted.state.upstream.model.as_deref(),
-                );
+                if super::super::pair_policy::pair_adapter_active(
+                    &admitted.state,
+                    super::UpstreamChannel::CodexResponses,
+                ) {
+                    adapt_grok_request_for_codex_upstream(
+                        &mut body,
+                        &incoming_model,
+                        admitted.state.upstream.model.as_deref(),
+                    );
+                } else {
+                    prepare_official_codex_request(
+                        &mut body,
+                        &incoming_model,
+                        admitted.state.upstream.model.as_deref(),
+                    );
+                }
                 Ok(UpstreamPrepare {
                     path: self.path(),
                     body,
