@@ -13,6 +13,8 @@ export const SIDE_SPLIT_FRAME_PAD_Y = pageEdgePx.previewY;
 export const SIDE_SPLIT_SEPARATOR_W = pageEdgePx.separator;
 export const SIDE_SPLIT_WIDTH_STEP = 16;
 export const SIDE_SPLIT_WIDTH_STEP_LARGE = 48;
+/** Inspect pane cannot occupy more than half the workbench. */
+export const SIDE_SPLIT_MAX_SHARE = 0.5;
 
 export function readStoredSideSplitWidth(
   storageKey: string,
@@ -39,15 +41,21 @@ export function persistSideSplitWidth(storageKey: string, width: number): void {
 
 /** Clamp the inspect card so the list column stays usable. */
 export function clampSideSplitWidth(width: number, containerWidth: number): number {
+  const requested = Math.round(Number.isFinite(width) ? width : SIDE_SPLIT_WIDTH_DEFAULT);
+  if (containerWidth <= 0) {
+    return Math.max(SIDE_SPLIT_WIDTH_FLOOR, requested);
+  }
   const chrome = SIDE_SPLIT_SEPARATOR_W + SIDE_SPLIT_FRAME_PAD_RIGHT;
   const usable = Math.max(0, containerWidth - chrome);
   const mainReserve =
     usable >= SIDE_SPLIT_MAIN_MIN + SIDE_SPLIT_WIDTH_MIN
       ? SIDE_SPLIT_MAIN_MIN
       : Math.min(SIDE_SPLIT_MAIN_MIN, Math.max(SIDE_SPLIT_MAIN_FLOOR, Math.floor(usable * 0.48)));
-  const maxW = Math.max(SIDE_SPLIT_WIDTH_FLOOR, usable - mainReserve);
+  const listCap = Math.max(SIDE_SPLIT_WIDTH_FLOOR, usable - mainReserve);
+  const shareCap = Math.floor(usable * SIDE_SPLIT_MAX_SHARE);
+  const maxW = Math.max(SIDE_SPLIT_WIDTH_FLOOR, Math.min(listCap, shareCap));
   const minW = Math.min(SIDE_SPLIT_WIDTH_MIN, maxW);
-  return Math.min(maxW, Math.max(minW, Math.round(width)));
+  return Math.min(maxW, Math.max(minW, requested));
 }
 
 export function createIdempotentCleanup<T extends unknown[]>(cleanup: (...args: T) => void) {
