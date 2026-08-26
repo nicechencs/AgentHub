@@ -27,7 +27,7 @@ use error::Result;
 use logging::targets;
 use models::{
     AgentId, AgentUpdateInfo, InstallOutcome, MultiRunReport, RunOptions, RuntimeId, Skill,
-    SkillListing,
+    SkillListing, SwitchConfirmKind, SwitchConfirmPreview,
 };
 use platform::{LifecycleCoordinator, LifecycleResult};
 use services::{
@@ -320,6 +320,53 @@ impl AgentHub {
     /// Isolated-adapter tests swap live-switch services after [`Self::open`].
     pub fn set_accounts(&mut self, accounts: AccountService) {
         self.accounts = accounts;
+    }
+
+    fn live_backup_dir(&self, agent: AgentId) -> PathBuf {
+        self.backups()
+            .backups_root()
+            .join("live")
+            .join(agent.as_str())
+    }
+
+    /// Read-only account switch confirm facts. Does not snapshot, lock, or switch.
+    pub fn account_switch_preview(
+        &self,
+        agent: AgentId,
+        id_or_label: &str,
+    ) -> Result<SwitchConfirmPreview> {
+        let current = self
+            .accounts()
+            .list(Some(agent))?
+            .into_iter()
+            .find(|a| a.is_current);
+        Ok(SwitchConfirmPreview {
+            agent,
+            target: id_or_label.to_string(),
+            kind: SwitchConfirmKind::Account,
+            current_label: current.map(|c| c.label),
+            backup_dir: self.live_backup_dir(agent),
+        })
+    }
+
+    /// Read-only provider switch confirm facts. Does not snapshot, lock, or switch.
+    pub fn provider_switch_preview(
+        &self,
+        agent: AgentId,
+        id_or_name: &str,
+    ) -> Result<SwitchConfirmPreview> {
+        let current = self
+            .providers()
+            .list(Some(agent))?
+            .into_iter()
+            .find(|p| p.is_current);
+        Ok(SwitchConfirmPreview {
+            agent,
+            target: id_or_name.to_string(),
+            kind: SwitchConfirmKind::Provider,
+            current_label: current.map(|c| c.name),
+            backup_dir: self.live_backup_dir(agent),
+        })
     }
 
     pub fn adapter_secret_resolver(&self) -> AdapterSecretResolver {

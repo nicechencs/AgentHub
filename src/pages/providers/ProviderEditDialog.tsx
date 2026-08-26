@@ -58,6 +58,7 @@ import {
   listRemoteOpenAiModelsForProvider,
   upsertProvider,
 } from '@/lib/api/provider';
+import { runProviderSaveFlow } from '@/lib/api/provider-save';
 import type { AgentId, Provider } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
@@ -91,10 +92,9 @@ import {
   canSaveWithSchemaStatus,
   planSchemaLoad,
   resolveProjectorExpectation,
-  runProviderSaveFlow,
   schemaErrorMessage,
   type SchemaUiStatus,
-} from './providerSaveFlow';
+} from './provider-schema-gate';
 import { requestRemoteModels } from './remote-models-request';
 
 const REMOTE_MODELS_DEBOUNCE_MS = 400;

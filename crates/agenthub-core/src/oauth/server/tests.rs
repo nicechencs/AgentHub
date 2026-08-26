@@ -5,21 +5,10 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 fn waiting_session(state: &str, redirect_uri: &str) -> OAuthSession {
-    OAuthSession {
-        state: state.into(),
-        agent: AgentId::Claude,
-        verifier: "verifier".into(),
-        redirect_uri: redirect_uri.into(),
-        provider_key: None,
-        status: OAuthStatus::Waiting,
-        code: None,
-        error: None,
-        created_at: Instant::now(),
-        completing: false,
-    }
+    OAuthSession::new(state, AgentId::Claude, "verifier", redirect_uri, None)
 }
 
 fn http_get(addr: std::net::SocketAddr, path: &str) {
@@ -27,7 +16,8 @@ fn http_get(addr: std::net::SocketAddr, path: &str) {
         if let Ok(mut stream) = TcpStream::connect(addr) {
             let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
             let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
-            let req = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+            let req =
+                format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
             if stream.write_all(req.as_bytes()).is_ok() {
                 let mut buf = [0u8; 512];
                 let _ = stream.read(&mut buf);
@@ -49,9 +39,8 @@ fn listener_ignores_probe_then_accepts_matching_callback() {
     store.insert(waiting_session(state, &redirect)).unwrap();
 
     let store_thread = Arc::clone(&store);
-    let handle = thread::spawn(move || {
-        spawn_callback_listener(listener, store_thread, state, "/callback")
-    });
+    let handle =
+        thread::spawn(move || spawn_callback_listener(listener, store_thread, state, "/callback"));
 
     http_get(addr, "/favicon.ico");
     assert_eq!(store.get_info(state).unwrap().status, OAuthStatus::Waiting);
@@ -79,9 +68,8 @@ fn listener_exits_when_session_is_cancelled() {
         .unwrap();
 
     let store_thread = Arc::clone(&store);
-    let handle = thread::spawn(move || {
-        spawn_callback_listener(listener, store_thread, state, "/callback")
-    });
+    let handle =
+        thread::spawn(move || spawn_callback_listener(listener, store_thread, state, "/callback"));
 
     store.mark_error(state, "cancelled").unwrap();
     handle

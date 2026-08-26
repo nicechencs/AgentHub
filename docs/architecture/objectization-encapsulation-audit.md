@@ -22,7 +22,8 @@ updated: 2026-08-26
 | --- | --- | --- |
 | O-01 | 领域 Service 曾是 `pub` 字段 | 已处理：Service 字段改为 `pub(crate)`，对外只留访问器。CLI / 桌面端走 `accounts()` / `providers()` 等。隔离测试用 `set_providers` / `set_accounts`。按领域拆 Service 内部职责仍暂缓 |
 | O-02 | 仍存在：`Database::with_conn` 为 `pub`；生产路径曾用 `ProviderService::repo()` 读行 | 部分处理：生产读改为 `get_by_id` / `get_current`；Account / Backup 的 `repo()` 收为 `pub(crate)`。`with_conn` 与 Provider `repo()` 仍给测试和补偿事务用 |
-| O-03、O-04、O-05 | 仍存在 | 暂缓。页面拆 Hook / 把保存用例上收属于跨层设计 |
+| O-03、O-04 | 仍存在 | 暂缓。页面拆 Hook 属于跨层设计 |
+| O-05 | 供应商保存编排曾在页面目录 | 已处理：`runProviderSaveFlow` 收到 `src/lib/api/provider-save.ts`；页面只保留 schema 闸门。validate/materialize/upsert 语义未改 |
 | O-06 | 生产 Hook 已走共享连接池；`loadAdapterPageResources` 只留在测试 | 标注为测试辅助，页面不得再自行拉账号 / Provider |
 | O-07 | 仍存在：多个模块级 store，`setBackend` 手工 reset | 部分处理：`setBackend` / `resetBackend` 会一起清空 catalog。统一 runtime context 仍暂缓 |
 | O-51、O-52 | Agent 状态 / catalog reset 后旧请求仍可写回 | 已处理：按 epoch 丢弃过期写回；catalog 随 backend 一起 reset |
@@ -45,8 +46,9 @@ updated: 2026-08-26
 | O-22 | `GenericConfigForm` 未把锁定状态传给 `SecretInput` | 已处理：`SecretInput` 接收 `disabled`/`readOnly` |
 | O-26–O-30 | 仍存在 | 暂缓。启动组合根、transport façade、Gateway 状态和协议策略需要分别设计 |
 | O-31–O-34 | 仍存在 | 暂缓。Usage normalizer、查询 filter 和模型映射的跨层收窄需保持统计语义 |
-| O-35、O-37、O-38 | 仍存在 | 暂缓。CLI 运行策略、选择确认抽取和发布脚本收口需要单独设计 |
-| O-36 | CLI 切换确认曾 `.ok()` 吞掉列表读取错误 | 部分处理：读取失败改为返回错误，不再带着错误认知去确认。结构化切换预览仍待 core 提供 |
+| O-35、O-38 | 仍存在 | 暂缓。CLI 运行策略和发布脚本收口需要单独设计 |
+| O-36 | CLI 切换确认曾 `.ok()` 吞掉列表读取错误，并自行拼接预览 | 已处理：读取失败返回错误；确认文案由 core `SwitchConfirmPreview` 生成。桌面端确认框仍自建文案 |
+| O-37 | CLI 多处重复解析 `--agent` | 已处理：共用 `agent_arg`；各命令错误原文保留 |
 | O-39 | mock `speaks` 与 core 对 GLM/DeepSeek 不一致 | 已处理：mock 补上 `openai-responses`。共享 fixture 仍未做 |
 | O-40–O-42、O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
 | O-43 | 测试 fake 用 `_ => unsupported` 吞掉新 Capability | 已处理：`Capability::fake_state` 穷举所有变体；测试 fake 走该 helper |
@@ -58,6 +60,7 @@ updated: 2026-08-26
 | O-65 | 卸载命令自行再打一份卸载前备份 | 已处理：卸载前备份只留在 Core 生命周期；桌面端不再额外 snapshot |
 | O-70 | 未实现的 Pi 登录被标成设备码 | 已处理：仅已实现的 xAI 为设备码；github-copilot / kimi-coding 不再导向设备码。未开这些登录 |
 | O-74 | `PkcePair` 字段公开可变 | 已处理：字段私有，只读 `verifier()` / `challenge()` |
+| O-71 | `OAuthSession` 字段公开 | 已处理：构造器 + 只读访问器；状态机 / TTL / `mark_error` 未改 |
 
 ## 结论
 
@@ -128,7 +131,8 @@ updated: 2026-08-26
 #### O-05｜Provider 配置保存业务仍在页面目录
 
 - **严重程度：高**
-- **位置：** `src/pages/providers/providerSaveFlow.ts:373-503`
+- **状态：已处理**
+- **位置：** `src/lib/api/provider-save.ts`；页面闸门 `src/pages/providers/provider-schema-gate.ts`
 - **问题：** 页面侧决定 schema/legacy 分支，并执行 parse、project、validate、materialize、构造 Provider 和 upsert；`ConfigPort` 只提供低层原语。
 - **建议：** 将“按 Agent schema 保存 Provider 配置”的完整用例放到 Backend/domain owner；页面只提交表单值并消费结构化结果。保留现有 projector 与 legacy 兼容路径，但统一入口。
 - **影响/风险：** 配置不变量分散在页面、contract 和 core；其他入口保存同类配置时容易产生不同语义。
@@ -402,7 +406,7 @@ updated: 2026-08-26
 #### O-36｜CLI 切换确认直接读取领域状态并吞掉错误
 
 - **严重程度：中高**
-- **状态：部分处理**
+- **状态：已处理**
 - **位置：** `crates/agenthub-cli/src/commands/account.rs`；`provider.rs` 的 `switch_confirm_prompt`
 - **问题：** 确认提示函数直接读取 Account/Provider 列表并用 `.ok()` 忽略数据库错误，同时自行拼接备份目录、当前项和进程影响说明。
 - **当前：** 列表读取失败会返回错误，切换确认不再在读失败时继续。结构化预览仍由 CLI 自行拼接，尚未收到 core。

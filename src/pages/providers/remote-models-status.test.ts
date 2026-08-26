@@ -8,7 +8,7 @@ import {
   resolveUpstreamBaseUrl,
   shouldFetchRemoteModels,
 } from '@/lib/provider-detect';
-import { canSaveProviderForm } from './providerSaveFlow';
+import { canSaveProviderForm } from './provider-schema-gate';
 
 describe('remoteModelsStatusView', () => {
   it('loading shows the loading key; picker and retry stay off', () => {

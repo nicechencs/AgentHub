@@ -5,11 +5,8 @@ use agenthub_core::models::{AgentId, CollectResult, ParserHealth, UsageQuery, Us
 use agenthub_core::AgentHub;
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
+use crate::agent_arg::parse_agent_filter;
 use crate::output::{print_json, OutputFormat};
-
-fn parse_agent_filter(agent_filter: Option<&str>) -> Result<Option<AgentId>> {
-    AgentId::parse_optional(agent_filter)
-}
 
 /// Incremental collect from agent session logs.
 pub fn collect(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {

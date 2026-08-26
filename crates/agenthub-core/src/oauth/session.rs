@@ -22,18 +22,84 @@ pub enum OAuthStatus {
 
 #[derive(Debug, Clone)]
 pub struct OAuthSession {
-    pub state: String,
-    pub agent: AgentId,
-    pub verifier: String,
-    pub redirect_uri: String,
+    state: String,
+    agent: AgentId,
+    verifier: String,
+    redirect_uri: String,
     /// Optional multi-provider key (Pi: anthropic / openai-codex / …).
-    pub provider_key: Option<String>,
-    pub status: OAuthStatus,
-    pub code: Option<String>,
-    pub error: Option<String>,
-    pub created_at: Instant,
+    provider_key: Option<String>,
+    status: OAuthStatus,
+    code: Option<String>,
+    error: Option<String>,
+    created_at: Instant,
     /// Set while the one allowed token exchange is in flight.
-    pub(crate) completing: bool,
+    completing: bool,
+}
+
+impl OAuthSession {
+    pub fn new(
+        state: impl Into<String>,
+        agent: AgentId,
+        verifier: impl Into<String>,
+        redirect_uri: impl Into<String>,
+        provider_key: Option<String>,
+    ) -> Self {
+        Self {
+            state: state.into(),
+            agent,
+            verifier: verifier.into(),
+            redirect_uri: redirect_uri.into(),
+            provider_key,
+            status: OAuthStatus::Waiting,
+            code: None,
+            error: None,
+            created_at: Instant::now(),
+            completing: false,
+        }
+    }
+
+    pub fn state(&self) -> &str {
+        &self.state
+    }
+
+    pub fn agent(&self) -> AgentId {
+        self.agent
+    }
+
+    pub fn verifier(&self) -> &str {
+        &self.verifier
+    }
+
+    pub fn redirect_uri(&self) -> &str {
+        &self.redirect_uri
+    }
+
+    pub fn provider_key(&self) -> Option<&str> {
+        self.provider_key.as_deref()
+    }
+
+    pub fn status(&self) -> OAuthStatus {
+        self.status
+    }
+
+    pub fn code(&self) -> Option<&str> {
+        self.code.as_deref()
+    }
+
+    pub fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
+    pub fn created_at(&self) -> Instant {
+        self.created_at
+    }
+
+    fn scrub_secrets(&mut self) {
+        self.verifier.clear();
+        self.redirect_uri.clear();
+        self.provider_key = None;
+        self.code = None;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,13 +131,13 @@ impl SessionStore {
             .lock()
             .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
         self.purge_locked(&mut g);
-        if g.contains_key(&session.state) {
+        if g.contains_key(session.state()) {
             return Err(AppError::message(
                 "oauth.state",
                 "OAuth state is already active",
             ));
         }
-        g.insert(session.state.clone(), session);
+        g.insert(session.state().to_string(), session);
         Ok(())
     }
 
@@ -85,10 +151,10 @@ impl SessionStore {
             .get(state)
             .ok_or_else(|| AppError::NotFound("oauth session not found".into()))?;
         Ok(OAuthSessionInfo {
-            state: s.state.clone(),
-            agent_id: s.agent,
-            status: s.status,
-            error: s.error.clone(),
+            state: s.state().to_string(),
+            agent_id: s.agent(),
+            status: s.status(),
+            error: s.error().map(str::to_string),
         })
     }
 
@@ -101,7 +167,7 @@ impl SessionStore {
         let s = g
             .get_mut(state)
             .ok_or_else(|| AppError::NotFound("oauth session not found".into()))?;
-        match s.status {
+        match s.status() {
             OAuthStatus::Waiting => {
                 let code = code.trim().to_string();
                 if code.is_empty() {
@@ -190,10 +256,10 @@ impl SessionStore {
         self.purge_locked(&mut g);
         let mut n = 0;
         for session in g.values_mut() {
-            if session.status != OAuthStatus::Waiting {
+            if session.status() != OAuthStatus::Waiting {
                 continue;
             }
-            if redirect_loopback_port(&session.redirect_uri) != Some(port) {
+            if redirect_loopback_port(session.redirect_uri()) != Some(port) {
                 continue;
             }
             session.status = OAuthStatus::Failed;
@@ -214,19 +280,19 @@ impl SessionStore {
         let s = g
             .get_mut(state)
             .ok_or_else(|| AppError::NotFound("oauth session not found".into()))?;
-        if s.completing || matches!(s.status, OAuthStatus::Succeeded | OAuthStatus::Failed) {
+        if s.completing || matches!(s.status(), OAuthStatus::Succeeded | OAuthStatus::Failed) {
             return Err(AppError::message(
                 "oauth.replay",
                 "OAuth session has already been consumed",
             ));
         }
-        if s.status != OAuthStatus::CallbackReceived {
+        if s.status() != OAuthStatus::CallbackReceived {
             return Err(AppError::message(
                 "oauth.not_ready",
                 "OAuth callback has not completed",
             ));
         }
-        if s.code.is_none() {
+        if s.code().is_none() {
             return Err(AppError::message(
                 "oauth.not_ready",
                 "OAuth 回调尚未到达，请完成浏览器授权",
@@ -243,7 +309,7 @@ impl SessionStore {
 
 fn purge_at(g: &mut HashMap<String, OAuthSession>, now: Instant) {
     g.retain(|_, s| {
-        now.checked_duration_since(s.created_at)
+        now.checked_duration_since(s.created_at())
             .is_some_and(|age| age < TTL)
     });
 }
@@ -252,15 +318,6 @@ pub(crate) fn redirect_loopback_port(redirect_uri: &str) -> Option<u16> {
     let rest = redirect_uri.strip_prefix("http://")?;
     let hostport = rest.split('/').next()?;
     hostport.rsplit_once(':')?.1.parse().ok()
-}
-
-impl OAuthSession {
-    fn scrub_secrets(&mut self) {
-        self.verifier.clear();
-        self.redirect_uri.clear();
-        self.provider_key = None;
-        self.code = None;
-    }
 }
 
 #[cfg(test)]

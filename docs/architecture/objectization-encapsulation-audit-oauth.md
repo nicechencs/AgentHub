@@ -41,6 +41,7 @@ OAuth 共 12 个 `.rs` 文件逐项检查：`mod.rs`、`identity.rs`、`provider
 ### O-71｜OAuthSession 对外暴露状态和敏感字段
 
 - **位置：** `crates/agenthub-core/src/oauth/session.rs:16-270`
+- **状态：已处理（字段封装）**
 - **问题：** `OAuthSession` 字段公开，完整会话包含 verifier/code 等流程字段；状态转换依赖调用顺序，`mark_error` 还丢弃具体错误。
 - **建议：** 通过构造器和语义化状态转换方法封装字段；敏感字段只在会话对象内部使用，错误按安全策略保存结构化诊断。
 - **影响：** 调用方可构造无效状态，状态不变量和诊断信息依赖外部配合。
