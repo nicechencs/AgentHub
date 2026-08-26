@@ -10,29 +10,21 @@ function source(rel: string): string {
   return readFileSync(path.join(srcRoot, rel), 'utf8');
 }
 
-function workbenchHeaderWrapper(pageSrc: string): string {
-  const compactAt = pageSrc.indexOf('size="compact"');
-  expect(compactAt).toBeGreaterThan(0);
-  const wrapperAt = pageSrc.lastIndexOf('<div', compactAt);
-  expect(wrapperAt).toBeGreaterThanOrEqual(0);
-  return pageSrc.slice(wrapperAt, compactAt);
-}
-
 describe('PageHeader', () => {
   it('does not draw a rule under the title; Skills/Projects match other pages', () => {
     expect(source('components/layout/PageHeader.tsx')).not.toContain('border-b');
-    expect(workbenchHeaderWrapper(source('pages/skills/index.tsx'))).not.toContain('border-b');
-    expect(workbenchHeaderWrapper(source('pages/projects/index.tsx'))).not.toContain('border-b');
     expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchHeader');
     expect(source('components/layout/SideSplit.tsx')).not.toContain('border-b');
+    expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
   });
 
   it('uses the split-list inset when a preview pane is mounted', () => {
-    expect(source('pages/projects/index.tsx')).toContain('workbenchXSplit');
-    expect(source('pages/skills/index.tsx')).toContain('workbenchXSplit');
     expect(source('components/layout/SideSplit.tsx')).toContain('workbenchXSplit');
+    expect(source('components/layout/SideSplit.tsx')).toContain("listOverflowX === 'hidden'");
+    expect(source('pages/projects/index.tsx')).toContain('listOverflowX="hidden"');
   });
 
   it('keeps workbench header actions in the list column, left of the separator', () => {
@@ -50,15 +42,8 @@ describe('PageHeader', () => {
     expect(listFooterAt).toBeGreaterThan(headerAt);
     expect(inspectAt).toBeGreaterThan(listFooterAt);
 
-    const projects = source('pages/projects/index.tsx');
-    const projectsSplit = projects.indexOf('preview.splitRef');
-    const projectsListCol = projects.indexOf('flex min-h-0 min-w-0 flex-1 flex-col');
-    const projectsHeader = projects.indexOf('pageRhythm.workbenchHeader');
-    const projectsSep = projects.indexOf('role="separator"');
-    expect(projectsSplit).toBeGreaterThan(0);
-    expect(projectsListCol).toBeGreaterThan(projectsSplit);
-    expect(projectsHeader).toBeGreaterThan(projectsListCol);
-    expect(projectsSep).toBeGreaterThan(projectsHeader);
+    expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
   });
 
   it('starts non-Chat body flush under the title slot', () => {
@@ -66,8 +51,7 @@ describe('PageHeader', () => {
     expect(source('components/layout/page-rhythm.ts')).toContain("workbenchY: 'pb-[18px]'");
     expect(source('pages/skills/index.tsx')).toContain('pageRhythm.chrome');
     expect(source('pages/skills/index.tsx')).not.toContain('className="mb-2"');
-    expect(source('pages/skills/index.tsx')).toContain('paddingTop: 0');
-    expect(source('pages/projects/index.tsx')).toContain('paddingTop: 0');
+    expect(source('components/layout/SideSplit.tsx')).toContain('paddingTop: 0');
     expect(source('components/ui/tabs.tsx')).not.toContain('mt-4 focus:outline-none');
     expect(source('pages/settings/index.tsx')).toContain('pageRhythm.chrome');
   });
@@ -77,8 +61,8 @@ describe('PageHeader', () => {
     expect(header).toContain('pageRhythm.pageTitle');
     expect(header).toContain('pageRhythm.pageTitleBlock');
     expect(header).toContain("description || '\\u00a0'");
-    expect(source('pages/skills/index.tsx')).toContain('pageRhythm.workbenchHeader');
-    expect(source('pages/projects/index.tsx')).toContain('pageRhythm.workbenchHeader');
+    expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchHeader');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');

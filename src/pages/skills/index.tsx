@@ -4,13 +4,12 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-  type TransitionEvent as ReactTransitionEvent,
 } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Store } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { useSideSplit } from '@/components/layout/use-side-split';
 import {
   SkillMarkdownPreviewPanel,
   type SkillPreviewTarget,
@@ -52,10 +51,8 @@ import {
   useSkillsCacheVersion,
 } from '@/lib/hooks/useSkills';
 import { getSettings } from '@/lib/api/settings';
-import { usePrefersReducedMotion } from '@/lib/motion';
 import { FEATURE_NOT_WIRED } from '@/lib/platform';
 import type { AgentId, Skill, SkillMarketSource } from '@/lib/types';
-import { cn } from '@/lib/utils';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import {
   adoptFailedToast,
@@ -103,33 +100,14 @@ import {
 } from './skills-preview-resync';
 import { applyCatalogCellState, cellKey } from './skills-catalog-model';
 import {
-  MAIN_WIDTH_FLOOR,
-  MAIN_WIDTH_MIN,
   parseSkillTab,
-  PREVIEW_FRAME_PAD_RIGHT,
-  PREVIEW_FRAME_PAD_Y,
-  PREVIEW_SEPARATOR_W,
-  PREVIEW_WIDTH_DEFAULT,
-  PREVIEW_WIDTH_FLOOR,
-  PREVIEW_WIDTH_MIN,
-  PREVIEW_WIDTH_STEP,
-  PREVIEW_WIDTH_STEP_LARGE,
-  PREVIEW_WIDTH_STORAGE_KEY,
-  readStoredPreviewWidth,
   type LocalFilter,
   type SkillTab,
 } from './skills-preview-model';
 import { SkillsLibraryPanel } from './SkillsLibraryPanel';
 import { SkillsMarketPanel } from './SkillsMarketPanel';
 
-export function createIdempotentCleanup<T extends unknown[]>(cleanup: (...args: T) => void) {
-  let completed = false;
-  return (...args: T) => {
-    if (completed) return;
-    completed = true;
-    cleanup(...args);
-  };
-}
+const SKILLS_PREVIEW_WIDTH_KEY = 'agenthub.skills.previewWidth';
 
 export default function SkillsPage() {
   const { toast } = useToast();
@@ -192,195 +170,9 @@ export default function SkillsPage() {
     name: string;
   } | null>(null);
   const [dangerBusy, setDangerBusy] = useState(false);
-  const [previewTarget, setPreviewTarget] = useState<SkillPreviewTarget | null>(null);
-  const [previewWidth, setPreviewWidth] = useState(readStoredPreviewWidth);
-  /** 壳层是否挂载（关闭动画结束后再卸） */
-  const [previewShellMounted, setPreviewShellMounted] = useState(false);
-  /** 视觉展开（宽度 0 → previewWidth） */
-  const [previewExpanded, setPreviewExpanded] = useState(false);
-  const [previewResizing, setPreviewResizing] = useState(false);
-  const reduceMotion = usePrefersReducedMotion();
-  const splitRef = useRef<HTMLDivElement>(null);
+  const preview = useSideSplit<SkillPreviewTarget>({ storageKey: SKILLS_PREVIEW_WIDTH_KEY });
+  const previewTarget = preview.target;
   const previewBodyRef = useRef<HTMLDivElement>(null);
-  const resizeCleanupRef = useRef<(() => void) | null>(null);
-
-  const cancelPreviewResize = useCallback(() => {
-    resizeCleanupRef.current?.();
-  }, []);
-
-  useEffect(() => () => cancelPreviewResize(), [cancelPreviewResize]);
-
-  const clampPreviewWidth = useCallback((w: number) => {
-    const containerW = splitRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-    // 分隔条 + 预览右侧画布留白（宽度动画要计入，避免卡片贴死右边框）
-    const chrome = PREVIEW_SEPARATOR_W + PREVIEW_FRAME_PAD_RIGHT;
-    const usable = Math.max(0, containerW - chrome);
-    // 够宽：保证左侧 MAIN_WIDTH_MIN；偏窄：左侧可收到 MAIN_WIDTH_FLOOR
-    const mainReserve =
-      usable >= MAIN_WIDTH_MIN + PREVIEW_WIDTH_MIN
-        ? MAIN_WIDTH_MIN
-        : Math.min(MAIN_WIDTH_MIN, Math.max(MAIN_WIDTH_FLOOR, Math.floor(usable * 0.48)));
-    const maxW = Math.max(PREVIEW_WIDTH_FLOOR, usable - mainReserve);
-    const minW = Math.min(PREVIEW_WIDTH_MIN, maxW);
-    return Math.min(maxW, Math.max(minW, Math.round(w)));
-  }, []);
-
-  const persistPreviewWidth = useCallback((w: number) => {
-    const next = clampPreviewWidth(w);
-    setPreviewWidth(next);
-    try {
-      window.localStorage.setItem(PREVIEW_WIDTH_STORAGE_KEY, String(next));
-    } catch {
-      // ignore
-    }
-    return next;
-  }, [clampPreviewWidth]);
-
-  /** 窗口/分栏变窄时重夹预览宽，避免固定像素把正文裁死 */
-  useEffect(() => {
-    if (!previewShellMounted || !previewExpanded) return;
-    const el = splitRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') {
-      const onWin = () => setPreviewWidth((w) => clampPreviewWidth(w));
-      window.addEventListener('resize', onWin);
-      onWin();
-      return () => window.removeEventListener('resize', onWin);
-    }
-    const ro = new ResizeObserver(() => {
-      setPreviewWidth((w) => {
-        const next = clampPreviewWidth(w);
-        return next === w ? w : next;
-      });
-    });
-    ro.observe(el);
-    setPreviewWidth((w) => clampPreviewWidth(w));
-    return () => ro.disconnect();
-  }, [previewShellMounted, previewExpanded, clampPreviewWidth]);
-
-  const requestOpenPreview = useCallback((target: SkillPreviewTarget) => {
-    cancelPreviewResize();
-    setPreviewTarget(target);
-    setPreviewShellMounted(true);
-    if (reduceMotion) {
-      setPreviewExpanded(true);
-      return;
-    }
-    // 双 rAF：先挂上 width:0，再扩到目标宽，触发 transition
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => setPreviewExpanded(true));
-    });
-  }, [cancelPreviewResize, reduceMotion]);
-
-  const requestClosePreview = useCallback(() => {
-    cancelPreviewResize();
-    setPreviewExpanded(false);
-    if (reduceMotion) {
-      setPreviewTarget(null);
-      setPreviewShellMounted(false);
-    }
-  }, [cancelPreviewResize, reduceMotion]);
-
-  const onPreviewPaneTransitionEnd = useCallback(
-    (e: ReactTransitionEvent<HTMLElement>) => {
-      if (e.propertyName !== 'width') return;
-      if (previewExpanded) return;
-      setPreviewTarget(null);
-      setPreviewShellMounted(false);
-    },
-    [previewExpanded],
-  );
-
-  const onPreviewResizeStart = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      cancelPreviewResize();
-      const startX = e.clientX;
-      const startW = previewWidth;
-
-      const prevCursor = document.body.style.cursor;
-      const prevSelect = document.body.style.userSelect;
-      const pointerTarget = e.currentTarget;
-      const pointerId = e.pointerId;
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-      setPreviewResizing(true);
-
-      const onMove = (ev: globalThis.PointerEvent): void => {
-        if (ev.pointerId !== pointerId) return;
-        // Dragging the left edge of the preview: mouse left → wider panel
-        setPreviewWidth(clampPreviewWidth(startW + (startX - ev.clientX)));
-      };
-      const cleanup = createIdempotentCleanup<[boolean, number?]>(
-        (commit: boolean, clientX: number = startX) => {
-          if (resizeCleanupRef.current !== cancel) return;
-          resizeCleanupRef.current = null;
-          if (commit) persistPreviewWidth(startW + (startX - clientX));
-          document.body.style.cursor = prevCursor;
-          document.body.style.userSelect = prevSelect;
-          setPreviewResizing(false);
-          window.removeEventListener('pointermove', onMove);
-          window.removeEventListener('pointerup', onUp);
-          window.removeEventListener('pointercancel', onCancel);
-          window.removeEventListener('blur', onBlur);
-          try {
-            pointerTarget.releasePointerCapture(pointerId);
-          } catch {
-            // The pointer may already have been released by the browser.
-          }
-        },
-      );
-      function onUp(ev: globalThis.PointerEvent): void {
-        if (ev.pointerId !== pointerId) return;
-        cleanup(true, ev.clientX);
-      }
-      function onCancel(ev: globalThis.PointerEvent): void {
-        if (ev.pointerId !== pointerId) return;
-        cleanup(false);
-      }
-      function onBlur() {
-        cleanup(false);
-      }
-      function cancel() {
-        cleanup(false);
-      }
-      resizeCleanupRef.current = cancel;
-
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-      window.addEventListener('pointercancel', onCancel);
-      window.addEventListener('blur', onBlur);
-      try {
-        pointerTarget.setPointerCapture(pointerId);
-      } catch {
-        // Keep the window listeners as a compatibility fallback.
-      }
-    },
-    [cancelPreviewResize, previewWidth, clampPreviewWidth, persistPreviewWidth],
-  );
-
-  const onPreviewSeparatorKeyDown = useCallback(
-    (e: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        e.preventDefault();
-        const step = e.shiftKey ? PREVIEW_WIDTH_STEP_LARGE : PREVIEW_WIDTH_STEP;
-        // Left arrow widens preview (same as drag left)
-        const delta = e.key === 'ArrowLeft' ? step : -step;
-        persistPreviewWidth(previewWidth + delta);
-      } else if (e.key === 'Home') {
-        e.preventDefault();
-        persistPreviewWidth(PREVIEW_WIDTH_MIN);
-      } else if (e.key === 'End') {
-        e.preventDefault();
-        const containerW = splitRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-        persistPreviewWidth(containerW - MAIN_WIDTH_MIN);
-      }
-    },
-    [previewWidth, persistPreviewWidth],
-  );
-
-  const resetPreviewWidth = useCallback(() => {
-    persistPreviewWidth(PREVIEW_WIDTH_DEFAULT);
-  }, [persistPreviewWidth]);
 
   const market = useSkillMarket(marketQuery, { enabled: tab === 'market' });
   /** 设置页切换市场源后 invalidate → version 变化，这里同步刷新源标签 */
@@ -780,7 +572,7 @@ export default function SkillsPage() {
       });
       setRemoveShared(null);
       if (previewTarget?.skillId === skillId) {
-        requestClosePreview();
+        preview.close();
       }
       await load();
     } catch (e) {
@@ -806,8 +598,8 @@ export default function SkillsPage() {
       setRemoveFromTool(null);
       if (previewTarget?.skillId === skillId) {
         const next = previewAfterRemoveFromTool(previewTarget, agentId);
-        if (next === 'close') requestClosePreview();
-        else setPreviewTarget(next);
+        if (next === 'close') preview.close();
+        else preview.open(next);
       }
       await load();
     } catch (e) {
@@ -821,47 +613,41 @@ export default function SkillsPage() {
   };
 
   const activeKey = previewTarget?.rowKey ?? null;
-  /** 动画壳宽 = 卡片宽 + 右侧画布 gutter（上下 padding 在壳内，不占横向） */
-  const previewShellWidth = previewExpanded
-    ? previewWidth + PREVIEW_FRAME_PAD_RIGHT
-    : 0;
-  const previewWidthTransition =
-    !previewResizing && !reduceMotion ? 'motion-panel-width' : 'transition-none';
 
   const openCatalogPreview = useCallback(
     (row: InstalledSkillDto, agentId?: AgentId) => {
-      requestOpenPreview(previewTargetFromCatalogRow(row, agentId));
+      preview.open(previewTargetFromCatalogRow(row, agentId));
     },
-    [requestOpenPreview],
+    [preview.open],
   );
 
   const selectPreviewCopy = useCallback((agentId: AgentId | null) => {
-    setPreviewTarget((current) => {
-      if (!current) return current;
-      if (agentId == null) {
-        if (current.privateAgent == null) return current;
-        return {
-          ...current,
-          privateAgent: null,
-          sourceDir: current.libraryDir ?? current.sourceDir,
-        };
-      }
-      const loc = (current.copies ?? []).find((copy) => copy.agentId === agentId);
-      if (!loc || current.privateAgent === agentId) return current;
-      return { ...current, privateAgent: agentId, sourceDir: loc.sourceDir };
-    });
-  }, []);
+    const current = preview.target;
+    if (!current) return;
+    if (agentId == null) {
+      if (current.privateAgent == null) return;
+      preview.open({
+        ...current,
+        privateAgent: null,
+        sourceDir: current.libraryDir ?? current.sourceDir,
+      });
+      return;
+    }
+    const loc = (current.copies ?? []).find((copy) => copy.agentId === agentId);
+    if (!loc || current.privateAgent === agentId) return;
+    preview.open({ ...current, privateAgent: agentId, sourceDir: loc.sourceDir });
+  }, [preview.open, preview.target]);
 
   useEffect(() => {
     if (!previewTarget) return;
     const next = previewAfterHiddenAgent(previewTarget, visibleAgentIdSet);
     if (next === 'keep') return;
     if (next === 'close') {
-      requestClosePreview();
+      preview.close();
       return;
     }
-    setPreviewTarget(next);
-  }, [previewTarget, visibleAgentIdSet, requestClosePreview]);
+    preview.open(next);
+  }, [previewTarget, visibleAgentIdSet, preview.close, preview.open]);
 
   useEffect(() => {
     if (!previewTarget) return;
@@ -875,23 +661,24 @@ export default function SkillsPage() {
     });
     if (result === 'keep') return;
     if (result === 'close') {
-      requestClosePreview();
+      preview.close();
       return;
     }
     if (previewTargetsEqual(result, previewTarget)) return;
-    setPreviewTarget(result);
+    preview.open(result);
   }, [
     catalog,
     dangerBusy,
     localRows,
     previewTarget,
     removeFromTool,
-    requestClosePreview,
+    preview.close,
+    preview.open,
   ]);
 
   /** ↑/↓ when preview open: move among currently filtered local rows (shared + private). */
   useEffect(() => {
-    if (!previewExpanded || !previewTarget) return;
+    if (!preview.expanded || !previewTarget) return;
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -915,7 +702,7 @@ export default function SkillsPage() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [
-    previewExpanded,
+    preview.expanded,
     previewTarget,
     tab,
     filtered,
@@ -925,7 +712,7 @@ export default function SkillsPage() {
 
   /** Enter on focused name already handled in row; Enter while preview open → focus document. */
   useEffect(() => {
-    if (!previewExpanded) return;
+    if (!preview.expanded) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter') return;
       if (shouldIgnoreListKeyboard(e.target)) return;
@@ -937,13 +724,50 @@ export default function SkillsPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [previewExpanded]);
+  }, [preview.expanded]);
+
+  const previewPanel = previewTarget ? (
+    <SkillMarkdownPreviewPanel
+      target={previewTarget}
+      open
+      width={preview.paneWidth}
+      onClose={preview.close}
+      onOpenDir={(path) => void handleOpenDir(path)}
+      onSelectCopy={selectPreviewCopy}
+      onRemoveCopy={
+        previewTarget.includeShared && !previewTarget.privateAgent
+          ? () =>
+              handleDeleteShared({
+                id: previewTarget.skillId,
+                name: previewTarget.name,
+              })
+          : previewTarget.privateAgent && !previewTarget.includeShared
+            ? () =>
+                handleUninstallPrivate(
+                  previewTarget.skillId,
+                  previewTarget.privateAgent!,
+                  previewTarget.name,
+                  false,
+                )
+            : undefined
+      }
+      removeCopyLabel={
+        previewTarget.includeShared && !previewTarget.privateAgent
+          ? t('skills.preview.removeShared')
+          : undefined
+      }
+      contentRef={previewBodyRef}
+      className="h-full min-w-0 shrink-0"
+    />
+  ) : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-canvas">
-      <div ref={splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-canvas">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className={pageRhythm.workbenchHeader}>
+    <>
+    <WorkbenchSplitPage
+      split={preview}
+      resizeAria={t('skills.preview.resizeAria')}
+      panel={previewPanel}
+      header={(
             <PageHeader
               size="compact"
               title={t('skills.page.title')}
@@ -958,15 +782,8 @@ export default function SkillsPage() {
                 </Button>
               }
             />
-          </div>
-
-        <div
-          className={cn(
-            'min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
-            previewShellMounted ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX,
-            pageRhythm.workbenchY,
-          )}
-        >
+      )}
+    >
           <Tabs value={tab} onValueChange={(v) => setTab(parseSkillTab(v))}>
             <div className={pageRhythm.chrome}>
               <TabsList>
@@ -1066,86 +883,7 @@ export default function SkillsPage() {
               />
             </TabsContent>
           </Tabs>
-        </div>
-        </div>
-
-        {previewShellMounted && previewTarget ? (
-          <>
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label={t('skills.preview.resizeAria')}
-              aria-valuenow={previewWidth}
-              aria-valuemin={PREVIEW_WIDTH_FLOOR}
-              tabIndex={previewExpanded ? 0 : -1}
-              onPointerDown={previewExpanded ? onPreviewResizeStart : undefined}
-              onDoubleClick={previewExpanded ? resetPreviewWidth : undefined}
-              onKeyDown={previewExpanded ? onPreviewSeparatorKeyDown : undefined}
-              className={cn(
-                'group relative z-10 w-1.5 shrink-0 cursor-col-resize bg-transparent outline-none',
-                'hover:bg-accent/40 focus-visible:bg-accent/40 active:bg-accent/60',
-                'before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:content-[""]',
-                !previewExpanded && 'pointer-events-none opacity-0',
-              )}
-            />
-            {/*
-              外层：宽度动画（卡片宽 + 右侧 gutter）。
-              内层：pr + 底距；顶距由页头 18px 槽承担。卡片 width 固定，右侧永远留白。
-            */}
-            <div
-              className={cn(
-                'h-full min-h-0 shrink-0 overflow-hidden',
-                previewWidthTransition,
-              )}
-              style={{ width: previewShellWidth }}
-              onTransitionEnd={onPreviewPaneTransitionEnd}
-            >
-              <div
-                className="box-border flex h-full min-h-0"
-                style={{
-                  width: previewWidth + PREVIEW_FRAME_PAD_RIGHT,
-                  paddingTop: 0,
-                  paddingBottom: PREVIEW_FRAME_PAD_Y,
-                  paddingRight: PREVIEW_FRAME_PAD_RIGHT,
-                }}
-              >
-                <SkillMarkdownPreviewPanel
-                  target={previewTarget}
-                  open
-                  width={previewWidth}
-                  onClose={requestClosePreview}
-                  onOpenDir={(path) => void handleOpenDir(path)}
-                  onSelectCopy={selectPreviewCopy}
-                  onRemoveCopy={
-                    previewTarget.includeShared && !previewTarget.privateAgent
-                      ? () =>
-                          handleDeleteShared({
-                            id: previewTarget.skillId,
-                            name: previewTarget.name,
-                          })
-                      : previewTarget.privateAgent && !previewTarget.includeShared
-                        ? () =>
-                            handleUninstallPrivate(
-                              previewTarget.skillId,
-                              previewTarget.privateAgent!,
-                              previewTarget.name,
-                              false,
-                            )
-                        : undefined
-                  }
-                  removeCopyLabel={
-                    previewTarget.includeShared && !previewTarget.privateAgent
-                      ? t('skills.preview.removeShared')
-                      : undefined
-                  }
-                  contentRef={previewBodyRef}
-                  className="h-full min-w-0 shrink-0"
-                />
-              </div>
-            </div>
-          </>
-        ) : null}
-      </div>
+    </WorkbenchSplitPage>
 
       <Dialog
         open={removeShared !== null}
@@ -1280,6 +1018,6 @@ export default function SkillsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

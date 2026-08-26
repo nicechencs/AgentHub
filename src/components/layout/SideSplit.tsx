@@ -82,6 +82,7 @@ export function WorkbenchSplitPage<T>({
   resizeAria,
   panel,
   listFooter,
+  listOverflowX = 'auto',
   children,
 }: {
   header: ReactNode;
@@ -90,16 +91,21 @@ export function WorkbenchSplitPage<T>({
   panel?: ReactNode;
   /** Docked at the list column bottom-right, left of the separator. */
   listFooter?: ReactNode;
+  /** Projects hides horizontal overflow while the preview is open. */
+  listOverflowX?: 'auto' | 'hidden';
   children: ReactNode;
 }) {
-  const listInset = split.mounted && panel ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX;
+  const paneOpen = Boolean(split.mounted && panel);
+  const listInset = paneOpen ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX;
+  const overflowX = paneOpen && listOverflowX === 'hidden' ? 'overflow-x-hidden' : 'overflow-x-auto';
   return (
     <div ref={split.splitRef} className="flex h-full min-h-0 overflow-hidden bg-canvas">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className={pageRhythm.workbenchHeader}>{header}</div>
         <div
           className={cn(
-            'min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto bg-canvas',
+            'min-h-0 min-w-0 flex-1 overflow-y-auto bg-canvas',
+            overflowX,
             listInset,
             listFooter ? undefined : pageRhythm.workbenchY,
           )}
