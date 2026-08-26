@@ -1,0 +1,12 @@
+{
+  "kimi-code-membership": ["anthropic-messages", "openai-chat"],
+  "anthropic-api": ["anthropic-messages"],
+  "openai-api": ["openai-chat"],
+  "xai-api": ["openai-responses", "openai-chat"],
+  "glm-coding-plan": ["anthropic-messages", "openai-chat", "openai-responses"],
+  "deepseek-api": ["anthropic-messages", "openai-chat", "openai-responses"],
+  "codex-chatgpt-subscription": ["openai-responses", "openai-codex-pkce"],
+  "claude-subscription": ["anthropic-messages", "anthropic-pkce"],
+  "grok-xai-subscription": ["openai-responses", "openai-chat", "xai-device-code"],
+  "unknown": []
+}

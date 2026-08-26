@@ -24,6 +24,7 @@ import {
   memberHealthFromAuthHealth,
 } from '@/lib/backend/contracts';
 import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
+import { ticketSurfaceSpeaks } from '@/lib/backend/contracts/ticket-speaks';
 import type { Account, AgentId, Provider } from '@/lib/types';
 import { delay } from './delay';
 import { getMockAccountById } from './account';
@@ -112,23 +113,8 @@ function credentialClassOfAccount(account: Account): TicketCredentialClass {
   return 'unknown';
 }
 
-/** Lockstep with TicketSurface::speaks in agenthub-core. */
 function speaksOf(surface: TicketSurface): string[] {
-  if (surface === 'kimi-code-membership') {
-    return ['anthropic-messages', 'openai-chat'];
-  }
-  if (surface === 'anthropic-api') return ['anthropic-messages'];
-  if (surface === 'openai-api') return ['openai-chat'];
-  if (surface === 'xai-api') return ['openai-responses', 'openai-chat'];
-  if (surface === 'glm-coding-plan' || surface === 'deepseek-api') {
-    return ['anthropic-messages', 'openai-chat', 'openai-responses'];
-  }
-  if (surface === 'codex-chatgpt-subscription') return ['openai-responses', 'openai-codex-pkce'];
-  if (surface === 'claude-subscription') return ['anthropic-messages', 'anthropic-pkce'];
-  if (surface === 'grok-xai-subscription') {
-    return ['openai-responses', 'openai-chat', 'xai-device-code'];
-  }
-  return [];
+  return ticketSurfaceSpeaks(surface);
 }
 
 function ticketId(kind: 'account' | 'provider', id: string): string {
