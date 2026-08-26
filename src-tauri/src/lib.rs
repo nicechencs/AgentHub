@@ -102,6 +102,8 @@ pub fn run() {
             commands::adapter::bind_ticket,
             commands::adapter::unbind_ticket,
             commands::adapter::list_adapter_profiles,
+            commands::adapter::list_default_route_pools,
+            commands::adapter::enroll_native_to_gateway,
             commands::adapter::apply_adapter,
             commands::adapter::start_adapter_bridge,
             commands::adapter::stop_adapter_bridge,

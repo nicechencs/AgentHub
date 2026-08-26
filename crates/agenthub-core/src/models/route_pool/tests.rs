@@ -92,6 +92,31 @@ fn hub_token_is_generated_and_redacted() {
 }
 
 #[test]
+fn default_overview_json_never_includes_hub_token() {
+    let overview = crate::models::DefaultRoutePoolOverview {
+        id: "pool-1".into(),
+        target_agent_id: AgentId::Codex,
+        surface: RouteDownstreamSurface::Responses,
+        dialect: RouteDownstreamDialect::Codex,
+        v2_enrolled: true,
+        gateway_port: Some(43121),
+        members: vec![crate::models::RouteMemberOverview {
+            source_kind: AdapterSourceKind::Account,
+            source_id: "acc-1".into(),
+            enabled: true,
+        }],
+        listed_models: vec!["gpt-4o".into()],
+    };
+    let json = serde_json::to_string(&overview).expect("json");
+    assert!(!json.contains("hubToken"));
+    assert!(!json.contains("hub_token"));
+    assert!(!json.contains("ahb_"));
+    assert!(json.contains("v2Enrolled"));
+    assert!(json.contains("gatewayPort"));
+    assert!(!json.contains("127.0.0.1"));
+}
+
+#[test]
 fn debug_redacts_hub_token() {
     let pool = crate::models::RoutePool {
         id: "pool-1".into(),

@@ -22,6 +22,11 @@ import type {
   AdapterServiceImpact,
   AdapterSourceKind,
   AdapterSupport,
+  DefaultRoutePoolList,
+  DefaultRoutePoolOverview,
+  RouteMemberOverview,
+  RoutePoolDialect,
+  RoutePoolSurface,
 } from './adapter';
 
 /** Exact camelCase shape serialized by Rust's `AdapterProfile`. */
@@ -400,5 +405,83 @@ export function mapAdapterBridgeStatusDto(
     endpoint: port ? `http://127.0.0.1:${port}/v1` : null,
     startedAt: mapStartedAt(wire.startedAtUnixMs),
     upstreamStatus: mapUpstreamStatus(wire.upstreamStatus),
+  };
+}
+
+export interface RouteMemberOverviewWire {
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+  enabled: boolean;
+}
+
+export interface DefaultRoutePoolOverviewWire {
+  id: string;
+  targetAgentId: AgentId;
+  surface: string;
+  dialect: string;
+  v2Enrolled: boolean;
+  gatewayPort?: number | null;
+  members?: RouteMemberOverviewWire[];
+  listedModels?: string[];
+}
+
+export interface DefaultRoutePoolListWire {
+  enabled: boolean;
+  pools?: DefaultRoutePoolOverviewWire[];
+}
+
+function mapPoolSurface(value: string): RoutePoolSurface {
+  if (value === 'messages' || value === 'responses' || value === 'chat_completions') {
+    return value;
+  }
+  return invalidWireValue('surface', value);
+}
+
+function mapPoolDialect(value: string): RoutePoolDialect {
+  if (
+    value === 'claude'
+    || value === 'codex'
+    || value === 'grok'
+    || value === 'kimi'
+    || value === 'dsh'
+    || value === 'generic'
+  ) {
+    return value;
+  }
+  return invalidWireValue('dialect', value);
+}
+
+function mapMemberOverview(wire: RouteMemberOverviewWire): RouteMemberOverview {
+  return {
+    sourceKind: mapSourceKind(wire.sourceKind),
+    sourceId: wire.sourceId,
+    enabled: wire.enabled === true,
+  };
+}
+
+export function mapDefaultRoutePoolOverview(wire: DefaultRoutePoolOverviewWire): DefaultRoutePoolOverview {
+  const port = isLoopbackPort(wire.gatewayPort ?? null) ? wire.gatewayPort : null;
+  const listed = Array.isArray(wire.listedModels)
+    ? wire.listedModels.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+  return {
+    id: wire.id,
+    targetAgentId: wire.targetAgentId,
+    surface: mapPoolSurface(wire.surface),
+    dialect: mapPoolDialect(wire.dialect),
+    v2Enrolled: wire.v2Enrolled === true,
+    gatewayPort: port,
+    members: (wire.members ?? []).map(mapMemberOverview),
+    listedModels: listed,
+  };
+}
+
+export function mapDefaultRoutePoolList(wire: DefaultRoutePoolListWire): DefaultRoutePoolList {
+  if (typeof wire.enabled !== 'boolean') {
+    return invalidWireValue('enabled', wire.enabled);
+  }
+  return {
+    enabled: wire.enabled,
+    pools: (wire.pools ?? []).map(mapDefaultRoutePoolOverview),
   };
 }

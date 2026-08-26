@@ -14,11 +14,15 @@ import { Notice } from '@/components/shared/Notice';
 import { Button } from '@/components/ui/button';
 import { Boxes } from 'lucide-react';
 import {
+  enrollNativeToGateway,
+  listDefaultRoutePools,
+  planAdapter,
   startAdapterBridge,
   stopAdapterBridge,
 } from '@/lib/api/adapter';
 import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
-import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
+import { useToast } from '@/components/ui/toast';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { CreateRouteDialog } from './CreateRouteDialog';
 import { EditRouteDialog } from './EditRouteDialog';
@@ -39,6 +43,10 @@ import {
   localBridgeSourceKey,
   partitionLocalBridgeRuntimes,
 } from './adapter-view-model';
+import {
+  directProfilesForRoutePoolV2,
+  matchDefaultPoolForProfile,
+} from './route-pool-view-model';
 import { useAdapterResources } from './use-bridge-resources';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
@@ -92,6 +100,7 @@ const ROUTES_INSPECT_WIDTH_KEY = 'agenthub.routes.inspectWidth';
  */
 export default function BridgesPage() {
   const { t } = useI18n();
+  const { toast } = useToast();
   const {
     entries,
     profiles,
@@ -118,6 +127,10 @@ export default function BridgesPage() {
   const [busyProfileIds, setBusyProfileIds] = useState<Record<string, boolean>>({});
   const inspect = useSideSplit<RouteInspect>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
   const routeOrder = useStoredIdOrder(StorageKey.routesProfileOrder);
+  const [routePoolV2, setRoutePoolV2] = useState(false);
+  const [defaultPools, setDefaultPools] = useState<DefaultRoutePoolOverview[]>([]);
+  const [nativeCanApplyById, setNativeCanApplyById] = useState<Record<string, boolean>>({});
+  const [enrollingProfileId, setEnrollingProfileId] = useState<string | null>(null);
 
   const setProfileBusy = (profileId: string, busy: boolean) => {
     setBusyProfileIds((current) => ({ ...current, [profileId]: busy }));
@@ -227,6 +240,24 @@ export default function BridgesPage() {
     };
   }, [profiles]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void listDefaultRoutePools()
+      .then((listed) => {
+        if (cancelled) return;
+        setRoutePoolV2(listed.enabled);
+        setDefaultPools(listed.pools);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRoutePoolV2(false);
+        setDefaultPools([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profiles]);
+
   const { bound, orphan } = useMemo(
     () => partitionLocalBridgeRuntimes(profiles, {
       entries,
@@ -288,6 +319,53 @@ export default function BridgesPage() {
     ? liveInspectProfile(inspectTarget.profile, profiles)
     : null;
   const activeProfileId = inspectProfileId(inspectTarget);
+  const directProfiles = useMemo(
+    () => directProfilesForRoutePoolV2(routePoolV2, profiles),
+    [routePoolV2, profiles],
+  );
+  const detailPool = detailTarget && routePoolV2
+    ? matchDefaultPoolForProfile(defaultPools, detailTarget)
+    : null;
+
+  useEffect(() => {
+    if (!routePoolV2 || !detailTarget) return;
+    if (detailTarget.route !== 'native_endpoint' && detailTarget.route !== 'config_sync') return;
+    const profileId = detailTarget.id;
+    let cancelled = false;
+    void planAdapter({
+      sourceKind: detailTarget.sourceKind,
+      sourceId: detailTarget.sourceId,
+      targetAgentId: detailTarget.targetAgentId,
+    })
+      .then((plan) => {
+        if (cancelled) return;
+        setNativeCanApplyById((current) => ({
+          ...current,
+          [profileId]: plan.canApply && plan.analysis.route === 'local_bridge',
+        }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setNativeCanApplyById((current) => ({ ...current, [profileId]: false }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [routePoolV2, detailTarget]);
+
+  const handleEnrollNative = async (profile: AdapterProfile) => {
+    setEnrollingProfileId(profile.id);
+    clearProfileError(profile.id);
+    try {
+      await enrollNativeToGateway(profile.id);
+      toast({ title: t('routes.pool.enrollSuccess'), variant: 'success' });
+      reloadThenClearProfileErrors();
+    } catch (error) {
+      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
+    } finally {
+      setEnrollingProfileId(null);
+    }
+  };
 
   const listProps = {
     bridgeStatuses,
@@ -408,6 +486,11 @@ export default function BridgesPage() {
         onRequestRemove={setRemoveConfirm}
         onRequestEdit={(profile) => inspect.open({ kind: 'edit', profile })}
         targetHidden={hiddenTargetIds.has(detailTarget.targetAgentId)}
+        routePoolV2={routePoolV2}
+        defaultPool={detailPool}
+        canApplyLocalBridge={nativeCanApplyById[detailTarget.id] === true}
+        onEnrollNative={handleEnrollNative}
+        enrolling={enrollingProfileId === detailTarget.id}
       />
     ) : null;
 
@@ -466,14 +549,14 @@ export default function BridgesPage() {
             onRetry={() => { void reload(); }}
           />
         ) : null}
-        {pageView === 'healthy_empty' ? (
+        {pageView === 'healthy_empty' && directProfiles.length === 0 ? (
           <EmptyState
             icon={Boxes}
             title={t('routes.empty.title')}
             description={t('routes.empty.description')}
           />
         ) : null}
-        {pageView === 'list' ? (
+        {pageView === 'list' || (pageView === 'healthy_empty' && directProfiles.length > 0) ? (
           <>
             {fleetSummary ? (
               <p className="text-xs text-secondary">{fleetSummary.label}</p>
@@ -496,6 +579,19 @@ export default function BridgesPage() {
                   {...listProps}
                   profiles={orderedOrphan}
                   onMove={moveOrphan}
+                  loading={false}
+                  loadError={null}
+                />
+              </PageSection>
+            ) : null}
+            {directProfiles.length > 0 ? (
+              <PageSection
+                title={t('routes.direct.title')}
+                description={t('routes.direct.description')}
+              >
+                <AdapterProfiles
+                  {...listProps}
+                  profiles={directProfiles}
                   loading={false}
                   loadError={null}
                 />

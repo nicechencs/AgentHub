@@ -4,6 +4,7 @@ import {
   mapAdapterApplyResult,
   mapAdapterBridgeStatusDto,
   mapAdapterRouteAnalysis,
+  mapDefaultRoutePoolList,
 } from './adapter-wire';
 
 describe('Adapter Rust wire mappers', () => {
@@ -365,5 +366,25 @@ describe('Adapter Rust wire mappers', () => {
       changes: [],
     });
     expect(unknown.reusePath).toBe('none');
+  });
+
+  it('maps a default pool list and never keeps a hub token field', () => {
+    const listed = mapDefaultRoutePoolList({
+      enabled: true,
+      pools: [{
+        id: 'pool-1',
+        targetAgentId: 'codex',
+        surface: 'responses',
+        dialect: 'codex',
+        v2Enrolled: true,
+        gatewayPort: 43121,
+        members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
+        listedModels: ['kimi-k2.5'],
+      }],
+    });
+    expect(listed.enabled).toBe(true);
+    expect(listed.pools[0]?.gatewayPort).toBe(43121);
+    expect(listed.pools[0]?.members[0]?.sourceId).toBe('kimi-1');
+    expect(JSON.stringify(listed)).not.toContain('hubToken');
   });
 });
