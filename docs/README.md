@@ -44,6 +44,7 @@ updated: 2026-08-26
 - [对象化与封装审查：OAuth](architecture/objectization-encapsulation-audit-oauth.md)
 - [对象化与封装审查：CLI、Tauri 与工具链](architecture/objectization-encapsulation-audit-cli-tauri.md)
 - [对象化与封装审查：测试、Mock 与 Fixture](architecture/objectization-encapsulation-audit-tests-fixtures.md)
+- [读模型 owner 与兼容策略（提案）](architecture/read-model-owners.md)
 
 ### 查稳定契约
 

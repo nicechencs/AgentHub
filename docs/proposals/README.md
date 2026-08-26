@@ -29,6 +29,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [tray-background-modes.md](tray-background-modes.md) | proposed | Could closing the window reduce WebView memory without changing route ownership or exit semantics? |
 | [modularity.md](modularity.md) | proposed | Which single-source and use-case boundaries should be tightened before any larger process change? |
 | [plugin-management.md](plugin-management.md) | proposed | Could AgentHub list and manage per-agent plugin/extension packs (not MCP servers) via official CLIs, with a Routes-like workbench? |
+| [read-model-owners.md](../architecture/read-model-owners.md) | proposed | Could O-15–O-19 be narrowed with unique mapper owners without changing wire DTO or splitting public types? |
 
 ## Proposal rules
 
