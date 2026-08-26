@@ -15,6 +15,7 @@ describe('agents layout wiring', () => {
     const page = source('pages/agents/index.tsx');
     expect(page).toContain('SortHandle');
     expect(page).toContain('useSortableDrag');
+    expect(page).toContain('onDragStartId');
     expect(page).toContain('useStoredIdOrder');
     expect(page).toContain('StorageKey.agentsCatalogOrder');
     expect(page).toContain('applyStoredAgentOrder');

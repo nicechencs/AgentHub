@@ -111,7 +111,7 @@ describe('TicketWalletList details', () => {
       }),
     );
     expect(markup).toContain('拖动排序');
-    expect(markup).toContain('draggable');
+    expect(markup).toContain('data-sortable-id');
   });
 
   it('puts 编辑配置 on the collapsed card, not only inside 详情', () => {
