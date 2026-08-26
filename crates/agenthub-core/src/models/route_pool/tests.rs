@@ -1,7 +1,7 @@
 use crate::models::{
     authorization_fingerprint, choose_default_pool_id, feature_flag_enabled, generate_hub_token,
     AdapterSourceKind, AgentId, RouteDownstreamDialect, RouteDownstreamSurface,
-    RouteSchedulePolicy, FEATURE_ROUTE_POOL_V2,
+    RouteSchedulePolicy, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 
 #[test]
@@ -14,6 +14,7 @@ fn feature_flags_are_fail_closed() {
     assert!(feature_flag_enabled(Some("1")));
     assert!(feature_flag_enabled(Some("ON")));
     assert_eq!(FEATURE_ROUTE_POOL_V2, "feature.route_pool_v2");
+    assert_eq!(FEATURE_ROUTE_INDEX_V2, "feature.route_index_v2");
 }
 
 #[test]
