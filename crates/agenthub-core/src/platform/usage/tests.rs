@@ -223,6 +223,7 @@ fn token_layout_repair_runs_once_then_skips() {
             session_id: Some("s1".into()),
             ts: "2026-08-07T00:00:00.000Z".into(),
             raw_hash: Some(format!("hash-{}", Uuid::new_v4())),
+            fast: false,
         };
         repo.insert_batch(&[row]).unwrap();
     };
@@ -244,7 +245,7 @@ fn token_layout_repair_runs_once_then_skips() {
     let _r1 = service.collect(Some(AgentId::Codex)).unwrap();
     assert_eq!(
         db.get_setting("usage_token_layout").unwrap().as_deref(),
-        Some("3")
+        Some("4")
     );
     assert!(
         service
@@ -264,7 +265,7 @@ fn token_layout_repair_runs_once_then_skips() {
     let _r2 = service.collect(Some(AgentId::Codex)).unwrap();
     assert_eq!(
         db.get_setting("usage_token_layout").unwrap().as_deref(),
-        Some("3")
+        Some("4")
     );
     assert_eq!(
         service
@@ -290,7 +291,7 @@ fn grok_parser_repair_clears_only_grok_rows_once() {
     let root = tempfile::tempdir().unwrap();
     let db = Database::open(&root.path().join("usage.db")).unwrap();
     let repo = UsageRepo::new(db.clone());
-    db.set_setting("usage_token_layout", "3").unwrap();
+    db.set_setting("usage_token_layout", "4").unwrap();
 
     let seed = |agent: AgentId, hash: &str| {
         repo.insert_batch(&[UsageRecord {
@@ -305,6 +306,7 @@ fn grok_parser_repair_clears_only_grok_rows_once() {
             session_id: Some("s1".into()),
             ts: "2026-08-07T00:00:00.000Z".into(),
             raw_hash: Some(hash.into()),
+            fast: false,
         }])
         .unwrap();
     };
@@ -382,6 +384,7 @@ fn usage_repo_clears_and_resets_one_agent() {
         session_id: Some("s".into()),
         ts: "2026-08-07T00:00:00.000Z".into(),
         raw_hash: Some(hash.into()),
+        fast: false,
     };
     repo.insert_batch(&[row(AgentId::Grok, "g"), row(AgentId::Claude, "c")])
         .unwrap();
@@ -448,7 +451,7 @@ fn recompute_costs_preserves_codex_billable_input() {
     let root = tempfile::tempdir().unwrap();
     let db = Database::open(&root.path().join("usage.db")).unwrap();
     // Mark layout current so collect path is not required.
-    db.set_setting("usage_token_layout", "3").unwrap();
+    db.set_setting("usage_token_layout", "4").unwrap();
     let repo = UsageRepo::new(db.clone());
 
     let row = UsageRecord {
@@ -464,6 +467,7 @@ fn recompute_costs_preserves_codex_billable_input() {
         session_id: Some("s1".into()),
         ts: "2026-08-07T00:00:00.000Z".into(),
         raw_hash: Some("hash-peel".into()),
+        fast: false,
     };
     repo.insert_batch(&[row]).unwrap();
 
@@ -487,13 +491,70 @@ fn recompute_costs_preserves_codex_billable_input() {
 }
 
 #[test]
+fn recompute_keeps_codex_fast_multiplier() {
+    use crate::models::UsageRecord;
+    use crate::usage::{estimate_cost_usd_for_agent, CostTokens};
+    use uuid::Uuid;
+
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    db.set_setting("usage_token_layout", "4").unwrap();
+    let repo = UsageRepo::new(db.clone());
+
+    let row = UsageRecord {
+        id: Uuid::new_v4().to_string(),
+        agent_id: AgentId::Codex,
+        account_id: None,
+        model: "gpt-5.6-sol".into(),
+        input_tokens: 100_000,
+        output_tokens: 0,
+        cache_tokens: 0,
+        cost_usd: Some(0.0),
+        session_id: Some("s1".into()),
+        ts: "2026-08-07T00:00:00.000Z".into(),
+        raw_hash: Some("hash-fast".into()),
+        fast: true,
+    };
+    repo.insert_batch(&[row]).unwrap();
+
+    let service = UsageService::new(db);
+    service.recompute_stored_costs().unwrap();
+    let rows = service
+        .query(crate::models::UsageQuery {
+            days: 30,
+            agent_id: Some(AgentId::Codex),
+            model: None,
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].fast);
+    let expected = estimate_cost_usd_for_agent(
+        AgentId::Codex,
+        "gpt-5.6-sol",
+        CostTokens {
+            input: 100_000,
+            fast: true,
+            ..CostTokens::default()
+        },
+        None,
+    );
+    assert!(
+        (rows[0].cost_usd.unwrap_or(0.0) - expected).abs() < 1e-9,
+        "got {:?} want {expected}",
+        rows[0].cost_usd
+    );
+    assert!((expected - 0.8).abs() < 0.01, "expected {expected}");
+}
+
+#[test]
 fn recompute_preserves_log_cost_for_unknown_model() {
     use crate::models::UsageRecord;
     use uuid::Uuid;
 
     let root = tempfile::tempdir().unwrap();
     let db = Database::open(&root.path().join("usage.db")).unwrap();
-    db.set_setting("usage_token_layout", "3").unwrap();
+    db.set_setting("usage_token_layout", "4").unwrap();
     let repo = UsageRepo::new(db.clone());
 
     let row = UsageRecord {
@@ -508,6 +569,7 @@ fn recompute_preserves_log_cost_for_unknown_model() {
         session_id: Some("s1".into()),
         ts: "2026-08-07T00:00:00.000Z".into(),
         raw_hash: Some("hash-log-cost".into()),
+        fast: false,
     };
     repo.insert_batch(&[row]).unwrap();
 
@@ -548,6 +610,7 @@ fn usage_upsert_repairs_token_fields_on_conflict() {
         session_id: Some("sess".into()),
         ts: "2026-08-07T00:00:00.000Z".into(),
         raw_hash: Some("same-hash".into()),
+        fast: false,
     };
     assert_eq!(repo.insert_batch(&[base.clone()]).unwrap(), 1);
 
@@ -694,6 +757,7 @@ fn overview_row(
         session_id: Some("s".into()),
         ts: ts.into(),
         raw_hash: Some(hash.into()),
+        fast: false,
     }
 }
 

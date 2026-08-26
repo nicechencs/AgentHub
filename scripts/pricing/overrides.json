@@ -42,5 +42,111 @@
     "output": 4,
     "cacheCreate": 0.95,
     "cacheRead": 0.16
+  },
+  "gpt-5.6": {
+    "$comment": "OpenAI long-context whole-request switch at 272K (models.dev / ccusage). Fast multiplier from ccusage.",
+    "input": 4,
+    "output": 20,
+    "cacheCreate": 5,
+    "cacheRead": 0.4,
+    "inputAbove200k": 8,
+    "outputAbove200k": 30,
+    "cacheCreateAbove200k": 10,
+    "cacheReadAbove200k": 0.8,
+    "longContextThreshold": 272000,
+    "fastMultiplier": 2
+  },
+  "gpt-5.6-sol": {
+    "input": 4,
+    "output": 20,
+    "cacheCreate": 5,
+    "cacheRead": 0.4,
+    "inputAbove200k": 8,
+    "outputAbove200k": 30,
+    "cacheCreateAbove200k": 10,
+    "cacheReadAbove200k": 0.8,
+    "longContextThreshold": 272000,
+    "fastMultiplier": 2
+  },
+  "gpt-5.6-luna": {
+    "input": 0.2,
+    "output": 1.2,
+    "cacheCreate": 0.25,
+    "cacheRead": 0.02,
+    "inputAbove200k": 0.4,
+    "outputAbove200k": 1.8,
+    "cacheCreateAbove200k": 0.5,
+    "cacheReadAbove200k": 0.04,
+    "longContextThreshold": 272000,
+    "fastMultiplier": 2
+  },
+  "gpt-5.6-terra": {
+    "input": 2,
+    "output": 12,
+    "cacheCreate": 2.5,
+    "cacheRead": 0.2,
+    "inputAbove200k": 4,
+    "outputAbove200k": 18,
+    "cacheCreateAbove200k": 5,
+    "cacheReadAbove200k": 0.4,
+    "longContextThreshold": 272000,
+    "fastMultiplier": 2
+  },
+  "gpt-5.5": {
+    "input": 5,
+    "output": 30,
+    "cacheRead": 0.5,
+    "inputAbove200k": 10,
+    "outputAbove200k": 45,
+    "cacheReadAbove200k": 1,
+    "longContextThreshold": 272000,
+    "fastMultiplier": 2.5
+  },
+  "gpt-5.4": {
+    "input": 2.5,
+    "output": 15,
+    "cacheRead": 0.25,
+    "inputAbove200k": 5,
+    "outputAbove200k": 22.5,
+    "cacheReadAbove200k": 0.5,
+    "longContextThreshold": 272000,
+    "fastMultiplier": 2
+  },
+  "gpt-5.3-codex": {
+    "input": 1.75,
+    "output": 14,
+    "cacheRead": 0.175,
+    "fastMultiplier": 2
+  },
+  "claude-sonnet-4-5": {
+    "$comment": "LiteLLM *_above_200k is marginal (no longContextThreshold).",
+    "input": 3,
+    "output": 15,
+    "cacheCreate": 3.75,
+    "cacheRead": 0.3,
+    "inputAbove200k": 6,
+    "outputAbove200k": 22.5,
+    "cacheCreateAbove200k": 7.5,
+    "cacheReadAbove200k": 0.6
+  },
+  "claude-sonnet-4-6": {
+    "input": 3,
+    "output": 15,
+    "cacheCreate": 3.75,
+    "cacheRead": 0.3,
+    "inputAbove200k": 6,
+    "outputAbove200k": 22.5,
+    "cacheCreateAbove200k": 7.5,
+    "cacheReadAbove200k": 0.6
+  },
+  "claude-sonnet-4.6": {
+    "input": 3,
+    "output": 15,
+    "cacheCreate": 3.75,
+    "cacheRead": 0.3,
+    "inputAbove200k": 6,
+    "outputAbove200k": 22.5,
+    "cacheCreateAbove200k": 7.5,
+    "cacheReadAbove200k": 0.6
   }
 }
