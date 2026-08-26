@@ -306,6 +306,7 @@ export interface UsageRecord {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  /** Combined cache tokens (create + read). Name is historical. */
   cacheReadTokens: number;
   /** Estimated cost in pricing-table units (USD). No FX conversion. */
   costUsd: number;
@@ -314,7 +315,7 @@ export interface UsageRecord {
 
 export interface UsageTrendPoint {
   date: string; // YYYY-MM-DD
-  /** 各 agent 的输入+输出 token 数 */
+  /** 各 agent 的 input + cache + output token 数 */
   [agentId: string]: number | string;
 }
 

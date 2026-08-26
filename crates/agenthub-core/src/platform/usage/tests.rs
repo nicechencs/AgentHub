@@ -486,6 +486,45 @@ fn recompute_costs_preserves_codex_billable_input() {
     assert!(rows[0].cost_usd.unwrap_or(0.0) > 0.0);
 }
 
+#[test]
+fn recompute_preserves_log_cost_for_unknown_model() {
+    use crate::models::UsageRecord;
+    use uuid::Uuid;
+
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    db.set_setting("usage_token_layout", "3").unwrap();
+    let repo = UsageRepo::new(db.clone());
+
+    let row = UsageRecord {
+        id: Uuid::new_v4().to_string(),
+        agent_id: AgentId::Grok,
+        account_id: None,
+        model: "no-such-vendor/definitely-not-priced-zzz".into(),
+        input_tokens: 10,
+        output_tokens: 2,
+        cache_tokens: 0,
+        cost_usd: Some(1.23),
+        session_id: Some("s1".into()),
+        ts: "2026-08-07T00:00:00.000Z".into(),
+        raw_hash: Some("hash-log-cost".into()),
+    };
+    repo.insert_batch(&[row]).unwrap();
+
+    let service = UsageService::new(db);
+    service.recompute_stored_costs().unwrap();
+    let rows = service
+        .query(crate::models::UsageQuery {
+            days: 30,
+            agent_id: Some(AgentId::Grok),
+            model: None,
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!((rows[0].cost_usd.unwrap_or(0.0) - 1.23).abs() < 1e-9);
+}
+
 /// UPSERT overwrites token fields for the same dedupe key (repair path).
 #[test]
 fn usage_upsert_repairs_token_fields_on_conflict() {
@@ -780,7 +819,7 @@ fn usage_trend_filters_by_model_and_since() {
     assert_eq!(
         claude_tokens(&all),
         187,
-        "input+output for all models in the 2-day window"
+        "input+cache+output for all models in the 2-day window"
     );
 
     let opus = repo
@@ -905,4 +944,64 @@ fn usage_trend_days1_rolling_includes_20h_unless_since_clips() {
             assert!(point_dates(&today).contains(&local_day(ts)));
         }
     }
+}
+
+#[test]
+fn usage_trend_includes_cache_tokens() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let ts = recent_ts(1);
+    repo.insert_batch(&[overview_row(
+        AgentId::Claude,
+        "opus",
+        100,
+        20,
+        30,
+        1.0,
+        &ts,
+        "c-cache",
+    )])
+    .unwrap();
+
+    let points = repo
+        .trend(7, Some(AgentId::Claude), None, None, &[])
+        .unwrap();
+    let tokens: i64 = points
+        .iter()
+        .map(|p| p.0.get("claude").and_then(|v| v.as_i64()).unwrap_or(0))
+        .sum();
+    assert_eq!(tokens, 150, "trend tokens match overview distribution");
+
+    let overview = repo
+        .overview(7, Some(AgentId::Claude), None, None, &[])
+        .unwrap();
+    assert_eq!(overview.distribution[0].tokens, 150);
+}
+
+#[test]
+fn since_filter_matches_offset_and_z_as_same_instant() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    repo.insert_batch(&[overview_row(
+        AgentId::Claude,
+        "opus",
+        5,
+        1,
+        0,
+        0.1,
+        "2026-08-20T12:00:00+00:00",
+        "offset-ts",
+    )])
+    .unwrap();
+
+    let rows = repo
+        .query(&crate::models::UsageQuery {
+            days: 365,
+            since: Some("2026-08-20T12:00:00.000Z".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(rows.len(), 1);
 }

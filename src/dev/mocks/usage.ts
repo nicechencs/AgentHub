@@ -169,7 +169,9 @@ export function createMockUsagePort(): UsagePort {
           byDay.set(day, point);
         }
         const point = byDay.get(day)!;
-        point[r.agentId] = (point[r.agentId] as number) + r.inputTokens + r.outputTokens;
+        const p = usageTokenParts(r);
+        point[r.agentId] =
+          (point[r.agentId] as number) + p.billableInput + p.cache + r.outputTokens;
       }
       return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
     },

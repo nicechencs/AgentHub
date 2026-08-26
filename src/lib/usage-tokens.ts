@@ -5,7 +5,7 @@ import type { AgentId, UsageRecord } from '@/lib/types';
  *
  * Storage contract (aligned with ccusage after parse):
  * - `inputTokens` is always **billable / non-cached** input
- * - `cacheReadTokens` is a separate cache bucket
+ * - `cacheReadTokens` is the stored combined cache bucket (create + read)
  * - Codex / Grok: parser peels cache out of OpenAI-style full `input_tokens`
  *   once at ingest; UI must never peel again
  * - Claude / Kimi / Pi: Anthropic-style disjoint input + cache
@@ -19,7 +19,7 @@ export function usageTokenParts(
   // agentId kept in the Pick so call sites stay uniform; layout no longer branches on it.
   const billableInput = Math.max(0, r.inputTokens);
   const cache = Math.max(0, r.cacheReadTokens);
-  // full prompt size for cache-hit % (≈ billable + cache on ccusage input side)
+  // full prompt size for cache share (billable + combined create/read)
   return {
     billableInput,
     cache,

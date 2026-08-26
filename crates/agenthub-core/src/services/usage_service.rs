@@ -273,8 +273,8 @@ impl UsageService {
         }
 
         // Repair historical rows once per collect:
-        // - Codex: fix input-includes-cache double billing + apply latest table rates
-        // - Unknown models: force $0 (no heuristic)
+        // - Codex: refresh cost from the latest table (tokens stay non-cached)
+        // - Unknown models: keep insert-time cost (log USD / Grok ticks / $0)
         // Leave non-Codex known-model rows alone (may store log costUSD).
         match self.recompute_stored_costs() {
             Ok(n) if n > 0 => {
@@ -409,6 +409,7 @@ impl UsageService {
     ///
     /// Historical bug: peeling `cache` from `input` when `cache <= input` double-subtracted
     /// on every collect and eroded Codex billable tokens toward zero.
+    /// Unknown-model costs are left as stored (log / ticks / $0).
     pub fn recompute_stored_costs(&self) -> Result<u64> {
         self.repo
             .recompute_costs(|agent, model, input, output, cache| {
@@ -423,10 +424,10 @@ impl UsageService {
                     let cost = estimate_cost_usd(model, bill_in, output, 0, cache_r, None);
                     return Some((bill_in, cost));
                 }
-                if !has_embedded_pricing(model) {
-                    return Some((input, 0.0));
-                }
-                // Known non-Codex models may store log costUSD — leave them alone.
+                // Known models may store log costUSD. Unknown models keep the
+                // insert-time value (invoice ticks / log USD, or $0). Wiping
+                // unknown rows to $0 dropped Grok ticks when the raw model id
+                // missed the embedded table.
                 None
             })
     }
