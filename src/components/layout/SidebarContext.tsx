@@ -11,18 +11,14 @@ interface SidebarContextValue {
   setPluginsNavVisible: (v: boolean) => void;
 }
 
-const SidebarContext = React.createContext<SidebarContextValue>({
-  collapsed: false,
-  setCollapsed: () => {},
-  toggle: () => {},
-  routesNavVisible: true,
-  setRoutesNavVisible: () => {},
-  pluginsNavVisible: true,
-  setPluginsNavVisible: () => {},
-});
+const SidebarContext = React.createContext<SidebarContextValue | undefined>(undefined);
 
 export function useSidebar() {
-  return React.useContext(SidebarContext);
+  const value = React.useContext(SidebarContext);
+  if (!value) {
+    throw new Error('SidebarProvider is required');
+  }
+  return value;
 }
 
 /** 侧栏 UI 偏好（折叠、路由/插件入口可见性；持久化到 localStorage） */

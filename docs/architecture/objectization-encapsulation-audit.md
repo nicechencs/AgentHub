@@ -23,12 +23,13 @@ updated: 2026-08-26
 | O-03、O-04、O-05 | 仍存在 | 暂缓。页面拆 Hook / 把保存用例上收属于跨层设计 |
 | O-06 | 生产 Hook 已走共享连接池；`loadAdapterPageResources` 只留在测试 | 标注为测试辅助，页面不得再自行拉账号 / Provider |
 | O-07 | 仍存在：多个模块级 store，`setBackend` 手工 reset | 暂缓。共享 store 本身保留；coordinator 先只管刷新，不接管生命周期 |
-| O-08、O-09 | 三处 façade 各自刷新，ticket bind 曾 `.catch(() => {})` | 已处理：`refreshRuntimeReadModels` 统一刷新；失败留在 store snapshot |
+| O-08、O-09 | 三处 façade 各自刷新，ticket bind 曾 `.catch(() => {})` | 已处理：统一刷新；失败留在 snapshot。连接页和 Chat 可看到并重试 |
 | O-10 | Chat 曾本地 `listTicketWallet` | 已处理：Chat 订阅共享票夹 |
 | O-11–O-14 | 仍存在 | 暂缓。Service / Bridge 内部拆分要单独设计 |
 | O-15–O-19 | 仍存在 | 暂缓。宽对象和派生数据收窄会改契约 |
 | O-20 | mock Agent 用模块级可变状态 | 暂缓。已有 `resetMockAgentStatuses`；实例化隔离收益低于测试迁移成本 |
-| O-21、O-23–O-25 | 仍存在 | 暂缓。Agent catalog、通用组件和展示配置需要先明确唯一 owner |
+| O-21、O-23、O-25 | 仍存在 | 暂缓。Agent catalog、通用组件和展示配置需要先明确唯一 owner |
+| O-24 | Sidebar Context 默认 setter 静默失效 | 已处理：缺少 Provider 时抛错 |
 | O-22 | `GenericConfigForm` 未把锁定状态传给 `SecretInput` | 已处理：`SecretInput` 接收 `disabled`/`readOnly` |
 | O-26–O-30 | 仍存在 | 暂缓。启动组合根、transport façade、Gateway 状态和协议策略需要分别设计 |
 | O-31–O-34 | 仍存在 | 暂缓。Usage normalizer、查询 filter 和模型映射的跨层收窄需保持统计语义 |
@@ -130,7 +131,7 @@ updated: 2026-08-26
 - **状态：已处理**
 - **位置：** `src/lib/api/tickets.ts`；`src/app/runtime/mutation-coordinator.ts`
 - **问题：** bind/unbind 成功后，连接池和票夹刷新都使用 `.catch(() => {})`。调用方收到成功结果，但页面可能继续看到旧的连接和绑定状态。
-- **当前：** coordinator 用 `Promise.allSettled` 刷新；写入成功仍返回给调用方，失败留在连接池 / 票夹 snapshot 的 `error` 字段。页面若订阅共享 store，可以看到过期数据并走重试。尚未做自动重试或独立的刷新失败提示。
+- **当前：** coordinator 用 `Promise.allSettled` 刷新；写入成功仍返回给调用方，失败留在连接池 / 票夹 snapshot 的 `error` 字段。连接页和 Chat 都展示该错误并可重试。尚未做自动重试。
 - **建议：** 区分“写入成功”和“读模型刷新失败”；至少将刷新状态交给 runtime 统一重试/提示，或返回可观察的刷新结果。
 - **影响/风险：** 后端真实状态与多个页面的显示状态不一致，且没有明确的用户重试信号。
 
@@ -259,8 +260,10 @@ updated: 2026-08-26
 #### O-24｜Sidebar Context 的默认 setter 静默失效
 
 - **严重程度：中**
-- **位置：** `src/components/layout/SidebarContext.tsx:14-22`
+- **状态：已处理**
+- **位置：** `src/components/layout/SidebarContext.tsx`
 - **问题：** Context 默认值包含 no-op setter。组件未包裹 `SidebarProvider` 时不会报错，而是表现为“操作成功但状态不保存”。
+- **当前：** 缺少 Provider 时 `useSidebar()` 抛错。应用根已包裹 `SidebarProvider`。
 - **建议：** 默认值改为 `undefined`，`useSidebar()` 在缺少 Provider 时显式抛错；状态写入由 Provider 统一拥有。
 - **影响/风险：** Provider 层级错误被隐藏，调用方无法判断自己是否真正连接到状态 owner。
 
