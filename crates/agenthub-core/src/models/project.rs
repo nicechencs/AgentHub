@@ -67,7 +67,7 @@ pub struct AgentSession {
     pub session_id: Option<String>,
 }
 
-/// Text excerpt for multi-select summarize / continue-chat context.
+/// Conversation text for project preview / continue-chat context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentProjectExcerpt {
@@ -76,7 +76,7 @@ pub struct AgentProjectExcerpt {
     pub title: String,
     pub cwd: Option<String>,
     pub updated_at: String,
-    /// Truncated conversation text suitable for a summarize prompt.
+    /// Extracted user/assistant turns, kept in full.
     pub excerpt: String,
 }
 

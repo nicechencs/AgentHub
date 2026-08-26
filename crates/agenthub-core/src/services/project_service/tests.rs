@@ -1743,7 +1743,7 @@ fn excerpt_skips_empty_assistant_tool_call_rows() {
 }
 
 #[test]
-fn excerpt_caps_user_turn_so_assistant_survives() {
+fn excerpt_keeps_long_user_turn_and_assistant() {
     let dir = tempdir().unwrap();
     let home = dir.path().join(".claude");
     let user = "please help ".repeat(800);
@@ -1778,16 +1778,60 @@ fn excerpt_caps_user_turn_so_assistant_survives() {
         "excerpt={}",
         ex.excerpt
     );
-    let user_body = ex
-        .excerpt
-        .split("---turn:assistant---")
-        .next()
-        .unwrap_or("")
-        .replace("---turn:user---", "");
     assert!(
-        user_body.chars().count() <= 2_000 + 8,
-        "user turn too long: {}",
-        user_body.chars().count()
+        ex.excerpt.matches("please help").count() >= 800,
+        "long user turn truncated: excerpt_len={}",
+        ex.excerpt.chars().count()
+    );
+}
+
+#[test]
+fn excerpt_keeps_first_and_last_turns_in_long_session() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    let session = home
+        .join("projects")
+        .join("-C-Users-demo-app")
+        .join("sess-long-conversation.jsonl");
+    let mut lines = Vec::new();
+    for i in 0..30 {
+        lines.push(serde_json::json!({
+            "type": "user",
+            "message": {"content": [{"type": "text", "text": format!("TURN-{i}-USER")}]},
+        }));
+        lines.push(serde_json::json!({
+            "type": "assistant",
+            "text": format!("TURN-{i}-ASST {}", "x".repeat(400)),
+        }));
+    }
+    write_jsonl(&session, &lines);
+
+    let rows = list_sessions_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(ex.excerpt.contains("TURN-0-USER"), "excerpt={}", ex.excerpt);
+    assert!(ex.excerpt.contains("TURN-0-ASST"), "excerpt={}", ex.excerpt);
+    assert!(
+        ex.excerpt.contains("TURN-29-USER"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("TURN-29-ASST"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert_eq!(
+        ex.excerpt.matches("---turn:user---").count(),
+        30,
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert_eq!(
+        ex.excerpt.matches("---turn:assistant---").count(),
+        30,
+        "excerpt={}",
+        ex.excerpt
     );
 }
 
