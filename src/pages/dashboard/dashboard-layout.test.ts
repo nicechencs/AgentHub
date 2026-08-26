@@ -37,6 +37,17 @@ describe('dashboard layout wiring', () => {
     expect(source('index.tsx')).not.toContain("t('dashboard.overview.manage')");
   });
 
+  it('plots overlay usage series in agent brand hex, not a stacked CSS-var area', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('resolveChartColor');
+    expect(page).toContain('type="linear"');
+    expect(page).toContain('isAnimationActive={false}');
+    expect(page).not.toContain('stackId');
+    expect(page).not.toContain('type="monotone"');
+    expect(page).not.toContain('stroke={meta.color}');
+    expect(page).not.toContain('stopColor={meta.color}');
+  });
+
   it('does not open a connect popup from overview cards or show quick actions', () => {
     const page = source('index.tsx');
     expect(page).not.toContain('onConnectRequest');
