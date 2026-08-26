@@ -150,7 +150,23 @@ fn enroll_v2_writes_port_once_and_keeps_token() {
 }
 
 #[test]
-fn occupancy_failure_must_not_enroll_v2() {
+fn enroll_v2_rejects_a_different_port() {
+    let (_dir, _db, service, profiles) = tmp();
+    let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
+    profiles.create(&profile).unwrap();
+    service
+        .create_legacy_pool(&profile, "ahb_stable-token", true)
+        .unwrap();
+    let enrolled = service.enroll_v2("profile-a", 43155).unwrap();
+    let error = service.enroll_v2("profile-a", 43156).unwrap_err();
+    assert_eq!(error.code(), "invalid_arg");
+    let stored = service.get("profile-a").unwrap().unwrap();
+    assert_eq!(stored.gateway_port, Some(43155));
+    assert_eq!(stored.policy_revision, enrolled.policy_revision);
+}
+
+#[test]
+fn create_legacy_pool_does_not_enroll_v2() {
     let (_dir, _db, service, profiles) = tmp();
     let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
     profiles.create(&profile).unwrap();

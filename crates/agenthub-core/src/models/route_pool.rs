@@ -17,8 +17,6 @@ mod tests;
 
 /// Settings key. Absent / anything other than an explicit on-value is fail-closed.
 pub const FEATURE_ROUTE_POOL_V2: &str = "feature.route_pool_v2";
-/// Dispatch and `/models` share this switch. Do not split them.
-pub const FEATURE_ROUTE_INDEX_V2: &str = "feature.route_index_v2";
 
 pub fn feature_flag_enabled(raw: Option<&str>) -> bool {
     matches!(

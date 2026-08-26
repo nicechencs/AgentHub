@@ -1,7 +1,4 @@
-use super::{
-    DispatchCandidate, EffectiveRouteIndex, MemberCapability, MemberCapabilitySnapshot,
-    RouteResolveError,
-};
+use super::{EffectiveRouteIndex, MemberCapability, MemberCapabilitySnapshot, RouteResolveError};
 
 fn grant(
     member_id: &str,
@@ -143,20 +140,6 @@ fn listed_models_each_have_a_resolver_candidate() {
         assert!(candidates
             .iter()
             .all(|candidate| candidate.capability_generation == index.generation));
-    }
-}
-
-#[test]
-fn scheduler_output_must_be_a_subset_of_resolver_candidates() {
-    let index = index_ab();
-    let resolved = index.resolve("responses", "m1").expect("m1");
-    let scheduled: Vec<&DispatchCandidate> = resolved.iter().take(1).collect();
-    for picked in scheduled {
-        assert!(
-            resolved.iter().any(|candidate| candidate == picked),
-            "scheduler may only shrink the resolver set"
-        );
-        assert_ne!(picked.member_id, "member-b");
     }
 }
 

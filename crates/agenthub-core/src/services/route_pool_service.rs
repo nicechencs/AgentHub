@@ -1,5 +1,6 @@
-//! RoutePool control plane. Flag-gated and fail-closed; runtime still uses the
-//! lead member until `route_index_v2` is wired. UI stays hidden (P8).
+//! RoutePool control plane. Gated by `feature.route_pool_v2` (fail-closed).
+//! Runtime still uses the lead member until a start spec carries an index.
+//! UI stays hidden.
 
 use std::collections::HashMap;
 

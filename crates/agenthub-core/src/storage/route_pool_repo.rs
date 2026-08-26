@@ -226,8 +226,13 @@ impl RoutePoolRepo {
         self.mutate(|conn| {
             let mut pool = get_pool_conn(conn, pool_id)?
                 .ok_or_else(|| AppError::NotFound(format!("route pool not found: {pool_id}")))?;
-            if pool.v2_enrolled && pool.gateway_port == Some(gateway_port) {
-                return Ok(pool);
+            if pool.v2_enrolled {
+                if pool.gateway_port == Some(gateway_port) {
+                    return Ok(pool);
+                }
+                return Err(AppError::InvalidArg(
+                    "v2 gateway port is frozen after enroll".into(),
+                ));
             }
             pool.v2_enrolled = true;
             pool.gateway_port = Some(gateway_port);
