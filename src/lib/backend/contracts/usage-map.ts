@@ -8,7 +8,8 @@ export interface CoreUsageRecord {
   model: string;
   inputTokens: number;
   outputTokens: number;
-  cacheTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
   costUsd?: number | null;
   sessionId?: string | null;
   ts: string;
@@ -31,7 +32,8 @@ export function mapCoreUsageRecord(r: CoreUsageRecord): UsageRecord {
     model: r.model ?? 'unknown',
     inputTokens: r.inputTokens ?? 0,
     outputTokens: r.outputTokens ?? 0,
-    cacheReadTokens: r.cacheTokens ?? 0,
+    cacheReadTokens: r.cacheReadTokens ?? 0,
+    cacheWriteTokens: r.cacheWriteTokens ?? 0,
     costUsd: r.costUsd ?? 0,
     sessionId: r.sessionId ?? '',
   };

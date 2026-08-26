@@ -218,7 +218,8 @@ fn token_layout_repair_runs_once_then_skips() {
             model: "gpt-5.6-luna".into(),
             input_tokens: 750,
             output_tokens: 10,
-            cache_tokens: 250,
+            cache_read_tokens: 250,
+            cache_write_tokens: 0,
             cost_usd: Some(0.01),
             session_id: Some("s1".into()),
             ts: "2026-08-07T00:00:00.000Z".into(),
@@ -245,7 +246,7 @@ fn token_layout_repair_runs_once_then_skips() {
     let _r1 = service.collect(Some(AgentId::Codex)).unwrap();
     assert_eq!(
         db.get_setting("usage_token_layout").unwrap().as_deref(),
-        Some("4")
+        Some("5")
     );
     assert!(
         service
@@ -265,7 +266,7 @@ fn token_layout_repair_runs_once_then_skips() {
     let _r2 = service.collect(Some(AgentId::Codex)).unwrap();
     assert_eq!(
         db.get_setting("usage_token_layout").unwrap().as_deref(),
-        Some("4")
+        Some("5")
     );
     assert_eq!(
         service
@@ -291,7 +292,7 @@ fn grok_parser_repair_clears_only_grok_rows_once() {
     let root = tempfile::tempdir().unwrap();
     let db = Database::open(&root.path().join("usage.db")).unwrap();
     let repo = UsageRepo::new(db.clone());
-    db.set_setting("usage_token_layout", "4").unwrap();
+    db.set_setting("usage_token_layout", "5").unwrap();
 
     let seed = |agent: AgentId, hash: &str| {
         repo.insert_batch(&[UsageRecord {
@@ -301,7 +302,8 @@ fn grok_parser_repair_clears_only_grok_rows_once() {
             model: "m".into(),
             input_tokens: 10,
             output_tokens: 1,
-            cache_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
             cost_usd: Some(0.01),
             session_id: Some("s1".into()),
             ts: "2026-08-07T00:00:00.000Z".into(),
@@ -379,7 +381,8 @@ fn usage_repo_clears_and_resets_one_agent() {
         model: "m".into(),
         input_tokens: 1,
         output_tokens: 1,
-        cache_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
         cost_usd: Some(0.01),
         session_id: Some("s".into()),
         ts: "2026-08-07T00:00:00.000Z".into(),
@@ -451,7 +454,7 @@ fn recompute_costs_preserves_codex_billable_input() {
     let root = tempfile::tempdir().unwrap();
     let db = Database::open(&root.path().join("usage.db")).unwrap();
     // Mark layout current so collect path is not required.
-    db.set_setting("usage_token_layout", "4").unwrap();
+    db.set_setting("usage_token_layout", "5").unwrap();
     let repo = UsageRepo::new(db.clone());
 
     let row = UsageRecord {
@@ -462,7 +465,8 @@ fn recompute_costs_preserves_codex_billable_input() {
         // Non-cached storage: full was 1000, cache 250 → billable 750
         input_tokens: 750,
         output_tokens: 10,
-        cache_tokens: 250,
+        cache_read_tokens: 250,
+        cache_write_tokens: 0,
         cost_usd: Some(0.0),
         session_id: Some("s1".into()),
         ts: "2026-08-07T00:00:00.000Z".into(),
@@ -498,7 +502,7 @@ fn recompute_keeps_codex_fast_multiplier() {
 
     let root = tempfile::tempdir().unwrap();
     let db = Database::open(&root.path().join("usage.db")).unwrap();
-    db.set_setting("usage_token_layout", "4").unwrap();
+    db.set_setting("usage_token_layout", "5").unwrap();
     let repo = UsageRepo::new(db.clone());
 
     let row = UsageRecord {
@@ -508,7 +512,8 @@ fn recompute_keeps_codex_fast_multiplier() {
         model: "gpt-5.6-sol".into(),
         input_tokens: 100_000,
         output_tokens: 0,
-        cache_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
         cost_usd: Some(0.0),
         session_id: Some("s1".into()),
         ts: "2026-08-07T00:00:00.000Z".into(),
@@ -554,7 +559,7 @@ fn recompute_preserves_log_cost_for_unknown_model() {
 
     let root = tempfile::tempdir().unwrap();
     let db = Database::open(&root.path().join("usage.db")).unwrap();
-    db.set_setting("usage_token_layout", "4").unwrap();
+    db.set_setting("usage_token_layout", "5").unwrap();
     let repo = UsageRepo::new(db.clone());
 
     let row = UsageRecord {
@@ -564,7 +569,8 @@ fn recompute_preserves_log_cost_for_unknown_model() {
         model: "no-such-vendor/definitely-not-priced-zzz".into(),
         input_tokens: 10,
         output_tokens: 2,
-        cache_tokens: 0,
+        cache_read_tokens: 0,
+        cache_write_tokens: 0,
         cost_usd: Some(1.23),
         session_id: Some("s1".into()),
         ts: "2026-08-07T00:00:00.000Z".into(),
@@ -605,7 +611,8 @@ fn usage_upsert_repairs_token_fields_on_conflict() {
         model: "gpt-5.6-luna".into(),
         input_tokens: 500, // wrong (double-peeled)
         output_tokens: 10,
-        cache_tokens: 250,
+        cache_read_tokens: 250,
+        cache_write_tokens: 0,
         cost_usd: Some(0.001),
         session_id: Some("sess".into()),
         ts: "2026-08-07T00:00:00.000Z".into(),
@@ -633,6 +640,8 @@ fn usage_upsert_repairs_token_fields_on_conflict() {
         .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].input_tokens, 750);
+    assert_eq!(rows[0].cache_read_tokens, 250);
+    assert_eq!(rows[0].cache_write_tokens, 0);
     assert!((rows[0].cost_usd.unwrap() - 0.01).abs() < 1e-9);
     // Primary key may stay the original id (ON CONFLICT does not replace id).
     assert_eq!(rows[0].id, id1);
@@ -752,7 +761,8 @@ fn overview_row(
         model: model.into(),
         input_tokens: input,
         output_tokens: output,
-        cache_tokens: cache,
+        cache_read_tokens: cache,
+        cache_write_tokens: 0,
         cost_usd: Some(cost),
         session_id: Some("s".into()),
         ts: ts.into(),
@@ -777,7 +787,8 @@ fn usage_overview_sums_and_groups_by_agent_or_model() {
     let all = repo.overview(7, None, None, None, &[]).unwrap();
     assert_eq!(all.metrics.billable_input, 180);
     assert_eq!(all.metrics.output, 28);
-    assert_eq!(all.metrics.cache, 12);
+    assert_eq!(all.metrics.cache_read, 12);
+    assert_eq!(all.metrics.cache_write, 0);
     assert!((all.metrics.cost_usd - 2.25).abs() < 1e-9);
     assert_eq!(
         all.distribution
@@ -817,6 +828,48 @@ fn usage_overview_sums_and_groups_by_agent_or_model() {
         vec!["opus", "sonnet"],
         "models list ignores the selected model filter"
     );
+}
+
+#[test]
+fn usage_overview_splits_cache_read_and_write() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let ts = recent_ts(1);
+    repo.insert_batch(&[crate::models::UsageRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        agent_id: AgentId::Claude,
+        account_id: None,
+        model: "opus".into(),
+        input_tokens: 100,
+        output_tokens: 20,
+        cache_read_tokens: 40,
+        cache_write_tokens: 25,
+        cost_usd: Some(1.0),
+        session_id: Some("s".into()),
+        ts: ts.clone(),
+        raw_hash: Some("split".into()),
+        fast: false,
+    }])
+    .unwrap();
+
+    let all = repo.overview(7, None, None, None, &[]).unwrap();
+    assert_eq!(all.metrics.billable_input, 100);
+    assert_eq!(all.metrics.output, 20);
+    assert_eq!(all.metrics.cache_read, 40);
+    assert_eq!(all.metrics.cache_write, 25);
+    assert_eq!(all.distribution[0].tokens, 185);
+    assert_eq!(all.distribution[0].cache_read, 40);
+    assert_eq!(all.distribution[0].cache_write, 25);
+
+    let rows = repo
+        .query(&crate::models::UsageQuery {
+            days: 7,
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(rows[0].cache_read_tokens, 40);
+    assert_eq!(rows[0].cache_write_tokens, 25);
 }
 
 #[test]

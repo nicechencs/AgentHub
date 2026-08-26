@@ -13,11 +13,12 @@ export interface UsageQuery {
   excludeAgentIds?: AgentId[];
 }
 
-/** SQL-aggregate totals. `billableInput` = stored input; full prompt = billable + cache. */
+/** SQL-aggregate totals. `billableInput` = stored input; full prompt = billable + write + read. */
 export interface UsageOverviewMetrics {
   billableInput: number;
   output: number;
-  cache: number;
+  cacheRead: number;
+  cacheWrite: number;
   costUsd: number;
 }
 
@@ -32,7 +33,8 @@ export interface UsageOverviewDistributionSlice {
   costUsd: number;
   billableInput: number;
   output: number;
-  cache: number;
+  cacheRead: number;
+  cacheWrite: number;
 }
 
 export interface UsageOverview {

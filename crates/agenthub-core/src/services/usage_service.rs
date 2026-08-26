@@ -187,7 +187,7 @@ impl UsageService {
                         // Stored input is already billable (Codex/Grok peeled at parse).
                         // Unknown model (no table row, no log cost): $0 + missing tip.
                         let cost = cost_for_event(&ev);
-                        let cache_tokens = ev.cache_tokens_total();
+                        let cache_write_tokens = ev.cache_write_tokens();
                         rows.push(UsageRecord {
                             id: Uuid::new_v4().to_string(),
                             agent_id: ev.agent_id,
@@ -195,7 +195,8 @@ impl UsageService {
                             model: ev.model,
                             input_tokens: ev.input_tokens,
                             output_tokens: ev.output_tokens,
-                            cache_tokens,
+                            cache_read_tokens: ev.cache_read_tokens,
+                            cache_write_tokens,
                             cost_usd: Some(cost),
                             session_id: ev.session_id,
                             ts: ev.ts,
@@ -215,7 +216,8 @@ impl UsageService {
                         .unwrap_or(0);
                     let events_n = rows.len() as u64;
                     let billable_sum: i64 = rows.iter().map(|r| r.input_tokens).sum();
-                    let cache_sum: i64 = rows.iter().map(|r| r.cache_tokens).sum();
+                    let cache_read_sum: i64 = rows.iter().map(|r| r.cache_read_tokens).sum();
+                    let cache_write_sum: i64 = rows.iter().map(|r| r.cache_write_tokens).sum();
                     tracing::debug!(
                         module = targets::USAGE,
                         op = "collect_agent",
@@ -226,7 +228,8 @@ impl UsageService {
                         failed = stats_failed,
                         files = cursors.len() as u64,
                         billable_input_sum = billable_sum,
-                        cache_sum,
+                        cache_read_sum,
+                        cache_write_sum,
                         records_total = total,
                         "usage collect agent batch"
                     );
@@ -402,15 +405,15 @@ impl UsageService {
     /// Recompute costs only; never rewrite token layout.
     ///
     /// Storage contract (aligned with ccusage):
-    /// - Codex: `input_tokens` is already non-cached billable; `cache_tokens` is cache read
-    /// - Others: input and cache are disjoint Anthropic-style buckets
+    /// - Codex: `input_tokens` is already non-cached billable; `cache_read_tokens` is cache read
+    /// - Others: input, cache write, and cache read are disjoint Anthropic-style buckets
     ///
     /// Historical bug: peeling `cache` from `input` when `cache <= input` double-subtracted
     /// on every collect and eroded Codex billable tokens toward zero.
     /// Unknown-model costs are left as stored (log / ticks / $0).
     pub fn recompute_stored_costs(&self) -> Result<u64> {
-        self.repo
-            .recompute_costs(|agent, model, input, output, cache, fast| {
+        self.repo.recompute_costs(
+            |agent, model, input, output, cache_read, cache_write, fast| {
                 let accounting = self
                     .registry
                     .get(&AgentKey::from_agent_id(agent))
@@ -418,13 +421,14 @@ impl UsageService {
                     .unwrap_or(TokenAccounting::Standard);
                 if accounting == TokenAccounting::CodexBillable {
                     // Trust stored non-cached input; refresh cost with latest rates + Fast.
-                    let (bill_in, cache_r) = codex_billable_tokens(input, cache);
+                    let (bill_in, cache_r) = codex_billable_tokens(input, cache_read);
                     let cost = estimate_cost_usd_for_agent(
                         agent,
                         model,
                         CostTokens {
                             input: bill_in,
                             output,
+                            cache_create: cache_write,
                             cache_read: cache_r,
                             fast,
                             ..CostTokens::default()
@@ -438,7 +442,8 @@ impl UsageService {
                 // unknown rows to $0 dropped Grok ticks when the raw model id
                 // missed the embedded table.
                 None
-            })
+            },
+        )
     }
 
     /// One-time repair when token accounting semantics change.
@@ -448,8 +453,8 @@ impl UsageService {
     /// `archived_sessions/`. UPSERT cannot drop orphan rows from older parsers.
     fn maybe_repair_token_layout(&self) -> Result<()> {
         const KEY: &str = "usage_token_layout";
-        // v4 = ccusage cost formula (long-context / 1h cache / Codex Fast) + archived sessions.
-        const VER: &str = "4";
+        // v5 = persist cache write vs read as separate columns (billing rates differ).
+        const VER: &str = "5";
         let cur = self.repo.get_meta(KEY)?;
         if cur.as_deref() == Some(VER) {
             tracing::debug!(

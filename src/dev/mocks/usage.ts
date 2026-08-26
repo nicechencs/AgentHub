@@ -50,6 +50,7 @@ const records: UsageRecord[] = (() => {
         const input = Math.floor(rand() * 80000) + 2000;
         const output = Math.floor(rand() * 20000) + 500;
         const cacheRead = Math.floor(input * rand() * 0.8);
+        const cacheWrite = Math.floor(input * rand() * 0.15);
         const ts = new Date(day);
         ts.setHours(Math.floor(rand() * 14) + 8, Math.floor(rand() * 60), 0, 0);
         out.push({
@@ -60,6 +61,7 @@ const records: UsageRecord[] = (() => {
           inputTokens: input,
           outputTokens: output,
           cacheReadTokens: cacheRead,
+          cacheWriteTokens: cacheWrite,
           costUsd: Math.round((input * 0.000015 + output * 0.000075) * 100) / 100,
           sessionId: `${agentId}-${day.toISOString().slice(0, 10)}-${s}`,
         });
@@ -92,18 +94,28 @@ function mockUsageOverview(q: UsageQuery): UsageOverview {
   const rows = records.filter((r) => matchesUsageQuery(r, q));
   let billableInput = 0;
   let output = 0;
-  let cache = 0;
+  let cacheRead = 0;
+  let cacheWrite = 0;
   let costUsd = 0;
   const byKey = new Map<
     string,
-    { key: string; tokens: number; costUsd: number; billableInput: number; output: number; cache: number }
+    {
+      key: string;
+      tokens: number;
+      costUsd: number;
+      billableInput: number;
+      output: number;
+      cacheRead: number;
+      cacheWrite: number;
+    }
   >();
   const groupByAgent = !q.agentId || q.agentId === 'all';
   for (const r of rows) {
     const p = usageTokenParts(r);
     billableInput += p.billableInput;
     output += r.outputTokens;
-    cache += p.cache;
+    cacheRead += p.cacheRead;
+    cacheWrite += p.cacheWrite;
     costUsd += r.costUsd;
     const key = groupByAgent ? r.agentId : r.model;
     const entry = byKey.get(key) ?? {
@@ -112,13 +124,15 @@ function mockUsageOverview(q: UsageQuery): UsageOverview {
       costUsd: 0,
       billableInput: 0,
       output: 0,
-      cache: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
     };
     entry.tokens += p.billableInput + p.cache + r.outputTokens;
     entry.costUsd += r.costUsd;
     entry.billableInput += p.billableInput;
     entry.output += r.outputTokens;
-    entry.cache += p.cache;
+    entry.cacheRead += p.cacheRead;
+    entry.cacheWrite += p.cacheWrite;
     byKey.set(key, entry);
   }
   const models = [
@@ -130,7 +144,7 @@ function mockUsageOverview(q: UsageQuery): UsageOverview {
     ),
   ].sort((a, b) => a.localeCompare(b));
   return {
-    metrics: { billableInput, output, cache, costUsd },
+    metrics: { billableInput, output, cacheRead, cacheWrite, costUsd },
     distribution: [...byKey.values()].sort((a, b) => b.tokens - a.tokens),
     models,
   };

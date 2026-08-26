@@ -14,14 +14,15 @@ use crate::storage::Database;
 const UPSERT_USAGE_SQL: &str = r#"
     INSERT INTO usage_records (
         id, agent_id, account_id, model,
-        input_tokens, output_tokens, cache_tokens,
+        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
         cost_usd, session_id, ts, raw_hash, fast
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
     ON CONFLICT(agent_id, session_id, raw_hash) DO UPDATE SET
         model = excluded.model,
         input_tokens = excluded.input_tokens,
         output_tokens = excluded.output_tokens,
-        cache_tokens = excluded.cache_tokens,
+        cache_read_tokens = excluded.cache_read_tokens,
+        cache_write_tokens = excluded.cache_write_tokens,
         cost_usd = excluded.cost_usd,
         ts = excluded.ts,
         fast = excluded.fast
@@ -61,7 +62,8 @@ impl UsageRepo {
                         r.model,
                         r.input_tokens,
                         r.output_tokens,
-                        r.cache_tokens,
+                        r.cache_read_tokens,
+                        r.cache_write_tokens,
                         r.cost_usd,
                         r.session_id,
                         r.ts,
@@ -134,7 +136,7 @@ impl UsageRepo {
             let mut sql = String::from(
                 r#"
                 SELECT id, agent_id, account_id, model,
-                       input_tokens, output_tokens, cache_tokens,
+                       input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
                        cost_usd, session_id, ts, raw_hash, fast
                 FROM usage_records
                 WHERE unixepoch(ts) >= unixepoch('now', ?1)
@@ -169,7 +171,7 @@ impl UsageRepo {
                 r#"
                 SELECT DISTINCT model FROM usage_records
                 WHERE unixepoch(ts) >= unixepoch('now', ?1)
-                  AND (input_tokens + output_tokens + cache_tokens) > 0
+                  AND (input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) > 0
                 ORDER BY model
                 "#,
             )?;
@@ -185,10 +187,11 @@ impl UsageRepo {
     /// Patch selected usage rows (cost and/or input token layout).
     ///
     /// `patch` returns `Some((new_input, new_cost))` to update, or `None` to skip.
+    /// Args: agent, model, input, output, cache_read, cache_write, fast.
     /// Returns number of rows changed.
     pub fn recompute_costs<F>(&self, mut patch: F) -> Result<u64>
     where
-        F: FnMut(AgentId, &str, i64, i64, i64, bool) -> Option<(i64, f64)>,
+        F: FnMut(AgentId, &str, i64, i64, i64, i64, bool) -> Option<(i64, f64)>,
     {
         self.db.with_conn(|conn| {
             let tx = conn.unchecked_transaction()?;
@@ -196,7 +199,8 @@ impl UsageRepo {
             {
                 let mut sel = tx.prepare(
                     r#"
-                    SELECT id, agent_id, model, input_tokens, output_tokens, cache_tokens,
+                    SELECT id, agent_id, model, input_tokens, output_tokens,
+                           cache_read_tokens, cache_write_tokens,
                            COALESCE(cost_usd, 0), COALESCE(fast, 0)
                     FROM usage_records
                     "#,
@@ -209,18 +213,29 @@ impl UsageRepo {
                         row.get::<_, i64>(3)?,
                         row.get::<_, i64>(4)?,
                         row.get::<_, i64>(5)?,
-                        row.get::<_, f64>(6)?,
-                        row.get::<_, i64>(7)? != 0,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, f64>(7)?,
+                        row.get::<_, i64>(8)? != 0,
                     ))
                 })?;
                 let mut updates: Vec<(i64, f64, String)> = Vec::new();
                 for r in rows {
-                    let (id, agent_s, model, input, output, cache, old_cost, fast) = r?;
+                    let (
+                        id,
+                        agent_s,
+                        model,
+                        input,
+                        output,
+                        cache_read,
+                        cache_write,
+                        old_cost,
+                        fast,
+                    ) = r?;
                     let Some(agent) = AgentId::parse(&agent_s) else {
                         continue;
                     };
                     let Some((new_input, new_cost)) =
-                        patch(agent, &model, input, output, cache, fast)
+                        patch(agent, &model, input, output, cache_read, cache_write, fast)
                     else {
                         continue;
                     };
@@ -267,7 +282,7 @@ impl UsageRepo {
             let mut sql = String::from(
                 r#"
                     SELECT ts, agent_id,
-                           SUM(input_tokens + cache_tokens + output_tokens) AS tokens
+                           SUM(input_tokens + cache_read_tokens + cache_write_tokens + output_tokens) AS tokens
                     FROM usage_records
                     WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#,
@@ -329,7 +344,8 @@ impl UsageRepo {
                     SELECT
                         COALESCE(SUM(input_tokens), 0),
                         COALESCE(SUM(output_tokens), 0),
-                        COALESCE(SUM(cache_tokens), 0),
+                        COALESCE(SUM(cache_read_tokens), 0),
+                        COALESCE(SUM(cache_write_tokens), 0),
                         COALESCE(SUM(COALESCE(cost_usd, 0)), 0)
                     FROM usage_records
                     WHERE unixepoch(ts) >= unixepoch('now', ?1)
@@ -349,8 +365,9 @@ impl UsageRepo {
                     Ok(UsageMetrics {
                         billable_input: row.get(0)?,
                         output: row.get(1)?,
-                        cache: row.get(2)?,
-                        cost_usd: row.get(3)?,
+                        cache_read: row.get(2)?,
+                        cache_write: row.get(3)?,
+                        cost_usd: row.get(4)?,
                     })
                 })?
             };
@@ -359,11 +376,12 @@ impl UsageRepo {
             let mut dist_sql = format!(
                 r#"
                     SELECT {group_col} AS key,
-                           SUM(input_tokens + cache_tokens + output_tokens) AS tokens,
+                           SUM(input_tokens + cache_read_tokens + cache_write_tokens + output_tokens) AS tokens,
                            COALESCE(SUM(COALESCE(cost_usd, 0)), 0),
                            COALESCE(SUM(input_tokens), 0),
                            COALESCE(SUM(output_tokens), 0),
-                           COALESCE(SUM(cache_tokens), 0)
+                           COALESCE(SUM(cache_read_tokens), 0),
+                           COALESCE(SUM(cache_write_tokens), 0)
                     FROM usage_records
                     WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#
@@ -392,7 +410,8 @@ impl UsageRepo {
                         cost_usd: row.get(2)?,
                         billable_input: row.get(3)?,
                         output: row.get(4)?,
-                        cache: row.get(5)?,
+                        cache_read: row.get(5)?,
+                        cache_write: row.get(6)?,
                     });
                 }
                 out
@@ -798,12 +817,13 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UsageRecord> {
         model: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
         input_tokens: row.get(4)?,
         output_tokens: row.get(5)?,
-        cache_tokens: row.get(6)?,
-        cost_usd: row.get(7)?,
-        session_id: row.get(8)?,
-        ts: row.get(9)?,
-        raw_hash: row.get(10)?,
-        fast: row.get::<_, i64>(11)? != 0,
+        cache_read_tokens: row.get(6)?,
+        cache_write_tokens: row.get(7)?,
+        cost_usd: row.get(8)?,
+        session_id: row.get(9)?,
+        ts: row.get(10)?,
+        raw_hash: row.get(11)?,
+        fast: row.get::<_, i64>(12)? != 0,
     })
 }
 
@@ -832,7 +852,8 @@ impl UsageRepo {
                         r.model,
                         r.input_tokens,
                         r.output_tokens,
-                        r.cache_tokens,
+                        r.cache_read_tokens,
+                        r.cache_write_tokens,
                         r.cost_usd,
                         r.session_id,
                         r.ts,

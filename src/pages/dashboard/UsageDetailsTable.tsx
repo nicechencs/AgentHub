@@ -32,6 +32,7 @@ type ColumnKey =
   | 'model'
   | 'input'
   | 'output'
+  | 'cacheWrite'
   | 'cacheRead'
   | 'cost'
   | 'session';
@@ -44,6 +45,7 @@ const COLUMNS: (ColumnWidthSpec<ColumnKey> & {
   { key: 'model', align: 'left', defaultWidth: 160, minWidth: 96 },
   { key: 'input', align: 'right', defaultWidth: 96, minWidth: 72 },
   { key: 'output', align: 'right', defaultWidth: 96, minWidth: 72 },
+  { key: 'cacheWrite', align: 'right', defaultWidth: 96, minWidth: 72 },
   { key: 'cacheRead', align: 'right', defaultWidth: 96, minWidth: 72 },
   { key: 'cost', align: 'right', defaultWidth: 88, minWidth: 64 },
   { key: 'session', align: 'left', defaultWidth: 180, minWidth: 96 },
@@ -55,6 +57,7 @@ const COLUMN_LABEL_KEYS: Record<ColumnKey, MessageKey> = {
   model: 'dashboard.table.model',
   input: 'dashboard.table.input',
   output: 'dashboard.table.output',
+  cacheWrite: 'dashboard.table.cacheWrite',
   cacheRead: 'dashboard.table.cacheRead',
   cost: 'dashboard.table.cost',
   session: 'dashboard.table.session',
@@ -226,6 +229,9 @@ export function UsageDetailsTable({ rows }: { rows: UsageRecord[] }) {
               </TableCell>
               <TableCell className="truncate whitespace-nowrap text-right font-mono text-xs">
                 {r.outputTokens.toLocaleString()}
+              </TableCell>
+              <TableCell className="truncate whitespace-nowrap text-right font-mono text-xs">
+                {r.cacheWriteTokens.toLocaleString()}
               </TableCell>
               <TableCell className="truncate whitespace-nowrap text-right font-mono text-xs">
                 {r.cacheReadTokens.toLocaleString()}

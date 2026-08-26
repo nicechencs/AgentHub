@@ -25,6 +25,7 @@ function row(
     inputTokens: 100,
     outputTokens: 20,
     cacheReadTokens: 10,
+    cacheWriteTokens: 0,
     costUsd: 1,
     sessionId: 's',
     ...overrides,
@@ -51,7 +52,7 @@ describe('usageWindowBound', () => {
 
 describe('filterHiddenUsageOverview', () => {
   const overview: UsageOverview = {
-    metrics: { billableInput: 1300, output: 130, cache: 200, costUsd: 2.5 },
+    metrics: { billableInput: 1300, output: 130, cacheRead: 200, cacheWrite: 0, costUsd: 2.5 },
     distribution: [
       {
         key: 'claude',
@@ -59,7 +60,8 @@ describe('filterHiddenUsageOverview', () => {
         costUsd: 2,
         billableInput: 1000,
         output: 100,
-        cache: 200,
+        cacheRead: 200,
+        cacheWrite: 0,
       },
       {
         key: 'kimi',
@@ -67,16 +69,37 @@ describe('filterHiddenUsageOverview', () => {
         costUsd: 0.5,
         billableInput: 300,
         output: 30,
-        cache: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
       },
     ],
     models: ['opus', 'sonnet'],
   };
 
   it('maps empty overview metrics to zeroed UI metrics with null cacheHitPct', () => {
-    const ui = overviewToUsageMetrics({ billableInput: 0, output: 0, cache: 0, costUsd: 0 });
+    const ui = overviewToUsageMetrics({
+      billableInput: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      costUsd: 0,
+    });
     expect(ui.fullInput).toBe(0);
     expect(ui.cacheHitPct).toBeNull();
+  });
+
+  it('maps cache write and read separately and includes both in cache share', () => {
+    const ui = overviewToUsageMetrics({
+      billableInput: 100,
+      output: 20,
+      cacheRead: 40,
+      cacheWrite: 25,
+      costUsd: 1,
+    });
+    expect(ui.cacheRead).toBe(40);
+    expect(ui.cacheWrite).toBe(25);
+    expect(ui.fullInput).toBe(165);
+    expect(ui.cacheHitPct).toBe(Math.round((65 / 165) * 100));
   });
 
   it('drops omitted (hidden or uninstalled) agent slices and re-sums metrics', () => {
@@ -85,7 +108,8 @@ describe('filterHiddenUsageOverview', () => {
     expect(next.metrics).toEqual({
       billableInput: 1000,
       output: 100,
-      cache: 200,
+      cacheRead: 200,
+      cacheWrite: 0,
       costUsd: 2,
     });
     const ui = overviewToUsageMetrics(next.metrics);

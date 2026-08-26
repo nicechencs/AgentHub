@@ -310,8 +310,10 @@ export interface UsageRecord {
   model: string;
   inputTokens: number;
   outputTokens: number;
-  /** Combined cache tokens (create + read). Name is historical. */
+  /** Cache read tokens (hit / reuse). */
   cacheReadTokens: number;
+  /** Cache write tokens (create + 1h ephemeral write). */
+  cacheWriteTokens: number;
   /** Estimated cost in pricing-table units (USD). No FX conversion. */
   costUsd: number;
   sessionId: string;
