@@ -10,15 +10,12 @@ use super::super::surface::*;
 use super::super::AccountService;
 
 impl AccountService {
-    pub fn list(&self, agent: Option<AgentId>) -> Result<Vec<Account>> {
-        // File-backed agents can rotate credentials while they are running.
-        // Reconcile a safe live snapshot before mapping rows for the UI so a
-        // stale DB snapshot cannot be shown as a dead login.
-        self.sync_current_live(agent);
+    /// SQLite pool plus local identity/expiry heals. No live-file sync and no
+    /// upstream quota HTTP — GUI list paths stay off the network.
+    pub fn list_pool(&self, agent: Option<AgentId>) -> Result<Vec<Account>> {
         let mut items = self.repo.list(agent)?;
         // Persist identity extracted from stored tokens so GUI sees email/sub
         // after redaction (JWT lives only in credentials until healed).
-        // Also promote token expiry and (for current OAuth) best-effort 5h/7d quota.
         for item in &mut items {
             let expected_updated_at = item.updated_at.clone();
             let mut dirty = false;
@@ -33,13 +30,6 @@ impl AccountService {
             // Tick quota countdown from absolute reset timestamps (no network).
             if item.kind == AccountKind::Oauth
                 && crate::services::account_quota::refresh_quota_reset_label(item, Utc::now())
-            {
-                dirty = true;
-            }
-            // Only probe upstream quota for the active OAuth account to keep list snappy.
-            if item.is_current
-                && item.kind == AccountKind::Oauth
-                && crate::services::account_quota::try_refresh_account_quota(item, false)
             {
                 dirty = true;
             }
@@ -58,12 +48,21 @@ impl AccountService {
                 }
             }
         }
+        sort_accounts(&mut items);
+        Ok(items)
+    }
+
+    /// File-backed agents can rotate credentials while they are running.
+    /// Reconcile a safe live snapshot before mapping rows so a stale DB
+    /// snapshot cannot be shown as a dead login. Still no quota HTTP.
+    pub fn list(&self, agent: Option<AgentId>) -> Result<Vec<Account>> {
+        self.sync_current_live(agent);
+        let mut items = self.list_pool(agent)?;
         // Live auth health describes the file currently observed by the adapter,
         // rather than the persisted pool row. Surface it only on the pool row
         // that still corresponds to that live authorization, and never write it
         // back to the database.
         self.merge_live_auth_state(&mut items, agent);
-        sort_accounts(&mut items);
         Ok(items)
     }
 

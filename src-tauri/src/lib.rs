@@ -170,6 +170,7 @@ pub fn run() {
             commands::backup::delete_backup,
             // Account
             commands::account::list_accounts,
+            commands::account::reconcile_accounts,
             commands::account::probe_live_auth,
             commands::account::import_account_live,
             commands::account::add_api_key_account,

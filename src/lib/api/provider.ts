@@ -8,6 +8,7 @@ import {
   loadAgentStatuses,
   markConnectionCurrent,
   notifyConnectionPoolChanged,
+  notifyTicketWalletChanged,
 } from '@/app/runtime';
 import { clearLiveAuthProbeCache } from '@/lib/backend/contracts/live-auth-probe-cache';
 import type { AgentId, Provider, SwitchPreview } from '@/lib/types';
@@ -33,6 +34,7 @@ function providerAuthStateChanged(agentId: AgentId): void {
   const backend = getBackend();
   void loadAgentStatuses(backend, { force: true }).catch(() => {});
   void notifyConnectionPoolChanged(backend).catch(() => {});
+  void notifyTicketWalletChanged(backend).catch(() => {});
 }
 
 export async function upsertProvider(p: Provider): Promise<Provider> {

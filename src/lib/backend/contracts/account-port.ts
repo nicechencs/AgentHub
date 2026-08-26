@@ -132,6 +132,11 @@ export function normalizeAuthState(
 
 export interface AccountPort {
   listAccounts(agentId?: AgentId): Promise<Account[]>;
+  /**
+   * Re-read live auth files into the pool. No upstream quota HTTP.
+   * Optional so mocks can omit it.
+   */
+  reconcileAccounts?(agentId?: AgentId): Promise<Account[]>;
   probeLiveAuth(agentId: AgentId): Promise<LiveAuthProbe>;
   switchAccount(agentId: AgentId, accountId: string): Promise<void>;
   undoSwitchAccount(agentId: AgentId): Promise<boolean>;

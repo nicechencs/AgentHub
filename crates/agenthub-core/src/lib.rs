@@ -519,7 +519,7 @@ impl AgentHub {
             capabilities = models::Capability::ALL.len(),
             "capability matrix attached to doctor report"
         );
-        DoctorReport {
+        let report = DoctorReport {
             data_dir: self.data_dir.display().to_string(),
             runtimes,
             agents,
@@ -531,7 +531,9 @@ impl AgentHub {
             warnings,
             version: Self::version().into(),
             locks,
-        }
+        };
+        services::doctor_snapshot::save(&self.data_dir, &report);
+        report
     }
 }
 

@@ -1,19 +1,17 @@
 //! Ticket / Binding wallet aggregation (connection-binding-model §6 steps 1–2).
 //!
 //! Builds a wallet from accounts + providers + adapter profiles. Prefers
-//! persisted `extra.surface` / `meta.surface`. A missing key is classified and
-//! best-effort written back; an unrecognized value displays as `unknown` and
-//! is not overwritten. `plan` rejects generated projection and leftover 本机路由 providers.
+//! persisted `extra.surface` / `meta.surface`. A missing key is classified for
+//! display only; list_wallet does not write the classification back. An
+//! unrecognized value displays as `unknown`. `plan` rejects generated
+//! projection and leftover 本机路由 providers.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use chrono::Utc;
-
 use crate::error::{AppError, Result};
 use crate::integrations::agents::codex::leftover;
-use crate::logging::targets;
 use crate::models::{
-    attach_persisted_surface, parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan,
+    parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan,
     AdapterProfile, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AgentId, PersistedTicketSurface, Provider, Ticket, TicketBinding, TicketBindingRoute,
     TicketBridgeRuntime, TicketCredentialClass, TicketPlanRequest, TicketSurface,
@@ -206,11 +204,7 @@ impl TicketReadService {
         let product = self
             .routes
             .classify_source_product(AdapterSourceKind::Account, &account.id)?;
-        let surface = TicketSurface::from_product(product);
-        if surface != TicketSurface::Unknown {
-            self.best_effort_writeback_account_surface(account, surface);
-        }
-        Ok(surface)
+        Ok(TicketSurface::from_product(product))
     }
 
     fn resolve_provider_surface(&self, provider: &Provider) -> Result<TicketSurface> {
@@ -227,59 +221,15 @@ impl TicketReadService {
             .routes
             .classify_source_product(AdapterSourceKind::Provider, &provider.id)?;
         let surface = TicketSurface::from_product(product);
-        let surface = if surface == TicketSurface::OpenaiApi
+        if surface == TicketSurface::OpenaiApi
             && !crate::services::adapter_route_constants::provider_has_official_openai_api_evidence(
                 provider,
-            ) {
-            TicketSurface::Unknown
-        } else {
-            surface
-        };
-        if surface != TicketSurface::Unknown || persisted == PersistedTicketSurface::Missing {
-            self.best_effort_writeback_provider_surface(provider, surface);
+            )
+        {
+            return Ok(TicketSurface::Unknown);
         }
         Ok(surface)
     }
-
-    fn best_effort_writeback_account_surface(&self, account: &Account, surface: TicketSurface) {
-        let mut extra = account.extra.clone();
-        attach_persisted_surface(&mut extra, surface);
-        let mut row = account.clone();
-        row.extra = extra;
-        if let Err(error) = self
-            .accounts
-            .update_healed_fields(&row, &account.updated_at, &now_ts())
-        {
-            tracing::warn!(
-                module = targets::ACCOUNT,
-                account_id = %account.id,
-                error = %error,
-                "ticket surface backfill failed; list_wallet continues"
-            );
-        }
-    }
-
-    fn best_effort_writeback_provider_surface(&self, provider: &Provider, surface: TicketSurface) {
-        let mut meta = provider.meta.clone();
-        attach_persisted_surface(&mut meta, surface);
-        let mut row = provider.clone();
-        row.meta = meta;
-        if let Err(error) =
-            self.providers
-                .update_healed_fields(&row, &provider.updated_at, &now_ts())
-        {
-            tracing::warn!(
-                module = targets::PROVIDER,
-                provider_id = %provider.id,
-                error = %error,
-                "ticket surface backfill failed; list_wallet continues"
-            );
-        }
-    }
-}
-
-fn now_ts() -> String {
-    Utc::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string()
 }
 
 /// Group known-surface tickets by `(surface, credential_class)` for §5.5.

@@ -15,7 +15,12 @@ import {
   probeLiveAuthWithPort,
 } from '@/lib/backend/contracts/live-auth-probe-cache';
 import type { LiveAuthProbe } from '@/lib/backend/contracts/ports';
+import { enrichStatusesWithConnections } from '@/lib/backend/contracts/agent-connection';
 import { logger } from '@/lib/logger';
+import {
+  getConnectionPoolSnapshot,
+  loadConnectionPool,
+} from './connection-pool-store';
 
 const log = logger.scope('runtime:agent-status');
 
@@ -211,6 +216,30 @@ async function enrichWithLiveAuth(
   return { statuses: enriched, liveAuthProbes };
 }
 
+function canLoadConnectionPool(backend: Backend): boolean {
+  return (
+    typeof backend.account?.listAccounts === 'function' &&
+    typeof backend.provider?.listProviders === 'function'
+  );
+}
+
+async function mergeConnectionPool(
+  backend: Backend,
+  statuses: AgentStatus[],
+): Promise<AgentStatus[]> {
+  if (!canLoadConnectionPool(backend)) return statuses;
+  try {
+    const pool = await loadConnectionPool(backend);
+    return enrichStatusesWithConnections(statuses, pool.accounts, pool.providers);
+  } catch (error) {
+    log.warn('connection pool merge failed; showing detect-only status', {
+      errorCode: errorCode(error),
+    });
+    const pool = getConnectionPoolSnapshot();
+    return enrichStatusesWithConnections(statuses, pool.accounts, pool.providers);
+  }
+}
+
 export async function loadAgentStatuses(
   backend: Backend,
   opts: { force?: boolean } = {},
@@ -259,22 +288,26 @@ export async function loadAgentStatuses(
   inflight = backend.agent
     .listAgents()
     .then(async (statuses) => {
-      // 两阶段：先放出 detect/连接池结果，主界面可立刻渲染；
-      // live-auth 随后补齐，避免启动被每个已装 agent 的凭据探测拖住。
-      // Confirm pending only against the raw listAgents payload.
+      // 三阶段：detect 先上屏；连接池复用共享 store；live-auth 最后补齐。
       settleConfirmedHidden(statuses);
       setSnapshot({
         state: 'ready',
         statuses: applyPendingHidden(statuses),
         liveAuthProbes: {},
-        // 仍有 live-auth 在飞时保持 refreshing，消费者不必当整页重载。
         refreshing: true,
         error: null,
       });
 
-      // Enrich the raw listAgents rows. Overlay only at snapshot time so a
-      // revert that clears pendingHidden is not overwritten by a baked stamp.
-      const enriched = await enrichWithLiveAuth(backend, statuses, opts.force === true);
+      const withPool = await mergeConnectionPool(backend, statuses);
+      setSnapshot({
+        state: 'ready',
+        statuses: applyPendingHidden(withPool),
+        liveAuthProbes: {},
+        refreshing: true,
+        error: null,
+      });
+
+      const enriched = await enrichWithLiveAuth(backend, withPool, opts.force === true);
       const nextStatuses = applyPendingHidden(enriched.statuses);
       const next = {
         state: 'ready' as const,

@@ -6,7 +6,7 @@ import {
   ADAPTER_BRIDGE_STATUS_POLL_MS,
   adapterBridgeProfilesToPoll,
   applyAdapterBridgeStatusPoll,
-  loadAdapterProfileResources,
+  loadAdapterProfilesList,
   mergeAdapterProfileLoad,
   type AdapterPageResources,
 } from './adapter-model';
@@ -94,26 +94,37 @@ export function useAdapterResources() {
   const reloadProfiles = useCallback(async () => {
     const currentGeneration = ++generation.current;
     setProfilesLoading(true);
-    const next = await loadAdapterProfileResources({
-      listProfiles: listAdapterProfiles,
-      getBridgeStatus: getAdapterBridgeStatus,
-    });
+    const listed = await loadAdapterProfilesList(listAdapterProfiles);
     if (currentGeneration !== generation.current) return;
+    // Paint persisted profiles before per-profile bridge inspection.
     setResources((current) => {
-      const merged = mergeAdapterProfileLoad(current, next);
+      const merged = mergeAdapterProfileLoad(current, {
+        profiles: listed.profiles,
+        bridgeStatuses: {},
+        profileState: listed.profileState,
+        profileError: listed.profileError,
+        bridgeStatusErrors: {},
+      });
       return {
         ...current,
         profiles: merged.profiles,
-        bridgeStatuses: merged.bridgeStatuses,
         profileState: merged.profileState,
         errors: {
           ...current.errors,
           profiles: merged.profileError,
-          bridgeStatuses: merged.bridgeStatusErrors,
+          bridgeStatuses: current.errors.bridgeStatuses,
         },
       };
     });
     setProfilesLoading(false);
+
+    const localBridgeProfiles = listed.profiles.filter((profile) => profile.route === 'local_bridge');
+    if (listed.profileError || localBridgeProfiles.length === 0) return;
+    const statusResults = await Promise.allSettled(
+      localBridgeProfiles.map((profile) => getAdapterBridgeStatus(profile.id)),
+    );
+    if (currentGeneration !== generation.current) return;
+    setResources((current) => applyAdapterBridgeStatusPoll(current, localBridgeProfiles, statusResults));
   }, []);
 
   const reload = useCallback(async () => {

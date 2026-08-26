@@ -28,6 +28,7 @@ import {
   legacyBridgesRedirectTo,
   loadAdapterPageResources,
   loadAdapterProfileResources,
+  loadAdapterProfilesList,
   mergeAdapterProfileLoad,
   resolveBridgesProfileQuery,
   shouldPollAdapterBridgeStatus,
@@ -437,6 +438,15 @@ describe('Bridges page', () => {
     expect(result.profileState).toBe('error');
     expect(result.errors.profiles).toBeInstanceOf(Error);
     expect(result.profiles).toEqual([]);
+  });
+
+  it('loads profiles without waiting on bridge status', async () => {
+    const profile = localBridgeProfile();
+    const getBridgeStatus = vi.fn();
+    const result = await loadAdapterProfilesList(async () => [profile]);
+    expect(result.profiles).toEqual([profile]);
+    expect(result.profileState).toBe('ready');
+    expect(getBridgeStatus).not.toHaveBeenCalled();
   });
 
   it('keeps the last successful profiles when a later listProfiles call fails', async () => {

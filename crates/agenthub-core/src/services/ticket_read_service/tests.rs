@@ -438,7 +438,7 @@ fn custom_remote_without_official_evidence_stays_unknown() {
         .get_by_id("codex-mytokens")
         .unwrap()
         .unwrap();
-    assert_eq!(stored.meta["surface"], "unknown");
+    assert!(stored.meta.get("surface").is_none());
 }
 
 #[test]
@@ -844,7 +844,7 @@ fn ticket_surface_serde_matches_wire() {
 }
 
 #[test]
-fn list_wallet_backfills_missing_surface_and_rereads_persisted() {
+fn list_wallet_classifies_missing_surface_without_writing_back() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
         .create(&provider(
@@ -884,15 +884,12 @@ fn list_wallet_backfills_missing_surface_and_rereads_persisted() {
         .get_by_id("anth")
         .unwrap()
         .unwrap();
-    assert_eq!(stored_provider.meta["surface"], "anthropic-api");
+    assert!(stored_provider.meta.get("surface").is_none());
     let stored_account = AccountRepo::new(db.clone())
         .get_by_id("codex-oauth")
         .unwrap()
         .unwrap();
-    assert_eq!(
-        stored_account.extra["surface"],
-        "codex-chatgpt-subscription"
-    );
+    assert!(stored_account.extra.get("surface").is_none());
 
     let second = TicketReadService::new(db).list_wallet().unwrap();
     assert!(second
@@ -984,9 +981,18 @@ fn list_wallet_surface_backfill_does_not_touch_current_or_settings() {
     });
     ProviderRepo::new(db.clone()).create(&row).unwrap();
 
-    let _ = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    assert_eq!(
+        wallet
+            .tickets
+            .iter()
+            .find(|t| t.id == "provider:anth")
+            .unwrap()
+            .surface,
+        TicketSurface::AnthropicApi
+    );
     let stored = ProviderRepo::new(db).get_by_id("anth").unwrap().unwrap();
-    assert_eq!(stored.meta["surface"], "anthropic-api");
+    assert!(stored.meta.get("surface").is_none());
     assert!(stored.is_current);
     assert_eq!(stored.settings_config["base_url"], "https://keep.example");
     assert_eq!(stored.name, "Anthropic");
@@ -1066,7 +1072,7 @@ fn list_wallet_unknown_surface_reclassifies_and_only_writes_known_result() {
         .get_by_id("claude-unknown")
         .unwrap()
         .unwrap();
-    assert_eq!(stored_claude.extra["surface"], "claude-subscription");
+    assert_eq!(stored_claude.extra["surface"], "unknown");
     let stored_relay = AccountRepo::new(db)
         .get_by_id("relay-unknown")
         .unwrap()

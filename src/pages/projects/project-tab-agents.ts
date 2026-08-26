@@ -18,7 +18,9 @@ export function resolveProjectFetchAgentId(
   tabAgents: readonly { id: string }[],
   selectedId: string,
 ): AgentId | null {
-  if (tabAgents.length === 0) return null;
+  if (!selectedId) return null;
+  // Detect may still be running: start the scan with URL / remembered id.
+  if (tabAgents.length === 0) return selectedId;
   return tabAgents.some((agent) => agent.id === selectedId) ? selectedId : null;
 }
 

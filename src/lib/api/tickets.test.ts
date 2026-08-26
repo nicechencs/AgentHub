@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { getBackend } from '@/app/runtime';
 import { bindTicket, listTicketWallet, planTicket, unbindTicket } from '@/lib/api/tickets';
 import { seedConnectFlowAdapterFixtures } from '@/dev/mocks/connect-flow-fixtures';
@@ -10,6 +10,16 @@ describe('tickets API façade', () => {
     const wallet = await listTicketWallet();
     expect(wallet.tickets.length).toBeGreaterThan(0);
     expect(wallet.tickets.every((t) => t.id.includes(':'))).toBe(true);
+  });
+
+  it('listTicketWallet reuses the process snapshot until a mutation', async () => {
+    getBackend();
+    seedConnectFlowAdapterFixtures({ includeOauthAccount: true });
+    const listWallet = vi.spyOn(getBackend().ticket, 'listWallet');
+    const first = await listTicketWallet();
+    const second = await listTicketWallet();
+    expect(listWallet).toHaveBeenCalledOnce();
+    expect(second).toEqual(first);
   });
 
   it('planTicket plans via ticket id', async () => {

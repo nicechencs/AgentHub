@@ -44,6 +44,18 @@ impl AgentService {
         self.detect_all_with_ttl(CACHE_TTL)
     }
 
+    pub fn cache_is_warm(&self) -> bool {
+        cache()
+            .lock()
+            .ok()
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .map(|entry| entry.at.elapsed() < CACHE_TTL)
+            })
+            .unwrap_or(false)
+    }
+
     fn detect_all_with_ttl(&self, ttl: Duration) -> Vec<DetectResult> {
         if let Ok(guard) = cache().lock() {
             if let Some(entry) = guard.as_ref() {
@@ -232,11 +244,13 @@ mod tests {
         invalidate_detect_cache();
         DETECT_CALLS.store(0, Ordering::SeqCst);
         let svc = counting_service();
+        assert!(!svc.cache_is_warm());
 
         let a = svc.detect_all();
         let calls_after_first = DETECT_CALLS.load(Ordering::SeqCst);
         assert_eq!(a.len(), AgentId::ALL.len());
         assert_eq!(calls_after_first, AgentId::ALL.len());
+        assert!(svc.cache_is_warm());
 
         let b = svc.detect_all();
         assert_eq!(DETECT_CALLS.load(Ordering::SeqCst), calls_after_first);

@@ -15,7 +15,11 @@ import {
   loadAgentCatalog,
   loadAgentStatuses,
   loadConnectionPool,
+  loadTicketWallet,
 } from '@/app/runtime';
+import { fetchCatalogShared } from '@/lib/hooks/useSkills';
+import { fetchAgentProjectsShared, rememberedProjectAgent } from '@/lib/hooks/useProjects';
+import { reconcileAccountPool } from '@/lib/api/account';
 import { applyLanguage, loadStoredLanguage } from '@/lib/i18n';
 import { applyTheme, loadStoredTheme } from '@/lib/theme';
 import { logger } from '@/lib/logger';
@@ -44,15 +48,30 @@ function delay(ms: number): Promise<void> {
  * agent 状态（doctor + 账号池 + live-auth）放到后台，避免启动遮罩假死。
  */
 function startBackgroundPreload(): Promise<void> {
+  const backend = getBackend();
   // fire-and-forget：失败写日志，不抛到 splash
-  void loadAgentStatuses(getBackend()).catch((e) => {
+  void loadAgentStatuses(backend).catch((e) => {
     log.error('agent status load failed', e);
   });
-  void loadConnectionPool(getBackend()).catch((e) => {
-    log.error('connection pool load failed', e);
+  void loadConnectionPool(backend)
+    .then(() => reconcileAccountPool())
+    .catch((e) => {
+      log.error('connection pool load failed', e);
+    });
+  void loadTicketWallet(backend).catch((e) => {
+    log.error('ticket wallet load failed', e);
   });
+  void fetchCatalogShared().catch((e) => {
+    log.error('skill catalog preload failed', e);
+  });
+  const lastProjectAgent = rememberedProjectAgent();
+  if (lastProjectAgent) {
+    void fetchAgentProjectsShared(lastProjectAgent, false).catch((e) => {
+      log.error('project list preload failed', e);
+    });
+  }
 
-  return loadAgentCatalog(getBackend())
+  return loadAgentCatalog(backend)
     .then(() => undefined)
     .catch((e) => {
       log.error('agent catalog load failed', e);

@@ -52,6 +52,19 @@ export {
 } from './ConnectionPoolProvider';
 
 export {
+  getTicketWalletSnapshot,
+  loadTicketWallet,
+  notifyTicketWalletChanged,
+  resetTicketWalletStore,
+  subscribeTicketWallet,
+} from './ticket-wallet-store';
+export type {
+  TicketWalletLoadState,
+  TicketWalletSnapshot,
+} from './ticket-wallet-store';
+export { useTicketWallet } from './TicketWalletProvider';
+
+export {
   getAppUpdateAvailable,
   resetAppUpdateStore,
   setAppUpdateAvailable,

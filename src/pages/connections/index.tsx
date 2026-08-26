@@ -18,10 +18,8 @@ import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import {
   bindTicket,
   isActiveBindingForAgent,
-  listTicketWallet,
   ticketIdFor,
   type TicketView,
-  type TicketWallet,
 } from '@/lib/api/tickets';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import {
@@ -36,8 +34,10 @@ import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import {
   accountsForAgent,
   getConnectionPoolSnapshot,
+  getTicketWalletSnapshot,
   providersForAgent,
   useConnectionPool,
+  useTicketWallet,
 } from '@/app/runtime';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
@@ -148,9 +148,15 @@ export default function ConnectionsPage() {
   const [pendingGuide, setPendingGuide] = useState<ConnectGuide | null>(null);
   const consumedGuideKeyRef = useRef<string | null>(null);
 
-  const [wallet, setWallet] = useState<TicketWallet | null>(null);
-  const [walletError, setWalletError] = useState<unknown>(null);
-  const [walletLoading, setWalletLoading] = useState(true);
+  const {
+    wallet,
+    error: walletError,
+    state: walletState,
+    reload: walletReload,
+    ensureLoaded: walletEnsureLoaded,
+  } = useTicketWallet();
+  const walletLoading =
+    (walletState === 'idle' || walletState === 'loading') && wallet == null;
   const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
 
   /** Agent context for add/import dialogs (deep-link or picker). */
@@ -240,31 +246,19 @@ export default function ConnectionsPage() {
     );
   }, [discoveryAgentId, pool.state]);
 
-  const walletGeneration = useRef(0);
   const loadWallet = useCallback(async (): Promise<boolean> => {
-    const generation = ++walletGeneration.current;
-    setWalletLoading(true);
     try {
-      const next = await listTicketWallet();
-      if (walletGeneration.current === generation) {
-        setWallet(next);
-        setWalletError(null);
-      }
-      return true;
-    } catch (e) {
-      if (walletGeneration.current === generation) {
-        setWalletError(e);
-        setWallet((prev) => prev ?? null);
-      }
+      await walletReload();
+      const snap = getTicketWalletSnapshot();
+      return snap.wallet != null && snap.error == null;
+    } catch {
       return false;
-    } finally {
-      if (walletGeneration.current === generation) setWalletLoading(false);
     }
-  }, []);
+  }, [walletReload]);
 
   useEffect(() => {
-    void loadWallet();
-  }, [loadWallet]);
+    if (walletState === 'idle') void walletEnsureLoaded();
+  }, [walletEnsureLoaded, walletState]);
 
   const visibleWallet = useMemo(() => {
     if (!wallet) return null;
