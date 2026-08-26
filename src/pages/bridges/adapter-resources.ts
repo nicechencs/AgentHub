@@ -155,6 +155,22 @@ export async function loadAdapterPageResources(loaders: AdapterResourceLoaders):
   };
 }
 
+/** Persist profiles only; callers fill bridge status asynchronously. */
+export async function loadAdapterProfilesList(
+  listProfiles: AdapterResourceLoaders['listProfiles'],
+): Promise<{
+  profiles: AdapterProfile[];
+  profileState: AdapterPageResources['profileState'];
+  profileError?: unknown;
+}> {
+  try {
+    const profiles = await Promise.resolve().then(listProfiles);
+    return { profiles, profileState: 'ready' };
+  } catch (error) {
+    return { profiles: [], profileState: 'error', profileError: error };
+  }
+}
+
 /** Profiles + bridge status only. Connection rows come from the shared pool store. */
 export async function loadAdapterProfileResources(
   loaders: Pick<AdapterResourceLoaders, 'listProfiles' | 'getBridgeStatus'>,

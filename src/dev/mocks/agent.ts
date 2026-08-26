@@ -244,7 +244,7 @@ export function createMockAgentPort(backend: Backend): AgentPort {
             MOCK_CAPABILITIES[s.agentId],
         })),
       );
-      return withConnectionEnrichment(backend, merged);
+      return merged;
     },
 
     async getAgent(agentId) {

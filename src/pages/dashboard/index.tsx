@@ -48,7 +48,6 @@ import {
   visibleCatalogAgents,
   visibleInstalledIds,
 } from '@/lib/agent-visibility';
-import { listAgents } from '@/lib/api/agent';
 import {
   getAdapterBridgeStatus,
   listAdapterProfiles,
@@ -64,7 +63,7 @@ import {
   type UsageAvailability,
   type UsageOverview,
 } from '@/lib/api/usage';
-import { listTicketWallet, type TicketWallet } from '@/lib/api/tickets';
+
 import type { MessageKey } from '@/lib/i18n';
 import { activeBindingForAgent } from '@/lib/ticket-wallet';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
@@ -73,15 +72,17 @@ import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
 import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import {
   getConnectionPoolSnapshot,
+  getTicketWalletSnapshot,
   providersForAgent,
   useAgentCatalogOptional,
   useConnectionPool,
+  useTicketWallet,
 } from '@/app/runtime';
 import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { hasEnvIssues } from '@/lib/env';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
-import type { AgentId, AgentStatus, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
+import type { AgentId, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { typeScalePx } from '@/styles/tokens';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { cn, fmtTokens } from '@/lib/utils';
@@ -141,15 +142,23 @@ export default function DashboardPage() {
   const { t } = useI18n();
   const usageSync = useUsageSync();
   const usageSectionRef = useRef<HTMLElement>(null);
-  const { installedIds } = useInstalledAgents();
+  const {
+    state: agentState,
+    statuses,
+    error: agentsError,
+    reload: reloadAgentStatuses,
+    installedIds,
+  } = useInstalledAgents();
   const catalog = useAgentCatalogOptional();
 
-  // —— Agent / runtime（上半）——
-  const [agents, setAgents] = useState<AgentStatus[] | null>(null);
+  // Detect snapshot is shared; cards render as soon as doctor is ready,
+  // even while live-auth is still refreshing.
+  const agents = statuses;
+  const agentsLoading = agentState === 'idle' || agentState === 'loading';
+  const showAgentError = agentState === 'error' && statuses.length === 0;
+
   const [runtimes, setRuntimes] = useState<RuntimeDetect[]>([]);
-  const [agentsLoading, setAgentsLoading] = useState(true);
-  const [agentsError, setAgentsError] = useState<unknown>(null);
-  const hiddenIds = useMemo(() => hiddenAgentIdSet(agents ?? []), [agents]);
+  const hiddenIds = useMemo(() => hiddenAgentIdSet(agents), [agents]);
   const hiddenAgentList = useMemo(() => [...hiddenIds].sort(), [hiddenIds]);
 
   // —— 页面级共享筛选（时间 + Agent + 模型；指标 / 趋势 / 分布 / 明细共用）——
@@ -176,28 +185,38 @@ export default function DashboardPage() {
   const [healthRefreshKey, setHealthRefreshKey] = useState(0);
   const [showGuide, setShowGuide] = useState(() => !loadBool(StorageKey.usageGuideDismissed));
 
-  /** 返回是否成功：连接流程的刷新契约需要真实成败，不能吞掉失败。 */
-  const loadAgents = useCallback(async (): Promise<boolean> => {
-    setAgentsLoading(true);
-    setAgentsError(null);
+  const loadRuntimes = useCallback(async (): Promise<boolean> => {
     try {
-      const [agentList, runtimeList] = await Promise.all([listAgents(), listRuntimes()]);
-      setAgents(agentList);
-      setRuntimes(runtimeList);
+      setRuntimes(await listRuntimes());
       return true;
-    } catch (e) {
-      setAgentsError(e);
+    } catch {
       return false;
-    } finally {
-      setAgentsLoading(false);
     }
   }, []);
 
+  /** 返回是否成功：连接流程的刷新契约需要真实成败，不能吞掉失败。 */
+  const loadAgents = useCallback(async (): Promise<boolean> => {
+    try {
+      const [agentsOk, runtimesOk] = await Promise.all([
+        reloadAgentStatuses().then(() => true, () => false),
+        loadRuntimes(),
+      ]);
+      return agentsOk && runtimesOk;
+    } catch {
+      return false;
+    }
+  }, [loadRuntimes, reloadAgentStatuses]);
+
   // —— 连接流程（Hub 主入口）：卡片徽标数据 + ConnectFlowDialog 接线 ——
   const pool = useConnectionPool();
+  const {
+    wallet,
+    error: walletError,
+    state: walletState,
+    reload: walletReload,
+    ensureLoaded: walletEnsureLoaded,
+  } = useTicketWallet();
   const [profiles, setProfiles] = useState<AdapterProfile[]>([]);
-  const [wallet, setWallet] = useState<TicketWallet | null>(null);
-  const [walletError, setWalletError] = useState<unknown>(null);
   const [connectEntry, setConnectEntry] = useState<ConnectFlowEntry | null>(null);
   const [bridgeStates, setBridgeStates] = useState<Record<string, AgentCardBridgeState>>({});
   const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
@@ -220,34 +239,31 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const walletGeneration = useRef(0);
   const loadWallet = useCallback(async (): Promise<boolean> => {
-    const generation = ++walletGeneration.current;
     try {
-      const next = await listTicketWallet();
-      if (walletGeneration.current === generation) {
-        setWallet(next);
-        setWalletError(null);
-      }
-      return true;
-    } catch (e) {
-      // Keep last good wallet; surface a visible degradation notice.
-      if (walletGeneration.current === generation) setWalletError(e);
+      await walletReload();
+      const snap = getTicketWalletSnapshot();
+      return snap.wallet != null && snap.error == null;
+    } catch {
       return false;
     }
-  }, []);
+  }, [walletReload]);
 
   useEffect(() => {
     if (poolState === 'idle') void poolEnsureLoaded();
   }, [poolState, poolEnsureLoaded]);
 
   useEffect(() => {
+    if (walletState === 'idle') void walletEnsureLoaded();
+  }, [walletEnsureLoaded, walletState]);
+
+  useEffect(() => {
     void loadProfiles();
   }, [loadProfiles]);
 
   useEffect(() => {
-    void loadWallet();
-  }, [loadWallet]);
+    void loadRuntimes();
+  }, [loadRuntimes]);
 
   /** 生效 provider 命中 adapter 生成投影 → 「本机路由」徽标（profile 联结，不读 provider.meta） */
   const adapterBadgeHits = useMemo(() => {
@@ -357,7 +373,7 @@ export default function DashboardPage() {
       return;
     }
     // 首次加载未完成：不要清掉 query，等已安装列表可用后再解析
-    if (agents == null) return;
+    if (agentsLoading) return;
     if (consumedConnectRef.current === raw) return;
 
     const allowed = agents.filter((item) => item.installed && !item.hidden).map((item) => item.agentId);
@@ -367,7 +383,7 @@ export default function DashboardPage() {
       setConnectEntry({ mode: 'for-agent', targetAgentId });
     }
     setSearchParams(consumeConnectResume(searchParams), { replace: true });
-  }, [searchParams, setSearchParams, agents]);
+  }, [searchParams, setSearchParams, agents, agentsLoading]);
 
   /**
    * 连接变更后重载页面数据；任一失败则抛出，由对话框呈现「已应用/已切换，但列表刷新失败」。
@@ -452,10 +468,6 @@ export default function DashboardPage() {
   );
 
   useEffect(() => {
-    void loadAgents();
-  }, [loadAgents]);
-
-  useEffect(() => {
     void loadUsage(usage === null && usageAvailability === null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadUsage]);
@@ -507,8 +519,8 @@ export default function DashboardPage() {
     [agentCatalogOrder, hiddenIds],
   );
   const parseVisibleIds = useMemo(
-    () => (agents == null ? undefined : visibleInstalledIds(agents)),
-    [agents],
+    () => (agentsLoading ? undefined : visibleInstalledIds(agents)),
+    [agents, agentsLoading],
   );
 
   useEffect(() => {
@@ -581,15 +593,15 @@ export default function DashboardPage() {
     installedIds.length,
   );
   const pageDescription = useMemo(() => {
-    if (!agents) return dashboardPageDescription(null, t);
+    if (agentsLoading) return dashboardPageDescription(null, t);
     const { metas, statuses } = installedOverviewScope(
       catalog.hydrated ? AGENTS : [],
       agents,
     );
     return dashboardPageDescription(summarizeAgentOverview(metas, statuses, t), t);
-  }, [agents, catalog.hydrated, t]);
+  }, [agents, agentsLoading, catalog.hydrated, t]);
   const envBad = hasEnvIssues(runtimes);
-  const showEnvCta = !agentsLoading && agents !== null && installedCount === 0 && envBad;
+  const showEnvCta = !agentsLoading && !showAgentError && installedCount === 0 && envBad;
 
   return (
     <div>
@@ -603,9 +615,9 @@ export default function DashboardPage() {
       <PageSection first>
         {agentsLoading ? (
           <AgentOverviewSkeleton count={overviewSkeletonCount} />
-        ) : agentsError ? (
+        ) : showAgentError ? (
           <ErrorState error={agentsError} onRetry={() => void loadAgents()} />
-        ) : agents ? (
+        ) : (
           <div className={showEnvCta ? pageRhythm.lead : undefined}>
             {showEnvCta && (
               <Notice
@@ -634,7 +646,7 @@ export default function DashboardPage() {
               </Notice>
             ) : null}
           </div>
-        ) : null}
+        )}
       </PageSection>
 
       {/* —— 用量总览：筛选 + 指标 + 趋势 + 分布 —— */}

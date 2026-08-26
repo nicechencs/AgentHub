@@ -12,6 +12,7 @@ pub mod agent_visibility_service;
 pub mod backup_service;
 pub mod chat_service;
 pub mod connection_service;
+pub mod doctor_snapshot;
 pub mod env_service;
 pub mod install_progress;
 pub mod install_service;

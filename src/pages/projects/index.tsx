@@ -134,7 +134,7 @@ export default function ProjectsPage() {
   }, [agentsLoading, tabAgents, agentId]);
 
   const fetchAgentId = resolveProjectFetchAgentId(tabAgents, agentId);
-  const listEnabled = hiddenReady && !agentsLoading && !!fetchAgentId;
+  const listEnabled = hiddenReady && !!fetchAgentId;
   const {
     data,
     error,

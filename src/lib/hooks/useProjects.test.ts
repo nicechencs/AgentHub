@@ -100,7 +100,7 @@ describe('project list skeleton', () => {
         agentsLoading: true,
         hiddenReady: true,
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldShowProjectListSkeleton({
         listLoading: false,
@@ -119,6 +119,20 @@ describe('project list skeleton', () => {
         hiddenReady: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe('remembered project agent', () => {
+  afterEach(() => {
+    clearProjectsDataCache();
+  });
+
+  it('stores the last tab and forgets it on cache clear', () => {
+    expect(rememberedProjectAgent()).toBeNull();
+    rememberProjectAgent('kimi');
+    expect(rememberedProjectAgent()).toBe('kimi');
+    clearProjectsDataCache();
+    expect(rememberedProjectAgent()).toBeNull();
   });
 });
 

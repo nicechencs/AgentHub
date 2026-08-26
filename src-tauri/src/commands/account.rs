@@ -193,9 +193,32 @@ fn list_accounts_inner(hub: &AgentHub, agent_id: Option<&str>) -> Result<Vec<Acc
     };
     let items = hub
         .accounts
-        .list(filter)
+        .list_pool(filter)
         .map_err(|e| map_err_string("list_accounts", e))?;
     Ok(items.into_iter().map(|a| a.redacted()).collect())
+}
+
+/// Invoke: `reconcile_accounts` — re-read live auth files into the pool.
+/// Does not probe upstream quota.
+#[tauri::command]
+pub async fn reconcile_accounts(
+    state: State<'_, AppState>,
+    agent_id: Option<String>,
+) -> Result<Vec<Account>, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        let filter = match agent_id.as_deref() {
+            None => None,
+            Some(s) if s.trim().is_empty() => None,
+            Some(s) => Some(parse_agent(s)?),
+        };
+        let items = hub
+            .accounts
+            .list(filter)
+            .map_err(|e| map_err_string("reconcile_accounts", e))?;
+        Ok(items.into_iter().map(|a| a.redacted()).collect())
+    })
+    .await
 }
 
 fn probe_live_auth_inner(hub: &AgentHub, agent_id: &str) -> Result<AuthState, String> {

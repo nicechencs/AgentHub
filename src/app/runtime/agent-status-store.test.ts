@@ -8,6 +8,7 @@ import {
   resetAgentStatusStore,
   revertAgentHidden,
 } from './agent-status-store';
+import { resetConnectionPoolStore } from './connection-pool-store';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -18,7 +19,10 @@ function deferred<T>() {
 }
 
 describe('agent-status-store', () => {
-  beforeEach(() => resetAgentStatusStore());
+  beforeEach(() => {
+    resetAgentStatusStore();
+    resetConnectionPoolStore();
+  });
 
   it('deduplicates concurrent detection and exposes ready state', async () => {
     const backend = {
@@ -182,6 +186,57 @@ describe('agent-status-store', () => {
     const ready = await loading;
     expect(ready).toMatchObject({ state: 'ready', refreshing: false });
     expect(liveAuthProbeForAgent(ready, 'claude')?.health).toBe('verified');
+  });
+
+  it('merges the shared connection pool after detect and before live-auth', async () => {
+    const auth = deferred<{
+      agentId: string;
+      kind: string;
+      summary: string;
+      hasCredentials: boolean;
+      health: 'verified';
+    }>();
+    const listAccounts = vi.fn(async () => [
+      {
+        id: 'acc-1',
+        agentId: 'claude',
+        kind: 'oauth' as const,
+        label: 'me@example.com',
+        isCurrent: true,
+        tokenValid: true,
+      },
+    ]);
+    const listProviders = vi.fn(async () => []);
+    const backend = {
+      agent: {
+        listAgents: vi.fn(async () => [
+          { agentId: 'claude', installed: true, authStatus: 'none', authLabel: '未配置', running: false },
+        ]),
+      },
+      account: {
+        listAccounts,
+        probeLiveAuth: vi.fn(() => auth.promise),
+      },
+      provider: { listProviders },
+    } as unknown as Backend;
+
+    const loading = loadAgentStatuses(backend);
+    await vi.waitFor(() => {
+      const snap = getAgentStatusSnapshot();
+      expect(snap.state).toBe('ready');
+      expect(listAccounts).toHaveBeenCalledOnce();
+      expect(snap.statuses[0]?.effectiveLabel).toBe('me@example.com');
+    });
+    expect(liveAuthProbeForAgent(getAgentStatusSnapshot(), 'claude')).toBeUndefined();
+
+    auth.resolve({
+      agentId: 'claude',
+      kind: 'oauth',
+      summary: 'verified',
+      hasCredentials: true,
+      health: 'verified',
+    });
+    await loading;
   });
 
   it('keeps backend failure distinct from an empty installed result', async () => {

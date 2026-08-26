@@ -3558,6 +3558,24 @@ fn import_live_writes_anthropic_and_grok_subscription_surface() {
 }
 
 #[test]
+fn list_pool_does_not_import_live_files() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::Oauth,
+        credentials: json!({
+            "access_token": "access-1",
+            "refresh_token": "refresh-1",
+            "email": "surface@example.com"
+        }),
+        label_hint: Some("surface@example.com".into()),
+        extra: json!({}),
+    });
+    assert!(svc.list_pool(Some(AgentId::Claude)).unwrap().is_empty());
+    assert_eq!(svc.list(Some(AgentId::Claude)).unwrap().len(), 1);
+}
+
+#[test]
 fn live_reconcile_new_row_and_rotation_keep_account_surface() {
     let (_root, svc, adapter) = live_svc(AgentId::Claude);
     adapter.set_live(LiveAccount {

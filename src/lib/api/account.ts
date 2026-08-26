@@ -7,6 +7,7 @@ import {
   loadAgentStatuses,
   markConnectionCurrent,
   notifyConnectionPoolChanged,
+  notifyTicketWalletChanged,
 } from '@/app/runtime';
 import type {
   AuthState,
@@ -44,6 +45,14 @@ export async function listAccounts(agentId?: AgentId): Promise<Account[]> {
   return getBackend().account.listAccounts(agentId);
 }
 
+/** Re-read live files into the pool, then refresh the shared store. */
+export async function reconcileAccountPool(agentId?: AgentId): Promise<void> {
+  const backend = getBackend();
+  if (!backend.account.reconcileAccounts) return;
+  await backend.account.reconcileAccounts(agentId);
+  await notifyConnectionPoolChanged(backend);
+}
+
 /**
  * Probe cache invalidation is followed by a background shared-status refresh.
  * Pages read the AgentStatus store, so this keeps Dashboard/Connections in
@@ -57,6 +66,7 @@ function authStateChanged(agentId: AgentId): void {
     // normal refresh can read the live config again.
   });
   void notifyConnectionPoolChanged(backend).catch(() => {});
+  void notifyTicketWalletChanged(backend).catch(() => {});
 }
 
 /** Reconcile an externally rotated/current login through the shared store. */

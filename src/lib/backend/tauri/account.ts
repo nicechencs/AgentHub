@@ -32,6 +32,18 @@ export function createTauriAccountPort(): AccountPort {
       }
     },
 
+    async reconcileAccounts(agentId) {
+      try {
+        const rows = await invoke<CoreAccount[]>('reconcile_accounts', {
+          agentId: agentId ?? null,
+        });
+        return rows.map(mapCoreAccount);
+      } catch (e) {
+        log.error('reconcile_accounts failed', e);
+        throw e;
+      }
+    },
+
     async probeLiveAuth(agentId) {
       try {
         const raw = await invoke<AuthState & { agentId?: AgentId }>('probe_live_auth', { agentId });

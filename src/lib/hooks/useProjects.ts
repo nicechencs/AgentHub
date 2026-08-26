@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getProjectMetadata, listAgentProjects } from '@/lib/api/project';
 import type { AgentId, AgentProject } from '@/lib/types';
+import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 
 /** Guard cache writes against invalidate generation. */
 export function isCurrentProjectsRequest(
@@ -30,9 +31,7 @@ export function shouldShowProjectListSkeleton(input: {
 }): boolean {
   return (
     input.listLoading ||
-    (input.data == null &&
-      input.error == null &&
-      (input.agentsLoading || !input.hiddenReady))
+    (input.data == null && input.error == null && !input.hiddenReady)
   );
 }
 
@@ -123,11 +122,15 @@ export function readCachedProjectList(
 }
 
 export function rememberedProjectAgent(): AgentId | null {
+  if (lastAgentIdCache) return lastAgentIdCache;
+  const stored = loadString(StorageKey.projectsLastAgent, '');
+  lastAgentIdCache = stored || null;
   return lastAgentIdCache;
 }
 
 export function rememberProjectAgent(id: AgentId) {
   lastAgentIdCache = id || null;
+  if (id) saveString(StorageKey.projectsLastAgent, id);
 }
 
 export function readCachedShowHidden(): boolean | null {
@@ -157,6 +160,7 @@ export function clearProjectsDataCache() {
   keyClock.clear();
   showHiddenCache = null;
   lastAgentIdCache = null;
+  saveString(StorageKey.projectsLastAgent, '');
   fetchGeneration += 1;
   invalidateVersion += 1;
   writeClock = 0;

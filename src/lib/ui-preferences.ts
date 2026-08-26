@@ -25,6 +25,8 @@ export const StorageKey = {
   connectionsTicketOrder: `${PREFIX}connections-ticket-order`,
   routesProfileOrder: `${PREFIX}routes-profile-order`,
   agentsCatalogOrder: `${PREFIX}agents-catalog-order`,
+  /** Last Projects tab; used to preload that agent's list on boot. */
+  projectsLastAgent: `${PREFIX}projects-last-agent`,
 } as const;
 
 export function loadJson<T>(key: string, fallback: T): T {

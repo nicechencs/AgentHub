@@ -78,11 +78,9 @@ export function createTauriAgentPort(backend: Backend): AgentPort {
         backend.doctor.loadDoctorMapped(),
         loadHiddenAgentIds(),
       ]);
-      return withConnectionEnrichment(
-        backend,
-        // AGENTS is catalog-driven (boot / mock seed); empty → detected-only.
-        stampHidden(mergeAgentListWithCatalog(doctor.agents, AGENTS), hiddenIds),
-      );
+      // Connection overlay lives in the agent-status store so listAgents
+      // does not issue a second listAccounts/listProviders during boot.
+      return stampHidden(mergeAgentListWithCatalog(doctor.agents, AGENTS), hiddenIds);
     },
 
     async getAgent(agentId) {

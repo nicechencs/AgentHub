@@ -32,8 +32,8 @@ describe('resolveProjectTabAgents', () => {
 });
 
 describe('resolveProjectFetchAgentId', () => {
-  it('returns null when the tab list is empty', () => {
-    expect(resolveProjectFetchAgentId([], 'claude')).toBeNull();
+  it('uses the selected id while tabs are still empty so the list can load before detect', () => {
+    expect(resolveProjectFetchAgentId([], 'claude')).toBe('claude');
     expect(resolveProjectFetchAgentId([], '')).toBeNull();
   });
 

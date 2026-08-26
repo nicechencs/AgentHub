@@ -6,6 +6,7 @@ import {
   type AgentStatusSnapshot,
 } from './agent-status-store';
 import { getBackend } from './backend-runtime';
+import { notifyConnectionPoolChanged } from './connection-pool-store';
 
 const AgentStatusContext = React.createContext<AgentStatusSnapshot | null>(null);
 
@@ -27,7 +28,18 @@ export function AgentStatusProvider({ children }: { children: React.ReactNode })
   // token rotation. One shared forced reload avoids every page probing alone.
   React.useEffect(() => {
     const onFocus = () => {
-      void loadAgentStatuses(getBackend(), { force: true }).catch(() => {});
+      const backend = getBackend();
+      void (async () => {
+        if (backend.account.reconcileAccounts) {
+          try {
+            await backend.account.reconcileAccounts();
+            await notifyConnectionPoolChanged(backend);
+          } catch {
+            // Keep the last pool; agent status still re-detects.
+          }
+        }
+        await loadAgentStatuses(backend, { force: true });
+      })().catch(() => {});
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
