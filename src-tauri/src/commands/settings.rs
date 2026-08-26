@@ -14,7 +14,7 @@ use agenthub_core::models::{AppSettings, PathInfo};
 pub async fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, |hub| {
-        hub.settings
+        hub.settings()
             .get_all()
             .map_err(|e| map_err_string("get_app_settings", e))
     })
@@ -25,7 +25,7 @@ pub async fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings,
 #[tauri::command]
 pub async fn get_path_info(state: State<'_, AppState>) -> Result<PathInfo, String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, |hub| Ok(hub.settings.path_info())).await
+    with_hub_blocking(hub, |hub| Ok(hub.settings().path_info())).await
 }
 
 /// Invoke: `set_setting` — whitelist key (theme|language|log_level|log_retention_days|close_to_tray|…).
@@ -40,7 +40,7 @@ pub async fn set_setting(
     let key_for_sync = key.clone();
     let value_for_sync = value.clone();
     with_hub_blocking(hub, move |hub| {
-        hub.settings
+        hub.settings()
             .set(&key, &value)
             .map_err(|e| map_err_string("set_setting", e))
     })
@@ -81,7 +81,7 @@ pub async fn open_external_url(url: String) -> Result<(), String> {
 pub async fn open_logs_dir(state: State<'_, AppState>) -> Result<String, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, |hub| {
-        let info = hub.settings.path_info();
+        let info = hub.settings().path_info();
         let path = std::path::PathBuf::from(&info.logs_dir);
         if !path.exists() {
             std::fs::create_dir_all(&path).map_err(|e| {
@@ -154,11 +154,11 @@ mod tests {
     #[test]
     fn settings_defaults_include_log_fields() {
         let (_dir, hub) = hub_tmp();
-        let s = hub.settings.get_all().unwrap();
+        let s = hub.settings().get_all().unwrap();
         assert_eq!(s.log_level, "info");
         assert_eq!(s.log_retention_days, 14);
         assert!(s.close_to_tray);
-        let paths = hub.settings.path_info();
+        let paths = hub.settings().path_info();
         assert!(
             paths.logs_dir.replace('\\', "/").ends_with("/logs"),
             "logs_dir={}",
@@ -169,24 +169,24 @@ mod tests {
     #[test]
     fn set_log_level_and_retention_via_service() {
         let (_dir, hub) = hub_tmp();
-        hub.settings.set("log_level", "debug").unwrap();
-        hub.settings.set("log_retention_days", "30").unwrap();
-        let s = hub.settings.get_all().unwrap();
+        hub.settings().set("log_level", "debug").unwrap();
+        hub.settings().set("log_retention_days", "30").unwrap();
+        let s = hub.settings().get_all().unwrap();
         assert_eq!(s.log_level, "debug");
         assert_eq!(s.log_retention_days, 30);
-        assert!(hub.settings.set("log_level", "nope").is_err());
-        assert!(hub.settings.set("log_retention_days", "0").is_err());
+        assert!(hub.settings().set("log_level", "nope").is_err());
+        assert!(hub.settings().set("log_retention_days", "0").is_err());
     }
 
     #[test]
     fn close_to_tray_roundtrip_via_service() {
         let (_dir, hub) = hub_tmp();
-        assert!(hub.settings.get_all().unwrap().close_to_tray);
-        hub.settings.set("close_to_tray", "false").unwrap();
-        assert!(!hub.settings.get_all().unwrap().close_to_tray);
-        hub.settings.set("close_to_tray", "true").unwrap();
-        assert!(hub.settings.get_all().unwrap().close_to_tray);
-        assert!(hub.settings.set("close_to_tray", "maybe").is_err());
+        assert!(hub.settings().get_all().unwrap().close_to_tray);
+        hub.settings().set("close_to_tray", "false").unwrap();
+        assert!(!hub.settings().get_all().unwrap().close_to_tray);
+        hub.settings().set("close_to_tray", "true").unwrap();
+        assert!(hub.settings().get_all().unwrap().close_to_tray);
+        assert!(hub.settings().set("close_to_tray", "maybe").is_err());
     }
 
     #[test]
@@ -202,7 +202,7 @@ mod tests {
         state
             .hub()
             .unwrap()
-            .settings
+            .settings()
             .set("close_to_tray", "false")
             .unwrap();
         state.sync_setting_flag("close_to_tray", "false");
@@ -211,7 +211,7 @@ mod tests {
             !state
                 .hub()
                 .unwrap()
-                .settings
+                .settings()
                 .get_all()
                 .unwrap()
                 .close_to_tray
@@ -220,7 +220,7 @@ mod tests {
         state
             .hub()
             .unwrap()
-            .settings
+            .settings()
             .set("close_to_tray", "true")
             .unwrap();
         state.sync_setting_flag("close_to_tray", "true");
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn open_logs_dir_ensures_directory_exists() {
         let (dir, hub) = hub_tmp();
-        let logs = std::path::PathBuf::from(hub.settings.path_info().logs_dir);
+        let logs = std::path::PathBuf::from(hub.settings().path_info().logs_dir);
         // layout already creates logs; remove and re-ensure path logic
         if logs.exists() {
             // keep dir for open; just verify present under data dir

@@ -5,7 +5,7 @@ use agenthub_core::AgentHub;
 use crate::output::{print_json, OutputFormat};
 
 pub fn path(hub: &AgentHub, format: OutputFormat) -> Result<()> {
-    let info = hub.settings.path_info();
+    let info = hub.settings().path_info();
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&info),
@@ -22,8 +22,8 @@ pub fn path(hub: &AgentHub, format: OutputFormat) -> Result<()> {
 pub fn get(hub: &AgentHub, key: Option<&str>, format: OutputFormat) -> Result<()> {
     match key {
         None => {
-            let all = hub.settings.get_all()?;
-            let app_version = hub.settings.get("app_version")?;
+            let all = hub.settings().get_all()?;
+            let app_version = hub.settings().get("app_version")?;
             match format {
                 OutputFormat::Quiet => Ok(()),
                 OutputFormat::Json => {
@@ -58,7 +58,7 @@ pub fn get(hub: &AgentHub, key: Option<&str>, format: OutputFormat) -> Result<()
             }
         }
         Some(k) => {
-            let v = hub.settings.get(k)?;
+            let v = hub.settings().get(k)?;
             match format {
                 OutputFormat::Quiet => Ok(()),
                 OutputFormat::Json => print_json(&serde_json::json!({ "key": k, "value": v })),
@@ -87,7 +87,7 @@ pub fn visible_config_keys() -> Vec<&'static str> {
 mod tests;
 
 pub fn set(hub: &AgentHub, key: &str, value: &str, format: OutputFormat) -> Result<()> {
-    hub.settings.set(key, value)?;
+    hub.settings().set(key, value)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => {

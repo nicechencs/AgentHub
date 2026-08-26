@@ -82,3 +82,49 @@ fn database_open_creates_schema_and_settings_roundtrip() {
     })
     .expect("schema checks");
 }
+
+#[test]
+fn peek_settings_reads_written_keys_and_empty_when_missing() {
+    let missing = tempfile::tempdir().expect("tempdir");
+    let empty = peek_settings(&missing.path().join("agenthub.db"), &["log_level"]);
+    assert!(empty.is_empty());
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("agenthub.db");
+    let db = Database::open(&path).expect("open db");
+    db.set_setting("log_level", "debug").expect("set level");
+    db.set_setting("log_retention_days", "21")
+        .expect("set days");
+    drop(db);
+
+    let values = peek_settings(&path, &["log_level", "log_retention_days", "missing"]);
+    assert_eq!(values.get("log_level").map(String::as_str), Some("debug"));
+    assert_eq!(
+        values.get("log_retention_days").map(String::as_str),
+        Some("21")
+    );
+    assert!(!values.contains_key("missing"));
+}
+
+#[test]
+fn load_app_settings_ignores_invalid_log_prefs() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("agenthub.db");
+    let db = Database::open(&path).expect("open db");
+
+    db.set_setting("log_level", "nope")
+        .expect("set invalid level");
+    db.set_setting("log_retention_days", "999")
+        .expect("set invalid days");
+    let settings = db.load_app_settings().expect("load invalid");
+    assert_eq!(settings.log_level, "info");
+    assert_eq!(settings.log_retention_days, 14);
+
+    db.set_setting("log_level", " DEBUG ")
+        .expect("set mixed case");
+    db.set_setting("log_retention_days", "30")
+        .expect("set valid days");
+    let settings = db.load_app_settings().expect("load valid");
+    assert_eq!(settings.log_level, "debug");
+    assert_eq!(settings.log_retention_days, 30);
+}

@@ -106,7 +106,7 @@ pub fn chat_cancel(state: State<'_, AppState>, conversation_id: String) -> Resul
 }
 
 fn list_conversations_inner(hub: &AgentHub) -> Result<Vec<Conversation>, String> {
-    hub.chat
+    hub.chat()
         .list_conversations()
         .map_err(|e| map_err_string("list_conversations", e))
 }
@@ -117,7 +117,7 @@ fn create_conversation_inner(
     cwd: Option<String>,
 ) -> Result<Conversation, String> {
     let agents = parse_agent_ids(agent_ids)?;
-    hub.chat
+    hub.chat()
         .create_conversation(agents, cwd)
         .map_err(|e| map_err_string("create_conversation", e))
 }
@@ -128,7 +128,7 @@ fn ensure_default_conversation_inner(
     cwd: Option<String>,
 ) -> Result<Conversation, String> {
     let agents = parse_agent_ids(agent_ids)?;
-    hub.chat
+    hub.chat()
         .ensure_default_conversation(agents, cwd)
         .map_err(|e| map_err_string("ensure_default_conversation", e))
 }
@@ -153,13 +153,13 @@ fn update_conversation_inner(
             Some(t.to_string())
         }
     });
-    hub.chat
+    hub.chat()
         .update_conversation(id, title, agents, cwd_patch, allow_dangerous)
         .map_err(|e| map_err_string("update_conversation", e))
 }
 
 fn delete_conversation_inner(hub: &AgentHub, id: &str) -> Result<(), String> {
-    hub.chat
+    hub.chat()
         .delete_conversation(id)
         .map_err(|e| map_err_string("delete_conversation", e))
 }
@@ -168,13 +168,13 @@ fn list_chat_messages_inner(
     hub: &AgentHub,
     conversation_id: &str,
 ) -> Result<Vec<ChatMessage>, String> {
-    hub.chat
+    hub.chat()
         .list_messages(conversation_id)
         .map_err(|e| map_err_string("list_chat_messages", e))
 }
 
 fn chat_cancel_inner(hub: &AgentHub, conversation_id: &str) -> Result<(), String> {
-    hub.chat
+    hub.chat()
         .cancel(conversation_id)
         .map_err(|e| map_err_string("chat_cancel", e))
 }
@@ -185,7 +185,7 @@ fn chat_send_inner(
     prompt: &str,
     on_event: Channel<ChatEvent>,
 ) -> Result<(), String> {
-    hub.chat
+    hub.chat()
         .send(conversation_id, prompt, &|ev| {
             let _ = on_event.send(ev);
         })

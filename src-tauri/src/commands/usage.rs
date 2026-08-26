@@ -24,7 +24,7 @@ pub async fn usage_collect(
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let filter = parse_agent_opt(agent_id.as_deref())?;
-        hub.usage
+        hub.usage()
             .collect(filter)
             .map_err(|e| map_err_string("usage_collect", e))
     })
@@ -47,7 +47,7 @@ pub async fn usage_query(
         let model = model.filter(|m| !m.is_empty() && m != "all");
         let since = since.filter(|s| !s.is_empty());
         let exclude_agent_ids = parse_exclude_agent_ids(exclude_agent_ids);
-        hub.usage
+        hub.usage()
             .query(UsageQuery {
                 days: days.max(1),
                 agent_id: agent,
@@ -77,7 +77,7 @@ pub async fn usage_trend(
         let since = since.filter(|s| !s.is_empty());
         let exclude = parse_exclude_agent_ids(exclude_agent_ids);
         let points = hub
-            .usage
+            .usage()
             .trend(
                 days.max(1),
                 agent,
@@ -106,7 +106,7 @@ pub async fn usage_overview(
         let model = model.filter(|m| !m.is_empty() && m != "all");
         let since = since.filter(|s| !s.is_empty());
         let exclude = parse_exclude_agent_ids(exclude_agent_ids);
-        hub.usage
+        hub.usage()
             .overview(
                 days.max(1),
                 agent,
@@ -130,7 +130,7 @@ fn parse_exclude_agent_ids(ids: Option<Vec<String>>) -> Vec<AgentId> {
 pub async fn usage_list_models(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        hub.usage
+        hub.usage()
             .list_models()
             .map_err(|e| map_err_string("usage_list_models", e))
     })
@@ -141,7 +141,7 @@ pub async fn usage_list_models(state: State<'_, AppState>) -> Result<Vec<String>
 pub async fn usage_parser_health(state: State<'_, AppState>) -> Result<Vec<ParserHealth>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        hub.usage
+        hub.usage()
             .parser_health()
             .map_err(|e| map_err_string("usage_parser_health", e))
     })
@@ -157,7 +157,7 @@ pub async fn usage_missing_pricing(
     let hub = state.hub_arc()?;
     let d = days.unwrap_or(30);
     with_hub_blocking(hub, move |hub| {
-        hub.usage
+        hub.usage()
             .missing_pricing_models(d)
             .map_err(|e| map_err_string("usage_missing_pricing", e))
     })

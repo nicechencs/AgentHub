@@ -25,7 +25,7 @@ pub async fn get_doctor_report(
 ) -> Result<DoctorReport, String> {
     let hub = state.hub_arc()?;
     let force = force.unwrap_or(false);
-    if !force && !hub.agents.cache_is_warm() {
+    if !force && !hub.agents().cache_is_warm() {
         if let Some(snapshot) = agenthub_core::services::doctor_snapshot::load(hub.data_dir()) {
             if DOCTOR_REFRESHING
                 .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -46,8 +46,8 @@ pub async fn get_doctor_report(
     }
     with_hub_blocking(hub, move |hub| {
         if force {
-            hub.env.invalidate_cache();
-            hub.agents.invalidate_cache();
+            hub.env().invalidate_cache();
+            hub.agents().invalidate_cache();
         }
         Ok(hub.doctor())
     })

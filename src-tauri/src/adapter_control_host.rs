@@ -83,7 +83,7 @@ impl AdapterControl for DesktopAdapterControl {
                 let _target_guard = self.coordinator.lock_target(target_agent_id).await;
                 let hub = Arc::clone(&self.hub);
                 with_hub_blocking(hub, move |hub| {
-                    hub.ticket_bind
+                    hub.ticket_bind()
                         .bind(&request)
                         .map_err(|err| map_err_string("bind_ticket", err))
                 })
@@ -122,7 +122,7 @@ impl AdapterControl for DesktopAdapterControl {
             agent_id: action.request.agent_id,
         };
         with_hub_blocking(hub, move |hub| {
-            hub.ticket_bind
+            hub.ticket_bind()
                 .unbind(&request)
                 .map_err(|err| map_err_string("unbind_ticket", err))
         })
@@ -184,7 +184,7 @@ pub(crate) fn apply_result_from_binding(
         "bind did not persist an adapter profile [adapter.profile_missing]".to_string()
     })?;
     let profile = hub
-        .adapter_apply
+        .adapter_apply()
         .list(None, None, Some(binding.agent_id))
         .map_err(|err| map_err_string("apply_adapter", err))?
         .into_iter()
@@ -194,7 +194,7 @@ pub(crate) fn apply_result_from_binding(
         "bind did not persist a generated provider [adapter.provider_missing]".to_string()
     })?;
     let provider = hub
-        .providers
+        .providers()
         .get(&provider_id, Some(binding.agent_id))
         .map_err(|err| map_err_string("apply_adapter", err))?;
     Ok(AdapterApplyResult {

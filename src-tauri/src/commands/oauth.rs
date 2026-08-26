@@ -72,7 +72,7 @@ pub async fn oauth_complete(
         if current.agent_id != target {
             return Err("oauth target changed before completion [oauth.target_changed]".into());
         }
-        oauth::complete_oauth(&hub.accounts, &oauth_state)
+        oauth::complete_oauth(hub.accounts(), &oauth_state)
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("oauth_complete", e))
     })
@@ -140,7 +140,7 @@ pub async fn oauth_device_complete(
                 "oauth device target changed before completion [oauth.target_changed]".into(),
             );
         }
-        oauth::complete_device_oauth(&hub.accounts, &oauth_state)
+        oauth::complete_device_oauth(hub.accounts(), &oauth_state)
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("oauth_device_complete", e))
     })

@@ -25,7 +25,7 @@ fn require_agent(agent_filter: Option<&str>, operation: &str) -> Result<AgentId>
 /// List accounts (redacted).
 pub fn list(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
     let filter = parse_agent_filter(agent_filter)?;
-    let items = hub.accounts.list(filter)?;
+    let items = hub.accounts().list(filter)?;
     emit_list(&items, format)
 }
 
@@ -45,7 +45,7 @@ pub fn import(
         ),
         assume_yes,
     )?;
-    let item = hub.accounts.import_live(agent, name)?;
+    let item = hub.accounts().import_live(agent, name)?;
     emit_one(&item, format)
 }
 
@@ -64,7 +64,7 @@ pub fn add_apikey(
         &format!("Add API key account for {}?", agent.as_str()),
         assume_yes,
     )?;
-    let item = hub.accounts.add_api_key(agent, label, &api_key)?;
+    let item = hub.accounts().add_api_key(agent, label, &api_key)?;
     emit_one(&item, format)
 }
 
@@ -78,7 +78,7 @@ pub fn switch(
 ) -> Result<()> {
     let agent = require_agent(agent_filter, "switch")?;
     confirm(&switch_confirm_prompt(hub, agent, id_or_label)?, assume_yes)?;
-    let result = hub.accounts.switch(id_or_label, agent)?;
+    let result = hub.accounts().switch(id_or_label, agent)?;
     emit_switch(&result, format)
 }
 
@@ -97,7 +97,7 @@ pub fn undo(
         ),
         assume_yes,
     )?;
-    let undone = hub.accounts.undo_switch(agent)?;
+    let undone = hub.accounts().undo_switch(agent)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&serde_json::json!({
@@ -121,7 +121,7 @@ pub fn switch_confirm_prompt(
     id_or_label: &str,
 ) -> Result<String> {
     let current = hub
-        .accounts
+        .accounts()
         .list(Some(agent))?
         .into_iter()
         .find(|a| a.is_current);
@@ -131,7 +131,7 @@ pub fn switch_confirm_prompt(
     };
     let backup = format!(
         "backup: {}",
-        hub.backups
+        hub.backups()
             .backups_root()
             .join("live")
             .join(agent.as_str())
@@ -188,7 +188,7 @@ pub fn refresh(
         ),
         assume_yes,
     )?;
-    let item = hub.accounts.refresh_token(id_or_label, agent)?;
+    let item = hub.accounts().refresh_token(id_or_label, agent)?;
     emit_one(&item, format)
 }
 
@@ -208,7 +208,7 @@ pub fn delete(
         ),
         assume_yes,
     )?;
-    hub.accounts.delete(id_or_label, agent)?;
+    hub.accounts().delete(id_or_label, agent)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&serde_json::json!({

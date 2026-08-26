@@ -41,7 +41,7 @@ pub async fn get_project_metadata(
 ) -> Result<ProjectMetadataFile, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        hub.projects
+        hub.projects()
             .get_metadata()
             .map_err(|e| map_err_string("get_project_metadata", e))
     })
@@ -59,7 +59,7 @@ pub async fn upsert_project_meta(
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let doc = hub
-            .projects
+            .projects()
             .get_metadata()
             .map_err(|e| map_err_string("upsert_project_meta", e))?;
         let mut meta = doc.projects.get(&project_id).cloned().unwrap_or_default();
@@ -70,7 +70,7 @@ pub async fn upsert_project_meta(
             let t = a.trim().to_string();
             meta.alias = if t.is_empty() { None } else { Some(t) };
         }
-        hub.projects
+        hub.projects()
             .upsert_project_meta(&project_id, meta)
             .map_err(|e| map_err_string("upsert_project_meta", e))
     })
@@ -85,7 +85,7 @@ pub async fn set_show_hidden_projects(
 ) -> Result<(), String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        hub.projects
+        hub.projects()
             .set_show_hidden_projects(show)
             .map_err(|e| map_err_string("set_show_hidden_projects", e))
     })
@@ -125,7 +125,7 @@ fn list_agent_projects_inner(
     include_hidden: bool,
 ) -> Result<Vec<AgentProject>, String> {
     let filter = parse_agent_opt(agent_id)?;
-    hub.projects
+    hub.projects()
         .list_projects(filter, include_hidden)
         .map_err(|e| map_err_string("list_agent_projects", e))
 }
@@ -134,19 +134,19 @@ fn list_agent_project_sessions_inner(
     hub: &AgentHub,
     project_id: &str,
 ) -> Result<Vec<AgentSession>, String> {
-    hub.projects
+    hub.projects()
         .list_sessions(project_id)
         .map_err(|e| map_err_string("list_agent_project_sessions", e))
 }
 
 fn delete_agent_project_inner(hub: &AgentHub, id: &str) -> Result<(), String> {
-    hub.projects
+    hub.projects()
         .delete(id)
         .map_err(|e| map_err_string("delete_agent_project", e))
 }
 
 fn delete_agent_projects_inner(hub: &AgentHub, ids: Vec<String>) -> Result<u32, String> {
-    hub.projects
+    hub.projects()
         .delete_many(&ids)
         .map_err(|e| map_err_string("delete_agent_projects", e))
 }
@@ -155,7 +155,7 @@ fn get_excerpts_inner(
     hub: &AgentHub,
     ids: Vec<String>,
 ) -> Result<Vec<AgentProjectExcerpt>, String> {
-    hub.projects
+    hub.projects()
         .excerpts(&ids)
         .map_err(|e| map_err_string("get_agent_project_excerpts", e))
 }
@@ -209,7 +209,7 @@ mod tests {
     fn metadata_upsert_roundtrip() {
         let (dir, hub) = hub_tmp();
         let pid = "claude:proj:-C-Users-demo";
-        hub.projects
+        hub.projects()
             .upsert_project_meta(
                 pid,
                 ProjectUserMeta {
@@ -218,7 +218,7 @@ mod tests {
                 },
             )
             .unwrap();
-        let doc = hub.projects.get_metadata().unwrap();
+        let doc = hub.projects().get_metadata().unwrap();
         assert!(doc.projects.get(pid).unwrap().hidden);
         assert!(dir.path().join("project_metadata.json").exists());
     }
@@ -227,7 +227,7 @@ mod tests {
     fn list_include_hidden_and_show_flag() {
         let (_dir, hub) = hub_tmp();
         let pid = "claude:proj:-C-Users-demo";
-        hub.projects
+        hub.projects()
             .upsert_project_meta(
                 pid,
                 ProjectUserMeta {
@@ -236,8 +236,8 @@ mod tests {
                 },
             )
             .unwrap();
-        hub.projects.set_show_hidden_projects(true).unwrap();
-        assert!(hub.projects.get_metadata().unwrap().show_hidden_projects);
+        hub.projects().set_show_hidden_projects(true).unwrap();
+        assert!(hub.projects().get_metadata().unwrap().show_hidden_projects);
         // Machine may have no claude projects; just ensure API accepts include_hidden.
         let _ = list_agent_projects_inner(&hub, Some("claude"), true).unwrap();
         let _ = list_agent_projects_inner(&hub, Some("claude"), false).unwrap();

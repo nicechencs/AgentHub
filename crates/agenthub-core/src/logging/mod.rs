@@ -119,30 +119,16 @@ pub fn parse_retention_days(s: &str) -> Result<u32> {
 
 /// Load log_level + retention from SQLite settings if present.
 pub fn load_log_prefs(data_dir: &Path) -> (String, u32) {
-    let path = db_path(data_dir);
-    if !path.exists() {
-        return (DEFAULT_LEVEL.into(), DEFAULT_RETENTION_DAYS);
-    }
-    let Ok(conn) = rusqlite::Connection::open(&path) else {
-        return (DEFAULT_LEVEL.into(), DEFAULT_RETENTION_DAYS);
-    };
-    let level = conn
-        .query_row(
-            "SELECT value FROM settings WHERE key = 'log_level'",
-            [],
-            |r| r.get::<_, String>(0),
-        )
-        .ok()
+    let values =
+        crate::storage::peek_settings(&db_path(data_dir), &["log_level", "log_retention_days"]);
+    let level = values
+        .get("log_level")
         .filter(|s| parse_level(s).is_ok())
+        .cloned()
         .unwrap_or_else(|| DEFAULT_LEVEL.into());
-    let retention = conn
-        .query_row(
-            "SELECT value FROM settings WHERE key = 'log_retention_days'",
-            [],
-            |r| r.get::<_, String>(0),
-        )
-        .ok()
-        .and_then(|s| parse_retention_days(&s).ok())
+    let retention = values
+        .get("log_retention_days")
+        .and_then(|s| parse_retention_days(s).ok())
         .unwrap_or(DEFAULT_RETENTION_DAYS);
     (level, retention)
 }

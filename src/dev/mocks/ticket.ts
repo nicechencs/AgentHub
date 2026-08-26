@@ -28,6 +28,14 @@ import type { Account, AgentId, Provider } from '@/lib/types';
 import { delay } from './delay';
 import { getMockAccountById } from './account';
 import { getMockProviderById } from './provider';
+import {
+  classifyAccountSource,
+  classifyProviderSource,
+  jsonString,
+  type ClassifiableAccount,
+  type ClassifiableProvider,
+  type MockSourceId,
+} from './source-classify';
 
 export interface MockTicketSourceResolver {
   listAccounts(): Account[];
@@ -43,17 +51,6 @@ export interface MockTicketSourceResolver {
   removeBinding?(profileId: string): void;
 }
 
-/** Optional classify fields mirroring core Account.extra / credentials. */
-type ClassifiableAccount = Account & {
-  extra?: Record<string, unknown>;
-  credentials?: Record<string, unknown>;
-};
-
-/** Optional persisted meta mirroring core Provider.meta. */
-type ClassifiableProvider = Provider & {
-  meta?: Record<string, unknown>;
-};
-
 const TICKET_SURFACES: readonly TicketSurface[] = [
   'kimi-code-membership',
   'anthropic-api',
@@ -66,22 +63,6 @@ const TICKET_SURFACES: readonly TicketSurface[] = [
   'grok-xai-subscription',
   'unknown',
 ];
-
-const OPENAI_API_ENDPOINT_NEEDLE = 'api.openai.com';
-const XAI_API_ENDPOINT_NEEDLE = 'api.x.ai';
-const GLM_CODING_ANTHROPIC_NEEDLE = 'open.bigmodel.cn/api/anthropic';
-const GLM_CODING_CHAT_NEEDLE = 'open.bigmodel.cn/api/coding';
-const DEEPSEEK_API_ENDPOINT_NEEDLE = 'api.deepseek.com';
-
-function blobContains(value: unknown, needle: string): boolean {
-  if (typeof value === 'string') return value.toLowerCase().includes(needle);
-  if (!value || typeof value !== 'object') return false;
-  return JSON.stringify(value).toLowerCase().includes(needle);
-}
-
-function explicitTagMatches(tag: string | undefined, accepted: readonly string[]): boolean {
-  return !!tag && accepted.some((item) => item.toLowerCase() === tag.toLowerCase());
-}
 
 const PROJECTION_NOT_A_TICKET = '自动生成的配置不是登录';
 
@@ -99,148 +80,29 @@ function adapterRouteToBinding(route: Exclude<AdapterRoute, 'unsupported'>): Bin
   return 'native';
 }
 
-function jsonString(value: unknown, key: string): string | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const raw = (value as Record<string, unknown>)[key];
-  if (typeof raw !== 'string') return undefined;
-  const trimmed = raw.trim();
-  return trimmed || undefined;
-}
-
-/** Mirror core `is_codex_auth_json`: format=auth_json OR nested tokens.access/refresh. */
-function isCodexAuthJson(format: string | undefined, credentials: unknown): boolean {
-  if (format?.toLowerCase() === 'auth_json') return true;
-  const tokens = credentials && typeof credentials === 'object'
-    ? (credentials as Record<string, unknown>).tokens
-    : undefined;
-  if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return false;
-  return Object.prototype.hasOwnProperty.call(tokens, 'access_token')
-    || Object.prototype.hasOwnProperty.call(tokens, 'refresh_token');
-}
-
 function classifyProviderSurface(provider: Provider): TicketSurface {
-  if (
-    provider.agentId === 'kimi'
-    && (provider.preset === 'kimi-code-membership'
-      || (typeof provider.configText === 'string'
-        && provider.configText.toLowerCase().includes('api.kimi.com/coding')))
-  ) {
-    return 'kimi-code-membership';
-  }
-  if (
-    provider.agentId === 'claude'
-    && (provider.preset === 'anthropic'
-      || (typeof provider.configText === 'string'
-        && provider.configText.toLowerCase().includes('api.anthropic.com')))
-  ) {
-    return 'anthropic-api';
-  }
-  const tag = provider.preset
-    ?? jsonString((provider as ClassifiableProvider).meta, 'provider');
-  if (
-    explicitTagMatches(tag, ['openai', 'openai-api'])
-    || blobContains(provider.configText, OPENAI_API_ENDPOINT_NEEDLE)
-    || blobContains(provider.configText, 'openrouter.ai')
-    || explicitTagMatches(tag, ['openai-compat', 'openrouter'])
-  ) {
-    return 'openai-api';
-  }
-  if (
-    explicitTagMatches(tag, ['xai', 'xai-api'])
-    || blobContains(provider.configText, XAI_API_ENDPOINT_NEEDLE)
-  ) {
-    return 'xai-api';
-  }
-  if (
-    explicitTagMatches(tag, ['glm-coding-plan'])
-    || blobContains(provider.configText, GLM_CODING_ANTHROPIC_NEEDLE)
-    || blobContains(provider.configText, GLM_CODING_CHAT_NEEDLE)
-  ) {
-    return 'glm-coding-plan';
-  }
-  if (
-    explicitTagMatches(tag, ['deepseek-api', 'deepseek'])
-    || blobContains(provider.configText, DEEPSEEK_API_ENDPOINT_NEEDLE)
-  ) {
-    return 'deepseek-api';
-  }
-  return 'unknown';
+  const id = classifyProviderSource(provider);
+  return id ? ticketSurfaceFromMockSource(id) : 'unknown';
 }
 
 function classifyAccountSurface(account: Account): TicketSurface {
-  const row = account as ClassifiableAccount;
-  const explicitProvider =
-    jsonString(row.extra, 'provider')
-    ?? jsonString(row.credentials, 'provider')
-    ?? account.provider?.trim();
-  const credentialFormat =
-    jsonString(row.credentials, 'format')
-    ?? jsonString(row.extra, 'format')
-    ?? account.credentialFormat?.trim();
-  const credentialsBlob = row.credentials ?? {};
+  const id = classifyAccountSource(account as ClassifiableAccount, {
+    includeAnthropicEndpoint: true,
+  });
+  return id ? ticketSurfaceFromMockSource(id) : 'unknown';
+}
 
-  if (account.agentId === 'claude' && account.kind === 'oauth') {
-    return 'claude-subscription';
-  }
-  if (account.agentId === 'grok' && account.kind === 'oauth') {
-    return 'grok-xai-subscription';
-  }
-  if (
-    account.kind === 'apikey'
-    && (explicitProvider?.toLowerCase() === 'anthropic'
-      || (typeof row.credentials === 'object'
-        && JSON.stringify(row.credentials).toLowerCase().includes('api.anthropic.com'))
-      || (typeof row.extra === 'object'
-        && JSON.stringify(row.extra).toLowerCase().includes('api.anthropic.com')))
-  ) {
-    return 'anthropic-api';
-  }
-  if (
-    account.kind === 'apikey'
-    && (explicitTagMatches(explicitProvider, ['openai', 'openai-api', 'openai-compat', 'openrouter'])
-      || blobContains(row.credentials, OPENAI_API_ENDPOINT_NEEDLE)
-      || blobContains(row.credentials, 'openrouter.ai')
-      || blobContains(row.extra, OPENAI_API_ENDPOINT_NEEDLE)
-      || blobContains(row.extra, 'openrouter.ai'))
-  ) {
-    return 'openai-api';
-  }
-  if (
-    account.kind === 'apikey'
-    && (explicitTagMatches(explicitProvider, ['xai', 'xai-api'])
-      || blobContains(row.credentials, XAI_API_ENDPOINT_NEEDLE)
-      || blobContains(row.extra, XAI_API_ENDPOINT_NEEDLE))
-  ) {
-    return 'xai-api';
-  }
-  if (
-    account.kind === 'apikey'
-    && (explicitTagMatches(explicitProvider, ['glm-coding-plan'])
-      || blobContains(row.credentials, GLM_CODING_ANTHROPIC_NEEDLE)
-      || blobContains(row.credentials, GLM_CODING_CHAT_NEEDLE)
-      || blobContains(row.extra, GLM_CODING_ANTHROPIC_NEEDLE)
-      || blobContains(row.extra, GLM_CODING_CHAT_NEEDLE))
-  ) {
-    return 'glm-coding-plan';
-  }
-  if (
-    account.kind === 'apikey'
-    && (explicitTagMatches(explicitProvider, ['deepseek-api', 'deepseek'])
-      || blobContains(row.credentials, DEEPSEEK_API_ENDPOINT_NEEDLE)
-      || blobContains(row.extra, DEEPSEEK_API_ENDPOINT_NEEDLE))
-  ) {
-    return 'deepseek-api';
-  }
-
-  // Lockstep with adapter_route_service identify_source Account arm:
-  // Codex OAuth + auth_json → subscription; Codex OAuth without auth_json →
-  // same product surface (oauth_other credential class in matrix).
-  if (account.agentId === 'codex' && account.kind === 'oauth') {
-    if (isCodexAuthJson(credentialFormat, credentialsBlob)) {
-      return 'codex-chatgpt-subscription';
-    }
-    return 'codex-chatgpt-subscription';
-  }
+function ticketSurfaceFromMockSource(id: MockSourceId): TicketSurface {
+  if (id === 'kimi-code-membership') return 'kimi-code-membership';
+  if (id === 'anthropic') return 'anthropic-api';
+  if (id === 'openai') return 'openai-api';
+  if (id === 'xai') return 'xai-api';
+  if (id === 'glm-coding-plan') return 'glm-coding-plan';
+  if (id === 'deepseek-api') return 'deepseek-api';
+  if (id === 'claude-oauth') return 'claude-subscription';
+  if (id === 'grok-oauth') return 'grok-xai-subscription';
+  // Codex OAuth with or without auth_json share the ChatGPT subscription surface.
+  if (id === 'codex-auth-json' || id === 'codex-oauth') return 'codex-chatgpt-subscription';
   return 'unknown';
 }
 

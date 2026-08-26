@@ -6,7 +6,7 @@ use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use crate::output::{emit_install_outcome, print_json, OutputFormat};
 
 pub fn list(hub: &AgentHub, format: OutputFormat) -> Result<()> {
-    let runtimes = hub.env.detect_all();
+    let runtimes = hub.env().detect_all();
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&runtimes),

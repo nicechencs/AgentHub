@@ -16,20 +16,6 @@
 
 export type ThemeScheme = 'light' | 'dark';
 
-/** Brand-color keys only — not the product agent catalog. */
-export const TOKEN_AGENT_IDS = [
-  'claude',
-  'codex',
-  'kimi',
-  'grok',
-  'pi',
-  'workbuddy',
-  'cursor',
-  'dsh',
-] as const;
-
-export type TokenAgentId = (typeof TOKEN_AGENT_IDS)[number];
-
 /** Semantic theme colors. Keys map to CSS vars `--{key}`. */
 export const THEME = {
   light: {
@@ -73,6 +59,7 @@ export const THEME = {
 /**
  * Agent brand colors (logo dots, chart series, accents).
  * Edit here only — light/dark both flow into CSS vars and TS helpers.
+ * Keys are color slots, not the product catalog.
  */
 export const AGENT_COLORS = {
   claude: { light: '#d97757', dark: '#d97757' },
@@ -83,7 +70,12 @@ export const AGENT_COLORS = {
   workbuddy: { light: '#0052d9', dark: '#3b82f6' },
   cursor: { light: '#f54e00', dark: '#ff6b2c' },
   dsh: { light: '#4d6bfe', dark: '#6b8cff' },
-} as const satisfies Record<TokenAgentId, { light: string; dark: string }>;
+} as const;
+
+export type TokenAgentId = keyof typeof AGENT_COLORS;
+
+/** Brand-color keys derived from {@link AGENT_COLORS} — not a product set. */
+export const TOKEN_AGENT_IDS = Object.keys(AGENT_COLORS) as TokenAgentId[];
 
 /** Radii → `--radius-sm` / `--radius` / `--radius-lg` / `--radius-mark` */
 export const RADIUS = {

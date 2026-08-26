@@ -160,7 +160,7 @@ impl AppState {
 fn load_close_to_tray(hub: &Result<Arc<AgentHub>, String>) -> bool {
     hub.as_ref()
         .ok()
-        .and_then(|h| h.settings.get("close_to_tray").ok().flatten())
+        .and_then(|h| h.settings().get("close_to_tray").ok().flatten())
         .map(|v| parse_bool_setting(&v))
         .unwrap_or(true)
 }
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn loads_close_to_tray_false_from_settings() {
         let (_dir, hub) = hub_tmp();
-        hub.settings.set("close_to_tray", "false").unwrap();
+        hub.settings().set("close_to_tray", "false").unwrap();
         let state = AppState::from_hub(Ok(hub));
         assert!(!state.close_to_tray());
     }

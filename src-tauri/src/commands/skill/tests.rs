@@ -104,7 +104,7 @@ fn read_skill_markdown_shared_via_command_inner() {
     use agenthub_core::services::SkillService;
 
     let (_root, hub) = isolated_hub();
-    let source = hub.skills.source_root().to_path_buf();
+    let source = hub.skills().source_root().to_path_buf();
     let skill_dir = source.join("preview-demo");
     fs::create_dir_all(&skill_dir).unwrap();
     fs::write(
@@ -112,7 +112,7 @@ fn read_skill_markdown_shared_via_command_inner() {
         "---\nname: Preview Demo\ndescription: d\n---\n\n# Hi\n\n**bold**\n",
     )
     .unwrap();
-    hub.skills.invalidate_list_cache();
+    hub.skills().invalidate_list_cache();
 
     // Ensure service path works even if list cache was warm elsewhere.
     let _ = SkillService::new(source, register_all());

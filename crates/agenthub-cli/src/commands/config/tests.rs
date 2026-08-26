@@ -25,7 +25,7 @@ fn get_set_roundtrip_and_reject_secret_key() {
     get(&hub, None, OutputFormat::Quiet).unwrap();
     get(&hub, Some("app_version"), OutputFormat::Quiet).unwrap();
     set(&hub, "theme", "dark", OutputFormat::Quiet).unwrap();
-    assert_eq!(hub.settings.get("theme").unwrap().as_deref(), Some("dark"));
+    assert_eq!(hub.settings().get("theme").unwrap().as_deref(), Some("dark"));
     assert_eq!(
         set(&hub, "api_key", "sk-secret", OutputFormat::Quiet)
             .unwrap_err()

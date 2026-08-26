@@ -89,7 +89,8 @@ impl AgentAdapter for FakeAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![], extra_copies: Vec::new(),
+            notes: vec![],
+            extra_copies: Vec::new(),
         }
     }
 
@@ -3359,14 +3360,12 @@ base_url = "https://mytokens.cc/v1"
         None => std::env::remove_var("CODEX_HOME"),
     }
 
-    let switched = switched.expect(
-        "official 切换 from API-key live must not return identity_conflict",
-    );
+    let switched =
+        switched.expect("official 切换 from API-key live must not return identity_conflict");
     assert!(switched.account.is_current);
     assert_eq!(switched.account.id, official.id);
     assert_eq!(
-        switched.account.extra["email"],
-        "41375197@qq.com",
+        switched.account.extra["email"], "41375197@qq.com",
         "do not overwrite official identity from API-key live"
     );
     assert!(
@@ -3380,10 +3379,7 @@ base_url = "https://mytokens.cc/v1"
     let official_row = listed.iter().find(|row| row.id == official.id).unwrap();
     assert!(official_row.is_current);
     assert_eq!(official_row.extra["email"], "41375197@qq.com");
-    assert_eq!(
-        listed.iter().filter(|row| row.is_current).count(),
-        1
-    );
+    assert_eq!(listed.iter().filter(|row| row.is_current).count(), 1);
 }
 
 #[test]
@@ -4354,5 +4350,98 @@ fn hub_codex_refresh_patches_token_only_auth_json_body() {
     assert_eq!(
         live.credentials["body"]["last_refresh"], "2026-08-20T00:00:00Z",
         "token-only patch must keep extra Codex auth.json fields"
+    );
+}
+
+#[test]
+fn probe_live_auth_not_found_without_adapter() {
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let svc = AccountService::with_registry(db, AdapterRegistry::new());
+    let err = svc.probe_live_auth(AgentId::Grok).unwrap_err();
+    assert_eq!(err.code(), "not_found");
+}
+
+#[test]
+fn probe_live_auth_returns_adapter_state() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    adapter.set_auth_state(AuthState {
+        agent: AgentId::Grok,
+        kind: Some("api_key".into()),
+        summary: "configured".into(),
+        has_credentials: true,
+        health: crate::models::AuthHealth::Configured,
+        source: Some("fake-live-auth".into()),
+        revision: Some("r1".into()),
+        also_present: Vec::new(),
+        secret_hash: None,
+    });
+    let state = svc.probe_live_auth(AgentId::Grok).unwrap();
+    assert_eq!(state.kind.as_deref(), Some("api_key"));
+    assert!(state.also_present.is_empty());
+}
+
+#[test]
+fn probe_live_auth_appends_adapter_projection_kind() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "ahb_stale_token",
+            "base_url": "http://127.0.0.1:43081"
+        }),
+        label_hint: Some("Claude bridge".into()),
+        extra: json!({}),
+    });
+    adapter.set_auth_state(AuthState {
+        agent: AgentId::Claude,
+        kind: Some("api_key".into()),
+        summary: "configured".into(),
+        has_credentials: true,
+        health: crate::models::AuthHealth::Configured,
+        source: Some("fake-live-auth".into()),
+        revision: None,
+        also_present: Vec::new(),
+        secret_hash: None,
+    });
+    assert!(svc.live_is_adapter_projection(AgentId::Claude).unwrap());
+    let state = svc.probe_live_auth(AgentId::Claude).unwrap();
+    assert_eq!(
+        state.also_present,
+        vec![crate::services::ADAPTER_PROJECTION_KIND.to_owned()]
+    );
+}
+
+#[test]
+fn probe_live_auth_does_not_duplicate_projection_kind() {
+    let (_root, svc, adapter) = live_svc(AgentId::Claude);
+    adapter.set_live(LiveAccount {
+        agent: AgentId::Claude,
+        kind: AccountKind::ApiKey,
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "ahb_stale_token",
+            "base_url": "http://127.0.0.1:43081"
+        }),
+        label_hint: Some("Claude bridge".into()),
+        extra: json!({}),
+    });
+    adapter.set_auth_state(AuthState {
+        agent: AgentId::Claude,
+        kind: Some("api_key".into()),
+        summary: "configured".into(),
+        has_credentials: true,
+        health: crate::models::AuthHealth::Configured,
+        source: Some("fake-live-auth".into()),
+        revision: None,
+        also_present: vec![crate::services::ADAPTER_PROJECTION_KIND.to_owned()],
+        secret_hash: None,
+    });
+    let state = svc.probe_live_auth(AgentId::Claude).unwrap();
+    assert_eq!(
+        state.also_present,
+        vec![crate::services::ADAPTER_PROJECTION_KIND.to_owned()]
     );
 }

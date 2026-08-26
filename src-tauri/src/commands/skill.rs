@@ -68,7 +68,7 @@ pub async fn sync_all_skills(
 }
 
 fn list_skills_inner(hub: &AgentHub) -> Result<Vec<Skill>, String> {
-    hub.skills
+    hub.skills()
         .list()
         .map_err(|e| map_err_string("list_skills", e))
 }
@@ -80,7 +80,7 @@ pub async fn list_installed_skills(
 ) -> Result<Vec<InstalledSkill>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, |hub| {
-        hub.skills
+        hub.skills()
             .list_installed()
             .map_err(|e| map_err_string("list_installed_skills", e))
     })
@@ -95,7 +95,7 @@ pub async fn list_skill_catalog(state: State<'_, AppState>) -> Result<Vec<Instal
 }
 
 fn list_skill_catalog_inner(hub: &AgentHub) -> Result<Vec<InstalledSkill>, String> {
-    hub.skills
+    hub.skills()
         .list_catalog()
         .map_err(|e| map_err_string("list_skill_catalog", e))
 }
@@ -122,7 +122,7 @@ fn read_skill_markdown_inner(
     private_agent: Option<&str>,
 ) -> Result<SkillMarkdownPreview, String> {
     let agent = parse_agent_opt(private_agent)?;
-    hub.skills
+    hub.skills()
         .read_skill_markdown(skill_id, agent)
         .map_err(|e| map_err_string("read_skill_markdown", e))
 }
@@ -137,7 +137,7 @@ pub async fn install_skill(
     let hub = state.hub_arc()?;
     let overwrite = overwrite.unwrap_or(false);
     with_hub_blocking(hub, move |hub| {
-        hub.skills
+        hub.skills()
             .install_skill(&source, overwrite)
             .map_err(|e| map_err_string("install_skill", e))
     })
@@ -156,7 +156,7 @@ pub async fn import_private_skill(
     let overwrite = overwrite.unwrap_or(false);
     with_hub_blocking(hub, move |hub| {
         let agent = parse_agent(&agent_id)?;
-        hub.skills
+        hub.skills()
             .import_private_to_shared(&skill_id, agent, overwrite)
             .map_err(|e| map_err_string("import_private_skill", e))
     })
@@ -174,12 +174,12 @@ pub async fn uninstall_skill(
     with_hub_blocking(hub, move |hub| {
         if let Some(agent_id) = private_agent {
             let agent = parse_agent(&agent_id)?;
-            hub.skills
+            hub.skills()
                 .uninstall_private_skill(&skill_id, agent)
                 .map_err(|e| map_err_string("uninstall_skill", e))
         } else {
-            hub.skills
-                .uninstall_skill(&skill_id, Some(&hub.backups))
+            hub.skills()
+                .uninstall_skill(&skill_id, Some(hub.backups()))
                 .map_err(|e| map_err_string("uninstall_skill", e))
         }
     })
@@ -191,7 +191,7 @@ pub async fn uninstall_skill(
 pub async fn update_skill(state: State<'_, AppState>, skill_id: String) -> Result<Skill, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        hub.skills
+        hub.skills()
             .update_skill(&skill_id)
             .map_err(|e| map_err_string("update_skill", e))
     })
@@ -218,7 +218,7 @@ pub async fn project_skill(
                 return Err(msg);
             }
         };
-        hub.skills
+        hub.skills()
             .project_skill(&skill_id, agent, mode)
             .map_err(|e| map_err_string("project_skill", e))
     })
@@ -273,14 +273,14 @@ fn sync_skill_inner(
             ));
         }
     };
-    hub.skills
+    hub.skills()
         .sync_with_mode(skill_id, agent, force, mode)
         .map_err(|e| map_err_string("sync_skill", e))
 }
 
 fn disable_skill_inner(hub: &AgentHub, skill_id: &str, agent_id: &str) -> Result<(), String> {
     let agent = parse_agent(agent_id)?;
-    hub.skills
+    hub.skills()
         .disable(skill_id, agent)
         .map_err(|e| map_err_string("disable_skill", e))
 }
@@ -296,7 +296,7 @@ fn sync_all_skills_inner(
         None => (AgentId::ALL.to_vec(), true),
     };
     let report = hub
-        .skills
+        .skills()
         .sync_targets(&targets, force, skip_unsupported)
         .map_err(|e| map_err_string("sync_all_skills", e))?;
     for failure in &report.failed {

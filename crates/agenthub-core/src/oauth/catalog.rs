@@ -96,8 +96,8 @@ const PI_PROVIDER_SPECS: &[PiProviderSpec] = &[
     PiProviderSpec {
         canonical: "github-copilot",
         aliases: &["github-copilot", "copilot"],
-        // Marked device-code so PKCE start rejects it; full device flow is not wired yet.
-        flow: Some(PiProviderFlow::DeviceCode),
+        // Known Pi key, but AgentHub does not implement PKCE or device-code for it.
+        flow: None,
         refreshable: false,
         quota: PiQuotaBackend::None,
     },
@@ -111,8 +111,8 @@ const PI_PROVIDER_SPECS: &[PiProviderSpec] = &[
     PiProviderSpec {
         canonical: "kimi-coding",
         aliases: &["kimi-coding", "kimi"],
-        // Same as github-copilot: block PKCE; device flow not implemented yet.
-        flow: Some(PiProviderFlow::DeviceCode),
+        // Known Pi key, but AgentHub does not implement PKCE or device-code for it.
+        flow: None,
         refreshable: false,
         quota: PiQuotaBackend::None,
     },
@@ -208,7 +208,7 @@ fn single_agent_accepts_provider_key(agent: AgentId, key: &str) -> bool {
     }
 }
 
-/// Whether this option uses device-code flow.
+/// Whether this option uses the implemented device-code flow (Pi xAI only).
 pub fn is_device_code_option(agent: AgentId, provider_key: Option<&str>) -> bool {
     match agent {
         AgentId::Pi => matches!(
@@ -217,6 +217,14 @@ pub fn is_device_code_option(agent: AgentId, provider_key: Option<&str>) -> bool
         ),
         _ => false,
     }
+}
+
+/// Known Pi login keys that are not implemented in AgentHub (not PKCE, not device-code).
+pub fn is_unimplemented_pi_oauth(provider_key: Option<&str>) -> bool {
+    matches!(
+        lookup_pi_provider(provider_key.unwrap_or("")).map(|s| s.flow),
+        Some(None)
+    )
 }
 
 /// Map Pi provider key (or alias) to the canonical auth.json key.
@@ -343,8 +351,13 @@ mod tests {
         assert_eq!(pi_provider_quota_backend("codex"), PiQuotaBackend::Codex);
         assert_eq!(pi_provider_quota_backend("grok"), PiQuotaBackend::Grok);
         assert_eq!(pi_provider_quota_backend("anthropic"), PiQuotaBackend::None);
-        assert!(is_device_code_option(AgentId::Pi, Some("github-copilot")));
-        assert!(is_device_code_option(AgentId::Pi, Some("kimi-coding")));
+        assert!(!is_device_code_option(AgentId::Pi, Some("github-copilot")));
+        assert!(!is_device_code_option(AgentId::Pi, Some("kimi-coding")));
+        assert!(is_unimplemented_pi_oauth(Some("github-copilot")));
+        assert!(is_unimplemented_pi_oauth(Some("kimi-coding")));
+        assert!(is_unimplemented_pi_oauth(Some("openrouter")));
+        assert!(!is_unimplemented_pi_oauth(Some("xai")));
+        assert!(is_device_code_option(AgentId::Pi, Some("xai")));
         assert!(!is_device_code_option(AgentId::Pi, Some("anthropic")));
     }
 

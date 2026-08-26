@@ -117,7 +117,7 @@ pub(crate) fn resolve_agents(args: &RunArgs, hub: &AgentHub) -> Result<Vec<Agent
 
     if ids.is_empty() {
         // Default: all currently installed agents.
-        let detected = hub.agents.detect_all();
+        let detected = hub.agents().detect_all();
         for d in detected {
             if d.status == agenthub_core::models::DetectStatus::Installed {
                 ids.push(d.agent);

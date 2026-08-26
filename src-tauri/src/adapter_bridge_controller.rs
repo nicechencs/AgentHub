@@ -71,7 +71,7 @@ async fn apply_local_bridge_locked(
 ) -> Result<AdapterApplyResult, String> {
     let target_agent_id = request.target_agent_id;
     let prepared = with_hub_blocking(hub.clone(), move |hub| {
-        hub.adapter_bridge
+        hub.adapter_bridge()
             .prepare(&request)
             .map_err(|error| map_err_string("prepare_adapter_bridge", error))
     })
@@ -171,11 +171,11 @@ async fn apply_local_bridge_locked(
     let _target_guard = coordinator.lock_target(target_agent).await;
     let result = with_hub_blocking(hub.clone(), move |hub| {
         let core_guard = hub
-            .providers
+            .providers()
             .begin_live_saga(target_agent)
             .map_err(|error| map_err_string("begin_adapter_bridge_provider_saga", error))?;
         let projection = hub
-            .adapter_bridge
+            .adapter_bridge()
             .revalidate_provider_projection(&prepared, port)
             .map_err(|error| map_err_string("revalidate_adapter_bridge_provider", error))?;
         let provider_id = prepared.profile().generated_provider_id.clone();
@@ -273,7 +273,7 @@ pub(crate) async fn set_local_bridge_auto_start(
     auto_start: bool,
 ) -> Result<AdapterProfile, String> {
     with_hub_blocking(hub, move |hub| {
-        hub.adapter_bridge
+        hub.adapter_bridge()
             .set_auto_start(&profile_id, auto_start)
             .map_err(|error| map_err_string("set_adapter_bridge_auto_start", error))
     })
@@ -298,7 +298,7 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
     let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
     if profile.route != AdapterRoute::LocalBridge {
         return with_hub_blocking(hub, move |hub| {
-            hub.adapter_apply
+            hub.adapter_apply()
                 .remove(&profile_id)
                 .map_err(|error| map_err_string("remove_adapter", error))
         })
@@ -312,7 +312,7 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
     let ticket_id = agenthub_core::models::ticket_id(profile.source_kind, &profile.source_id);
     let agent_id = profile.target_agent_id;
     with_hub_blocking(hub, move |hub| {
-        hub.ticket_bind
+        hub.ticket_bind()
             .unbind(&agenthub_core::models::TicketUnbindRequest {
                 ticket_id,
                 agent_id,
@@ -333,7 +333,7 @@ pub(crate) fn restore_adapter_bridges(
 ) {
     tauri::async_runtime::spawn(async move {
         let profiles = match with_hub_blocking(hub.clone(), |hub| {
-            hub.adapter_bridge
+            hub.adapter_bridge()
                 .list_auto_start_profiles()
                 .map_err(|error| map_err_string("list_adapter_bridge_restore", error))
         })
@@ -354,7 +354,7 @@ pub(crate) fn restore_adapter_bridges(
             let _profile_guard = coordinator.lock_profile(&profile.id).await;
             let profile_id = profile.id.clone();
             let material = match with_hub_blocking(hub.clone(), move |hub| {
-                hub.adapter_bridge
+                hub.adapter_bridge()
                     .resolve_restore_material(&profile_id)
                     .map_err(|error| map_err_string("resolve_adapter_bridge_restore", error))
             })
@@ -475,7 +475,7 @@ pub(crate) fn restore_adapter_bridges(
             } else if let Err(error) = with_hub_blocking(hub.clone(), {
                 let profile_id = profile.id.clone();
                 move |hub| {
-                    hub.adapter_bridge
+                    hub.adapter_bridge()
                         .clear_retryable_error(&profile_id)
                         .map(|_| ())
                         .map_err(|error| map_err_string("clear_adapter_bridge_retryable", error))
@@ -511,14 +511,14 @@ fn persist_bridge_projection_inner(
     let (created, projected_provider) = match projection {
         AdapterBridgeProviderProjection::Create(input) => {
             let provider = hub
-                .providers
+                .providers()
                 .create_with_guard(core_guard, &input)
                 .map_err(|error| map_err_string("create_adapter_bridge_provider", error))?;
             (true, Some(provider))
         }
         AdapterBridgeProviderProjection::Update(input) => {
             let provider = hub
-                .providers
+                .providers()
                 .update_with_guard(core_guard, &input)
                 .map_err(|error| map_err_string("update_adapter_bridge_provider", error))?;
             (false, Some(provider))
@@ -539,14 +539,14 @@ fn persist_bridge_projection_inner(
         .map(|provider| provider.id.as_str())
         .filter(|id| *id != provider_id.as_str());
     let provider = if should_switch {
-        match hub.providers.switch_with_guard(
+        match hub.providers().switch_with_guard(
             core_guard,
             &provider_id,
             prepared.profile().target_agent_id,
         ) {
             Ok(result) => {
                 let backup_id = result.backup.as_ref().map(|backup| backup.id.as_str());
-                match hub.providers.persist_first_bind_restore_meta_with_guard(
+                match hub.providers().persist_first_bind_restore_meta_with_guard(
                     core_guard,
                     &result.provider,
                     previous_current_id,
@@ -594,13 +594,13 @@ fn persist_bridge_projection_inner(
         // `None` means no pool mutation was needed.  The provider must still
         // exist for the result, but this read happens only on the no-op path,
         // before any new projection has been written by this saga.
-        hub.providers
+        hub.providers()
             .get_by_id(&provider_id)
             .map_err(|error| map_err_string("load_adapter_bridge_provider", error))?
             .ok_or_else(|| "adapter bridge provider missing after projection".to_string())?
             .redacted()
     };
-    let profile = match hub.adapter_bridge.finalize(prepared, port) {
+    let profile = match hub.adapter_bridge().finalize(prepared, port) {
         Ok(profile) => profile,
         Err(error) => {
             let rollback = rollback_bridge_projection(
@@ -642,17 +642,17 @@ fn capture_provider_snapshot(
 ) -> Result<BridgeProviderSnapshot, String> {
     let generated = match generated_provider_id {
         Some(id) => hub
-            .providers
+            .providers()
             .get_by_id(id)
             .map_err(|error| map_err_string("snapshot_adapter_bridge_provider", error))?,
         None => None,
     };
     let current_provider = hub
-        .providers
+        .providers()
         .get_current(target_agent)
         .map_err(|error| map_err_string("snapshot_adapter_bridge_provider", error))?;
     let live_config = hub
-        .providers
+        .providers()
         .capture_live_config_snapshot_with_guard(core_guard, target_agent)
         .map_err(|error| map_err_string("snapshot_adapter_bridge_live_config", error))?;
     Ok(BridgeProviderSnapshot {
@@ -677,12 +677,12 @@ fn rollback_bridge_projection(
 
     if let Some(old) = &snapshot.generated {
         let input = provider_to_non_current_input(old);
-        if hub.providers.update_with_guard(core_guard, &input).is_err() {
+        if hub.providers().update_with_guard(core_guard, &input).is_err() {
             failed = true;
         }
     } else if created
         && hub
-            .providers
+            .providers()
             .delete_with_guard(core_guard, provider_id, target_agent)
             .is_err()
     {
@@ -699,7 +699,7 @@ fn rollback_bridge_projection(
 
     if let Some(old_current) = &snapshot.current_provider {
         if hub
-            .providers
+            .providers()
             .switch_with_guard(core_guard, &old_current.id, target_agent)
             .is_err()
         {
@@ -712,7 +712,7 @@ fn rollback_bridge_projection(
     // Restore the snapshot last so failed finalize/switch cannot leave live
     // config changed.
     if hub
-        .providers
+        .providers()
         .restore_live_config_snapshot_with_guard(core_guard, &snapshot.live_config)
         .is_err()
     {
@@ -755,7 +755,7 @@ async fn load_adapter_profile(
     profile_id: String,
 ) -> Result<AdapterProfile, String> {
     with_hub_blocking(hub, move |hub| {
-        hub.adapter_apply
+        hub.adapter_apply()
             .list(None, None, None)
             .map_err(|error| map_err_string("list_adapter_profiles", error))?
             .into_iter()
@@ -791,7 +791,7 @@ async fn mark_needs_attention(hub: Arc<AgentHub>, profile_id: &str, code: &str) 
     let operation_profile_id = profile_id.clone();
     let operation_code = code.clone();
     if with_hub_blocking(hub, move |hub| {
-        hub.adapter_bridge
+        hub.adapter_bridge()
             .mark_needs_attention(&operation_profile_id, &operation_code)
             .map(|_| ())
             .map_err(|error| map_err_string("mark_adapter_bridge_needs_attention", error))
@@ -809,7 +809,7 @@ async fn mark_retryable(hub: Arc<AgentHub>, profile_id: &str, code: &str) {
     let operation_profile_id = profile_id.clone();
     let operation_code = code.clone();
     if with_hub_blocking(hub, move |hub| {
-        hub.adapter_bridge
+        hub.adapter_bridge()
             .mark_retryable(&operation_profile_id, &operation_code)
             .map(|_| ())
             .map_err(|error| map_err_string("mark_adapter_bridge_retryable", error))
@@ -879,7 +879,7 @@ fn oauth_reload_for_material(
     source_id: &str,
 ) -> Option<UpstreamAuthReload> {
     oauth_bridge_reload_callback(
-        hub.accounts.clone(),
+        hub.accounts().clone(),
         hub.adapter_secret_resolver(),
         source_kind,
         source_id.to_owned(),
@@ -910,7 +910,7 @@ fn resolve_v2_pool_members(
     if material.route_index().is_none() {
         return None;
     }
-    let members = hub.route_pools.list_members(&profile.id).ok()?;
+    let members = hub.route_pools().list_members(&profile.id).ok()?;
     if members.is_empty() {
         return None;
     }
@@ -933,7 +933,7 @@ fn resolve_v2_pool_members(
             });
             continue;
         }
-        match hub.adapter_bridge.resolve_member_auth(
+        match hub.adapter_bridge().resolve_member_auth(
             &profile.rule_id,
             member.source_kind,
             &member.source_id,
@@ -946,7 +946,7 @@ fn resolve_v2_pool_members(
                     label: member.source_id.clone(),
                     auth,
                     reload: oauth_bridge_reload_callback(
-                        hub.accounts.clone(),
+                        hub.accounts().clone(),
                         hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
@@ -972,7 +972,7 @@ fn resolve_v2_pool_members(
                     label: member.source_id.clone(),
                     auth: agenthub_core::bridge::ResolvedAuth::bearer(""),
                     reload: oauth_bridge_reload_callback(
-                        hub.accounts.clone(),
+                        hub.accounts().clone(),
                         hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
@@ -1001,7 +1001,7 @@ fn resolve_pool_members(
         return Vec::new();
     }
     let lead_ticket = ticket_id(profile.source_kind, &profile.source_id);
-    let Ok(wallet) = hub.tickets.list_wallet() else {
+    let Ok(wallet) = hub.tickets().list_wallet() else {
         return Vec::new();
     };
     let Some(lead_ticket_row) = wallet
@@ -1035,7 +1035,7 @@ fn resolve_pool_members(
             });
             continue;
         }
-        match hub.adapter_bridge.resolve_member_auth(
+        match hub.adapter_bridge().resolve_member_auth(
             &profile.rule_id,
             member.source_kind,
             &member.source_id,
@@ -1048,7 +1048,7 @@ fn resolve_pool_members(
                     label: member.label.clone(),
                     auth,
                     reload: oauth_bridge_reload_callback(
-                        hub.accounts.clone(),
+                        hub.accounts().clone(),
                         hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
@@ -1074,7 +1074,7 @@ fn resolve_pool_members(
                     label: member.label.clone(),
                     auth: agenthub_core::bridge::ResolvedAuth::bearer(""),
                     reload: oauth_bridge_reload_callback(
-                        hub.accounts.clone(),
+                        hub.accounts().clone(),
                         hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
@@ -1102,7 +1102,7 @@ async fn attach_live_prior_index(
         Err(error) => return Err(map_bridge_host_error(error)),
     };
     with_hub_blocking(hub, move |hub| {
-        Ok(hub.adapter_bridge.attach_route_index(seeded, &profile))
+        Ok(hub.adapter_bridge().attach_route_index(seeded, &profile))
     })
     .await
 }
@@ -1133,7 +1133,7 @@ pub(crate) async fn enroll_v2_and_refresh_index(
 ) -> Result<EnrolledIndexRefresh, String> {
     let profile_for_enroll = profile.clone();
     let did_enroll = with_hub_blocking(hub.clone(), move |hub| {
-        hub.adapter_bridge
+        hub.adapter_bridge()
             .enroll_v2_after_bind(&profile_for_enroll, port)
             .map_err(|error| map_err_string("enroll_adapter_bridge_v2", error))
     })
@@ -1145,7 +1145,7 @@ pub(crate) async fn enroll_v2_and_refresh_index(
     let profile_for_attach = profile.clone();
     let refreshed = with_hub_blocking(hub.clone(), move |hub| {
         Ok(hub
-            .adapter_bridge
+            .adapter_bridge()
             .attach_route_index(seeded, &profile_for_attach))
     })
     .await?;
@@ -1259,7 +1259,7 @@ async fn start_with_bind_fallback(
 
 fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> Result<(), String> {
     let profile = hub
-        .adapter_apply
+        .adapter_apply()
         .list(None, None, None)
         .map_err(|error| map_err_string("load_adapter_bridge_restore_profile", error))?
         .into_iter()
@@ -1267,11 +1267,11 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
         .ok_or_else(|| format!("adapter profile not found: {profile_id}"))?;
     let target_agent = profile.target_agent_id;
     let core_guard = hub
-        .providers
+        .providers()
         .begin_live_saga(target_agent)
         .map_err(|error| map_err_string("begin_adapter_bridge_restore_rebind_saga", error))?;
     let (input, was_current) = hub
-        .adapter_bridge
+        .adapter_bridge()
         .projection_for_restored_port(profile_id, port)
         .map_err(|error| map_err_string("projection_adapter_bridge_restore_port", error))?;
     // Snapshot before any pool or live mutation so a later-stage failure can
@@ -1280,7 +1280,7 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
         capture_provider_snapshot(hub, &core_guard, Some(input.id.as_str()), target_agent)?;
     let provider_id = input.id.clone();
 
-    if let Err(error) = hub.providers.update_with_guard(&core_guard, &input) {
+    if let Err(error) = hub.providers().update_with_guard(&core_guard, &input) {
         // SQL ABORT leaves the pool unchanged. Restore-port projections are
         // always demoted, so live config was not written and must not be
         // rewritten here (that would replace the injected update error).
@@ -1288,7 +1288,7 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
     }
     if was_current {
         if let Err(error) = hub
-            .providers
+            .providers()
             .switch_with_guard(&core_guard, &provider_id, target_agent)
         {
             let rollback = rollback_bridge_projection(
@@ -1307,7 +1307,7 @@ fn realign_restored_bridge_port(hub: &AgentHub, profile_id: &str, port: u16) -> 
             ));
         }
     }
-    if let Err(error) = hub.adapter_bridge.persist_restored_port(profile_id, port) {
+    if let Err(error) = hub.adapter_bridge().persist_restored_port(profile_id, port) {
         // persist_restored_port is last and transactional, so a failure leaves
         // profile.local_port on the old preferred port. Restore the generated
         // provider row; rewrite live config only when switch already mutated it.
@@ -1355,7 +1355,7 @@ fn rollback_restored_bridge_port(
     }
     if let Some(old) = &snapshot.generated {
         let input = provider_to_non_current_input(old);
-        if hub.providers.update_with_guard(core_guard, &input).is_err() {
+        if hub.providers().update_with_guard(core_guard, &input).is_err() {
             return Err("adapter.bridge_rollback");
         }
     }
@@ -1405,7 +1405,7 @@ async fn bridge_profile_id_for_request(
     request: AdapterBridgePrepareRequest,
 ) -> Result<String, String> {
     with_hub_blocking(hub, move |hub| {
-        hub.adapter_bridge
+        hub.adapter_bridge()
             .profile_id_for_request(&request)
             .map_err(|error| map_err_string("adapter_bridge_profile_id", error))
     })
