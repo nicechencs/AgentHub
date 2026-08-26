@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: core, Tauri, CLI, and runtime contributors
 source-of-truth: crates/agenthub-core, src-tauri, and current adapter control/bridge code
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # Core 与 Runtime
@@ -93,4 +93,5 @@ sidecar 只承接 `local_bridge` runtime 和它的 lifecycle；Account、Provide
 - [Adapters and bridges](../concepts/adapters-and-bridges.md)
 - [Chat and agents](../concepts/chat-and-agents.md)
 - [Sidecar proposal](../proposals/adapter-sidecar.md)
+- [本机同口授权池（提案）](../proposals/unified-loopback-pool.md)
 - [Legacy document index](../archive/legacy-document-index.md)

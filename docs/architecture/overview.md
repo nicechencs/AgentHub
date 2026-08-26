@@ -72,3 +72,4 @@ flowchart LR
 - [Adapter 路线内核](adapter-route-kernel.md)：`plan()` 是唯一决策者；golden 是只读投影；mock 只查表。
 - [Connections and routing](../concepts/connections-and-routing.md)：登录、绑定和路线的领域模型。
 - [Product boundaries](../decisions/product-boundaries.md)：不做什么以及术语约束。
+- [本机同口授权池（提案）](../proposals/unified-loopback-pool.md)：同口调度与按模型选授权是候选方向，不是当前运行前提。

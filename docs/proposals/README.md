@@ -18,12 +18,14 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 - `local_bridge` currently runs in the Tauri process through the in-process control host. The current control contract is useful independently of any process move.
 - The current tray behavior and module boundaries are the baseline. A proposal must preserve them until a replacement is implemented and verified.
 - Product writes remain `plan` / `bind` / `unbind`; credentials, accounts, providers, and live configuration are not moved into a speculative runtime process.
+- A local-bridge profile still authenticates with its own local bearer. Sharing one loopback port does not currently mean one Hub token or a cross-product authorization pool.
 
 ## Candidates
 
 | Proposal | Status | Question it explores |
 |---|---|---|
 | [adapter-sidecar.md](adapter-sidecar.md) | proposed | Could a user-level process own the long-lived local route runtime while GUI and CLI remain clients? |
+| [unified-loopback-pool.md](unified-loopback-pool.md) | proposed | Could every routed authorization share one loopback port, one Hub token per Agent, and model/health scheduling? |
 | [tray-background-modes.md](tray-background-modes.md) | proposed | Could closing the window reduce WebView memory without changing route ownership or exit semantics? |
 | [modularity.md](modularity.md) | proposed | Which single-source and use-case boundaries should be tightened before any larger process change? |
 | [plugin-management.md](plugin-management.md) | proposed | Could AgentHub list and manage per-agent plugin/extension packs (not MCP servers) via official CLIs, with a Routes-like workbench? |

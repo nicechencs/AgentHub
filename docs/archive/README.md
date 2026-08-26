@@ -13,9 +13,9 @@
 
 | File | Historical role | Current reading path |
 |---|---|---|
-| [a4-unified-loopback-gateway.md](a4-unified-loopback-gateway.md) | Unified loopback gateway design and A4 compatibility decisions | Current route endpoint and runtime reference docs; see `docs/reference/local-route-api.md` and `docs/concepts/adapters-and-bridges.md` |
-| [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md) | Dated multi-lane implementation plan for route and connection refactoring | Current concepts/architecture docs plus `docs/proposals/adapter-sidecar.md` for future process work |
-| [multi-account-routing-rfc.md](multi-account-routing-rfc.md) | RFC for multi-account route runtime and member health | Current routing concept, runtime reference, and Routes page pattern |
+| [a4-unified-loopback-gateway.md](a4-unified-loopback-gateway.md) | Unified loopback gateway design and A4 compatibility decisions | Current route endpoint and runtime reference docs; same-port pool candidate is `docs/proposals/unified-loopback-pool.md` |
+| [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md) | Dated multi-lane implementation plan for route and connection refactoring | Current concepts/architecture docs plus `docs/proposals/adapter-sidecar.md` and `docs/proposals/unified-loopback-pool.md` |
+| [multi-account-routing-rfc.md](multi-account-routing-rfc.md) | RFC for same-surface multi-account route runtime and member health | Current routing concept plus the same-port pool candidate `docs/proposals/unified-loopback-pool.md` |
 | [hub-redesign-plan.md](hub-redesign-plan.md) | Completed Hub Phase 1 implementation record | `docs/ui/page-patterns.md` and `docs/concepts/connections-and-routing.md` |
 | [route-endpoint-audit-2026-08.md](route-endpoint-audit-2026-08.md) | Dated endpoint audit snapshot | `docs/reference/local-route-api.md` |
 | [single-kernel-projections.md](single-kernel-projections.md) | Completed Adapter single-kernel proposal plus E/F evaluation | Current contract: `docs/architecture/adapter-route-kernel.md` |

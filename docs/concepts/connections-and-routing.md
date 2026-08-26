@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: Ticket/Connection services, adapter planner contracts, and product boundary decisions
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # Connections、Routes 与绑定
@@ -74,3 +74,4 @@ unbind(binding)        → 停桥（若有）、恢复上一份 live、保留登
 - [Adapters and bridges](adapters-and-bridges.md)
 - [Product boundaries](../decisions/product-boundaries.md)
 - [Local route API](../reference/local-route-api.md)
+- [本机同口授权池（提案）](../proposals/unified-loopback-pool.md)

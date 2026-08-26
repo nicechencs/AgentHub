@@ -3,7 +3,7 @@
 > **Archived / 已归档**: Historical record. Do not use as current implementation contract or TODO list.
 > **Status**: archived historical record
 >
-> **归档（2026-08-24）**。产品方向仍以 [../reference/route-compatibility.md](../reference/route-compatibility.md) 的兼容矩阵为准（历史稿 §5.5）。内核（AccountPicker / 请求边界 FSM）已在 `bridge/account.rs`；`multi_account` 门默认关，不是「零实现」，也还没对用户开闸。
+> **归档（2026-08-24）**。产品方向仍以 [../reference/route-compatibility.md](../reference/route-compatibility.md) 的兼容矩阵为准（历史稿 §5.5）。内核（AccountPicker / 请求边界 FSM）已在 `bridge/account.rs`；`multi_account` 门默认关，不是「零实现」，也还没对用户开闸。跨产品同口池的候选方向见 [../proposals/unified-loopback-pool.md](../proposals/unified-loopback-pool.md)，不要把本文重新启用为待办。
 >
 > 原状态：**设计稿（2026-08-22）**。
 > 产品真源：[../reference/route-compatibility.md](../reference/route-compatibility.md)；原文 §5.1.2、§5.3、§5.5 的历史上下文保留在本记录中。
