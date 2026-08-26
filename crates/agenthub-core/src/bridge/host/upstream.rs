@@ -206,24 +206,68 @@ pub(super) async fn read_bounded_upstream_error(
     Ok(body)
 }
 
-pub(super) async fn post_upstream(
+pub(super) enum UpstreamConnectError {
+    Stopping,
+    Timeout,
+    Unavailable,
+}
+
+pub(super) fn timeout_response() -> Response {
+    error_response(
+        StatusCode::GATEWAY_TIMEOUT,
+        "upstream_timeout",
+        "The upstream model provider timed out.",
+        None,
+    )
+}
+
+pub(super) fn unavailable_response() -> Response {
+    error_response(
+        StatusCode::BAD_GATEWAY,
+        "upstream_unavailable",
+        "The upstream model provider is unavailable.",
+        None,
+    )
+}
+
+pub(super) fn pool_exhausted_response(retry_after: Option<HeaderValue>) -> Response {
+    error_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "pool_exhausted",
+        "No available connection can serve this request right now.",
+        retry_after,
+    )
+}
+
+pub(super) fn map_v2_request_error(
+    status: StatusCode,
+    retry_after: Option<HeaderValue>,
+) -> Response {
+    let status = match status.as_u16() {
+        400 | 403 | 422 => status,
+        _ => StatusCode::BAD_REQUEST,
+    };
+    error_response(
+        status,
+        "invalid_request",
+        "The request was rejected.",
+        retry_after,
+    )
+}
+
+pub(super) async fn post_upstream_attempt(
     state: &EdgeState,
     builder: reqwest::RequestBuilder,
     request_id: &str,
-) -> Result<reqwest::Response, Response> {
+) -> Result<reqwest::Response, UpstreamConnectError> {
     let result = tokio::select! {
-        _ = state.force_shutdown.cancelled() => return Err(stopping_response()),
+        _ = state.force_shutdown.cancelled() => return Err(UpstreamConnectError::Stopping),
         result = tokio::time::timeout(UPSTREAM_RESPONSE_HEADER_TIMEOUT, builder.send()) => match result {
             Ok(result) => result,
             Err(_) => {
                 tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "header_timeout", status = 504_u16, "bridge upstream response headers timed out");
                 state.record_upstream_failure();
-                return Err(error_response(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    "upstream_timeout",
-                    "The upstream model provider timed out.",
-                    None,
-                ));
+                return Err(UpstreamConnectError::Timeout);
             }
         },
     };
@@ -232,13 +276,21 @@ pub(super) async fn post_upstream(
         Err(_) => {
             tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "unavailable", status = 502_u16, "bridge upstream unavailable");
             state.record_upstream_failure();
-            Err(error_response(
-                StatusCode::BAD_GATEWAY,
-                "upstream_unavailable",
-                "The upstream model provider is unavailable.",
-                None,
-            ))
+            Err(UpstreamConnectError::Unavailable)
         }
+    }
+}
+
+pub(super) async fn post_upstream(
+    state: &EdgeState,
+    builder: reqwest::RequestBuilder,
+    request_id: &str,
+) -> Result<reqwest::Response, Response> {
+    match post_upstream_attempt(state, builder, request_id).await {
+        Ok(response) => Ok(response),
+        Err(UpstreamConnectError::Stopping) => Err(stopping_response()),
+        Err(UpstreamConnectError::Timeout) => Err(timeout_response()),
+        Err(UpstreamConnectError::Unavailable) => Err(unavailable_response()),
     }
 }
 
