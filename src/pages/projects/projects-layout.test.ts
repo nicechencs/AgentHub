@@ -21,4 +21,15 @@ describe('projects split layout', () => {
     expect(page).not.toContain('useProjectPreview');
     expect(page).not.toContain('previewShellMounted');
   });
+
+  it('renders excerpt turns as a user/assistant conversation', () => {
+    const preview = source('ProjectConversationPreviewPanel.tsx');
+    expect(preview).toContain("t('projects.preview.roleUser')");
+    expect(preview).toContain("t('projects.preview.roleAssistant'");
+    expect(preview).toContain('justify-end');
+    expect(preview).toContain('justify-start');
+    expect(preview).toContain('<AgentDot');
+    expect(preview).toContain('rounded-composer bg-subtle');
+    expect(preview).toContain('rounded-composer bg-hover/60');
+  });
 });

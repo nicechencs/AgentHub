@@ -215,7 +215,10 @@ describe('project API (browser mock)', () => {
     const excerpts = await exP;
     expect(excerpts).toHaveLength(1);
     expect(excerpts[0].id).toBe(id);
-    expect(excerpts[0].excerpt.length).toBeGreaterThan(0);
+    expect(excerpts[0].excerpt).toContain('---turn:user---');
+    expect(excerpts[0].excerpt).toContain('---turn:assistant---');
+    expect(excerpts[0].excerpt).toContain('重构 provider 切换逻辑');
+    expect(excerpts[0].excerpt).toContain('工作目录');
   });
 });
 

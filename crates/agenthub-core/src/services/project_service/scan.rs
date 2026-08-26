@@ -13,6 +13,7 @@ use std::time::SystemTime;
 use crate::catalog::limits::{
     PROJECT_EXCERPT_CHARS as EXCERPT_CHARS, PROJECT_LIST_HEAD_BYTES as LIST_HEAD_BYTES,
     PROJECT_PREVIEW_CHARS as PREVIEW_CHARS, PROJECT_SCAN_BYTES as SCAN_BYTES,
+    PROJECT_USER_TURN_EXCERPT_CHARS as USER_TURN_EXCERPT_CHARS,
 };
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentProject, AgentProjectExcerpt, AgentSession};
@@ -2103,6 +2104,22 @@ fn extract_assistant_turn(v: &serde_json::Value) -> Option<ExcerptTurn> {
     ) {
         return None;
     }
+    let payload_ty = v
+        .pointer("/payload/type")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if matches!(
+        payload_ty.as_str(),
+        "function_call"
+            | "function_call_output"
+            | "custom_tool_call"
+            | "reasoning"
+            | "tool_call"
+            | "tool_result"
+    ) {
+        return None;
+    }
     let role = v
         .get("role")
         .and_then(|r| r.as_str())
@@ -2116,11 +2133,14 @@ fn extract_assistant_turn(v: &serde_json::Value) -> Option<ExcerptTurn> {
     let is_assistant = ty.contains("assistant")
         || ty == "agent"
         || role == "assistant"
-        || payload_role == "assistant";
+        || payload_role == "assistant"
+        || payload_ty.contains("assistant")
+        || payload_ty == "agent_message";
     if !is_assistant {
         return None;
     }
-    let text = extract_text_from_value(v)?;
+    let text = extract_text_from_value(v)
+        .or_else(|| v.get("payload").and_then(extract_text_from_value))?;
     let t = text.trim();
     if t.is_empty() {
         return None;
@@ -2153,7 +2173,7 @@ fn extract_grok_update_turns(text: &str) -> Vec<ExcerptTurn> {
         }
         turns.push(ExcerptTurn { role, text: piece });
     }
-    turns
+    polish_excerpt_turns(turns)
 }
 
 fn grok_update_chunk(line: &str) -> Option<(&'static str, String)> {
@@ -2171,18 +2191,67 @@ fn grok_update_chunk(line: &str) -> Option<(&'static str, String)> {
         "agent_message_chunk" | "agent_message" | "assistant_message_chunk" => "assistant",
         _ => return None,
     };
-    let piece = update
-        .pointer("/content/text")
-        .and_then(|x| x.as_str())
-        .or_else(|| update.get("content").and_then(|x| x.as_str()))
-        .or_else(|| update.get("text").and_then(|x| x.as_str()))
-        .unwrap_or("")
-        .to_string();
-    if piece.is_empty() {
-        None
-    } else {
-        Some((role, piece))
+    let piece = grok_update_text(update)?;
+    Some((role, piece))
+}
+
+fn grok_update_text(update: &serde_json::Value) -> Option<String> {
+    if let Some(s) = update.pointer("/content/text").and_then(|x| x.as_str()) {
+        if !s.is_empty() {
+            return Some(s.to_string());
+        }
     }
+    if let Some(arr) = update.get("content").and_then(|x| x.as_array()) {
+        let mut parts = Vec::new();
+        for item in arr {
+            if let Some(s) = item.as_str() {
+                parts.push(s.to_string());
+            } else if let Some(s) = item.get("text").and_then(|t| t.as_str()) {
+                parts.push(s.to_string());
+            }
+        }
+        let joined = parts.join("");
+        if !joined.is_empty() {
+            return Some(joined);
+        }
+    }
+    extract_text_from_value(update)
+}
+
+fn polish_excerpt_turns(turns: Vec<ExcerptTurn>) -> Vec<ExcerptTurn> {
+    turns
+        .into_iter()
+        .filter_map(|t| {
+            if t.role == "user" {
+                let text = visible_transcript_text(&t.text)?;
+                Some(ExcerptTurn {
+                    role: "user",
+                    text,
+                })
+            } else if t.text.trim().is_empty() {
+                None
+            } else {
+                Some(t)
+            }
+        })
+        .collect()
+}
+
+/// Prefer Grok `updates.jsonl` (clean user chunks). If it has no assistant
+/// text, keep those user turns and fill replies from `chat_history.jsonl`.
+fn merge_grok_excerpt_turns(
+    update_turns: Vec<ExcerptTurn>,
+    chat_turns: Vec<ExcerptTurn>,
+) -> Vec<ExcerptTurn> {
+    if update_turns.is_empty() {
+        return chat_turns;
+    }
+    if update_turns.iter().any(|t| t.role == "assistant") {
+        return update_turns;
+    }
+    let mut out = update_turns;
+    out.extend(chat_turns.into_iter().filter(|t| t.role == "assistant"));
+    out
 }
 
 /// Role-tagged turns so markdown `---` inside a reply is not a splitter.
@@ -2203,7 +2272,16 @@ fn format_excerpt_turns(turns: &[ExcerptTurn]) -> String {
         if remaining == 0 {
             break;
         }
-        let piece = truncate_chars(text, remaining);
+        // A wrapped user prompt must not consume the whole excerpt budget.
+        let budget = if t.role == "user" {
+            remaining.min(USER_TURN_EXCERPT_CHARS)
+        } else {
+            remaining
+        };
+        if budget == 0 {
+            continue;
+        }
+        let piece = truncate_chars(text, budget);
         if !body.is_empty() {
             body.push('\n');
         }
@@ -2253,18 +2331,20 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
         }
     });
     let text = read_head(&abs_path, SCAN_BYTES * 2).unwrap_or_default();
-    let mut turns = Vec::new();
-    if agent == AgentId::Grok {
+    let chat_turns = extract_jsonl_transcript_turns(&text);
+    let turns = if agent == AgentId::Grok {
         let updates = abs_path.with_file_name("updates.jsonl");
-        if updates.is_file() {
-            if let Some(u) = read_head(&updates, SCAN_BYTES * 2) {
-                turns = extract_grok_update_turns(&u);
-            }
-        }
-    }
-    if turns.is_empty() {
-        turns = extract_jsonl_transcript_turns(&text);
-    }
+        let update_turns = if updates.is_file() {
+            read_head(&updates, SCAN_BYTES * 2)
+                .map(|u| extract_grok_update_turns(&u))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        merge_grok_excerpt_turns(update_turns, chat_turns)
+    } else {
+        chat_turns
+    };
     let body = if turns.is_empty() {
         String::new()
     } else {

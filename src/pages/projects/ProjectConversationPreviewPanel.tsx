@@ -213,24 +213,40 @@ export function ProjectConversationPreviewPanel({
         {phase === 'ready' ? (
           <div className="space-y-2">
             <p className="text-meta text-muted">{t('projects.preview.turns', { n: turns.length })}</p>
-            <ol className="space-y-2">
+            <ol className="space-y-3">
               {turns.map((turn, index) => {
                 const userish = turn.role === 'user';
                 return (
                   <li
                     key={`${index}:${turn.role}:${turn.text.slice(0, 24)}`}
-                    className={cn('flex', userish && 'justify-end')}
+                    className={cn('flex gap-2', userish ? 'justify-end' : 'justify-start')}
                   >
-                    <div
-                      className={cn(
-                        'min-w-0 max-w-[92%] text-body text-primary',
-                        userish
-                          ? 'rounded-composer bg-subtle px-3 py-2'
-                          : 'leading-relaxed',
-                      )}
-                    >
-                      <MarkdownView content={turn.text} variant="chat" />
-                    </div>
+                    {userish ? (
+                      <div
+                        className="min-w-0 max-w-[92%] rounded-composer bg-subtle px-3 py-2 text-body text-primary"
+                        aria-label={t('projects.preview.roleUser')}
+                      >
+                        <MarkdownView content={turn.text} variant="chat" />
+                      </div>
+                    ) : (
+                      <>
+                        <AgentDot
+                          agentId={session.agentId}
+                          color={agentMeta?.color}
+                          className="mt-1.5 shrink-0"
+                        />
+                        <div className="min-w-0 max-w-[92%] flex-1">
+                          <p className="mb-1 text-meta text-muted">
+                            {t('projects.preview.roleAssistant', {
+                              name: agentMeta?.name ?? session.agentId,
+                            })}
+                          </p>
+                          <div className="rounded-composer bg-hover/60 px-3 py-2 text-body leading-relaxed text-primary">
+                            <MarkdownView content={turn.text} variant="chat" />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </li>
                 );
               })}
