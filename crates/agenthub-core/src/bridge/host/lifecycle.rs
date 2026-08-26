@@ -11,6 +11,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use crate::bridge::route_index::EffectiveRouteIndex;
 use crate::bridge::runtime::{
     BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamStatus,
 };
@@ -137,6 +138,17 @@ impl BridgeRuntimeHost {
         let status = runtime.status(true);
         registry.runtimes.insert(status.profile_id.clone(), runtime);
         Ok(status)
+    }
+
+    pub fn live_route_index(
+        &self,
+        profile_id: &str,
+    ) -> Result<Option<EffectiveRouteIndex>, BridgeHostError> {
+        let registry = self.gateway.lock()?;
+        Ok(registry
+            .runtimes
+            .get(profile_id)
+            .and_then(|runtime| runtime.spec.route_index.clone()))
     }
 
     pub fn status(&self, profile_id: &str) -> Result<Option<BridgeRuntimeStatus>, BridgeHostError> {
@@ -618,23 +630,7 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.listed_models == right.listed_models
         && left.multi_account == right.multi_account
         && member_fingerprint(left) == member_fingerprint(right)
-        && left.route_index.as_ref().map(|index| {
-            (
-                index.route_id.as_str(),
-                index.generation,
-                index.list_models("responses"),
-                index.list_models("messages"),
-                index.list_models("chat_completions"),
-            )
-        }) == right.route_index.as_ref().map(|index| {
-            (
-                index.route_id.as_str(),
-                index.generation,
-                index.list_models("responses"),
-                index.list_models("messages"),
-                index.list_models("chat_completions"),
-            )
-        })
+        && left.route_index == right.route_index
 }
 
 fn member_fingerprint(spec: &BridgeStartSpec) -> Vec<(String, String, String)> {

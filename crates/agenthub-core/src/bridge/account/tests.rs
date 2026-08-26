@@ -1,4 +1,5 @@
 use super::*;
+use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::runtime::ResolvedAuth;
 
 fn member(id: &str, token: &str, health: MemberHealth) -> PickedMember {
@@ -103,6 +104,109 @@ fn partition_account_id_only_when_polling() {
     let multi = picker(MemberHealth::Renewable, MemberHealth::Renewable);
     let a = multi.pick_new().expect("a");
     assert_eq!(multi.partition_account_id(&a), Some("acc-a"));
+}
+
+fn candidate() -> DispatchCandidate {
+    DispatchCandidate {
+        member_id: "acc-b".into(),
+        upstream_endpoint: "http://127.0.0.1/v1".into(),
+        upstream_model: "m1".into(),
+        upstream_provider: "openai".into(),
+        upstream_dialect: "generic".into(),
+        transport_key: "openai:generic".into(),
+        capability_generation: 1,
+    }
+}
+
+fn candidates(ids: &[&str]) -> Vec<DispatchCandidate> {
+    ids.iter()
+        .map(|id| DispatchCandidate {
+            member_id: (*id).into(),
+            ..candidate()
+        })
+        .collect()
+}
+
+#[test]
+fn pick_from_candidates_cannot_select_member_absent_from_resolve() {
+    let picker = AccountPicker::with_sink(
+        vec![
+            member("acc-b", "token-b", MemberHealth::Renewable).with_schedule(0, 0),
+            member("acc-a", "token-a", MemberHealth::Renewable).with_schedule(0, 1),
+        ],
+        false,
+        None,
+    );
+    assert_eq!(picker.pick_new().expect("lead-first").source_id, "acc-b");
+    let picked = picker
+        .pick_from_candidates(&candidates(&["acc-a"]), None, &[])
+        .expect("A");
+    assert_eq!(picked.source_id, "acc-a");
+    assert!(picker
+        .pick_from_candidates(&candidates(&["acc-missing"]), None, &[])
+        .is_none());
+}
+
+#[test]
+fn pick_from_candidates_only_shrinks_and_respects_exclusion_and_priority() {
+    let picker = AccountPicker::with_sink(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable).with_schedule(1, 0),
+            member("acc-b", "token-b", MemberHealth::Renewable).with_schedule(0, 0),
+            member("acc-c", "token-c", MemberHealth::NeedsLogin).with_schedule(-1, 0),
+        ],
+        false,
+        None,
+    );
+    let picked = picker
+        .pick_from_candidates(&candidates(&["acc-a", "acc-b", "acc-c"]), None, &[])
+        .expect("b wins priority");
+    assert_eq!(picked.source_id, "acc-b");
+    let after_exclude = picker
+        .pick_from_candidates(
+            &candidates(&["acc-a", "acc-b"]),
+            None,
+            &["acc-b".to_owned()],
+        )
+        .expect("a after exclude");
+    assert_eq!(after_exclude.source_id, "acc-a");
+}
+
+#[test]
+fn scheduler_picks_are_always_in_the_resolver_set() {
+    let picker = AccountPicker::with_sink(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable),
+            member("acc-b", "token-b", MemberHealth::Renewable),
+            member("acc-c", "token-c", MemberHealth::Renewable),
+        ],
+        false,
+        None,
+    );
+    for set in [
+        vec!["acc-a"],
+        vec!["acc-b"],
+        vec!["acc-a", "acc-c"],
+        vec!["acc-b", "acc-c"],
+        vec!["acc-a", "acc-b", "acc-c"],
+    ] {
+        let resolved = candidates(&set);
+        let picked = picker
+            .pick_from_candidates(&resolved, None, &[])
+            .expect("eligible");
+        assert!(
+            set.contains(&picked.source_id.as_str()),
+            "pick {} not in {set:?}",
+            picked.source_id
+        );
+    }
+}
+
+#[test]
+#[ignore = "route-scoped sticky is deferred; do not ship a global session map"]
+fn affinity_key_is_route_scoped_not_raw_session() {
+    let _key = "(route_id, downstream_dialect, hash(session))";
+    panic!("sticky affinity is not implemented in this slice");
 }
 
 #[test]

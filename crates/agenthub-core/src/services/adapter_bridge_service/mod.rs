@@ -29,18 +29,20 @@ use toml_edit::DocumentMut;
 
 use crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL;
 use crate::bridge::{
-    BridgeLocalSurface, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol, ResolvedAuth,
+    index_from_member_listings, BridgeLocalSurface, BridgeStartSpec, BridgeUpstreamConfig,
+    BridgeUpstreamProtocol, EffectiveRouteIndex, MemberListing, ResolvedAuth,
 };
 use crate::error::{AppError, Result};
 use crate::models::{
     list_local_bridge_models, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
-    LocalBridgeEdge, Provider, ProviderInput, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE,
-    CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE,
-    KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
+    LocalBridgeEdge, Provider, ProviderInput, RouteMember, ANTHROPIC_CODEX_EDGE,
+    CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE,
+    GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE,
+    OPENAI_GROK_BRIDGE_EDGE,
 };
-use crate::services::{AdapterRouteService, AdapterSecretResolver};
+use crate::services::{AdapterRouteService, AdapterSecretResolver, RoutePoolService};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
 
 const RULE_ID: &str = KIMI_CODEX_EDGE.rule_id;
@@ -426,6 +428,38 @@ fn listed_models_for_bridge(
     )
 }
 
+fn index_endpoint_key(surface: BridgeLocalSurface) -> &'static str {
+    match surface {
+        BridgeLocalSurface::Responses => "responses",
+        BridgeLocalSurface::Messages => "messages",
+        BridgeLocalSurface::ChatCompletions => "chat_completions",
+    }
+}
+
+fn index_provider_key(source: AdapterSourceProduct) -> &'static str {
+    match source {
+        AdapterSourceProduct::KimiCodeMembership => "kimi",
+        AdapterSourceProduct::AnthropicApi => "anthropic",
+        AdapterSourceProduct::OpenaiApi => "openai",
+        AdapterSourceProduct::XaiApi => "xai",
+        AdapterSourceProduct::GlmCodingPlan => "glm",
+        AdapterSourceProduct::DeepseekApi => "deepseek",
+        AdapterSourceProduct::CodexChatGptSubscription => "codex",
+        AdapterSourceProduct::ClaudeSubscription => "claude",
+        AdapterSourceProduct::XaiGrokSubscription => "grok",
+        AdapterSourceProduct::Other => "other",
+    }
+}
+
+fn index_transport_key(protocol: BridgeUpstreamProtocol) -> &'static str {
+    match protocol {
+        BridgeUpstreamProtocol::OpenAiChatCompletions => "openai:generic",
+        BridgeUpstreamProtocol::AnthropicMessages => "anthropic:claude",
+        BridgeUpstreamProtocol::CodexResponsesOauth => "codex:codex",
+        BridgeUpstreamProtocol::XaiResponsesOauth => "grok:grok",
+    }
+}
+
 /// Safe input for beginning a local bridge saga. It contains no credentials.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -464,6 +498,10 @@ pub struct AdapterBridgeRuntimeMaterial {
     target_agent: AgentId,
     upstream_auth: ResolvedAuth,
     local_bearer: String,
+    route_index: Option<EffectiveRouteIndex>,
+    /// When the v2 index flag is on, a non-zero preferred port is occupancy-failed
+    /// instead of rebound, even before the pool is enrolled.
+    index_enabled: bool,
 }
 
 impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
@@ -483,6 +521,11 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
             .field("target_agent", &self.target_agent)
             .field("upstream_auth", &self.upstream_auth)
             .field("local_bearer", &"REDACTED")
+            .field(
+                "route_index",
+                &self.route_index.as_ref().map(|index| index.generation),
+            )
+            .field("index_enabled", &self.index_enabled)
             .finish()
     }
 }
@@ -526,6 +569,8 @@ impl AdapterBridgeRuntimeMaterial {
             target_agent: AgentId::Codex,
             upstream_auth: ResolvedAuth::bearer(upstream_token),
             local_bearer: local_bearer.into(),
+            route_index: None,
+            index_enabled: false,
         }
     }
 
@@ -533,7 +578,17 @@ impl AdapterBridgeRuntimeMaterial {
     /// `None` to reuse the persisted port, or `Some(0)` for explicit
     /// reallocation after a bind conflict.
     pub fn start_spec(&self, port: Option<u16>) -> BridgeStartSpec {
-        BridgeStartSpec::new(
+        let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(
+            &self.upstream_base_url,
+        );
+        let lead_listed = listed_models_for_bridge(
+            self.source,
+            self.target_agent,
+            &self.upstream_model,
+            custom,
+            &self.configured_listed_models,
+        );
+        let mut spec = BridgeStartSpec::new(
             self.profile_id.clone(),
             port.or(self.preferred_port).unwrap_or(0),
             self.local_bearer.clone(),
@@ -546,25 +601,39 @@ impl AdapterBridgeRuntimeMaterial {
                 local_surface: self.local_surface,
             },
         )
-        .with_listed_models({
-            let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(
-                &self.upstream_base_url,
-            );
-            listed_models_for_bridge(
-                self.source,
-                self.target_agent,
-                &self.upstream_model,
-                custom,
-                &self.configured_listed_models,
-            )
-        })
-        .with_mapping(
-            self.source,
-            self.target_agent,
-            crate::services::adapter_route_constants::is_custom_openai_compat_url(
-                &self.upstream_base_url,
-            ),
-        )
+        .with_listed_models(lead_listed)
+        .with_mapping(self.source, self.target_agent, custom);
+        if let Some(index) = &self.route_index {
+            spec = spec
+                .with_listed_models(index.list_models(index_endpoint_key(self.local_surface)))
+                .with_route_index(index.clone());
+        }
+        spec
+    }
+
+    pub fn route_index(&self) -> Option<&EffectiveRouteIndex> {
+        self.route_index.as_ref()
+    }
+
+    pub fn freeze_gateway_port(&self) -> bool {
+        self.preferred_port.is_some_and(|port| port != 0)
+            && (self.route_index.is_some() || self.index_enabled)
+    }
+
+    /// Seed last-successful snapshots so a partial rebuild can keep them.
+    pub fn with_prior_route_index(mut self, index: EffectiveRouteIndex) -> Self {
+        self.route_index = Some(index);
+        self
+    }
+
+    /// Host/controller tests: attach a production-built index without prepare.
+    pub fn with_route_index_for_test(self, index: EffectiveRouteIndex) -> Self {
+        self.with_prior_route_index(index)
+    }
+
+    pub fn with_index_enabled_for_test(mut self) -> Self {
+        self.index_enabled = true;
+        self
     }
 
     /// Verify a freshly bound listener before its generated provider becomes
@@ -837,6 +906,7 @@ pub struct AdapterBridgeService {
     pub(super) profiles: AdapterProfileRepo,
     pub(super) providers: ProviderRepo,
     pub(super) secrets: AdapterSecretResolver,
+    pub(super) route_pools: RoutePoolService,
 }
 
 impl AdapterBridgeService {
@@ -845,7 +915,140 @@ impl AdapterBridgeService {
             routes: AdapterRouteService::new(db.clone()),
             profiles: AdapterProfileRepo::new(db.clone()),
             providers: ProviderRepo::new(db.clone()),
+            route_pools: RoutePoolService::new(db.clone()),
             secrets: AdapterSecretResolver::new(db),
+        }
+    }
+
+    pub fn attach_route_index(
+        &self,
+        mut material: AdapterBridgeRuntimeMaterial,
+        profile: &AdapterProfile,
+    ) -> AdapterBridgeRuntimeMaterial {
+        material.index_enabled = self.route_pools.index_enabled();
+        let _ = self.route_pools.ensure_legacy_pool(profile);
+        if let Some(index) = self.route_index_for_material(&material, profile) {
+            if let Ok(Some(pool)) = self.route_pools.get(&material.profile_id) {
+                if let Some(port) = pool.gateway_port {
+                    material.preferred_port = Some(port);
+                }
+            }
+            material.route_index = Some(index);
+        } else {
+            material.route_index = None;
+        }
+        material
+    }
+
+    /// Persist v2 enrollment only after the listener is already bound and
+    /// healthy. Occupancy / bind / health failures must not call this.
+    pub fn enroll_v2_after_bind(&self, profile: &AdapterProfile, port: u16) -> Result<bool> {
+        if profile.route != AdapterRoute::LocalBridge {
+            return Ok(false);
+        }
+        if !self.route_pools.index_enabled() {
+            return Ok(false);
+        }
+        self.route_pools.ensure_legacy_pool(profile)?;
+        self.route_pools.enroll_v2(&profile.id, port)?;
+        Ok(true)
+    }
+
+    fn route_index_for_material(
+        &self,
+        material: &AdapterBridgeRuntimeMaterial,
+        profile: &AdapterProfile,
+    ) -> Option<EffectiveRouteIndex> {
+        if !self.route_pools.index_enabled() {
+            return None;
+        }
+        let pool = self.route_pools.get(&material.profile_id).ok().flatten()?;
+        if !pool.v2_enrolled {
+            return None;
+        }
+        let members = self.route_pools.list_members(&pool.id).ok()?;
+        let rule = rule_for_id(&profile.rule_id)?;
+        let endpoint = index_endpoint_key(material.local_surface);
+        let prior = material
+            .route_index
+            .as_ref()
+            .map(EffectiveRouteIndex::capability_snapshots);
+        let mut listings = Vec::new();
+        for member in members.into_iter().filter(|member| member.enabled) {
+            listings.push(self.listing_for_member(material, &rule, profile, &member));
+        }
+        Some(index_from_member_listings(
+            pool.id,
+            pool.policy_revision.max(0) as u64,
+            endpoint,
+            &listings,
+            prior.as_deref(),
+        ))
+    }
+
+    fn listing_for_member(
+        &self,
+        material: &AdapterBridgeRuntimeMaterial,
+        rule: &CodexBridgeRule,
+        profile: &AdapterProfile,
+        member: &RouteMember,
+    ) -> MemberListing {
+        let provider = index_provider_key(material.source);
+        let transport = index_transport_key(material.protocol);
+        let is_lead = member.source_kind == profile.source_kind
+            && member.source_id == material.source_connection_id;
+        if is_lead {
+            let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(
+                &material.upstream_base_url,
+            );
+            return MemberListing {
+                member_id: member.source_id.clone(),
+                listed_models: listed_models_for_bridge(
+                    material.source,
+                    material.target_agent,
+                    &material.upstream_model,
+                    custom,
+                    &material.configured_listed_models,
+                ),
+                upstream_provider: provider.to_owned(),
+                upstream_dialect: provider.to_owned(),
+                upstream_endpoint: material.upstream_base_url.clone(),
+                transport_key: transport.to_owned(),
+                snapshot_ok: true,
+            };
+        }
+        let snapshot_ok = self
+            .resolve_member_auth(rule.rule_id, member.source_kind, &member.source_id)
+            .map(|auth| auth.has_token())
+            .unwrap_or(false);
+        if !snapshot_ok {
+            return MemberListing {
+                member_id: member.source_id.clone(),
+                listed_models: Vec::new(),
+                upstream_provider: provider.to_owned(),
+                upstream_dialect: provider.to_owned(),
+                upstream_endpoint: material.upstream_base_url.clone(),
+                transport_key: transport.to_owned(),
+                snapshot_ok: false,
+            };
+        }
+        let (url, model, configured, _protocol, _) =
+            prepare::openai_source_upstream(self, rule, member.source_kind, &member.source_id);
+        let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(&url);
+        MemberListing {
+            member_id: member.source_id.clone(),
+            listed_models: listed_models_for_bridge(
+                rule.source,
+                rule.target_agent,
+                &model,
+                custom,
+                &configured,
+            ),
+            upstream_provider: provider.to_owned(),
+            upstream_dialect: provider.to_owned(),
+            upstream_endpoint: url,
+            transport_key: transport.to_owned(),
+            snapshot_ok: true,
         }
     }
 }
