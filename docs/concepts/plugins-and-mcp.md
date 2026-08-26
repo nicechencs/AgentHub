@@ -24,6 +24,8 @@ updated: 2026-08-26
 
 Goose 把 MCP 叫做 “extension”。那是 Goose 的用词。AgentHub 的「插件」对齐 Claude / Codex / Grok / Pi 的 plugin 包，不对齐 Goose 的 MCP 别名。
 
+厂商侧谁有插件系统（AgentHub 均未接线）：**有** = Claude、Grok、Codex、Pi；**另一套、不硬转** = DSH Cordis；**无 / 未验证** = Cursor Agent、Kimi、WorkBuddy。逐项依据见 [Agent 插件表面 · 厂商插件系统](../reference/agent-plugin-surfaces.md#厂商插件系统plugin--extension-包)。同类产品怎么管见 [插件管理提案 · 同类怎么管](../proposals/plugin-management.md#3-同类怎么管2026-08-对照)。
+
 ## 当前产品表面
 
 - **Skills**（`/skills`）管理共享技能与投影。`Capability::Skills` 由 adapter 声明；Kimi 为 Unsupported。
@@ -39,7 +41,7 @@ Goose 把 MCP 叫做 “extension”。那是 Goose 的用词。AgentHub 的「�
 | MCP live 配置 | 各 Agent 自己的 json/toml |
 | 插件包 | 各 Agent 的 plugin 缓存/目录 + `enabledPlugins` / `[plugins]` / Pi settings |
 
-AgentHub 若管理插件，应**委托各家官方 CLI**（`claude plugin`、`codex plugin`、`grok plugin`、`pi install`），以厂商 live 状态为准，不自建第二套商店，也不把插件投影成共享 `~/.agents/plugins/`。
+插件包的 live 状态在各 Agent 自己的目录和 CLI 里。接线方案（委托官方 CLI、不自建商店、不做 `~/.agents/plugins` 共享真源）见 [插件管理提案](../proposals/plugin-management.md)，不是当前能力。
 
 ## 和连接 / 路由 / MCP 的边界
 
