@@ -4777,6 +4777,48 @@ async fn v2_400_does_not_switch_members() {
 }
 
 #[tokio::test]
+async fn v2_policy_403_does_not_switch_members() {
+    let callback: ChatCallback = Arc::new(|bearer, _body| {
+        if bearer == "Bearer token-a" {
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "error": {
+                        "message": "you do not have access to generate this content"
+                    }
+                })),
+            )
+                .into_response()
+        } else {
+            chat_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p5_pool_spec(
+            "p5-403-policy-no-switch",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned()],
+        "policy 403 must not switch members"
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
 async fn v2_entitlement_excludes_member_for_model_not_account() {
     let callback: ChatCallback = Arc::new(|bearer, body| {
         let model = body.get("model").and_then(Value::as_str).unwrap_or("");

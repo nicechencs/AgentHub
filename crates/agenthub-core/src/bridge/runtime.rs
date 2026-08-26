@@ -77,17 +77,21 @@ impl ResolvedAuth {
         true
     }
 
-    /// Adopt a token produced by a shared reload. Same-cell waiters already
-    /// hold it; other cells (cross-pool members) copy it.
-    pub(crate) fn apply_reloaded_token(&self, token: &str) -> bool {
+    /// Adopt a shared-reload token. Same-cell waiters already hold it;
+    /// other cells copy it only if `expected` still matches. A newer
+    /// revision must not be overwritten.
+    pub(crate) fn apply_reloaded_token(&self, expected: u64, token: &str) -> bool {
         let Ok(mut guard) = self.cell.lock() else {
             return false;
         };
         if guard.token == token {
             return true;
         }
+        if guard.revision != expected {
+            return false;
+        }
         guard.token = token.to_owned();
-        guard.revision = guard.revision.saturating_add(1);
+        guard.revision = expected.saturating_add(1);
         true
     }
 }

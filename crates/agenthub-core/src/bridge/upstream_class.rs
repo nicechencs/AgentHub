@@ -13,7 +13,6 @@ mod tests;
 /// Default member cooldown when `Retry-After` is missing or zero.
 pub const DEFAULT_COOLDOWN: Duration = Duration::from_secs(2);
 
-/// Proposal §8 classes. Scope is documented on each variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpstreamErrorClass {
     /// Ordinary 400 / 422, and policy 403. Request-scoped: no member switch.
@@ -103,12 +102,9 @@ fn haystack(body: Option<&str>) -> String {
 fn is_entitlement_body(body: Option<&str>) -> bool {
     let hay = haystack(body);
     hay.contains("model_not_found")
-        || hay.contains("does not have access")
-        || hay.contains("do not have access")
-        || hay.contains("does not exist")
         || hay.contains("unknown model")
         || hay.contains("model not found")
-        || hay.contains("not available in your")
+        || hay.contains("invalid_model")
         || hay.contains("invalid model")
 }
 
