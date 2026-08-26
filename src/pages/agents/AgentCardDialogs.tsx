@@ -27,6 +27,8 @@ export type AgentCardDialogsProps = {
   onConfirmOneClick: () => void;
   /** Live read: leftover menu dismiss while the opening click is settling. */
   shouldIgnoreDismiss?: (nextOpen: boolean) => boolean;
+  /** Current spawn is IDE/desktop; install/purge must not claim to replace it. */
+  specialInstall?: boolean;
 };
 
 export function AgentCardDialogs({
@@ -43,6 +45,7 @@ export function AgentCardDialogs({
   onConfirmInstall,
   onConfirmOneClick,
   shouldIgnoreDismiss,
+  specialInstall,
 }: AgentCardDialogsProps) {
   const { t } = useI18n();
   const onDialogOpenChange = (nextOpen: boolean) => {
@@ -116,7 +119,9 @@ export function AgentCardDialogs({
           <DialogHeader>
             <DialogTitle>{t('agents.dialog.uninstallConfigTitle')}</DialogTitle>
             <DialogDescription className="text-danger">
-              {t('agents.dialog.uninstallConfigDesc')}
+              {specialInstall
+                ? t('agents.dialog.uninstallConfigKeepsApp')
+                : t('agents.dialog.uninstallConfigDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="text-sm text-secondary">
@@ -149,7 +154,9 @@ export function AgentCardDialogs({
           <DialogHeader>
             <DialogTitle>{t('agents.dialog.installTitle', { name: agentName })}</DialogTitle>
             <DialogDescription>
-              {t('agents.dialog.installDesc')}
+              {specialInstall
+                ? t('agents.dialog.installAlongsideDesc')
+                : t('agents.dialog.installDesc')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

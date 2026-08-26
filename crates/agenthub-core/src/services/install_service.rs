@@ -1332,21 +1332,48 @@ pub fn upgrade_from_contribution(
     result
 }
 
+fn special_channel_kind(channel: Option<&str>) -> Option<&'static str> {
+    let raw = channel.map(str::trim).filter(|c| !c.is_empty())?;
+    match raw.to_ascii_lowercase().as_str() {
+        "ide" => Some("ide"),
+        "desktop" => Some("desktop"),
+        _ => None,
+    }
+}
+
+fn special_uninstall_program_message(kind: &str) -> String {
+    if kind == "ide" {
+        "当前是 IDE 插件安装，无法在这里卸载程序，请到 IDE 插件中卸载".into()
+    } else {
+        "当前是桌面应用安装，无法在这里卸载程序，请到桌面应用或 Microsoft Store 卸载".into()
+    }
+}
+
+fn special_uninstall_purge_note(kind: &str) -> String {
+    if kind == "ide" {
+        "当前是 IDE 插件安装，程序请到 IDE 插件中卸载；将仅清理配置目录".into()
+    } else {
+        "当前是桌面应用安装，程序请到桌面应用或 Microsoft Store 卸载；将仅清理配置目录"
+            .into()
+    }
+}
+
 /// npm / native can be upgraded here. IDE / desktop copies must be updated
 /// in that product; never treat them as native and run the installer.
 fn resolve_in_app_upgrade_channel(
     channel: Option<&str>,
 ) -> std::result::Result<&'static str, String> {
+    if let Some(kind) = special_channel_kind(channel) {
+        return Err(if kind == "ide" {
+            "当前是 IDE 插件安装，无法在这里更新，请到 IDE 插件中更新".into()
+        } else {
+            "当前是桌面应用安装，无法在这里更新，请到桌面应用中更新".into()
+        });
+    }
     let Some(raw) = channel.map(str::trim).filter(|c| !c.is_empty()) else {
         return Ok("native");
     };
     let lower = raw.to_ascii_lowercase();
-    if lower == "ide" {
-        return Err("当前是 IDE 插件安装，无法在这里更新，请到 IDE 插件中更新".into());
-    }
-    if lower == "desktop" {
-        return Err("当前是桌面应用安装，无法在这里更新，请到桌面应用中更新".into());
-    }
     if lower == "npm" || (lower.contains("npm") && !lower.contains("native")) {
         return Ok("npm");
     }
@@ -1692,13 +1719,23 @@ fn uninstall_agent_inner(
 
         let channel = before.channel.as_deref().unwrap_or("");
         let is_npm = channel == "npm" || (channel.contains("npm") && !channel.contains("native"));
+        let special = special_channel_kind(before.channel.as_deref());
         // Never uninstall shared runtimes (Node/npm/PowerShell).
         logs.push(
             "# note: shared runtimes (nodejs/npm/powershell/git) are never uninstalled".into(),
         );
 
         let mut removed_program = false;
-        if is_npm {
+        if let Some(kind) = special {
+            if !purge_config {
+                return Ok(InstallOutcome::failure(
+                    action,
+                    logs,
+                    special_uninstall_program_message(kind),
+                ));
+            }
+            logs.push(special_uninstall_purge_note(kind));
+        } else if is_npm {
             if let Some(pkg) = contribution.npm_package() {
                 removed_program = npm_uninstall_global_then_leftover(pkg, executor, &mut logs)?;
             }
@@ -1839,7 +1876,14 @@ fn uninstall_agent_inner(
             action: action.into(),
             logs,
             message: if ok {
-                format!("{} 卸载完成", agent.as_str())
+                if special.is_some() && purge_config && !removed_program {
+                    format!(
+                        "{} 已删除配置；程序仍在 IDE 插件或桌面应用中",
+                        agent.as_str()
+                    )
+                } else {
+                    format!("{} 卸载完成", agent.as_str())
+                }
             } else if is_npm || removed_program {
                 format!(
                     "{} 卸载后仍检测到二进制（可能 PATH 残留或安装在其他位置）",

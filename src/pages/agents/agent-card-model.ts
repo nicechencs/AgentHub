@@ -79,6 +79,44 @@ export function extraCopyKindLabel(
   return key ? t(key) : kind;
 }
 
+export function updateViaLabel(
+  via: UpdateVia,
+  t: (key: MessageKey) => string,
+): string {
+  switch (via) {
+    case 'in_app':
+      return t('agents.card.viaInApp');
+    case 'ide':
+      return t('agents.card.updateViaIde');
+    case 'desktop':
+      return t('agents.card.updateViaDesktop');
+    case 'official':
+      return t('agents.card.needsOfficial');
+    default:
+      return t('agents.card.viaNone');
+  }
+}
+
+export function uninstallViaLabel(
+  via: UninstallVia,
+  t: (key: MessageKey) => string,
+): string {
+  switch (via) {
+    case 'in_app':
+      return t('agents.card.viaInApp');
+    case 'ide':
+      return t('agents.card.uninstallViaIde');
+    case 'desktop':
+      return t('agents.card.uninstallViaDesktop');
+    case 'official':
+      return t('agents.card.needsOfficial');
+    case 'leftover':
+      return t('agents.card.viaLeftover');
+    default:
+      return t('agents.card.viaNone');
+  }
+}
+
 /**
  * Compare one extra copy against the shared remote latest.
  * Leftover data-dir npm is not an upgrade target — skip the hint.
@@ -89,16 +127,174 @@ export type ExtraCopyUpdateHint = 'update_available' | 'up_to_date' | 'unknown';
 export const SPECIAL_INSTALL_CHANNELS = ['desktop', 'ide'] as const;
 export type SpecialInstallChannel = (typeof SPECIAL_INSTALL_CHANNELS)[number];
 
+export type InstallSource = 'npm' | 'native' | 'ide' | 'desktop' | 'leftover-agenthub';
+export type UpdateVia = 'in_app' | 'ide' | 'desktop' | 'official' | 'none';
+export type UninstallVia = 'in_app' | 'ide' | 'desktop' | 'official' | 'leftover' | 'none';
+
+export type AgentInstall = {
+  source: InstallSource;
+  location: string;
+  version?: string | null;
+  updateVia: UpdateVia;
+  uninstallVia: UninstallVia;
+  spawn: boolean;
+  kind: string;
+};
+
 export function isSpecialInstallChannel(
   channel?: string | null,
 ): channel is SpecialInstallChannel {
   return channel === 'desktop' || channel === 'ide';
 }
 
+export function isInstallSource(value?: string | null): value is InstallSource {
+  return (
+    value === 'npm' ||
+    value === 'native' ||
+    value === 'ide' ||
+    value === 'desktop' ||
+    value === 'leftover-agenthub'
+  );
+}
+
+/** Same object for every agent copy so UI does not mix npm / IDE / Store. */
+export function installLifecycle(
+  kind: string,
+  agentId?: string,
+): Pick<AgentInstall, 'source' | 'updateVia' | 'uninstallVia'> {
+  if (kind === 'npm') {
+    return { source: 'npm', updateVia: 'in_app', uninstallVia: 'in_app' };
+  }
+  if (kind === 'native' && agentId === 'workbuddy') {
+    return { source: 'native', updateVia: 'official', uninstallVia: 'in_app' };
+  }
+  if (kind === 'native') {
+    return { source: 'native', updateVia: 'in_app', uninstallVia: 'in_app' };
+  }
+  if (kind === 'ide') {
+    return { source: 'ide', updateVia: 'ide', uninstallVia: 'ide' };
+  }
+  if (kind === 'desktop') {
+    return { source: 'desktop', updateVia: 'desktop', uninstallVia: 'desktop' };
+  }
+  if (kind === 'leftover-agenthub') {
+    return { source: 'leftover-agenthub', updateVia: 'none', uninstallVia: 'leftover' };
+  }
+  return { source: 'native', updateVia: 'none', uninstallVia: 'none' };
+}
+
+function sameInstallPath(a: string, b: string): boolean {
+  return a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase();
+}
+
+function asUpdateVia(value?: string | null): UpdateVia | undefined {
+  if (
+    value === 'in_app' ||
+    value === 'ide' ||
+    value === 'desktop' ||
+    value === 'official' ||
+    value === 'none'
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function asUninstallVia(value?: string | null): UninstallVia | undefined {
+  if (
+    value === 'in_app' ||
+    value === 'ide' ||
+    value === 'desktop' ||
+    value === 'official' ||
+    value === 'leftover' ||
+    value === 'none'
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function toAgentInstall(
+  agentId: string,
+  kind: string,
+  location: string,
+  version: string | null | undefined,
+  spawn: boolean,
+  copy?: {
+    source?: string | null;
+    updateVia?: string | null;
+    uninstallVia?: string | null;
+  },
+): AgentInstall {
+  const fallbackKind = isInstallSource(kind) ? kind : 'native';
+  const life = installLifecycle(fallbackKind, agentId);
+  const source = isInstallSource(copy?.source) ? copy.source : life.source;
+  return {
+    source,
+    location,
+    version,
+    updateVia: asUpdateVia(copy?.updateVia) ?? life.updateVia,
+    uninstallVia: asUninstallVia(copy?.uninstallVia) ?? life.uninstallVia,
+    spawn,
+    kind: fallbackKind,
+  };
+}
+
+/** Spawn copy + extras, each with source / location / update / uninstall. */
+export function listAgentInstalls(
+  agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
+): AgentInstall[] {
+  const out: AgentInstall[] = [];
+  const spawnPath = agent.binPath?.trim();
+  if (agent.installed && spawnPath) {
+    const kind = isInstallSource(agent.channel) ? agent.channel : 'native';
+    out.push(toAgentInstall(agent.agentId, kind, spawnPath, agent.version, true));
+  }
+  for (const copy of agent.extraCopies ?? []) {
+    const location = copy.path?.trim();
+    if (!location) continue;
+    if (spawnPath && sameInstallPath(spawnPath, location)) continue;
+    out.push(
+      toAgentInstall(
+        agent.agentId,
+        copy.kind || copy.source || 'native',
+        location,
+        copy.version,
+        false,
+        copy,
+      ),
+    );
+  }
+  return out;
+}
+
 /** npm / native can be upgraded here; missing channel still uses native install. */
 export function isInAppUpgradeChannel(channel?: string | null): boolean {
   if (!channel?.trim()) return true;
   return channel === 'npm' || channel === 'native';
+}
+
+export function spawnInstall(
+  agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
+): AgentInstall | undefined {
+  return listAgentInstalls(agent).find((row) => row.spawn);
+}
+
+/** Program uninstall only covers copies whose uninstall method is in-app. */
+export function canUninstallProgramInApp(
+  agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
+): boolean {
+  return listAgentInstalls(agent).some((row) => row.uninstallVia === 'in_app');
+}
+
+/** Plugin/desktop copies stay; npm/native can still be installed beside them. */
+export function canInstallAlongsideSpecial(
+  agent: Pick<AgentStatus, 'installed' | 'agentId' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
+): boolean {
+  if (!agent.installed) return false;
+  return !listAgentInstalls(agent).some(
+    (row) => row.source === 'npm' || row.source === 'native',
+  );
 }
 
 export type SpecialChannelUpdateTarget = {
@@ -112,25 +308,30 @@ export type SpecialChannelUpdateTarget = {
  * Skip when that copy is already current.
  */
 export function specialChannelUpdateTargets(
-  agent: Pick<AgentStatus, 'channel' | 'extraCopies' | 'latestVersion' | 'update'>,
+  agent: Pick<
+    AgentStatus,
+    'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies' | 'latestVersion' | 'update'
+  >,
 ): SpecialChannelUpdateTarget[] {
   const latest = agent.update?.latestVersion ?? agent.latestVersion;
   const state = agent.update?.state;
   const outdated = new Set<SpecialInstallChannel>();
   const shown = new Set<SpecialInstallChannel>();
-  if (
-    isSpecialInstallChannel(agent.channel) &&
-    state !== 'up_to_date' &&
-    state !== 'checking'
-  ) {
-    shown.add(agent.channel);
-    if (state === 'update_available') outdated.add(agent.channel);
-  }
-  for (const copy of agent.extraCopies ?? []) {
-    if (!isSpecialInstallChannel(copy.kind)) continue;
-    if (extraCopyUpdateHint(copy.kind, copy.version, latest) === 'update_available') {
-      shown.add(copy.kind);
-      outdated.add(copy.kind);
+  for (const inst of listAgentInstalls(agent)) {
+    if (!isSpecialInstallChannel(inst.source)) continue;
+    const copyHint = extraCopyUpdateHint(inst.source, inst.version, latest);
+    if (copyHint === 'update_available') {
+      shown.add(inst.source);
+      outdated.add(inst.source);
+      continue;
+    }
+    if (
+      inst.spawn &&
+      state !== 'up_to_date' &&
+      state !== 'checking'
+    ) {
+      shown.add(inst.source);
+      if (state === 'update_available') outdated.add(inst.source);
     }
   }
   return SPECIAL_INSTALL_CHANNELS.filter((kind) => shown.has(kind)).map((kind) => ({

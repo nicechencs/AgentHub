@@ -498,6 +498,21 @@ fn public_purge_entry_rejects_data_dir_unrelated_to_database_authority() {
 }
 
 #[test]
+fn special_channel_kind_blocks_program_uninstall_copy() {
+    assert_eq!(special_channel_kind(Some("ide")), Some("ide"));
+    assert_eq!(special_channel_kind(Some("DESKTOP")), Some("desktop"));
+    assert_eq!(special_channel_kind(Some("npm")), None);
+    assert_eq!(special_channel_kind(None), None);
+    let ide = special_uninstall_program_message("ide");
+    assert!(ide.contains("IDE"), "{ide}");
+    let desktop = special_uninstall_program_message("desktop");
+    assert!(
+        desktop.contains("Microsoft Store") || desktop.contains("桌面"),
+        "{desktop}"
+    );
+}
+
+#[test]
 fn resolve_in_app_upgrade_channel_blocks_ide_and_desktop() {
     assert_eq!(resolve_in_app_upgrade_channel(Some("npm")).unwrap(), "npm");
     assert_eq!(

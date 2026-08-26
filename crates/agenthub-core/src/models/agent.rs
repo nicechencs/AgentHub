@@ -118,6 +118,58 @@ pub enum DetectStatus {
     NotFound,
 }
 
+/// Lifecycle for one on-disk copy: source, update path, uninstall path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InstallLifecycle {
+    /// npm | native | ide | desktop | leftover-agenthub
+    pub source: &'static str,
+    /// in_app | ide | desktop | official | none
+    pub update_via: &'static str,
+    /// in_app | ide | desktop | official | leftover | none
+    pub uninstall_via: &'static str,
+}
+
+/// Same object for every agent copy so UI does not mix npm / IDE / Store.
+pub fn install_lifecycle(agent: AgentId, kind: &str) -> InstallLifecycle {
+    match kind {
+        "npm" => InstallLifecycle {
+            source: "npm",
+            update_via: "in_app",
+            uninstall_via: "in_app",
+        },
+        "native" if agent == AgentId::WorkBuddy => InstallLifecycle {
+            source: "native",
+            update_via: "official",
+            uninstall_via: "in_app",
+        },
+        "native" => InstallLifecycle {
+            source: "native",
+            update_via: "in_app",
+            uninstall_via: "in_app",
+        },
+        "ide" => InstallLifecycle {
+            source: "ide",
+            update_via: "ide",
+            uninstall_via: "ide",
+        },
+        "desktop" => InstallLifecycle {
+            source: "desktop",
+            update_via: "desktop",
+            uninstall_via: "desktop",
+        },
+        "leftover-agenthub" => InstallLifecycle {
+            source: "leftover-agenthub",
+            update_via: "none",
+            uninstall_via: "leftover",
+        },
+        _ => InstallLifecycle {
+            source: "native",
+            update_via: "none",
+            uninstall_via: "none",
+        },
+    }
+}
+
 /// An additional on-disk copy of an agent CLI (not the spawn target).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -127,6 +179,50 @@ pub struct DetectedBinaryCopy {
     pub kind: String,
     pub version: Option<String>,
     pub channel: Option<String>,
+    /// Install source (same codes as `kind` for known copies).
+    #[serde(default)]
+    pub source: String,
+    /// Where this copy is updated.
+    #[serde(default)]
+    pub update_via: String,
+    /// Where this copy is uninstalled.
+    #[serde(default)]
+    pub uninstall_via: String,
+}
+
+impl Default for DetectedBinaryCopy {
+    fn default() -> Self {
+        Self {
+            path: PathBuf::new(),
+            kind: String::new(),
+            version: None,
+            channel: None,
+            source: String::new(),
+            update_via: "none".into(),
+            uninstall_via: "none".into(),
+        }
+    }
+}
+
+impl DetectedBinaryCopy {
+    pub fn from_kind(
+        agent: AgentId,
+        path: PathBuf,
+        kind: &str,
+        version: Option<String>,
+        channel: Option<String>,
+    ) -> Self {
+        let life = install_lifecycle(agent, kind);
+        Self {
+            path,
+            kind: kind.to_string(),
+            version,
+            channel,
+            source: life.source.to_string(),
+            update_via: life.update_via.to_string(),
+            uninstall_via: life.uninstall_via.to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
