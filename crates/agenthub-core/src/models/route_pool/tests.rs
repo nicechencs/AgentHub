@@ -1,8 +1,9 @@
 use crate::models::{
     authorization_fingerprint, choose_default_pool_id, feature_flag_enabled, generate_hub_token,
-    AdapterSourceKind, AgentId, RouteDownstreamDialect, RouteDownstreamSurface,
-    RouteSchedulePolicy, FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
-    FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    model_route_id_is_exact, AdapterSourceKind, AgentId, RouteDownstreamDialect,
+    RouteDownstreamSurface, RouteSchedulePolicy, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
+    FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
+    FEATURE_ROUTE_POOL_V2,
 };
 
 #[test]
@@ -24,6 +25,18 @@ fn feature_flags_are_fail_closed() {
         FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
         "feature.grok_ingress_codex_upstream"
     );
+    assert_eq!(FEATURE_MIXED_PROVIDER_POOL, "feature.mixed_provider_pool");
+    assert!(feature_flag_enabled(Some("yes")));
+}
+
+#[test]
+fn model_route_ids_are_exact_only() {
+    assert!(model_route_id_is_exact("m1"));
+    assert!(model_route_id_is_exact("grok-4"));
+    assert!(!model_route_id_is_exact(""));
+    assert!(!model_route_id_is_exact("gpt-*"));
+    assert!(!model_route_id_is_exact("gpt-?"));
+    assert!(!model_route_id_is_exact("gpt-[4]"));
 }
 
 #[test]
