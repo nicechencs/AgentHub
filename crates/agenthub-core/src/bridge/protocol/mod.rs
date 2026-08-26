@@ -9,6 +9,7 @@
 
 pub mod anthropic_messages;
 pub mod chat;
+pub mod pair;
 pub mod responses;
 
 /// Claude subscription → Codex kernel fixtures.

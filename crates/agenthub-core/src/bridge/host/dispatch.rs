@@ -6,8 +6,12 @@ use axum::response::Response;
 use tokio::sync::OwnedSemaphorePermit;
 
 use super::admission::{admit_conversation, AdmittedRequest};
+use super::continuation::ContinuationBindings;
 use super::gateway::{Gateway, GatewayAuthError, ModelSwitchOutcome};
 use super::http::{error_response, reject_invalid_local_auth, stopping_response, EdgeState};
+use super::pair_policy::{
+    identity_relay, pair_adapter_active, pair_direction, pair_model_servable,
+};
 use super::stream::{
     chat_non_stream_response, chat_stream_response, messages_non_stream_response,
     messages_stream_response, non_stream_response, passthrough_json_response,
@@ -65,6 +69,27 @@ pub(super) async fn handle_conversation(
         .and_then(|value| value.as_str())
         .unwrap_or("")
         .to_owned();
+    let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
+    if pair_adapter_active(&admitted.state, channel)
+        && !pair_model_servable(&admitted.state, &model)
+    {
+        tracing::warn!(
+            target: "core.adapter",
+            profile_id = %admitted.state.profile_id,
+            request_id = %admitted.request_id,
+            model,
+            op = "upstream",
+            code = "model_unavailable",
+            status = 400_u16,
+            "pair adapter has no upstream mapping for this model"
+        );
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "model_unavailable",
+            "No running route can serve this model.",
+            None,
+        );
+    }
     let mut resolver_candidates = None;
     if let Some(index) = &admitted.state.route_index {
         let endpoint = DownstreamSurface::endpoint_key(admitted.state.upstream.local_surface);
@@ -140,9 +165,38 @@ pub(super) async fn handle_conversation(
             }
         }
     }
-    let Some(member) = (match &resolver_candidates {
-        Some(candidates) => admitted.state.pick_v2(candidates, &model, &[]),
-        None => admitted.state.account_picker.pick_new(),
+    let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
+    let pair_active = pair_adapter_active(&admitted.state, channel);
+    let has_stateful = ContinuationBindings::has_stateful_fields(&admitted.body, &admitted.headers);
+    let required_member = if pair_active {
+        admitted
+            .state
+            .continuations
+            .required_member(&admitted.body, &admitted.headers)
+    } else {
+        None
+    };
+    let Some(member) = (if let Some(required_id) = required_member.as_deref() {
+        match pick_bound_member(
+            &admitted.state,
+            resolver_candidates.as_deref(),
+            required_id,
+            &model,
+        ) {
+            Some(member) => Some(member),
+            None => {
+                return continuation_unavailable(
+                    &admitted.state,
+                    &admitted.request_id,
+                    admitted.started,
+                );
+            }
+        }
+    } else {
+        match &resolver_candidates {
+            Some(candidates) => admitted.state.pick_v2(candidates, &model, &[]),
+            None => admitted.state.account_picker.pick_new(),
+        }
     }) else {
         return no_eligible_member(
             &admitted.state,
@@ -151,8 +205,8 @@ pub(super) async fn handle_conversation(
             &model,
         );
     };
+    let continuation_locked = pair_active && (has_stateful || required_member.is_some());
     admitted.member = Some(member);
-    let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
     let prepared = match channel.prepare(surface, &admitted) {
         Ok(prepared) => prepared,
         Err(response) => return response,
@@ -172,8 +226,64 @@ pub(super) async fn handle_conversation(
         prepared,
         resolver_candidates,
         model,
+        continuation_locked,
     )
     .await
+}
+
+fn pick_bound_member(
+    state: &EdgeState,
+    candidates: Option<&[DispatchCandidate]>,
+    member_id: &str,
+    model: &str,
+) -> Option<crate::bridge::account::PickedMember> {
+    let _ = model;
+    let matches_id = |member: &crate::bridge::account::PickedMember| {
+        member.source_id == member_id || member.ticket_id == member_id || member.label == member_id
+    };
+    state
+        .account_picker
+        .members()
+        .iter()
+        .find(|member| {
+            if !matches_id(member) || !member.is_eligible() {
+                return false;
+            }
+            if state
+                .auth_reload
+                .is_isolated(&member.authorization_fingerprint())
+            {
+                return false;
+            }
+            match candidates {
+                Some(candidates) if !candidates.is_empty() => candidates.iter().any(|candidate| {
+                    member.source_id == candidate.member_id
+                        || member.ticket_id == candidate.member_id
+                        || member.label == candidate.member_id
+                }),
+                _ => true,
+            }
+        })
+        .cloned()
+}
+
+fn continuation_unavailable(state: &EdgeState, request_id: &str, started: Instant) -> Response {
+    tracing::warn!(
+        target: "core.adapter",
+        profile_id = %state.profile_id,
+        request_id = %request_id,
+        op = "upstream",
+        code = "continuation_unavailable",
+        status = 400_u16,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "stateful continuation cannot keep the original login"
+    );
+    error_response(
+        StatusCode::BAD_REQUEST,
+        "continuation_unavailable",
+        "This conversation cannot continue because the original login is no longer available.",
+        None,
+    )
 }
 
 fn no_eligible_member(
@@ -222,6 +332,7 @@ async fn forward_upstream(
     prepared: UpstreamPrepare,
     candidates: Option<Vec<DispatchCandidate>>,
     public_model: String,
+    continuation_locked: bool,
 ) -> Response {
     let AdmittedRequest {
         state,
@@ -256,6 +367,7 @@ async fn forward_upstream(
         member,
         candidates.as_deref(),
         &public_model,
+        continuation_locked,
     )
     .await
     {
@@ -299,10 +411,27 @@ fn forward_stream(
     cache_seed: Option<String>,
     member: PickedMember,
 ) -> Response {
-    if channel.passthrough_for(surface) {
+    if identity_relay(channel, surface, &state) {
         return passthrough_sse_response(
-            state, response, request_id, started, permit, cache_seed, member, surface,
+            state, response, request_id, started, permit, cache_seed, member, surface, None,
         );
+    }
+    if surface == DownstreamSurface::Responses {
+        if let Some(direction) = pair_direction(&state, channel) {
+            if pair_adapter_active(&state, channel) {
+                return passthrough_sse_response(
+                    state,
+                    response,
+                    request_id,
+                    started,
+                    permit,
+                    cache_seed,
+                    member,
+                    surface,
+                    Some(direction),
+                );
+            }
+        }
     }
     match surface {
         DownstreamSurface::Responses => {
@@ -331,11 +460,28 @@ async fn forward_non_stream(
     cache_seed: Option<String>,
     member: PickedMember,
 ) -> Response {
-    if channel.passthrough_for(surface) {
+    if identity_relay(channel, surface, &state) {
         return passthrough_json_response(
-            state, response, request_id, started, permit, cache_seed, member,
+            state, response, request_id, started, permit, cache_seed, member, None,
         )
         .await;
+    }
+    if surface == DownstreamSurface::Responses {
+        if let Some(direction) = pair_direction(&state, channel) {
+            if pair_adapter_active(&state, channel) {
+                return passthrough_json_response(
+                    state,
+                    response,
+                    request_id,
+                    started,
+                    permit,
+                    cache_seed,
+                    member,
+                    Some(direction),
+                )
+                .await;
+            }
+        }
     }
     match surface {
         DownstreamSurface::Responses => {

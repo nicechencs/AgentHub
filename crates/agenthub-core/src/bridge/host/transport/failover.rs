@@ -42,6 +42,7 @@ pub(super) async fn send_upstream_v2(
     member: PickedMember,
     candidates: &[DispatchCandidate],
     public_model: &str,
+    continuation_locked: bool,
 ) -> Result<UpstreamSendOutcome, Response> {
     let recovery = channel.recovery();
     let original_body = body;
@@ -53,6 +54,12 @@ pub(super) async fn send_upstream_v2(
     let mut grok_strip_attempt = 0u8;
     let max_attempts = candidates.len().clamp(1, V2_MAX_ATTEMPTS);
     let mut attempts = 0usize;
+    let mut last_fail: Option<(
+        UpstreamErrorClass,
+        StatusCode,
+        Option<HeaderValue>,
+        Option<String>,
+    )> = None;
 
     loop {
         attempts += 1;
@@ -184,11 +191,13 @@ pub(super) async fn send_upstream_v2(
                             continue;
                         }
                     }
+                    last_fail = Some((class, status, retry_after, detail));
                     state.isolate_authorization(&member);
                     exclude_member(&mut excluded, &member);
                     break;
                 }
                 FailoverDecision::ExcludeMemberModel => {
+                    last_fail = Some((class, status, retry_after, detail));
                     exclude_member(&mut excluded, &member);
                     break;
                 }
@@ -201,16 +210,40 @@ pub(super) async fn send_upstream_v2(
                     state
                         .account_picker
                         .set_cooldown(&member.source_id, model, duration);
+                    last_fail = Some((class, status, retry_after, detail));
                     exclude_member(&mut excluded, &member);
                     break;
                 }
                 FailoverDecision::FailoverIfUncommitted => {
+                    last_fail = Some((class, status, retry_after, detail));
                     exclude_member(&mut excluded, &member);
                     break;
                 }
             }
         }
 
+        if continuation_locked {
+            if let Some((class, status, retry_after, detail)) = last_fail {
+                return Err(map_request_or_upstream(
+                    state,
+                    request_id,
+                    started,
+                    class,
+                    status,
+                    retry_after,
+                    detail.as_deref(),
+                    &member,
+                    failover_from.as_deref(),
+                ));
+            }
+            return Err(exhausted(
+                state,
+                request_id,
+                started,
+                public_model,
+                failover_from.as_deref(),
+            ));
+        }
         let Some(next) = state.pick_v2(candidates, public_model, &excluded) else {
             return Err(exhausted(
                 state,

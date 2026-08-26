@@ -22,6 +22,14 @@ pub const FEATURE_ROUTE_POOL_V2: &str = "feature.route_pool_v2";
 /// One flag controls both dispatch and `GET /models`.
 pub const FEATURE_ROUTE_INDEX_V2: &str = "feature.route_index_v2";
 
+/// Codex client `/v1/responses` → Grok upstream pair adapter. Independent of
+/// the reverse direction. Off keeps today's Experimental passthrough.
+pub const FEATURE_CODEX_INGRESS_GROK_UPSTREAM: &str = "feature.codex_ingress_grok_upstream";
+
+/// Grok client `/v1/responses` → Codex upstream pair adapter. Independent of
+/// the reverse direction. Off keeps today's Experimental passthrough.
+pub const FEATURE_GROK_INGRESS_CODEX_UPSTREAM: &str = "feature.grok_ingress_codex_upstream";
+
 pub fn feature_flag_enabled(raw: Option<&str>) -> bool {
     matches!(
         raw.map(|value| value.trim().to_ascii_lowercase())
