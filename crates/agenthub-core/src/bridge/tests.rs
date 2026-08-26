@@ -5214,3 +5214,339 @@ async fn v1_without_index_does_not_enter_pool_exhausted() {
     host.shutdown().await.expect("shutdown");
     task.abort();
 }
+
+fn grok_codex_pair_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
+    grok_codex_spec(profile_id, port, upstream_port)
+        .with_mapping(
+            AdapterSourceProduct::XaiGrokSubscription,
+            AgentId::Codex,
+            false,
+        )
+        .with_pair_adapter_flags(true, false)
+        .with_listed_models(vec!["grok-4.5".into()])
+}
+
+fn codex_grok_pair_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
+    let mut spec = spec(profile_id, port, upstream_port);
+    spec.upstream.base_url = format!("http://127.0.0.1:{upstream_port}/v1/");
+    spec.upstream.model = Some("gpt-5.4".to_owned());
+    spec.upstream.protocol = BridgeUpstreamProtocol::CodexResponsesOauth;
+    spec.upstream.local_surface = BridgeLocalSurface::Responses;
+    spec.upstream.auth = ResolvedAuth::bearer("oauth-upstream-token");
+    spec.with_mapping(
+        AdapterSourceProduct::CodexChatGptSubscription,
+        AgentId::Grok,
+        false,
+    )
+    .with_pair_adapter_flags(false, true)
+    .with_listed_models(vec!["gpt-5.4".into()])
+}
+
+async fn counting_responses_upstream() -> (u16, Arc<AtomicUsize>, tokio::task::JoinHandle<()>) {
+    async fn responses(State(hits): State<Arc<AtomicUsize>>) -> Json<Value> {
+        hits.fetch_add(1, Ordering::SeqCst);
+        Json(grok_completed_response("hello"))
+    }
+    let hits = Arc::new(AtomicUsize::new(0));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind counting upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let state = hits.clone();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(state),
+        )
+        .await
+        .expect("serve counting upstream");
+    });
+    (port, hits, task)
+}
+
+async fn capturing_codex_pair_upstream() -> (
+    u16,
+    Arc<Mutex<Vec<CapturedGrokRequest>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    async fn responses(
+        State(captured): State<Arc<Mutex<Vec<CapturedGrokRequest>>>>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Json<Value> {
+        captured
+            .lock()
+            .expect("lock")
+            .push(CapturedGrokRequest { headers, body });
+        Json(json!({
+            "id": "resp_codex_pair",
+            "object": "response",
+            "created_at": 1,
+            "model": "gpt-5.4",
+            "status": "completed",
+            "store": false,
+            "service_tier": "default",
+            "metadata": { "codex_only": true },
+            "output": [{
+                "id": "msg_codex",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{ "type": "output_text", "text": "hello from codex" }]
+            }],
+            "usage": {
+                "input_tokens": 2,
+                "output_tokens": 3,
+                "total_tokens": 5,
+                "reasoning_tokens": 0,
+                "output_tokens_details": { "reasoning_tokens": 0 }
+            }
+        }))
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind capturing Codex pair");
+    let port = listener.local_addr().expect("addr").port();
+    let state = captured.clone();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(state),
+        )
+        .await
+        .expect("serve capturing Codex pair");
+    });
+    (port, captured, task)
+}
+
+#[tokio::test]
+async fn pair_flag_on_codex_to_grok_adapts_request_and_strips_grok_identity() {
+    let reply = json!({
+        "id": "resp_grok",
+        "object": "response",
+        "created_at": 1,
+        "model": "grok-4.5",
+        "status": "completed",
+        "prompt_cache_key": "grok-cache-secret",
+        "session_id": "grok-session-secret",
+        "output": [{
+            "id": "msg_grok",
+            "type": "message",
+            "status": "completed",
+            "role": "assistant",
+            "content": [{ "type": "output_text", "text": "hello" }]
+        }],
+        "usage": {
+            "input_tokens": 2,
+            "output_tokens": 3,
+            "total_tokens": 5,
+            "reasoning_tokens": 0,
+            "output_tokens_details": { "reasoning_tokens": 0 }
+        }
+    });
+    let (upstream_port, captured, upstream_task) = capturing_grok_requests_with_reply(reply).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_pair_spec("pair-c2g", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "store": true,
+            "metadata": { "codex": true },
+            "input": [
+                {
+                    "type": "message",
+                    "role": "system",
+                    "content": [{ "type": "input_text", "text": "sys" }]
+                },
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }
+            ]
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["output"][0]["content"][0]["text"], "hello");
+    assert!(body.get("prompt_cache_key").is_none(), "{body}");
+    assert!(body.get("session_id").is_none(), "{body}");
+
+    let captured = captured.lock().expect("lock").clone();
+    assert_eq!(captured.len(), 1);
+    assert!(
+        captured[0].body.get("store").is_none(),
+        "{}",
+        captured[0].body
+    );
+    assert!(captured[0].body.get("metadata").is_none());
+    assert!(captured[0].headers.get("x-grok-client-version").is_some());
+
+    host.stop("pair-c2g").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn pair_flag_on_grok_to_codex_uses_allowlist_without_grok_headers() {
+    let (upstream_port, captured, upstream_task) = capturing_codex_pair_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_grok_pair_spec("pair-g2c", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "gpt-5.4",
+            "prompt_cache_key": "grok-cache-1",
+            "store": true,
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["output"][0]["content"][0]["text"], "hello from codex");
+    assert!(body.get("store").is_none(), "{body}");
+    assert!(body.get("service_tier").is_none(), "{body}");
+    assert!(body.get("metadata").is_none(), "{body}");
+
+    let captured = captured.lock().expect("lock").clone();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].body["store"], false);
+    assert!(captured[0].body.get("prompt_cache_key").is_none());
+    assert!(captured[0].headers.get("x-grok-client-version").is_none());
+    assert!(captured[0].headers.get("x-grok-session-id").is_none());
+
+    host.stop("pair-g2c").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn pair_flag_on_missing_model_does_not_call_upstream() {
+    let (upstream_port, hits, upstream_task) = counting_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_pair_spec("pair-miss", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "not-a-mapped-model",
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "model_unavailable");
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+
+    host.stop("pair-miss").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn pair_flag_on_continuation_does_not_call_other_member() {
+    let reject_a = Arc::new(AtomicBool::new(false));
+    let (upstream_port, captured, upstream_task) =
+        grok_account_gated_upstream(reject_a.clone()).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            grok_codex_pair_spec("pair-sticky", 0, upstream_port)
+                .with_members(vec![
+                    pool_member("acc-a", "token-a"),
+                    pool_member("acc-b", "token-b"),
+                ])
+                .with_multi_account(true),
+        )
+        .await
+        .expect("start");
+    let first = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({ "model": "grok-4.5", "input": "hello" }))
+        .send()
+        .await
+        .expect("first");
+    assert_eq!(first.status(), StatusCode::OK);
+    let first_body: Value = first.json().await.expect("first json");
+    let response_id = first_body["id"].as_str().expect("id").to_owned();
+
+    reject_a.store(true, Ordering::SeqCst);
+    let second = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "previous_response_id": response_id,
+            "input": "again"
+        }))
+        .send()
+        .await
+        .expect("second");
+    assert_ne!(second.status(), StatusCode::OK);
+    let bearers = captured.lock().expect("lock").clone();
+    assert!(
+        bearers.iter().all(|item| item != "Bearer token-b"),
+        "continuation must not replay onto the other member: {bearers:?}"
+    );
+    assert!(bearers.iter().any(|item| item == "Bearer token-a"));
+
+    host.stop("pair-sticky").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn pair_flag_off_keeps_experimental_grok_codex_passthrough() {
+    let (upstream_port, captured, upstream_task) = capturing_grok_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec("pair-off", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "store": true,
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let upstream = captured.lock().expect("lock").clone();
+    assert_eq!(upstream.len(), 1);
+    assert_eq!(upstream[0]["store"], true);
+
+    host.stop("pair-off").await.expect("stop");
+    upstream_task.abort();
+}

@@ -1,0 +1,52 @@
+[
+  {
+    "type": "response.created",
+    "sequence_number": 0,
+    "response": {
+      "id": "resp_grok_stream",
+      "object": "response",
+      "created_at": 1,
+      "model": "grok-4.5",
+      "status": "in_progress",
+      "output": [],
+      "prompt_cache_key": "grok-cache-secret",
+      "session_id": "grok-session-secret"
+    }
+  },
+  {
+    "type": "response.output_text.delta",
+    "sequence_number": 1,
+    "output_index": 0,
+    "item_id": "msg_1",
+    "content_index": 0,
+    "delta": "hi"
+  },
+  {
+    "type": "response.completed",
+    "sequence_number": 2,
+    "response": {
+      "id": "resp_grok_stream",
+      "object": "response",
+      "created_at": 1,
+      "model": "grok-4.5",
+      "status": "completed",
+      "prompt_cache_key": "grok-cache-secret",
+      "session_id": "grok-session-secret",
+      "x_grok_req_id": "req-secret",
+      "output": [
+        {
+          "id": "msg_1",
+          "type": "message",
+          "status": "completed",
+          "role": "assistant",
+          "content": [{ "type": "output_text", "text": "hi" }]
+        }
+      ],
+      "usage": {
+        "input_tokens": 2,
+        "output_tokens": 1,
+        "total_tokens": 3
+      }
+    }
+  }
+]

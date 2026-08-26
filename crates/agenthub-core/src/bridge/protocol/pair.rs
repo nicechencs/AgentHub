@@ -15,6 +15,9 @@ use serde_json::{Map, Value};
 
 use super::responses::{fold_official_codex_system_items, prepare_official_codex_request};
 
+#[cfg(test)]
+mod tests;
+
 /// Downstream or upstream Responses dialect. Never inferred from the URL path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResponsesDialect {

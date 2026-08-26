@@ -78,6 +78,14 @@ pub(super) fn fixture(name: &str) -> Value {
         "claude_codex_unsupported_image" => {
             include_str!("fixtures/claude_codex_unsupported_image.json")
         }
+        "pair_codex_to_grok_request" => include_str!("fixtures/pair_codex_to_grok_request.json"),
+        "pair_codex_to_grok_response" => include_str!("fixtures/pair_codex_to_grok_response.json"),
+        "pair_codex_to_grok_sse" => include_str!("fixtures/pair_codex_to_grok_sse.json"),
+        "pair_grok_to_codex_request" => include_str!("fixtures/pair_grok_to_codex_request.json"),
+        "pair_grok_to_codex_response" => include_str!("fixtures/pair_grok_to_codex_response.json"),
+        "pair_grok_to_codex_sse" => include_str!("fixtures/pair_grok_to_codex_sse.json"),
+        "pair_parallel_tools" => include_str!("fixtures/pair_parallel_tools.json"),
+        "pair_error_event" => include_str!("fixtures/pair_error_event.json"),
         _ => panic!("unknown fixture {name}"),
     };
     serde_json::from_str(source).expect("fixture is valid JSON")
