@@ -24,7 +24,8 @@ updated: 2026-08-26
 | O-02 | 仍存在：`Database::with_conn` 为 `pub`；生产路径曾用 `ProviderService::repo()` 读行 | 部分处理：生产读改为 `get_by_id` / `get_current`；Account / Backup 的 `repo()` 收为 `pub(crate)`。`with_conn` 与 Provider `repo()` 仍给测试和补偿事务用 |
 | O-03、O-04、O-05 | 仍存在 | 暂缓。页面拆 Hook / 把保存用例上收属于跨层设计 |
 | O-06 | 生产 Hook 已走共享连接池；`loadAdapterPageResources` 只留在测试 | 标注为测试辅助，页面不得再自行拉账号 / Provider |
-| O-07 | 仍存在：多个模块级 store，`setBackend` 手工 reset | 暂缓。共享 store 本身保留；coordinator 先只管刷新，不接管生命周期 |
+| O-07 | 仍存在：多个模块级 store，`setBackend` 手工 reset | 部分处理：`setBackend` / `resetBackend` 会一起清空 catalog。统一 runtime context 仍暂缓 |
+| O-51、O-52 | Agent 状态 / catalog reset 后旧请求仍可写回 | 已处理：按 epoch 丢弃过期写回；catalog 随 backend 一起 reset |
 | O-08、O-09 | 三处 façade 各自刷新，ticket bind 曾 `.catch(() => {})` | 已处理：统一刷新；失败留在 snapshot。连接页和 Chat 可看到并重试 |
 | O-10 | Chat 曾本地 `listTicketWallet` | 已处理：Chat 订阅共享票夹 |
 | O-11–O-14 | 仍存在 | 暂缓。Service / Bridge 内部拆分要单独设计 |
