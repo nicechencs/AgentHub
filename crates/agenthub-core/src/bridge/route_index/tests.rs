@@ -459,6 +459,37 @@ fn disabled_lane_rule_is_lane_disabled_not_silent_drop() {
 }
 
 #[test]
+fn mixed_rules_project_public_model_from_upstream_listings() {
+    let index = EffectiveRouteIndex::build(
+        "mixed",
+        1,
+        &[
+            grant_mapped("grok-member", "grok-4", "grok", "grok", "grok-4"),
+            grant_mapped("codex-member", "gpt-5", "codex", "codex", "gpt-5"),
+        ],
+    )
+    .with_mixed_provider_rules(
+        true,
+        vec![
+            rule("r-grok", "grok", "grok", "grok-4", 0, Some("shared")),
+            rule("r-codex", "codex", "codex", "gpt-5", 10, Some("shared")),
+        ],
+    );
+    let candidates = index.resolve("responses", "m1").expect("public m1");
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| (
+                candidate.member_id.as_str(),
+                candidate.upstream_model.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![("codex-member", "gpt-5"), ("grok-member", "grok-4")]
+    );
+    assert!(index.list_models("responses").contains(&"m1".to_owned()));
+}
+
+#[test]
 fn exclusive_single_provider_models_stay_listed_with_mixed_flag_on() {
     let index = index_ab().with_mixed_provider_rules(true, vec![]);
     assert_eq!(index.list_models("responses"), vec!["m1", "m2"]);

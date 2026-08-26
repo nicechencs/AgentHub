@@ -248,6 +248,7 @@ pub(super) struct UpstreamSendOutcome {
 pub(super) async fn send_upstream(
     state: &EdgeState,
     url: reqwest::Url,
+    path: &str,
     channel: UpstreamChannel,
     request_id: &str,
     started: Instant,
@@ -263,6 +264,7 @@ pub(super) async fn send_upstream(
         return failover::send_upstream_v2(
             state,
             url,
+            path,
             channel,
             request_id,
             started,

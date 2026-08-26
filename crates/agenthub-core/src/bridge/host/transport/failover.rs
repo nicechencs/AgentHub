@@ -33,6 +33,7 @@ const V2_MAX_ATTEMPTS: usize = 8;
 pub(super) async fn send_upstream_v2(
     state: &EdgeState,
     url: reqwest::Url,
+    path: &str,
     channel: UpstreamChannel,
     request_id: &str,
     started: Instant,
@@ -44,7 +45,6 @@ pub(super) async fn send_upstream_v2(
     public_model: &str,
     continuation_locked: bool,
 ) -> Result<UpstreamSendOutcome, Response> {
-    let recovery = channel.recovery();
     let original_body = body;
     let original_identity = identity;
     let mut member = member;
@@ -72,6 +72,10 @@ pub(super) async fn send_upstream_v2(
                 failover_from.as_deref(),
             ));
         }
+        let candidate = candidate_for_member(candidates, &member);
+        let attempt_channel = attempt_channel(state, channel, candidate);
+        let attempt_url = attempt_url(state, &url, path, candidate);
+        let recovery = attempt_channel.recovery();
         let fingerprint = member.authorization_fingerprint();
         let account_id = state
             .account_picker
@@ -80,6 +84,9 @@ pub(super) async fn send_upstream_v2(
         let account_id = account_id.as_deref();
         let mut identity = identity_for_member(&original_identity, cache_seed, account_id);
         let mut body = original_body.clone();
+        if mixed_index_enabled(state) {
+            apply_candidate_model(&mut body, candidate);
+        }
         if recovery.strips_grok_reasoning() {
             apply_grok_replay(state, &mut body, cache_seed, account_id);
         }
@@ -99,8 +106,8 @@ pub(super) async fn send_upstream_v2(
 
         loop {
             let token = member.auth.token();
-            let builder = channel.apply_auth(
-                state.client.post(url.clone()).json(&body),
+            let builder = attempt_channel.apply_auth(
+                state.client.post(attempt_url.clone()).json(&body),
                 &token,
                 identity.as_ref(),
             );
@@ -272,6 +279,86 @@ pub(super) async fn send_upstream_v2(
         }
         member = next;
         grok_strip_attempt = 0;
+    }
+}
+
+fn candidate_for_member<'a>(
+    candidates: &'a [DispatchCandidate],
+    member: &PickedMember,
+) -> Option<&'a DispatchCandidate> {
+    candidates.iter().find(|candidate| {
+        candidate.member_id == member.source_id
+            || candidate.member_id == member.ticket_id
+            || candidate.member_id == member.label
+            || member
+                .ticket_id
+                .ends_with(&format!(":{}", candidate.member_id))
+            || member
+                .source_id
+                .ends_with(&format!(":{}", candidate.member_id))
+    })
+}
+
+fn mixed_index_enabled(state: &EdgeState) -> bool {
+    state
+        .route_index
+        .as_ref()
+        .is_some_and(|index| index.mixed_provider_enabled())
+}
+
+fn attempt_channel(
+    state: &EdgeState,
+    lead: UpstreamChannel,
+    candidate: Option<&DispatchCandidate>,
+) -> UpstreamChannel {
+    if !mixed_index_enabled(state) {
+        return lead;
+    }
+    candidate
+        .and_then(|candidate| channel_from_transport_key(&candidate.transport_key))
+        .unwrap_or(lead)
+}
+
+fn attempt_url(
+    state: &EdgeState,
+    lead: &reqwest::Url,
+    path: &str,
+    candidate: Option<&DispatchCandidate>,
+) -> reqwest::Url {
+    if !mixed_index_enabled(state) {
+        return lead.clone();
+    }
+    let Some(endpoint) = candidate
+        .map(|candidate| candidate.upstream_endpoint.trim())
+        .filter(|endpoint| !endpoint.is_empty())
+    else {
+        return lead.clone();
+    };
+    let Ok(base) = reqwest::Url::parse(endpoint) else {
+        return lead.clone();
+    };
+    base.join(path).unwrap_or_else(|_| lead.clone())
+}
+
+fn apply_candidate_model(body: &mut Value, candidate: Option<&DispatchCandidate>) {
+    let Some(model) = candidate
+        .map(|candidate| candidate.upstream_model.trim())
+        .filter(|model| !model.is_empty())
+    else {
+        return;
+    };
+    if let Some(object) = body.as_object_mut() {
+        object.insert("model".to_owned(), Value::String(model.to_owned()));
+    }
+}
+
+fn channel_from_transport_key(key: &str) -> Option<UpstreamChannel> {
+    match key.trim() {
+        "openai:generic" => Some(UpstreamChannel::OpenAiChat),
+        "anthropic:claude" => Some(UpstreamChannel::Anthropic),
+        "codex:codex" => Some(UpstreamChannel::CodexResponses),
+        "grok:grok" => Some(UpstreamChannel::Grok),
+        _ => None,
     }
 }
 
