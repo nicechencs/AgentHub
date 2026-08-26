@@ -6,6 +6,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use super::route_index::DispatchCandidate;
 use super::runtime::{ResolvedAuth, UpstreamAuthReload};
 
 #[cfg(test)]
@@ -39,6 +40,8 @@ pub struct PickedMember {
     pub label: String,
     pub auth: ResolvedAuth,
     pub reload: Option<UpstreamAuthReload>,
+    pub priority: i64,
+    pub position: i64,
     health: Arc<Mutex<MemberHealth>>,
 }
 
@@ -52,6 +55,8 @@ impl std::fmt::Debug for PickedMember {
             .field("label", &self.label)
             .field("auth", &self.auth)
             .field("reload", &self.reload.is_some())
+            .field("priority", &self.priority)
+            .field("position", &self.position)
             .field("health", &self.health())
             .finish()
     }
@@ -74,8 +79,16 @@ impl PickedMember {
             label: label.into(),
             auth,
             reload,
+            priority: 0,
+            position: 0,
             health: Arc::new(Mutex::new(health)),
         }
+    }
+
+    pub fn with_schedule(mut self, priority: i64, position: i64) -> Self {
+        self.priority = priority;
+        self.position = position;
+        self
     }
 
     pub fn health(&self) -> MemberHealth {
@@ -112,6 +125,8 @@ pub struct BridgeMemberSpec {
     pub auth: ResolvedAuth,
     pub reload: Option<UpstreamAuthReload>,
     pub health: MemberHealth,
+    pub priority: i64,
+    pub position: i64,
 }
 
 impl std::fmt::Debug for BridgeMemberSpec {
@@ -125,6 +140,8 @@ impl std::fmt::Debug for BridgeMemberSpec {
             .field("auth", &self.auth)
             .field("reload", &self.reload.is_some())
             .field("health", &self.health)
+            .field("priority", &self.priority)
+            .field("position", &self.position)
             .finish()
     }
 }
@@ -140,6 +157,7 @@ impl From<&BridgeMemberSpec> for PickedMember {
             spec.reload.clone(),
             spec.health,
         )
+        .with_schedule(spec.priority, spec.position)
     }
 }
 
@@ -213,6 +231,61 @@ impl AccountPicker {
         } else {
             None
         }
+    }
+
+    fn matches_candidate(member: &PickedMember, candidate: &DispatchCandidate) -> bool {
+        member.source_id == candidate.member_id
+            || member.ticket_id == candidate.member_id
+            || member.label == candidate.member_id
+    }
+
+    fn is_excluded(member: &PickedMember, excluded_members: &[String]) -> bool {
+        excluded_members.iter().any(|excluded| {
+            excluded == &member.source_id
+                || excluded == &member.ticket_id
+                || excluded == &member.label
+        })
+    }
+
+    /// v2 scheduler: shrink `resolve` output only. Never enlarges the set and
+    /// never re-interprets the model. Default order is priority, position, id.
+    pub fn pick_from_candidates(
+        &self,
+        candidates: &[DispatchCandidate],
+        affinity_key: Option<&str>,
+        excluded_members: &[String],
+    ) -> Option<PickedMember> {
+        let mut eligible: Vec<&PickedMember> = self
+            .inner
+            .members
+            .iter()
+            .filter(|member| {
+                candidates
+                    .iter()
+                    .any(|candidate| Self::matches_candidate(member, candidate))
+                    && member.is_eligible()
+                    && !Self::is_excluded(member, excluded_members)
+            })
+            .collect();
+        if eligible.is_empty() {
+            return None;
+        }
+        if let Some(affinity) = affinity_key.map(str::trim).filter(|key| !key.is_empty()) {
+            if let Some(sticky) = eligible.iter().find(|member| {
+                member.source_id == affinity
+                    || member.ticket_id == affinity
+                    || member.label == affinity
+            }) {
+                return Some((*sticky).clone());
+            }
+        }
+        eligible.sort_by(|left, right| {
+            left.priority
+                .cmp(&right.priority)
+                .then(left.position.cmp(&right.position))
+                .then(left.source_id.cmp(&right.source_id))
+        });
+        eligible.first().map(|member| (*member).clone())
     }
 
     /// New request: from cursor, first eligible member; then cursor = (idx+1)%n.

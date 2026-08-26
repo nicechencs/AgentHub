@@ -6,7 +6,8 @@ use std::sync::Mutex;
 
 use agenthub_core::adapters::{AdapterRegistry, AgentAdapter};
 use agenthub_core::bridge::{
-    BridgeHostError, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamStatus, ResolvedAuth,
+    index_from_member_listings, BridgeHostError, BridgeStartSpec, BridgeUpstreamConfig,
+    BridgeUpstreamStatus, MemberListing, ResolvedAuth,
 };
 use agenthub_core::error::{AppError, Result as CoreResult};
 use agenthub_core::models::{
@@ -223,6 +224,50 @@ fn ensure_listener_rebinds_when_preferred_port_is_busy() {
         assert_ne!(
             ensured.status.port, busy_port,
             "listener must rebind away from the occupied preferred port"
+        );
+
+        host.shutdown().await.unwrap();
+        drop(blocker);
+    });
+}
+
+#[test]
+fn frozen_v2_port_does_not_rebind_on_occupancy() {
+    tauri::async_runtime::block_on(async {
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy_port = blocker.local_addr().unwrap().port();
+        let host = BridgeRuntimeHost::new();
+        let index = index_from_member_listings(
+            "profile-frozen",
+            1,
+            "responses",
+            &[MemberListing {
+                member_id: "test-source".into(),
+                listed_models: vec!["m1".into()],
+                upstream_provider: "kimi".into(),
+                upstream_dialect: "kimi".into(),
+                upstream_endpoint: "https://api.kimi.com/coding/v1".into(),
+                transport_key: "openai:generic".into(),
+                snapshot_ok: true,
+            }],
+            None,
+        );
+        let material = AdapterBridgeRuntimeMaterial::for_test(
+            "profile-frozen",
+            Some(busy_port),
+            "local-bearer-frozen-value-xxxxxxxxx",
+            "upstream-bearer-frozen-value-xxxxxxx",
+        )
+        .with_route_index_for_test(index);
+
+        let error = match ensure_bridge_listener(&host, &material, None, Vec::new(), false).await {
+            Err(error) => error,
+            Ok(_) => panic!("occupancy must fail bind on the frozen port"),
+        };
+        assert!(matches!(error, BridgeHostError::Bind(_)));
+        assert!(
+            host.status("profile-frozen").unwrap().is_none(),
+            "occupancy must not start a rewritten listener"
         );
 
         host.shutdown().await.unwrap();
@@ -736,7 +781,8 @@ impl AgentAdapter for IsolatedCodexAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![], extra_copies: Vec::new(),
+            notes: vec![],
+            extra_copies: Vec::new(),
         }
     }
 
@@ -907,7 +953,8 @@ impl AgentAdapter for IsolatedLiveAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![], extra_copies: Vec::new(),
+            notes: vec![],
+            extra_copies: Vec::new(),
         }
     }
 
