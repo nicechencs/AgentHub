@@ -391,20 +391,25 @@ impl AccountPicker {
     }
 
     /// `model = None` cools the whole member; otherwise only that model bucket.
+    /// Concurrent 429s keep the later deadline so a short `Retry-After` cannot
+    /// replace a longer one.
     pub fn set_cooldown(&self, member_id: &str, model: Option<&str>, duration: Duration) {
         let until = Instant::now() + duration;
         let Ok(mut guard) = self.inner.cooldowns.lock() else {
             return;
         };
         match model.map(str::trim).filter(|value| !value.is_empty()) {
-            Some(model) => {
+            Some(model) => keep_later_deadline(
                 guard
                     .member_model
-                    .insert((member_id.to_owned(), model.to_owned()), until);
-            }
-            None => {
-                guard.member.insert(member_id.to_owned(), until);
-            }
+                    .entry((member_id.to_owned(), model.to_owned()))
+                    .or_insert(until),
+                until,
+            ),
+            None => keep_later_deadline(
+                guard.member.entry(member_id.to_owned()).or_insert(until),
+                until,
+            ),
         }
     }
 
@@ -467,5 +472,11 @@ impl AccountPicker {
             HeaderValue::from_str(&secs.to_string())
                 .unwrap_or_else(|_| HeaderValue::from_static("1"))
         })
+    }
+}
+
+fn keep_later_deadline(existing: &mut Instant, until: Instant) {
+    if until > *existing {
+        *existing = until;
     }
 }

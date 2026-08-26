@@ -74,6 +74,11 @@ fn policy_403_stays_request_scoped() {
         classify_http(StatusCode::FORBIDDEN, Some(body), false),
         UpstreamErrorClass::Request
     );
+    let access = r#"{"error":{"message":"you do not have access to generate this content"}}"#;
+    assert_eq!(
+        classify_http(StatusCode::FORBIDDEN, Some(access), false),
+        UpstreamErrorClass::Request
+    );
     assert!(!UpstreamErrorClass::Request.allows_member_switch(false));
 }
 

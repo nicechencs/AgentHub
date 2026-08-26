@@ -31,10 +31,16 @@ impl AuthReloadOutcome {
     }
 }
 
+#[derive(Clone)]
+struct SharedReload {
+    outcome: AuthReloadOutcome,
+    token: Option<String>,
+}
+
 struct FingerprintGate {
     lock: tokio::sync::Mutex<()>,
     generation: AtomicU64,
-    last_token: Mutex<Option<String>>,
+    shared: Mutex<Option<SharedReload>>,
 }
 
 impl FingerprintGate {
@@ -42,7 +48,7 @@ impl FingerprintGate {
         Self {
             lock: tokio::sync::Mutex::new(()),
             generation: AtomicU64::new(0),
-            last_token: Mutex::new(None),
+            shared: Mutex::new(None),
         }
     }
 }
@@ -103,8 +109,8 @@ impl AuthReloadCoordinator {
         }
     }
 
-    /// One refresh per fingerprint. Waiters reuse that result and never overwrite
-    /// a newer revision in the same auth cell.
+    /// One refresh per fingerprint. Waiters reuse the leader outcome; they
+    /// never apply a previous rotation over a newer revision.
     pub async fn reload_member(&self, member: &PickedMember) -> AuthReloadOutcome {
         let fingerprint = member.authorization_fingerprint();
         if fingerprint.trim().is_empty() {
@@ -112,16 +118,24 @@ impl AuthReloadCoordinator {
         }
         let gate = self.gate(&fingerprint);
         let gen_before = gate.generation.load(Ordering::SeqCst);
+        let observed = member.auth.revision();
         let _lock = gate.lock.lock().await;
         let gen_after = gate.generation.load(Ordering::SeqCst);
         if gen_after > gen_before {
-            return apply_shared_token(member, &gate);
+            return apply_shared_reload(member, &gate, observed);
         }
         let outcome = run_reload(member);
-        if let AuthReloadOutcome::Rotated = outcome {
-            if let Ok(mut last) = gate.last_token.lock() {
-                *last = Some(member.auth.token());
-            }
+        let token = matches!(
+            outcome,
+            AuthReloadOutcome::Rotated | AuthReloadOutcome::Stale
+        )
+        .then(|| member.auth.token());
+        {
+            let mut shared = gate
+                .shared
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            *shared = Some(SharedReload { outcome, token });
         }
         gate.generation.fetch_add(1, Ordering::SeqCst);
         outcome
@@ -134,16 +148,35 @@ impl Default for AuthReloadCoordinator {
     }
 }
 
-fn apply_shared_token(member: &PickedMember, gate: &FingerprintGate) -> AuthReloadOutcome {
-    let token = gate.last_token.lock().ok().and_then(|guard| guard.clone());
-    let Some(token) = token else {
+fn apply_shared_reload(
+    member: &PickedMember,
+    gate: &FingerprintGate,
+    observed: u64,
+) -> AuthReloadOutcome {
+    let shared = gate
+        .shared
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let Some(shared) = shared else {
         return AuthReloadOutcome::Unchanged;
     };
-    if member.auth.token() == token {
-        return AuthReloadOutcome::AlreadyFresh;
+    match shared.outcome {
+        AuthReloadOutcome::Unchanged => AuthReloadOutcome::Unchanged,
+        AuthReloadOutcome::Rotated => {
+            if let Some(token) = shared.token.as_deref() {
+                member.auth.apply_reloaded_token(observed, token);
+            }
+            AuthReloadOutcome::AlreadyFresh
+        }
+        AuthReloadOutcome::Stale => {
+            if let Some(token) = shared.token.as_deref() {
+                member.auth.apply_reloaded_token(observed, token);
+            }
+            AuthReloadOutcome::Stale
+        }
+        AuthReloadOutcome::AlreadyFresh => AuthReloadOutcome::AlreadyFresh,
     }
-    member.auth.apply_reloaded_token(&token);
-    AuthReloadOutcome::AlreadyFresh
 }
 
 fn run_reload(member: &PickedMember) -> AuthReloadOutcome {

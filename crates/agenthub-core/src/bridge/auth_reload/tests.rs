@@ -28,6 +28,15 @@ fn stale_revision_does_not_clobber_newer_token() {
     assert_eq!(auth.token(), "newer");
 }
 
+#[test]
+fn apply_reloaded_token_does_not_clobber_newer_revision() {
+    let auth = ResolvedAuth::bearer("old");
+    let observed = auth.revision();
+    auth.replace_token("newer");
+    assert!(!auth.apply_reloaded_token(observed, "from-reload"));
+    assert_eq!(auth.token(), "newer");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_reloads_invoke_callback_once() {
     let hits = Arc::new(AtomicUsize::new(0));
@@ -139,6 +148,86 @@ async fn in_flight_reload_cannot_overwrite_newer_credential() {
     assert_eq!(outcome, AuthReloadOutcome::Stale);
     assert_eq!(hits.load(Ordering::SeqCst), 1);
     assert_eq!(auth.token(), "newer");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn waiter_on_stale_reload_retries_without_clobbering_newer_credential() {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_cb = hits.clone();
+    let phase = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new((Mutex::new(false), Condvar::new()));
+    let started_cb = started.clone();
+    let release = Arc::new((Mutex::new(false), Condvar::new()));
+    let release_cb = release.clone();
+    let reload: crate::bridge::UpstreamAuthReload = Arc::new(move || {
+        hits_cb.fetch_add(1, Ordering::SeqCst);
+        if phase.fetch_add(1, Ordering::SeqCst) == 0 {
+            return Some("rotated".into());
+        }
+        {
+            let (lock, cvar) = &*started_cb;
+            *lock.lock().expect("lock") = true;
+            cvar.notify_one();
+        }
+        let (lock, cvar) = &*release_cb;
+        let mut go = lock.lock().expect("lock");
+        while !*go {
+            go = cvar.wait(go).expect("wait");
+        }
+        Some("from-reload".into())
+    });
+    let leader_member = member("acc-a", "old", reload);
+    let waiter_member = PickedMember::new(
+        leader_member.ticket_id.clone(),
+        leader_member.source_kind.clone(),
+        leader_member.source_id.clone(),
+        leader_member.label.clone(),
+        leader_member.auth.clone(),
+        leader_member.reload.clone(),
+        MemberHealth::Renewable,
+    );
+    let coordinator = AuthReloadCoordinator::new();
+    assert_eq!(
+        coordinator.reload_member(&leader_member).await,
+        AuthReloadOutcome::Rotated
+    );
+    assert_eq!(leader_member.auth.token(), "rotated");
+
+    let leader = tokio::spawn({
+        let coordinator = coordinator.clone();
+        let leader_member = leader_member.clone();
+        async move { coordinator.reload_member(&leader_member).await }
+    });
+    {
+        let (lock, cvar) = &*started;
+        let mut ready = lock.lock().expect("lock");
+        while !*ready {
+            ready = cvar.wait(ready).expect("wait");
+        }
+    }
+    leader_member.auth.replace_token("newer");
+    let waiter = tokio::spawn({
+        let coordinator = coordinator.clone();
+        let waiter_member = waiter_member.clone();
+        async move { coordinator.reload_member(&waiter_member).await }
+    });
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    {
+        let (lock, cvar) = &*release;
+        *lock.lock().expect("lock") = true;
+        cvar.notify_one();
+    }
+    let leader_out = leader.await.expect("join leader");
+    let waiter_out = waiter.await.expect("join waiter");
+    assert_eq!(leader_out, AuthReloadOutcome::Stale);
+    assert!(
+        waiter_out.should_retry(),
+        "waiter must retry with the newer cell, not isolate: {waiter_out:?}"
+    );
+    assert_eq!(leader_member.auth.token(), "newer");
+    assert_eq!(waiter_member.auth.token(), "newer");
+    assert!(!coordinator.is_isolated("account:acc-a"));
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
 }
 
 #[test]
