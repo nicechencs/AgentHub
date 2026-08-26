@@ -365,7 +365,7 @@ impl EdgeState {
         force_shutdown: CancellationToken,
         auth_reload: AuthReloadCoordinator,
     ) -> Self {
-        Self {
+        let state = Self {
             profile_id: Arc::from(spec.profile_id.clone()),
             local_token: Arc::from(spec.local_token.clone()),
             upstream: spec.upstream.clone(),
@@ -389,6 +389,19 @@ impl EdgeState {
             custom_openai: spec.custom_openai,
             route_index: spec.route_index.clone(),
             auth_reload,
+        };
+        // stop+start is how production rotates a login; host-wide 401
+        // isolation must not outlive the old picker.
+        state.admit_started_members();
+        state
+    }
+
+    fn admit_started_members(&self) {
+        for member in self.account_picker.members() {
+            if member.is_eligible() {
+                self.auth_reload
+                    .clear_isolated(&member.authorization_fingerprint());
+            }
         }
     }
 

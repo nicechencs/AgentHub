@@ -4692,6 +4692,61 @@ async fn v2_401_after_failed_reload_failovers_to_second_member() {
     task.abort();
 }
 
+#[tokio::test]
+async fn v2_stop_and_start_with_new_token_clears_host_isolation() {
+    let callback: ChatCallback = Arc::new(|bearer, _body| {
+        if bearer == "Bearer token-a" {
+            StatusCode::UNAUTHORIZED.into_response()
+        } else {
+            chat_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let index = p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]);
+    let status = host
+        .start(p5_pool_spec(
+            "p5-401-restart-clears",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            index.clone(),
+        ))
+        .await
+        .expect("start");
+    let first = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned(), "Bearer token-b".to_owned()]
+    );
+    host.stop("p5-401-restart-clears").await.expect("stop");
+    captured.lock().expect("lock").clear();
+    let status = host
+        .start(p5_pool_spec(
+            "p5-401-restart-clears",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a2"),
+                pool_member("acc-b", "token-b"),
+            ],
+            index,
+        ))
+        .await
+        .expect("restart");
+    let second = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a2".to_owned()],
+        "stop+start with a new login must re-admit A"
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn v2_concurrent_401_reload_is_singleflight() {
     let hits = Arc::new(AtomicUsize::new(0));
