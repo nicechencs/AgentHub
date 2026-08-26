@@ -3,7 +3,7 @@ title: AgentHub 文档索引
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # AgentHub 文档
@@ -37,6 +37,7 @@ updated: 2026-08-25
 - [Adapter 与本机路由](concepts/adapters-and-bridges.md)
 - [账号与授权](concepts/accounts-and-authorization.md)
 - [Chat 与 Agent](concepts/chat-and-agents.md)
+- [插件、MCP 与技能](concepts/plugins-and-mcp.md)
 
 ### 查稳定契约
 
@@ -48,6 +49,8 @@ updated: 2026-08-25
 - [日志](reference/logging.md)
 - [测试](reference/testing.md)
 - [术语表](reference/terminology.md)
+- [MCP inventory](reference/mcp-inventory.md)
+- [Agent 插件表面](reference/agent-plugin-surfaces.md)
 
 ### 产品与界面
 
@@ -62,6 +65,7 @@ updated: 2026-08-25
 - [Adapter sidecar](proposals/adapter-sidecar.md)
 - [托盘后台模式](proposals/tray-background-modes.md)
 - [模块化改进](proposals/modularity.md)
+- [插件与 MCP 管理](proposals/plugin-management.md)
 - [归档索引](archive/README.md)：不可作为当前契约。
 - [单一内核与查表投影（历史）](archive/single-kernel-projections.md)
 - [旧文档迁移索引](archive/legacy-document-index.md)：旧路径到新真源的完整映射。
