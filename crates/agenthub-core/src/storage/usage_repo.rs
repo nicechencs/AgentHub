@@ -15,15 +15,16 @@ const UPSERT_USAGE_SQL: &str = r#"
     INSERT INTO usage_records (
         id, agent_id, account_id, model,
         input_tokens, output_tokens, cache_tokens,
-        cost_usd, session_id, ts, raw_hash
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        cost_usd, session_id, ts, raw_hash, fast
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
     ON CONFLICT(agent_id, session_id, raw_hash) DO UPDATE SET
         model = excluded.model,
         input_tokens = excluded.input_tokens,
         output_tokens = excluded.output_tokens,
         cache_tokens = excluded.cache_tokens,
         cost_usd = excluded.cost_usd,
-        ts = excluded.ts
+        ts = excluded.ts,
+        fast = excluded.fast
 "#;
 
 pub struct UsageRepo {
@@ -65,6 +66,7 @@ impl UsageRepo {
                         r.session_id,
                         r.ts,
                         r.raw_hash,
+                        r.fast,
                     ])?;
                     inserted += n as u64;
                 }
@@ -133,7 +135,7 @@ impl UsageRepo {
                 r#"
                 SELECT id, agent_id, account_id, model,
                        input_tokens, output_tokens, cache_tokens,
-                       cost_usd, session_id, ts, raw_hash
+                       cost_usd, session_id, ts, raw_hash, fast
                 FROM usage_records
                 WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#,
@@ -186,7 +188,7 @@ impl UsageRepo {
     /// Returns number of rows changed.
     pub fn recompute_costs<F>(&self, mut patch: F) -> Result<u64>
     where
-        F: FnMut(AgentId, &str, i64, i64, i64) -> Option<(i64, f64)>,
+        F: FnMut(AgentId, &str, i64, i64, i64, bool) -> Option<(i64, f64)>,
     {
         self.db.with_conn(|conn| {
             let tx = conn.unchecked_transaction()?;
@@ -195,7 +197,7 @@ impl UsageRepo {
                 let mut sel = tx.prepare(
                     r#"
                     SELECT id, agent_id, model, input_tokens, output_tokens, cache_tokens,
-                           COALESCE(cost_usd, 0)
+                           COALESCE(cost_usd, 0), COALESCE(fast, 0)
                     FROM usage_records
                     "#,
                 )?;
@@ -208,15 +210,17 @@ impl UsageRepo {
                         row.get::<_, i64>(4)?,
                         row.get::<_, i64>(5)?,
                         row.get::<_, f64>(6)?,
+                        row.get::<_, i64>(7)? != 0,
                     ))
                 })?;
                 let mut updates: Vec<(i64, f64, String)> = Vec::new();
                 for r in rows {
-                    let (id, agent_s, model, input, output, cache, old_cost) = r?;
+                    let (id, agent_s, model, input, output, cache, old_cost, fast) = r?;
                     let Some(agent) = AgentId::parse(&agent_s) else {
                         continue;
                     };
-                    let Some((new_input, new_cost)) = patch(agent, &model, input, output, cache)
+                    let Some((new_input, new_cost)) =
+                        patch(agent, &model, input, output, cache, fast)
                     else {
                         continue;
                     };
@@ -666,9 +670,7 @@ fn local_trend_bucket(ts: &str, grain: TrendGrain) -> Option<String> {
     })
 }
 
-fn truncate_local_hour(
-    dt: chrono::DateTime<chrono::Local>,
-) -> chrono::DateTime<chrono::Local> {
+fn truncate_local_hour(dt: chrono::DateTime<chrono::Local>) -> chrono::DateTime<chrono::Local> {
     use chrono::Timelike;
     let naive = dt
         .date_naive()
@@ -801,6 +803,7 @@ fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UsageRecord> {
         session_id: row.get(8)?,
         ts: row.get(9)?,
         raw_hash: row.get(10)?,
+        fast: row.get::<_, i64>(11)? != 0,
     })
 }
 
@@ -834,6 +837,7 @@ impl UsageRepo {
                         r.session_id,
                         r.ts,
                         r.raw_hash,
+                        r.fast,
                     ])? as u64;
                 }
             }

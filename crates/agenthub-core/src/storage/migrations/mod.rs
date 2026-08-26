@@ -55,6 +55,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("00015_chat_native_session.sql"),
     ),
     ("00016_route_pools", include_str!("00016_route_pools.sql")),
+    ("00017_usage_fast", include_str!("00017_usage_fast.sql")),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

@@ -21,7 +21,7 @@ use crate::storage::{Database, UsageRepo};
 use crate::usage::grok::{grok_model_has_pricing, pricing_candidates};
 use crate::usage::session_jsonl::CollectStats;
 use crate::usage::{
-    codex_billable_tokens, estimate_cost_usd, estimate_cost_usd_for_agent, has_embedded_pricing,
+    codex_billable_tokens, estimate_cost_usd_for_agent, has_embedded_pricing, CostTokens,
 };
 use crate::utils::redact::redact_text;
 
@@ -179,10 +179,7 @@ impl UsageService {
                     failed += stats_failed;
                     let mut rows = Vec::with_capacity(events.len());
                     for ev in events {
-                        let tokens = ev.input_tokens
-                            + ev.output_tokens
-                            + ev.cache_creation_tokens
-                            + ev.cache_read_tokens;
+                        let tokens = ev.cache_tokens_total() + ev.input_tokens + ev.output_tokens;
                         if tokens > 0 && ev.cost_usd.is_none() && event_missing_pricing(&ev) {
                             missing_pricing.insert(ev.model.clone());
                         }
@@ -203,6 +200,7 @@ impl UsageService {
                             session_id: ev.session_id,
                             ts: ev.ts,
                             raw_hash: Some(ev.raw_hash),
+                            fast: ev.fast,
                         });
                     }
                     let n = self.repo.insert_batch_and_cursors(&rows, &cursors)?;
@@ -412,16 +410,27 @@ impl UsageService {
     /// Unknown-model costs are left as stored (log / ticks / $0).
     pub fn recompute_stored_costs(&self) -> Result<u64> {
         self.repo
-            .recompute_costs(|agent, model, input, output, cache| {
+            .recompute_costs(|agent, model, input, output, cache, fast| {
                 let accounting = self
                     .registry
                     .get(&AgentKey::from_agent_id(agent))
                     .map(|s| s.token_accounting())
                     .unwrap_or(TokenAccounting::Standard);
                 if accounting == TokenAccounting::CodexBillable {
-                    // Trust stored non-cached input; only refresh cost with latest rates.
+                    // Trust stored non-cached input; refresh cost with latest rates + Fast.
                     let (bill_in, cache_r) = codex_billable_tokens(input, cache);
-                    let cost = estimate_cost_usd(model, bill_in, output, 0, cache_r, None);
+                    let cost = estimate_cost_usd_for_agent(
+                        agent,
+                        model,
+                        CostTokens {
+                            input: bill_in,
+                            output,
+                            cache_read: cache_r,
+                            fast,
+                            ..CostTokens::default()
+                        },
+                        None,
+                    );
                     return Some((bill_in, cost));
                 }
                 // Known models may store log costUSD. Unknown models keep the
@@ -435,13 +444,12 @@ impl UsageService {
     /// One-time repair when token accounting semantics change.
     ///
     /// Clears stored rows + cursors so the next collect rebuilds from session logs
-    /// with the current rules (non-cached Codex input, cumulative-advance filter,
-    /// fork rewritten-history burst skip). UPSERT alone cannot drop orphan rows that
-    /// previous parsers over-inserted.
+    /// with current cost rules (long-context, 1h cache, Codex Fast) and scans
+    /// `archived_sessions/`. UPSERT cannot drop orphan rows from older parsers.
     fn maybe_repair_token_layout(&self) -> Result<()> {
         const KEY: &str = "usage_token_layout";
-        // v3 = non-cached Codex input + ccusage cumulative-advance + fork burst skip.
-        const VER: &str = "3";
+        // v4 = ccusage cost formula (long-context / 1h cache / Codex Fast) + archived sessions.
+        const VER: &str = "4";
         let cur = self.repo.get_meta(KEY)?;
         if cur.as_deref() == Some(VER) {
             tracing::debug!(
@@ -552,10 +560,14 @@ fn cost_for_event(ev: &crate::models::ParsedUsageEvent) -> f64 {
             return estimate_cost_usd_for_agent(
                 ev.agent_id,
                 &model,
-                ev.input_tokens,
-                ev.output_tokens,
-                ev.cache_creation_tokens,
-                ev.cache_read_tokens,
+                CostTokens {
+                    input: ev.input_tokens,
+                    output: ev.output_tokens,
+                    cache_create: ev.cache_creation_tokens,
+                    cache_create_1h: ev.cache_creation_1h_tokens,
+                    cache_read: ev.cache_read_tokens,
+                    fast: ev.fast,
+                },
                 None,
             );
         }
@@ -563,10 +575,14 @@ fn cost_for_event(ev: &crate::models::ParsedUsageEvent) -> f64 {
     estimate_cost_usd_for_agent(
         ev.agent_id,
         &ev.model,
-        ev.input_tokens,
-        ev.output_tokens,
-        ev.cache_creation_tokens,
-        ev.cache_read_tokens,
+        CostTokens {
+            input: ev.input_tokens,
+            output: ev.output_tokens,
+            cache_create: ev.cache_creation_tokens,
+            cache_create_1h: ev.cache_creation_1h_tokens,
+            cache_read: ev.cache_read_tokens,
+            fast: ev.fast,
+        },
         ev.cost_usd,
     )
 }

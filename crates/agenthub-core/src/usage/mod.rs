@@ -10,8 +10,8 @@ mod pricing;
 pub mod session_jsonl;
 
 pub use pricing::{
-    codex_billable_tokens, estimate_cost_usd, estimate_cost_usd_flat, estimate_cost_usd_for_agent,
-    has_embedded_pricing, rates_for, rates_for_embedded,
+    codex_billable_tokens, estimate_cost_from_tokens, estimate_cost_usd, estimate_cost_usd_flat,
+    estimate_cost_usd_for_agent, has_embedded_pricing, rates_for, rates_for_embedded, CostTokens,
 };
 pub use session_jsonl::collect_for_agent;
 

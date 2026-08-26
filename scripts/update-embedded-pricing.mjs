@@ -83,7 +83,7 @@ function perTokenToPerMillion(v) {
 }
 
 /**
- * @returns {{ input: number, output: number, cacheCreate?: number, cacheRead?: number } | null}
+ * @returns {Record<string, number> | null}
  */
 function rowFromLiteLLM(entry) {
   if (!entry || typeof entry !== 'object') return null;
@@ -92,7 +92,7 @@ function rowFromLiteLLM(entry) {
   if (input == null || output == null) return null;
   if (input === 0 && output === 0) return null;
 
-  /** @type {{ input: number, output: number, cacheCreate?: number, cacheRead?: number }} */
+  /** @type {Record<string, number>} */
   const row = { input, output };
   const cc =
     perTokenToPerMillion(entry.cache_creation_input_token_cost) ??
@@ -103,7 +103,34 @@ function rowFromLiteLLM(entry) {
     perTokenToPerMillion(entry.cache_read_input_token_cost_above_1hr);
   if (cc != null) row.cacheCreate = cc;
   if (cr != null) row.cacheRead = cr;
+  const ia = perTokenToPerMillion(entry.input_cost_per_token_above_200k_tokens);
+  const oa = perTokenToPerMillion(entry.output_cost_per_token_above_200k_tokens);
+  const cca = perTokenToPerMillion(entry.cache_creation_input_token_cost_above_200k_tokens);
+  const cra = perTokenToPerMillion(entry.cache_read_input_token_cost_above_200k_tokens);
+  if (ia != null) row.inputAbove200k = ia;
+  if (oa != null) row.outputAbove200k = oa;
+  if (cca != null) row.cacheCreateAbove200k = cca;
+  if (cra != null) row.cacheReadAbove200k = cra;
   return row;
+}
+
+const OPTIONAL_RATE_FIELDS = [
+  'cacheCreate',
+  'cacheRead',
+  'inputAbove200k',
+  'outputAbove200k',
+  'cacheCreateAbove200k',
+  'cacheReadAbove200k',
+  'longContextThreshold',
+  'fastMultiplier',
+];
+
+function applyOptionalFields(row, src) {
+  for (const field of OPTIONAL_RATE_FIELDS) {
+    if (src[field] != null && Number.isFinite(Number(src[field]))) {
+      row[field] = Number(src[field]);
+    }
+  }
 }
 
 function stableStringify(obj) {
@@ -201,14 +228,9 @@ function buildTable(litellm, overridesRaw) {
     const input = Number(v.input);
     const output = Number(v.output);
     if (!Number.isFinite(input) || !Number.isFinite(output)) continue;
-    /** @type {{ input: number, output: number, cacheCreate?: number, cacheRead?: number }} */
-    const row = { input, output };
-    if (v.cacheCreate != null && Number.isFinite(Number(v.cacheCreate))) {
-      row.cacheCreate = Number(v.cacheCreate);
-    }
-    if (v.cacheRead != null && Number.isFinite(Number(v.cacheRead))) {
-      row.cacheRead = Number(v.cacheRead);
-    }
+    /** @type {Record<string, number>} */
+    const row = { ...(table[k] ?? {}), input, output };
+    applyOptionalFields(row, v);
     overrides[k] = row;
     table[k] = row;
   }
