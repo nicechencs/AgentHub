@@ -14,9 +14,10 @@ use crate::models::{
     choose_default_pool_id, enroll_native_plan_is_open, feature_flag_enabled, generate_hub_token,
     list_local_bridge_models, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter, AdapterRoute,
     AdapterRouteRequest, AdapterSourceKind, AgentId, DefaultRoutePoolList,
-    DefaultRoutePoolOverview, RouteDownstreamDialect, RouteDownstreamSurface, RouteMember,
-    RouteMemberOverview, RoutePool, RouteSchedulePolicy, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
-    FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    DefaultRoutePoolOverview, ModelRouteRule, RouteDownstreamDialect, RouteDownstreamSurface,
+    RouteMember, RouteMemberOverview, RoutePool, RouteSchedulePolicy,
+    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 use crate::storage::{binding_get_conn, AdapterProfileRepo, Database, RoutePoolRepo};
 
@@ -76,6 +77,20 @@ impl RoutePoolService {
                     .as_deref(),
             ),
         )
+    }
+
+    /// Mixed-provider resolve. Persistence writes stay on `route_pool_v2`;
+    /// this flag additionally gates the index path and does not activate v1
+    /// `switch_edge_for_model`.
+    pub fn mixed_provider_enabled(&self) -> bool {
+        self.index_enabled()
+            && feature_flag_enabled(
+                self.db
+                    .get_setting(FEATURE_MIXED_PROVIDER_POOL)
+                    .ok()
+                    .flatten()
+                    .as_deref(),
+            )
     }
 
     pub fn get(&self, pool_id: &str) -> Result<Option<RoutePool>> {
@@ -251,6 +266,86 @@ impl RoutePoolService {
         self.pools.remove_member(member_id)?;
         self.sync_lead_projection(&member.route_pool_id)?;
         Ok(())
+    }
+
+    pub fn list_rules(&self, pool_id: &str) -> Result<Vec<ModelRouteRule>> {
+        self.require_enabled()?;
+        self.pools.list_rules(pool_id)
+    }
+
+    pub fn get_rule(&self, rule_id: &str) -> Result<Option<ModelRouteRule>> {
+        self.require_enabled()?;
+        self.pools.get_rule(rule_id)
+    }
+
+    /// Operators insert rules explicitly. Listed member models are not copied.
+    pub fn add_rule(
+        &self,
+        pool_id: &str,
+        public_model: &str,
+        endpoint_family: &str,
+        upstream_provider: &str,
+        upstream_dialect: &str,
+        upstream_model: &str,
+        priority: i64,
+        equivalent_group: Option<&str>,
+    ) -> Result<ModelRouteRule> {
+        self.require_enabled()?;
+        let now = now();
+        self.pools.add_rule(&ModelRouteRule {
+            id: Uuid::new_v4().to_string(),
+            route_pool_id: pool_id.to_owned(),
+            public_model: public_model.to_owned(),
+            endpoint_family: endpoint_family.to_owned(),
+            upstream_provider: upstream_provider.to_owned(),
+            upstream_dialect: upstream_dialect.to_owned(),
+            upstream_model: upstream_model.to_owned(),
+            priority,
+            equivalent_group: equivalent_group
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned),
+            enabled: true,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    pub fn set_rule_enabled(&self, rule_id: &str, enabled: bool) -> Result<ModelRouteRule> {
+        self.require_enabled()?;
+        let mut rule = self.require_rule(rule_id)?;
+        rule.enabled = enabled;
+        rule.updated_at = now();
+        self.pools.update_rule(&rule)
+    }
+
+    pub fn set_rule_priority(&self, rule_id: &str, priority: i64) -> Result<ModelRouteRule> {
+        self.require_enabled()?;
+        let mut rule = self.require_rule(rule_id)?;
+        rule.priority = priority;
+        rule.updated_at = now();
+        self.pools.update_rule(&rule)
+    }
+
+    pub fn set_rule_equivalent_group(
+        &self,
+        rule_id: &str,
+        equivalent_group: Option<&str>,
+    ) -> Result<ModelRouteRule> {
+        self.require_enabled()?;
+        let mut rule = self.require_rule(rule_id)?;
+        rule.equivalent_group = equivalent_group
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+        rule.updated_at = now();
+        self.pools.update_rule(&rule)
+    }
+
+    pub fn remove_rule(&self, rule_id: &str) -> Result<()> {
+        self.require_enabled()?;
+        let _rule = self.require_rule(rule_id)?;
+        self.pools.remove_rule(rule_id)
     }
 
     /// Persist the one-time v2 enrollment after the gateway port is already live.
@@ -502,6 +597,12 @@ impl RoutePoolService {
         self.pools
             .get_member(member_id)?
             .ok_or_else(|| AppError::NotFound(format!("route member not found: {member_id}")))
+    }
+
+    fn require_rule(&self, rule_id: &str) -> Result<ModelRouteRule> {
+        self.pools
+            .get_rule(rule_id)?
+            .ok_or_else(|| AppError::NotFound(format!("model route rule not found: {rule_id}")))
     }
 
     fn require_enabled(&self) -> Result<()> {

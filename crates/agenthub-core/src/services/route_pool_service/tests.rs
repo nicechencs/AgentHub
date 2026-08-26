@@ -3,7 +3,7 @@ use crate::models::{
     AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
     AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId, Provider,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
-    FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 use crate::services::RoutePoolService;
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -51,6 +51,13 @@ fn flag_off_is_fail_closed() {
     let service = RoutePoolService::new(db);
     let error = service.list(None, None).unwrap_err();
     assert_eq!(error.code(), "unsupported");
+    assert_eq!(
+        service
+            .add_rule("pool", "m1", "responses", "grok", "grok", "grok-4", 0, None)
+            .unwrap_err()
+            .code(),
+        "unsupported"
+    );
 }
 
 #[test]
@@ -239,6 +246,63 @@ fn pair_adapter_flags_are_independent_and_fail_closed() {
     db.set_setting(FEATURE_CODEX_INGRESS_GROK_UPSTREAM, "off")
         .unwrap();
     assert_eq!(service.pair_adapter_flags(), (false, true));
+}
+
+#[test]
+fn mixed_provider_requires_index_and_mixed_flags() {
+    let (_dir, db, service, _profiles) = tmp();
+    assert!(!service.mixed_provider_enabled());
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    assert!(!service.mixed_provider_enabled());
+    db.set_setting(FEATURE_MIXED_PROVIDER_POOL, "true").unwrap();
+    assert!(service.mixed_provider_enabled());
+    db.set_setting(FEATURE_MIXED_PROVIDER_POOL, "off").unwrap();
+    assert!(!service.mixed_provider_enabled());
+}
+
+#[test]
+fn rule_crud_is_gated_by_pool_flag_and_does_not_copy_member_models() {
+    let (_dir, _db, service, profiles) = tmp();
+    let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
+    profiles.create(&profile).unwrap();
+    service
+        .create_legacy_pool(&profile, "ahb_stable-token", true)
+        .unwrap();
+    assert!(service.list_rules("profile-a").unwrap().is_empty());
+    let grok = service
+        .add_rule(
+            "profile-a",
+            "m1",
+            "responses",
+            "grok",
+            "grok",
+            "grok-4",
+            0,
+            None,
+        )
+        .unwrap();
+    let _codex = service
+        .add_rule(
+            "profile-a",
+            "m1",
+            "responses",
+            "codex",
+            "codex",
+            "gpt-5",
+            1,
+            Some("shared"),
+        )
+        .unwrap();
+    service.set_rule_enabled(&grok.id, false).unwrap();
+    let listed = service.list_rules("profile-a").unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(!listed.iter().any(|rule| rule.public_model == "acc-a"));
+    assert!(!listed[0].enabled);
+    assert_eq!(listed[1].equivalent_group.as_deref(), Some("shared"));
+    service.remove_rule(&listed[0].id).unwrap();
+    assert_eq!(service.list_rules("profile-a").unwrap().len(), 1);
+    let revision = service.get("profile-a").unwrap().unwrap().policy_revision;
+    assert!(revision > 1);
 }
 
 #[tokio::test]

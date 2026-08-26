@@ -30,6 +30,10 @@ pub const FEATURE_CODEX_INGRESS_GROK_UPSTREAM: &str = "feature.codex_ingress_gro
 /// the reverse direction. Off keeps today's Experimental passthrough.
 pub const FEATURE_GROK_INGRESS_CODEX_UPSTREAM: &str = "feature.grok_ingress_codex_upstream";
 
+/// Explicit mixed-provider composite routes. Off keeps `AmbiguousModel` when
+/// candidates span more than one upstream provider. UI hidden.
+pub const FEATURE_MIXED_PROVIDER_POOL: &str = "feature.mixed_provider_pool";
+
 pub fn feature_flag_enabled(raw: Option<&str>) -> bool {
     matches!(
         raw.map(|value| value.trim().to_ascii_lowercase())
@@ -220,6 +224,50 @@ impl RouteMember {
     pub fn fingerprint(&self) -> String {
         authorization_fingerprint(self.source_kind, &self.source_id)
     }
+}
+
+/// Exact `public_model` → one upstream lane. Never inferred from a model-name
+/// prefix. Cross-provider failover only when `equivalent_group` matches.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRouteRule {
+    pub id: String,
+    pub route_pool_id: String,
+    pub public_model: String,
+    pub endpoint_family: String,
+    pub upstream_provider: String,
+    pub upstream_dialect: String,
+    pub upstream_model: String,
+    pub priority: i64,
+    /// Same non-empty group marks lanes equivalent for pre-commit failover.
+    /// Default is not equivalent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub equivalent_group: Option<String>,
+    pub enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl ModelRouteRule {
+    pub fn lane_key(&self) -> (&str, &str) {
+        (
+            self.upstream_provider.as_str(),
+            self.upstream_dialect.as_str(),
+        )
+    }
+
+    pub fn normalized_equivalent_group(&self) -> Option<&str> {
+        self.equivalent_group
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+}
+
+/// Exact model ids only. Globs would guess a lane from a name pattern.
+pub fn model_route_id_is_exact(value: &str) -> bool {
+    let trimmed = value.trim();
+    !trimmed.is_empty() && !trimmed.contains(['*', '?', '['])
 }
 
 pub fn authorization_fingerprint(kind: AdapterSourceKind, source_id: &str) -> String {
