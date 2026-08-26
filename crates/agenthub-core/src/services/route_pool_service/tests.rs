@@ -1,6 +1,6 @@
 use crate::models::{
     AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
-    AgentId, FEATURE_ROUTE_POOL_V2,
+    AgentId, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 use crate::services::RoutePoolService;
 use crate::storage::{AdapterProfileRepo, Database};
@@ -190,4 +190,89 @@ fn native_endpoint_profiles_are_not_auto_enrolled() {
     profiles.create(&direct).unwrap();
     let listed = service.project_legacy_local_bridges().unwrap();
     assert!(listed.is_empty());
+}
+
+#[test]
+fn enroll_v2_rejects_native_endpoint_and_config_sync() {
+    let (_dir, _db, service, profiles) = tmp();
+    for (id, route) in [
+        ("native", AdapterRoute::NativeEndpoint),
+        ("sync", AdapterRoute::ConfigSync),
+    ] {
+        let mut profile = bridge_profile(id, "acc", AgentId::Codex, false);
+        profile.route = route;
+        profile.local_port = None;
+        profiles.create(&profile).unwrap();
+        service
+            .create_legacy_pool(&profile, &format!("ahb_stable-token-{id}"), false)
+            .unwrap();
+        let error = service.enroll_v2(id, 43155).unwrap_err();
+        assert_eq!(error.code(), "unsupported");
+        assert!(!service.get(id).unwrap().unwrap().v2_enrolled);
+    }
+}
+
+#[test]
+fn index_enabled_requires_both_flags() {
+    let (_dir, db, service, _profiles) = tmp();
+    assert!(!service.index_enabled());
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    assert!(service.index_enabled());
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "off").unwrap();
+    assert!(!service.index_enabled());
+}
+
+#[tokio::test]
+async fn occupancy_failure_does_not_enroll_or_rewrite_client() {
+    let (_dir, _db, service, profiles) = tmp();
+    let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
+    profiles.create(&profile).unwrap();
+    service
+        .create_legacy_pool(&profile, "ahb_stable-token", true)
+        .unwrap();
+    let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let busy = blocker.local_addr().unwrap().port();
+    let host = crate::bridge::BridgeRuntimeHost::new();
+    assert!(service
+        .bind_then_enroll(&host, "profile-a", busy)
+        .await
+        .is_err());
+    let pool = service.get("profile-a").unwrap().unwrap();
+    assert!(!pool.v2_enrolled);
+    assert_eq!(pool.gateway_port, None);
+    assert_eq!(pool.hub_token, "ahb_stable-token");
+    assert_eq!(
+        profiles.get("profile-a").unwrap().unwrap().local_port,
+        Some(43121)
+    );
+    drop(blocker);
+    host.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn bind_then_enroll_writes_port_only_after_bind() {
+    let (_dir, _db, service, profiles) = tmp();
+    let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
+    profiles.create(&profile).unwrap();
+    service
+        .create_legacy_pool(&profile, "ahb_stable-token", true)
+        .unwrap();
+    let host = crate::bridge::BridgeRuntimeHost::new();
+    let port = {
+        let probe = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        probe.local_addr().unwrap().port()
+    };
+    let enrolled = service
+        .bind_then_enroll(&host, "profile-a", port)
+        .await
+        .unwrap();
+    assert!(enrolled.v2_enrolled);
+    assert_eq!(enrolled.gateway_port, Some(port));
+    assert_eq!(enrolled.hub_token, "ahb_stable-token");
+    assert_eq!(
+        profiles.get("profile-a").unwrap().unwrap().local_port,
+        Some(43121),
+        "enroll must not rewrite the historical client port"
+    );
+    host.shutdown().await.unwrap();
 }

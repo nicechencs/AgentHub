@@ -198,14 +198,18 @@ impl BridgeStartSpec {
         self
     }
 
-    /// Live picker for this spec. Closed gate keeps only the lead.
+    /// `route_index` skips the RFC §7 lead-only trim.
     pub fn account_picker(&self) -> AccountPicker {
         let members = if self.members.is_empty() {
             vec![self.lead_member()]
         } else {
             self.members.iter().map(PickedMember::from).collect()
         };
-        AccountPicker::from_members(members, self.multi_account, None)
+        if self.route_index.is_some() {
+            AccountPicker::with_sink(members, self.multi_account, None)
+        } else {
+            AccountPicker::from_members(members, self.multi_account, None)
+        }
     }
 
     fn lead_member(&self) -> PickedMember {

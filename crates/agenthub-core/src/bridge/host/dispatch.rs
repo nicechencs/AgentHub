@@ -63,10 +63,13 @@ pub(super) async fn handle_conversation(
         .get("model")
         .and_then(|value| value.as_str())
         .unwrap_or("");
+    let mut resolver_candidates = None;
     if let Some(index) = &admitted.state.route_index {
         let endpoint = DownstreamSurface::endpoint_key(admitted.state.upstream.local_surface);
         match index.resolve(endpoint, model) {
-            Ok(candidates) if !candidates.is_empty() => {}
+            Ok(candidates) if !candidates.is_empty() => {
+                resolver_candidates = Some(candidates);
+            }
             Ok(_) | Err(_) => {
                 tracing::warn!(
                     target: "core.adapter",
@@ -135,7 +138,15 @@ pub(super) async fn handle_conversation(
             }
         }
     }
-    let Some(member) = admitted.state.account_picker.pick_new() else {
+    let Some(member) = (match &resolver_candidates {
+        Some(candidates) => {
+            admitted
+                .state
+                .account_picker
+                .pick_from_candidates(candidates, None, &[])
+        }
+        None => admitted.state.account_picker.pick_new(),
+    }) else {
         return no_eligible_member(&admitted.state, &admitted.request_id, admitted.started);
     };
     admitted.member = Some(member);

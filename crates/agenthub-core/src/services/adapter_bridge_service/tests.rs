@@ -3,9 +3,9 @@ use super::*;
 use crate::models::{
     Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
     AdapterSourceKind, AdapterSourceProduct, AdapterTargetProtocol, AdapterUpstreamTransport,
-    Provider, LOCAL_BRIDGE_EDGES,
+    Provider, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
 };
-use crate::services::ProviderService;
+use crate::services::{ProviderService, RoutePoolService};
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
 use axum::http::StatusCode;
 use axum::routing::get;
@@ -834,6 +834,8 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         target_agent: AgentId::Codex,
         upstream_auth: ResolvedAuth::bearer("upstream-secret"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -864,6 +866,8 @@ async fn codex_responses_health_probe_does_not_request_models() {
         target_agent: AgentId::Claude,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -892,6 +896,8 @@ async fn xai_responses_health_probe_does_not_request_models() {
         target_agent: AgentId::Claude,
         upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -920,6 +926,8 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
         target_agent: AgentId::Grok,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.is_empty());
@@ -948,6 +956,8 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
         target_agent: AgentId::Claude,
         upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
@@ -971,6 +981,8 @@ fn start_spec_empty_when_mapping_and_default_are_missing() {
         target_agent: AgentId::Kimi,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     assert!(material.start_spec(Some(0)).listed_models.is_empty());
 }
@@ -991,6 +1003,8 @@ fn start_spec_lists_configured_default_when_mapping_is_missing() {
         target_agent: AgentId::Kimi,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
@@ -1014,6 +1028,8 @@ fn start_spec_lists_openai_to_codex_without_kimi_ids() {
         target_agent: AgentId::Codex,
         upstream_auth: ResolvedAuth::bearer("openai-upstream-secret"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert_eq!(listed, vec![OPENAI_DEFAULT_MODEL.to_string()]);
@@ -1332,11 +1348,10 @@ fn prepare_codex_subscription_projects_only_claude_loopback_env() {
         input.settings_config["env"]["ANTHROPIC_BASE_URL"],
         "http://127.0.0.1:43144"
     );
-    assert_eq!(
-        input.settings_config["env"]["ANTHROPIC_MODEL"],
-        "gpt-5.4"
-    );
-    assert!(input.settings_config["env"].get("CLAUDE_CODE_MAX_CONTEXT_TOKENS").is_none());
+    assert_eq!(input.settings_config["env"]["ANTHROPIC_MODEL"], "gpt-5.4");
+    assert!(input.settings_config["env"]
+        .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+        .is_none());
     assert!(input.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"]
         .as_str()
         .is_some_and(|token| token.starts_with("ahb_")));
@@ -1846,6 +1861,8 @@ fn start_spec_lists_stealth_ox_alpha_for_custom_openai() {
         target_agent: AgentId::Codex,
         upstream_auth: ResolvedAuth::bearer("sk-or-placeholder-test-key"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(
@@ -1870,6 +1887,8 @@ fn start_spec_keeps_every_user_listed_model() {
         target_agent: AgentId::Codex,
         upstream_auth: ResolvedAuth::bearer("sk-or-placeholder-test-key"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "openai/gpt-4o"));
@@ -1895,6 +1914,8 @@ fn start_spec_strips_claude_1m_marker_from_listed_models() {
         target_agent: AgentId::Claude,
         upstream_auth: ResolvedAuth::bearer("sk-or-placeholder-test-key"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
@@ -1917,6 +1938,8 @@ fn start_spec_official_openai_does_not_list_stealth() {
         target_agent: AgentId::Codex,
         upstream_auth: ResolvedAuth::bearer("openai-upstream-secret"),
         local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.iter().any(|model| model == "stealth/ox-alpha"));
@@ -1970,11 +1993,10 @@ fn prepare_glm_claude_uses_anthropic_endpoint() {
         other => panic!("expected create projection, got {other:?}"),
     };
     assert_eq!(input.settings_config["model"], "glm-4.6");
-    assert_eq!(
-        input.settings_config["env"]["ANTHROPIC_MODEL"],
-        "glm-4.6"
-    );
-    assert!(input.settings_config["env"].get("CLAUDE_CODE_MAX_CONTEXT_TOKENS").is_none());
+    assert_eq!(input.settings_config["env"]["ANTHROPIC_MODEL"], "glm-4.6");
+    assert!(input.settings_config["env"]
+        .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+        .is_none());
 }
 
 #[test]
@@ -2129,5 +2151,228 @@ fn prepare_rejects_openai_marker_when_active_toml_host_is_not_official() {
             .unwrap_err()
             .code(),
         "unsupported"
+    );
+}
+
+#[test]
+fn production_start_spec_attaches_index_when_flags_on_and_pool_enrolled() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-membership", "upstream-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    assert!(
+        prepared
+            .runtime_material()
+            .start_spec(Some(0))
+            .route_index
+            .is_none(),
+        "unenrolled pool must not attach an index"
+    );
+    RoutePoolService::new(db.clone())
+        .enroll_v2(&prepared.profile().id, 43155)
+        .unwrap();
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    let spec = prepared.runtime_material().start_spec(Some(0));
+    let index = spec.route_index.expect("enrolled v2 start attaches index");
+    assert!(!index.list_models("responses").is_empty());
+    assert!(index.resolve("responses", "unknown-model").is_err());
+}
+
+#[test]
+fn production_start_spec_skips_index_when_route_index_flag_is_off() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-membership", "upstream-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    RoutePoolService::new(db.clone())
+        .enroll_v2(&prepared.profile().id, 43155)
+        .unwrap();
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    assert!(
+        prepared
+            .runtime_material()
+            .start_spec(Some(0))
+            .route_index
+            .is_none(),
+        "flag off must keep v1 lead dispatch"
+    );
+}
+
+fn openai_source_with_listed(id: &str, api_key: &str, listed: &[&str]) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        name: "OpenAI API".into(),
+        settings_config: json!({
+            "apiKey": api_key,
+            "listedModels": listed,
+        }),
+        meta: json!({"preset": "openai"}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn production_index_uses_each_member_listed_models_not_the_lead_catalog() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    let providers = ProviderRepo::new(db.clone());
+    providers
+        .create(&openai_source_with_listed(
+            "openai-a",
+            "sk-openai-a",
+            &["m1"],
+        ))
+        .unwrap();
+    providers
+        .create(&openai_source_with_listed(
+            "openai-b",
+            "sk-openai-b",
+            &["m2"],
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
+        .unwrap();
+    let pools = RoutePoolService::new(db.clone());
+    pools
+        .add_member(
+            &prepared.profile().id,
+            AdapterSourceKind::Provider,
+            "openai-b",
+        )
+        .unwrap();
+    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
+        .unwrap();
+    let index = prepared
+        .runtime_material()
+        .start_spec(Some(0))
+        .route_index
+        .expect("enrolled pool attaches production index");
+    assert_eq!(index.list_models("responses"), vec!["m1", "m2"]);
+    let m1 = index.resolve("responses", "m1").expect("m1");
+    assert_eq!(
+        m1.iter()
+            .map(|candidate| candidate.member_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["openai-a"]
+    );
+    let m2 = index.resolve("responses", "m2").expect("m2");
+    assert_eq!(
+        m2.iter()
+            .map(|candidate| candidate.member_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["openai-b"]
+    );
+}
+
+#[test]
+fn production_index_omits_sibling_when_member_snapshot_fails() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&openai_source_with_listed(
+            "openai-a",
+            "sk-openai-a",
+            &["m1"],
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
+        .unwrap();
+    let pools = RoutePoolService::new(db.clone());
+    pools
+        .add_member(
+            &prepared.profile().id,
+            AdapterSourceKind::Provider,
+            "openai-missing",
+        )
+        .unwrap();
+    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
+        .unwrap();
+    let index = prepared
+        .runtime_material()
+        .start_spec(Some(0))
+        .route_index
+        .expect("lead snapshot still builds an index");
+    assert_eq!(index.list_models("responses"), vec!["m1"]);
+    assert!(index.resolve("responses", "m2").is_err());
+}
+
+#[test]
+fn attach_keeps_last_successful_sibling_when_prior_index_is_present() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    let providers = ProviderRepo::new(db.clone());
+    providers
+        .create(&openai_source_with_listed(
+            "openai-a",
+            "sk-openai-a",
+            &["m1"],
+        ))
+        .unwrap();
+    providers
+        .create(&openai_source_with_listed(
+            "openai-b",
+            "sk-openai-b",
+            &["m2"],
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
+        .unwrap();
+    let pools = RoutePoolService::new(db.clone());
+    pools
+        .add_member(
+            &prepared.profile().id,
+            AdapterSourceKind::Provider,
+            "openai-b",
+        )
+        .unwrap();
+    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
+        .unwrap();
+    let prior = prepared.runtime_material().clone();
+    assert_eq!(
+        prior
+            .route_index()
+            .expect("enrolled")
+            .list_models("responses"),
+        vec!["m1", "m2"]
+    );
+    providers.delete("openai-b").unwrap();
+    let kept = service.attach_route_index(prior, prepared.profile());
+    let index = kept
+        .route_index()
+        .expect("partial rebuild keeps last-successful sibling");
+    assert_eq!(index.list_models("responses"), vec!["m1", "m2"]);
+    assert_eq!(
+        index
+            .resolve("responses", "m2")
+            .expect("kept B")
+            .iter()
+            .map(|candidate| candidate.member_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["openai-b"]
     );
 }

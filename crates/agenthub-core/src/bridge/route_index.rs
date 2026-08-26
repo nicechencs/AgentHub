@@ -159,4 +159,86 @@ impl EffectiveRouteIndex {
         }
         models
     }
+
+    /// Last successful member snapshots, used so a partial rebuild cannot
+    /// empty the pool index.
+    pub fn capability_snapshots(&self) -> Vec<MemberCapabilitySnapshot> {
+        let mut snapshots = Vec::new();
+        for ((endpoint, model), candidates) in &self.by_endpoint_model {
+            for candidate in candidates {
+                snapshots.push(MemberCapabilitySnapshot {
+                    member_id: candidate.member_id.clone(),
+                    public_model: model.clone(),
+                    endpoint: endpoint.clone(),
+                    upstream_provider: candidate.upstream_provider.clone(),
+                    upstream_dialect: candidate.upstream_dialect.clone(),
+                    upstream_model: candidate.upstream_model.clone(),
+                    upstream_endpoint: candidate.upstream_endpoint.clone(),
+                    transport_key: candidate.transport_key.clone(),
+                    capability: MemberCapability::Supported,
+                });
+            }
+        }
+        snapshots
+    }
+}
+
+/// One member's listed models used to build a production index.
+///
+/// Unknown / empty ids stay out. `snapshot_ok = false` keeps that member's
+/// last successful snapshots so a partial refresh cannot empty the pool.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberListing {
+    pub member_id: String,
+    pub listed_models: Vec<String>,
+    pub upstream_provider: String,
+    pub upstream_dialect: String,
+    pub upstream_endpoint: String,
+    pub transport_key: String,
+    pub snapshot_ok: bool,
+}
+
+/// Build [`EffectiveRouteIndex`] from member mapping listings.
+pub fn index_from_member_listings(
+    route_id: impl Into<String>,
+    generation: u64,
+    endpoint: &str,
+    members: &[MemberListing],
+    prior: Option<&[MemberCapabilitySnapshot]>,
+) -> EffectiveRouteIndex {
+    let mut snapshots = Vec::new();
+    for member in members {
+        if !member.snapshot_ok {
+            if let Some(prior) = prior {
+                snapshots.extend(
+                    prior
+                        .iter()
+                        .filter(|snapshot| snapshot.member_id == member.member_id)
+                        .cloned(),
+                );
+            }
+            continue;
+        }
+        if member.member_id.trim().is_empty() {
+            continue;
+        }
+        for model in &member.listed_models {
+            let model = model.trim();
+            if model.is_empty() {
+                continue;
+            }
+            snapshots.push(MemberCapabilitySnapshot {
+                member_id: member.member_id.clone(),
+                public_model: model.to_owned(),
+                endpoint: endpoint.to_owned(),
+                upstream_provider: member.upstream_provider.clone(),
+                upstream_dialect: member.upstream_dialect.clone(),
+                upstream_model: model.to_owned(),
+                upstream_endpoint: member.upstream_endpoint.clone(),
+                transport_key: member.transport_key.clone(),
+                capability: MemberCapability::Supported,
+            });
+        }
+    }
+    EffectiveRouteIndex::build(route_id, generation, &snapshots)
 }

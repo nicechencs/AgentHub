@@ -1,4 +1,7 @@
-use super::{EffectiveRouteIndex, MemberCapability, MemberCapabilitySnapshot, RouteResolveError};
+use super::{
+    index_from_member_listings, EffectiveRouteIndex, MemberCapability, MemberCapabilitySnapshot,
+    MemberListing, RouteResolveError,
+};
 
 fn grant(
     member_id: &str,
@@ -140,6 +143,80 @@ fn listed_models_each_have_a_resolver_candidate() {
         assert!(candidates
             .iter()
             .all(|candidate| candidate.capability_generation == index.generation));
+    }
+}
+
+#[test]
+fn index_from_member_listings_unions_exclusive_models() {
+    let index = index_from_member_listings(
+        "pool",
+        7,
+        "responses",
+        &[
+            listing("acc-a", &["m1"], true),
+            listing("acc-b", &["m2"], true),
+        ],
+        None,
+    );
+    assert_eq!(index.generation, 7);
+    assert_eq!(index.list_models("responses"), vec!["m1", "m2"]);
+    assert_eq!(
+        index
+            .resolve("responses", "m1")
+            .expect("m1")
+            .iter()
+            .map(|candidate| candidate.member_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["acc-a"]
+    );
+    assert_eq!(
+        index
+            .resolve("responses", "m2")
+            .expect("m2")
+            .iter()
+            .map(|candidate| candidate.member_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["acc-b"]
+    );
+}
+
+#[test]
+fn partial_member_snapshot_failure_keeps_last_successful() {
+    let prior = vec![
+        grant("acc-a", "m1", "codex", "codex"),
+        grant("acc-b", "m2", "codex", "codex"),
+    ];
+    let index = index_from_member_listings(
+        "pool",
+        3,
+        "responses",
+        &[
+            listing("acc-a", &["m1"], true),
+            listing("acc-b", &[], false),
+        ],
+        Some(&prior),
+    );
+    assert_eq!(index.list_models("responses"), vec!["m1", "m2"]);
+    assert_eq!(
+        index
+            .resolve("responses", "m2")
+            .expect("kept B")
+            .iter()
+            .map(|candidate| candidate.member_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["acc-b"]
+    );
+}
+
+fn listing(member_id: &str, models: &[&str], snapshot_ok: bool) -> MemberListing {
+    MemberListing {
+        member_id: member_id.into(),
+        listed_models: models.iter().map(|model| (*model).to_owned()).collect(),
+        upstream_provider: "codex".into(),
+        upstream_dialect: "codex".into(),
+        upstream_endpoint: "https://codex.example/v1".into(),
+        transport_key: "codex:codex".into(),
+        snapshot_ok,
     }
 }
 

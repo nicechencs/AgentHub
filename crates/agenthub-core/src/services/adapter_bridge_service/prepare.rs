@@ -57,8 +57,13 @@ impl AdapterBridgeService {
             ));
         }
 
-        let (upstream_base_url, upstream_model, configured_listed_models, protocol, context_window_tokens) =
-            openai_source_upstream(self, &rule, request.source_kind, source_id);
+        let (
+            upstream_base_url,
+            upstream_model,
+            configured_listed_models,
+            protocol,
+            context_window_tokens,
+        ) = openai_source_upstream(self, &rule, request.source_kind, source_id);
         let (generated_provider_exists, generated_provider_is_current) =
             if let Some(provider) = existing_provider.as_ref() {
                 validate_generated_provider(provider, &profile, profile.local_port)?;
@@ -87,8 +92,8 @@ impl AdapterBridgeService {
             Some(provider) => local_bearer_from_provider(provider)?,
             None => generate_local_bearer()?,
         };
-        Ok(AdapterBridgePrepared {
-            material: AdapterBridgeRuntimeMaterial {
+        let material = self.attach_route_index(
+            AdapterBridgeRuntimeMaterial {
                 profile_id: profile.id.clone(),
                 source_connection_id: profile.source_id.clone(),
                 preferred_port: profile.local_port,
@@ -102,7 +107,13 @@ impl AdapterBridgeService {
                 target_agent: rule.target_agent,
                 upstream_auth,
                 local_bearer,
+                route_index: None,
+                index_enabled: false,
             },
+            &profile,
+        );
+        Ok(AdapterBridgePrepared {
+            material,
             profile,
             generated_provider_exists,
             generated_provider_is_current,
