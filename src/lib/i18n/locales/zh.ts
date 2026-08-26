@@ -1666,6 +1666,8 @@ export const zh = {
       extraCopyCanUpdate: "可更新",
       extraCopyIsLatest: "已最新",
       extraCopyUpgradeSpawnOnly: "升级只作用于当前启动渠道",
+      updateViaDesktop: "请到桌面应用更新",
+      updateViaIde: "请到 IDE 插件更新",
       copyPath: "复制路径",
       copyPathTitle: "复制安装路径，便于查看文件位置",
       pathCopied: "已复制路径",

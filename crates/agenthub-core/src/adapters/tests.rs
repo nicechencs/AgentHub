@@ -3,7 +3,7 @@ use super::codex_copies::ide_codex_bins_under;
 use super::detect_binary::{
     agenthub_user_npm_prefix_roots, attach_extra_binary_copies, detect_binary, expand_binary_names,
     first_existing_named_bin, infer_channel, is_under_agenthub_user_npm_prefix,
-    well_known_bin_paths,
+    well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
 };
 use super::*;
 use crate::error::AppError;
@@ -248,6 +248,118 @@ fn attach_extra_binary_copies_refreshes_note_when_ide_copy_is_added() {
         "second attach must rebuild one combined note: {:?}",
         result.notes
     );
+}
+
+#[test]
+fn attach_extra_binary_copies_promotes_desktop_when_not_found() {
+    let tmp = tempfile::tempdir().unwrap();
+    #[cfg(windows)]
+    let leftover = tmp.path().join("leftover.cmd");
+    #[cfg(not(windows))]
+    let leftover = tmp.path().join("leftover");
+    #[cfg(windows)]
+    let desktop = tmp.path().join("desktop.exe");
+    #[cfg(not(windows))]
+    let desktop = tmp.path().join("desktop-copy");
+    #[cfg(windows)]
+    let ide = tmp.path().join("ide.exe");
+    #[cfg(not(windows))]
+    let ide = tmp.path().join("ide-copy");
+    write_spawnable_probe(&leftover, "9.9.9");
+    write_spawnable_probe(&desktop, "0.50.0");
+    write_spawnable_probe(&ide, "0.49.0");
+
+    let mut result = DetectResult {
+        agent: AgentId::Codex,
+        status: DetectStatus::NotFound,
+        version: None,
+        binary_path: None,
+        channel: None,
+        env_ready: true,
+        notes: vec![NOT_FOUND_FIREFIGHTING_NOTE.into()],
+        extra_copies: vec![DetectedBinaryCopy {
+            path: leftover.clone(),
+            kind: "leftover-agenthub".into(),
+            version: Some("9.9.9".into()),
+            channel: Some("npm".into()),
+        }],
+    };
+    attach_extra_binary_copies(
+        &mut result,
+        vec![(ide.clone(), "ide"), (desktop.clone(), "desktop")],
+        &["--version"],
+        &[],
+    );
+
+    assert_eq!(result.status, DetectStatus::Installed);
+    assert_eq!(result.binary_path.as_deref(), Some(desktop.as_path()));
+    assert_eq!(result.channel.as_deref(), Some("desktop"));
+    if let Some(v) = result.version.as_deref() {
+        assert_eq!(v, "0.50.0");
+    }
+    assert!(
+        !result
+            .notes
+            .iter()
+            .any(|n| n == NOT_FOUND_FIREFIGHTING_NOTE),
+        "PATH-miss firefighting note must drop after promote: {:?}",
+        result.notes
+    );
+    assert!(
+        result.notes.iter().any(|n| n.contains("desktop")),
+        "promote note should name the desktop copy: {:?}",
+        result.notes
+    );
+    assert_eq!(
+        result.extra_copies.len(),
+        2,
+        "leftover + ide remain extra: {:?}",
+        result.extra_copies
+    );
+    assert!(result
+        .extra_copies
+        .iter()
+        .any(|c| c.kind == "leftover-agenthub" && c.path == leftover));
+    assert!(result
+        .extra_copies
+        .iter()
+        .any(|c| c.kind == "ide" && c.path == ide));
+    assert!(result
+        .extra_copies
+        .iter()
+        .all(|c| c.path != desktop));
+}
+
+#[test]
+fn leftover_extra_copy_alone_does_not_count_as_installed() {
+    let tmp = tempfile::tempdir().unwrap();
+    #[cfg(windows)]
+    let leftover = tmp.path().join("leftover.cmd");
+    #[cfg(not(windows))]
+    let leftover = tmp.path().join("leftover");
+    write_spawnable_probe(&leftover, "9.9.9");
+
+    let mut result = DetectResult {
+        agent: AgentId::Codex,
+        status: DetectStatus::NotFound,
+        version: None,
+        binary_path: None,
+        channel: None,
+        env_ready: true,
+        notes: vec![NOT_FOUND_FIREFIGHTING_NOTE.into()],
+        extra_copies: vec![DetectedBinaryCopy {
+            path: leftover.clone(),
+            kind: "leftover-agenthub".into(),
+            version: Some("9.9.9".into()),
+            channel: Some("npm".into()),
+        }],
+    };
+    attach_extra_binary_copies(&mut result, Vec::new(), &["--version"], &[]);
+
+    assert_eq!(result.status, DetectStatus::NotFound);
+    assert!(result.binary_path.is_none());
+    assert_eq!(result.extra_copies.len(), 1);
+    assert_eq!(result.extra_copies[0].path, leftover);
 }
 
 #[test]

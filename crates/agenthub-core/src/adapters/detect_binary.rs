@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::models::{AgentId, DetectedBinaryCopy, DetectResult};
+use crate::models::{AgentId, DetectedBinaryCopy, DetectResult, DetectStatus};
 use crate::utils::redact::redact_text;
 
 /// Shared detect helper used by adapters.
@@ -146,8 +146,9 @@ pub(crate) fn detect_binary_with_env(
 }
 
 /// Other on-disk CLIs besides `binary_path` (npm/native well-known, IDE, desktop).
-/// Leftover `~/.agenthub/npm` is attached separately and is not a spawn target.
-/// Does not change the spawn `binary_path`.
+/// Leftover `~/.agenthub/npm` is attached separately and is never a spawn target.
+/// When still `NotFound`, a spawnable extra copy (native → npm → desktop → ide)
+/// is promoted to the spawn target so the agent counts as installed.
 pub(crate) fn attach_extra_binary_copies(
     result: &mut DetectResult,
     candidates: impl IntoIterator<Item = (PathBuf, &'static str)>,
@@ -189,6 +190,48 @@ pub(crate) fn attach_extra_binary_copies(
     if added > 0 {
         refresh_channel_extra_copies_note(result);
     }
+    promote_spawnable_extra_copy_if_missing(result);
+}
+
+/// PATH / well-known miss, but a real extra copy exists (desktop hashed dir, IDE, …).
+/// Leftover AgentHub npm is observational only and never becomes Installed.
+fn promote_spawnable_extra_copy_if_missing(result: &mut DetectResult) {
+    if result.status == DetectStatus::Installed && result.binary_path.is_some() {
+        return;
+    }
+    const ORDER: [&str; 4] = ["native", "npm", "desktop", "ide"];
+    let Some(idx) = ORDER
+        .iter()
+        .find_map(|kind| result.extra_copies.iter().position(|c| c.kind == *kind))
+    else {
+        return;
+    };
+    let copy = result.extra_copies.remove(idx);
+    let channel = copy
+        .channel
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| Some(copy.kind.clone()));
+    tracing::info!(
+        target: crate::logging::targets::DETECT,
+        module = crate::logging::targets::DETECT,
+        op = "detect_binary",
+        agent = result.agent.as_str(),
+        via = %copy.kind,
+        path = %copy.path.display(),
+        "agent binary found as extra copy; marking Installed"
+    );
+    result.status = DetectStatus::Installed;
+    result.version = copy.version;
+    result.channel = channel;
+    result.notes.retain(|n| n != NOT_FOUND_FIREFIGHTING_NOTE);
+    result.notes.push(format!(
+        "found via {} copy (not on process PATH): {}",
+        copy.kind,
+        copy.path.display()
+    ));
+    result.binary_path = Some(copy.path);
+    refresh_channel_extra_copies_note(result);
 }
 
 fn probe_bin_version(

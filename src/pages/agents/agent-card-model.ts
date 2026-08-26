@@ -1,5 +1,6 @@
 import type { InstallChannelMeta } from '@/config/agents';
 import type { MessageKey } from '@/lib/i18n';
+import type { AgentStatus } from '@/lib/types';
 import { handleMenuDialogSelect } from '@/pages/connections/ticket-wallet-model';
 
 export type AgentCardTaskAction = 'install' | 'upgrade' | 'oneclick';
@@ -84,6 +85,59 @@ export function extraCopyKindLabel(
  * Upgrade still uses the spawn channel; this is display-only.
  */
 export type ExtraCopyUpdateHint = 'update_available' | 'up_to_date' | 'unknown';
+
+export const SPECIAL_INSTALL_CHANNELS = ['desktop', 'ide'] as const;
+export type SpecialInstallChannel = (typeof SPECIAL_INSTALL_CHANNELS)[number];
+
+export function isSpecialInstallChannel(
+  channel?: string | null,
+): channel is SpecialInstallChannel {
+  return channel === 'desktop' || channel === 'ide';
+}
+
+/** npm / native can be upgraded here; missing channel still uses native install. */
+export function isInAppUpgradeChannel(channel?: string | null): boolean {
+  if (!channel?.trim()) return true;
+  return channel === 'npm' || channel === 'native';
+}
+
+export type SpecialChannelUpdateTarget = {
+  kind: SpecialInstallChannel;
+  outdated: boolean;
+};
+
+/**
+ * Special copies AgentHub cannot upgrade. Hint after the agent name so the
+ * user goes to the desktop app or IDE extension.
+ * Skip when that copy is already current.
+ */
+export function specialChannelUpdateTargets(
+  agent: Pick<AgentStatus, 'channel' | 'extraCopies' | 'latestVersion' | 'update'>,
+): SpecialChannelUpdateTarget[] {
+  const latest = agent.update?.latestVersion ?? agent.latestVersion;
+  const state = agent.update?.state;
+  const outdated = new Set<SpecialInstallChannel>();
+  const shown = new Set<SpecialInstallChannel>();
+  if (
+    isSpecialInstallChannel(agent.channel) &&
+    state !== 'up_to_date' &&
+    state !== 'checking'
+  ) {
+    shown.add(agent.channel);
+    if (state === 'update_available') outdated.add(agent.channel);
+  }
+  for (const copy of agent.extraCopies ?? []) {
+    if (!isSpecialInstallChannel(copy.kind)) continue;
+    if (extraCopyUpdateHint(copy.kind, copy.version, latest) === 'update_available') {
+      shown.add(copy.kind);
+      outdated.add(copy.kind);
+    }
+  }
+  return SPECIAL_INSTALL_CHANNELS.filter((kind) => shown.has(kind)).map((kind) => ({
+    kind,
+    outdated: outdated.has(kind),
+  }));
+}
 
 export function extraCopyUpdateHint(
   kind: string,

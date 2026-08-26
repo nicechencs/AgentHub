@@ -115,9 +115,10 @@ export function mapDoctorDetectResult(
   capabilities?: Record<string, Record<string, DoctorCapabilityState>>,
 ): AgentStatus {
   const installed = d.status === 'installed';
-  const channel = asInstallChannel(d.channel);
-  const chMeta = channel
-    ? (findChannel(d.agent, channel) ?? defaultChannel(d.agent))
+  const detectedChannel = d.channel?.trim() || undefined;
+  const installChannel = asInstallChannel(detectedChannel);
+  const chMeta = installChannel
+    ? (findChannel(d.agent, installChannel) ?? defaultChannel(d.agent))
     : defaultChannel(d.agent);
   const check = checkChannelEnv(chMeta, runtimes);
 
@@ -125,7 +126,7 @@ export function mapDoctorDetectResult(
     agentId: d.agent,
     installed,
     version: d.version ?? undefined,
-    channel: installed ? channel : undefined,
+    channel: installed ? detectedChannel : undefined,
     binPath: d.binaryPath ?? undefined,
     extraCopies: d.extraCopies?.length ? d.extraCopies.map((c) => ({ ...c })) : undefined,
     notes: d.notes?.length ? [...d.notes] : undefined,

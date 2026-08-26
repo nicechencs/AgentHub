@@ -498,6 +498,20 @@ fn public_purge_entry_rejects_data_dir_unrelated_to_database_authority() {
 }
 
 #[test]
+fn resolve_in_app_upgrade_channel_blocks_ide_and_desktop() {
+    assert_eq!(resolve_in_app_upgrade_channel(Some("npm")).unwrap(), "npm");
+    assert_eq!(
+        resolve_in_app_upgrade_channel(Some("native")).unwrap(),
+        "native"
+    );
+    assert_eq!(resolve_in_app_upgrade_channel(None).unwrap(), "native");
+    let ide = resolve_in_app_upgrade_channel(Some("ide")).unwrap_err();
+    assert!(ide.contains("IDE"), "{ide}");
+    let desktop = resolve_in_app_upgrade_channel(Some("desktop")).unwrap_err();
+    assert!(desktop.contains("桌面"), "{desktop}");
+}
+
+#[test]
 fn upgrade_not_installed_fails_closed() {
     let registry = register_all();
     let calls = Arc::new(Mutex::new(Vec::new()));

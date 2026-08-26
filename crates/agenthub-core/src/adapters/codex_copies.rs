@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 
 use crate::models::DetectResult;
 
-/// Fill IDE / desktop `extra_copies`. Does not change the spawn `binary_path`.
+/// Fill IDE / desktop extra copies. Shared detect may promote one of them to
+/// the spawn target when PATH / well-known dirs missed (desktop hashed dir).
 /// Leftover `~/.agenthub/npm` and well-known npm/native copies are attached
 /// by shared detect, not here.
 pub(crate) fn attach_codex_extra_copies(result: &mut DetectResult) {
