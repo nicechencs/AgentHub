@@ -1,0 +1,9 @@
+{
+  "type": "error",
+  "sequence_number": 4,
+  "code": "upstream_error",
+  "message": "The upstream model provider returned an error.",
+  "prompt_cache_key": "grok-cache-secret",
+  "session_id": "grok-session-secret",
+  "store": false
+}

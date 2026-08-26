@@ -1,0 +1,30 @@
+{
+  "model": "grok-4.5",
+  "store": true,
+  "metadata": { "codex_session": "should-not-hit-grok" },
+  "max_output_tokens": 64,
+  "instructions": "Be brief.",
+  "input": [
+    {
+      "type": "message",
+      "role": "system",
+      "content": [{ "type": "input_text", "text": "You are a coding agent." }]
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": [{ "type": "input_text", "text": "hello" }]
+    }
+  ],
+  "tools": [
+    { "type": "local_shell" },
+    {
+      "type": "function",
+      "name": "lookup",
+      "parameters": { "type": "object", "properties": {} }
+    }
+  ],
+  "tool_choice": "auto",
+  "temperature": 0.2,
+  "stream": false
+}

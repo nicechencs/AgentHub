@@ -1,0 +1,45 @@
+[
+  {
+    "type": "response.created",
+    "sequence_number": 0,
+    "response": {
+      "id": "resp_codex_stream",
+      "object": "response",
+      "created_at": 1,
+      "model": "gpt-5.4",
+      "status": "in_progress",
+      "output": [],
+      "store": false,
+      "service_tier": "default"
+    }
+  },
+  {
+    "type": "response.output_item.added",
+    "sequence_number": 1,
+    "output_index": 0,
+    "item": {
+      "id": "fc_1",
+      "type": "function_call",
+      "status": "in_progress",
+      "call_id": "call_lookup",
+      "name": "lookup",
+      "arguments": ""
+    }
+  },
+  {
+    "type": "response.function_call_arguments.done",
+    "sequence_number": 2,
+    "output_index": 0,
+    "item_id": "fc_1",
+    "call_id": "call_lookup",
+    "arguments": "{\"q\":\"weather\"}"
+  },
+  {
+    "type": "error",
+    "sequence_number": 3,
+    "code": "upstream_error",
+    "message": "The upstream model provider returned an error.",
+    "store": false,
+    "metadata": { "codex_only": true }
+  }
+]
