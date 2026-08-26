@@ -4,19 +4,19 @@ type: concept
 status: current
 owner: maintainers
 audience: product, frontend, and core contributors
-source-of-truth: SkillService, mcp_inventory.rs, vendor plugin CLIs, and linked reference pages
+source-of-truth: SkillService, mcp_inventory.rs, plugin_inventory.rs, vendor plugin CLIs, and linked reference pages
 updated: 2026-08-26
 ---
 
 # 插件、MCP 与技能
 
-本页区分 AgentHub 里三类扩展。用户说的**插件**是各家 `plugin` / `extension` 包，**不是** MCP server。MCP 仍是独立的 `/mcp` 只读页。尚未落地的插件工作台见 [插件管理提案](../proposals/plugin-management.md)。
+本页区分 AgentHub 里三类扩展。用户说的**插件**是各家 `plugin` / `extension` 包，**不是** MCP server。MCP 仍是独立的 `/mcp` 只读页。`/plugins` 目前只读列出 Claude / Grok 已装包；安装/启用/卸载见 [插件管理提案](../proposals/plugin-management.md)。
 
 ## 三类扩展（不要混名）
 
 | 用户界面 | 对象 | 典型厂商入口 | AgentHub 当前 |
 |---|---|---|---|
-| **插件** | 可安装的 **extension / plugin 包**（常打包 skills、commands、agents、hooks，有时附带 MCP） | Claude `/plugin`、Codex `/plugins`、Grok `plugin`、Pi `pi install` | **未接线**。无页面、无扫描、无能力键 |
+| **插件** | 可安装的 **extension / plugin 包**（常打包 skills、commands、agents、hooks，有时附带 MCP） | Claude `/plugin`、Codex `/plugins`、Grok `plugin`、Pi `pi install` | **只读列表** `/plugins`（Claude / Grok）。无安装/写入，无能力键 |
 | **MCP** | Agent 作为客户端去连接的 **MCP server 条目** | `claude mcp`、`codex mcp`、`grok mcp`、`~/.cursor/mcp.json` | **只读盘点** `/mcp`。`Capability::Mcp` 全部 Planned |
 | **技能** | 带 `SKILL.md` 的技能目录 | 各家 `skills/` 目录 | **已管理** `/skills`，共享源 `~/.agents/skills/` |
 
@@ -30,7 +30,7 @@ Goose 把 MCP 叫做 “extension”。那是 Goose 的用词。AgentHub 的「�
 
 - **Skills**（`/skills`）管理共享技能与投影。`Capability::Skills` 由 adapter 声明；Kimi 为 Unsupported。
 - **MCP**（`/mcp`）列出已发现的 server 名、传输、命令/地址、来源文件。清单存在不等于能改配置，更不等于插件已安装。
-- **插件**：无 `/plugins` 路由、无侧栏项、无设置开关。厂商目录（`~/.claude/plugins/`、`~/.codex/plugins/`、`~/.grok/plugins/`、Pi packages）尚未扫描。
+- **插件**（`/plugins`）只读列出 Claude / Grok 已装包：优先官方 CLI JSON，否则读 live 目录（`~/.claude/plugins/` + `enabledPlugins`，`~/.grok/plugins/`）。设置「显示插件页面」只藏侧栏入口。附带 MCP 只作为包内组件。Codex / Pi / 其他 Agent 尚未接线。
 - 厂商 Plugin 市场也不是 Skills 市场（`skills.sh` / `skillhub.cn`）。
 
 ## 所有权
@@ -41,7 +41,7 @@ Goose 把 MCP 叫做 “extension”。那是 Goose 的用词。AgentHub 的「�
 | MCP live 配置 | 各 Agent 自己的 json/toml |
 | 插件包 | 各 Agent 的 plugin 缓存/目录 + `enabledPlugins` / `[plugins]` / Pi settings |
 
-插件包的 live 状态在各 Agent 自己的目录和 CLI 里。接线方案（委托官方 CLI、不自建商店、不做 `~/.agents/plugins` 共享真源）见 [插件管理提案](../proposals/plugin-management.md)，不是当前能力。
+插件包的 live 状态在各 Agent 自己的目录和 CLI 里。AgentHub 只读编排与展示；启用/安装/卸载见 [插件管理提案](../proposals/plugin-management.md)。
 
 ## 和连接 / 路由 / MCP 的边界
 

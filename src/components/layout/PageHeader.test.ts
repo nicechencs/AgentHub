@@ -19,6 +19,7 @@ describe('PageHeader', () => {
     expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');
   });
 
   it('uses the split-list inset when a preview pane is mounted', () => {
@@ -66,11 +67,13 @@ describe('PageHeader', () => {
     expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchHeader');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('App.tsx')).toContain('!isChat && <TopBar');
     expect(source('pages/settings/index.tsx')).not.toMatch(/readingColumn\}>\s*<PageHeader/);
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
     expect(source('pages/chat/ChatSessionHeader.tsx')).not.toContain('pageRhythm.workbenchHeader');
     expect(source('App.tsx')).toContain("pathname === '/connections'");
     expect(source('App.tsx')).toContain("pathname === '/routes'");
+    expect(source('App.tsx')).toContain("pathname === '/plugins'");
   });
 });
