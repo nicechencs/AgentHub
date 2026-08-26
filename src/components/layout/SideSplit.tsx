@@ -8,7 +8,7 @@ import {
 import type { SideSplitController } from './use-side-split';
 
 const separatorClass = cn(
-  'group relative z-10 w-1.5 shrink-0 cursor-col-resize bg-transparent outline-none',
+  'group relative z-10 w-1.5 shrink-0 cursor-col-resize touch-none bg-transparent outline-none',
   'hover:bg-accent/40 focus-visible:bg-accent/40 active:bg-accent/60',
   'before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:content-[""]',
 );

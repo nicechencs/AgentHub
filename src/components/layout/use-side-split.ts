@@ -99,6 +99,7 @@ export function useSideSplit<T>(options: {
   useLayoutEffect(() => {
     const el = splitRef.current;
     const apply = () => {
+      if (resizeCleanupRef.current) return;
       const next = el?.getBoundingClientRect().width ?? measureContainer();
       setContainerWidth((prev) => (prev === next ? prev : next));
     };
@@ -174,10 +175,12 @@ export function useSideSplit<T>(options: {
   const onResizeStart = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       e.preventDefault();
+      e.stopPropagation();
       cancelResize();
       const startX = e.clientX;
       const previousWidth = rememberedWidth;
       const startW = paneWidth;
+      const stage = containerWidth || measureContainer();
       const prevCursor = document.body.style.cursor;
       const prevSelect = document.body.style.userSelect;
       const pointerTarget = e.currentTarget;
@@ -188,7 +191,7 @@ export function useSideSplit<T>(options: {
 
       const onMove = (ev: globalThis.PointerEvent): void => {
         if (ev.pointerId !== pointerId) return;
-        setRememberedWidth(clampWidth(startW + (startX - ev.clientX)));
+        setRememberedWidth(clampSideSplitWidth(startW + (startX - ev.clientX), stage));
       };
       const cleanup = createIdempotentCleanup<[boolean, number?]>(
         (commit: boolean, clientX: number = startX) => {
@@ -236,7 +239,7 @@ export function useSideSplit<T>(options: {
         // Keep the window listeners as a compatibility fallback.
       }
     },
-    [cancelResize, paneWidth, rememberedWidth, clampWidth, persistWidth],
+    [cancelResize, paneWidth, rememberedWidth, containerWidth, measureContainer, persistWidth],
   );
 
   const onSeparatorKeyDown = useCallback(

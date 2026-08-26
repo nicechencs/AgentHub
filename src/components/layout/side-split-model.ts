@@ -13,8 +13,12 @@ export const SIDE_SPLIT_FRAME_PAD_Y = pageEdgePx.previewY;
 export const SIDE_SPLIT_SEPARATOR_W = pageEdgePx.separator;
 export const SIDE_SPLIT_WIDTH_STEP = 16;
 export const SIDE_SPLIT_WIDTH_STEP_LARGE = 48;
-/** Inspect pane cannot occupy more than half the workbench. */
-export const SIDE_SPLIT_MAX_SHARE = 0.5;
+/**
+ * Inspect pane share of the workbench. List reserve (`SIDE_SPLIT_MAIN_MIN`)
+ * still wins when it is tighter; this only stops a stored width from eating
+ * the list after the window shrinks.
+ */
+export const SIDE_SPLIT_MAX_SHARE = 0.7;
 
 export function readStoredSideSplitWidth(
   storageKey: string,
