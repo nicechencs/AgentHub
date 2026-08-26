@@ -273,6 +273,10 @@ export function createMockAccountPort(): AccountPort {
       return this.completeOAuth('claude');
     },
 
+    async cancelOAuth(state) {
+      void state;
+    },
+
     async startDeviceOAuth(agentId, providerKey) {
       await delay(50);
       return {

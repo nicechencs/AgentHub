@@ -130,3 +130,19 @@ fn concurrent_completion_claims_have_one_winner() {
     assert_eq!(successes, 1);
     assert_eq!(replays, 7);
 }
+
+#[test]
+fn cancel_waiting_on_port_fails_only_matching_sessions() {
+    let store = SessionStore::new();
+    store
+        .insert(session("keep", Instant::now()))
+        .unwrap();
+    let mut other = session("drop", Instant::now());
+    other.redirect_uri = "http://127.0.0.1:1455/callback".into();
+    store.insert(other).unwrap();
+
+    assert_eq!(store.cancel_waiting_on_port(1455).unwrap(), 1);
+    assert_eq!(store.get_info("keep").unwrap().status, OAuthStatus::Waiting);
+    assert_eq!(store.get_info("drop").unwrap().status, OAuthStatus::Failed);
+    assert!(!store.is_waiting("drop"));
+}

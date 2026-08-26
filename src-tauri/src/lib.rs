@@ -190,6 +190,7 @@ pub fn run() {
             commands::oauth::oauth_device_complete,
             commands::oauth::oauth_wait,
             commands::oauth::oauth_complete,
+            commands::oauth::oauth_cancel,
             commands::oauth::oauth_supported,
             // Usage
             commands::usage::usage_get_availability,

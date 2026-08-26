@@ -13,6 +13,7 @@ impl AccountService {
     /// SQLite pool plus local identity/expiry heals. No live-file sync and no
     /// upstream quota HTTP — GUI list paths stay off the network.
     pub fn list_pool(&self, agent: Option<AgentId>) -> Result<Vec<Account>> {
+        self.connections.reconcile_known_agents(agent);
         let mut items = self.repo.list(agent)?;
         // Persist identity extracted from stored tokens so GUI sees email/sub
         // after redaction (JWT lives only in credentials until healed).

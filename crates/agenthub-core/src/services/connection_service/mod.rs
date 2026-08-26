@@ -88,6 +88,36 @@ impl ConnectionService {
             .to_string()
     }
 
+    /// Repair `is_current` so it mirrors `agent_active_bindings` for one agent
+    /// or every catalog agent. List/wallet callers use this; it is a no-op write
+    /// when flags already match the pointer.
+    pub fn reconcile_known_agents(&self, agent: Option<AgentId>) {
+        match agent {
+            Some(id) => {
+                if let Err(error) = self.get_active(id) {
+                    tracing::warn!(
+                        module = crate::logging::targets::ACCOUNT,
+                        agent = id.as_str(),
+                        error = %error,
+                        "active binding reconcile failed"
+                    );
+                }
+            }
+            None => {
+                for id in AgentId::ALL {
+                    if let Err(error) = self.get_active(id) {
+                        tracing::warn!(
+                            module = crate::logging::targets::ACCOUNT,
+                            agent = id.as_str(),
+                            error = %error,
+                            "active binding reconcile failed"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     pub(super) fn require_current_flag(&self, is_current: bool, kind: &str) -> Result<()> {
         if !is_current {
             return Err(AppError::InvalidArg(format!(

@@ -22,6 +22,7 @@ import {
   type TicketView,
 } from '@/lib/api/tickets';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
+import { OAuthFlowDialog } from '@/components/connect/OAuthFlowDialog';
 import {
   buildResumeConnectUrl,
   consumeConnectIntent,
@@ -174,6 +175,7 @@ export default function ConnectionsPage() {
   );
   const inspect = useSideSplit<ConnectionInspect>({ storageKey: CONNECTIONS_INSPECT_WIDTH_KEY });
   const [loginImportOpen, setLoginImportOpen] = useState(false);
+  const [oauthOpen, setOauthOpen] = useState(false);
   const [importLiveProbe, setImportLiveProbe] = useState<LiveAuthProbe | null>(null);
   const [importProbeLoading, setImportProbeLoading] = useState(false);
   const importProbeGen = useRef(0);
@@ -540,10 +542,17 @@ export default function ConnectionsPage() {
     ignoreMenuDialogDismissRef.current = true;
     if (next.loginImportOpen) {
       inspect.close();
+      setOauthOpen(false);
       setLoginImportOpen(true);
+    }
+    if (next.oauthDialogOpen) {
+      inspect.close();
+      setLoginImportOpen(false);
+      setOauthOpen(true);
     }
     if (next.apiKeyDialogOpen) {
       setLoginImportOpen(false);
+      setOauthOpen(false);
       inspect.open({
         kind: 'provider',
         mode: 'add',
@@ -861,6 +870,7 @@ export default function ConnectionsPage() {
               agents={buildTicketAddMenu(allowedAgents)}
               focusedAgentId={filterAgent === 'all' ? null : filterAgent}
               onImportLogin={(id) => openTicketAdd('import-login', id)}
+              onOauth={(id) => openTicketAdd('oauth', id)}
               onAddKey={(id) => openTicketAdd('api-key', id)}
             />
           }
@@ -958,6 +968,7 @@ export default function ConnectionsPage() {
             installedAgentIds={allowedAgents}
             onAddKey={(id) => openTicketAdd('api-key', id)}
             onImportLogin={(id) => openTicketAdd('import-login', id)}
+            onOauth={(id) => openTicketAdd('oauth', id)}
           />
         </>
       )}
@@ -1021,6 +1032,32 @@ export default function ConnectionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <OAuthFlowDialog
+        agentId={addAgentId}
+        open={oauthOpen}
+        onOpenChange={(open) => {
+          if (shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, open)) return;
+          setOauthOpen(open);
+        }}
+        onCompleted={(account) => {
+          setOauthOpen(false);
+          void (async () => {
+            try {
+              await switchAccount(account.agentId, account.id);
+              toast({ title: t('connect.oauth.success'), variant: 'success' });
+              await poolReload().catch(() => {});
+              await loadWallet();
+            } catch (e) {
+              toast({
+                title: t('connect.oauth.failedTitle'),
+                description: e instanceof Error ? e.message : String(e),
+                variant: 'danger',
+              });
+            }
+          })();
+        }}
+      />
 
       <Dialog
         open={Boolean(deleteTicket)}

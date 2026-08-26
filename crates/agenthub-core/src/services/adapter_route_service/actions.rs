@@ -6,7 +6,8 @@ use crate::models::{
     AdapterSourceKind, AdapterSupport, AgentId,
 };
 use crate::services::adapter_route_constants::{
-    ANTHROPIC_AUTH_TOKEN_ENV, DEEPSEEK_CLAUDE_BASE_URL, DEEPSEEK_CLAUDE_RULE_ID,
+    ANTHROPIC_AUTH_TOKEN_ENV, CONNECTION_SECRET_MARKER, DEEPSEEK_CLAUDE_BASE_URL,
+    DEEPSEEK_CLAUDE_RULE_ID,
     DEEPSEEK_CODEX_BASE_URL, DEEPSEEK_CODEX_RULE_ID, DEEPSEEK_PI_PROVIDER_SLOT,
     DEEPSEEK_PI_RULE_ID, DSH_DEEPSEEK_PROVIDER_SLOT, GLM_CLAUDE_BASE_URL, GLM_CLAUDE_RULE_ID,
     GLM_CODEX_BASE_URL, GLM_CODEX_RULE_ID, GLM_PI_PROVIDER_SLOT, GLM_PI_RULE_ID,
@@ -82,6 +83,7 @@ pub(super) fn write_gate(
     matrix_can_apply
         && bind_implementation_open(request, analysis)
         && subscription_account_secret_open(accounts, request, analysis)
+        && account_api_key_secret_open(accounts, request)
 }
 
 pub(super) fn subscription_account_secret_open(
@@ -118,7 +120,43 @@ pub(super) fn subscription_account_secret_open(
     ]
     .iter()
     .filter_map(|pointer| account.credentials.pointer(pointer))
-    .any(|value| value.as_str().is_some_and(|token| !token.trim().is_empty()))
+    .any(|value| value.as_str().is_some_and(usable_plan_secret))
+}
+
+/// Account API-key tickets must already have the shape apply extracts
+/// (`format=api_key` + a usable `api_key`). Provider sources keep their
+/// existing classify/bind gates (keys may live in env / TOML content).
+pub(super) fn account_api_key_secret_open(
+    accounts: &AccountRepo,
+    request: &AdapterRouteRequest,
+) -> bool {
+    if request.source_kind != AdapterSourceKind::Account {
+        return true;
+    }
+    let Ok(Some(account)) = accounts.get_by_id(&request.source_id) else {
+        return false;
+    };
+    if account.kind != crate::models::AccountKind::ApiKey {
+        return true;
+    }
+    let format = account
+        .credentials
+        .get("format")
+        .and_then(Value::as_str)
+        .map(str::trim);
+    if !format.is_some_and(|value| value.eq_ignore_ascii_case("api_key")) {
+        return false;
+    }
+    account
+        .credentials
+        .get("api_key")
+        .and_then(Value::as_str)
+        .is_some_and(usable_plan_secret)
+}
+
+fn usable_plan_secret(value: &str) -> bool {
+    let trimmed = value.trim();
+    !trimmed.is_empty() && trimmed != "***" && trimmed != CONNECTION_SECRET_MARKER
 }
 
 /// Bind implementations opened in this step. API secrets resolve from either

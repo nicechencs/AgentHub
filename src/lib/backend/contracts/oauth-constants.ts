@@ -6,6 +6,13 @@
 /** Default PKCE wait window (seconds) for waitOAuth / completeOAuth. */
 export const OAUTH_WAIT_TIMEOUT_SECS = 120;
 
+/** Agents with an in-app OAuth login option (mirrors core `list_oauth_options`). */
+export const OAUTH_LOGIN_AGENT_IDS = ['claude', 'codex', 'grok', 'pi'] as const;
+
+export function agentSupportsOAuthLogin(agentId: string): boolean {
+  return (OAUTH_LOGIN_AGENT_IDS as readonly string[]).includes(agentId);
+}
+
 /**
  * Pi OAuth provider keys/aliases for which AgentHub implements credential refresh.
  *

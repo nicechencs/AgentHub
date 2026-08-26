@@ -83,6 +83,24 @@ fn store() -> &'static Mutex<HashMap<String, DeviceSession>> {
     DEVICE_STORE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub fn cancel_device_oauth(state: &str) -> Result<()> {
+    let mut sessions = store()
+        .lock()
+        .map_err(|_| AppError::message("oauth.store", "device store poisoned"))?;
+    purge_locked(&mut sessions, Some(state));
+    if let Some(session) = sessions.get_mut(state) {
+        if !matches!(
+            session.status,
+            DeviceOAuthStatus::Complete | DeviceOAuthStatus::Completing
+        ) {
+            session.status = DeviceOAuthStatus::Failed;
+            session.error = Some("OAuth authorization failed".into());
+            scrub_session(session);
+        }
+    }
+    Ok(())
+}
+
 fn purge_locked(sessions: &mut HashMap<String, DeviceSession>, keep: Option<&str>) {
     let now = Instant::now();
     sessions.retain(|state, session| {

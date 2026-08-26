@@ -79,6 +79,12 @@ pub async fn oauth_complete(
     .await
 }
 
+/// Invoke: `oauth_cancel` — fail an in-flight PKCE/device session and drop its listener.
+#[tauri::command]
+pub async fn oauth_cancel(oauth_state: String) -> Result<(), String> {
+    oauth::cancel_oauth(&oauth_state).map_err(|e| map_err_string("oauth_cancel", e))
+}
+
 /// Invoke: `oauth_supported`
 #[tauri::command]
 pub async fn oauth_supported(state: State<'_, AppState>, agent_id: String) -> Result<bool, String> {

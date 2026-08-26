@@ -2,6 +2,7 @@
  * Global ticket-wallet list helpers (Connections page).
  * Filter / binding usage lines — pure functions for vitest.
  */
+import { agentSupportsOAuthLogin } from '@/lib/backend/contracts/oauth-constants';
 import { agentDisplayName } from '@/config/agents';
 import {
   formatRouteEndpointHttpUrl,
@@ -82,12 +83,18 @@ export const TICKET_WALLET_FILTERS: Array<{ value: TicketWalletFilter; label: st
   { value: 'unknown', label: '未识别' },
 ];
 
-export type TicketAddKind = 'import-login' | 'api-key';
+export type TicketAddKind = 'import-login' | 'oauth' | 'api-key';
 
 export const TICKET_ADD_ACTIONS: Array<{ kind: TicketAddKind; label: string }> = [
   { kind: 'import-login', label: '导入当前授权' },
+  { kind: 'oauth', label: '官方登录' },
   { kind: 'api-key', label: '添加 API Key' },
 ];
+
+export function ticketAddActionsForAgent(agentId: AgentId): Array<{ kind: TicketAddKind; label: string }> {
+  if (agentSupportsOAuthLogin(agentId)) return TICKET_ADD_ACTIONS;
+  return TICKET_ADD_ACTIONS.filter((item) => item.kind !== 'oauth');
+}
 
 export function ticketWalletFilterLabel(
   filter: TicketWalletFilter,
@@ -106,9 +113,9 @@ export function ticketAddActionLabel(kind: TicketAddKind, t?: TranslateFn): stri
   if (!t) {
     return TICKET_ADD_ACTIONS.find((item) => item.kind === kind)?.label ?? '导入当前授权';
   }
-  return kind === 'import-login'
-    ? t('connections.list.importLogin')
-    : t('connections.list.addApiKey');
+  if (kind === 'import-login') return t('connections.list.importLogin');
+  if (kind === 'oauth') return t('connections.list.addOauth');
+  return t('connections.list.addApiKey');
 }
 
 export function ticketCredentialClassChipLabel(
@@ -166,7 +173,7 @@ export function buildTicketAddMenu(
   return agentIds.map((id) => ({
     id,
     name: agentDisplayName(id),
-    actions: TICKET_ADD_ACTIONS,
+    actions: ticketAddActionsForAgent(id),
   }));
 }
 
@@ -184,11 +191,16 @@ export function dispatchTicketAddAction(
   agentId: AgentId,
   handlers: {
     onImportLogin?: (id: AgentId) => void;
+    onOauth?: (id: AgentId) => void;
     onAddKey?: (id: AgentId) => void;
   },
 ): void {
   if (kind === 'import-login') {
     handlers.onImportLogin?.(agentId);
+    return;
+  }
+  if (kind === 'oauth') {
+    handlers.onOauth?.(agentId);
     return;
   }
   handlers.onAddKey?.(agentId);
@@ -256,6 +268,7 @@ export function handleTicketAddMenuSelect(
   agentId: AgentId,
   handlers: {
     onImportLogin?: (id: AgentId) => void;
+    onOauth?: (id: AgentId) => void;
     onAddKey?: (id: AgentId) => void;
     onMenuClose?: () => void;
   },
@@ -274,12 +287,14 @@ export function ticketAddDialogState(
 ): {
   addAgentId: AgentId;
   loginImportOpen: boolean;
+  oauthDialogOpen: boolean;
   apiKeyDialogOpen: boolean;
   clearEditProvider: boolean;
 } {
   return {
     addAgentId: agentId,
     loginImportOpen: kind === 'import-login',
+    oauthDialogOpen: kind === 'oauth',
     apiKeyDialogOpen: kind === 'api-key',
     clearEditProvider: kind === 'api-key',
   };

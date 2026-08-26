@@ -178,6 +178,7 @@ impl ProviderService {
 
     /// Deterministic list: [`AgentId::ALL`] order, then name, then id.
     pub fn list(&self, agent: Option<AgentId>) -> Result<Vec<Provider>> {
+        self.connections.reconcile_known_agents(agent);
         if let Some(agent) = agent {
             let _ = self.heal_secret_url_duplicates(agent);
         } else {
