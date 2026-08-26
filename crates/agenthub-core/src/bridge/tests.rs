@@ -4530,3 +4530,590 @@ async fn live_start_does_not_reuse_index_when_members_remap_same_models() {
     assert!(matches!(error, BridgeHostError::ConflictingStart));
     host.shutdown().await.expect("shutdown");
 }
+
+fn chat_ok_body() -> Value {
+    json!({
+        "id": "chat-test",
+        "model": "m1",
+        "created": 1,
+        "choices": [{ "message": { "role": "assistant", "content": "hello" }, "finish_reason": "stop" }],
+        "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 }
+    })
+}
+
+fn chat_ok() -> Response {
+    Json(chat_ok_body()).into_response()
+}
+
+type ChatCallback = Arc<dyn Fn(String, Value) -> Response + Send + Sync>;
+
+async fn callback_chat_upstream(
+    callback: ChatCallback,
+) -> (
+    u16,
+    Arc<Mutex<Vec<(String, Value)>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    async fn chat(
+        State((callback, captured)): State<(ChatCallback, Arc<Mutex<Vec<(String, Value)>>>)>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Response {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        captured
+            .lock()
+            .expect("lock")
+            .push((bearer.clone(), body.clone()));
+        callback(bearer, body)
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind scripted chat");
+    let port = listener.local_addr().expect("addr").port();
+    let state = (callback, captured.clone());
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/chat/completions", post(chat))
+                .with_state(state),
+        )
+        .await
+        .expect("serve scripted chat");
+    });
+    (port, captured, task)
+}
+
+fn p5_listing(member_id: &str, models: &[&str]) -> MemberListing {
+    MemberListing {
+        member_id: member_id.into(),
+        listed_models: models.iter().map(|model| (*model).to_string()).collect(),
+        upstream_provider: "openai".into(),
+        upstream_dialect: "generic".into(),
+        upstream_endpoint: "http://127.0.0.1/v1".into(),
+        transport_key: "openai:generic".into(),
+        snapshot_ok: true,
+    }
+}
+
+fn p5_index(members: &[(&str, &[&str])]) -> EffectiveRouteIndex {
+    let listings: Vec<MemberListing> = members
+        .iter()
+        .map(|(id, models)| p5_listing(id, models))
+        .collect();
+    index_from_member_listings("pool-v2-p5", 1, "responses", &listings, None)
+}
+
+fn p5_pool_spec(
+    profile_id: &str,
+    upstream_port: u16,
+    members: Vec<BridgeMemberSpec>,
+    index: EffectiveRouteIndex,
+) -> BridgeStartSpec {
+    spec_with_token(profile_id, 0, upstream_port, TOKEN_A)
+        .with_members(members)
+        .with_listed_models(index.list_models("responses"))
+        .with_route_index(index)
+}
+
+fn captured_tokens(captured: &Mutex<Vec<(String, Value)>>) -> Vec<String> {
+    captured
+        .lock()
+        .expect("lock")
+        .iter()
+        .map(|(bearer, _)| bearer.clone())
+        .collect()
+}
+
+async fn post_p5_model(port: u16, model: &str, stream: bool) -> reqwest::Response {
+    client()
+        .await
+        .post(format!("http://127.0.0.1:{port}/v1/responses"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .json(&json!({"model": model, "input": "hello", "stream": stream}))
+        .send()
+        .await
+        .expect("p5 request")
+}
+
+#[tokio::test]
+async fn v2_401_after_failed_reload_failovers_to_second_member() {
+    let callback: ChatCallback = Arc::new(|bearer, _body| {
+        if bearer == "Bearer token-a" {
+            StatusCode::UNAUTHORIZED.into_response()
+        } else {
+            chat_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let index = p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]);
+    let status = host
+        .start(p5_pool_spec(
+            "p5-401-failover",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            index,
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bodies: Vec<Value> = captured
+        .lock()
+        .expect("lock")
+        .iter()
+        .map(|(_, body)| body.clone())
+        .collect();
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned(), "Bearer token-b".to_owned()]
+    );
+    assert_eq!(bodies.len(), 2);
+    assert_eq!(bodies[0], bodies[1], "original body must be re-prepared");
+    captured.lock().expect("lock").clear();
+    let second = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-b".to_owned()],
+        "A stays isolated after failed 401 reload"
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn v2_concurrent_401_reload_is_singleflight() {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_cb = hits.clone();
+    let reload: UpstreamAuthReload = Arc::new(move || {
+        hits_cb.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(80));
+        Some("rotated-token".into())
+    });
+    let mut member = pool_member("acc-a", "old-token");
+    member.reload = Some(reload);
+    let callback: ChatCallback = Arc::new(|bearer, _body| {
+        if bearer == "Bearer rotated-token" {
+            chat_ok()
+        } else {
+            StatusCode::UNAUTHORIZED.into_response()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let index = p5_index(&[("acc-a", &["m1"][..])]);
+    let status = host
+        .start(p5_pool_spec(
+            "p5-401-singleflight",
+            upstream_port,
+            vec![member],
+            index,
+        ))
+        .await
+        .expect("start");
+    let port = status.port;
+    let (left, right) = tokio::join!(
+        post_p5_model(port, "m1", false),
+        post_p5_model(port, "m1", false)
+    );
+    assert_eq!(left.status(), StatusCode::OK);
+    assert_eq!(right.status(), StatusCode::OK);
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+    let tokens = captured_tokens(&captured);
+    assert!(tokens.iter().any(|token| token == "Bearer old-token"));
+    assert!(tokens.iter().any(|token| token == "Bearer rotated-token"));
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn v2_400_does_not_switch_members() {
+    let callback: ChatCallback = Arc::new(|bearer, _body| {
+        if bearer == "Bearer token-a" {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": {"message": "bad schema"}})),
+            )
+                .into_response()
+        } else {
+            chat_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p5_pool_spec(
+            "p5-400-no-switch",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "invalid_request");
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned()]
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn v2_entitlement_excludes_member_for_model_not_account() {
+    let callback: ChatCallback = Arc::new(|bearer, body| {
+        let model = body.get("model").and_then(Value::as_str).unwrap_or("");
+        if bearer == "Bearer token-a" && model == "m1" {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "error": {
+                        "code": "model_not_found",
+                        "message": "The model does not exist or you do not have access to it."
+                    }
+                })),
+            )
+                .into_response()
+        } else if bearer == "Bearer token-a" || bearer == "Bearer token-b" {
+            chat_ok()
+        } else {
+            StatusCode::UNAUTHORIZED.into_response()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p5_pool_spec(
+            "p5-entitlement",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            p5_index(&[("acc-a", &["m1", "m2"][..]), ("acc-b", &["m1"][..])]),
+        ))
+        .await
+        .expect("start");
+    let first = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned(), "Bearer token-b".to_owned()]
+    );
+    captured.lock().expect("lock").clear();
+    let second = post_p5_model(status.port, "m2", false).await;
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned()],
+        "A must still serve other models and must not be NeedsLogin"
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn v2_entitlement_403_matches_404_scope() {
+    let callback: ChatCallback = Arc::new(|bearer, _body| {
+        if bearer == "Bearer token-a" {
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "error": {
+                        "code": "model_not_found",
+                        "message": "The model does not exist or you do not have access to it."
+                    }
+                })),
+            )
+                .into_response()
+        } else {
+            chat_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p5_pool_spec(
+            "p5-entitlement-403",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned(), "Bearer token-b".to_owned()]
+    );
+    captured.lock().expect("lock").clear();
+    let again = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(again.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned(), "Bearer token-b".to_owned()],
+        "entitlement is this-request only; A is not isolated"
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn v2_429_cools_member_and_keeps_models_catalog() {
+    let callback: ChatCallback = Arc::new(|bearer, _body| {
+        if bearer == "Bearer token-a" {
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(header::RETRY_AFTER, "1")],
+                Json(json!({"error": {"message": "rate limited"}})),
+            )
+                .into_response()
+        } else {
+            chat_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p5_pool_spec(
+            "p5-429-cooldown",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+        ))
+        .await
+        .expect("start");
+    let first = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned(), "Bearer token-b".to_owned()]
+    );
+    captured.lock().expect("lock").clear();
+    let second = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-b".to_owned()],
+        "A stays in cooldown"
+    );
+    let listed = client()
+        .await
+        .get(format!("http://127.0.0.1:{}/v1/models", status.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .send()
+        .await
+        .expect("models")
+        .json::<Value>()
+        .await
+        .expect("models json");
+    let ids: Vec<&str> = listed["data"]
+        .as_array()
+        .expect("data")
+        .iter()
+        .filter_map(|row| row["id"].as_str())
+        .collect();
+    assert_eq!(ids, vec!["m1"], "cooldown is availability, not capability");
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn v2_5xx_failovers_before_downstream_commit() {
+    let callback: ChatCallback = Arc::new(|bearer, _body| {
+        if bearer == "Bearer token-a" {
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        } else {
+            chat_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p5_pool_spec(
+            "p5-5xx-failover",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned(), "Bearer token-b".to_owned()]
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn v2_does_not_replay_after_first_sse_byte() {
+    let callback: ChatCallback = Arc::new(|bearer, _body| {
+        if bearer == "Bearer token-a" {
+            (
+                [(header::CONTENT_TYPE, "text/event-stream")],
+                Body::from(
+                    "data: {\"id\":\"chat-stream\",\"model\":\"m1\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+                ),
+            )
+                .into_response()
+        } else {
+            chat_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p5_pool_spec(
+            "p5-sse-committed",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", true).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await.expect("sse");
+    assert!(body.contains("hi") || body.contains("response."));
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned()],
+        "must not replay onto B after the first downstream byte"
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn v2_pool_exhausted_when_both_members_fail() {
+    let callback: ChatCallback =
+        Arc::new(|_bearer, _body| StatusCode::UNAUTHORIZED.into_response());
+    let (upstream_port, _captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p5_pool_spec(
+            "p5-exhausted-401",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "pool_exhausted");
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn v2_pool_exhausted_includes_retry_after_from_cooldown() {
+    let callback: ChatCallback = Arc::new(|_bearer, _body| {
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, "1")],
+            Json(json!({"error": {"message": "rate limited"}})),
+        )
+            .into_response()
+    });
+    let (upstream_port, _captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p5_pool_spec(
+            "p5-exhausted-429",
+            upstream_port,
+            vec![
+                pool_member("acc-a", "token-a"),
+                pool_member("acc-b", "token-b"),
+            ],
+            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let retry_after = response
+        .headers()
+        .get(header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "pool_exhausted");
+    assert_eq!(retry_after.as_deref(), Some("1"));
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn v1_without_index_does_not_enter_pool_exhausted() {
+    let callback: ChatCallback = Arc::new(|bearer, _body| {
+        if bearer == "Bearer token-a" {
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        } else {
+            chat_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            spec_with_token("p5-v1-no-index", 0, upstream_port, TOKEN_A)
+                .with_members(vec![
+                    pool_member("acc-a", "token-a"),
+                    pool_member("acc-b", "token-b"),
+                ])
+                .with_multi_account(true)
+                .with_listed_models(vec!["m1".into()]),
+        )
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "upstream_error");
+    assert_ne!(body["error"]["code"], "pool_exhausted");
+    assert_eq!(
+        captured_tokens(&captured),
+        vec!["Bearer token-a".to_owned()],
+        "v1 must not failover on 5xx"
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}

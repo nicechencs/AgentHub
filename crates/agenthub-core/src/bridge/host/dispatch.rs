@@ -15,9 +15,10 @@ use super::stream::{
 };
 use super::surface::DownstreamSurface;
 use super::transport::{send_upstream, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome};
-use super::upstream::join_upstream;
+use super::upstream::{join_upstream, pool_exhausted_response};
 use super::UPSTREAM_NON_STREAM_TIMEOUT;
 use crate::bridge::account::PickedMember;
+use crate::bridge::route_index::DispatchCandidate;
 
 pub(super) async fn handle_conversation(
     surface: DownstreamSurface,
@@ -62,11 +63,12 @@ pub(super) async fn handle_conversation(
         .body
         .get("model")
         .and_then(|value| value.as_str())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_owned();
     let mut resolver_candidates = None;
     if let Some(index) = &admitted.state.route_index {
         let endpoint = DownstreamSurface::endpoint_key(admitted.state.upstream.local_surface);
-        match index.resolve(endpoint, model) {
+        match index.resolve(endpoint, &model) {
             Ok(candidates) if !candidates.is_empty() => {
                 resolver_candidates = Some(candidates);
             }
@@ -90,7 +92,7 @@ pub(super) async fn handle_conversation(
             }
         }
     } else {
-        match gateway.switch_edge_for_model(&admitted.state, model) {
+        match gateway.switch_edge_for_model(&admitted.state, &model) {
             ModelSwitchOutcome::Stay => {}
             ModelSwitchOutcome::Switched(mut switched) => {
                 tracing::info!(
@@ -111,7 +113,7 @@ pub(super) async fn handle_conversation(
                     .state
                     .listed_models
                     .iter()
-                    .any(|item| crate::models::listed_model_matches(item, model));
+                    .any(|item| crate::models::listed_model_matches(item, &model));
                 let listed_restricted = !admitted.state.listed_models.is_empty();
                 let code = if listed_restricted && !listed_hit && !model.is_empty() {
                     "listed_models_reject"
@@ -139,15 +141,15 @@ pub(super) async fn handle_conversation(
         }
     }
     let Some(member) = (match &resolver_candidates {
-        Some(candidates) => {
-            admitted
-                .state
-                .account_picker
-                .pick_from_candidates(candidates, None, &[])
-        }
+        Some(candidates) => admitted.state.pick_v2(candidates, &model, &[]),
         None => admitted.state.account_picker.pick_new(),
     }) else {
-        return no_eligible_member(&admitted.state, &admitted.request_id, admitted.started);
+        return no_eligible_member(
+            &admitted.state,
+            &admitted.request_id,
+            admitted.started,
+            &model,
+        );
     };
     admitted.member = Some(member);
     let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
@@ -163,10 +165,37 @@ pub(super) async fn handle_conversation(
         to = prepared.path,
         "downstream surface converted to upstream path"
     );
-    forward_upstream(surface, admitted, channel, prepared).await
+    forward_upstream(
+        surface,
+        admitted,
+        channel,
+        prepared,
+        resolver_candidates,
+        model,
+    )
+    .await
 }
 
-fn no_eligible_member(state: &EdgeState, request_id: &str, started: Instant) -> Response {
+fn no_eligible_member(
+    state: &EdgeState,
+    request_id: &str,
+    started: Instant,
+    model: &str,
+) -> Response {
+    if state.route_index.is_some() {
+        tracing::warn!(
+            target: "core.adapter",
+            profile_id = %state.profile_id,
+            request_id = %request_id,
+            op = "upstream",
+            code = "pool_exhausted",
+            status = 503_u16,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "v2 route pool has no eligible member"
+        );
+        state.record_upstream_failure();
+        return pool_exhausted_response(state.account_picker.soonest_retry_after(model));
+    }
     tracing::warn!(
         target: "core.adapter",
         profile_id = %state.profile_id,
@@ -191,6 +220,8 @@ async fn forward_upstream(
     admitted: AdmittedRequest,
     channel: UpstreamChannel,
     prepared: UpstreamPrepare,
+    candidates: Option<Vec<DispatchCandidate>>,
+    public_model: String,
 ) -> Response {
     let AdmittedRequest {
         state,
@@ -223,6 +254,8 @@ async fn forward_upstream(
         body,
         cache_seed.as_deref(),
         member,
+        candidates.as_deref(),
+        &public_model,
     )
     .await
     {
