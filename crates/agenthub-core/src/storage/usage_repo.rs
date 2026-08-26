@@ -135,7 +135,7 @@ impl UsageRepo {
                        input_tokens, output_tokens, cache_tokens,
                        cost_usd, session_id, ts, raw_hash
                 FROM usage_records
-                WHERE ts >= datetime('now', ?1)
+                WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#,
             );
             let day_arg = format!("-{days} days");
@@ -166,7 +166,7 @@ impl UsageRepo {
             let mut stmt = conn.prepare(
                 r#"
                 SELECT DISTINCT model FROM usage_records
-                WHERE ts >= datetime('now', ?1)
+                WHERE unixepoch(ts) >= unixepoch('now', ?1)
                   AND (input_tokens + output_tokens + cache_tokens) > 0
                 ORDER BY model
                 "#,
@@ -242,10 +242,11 @@ impl UsageRepo {
 
     /// Daily token trend bucketed by **local calendar day**.
     ///
-    /// Look-back matches `overview` / `query`: rolling `datetime('now', '-N days')`,
-    /// not local midnight of `today - (days - 1)`. When `since` is present it is
-    /// AND-ed (dashboard "today" passes local midnight). Cards stay rolling; the
-    /// chart only rebuckets included rows into local `YYYY-MM-DD`.
+    /// Look-back matches `overview` / `query`: rolling `unixepoch('now', '-N days')`
+    /// so RFC3339 (`T` / `Z` / offset) and SQLite datetime strings compare as
+    /// instants. When `since` is present it is AND-ed (dashboard "today" passes
+    /// local midnight). Cards stay rolling; the chart only rebuckets included
+    /// rows into local `YYYY-MM-DD`.
     pub fn trend(
         &self,
         days: u32,
@@ -259,9 +260,9 @@ impl UsageRepo {
             let mut sql = String::from(
                 r#"
                     SELECT ts, agent_id,
-                           SUM(input_tokens + output_tokens) AS tokens
+                           SUM(input_tokens + cache_tokens + output_tokens) AS tokens
                     FROM usage_records
-                    WHERE ts >= datetime('now', ?1)
+                    WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#,
             );
             let day_arg = format!("-{days} days");
@@ -321,7 +322,7 @@ impl UsageRepo {
                         COALESCE(SUM(cache_tokens), 0),
                         COALESCE(SUM(COALESCE(cost_usd, 0)), 0)
                     FROM usage_records
-                    WHERE ts >= datetime('now', ?1)
+                    WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#,
             );
             let mut metrics_args: Vec<Box<dyn rusqlite::types::ToSql>> =
@@ -354,7 +355,7 @@ impl UsageRepo {
                            COALESCE(SUM(output_tokens), 0),
                            COALESCE(SUM(cache_tokens), 0)
                     FROM usage_records
-                    WHERE ts >= datetime('now', ?1)
+                    WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#
             );
             let mut dist_args: Vec<Box<dyn rusqlite::types::ToSql>> =
@@ -390,7 +391,7 @@ impl UsageRepo {
             let mut models_sql = String::from(
                 r#"
                     SELECT DISTINCT model FROM usage_records
-                    WHERE ts >= datetime('now', ?1)
+                    WHERE unixepoch(ts) >= unixepoch('now', ?1)
                       AND model IS NOT NULL AND model != ''
                 "#,
             );
@@ -636,19 +637,17 @@ fn local_day_bucket(ts: &str) -> Option<String> {
     })
 }
 
-/// Appends a `ts >= since` filter comparing RFC3339 strings lexically.
+/// Appends a `since` lower bound compared as instants (`unixepoch`).
 ///
-/// Premise: every collector writes `ts` in the same normalized RFC3339/UTC
-/// format (same offset, same fractional-second precision), so lexicographic
-/// order matches chronological order. Mixed formats (e.g. differing UTC
-/// offsets or precision) can produce boundary inaccuracies at day edges.
+/// `since` is RFC3339 from the dashboard (local midnight). Stored `ts` may be
+/// `Z`, `+00:00`, or log-native; lexical `T` vs space is not used.
 fn push_since_filter(
     sql: &mut String,
     args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
     since: Option<&str>,
 ) {
     if let Some(since) = since.filter(|s| !s.is_empty()) {
-        sql.push_str(" AND ts >= ?");
+        sql.push_str(" AND unixepoch(ts) >= unixepoch(?)");
         args.push(Box::new(since.to_string()));
     }
 }

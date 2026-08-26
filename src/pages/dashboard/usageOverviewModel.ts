@@ -64,6 +64,7 @@ export function overviewToUsageMetrics(metrics: UsageOverviewMetrics): UsageMetr
     cacheRead: metrics.cache,
     fullInput,
     cost: metrics.costUsd,
+    // Stored `cache` is create+read. This is cache share of the prompt, not hit rate.
     cacheHitPct: fullInput > 0 ? Math.round((metrics.cache / fullInput) * 100) : null,
   };
 }

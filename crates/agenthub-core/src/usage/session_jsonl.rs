@@ -1414,12 +1414,14 @@ pub(crate) fn extract_codex(
     }
 
     // Only event_msg / token_count carries usage (session path).
+    // Do not fall back to extract_claude_like: that path does not peel
+    // OpenAI-style cached_input_tokens out of input, so generic `usage`
+    // rows would double-count cache in totals and cost.
     let is_token_count = v.get("type").and_then(|t| t.as_str()) == Some("event_msg")
         && v.pointer("/payload/type").and_then(|t| t.as_str()) == Some("token_count");
 
     if !is_token_count {
-        // Fallback to generic usage object if present (headless / atypical logs).
-        return extract_claude_like(AgentId::Codex, line, session_id);
+        return Ok(None);
     }
 
     let info = v.pointer("/payload/info");
@@ -1670,6 +1672,15 @@ mod tests {
         assert_eq!(ev.output_tokens, 125);
         assert_eq!(ev.cache_read_tokens, 250);
         assert_eq!(ev.model, "gpt-5.2-codex");
+    }
+
+    #[test]
+    fn codex_skips_generic_usage_that_would_not_peel_cache() {
+        let mut state = CodexParseState::default();
+        let line = r#"{"timestamp":"2026-05-13T09:01:00.000Z","type":"response","usage":{"input_tokens":1000,"cached_input_tokens":250,"output_tokens":10}}"#;
+        assert!(extract_codex(line, Some("s1"), &mut state)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
