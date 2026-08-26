@@ -1,5 +1,5 @@
 //! RoutePool control plane. Gated by `feature.route_pool_v2` (fail-closed).
-//! Runtime still uses the lead member until a start spec carries an index.
+//! `feature.route_index_v2` attaches the shared resolver on enrolled start.
 //! UI stays hidden.
 
 use std::collections::HashMap;
@@ -7,11 +7,13 @@ use std::collections::HashMap;
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::bridge::BridgeRuntimeHost;
 use crate::error::{AppError, Result};
 use crate::models::{
     choose_default_pool_id, feature_flag_enabled, generate_hub_token, AdapterProfile,
     AdapterProfileFilter, AdapterRoute, AdapterSourceKind, AgentId, RouteDownstreamDialect,
-    RouteDownstreamSurface, RouteMember, RoutePool, RouteSchedulePolicy, FEATURE_ROUTE_POOL_V2,
+    RouteDownstreamSurface, RouteMember, RoutePool, RouteSchedulePolicy, FEATURE_ROUTE_INDEX_V2,
+    FEATURE_ROUTE_POOL_V2,
 };
 use crate::storage::{binding_get_conn, AdapterProfileRepo, Database, RoutePoolRepo};
 
@@ -37,6 +39,19 @@ impl RoutePoolService {
         Ok(feature_flag_enabled(
             self.db.get_setting(FEATURE_ROUTE_POOL_V2)?.as_deref(),
         ))
+    }
+
+    /// `feature.route_index_v2` (and persistence) must both be on. One flag
+    /// still controls dispatch and `/models` together.
+    pub fn index_enabled(&self) -> bool {
+        self.enabled().unwrap_or(false)
+            && feature_flag_enabled(
+                self.db
+                    .get_setting(FEATURE_ROUTE_INDEX_V2)
+                    .ok()
+                    .flatten()
+                    .as_deref(),
+            )
     }
 
     pub fn get(&self, pool_id: &str) -> Result<Option<RoutePool>> {
@@ -131,7 +146,49 @@ impl RoutePoolService {
     /// Occupancy failure must not call this; the historical client projection stays.
     pub fn enroll_v2(&self, pool_id: &str, gateway_port: u16) -> Result<RoutePool> {
         self.require_enabled()?;
+        if let Some(profile) = self.profiles.get(pool_id)? {
+            if profile.route != AdapterRoute::LocalBridge {
+                return Err(AppError::Unsupported(
+                    "native_endpoint and config_sync do not enroll into a loopback pool".into(),
+                ));
+            }
+        }
         self.pools.enroll_v2(pool_id, gateway_port, &now())
+    }
+
+    /// Bind the unified gateway first; persist enrollment only after bind.
+    /// Occupancy / bind failure leaves the pool unenrolled and does not rewrite
+    /// the client-facing port or Hub token.
+    pub async fn bind_then_enroll(
+        &self,
+        host: &BridgeRuntimeHost,
+        pool_id: &str,
+        port: u16,
+    ) -> Result<RoutePool> {
+        self.require_enabled()?;
+        let bound = host
+            .set_gateway_port(port)
+            .await
+            .map_err(|error| match error {
+                crate::bridge::BridgeHostError::Bind(io) => AppError::Io(io),
+                crate::bridge::BridgeHostError::InvalidGatewayPort => {
+                    AppError::InvalidArg("v2 gateway port must be between 1 and 65535".into())
+                }
+                other => AppError::message("adapter.bridge_start", other.to_string()),
+            })?;
+        self.enroll_v2(pool_id, bound)
+    }
+
+    /// Project this local-bridge profile to a one-member unenrolled pool.
+    /// Does not enroll v2 and never hijacks native_endpoint / config_sync.
+    pub fn ensure_legacy_pool(&self, profile: &AdapterProfile) -> Result<Option<RoutePool>> {
+        if !self.enabled()? {
+            return Ok(None);
+        }
+        if profile.route != AdapterRoute::LocalBridge {
+            return Ok(None);
+        }
+        Ok(Some(self.project_one(profile)?))
     }
 
     /// Project each old local-bridge profile to one RoutePool + lead member.

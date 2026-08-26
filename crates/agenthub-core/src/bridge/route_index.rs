@@ -160,3 +160,65 @@ impl EffectiveRouteIndex {
         models
     }
 }
+
+/// One member's listed models used to build a production index.
+///
+/// Unknown / empty ids stay out. `snapshot_ok = false` keeps that member's
+/// last successful snapshots so a partial refresh cannot empty the pool.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberListing {
+    pub member_id: String,
+    pub listed_models: Vec<String>,
+    pub upstream_provider: String,
+    pub upstream_dialect: String,
+    pub upstream_endpoint: String,
+    pub transport_key: String,
+    pub snapshot_ok: bool,
+}
+
+/// Build [`EffectiveRouteIndex`] from member mapping listings. This is the
+/// production snapshot path used by start / restore; tests must not bypass it
+/// with a hand-rolled index when asserting that path.
+pub fn index_from_member_listings(
+    route_id: impl Into<String>,
+    generation: u64,
+    endpoint: &str,
+    members: &[MemberListing],
+    prior: Option<&[MemberCapabilitySnapshot]>,
+) -> EffectiveRouteIndex {
+    let mut snapshots = Vec::new();
+    for member in members {
+        if !member.snapshot_ok {
+            if let Some(prior) = prior {
+                snapshots.extend(
+                    prior
+                        .iter()
+                        .filter(|snapshot| snapshot.member_id == member.member_id)
+                        .cloned(),
+                );
+            }
+            continue;
+        }
+        if member.member_id.trim().is_empty() {
+            continue;
+        }
+        for model in &member.listed_models {
+            let model = model.trim();
+            if model.is_empty() {
+                continue;
+            }
+            snapshots.push(MemberCapabilitySnapshot {
+                member_id: member.member_id.clone(),
+                public_model: model.to_owned(),
+                endpoint: endpoint.to_owned(),
+                upstream_provider: member.upstream_provider.clone(),
+                upstream_dialect: member.upstream_dialect.clone(),
+                upstream_model: model.to_owned(),
+                upstream_endpoint: member.upstream_endpoint.clone(),
+                transport_key: member.transport_key.clone(),
+                capability: MemberCapability::Supported,
+            });
+        }
+    }
+    EffectiveRouteIndex::build(route_id, generation, &snapshots)
+}

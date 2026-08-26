@@ -18,6 +18,10 @@ mod tests;
 /// Settings key. Absent / anything other than an explicit on-value is fail-closed.
 pub const FEATURE_ROUTE_POOL_V2: &str = "feature.route_pool_v2";
 
+/// Shared resolver + `/models` index. Off keeps lead + `switch_edge_for_model`.
+/// One flag controls both dispatch and `GET /models`.
+pub const FEATURE_ROUTE_INDEX_V2: &str = "feature.route_index_v2";
+
 pub fn feature_flag_enabled(raw: Option<&str>) -> bool {
     matches!(
         raw.map(|value| value.trim().to_ascii_lowercase())

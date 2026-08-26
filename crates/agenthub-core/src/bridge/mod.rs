@@ -17,8 +17,8 @@ pub use account::{AccountPicker, BridgeMemberSpec, MemberHealth, MemberHealthSin
 pub use host::{BridgeHostError, BridgeRuntimeHost};
 pub use request_fsm::{AccountSwitchGate, RequestDecision, RequestFsm, SwitchClass};
 pub use route_index::{
-    DispatchCandidate, EffectiveRouteIndex, MemberCapability, MemberCapabilitySnapshot,
-    RouteResolveError,
+    index_from_member_listings, DispatchCandidate, EffectiveRouteIndex, MemberCapability,
+    MemberCapabilitySnapshot, MemberListing, RouteResolveError,
 };
 pub use runtime::{
     BridgeLocalSurface, BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec,
