@@ -70,6 +70,41 @@ fn event_missing_pricing_does_not_fire_when_ticks_are_absent_but_table_matches()
     assert!(!event_missing_pricing(&ev));
 }
 
+fn codex_event(model: &str, ts: &str) -> ParsedUsageEvent {
+    ParsedUsageEvent {
+        agent_id: AgentId::Codex,
+        model: model.into(),
+        input_tokens: 100_000,
+        output_tokens: 0,
+        cache_creation_tokens: 0,
+        cache_creation_1h_tokens: 0,
+        cache_read_tokens: 0,
+        session_id: Some("sess".into()),
+        ts: ts.into(),
+        raw_hash: "h".into(),
+        cost_usd: None,
+        fast: false,
+    }
+}
+
+#[test]
+fn auto_review_uses_published_backend_and_is_not_missing_pricing() {
+    let luna = codex_event("gpt-5.6-luna", "2026-08-26T00:00:00Z");
+    let review = codex_event("codex-auto-review", "2026-08-26T00:00:00Z");
+    let old = codex_event("codex-auto-review", "2026-07-01T00:00:00Z");
+    assert!(!event_missing_pricing(&review));
+    assert!(!event_missing_pricing(&old));
+    let luna_cost = cost_for_event(&luna);
+    assert!(
+        (cost_for_event(&review) - luna_cost).abs() < 1e-12,
+        "current auto-review must bill as luna"
+    );
+    assert!(
+        (cost_for_event(&old) - 0.25).abs() < 1e-9,
+        "pre-luna auto-review bills as gpt-5.4"
+    );
+}
+
 fn detect_row(agent: AgentId, installed: bool) -> DetectResult {
     DetectResult {
         agent,

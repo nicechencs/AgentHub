@@ -281,12 +281,6 @@
     "cacheCreate": 2.5,
     "cacheRead": 0.2
   },
-  "codex-auto-review": {
-    "input": 2.5,
-    "output": 15,
-    "cacheCreate": 2.5,
-    "cacheRead": 0.25
-  },
   "codex-mini-latest": {
     "input": 1.5,
     "output": 6,

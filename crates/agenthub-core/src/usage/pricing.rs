@@ -16,9 +16,15 @@
 //! `scripts/update-embedded-pricing.mjs` (manual `pnpm pricing:update` or daily CI).
 //! Runtime never fetches pricing. Local-only models live in
 //! `scripts/pricing/overrides.json`.
+//!
+//! `codex-auto-review` is a Codex log label, not a priced model. Cost lookup
+//! uses the published backend OpenAI named for that date (GPT-5.4, then
+//! GPT-5.6 Luna from 2026-07-30). The stored model id is left unchanged.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
+
+use crate::models::AgentId;
 
 /// Embedded USD-per-1M rates (same units as common public list prices).
 const EMBEDDED_PRICING_JSON: &str = include_str!("embedded-pricing.json");
@@ -222,6 +228,29 @@ pub fn estimate_cost_usd(
     )
 }
 
+/// Codex `codex-auto-review` backend switch (OpenAI, 2026-07-30): GPT-5.4 → Luna.
+const CODEX_AUTO_REVIEW_LUNA_ON: &str = "2026-07-30";
+
+/// Model id used for the pricing table. Log labels that are not priced stay
+/// on the row; only the lookup key is rewritten.
+pub fn pricing_model_for<'a>(agent: AgentId, model: &'a str, as_of: Option<&str>) -> &'a str {
+    if agent != AgentId::Codex || !model.eq_ignore_ascii_case("codex-auto-review") {
+        return model;
+    }
+    if as_of
+        .and_then(|ts| ts.get(..10))
+        .is_some_and(|d| d < CODEX_AUTO_REVIEW_LUNA_ON)
+    {
+        "gpt-5.4"
+    } else {
+        "gpt-5.6-luna"
+    }
+}
+
+pub fn has_embedded_pricing_for(agent: AgentId, model: &str, as_of: Option<&str>) -> bool {
+    has_embedded_pricing(pricing_model_for(agent, model, as_of))
+}
+
 /// Agent-aware cost estimate.
 ///
 /// All agents store **disjoint** buckets after parse:
@@ -230,18 +259,29 @@ pub fn estimate_cost_usd(
 ///
 /// Codex Fast and missing cache-read prices follow ccusage's Codex bucket.
 pub fn estimate_cost_usd_for_agent(
-    agent: crate::models::AgentId,
+    agent: AgentId,
     model: &str,
     tokens: CostTokens,
     cost_usd: Option<f64>,
 ) -> f64 {
+    estimate_cost_usd_for_agent_at(agent, model, tokens, cost_usd, None)
+}
+
+pub fn estimate_cost_usd_for_agent_at(
+    agent: AgentId,
+    model: &str,
+    tokens: CostTokens,
+    cost_usd: Option<f64>,
+    as_of: Option<&str>,
+) -> f64 {
     if let Some(usd) = cost_usd.filter(|c| c.is_finite() && *c >= 0.0) {
         return round2(usd);
     }
+    let model = pricing_model_for(agent, model, as_of);
     let Some(mut r) = table().find(model) else {
         return 0.0;
     };
-    if agent == crate::models::AgentId::Codex && !r.cache_read_explicit {
+    if agent == AgentId::Codex && !r.cache_read_explicit {
         r.cache_read = r.input;
         r.cache_read_above_200k = r.input_above_200k.or(Some(r.input));
     }
@@ -550,6 +590,61 @@ mod tests {
         // 510K context > 272K → long $0.4/$1.8/$0.04 per 1M
         // 0.01*0.4 + 0.001*1.8 + 0.5*0.04 = 0.0258
         assert!((c - 0.0258).abs() < 1e-5, "cached-heavy cost was {c}");
+    }
+
+    #[test]
+    fn auto_review_is_not_a_priced_model() {
+        assert!(!has_embedded_pricing("codex-auto-review"));
+        assert_eq!(
+            pricing_model_for(AgentId::Codex, "codex-auto-review", None),
+            "gpt-5.6-luna"
+        );
+        assert_eq!(
+            pricing_model_for(
+                AgentId::Codex,
+                "codex-auto-review",
+                Some("2026-07-29T23:59:59Z")
+            ),
+            "gpt-5.4"
+        );
+        assert_eq!(
+            pricing_model_for(
+                AgentId::Codex,
+                "codex-auto-review",
+                Some("2026-07-30T00:00:00Z")
+            ),
+            "gpt-5.6-luna"
+        );
+        assert_eq!(
+            pricing_model_for(AgentId::Codex, "gpt-5.6-sol", None),
+            "gpt-5.6-sol"
+        );
+    }
+
+    #[test]
+    fn auto_review_bills_at_published_backend_rates() {
+        // Stay under the 272K whole-request switch so this isolates the rate card.
+        let tokens = CostTokens::from_parts(100_000, 0, 0, 0);
+        let luna = estimate_cost_usd_for_agent(AgentId::Codex, "gpt-5.6-luna", tokens, None);
+        let review = estimate_cost_usd_for_agent_at(
+            AgentId::Codex,
+            "codex-auto-review",
+            tokens,
+            None,
+            Some("2026-08-26T00:00:00Z"),
+        );
+        assert!((review - luna).abs() < 1e-12, "got {review} want {luna}");
+        let old = estimate_cost_usd_for_agent_at(
+            AgentId::Codex,
+            "codex-auto-review",
+            tokens,
+            None,
+            Some("2026-07-01T00:00:00Z"),
+        );
+        let gpt54 = estimate_cost_usd_for_agent(AgentId::Codex, "gpt-5.4", tokens, None);
+        assert!((old - gpt54).abs() < 1e-12, "got {old} want {gpt54}");
+        assert!((review - 0.02).abs() < 1e-9, "luna input got {review}");
+        assert!((old - 0.25).abs() < 1e-9, "gpt-5.4 input got {old}");
     }
 
     #[test]

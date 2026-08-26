@@ -21,7 +21,8 @@ use crate::storage::{Database, UsageRepo};
 use crate::usage::grok::{grok_model_has_pricing, pricing_candidates};
 use crate::usage::session_jsonl::CollectStats;
 use crate::usage::{
-    codex_billable_tokens, estimate_cost_usd_for_agent, has_embedded_pricing, CostTokens,
+    codex_billable_tokens, estimate_cost_usd_for_agent_at, has_embedded_pricing,
+    has_embedded_pricing_for, CostTokens,
 };
 use crate::utils::redact::redact_text;
 
@@ -398,7 +399,7 @@ impl UsageService {
         let models = self.repo.distinct_models(days)?;
         Ok(models
             .into_iter()
-            .filter(|m| !has_embedded_pricing(m))
+            .filter(|m| !has_embedded_pricing_for(AgentId::Codex, m, None))
             .collect())
     }
 
@@ -422,7 +423,7 @@ impl UsageService {
                 if accounting == TokenAccounting::CodexBillable {
                     // Trust stored non-cached input; refresh cost with latest rates + Fast.
                     let (bill_in, cache_r) = codex_billable_tokens(input, cache_read);
-                    let cost = estimate_cost_usd_for_agent(
+                    let cost = estimate_cost_usd_for_agent_at(
                         agent,
                         model,
                         CostTokens {
@@ -433,6 +434,7 @@ impl UsageService {
                             fast,
                             ..CostTokens::default()
                         },
+                        None,
                         None,
                     );
                     return Some((bill_in, cost));
@@ -552,7 +554,7 @@ fn event_missing_pricing(ev: &crate::models::ParsedUsageEvent) -> bool {
     if ev.agent_id == AgentId::Grok {
         !grok_model_has_pricing(&ev.model)
     } else {
-        !has_embedded_pricing(&ev.model)
+        !has_embedded_pricing_for(ev.agent_id, &ev.model, Some(&ev.ts))
     }
 }
 
@@ -562,7 +564,7 @@ fn cost_for_event(ev: &crate::models::ParsedUsageEvent) -> f64 {
             .into_iter()
             .find(|c| has_embedded_pricing(c))
         {
-            return estimate_cost_usd_for_agent(
+            return estimate_cost_usd_for_agent_at(
                 ev.agent_id,
                 &model,
                 CostTokens {
@@ -574,10 +576,11 @@ fn cost_for_event(ev: &crate::models::ParsedUsageEvent) -> f64 {
                     fast: ev.fast,
                 },
                 None,
+                Some(&ev.ts),
             );
         }
     }
-    estimate_cost_usd_for_agent(
+    estimate_cost_usd_for_agent_at(
         ev.agent_id,
         &ev.model,
         CostTokens {
@@ -589,6 +592,7 @@ fn cost_for_event(ev: &crate::models::ParsedUsageEvent) -> f64 {
             fast: ev.fast,
         },
         ev.cost_usd,
+        Some(&ev.ts),
     )
 }
 
