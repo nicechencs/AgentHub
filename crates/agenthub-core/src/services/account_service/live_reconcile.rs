@@ -5,8 +5,8 @@ use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    Account, AccountKind, AdapterProfile, AdapterProfileFilter, AgentId, BackupKind, Capability,
-    LiveAccount, Provider,
+    Account, AccountKind, AdapterProfile, AdapterProfileFilter, AgentId, AuthState, BackupKind,
+    Capability, LiveAccount, Provider,
 };
 use crate::services::adapter_projection::{
     classify_account_live, leftover_live_flag, should_skip_live_reconcile, LiveOrigin,
@@ -498,6 +498,25 @@ impl AccountService {
         leftover_live_flag(agent) || self.live_is_adapter_projection(agent).unwrap_or(false)
     }
 
+    /// Read-only live authentication status, including adapter-projection presence.
+    pub fn probe_live_auth(&self, agent: AgentId) -> Result<AuthState> {
+        let adapter = self.registry.get(agent).ok_or_else(|| {
+            AppError::NotFound(format!("adapter not registered: {}", agent.as_str()))
+        })?;
+        let mut state = adapter.read_auth()?;
+        if self.live_is_adapter_projection(agent).unwrap_or(false)
+            && !state
+                .also_present
+                .iter()
+                .any(|kind| kind == crate::services::ADAPTER_PROJECTION_KIND)
+        {
+            state
+                .also_present
+                .push(crate::services::ADAPTER_PROJECTION_KIND.to_owned());
+        }
+        Ok(state)
+    }
+
     pub fn live_is_adapter_projection(&self, agent: AgentId) -> Result<bool> {
         let (profiles, providers, leftover) = self.projection_snapshots(agent)?;
         let Ok(adapter) = self.adapter(agent) else {
@@ -722,15 +741,13 @@ fn live_is_api_key_shaped(live: &LiveAccount) -> bool {
         .is_some_and(|key| !key.is_empty());
     let tokens = body.get("tokens");
     let has_oauth = tokens.is_some_and(|tokens| {
-        ["access_token", "refresh_token"]
-            .iter()
-            .any(|field| {
-                tokens
-                    .get(*field)
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .is_some_and(|token| !token.is_empty())
-            })
+        ["access_token", "refresh_token"].iter().any(|field| {
+            tokens
+                .get(*field)
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .is_some_and(|token| !token.is_empty())
+        })
     });
     has_key && !has_oauth
 }

@@ -286,7 +286,7 @@ fn spawn_tray_bridge_batch<R: Runtime>(app: AppHandle<R>, start: bool) {
         };
 
         let profiles = match with_hub_blocking(hub, move |hub| {
-            hub.adapter_apply
+            hub.adapter_apply()
                 .list_filtered(&AdapterProfileFilter {
                     route: Some(AdapterRoute::LocalBridge),
                     ..AdapterProfileFilter::default()
@@ -356,7 +356,7 @@ fn current_tray_language<R: Runtime>(app: &AppHandle<R>) -> TrayUiLanguage {
             state
                 .hub()
                 .ok()
-                .and_then(|hub| hub.settings.get("language").ok().flatten())
+                .and_then(|hub| hub.settings().get("language").ok().flatten())
         })
         .unwrap_or_default();
     parse_tray_language(&raw)

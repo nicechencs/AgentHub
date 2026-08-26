@@ -22,7 +22,7 @@ fn require_agent(agent_filter: Option<&str>) -> Result<AgentId> {
 }
 
 pub fn list(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
-    let items = hub.backups.list(parse_agent_filter(agent_filter)?)?;
+    let items = hub.backups().list(parse_agent_filter(agent_filter)?)?;
     emit_list(&items, format)
 }
 
@@ -33,7 +33,7 @@ pub fn create(
     note: Option<&str>,
 ) -> Result<()> {
     let record = hub
-        .backups
+        .backups()
         .snapshot(require_agent(agent_filter)?, BackupKind::Manual, note)?;
     emit_record(&record, format)
 }
@@ -43,7 +43,7 @@ pub fn restore(hub: &AgentHub, id: &str, format: OutputFormat, assume_yes: bool)
         &format!("Restore backup {id}? Current live files will be backed up first."),
         assume_yes,
     )?;
-    let result = hub.backups.restore(id)?;
+    let result = hub.backups().restore(id)?;
     emit_restore(&result, format)
 }
 
@@ -52,7 +52,7 @@ pub fn delete(hub: &AgentHub, id: &str, format: OutputFormat, assume_yes: bool) 
         &format!("Delete backup {id}? This removes its snapshot files."),
         assume_yes,
     )?;
-    hub.backups.delete(id)?;
+    hub.backups().delete(id)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&serde_json::json!({ "deleted": id })),

@@ -28,11 +28,11 @@ struct SkillsFsChanged {
 pub fn collect_skill_watch_roots(hub: &AgentHub) -> Vec<PathBuf> {
     let mut roots = Vec::new();
 
-    let shared = hub.skills.source_root().to_path_buf();
+    let shared = hub.skills().source_root().to_path_buf();
     push_watch_path(&mut roots, shared);
 
     for id in AgentId::ALL {
-        let Some(adapter) = hub.skills.registry().get(id) else {
+        let Some(adapter) = hub.skills().registry().get(id) else {
             continue;
         };
         if let Some(dir) = adapter.skills_dir() {
@@ -164,7 +164,7 @@ fn run_watch_loop(
                     pending = false;
                     // Drop process list cache before GUI reloads so the next
                     // list_skills / list_installed does not serve a stale matrix.
-                    hub.skills.invalidate_list_cache();
+                    hub.skills().invalidate_list_cache();
                     let payload = SkillsFsChanged {
                         source: "fs",
                         roots: roots_count,

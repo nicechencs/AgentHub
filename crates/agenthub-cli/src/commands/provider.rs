@@ -62,7 +62,7 @@ pub fn presets(format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
 /// List persisted L1 providers (redacted JSON; table: agent/id/name/current).
 pub fn list(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
     let filter = resolve_agent_filter(agent_filter)?;
-    let items = hub.providers.list(filter)?;
+    let items = hub.providers().list(filter)?;
     emit_provider_list(&items, format)
 }
 
@@ -74,7 +74,7 @@ pub fn show(
     agent_filter: Option<&str>,
 ) -> Result<()> {
     let filter = resolve_agent_filter(agent_filter)?;
-    let item = hub.providers.get(id_or_name, filter)?;
+    let item = hub.providers().get(id_or_name, filter)?;
     emit_provider_show(&item, format)
 }
 
@@ -94,7 +94,7 @@ pub fn import_live(
         ),
         assume_yes,
     )?;
-    let item = hub.providers.import_live(agent, name)?;
+    let item = hub.providers().import_live(agent, name)?;
     emit_provider_show(&item, format)
 }
 
@@ -108,7 +108,7 @@ pub fn switch(
 ) -> Result<()> {
     let agent = require_agent(agent_filter, "switch")?;
     confirm(&switch_confirm_prompt(hub, agent, id_or_name)?, assume_yes)?;
-    let result = hub.providers.switch(id_or_name, agent)?;
+    let result = hub.providers().switch(id_or_name, agent)?;
     emit_provider_switch(&result, format)
 }
 
@@ -127,7 +127,7 @@ pub fn undo(
         ),
         assume_yes,
     )?;
-    let undone = hub.providers.undo_switch(agent)?;
+    let undone = hub.providers().undo_switch(agent)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&serde_json::json!({
@@ -153,7 +153,7 @@ pub fn test_latency(
     agent_filter: Option<&str>,
 ) -> Result<()> {
     let agent = require_agent(agent_filter, "test-latency")?;
-    let ms = hub.providers.test_latency(agent, id_or_name)?;
+    let ms = hub.providers().test_latency(agent, id_or_name)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&serde_json::json!({
@@ -174,7 +174,7 @@ pub fn switch_confirm_prompt(
     id_or_name: &str,
 ) -> Result<String> {
     let current = hub
-        .providers
+        .providers()
         .list(Some(agent))?
         .into_iter()
         .find(|p| p.is_current);
@@ -184,7 +184,7 @@ pub fn switch_confirm_prompt(
     };
     let backup = format!(
         "backup: {}",
-        hub.backups
+        hub.backups()
             .backups_root()
             .join("live")
             .join(agent.as_str())

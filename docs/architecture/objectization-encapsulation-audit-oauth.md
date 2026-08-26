@@ -33,6 +33,7 @@ OAuth 共 12 个 `.rs` 文件逐项检查：`mod.rs`、`identity.rs`、`provider
 ### O-70｜OAuth 流程枚举混淆“支持的流程”和“暂不可用流程”
 
 - **位置：** `crates/agenthub-core/src/oauth/catalog.rs:18-285`
+- **状态：已处理**
 - **问题：** `github-copilot`、`kimi-coding` 被标为 DeviceCode，但对应流程实际未实现；同一枚举同时表达流程类型和产品可用性。
 - **建议：** 将“支持的流程”与“未实现/被阻断原因”建模为不同字段或状态对象。
 - **影响：** UI 或调用方可能把不可用项当成可执行的设备码登录。
@@ -61,6 +62,7 @@ OAuth 共 12 个 `.rs` 文件逐项检查：`mod.rs`、`identity.rs`、`provider
 ### O-74｜PKCE 值对象字段公开可变
 
 - **位置：** `crates/agenthub-core/src/oauth/pkce.rs:9-35`
+- **状态：已处理**
 - **问题：** `PkcePair` 职责单一，但字段公开，外部可以绕过 verifier/challenge 配对不变量。
 - **建议：** 使用私有字段和只读访问方法，构造时一次性生成配对值。
 - **影响：** 当前风险低，但值对象不变量可被外部破坏。

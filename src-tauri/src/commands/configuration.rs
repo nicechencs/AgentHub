@@ -21,7 +21,7 @@ pub async fn get_agent_config_schema(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     with_hub_blocking(hub, move |hub| {
-        hub.configuration
+        hub.configuration()
             .schema(agent)
             .map_err(|e| map_err_string("get_agent_config_schema", e))
     })
@@ -37,7 +37,7 @@ pub async fn read_agent_config(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     with_hub_blocking(hub, move |hub| {
-        hub.configuration
+        hub.configuration()
             .read(agent)
             .map_err(|e| map_err_string("read_agent_config", e))
     })
@@ -54,7 +54,7 @@ pub async fn validate_agent_config(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     with_hub_blocking(hub, move |hub| {
-        hub.configuration
+        hub.configuration()
             .validate_value(agent, values)
             .map_err(|e| map_err_string("validate_agent_config", e))
     })
@@ -72,7 +72,7 @@ pub async fn plan_agent_config(
     let agent = parse_agent(&agent_id)?;
     with_hub_blocking(hub, move |hub| {
         let map = value_to_map(values)?;
-        hub.configuration
+        hub.configuration()
             .plan_apply(agent, &map)
             .map_err(|e| map_err_string("plan_agent_config", e))
     })
@@ -90,7 +90,7 @@ pub async fn apply_agent_config(
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        hub.configuration
+        hub.configuration()
             .apply_value(agent, values)
             .map_err(|e| map_err_string("apply_agent_config", e))
     })
@@ -108,7 +108,7 @@ pub async fn materialize_agent_config(
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     with_hub_blocking(hub, move |hub| {
-        hub.configuration
+        hub.configuration()
             .materialize_settings_config_value(agent, values, base_raw)
             .map_err(|e| map_err_string("materialize_agent_config", e))
     })

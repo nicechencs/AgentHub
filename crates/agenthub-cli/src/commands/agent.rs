@@ -165,7 +165,7 @@ pub fn list(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) ->
         None => None,
     };
 
-    let mut agents = hub.agents.detect_all();
+    let mut agents = hub.agents().detect_all();
     if let Some(id) = filter {
         agents.retain(|a| a.agent == id);
     }

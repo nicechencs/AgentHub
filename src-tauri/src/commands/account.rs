@@ -124,7 +124,7 @@ pub async fn undo_switch_account(
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        hub.accounts
+        hub.accounts()
             .undo_switch(agent)
             .map_err(|e| map_err_string("undo_switch_account", e))
     })
@@ -158,7 +158,7 @@ pub async fn refresh_account_token(
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        hub.accounts
+        hub.accounts()
             .refresh_token(&id_or_label, agent)
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("refresh_account_token", e))
@@ -177,7 +177,7 @@ pub async fn refresh_account_quota(
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        hub.accounts
+        hub.accounts()
             .refresh_quota(&id_or_label, agent)
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("refresh_account_quota", e))
@@ -192,7 +192,7 @@ fn list_accounts_inner(hub: &AgentHub, agent_id: Option<&str>) -> Result<Vec<Acc
         Some(s) => Some(parse_agent(s)?),
     };
     let items = hub
-        .accounts
+        .accounts()
         .list_pool(filter)
         .map_err(|e| map_err_string("list_accounts", e))?;
     Ok(items.into_iter().map(|a| a.redacted()).collect())
@@ -213,7 +213,7 @@ pub async fn reconcile_accounts(
             Some(s) => Some(parse_agent(s)?),
         };
         let items = hub
-            .accounts
+            .accounts()
             .list(filter)
             .map_err(|e| map_err_string("reconcile_accounts", e))?;
         Ok(items.into_iter().map(|a| a.redacted()).collect())
@@ -222,28 +222,9 @@ pub async fn reconcile_accounts(
 }
 
 fn probe_live_auth_inner(hub: &AgentHub, agent_id: &str) -> Result<AuthState, String> {
-    let agent = parse_agent(agent_id)?;
-    let adapter = hub
-        .registry()
-        .get(agent)
-        .ok_or_else(|| format!("adapter not registered: {}", agent.as_str()))?;
-    let mut state = adapter
-        .read_auth()
-        .map_err(|e| map_err_string("probe_live_auth", e))?;
-    if hub
-        .accounts
-        .live_is_adapter_projection(agent)
-        .unwrap_or(false)
-        && !state
-            .also_present
-            .iter()
-            .any(|kind| kind == agenthub_core::services::ADAPTER_PROJECTION_KIND)
-    {
-        state
-            .also_present
-            .push(agenthub_core::services::ADAPTER_PROJECTION_KIND.to_owned());
-    }
-    Ok(state)
+    hub.accounts()
+        .probe_live_auth(parse_agent(agent_id)?)
+        .map_err(|e| map_err_string("probe_live_auth", e))
 }
 
 fn import_account_live_inner(
@@ -253,7 +234,7 @@ fn import_account_live_inner(
 ) -> Result<Account, String> {
     let agent = parse_agent(agent_id)?;
     let item = hub
-        .accounts
+        .accounts()
         .import_live(agent, name)
         .map_err(|e| map_err_string("import_account_live", e))?;
     Ok(item.redacted())
@@ -281,7 +262,7 @@ fn add_api_key_account_inner_with_marker(
 ) -> Result<Account, String> {
     let agent = parse_agent(agent_id)?;
     let item = hub
-        .accounts
+        .accounts()
         .add_api_key_with_env_and_marker(agent, label, key, env_key, product_marker)
         .map_err(|e| map_err_string("add_api_key_account", e))?;
     Ok(item.redacted())
@@ -296,7 +277,7 @@ fn update_api_key_account_inner(
 ) -> Result<Account, String> {
     let agent = parse_agent(agent_id)?;
     let item = hub
-        .accounts
+        .accounts()
         .update_api_key(agent, id_or_label, label, key)
         .map_err(|e| map_err_string("update_api_key_account", e))?;
     Ok(item.redacted())
@@ -309,7 +290,7 @@ fn switch_account_inner(
 ) -> Result<AccountSwitchResult, String> {
     let agent = parse_agent(agent_id)?;
     let result = hub
-        .accounts
+        .accounts()
         .switch(id_or_label, agent)
         .map_err(|e| map_err_string("switch_account", e))?;
     Ok(result.redacted())
@@ -317,7 +298,7 @@ fn switch_account_inner(
 
 fn delete_account_inner(hub: &AgentHub, agent_id: &str, id_or_label: &str) -> Result<(), String> {
     let agent = parse_agent(agent_id)?;
-    hub.accounts
+    hub.accounts()
         .delete(id_or_label, agent)
         .map_err(|e| map_err_string("delete_account", e))
 }

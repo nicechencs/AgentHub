@@ -319,12 +319,12 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
             ))
             .unwrap();
         let prepared = hub
-            .adapter_bridge
+            .adapter_bridge()
             .prepare(&restore_prepare_request("kimi-enroll-saga"))
             .unwrap();
         let profile = prepared.profile().clone();
         assert!(
-            hub.route_pools
+            hub.route_pools()
                 .get(&profile.id)
                 .unwrap()
                 .unwrap()
@@ -336,11 +336,11 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
         let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let busy = blocker.local_addr().unwrap().port();
         assert!(hub
-            .route_pools
+            .route_pools()
             .bind_then_enroll(&host, &profile.id, busy)
             .await
             .is_err());
-        let pool = hub.route_pools.get(&profile.id).unwrap().unwrap();
+        let pool = hub.route_pools().get(&profile.id).unwrap().unwrap();
         assert!(!pool.v2_enrolled);
         assert_eq!(pool.gateway_port, None);
         drop(blocker);
@@ -350,7 +350,7 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
             .await
             .unwrap();
         assert!(ensured.status.running);
-        let still = hub.route_pools.get(&profile.id).unwrap().unwrap();
+        let still = hub.route_pools().get(&profile.id).unwrap().unwrap();
         assert!(
             !still.v2_enrolled,
             "bind success without enroll helper must not enroll"
@@ -367,7 +367,7 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
         )
         .await
         .unwrap();
-        let enrolled = hub.route_pools.get(&profile.id).unwrap().unwrap();
+        let enrolled = hub.route_pools().get(&profile.id).unwrap().unwrap();
         assert!(enrolled.v2_enrolled);
         assert_eq!(enrolled.gateway_port, Some(ensured.status.port));
         assert!(
@@ -402,7 +402,7 @@ fn enroll_refresh_replace_of_reused_listener_is_compensated() {
             ))
             .unwrap();
         let prepared = hub
-            .adapter_bridge
+            .adapter_bridge()
             .prepare(&restore_prepare_request("kimi-enroll-replace-own"))
             .unwrap();
         let profile = prepared.profile().clone();
@@ -473,7 +473,7 @@ fn enroll_refresh_reuse_of_indexed_spec_is_not_compensated() {
             ))
             .unwrap();
         let prepared = hub
-            .adapter_bridge
+            .adapter_bridge()
             .prepare(&restore_prepare_request("kimi-enroll-reuse-own"))
             .unwrap();
         let profile = prepared.profile().clone();
@@ -546,7 +546,7 @@ fn unenrolled_index_enabled_busy_preferred_port_does_not_rebind_or_enroll() {
             ))
             .unwrap();
         let prepared = hub
-            .adapter_bridge
+            .adapter_bridge()
             .prepare(&restore_prepare_request("kimi-occupy-preferred"))
             .unwrap();
         let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
@@ -557,7 +557,7 @@ fn unenrolled_index_enabled_busy_preferred_port_does_not_rebind_or_enroll() {
             .update(&profile)
             .unwrap();
         let prepared = hub
-            .adapter_bridge
+            .adapter_bridge()
             .prepare(&restore_prepare_request("kimi-occupy-preferred"))
             .unwrap();
         assert!(
@@ -583,7 +583,7 @@ fn unenrolled_index_enabled_busy_preferred_port_does_not_rebind_or_enroll() {
             host.status(&profile.id).unwrap().is_none(),
             "occupancy must not start a rewritten listener"
         );
-        let pool = hub.route_pools.get(&profile.id).unwrap().unwrap();
+        let pool = hub.route_pools().get(&profile.id).unwrap().unwrap();
         assert!(!pool.v2_enrolled);
         assert_eq!(pool.gateway_port, None);
 
@@ -660,7 +660,7 @@ fn busy_preferred_port_rebind_then_realign_updates_projection() {
         let profile = seed_active_bridge(&hub, "kimi-rebind-chain", preferred);
         let provider_id = profile.generated_provider_id.clone().unwrap();
         let local_bearer = hub
-            .providers
+            .providers()
             .repo()
             .get_by_id(&provider_id)
             .unwrap()
@@ -907,7 +907,7 @@ fn create_projection(hub: &AgentHub, prepared: &AdapterBridgePrepared, port: u16
     };
     // Keep the generated row non-current so realign never writes ~/.codex.
     assert!(!input.is_current);
-    hub.providers.create(&input).unwrap()
+    hub.providers().create(&input).unwrap()
 }
 
 fn seed_active_bridge(hub: &AgentHub, source_id: &str, old_port: u16) -> AdapterProfile {
@@ -915,17 +915,17 @@ fn seed_active_bridge(hub: &AgentHub, source_id: &str, old_port: u16) -> Adapter
         .create(&kimi_source(source_id, "upstream-membership-secret"))
         .unwrap();
     let prepared = hub
-        .adapter_bridge
+        .adapter_bridge()
         .prepare(&restore_prepare_request(source_id))
         .unwrap();
     let generated = create_projection(hub, &prepared, old_port);
     assert!(!generated.is_current);
-    hub.adapter_bridge.finalize(&prepared, old_port).unwrap()
+    hub.adapter_bridge().finalize(&prepared, old_port).unwrap()
 }
 
 fn provider_content_contains(hub: &AgentHub, provider_id: &str, needle: &str) -> bool {
     let stored = hub
-        .providers
+        .providers()
         .repo()
         .get_by_id(provider_id)
         .unwrap()
@@ -1163,23 +1163,23 @@ fn isolated_restore_hub(
     ));
     let mut registry = AdapterRegistry::new();
     registry.register(adapter.clone());
-    hub.providers = ProviderService::with_live(
+    hub.set_providers(ProviderService::with_live(
         hub.db().clone(),
         registry,
         dir.path().join("isolated-backups"),
-    );
+    ));
     (dir, hub, adapter)
 }
 
 fn mark_generated_current(hub: &AgentHub, provider_id: &str) {
     let mut stored = hub
-        .providers
+        .providers()
         .repo()
         .get_by_id(provider_id)
         .unwrap()
         .unwrap();
     stored.is_current = true;
-    hub.providers.repo().update(&stored).unwrap();
+    hub.providers().repo().update(&stored).unwrap();
 }
 
 #[test]
@@ -1389,8 +1389,16 @@ fn isolated_route_hub(
     registry.register(source_adapter.clone());
     registry.register(target_adapter.clone());
     let backups = dir.path().join("isolated-backups");
-    hub.providers = ProviderService::with_live(hub.db().clone(), registry.clone(), backups.clone());
-    hub.accounts = AccountService::with_live(hub.db().clone(), registry, backups);
+    hub.set_providers(ProviderService::with_live(
+        hub.db().clone(),
+        registry.clone(),
+        backups.clone(),
+    ));
+    hub.set_accounts(AccountService::with_live(
+        hub.db().clone(),
+        registry,
+        backups,
+    ));
     (dir, hub, source_adapter, target_adapter)
 }
 
@@ -1447,10 +1455,10 @@ fn oauth_local_bridge_bind_reuses_login_row_and_does_not_occupy_live() {
         let target_auth_before = std::fs::read(&target_adapter.auth_path).unwrap();
         let target_config_before = std::fs::read(&target_adapter.config_path).unwrap();
 
-        let prepared = hub.adapter_bridge.prepare(&request).unwrap();
-        let core_guard = hub.providers.begin_live_saga(target_agent).unwrap();
+        let prepared = hub.adapter_bridge().prepare(&request).unwrap();
+        let core_guard = hub.providers().begin_live_saga(target_agent).unwrap();
         let projection = hub
-            .adapter_bridge
+            .adapter_bridge()
             .revalidate_provider_projection(&prepared, 43121)
             .unwrap();
         let snapshot = capture_provider_snapshot(
@@ -1477,7 +1485,7 @@ fn oauth_local_bridge_bind_reuses_login_row_and_does_not_occupy_live() {
         assert_eq!(prepared.profile().source_id, "grok-subscription", "{label}");
         assert!(!result.provider.is_current, "{label}");
         let current = hub
-            .providers
+            .providers()
             .repo()
             .get_current(target_agent)
             .unwrap()
@@ -1525,7 +1533,7 @@ fn rollback_skips_live_switch_when_bind_did_not_occupy() {
         target_agent_id: AgentId::Claude,
         auto_start: true,
     };
-    let prepared = hub.adapter_bridge.prepare(&request).unwrap();
+    let prepared = hub.adapter_bridge().prepare(&request).unwrap();
     install_sql_trigger(
         &hub,
         r#"
@@ -1537,9 +1545,9 @@ fn rollback_skips_live_switch_when_bind_did_not_occupy() {
         END;
         "#,
     );
-    let core_guard = hub.providers.begin_live_saga(AgentId::Claude).unwrap();
+    let core_guard = hub.providers().begin_live_saga(AgentId::Claude).unwrap();
     let projection = hub
-        .adapter_bridge
+        .adapter_bridge()
         .revalidate_provider_projection(&prepared, 43121)
         .unwrap();
     let snapshot = capture_provider_snapshot(
@@ -1558,7 +1566,7 @@ fn rollback_skips_live_switch_when_bind_did_not_occupy() {
         "non-occupying rollback must not rewrite live: {error}"
     );
     let current = hub
-        .providers
+        .providers()
         .repo()
         .get_current(AgentId::Claude)
         .unwrap()
@@ -1606,7 +1614,7 @@ fn apply_local_bridge_from_grok_oauth_does_not_occupy_claude_current() {
         assert_eq!(accounts[0].id, "grok-subscription");
         assert!(!result.provider.is_current);
         let current = hub
-            .providers
+            .providers()
             .repo()
             .get_current(AgentId::Claude)
             .unwrap()

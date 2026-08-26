@@ -56,40 +56,40 @@ pub struct AgentHub {
     pub(crate) db: Database,
     pub(crate) registry: AdapterRegistry,
     /// Read-only agent directory (key / capabilities / install channels).
-    pub catalog: AgentCatalogService,
+    pub(crate) catalog: AgentCatalogService,
     /// Install-family lifecycle (operation records + redetect).
-    pub lifecycle: LifecycleCoordinator,
+    pub(crate) lifecycle: LifecycleCoordinator,
     /// Native config schema / read / validate / apply (projectors).
-    pub configuration: ConfigurationService,
+    pub(crate) configuration: ConfigurationService,
     /// Active account/provider binding (unique current pointer per agent).
-    pub connections: ConnectionService,
-    pub env: EnvService,
-    pub agents: AgentService,
-    pub providers: ProviderService,
-    pub accounts: AccountService,
+    pub(crate) connections: ConnectionService,
+    pub(crate) env: EnvService,
+    pub(crate) agents: AgentService,
+    pub(crate) providers: ProviderService,
+    pub(crate) accounts: AccountService,
     /// Read-only compatibility route analysis. Never applies configuration.
-    pub adapter_routes: AdapterRouteService,
+    pub(crate) adapter_routes: AdapterRouteService,
     /// Applies the one supported Kimi membership -> Claude adapter projection.
-    pub adapter_apply: AdapterApplyService,
+    pub(crate) adapter_apply: AdapterApplyService,
     /// Prepares/persists the Kimi membership -> Codex bridge saga. The desktop
     /// host owns listener lifetime and live configuration switching.
-    pub adapter_bridge: AdapterBridgeService,
+    pub(crate) adapter_bridge: AdapterBridgeService,
     /// Read-only Ticket / Binding wallet aggregation + plan(ticket, agent).
-    pub tickets: TicketReadService,
+    pub(crate) tickets: TicketReadService,
     /// Ticket bind / unbind write API. Codex bridge bind stays on the host.
-    pub ticket_bind: TicketBindService,
-    pub backups: BackupService,
-    pub skills: SkillService,
-    pub settings: SettingsService,
-    pub run: Arc<RunService>,
-    pub chat: ChatService,
-    pub projects: ProjectService,
-    pub usage: UsageService,
+    pub(crate) ticket_bind: TicketBindService,
+    pub(crate) backups: BackupService,
+    pub(crate) skills: SkillService,
+    pub(crate) settings: SettingsService,
+    pub(crate) run: Arc<RunService>,
+    pub(crate) chat: ChatService,
+    pub(crate) projects: ProjectService,
+    pub(crate) usage: UsageService,
     /// Soft-hide preference (UI only; detect / install unchanged).
-    pub agent_visibility: AgentVisibilityService,
+    pub(crate) agent_visibility: AgentVisibilityService,
     /// Flag-gated RoutePool persistence (`feature.route_pool_v2`).
     /// Resolver attach is `feature.route_index_v2`. UI hidden.
-    pub route_pools: RoutePoolService,
+    pub(crate) route_pools: RoutePoolService,
 }
 
 impl AgentHub {
@@ -222,6 +222,104 @@ impl AgentHub {
     /// Domain writes go through the corresponding service.
     pub fn db(&self) -> &Database {
         &self.db
+    }
+
+    pub fn catalog(&self) -> &AgentCatalogService {
+        &self.catalog
+    }
+
+    pub fn lifecycle(&self) -> &LifecycleCoordinator {
+        &self.lifecycle
+    }
+
+    pub fn configuration(&self) -> &ConfigurationService {
+        &self.configuration
+    }
+
+    pub fn connections(&self) -> &ConnectionService {
+        &self.connections
+    }
+
+    pub fn env(&self) -> &EnvService {
+        &self.env
+    }
+
+    pub fn agents(&self) -> &AgentService {
+        &self.agents
+    }
+
+    pub fn providers(&self) -> &ProviderService {
+        &self.providers
+    }
+
+    pub fn accounts(&self) -> &AccountService {
+        &self.accounts
+    }
+
+    pub fn adapter_routes(&self) -> &AdapterRouteService {
+        &self.adapter_routes
+    }
+
+    pub fn adapter_apply(&self) -> &AdapterApplyService {
+        &self.adapter_apply
+    }
+
+    pub fn adapter_bridge(&self) -> &AdapterBridgeService {
+        &self.adapter_bridge
+    }
+
+    pub fn tickets(&self) -> &TicketReadService {
+        &self.tickets
+    }
+
+    pub fn ticket_bind(&self) -> &TicketBindService {
+        &self.ticket_bind
+    }
+
+    pub fn backups(&self) -> &BackupService {
+        &self.backups
+    }
+
+    pub fn skills(&self) -> &SkillService {
+        &self.skills
+    }
+
+    pub fn settings(&self) -> &SettingsService {
+        &self.settings
+    }
+
+    pub fn run(&self) -> &Arc<RunService> {
+        &self.run
+    }
+
+    pub fn chat(&self) -> &ChatService {
+        &self.chat
+    }
+
+    pub fn projects(&self) -> &ProjectService {
+        &self.projects
+    }
+
+    pub fn usage(&self) -> &UsageService {
+        &self.usage
+    }
+
+    pub fn agent_visibility(&self) -> &AgentVisibilityService {
+        &self.agent_visibility
+    }
+
+    pub fn route_pools(&self) -> &RoutePoolService {
+        &self.route_pools
+    }
+
+    /// Isolated-adapter tests swap live-switch services after [`Self::open`].
+    pub fn set_providers(&mut self, providers: ProviderService) {
+        self.providers = providers;
+    }
+
+    /// Isolated-adapter tests swap live-switch services after [`Self::open`].
+    pub fn set_accounts(&mut self, accounts: AccountService) {
+        self.accounts = accounts;
     }
 
     pub fn adapter_secret_resolver(&self) -> AdapterSecretResolver {

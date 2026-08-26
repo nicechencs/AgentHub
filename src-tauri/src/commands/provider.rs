@@ -148,7 +148,7 @@ pub async fn undo_switch_provider(
     let hub = state.hub_arc()?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        hub.providers
+        hub.providers()
             .undo_switch(agent)
             .map_err(|e| map_err_string("undo_switch_provider", e))
     })
@@ -187,7 +187,7 @@ pub async fn test_provider_latency(
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let agent = parse_agent(&agent_id)?;
-        hub.providers
+        hub.providers()
             .test_latency(agent, &provider_id)
             .map_err(|e| map_err_string("test_provider_latency", e))
     })
@@ -201,7 +201,7 @@ pub async fn test_provider_latency(
 fn list_providers_inner(hub: &AgentHub, agent_id: Option<&str>) -> Result<Vec<Provider>, String> {
     let filter = parse_agent_opt(agent_id)?;
     let items = hub
-        .providers
+        .providers()
         .list(filter)
         .map_err(|e| map_err_string("list_providers", e))?;
     Ok(items.into_iter().map(|p| p.redacted()).collect())
@@ -214,7 +214,7 @@ fn get_provider_inner(
 ) -> Result<Provider, String> {
     let filter = parse_agent_opt(agent_id)?;
     let item = hub
-        .providers
+        .providers()
         .get(id_or_name, filter)
         .map_err(|e| map_err_string("get_provider", e))?;
     Ok(item.redacted())
@@ -222,13 +222,13 @@ fn get_provider_inner(
 
 fn upsert_provider_inner(hub: &AgentHub, mut input: ProviderInput) -> Result<Provider, String> {
     // Merge secrets from the stored row when the client re-sends "***".
-    if let Ok(existing) = hub.providers.get(&input.id, Some(input.agent_id)) {
+    if let Ok(existing) = hub.providers().get(&input.id, Some(input.agent_id)) {
         input.settings_config =
             merge_preserving_secrets(&existing.settings_config, &input.settings_config);
         input.meta = merge_preserving_secrets(&existing.meta, &input.meta);
     }
     let saved = hub
-        .providers
+        .providers()
         .upsert(&input)
         .map_err(|e| map_err_string("upsert_provider", e))?;
     Ok(saved.redacted())
@@ -236,7 +236,7 @@ fn upsert_provider_inner(hub: &AgentHub, mut input: ProviderInput) -> Result<Pro
 
 fn delete_provider_inner(hub: &AgentHub, agent_id: &str, provider_id: &str) -> Result<(), String> {
     let agent = parse_agent(agent_id)?;
-    hub.providers
+    hub.providers()
         .delete(provider_id, agent)
         .map_err(|e| map_err_string("delete_provider", e))
 }
@@ -248,7 +248,7 @@ fn import_provider_live_inner(
 ) -> Result<Provider, String> {
     let agent = parse_agent(agent_id)?;
     let item = hub
-        .providers
+        .providers()
         .import_live(agent, name)
         .map_err(|e| map_err_string("import_provider_live", e))?;
     Ok(item.redacted())
@@ -261,7 +261,7 @@ fn switch_provider_inner(
 ) -> Result<ProviderSwitchResult, String> {
     let agent = parse_agent(agent_id)?;
     let result = hub
-        .providers
+        .providers()
         .switch(id_or_name, agent)
         .map_err(|e| map_err_string("switch_provider", e))?;
     Ok(result.redacted())
@@ -275,11 +275,11 @@ fn switch_provider_preview_inner(
     let agent = parse_agent(agent_id)?;
     // Validate target exists and belongs to agent (no write).
     let _target = hub
-        .providers
+        .providers()
         .get(id_or_name, Some(agent))
         .map_err(|e| map_err_string("switch_provider_preview", e))?;
     let current = hub
-        .providers
+        .providers()
         .list(Some(agent))
         .map_err(|e| map_err_string("switch_provider_preview", e))?
         .into_iter()
@@ -291,7 +291,7 @@ fn switch_provider_preview_inner(
     };
 
     let backup_path = hub
-        .backups
+        .backups()
         .backups_root()
         .join("live")
         .join(agent.as_str())
@@ -352,7 +352,7 @@ fn stored_api_key_for_remote_models(hub: &AgentHub, provider_id: &str) -> Result
         ));
     }
     let provider = hub
-        .providers
+        .providers()
         .get(id, None)
         .map_err(|e| map_err_string("list_remote_openai_models_for_provider", e))?;
     let Some(key) = api_key_secret(&provider.settings_config) else {

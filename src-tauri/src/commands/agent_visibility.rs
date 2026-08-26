@@ -10,7 +10,7 @@ use crate::state::AppState;
 pub async fn list_hidden_agents(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        hub.agent_visibility
+        hub.agent_visibility()
             .list_hidden_agents()
             .map_err(|e| map_err_string("list_hidden_agents", e))
     })
@@ -27,7 +27,7 @@ pub async fn set_agent_hidden(
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let id = parse_agent(&agent_id)?;
-        hub.agent_visibility
+        hub.agent_visibility()
             .set_agent_hidden(id, hidden)
             .map_err(|e| map_err_string("set_agent_hidden", e))
     })

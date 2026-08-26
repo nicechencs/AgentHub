@@ -30,7 +30,7 @@ pub async fn analyze_adapter(
     with_hub_blocking(hub, move |hub| {
         let source_kind = parse_source_kind(&source_kind)?;
         let target_agent_id = parse_agent(&target_agent_id)?;
-        hub.adapter_routes
+        hub.adapter_routes()
             .analyze(&AdapterRouteRequest {
                 source_kind,
                 source_id,
@@ -55,7 +55,7 @@ pub async fn plan_adapter(
     with_hub_blocking(hub, move |hub| {
         let source_kind = parse_source_kind(&source_kind)?;
         let target_agent_id = parse_agent(&target_agent_id)?;
-        hub.adapter_routes
+        hub.adapter_routes()
             .plan(&AdapterRouteRequest {
                 source_kind,
                 source_id,
@@ -74,7 +74,7 @@ pub async fn list_ticket_wallet(state: State<'_, AppState>) -> Result<TicketWall
     let host = state.bridge_host();
     with_hub_blocking(hub, move |hub| {
         let mut wallet = hub
-            .tickets
+            .tickets()
             .list_wallet()
             .map_err(|err| map_err_string("list_ticket_wallet", err))?;
         enrich_bridge_running(&host, &mut wallet);
@@ -96,7 +96,7 @@ pub async fn plan_ticket(
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| {
         let target_agent_id = parse_agent(&target_agent_id)?;
-        hub.tickets
+        hub.tickets()
             .plan(&TicketPlanRequest {
                 ticket_id,
                 target_agent_id,
@@ -274,7 +274,7 @@ fn list_adapter_profiles_inner(
     let target_agent_id = target_agent_id.map(parse_agent).transpose()?;
     let mode = parse_mode_opt(mode)?;
     let route = parse_route_opt(route)?;
-    hub.adapter_apply
+    hub.adapter_apply()
         .list_filtered(&AdapterProfileFilter {
             source_kind,
             source_id: source_id.map(str::to_owned),

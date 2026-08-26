@@ -15,7 +15,7 @@ pub async fn list_agent_catalog(
     state: State<'_, AppState>,
 ) -> Result<Vec<AgentDescriptor>, String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, move |hub| Ok(hub.catalog.list_owned())).await
+    with_hub_blocking(hub, move |hub| Ok(hub.catalog().list_owned())).await
 }
 
 /// Invoke: `get_agent_catalog_entry`
@@ -29,7 +29,7 @@ pub async fn get_agent_catalog_entry(
 ) -> Result<AgentDescriptor, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        hub.catalog
+        hub.catalog()
             .get_str(&key)
             .map(|d| d.clone())
             .map_err(|e| map_err_string("get_agent_catalog_entry", e))

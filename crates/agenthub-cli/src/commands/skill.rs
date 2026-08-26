@@ -22,7 +22,7 @@ fn require_agent(agent_filter: Option<&str>) -> Result<AgentId> {
 
 pub fn list(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
     let filter = parse_agent_filter(agent_filter)?;
-    let mut skills = hub.skills.list()?;
+    let mut skills = hub.skills().list()?;
     if let Some(agent) = filter {
         for skill in &mut skills {
             skill.projections.retain(|item| item.agent == agent);
@@ -62,7 +62,7 @@ pub fn sync(
     } else {
         vec![selected.expect("validated selected agent")]
     };
-    let report = hub.skills.sync_targets(&targets, force, all)?;
+    let report = hub.skills().sync_targets(&targets, force, all)?;
 
     let failures = report.failed.len();
     emit_sync_report(&report, format)?;
@@ -94,7 +94,7 @@ pub fn enable(
             assume_yes,
         )?;
     }
-    hub.skills.sync(skill_id, agent, force)?;
+    hub.skills().sync(skill_id, agent, force)?;
     emit_action("enabled", skill_id, agent, format)
 }
 
@@ -113,12 +113,12 @@ pub fn disable(
         ),
         assume_yes,
     )?;
-    hub.skills.disable(skill_id, agent)?;
+    hub.skills().disable(skill_id, agent)?;
     emit_action("disabled", skill_id, agent, format)
 }
 
 pub fn list_installed(hub: &AgentHub, format: OutputFormat) -> Result<()> {
-    let items = hub.skills.list_installed()?;
+    let items = hub.skills().list_installed()?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&items),
@@ -150,7 +150,7 @@ pub fn list_installed(hub: &AgentHub, format: OutputFormat) -> Result<()> {
 }
 
 pub fn install(hub: &AgentHub, source: &str, overwrite: bool, format: OutputFormat) -> Result<()> {
-    let skill = hub.skills.install_skill(source, overwrite)?;
+    let skill = hub.skills().install_skill(source, overwrite)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&skill),
@@ -185,7 +185,7 @@ pub fn import_private(
         )?;
     }
     let skill = hub
-        .skills
+        .skills()
         .import_private_to_shared(skill_id, agent, overwrite)?;
     match format {
         OutputFormat::Quiet => Ok(()),
@@ -219,7 +219,7 @@ pub fn uninstall(
             ),
             assume_yes,
         )?;
-        hub.skills.uninstall_private_skill(skill_id, agent)?;
+        hub.skills().uninstall_private_skill(skill_id, agent)?;
     } else {
         confirm(
             &format!(
@@ -227,7 +227,7 @@ pub fn uninstall(
             ),
             assume_yes,
         )?;
-        hub.skills.uninstall_skill(skill_id, Some(&hub.backups))?;
+        hub.skills().uninstall_skill(skill_id, Some(hub.backups()))?;
     }
     match format {
         OutputFormat::Quiet => Ok(()),
@@ -244,7 +244,7 @@ pub fn uninstall(
 }
 
 pub fn update(hub: &AgentHub, skill_id: &str, format: OutputFormat) -> Result<()> {
-    let skill = hub.skills.update_skill(skill_id)?;
+    let skill = hub.skills().update_skill(skill_id)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&skill),
@@ -268,7 +268,7 @@ pub fn project(
             "invalid project mode '{mode}', expected: link|copy"
         ))
     })?;
-    let result = hub.skills.project_skill(skill_id, agent, mode)?;
+    let result = hub.skills().project_skill(skill_id, agent, mode)?;
     match format {
         OutputFormat::Quiet => Ok(()),
         OutputFormat::Json => print_json(&result),

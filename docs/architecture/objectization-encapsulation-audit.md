@@ -20,7 +20,7 @@ updated: 2026-08-26
 
 | 编号 | 核实 | 处理 |
 | --- | --- | --- |
-| O-01 | 仍存在：领域 Service 仍是 `pub` 字段 | 部分处理：`data_dir` / `db` / `registry` 收为 `pub(crate)`，对外只留访问器。生产路径的密钥解析走 `adapter_secret_resolver()`，不再从 CLI/Tauri 直接拿 `hub.db`。Service 字段仍待按领域收窄 |
+| O-01 | 领域 Service 曾是 `pub` 字段 | 已处理：Service 字段改为 `pub(crate)`，对外只留访问器。CLI / 桌面端走 `accounts()` / `providers()` 等。隔离测试用 `set_providers` / `set_accounts`。按领域拆 Service 内部职责仍暂缓 |
 | O-02 | 仍存在：`Database::with_conn` 为 `pub`；生产路径曾用 `ProviderService::repo()` 读行 | 部分处理：生产读改为 `get_by_id` / `get_current`；Account / Backup 的 `repo()` 收为 `pub(crate)`。`with_conn` 与 Provider `repo()` 仍给测试和补偿事务用 |
 | O-03、O-04、O-05 | 仍存在 | 暂缓。页面拆 Hook / 把保存用例上收属于跨层设计 |
 | O-06 | 生产 Hook 已走共享连接池；`loadAdapterPageResources` 只留在测试 | 标注为测试辅助，页面不得再自行拉账号 / Provider |
@@ -39,7 +39,8 @@ updated: 2026-08-26
 | O-15–O-19 | 仍存在 | 暂缓。宽对象和派生数据收窄会改契约 |
 | O-20 | mock Agent 用模块级可变状态 | 暂缓。已有 `resetMockAgentStatuses`；实例化隔离收益低于测试迁移成本 |
 | O-21 | 产品集合曾是可变导出 | 已处理：`applyAgentCatalog` 整体替换并冻结 `AGENTS` / `AGENT_MAP` / `AGENT_IDS`。集合仍由 catalog 入口写入 |
-| O-23、O-25 | 仍存在 | 暂缓。通用组件拆分和 token 色板与 catalog 分离需要先明确唯一 owner |
+| O-23 | 仍存在 | 暂缓。通用表单 / 侧栏业务规则拆分需先明确唯一 owner |
+| O-25 | token 层曾单独维护 Agent ID 列表 | 已处理：`TOKEN_AGENT_IDS` 从色板 `AGENT_COLORS` 派生，不再平行维护产品集合。展示 meta 与安装命令仍在 catalog 映射 |
 | O-24 | Sidebar Context 默认 setter 静默失效 | 已处理：缺少 Provider 时抛错 |
 | O-22 | `GenericConfigForm` 未把锁定状态传给 `SecretInput` | 已处理：`SecretInput` 接收 `disabled`/`readOnly` |
 | O-26–O-30 | 仍存在 | 暂缓。启动组合根、transport façade、Gateway 状态和协议策略需要分别设计 |
@@ -49,16 +50,24 @@ updated: 2026-08-26
 | O-39 | mock `speaks` 与 core 对 GLM/DeepSeek 不一致 | 已处理：mock 补上 `openai-responses`。共享 fixture 仍未做 |
 | O-40–O-42、O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
 | O-43 | 测试 fake 用 `_ => unsupported` 吞掉新 Capability | 已处理：`Capability::fake_state` 穷举所有变体；测试 fake 走该 helper |
+| O-46 | logging 自行打开 SQLite | 部分处理：启动窥探收到 `storage::peek_settings`；logging 不再手写 SQL。启动仍先于 Database 打开，不改 subscriber 生命周期 |
+| O-47 | Adapter 锁表随 profile id 永久增长 | 已处理：`lock_profile` 回收已无持有者的条目；Agent 锁仍按封闭枚举保留 |
+| O-48 | 设置解析在 Database / SettingsService / logging 重复 | 已处理：`load_app_settings` 与 logging 共用 `parse_level` / `parse_retention_days`；非法落盘值回落到默认 |
+| O-57 | Ticket mock 与 Adapter mock 各维护来源分类 | 已处理：mock 内共用 `source-classify`；不与 core 分类契约合并 |
+| O-62 | 桌面端命令直接 `registry.read_auth` | 已处理：登录探测上收到 `AccountService::probe_live_auth`；命令只做参数转换 |
+| O-65 | 卸载命令自行再打一份卸载前备份 | 已处理：卸载前备份只留在 Core 生命周期；桌面端不再额外 snapshot |
+| O-70 | 未实现的 Pi 登录被标成设备码 | 已处理：仅已实现的 xAI 为设备码；github-copilot / kimi-coding 不再导向设备码。未开这些登录 |
+| O-74 | `PkcePair` 字段公开可变 | 已处理：字段私有，只读 `verifier()` / `challenge()` |
 
 ## 结论
 
-当前代码已经有 `AgentHub`、各领域 Service、Backend port、运行时 store 和页面 model 等对象化基础，但在补查后仍存在以下主要缺口：
+当前代码已经有 `AgentHub`、各领域 Service、Backend port、运行时 store 和页面 model 等对象化基础。CLI / 桌面端已改为走 Hub 访问器，登录探测、设置解析、卸载前备份和 profile 锁回收也已收口。补查后仍存在的主要缺口：
 
-- 核心门面、数据库和 repository 的内部能力暴露过宽，外部可以绕过领域用例；
+- `Database::with_conn` 与部分 `repo()` 仍给补偿事务和测试使用；
 - 页面 Hook、Tauri controller 和部分 Service 同时承担状态、编排、持久化和补偿；
 - 同一业务概念在多个对象中分别保存或派生，尤其是 Agent 状态、连接池、票夹和路线信息。
 
-最高风险曾经是：调用方可以直接操作本应由领域对象维护的状态；写入成功后，多个前端读模型又可能各自刷新、静默失败或相互覆盖。票夹 bind/unbind 与账号 / Provider 变更的读模型刷新已收到 runtime coordinator；其余公开面和领域拆分仍待单独设计。
+最高风险曾经是：调用方可以直接操作本应由领域对象维护的状态；写入成功后，多个前端读模型又可能各自刷新、静默失败或相互覆盖。票夹 bind/unbind 与账号 / Provider 变更的读模型刷新已收到 runtime coordinator；页面拆 Hook、Service 内部拆分和契约收窄仍待单独设计。
 
 ## 全量复核新增问题索引
 

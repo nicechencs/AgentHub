@@ -205,16 +205,8 @@ pub async fn uninstall_agent(
     let hook = install_progress_hook(app, Some(key.as_str().into()), "uninstall");
     with_hub_blocking(hub, move |hub| {
         hub.with_install_log_hook(hook, || {
-            if purge {
-                // Best-effort pre-uninstall backup
-                if let Some(agent) = legacy_builtin_agent_id(&key) {
-                    let _ = hub.backups.snapshot(
-                        agent,
-                        agenthub_core::models::BackupKind::PreUninstall,
-                        Some("pre-uninstall"),
-                    );
-                }
-            }
+            // PreUninstall snapshot is owned by Core lifecycle (same live-write
+            // guard as purge). Hosts must not snapshot again.
             hub.uninstall_agent_key(&key, purge)
                 .map_err(|e| map_err_string("uninstall_agent", e))
         })

@@ -11,7 +11,7 @@ fn create_list_send_and_delete() {
     let list = list_conversations_inner(&hub).unwrap();
     assert_eq!(list.len(), 1);
 
-    hub.chat
+    hub.chat()
         .send(&conv.id, "hello from test", &|_ev| {})
         .unwrap();
     let msgs = list_chat_messages_inner(&hub, &conv.id).unwrap();

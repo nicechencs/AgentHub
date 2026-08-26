@@ -46,7 +46,7 @@ pub(crate) fn pick_directory_with(
                 state
                     .hub()
                     .ok()
-                    .and_then(|hub| hub.settings.get("language").ok().flatten())
+                    .and_then(|hub| hub.settings().get("language").ok().flatten())
             })
             .unwrap_or_default();
         pick_directory_default_title(parse_tray_language(&raw))

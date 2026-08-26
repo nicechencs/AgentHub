@@ -13,7 +13,7 @@ pub async fn list_connection_trash(
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
         let agent = parse_agent_opt(agent_id.as_deref())?;
-        hub.connections
+        hub.connections()
             .list_trash(agent)
             .map(|items| items.into_iter().map(|item| item.redacted()).collect())
             .map_err(|err| map_err_string("list_connection_trash", err))
@@ -28,7 +28,7 @@ pub async fn restore_connection_trash(
 ) -> Result<(), String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        hub.connections
+        hub.connections()
             .restore_trash(&id)
             .map_err(|err| map_err_string("restore_connection_trash", err))
     })
@@ -39,7 +39,7 @@ pub async fn restore_connection_trash(
 pub async fn delete_connection_trash(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        hub.connections
+        hub.connections()
             .delete_trash(&id)
             .map_err(|err| map_err_string("delete_connection_trash", err))
     })

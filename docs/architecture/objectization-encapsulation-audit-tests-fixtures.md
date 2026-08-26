@@ -46,6 +46,7 @@ updated: 2026-08-26
 ### O-57｜Ticket Mock 与 Adapter Mock 重复维护来源分类
 
 - **位置：** `src/dev/mocks/ticket.ts:70-180`、`src/dev/mocks/adapter/source-ticket.ts:15-180`
+- **状态：已处理**
 - **问题：** 两处分别维护多个 endpoint/preset 判断，字段输入模型也不同。
 - **建议：** 抽出单一来源分类策略/fixture，两个 Mock 只消费统一分类结果。
 - **影响：** Mock wallet 与 Mock adapter 可能对同一来源得出不同分类。

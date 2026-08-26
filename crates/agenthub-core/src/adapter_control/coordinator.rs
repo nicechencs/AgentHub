@@ -33,6 +33,8 @@ impl AdapterSagaCoordinator {
                 .profiles
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
+            // Keep only entries still cloned by a holder or waiter (map Arc is otherwise the last).
+            profiles.retain(|_, lock| Arc::strong_count(lock) > 1);
             Arc::clone(
                 profiles
                     .entry(profile_id.to_owned())
@@ -59,6 +61,14 @@ impl AdapterSagaCoordinator {
             )
         };
         lock.lock_owned().await
+    }
+
+    #[cfg(test)]
+    pub(crate) fn profile_lock_count(&self) -> usize {
+        self.profiles
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .len()
     }
 }
 

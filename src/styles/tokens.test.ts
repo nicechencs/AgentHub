@@ -21,6 +21,10 @@ import {
 } from './tokens';
 
 describe('design tokens SSOT', () => {
+  it('derives brand-color keys from AGENT_COLORS, not a second product list', () => {
+    expect(TOKEN_AGENT_IDS).toEqual(Object.keys(AGENT_COLORS));
+  });
+
   it('exposes a brand color for every catalog agent', () => {
     for (const id of TOKEN_AGENT_IDS) {
       expect(AGENT_COLORS[id].light).toMatch(/^#[0-9a-fA-F]{6}$/);

@@ -77,7 +77,7 @@ fn upsert_roundtrip_redacts_secrets_and_preserves_on_marker() {
     );
 
     // Stored secret must still be the original (unredacted load).
-    let stored = hub.providers.get("p-secret", None).unwrap();
+    let stored = hub.providers().get("p-secret", None).unwrap();
     assert_eq!(
         stored.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
         "sk-live-secret"
@@ -124,7 +124,7 @@ fn upsert_preserves_codex_auth_openai_api_key_on_marker() {
     .unwrap();
     assert_eq!(updated.name, "Codex Relay 2");
 
-    let stored = hub.providers.get("p-codex-auth", None).unwrap();
+    let stored = hub.providers().get("p-codex-auth", None).unwrap();
     assert_eq!(
         stored.settings_config["auth"]["OPENAI_API_KEY"],
         "sk-codex-live"
@@ -168,7 +168,7 @@ fn upsert_preserves_opaque_toml_when_content_is_marker() {
     )
     .unwrap();
 
-    let stored = hub.providers.get("p-toml", None).unwrap();
+    let stored = hub.providers().get("p-toml", None).unwrap();
     assert!(stored.settings_config["content"]
         .as_str()
         .unwrap()
@@ -226,7 +226,7 @@ fn stored_api_key_for_remote_models_resolves_without_network() {
         "***"
     );
 
-    let stored = hub.providers.get("p-secret", None).unwrap();
+    let stored = hub.providers().get("p-secret", None).unwrap();
     assert!(agenthub_core::utils::redact::api_key_secret(&stored.settings_config).is_some());
     let gui = get_provider_inner(&hub, "p-secret", None).unwrap();
     assert_eq!(gui.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"], "***");

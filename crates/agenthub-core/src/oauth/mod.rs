@@ -12,9 +12,9 @@ mod server;
 mod session;
 
 pub use catalog::{
-    is_device_code_option, list_oauth_options, pi_auth_json_key, pi_provider_quota_backend,
-    pi_provider_refreshable, pi_refreshable_provider_aliases, resolve_pkce_provider, OAuthFlowKind,
-    OAuthLoginOption, PiQuotaBackend,
+    is_device_code_option, is_unimplemented_pi_oauth, list_oauth_options, pi_auth_json_key,
+    pi_provider_quota_backend, pi_provider_refreshable, pi_refreshable_provider_aliases,
+    resolve_pkce_provider, OAuthFlowKind, OAuthLoginOption, PiQuotaBackend,
 };
 pub use device::{
     complete_device_oauth, device_oauth_agent, poll_device_oauth, start_device_oauth,
@@ -88,9 +88,14 @@ pub fn start_oauth(
 
     let provider = resolve_pkce_provider(agent, provider_key).ok_or_else(|| {
         if agent == AgentId::Pi {
-            AppError::InvalidArg(
-                "Pi OAuth requires providerKey: anthropic | openai-codex (xai 使用设备码)".into(),
-            )
+            if is_unimplemented_pi_oauth(provider_key) {
+                AppError::Unsupported("this Pi login is not available in AgentHub".into())
+            } else {
+                AppError::InvalidArg(
+                    "Pi OAuth requires providerKey: anthropic | openai-codex (xai 使用设备码)"
+                        .into(),
+                )
+            }
         } else {
             AppError::Unsupported(format!(
                 "OAuth PKCE is not configured for {}",
@@ -122,7 +127,7 @@ pub fn start_oauth(
     };
     let redirect_uri = format!("http://{host}:{port}{path}");
 
-    let authorize_url = provider.build_authorize_url(&redirect_uri, &state, &pkce.challenge);
+    let authorize_url = provider.build_authorize_url(&redirect_uri, &state, pkce.challenge());
 
     let resolved_key = provider_key
         .map(str::trim)
@@ -140,7 +145,7 @@ pub fn start_oauth(
     st.insert(session::OAuthSession {
         state: state.clone(),
         agent,
-        verifier: pkce.verifier.clone(),
+        verifier: pkce.verifier().to_string(),
         redirect_uri: redirect_uri.clone(),
         provider_key: resolved_key.clone(),
         status: OAuthStatus::Waiting,
@@ -432,5 +437,21 @@ impl TokenBundle {
             label_hint: label,
             extra,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unimplemented_pi_login_does_not_redirect_to_device_code() {
+        let err = start_oauth(AgentId::Pi, false, Some("github-copilot")).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("start_device_oauth"),
+            "unimplemented login must not be advertised as device-code: {msg}"
+        );
+        assert!(msg.contains("not available"), "{msg}");
     }
 }

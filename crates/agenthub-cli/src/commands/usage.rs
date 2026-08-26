@@ -14,7 +14,7 @@ fn parse_agent_filter(agent_filter: Option<&str>) -> Result<Option<AgentId>> {
 /// Incremental collect from agent session logs.
 pub fn collect(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
     let filter = parse_agent_filter(agent_filter)?;
-    let result = hub.usage.collect(filter)?;
+    let result = hub.usage().collect(filter)?;
     emit_collect(&result, format)
 }
 
@@ -31,7 +31,7 @@ pub fn stats(
         .map(str::trim)
         .filter(|s| !s.is_empty() && *s != "all")
         .map(|s| s.to_string());
-    let rows = hub.usage.query(UsageQuery {
+    let rows = hub.usage().query(UsageQuery {
         days: days.max(1),
         agent_id: agent,
         model,
@@ -43,10 +43,10 @@ pub fn stats(
 /// Distinct model names from usage table (not an official catalog).
 pub fn models(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
     let agent = parse_agent_filter(agent_filter)?;
-    let mut list = hub.usage.list_models()?;
+    let mut list = hub.usage().list_models()?;
     if let Some(a) = agent {
         // Filter models that appear for this agent in recent wide window.
-        let rows = hub.usage.query(UsageQuery {
+        let rows = hub.usage().query(UsageQuery {
             days: 365,
             agent_id: Some(a),
             model: None,
@@ -76,7 +76,7 @@ pub fn models(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) 
 
 /// Parser health per agent.
 pub fn health(hub: &AgentHub, format: OutputFormat) -> Result<()> {
-    let rows = hub.usage.parser_health()?;
+    let rows = hub.usage().parser_health()?;
     emit_health(&rows, format)
 }
 

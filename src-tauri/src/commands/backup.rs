@@ -61,7 +61,7 @@ pub async fn delete_backup(state: State<'_, AppState>, backup_id: String) -> Res
 
 fn list_backups_inner(hub: &AgentHub, agent_id: Option<&str>) -> Result<Vec<BackupRecord>, String> {
     let filter = parse_agent_opt(agent_id)?;
-    hub.backups
+    hub.backups()
         .list(filter)
         .map_err(|e| map_err_string("list_backups", e))
 }
@@ -72,13 +72,13 @@ fn create_backup_inner(
     note: Option<&str>,
 ) -> Result<BackupRecord, String> {
     let agent = parse_agent(agent_id)?;
-    hub.backups
+    hub.backups()
         .snapshot(agent, BackupKind::Manual, note)
         .map_err(|e| map_err_string("create_backup", e))
 }
 
 fn restore_backup_inner(hub: &AgentHub, backup_id: &str) -> Result<RestoreResult, String> {
-    hub.backups
+    hub.backups()
         .restore(backup_id)
         .map_err(|e| map_err_string("restore_backup", e))
 }
@@ -89,7 +89,7 @@ fn restore_backup_for_target_inner(
     target: AgentId,
 ) -> Result<RestoreResult, String> {
     let record = hub
-        .backups
+        .backups()
         .get_by_id(backup_id)
         .map_err(|e| map_err_string("restore_backup", e))?;
     if record.agent_id != Some(target) {
@@ -103,7 +103,7 @@ async fn backup_target_agent(
     backup_id: String,
 ) -> Result<AgentId, String> {
     with_hub_blocking(hub, move |hub| {
-        hub.backups
+        hub.backups()
             .get_by_id(&backup_id)
             .and_then(|record| {
                 record.agent_id.ok_or_else(|| {
@@ -116,7 +116,7 @@ async fn backup_target_agent(
 }
 
 fn delete_backup_inner(hub: &AgentHub, backup_id: &str) -> Result<(), String> {
-    hub.backups
+    hub.backups()
         .delete(backup_id)
         .map_err(|e| map_err_string("delete_backup", e))
 }

@@ -8,8 +8,8 @@ use crate::error::{AppError, Result};
 
 #[derive(Debug, Clone)]
 pub struct PkcePair {
-    pub verifier: String,
-    pub challenge: String,
+    verifier: String,
+    challenge: String,
 }
 
 impl PkcePair {
@@ -25,6 +25,14 @@ impl PkcePair {
             verifier,
             challenge,
         })
+    }
+
+    pub fn verifier(&self) -> &str {
+        &self.verifier
+    }
+
+    pub fn challenge(&self) -> &str {
+        &self.challenge
     }
 }
 
@@ -42,8 +50,8 @@ mod tests {
     #[test]
     fn pkce_shapes() {
         let p = PkcePair::generate().unwrap();
-        assert!(p.verifier.len() >= 32);
-        assert!(!p.challenge.is_empty());
-        assert_ne!(p.verifier, p.challenge);
+        assert!(p.verifier().len() >= 32);
+        assert!(!p.challenge().is_empty());
+        assert_ne!(p.verifier(), p.challenge());
     }
 }

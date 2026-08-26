@@ -59,6 +59,7 @@ pub use usage_repo::{UsageCursor, UsageRepo};
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -189,10 +190,12 @@ impl Database {
             s.language = v;
         }
         if let Some(v) = self.get_setting("log_level")? {
-            s.log_level = v;
+            if crate::logging::parse_level(&v).is_ok() {
+                s.log_level = v.trim().to_ascii_lowercase();
+            }
         }
         if let Some(v) = self.get_setting("log_retention_days")? {
-            if let Ok(n) = v.parse::<u32>() {
+            if let Ok(n) = crate::logging::parse_retention_days(&v) {
                 s.log_retention_days = n;
             }
         }
@@ -213,6 +216,30 @@ impl Database {
         }
         Ok(s)
     }
+}
+
+/// Bootstrap read-only peek of `settings` rows.
+///
+/// Used before `Database::open` (migrations / WAL / app lock). Missing file,
+/// open failure, or a missing/unreadable key yields an empty map or omits that key.
+pub fn peek_settings(db_file: &Path, keys: &[&str]) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    if !db_file.exists() {
+        return out;
+    }
+    let Ok(conn) = Connection::open(db_file) else {
+        return out;
+    };
+    for key in keys {
+        if let Ok(value) =
+            conn.query_row("SELECT value FROM settings WHERE key = ?1", [*key], |r| {
+                r.get::<_, String>(0)
+            })
+        {
+            out.insert((*key).to_string(), value);
+        }
+    }
+    out
 }
 
 fn set_wal_journal_mode(conn: &Connection) -> Result<()> {

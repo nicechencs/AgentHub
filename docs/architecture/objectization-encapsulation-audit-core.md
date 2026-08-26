@@ -28,6 +28,7 @@ updated: 2026-08-26
 ### O-46｜Logging 绕过 Database 建立第二条 SQLite 访问路径
 
 - **位置：** `crates/agenthub-core/src/logging/mod.rs:120-147`
+- **状态：部分处理**
 - **问题：** `load_log_prefs` 直接 `Connection::open(db_path)` 查询 settings，而其他设置读写经过 Database/SettingsService。
 - **建议：** 启动时由统一 bootstrap 解析并传入 `LogConfig`；logging 不自行打开 SQLite。
 - **影响：** 连接、锁等待、迁移和错误降级语义形成第二套实现。
@@ -35,6 +36,7 @@ updated: 2026-08-26
 ### O-47｜Adapter 锁表没有随 profile 生命周期回收
 
 - **位置：** `crates/agenthub-core/src/adapter_control/coordinator.rs:16-62`
+- **状态：已处理**
 - **问题：** `profiles` 和 `targets` 是永久增长的 HashMap，每个新 profile ID 都留下一个 Mutex 条目。
 - **建议：** 使用可回收锁条目，或由 profile 注册/注销生命周期管理；固定 Agent 锁可保留枚举键。
 - **影响：** 长期运行、批量导入或反复创建 profile 时，进程内锁表持续增长。
@@ -42,6 +44,7 @@ updated: 2026-08-26
 ### O-48｜设置解析职责在 Database、SettingsService、Logging 间重复
 
 - **位置：** `crates/agenthub-core/src/storage/mod.rs:157-214`、`crates/agenthub-core/src/services/settings_service.rs:22-100`、`crates/agenthub-core/src/logging/mod.rs:120-147`
+- **状态：已处理**
 - **问题：** 多处分别承担键名、默认值、校验和类型转换，logging 还自行查询原始字符串。
 - **建议：** 由 SettingsService 成为设置值对象和校验 owner；Database 只做通用持久化；logging 只消费解析后的 `LogConfig`。
 - **影响：** 默认值、合法范围和降级规则变更时需要同步多处。

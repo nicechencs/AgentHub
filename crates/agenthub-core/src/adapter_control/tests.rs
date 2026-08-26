@@ -35,6 +35,16 @@ async fn lock_profile_is_independent_per_profile_id() {
     let _b = coordinator.lock_profile("profile-b").await;
 }
 
+#[tokio::test]
+async fn lock_profile_recycles_unused_entries() {
+    let coordinator = AdapterSagaCoordinator::new();
+    for i in 0..100 {
+        drop(coordinator.lock_profile(&format!("profile-{i}")).await);
+    }
+    let _held = coordinator.lock_profile("recycle-trigger").await;
+    assert_eq!(coordinator.profile_lock_count(), 1);
+}
+
 #[test]
 fn adapter_control_status_stopped_has_no_secrets() {
     use crate::adapter_control::AdapterBridgeStatus;
