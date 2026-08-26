@@ -47,6 +47,8 @@ pub enum BridgeHostError {
     StatePoisoned,
     #[error("failed to bind loopback bridge listener: {0}")]
     Bind(#[from] std::io::Error),
+    #[error("gateway port must be a non-zero loopback port")]
+    InvalidGatewayPort,
 }
 
 /// A tiny cancellation-safe completion primitive. The cleanup task, rather than an RPC caller,
@@ -136,6 +138,7 @@ pub(super) struct EdgeState {
     pub(super) mapping_source: Option<crate::models::AdapterSourceProduct>,
     pub(super) mapping_target: Option<crate::models::AgentId>,
     pub(super) custom_openai: bool,
+    pub(super) route_index: Option<crate::bridge::route_index::EffectiveRouteIndex>,
 }
 
 pub(super) enum GatewayAuthError {
@@ -378,6 +381,7 @@ impl EdgeState {
             mapping_source: spec.mapping_source,
             mapping_target: spec.mapping_target,
             custom_openai: spec.custom_openai,
+            route_index: spec.route_index.clone(),
         }
     }
 

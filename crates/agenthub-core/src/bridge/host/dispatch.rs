@@ -63,51 +63,76 @@ pub(super) async fn handle_conversation(
         .get("model")
         .and_then(|value| value.as_str())
         .unwrap_or("");
-    match gateway.switch_edge_for_model(&admitted.state, model) {
-        ModelSwitchOutcome::Stay => {}
-        ModelSwitchOutcome::Switched(mut switched) => {
-            tracing::info!(
-                target: "core.adapter",
-                request_id = %admitted.request_id,
-                lead_profile_id = %admitted.state.profile_id,
-                switch_profile_id = %switched.profile_id,
-                model,
-                "request-scoped model switch after lead mapping miss"
-            );
-            if !model.is_empty() {
-                switched.upstream.model = Some(model.to_owned());
+    if let Some(index) = &admitted.state.route_index {
+        let endpoint = DownstreamSurface::endpoint_key(admitted.state.upstream.local_surface);
+        match index.resolve(endpoint, model) {
+            Ok(candidates) if !candidates.is_empty() => {}
+            Ok(_) | Err(_) => {
+                tracing::warn!(
+                    target: "core.adapter",
+                    profile_id = %admitted.state.profile_id,
+                    request_id = %admitted.request_id,
+                    model,
+                    op = "upstream",
+                    code = "model_unavailable",
+                    status = 400_u16,
+                    "v2 route index failed closed before any upstream attempt"
+                );
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "model_unavailable",
+                    "No running route can serve this model.",
+                    None,
+                );
             }
-            admitted.state = switched;
         }
-        ModelSwitchOutcome::Unavailable => {
-            let listed_hit = admitted
-                .state
-                .listed_models
-                .iter()
-                .any(|item| crate::models::listed_model_matches(item, model));
-            let listed_restricted = !admitted.state.listed_models.is_empty();
-            let code = if listed_restricted && !listed_hit && !model.is_empty() {
-                "listed_models_reject"
-            } else {
-                "model_unavailable"
-            };
-            tracing::warn!(
-                target: "core.adapter",
-                profile_id = %admitted.state.profile_id,
-                request_id = %admitted.request_id,
-                model,
-                listed = listed_restricted,
-                op = "upstream",
-                code,
-                status = 400_u16,
-                "lead mapping missed and no running alternate can serve this model"
-            );
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                code,
-                "No running route can serve this model.",
-                None,
-            );
+    } else {
+        match gateway.switch_edge_for_model(&admitted.state, model) {
+            ModelSwitchOutcome::Stay => {}
+            ModelSwitchOutcome::Switched(mut switched) => {
+                tracing::info!(
+                    target: "core.adapter",
+                    request_id = %admitted.request_id,
+                    lead_profile_id = %admitted.state.profile_id,
+                    switch_profile_id = %switched.profile_id,
+                    model,
+                    "request-scoped model switch after lead mapping miss"
+                );
+                if !model.is_empty() {
+                    switched.upstream.model = Some(model.to_owned());
+                }
+                admitted.state = switched;
+            }
+            ModelSwitchOutcome::Unavailable => {
+                let listed_hit = admitted
+                    .state
+                    .listed_models
+                    .iter()
+                    .any(|item| crate::models::listed_model_matches(item, model));
+                let listed_restricted = !admitted.state.listed_models.is_empty();
+                let code = if listed_restricted && !listed_hit && !model.is_empty() {
+                    "listed_models_reject"
+                } else {
+                    "model_unavailable"
+                };
+                tracing::warn!(
+                    target: "core.adapter",
+                    profile_id = %admitted.state.profile_id,
+                    request_id = %admitted.request_id,
+                    model,
+                    listed = listed_restricted,
+                    op = "upstream",
+                    code,
+                    status = 400_u16,
+                    "lead mapping missed and no running alternate can serve this model"
+                );
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    code,
+                    "No running route can serve this model.",
+                    None,
+                );
+            }
         }
     }
     let Some(member) = admitted.state.account_picker.pick_new() else {
