@@ -5587,13 +5587,13 @@ async fn pair_flag_off_keeps_experimental_grok_codex_passthrough() {
     upstream_task.abort();
 }
 
-fn p7_listing(member_id: &str, provider: &str, models: &[&str]) -> MemberListing {
+fn p7_listing(member_id: &str, provider: &str, models: &[&str], endpoint: &str) -> MemberListing {
     MemberListing {
         member_id: member_id.into(),
         listed_models: models.iter().map(|model| (*model).to_string()).collect(),
         upstream_provider: provider.into(),
         upstream_dialect: provider.into(),
-        upstream_endpoint: format!("https://{provider}.example/v1"),
+        upstream_endpoint: endpoint.into(),
         transport_key: format!("{provider}:{provider}"),
         snapshot_ok: true,
     }
@@ -5622,14 +5622,14 @@ fn p7_rule(
     }
 }
 
-fn p7_index(mixed: bool, rules: Vec<ModelRouteRule>) -> EffectiveRouteIndex {
+fn p7_index(mixed: bool, rules: Vec<ModelRouteRule>, endpoint: &str) -> EffectiveRouteIndex {
     index_from_member_listings(
         "pool-v2-p7",
         1,
         "responses",
         &[
-            p7_listing("grok-member", "grok", &["m1"]),
-            p7_listing("codex-member", "codex", &["m1"]),
+            p7_listing("grok-member", "grok", &["m1"], endpoint),
+            p7_listing("codex-member", "codex", &["m1"], endpoint),
         ],
         None,
     )
@@ -5654,8 +5654,11 @@ fn p7_members() -> Vec<BridgeMemberSpec> {
 fn p7_pool_spec(
     profile_id: &str,
     upstream_port: u16,
-    index: EffectiveRouteIndex,
+    mixed: bool,
+    rules: Vec<ModelRouteRule>,
 ) -> BridgeStartSpec {
+    let endpoint = format!("http://127.0.0.1:{upstream_port}");
+    let index = p7_index(mixed, rules, &endpoint);
     spec_with_token(profile_id, 0, upstream_port, TOKEN_A)
         .with_members(p7_members())
         .with_listed_models(index.list_models("responses"))
@@ -5687,11 +5690,7 @@ async fn p7_flag_off_hides_mixed_model_and_does_not_call_upstream() {
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
     let status = host
-        .start(p7_pool_spec(
-            "p7-flag-off",
-            upstream_port,
-            p7_index(false, vec![]),
-        ))
+        .start(p7_pool_spec("p7-flag-off", upstream_port, false, vec![]))
         .await
         .expect("start");
     assert!(listed_model_ids(status.port).await.is_empty());
@@ -5708,11 +5707,7 @@ async fn p7_flag_on_without_rules_does_not_guess_provider() {
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
     let status = host
-        .start(p7_pool_spec(
-            "p7-no-rules",
-            upstream_port,
-            p7_index(true, vec![]),
-        ))
+        .start(p7_pool_spec("p7-no-rules", upstream_port, true, vec![]))
         .await
         .expect("start");
     assert!(listed_model_ids(status.port).await.is_empty());
@@ -5732,7 +5727,8 @@ async fn p7_unknown_model_does_not_call_upstream() {
         .start(p7_pool_spec(
             "p7-unknown",
             upstream_port,
-            p7_index(true, vec![p7_rule("r-grok", "grok", "m1", 0, None)]),
+            true,
+            vec![p7_rule("r-grok", "grok", "m1", 0, None)],
         ))
         .await
         .expect("start");
@@ -5754,15 +5750,16 @@ async fn p7_equivalent_lanes_failover_on_5xx_not_400() {
     });
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
-    let index = p7_index(
-        true,
-        vec![
-            p7_rule("r-grok", "grok", "m1", 0, Some("shared")),
-            p7_rule("r-codex", "codex", "m1", 10, Some("shared")),
-        ],
-    );
     let status = host
-        .start(p7_pool_spec("p7-equiv-5xx", upstream_port, index))
+        .start(p7_pool_spec(
+            "p7-equiv-5xx",
+            upstream_port,
+            true,
+            vec![
+                p7_rule("r-grok", "grok", "m1", 0, Some("shared")),
+                p7_rule("r-codex", "codex", "m1", 10, Some("shared")),
+            ],
+        ))
         .await
         .expect("start");
     assert_eq!(listed_model_ids(status.port).await, vec!["m1".to_owned()]);
@@ -5792,15 +5789,16 @@ async fn p7_equivalent_lanes_failover_on_5xx_not_400() {
     });
     let (upstream_port, captured, task) = callback_chat_upstream(callback_400).await;
     let host = BridgeRuntimeHost::new();
-    let index = p7_index(
-        true,
-        vec![
-            p7_rule("r-grok", "grok", "m1", 0, Some("shared")),
-            p7_rule("r-codex", "codex", "m1", 10, Some("shared")),
-        ],
-    );
     let status = host
-        .start(p7_pool_spec("p7-equiv-400", upstream_port, index))
+        .start(p7_pool_spec(
+            "p7-equiv-400",
+            upstream_port,
+            true,
+            vec![
+                p7_rule("r-grok", "grok", "m1", 0, Some("shared")),
+                p7_rule("r-codex", "codex", "m1", 10, Some("shared")),
+            ],
+        ))
         .await
         .expect("start");
     let response = post_p5_model(status.port, "m1", false).await;
@@ -5825,15 +5823,16 @@ async fn p7_non_equivalent_lanes_do_not_failover_on_5xx() {
     });
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
-    let index = p7_index(
-        true,
-        vec![
-            p7_rule("r-grok", "grok", "m1", 0, None),
-            p7_rule("r-codex", "codex", "m1", 10, None),
-        ],
-    );
     let status = host
-        .start(p7_pool_spec("p7-no-equiv-5xx", upstream_port, index))
+        .start(p7_pool_spec(
+            "p7-no-equiv-5xx",
+            upstream_port,
+            true,
+            vec![
+                p7_rule("r-grok", "grok", "m1", 0, None),
+                p7_rule("r-codex", "codex", "m1", 10, None),
+            ],
+        ))
         .await
         .expect("start");
     let response = post_p5_model(status.port, "m1", false).await;
@@ -5852,9 +5851,13 @@ async fn p7_declared_grok_lane_does_not_pick_codex_member() {
     let callback: ChatCallback = Arc::new(|_bearer, _body| chat_ok());
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
-    let index = p7_index(true, vec![p7_rule("r-grok", "grok", "m1", 0, None)]);
     let status = host
-        .start(p7_pool_spec("p7-grok-only", upstream_port, index))
+        .start(p7_pool_spec(
+            "p7-grok-only",
+            upstream_port,
+            true,
+            vec![p7_rule("r-grok", "grok", "m1", 0, None)],
+        ))
         .await
         .expect("start");
     let response = post_p5_model(status.port, "m1", false).await;
@@ -5865,4 +5868,52 @@ async fn p7_declared_grok_lane_does_not_pick_codex_member() {
     );
     host.shutdown().await.expect("shutdown");
     task.abort();
+}
+
+#[tokio::test]
+async fn p7_equivalent_failover_uses_the_other_lane_endpoint() {
+    let grok_cb: ChatCallback =
+        Arc::new(|_bearer, _body| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    let codex_cb: ChatCallback = Arc::new(|_bearer, _body| chat_ok());
+    let (grok_port, grok_captured, grok_task) = callback_chat_upstream(grok_cb).await;
+    let (codex_port, codex_captured, codex_task) = callback_chat_upstream(codex_cb).await;
+    let grok_ep = format!("http://127.0.0.1:{grok_port}");
+    let codex_ep = format!("http://127.0.0.1:{codex_port}");
+    let index = index_from_member_listings(
+        "pool-v2-p7",
+        1,
+        "responses",
+        &[
+            p7_listing("grok-member", "grok", &["m1"], &grok_ep),
+            p7_listing("codex-member", "codex", &["m1"], &codex_ep),
+        ],
+        None,
+    )
+    .with_mixed_provider_rules(
+        true,
+        vec![
+            p7_rule("r-grok", "grok", "m1", 0, Some("shared")),
+            p7_rule("r-codex", "codex", "m1", 10, Some("shared")),
+        ],
+    );
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            spec_with_token("p7-lane-url", 0, grok_port, TOKEN_A)
+                .with_members(p7_members())
+                .with_listed_models(index.list_models("responses"))
+                .with_route_index(index),
+        )
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(captured_tokens(&grok_captured).len(), 1);
+    assert_eq!(
+        captured_tokens(&codex_captured),
+        vec!["Bearer token-codex".to_owned()]
+    );
+    host.shutdown().await.expect("shutdown");
+    grok_task.abort();
+    codex_task.abort();
 }
