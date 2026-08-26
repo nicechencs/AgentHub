@@ -62,6 +62,8 @@ export function ChatComposer({
   agentsReady,
   blockers,
   connectionCaption,
+  walletError,
+  onRetryWallet,
   onSend,
   onCancel,
   onSelectAgent,
@@ -87,6 +89,8 @@ export function ChatComposer({
   agentsReady: boolean;
   blockers: ChatSendBlocker[];
   connectionCaption: string | null;
+  walletError?: unknown;
+  onRetryWallet?: () => void;
   onSend: () => void;
   onCancel: () => void;
   onSelectAgent: (id: AgentId) => void;
@@ -145,6 +149,16 @@ export function ChatComposer({
 
   return (
     <>
+      {walletError && !firstBlocker ? (
+        <Notice
+          tone="warning"
+          className="mb-2"
+          actionLabel={onRetryWallet ? t('chrome.error.retry') : undefined}
+          onAction={onRetryWallet}
+        >
+          {t('connections.page.walletError')}
+        </Notice>
+      ) : null}
       {firstBlocker && (
         <BlockerNotice
           blocker={firstBlocker}

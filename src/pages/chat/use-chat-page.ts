@@ -932,6 +932,8 @@ export function useChatPage() {
     connectionView,
     connectionOptions,
     connectionCaption,
+    walletError: ticketWallet.error,
+    reloadWallet: ticketWallet.reload,
     blockers,
     railGroups,
     filteredCount,
