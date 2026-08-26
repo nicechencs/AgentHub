@@ -9,6 +9,8 @@ import type {
   AdapterProfileFilter,
   AdapterRouteAnalysis,
   AdapterRouteRequest,
+  DefaultRoutePoolList,
+  DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
 
 export type {
@@ -44,6 +46,18 @@ export async function planAdapter(request: AdapterRouteRequest): Promise<Adapter
 /** Lists credential-free adapter profiles. */
 export async function listAdapterProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]> {
   return getBackend().adapter.listProfiles(filter);
+}
+
+/** Default-pool overview for Routes. Flag off returns `{ enabled: false, pools: [] }`. */
+export async function listDefaultRoutePools(): Promise<DefaultRoutePoolList> {
+  return getBackend().adapter.listDefaultRoutePools();
+}
+
+/** Convert a direct login into the target Agent default local route. */
+export async function enrollNativeToGateway(profileId: string): Promise<DefaultRoutePoolOverview> {
+  const result = await getBackend().adapter.enrollNativeToGateway(profileId);
+  await refreshConnectionPoolAfterAdapterMutation();
+  return result;
 }
 
 async function refreshConnectionPoolAfterAdapterMutation(): Promise<void> {

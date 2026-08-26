@@ -9,11 +9,15 @@ import {
   mapAdapterBridgeStatusDto,
   mapAdapterProfile,
   mapAdapterRouteAnalysis,
+  mapDefaultRoutePoolList,
+  mapDefaultRoutePoolOverview,
   type AdapterApplyPlanWire,
   type AdapterApplyResultWireInput,
   type AdapterBridgeStatusDtoWire,
   type AdapterProfileWire,
   type AdapterRouteAnalysisWire,
+  type DefaultRoutePoolListWire,
+  type DefaultRoutePoolOverviewWire,
 } from '@/lib/backend/contracts/adapter-wire';
 import { invoke } from './invoke';
 
@@ -85,6 +89,16 @@ export function createTauriAdapterPort(): AdapterPort {
     async listProfiles(filter) {
       const wire = await invokeAdapter<AdapterProfileWire[]>('list_adapter_profiles', { ...filter });
       return wire.map(mapAdapterProfile);
+    },
+    async listDefaultRoutePools() {
+      const wire = await invokeAdapter<DefaultRoutePoolListWire>('list_default_route_pools', {});
+      return mapDefaultRoutePoolList(wire);
+    },
+    async enrollNativeToGateway(profileId) {
+      const wire = await invokeAdapter<DefaultRoutePoolOverviewWire>('enroll_native_to_gateway', {
+        profileId,
+      });
+      return mapDefaultRoutePoolOverview(wire);
     },
     async apply(request) {
       // Thin host command: core `apply_adapter` delegates to bind_ticket_inner.

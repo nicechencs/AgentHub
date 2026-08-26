@@ -858,6 +858,27 @@ export const zh = {
       copyPortPending: "端口分配后可复制",
       upstreamUrl: "上游地址",
     },
+    pool: {
+      entry: "本机入口",
+      entryPending: "端口分配中",
+      surfaceLabel: "接口",
+      surface: {
+        messages: "对话接口",
+        responses: "回复接口",
+        chatCompletions: "对话补全",
+      },
+      members: "已接入的登录",
+      memberOff: "已停用",
+      tokenSaved: "本机令牌已保存",
+      enrollNative: "交给本机网关",
+      enrolling: "接入中…",
+      enrollFailed: "无法交给本机网关",
+      enrollSuccess: "已交给本机网关。",
+    },
+    direct: {
+      title: "直连",
+      description: "官方直连。需要时可以改走本机转发。",
+    },
   },
   dashboard: {
     range: {

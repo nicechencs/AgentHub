@@ -7,14 +7,16 @@ use std::collections::HashMap;
 use chrono::Utc;
 use uuid::Uuid;
 
+use super::AdapterRouteService;
 use crate::bridge::BridgeRuntimeHost;
 use crate::error::{AppError, Result};
 use crate::models::{
-    choose_default_pool_id, feature_flag_enabled, generate_hub_token, AdapterProfile,
-    AdapterProfileFilter, AdapterRoute, AdapterSourceKind, AgentId, RouteDownstreamDialect,
-    RouteDownstreamSurface, RouteMember, RoutePool, RouteSchedulePolicy,
-    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
-    FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    choose_default_pool_id, enroll_native_plan_is_open, feature_flag_enabled, generate_hub_token,
+    list_local_bridge_models, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter, AdapterRoute,
+    AdapterRouteRequest, AdapterSourceKind, AgentId, DefaultRoutePoolList,
+    DefaultRoutePoolOverview, RouteDownstreamDialect, RouteDownstreamSurface, RouteMember,
+    RouteMemberOverview, RoutePool, RouteSchedulePolicy, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
+    FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 use crate::storage::{binding_get_conn, AdapterProfileRepo, Database, RoutePoolRepo};
 
@@ -88,6 +90,98 @@ impl RoutePoolService {
     ) -> Result<Vec<RoutePool>> {
         self.require_enabled()?;
         self.pools.list_pools(target_agent_id, surface)
+    }
+
+    pub fn get_adapter_profile(&self, id: &str) -> Result<Option<AdapterProfile>> {
+        self.profiles.get(id)
+    }
+
+    /// Default pools only. Flag off returns `{ enabled: false, pools: [] }` so
+    /// the Routes page can stay unchanged without treating this as an error.
+    pub fn list_default_overviews(&self) -> Result<DefaultRoutePoolList> {
+        if !self.enabled()? {
+            return Ok(DefaultRoutePoolList {
+                enabled: false,
+                pools: Vec::new(),
+            });
+        }
+        let mut overviews = Vec::new();
+        for pool in self.pools.list_pools(None, None)? {
+            if !pool.is_default {
+                continue;
+            }
+            overviews.push(self.overview_from_pool(&pool)?);
+        }
+        Ok(DefaultRoutePoolList {
+            enabled: true,
+            pools: overviews,
+        })
+    }
+
+    pub fn overview_from_pool(&self, pool: &RoutePool) -> Result<DefaultRoutePoolOverview> {
+        let members = self.pools.list_members(&pool.id)?;
+        let listed_models = self.listed_models_for_pool(pool, &members);
+        Ok(DefaultRoutePoolOverview {
+            id: pool.id.clone(),
+            target_agent_id: pool.target_agent_id,
+            surface: pool.downstream_surface,
+            dialect: pool.downstream_dialect,
+            v2_enrolled: pool.v2_enrolled,
+            gateway_port: pool.gateway_port,
+            members: members
+                .into_iter()
+                .map(|member| RouteMemberOverview {
+                    source_kind: member.source_kind,
+                    source_id: member.source_id,
+                    enabled: member.enabled,
+                })
+                .collect(),
+            listed_models,
+        })
+    }
+
+    /// `plan()` then refuse unless the matrix allows a local-bridge write now.
+    pub fn evaluate_enroll_native(&self, profile: &AdapterProfile) -> Result<AdapterApplyPlan> {
+        self.require_enabled()?;
+        let routes = AdapterRouteService::new(self.db.clone());
+        let plan = routes.plan(&AdapterRouteRequest {
+            source_kind: profile.source_kind,
+            source_id: profile.source_id.clone(),
+            target_agent_id: profile.target_agent_id,
+        })?;
+        enroll_native_plan_is_open(profile, &plan)?;
+        Ok(plan)
+    }
+
+    /// Persist v2 enrollment only after a healthy local-bridge bind.
+    /// Occupancy / bind failure must not call this.
+    pub fn persist_enroll_after_native_bind(
+        &self,
+        bound_profile: &AdapterProfile,
+        port: u16,
+    ) -> Result<DefaultRoutePoolOverview> {
+        self.require_enabled()?;
+        if bound_profile.route != AdapterRoute::LocalBridge {
+            return Err(AppError::Unsupported(
+                "native enroll persist requires a local_bridge profile".into(),
+            ));
+        }
+        self.ensure_legacy_pool(bound_profile)?;
+        let enrolled = self.enroll_v2(&bound_profile.id, port)?;
+        let pool = if enrolled.is_default {
+            enrolled
+        } else {
+            let siblings = self.pools.list_pools(
+                Some(enrolled.target_agent_id),
+                Some(enrolled.downstream_surface),
+            )?;
+            if siblings.iter().any(|item| item.is_default) {
+                enrolled
+            } else {
+                self.pools.set_default(&enrolled.id)?
+            }
+        };
+        self.overview_from_pool(&pool)
     }
 
     pub fn list_members(&self, pool_id: &str) -> Result<Vec<RouteMember>> {
@@ -396,6 +490,17 @@ impl RoutePoolService {
             Ok(())
         })?;
         Ok(active)
+    }
+
+    fn listed_models_for_pool(&self, pool: &RoutePool, members: &[RouteMember]) -> Vec<String> {
+        let Some(lead) = members.iter().find(|member| member.enabled) else {
+            return Vec::new();
+        };
+        let routes = AdapterRouteService::new(self.db.clone());
+        let Ok(product) = routes.classify_source_product(lead.source_kind, &lead.source_id) else {
+            return Vec::new();
+        };
+        list_local_bridge_models(product, pool.target_agent_id, None)
     }
 
     fn require_member(&self, member_id: &str) -> Result<RouteMember> {

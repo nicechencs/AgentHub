@@ -867,6 +867,27 @@ export const en = {
       copyPortPending: "Copy after the port is assigned",
       upstreamUrl: "Upstream URL",
     },
+    pool: {
+      entry: "Local entry",
+      entryPending: "Port pending",
+      surfaceLabel: "Endpoint",
+      surface: {
+        messages: "Messages",
+        responses: "Responses",
+        chatCompletions: "Chat completions",
+      },
+      members: "Enrolled logins",
+      memberOff: "Off",
+      tokenSaved: "Local token saved",
+      enrollNative: "Use local forwarding",
+      enrolling: "Connecting…",
+      enrollFailed: "Couldn't switch this login to local forwarding",
+      enrollSuccess: "Now using local forwarding.",
+    },
+    direct: {
+      title: "Direct",
+      description: "Official direct connection. You can switch it to local forwarding when needed.",
+    },
   },
   dashboard: {
     range: {

@@ -378,6 +378,78 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('role="dialog"');
     expect(markup).not.toContain('运行中');
     expect(markup).toContain('本机入口');
+    expect(markup).not.toContain('交给本机网关');
+    expect(markup).not.toContain('已接入的登录');
+    expect(markup).not.toContain('本机令牌已保存');
+  });
+
+  it('shows default pool members when flag is on, and hides them when off', () => {
+    const profile = localBridgeProfile();
+    const pool = {
+      id: profile.id,
+      targetAgentId: 'codex' as const,
+      surface: 'responses' as const,
+      dialect: 'codex' as const,
+      v2Enrolled: true,
+      gatewayPort: 43121,
+      members: [{ sourceKind: 'provider' as const, sourceId: 'kimi-1', enabled: true }],
+      listedModels: ['kimi-k2.5'],
+    };
+    const off = renderDetail({
+      profile,
+      bridgeStatus: runningStatus(profile.id),
+      entries: [openRouterEntry()],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+      routePoolV2: false,
+      defaultPool: pool,
+    });
+    expect(off).not.toContain('已接入的登录');
+    expect(off).not.toContain('本机令牌已保存');
+    const on = renderDetail({
+      profile,
+      bridgeStatus: runningStatus(profile.id),
+      entries: [openRouterEntry()],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+      routePoolV2: true,
+      defaultPool: pool,
+    });
+    expect(on).toContain('http://127.0.0.1:43121');
+    expect(on).toContain('回复接口');
+    expect(on).toContain('已接入的登录');
+    expect(on).toContain('OpenRouter');
+    expect(on).toContain('本机令牌已保存');
+    expect(on).not.toContain('hubToken');
+    expect(on).not.toContain('ahb_');
+  });
+
+  it('shows enroll CTA only when flag is on, route is native, and plan allows local_bridge', () => {
+    const native = { ...localBridgeProfile(), id: 'native-1', route: 'native_endpoint' as const, localPort: null };
+    const hidden = renderDetail({
+      profile: native,
+      entries: [],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+      routePoolV2: true,
+      canApplyLocalBridge: false,
+      onEnrollNative: vi.fn(),
+    });
+    expect(hidden).not.toContain('交给本机网关');
+    const shown = renderDetail({
+      profile: native,
+      entries: [],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+      routePoolV2: true,
+      canApplyLocalBridge: true,
+      onEnrollNative: vi.fn(),
+    });
+    expect(shown).toContain('交给本机网关');
   });
 
   it('opens detail as the same inspect chrome as edit', () => {

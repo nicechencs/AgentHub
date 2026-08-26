@@ -230,10 +230,39 @@ export function adapterCommandError(fields: {
   });
 }
 
+export type RoutePoolSurface = 'messages' | 'responses' | 'chat_completions';
+export type RoutePoolDialect = 'claude' | 'codex' | 'grok' | 'kimi' | 'dsh' | 'generic';
+
+/** Credential-free member row. Never includes login secrets or Hub tokens. */
+export interface RouteMemberOverview {
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+  enabled: boolean;
+}
+
+/** Credential-free default-pool overview. Never includes `hubToken`. */
+export interface DefaultRoutePoolOverview {
+  id: string;
+  targetAgentId: AgentId;
+  surface: RoutePoolSurface;
+  dialect: RoutePoolDialect;
+  v2Enrolled: boolean;
+  gatewayPort?: number | null;
+  members: RouteMemberOverview[];
+  listedModels?: string[];
+}
+
+export interface DefaultRoutePoolList {
+  enabled: boolean;
+  pools: DefaultRoutePoolOverview[];
+}
+
 export interface AdapterPort {
   analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
   listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
+  listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
+  enrollNativeToGateway(profileId: string): Promise<DefaultRoutePoolOverview>;
   apply(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
   remove(profileId: string): Promise<void>;
   startBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus>;

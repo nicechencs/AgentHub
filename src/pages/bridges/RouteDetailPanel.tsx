@@ -11,6 +11,7 @@ import { openLogsDir } from '@/lib/api/settings';
 import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
+  DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,13 @@ import {
 import {
   adapterProfileRecoveryGuide,
 } from './adapter-view-model';
+import {
+  defaultPoolEntryUrl,
+  nativeEnrollCtaVisible,
+  routePoolMemberLabels,
+  routePoolMembersSectionVisible,
+  routePoolSurfaceLabel,
+} from './route-pool-view-model';
 
 /**
  * Route detail: login, local address, who is connected. No protocol graph.
@@ -54,6 +62,11 @@ export function RouteDetailPanel({
   open = true,
   onOpenChange,
   width,
+  routePoolV2 = false,
+  defaultPool = null,
+  canApplyLocalBridge = false,
+  onEnrollNative,
+  enrolling = false,
 }: {
   id?: string;
   profile: AdapterProfile | null;
@@ -69,6 +82,11 @@ export function RouteDetailPanel({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   width?: number;
+  routePoolV2?: boolean;
+  defaultPool?: DefaultRoutePoolOverview | null;
+  canApplyLocalBridge?: boolean;
+  onEnrollNative?: (profile: AdapterProfile) => void;
+  enrolling?: boolean;
 }) {
   const { t } = useI18n();
   if (!profile) return null;
@@ -95,6 +113,12 @@ export function RouteDetailPanel({
       entries={entries}
       siblingProfiles={siblingProfiles}
       error={error}
+      routePoolV2={routePoolV2}
+      defaultPool={defaultPool}
+      canApplyLocalBridge={canApplyLocalBridge}
+      onEnrollNative={onEnrollNative}
+      enrolling={enrolling}
+      busy={busy}
     />
   );
 
@@ -145,12 +169,24 @@ function RouteDetailBody({
   entries,
   siblingProfiles,
   error,
+  routePoolV2 = false,
+  defaultPool = null,
+  canApplyLocalBridge = false,
+  onEnrollNative,
+  enrolling = false,
+  busy = false,
 }: {
   profile: AdapterProfile;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
   entries: ConnectionEntry[];
   siblingProfiles: readonly AdapterProfile[];
   error: unknown;
+  routePoolV2?: boolean;
+  defaultPool?: DefaultRoutePoolOverview | null;
+  canApplyLocalBridge?: boolean;
+  onEnrollNative?: (profile: AdapterProfile) => void;
+  enrolling?: boolean;
+  busy?: boolean;
 }) {
   const { toast } = useToast();
   const { t } = useI18n();
@@ -235,6 +271,27 @@ function RouteDetailBody({
           <p className="text-meta text-muted">{routeModelsSummary(capabilities.models, t)}</p>
         </section>
 
+        {routePoolMembersSectionVisible(routePoolV2, defaultPool) && defaultPool ? (
+          <RoutePoolOverviewSection pool={defaultPool} entries={entries} />
+        ) : null}
+
+        {nativeEnrollCtaVisible({
+          flagOn: routePoolV2,
+          route: profile.route,
+          canApplyLocalBridge,
+        }) && onEnrollNative ? (
+          <section className="space-y-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || enrolling}
+              onClick={() => onEnrollNative(profile)}
+            >
+              {enrolling ? t('routes.pool.enrolling') : t('routes.pool.enrollNative')}
+            </Button>
+          </section>
+        ) : null}
+
         {recovery ? (
           <section className="space-y-1.5" role="status">
             <h3 className="text-sm font-medium text-warning">{t('routes.recovery.stepsTitle')}</h3>
@@ -288,6 +345,67 @@ function RouteDetailBody({
         </details>
       </div>
     </>
+  );
+}
+
+function RoutePoolOverviewSection({
+  pool,
+  entries,
+}: {
+  pool: DefaultRoutePoolOverview;
+  entries: ConnectionEntry[];
+}) {
+  const { t } = useI18n();
+  const entry = defaultPoolEntryUrl(pool.gatewayPort);
+  const members = routePoolMemberLabels(pool.members, entries);
+  return (
+    <section className="space-y-2" data-route-pool={pool.id}>
+      <h3 className="text-body font-medium">{t('routes.pool.entry')}</h3>
+      <div className="rounded-card border border-border bg-subtle p-3 space-y-3">
+        <dl className="grid gap-2 text-sm">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <dt className="w-12 shrink-0 text-muted">{t('routes.pool.entry')}</dt>
+            <dd className="min-w-0">
+              {entry.url ? (
+                <CopyableEndpoint
+                  text={entry.url}
+                  url={entry.url}
+                  ariaLabel={t('routes.graph.copyLocal', { endpoint: entry.url })}
+                  className="text-sm font-medium"
+                />
+              ) : (
+                <span className="text-muted">{t('routes.pool.entryPending')}</span>
+              )}
+            </dd>
+          </div>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <dt className="w-12 shrink-0 text-muted">{t('routes.pool.surfaceLabel')}</dt>
+            <dd className="min-w-0 text-sm">{routePoolSurfaceLabel(pool.surface, t)}</dd>
+          </div>
+        </dl>
+        <div className="space-y-1.5">
+          <h4 className="text-sm font-medium">{t('routes.pool.members')}</h4>
+          {members.length === 0 ? (
+            <p className="text-sm text-muted">{t('routes.graph.empty')}</p>
+          ) : (
+            <ul className="space-y-1">
+              {members.map((member) => (
+                <li
+                  key={`${member.sourceKind}:${member.sourceId}`}
+                  className="flex min-w-0 flex-wrap items-center gap-x-2 py-0.5 text-sm"
+                >
+                  <span className="truncate">{member.title}</span>
+                  {member.enabled ? null : (
+                    <span className="text-meta text-muted">{t('routes.pool.memberOff')}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <p className="text-meta text-muted">{t('routes.pool.tokenSaved')}</p>
+      </div>
+    </section>
   );
 }
 
