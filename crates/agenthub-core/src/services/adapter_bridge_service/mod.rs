@@ -996,13 +996,23 @@ impl AdapterBridgeService {
         for member in members.into_iter().filter(|member| member.enabled) {
             listings.push(self.listing_for_member(material, &rule, profile, &member));
         }
-        Some(index_from_member_listings(
-            pool.id,
+        let index = index_from_member_listings(
+            pool.id.clone(),
             pool.policy_revision.max(0) as u64,
             endpoint,
             &listings,
             prior.as_deref(),
-        ))
+        );
+        if self.route_pools.mixed_provider_enabled() {
+            let rules = self
+                .route_pools
+                .list_rules(&pool.id)
+                .ok()
+                .unwrap_or_default();
+            Some(index.with_mixed_provider_rules(true, rules))
+        } else {
+            Some(index)
+        }
     }
 
     fn listing_for_member(
