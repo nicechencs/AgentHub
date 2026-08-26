@@ -648,7 +648,7 @@ export const en = {
     unbind: {
       title: "Stop this local forward and restore the previous setup?",
       description: "Stops the local forward and restores the tool's previous config. The login stays in Connections.",
-      orphanNote: "The source login is gone; stop and restore still use the same steps.",
+      orphanDescription: "Stops the local forward and restores the tool's previous config. The source login is gone, but the same stop-and-restore steps still apply.",
       fallback: "Couldn't stop and restore this local forward",
       confirming: "Stopping and restoring…",
       retry: "Retry stop and restore",
