@@ -43,9 +43,12 @@ import {
   extraCopyKindLabel,
   extraCopyUpdateHint,
   formatAgentVersion,
+  isInAppUpgradeChannel,
   isNodeTooOldUpdateNote,
+  isSpecialInstallChannel,
   openAgentCardUninstallConfirm,
   resolveOfficialSetupUrl,
+  specialChannelUpdateTargets,
 } from './agent-card-model';
 import { AgentCardDialogs } from './AgentCardDialogs';
 import { useAgentCardLifecycle } from './use-agent-card-lifecycle';
@@ -68,9 +71,13 @@ export function AgentCard({
 }) {
   const { t } = useI18n();
   const meta = AGENT_MAP[agent.agentId];
-  const [selectedChannelId, setSelectedChannelId] = React.useState(
-    () => agent.channel ?? meta?.installChannels[0]?.id ?? 'native',
-  );
+  const [selectedChannelId, setSelectedChannelId] = React.useState(() => {
+    const detected = agent.channel;
+    if (detected && meta?.installChannels.some((c) => c.id === detected)) {
+      return detected;
+    }
+    return meta?.installChannels[0]?.id ?? 'native';
+  });
 
   const selectedChannelFallback: InstallChannelMeta = meta?.installChannels.find((c) => c.id === selectedChannelId)
     ?? meta?.installChannels[0]
@@ -168,8 +175,11 @@ export function AgentCard({
 
   const updateState = agent.update?.state;
   const checkingUpdate = updateState === 'checking';
+  const inAppChannel = isInAppUpgradeChannel(agent.channel);
+  const specialTargets = specialChannelUpdateTargets(agent);
   const upgradable =
     agent.installed &&
+    inAppChannel &&
     (updateState === 'update_available' ||
       (!agent.update &&
         !!agent.latestVersion &&
@@ -180,7 +190,8 @@ export function AgentCard({
     agent.update?.setupUrl,
     meta.installChannels,
   );
-  const canForceUpgrade = agent.installed && !updateUnsupported;
+  const canForceUpgrade = agent.installed && inAppChannel && !updateUnsupported;
+  const showInAppUpgrade = agent.installed && (inAppChannel || updateUnsupported);
   const latestLabel =
     agent.update?.latestVersion ?? agent.latestVersion ?? undefined;
   const versionLabel = formatAgentVersion(agent.version);
@@ -384,6 +395,19 @@ export function AgentCard({
                         {t('agents.card.needsOfficial')}
                       </Tip>
                     ))}
+                  {specialTargets.map((target) => (
+                    <Tip
+                      key={target.kind}
+                      className={
+                        target.outdated ? 'text-xs text-success' : 'text-xs text-muted'
+                      }
+                      label={agent.update?.note ?? t('agents.card.extraCopyUpgradeSpawnOnly')}
+                    >
+                      {target.kind === 'desktop'
+                        ? t('agents.card.updateViaDesktop')
+                        : t('agents.card.updateViaIde')}
+                    </Tip>
+                  ))}
                 </>
               ) : cardState === 'env_missing' ? (
                 <>
@@ -412,7 +436,13 @@ export function AgentCard({
                     />
                   </span>
                 ) : null}
-                {agent.channel && <Badge>{agent.channel}</Badge>}
+                {agent.channel && (
+                  <Badge>
+                    {isSpecialInstallChannel(agent.channel)
+                      ? extraCopyKindLabel(agent.channel, t)
+                      : agent.channel}
+                  </Badge>
+                )}
               </div>
             ) : (
               <div className="mt-1 space-y-1 text-xs text-muted">
@@ -538,34 +568,36 @@ export function AgentCard({
             </Button>
           ) : agent.installed ? (
             <>
-              <Button
-                size="icon"
-                variant="secondary"
-                disabled={
-                  busy ||
-                  checkingUpdate ||
-                  (updateUnsupported
-                    ? !officialSetupUrl
-                    : !upgradable && !canForceUpgrade)
-                }
-                aria-label={
-                  updateUnsupported
-                    ? t('agents.card.openOfficialUpdate')
-                    : upgradable
-                      ? t('agents.card.update')
-                      : t('agents.card.forceUpgrade')
-                }
-                title={upgradeTooltip}
-                onClick={updateUnsupported ? openOfficialSetup : onUpgradeClick}
-              >
-                <ArrowUpCircle
-                  className={cn(
-                    'h-3.5 w-3.5',
-                    upgradable && 'text-success',
-                    checkingUpdate && 'animate-pulse opacity-70',
-                  )}
-                />
-              </Button>
+              {showInAppUpgrade ? (
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  disabled={
+                    busy ||
+                    checkingUpdate ||
+                    (updateUnsupported
+                      ? !officialSetupUrl
+                      : !upgradable && !canForceUpgrade)
+                  }
+                  aria-label={
+                    updateUnsupported
+                      ? t('agents.card.openOfficialUpdate')
+                      : upgradable
+                        ? t('agents.card.update')
+                        : t('agents.card.forceUpgrade')
+                  }
+                  title={upgradeTooltip}
+                  onClick={updateUnsupported ? openOfficialSetup : onUpgradeClick}
+                >
+                  <ArrowUpCircle
+                    className={cn(
+                      'h-3.5 w-3.5',
+                      upgradable && 'text-success',
+                      checkingUpdate && 'animate-pulse opacity-70',
+                    )}
+                  />
+                </Button>
+              ) : null}
               <Button
                 size="icon"
                 variant="outline"

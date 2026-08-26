@@ -1187,18 +1187,12 @@ pub fn upgrade_agent_with_contribution(
             ));
         }
 
-        let channel = before
-            .channel
-            .as_deref()
-            .map(|c| {
-                // Prefer concrete channel; legacy "npm-or-native" treated as native unless path says npm.
-                if c == "npm" || (c.contains("npm") && !c.contains("native")) {
-                    "npm"
-                } else {
-                    "native"
-                }
-            })
-            .unwrap_or("native");
+        let channel = match resolve_in_app_upgrade_channel(before.channel.as_deref()) {
+            Ok(ch) => ch,
+            Err(message) => {
+                return Ok(InstallOutcome::failure(action, logs, message));
+            }
+        };
 
         let before_ver = before.version.clone().unwrap_or_else(|| "?".into());
         push_log(
@@ -1336,6 +1330,27 @@ pub fn upgrade_from_contribution(
         &result,
     );
     result
+}
+
+/// npm / native can be upgraded here. IDE / desktop copies must be updated
+/// in that product; never treat them as native and run the installer.
+fn resolve_in_app_upgrade_channel(
+    channel: Option<&str>,
+) -> std::result::Result<&'static str, String> {
+    let Some(raw) = channel.map(str::trim).filter(|c| !c.is_empty()) else {
+        return Ok("native");
+    };
+    let lower = raw.to_ascii_lowercase();
+    if lower == "ide" {
+        return Err("当前是 IDE 插件安装，无法在这里更新，请到 IDE 插件中更新".into());
+    }
+    if lower == "desktop" {
+        return Err("当前是桌面应用安装，无法在这里更新，请到桌面应用中更新".into());
+    }
+    if lower == "npm" || (lower.contains("npm") && !lower.contains("native")) {
+        return Ok("npm");
+    }
+    Ok("native")
 }
 
 fn upgrade_succeeded(command_ok: bool, detected: &DetectStatus) -> bool {

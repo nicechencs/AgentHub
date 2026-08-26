@@ -197,7 +197,18 @@ fn check_one(
     }
 
     // Annotate non-npm installs: remote probe source may differ from install channel.
-    if channel != "npm" {
+    if channel == "ide" || channel == "desktop" {
+        let label = if channel == "ide" {
+            "IDE 插件"
+        } else {
+            "桌面应用"
+        };
+        let base = format!("当前安装来自{label}，无法在 AgentHub 内更新，请到{label}中更新");
+        info.note = Some(match info.note {
+            Some(n) if !n.is_empty() => format!("{base}（{n}）"),
+            _ => base,
+        });
+    } else if channel != "npm" {
         let base = if remote.source.starts_with("npm") {
             format!("当前安装渠道为 {channel}，已对照 npm dist-tag 版本；升级仍按本机渠道执行")
         } else {

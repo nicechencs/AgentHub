@@ -279,6 +279,33 @@ describe('mapDoctorDetectResult', () => {
     expect(mapped.notes).toEqual(['另有 1 份 Codex']);
   });
 
+  it('keeps desktop/ide spawn channel on installed agents', () => {
+    const runtimes = sampleReport.runtimes.map(mapDoctorEnvStatus);
+    const mapped = mapDoctorDetectResult(
+      {
+        agent: 'codex',
+        status: 'installed',
+        version: '0.50.0',
+        binaryPath: 'C:\\Users\\demo\\AppData\\Local\\OpenAI\\Codex\\bin\\hash\\codex.exe',
+        channel: 'desktop',
+        envReady: true,
+        notes: ['found via desktop copy'],
+        extraCopies: [
+          {
+            path: 'C:\\Users\\demo\\.vscode\\extensions\\openai.chatgpt\\bin\\windows-x86_64\\codex.exe',
+            kind: 'ide',
+            version: '0.49.0',
+            channel: null,
+          },
+        ],
+      },
+      runtimes,
+    );
+    expect(mapped.installed).toBe(true);
+    expect(mapped.channel).toBe('desktop');
+    expect(mapped.extraCopies?.[0]?.kind).toBe('ide');
+  });
+
   it('attaches doctor capabilities when provided', () => {
     const runtimes = sampleReport.runtimes.map(mapDoctorEnvStatus);
     const claude = mapDoctorDetectResult(sampleReport.agents[0], runtimes, {

@@ -9,8 +9,11 @@ import {
   extraCopyKindLabel,
   extraCopyKindLabelKey,
   extraCopyUpdateHint,
+  isInAppUpgradeChannel,
   isNodeTooOldUpdateNote,
+  isSpecialInstallChannel,
   openAgentCardUninstallConfirm,
+  specialChannelUpdateTargets,
 } from './agent-card-model';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -125,7 +128,11 @@ describe('extra copy labels', () => {
     expect(card).toContain('agents.card.copyPath');
     expect(card).toContain('extraCopyKindLabel');
     expect(card).toContain('extraCopyUpdateHint');
+    expect(card).toContain('specialChannelUpdateTargets');
+    expect(card).toContain('updateViaDesktop');
     expect(zh.agents.card.copyPath).toBe('复制路径');
+    expect(zh.agents.card.updateViaDesktop).toBe('请到桌面应用更新');
+    expect(zh.agents.card.updateViaIde).toBe('请到 IDE 插件更新');
     expect(zh.agents.card.extraCopyDesktop).toBe('桌面应用');
   });
 
@@ -137,6 +144,50 @@ describe('extra copy labels', () => {
     );
     expect(extraCopyUpdateHint('leftover-agenthub', '0.1.0', '1.0.0')).toBeUndefined();
     expect(extraCopyUpdateHint('npm', undefined, '1.2.0')).toBeUndefined();
+  });
+
+  it('treats npm/native as in-app upgrade and ide/desktop as external', () => {
+    expect(isInAppUpgradeChannel('npm')).toBe(true);
+    expect(isInAppUpgradeChannel('native')).toBe(true);
+    expect(isInAppUpgradeChannel(undefined)).toBe(true);
+    expect(isInAppUpgradeChannel('desktop')).toBe(false);
+    expect(isInAppUpgradeChannel('ide')).toBe(false);
+    expect(isSpecialInstallChannel('desktop')).toBe(true);
+    expect(isSpecialInstallChannel('npm')).toBe(false);
+  });
+
+  it('hints after the agent name for special copies that cannot be upgraded here', () => {
+    expect(
+      specialChannelUpdateTargets({
+        channel: 'desktop',
+        extraCopies: [],
+        latestVersion: '0.51.0',
+        update: { agentId: 'codex', state: 'update_available', latestVersion: '0.51.0' },
+      }),
+    ).toEqual([{ kind: 'desktop', outdated: true }]);
+    expect(
+      specialChannelUpdateTargets({
+        channel: 'npm',
+        extraCopies: [
+          {
+            path: '/ide/codex',
+            kind: 'ide',
+            version: '0.49.0',
+            channel: null,
+          },
+        ],
+        latestVersion: '0.50.0',
+        update: { agentId: 'codex', state: 'up_to_date', latestVersion: '0.50.0' },
+      }),
+    ).toEqual([{ kind: 'ide', outdated: true }]);
+    expect(
+      specialChannelUpdateTargets({
+        channel: 'desktop',
+        extraCopies: [],
+        latestVersion: '0.50.0',
+        update: { agentId: 'codex', state: 'up_to_date', latestVersion: '0.50.0' },
+      }),
+    ).toEqual([]);
   });
 });
 

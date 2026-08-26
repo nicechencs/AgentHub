@@ -101,7 +101,8 @@ export interface AgentStatus {
   installed: boolean;
   version?: string;
   latestVersion?: string;
-  channel?: InstallChannel;
+  /** Spawn channel: `npm` / `native`, or observed `ide` / `desktop`. */
+  channel?: string;
   binPath?: string;
   /** Other on-disk copies besides binPath (other channels, IDE, leftover npm). */
   extraCopies?: Array<{

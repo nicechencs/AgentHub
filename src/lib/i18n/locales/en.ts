@@ -1675,6 +1675,8 @@ export const en = {
       extraCopyCanUpdate: "update available",
       extraCopyIsLatest: "up to date",
       extraCopyUpgradeSpawnOnly: "Upgrade only updates the spawn channel",
+      updateViaDesktop: "Update in the desktop app",
+      updateViaIde: "Update in the IDE extension",
       copyPath: "Copy path",
       copyPathTitle: "Copy the install path so you can find the file",
       pathCopied: "Path copied",
