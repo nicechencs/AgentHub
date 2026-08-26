@@ -265,6 +265,7 @@ impl AdapterBridgeService {
                 upstream_auth,
                 local_bearer: local_bearer_from_provider(&provider)?,
                 route_index: None,
+                index_enabled: false,
             },
             &profile,
         );

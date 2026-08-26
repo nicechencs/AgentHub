@@ -198,9 +198,7 @@ pub struct MemberListing {
     pub snapshot_ok: bool,
 }
 
-/// Build [`EffectiveRouteIndex`] from member mapping listings. This is the
-/// production snapshot path used by start / restore; tests must not bypass it
-/// with a hand-rolled index when asserting that path.
+/// Build [`EffectiveRouteIndex`] from member mapping listings.
 pub fn index_from_member_listings(
     route_id: impl Into<String>,
     generation: u64,

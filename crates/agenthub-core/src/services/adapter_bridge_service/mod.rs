@@ -499,6 +499,9 @@ pub struct AdapterBridgeRuntimeMaterial {
     upstream_auth: ResolvedAuth,
     local_bearer: String,
     route_index: Option<EffectiveRouteIndex>,
+    /// When the v2 index flag is on, a non-zero preferred port is occupancy-failed
+    /// instead of rebound, even before the pool is enrolled.
+    index_enabled: bool,
 }
 
 impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
@@ -522,6 +525,7 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
                 "route_index",
                 &self.route_index.as_ref().map(|index| index.generation),
             )
+            .field("index_enabled", &self.index_enabled)
             .finish()
     }
 }
@@ -566,6 +570,7 @@ impl AdapterBridgeRuntimeMaterial {
             upstream_auth: ResolvedAuth::bearer(upstream_token),
             local_bearer: local_bearer.into(),
             route_index: None,
+            index_enabled: false,
         }
     }
 
@@ -611,12 +616,23 @@ impl AdapterBridgeRuntimeMaterial {
     }
 
     pub fn freeze_gateway_port(&self) -> bool {
-        self.route_index.is_some() && self.preferred_port.is_some_and(|port| port != 0)
+        self.preferred_port.is_some_and(|port| port != 0)
+            && (self.route_index.is_some() || self.index_enabled)
+    }
+
+    /// Seed last-successful snapshots so a partial rebuild can keep them.
+    pub fn with_prior_route_index(mut self, index: EffectiveRouteIndex) -> Self {
+        self.route_index = Some(index);
+        self
     }
 
     /// Host/controller tests: attach a production-built index without prepare.
-    pub fn with_route_index_for_test(mut self, index: EffectiveRouteIndex) -> Self {
-        self.route_index = Some(index);
+    pub fn with_route_index_for_test(self, index: EffectiveRouteIndex) -> Self {
+        self.with_prior_route_index(index)
+    }
+
+    pub fn with_index_enabled_for_test(mut self) -> Self {
+        self.index_enabled = true;
         self
     }
 
@@ -909,6 +925,7 @@ impl AdapterBridgeService {
         mut material: AdapterBridgeRuntimeMaterial,
         profile: &AdapterProfile,
     ) -> AdapterBridgeRuntimeMaterial {
+        material.index_enabled = self.route_pools.index_enabled();
         let _ = self.route_pools.ensure_legacy_pool(profile);
         if let Some(index) = self.route_index_for_material(&material, profile) {
             if let Ok(Some(pool)) = self.route_pools.get(&material.profile_id) {
@@ -917,6 +934,8 @@ impl AdapterBridgeService {
                 }
             }
             material.route_index = Some(index);
+        } else {
+            material.route_index = None;
         }
         material
     }

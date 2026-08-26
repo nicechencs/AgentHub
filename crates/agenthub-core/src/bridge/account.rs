@@ -247,8 +247,7 @@ impl AccountPicker {
         })
     }
 
-    /// v2 scheduler: shrink `resolve` output only. Never enlarges the set and
-    /// never re-interprets the model. Default order is priority, position, id.
+    /// Shrink `resolve` output only. Order is priority, position, id.
     pub fn pick_from_candidates(
         &self,
         candidates: &[DispatchCandidate],
