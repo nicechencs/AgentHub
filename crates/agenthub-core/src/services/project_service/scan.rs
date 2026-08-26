@@ -7,11 +7,14 @@
 use chrono::Utc;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::catalog::limits::{
-    PROJECT_EXCERPT_CHARS as EXCERPT_CHARS, PROJECT_LIST_HEAD_BYTES as LIST_HEAD_BYTES,
+    PROJECT_ASSISTANT_TURN_EXCERPT_CHARS as ASSISTANT_TURN_EXCERPT_CHARS,
+    PROJECT_EXCERPT_CHARS as EXCERPT_CHARS, PROJECT_EXCERPT_KEEP_BYTES as EXCERPT_KEEP_BYTES,
+    PROJECT_EXCERPT_READ_BYTES as EXCERPT_READ_BYTES, PROJECT_LIST_HEAD_BYTES as LIST_HEAD_BYTES,
     PROJECT_PREVIEW_CHARS as PREVIEW_CHARS, PROJECT_SCAN_BYTES as SCAN_BYTES,
     PROJECT_USER_TURN_EXCERPT_CHARS as USER_TURN_EXCERPT_CHARS,
 };
@@ -2130,12 +2133,24 @@ fn extract_assistant_turn(v: &serde_json::Value) -> Option<ExcerptTurn> {
         .and_then(|r| r.as_str())
         .unwrap_or("")
         .to_ascii_lowercase();
+    let message_role = v
+        .pointer("/message/role")
+        .and_then(|r| r.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if matches!(
+        message_role.as_str(),
+        "toolresult" | "tool" | "tool_result" | "system"
+    ) {
+        return None;
+    }
     let is_assistant = ty.contains("assistant")
         || ty == "agent"
         || role == "assistant"
         || payload_role == "assistant"
         || payload_ty.contains("assistant")
-        || payload_ty == "agent_message";
+        || payload_ty == "agent_message"
+        || message_role == "assistant";
     if !is_assistant {
         return None;
     }
@@ -2224,10 +2239,7 @@ fn polish_excerpt_turns(turns: Vec<ExcerptTurn>) -> Vec<ExcerptTurn> {
         .filter_map(|t| {
             if t.role == "user" {
                 let text = visible_transcript_text(&t.text)?;
-                Some(ExcerptTurn {
-                    role: "user",
-                    text,
-                })
+                Some(ExcerptTurn { role: "user", text })
             } else if t.text.trim().is_empty() {
                 None
             } else {
@@ -2237,13 +2249,23 @@ fn polish_excerpt_turns(turns: Vec<ExcerptTurn>) -> Vec<ExcerptTurn> {
         .collect()
 }
 
-/// Prefer Grok `updates.jsonl` (clean user chunks). If it has no assistant
-/// text, keep those user turns and fill replies from `chat_history.jsonl`.
+/// Prefer Grok `updates.jsonl` (clean user chunks) when it covers at least as
+/// many user turns as `chat_history.jsonl`. A truncated updates head — the
+/// file is mostly `tool_call` noise — can look complete while only covering
+/// the first turn; in that case keep the richer transcript.
 fn merge_grok_excerpt_turns(
     update_turns: Vec<ExcerptTurn>,
     chat_turns: Vec<ExcerptTurn>,
 ) -> Vec<ExcerptTurn> {
     if update_turns.is_empty() {
+        return chat_turns;
+    }
+    if chat_turns.is_empty() {
+        return update_turns;
+    }
+    let update_users = update_turns.iter().filter(|t| t.role == "user").count();
+    let chat_users = chat_turns.iter().filter(|t| t.role == "user").count();
+    if chat_users > update_users {
         return chat_turns;
     }
     if update_turns.iter().any(|t| t.role == "assistant") {
@@ -2272,12 +2294,13 @@ fn format_excerpt_turns(turns: &[ExcerptTurn]) -> String {
         if remaining == 0 {
             break;
         }
-        // A wrapped user prompt must not consume the whole excerpt budget.
-        let budget = if t.role == "user" {
-            remaining.min(USER_TURN_EXCERPT_CHARS)
+        // A wrapped prompt or a long first reply must not hide later turns.
+        let per_turn = if t.role == "user" {
+            USER_TURN_EXCERPT_CHARS
         } else {
-            remaining
+            ASSISTANT_TURN_EXCERPT_CHARS
         };
+        let budget = remaining.min(per_turn);
         if budget == 0 {
             continue;
         }
@@ -2330,14 +2353,30 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
             session_id: native_session_id_from_path(agent, &abs_path),
         }
     });
-    let text = read_head(&abs_path, SCAN_BYTES * 2).unwrap_or_default();
-    let chat_turns = extract_jsonl_transcript_turns(&text);
+    let filtered = read_jsonl_matching(
+        &abs_path,
+        transcript_line_might_be_turn,
+        EXCERPT_KEEP_BYTES,
+        EXCERPT_READ_BYTES,
+    )
+    .unwrap_or_default();
+    let chat_text = if filtered.trim().is_empty() {
+        read_head(&abs_path, SCAN_BYTES.saturating_mul(2)).unwrap_or_default()
+    } else {
+        filtered
+    };
+    let chat_turns = extract_jsonl_transcript_turns(&chat_text);
     let turns = if agent == AgentId::Grok {
         let updates = abs_path.with_file_name("updates.jsonl");
         let update_turns = if updates.is_file() {
-            read_head(&updates, SCAN_BYTES * 2)
-                .map(|u| extract_grok_update_turns(&u))
-                .unwrap_or_default()
+            read_jsonl_matching(
+                &updates,
+                grok_updates_line_might_be_message,
+                EXCERPT_KEEP_BYTES,
+                EXCERPT_READ_BYTES,
+            )
+            .map(|u| extract_grok_update_turns(&u))
+            .unwrap_or_default()
         } else {
             Vec::new()
         };
@@ -2536,8 +2575,158 @@ fn extract_text_from_value(v: &serde_json::Value) -> Option<String> {
     None
 }
 
+fn grok_updates_line_might_be_message(line: &str) -> bool {
+    line.contains("user_message_chunk")
+        || line.contains("agent_message_chunk")
+        || line.contains("assistant_message_chunk")
+        || line.contains("\"sessionUpdate\":\"user_message\"")
+        || line.contains("\"sessionUpdate\": \"user_message\"")
+        || line.contains("\"sessionUpdate\":\"agent_message\"")
+        || line.contains("\"sessionUpdate\": \"agent_message\"")
+}
+
+fn json_field_eq(head: &str, key: &str, value: &str) -> bool {
+    let compact = format!("\"{key}\":\"{value}\"");
+    let spaced = format!("\"{key}\": \"{value}\"");
+    head.contains(&compact) || head.contains(&spaced)
+}
+
+/// Cheap prefix check so tool dumps / function_call_output / event_msg are not
+/// loaded. Applied to Claude, Codex, Grok, Kimi, Pi, and WorkBuddy transcripts.
+fn transcript_line_might_be_turn(line: &str) -> bool {
+    let head = line.get(..line.len().min(1024)).unwrap_or(line);
+    if head.contains("function_call_output")
+        || head.contains("\"synthetic_reason\"")
+        || json_field_eq(head, "type", "event_msg")
+        || json_field_eq(head, "type", "session_meta")
+        || json_field_eq(head, "type", "turn_context")
+        || json_field_eq(head, "type", "tool_result")
+        || json_field_eq(head, "type", "reasoning")
+        || json_field_eq(head, "role", "toolResult")
+        || head.contains("sessionUpdate\":\"tool_call")
+    {
+        return false;
+    }
+    grok_updates_line_might_be_message(head)
+        || json_field_eq(head, "type", "user")
+        || json_field_eq(head, "type", "assistant")
+        || json_field_eq(head, "type", "human")
+        || json_field_eq(head, "role", "user")
+        || json_field_eq(head, "role", "assistant")
+        || head.contains("turn.prompt")
+        || head.contains("context.append_message")
+}
+
+const LINE_PREFIX_BYTES: usize = 2048;
+
+/// Stream a jsonl, keep matching lines, stop after `max_kept_bytes` of kept
+/// content or `max_read_bytes` of the file. Non-matching lines are skipped
+/// after a small prefix so multi-MB tool dumps do not fill the excerpt window.
+fn read_jsonl_matching(
+    path: &Path,
+    keep: impl Fn(&str) -> bool,
+    max_kept_bytes: u64,
+    max_read_bytes: u64,
+) -> Option<String> {
+    let file = fs::File::open(path).ok()?;
+    let mut reader = BufReader::new(file.take(max_read_bytes));
+    let mut out = String::new();
+    let mut kept = 0u64;
+    loop {
+        let (mut buf, had_nl) = read_line_prefix(&mut reader, LINE_PREFIX_BYTES)?;
+        if buf.is_empty() && !had_nl {
+            break;
+        }
+        let prefix = String::from_utf8_lossy(&buf);
+        if !keep(prefix.trim_end_matches(['\n', '\r'])) {
+            if !had_nl {
+                skip_rest_of_line(&mut reader);
+            }
+            continue;
+        }
+        if !had_nl {
+            let extra = (max_kept_bytes.saturating_sub(kept) as usize)
+                .saturating_add(8)
+                .min(512 * 1024);
+            let (rest, rest_nl) = read_line_prefix(&mut reader, extra.max(1))?;
+            buf.extend_from_slice(&rest);
+            if !rest_nl {
+                skip_rest_of_line(&mut reader);
+            }
+        }
+        while matches!(buf.last(), Some(b'\n' | b'\r')) {
+            buf.pop();
+        }
+        let line = String::from_utf8_lossy(&buf);
+        let add = line.len() as u64 + 1;
+        if kept > 0 && kept.saturating_add(add) > max_kept_bytes {
+            break;
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&line);
+        kept = kept.saturating_add(add);
+        if kept >= max_kept_bytes {
+            break;
+        }
+    }
+    Some(out)
+}
+
+fn read_line_prefix<R: BufRead>(reader: &mut R, limit: usize) -> Option<(Vec<u8>, bool)> {
+    let mut buf = Vec::new();
+    loop {
+        let avail = match reader.fill_buf() {
+            Ok(a) => a,
+            Err(_) => {
+                return if buf.is_empty() {
+                    None
+                } else {
+                    Some((buf, false))
+                };
+            }
+        };
+        if avail.is_empty() {
+            return Some((buf, false));
+        }
+        let room = limit.saturating_sub(buf.len());
+        if room == 0 {
+            return Some((buf, false));
+        }
+        let chunk = &avail[..avail.len().min(room)];
+        if let Some(i) = chunk.iter().position(|&b| b == b'\n') {
+            buf.extend_from_slice(&chunk[..=i]);
+            reader.consume(i + 1);
+            return Some((buf, true));
+        }
+        let n = chunk.len();
+        buf.extend_from_slice(chunk);
+        reader.consume(n);
+        if buf.len() >= limit {
+            return Some((buf, false));
+        }
+    }
+}
+
+fn skip_rest_of_line<R: BufRead>(reader: &mut R) {
+    loop {
+        let Ok(avail) = reader.fill_buf() else {
+            return;
+        };
+        if avail.is_empty() {
+            return;
+        }
+        if let Some(i) = avail.iter().position(|&b| b == b'\n') {
+            reader.consume(i + 1);
+            return;
+        }
+        let n = avail.len();
+        reader.consume(n);
+    }
+}
+
 fn read_head(path: &Path, max_bytes: u64) -> Option<String> {
-    use std::io::Read;
     let file = fs::File::open(path).ok()?;
     let mut handle = file.take(max_bytes);
     let mut buf = Vec::new();

@@ -58,10 +58,17 @@ pub const PROJECT_PREVIEW_CHARS: usize = 120;
 pub const PROJECT_EXCERPT_CHARS: usize = 6_000;
 /// Cap a single user turn inside an excerpt so a wrapped prompt cannot hide assistant replies.
 pub const PROJECT_USER_TURN_EXCERPT_CHARS: usize = 2_000;
+/// Cap a single assistant turn so a long first reply cannot hide later turns.
+pub const PROJECT_ASSISTANT_TURN_EXCERPT_CHARS: usize = 2_000;
 /// Cap total sessions returned per agent to keep UI snappy.
 pub const PROJECT_MAX_PER_AGENT: usize = 500;
 /// When scanning a large jsonl, only read the first N bytes for preview/excerpt.
 pub const PROJECT_SCAN_BYTES: u64 = 256 * 1024;
+/// Bytes of *kept* turn lines for a session excerpt after filtering sidecar noise.
+pub const PROJECT_EXCERPT_KEEP_BYTES: u64 = 512 * 1024;
+/// Bytes *scanned* from a jsonl while collecting excerpt turns.
+/// Must exceed Codex rollouts / Grok `updates.jsonl` that bury later turns behind multi-MB tool dumps.
+pub const PROJECT_EXCERPT_READ_BYTES: u64 = 256 * 1024 * 1024;
 /// Cheap `list_projects` peek of the newest session file (cwd / preview only).
 /// Do not use this in `list_sessions` — that path still uses [`PROJECT_SCAN_BYTES`].
 pub const PROJECT_LIST_HEAD_BYTES: u64 = 16 * 1024;
