@@ -22,7 +22,8 @@ use super::host::{CleanupCompletion, MAX_IN_FLIGHT_REQUESTS_PER_PROFILE};
 use super::{
     protocol::responses::is_leftover_bridge_model, BridgeHostError, BridgeLocalSurface,
     BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec, BridgeUpstreamConfig,
-    BridgeUpstreamProtocol, BridgeUpstreamStatus, MemberHealth, ResolvedAuth, UpstreamAuthReload,
+    BridgeUpstreamProtocol, BridgeUpstreamStatus, EffectiveRouteIndex, MemberCapability,
+    MemberCapabilitySnapshot, MemberHealth, ResolvedAuth, UpstreamAuthReload,
 };
 use crate::models::{list_local_bridge_models, AdapterSourceProduct, AgentId};
 
@@ -4016,5 +4017,382 @@ async fn single_member_spec_keeps_legacy_oauth_reload_cell() {
         ]
     );
     host.stop("single-member-reload").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn set_gateway_port_zero_is_rejected() {
+    let host = BridgeRuntimeHost::new();
+    assert!(matches!(
+        host.set_gateway_port(0).await,
+        Err(BridgeHostError::InvalidGatewayPort)
+    ));
+}
+
+#[tokio::test]
+async fn primary_port_restart_does_not_drift() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let first = host
+        .start(spec_with_token("restart-a", 0, upstream_port, TOKEN_A))
+        .await
+        .expect("start A");
+    let primary = first.port;
+    host.start(spec_with_token("restart-b", 0, upstream_port, TOKEN_B))
+        .await
+        .expect("start B on primary");
+    host.stop("restart-a").await.expect("stop A");
+    let restored = host
+        .start(spec_with_token("restart-a", 0, upstream_port, TOKEN_A))
+        .await
+        .expect("restart A onto live primary");
+    assert_eq!(restored.port, primary);
+    assert_eq!(host.gateway_port().expect("gateway port"), Some(primary));
+    host.stop("restart-a").await.expect("stop A again");
+    host.stop("restart-b").await.expect("stop B");
+    let rebound = host
+        .start(spec_with_token(
+            "restart-a",
+            primary,
+            upstream_port,
+            TOKEN_A,
+        ))
+        .await
+        .expect("rebind stored primary");
+    assert_eq!(rebound.port, primary);
+    host.shutdown().await.expect("shutdown");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn set_gateway_port_occupancy_conflict_leaves_existing_listener() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let first = host
+        .start(spec_with_token("occupy-a", 0, upstream_port, TOKEN_A))
+        .await
+        .expect("start");
+    let original = first.port;
+    let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("blocker");
+    let busy = blocker.local_addr().expect("blocker addr").port();
+    assert!(matches!(
+        host.set_gateway_port(busy).await,
+        Err(BridgeHostError::Bind(_))
+    ));
+    assert_eq!(host.gateway_port().expect("gateway port"), Some(original));
+    let health = client()
+        .await
+        .get(format!("http://127.0.0.1:{original}/health"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .send()
+        .await
+        .expect("health on original port");
+    assert_eq!(health.status(), StatusCode::OK);
+    drop(blocker);
+    host.shutdown().await.expect("shutdown");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn set_gateway_port_moves_primary_and_keeps_explicit_alias() {
+    let (upstream_port, upstream_task) = grok_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let _primary = host
+        .start(grok_claude_with_token(
+            "alias-keep-primary",
+            0,
+            upstream_port,
+            TOKEN_A,
+        ))
+        .await
+        .expect("start primary");
+    let alias_port = free_loopback_port().await;
+    let aliased = host
+        .start(grok_codex_with_token(
+            "alias-keep-historical",
+            alias_port,
+            upstream_port,
+            TOKEN_B,
+        ))
+        .await
+        .expect("bind historical alias");
+    assert_eq!(aliased.port, alias_port);
+    let next = free_loopback_port().await;
+    let moved = host
+        .set_gateway_port(next)
+        .await
+        .expect("move unified port");
+    assert_eq!(moved, next);
+    assert_eq!(host.gateway_port().expect("gateway port"), Some(next));
+    assert_eq!(
+        host.status("alias-keep-primary")
+            .expect("status")
+            .expect("primary edge")
+            .port,
+        next
+    );
+    assert_eq!(
+        host.status("alias-keep-historical")
+            .expect("status")
+            .expect("alias edge")
+            .port,
+        alias_port
+    );
+    let http = client().await;
+    let via_new = http
+        .post(format!("http://127.0.0.1:{next}/v1/messages"))
+        .header("x-api-key", TOKEN_A)
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 32,
+            "messages": [{ "role": "user", "content": "hello" }]
+        }))
+        .send()
+        .await
+        .expect("A via new primary");
+    assert_eq!(via_new.status(), StatusCode::OK);
+    let via_alias = http
+        .post(format!("http://127.0.0.1:{alias_port}/v1/responses"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_B}"))
+        .json(&json!({"model": "grok-4.5", "input": "hello"}))
+        .send()
+        .await
+        .expect("B via preserved alias");
+    assert_eq!(via_alias.status(), StatusCode::OK);
+    host.shutdown().await.expect("shutdown");
+    upstream_task.abort();
+}
+
+async fn capturing_chat_upstream() -> (u16, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
+    async fn chat(
+        State(captured): State<Arc<Mutex<Vec<String>>>>,
+        headers: axum::http::HeaderMap,
+    ) -> Json<Value> {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        captured.lock().expect("lock").push(bearer);
+        Json(json!({
+            "id": "chat-test",
+            "model": "exclusive",
+            "created": 1,
+            "choices": [{ "message": { "role": "assistant", "content": "hello" }, "finish_reason": "stop" }],
+            "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 }
+        }))
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind exclusive upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let state = captured.clone();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/chat/completions", post(chat))
+                .with_state(state),
+        )
+        .await
+        .expect("serve exclusive upstream");
+    });
+    (port, captured, task)
+}
+
+fn exclusive_spec(
+    profile_id: &str,
+    local_token: &str,
+    upstream_port: u16,
+    listed: &str,
+    upstream_token: &str,
+) -> BridgeStartSpec {
+    let mut spec = spec_with_token(profile_id, 0, upstream_port, local_token)
+        .with_listed_models(vec![listed.into()])
+        .with_mapping(AdapterSourceProduct::OpenaiApi, AgentId::Codex, false);
+    spec.upstream.auth = ResolvedAuth::bearer(upstream_token);
+    spec.upstream.model = Some(listed.into());
+    spec
+}
+
+#[tokio::test]
+async fn exclusive_model_m1_does_not_select_peer_b() {
+    let (upstream_a, captured_a, task_a) = capturing_chat_upstream().await;
+    let (upstream_b, captured_b, task_b) = capturing_chat_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let first = host
+        .start(exclusive_spec(
+            "exclusive-a",
+            TOKEN_A,
+            upstream_a,
+            "m1",
+            "upstream-a",
+        ))
+        .await
+        .expect("start A");
+    host.start({
+        let mut spec = exclusive_spec("exclusive-b", TOKEN_B, upstream_b, "m2", "upstream-b");
+        spec.port = first.port;
+        spec
+    })
+    .await
+    .expect("start B");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", first.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .json(&json!({"model": "m1", "input": "hello"}))
+        .send()
+        .await
+        .expect("m1 on A");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        captured_a.lock().expect("lock A").clone(),
+        vec!["Bearer upstream-a".to_owned()]
+    );
+    assert!(
+        captured_b.lock().expect("lock B").is_empty(),
+        "m1 must not select B"
+    );
+    host.shutdown().await.expect("shutdown");
+    task_a.abort();
+    task_b.abort();
+}
+
+#[tokio::test]
+async fn pool_tokens_do_not_cross_on_models_catalog() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let first = host
+        .start(
+            spec_with_token("pool-models-a", 0, upstream_port, TOKEN_A)
+                .with_listed_models(vec!["m1".into()]),
+        )
+        .await
+        .expect("start A");
+    host.start(
+        spec_with_token("pool-models-b", first.port, upstream_port, TOKEN_B)
+            .with_listed_models(vec!["m2".into()]),
+    )
+    .await
+    .expect("start B");
+    let http = client().await;
+    let listed_a = http
+        .get(format!("http://127.0.0.1:{}/v1/models", first.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .send()
+        .await
+        .expect("models A")
+        .json::<Value>()
+        .await
+        .expect("models A json");
+    assert_eq!(listed_a["data"][0]["id"], "m1");
+    assert_eq!(listed_a["data"].as_array().map(Vec::len), Some(1));
+    let listed_b = http
+        .get(format!("http://127.0.0.1:{}/v1/models", first.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_B}"))
+        .send()
+        .await
+        .expect("models B")
+        .json::<Value>()
+        .await
+        .expect("models B json");
+    assert_eq!(listed_b["data"][0]["id"], "m2");
+    assert_eq!(listed_b["data"].as_array().map(Vec::len), Some(1));
+    host.shutdown().await.expect("shutdown");
+    upstream_task.abort();
+}
+
+fn v2_index(route_id: &str, member_id: &str, model: &str) -> EffectiveRouteIndex {
+    EffectiveRouteIndex::build(
+        route_id,
+        1,
+        &[MemberCapabilitySnapshot {
+            member_id: member_id.into(),
+            public_model: model.into(),
+            endpoint: "responses".into(),
+            upstream_provider: "openai".into(),
+            upstream_dialect: "generic".into(),
+            upstream_model: model.into(),
+            upstream_endpoint: "http://127.0.0.1/v1".into(),
+            transport_key: "openai:generic".into(),
+            capability: MemberCapability::Supported,
+        }],
+    )
+}
+
+#[tokio::test]
+async fn v2_index_unknown_model_fails_closed_without_peer_switch() {
+    let (upstream_a, captured_a, task_a) = capturing_chat_upstream().await;
+    let (upstream_b, captured_b, task_b) = capturing_chat_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let first = host
+        .start(
+            exclusive_spec("v2-a", TOKEN_A, upstream_a, "m1", "upstream-a")
+                .with_route_index(v2_index("v2-a", "v2-a", "m1")),
+        )
+        .await
+        .expect("start A");
+    host.start({
+        let mut spec = exclusive_spec("v2-b", TOKEN_B, upstream_b, "m2", "upstream-b");
+        spec.port = first.port;
+        spec
+    })
+    .await
+    .expect("start B");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", first.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .json(&json!({"model": "m2", "input": "hello"}))
+        .send()
+        .await
+        .expect("m2 on v2 A");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.expect("error json");
+    assert_eq!(body["error"]["code"], "model_unavailable");
+    assert!(captured_a.lock().expect("lock A").is_empty());
+    assert!(
+        captured_b.lock().expect("lock B").is_empty(),
+        "v2 must not scan other profiles for a model switch"
+    );
+    host.shutdown().await.expect("shutdown");
+    task_a.abort();
+    task_b.abort();
+}
+
+#[tokio::test]
+async fn v2_models_catalog_comes_from_the_same_index() {
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let first = host
+        .start(
+            spec_with_token("v2-models-a", 0, upstream_port, TOKEN_A)
+                .with_listed_models(vec!["stale-lead-only".into()])
+                .with_route_index(v2_index("v2-models-a", "v2-models-a", "m1")),
+        )
+        .await
+        .expect("start A");
+    host.start(
+        spec_with_token("v2-models-b", first.port, upstream_port, TOKEN_B)
+            .with_listed_models(vec!["m2".into()]),
+    )
+    .await
+    .expect("start B");
+    let listed_a = client()
+        .await
+        .get(format!("http://127.0.0.1:{}/v1/models", first.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .send()
+        .await
+        .expect("models A")
+        .json::<Value>()
+        .await
+        .expect("models A json");
+    assert_eq!(listed_a["data"].as_array().map(Vec::len), Some(1));
+    assert_eq!(listed_a["data"][0]["id"], "m1");
+    host.shutdown().await.expect("shutdown");
     upstream_task.abort();
 }

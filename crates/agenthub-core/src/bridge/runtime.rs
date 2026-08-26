@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use super::account::{AccountPicker, BridgeMemberSpec, MemberHealth, PickedMember};
+use super::route_index::EffectiveRouteIndex;
 use crate::models::{AdapterSourceProduct, AgentId};
 
 /// Opaque callback that may rotate the in-memory upstream bearer.
@@ -125,6 +126,8 @@ pub struct BridgeStartSpec {
     pub mapping_source: Option<AdapterSourceProduct>,
     pub mapping_target: Option<AgentId>,
     pub custom_openai: bool,
+    /// Shared resolver snapshot. `None` keeps lead + `switch_edge_for_model`.
+    pub route_index: Option<EffectiveRouteIndex>,
 }
 
 impl fmt::Debug for BridgeStartSpec {
@@ -142,6 +145,10 @@ impl fmt::Debug for BridgeStartSpec {
             .field("mapping_source", &self.mapping_source)
             .field("mapping_target", &self.mapping_target)
             .field("custom_openai", &self.custom_openai)
+            .field(
+                "route_index",
+                &self.route_index.as_ref().map(|index| index.generation),
+            )
             .finish()
     }
 }
@@ -165,6 +172,7 @@ impl BridgeStartSpec {
             mapping_source: None,
             mapping_target: None,
             custom_openai: false,
+            route_index: None,
         }
     }
 
@@ -224,6 +232,11 @@ impl BridgeStartSpec {
 
     pub fn with_listed_models(mut self, listed_models: Vec<String>) -> Self {
         self.listed_models = listed_models;
+        self
+    }
+
+    pub fn with_route_index(mut self, index: EffectiveRouteIndex) -> Self {
+        self.route_index = Some(index);
         self
     }
 
