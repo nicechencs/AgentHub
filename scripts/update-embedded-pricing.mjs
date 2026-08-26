@@ -246,7 +246,6 @@ function buildTable(litellm, overridesRaw) {
     'moonshot/kimi-k2.5',
     'grok-4',
     'kimi-for-coding',
-    'codex-auto-review',
   ];
   const missingRequired = required.filter((k) => !table[k]);
   if (missingRequired.length) {

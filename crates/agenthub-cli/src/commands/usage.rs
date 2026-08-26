@@ -208,11 +208,11 @@ pub fn parse_days(raw: u32) -> Result<u32> {
 }
 
 fn missing_pricing_from_rows(rows: &[UsageRecord]) -> Vec<String> {
-    use agenthub_core::usage::has_embedded_pricing;
+    use agenthub_core::usage::has_embedded_pricing_for;
     let mut set = std::collections::BTreeSet::new();
     for r in rows {
         let tokens = r.input_tokens + r.output_tokens + r.cache_tokens_total();
-        if tokens > 0 && !has_embedded_pricing(&r.model) {
+        if tokens > 0 && !has_embedded_pricing_for(r.agent_id, &r.model, Some(&r.ts)) {
             set.insert(r.model.clone());
         }
     }
