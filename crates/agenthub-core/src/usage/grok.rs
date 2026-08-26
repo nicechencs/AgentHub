@@ -235,11 +235,13 @@ pub(crate) fn extract_grok_events(
             input_tokens: uncached,
             output_tokens: row.output_tokens.max(0),
             cache_creation_tokens: cache_create,
+            cache_creation_1h_tokens: 0,
             cache_read_tokens: cache_read,
             session_id: session_id.clone(),
             ts: ts.clone(),
             raw_hash,
             cost_usd,
+            fast: false,
         });
     }
     Ok(events)

@@ -6,6 +6,8 @@
 //!   - Skip `last_token_usage` when `total_token_usage` is unchanged (duplicate snapshots).
 //!   - Fork/subagent sessions: skip rewritten parent-history burst at open (≤1s gaps).
 //!   - Store **non-cached** input (`full − cached`) to match ccusage `inputTokens`.
+//!   - Also scan `archived_sessions/` (live `sessions/` wins on the same relative path).
+//!   - Fast/Priority from `thread_settings_applied` or config.toml `service_tier`.
 //! - Kimi: only `wire.jsonl`; old StatusUpdate/token_usage + new usage.record (turn only).
 //! - Pi: type=message role=assistant; usage.input/output/cacheRead/cacheWrite/cost.total.
 //! - Grok: `sessions/**/updates.jsonl` `turn_completed` only (ccusage adapter-grok).
@@ -14,7 +16,8 @@
 //! - DSH: provider usage on assistant/step events; inherit model from `request/header`.
 //!   Skip Token Meter heuristics (`surfaceTokens` / `estimated`). Do not scan cwd `.sessions`.
 //! - Paths: CLAUDE_CONFIG_DIR / XDG, KIMI_DATA_DIR, PI_AGENT_DIR, GROK_HOME, DSH_HOME / DSH_SESSION_ROOT.
-//! - Pricing: prefer log costUSD / Grok ticks (Auto), else token × rates.
+//! - Pricing: prefer log costUSD / Grok ticks (Auto), else token × rates
+//!   (long-context whole-request switch, 1h cache at 2× input, Codex Fast).
 //!
 //! AgentHub adds SQLite incremental cursors (ccusage is primarily report-oriented).
 
@@ -73,10 +76,29 @@ pub(crate) fn discover_workbuddy_files() -> Result<Vec<PathBuf>> {
 }
 
 pub(crate) fn discover_codex_files() -> Result<Vec<PathBuf>> {
-    let mut out = Vec::new();
     let home = agent_home(AgentId::Codex)?;
-    walk_jsonl(&home.join("sessions"), &mut out, None);
-    finish_files(out)
+    finish_files(discover_codex_files_in(&home))
+}
+
+/// ccusage: `sessions/` plus `archived_sessions/`. When both have the same
+/// relative path, keep the live `sessions/` copy.
+pub(crate) fn discover_codex_files_in(home: &Path) -> Vec<PathBuf> {
+    let sessions = home.join("sessions");
+    let archived = home.join("archived_sessions");
+    let mut active = Vec::new();
+    walk_jsonl(&sessions, &mut active, None);
+    let mut extra = Vec::new();
+    walk_jsonl(&archived, &mut extra, None);
+    let active_rel: std::collections::HashSet<PathBuf> = active
+        .iter()
+        .filter_map(|p| p.strip_prefix(&sessions).ok().map(|r| r.to_path_buf()))
+        .collect();
+    extra.retain(|p| match p.strip_prefix(&archived) {
+        Ok(rel) => !active_rel.contains(rel),
+        Err(_) => true,
+    });
+    active.extend(extra);
+    active
 }
 
 pub(crate) fn discover_kimi_files() -> Result<Vec<PathBuf>> {
@@ -357,6 +379,7 @@ pub(crate) fn line_might_have_usage_codex(line: &str) -> bool {
     line.contains("token_count")
         || line.contains("last_token_usage")
         || line.contains("turn_context")
+        || line.contains("thread_settings_applied")
         || line.contains("\"usage\"")
 }
 
@@ -463,6 +486,36 @@ pub(crate) fn read_codex_default_model(root: &Path) -> Option<String> {
         }
     }
     None
+}
+
+/// ccusage Auto Fast: top-level `service_tier = "fast"|"priority"` in config.toml.
+pub(crate) fn read_codex_fast_service_tier(root: &Path) -> bool {
+    let toml_path = root.join("config.toml");
+    let Ok(text) = fs::read_to_string(&toml_path) else {
+        return false;
+    };
+    if let Ok(doc) = text.parse::<toml_edit::DocumentMut>() {
+        return doc
+            .get("service_tier")
+            .and_then(|item| item.as_str())
+            .is_some_and(|v| matches!(v.trim(), "fast" | "priority"));
+    }
+    for line in text.lines() {
+        let setting = line.split('#').next().unwrap_or_default();
+        if setting.starts_with(' ') || setting.starts_with('\t') {
+            continue;
+        }
+        let setting = setting.trim();
+        let Some((key, value)) = setting.split_once('=') else {
+            continue;
+        };
+        if key.trim() != "service_tier" {
+            continue;
+        }
+        let value = value.trim().trim_matches(['"', '\'']);
+        return matches!(value, "fast" | "priority");
+    }
+    false
 }
 
 /// Read Pi default model from real `~/.pi/agent/settings.json` (`defaultModel`).
@@ -630,15 +683,16 @@ pub(crate) fn bootstrap_codex_model(path: &Path, up_to: u64) -> Option<String> {
 pub(crate) fn bootstrap_codex_prefix(
     path: &Path,
     up_to: u64,
-) -> (Option<String>, Option<CodexRawTotals>) {
+) -> (Option<String>, Option<CodexRawTotals>, Option<bool>) {
     let Ok(file) = File::open(path) else {
-        return (None, None);
+        return (None, None, None);
     };
     let mut reader = BufReader::new(file);
     let mut buf = String::new();
     let mut read: u64 = 0;
     let mut model: Option<String> = None;
     let mut previous_total: Option<CodexRawTotals> = None;
+    let mut service_tier_fast: Option<bool> = None;
 
     loop {
         if read >= up_to {
@@ -661,11 +715,26 @@ pub(crate) fn bootstrap_codex_prefix(
         if line.is_empty() {
             continue;
         }
-        if line.contains("turn_context") {
+        if line.contains("turn_context") || line.contains("thread_settings_applied") {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
                 if v.get("type").and_then(|t| t.as_str()) == Some("turn_context") {
                     if let Some(m) = codex_model_from_value(&v) {
                         model = Some(m);
+                    }
+                }
+                if v.get("type").and_then(|t| t.as_str()) == Some("event_msg")
+                    && v.pointer("/payload/type").and_then(|t| t.as_str())
+                        == Some("thread_settings_applied")
+                {
+                    if let Some(tier) = v
+                        .pointer("/payload/thread_settings/service_tier")
+                        .and_then(|t| t.as_str())
+                    {
+                        service_tier_fast = match tier.trim().to_ascii_lowercase().as_str() {
+                            "fast" | "priority" => Some(true),
+                            "default" | "standard" => Some(false),
+                            _ => None,
+                        };
                     }
                 }
             }
@@ -688,7 +757,7 @@ pub(crate) fn bootstrap_codex_prefix(
             }
         }
     }
-    (model, previous_total)
+    (model, previous_total, service_tier_fast)
 }
 
 /// Real Kimi Code + ccusage wire.jsonl:
@@ -731,11 +800,13 @@ pub(crate) fn extract_kimi(
             input_tokens: input,
             output_tokens: output,
             cache_creation_tokens: cache_create,
+            cache_creation_1h_tokens: 0,
             cache_read_tokens: cache_read,
             session_id: session_id.map(|s| s.to_string()),
             ts,
             raw_hash,
             cost_usd: None,
+            fast: false,
         }));
     }
 
@@ -797,11 +868,13 @@ pub(crate) fn extract_kimi(
         input_tokens: input,
         output_tokens: output,
         cache_creation_tokens: cache_create,
+        cache_creation_1h_tokens: 0,
         cache_read_tokens: cache_read,
         session_id: session_id.map(|s| s.to_string()),
         ts,
         raw_hash,
         cost_usd: None,
+        fast: false,
     }))
 }
 
@@ -886,11 +959,13 @@ pub(crate) fn extract_pi(
         input_tokens: input,
         output_tokens: output,
         cache_creation_tokens: cache_create,
+        cache_creation_1h_tokens: 0,
         cache_read_tokens: cache_read,
         session_id: session_id.map(|s| s.to_string()),
         ts,
         raw_hash,
         cost_usd,
+        fast: false,
     }))
 }
 
@@ -1001,11 +1076,13 @@ pub(crate) fn extract_dsh(
         input_tokens: input,
         output_tokens: output,
         cache_creation_tokens: cache_create,
+        cache_creation_1h_tokens: 0,
         cache_read_tokens: cache_read,
         session_id: sid,
         ts,
         raw_hash,
         cost_usd,
+        fast: false,
     }))
 }
 
@@ -1068,16 +1145,18 @@ fn extract_from_usage_obj(
         usage,
         &["cache_creation_input_tokens", "cache_creation_tokens"],
     );
-    // ccusage cache_creation breakdown (ephemeral 5m/1h)
+    let mut cache_create_1h = 0;
+    // ccusage: prefer cache_creation 5m/1h breakdown when present.
     if let Some(cc) = usage.get("cache_creation").filter(|c| c.is_object()) {
         let a = token_field(cc, &["ephemeral_5m_input_tokens"]);
         let b = token_field(cc, &["ephemeral_1h_input_tokens"]);
         if a + b > 0 {
-            cache_create = a + b;
+            cache_create = a;
+            cache_create_1h = b;
         }
     }
 
-    if input == 0 && output == 0 && cache_read == 0 && cache_create == 0 {
+    if input == 0 && output == 0 && cache_read == 0 && cache_create == 0 && cache_create_1h == 0 {
         return Ok(None);
     }
 
@@ -1120,11 +1199,13 @@ fn extract_from_usage_obj(
         input_tokens: input,
         output_tokens: output,
         cache_creation_tokens: cache_create,
+        cache_creation_1h_tokens: cache_create_1h,
         cache_read_tokens: cache_read,
         session_id: sid,
         ts,
         raw_hash,
         cost_usd,
+        fast: false,
     }))
 }
 
@@ -1144,6 +1225,10 @@ pub(crate) struct CodexParseState {
     previous_total: Option<CodexRawTotals>,
     /// Fork/subagent: skip rewritten parent-history burst at session open.
     replay: CodexReplaySkip,
+    /// `thread_settings_applied` Fast/Priority. `None` = not recorded this file.
+    service_tier_fast: Option<bool>,
+    /// `config.toml service_tier = fast|priority` (ccusage Auto when unrecorded).
+    config_fast: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1173,10 +1258,24 @@ impl CodexParseState {
         }
     }
 
+    fn event_is_fast(&self) -> bool {
+        self.service_tier_fast.unwrap_or(self.config_fast)
+    }
+
+    fn apply_service_tier(&mut self, recorded: &str) {
+        self.service_tier_fast = match recorded.trim().to_ascii_lowercase().as_str() {
+            "fast" | "priority" => Some(true),
+            "default" | "standard" => Some(false),
+            _ => None,
+        };
+    }
+
     /// Resume mid-file: inherit model + last cumulative total from the scanned prefix.
     pub fn resume_from_prefix(
         model: Option<String>,
         previous_total: Option<CodexRawTotals>,
+        service_tier_fast: Option<bool>,
+        config_fast: bool,
     ) -> Self {
         Self {
             model,
@@ -1185,6 +1284,8 @@ impl CodexParseState {
             forkish: false,
             burst_skip_active: false,
             replay: CodexReplaySkip::Done,
+            service_tier_fast,
+            config_fast,
             ..Default::default()
         }
     }
@@ -1193,7 +1294,7 @@ impl CodexParseState {
     ///
     /// ccusage: multi-agent children replay parent usage at the fork instant; those
     /// events must not be billed again (see ccusage `replay.rs` / `parser.rs`).
-    pub fn init_from_file(path: &Path, model: Option<String>) -> Self {
+    pub fn init_from_file(path: &Path, model: Option<String>, config_fast: bool) -> Self {
         let forkish = codex_file_is_forkish(path);
         let (replay, burst_skip_active) = if forkish {
             if let Some(first_ms) = codex_detect_rewritten_burst(path) {
@@ -1213,6 +1314,8 @@ impl CodexParseState {
             skipped_burst: 0,
             previous_total: None,
             replay,
+            service_tier_fast: None,
+            config_fast,
         }
     }
 }
@@ -1413,6 +1516,18 @@ pub(crate) fn extract_codex(
         return Ok(None);
     }
 
+    if v.get("type").and_then(|t| t.as_str()) == Some("event_msg")
+        && v.pointer("/payload/type").and_then(|t| t.as_str()) == Some("thread_settings_applied")
+    {
+        if let Some(tier) = v
+            .pointer("/payload/thread_settings/service_tier")
+            .and_then(|t| t.as_str())
+        {
+            state.apply_service_tier(tier);
+        }
+        return Ok(None);
+    }
+
     // Only event_msg / token_count carries usage (session path).
     // Do not fall back to extract_claude_like: that path does not peel
     // OpenAI-style cached_input_tokens out of input, so generic `usage`
@@ -1498,11 +1613,13 @@ pub(crate) fn extract_codex(
         input_tokens: billable_input,
         output_tokens: output,
         cache_creation_tokens: 0,
+        cache_creation_1h_tokens: 0,
         cache_read_tokens: cache_read,
         session_id: session_id.map(|s| s.to_string()),
         ts,
         raw_hash,
         cost_usd: None,
+        fast: state.event_is_fast(),
     }))
 }
 
@@ -1816,7 +1933,7 @@ mod tests {
             "\n",
         );
         fs::write(&path, content).unwrap();
-        let state = CodexParseState::init_from_file(&path, None);
+        let state = CodexParseState::init_from_file(&path, None, false);
         assert!(state.forkish);
         assert!(state.burst_skip_active);
         assert!(matches!(
@@ -1906,15 +2023,16 @@ mod tests {
         fs::write(&log, &content).unwrap();
         // Resume after first two lines (past the first token_count).
         let up_to = (l1.len() + 1 + l2.len() + 1) as u64;
-        let (model, prev) = bootstrap_codex_prefix(&log, up_to);
+        let (model, prev, tier) = bootstrap_codex_prefix(&log, up_to);
         assert_eq!(model.as_deref(), Some("gpt-5.6-sol"));
+        assert!(tier.is_none());
         let prev = prev.expect("previous total");
         assert_eq!(prev.input, 1000);
         assert_eq!(prev.cached, 400);
         assert_eq!(prev.output, 50);
 
         // With previous_total seeded, a duplicate total snapshot must be skipped.
-        let mut state = CodexParseState::resume_from_prefix(model, Some(prev));
+        let mut state = CodexParseState::resume_from_prefix(model, Some(prev), None, false);
         assert!(extract_codex(l3, Some("s"), &mut state).unwrap().is_none());
         assert_eq!(state.skipped_dup_total, 1);
     }
@@ -2356,5 +2474,88 @@ mod tests {
             let s = p.to_string_lossy();
             !s.contains("node_modules") && !s.contains(".db") && !s.contains(".sessions")
         }));
+    }
+
+    #[test]
+    fn claude_cache_creation_1h_stays_split() {
+        let line = r#"{"timestamp":"2026-01-09T10:00:00.000Z","message":{"role":"assistant","id":"m1","model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":1,"cache_creation_input_tokens":300,"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":200},"cache_read_input_tokens":4}},"requestId":"r1"}"#;
+        let ev = extract_claude_like(AgentId::Claude, line, Some("s"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(ev.cache_creation_tokens, 100);
+        assert_eq!(ev.cache_creation_1h_tokens, 200);
+        assert_eq!(ev.cache_read_tokens, 4);
+        assert_eq!(ev.cache_tokens_total(), 304);
+    }
+
+    #[test]
+    fn codex_fast_tier_from_thread_settings() {
+        let settings = r#"{"timestamp":"2026-07-09T08:00:00.000Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"priority"}}}"#;
+        let tok = r#"{"timestamp":"2026-07-09T08:01:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.6-sol","last_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":1,"total_tokens":101}}}}"#;
+        let mut state = CodexParseState::default();
+        assert!(extract_codex(settings, Some("s"), &mut state)
+            .unwrap()
+            .is_none());
+        let ev = extract_codex(tok, Some("s"), &mut state).unwrap().unwrap();
+        assert!(ev.fast);
+        assert_eq!(ev.input_tokens, 100);
+    }
+
+    #[test]
+    fn discover_codex_prefers_live_sessions_over_archived_same_path() {
+        let dir = tempdir().unwrap();
+        let sessions = dir.path().join("sessions");
+        let archived = dir.path().join("archived_sessions");
+        fs::create_dir_all(sessions.join("dup")).unwrap();
+        fs::create_dir_all(archived.join("dup")).unwrap();
+        fs::create_dir_all(archived.join("only")).unwrap();
+        fs::write(sessions.join("dup/rollout.jsonl"), "{}\n").unwrap();
+        fs::write(archived.join("dup/rollout.jsonl"), "{archived}\n").unwrap();
+        fs::write(archived.join("only/rollout.jsonl"), "{only}\n").unwrap();
+        let files = discover_codex_files_in(dir.path());
+        let names: Vec<_> = files
+            .iter()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .collect();
+        assert!(
+            names
+                .iter()
+                .any(|n| n.contains("/sessions/dup/rollout.jsonl")),
+            "{names:?}"
+        );
+        assert!(
+            names
+                .iter()
+                .any(|n| n.contains("/archived_sessions/only/rollout.jsonl")),
+            "{names:?}"
+        );
+        assert!(
+            !names
+                .iter()
+                .any(|n| n.contains("/archived_sessions/dup/rollout.jsonl")),
+            "archived duplicate should yield to live sessions: {names:?}"
+        );
+    }
+
+    #[test]
+    fn read_codex_fast_service_tier_from_toml() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("config.toml"), "service_tier = \"fast\"\n").unwrap();
+        assert!(read_codex_fast_service_tier(dir.path()));
+        fs::write(
+            dir.path().join("config.toml"),
+            "service_tier = \"standard\"\n",
+        )
+        .unwrap();
+        assert!(!read_codex_fast_service_tier(dir.path()));
+        fs::write(
+            dir.path().join("config.toml"),
+            "[profiles.work]\nservice_tier = \"priority\"\n",
+        )
+        .unwrap();
+        assert!(
+            !read_codex_fast_service_tier(dir.path()),
+            "profile-only Fast must not mark every session Fast"
+        );
     }
 }

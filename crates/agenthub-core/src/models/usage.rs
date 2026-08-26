@@ -23,6 +23,9 @@ pub struct UsageRecord {
     /// RFC3339 / ISO-ish timestamp.
     pub ts: String,
     pub raw_hash: Option<String>,
+    /// Codex Fast / Priority. Must persist so collect recompute keeps the multiplier.
+    #[serde(default)]
+    pub fast: bool,
 }
 
 /// Query filter for listing usage rows.
@@ -136,6 +139,8 @@ pub struct ParsedUsageEvent {
     pub input_tokens: i64,
     pub output_tokens: i64,
     pub cache_creation_tokens: i64,
+    /// 1-hour ephemeral cache writes (ccusage `ephemeral_1h_input_tokens`).
+    pub cache_creation_1h_tokens: i64,
     pub cache_read_tokens: i64,
     pub session_id: Option<String>,
     pub ts: String,
@@ -143,10 +148,12 @@ pub struct ParsedUsageEvent {
     pub raw_hash: String,
     /// Log-provided USD cost (ccusage costUSD) when present.
     pub cost_usd: Option<f64>,
+    /// Codex Fast / Priority service tier for this turn.
+    pub fast: bool,
 }
 
 impl ParsedUsageEvent {
     pub fn cache_tokens_total(&self) -> i64 {
-        self.cache_creation_tokens + self.cache_read_tokens
+        self.cache_creation_tokens + self.cache_creation_1h_tokens + self.cache_read_tokens
     }
 }
