@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -15,7 +16,6 @@ import {
   persistSideSplitWidth,
   readStoredSideSplitWidth,
   SIDE_SPLIT_FRAME_PAD_RIGHT,
-  SIDE_SPLIT_MAIN_MIN,
   SIDE_SPLIT_WIDTH_DEFAULT,
   SIDE_SPLIT_WIDTH_FLOOR,
   SIDE_SPLIT_WIDTH_MIN,
@@ -50,9 +50,10 @@ export function useSideSplit<T>(options: {
   const storageKey = options.storageKey;
   const defaultWidth = options.defaultWidth ?? SIDE_SPLIT_WIDTH_DEFAULT;
   const [target, setTarget] = useState<T | null>(null);
-  const [paneWidth, setPaneWidth] = useState(() =>
+  const [rememberedWidth, setRememberedWidth] = useState(() =>
     readStoredSideSplitWidth(storageKey, defaultWidth),
   );
+  const [containerWidth, setContainerWidth] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [resizing, setResizing] = useState(false);
@@ -76,45 +77,44 @@ export function useSideSplit<T>(options: {
     openRafRef.current = null;
   };
 
+  const measureContainer = useCallback(() => {
+    return splitRef.current?.getBoundingClientRect().width ?? 0;
+  }, []);
+
   const clampWidth = useCallback(
-    (w: number) => {
-      const containerW =
-        splitRef.current?.getBoundingClientRect().width ??
-        (typeof window !== 'undefined' ? window.innerWidth : 1200);
-      return clampSideSplitWidth(w, containerW);
-    },
-    [],
+    (w: number, stage = containerWidth || measureContainer()) => clampSideSplitWidth(w, stage),
+    [containerWidth, measureContainer],
   );
 
   const persistWidth = useCallback(
     (w: number) => {
       const next = clampWidth(w);
-      setPaneWidth(next);
+      setRememberedWidth(next);
       persistSideSplitWidth(storageKey, next);
       return next;
     },
     [clampWidth, storageKey],
   );
 
-  useEffect(() => {
-    if (!mounted || !expanded) return;
+  useLayoutEffect(() => {
     const el = splitRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') {
-      const onWin = () => setPaneWidth((w) => clampWidth(w));
-      window.addEventListener('resize', onWin);
-      onWin();
-      return () => window.removeEventListener('resize', onWin);
+    const apply = () => {
+      const next = el?.getBoundingClientRect().width ?? measureContainer();
+      setContainerWidth((prev) => (prev === next ? prev : next));
+    };
+    apply();
+    if (!el) return;
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', apply);
+      return () => window.removeEventListener('resize', apply);
     }
-    const ro = new ResizeObserver(() => {
-      setPaneWidth((w) => {
-        const next = clampWidth(w);
-        return next === w ? w : next;
-      });
-    });
+    const ro = new ResizeObserver(apply);
     ro.observe(el);
-    setPaneWidth((w) => clampWidth(w));
     return () => ro.disconnect();
-  }, [mounted, expanded, clampWidth]);
+  }, [mounted, expanded, measureContainer]);
+
+  // Window resize must not write `rememberedWidth`; `paneWidth` is display-only clamp.
+  const paneWidth = clampWidth(rememberedWidth);
 
   const open = useCallback(
     (next: T) => {
@@ -176,6 +176,7 @@ export function useSideSplit<T>(options: {
       e.preventDefault();
       cancelResize();
       const startX = e.clientX;
+      const previousWidth = rememberedWidth;
       const startW = paneWidth;
       const prevCursor = document.body.style.cursor;
       const prevSelect = document.body.style.userSelect;
@@ -187,13 +188,14 @@ export function useSideSplit<T>(options: {
 
       const onMove = (ev: globalThis.PointerEvent): void => {
         if (ev.pointerId !== pointerId) return;
-        setPaneWidth(clampWidth(startW + (startX - ev.clientX)));
+        setRememberedWidth(clampWidth(startW + (startX - ev.clientX)));
       };
       const cleanup = createIdempotentCleanup<[boolean, number?]>(
         (commit: boolean, clientX: number = startX) => {
           if (resizeCleanupRef.current !== cancel) return;
           resizeCleanupRef.current = null;
-          if (commit) persistWidth(startW + (startX - clientX));
+          if (commit && clientX !== startX) persistWidth(startW + (startX - clientX));
+          else setRememberedWidth(previousWidth);
           document.body.style.cursor = prevCursor;
           document.body.style.userSelect = prevSelect;
           setResizing(false);
@@ -234,7 +236,7 @@ export function useSideSplit<T>(options: {
         // Keep the window listeners as a compatibility fallback.
       }
     },
-    [cancelResize, paneWidth, clampWidth, persistWidth],
+    [cancelResize, paneWidth, rememberedWidth, clampWidth, persistWidth],
   );
 
   const onSeparatorKeyDown = useCallback(
@@ -249,17 +251,18 @@ export function useSideSplit<T>(options: {
         persistWidth(SIDE_SPLIT_WIDTH_MIN);
       } else if (e.key === 'End') {
         e.preventDefault();
-        const containerW =
-          splitRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-        persistWidth(containerW - SIDE_SPLIT_MAIN_MIN);
+        const stage = containerWidth || measureContainer();
+        if (stage <= 0) return;
+        persistWidth(stage);
       }
     },
-    [paneWidth, persistWidth],
+    [paneWidth, persistWidth, containerWidth, measureContainer],
   );
 
   const resetWidth = useCallback(() => {
-    persistWidth(defaultWidth);
-  }, [persistWidth, defaultWidth]);
+    setRememberedWidth(defaultWidth);
+    persistSideSplitWidth(storageKey, defaultWidth);
+  }, [defaultWidth, storageKey]);
 
   const shellWidth = expanded ? paneWidth + SIDE_SPLIT_FRAME_PAD_RIGHT : 0;
   const widthTransition =
