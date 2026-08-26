@@ -64,6 +64,7 @@ import {
   type TicketAddKind,
 } from './ticket-wallet-model';
 import { useTicketBindActions } from './use-ticket-route-actions';
+import { useConnectionImportProbe } from './use-connection-import-probe';
 import {
   deleteConnectionDialogDescription,
   deleteConnectionToastDescription,
@@ -174,16 +175,20 @@ export default function ConnectionsPage() {
     () => highlightAgentId ?? allowedAgents[0] ?? 'claude',
   );
   const inspect = useSideSplit<ConnectionInspect>({ storageKey: CONNECTIONS_INSPECT_WIDTH_KEY });
-  const [loginImportOpen, setLoginImportOpen] = useState(false);
   const [oauthOpen, setOauthOpen] = useState(false);
-  const [importLiveProbe, setImportLiveProbe] = useState<LiveAuthProbe | null>(null);
-  const [importProbeLoading, setImportProbeLoading] = useState(false);
-  const importProbeGen = useRef(0);
-  const [importingAccount, setImportingAccount] = useState(false);
   const [discoveryProbe, setDiscoveryProbe] = useState<LiveAuthProbe | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [discoveryDismissed, setDiscoveryDismissed] = useState(false);
   const discoveryProbeGen = useRef(0);
+  const {
+    loginImportOpen,
+    setLoginImportOpen,
+    importLiveProbe,
+    setImportLiveProbe,
+    importProbeLoading,
+    importingAccount,
+    setImportingAccount,
+  } = useConnectionImportProbe({ addAgentId, discoveryProbe });
   const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const guideOpenedApiKeyRef = useRef(false);
@@ -208,33 +213,6 @@ export default function ConnectionsPage() {
   }, [filterAgent, installedIds, loading]);
 
   const discoveryAgentId: AgentId = filterAgent === 'all' ? addAgentId : filterAgent;
-
-  useEffect(() => {
-    if (!loginImportOpen) {
-      importProbeGen.current += 1;
-      setImportLiveProbe(null);
-      setImportProbeLoading(false);
-      return;
-    }
-    const generation = ++importProbeGen.current;
-    const agentId = addAgentId;
-    const seed = discoveryProbe?.agentId === agentId ? discoveryProbe : null;
-    setImportLiveProbe(seed);
-    setImportProbeLoading(!seed);
-    void probeLiveAuth(agentId, { force: true }).then(
-      (probe) => {
-        if (importProbeGen.current !== generation) return;
-        setImportLiveProbe(probe);
-        setImportProbeLoading(false);
-      },
-      () => {
-        if (importProbeGen.current !== generation) return;
-        setImportLiveProbe(null);
-        setImportProbeLoading(false);
-      },
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed at open; listing discoveryProbe would re-force
-  }, [addAgentId, loginImportOpen]);
 
   useEffect(() => {
     setDiscoveryDismissed(false);
