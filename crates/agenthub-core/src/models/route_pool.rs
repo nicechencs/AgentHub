@@ -9,7 +9,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
-use super::{AdapterSourceKind, AgentId};
+use super::{AdapterApplyPlan, AdapterProfile, AdapterRoute, AdapterSourceKind, AgentId};
 use crate::error::{AppError, Result};
 
 #[cfg(test)]
@@ -234,6 +234,40 @@ pub fn generate_hub_token() -> Result<String> {
     Ok(format!("ahb_{}", URL_SAFE_NO_PAD.encode(bytes)))
 }
 
+/// Member reference on the default-pool overview. No secrets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteMemberOverview {
+    pub source_kind: AdapterSourceKind,
+    pub source_id: String,
+    pub enabled: bool,
+}
+
+/// Default-pool overview for Routes. Never includes `hub_token`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultRoutePoolOverview {
+    pub id: String,
+    pub target_agent_id: AgentId,
+    pub surface: RouteDownstreamSurface,
+    pub dialect: RouteDownstreamDialect,
+    pub v2_enrolled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway_port: Option<u16>,
+    pub members: Vec<RouteMemberOverview>,
+    /// Stable capability names from mapping / index when present. No health.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub listed_models: Vec<String>,
+}
+
+/// Flag-gated list of default pools. Flag off → `enabled=false` and no pools.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultRoutePoolList {
+    pub enabled: bool,
+    pub pools: Vec<DefaultRoutePoolOverview>,
+}
+
 /// Pick the unique default pool among candidates for one Agent / surface.
 ///
 /// Active binding wins; otherwise the stable id order is used. Never guesses
@@ -253,4 +287,28 @@ pub fn choose_default_pool_id<'a>(
         }
     }
     ids.first().map(|id| (*id).to_owned())
+}
+
+/// Whether an existing native_endpoint / config_sync profile may be converted
+/// into the target Agent default local-bridge pool. `plan()` must already have
+/// been called; this never invents a matrix cell.
+pub fn enroll_native_plan_is_open(profile: &AdapterProfile, plan: &AdapterApplyPlan) -> Result<()> {
+    match profile.route {
+        AdapterRoute::NativeEndpoint | AdapterRoute::ConfigSync => {}
+        AdapterRoute::LocalBridge => {
+            return Err(AppError::Unsupported("already a local route".into()));
+        }
+        AdapterRoute::Unsupported => {
+            return Err(AppError::Unsupported("unsupported route".into()));
+        }
+    }
+    if !plan.can_apply {
+        return Err(AppError::Unsupported(plan.reason.clone()));
+    }
+    if plan.analysis.route != AdapterRoute::LocalBridge {
+        return Err(AppError::Unsupported(
+            "this login cannot use the local gateway for that tool".into(),
+        ));
+    }
+    Ok(())
 }

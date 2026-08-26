@@ -91,3 +91,94 @@ fn adapter_retryable_classification_covers_restore_and_retryable_prefix() {
         assert!(!is_adapter_error_retryable(code), "{code}");
     }
 }
+
+use agenthub_core::bridge::BridgeRuntimeHost;
+use agenthub_core::models::{
+    AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
+    AgentId, FEATURE_ROUTE_POOL_V2,
+};
+use agenthub_core::storage::AdapterProfileRepo;
+use agenthub_core::AgentHub;
+
+fn native_or_bridge_profile(
+    id: &str,
+    source_id: &str,
+    route: AdapterRoute,
+    port: Option<u16>,
+) -> AdapterProfile {
+    AdapterProfile {
+        id: id.into(),
+        name: id.into(),
+        source_kind: AdapterSourceKind::Provider,
+        source_id: source_id.into(),
+        target_agent_id: AgentId::Codex,
+        route,
+        mode: AdapterProfileMode::Api,
+        status: AdapterProfileStatus::Active,
+        rule_id: "kimi-membership-to-codex-v1".into(),
+        rule_version: "v1".into(),
+        generated_provider_id: None,
+        local_port: port,
+        auto_start: true,
+        last_error_code: None,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+#[test]
+fn persist_enroll_native_if_bound_skips_enroll_on_bind_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    let profile = native_or_bridge_profile(
+        "bound-skip",
+        "src-1",
+        AdapterRoute::LocalBridge,
+        Some(43121),
+    );
+    AdapterProfileRepo::new(hub.db().clone())
+        .create(&profile)
+        .unwrap();
+    hub.route_pools()
+        .create_legacy_pool(&profile, "ahb_secret-token", true)
+        .unwrap();
+    let host = BridgeRuntimeHost::new();
+    let error =
+        persist_enroll_native_if_bound(&hub, &host, Err("adapter.port_in_use".into())).unwrap_err();
+    assert!(error.contains("adapter.port_in_use"));
+    let pool = hub.route_pools().get("bound-skip").unwrap().unwrap();
+    assert!(!pool.v2_enrolled);
+    assert_eq!(pool.gateway_port, None);
+    assert_eq!(pool.hub_token, "ahb_secret-token");
+}
+
+#[test]
+fn persist_enroll_native_if_bound_success_omits_hub_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = AgentHub::open(Some(dir.path())).unwrap();
+    hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    let profile =
+        native_or_bridge_profile("bound-ok", "src-1", AdapterRoute::LocalBridge, Some(43121));
+    AdapterProfileRepo::new(hub.db().clone())
+        .create(&profile)
+        .unwrap();
+    let host = BridgeRuntimeHost::new();
+    let binding = TicketBinding {
+        ticket_id: "provider:src-1".into(),
+        agent_id: AgentId::Codex,
+        route: TicketBindingRoute::Bridge,
+        active: true,
+        profile_id: Some("bound-ok".into()),
+        bridge: Some(agenthub_core::models::TicketBridgeRuntime {
+            port: Some(43155),
+            running: true,
+        }),
+    };
+    let overview = persist_enroll_native_if_bound(&hub, &host, Ok(binding)).unwrap();
+    assert!(overview.v2_enrolled);
+    assert_eq!(overview.gateway_port, Some(43155));
+    let json = serde_json::to_string(&overview).unwrap();
+    assert!(!json.contains("hubToken"));
+    assert!(!json.contains("ahb_"));
+}

@@ -10,6 +10,7 @@ import {
   type AdapterPort,
   type AdapterProfile,
   type AdapterProfileFilter,
+  type DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
 import { delay } from './delay';
 import { analyze } from './adapter/analyze';
@@ -25,6 +26,8 @@ export function resetMockAdapters(): void {
     state.profiles.length = 0;
     state.bridgeStatuses.clear();
     state.generatedProviders.clear();
+    state.routePoolV2 = false;
+    state.defaultPools.length = 0;
   });
 }
 
@@ -99,12 +102,31 @@ export function seedMockAdapterProfiles(
   }
 }
 
+/** Opt-in for Routes pool UI tests. Default mock keeps the flag off. */
+export function setMockRoutePoolV2(enabled: boolean): void {
+  for (const state of adapterStates) {
+    state.routePoolV2 = enabled;
+  }
+}
+
+export function seedMockDefaultRoutePools(pools: readonly DefaultRoutePoolOverview[]): void {
+  for (const state of adapterStates) {
+    state.defaultPools = pools.map((pool) => ({
+      ...pool,
+      members: pool.members.map((member) => ({ ...member })),
+      listedModels: [...(pool.listedModels ?? [])],
+    }));
+  }
+}
+
 export function createMockAdapterPort(resolver: MockAdapterSourceResolver): AdapterPort {
   const state: MockAdapterState = {
     profiles: [],
     bridgeStatuses: new Map(),
     generatedProviders: new Map(),
     removeGeneratedProvider: resolver.removeGeneratedProvider,
+    routePoolV2: false,
+    defaultPools: [],
   };
   adapterStates.add(state);
 
@@ -128,6 +150,90 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         .filter((profile) => !filter.status || profile.status === filter.status)
         .filter((profile) => filter.autoStart == null || profile.autoStart === filter.autoStart)
         .map((profile) => ({ ...profile }));
+    },
+    async listDefaultRoutePools() {
+      await delay(20);
+      if (!state.routePoolV2) return { enabled: false, pools: [] };
+      return {
+        enabled: true,
+        pools: state.defaultPools.map((pool) => ({
+          ...pool,
+          members: pool.members.map((member) => ({ ...member })),
+          listedModels: [...(pool.listedModels ?? [])],
+        })),
+      };
+    },
+    async enrollNativeToGateway(profileId) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      const profile = state.profiles.find((item) => item.id === profileId);
+      if (!profile) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `adapter profile not found: ${profileId}`,
+          retryable: false,
+        });
+      }
+      if (profile.route !== 'native_endpoint' && profile.route !== 'config_sync') {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'already a local route',
+          retryable: false,
+        });
+      }
+      const plan = buildPlan(resolver, {
+        sourceKind: profile.sourceKind,
+        sourceId: profile.sourceId,
+        targetAgentId: profile.targetAgentId,
+      });
+      if (!plan.canApply || plan.analysis.route !== 'local_bridge') {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: plan.reason || 'this login cannot use the local gateway for that tool',
+          retryable: false,
+        });
+      }
+      profile.route = 'local_bridge';
+      profile.localPort = profile.localPort ?? 43121;
+      profile.updatedAt = new Date().toISOString();
+      state.bridgeStatuses.set(profile.id, runningBridgeStatus(profile));
+      const surface = profile.targetAgentId === 'claude'
+        ? 'messages' as const
+        : profile.targetAgentId === 'kimi' || profile.targetAgentId === 'dsh'
+          ? 'chat_completions' as const
+          : 'responses' as const;
+      const dialect: DefaultRoutePoolOverview['dialect'] =
+        profile.targetAgentId === 'claude'
+        || profile.targetAgentId === 'codex'
+        || profile.targetAgentId === 'grok'
+        || profile.targetAgentId === 'kimi'
+        || profile.targetAgentId === 'dsh'
+          ? profile.targetAgentId
+          : 'generic';
+      const overview: DefaultRoutePoolOverview = {
+        id: profile.id,
+        targetAgentId: profile.targetAgentId,
+        surface,
+        dialect,
+        v2Enrolled: true,
+        gatewayPort: profile.localPort ?? 43121,
+        members: [{
+          sourceKind: profile.sourceKind,
+          sourceId: profile.sourceId,
+          enabled: true,
+        }],
+        listedModels: [],
+      };
+      const existing = state.defaultPools.findIndex((pool) => pool.id === overview.id);
+      if (existing >= 0) state.defaultPools[existing] = overview;
+      else state.defaultPools.push(overview);
+      return { ...overview, members: overview.members.map((member) => ({ ...member })) };
     },
     async apply(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
       await delay(20);

@@ -7,6 +7,7 @@ import {
   type AdapterEvidence,
   type AdapterPlanChange,
   type AdapterProfile,
+  type DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
 import type { Account, Provider } from '@/lib/types';
 import {
@@ -38,6 +39,8 @@ export interface MockAdapterState {
   bridgeStatuses: Map<string, AdapterBridgeRuntimeStatus>;
   generatedProviders: Map<string, Provider>;
   removeGeneratedProvider?: (provider: Provider) => void;
+  routePoolV2: boolean;
+  defaultPools: DefaultRoutePoolOverview[];
 }
 
 export interface MockAdapterSourceResolver {
