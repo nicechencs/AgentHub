@@ -1022,8 +1022,13 @@ impl AdapterBridgeService {
         profile: &AdapterProfile,
         member: &RouteMember,
     ) -> MemberListing {
-        let provider = index_provider_key(material.source);
-        let transport = index_transport_key(material.protocol);
+        let product = self
+            .routes
+            .classify_source_product(member.source_kind, &member.source_id)
+            .unwrap_or(material.source);
+        let member_rule =
+            rule_for_member_product(product, profile.target_agent_id).unwrap_or(*rule);
+        let provider = index_provider_key(product);
         let is_lead = member.source_kind == profile.source_kind
             && member.source_id == material.source_connection_id;
         if is_lead {
@@ -1033,7 +1038,7 @@ impl AdapterBridgeService {
             return MemberListing {
                 member_id: member.source_id.clone(),
                 listed_models: listed_models_for_bridge(
-                    material.source,
+                    product,
                     material.target_agent,
                     &material.upstream_model,
                     custom,
@@ -1042,12 +1047,12 @@ impl AdapterBridgeService {
                 upstream_provider: provider.to_owned(),
                 upstream_dialect: provider.to_owned(),
                 upstream_endpoint: material.upstream_base_url.clone(),
-                transport_key: transport.to_owned(),
+                transport_key: index_transport_key(material.protocol).to_owned(),
                 snapshot_ok: true,
             };
         }
         let snapshot_ok = self
-            .resolve_member_auth(rule.rule_id, member.source_kind, &member.source_id)
+            .resolve_member_auth(member_rule.rule_id, member.source_kind, &member.source_id)
             .map(|auth| auth.has_token())
             .unwrap_or(false);
         if !snapshot_ok {
@@ -1056,19 +1061,23 @@ impl AdapterBridgeService {
                 listed_models: Vec::new(),
                 upstream_provider: provider.to_owned(),
                 upstream_dialect: provider.to_owned(),
-                upstream_endpoint: material.upstream_base_url.clone(),
-                transport_key: transport.to_owned(),
+                upstream_endpoint: member_rule.upstream_base_url.to_owned(),
+                transport_key: index_transport_key(member_rule.protocol).to_owned(),
                 snapshot_ok: false,
             };
         }
-        let (url, model, configured, _protocol, _) =
-            prepare::openai_source_upstream(self, rule, member.source_kind, &member.source_id);
+        let (url, model, configured, protocol, _) = prepare::openai_source_upstream(
+            self,
+            &member_rule,
+            member.source_kind,
+            &member.source_id,
+        );
         let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(&url);
         MemberListing {
             member_id: member.source_id.clone(),
             listed_models: listed_models_for_bridge(
-                rule.source,
-                rule.target_agent,
+                product,
+                member_rule.target_agent,
                 &model,
                 custom,
                 &configured,
@@ -1076,8 +1085,24 @@ impl AdapterBridgeService {
             upstream_provider: provider.to_owned(),
             upstream_dialect: provider.to_owned(),
             upstream_endpoint: url,
-            transport_key: transport.to_owned(),
+            transport_key: index_transport_key(protocol).to_owned(),
             snapshot_ok: true,
         }
     }
+}
+
+fn rule_for_member_product(
+    product: AdapterSourceProduct,
+    target_agent: AgentId,
+) -> Option<CodexBridgeRule> {
+    LIVE_BRIDGE_RULES
+        .iter()
+        .copied()
+        .find(|rule| rule.source == product && rule.target_agent == target_agent)
+        .or_else(|| {
+            LIVE_BRIDGE_RULES
+                .iter()
+                .copied()
+                .find(|rule| rule.source == product)
+        })
 }

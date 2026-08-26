@@ -3,7 +3,8 @@ use super::*;
 use crate::models::{
     Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
     AdapterSourceKind, AdapterSourceProduct, AdapterTargetProtocol, AdapterUpstreamTransport,
-    Provider, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
+    Provider, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    LOCAL_BRIDGE_EDGES,
 };
 use crate::services::{ProviderService, RoutePoolService};
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
@@ -2300,6 +2301,88 @@ fn production_index_uses_each_member_listed_models_not_the_lead_catalog() {
             .map(|candidate| candidate.member_id.as_str())
             .collect::<Vec<_>>(),
         vec!["openai-b"]
+    );
+}
+
+#[test]
+fn production_index_labels_members_by_their_own_provider() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    db.set_setting(FEATURE_MIXED_PROVIDER_POOL, "true").unwrap();
+    AccountRepo::new(db.clone())
+        .create(&grok_subscription_account(
+            "grok-subscription",
+            "grok-upstream-secret",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account(
+            "codex-subscription",
+            "codex-upstream-access-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&grok_codex_account_request("grok-subscription"))
+        .unwrap();
+    let pools = RoutePoolService::new(db.clone());
+    pools
+        .add_member(
+            &prepared.profile().id,
+            AdapterSourceKind::Account,
+            "codex-subscription",
+        )
+        .unwrap();
+    pools
+        .add_rule(
+            &prepared.profile().id,
+            "m1",
+            "responses",
+            "grok",
+            "grok",
+            "grok-4.5",
+            0,
+            Some("shared"),
+        )
+        .unwrap();
+    pools
+        .add_rule(
+            &prepared.profile().id,
+            "m1",
+            "responses",
+            "codex",
+            "codex",
+            "gpt-5.4",
+            10,
+            Some("shared"),
+        )
+        .unwrap();
+    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    let prepared = service
+        .prepare(&grok_codex_account_request("grok-subscription"))
+        .unwrap();
+    let index = prepared
+        .runtime_material()
+        .start_spec(Some(0))
+        .route_index
+        .expect("enrolled mixed pool attaches index");
+    let providers: Vec<_> = index
+        .capability_snapshots()
+        .into_iter()
+        .map(|snapshot| (snapshot.member_id, snapshot.upstream_provider))
+        .collect();
+    assert!(
+        providers
+            .iter()
+            .any(|(id, provider)| id == "grok-subscription" && provider == "grok"),
+        "grok member must keep grok provider, got {providers:?}"
+    );
+    assert!(
+        providers
+            .iter()
+            .any(|(id, provider)| id == "codex-subscription" && provider == "codex"),
+        "codex member must not inherit the grok lead provider, got {providers:?}"
     );
 }
 
