@@ -234,11 +234,7 @@ pub fn generate_hub_token() -> Result<String> {
     Ok(format!("ahb_{}", URL_SAFE_NO_PAD.encode(bytes)))
 }
 
-/// Pick the unique default pool among candidates for one Agent / surface.
-///
-/// Active binding wins; otherwise the stable id order is used. Never guesses
-/// from created_at or live runtime state.
-/// Credential-free member row for the Routes product surface. No secrets.
+/// Member reference on the default-pool overview. No secrets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteMemberOverview {
@@ -247,7 +243,7 @@ pub struct RouteMemberOverview {
     pub enabled: bool,
 }
 
-/// Credential-free default-pool overview. Never includes `hub_token`.
+/// Default-pool overview for Routes. Never includes `hub_token`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DefaultRoutePoolOverview {
@@ -272,6 +268,10 @@ pub struct DefaultRoutePoolList {
     pub pools: Vec<DefaultRoutePoolOverview>,
 }
 
+/// Pick the unique default pool among candidates for one Agent / surface.
+///
+/// Active binding wins; otherwise the stable id order is used. Never guesses
+/// from created_at or live runtime state.
 pub fn choose_default_pool_id<'a>(
     pool_ids: impl IntoIterator<Item = &'a str>,
     active_binding_profile_id: Option<&str>,

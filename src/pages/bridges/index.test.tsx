@@ -422,6 +422,7 @@ describe('Bridges page', () => {
     expect(on).toContain('已接入的登录');
     expect(on).toContain('OpenRouter');
     expect(on).toContain('本机令牌已保存');
+    expect(on).toContain('kimi-k2.5');
     expect(on).not.toContain('hubToken');
     expect(on).not.toContain('ahb_');
   });

@@ -382,6 +382,12 @@ function RoutePoolOverviewSection({
             <dt className="w-12 shrink-0 text-muted">{t('routes.pool.surfaceLabel')}</dt>
             <dd className="min-w-0 text-sm">{routePoolSurfaceLabel(pool.surface, t)}</dd>
           </div>
+          {pool.listedModels && pool.listedModels.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+              <dt className="w-12 shrink-0 text-muted">{t('routes.capabilities.models')}</dt>
+              <dd className="min-w-0 text-sm">{pool.listedModels.join(', ')}</dd>
+            </div>
+          ) : null}
         </dl>
         <div className="space-y-1.5">
           <h4 className="text-sm font-medium">{t('routes.pool.members')}</h4>

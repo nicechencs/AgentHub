@@ -439,6 +439,27 @@ fn persist_enroll_after_native_bind_sets_v2_without_hub_token() {
 }
 
 #[test]
+fn persist_enroll_after_native_bind_promotes_over_sibling_default() {
+    let (_dir, _db, service, profiles) = tmp();
+    let previous = bridge_profile("old-default", "acc-old", AgentId::Codex, true);
+    let bound = bridge_profile("bound-new", "acc-a", AgentId::Codex, true);
+    profiles.create(&previous).unwrap();
+    profiles.create(&bound).unwrap();
+    service
+        .create_legacy_pool(&previous, "ahb_old-token", true)
+        .unwrap();
+    let overview = service
+        .persist_enroll_after_native_bind(&bound, 43155)
+        .unwrap();
+    assert_eq!(overview.id, "bound-new");
+    assert!(service.get("bound-new").unwrap().unwrap().is_default);
+    assert!(!service.get("old-default").unwrap().unwrap().is_default);
+    let listed = service.list_default_overviews().unwrap();
+    assert_eq!(listed.pools.len(), 1);
+    assert_eq!(listed.pools[0].id, "bound-new");
+}
+
+#[test]
 fn persist_enroll_after_native_bind_rejects_native_profile() {
     let (_dir, _db, service, profiles) = tmp();
     let native = native_profile("native-1", "acc-a", AgentId::Codex);

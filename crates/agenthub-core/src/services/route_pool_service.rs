@@ -168,18 +168,13 @@ impl RoutePoolService {
         }
         self.ensure_legacy_pool(bound_profile)?;
         let enrolled = self.enroll_v2(&bound_profile.id, port)?;
+        // Bind just made this login the Agent's active route; it is the default
+        // pool for that surface. A leftover sibling default would hide this
+        // overview from list_default_overviews.
         let pool = if enrolled.is_default {
             enrolled
         } else {
-            let siblings = self.pools.list_pools(
-                Some(enrolled.target_agent_id),
-                Some(enrolled.downstream_surface),
-            )?;
-            if siblings.iter().any(|item| item.is_default) {
-                enrolled
-            } else {
-                self.pools.set_default(&enrolled.id)?
-            }
+            self.pools.set_default(&enrolled.id)?
         };
         self.overview_from_pool(&pool)
     }

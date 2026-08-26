@@ -877,7 +877,7 @@ export const zh = {
     },
     direct: {
       title: "直连",
-      description: "官方直连。需要时可以改走本机转发。",
+      description: "当前规则允许本机转发、但还没接到本机入口的登录。",
     },
   },
   dashboard: {
