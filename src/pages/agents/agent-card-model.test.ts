@@ -30,14 +30,14 @@ describe('openAgentCardUninstallConfirm', () => {
   it('swallows select, opens program/config, and arms the leftover dismiss', () => {
     vi.useFakeTimers();
     const event = { preventDefault: vi.fn() };
-    const setConfirmDialog = vi.fn();
+    const openConfirm = vi.fn();
     const ignoreRef = { current: false };
 
-    openAgentCardUninstallConfirm(event, 'program', setConfirmDialog, ignoreRef);
+    openAgentCardUninstallConfirm(event, 'program', openConfirm, ignoreRef);
 
     expect(event.preventDefault).toHaveBeenCalledOnce();
-    expect(setConfirmDialog).toHaveBeenCalledOnce();
-    expect(setConfirmDialog).toHaveBeenCalledWith('program');
+    expect(openConfirm).toHaveBeenCalledOnce();
+    expect(openConfirm).toHaveBeenCalledWith('program');
     expect(ignoreRef.current).toBe(true);
     expect(shouldIgnoreMenuDialogDismiss(ignoreRef.current, false)).toBe(true);
     vi.advanceTimersByTime(100);
@@ -47,12 +47,12 @@ describe('openAgentCardUninstallConfirm', () => {
   it('opens the delete-config confirm without touching navigate/copy/install', () => {
     vi.useFakeTimers();
     const event = { preventDefault: vi.fn() };
-    const setConfirmDialog = vi.fn();
+    const openConfirm = vi.fn();
     const ignoreRef = { current: false };
 
-    openAgentCardUninstallConfirm(event, 'config', setConfirmDialog, ignoreRef);
+    openAgentCardUninstallConfirm(event, 'config', openConfirm, ignoreRef);
 
-    expect(setConfirmDialog).toHaveBeenCalledWith('config');
+    expect(openConfirm).toHaveBeenCalledWith('config');
     expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 });
@@ -294,7 +294,7 @@ describe('agent-card install confirm', () => {
   it('opens confirm instead of starting install immediately', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
     const dialogs = readFileSync(path.join(dir, 'AgentCardDialogs.tsx'), 'utf8');
-    expect(card).toContain("setConfirmDialog('install')");
+    expect(card).toContain("openConfirm('install')");
     expect(card).not.toMatch(/onClick=\{\(\) => startAgentInstall\(selectedChannel\)\}/);
     expect(dialogs).toContain('agents.dialog.confirmInstall');
     expect(dialogs).toContain('onConfirmInstall');

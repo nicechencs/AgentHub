@@ -140,7 +140,7 @@ export default function ProjectsPage() {
     error,
     loading: listLoading,
     reload,
-    setData,
+    replaceProjectListFromMutation,
   } = useAgentProjectList(fetchAgentId, showHidden, listEnabled);
   const projects = data ?? [];
   const projectCounts = useMemo(() => {
@@ -372,8 +372,8 @@ export default function ProjectsPage() {
         const kids = (prev[pid] ?? []).filter((s) => s.id !== deleteTarget.id);
         return { ...prev, [pid]: kids };
       });
-      setData((prev) =>
-        (prev ?? [])
+      replaceProjectListFromMutation((prev) =>
+        prev
           .map((p) =>
             p.id === pid
               ? {
@@ -414,8 +414,8 @@ export default function ProjectsPage() {
         }
         return next;
       });
-      setData((prev) =>
-        (prev ?? [])
+      replaceProjectListFromMutation((prev) =>
+        prev
           .map((p) => {
             const removed = (sessionsByProject[p.id] ?? []).filter((s) => idSet.has(s.id));
             if (removed.length === 0) return p;

@@ -14,6 +14,7 @@ use super::{
         encode_chat_from_ir, parse_chat_request, sse_frame, translate_chat_response,
         ChatStreamToIr, ResponsesSseTranslator,
     },
+    fixture_loader::fixture,
     responses::{
         apply_official_codex_model, encode_responses_from_ir, parse_responses_request,
         prepare_official_codex_request, responses_output_to_ir, to_grok_chat_request,
@@ -21,64 +22,6 @@ use super::{
         translate_responses_request, IrToResponsesSse, ResponsesStreamToIr,
     },
 };
-
-fn fixture(name: &str) -> Value {
-    let source = match name {
-        "responses_text" => include_str!("fixtures/responses_text.json"),
-        "unsupported_input" => include_str!("fixtures/unsupported_input.json"),
-        "unsupported_web_search" => include_str!("fixtures/unsupported_web_search.json"),
-        "chat_text" => include_str!("fixtures/chat_text.json"),
-        "chat_tool" => include_str!("fixtures/chat_tool.json"),
-        "sse_text_split" => include_str!("fixtures/sse_text_split.json"),
-        "sse_text_usage_tail" => include_str!("fixtures/sse_text_usage_tail.json"),
-        "sse_length_stop" => include_str!("fixtures/sse_length_stop.json"),
-        "sse_content_filter_stop" => include_str!("fixtures/sse_content_filter_stop.json"),
-        "sse_tool_call" => include_str!("fixtures/sse_tool_call.json"),
-        "responses_parallel_tool_history" => {
-            include_str!("fixtures/responses_parallel_tool_history.json")
-        }
-        "responses_reasoning" => include_str!("fixtures/responses_reasoning.json"),
-        "responses_function_output_text" => {
-            include_str!("fixtures/responses_function_output_text.json")
-        }
-        "responses_function_output_unsupported" => {
-            include_str!("fixtures/responses_function_output_unsupported.json")
-        }
-        "usage_stop" => include_str!("fixtures/usage_stop.json"),
-        "upstream_error" => include_str!("fixtures/upstream_error.json"),
-        "anthropic_messages_text" => include_str!("fixtures/anthropic_messages_text.json"),
-        "anthropic_messages_tools" => include_str!("fixtures/anthropic_messages_tools.json"),
-        "anthropic_messages_image" => include_str!("fixtures/anthropic_messages_image.json"),
-        "responses_upstream_text" => include_str!("fixtures/responses_upstream_text.json"),
-        "responses_upstream_tool" => include_str!("fixtures/responses_upstream_tool.json"),
-        "responses_upstream_sse_text" => include_str!("fixtures/responses_upstream_sse_text.json"),
-        "responses_upstream_sse_tool" => include_str!("fixtures/responses_upstream_sse_tool.json"),
-        "anthropic_upstream_text" => include_str!("fixtures/anthropic_upstream_text.json"),
-        "anthropic_upstream_tool" => include_str!("fixtures/anthropic_upstream_tool.json"),
-        "anthropic_upstream_stop_max_tokens" => {
-            include_str!("fixtures/anthropic_upstream_stop_max_tokens.json")
-        }
-        "anthropic_upstream_usage" => include_str!("fixtures/anthropic_upstream_usage.json"),
-        "anthropic_upstream_sse_text" => include_str!("fixtures/anthropic_upstream_sse_text.json"),
-        "anthropic_upstream_sse_tool" => include_str!("fixtures/anthropic_upstream_sse_tool.json"),
-        "anthropic_upstream_error" => include_str!("fixtures/anthropic_upstream_error.json"),
-        "anthropic_upstream_thinking" => include_str!("fixtures/anthropic_upstream_thinking.json"),
-        "anthropic_upstream_sse_truncated" => {
-            include_str!("fixtures/anthropic_upstream_sse_truncated.json")
-        }
-        "anthropic_upstream_sse_orphan_delta" => {
-            include_str!("fixtures/anthropic_upstream_sse_orphan_delta.json")
-        }
-        "anthropic_upstream_usage_malformed" => {
-            include_str!("fixtures/anthropic_upstream_usage_malformed.json")
-        }
-        "anthropic_upstream_stop_unknown" => {
-            include_str!("fixtures/anthropic_upstream_stop_unknown.json")
-        }
-        _ => panic!("unknown fixture"),
-    };
-    serde_json::from_str(source).expect("fixture is valid JSON")
-}
 
 fn assert_codex_completed_usage(usage: &Value) {
     #[derive(serde::Deserialize)]

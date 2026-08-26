@@ -18,22 +18,28 @@ updated: 2026-08-26
 
 ### O-54｜Skill Mock 状态没有按 Backend 实例隔离
 
-- **位置：** `src/dev/mocks/skill.ts:23,59,121,139`、`src/dev/mocks/create-backend.ts:64-132`
+- **位置：** `src/dev/mocks/skill.ts`、`src/dev/mocks/create-backend.ts`
+- **状态：已处理**
 - **问题：** `lastProjectionMode`、`mockState`、`mockPrivateSkills` 和 seeded random 为模块级状态，`createBackend()` 不重置。
+- **当前：** `resetMockSkills()` 恢复种子目录并清空投影模式；`createBackend()` 会调用它。
 - **建议：** 提供 `resetMockSkills()`，在 Backend factory/setup 调用；fixture 构造与运行时状态分离并按实例深拷贝。
 - **影响：** 测试顺序敏感、并行不稳定，技能投影断言可能被前序测试污染。
 
 ### O-55｜Config Mock 把内部可变对象直接返回
 
-- **位置：** `src/dev/mocks/config.ts:154-176,210-224`
+- **位置：** `src/dev/mocks/config.ts`
+- **状态：已处理**
 - **问题：** `readAgentConfig()` 返回模块级 values 引用，`getAgentConfigSchema()` 也直接返回 schema；调用方可反向修改 Mock 内部状态。
+- **当前：** schema、values、unknownNative 均返回深拷贝；apply 仍写入内部 store。
 - **建议：** 读取接口统一返回深拷贝，schema、values 和 unknownNative 均不允许外部直接改写。
 - **影响：** 测试辅助对象职责不清，并可能制造跨测试污染。
 
 ### O-56｜OAuth Mock 没有把 Agent/Provider 上下文建模进会话对象
 
-- **位置：** `src/dev/mocks/account.ts:261-337`
+- **位置：** `src/dev/mocks/account.ts`
+- **状态：已处理**
 - **问题：** `waitOAuth()`、`finishOAuth()` 和 `finishDeviceOAuth()` 使用固定 Agent/Provider 结果，state 只传字符串且不校验来源。
+- **当前：** 按 `state` 保存 agent / provider / 流程；wait/finish/cancel/poll 查找会话，未知 state 会失败。
 - **建议：** 建立包含 agent、providerKey、flow 的 OAuth session 对象，wait/finish/cancel 均按 session 查找和校验。
 - **影响：** 多 Agent OAuth 测试可能误通过，Mock 无法发现串线。
 
@@ -60,15 +66,19 @@ updated: 2026-08-26
 
 ### O-60｜协议测试重复维护 Fixture Loader
 
-- **位置：** `crates/agenthub-core/src/bridge/protocol/tests.rs:25-80`、`claude_codex_tests.rs:18-49`
+- **位置：** `crates/agenthub-core/src/bridge/protocol/fixture_loader.rs`
+- **状态：已处理**
 - **问题：** 两个模块分别维护 fixture 名称到 `include_str!` 的映射。
+- **当前：** `tests.rs` 与 `claude_codex_tests.rs` 共用一个 test-only loader。
 - **建议：** 抽出测试专用 loader，或按协议域合并映射。
 - **影响：** fixture 新增、重命名时容易只更新一处。
 
 ### O-61｜Usage Mock 数据不是 Factory 级状态
 
-- **位置：** `src/dev/mocks/usage.ts:38-63`
+- **位置：** `src/dev/mocks/usage.ts`
+- **状态：已处理**
 - **问题：** usage records 在模块加载时一次生成，依赖初始化时钟，`createBackend()` 不 reset/reseed。
+- **当前：** `resetMockUsage()` 按当前时间重新生成近 30 天数据；`createBackend()` 会调用它。窗口过滤仍用 `Date.now()`。
 - **建议：** 使用固定时间基准，并让每个 Backend 实例生成独立数据或显式 reset。
 - **影响：** 时间窗口断言随日期变化，不同测试共享同一批对象。
 

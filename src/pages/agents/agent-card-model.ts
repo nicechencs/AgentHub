@@ -37,10 +37,10 @@ export type AgentCardUninstallConfirmKind = 'program' | 'config';
 export function openAgentCardUninstallConfirm(
   event: { preventDefault: () => void },
   kind: AgentCardUninstallConfirmKind,
-  setConfirmDialog: (kind: AgentCardUninstallConfirmKind) => void,
+  openConfirm: (kind: AgentCardUninstallConfirmKind) => void,
   ignoreRef: { current: boolean },
 ): void {
-  handleMenuDialogSelect(event, ignoreRef, () => setConfirmDialog(kind));
+  handleMenuDialogSelect(event, ignoreRef, () => openConfirm(kind));
 }
 
 export function resolveOfficialSetupUrl(

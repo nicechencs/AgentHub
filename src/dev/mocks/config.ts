@@ -13,6 +13,10 @@ import {
   parseContextWindowChoice,
 } from '@/lib/claude-client-env';
 
+function cloneJson<T>(value: T): T {
+  return structuredClone(value);
+}
+
 const SCHEMAS: Record<string, AgentConfigSchemaDto> = {
   claude: {
     agentKey: 'claude',
@@ -155,21 +159,22 @@ export function createMockConfigPort(): ConfigPort {
       if (!schema) {
         throw new Error(`unsupported config projector for ${agentId} [unsupported]`);
       }
-      return schema;
+      return cloneJson(schema);
     },
     async readAgentConfig(agentId) {
       const schema = SCHEMAS[agentId];
       if (!schema) {
         throw new Error(`unsupported config projector for ${agentId} [unsupported]`);
       }
-      const values = mockValues[agentId] ?? {
-        ...Object.fromEntries(schema.fields.map((f) => [f.key, f.secret ? SECRET_REDACTED : ''])),
-      };
+      const values = cloneJson(
+        mockValues[agentId] ??
+          Object.fromEntries(schema.fields.map((f) => [f.key, f.secret ? SECRET_REDACTED : ''])),
+      );
       const doc: NormalizedConfigDocumentDto = {
         agentKey: agentId,
         schemaVersion: schema.schemaVersion,
         values,
-        unknownNative: { format: schema.nativeFormat, content: '' },
+        unknownNative: cloneJson({ format: schema.nativeFormat, content: '' }),
         missing: false,
         path: schema.relativePath,
       };

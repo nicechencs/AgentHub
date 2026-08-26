@@ -26,12 +26,3 @@ export function useAgentCatalog(): AgentCatalogSnapshot {
   }
   return ctx;
 }
-
-/** Safe variant for optional use (returns store snapshot without provider). */
-export function useAgentCatalogOptional(): AgentCatalogSnapshot {
-  return React.useSyncExternalStore(
-    subscribeAgentCatalog,
-    getAgentCatalogSnapshot,
-    getAgentCatalogSnapshot,
-  );
-}

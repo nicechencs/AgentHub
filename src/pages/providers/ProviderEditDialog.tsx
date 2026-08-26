@@ -31,7 +31,7 @@ import { SecretInput } from '@/components/shared/SecretInput';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import type { TranslateFn } from '@/lib/i18n';
-import { useAgentCatalogOptional } from '@/app/runtime';
+import { useAgentCatalog } from '@/app/runtime';
 import { agentDisplayName } from '@/config/agents';
 import {
   agentHasOfficialApiTemplate,
@@ -195,7 +195,7 @@ export function ProviderEditDialog({
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const catalog = useAgentCatalogOptional();
+  const catalog = useAgentCatalog();
   const isEdit = mode === 'edit';
   const agentName = agentDisplayName(agentId);
   const livePaths = liveConfigPaths(agentId);

@@ -18,8 +18,10 @@ updated: 2026-08-26
 
 ### O-45｜Agent 检测缓存是跨实例、跨 Registry 的全局状态
 
-- **位置：** `crates/agenthub-core/src/services/agent_service.rs:10-19,59-75`
+- **位置：** `crates/agenthub-core/src/services/agent_service.rs`
+- **状态：已处理**
 - **问题：** `AgentService` 有自己的 registry，但检测结果放在全局 `static CACHE`，没有绑定 Registry 身份或实例生命周期。
+- **当前：** 检测结果缓存在实例上（同实例 clone 共享）；`invalidate_detect_cache()` 仍通过代数让所有实例失效，供安装/生命周期调用。
 - **建议：** 把缓存放入 `AgentService` 实例，或以 Registry/catalog 版本作为缓存键，并保留显式失效入口。
 - **影响：** 不同宿主、测试或 Registry 实例可能读到其他实例的检测结果。
 

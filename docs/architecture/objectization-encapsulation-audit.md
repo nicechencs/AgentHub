@@ -26,6 +26,13 @@ updated: 2026-08-26
 | O-06 | 生产 Hook 已走共享连接池；`loadAdapterPageResources` 只留在测试 | 标注为测试辅助，页面不得再自行拉账号 / Provider |
 | O-07 | 仍存在：多个模块级 store，`setBackend` 手工 reset | 部分处理：`setBackend` / `resetBackend` 会一起清空 catalog。统一 runtime context 仍暂缓 |
 | O-51、O-52 | Agent 状态 / catalog reset 后旧请求仍可写回 | 已处理：按 epoch 丢弃过期写回；catalog 随 backend 一起 reset |
+| O-50 | 项目列表 Hook 曾返回通用 `setData` | 已处理：只暴露 `replaceProjectListFromMutation` |
+| O-54、O-55、O-61 | Skill / Config / Usage mock 跨实例污染 | 已处理：factory reset；config 读取返回拷贝 |
+| O-45 | 检测缓存曾是进程级全局 | 已处理：缓存在 AgentService 实例上；安装仍可全局失效 |
+| O-49 | Agent 卡片 Hook 曾返回内部 setter | 已处理：只返回确认/任务/环境面板命令 |
+| O-53 | Catalog/连接池 Context 与 store 双通道 | 已处理：Catalog 走 Provider；连接池去掉空 Context |
+| O-56 | OAuth mock 结束登录时写死 Agent | 已处理：按 state 查找会话 |
+| O-60 | 协议测试两套 fixture 映射 | 已处理：共用 test-only loader |
 | O-08、O-09 | 三处 façade 各自刷新，ticket bind 曾 `.catch(() => {})` | 已处理：统一刷新；失败留在 snapshot。连接页和 Chat 可看到并重试 |
 | O-10 | Chat 曾本地 `listTicketWallet` | 已处理：Chat 订阅共享票夹 |
 | O-11–O-14 | 仍存在 | 暂缓。Service / Bridge 内部拆分要单独设计 |

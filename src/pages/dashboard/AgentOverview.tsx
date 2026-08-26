@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Bot } from 'lucide-react';
 
-import { useAgentCatalogOptional } from '@/app/runtime';
+import { useAgentCatalog } from '@/app/runtime';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -59,7 +59,7 @@ export function AgentOverview({
 }: AgentOverviewProps) {
   const navigate = useNavigate();
   const { t } = useI18n();
-  const catalog = useAgentCatalogOptional();
+  const catalog = useAgentCatalog();
   const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
   const { metas: installedMetas, statuses: installedStatuses } = installedOverviewScope(
     catalog.hydrated ? AGENTS : [],
