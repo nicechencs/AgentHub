@@ -6,7 +6,6 @@ use axum::response::Response;
 use tokio::sync::OwnedSemaphorePermit;
 
 use super::admission::{admit_conversation, AdmittedRequest};
-use super::continuation::ContinuationBindings;
 use super::gateway::{Gateway, GatewayAuthError, ModelSwitchOutcome};
 use super::http::{error_response, reject_invalid_local_auth, stopping_response, EdgeState};
 use super::pair_policy::{
@@ -69,27 +68,6 @@ pub(super) async fn handle_conversation(
         .and_then(|value| value.as_str())
         .unwrap_or("")
         .to_owned();
-    let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
-    if pair_adapter_active(&admitted.state, channel)
-        && !pair_model_servable(&admitted.state, &model)
-    {
-        tracing::warn!(
-            target: "core.adapter",
-            profile_id = %admitted.state.profile_id,
-            request_id = %admitted.request_id,
-            model,
-            op = "upstream",
-            code = "model_unavailable",
-            status = 400_u16,
-            "pair adapter has no upstream mapping for this model"
-        );
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "model_unavailable",
-            "No running route can serve this model.",
-            None,
-        );
-    }
     let mut resolver_candidates = None;
     if let Some(index) = &admitted.state.route_index {
         let endpoint = DownstreamSurface::endpoint_key(admitted.state.upstream.local_surface);
@@ -140,7 +118,13 @@ pub(super) async fn handle_conversation(
                     .iter()
                     .any(|item| crate::models::listed_model_matches(item, &model));
                 let listed_restricted = !admitted.state.listed_models.is_empty();
-                let code = if listed_restricted && !listed_hit && !model.is_empty() {
+                let pair_active = pair_adapter_active(
+                    &admitted.state,
+                    UpstreamChannel::from_protocol(admitted.state.upstream.protocol),
+                );
+                let code = if pair_active {
+                    "model_unavailable"
+                } else if listed_restricted && !listed_hit && !model.is_empty() {
                     "listed_models_reject"
                 } else {
                     "model_unavailable"
@@ -166,8 +150,27 @@ pub(super) async fn handle_conversation(
         }
     }
     let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
+    if pair_adapter_active(&admitted.state, channel)
+        && !pair_model_servable(&admitted.state, &model)
+    {
+        tracing::warn!(
+            target: "core.adapter",
+            profile_id = %admitted.state.profile_id,
+            request_id = %admitted.request_id,
+            model,
+            op = "upstream",
+            code = "model_unavailable",
+            status = 400_u16,
+            "pair adapter has no upstream mapping for this model"
+        );
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "model_unavailable",
+            "No running route can serve this model.",
+            None,
+        );
+    }
     let pair_active = pair_adapter_active(&admitted.state, channel);
-    let has_stateful = ContinuationBindings::has_stateful_fields(&admitted.body, &admitted.headers);
     let required_member = if pair_active {
         admitted
             .state
@@ -176,6 +179,12 @@ pub(super) async fn handle_conversation(
     } else {
         None
     };
+    if pair_active
+        && crate::bridge::protocol::pair::previous_response_id(&admitted.body).is_some()
+        && required_member.is_none()
+    {
+        return continuation_unavailable(&admitted.state, &admitted.request_id, admitted.started);
+    }
     let Some(member) = (if let Some(required_id) = required_member.as_deref() {
         match pick_bound_member(
             &admitted.state,
@@ -205,7 +214,7 @@ pub(super) async fn handle_conversation(
             &model,
         );
     };
-    let continuation_locked = pair_active && (has_stateful || required_member.is_some());
+    let continuation_locked = pair_active && required_member.is_some();
     admitted.member = Some(member);
     let prepared = match channel.prepare(surface, &admitted) {
         Ok(prepared) => prepared,

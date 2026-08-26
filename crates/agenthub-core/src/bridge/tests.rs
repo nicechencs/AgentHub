@@ -5523,6 +5523,42 @@ async fn pair_flag_on_continuation_does_not_call_other_member() {
 }
 
 #[tokio::test]
+async fn pair_flag_on_unbound_previous_response_id_does_not_call_upstream() {
+    let (upstream_port, hits, upstream_task) = counting_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            grok_codex_pair_spec("pair-unbound", 0, upstream_port)
+                .with_members(vec![
+                    pool_member("acc-a", "token-a"),
+                    pool_member("acc-b", "token-b"),
+                ])
+                .with_multi_account(true),
+        )
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "previous_response_id": "resp_unknown",
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "continuation_unavailable");
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+
+    host.stop("pair-unbound").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
 async fn pair_flag_off_keeps_experimental_grok_codex_passthrough() {
     let (upstream_port, captured, upstream_task) = capturing_grok_responses_upstream().await;
     let host = BridgeRuntimeHost::new();

@@ -83,7 +83,7 @@ fn codex_to_grok_request_strips_store_system_and_allowlist_rejects() {
     adapt_codex_request_for_grok_upstream(&mut body);
     assert!(body.get("store").is_none(), "{body}");
     assert!(body.get("metadata").is_none(), "{body}");
-    assert!(body.get("max_output_tokens").is_none(), "{body}");
+    assert_eq!(body["max_output_tokens"], 64);
     assert_no_system_or_developer_items(&body);
     let instructions = body["instructions"].as_str().expect("instructions");
     assert!(instructions.contains("Be brief."), "{instructions}");

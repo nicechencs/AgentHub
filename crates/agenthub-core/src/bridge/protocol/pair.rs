@@ -169,7 +169,6 @@ pub fn completed_response_id(body: &Value) -> Option<&str> {
 /// Grok raw. Intentionally excludes Grok cache / reasoning / include / tools.
 const CODEX_ONLY_REQUEST_KEYS: &[&str] = &[
     "metadata",
-    "max_output_tokens",
     "max_tokens",
     "service_tier",
     "text",
