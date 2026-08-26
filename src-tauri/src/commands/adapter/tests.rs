@@ -70,9 +70,24 @@ fn adapter_error_from_string_marks_rollback_and_stop_as_not_retryable() {
 
 #[test]
 fn adapter_retryable_classification_covers_restore_and_retryable_prefix() {
-    assert!(is_adapter_error_retryable("adapter.bridge_start"));
-    assert!(is_adapter_error_retryable("adapter.bridge_restore_source"));
-    assert!(is_adapter_error_retryable("retryable:adapter.port_in_use"));
-    assert!(!is_adapter_error_retryable("needs_attention"));
-    assert!(!is_adapter_error_retryable("adapter.bridge_rollback"));
+    // Keep in lockstep with `isAdapterErrorCodeRetryable` in
+    // `src/lib/backend/contracts/adapter.test.ts`.
+    for code in [
+        "retryable:adapter.port_in_use",
+        "adapter.port_in_use",
+        "adapter.bridge_start",
+        "adapter.bridge_upstream_auth",
+        "adapter.bridge_restore_source",
+        "adapter.bridge_restore_port",
+    ] {
+        assert!(is_adapter_error_retryable(code), "{code}");
+    }
+    for code in [
+        "needs_attention",
+        "adapter.bridge_rollback",
+        "adapter.bridge_stop",
+        "not_found",
+    ] {
+        assert!(!is_adapter_error_retryable(code), "{code}");
+    }
 }
