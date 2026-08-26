@@ -33,6 +33,55 @@ export const CLAUDE_MODEL_SLOT_ENV_KEYS = [
 const AUTH_KEYS = ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY'] as const;
 const URL_KEYS = ['ANTHROPIC_BASE_URL'] as const;
 
+function looksLikeClaudeSettingsRoot(root: Record<string, unknown>): boolean {
+  if (root.env && typeof root.env === 'object' && !Array.isArray(root.env)) return true;
+  const schema = root.$schema;
+  return typeof schema === 'string' && /claude-code-settings/i.test(schema);
+}
+
+/**
+ * 从粘贴文本抽出完整 Claude settings.json（含 `$schema`）。
+ * 支持整段 JSON、前后夹杂 UI 文案、以及缺少外层大括号的片段。
+ */
+export function extractClaudeSettingsDocument(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const candidates: string[] = [];
+  const push = (value: string) => {
+    if (value && !candidates.includes(value)) candidates.push(value);
+  };
+
+  if (trimmed.startsWith('{')) push(trimmed);
+
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    push(text.slice(start, end + 1).trim());
+  }
+
+  if (
+    !trimmed.startsWith('{') &&
+    !trimmed.includes('\n{') &&
+    (/"env"\s*:/.test(trimmed) || /"\$schema"\s*:/.test(trimmed))
+  ) {
+    push(`{${trimmed}}`);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      const root = parsed as Record<string, unknown>;
+      if (!looksLikeClaudeSettingsRoot(root)) continue;
+      return JSON.stringify(root, null, 2);
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 /**
  * 从任意文本抽 KEY=VALUE / JSON 字段。
  * 返回全部命中的 env 映射（含主字段）。
