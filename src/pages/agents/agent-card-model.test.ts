@@ -137,6 +137,8 @@ describe('extra copy labels', () => {
     expect(card).toContain('agents.card.installSource');
     expect(card).toContain('agents.card.updateChannel');
     expect(card).toContain('agents.card.uninstallMethod');
+    expect(card).toContain('<Hint label={inst.location}');
+    expect(card).not.toMatch(/<p[^>]*\stitle=\{inst\.location\}/);
     expect(card).toContain('specialChannelUpdateTargets');
     expect(card).toContain('updateViaDesktop');
     expect(zh.agents.card.copyPath).toBe('复制路径');
