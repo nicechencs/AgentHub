@@ -65,7 +65,7 @@ updated: 2026-08-26
 - [Adapter sidecar](proposals/adapter-sidecar.md)
 - [托盘后台模式](proposals/tray-background-modes.md)
 - [模块化改进](proposals/modularity.md)
-- [插件与 MCP 管理](proposals/plugin-management.md)
+- [插件（extension / plugin）管理](proposals/plugin-management.md)
 - [归档索引](archive/README.md)：不可作为当前契约。
 - [单一内核与查表投影（历史）](archive/single-kernel-projections.md)
 - [旧文档迁移索引](archive/legacy-document-index.md)：旧路径到新真源的完整映射。

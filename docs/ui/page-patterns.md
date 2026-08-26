@@ -174,7 +174,7 @@ Agents is the lifecycle surface: installed state, runtime readiness, install/upd
 
 ### MCP
 
-MCP is a read-only inventory of known configuration files. It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported. The current page is a standard single-column table, not the Routes workbench split. A future management workbench is a [proposal](../proposals/plugin-management.md), not this contract.
+MCP is a read-only inventory of known **MCP server** configuration files. It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported, and it is not the plugin/extension pack manager. The current page is a standard single-column table. A future **plugin pack** workbench (`/plugins`) is a [proposal](../proposals/plugin-management.md), not this contract.
 
 ## 10. Responsive and interaction constraints
 

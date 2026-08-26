@@ -25,7 +25,7 @@ updated: 2026-08-26
 | 账号池 | OAuth 按 Agent + identity 覆盖；Key 按指纹分行；每 Agent 只有一个 live current | [Accounts and authorization](../concepts/accounts-and-authorization.md) |
 | 凭据落盘加密 | 无必要，项目范围外；沿用现有存储方案 | [Product boundaries](product-boundaries.md) |
 | 国产 OAuth | 不开 adapter 边，不转 API；国产路由只认支持的 API Key | [Product boundaries](product-boundaries.md) |
-| MCP / 插件 | 当前只读 inventory；写入与厂商 Plugin 市场是提案 | [插件、MCP 与技能](../concepts/plugins-and-mcp.md) |
+| 插件 vs MCP | 插件是各家 extension/plugin 包；MCP 是 `/mcp` 只读 server 清单。二者不得混名 | [插件、MCP 与技能](../concepts/plugins-and-mcp.md) |
 
 ## 阅读规则
 

@@ -53,7 +53,7 @@ flowchart LR
 - `services`：Account、Provider、Connection、Ticket、Chat、Run、Usage 等业务编排。
 - `storage`：SQLite schema、迁移、repository。
 - `adapters` / `integrations`：Agent 特有路径、配置、账号、运行和流解析贡献。
-- `platform`：catalog、capability、configuration、lifecycle、skills、usage 等平台能力。MCP 目前只有 service 级只读 inventory，不是 platform 写入端口。
+- `platform`：catalog、capability、configuration、lifecycle、skills、usage 等平台能力。MCP 目前只有 service 级只读 inventory。厂商 plugin/extension 包尚未进入 platform 端口。
 - `bridge`：loopback listener 与 Messages/Responses/Chat 转换；当前是进程内运行时。
 - `runtime` / `utils`：共享运行时检测、进程、路径、脱敏与流解析工具。
 

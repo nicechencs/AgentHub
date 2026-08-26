@@ -59,7 +59,8 @@ updated: 2026-08-26
 | `install` / `lifecycle` | 有可审计的 npm/native 安装渠道 |
 | `config` | 能安全读取/合并公开配置字段；无法保证 round-trip 时保持只读或 fail-closed |
 | `skills` | 有稳定的技能目标目录 |
-| MCP inventory 路径 | 仅当用户级 live 文件形状已验证；写入仍要求 `Capability::Mcp` 不再是 Planned |
+| MCP inventory 路径 | 仅当用户级 MCP live 文件形状已验证；写入仍要求 `Capability::Mcp` 不再是 Planned |
+| 插件 / extension 端口 | 仅当该 Agent 有官方 `plugin`/`install` CLI 或已验证的 enabled 清单；与 MCP 端口分开注册 |
 | `usage` | 有脱敏 fixture 锁定日志字段 |
 | `projects` | 有明确的会话/项目根和安全删除边界 |
 | `stream` | 已验证结构化 stdout/事件协议 |
