@@ -130,6 +130,9 @@ impl EffectiveRouteIndex {
     pub fn with_mixed_provider_rules(mut self, enabled: bool, rules: Vec<ModelRouteRule>) -> Self {
         self.mixed_provider_enabled = enabled;
         self.rules = rules;
+        if enabled {
+            self.project_public_models_from_rules();
+        }
         self
     }
 
@@ -167,7 +170,7 @@ impl EffectiveRouteIndex {
         if mixed && (!self.mixed_provider_enabled || enabled_rules.is_empty()) {
             return Err(RouteResolveError::AmbiguousModel);
         }
-        if enabled_rules.is_empty() {
+        if !self.mixed_provider_enabled || enabled_rules.is_empty() {
             return Ok(candidates.clone());
         }
         let filtered = filter_candidates_by_rules(candidates, &enabled_rules);
@@ -290,7 +293,7 @@ impl EffectiveRouteIndex {
         let last_lane = last_member_id.and_then(|member_id| {
             candidates
                 .iter()
-                .find(|candidate| candidate.member_id == member_id)
+                .find(|candidate| candidate_matches_id(candidate, member_id))
                 .map(lane_key)
         });
         let mut lanes: BTreeSet<(&str, &str)> = BTreeSet::new();
@@ -312,6 +315,63 @@ impl EffectiveRouteIndex {
             })
             .cloned()
             .collect()
+    }
+
+    fn project_public_models_from_rules(&mut self) {
+        let snapshots = self.capability_snapshots();
+        let generation = self.generation;
+        let enabled: Vec<ModelRouteRule> = self
+            .rules
+            .iter()
+            .filter(|rule| rule.enabled)
+            .cloned()
+            .collect();
+        for rule in &enabled {
+            let endpoint = rule.endpoint_family.trim();
+            let public_model = rule.public_model.trim();
+            let target_model = rule.upstream_model.trim();
+            if endpoint.is_empty() || public_model.is_empty() {
+                continue;
+            }
+            for snapshot in &snapshots {
+                if snapshot.endpoint.trim() != endpoint {
+                    continue;
+                }
+                if snapshot.upstream_provider.trim() != rule.upstream_provider.trim()
+                    || snapshot.upstream_dialect.trim() != rule.upstream_dialect.trim()
+                {
+                    continue;
+                }
+                let listed = snapshot.public_model.trim();
+                let upstream = snapshot.upstream_model.trim();
+                if upstream != target_model && listed != target_model && listed != public_model {
+                    continue;
+                }
+                let candidate = DispatchCandidate {
+                    member_id: snapshot.member_id.clone(),
+                    upstream_endpoint: snapshot.upstream_endpoint.clone(),
+                    upstream_model: if target_model.is_empty() {
+                        snapshot.upstream_model.clone()
+                    } else {
+                        target_model.to_owned()
+                    },
+                    upstream_provider: snapshot.upstream_provider.clone(),
+                    upstream_dialect: snapshot.upstream_dialect.clone(),
+                    transport_key: snapshot.transport_key.clone(),
+                    capability_generation: generation,
+                };
+                let entry = self
+                    .by_endpoint_model
+                    .entry((endpoint.to_owned(), public_model.to_owned()))
+                    .or_default();
+                entry.retain(|existing| existing.member_id != candidate.member_id);
+                entry.push(candidate);
+            }
+        }
+        for candidates in self.by_endpoint_model.values_mut() {
+            candidates.sort_by(|left, right| left.member_id.cmp(&right.member_id));
+            candidates.dedup_by(|left, right| left.member_id == right.member_id);
+        }
     }
 
     fn enabled_rules_for(&self, endpoint: &str, public_model: &str) -> Vec<&ModelRouteRule> {
@@ -463,10 +523,18 @@ fn lane_key(candidate: &DispatchCandidate) -> (&str, &str) {
     )
 }
 
+fn candidate_matches_id(candidate: &DispatchCandidate, id: &str) -> bool {
+    let id = id.trim();
+    if id.is_empty() {
+        return false;
+    }
+    candidate.member_id == id || id.ends_with(&format!(":{}", candidate.member_id))
+}
+
 fn member_excluded(candidate: &DispatchCandidate, excluded_member_ids: &[String]) -> bool {
     excluded_member_ids
         .iter()
-        .any(|excluded| excluded == &candidate.member_id)
+        .any(|excluded| candidate_matches_id(candidate, excluded))
 }
 
 fn lane_priority(lane: (&str, &str), rules: &[&ModelRouteRule]) -> i64 {

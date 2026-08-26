@@ -367,6 +367,7 @@ async fn forward_upstream(
     let UpstreamSendOutcome { response, member } = match send_upstream(
         &state,
         url,
+        path,
         channel,
         &request_id,
         started,
