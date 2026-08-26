@@ -548,8 +548,7 @@ export default function BridgesPage() {
           <DialogHeader className="shrink-0">
             <DialogTitle>{t('routes.unbind.title')}</DialogTitle>
             <DialogDescription>
-              {t('routes.unbind.description')}
-              {removeConfirmIsOrphan ? t('routes.unbind.orphanNote') : ''}
+              {t(removeConfirmIsOrphan ? 'routes.unbind.orphanDescription' : 'routes.unbind.description')}
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">

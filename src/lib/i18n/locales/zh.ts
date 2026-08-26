@@ -639,7 +639,7 @@ export const zh = {
     unbind: {
       title: "停止这条本机转发并还原配置？",
       description: "会停止本机转发并恢复该工具上一份配置。登录仍留在连接页。",
-      orphanNote: "来源登录已不在，仍走同一套停止并还原。",
+      orphanDescription: "会停止本机转发并恢复该工具上一份配置。来源登录已不在，仍走同一套停止并还原。",
       fallback: "无法停止并还原这条本机转发",
       confirming: "停止并还原中…",
       retry: "重试停止并还原",
