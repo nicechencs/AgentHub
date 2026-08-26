@@ -47,7 +47,7 @@ updated: 2026-08-26
 | O-26–O-30 | 仍存在 | 暂缓。启动组合根、transport façade、Gateway 状态和协议策略需要分别设计 |
 | O-31–O-34 | 仍存在 | 暂缓。Usage normalizer、查询 filter 和模型映射的跨层收窄需保持统计语义 |
 | O-35、O-38 | 仍存在 | 暂缓。CLI 运行策略和发布脚本收口需要单独设计 |
-| O-36 | CLI 切换确认曾 `.ok()` 吞掉列表读取错误，并自行拼接预览 | 已处理：读取失败返回错误；确认文案由 core `SwitchConfirmPreview` 生成。桌面端确认框仍自建文案 |
+| O-36 | CLI 切换确认曾 `.ok()` 吞掉列表读取错误，并自行拼接预览 | 已处理：读取失败返回错误；确认事实由 core `SwitchConfirmPreview` 生成。CLI 渲染英文；桌面端只把同一份事实译成界面文案 |
 | O-37 | CLI 多处重复解析 `--agent` | 已处理：共用 `agent_arg`；各命令错误原文保留 |
 | O-39 | mock `speaks` 与 core 对 GLM/DeepSeek 不一致 | 已处理：mock 补上 `openai-responses`。共享 fixture 仍未做 |
 | O-40–O-42、O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
@@ -61,6 +61,7 @@ updated: 2026-08-26
 | O-70 | 未实现的 Pi 登录被标成设备码 | 已处理：仅已实现的 xAI 为设备码；github-copilot / kimi-coding 不再导向设备码。未开这些登录 |
 | O-74 | `PkcePair` 字段公开可变 | 已处理：字段私有，只读 `verifier()` / `challenge()` |
 | O-71 | `OAuthSession` 字段公开 | 已处理：构造器 + 只读访问器；状态机 / TTL / `mark_error` 未改 |
+| O-63 | 设置语言读取散落 | 已处理：托盘和选目录共用 `language_from_hub`。关闭到托盘的两个布尔解析器语义不同，未合并 |
 
 ## 结论
 

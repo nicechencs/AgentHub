@@ -18,7 +18,8 @@ use crate::exit_coordinator::{
 };
 use crate::state::AppState;
 use crate::tray_i18n::{
-    parse_tray_language, tray_dialog_copy, tray_menu_copy, TrayMenuCopy, TrayUiLanguage,
+    language_from_hub, parse_tray_language, tray_dialog_copy, tray_menu_copy, TrayMenuCopy,
+    TrayUiLanguage,
 };
 
 const TRAY_ID: &str = "main";
@@ -350,16 +351,10 @@ fn spawn_tray_bridge_batch<R: Runtime>(app: AppHandle<R>, start: bool) {
 }
 
 fn current_tray_language<R: Runtime>(app: &AppHandle<R>) -> TrayUiLanguage {
-    let raw = app
-        .try_state::<AppState>()
-        .and_then(|state| {
-            state
-                .hub()
-                .ok()
-                .and_then(|hub| hub.settings().get("language").ok().flatten())
-        })
-        .unwrap_or_default();
-    parse_tray_language(&raw)
+    let Some(state) = app.try_state::<AppState>() else {
+        return TrayUiLanguage::Zh;
+    };
+    language_from_hub(state.hub().ok())
 }
 
 fn build_tray_menu<R: Runtime>(app: &AppHandle<R>, copy: &TrayMenuCopy) -> tauri::Result<Menu<R>> {
@@ -564,6 +559,12 @@ mod tests {
         assert_eq!(parse_tray_language("en"), TrayUiLanguage::En);
         assert_eq!(parse_tray_language("en-US"), TrayUiLanguage::En);
         assert_eq!(parse_tray_language("EN"), TrayUiLanguage::En);
+    }
+
+    #[test]
+    fn language_from_hub_defaults_zh_without_hub() {
+        use crate::tray_i18n::language_from_hub;
+        assert_eq!(language_from_hub(None), TrayUiLanguage::Zh);
     }
 
     #[test]

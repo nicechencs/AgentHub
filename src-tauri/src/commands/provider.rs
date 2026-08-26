@@ -6,7 +6,9 @@
 
 use agenthub_core::error::AppError;
 use agenthub_core::logging::{self, targets};
-use agenthub_core::models::{Provider, ProviderInput, ProviderPreset, ProviderSwitchResult};
+use agenthub_core::models::{
+    Provider, ProviderInput, ProviderPreset, ProviderSwitchResult, SwitchConfirmPreview,
+};
 use agenthub_core::presets;
 use agenthub_core::utils::redact::{api_key_secret, is_secret_key, mask_secret_tail};
 use agenthub_core::AgentHub;
@@ -278,31 +280,23 @@ fn switch_provider_preview_inner(
         .providers()
         .get(id_or_name, Some(agent))
         .map_err(|e| map_err_string("switch_provider_preview", e))?;
-    let current = hub
-        .providers()
-        .list(Some(agent))
-        .map_err(|e| map_err_string("switch_provider_preview", e))?
-        .into_iter()
-        .find(|p| p.is_current);
+    let preview = hub
+        .provider_switch_preview(agent, id_or_name)
+        .map_err(|e| map_err_string("switch_provider_preview", e))?;
+    Ok(gui_switch_preview(preview))
+}
 
-    let backfill_summary = match current {
-        Some(c) => format!("当前生效配置将回存为「{}」", c.name),
+/// Desktop dialog copy. Facts come from core; wording stays on the host.
+fn gui_switch_preview(preview: SwitchConfirmPreview) -> SwitchPreview {
+    let backfill_summary = match preview.current_label.as_deref() {
+        Some(label) => format!("当前生效配置将回存为「{label}」"),
         None => "尚无生效配置，将直接写入本机".into(),
     };
-
-    let backup_path = hub
-        .backups()
-        .backups_root()
-        .join("live")
-        .join(agent.as_str())
-        .display()
-        .to_string();
-
-    Ok(SwitchPreview {
+    SwitchPreview {
         backfill_summary,
-        backup_path,
+        backup_path: preview.backup_dir.display().to_string(),
         process_warning: None,
-    })
+    }
 }
 
 /// When `new` carries the redaction marker at secret keys (or opaque TOML

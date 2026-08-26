@@ -8,7 +8,7 @@ use tauri_plugin_dialog::{DialogExt, FilePath};
 use agenthub_core::logging::targets;
 
 use crate::state::AppState;
-use crate::tray_i18n::{parse_tray_language, TrayUiLanguage};
+use crate::tray_i18n::{language_from_hub, TrayUiLanguage};
 
 pub(crate) const DEFAULT_PICK_DIRECTORY_TITLE: &str = "选择工作目录";
 const DEFAULT_PICK_DIRECTORY_TITLE_EN: &str = "Select working directory";
@@ -40,16 +40,11 @@ pub(crate) fn pick_directory_with(
 ) -> Result<Option<String>, String> {
     let mut dialog = app.dialog().file();
     let fallback_title = title.unwrap_or_else(|| {
-        let raw = app
-            .try_state::<AppState>()
-            .and_then(|state| {
-                state
-                    .hub()
-                    .ok()
-                    .and_then(|hub| hub.settings().get("language").ok().flatten())
-            })
-            .unwrap_or_default();
-        pick_directory_default_title(parse_tray_language(&raw))
+        let lang = match app.try_state::<AppState>() {
+            Some(state) => language_from_hub(state.hub().ok()),
+            None => TrayUiLanguage::Zh,
+        };
+        pick_directory_default_title(lang)
     });
     dialog = dialog.set_title(fallback_title);
     dialog = dialog.set_can_create_directories(true);

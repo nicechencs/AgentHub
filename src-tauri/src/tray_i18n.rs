@@ -1,5 +1,7 @@
 //! Pure tray / native-dialog copy. Language parse matches GUI `mapLanguageToUi`.
 
+use agenthub_core::AgentHub;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TrayUiLanguage {
     Zh,
@@ -13,6 +15,14 @@ pub(crate) fn parse_tray_language(raw: &str) -> TrayUiLanguage {
     } else {
         TrayUiLanguage::Zh
     }
+}
+
+/// Settings `language` → tray / native-dialog locale. Missing hub or key → zh.
+pub(crate) fn language_from_hub(hub: Option<&AgentHub>) -> TrayUiLanguage {
+    let raw = hub
+        .and_then(|hub| hub.settings().get("language").ok().flatten())
+        .unwrap_or_default();
+    parse_tray_language(&raw)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
