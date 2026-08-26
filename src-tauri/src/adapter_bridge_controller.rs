@@ -84,7 +84,7 @@ async fn apply_local_bridge_locked(
         prepared.profile().source_kind,
         &prepared.profile().source_id,
     );
-    let members = resolve_pool_members(
+    let members = resolve_start_members(
         hub.as_ref(),
         prepared.profile(),
         prepared.runtime_material(),
@@ -341,7 +341,7 @@ pub(crate) fn restore_adapter_bridges(
                 material.profile().source_kind,
                 &material.profile().source_id,
             );
-            let members = resolve_pool_members(
+            let members = resolve_start_members(
                 hub.as_ref(),
                 material.profile(),
                 material.runtime_material(),
@@ -802,6 +802,107 @@ fn oauth_reload_for_material(
     )
 }
 
+fn resolve_start_members(
+    hub: &AgentHub,
+    profile: &AdapterProfile,
+    material: &AdapterBridgeRuntimeMaterial,
+    lead_reload: Option<UpstreamAuthReload>,
+) -> Vec<BridgeMemberSpec> {
+    if let Some(members) = resolve_v2_pool_members(hub, profile, material, lead_reload.clone()) {
+        return members;
+    }
+    resolve_pool_members(hub, profile, material, lead_reload)
+}
+
+/// Enrolled v2 pool members. Does not open `multi_account`; the start spec
+/// keeps every member only because a route index is attached.
+fn resolve_v2_pool_members(
+    hub: &AgentHub,
+    profile: &AdapterProfile,
+    material: &AdapterBridgeRuntimeMaterial,
+    lead_reload: Option<UpstreamAuthReload>,
+) -> Option<Vec<BridgeMemberSpec>> {
+    if material.route_index().is_none() {
+        return None;
+    }
+    let members = hub.route_pools.list_members(&profile.id).ok()?;
+    if members.is_empty() {
+        return None;
+    }
+    let protocol = material.protocol();
+    let mut resolved = Vec::with_capacity(members.len());
+    for member in members.into_iter().filter(|member| member.enabled) {
+        let is_lead =
+            member.source_kind == profile.source_kind && member.source_id == profile.source_id;
+        if is_lead {
+            resolved.push(BridgeMemberSpec {
+                ticket_id: ticket_id(member.source_kind, &member.source_id),
+                source_kind: member.source_kind.as_str().to_owned(),
+                source_id: member.source_id.clone(),
+                label: member.source_id.clone(),
+                auth: material.start_spec(None).upstream.auth,
+                reload: lead_reload.clone(),
+                health: MemberHealth::Renewable,
+                priority: member.priority,
+                position: member.position,
+            });
+            continue;
+        }
+        match hub.adapter_bridge.resolve_member_auth(
+            &profile.rule_id,
+            member.source_kind,
+            &member.source_id,
+        ) {
+            Ok(auth) if auth.has_token() => {
+                resolved.push(BridgeMemberSpec {
+                    ticket_id: ticket_id(member.source_kind, &member.source_id),
+                    source_kind: member.source_kind.as_str().to_owned(),
+                    source_id: member.source_id.clone(),
+                    label: member.source_id.clone(),
+                    auth,
+                    reload: oauth_bridge_reload_callback(
+                        hub.accounts.clone(),
+                        AdapterSecretResolver::new(hub.db.clone()),
+                        member.source_kind,
+                        member.source_id.clone(),
+                        protocol,
+                    ),
+                    health: MemberHealth::Renewable,
+                    priority: member.priority,
+                    position: member.position,
+                });
+            }
+            _ => {
+                tracing::info!(
+                    target: "gui",
+                    op = "adapter_bridge_member_isolated",
+                    profile_id = %profile.id,
+                    account_id = %member.source_id,
+                    "isolating v2 pool member whose secret could not be resolved"
+                );
+                resolved.push(BridgeMemberSpec {
+                    ticket_id: ticket_id(member.source_kind, &member.source_id),
+                    source_kind: member.source_kind.as_str().to_owned(),
+                    source_id: member.source_id.clone(),
+                    label: member.source_id.clone(),
+                    auth: agenthub_core::bridge::ResolvedAuth::bearer(""),
+                    reload: oauth_bridge_reload_callback(
+                        hub.accounts.clone(),
+                        AdapterSecretResolver::new(hub.db.clone()),
+                        member.source_kind,
+                        member.source_id.clone(),
+                        protocol,
+                    ),
+                    health: MemberHealth::NeedsLogin,
+                    priority: member.priority,
+                    position: member.position,
+                });
+            }
+        }
+    }
+    Some(resolved)
+}
+
 /// Resolve C1 surface-group siblings. A closed multi_account gate returns an
 /// empty list so the host synthesizes the lead (byte-equivalent start spec).
 /// A sibling secret failure isolates that member instead of failing start.
@@ -844,6 +945,8 @@ fn resolve_pool_members(
                 auth: material.start_spec(None).upstream.auth,
                 reload: lead_reload.clone(),
                 health: MemberHealth::Renewable,
+                priority: 0,
+                position: members.len() as i64,
             });
             continue;
         }
@@ -867,6 +970,8 @@ fn resolve_pool_members(
                         protocol,
                     ),
                     health: MemberHealth::Renewable,
+                    priority: 0,
+                    position: members.len() as i64,
                 });
             }
             _ => {
@@ -891,6 +996,8 @@ fn resolve_pool_members(
                         protocol,
                     ),
                     health: MemberHealth::NeedsLogin,
+                    priority: 0,
+                    position: members.len() as i64,
                 });
             }
         }
@@ -931,7 +1038,10 @@ pub(crate) async fn ensure_bridge_listener(
                 owned_by_saga: true,
             })
         }
-        Err(BridgeHostError::Bind(_)) => {
+        Err(error @ BridgeHostError::Bind(_)) => {
+            if material.freeze_gateway_port() {
+                return Err(error);
+            }
             let status = host
                 .start(
                     material
@@ -968,7 +1078,10 @@ async fn start_with_bind_fallback(
         .await
     {
         Ok(status) => Ok(status),
-        Err(BridgeHostError::Bind(_)) => {
+        Err(error @ BridgeHostError::Bind(_)) => {
+            if material.freeze_gateway_port() {
+                return Err(error);
+            }
             host.start(
                 material
                     .start_spec(Some(0))

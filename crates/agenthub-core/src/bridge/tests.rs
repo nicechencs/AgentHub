@@ -20,10 +20,11 @@ use tokio::{
 
 use super::host::{CleanupCompletion, MAX_IN_FLIGHT_REQUESTS_PER_PROFILE};
 use super::{
-    protocol::responses::is_leftover_bridge_model, BridgeHostError, BridgeLocalSurface,
-    BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec, BridgeUpstreamConfig,
-    BridgeUpstreamProtocol, BridgeUpstreamStatus, EffectiveRouteIndex, MemberCapability,
-    MemberCapabilitySnapshot, MemberHealth, ResolvedAuth, UpstreamAuthReload,
+    index_from_member_listings, protocol::responses::is_leftover_bridge_model, BridgeHostError,
+    BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec,
+    BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, EffectiveRouteIndex,
+    MemberCapability, MemberCapabilitySnapshot, MemberHealth, MemberListing, ResolvedAuth,
+    UpstreamAuthReload,
 };
 use crate::models::{list_local_bridge_models, AdapterSourceProduct, AgentId};
 
@@ -3880,6 +3881,8 @@ fn pool_member(id: &str, token: &str) -> BridgeMemberSpec {
         auth: ResolvedAuth::bearer(token),
         reload: None,
         health: MemberHealth::Renewable,
+        priority: 0,
+        position: 0,
     }
 }
 
@@ -4395,4 +4398,97 @@ async fn v2_models_catalog_comes_from_the_same_index() {
     assert_eq!(listed_a["data"][0]["id"], "m1");
     host.shutdown().await.expect("shutdown");
     upstream_task.abort();
+}
+
+fn production_index(members: &[(&str, &str)]) -> EffectiveRouteIndex {
+    let listings: Vec<MemberListing> = members
+        .iter()
+        .map(|(member_id, model)| MemberListing {
+            member_id: (*member_id).into(),
+            listed_models: vec![(*model).into()],
+            upstream_provider: "openai".into(),
+            upstream_dialect: "generic".into(),
+            upstream_endpoint: "http://127.0.0.1/v1".into(),
+            transport_key: "openai:generic".into(),
+            snapshot_ok: true,
+        })
+        .collect();
+    index_from_member_listings("pool-v2", 1, "responses", &listings, None)
+}
+
+#[tokio::test]
+async fn production_built_index_unions_models_and_never_crosses_members() {
+    let (upstream_port, captured, task) = capturing_chat_upstream().await;
+    let index = production_index(&[("acc-b", "m2"), ("acc-a", "m1")]);
+    assert_eq!(index.list_models("responses"), vec!["m1", "m2"]);
+    let host = BridgeRuntimeHost::new();
+    let mut spec = spec_with_token("pool-v2", 0, upstream_port, TOKEN_A)
+        .with_members(vec![
+            pool_member("acc-b", "upstream-b"),
+            pool_member("acc-a", "upstream-a"),
+        ])
+        .with_listed_models(index.list_models("responses"))
+        .with_route_index(index);
+    spec.upstream.model = None;
+    spec.upstream.auth = ResolvedAuth::bearer("lead-unused");
+    let status = host.start(spec).await.expect("start enrolled pool");
+    let http = client().await;
+    let listed = http
+        .get(format!("http://127.0.0.1:{}/v1/models", status.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .send()
+        .await
+        .expect("models")
+        .json::<Value>()
+        .await
+        .expect("models json");
+    let ids: Vec<&str> = listed["data"]
+        .as_array()
+        .expect("data")
+        .iter()
+        .filter_map(|row| row["id"].as_str())
+        .collect();
+    assert_eq!(ids, vec!["m1", "m2"]);
+
+    let m1 = http
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .json(&json!({"model": "m1", "input": "hello"}))
+        .send()
+        .await
+        .expect("m1");
+    assert_eq!(m1.status(), StatusCode::OK);
+    assert_eq!(
+        captured.lock().expect("lock").clone(),
+        vec!["Bearer upstream-a".to_owned()],
+        "m1 must not pick B even when B is first in the picker"
+    );
+
+    captured.lock().expect("lock").clear();
+    let unknown = http
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .json(&json!({"model": "unknown", "input": "hello"}))
+        .send()
+        .await
+        .expect("unknown");
+    assert_eq!(unknown.status(), StatusCode::BAD_REQUEST);
+    assert!(captured.lock().expect("lock").is_empty());
+
+    captured.lock().expect("lock").clear();
+    let m2 = http
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .json(&json!({"model": "m2", "input": "hello"}))
+        .send()
+        .await
+        .expect("m2");
+    assert_eq!(m2.status(), StatusCode::OK);
+    assert_eq!(
+        captured.lock().expect("lock").clone(),
+        vec!["Bearer upstream-b".to_owned()]
+    );
+
+    host.shutdown().await.expect("shutdown");
+    task.abort();
 }
