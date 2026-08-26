@@ -28,6 +28,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [unified-loopback-pool.md](unified-loopback-pool.md) | proposed | Could every routed authorization share one loopback port, one Hub token per Agent, and model/health scheduling? |
 | [tray-background-modes.md](tray-background-modes.md) | proposed | Could closing the window reduce WebView memory without changing route ownership or exit semantics? |
 | [modularity.md](modularity.md) | proposed | Which single-source and use-case boundaries should be tightened before any larger process change? |
+| [Service 内部 owner 拆分](../architecture/service-internal-owners.md) | proposed | Concrete internal owner split for O-11 ProviderService, O-12 AccountService, O-13 BackupService, and O-14/O-66 local-route persist — façades and switch semantics stay |
 | [plugin-management.md](plugin-management.md) | proposed | Could AgentHub list and manage per-agent plugin/extension packs (not MCP servers) via official CLIs, with a Routes-like workbench? |
 
 ## Proposal rules
