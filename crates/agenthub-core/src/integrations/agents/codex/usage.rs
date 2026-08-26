@@ -9,7 +9,7 @@ use crate::platform::usage::{TokenAccounting, UsageFileParser, UsageLineOutcome,
 use crate::platform::AgentKey;
 use crate::usage::session_jsonl::{
     bootstrap_codex_prefix, discover_codex_files, extract_codex, line_might_have_usage_codex,
-    read_codex_default_model, CodexParseState,
+    read_codex_default_model, read_codex_fast_service_tier, CodexParseState,
 };
 use crate::utils::paths::agent_home;
 use crate::utils::redact::redact_text;
@@ -76,15 +76,20 @@ impl UsageSource for CodexUsageSource {
 
     fn begin_file(&self, path: &Path, byte_offset: u64) -> Box<dyn UsageFileParser> {
         // Prefer: turn_context inheritance → ~/.codex/config.toml `model` → "unknown".
-        let from_cfg = agent_home(AgentId::Codex)
-            .ok()
-            .and_then(|root| read_codex_default_model(&root));
+        let home = agent_home(AgentId::Codex).ok();
+        let from_cfg = home
+            .as_ref()
+            .and_then(|root| read_codex_default_model(root));
+        let config_fast = home
+            .as_ref()
+            .is_some_and(|root| read_codex_fast_service_tier(root));
         // Full-file scan (offset 0): detect fork/subagent rewritten-history burst.
         // Incremental resume: inherit model + previous total_token_usage; no burst skip.
         let state = if byte_offset == 0 {
-            CodexParseState::init_from_file(path, from_cfg)
+            CodexParseState::init_from_file(path, from_cfg, config_fast)
         } else {
-            let (prefix_model, previous_total) = bootstrap_codex_prefix(path, byte_offset);
+            let (prefix_model, previous_total, service_tier_fast) =
+                bootstrap_codex_prefix(path, byte_offset);
             let model = prefix_model.or(from_cfg);
             tracing::debug!(
                 module = targets::USAGE,
@@ -95,7 +100,12 @@ impl UsageSource for CodexUsageSource {
                 model = model.as_deref().unwrap_or("unknown"),
                 "codex usage file resume mid-cursor"
             );
-            CodexParseState::resume_from_prefix(model, previous_total)
+            CodexParseState::resume_from_prefix(
+                model,
+                previous_total,
+                service_tier_fast,
+                config_fast,
+            )
         };
         if byte_offset == 0 && (state.forkish || state.burst_skip_active) {
             let path_s = redact_text(&path.to_string_lossy());

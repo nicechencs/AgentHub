@@ -4,6 +4,10 @@
 //! - Prefer log-provided costUSD (Auto mode)
 //! - Else look up embedded per-1M rates (LiteLLM-style subset)
 //! - Fuzzy alias matching for dated model ids (e.g. claude-sonnet-4-20250514)
+//! - Long-context: whole-request switch when `longContextThreshold` is set
+//!   (OpenAI 272K); otherwise LiteLLM `*_above_200k` is billed marginally
+//! - 1-hour cache writes bill at `2 × input`
+//! - Codex Fast / Priority multiplies the token cost
 //!
 //! Costs stay in the same unit as the pricing table (**USD per 1M tokens**).
 //! No FX conversion at runtime.
@@ -19,6 +23,12 @@ use std::sync::OnceLock;
 /// Embedded USD-per-1M rates (same units as common public list prices).
 const EMBEDDED_PRICING_JSON: &str = include_str!("embedded-pricing.json");
 
+/// ccusage: 1-hour ephemeral cache writes are billed at 2× the input rate.
+const CACHE_CREATE_1H_INPUT_MULTIPLIER: f64 = 2.0;
+
+/// Default LiteLLM `*_above_200k_tokens` boundary when no per-model threshold is set.
+const DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS: u64 = 200_000;
+
 /// Per-token rates (USD).
 #[derive(Debug, Clone, Copy)]
 pub struct Rates {
@@ -26,6 +36,37 @@ pub struct Rates {
     pub output: f64,
     pub cache_create: f64,
     pub cache_read: f64,
+    pub cache_read_explicit: bool,
+    pub input_above_200k: Option<f64>,
+    pub output_above_200k: Option<f64>,
+    pub cache_create_above_200k: Option<f64>,
+    pub cache_read_above_200k: Option<f64>,
+    /// When set, the whole request switches to the `*_above_200k` rates.
+    pub long_context_threshold: Option<u64>,
+    pub fast_multiplier: f64,
+}
+
+/// Token buckets after parse (disjoint: input does not include cache).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CostTokens {
+    pub input: i64,
+    pub output: i64,
+    pub cache_create: i64,
+    pub cache_create_1h: i64,
+    pub cache_read: i64,
+    pub fast: bool,
+}
+
+impl CostTokens {
+    pub fn from_parts(input: i64, output: i64, cache_create: i64, cache_read: i64) -> Self {
+        Self {
+            input,
+            output,
+            cache_create,
+            cache_read,
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -37,6 +78,18 @@ struct EmbeddedRow {
     cache_create: Option<f64>,
     #[serde(default)]
     cache_read: Option<f64>,
+    #[serde(default)]
+    input_above_200k: Option<f64>,
+    #[serde(default)]
+    output_above_200k: Option<f64>,
+    #[serde(default)]
+    cache_create_above_200k: Option<f64>,
+    #[serde(default)]
+    cache_read_above_200k: Option<f64>,
+    #[serde(default)]
+    long_context_threshold: Option<u64>,
+    #[serde(default)]
+    fast_multiplier: Option<f64>,
 }
 
 struct PricingTable {
@@ -51,13 +104,22 @@ impl PricingTable {
         let mut by_key = HashMap::new();
         for (k, row) in raw {
             let create = row.cache_create.unwrap_or(row.input);
+            let cache_read_explicit = row.cache_read.is_some();
             let read = row.cache_read.unwrap_or(row.input * 0.1);
-            // Convert USD/1M → USD/token
+            let per_m = |v: f64| v / 1_000_000.0;
+            let per_m_opt = |v: Option<f64>| v.map(per_m);
             let rates = Rates {
-                input: row.input / 1_000_000.0,
-                output: row.output / 1_000_000.0,
-                cache_create: create / 1_000_000.0,
-                cache_read: read / 1_000_000.0,
+                input: per_m(row.input),
+                output: per_m(row.output),
+                cache_create: per_m(create),
+                cache_read: per_m(read),
+                cache_read_explicit,
+                input_above_200k: per_m_opt(row.input_above_200k),
+                output_above_200k: per_m_opt(row.output_above_200k),
+                cache_create_above_200k: per_m_opt(row.cache_create_above_200k),
+                cache_read_above_200k: per_m_opt(row.cache_read_above_200k),
+                long_context_threshold: row.long_context_threshold.filter(|n| *n > 0),
+                fast_multiplier: row.fast_multiplier.filter(|n| *n > 0.0).unwrap_or(1.0),
             };
             by_key.insert(normalize_key(&k), rates);
             // Also index bare model segment after last '/'
@@ -145,10 +207,6 @@ fn strip_date_suffix(s: &str) -> Option<&str> {
 /// - Log `costUSD` → trust it
 /// - Embedded pricing row → token × rates (USD, no FX)
 /// - **Unknown model (no table row)** → **$0** (UI/CLI shows yellow missing-pricing tip)
-///
-/// `input_includes_cache`: Codex/OpenAI-style rows where `input_tokens` already
-/// includes `cache_read` (bill `input - cache_read` + `cache_read × cache rate`).
-/// Anthropic-style rows leave this `false` (input and cache are disjoint).
 pub fn estimate_cost_usd(
     model: &str,
     input: i64,
@@ -157,14 +215,10 @@ pub fn estimate_cost_usd(
     cache_read: i64,
     cost_usd: Option<f64>,
 ) -> f64 {
-    estimate_cost_usd_ex(
+    estimate_cost_from_tokens(
         model,
-        input,
-        output,
-        cache_create,
-        cache_read,
+        CostTokens::from_parts(input, output, cache_create, cache_read),
         cost_usd,
-        false,
     )
 }
 
@@ -174,27 +228,34 @@ pub fn estimate_cost_usd(
 /// - Claude/Kimi/Pi: Anthropic-style input + cache create/read
 /// - Codex / Grok: ccusage non-cached `input` + separate `cache_read`
 ///
-/// Never set `input_includes_cache` here — that flag is only for raw OpenAI
-/// totals at the parse boundary (`extract_codex`), not for stored rows.
+/// Codex Fast and missing cache-read prices follow ccusage's Codex bucket.
 pub fn estimate_cost_usd_for_agent(
     agent: crate::models::AgentId,
     model: &str,
-    input: i64,
-    output: i64,
-    cache_create: i64,
-    cache_read: i64,
+    tokens: CostTokens,
     cost_usd: Option<f64>,
 ) -> f64 {
-    let _ = agent;
-    estimate_cost_usd_ex(
-        model,
-        input,
-        output,
-        cache_create,
-        cache_read,
-        cost_usd,
-        false,
-    )
+    if let Some(usd) = cost_usd.filter(|c| c.is_finite() && *c >= 0.0) {
+        return round2(usd);
+    }
+    let Some(mut r) = table().find(model) else {
+        return 0.0;
+    };
+    if agent == crate::models::AgentId::Codex && !r.cache_read_explicit {
+        r.cache_read = r.input;
+        r.cache_read_above_200k = r.input_above_200k.or(Some(r.input));
+    }
+    round2(calculate_cost_from_pricing(tokens, r))
+}
+
+pub fn estimate_cost_from_tokens(model: &str, tokens: CostTokens, cost_usd: Option<f64>) -> f64 {
+    if let Some(usd) = cost_usd.filter(|c| c.is_finite() && *c >= 0.0) {
+        return round2(usd);
+    }
+    let Some(r) = table().find(model) else {
+        return 0.0;
+    };
+    round2(calculate_cost_from_pricing(tokens, r))
 }
 
 /// Stored Codex token layout is **already** ccusage-style after parse:
@@ -211,41 +272,82 @@ pub fn codex_billable_tokens(input: i64, cache_read: i64) -> (i64, i64) {
     (input.max(0), cache_read.max(0))
 }
 
-fn estimate_cost_usd_ex(
-    model: &str,
-    input: i64,
-    output: i64,
-    cache_create: i64,
-    cache_read: i64,
-    cost_usd: Option<f64>,
-    input_includes_cache: bool,
-) -> f64 {
-    if let Some(usd) = cost_usd.filter(|c| c.is_finite() && *c >= 0.0) {
-        return round2(usd);
-    }
-    let Some(r) = table().find(model) else {
-        // Unknown model: do not invent a price (was heuristic; now $0 + missing tip).
-        return 0.0;
-    };
+fn calculate_cost_from_pricing(usage: CostTokens, r: Rates) -> f64 {
+    let input = usage.input.max(0) as u64;
+    let output = usage.output.max(0) as u64;
+    let cache_create_5m = usage.cache_create.max(0) as u64;
+    let cache_create_1h = usage.cache_create_1h.max(0) as u64;
+    let cache_read = usage.cache_read.max(0) as u64;
 
-    let input = input.max(0);
-    let output = output.max(0);
-    let cache_create = cache_create.max(0);
-    let cache_read = cache_read.max(0);
+    let cache_create_1h_cost = r.input * CACHE_CREATE_1H_INPUT_MULTIPLIER;
+    let cache_create_1h_cost_above = r
+        .input_above_200k
+        .map(|c| c * CACHE_CREATE_1H_INPUT_MULTIPLIER);
 
-    // OpenAI/Codex: cached_input_tokens ⊆ input_tokens — bill non-cached + cache rate.
-    let (bill_input, bill_cache_read) = if input_includes_cache {
-        let cr = cache_read.min(input);
-        ((input - cr).max(0), cr)
+    let usd = if let Some(threshold) = r.long_context_threshold {
+        let context_tokens = input
+            .saturating_add(cache_read)
+            .saturating_add(cache_create_5m)
+            .saturating_add(cache_create_1h);
+        let long_context = context_tokens > threshold;
+        let rate = |base: f64, above: Option<f64>| {
+            if long_context {
+                above.unwrap_or(base)
+            } else {
+                base
+            }
+        };
+        input as f64 * rate(r.input, r.input_above_200k)
+            + output as f64 * rate(r.output, r.output_above_200k)
+            + cache_create_5m as f64 * rate(r.cache_create, r.cache_create_above_200k)
+            + cache_create_1h as f64 * rate(cache_create_1h_cost, cache_create_1h_cost_above)
+            + cache_read as f64 * rate(r.cache_read, r.cache_read_above_200k)
     } else {
-        (input, cache_read)
+        tiered_cost(
+            input,
+            r.input,
+            r.input_above_200k,
+            DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+        ) + tiered_cost(
+            output,
+            r.output,
+            r.output_above_200k,
+            DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+        ) + tiered_cost(
+            cache_create_5m,
+            r.cache_create,
+            r.cache_create_above_200k,
+            DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+        ) + tiered_cost(
+            cache_create_1h,
+            cache_create_1h_cost,
+            cache_create_1h_cost_above,
+            DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+        ) + tiered_cost(
+            cache_read,
+            r.cache_read,
+            r.cache_read_above_200k,
+            DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+        )
     };
 
-    let usd = (bill_input as f64) * r.input
-        + (output as f64) * r.output
-        + (cache_create as f64) * r.cache_create
-        + (bill_cache_read as f64) * r.cache_read;
-    round2(usd)
+    if usage.fast && r.fast_multiplier > 0.0 && r.fast_multiplier != 1.0 {
+        usd * r.fast_multiplier
+    } else {
+        usd
+    }
+}
+
+fn tiered_cost(tokens: u64, base: f64, above: Option<f64>, threshold: u64) -> f64 {
+    if tokens == 0 {
+        return 0.0;
+    }
+    if let Some(above) = above {
+        if tokens > threshold {
+            return (threshold as f64 * base) + ((tokens - threshold) as f64 * above);
+        }
+    }
+    tokens as f64 * base
 }
 
 /// Backward-compatible helper (cache = create+read treated as read; non-Codex).
@@ -271,6 +373,13 @@ pub fn rates_for(model: &str) -> Rates {
         output: 0.0,
         cache_create: 0.0,
         cache_read: 0.0,
+        cache_read_explicit: false,
+        input_above_200k: None,
+        output_above_200k: None,
+        cache_create_above_200k: None,
+        cache_read_above_200k: None,
+        long_context_threshold: None,
+        fast_multiplier: 1.0,
     })
 }
 
@@ -283,6 +392,7 @@ fn round2(v: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::AgentId;
 
     #[test]
     fn prefers_log_cost_usd() {
@@ -302,12 +412,9 @@ mod tests {
     fn small_row_not_rounded_to_zero() {
         // Cheap model + high cache: must not collapse to $0.00 at 2-dp storage.
         let c = estimate_cost_usd_for_agent(
-            crate::models::AgentId::Codex,
+            AgentId::Codex,
             "gpt-5.6-luna",
-            192_028,
-            62,
-            0,
-            191_232,
+            CostTokens::from_parts(192_028, 62, 0, 191_232),
             None,
         );
         assert!(c > 0.001, "got {c}");
@@ -373,17 +480,113 @@ mod tests {
 
     #[test]
     fn codex_cost_on_normalized_tokens() {
-        use crate::models::AgentId;
-        // gpt-5.6-luna: $0.2 / $1.2 / $0.02 per 1M — billable 100k + cache 900k
+        // gpt-5.6-luna short: $0.2 / $1.2 / $0.02 per 1M — 100k billable, under 272K context
         let c = estimate_cost_usd_for_agent(
             AgentId::Codex,
             "gpt-5.6-luna",
-            100_000,
-            0,
-            0,
-            900_000,
+            CostTokens::from_parts(100_000, 0, 0, 50_000),
             None,
         );
-        assert!((c - 0.038).abs() < 0.001, "got {c}");
+        // 0.1M * 0.2 + 0.05M * 0.02 = 0.021
+        assert!((c - 0.021).abs() < 0.001, "got {c}");
+    }
+
+    #[test]
+    fn cache_creation_1h_bills_at_twice_input() {
+        // 1M 1h-cache writes on sonnet-4: 2 × $3 = $6 (not the 5m create rate).
+        let c = estimate_cost_from_tokens(
+            "claude-sonnet-4",
+            CostTokens {
+                cache_create_1h: 1_000_000,
+                ..CostTokens::default()
+            },
+            None,
+        );
+        assert!((c - 6.0).abs() < 0.01, "got {c}");
+    }
+
+    #[test]
+    fn sonnet_45_above_200k_is_marginal() {
+        // LiteLLM above_200k on sonnet-4-5: first 200K at $3, rest at $6.
+        let c = estimate_cost_usd("claude-sonnet-4-5", 1_000_000, 0, 0, 0, None);
+        assert!((c - 5.4).abs() < 0.01, "got {c}");
+        let c6 = estimate_cost_usd("claude-sonnet-4-6", 1_000_000, 0, 0, 0, None);
+        assert!((c6 - 5.4).abs() < 0.01, "got {c6}");
+    }
+
+    #[test]
+    fn gpt_56_sol_whole_request_switches_at_272k() {
+        let long = estimate_cost_from_tokens(
+            "gpt-5.6-sol",
+            CostTokens::from_parts(300_000, 1_000, 0, 100),
+            None,
+        );
+        // Whole request at long rates $8/$30/$0.8 per 1M.
+        // 0.3*8 + 0.001*30 + 0.0001*0.8 = 2.43008
+        assert!(
+            (long - 2.43008).abs() < 1e-5,
+            "long-context cost was {long}"
+        );
+
+        let short = estimate_cost_from_tokens(
+            "gpt-5.6-sol",
+            CostTokens::from_parts(100_000, 1_000, 0, 100),
+            None,
+        );
+        // Short rates $4/$20/$0.4: 0.4 + 0.02 + 0.00004 = 0.42004
+        assert!(
+            (short - 0.42004).abs() < 1e-5,
+            "short-context cost was {short}"
+        );
+    }
+
+    #[test]
+    fn cached_context_selects_long_context_tier() {
+        let c = estimate_cost_from_tokens(
+            "gpt-5.6-luna",
+            CostTokens::from_parts(10_000, 1_000, 0, 500_000),
+            None,
+        );
+        // 510K context > 272K → long $0.4/$1.8/$0.04 per 1M
+        // 0.01*0.4 + 0.001*1.8 + 0.5*0.04 = 0.0258
+        assert!((c - 0.0258).abs() < 1e-5, "cached-heavy cost was {c}");
+    }
+
+    #[test]
+    fn fast_multiplier_applies_to_codex_token_cost() {
+        // Stay under the 272K whole-request switch so this isolates Fast.
+        let standard = estimate_cost_usd_for_agent(
+            AgentId::Codex,
+            "gpt-5.6-sol",
+            CostTokens::from_parts(100_000, 0, 0, 0),
+            None,
+        );
+        let fast = estimate_cost_usd_for_agent(
+            AgentId::Codex,
+            "gpt-5.6-sol",
+            CostTokens {
+                input: 100_000,
+                fast: true,
+                ..CostTokens::default()
+            },
+            None,
+        );
+        assert!((standard - 0.4).abs() < 0.01, "standard got {standard}");
+        assert!((fast - 0.8).abs() < 0.01, "fast got {fast}");
+    }
+
+    #[test]
+    fn log_cost_skips_fast_and_long_context() {
+        let c = estimate_cost_usd_for_agent(
+            AgentId::Codex,
+            "gpt-5.6-sol",
+            CostTokens {
+                input: 1_000_000,
+                fast: true,
+                ..CostTokens::default()
+            },
+            Some(1.5),
+        );
+        assert!((c - 1.5).abs() < 0.01);
     }
 }

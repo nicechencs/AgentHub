@@ -19,11 +19,13 @@ fn grok_event(
         input_tokens: input,
         output_tokens: output,
         cache_creation_tokens: cache_create,
+        cache_creation_1h_tokens: 0,
         cache_read_tokens: cache_read,
         session_id: Some("sess".into()),
         ts: "2025-06-15T00:00:00+00:00".into(),
         raw_hash: "h".into(),
         cost_usd,
+        fast: false,
     }
 }
 
@@ -80,7 +82,8 @@ fn detect_row(agent: AgentId, installed: bool) -> DetectResult {
         binary_path: None,
         channel: None,
         env_ready: installed,
-        notes: Vec::new(), extra_copies: Vec::new(),
+        notes: Vec::new(),
+        extra_copies: Vec::new(),
     }
 }
 
