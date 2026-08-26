@@ -1756,6 +1756,9 @@ fn list_syncs_current_grok_token_rotation_without_creating_account() {
         extra: json!({"source": "auth.json"}),
     });
     let first = svc.import_live(AgentId::Grok, None).unwrap();
+    svc.repo()
+        .update_healed_fields(&first, &first.updated_at, "2020-01-01 00:00:00.000000")
+        .unwrap();
 
     // The CLI refreshes the same grant in place. A list/read must reconcile
     // the current row instead of importing a second authorization.
@@ -3778,6 +3781,13 @@ fn cli_owned_follow_rereads_rotated_access_from_temp_auth_json() {
         extra: json!({"source": "auth.json"}),
     });
     let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    svc.repo()
+        .update_healed_fields(
+            &imported,
+            &imported.updated_at,
+            "2020-01-01 00:00:00.000000",
+        )
+        .unwrap();
     adapter.set_live(LiveAccount {
         agent: AgentId::Grok,
         kind: AccountKind::Oauth,
@@ -4078,6 +4088,13 @@ fn oauth_cli_file_newer_than_row_updates_row_file_unchanged() {
     let (_root, svc, adapter) = live_svc(AgentId::Grok);
     adapter.set_live(grok_oauth_live("at-old", "rt-old"));
     let imported = svc.import_live(AgentId::Grok, None).unwrap();
+    svc.repo()
+        .update_healed_fields(
+            &imported,
+            &imported.updated_at,
+            "2020-01-01 00:00:00.000000",
+        )
+        .unwrap();
     let writes_before = adapter.write_attempts.load(Ordering::SeqCst);
     adapter.set_live(grok_oauth_live("at-new", "rt-new"));
 

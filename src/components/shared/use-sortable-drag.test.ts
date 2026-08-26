@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { SortHandle } from './SortHandle';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -40,7 +41,11 @@ describe('sortable drag wiring', () => {
 
   it('renders a keyboard-accessible grip that ignores icon hit-testing', () => {
     const html = renderToStaticMarkup(
-      createElement(SortHandle, { id: 'row-1', onDragStartId() {} }),
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(SortHandle, { id: 'row-1', onDragStartId() {} }),
+      ),
     );
     expect(html).toContain('拖动排序');
     expect(html).toContain('pointer-events-none');
