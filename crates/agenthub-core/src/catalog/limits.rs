@@ -56,6 +56,8 @@ pub const OAUTH_REFRESH_SKEW_MS: i64 = 5 * 60 * 1000;
 pub const PROJECT_PREVIEW_CHARS: usize = 120;
 /// Max characters of body text pulled into a summarize excerpt.
 pub const PROJECT_EXCERPT_CHARS: usize = 6_000;
+/// Cap a single user turn inside an excerpt so a wrapped prompt cannot hide assistant replies.
+pub const PROJECT_USER_TURN_EXCERPT_CHARS: usize = 2_000;
 /// Cap total sessions returned per agent to keep UI snappy.
 pub const PROJECT_MAX_PER_AGENT: usize = 500;
 /// When scanning a large jsonl, only read the first N bytes for preview/excerpt.

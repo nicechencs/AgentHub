@@ -38,6 +38,33 @@ describe('splitExcerptTurns', () => {
     ]);
   });
 
+  it('splits consecutive role-tagged turns used by mock excerpts', () => {
+    expect(
+      splitExcerptTurns(
+        [
+          '---turn:user---',
+          '修复登录页 token 过期问题',
+          '---turn:assistant---',
+          '工作目录：C:\\Users\\demo\\app',
+          '',
+          '已按这条会话继续，下一步建议先核对现有实现再改。',
+        ].join('\n'),
+      ),
+    ).toEqual([
+      { role: 'user', text: '修复登录页 token 过期问题' },
+      {
+        role: 'assistant',
+        text: '工作目录：C:\\Users\\demo\\app\n\n已按这条会话继续，下一步建议先核对现有实现再改。',
+      },
+    ]);
+  });
+
+  it('skips empty role-tagged blocks', () => {
+    expect(
+      splitExcerptTurns(['---turn:user---', '', '---turn:assistant---', 'ok'].join('\n')),
+    ).toEqual([{ role: 'assistant', text: 'ok' }]);
+  });
+
   it('keeps markdown horizontal rules inside a role-tagged assistant turn', () => {
     const excerpt = [
       '---turn:user---',

@@ -1865,6 +1865,8 @@ export const zh = {
       retry: "重试",
       openRecord: "定位记录文件",
       turns: "{n} 段摘录",
+      roleUser: "你",
+      roleAssistant: "{name}",
       loading: "正在读取对话摘录…",
       empty: "没有可读的对话摘录",
       failed: "无法读取对话摘录",

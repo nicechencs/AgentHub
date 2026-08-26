@@ -1872,6 +1872,8 @@ export const en = {
       retry: "Retry",
       openRecord: "Locate record file",
       turns: "{n} excerpt turns",
+      roleUser: "You",
+      roleAssistant: "{name}",
       loading: "Reading conversation excerpt…",
       empty: "No readable conversation excerpt",
       failed: "Couldn't read the conversation excerpt",

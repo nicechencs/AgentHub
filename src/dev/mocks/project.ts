@@ -21,10 +21,13 @@ function mockExcerpt(p: AgentSession): string {
   const topic = p.preview?.trim() || p.title;
   const cwd = p.cwd ?? '未知';
   return [
+    '---turn:user---',
     topic,
+    '---turn:assistant---',
     `工作目录：${cwd}`,
-    `已按这条会话继续，下一步建议先核对现有实现再改。`,
-  ].join('\n---\n');
+    '',
+    '已按这条会话继续，下一步建议先核对现有实现再改。',
+  ].join('\n');
 }
 
 function applyMeta(rows: AgentProject[]): AgentProject[] {

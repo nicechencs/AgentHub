@@ -1192,6 +1192,380 @@ fn grok_excerpt_prefers_updates_jsonl_chunks_over_wrapped_chat_history() {
         "excerpt={}",
         ex.excerpt
     );
+    assert!(
+        ex.excerpt.contains("---turn:assistant---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn grok_excerpt_unwraps_user_query_in_updates_chunks() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".grok");
+    let encoded = "D%3A%5Cwork%5Cupdates-unwrap";
+    let sess = home
+        .join("sessions")
+        .join(encoded)
+        .join("019f-updates-unwrap");
+    write_jsonl(
+        &sess.join("chat_history.jsonl"),
+        &[serde_json::json!({"type":"system","content":"You are Grok released by xAI."})],
+    );
+    write_jsonl(
+        &sess.join("updates.jsonl"),
+        &[
+            grok_acp_chunk(
+                "user_message_chunk",
+                Some("<user_info>\nOS: windows\n</user_info>\n<user_query>\nvisible question\n</user_query>"),
+            ),
+            grok_acp_chunk("agent_message_chunk", Some("short reply")),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Grok, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("visible question"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("<user_info>"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("short reply"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn grok_excerpt_keeps_updates_assistant_over_chat_history() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".grok");
+    let encoded = "D%3A%5Cwork%5Cupdates-keep";
+    let sess = home
+        .join("sessions")
+        .join(encoded)
+        .join("019f-updates-keep");
+    write_jsonl(
+        &sess.join("chat_history.jsonl"),
+        &[
+            serde_json::json!({"type":"user","content":[{"type":"text","text":"<user_query>\nwrapped should lose\n</user_query>"}]}),
+            serde_json::json!({"type":"assistant","content":"from chat_history"}),
+        ],
+    );
+    write_jsonl(
+        &sess.join("updates.jsonl"),
+        &[
+            grok_acp_chunk("user_message_chunk", Some("clean user prompt")),
+            grok_acp_chunk("agent_message_chunk", Some("from updates")),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Grok, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("clean user prompt"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("from updates"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("from chat_history"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("wrapped should lose"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn grok_excerpt_reads_agent_message_content_array() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".grok");
+    let encoded = "D%3A%5Cwork%5Cupdates-array";
+    let sess = home
+        .join("sessions")
+        .join(encoded)
+        .join("019f-updates-array");
+    write_jsonl(
+        &sess.join("chat_history.jsonl"),
+        &[serde_json::json!({"type":"system","content":"You are Grok."})],
+    );
+    write_jsonl(
+        &sess.join("updates.jsonl"),
+        &[
+            grok_acp_chunk("user_message_chunk", Some("array prompt")),
+            serde_json::json!({
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": [
+                            {"type": "text", "text": "hello "},
+                            {"type": "text", "text": "array"}
+                        ]
+                    }
+                }
+            }),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Grok, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("array prompt"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("hello array"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn grok_excerpt_fills_assistant_from_chat_history_when_updates_have_only_user() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".grok");
+    let encoded = "D%3A%5Cwork%5Cupdates-user-only";
+    let sess = home
+        .join("sessions")
+        .join(encoded)
+        .join("019f-updates-user-only");
+    write_jsonl(
+        &sess.join("chat_history.jsonl"),
+        &[
+            serde_json::json!({"type":"system","content":"You are Grok released by xAI."}),
+            serde_json::json!({"type":"user","content":[{"type":"text","text":"<user_query>\nwrapped should lose\n</user_query>"}]}),
+            serde_json::json!({"type":"assistant","content":"## 结论\n\n已从 chat_history 补上。"}),
+        ],
+    );
+    write_jsonl(
+        &sess.join("updates.jsonl"),
+        &[grok_acp_chunk(
+            "user_message_chunk",
+            Some("clean user prompt"),
+        )],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Grok, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("clean user prompt"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("wrapped should lose"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("---turn:assistant---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("已从 chat_history 补上"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn codex_excerpt_reads_assistant_from_response_item_payload() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".codex");
+    let session = home
+        .join("sessions")
+        .join("2026")
+        .join("08")
+        .join("03")
+        .join("rollout-excerpt-assistant.jsonl");
+    write_session(
+        &session,
+        &[
+            r#"{"type":"session_meta","payload":{"session_id":"abc","cwd":"D:\\work\\repo"}}"#,
+            r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix grouping"}]}}"#,
+            r#"{"type":"response_item","payload":{"type":"function_call","name":"read_file","arguments":"{}"}}"#,
+            r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"grouped by cwd"}]}}"#,
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Codex, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("---turn:user---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("fix grouping"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("---turn:assistant---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("grouped by cwd"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("read_file"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn claude_excerpt_reads_nested_assistant_message_text() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    let session = home
+        .join("projects")
+        .join("-C-Users-demo-app")
+        .join("sess-nested-assistant.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({"type":"user","message":{"role":"user","content":[{"type":"text","text":"fix login"}]}}),
+            serde_json::json!({"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{}}]}}),
+            serde_json::json!({"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"looking into it"}]}}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("fix login"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("looking into it"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("tool_use"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("Read"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn excerpt_skips_empty_assistant_tool_call_rows() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    let session = home
+        .join("projects")
+        .join("-C-Users-demo-app")
+        .join("sess-empty-assistant.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({"type":"user","text":"hi"}),
+            serde_json::json!({"type":"assistant","content":"","tool_calls":[{"name":"Read"}]}),
+            serde_json::json!({"type":"assistant","text":"done"}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert_eq!(
+        ex.excerpt.matches("---turn:assistant---").count(),
+        1,
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("done"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        !ex.excerpt.contains("Read"),
+        "excerpt={}",
+        ex.excerpt
+    );
+}
+
+#[test]
+fn excerpt_caps_user_turn_so_assistant_survives() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join(".claude");
+    let user = "please help ".repeat(800);
+    assert!(user.chars().count() > 6_000);
+    let session = home
+        .join("projects")
+        .join("-C-Users-demo-app")
+        .join("sess-long-user.jsonl");
+    write_jsonl(
+        &session,
+        &[
+            serde_json::json!({"type":"user","message":{"content":user}}),
+            serde_json::json!({"type":"assistant","text":"assistant still visible"}),
+        ],
+    );
+
+    let rows = list_sessions_for_agent_home(AgentId::Claude, &home, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ex = load_excerpt(&rows[0].id, Some(&home)).unwrap();
+    assert!(
+        ex.excerpt.contains("---turn:user---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("---turn:assistant---"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    assert!(
+        ex.excerpt.contains("assistant still visible"),
+        "excerpt={}",
+        ex.excerpt
+    );
+    let user_body = ex
+        .excerpt
+        .split("---turn:assistant---")
+        .next()
+        .unwrap_or("")
+        .replace("---turn:user---", "");
+    assert!(
+        user_body.chars().count() <= 2_000 + 8,
+        "user turn too long: {}",
+        user_body.chars().count()
+    );
 }
 
 #[test]
