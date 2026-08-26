@@ -102,17 +102,13 @@ export function AgentCard({
 
   const {
     task,
-    setTask,
     elapsedSec,
     confirmDialog,
-    setConfirmDialog,
     confirmName,
-    setConfirmName,
+    onConfirmNameChange,
     uninstalling,
     showEnvPanel,
-    setShowEnvPanel,
     envAutoStart,
-    setEnvAutoStart,
     envCheck,
     envPlan,
     canOneClickEnv,
@@ -123,6 +119,10 @@ export function AgentCard({
     startUpgrade,
     doUninstall,
     toast,
+    openConfirm,
+    closeConfirm,
+    dismissTask,
+    closeEnvironmentPanel,
   } = life;
 
   const [hiding, setHiding] = React.useState(false);
@@ -134,7 +134,7 @@ export function AgentCard({
     event: { preventDefault: () => void },
     kind: 'program' | 'config',
   ) => {
-    openAgentCardUninstallConfirm(event, kind, setConfirmDialog, ignoreMenuDialogDismissRef);
+    openAgentCardUninstallConfirm(event, kind, openConfirm, ignoreMenuDialogDismissRef);
   };
 
   const toggleHidden = async () => {
@@ -247,7 +247,7 @@ export function AgentCard({
       startUpgrade();
       return;
     }
-    setConfirmDialog('force-upgrade');
+    openConfirm('force-upgrade');
   };
 
   const updateSource = agent.update?.source;
@@ -501,7 +501,7 @@ export function AgentCard({
                             disabled={busy}
                             onClick={() => {
                               setSelectedChannelId(ch.id);
-                              setShowEnvPanel(false);
+                              closeEnvironmentPanel();
                             }}
                             className={cn(
                               'cursor-pointer rounded-full border px-2 py-0.5 transition-colors',
@@ -572,7 +572,7 @@ export function AgentCard({
                   size="sm"
                   variant="secondary"
                   onClick={() =>
-                    installFailed ? retryAction() : setConfirmDialog('install')
+                    installFailed ? retryAction() : openConfirm('install')
                   }
                   disabled={busy}
                   title={
@@ -684,7 +684,7 @@ export function AgentCard({
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={canOneClickEnv ? () => setConfirmDialog('oneclick') : startOneClickEnvOnly}
+                onClick={canOneClickEnv ? () => openConfirm('oneclick') : startOneClickEnvOnly}
                 disabled={busy}
                 title={
                   canOneClickEnv
@@ -735,7 +735,7 @@ export function AgentCard({
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => (installFailed ? retryAction() : setConfirmDialog('install'))}
+                onClick={() => (installFailed ? retryAction() : openConfirm('install'))}
                 disabled={busy}
                 title={installFailed ? t('agents.card.retry') : t('agents.card.installWithChannel', { id: selectedChannel.id })}
               >
@@ -766,7 +766,7 @@ export function AgentCard({
                         key={ch.id}
                         onSelect={() => {
                           setSelectedChannelId(ch.id);
-                          setConfirmDialog('install');
+                          openConfirm('install');
                         }}
                       >
                         {ch.label}
@@ -791,13 +791,9 @@ export function AgentCard({
             runtimes={runtimes}
             focusIds={[...envCheck.missing, ...envCheck.outdated, ...envCheck.broken]}
             autoStart={envAutoStart}
-            onDismiss={() => {
-              setShowEnvPanel(false);
-              setEnvAutoStart(false);
-            }}
+            onDismiss={closeEnvironmentPanel}
             onDone={() => {
-              setShowEnvPanel(false);
-              setEnvAutoStart(false);
+              closeEnvironmentPanel();
               onEnvChanged();
             }}
           />
@@ -820,7 +816,7 @@ export function AgentCard({
                 </Button>
               )}
               {task.status !== 'running' && (
-                <Button size="sm" variant="ghost" onClick={() => setTask(null)}>
+                <Button size="sm" variant="ghost" onClick={dismissTask}>
                   <X className="h-3.5 w-3.5" /> {t('agents.card.close')}
                 </Button>
               )}
@@ -838,14 +834,11 @@ export function AgentCard({
         agentName={meta.name}
         confirmDialog={confirmDialog}
         confirmName={confirmName}
-        onConfirmNameChange={setConfirmName}
+        onConfirmNameChange={onConfirmNameChange}
         uninstalling={uninstalling}
         busy={busy}
         updateState={updateState}
-        onClose={() => {
-          setConfirmDialog(null);
-          setConfirmName('');
-        }}
+        onClose={closeConfirm}
         onUninstall={(deleteConfig) => void doUninstall(deleteConfig)}
         onConfirmForceUpgrade={startUpgrade}
         onConfirmInstall={() => startAgentInstall(selectedChannel)}

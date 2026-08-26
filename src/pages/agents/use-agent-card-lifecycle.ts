@@ -378,19 +378,37 @@ export function useAgentCardLifecycle(input: {
     }
   };
 
+  const openConfirm = (kind: Exclude<AgentCardConfirmKind, null>) => {
+    setConfirmDialog(kind);
+  };
+
+  const closeConfirm = () => {
+    setConfirmDialog(null);
+    setConfirmName('');
+  };
+
+  const onConfirmNameChange = (value: string) => {
+    setConfirmName(value);
+  };
+
+  const dismissTask = () => {
+    setTask(null);
+  };
+
+  const closeEnvironmentPanel = () => {
+    setShowEnvPanel(false);
+    setEnvAutoStart(false);
+  };
+
   return {
     task,
-    setTask,
     elapsedSec,
     confirmDialog,
-    setConfirmDialog,
     confirmName,
-    setConfirmName,
+    onConfirmNameChange,
     uninstalling,
     showEnvPanel,
-    setShowEnvPanel,
     envAutoStart,
-    setEnvAutoStart,
     envCheck,
     envPlan,
     canOneClickEnv,
@@ -401,5 +419,9 @@ export function useAgentCardLifecycle(input: {
     startUpgrade,
     doUninstall,
     toast,
+    openConfirm,
+    closeConfirm,
+    dismissTask,
+    closeEnvironmentPanel,
   };
 }

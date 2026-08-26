@@ -15,4 +15,6 @@ pub mod responses;
 #[cfg(test)]
 mod claude_codex_tests;
 #[cfg(test)]
+mod fixture_loader;
+#[cfg(test)]
 mod tests;

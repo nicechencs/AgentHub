@@ -267,8 +267,6 @@ function useDataVersion(): number {
   return tick;
 }
 
-type SetStateAction<T> = T | ((prev: T) => T);
-
 export function useProjectShowHidden() {
   const [showHidden, setShowHiddenState] = useState(() => showHiddenCache ?? false);
   const [ready, setReady] = useState(() => showHiddenCache !== null);
@@ -323,15 +321,15 @@ export function useAgentProjectList(
     setError(null);
   }
 
-  const setData = useCallback(
-    (action: SetStateAction<AgentProject[] | null>) => {
+  const replaceProjectListFromMutation = useCallback(
+    (next: AgentProject[] | ((prev: AgentProject[]) => AgentProject[])) => {
       setDataState((prev) => {
-        const next = typeof action === 'function' ? action(prev) : action;
-        if (agentId && next) {
+        const rows = typeof next === 'function' ? next(prev ?? []) : next;
+        if (agentId) {
           writeClock += 1;
-          writeAgentList(agentId, includeHidden, next, writeClock);
+          writeAgentList(agentId, includeHidden, rows, writeClock);
         }
-        return next;
+        return rows;
       });
     },
     [agentId, includeHidden],
@@ -373,7 +371,7 @@ export function useAgentProjectList(
     loading: enabled && data == null && error == null,
     refreshing: enabled && fetching && data != null,
     reload,
-    setData,
+    replaceProjectListFromMutation,
   };
 }
 

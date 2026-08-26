@@ -69,7 +69,7 @@ import {
   getConnectionPoolSnapshot,
   getTicketWalletSnapshot,
   providersForAgent,
-  useAgentCatalogOptional,
+  useAgentCatalog,
   useConnectionPool,
   useTicketWallet,
 } from '@/app/runtime';
@@ -153,7 +153,7 @@ export default function DashboardPage() {
     installedAgents,
     omittedIds,
   } = useInstalledAgents();
-  const catalog = useAgentCatalogOptional();
+  const catalog = useAgentCatalog();
 
   // Detect snapshot is shared; cards render as soon as doctor is ready,
   // even while live-auth is still refreshing.

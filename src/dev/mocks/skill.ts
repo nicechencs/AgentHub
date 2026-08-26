@@ -118,7 +118,8 @@ function buildMockSkill(name: string): MockSkill {
   };
 }
 
-const mockState: MockSkill[] = uniqueNames.map(buildMockSkill);
+const INITIAL_MOCK_STATE = uniqueNames.map(buildMockSkill);
+let mockState = structuredClone(INITIAL_MOCK_STATE);
 
 function toSharedInstalledRow(s: MockSkill): InstalledSkillDto {
   return {
@@ -136,7 +137,7 @@ function toSharedInstalledRow(s: MockSkill): InstalledSkillDto {
   };
 }
 
-const mockPrivateSkills: InstalledSkillDto[] = [
+const INITIAL_PRIVATE_SKILLS: InstalledSkillDto[] = [
   {
     id: 'sample-pet',
     name: 'sample-pet',
@@ -233,6 +234,15 @@ const mockPrivateSkills: InstalledSkillDto[] = [
     projections: [],
   },
 ];
+
+let mockPrivateSkills = structuredClone(INITIAL_PRIVATE_SKILLS);
+
+/** Restores seeded skill catalog so each backend factory starts clean. */
+export function resetMockSkills(): void {
+  lastProjectionMode.clear();
+  mockState = structuredClone(INITIAL_MOCK_STATE);
+  mockPrivateSkills = structuredClone(INITIAL_PRIVATE_SKILLS);
+}
 
 export function createMockSkillPort(): SkillPort {
   return {

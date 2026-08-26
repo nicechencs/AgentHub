@@ -37,9 +37,9 @@ import {
   upsertMockProvider,
 } from './provider';
 import { createMockSettingsPort } from './settings';
-import { createMockSkillPort } from './skill';
+import { createMockSkillPort, resetMockSkills } from './skill';
 import { createMockUpdatePort } from './update';
-import { createMockUsagePort } from './usage';
+import { createMockUsagePort, resetMockUsage } from './usage';
 import { createMockTrashPort, resetMockTrash } from './trash';
 import { createMockTicketPort } from './ticket';
 import { seedConnectFlowAdapterFixtures } from './connect-flow-fixtures';
@@ -67,6 +67,8 @@ export const createBackend: CreateBackend = () => {
   resetProjectMock();
   resetMockAgentCatalog();
   resetMockConfig();
+  resetMockSkills();
+  resetMockUsage();
   resetMockTrash();
   resetMockAdapters();
   resetMockAccounts();

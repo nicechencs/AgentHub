@@ -20,15 +20,19 @@ updated: 2026-08-26
 
 ### O-49｜Agent 卡片 Hook 暴露内部状态 setter
 
-- **位置：** `src/pages/agents/use-agent-card-lifecycle.ts:136,386`
+- **位置：** `src/pages/agents/use-agent-card-lifecycle.ts`
+- **状态：已处理**
 - **问题：** Hook 内部拥有任务、确认框、环境面板等状态，却返回 `setTask`、`setConfirmDialog`、`setConfirmName`、`setShowEnvPanel`、`setEnvAutoStart`，调用方可以直接写入内部状态。
-- **建议：** 只返回 `openUninstallConfirm`、`closeEnvironmentPanel`、`dismissTask` 等语义化命令，让任务状态由生命周期动作驱动。
+- **当前：** 只返回 `openConfirm`、`closeConfirm`、`onConfirmNameChange`、`dismissTask`、`closeEnvironmentPanel`。
+- **建议：** 只返回语义化命令，让任务状态由生命周期动作驱动。
 - **影响：** 后续组件可绕过生命周期约束制造非法状态。
 
 ### O-50｜项目 Hook 暴露共享缓存写入口
 
-- **位置：** `src/lib/hooks/useProjects.ts:326,376`
+- **位置：** `src/lib/hooks/useProjects.ts`
+- **状态：已处理**
 - **问题：** `useAgentProjectList` 返回 `setData`，调用方可以直接修改组件状态、模块级 `lists`、`writeClock` 并通知订阅者，绕过统一请求排序和失效代数。
+- **当前：** 只返回 `replaceProjectListFromMutation`；删除会话后仍走同一套 writeClock / 缓存写入。
 - **建议：** 改为 `replaceProjectListFromMutation`、`removeProject`、`invalidateProjects` 等受限操作，或完全隐藏缓存写入。
 - **影响：** 多个页面并用项目缓存时，局部状态和共享读模型可能不一致。
 
@@ -52,8 +56,10 @@ updated: 2026-08-26
 
 ### O-53｜Runtime Context 与外部 Store 存在双重订阅模型
 
-- **位置：** `src/app/runtime/AgentCatalogProvider.tsx:8,22`、`ConnectionPoolProvider.tsx:9,27`
+- **位置：** `src/app/runtime/AgentCatalogProvider.tsx`、`ConnectionPoolProvider.tsx`
+- **状态：已处理**
 - **问题：** Provider 创建 Context，但主要消费者通过 `useAgentCatalogOptional`、`useConnectionPool` 直接订阅外部 Store；同一状态存在两套访问路径。
+- **当前：** Catalog 页面改走 `useAgentCatalog()`（必须在 Provider 内）。连接池去掉未使用的 Context / Provider / Optional Hook，只保留 store 订阅。
 - **建议：** 要么删除无实际作用的 Context/Provider，要么让强制 Hook 统一从 Context 读取，Optional Hook 再直接订阅 Store。
 - **影响：** 状态访问模型重复，未来容易误判 Provider 与 Store 是否同步。
 

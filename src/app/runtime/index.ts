@@ -11,7 +11,7 @@ export {
   subscribeAgentCatalog,
 } from './agent-catalog-store';
 export type { AgentCatalogSnapshot, AgentCatalogStatus } from './agent-catalog-store';
-export { AgentCatalogProvider, useAgentCatalog, useAgentCatalogOptional } from './AgentCatalogProvider';
+export { AgentCatalogProvider, useAgentCatalog } from './AgentCatalogProvider';
 export {
   applyAgentHidden,
   getAgentStatusSnapshot,
@@ -45,11 +45,7 @@ export type {
   ConnectionPoolLoadState,
   ConnectionPoolSnapshot,
 } from './connection-pool-store';
-export {
-  ConnectionPoolProvider,
-  useConnectionPool,
-  useConnectionPoolOptional,
-} from './ConnectionPoolProvider';
+export { useConnectionPool } from './ConnectionPoolProvider';
 
 export {
   getTicketWalletSnapshot,

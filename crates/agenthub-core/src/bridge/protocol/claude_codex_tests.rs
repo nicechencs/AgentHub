@@ -12,42 +12,9 @@ use super::{
         translate_responses_to_anthropic_request, AnthropicStreamToIr,
     },
     chat::sse_frame,
+    fixture_loader::fixture,
     responses::{encode_responses_from_ir, parse_responses_request, IrToResponsesSse},
 };
-
-fn fixture(name: &str) -> Value {
-    let source = match name {
-        "claude_codex_responses_text" => {
-            include_str!("fixtures/claude_codex_responses_text.json")
-        }
-        "claude_codex_responses_multiturn" => {
-            include_str!("fixtures/claude_codex_responses_multiturn.json")
-        }
-        "claude_codex_responses_tools" => {
-            include_str!("fixtures/claude_codex_responses_tools.json")
-        }
-        "claude_codex_anthropic_text_usage" => {
-            include_str!("fixtures/claude_codex_anthropic_text_usage.json")
-        }
-        "claude_codex_anthropic_stop_max_tokens" => {
-            include_str!("fixtures/claude_codex_anthropic_stop_max_tokens.json")
-        }
-        "claude_codex_anthropic_error" => {
-            include_str!("fixtures/claude_codex_anthropic_error.json")
-        }
-        "claude_codex_anthropic_sse_split" => {
-            include_str!("fixtures/claude_codex_anthropic_sse_split.json")
-        }
-        "claude_codex_anthropic_thinking" => {
-            include_str!("fixtures/claude_codex_anthropic_thinking.json")
-        }
-        "claude_codex_unsupported_image" => {
-            include_str!("fixtures/claude_codex_unsupported_image.json")
-        }
-        _ => panic!("unknown fixture {name}"),
-    };
-    serde_json::from_str(source).expect("fixture is valid JSON")
-}
 
 fn assert_codex_completed_usage(usage: &Value) {
     #[derive(serde::Deserialize)]

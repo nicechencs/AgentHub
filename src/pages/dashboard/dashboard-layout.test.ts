@@ -25,7 +25,7 @@ describe('dashboard layout wiring', () => {
 
   it('re-renders overview cards when the runtime catalog hydrates', () => {
     const overview = source('AgentOverview.tsx');
-    expect(overview).toContain('useAgentCatalogOptional');
+    expect(overview).toContain('useAgentCatalog');
     expect(overview).toContain('catalog.hydrated');
   });
 

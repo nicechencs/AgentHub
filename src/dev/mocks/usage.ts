@@ -33,14 +33,12 @@ function seededRandom(seed: number) {
   };
 }
 
-const rand = seededRandom(20260726);
-
-const records: UsageRecord[] = (() => {
+function buildRecords(nowMs: number): UsageRecord[] {
+  const rand = seededRandom(20260726);
   const out: UsageRecord[] = [];
-  const now = new Date();
   let id = 0;
   for (let d = 29; d >= 0; d--) {
-    const day = new Date(now.getTime() - d * 24 * 3600 * 1000);
+    const day = new Date(nowMs - d * 24 * 3600 * 1000);
     for (const agentId of DEMO_USAGE_AGENTS) {
       if (!usageCapable(agentId)) continue;
       const sessions = Math.floor(rand() * 6) + (d < 7 ? 2 : 0);
@@ -69,7 +67,14 @@ const records: UsageRecord[] = (() => {
     }
   }
   return out;
-})();
+}
+
+let records = buildRecords(Date.now());
+
+/** Regenerates the 30-day usage window so each backend factory starts relative to now. */
+export function resetMockUsage(): void {
+  records = buildRecords(Date.now());
+}
 
 function inUsageWindow(r: UsageRecord, days: number, since?: string): boolean {
   const t = new Date(r.timestamp).getTime();

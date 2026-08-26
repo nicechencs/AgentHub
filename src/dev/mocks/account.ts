@@ -15,12 +15,29 @@ const mockState: Record<AgentId, Account[]> = {
 
 let lastSwitch: { agentId: AgentId; fromId: string } | null = null;
 
+type MockOAuthSession = {
+  agentId: AgentId;
+  providerKey: string | null;
+  flow: 'pkce' | 'device';
+};
+
+const oauthSessions = new Map<string, MockOAuthSession>();
+
+function requireOAuthSession(state: string): MockOAuthSession {
+  const session = oauthSessions.get(state);
+  if (!session) {
+    throw new Error(`unknown oauth state: ${state}`);
+  }
+  return session;
+}
+
 /** Clears browser-mock account-pool state so each backend factory starts clean. */
 export function resetMockAccounts(): void {
   (Object.keys(mockState) as AgentId[]).forEach((agentId) => {
     mockState[agentId].length = 0;
   });
   lastSwitch = null;
+  oauthSessions.clear();
 }
 
 /** Synchronous test-only insertion used by ConnectFlow / adapter fixtures. */
@@ -248,8 +265,14 @@ export function createMockAccountPort(): AccountPort {
 
     async startOAuth(agentId, _openBrowser, providerKey) {
       await delay(50);
+      const state = `mock-${agentId}-${Date.now()}`;
+      oauthSessions.set(state, {
+        agentId,
+        providerKey: providerKey ?? null,
+        flow: 'pkce',
+      });
       return {
-        state: `mock-${agentId}-${Date.now()}`,
+        state,
         authorizeUrl: 'http://127.0.0.1:34567/callback?code=mock-code&state=mock',
         redirectUri: 'http://127.0.0.1:34567/callback',
         agentId,
@@ -260,27 +283,34 @@ export function createMockAccountPort(): AccountPort {
 
     async waitOAuth(state) {
       await delay(100);
+      const session = requireOAuthSession(state);
       return {
         state,
-        agentId: 'claude' as AgentId,
+        agentId: session.agentId,
         status: 'callbackReceived' as const,
         error: null,
       };
     },
 
     async finishOAuth(state) {
-      void state;
-      return this.completeOAuth('claude');
+      const session = requireOAuthSession(state);
+      return this.completeOAuth(session.agentId, session.providerKey);
     },
 
     async cancelOAuth(state) {
-      void state;
+      oauthSessions.delete(state);
     },
 
     async startDeviceOAuth(agentId, providerKey) {
       await delay(50);
+      const state = `mock-dev-${Date.now()}`;
+      oauthSessions.set(state, {
+        agentId,
+        providerKey,
+        flow: 'device',
+      });
       return {
-        state: `mock-dev-${Date.now()}`,
+        state,
         agentId,
         providerKey,
         userCode: 'ABCD-EFGH',
@@ -293,12 +323,13 @@ export function createMockAccountPort(): AccountPort {
 
     async pollDeviceOAuth(state) {
       await delay(80);
+      requireOAuthSession(state);
       return { state, status: 'complete' as const, error: null };
     },
 
     async finishDeviceOAuth(state) {
-      void state;
-      return this.completeOAuth('pi', 'xai');
+      const session = requireOAuthSession(state);
+      return this.completeOAuth(session.agentId, session.providerKey);
     },
 
     async completeOAuth(agentId, providerKey) {

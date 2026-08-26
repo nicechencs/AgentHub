@@ -1,6 +1,11 @@
-//! Agent detect service with short TTL cache (same pattern as runtime detect).
+//! Agent detect service with a per-instance TTL cache.
+//!
+//! Install / lifecycle still call [`invalidate_detect_cache`] without an
+//! `AgentService`: a process-wide generation makes every instance treat stored
+//! results as a miss.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::adapters::AdapterRegistry;
@@ -9,35 +14,45 @@ use crate::models::{AgentId, DetectResult};
 
 struct CacheEntry {
     at: Instant,
+    generation: u64,
     results: Vec<DetectResult>,
 }
 
-static CACHE: OnceLock<Mutex<Option<CacheEntry>>> = OnceLock::new();
-
-fn cache() -> &'static Mutex<Option<CacheEntry>> {
-    CACHE.get_or_init(|| Mutex::new(None))
+impl CacheEntry {
+    fn is_fresh(&self, ttl: Duration) -> bool {
+        self.generation == CACHE_GENERATION.load(Ordering::SeqCst) && self.at.elapsed() < ttl
+    }
 }
+
+/// Bumped by [`invalidate_detect_cache`] so every instance drops stale results.
+static CACHE_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Drop cached agent detect results (call after install / upgrade / uninstall).
 pub fn invalidate_detect_cache() {
-    if let Ok(mut guard) = cache().lock() {
-        *guard = None;
-    }
+    CACHE_GENERATION.fetch_add(1, Ordering::SeqCst);
 }
 
 #[derive(Clone)]
 pub struct AgentService {
     registry: AdapterRegistry,
+    /// Shared across clones of the same service; not shared across `new()`.
+    cache: Arc<Mutex<Option<CacheEntry>>>,
 }
 
 impl AgentService {
     pub fn new(registry: AdapterRegistry) -> Self {
-        Self { registry }
+        Self {
+            registry,
+            cache: Arc::new(Mutex::new(None)),
+        }
     }
 
     /// Invalidate the shared detect cache (install / upgrade / uninstall hooks).
     pub fn invalidate_cache(&self) {
         invalidate_detect_cache();
+        if let Ok(mut guard) = self.cache.lock() {
+            *guard = None;
+        }
     }
 
     pub fn detect_all(&self) -> Vec<DetectResult> {
@@ -45,31 +60,32 @@ impl AgentService {
     }
 
     pub fn cache_is_warm(&self) -> bool {
-        cache()
+        self.cache
             .lock()
             .ok()
-            .and_then(|guard| {
-                guard
-                    .as_ref()
-                    .map(|entry| entry.at.elapsed() < CACHE_TTL)
-            })
+            .and_then(|guard| guard.as_ref().map(|entry| entry.is_fresh(CACHE_TTL)))
             .unwrap_or(false)
     }
 
     fn detect_all_with_ttl(&self, ttl: Duration) -> Vec<DetectResult> {
-        if let Ok(guard) = cache().lock() {
+        if let Ok(guard) = self.cache.lock() {
             if let Some(entry) = guard.as_ref() {
-                if entry.at.elapsed() < ttl {
+                if entry.is_fresh(ttl) {
                     return entry.results.clone();
                 }
             }
         }
 
+        let generation = CACHE_GENERATION.load(Ordering::SeqCst);
         let results = self.detect_all_uncached();
+        if CACHE_GENERATION.load(Ordering::SeqCst) != generation {
+            return results;
+        }
 
-        if let Ok(mut guard) = cache().lock() {
+        if let Ok(mut guard) = self.cache.lock() {
             *guard = Some(CacheEntry {
                 at: Instant::now(),
+                generation,
                 results: results.clone(),
             });
         }
@@ -171,7 +187,7 @@ mod tests {
     use std::thread;
 
     static DETECT_CALLS: AtomicUsize = AtomicUsize::new(0);
-    /// Serialize cache tests: they share process-wide CACHE + DETECT_CALLS.
+    /// Serialize cache tests: they share process-wide DETECT_CALLS + generation.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     struct CountingAdapter {
@@ -306,5 +322,65 @@ mod tests {
             DETECT_CALLS.load(Ordering::SeqCst),
             first + AgentId::ALL.len()
         );
+    }
+
+    #[test]
+    fn cache_is_warm_false_after_global_invalidate() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        invalidate_detect_cache();
+        DETECT_CALLS.store(0, Ordering::SeqCst);
+        let svc = counting_service();
+        let _ = svc.detect_all();
+        assert!(svc.cache_is_warm());
+
+        invalidate_detect_cache();
+        assert!(!svc.cache_is_warm());
+
+        let first = DETECT_CALLS.load(Ordering::SeqCst);
+        let _ = svc.detect_all();
+        assert_eq!(
+            DETECT_CALLS.load(Ordering::SeqCst),
+            first + AgentId::ALL.len()
+        );
+        assert!(svc.cache_is_warm());
+    }
+
+    #[test]
+    fn separate_instances_do_not_share_detect_cache() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        invalidate_detect_cache();
+        DETECT_CALLS.store(0, Ordering::SeqCst);
+        let a = counting_service();
+        let b = counting_service();
+
+        let _ = a.detect_all();
+        let after_a = DETECT_CALLS.load(Ordering::SeqCst);
+        assert_eq!(after_a, AgentId::ALL.len());
+        assert!(a.cache_is_warm());
+        assert!(!b.cache_is_warm());
+
+        let _ = b.detect_all();
+        assert_eq!(
+            DETECT_CALLS.load(Ordering::SeqCst),
+            after_a + AgentId::ALL.len()
+        );
+        assert!(b.cache_is_warm());
+    }
+
+    #[test]
+    fn clones_share_detect_cache() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        invalidate_detect_cache();
+        DETECT_CALLS.store(0, Ordering::SeqCst);
+        let a = counting_service();
+        let b = a.clone();
+
+        let _ = a.detect_all();
+        let after_a = DETECT_CALLS.load(Ordering::SeqCst);
+        assert_eq!(after_a, AgentId::ALL.len());
+        assert!(b.cache_is_warm());
+
+        let _ = b.detect_all();
+        assert_eq!(DETECT_CALLS.load(Ordering::SeqCst), after_a);
     }
 }
