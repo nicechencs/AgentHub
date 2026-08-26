@@ -51,7 +51,6 @@ import {
   openAgentCardUninstallConfirm,
   spawnInstall,
   uninstallViaLabel,
-  updateViaLabel,
   resolveOfficialSetupUrl,
   specialChannelUpdateTargets,
 } from './agent-card-model';
@@ -288,19 +287,19 @@ export function AgentCard({
     toast({ title: t('agents.env.commandCopied') });
   };
 
-  const copyInstallPath = (path: string) => {
-    const value = path.trim();
+  const copyVersion = (version: string) => {
+    const value = version.trim();
     if (!value) return;
     void navigator.clipboard.writeText(value).then(
       () => {
         toast({
-          title: t('agents.card.pathCopied'),
+          title: t('agents.card.versionCopied'),
           description: value,
           variant: 'success',
         });
       },
       () => {
-        toast({ title: t('agents.card.copyPathFailed'), variant: 'danger' });
+        toast({ title: t('agents.card.copyVersionFailed'), variant: 'danger' });
       },
     );
   };
@@ -444,37 +443,30 @@ export function AgentCard({
                     latestLabel,
                   );
                   return (
-                    <div key={`${inst.source}:${inst.location}`} className="min-w-0">
-                      <div className="flex min-w-0 flex-wrap items-center gap-1">
-                        {inst.spawn ? <Badge>{t('agents.card.spawnCopy')}</Badge> : null}
+                    <div
+                      key={`${inst.source}:${inst.location}`}
+                      className="flex min-w-0 flex-wrap items-center gap-1"
+                    >
+                      {inst.spawn ? <Badge>{t('agents.card.spawnCopy')}</Badge> : null}
+                      <Hint label={inst.location} contentClassName="max-w-xs break-all">
                         <span className="font-medium text-secondary">
                           {extraCopyKindLabel(inst.source, t)}
                         </span>
-                        {versionText ? <span>{versionText}</span> : null}
-                        {updateHint === 'update_available' ? (
-                          <span className="text-success">
-                            {t('agents.card.extraCopyCanUpdate')}
-                          </span>
-                        ) : null}
-                        <CopyInstallPathButton
-                          path={inst.location}
-                          label={t('agents.card.copyPath')}
-                          title={t('agents.card.copyPathTitle')}
-                          onCopy={copyInstallPath}
-                        />
-                      </div>
-                      <Hint label={inst.location} contentClassName="max-w-xs break-all">
-                        <p className="min-w-0 truncate font-mono">
-                          {t('agents.card.installLocation')} {inst.location}
-                        </p>
                       </Hint>
-                      <p>
-                        {t('agents.card.installSource')} {extraCopyKindLabel(inst.source, t)}
-                        {' · '}
-                        {t('agents.card.updateChannel')} {updateViaLabel(inst.updateVia, t)}
-                        {' · '}
-                        {t('agents.card.uninstallMethod')} {uninstallViaLabel(inst.uninstallVia, t)}
-                      </p>
+                      {versionText ? <span>{versionText}</span> : null}
+                      {updateHint === 'update_available' ? (
+                        <span className="text-success">
+                          {t('agents.card.extraCopyCanUpdate')}
+                        </span>
+                      ) : null}
+                      {versionText ? (
+                        <CopyVersionButton
+                          version={versionText}
+                          label={t('agents.card.copyVersion')}
+                          title={t('agents.card.copyVersionTitle')}
+                          onCopy={copyVersion}
+                        />
+                      ) : null}
                     </div>
                   );
                 })}
@@ -852,16 +844,16 @@ export function AgentCard({
   );
 }
 
-function CopyInstallPathButton({
-  path,
+function CopyVersionButton({
+  version,
   label,
   title,
   onCopy,
 }: {
-  path: string;
+  version: string;
   label: string;
   title: string;
-  onCopy: (path: string) => void;
+  onCopy: (version: string) => void;
 }) {
   return (
     <Button
@@ -871,7 +863,7 @@ function CopyInstallPathButton({
       className="shrink-0"
       aria-label={label}
       title={title}
-      onClick={() => onCopy(path)}
+      onClick={() => onCopy(version)}
     >
       <Copy className="h-3.5 w-3.5" />
     </Button>
