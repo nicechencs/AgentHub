@@ -254,7 +254,7 @@ describe('Bridges page', () => {
       onMove: vi.fn(),
     });
     expect(markup).toContain('拖动排序');
-    expect(markup).toContain('draggable');
+    expect(markup).toContain('data-sortable-id');
   });
 
   it('shows the upstream → loopback flow and the clients one OpenRouter route serves', () => {
