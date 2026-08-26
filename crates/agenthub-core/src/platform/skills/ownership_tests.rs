@@ -60,10 +60,7 @@ impl AgentAdapter for FakeAdapter {
     }
 
     fn capability(&self, cap: Capability) -> CapabilityState {
-        match cap {
-            Capability::Skills => CapabilityState::full(),
-            _ => CapabilityState::unsupported("fake"),
-        }
+        cap.fake_state(&[Capability::Skills])
     }
 
     fn skills_dir(&self) -> Option<PathBuf> {

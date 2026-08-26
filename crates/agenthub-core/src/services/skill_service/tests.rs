@@ -48,7 +48,7 @@ impl AgentAdapter for FakeAdapter {
         match cap {
             Capability::Skills if self.supports => CapabilityState::full(),
             Capability::Skills => CapabilityState::unsupported("fake skills unsupported"),
-            _ => CapabilityState::unsupported("fake"),
+            other => other.fake_state(&[]),
         }
     }
 

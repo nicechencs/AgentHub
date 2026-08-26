@@ -107,7 +107,7 @@ pub fn switch(
     assume_yes: bool,
 ) -> Result<()> {
     let agent = require_agent(agent_filter, "switch")?;
-    confirm(&switch_confirm_prompt(hub, agent, id_or_name), assume_yes)?;
+    confirm(&switch_confirm_prompt(hub, agent, id_or_name)?, assume_yes)?;
     let result = hub.providers.switch(id_or_name, agent)?;
     emit_provider_switch(&result, format)
 }
@@ -168,12 +168,16 @@ pub fn test_latency(
     }
 }
 
-pub fn switch_confirm_prompt(hub: &AgentHub, agent: AgentId, id_or_name: &str) -> String {
+pub fn switch_confirm_prompt(
+    hub: &AgentHub,
+    agent: AgentId,
+    id_or_name: &str,
+) -> Result<String> {
     let current = hub
         .providers
-        .list(Some(agent))
-        .ok()
-        .and_then(|items| items.into_iter().find(|p| p.is_current));
+        .list(Some(agent))?
+        .into_iter()
+        .find(|p| p.is_current);
     let backfill = match current {
         Some(c) => format!("backfill: current live will be saved as 「{}」", c.name),
         None => "backfill: no current provider; live will be written directly".into(),
@@ -186,10 +190,10 @@ pub fn switch_confirm_prompt(hub: &AgentHub, agent: AgentId, id_or_name: &str) -
             .join(agent.as_str())
             .display()
     );
-    format!(
+    Ok(format!(
         "Switch {} to provider {id_or_name}?\n  {backfill}\n  {backup}\n  process: running agent processes are not stopped",
         agent.as_str()
-    )
+    ))
 }
 
 /// Pure presentation for list (testable without DB).

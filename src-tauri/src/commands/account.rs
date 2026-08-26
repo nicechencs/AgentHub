@@ -224,7 +224,7 @@ pub async fn reconcile_accounts(
 fn probe_live_auth_inner(hub: &AgentHub, agent_id: &str) -> Result<AuthState, String> {
     let agent = parse_agent(agent_id)?;
     let adapter = hub
-        .registry
+        .registry()
         .get(agent)
         .ok_or_else(|| format!("adapter not registered: {}", agent.as_str()))?;
     let mut state = adapter

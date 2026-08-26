@@ -61,7 +61,7 @@ pub fn capabilities(
         None => None,
     };
 
-    let mut matrix = hub.registry.matrix();
+    let mut matrix = hub.registry().matrix();
     if let Some(id) = filter {
         matrix.retain(|k, _| *k == id);
         if matrix.is_empty() {

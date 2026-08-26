@@ -27,7 +27,7 @@ type AgentTabStripBase = {
   disabled?: AgentId[];
   disabledReason?: string;
   /** 默认全量 AGENTS；非 Agents 页请传已安装子集 */
-  agents?: AgentMeta[];
+  agents?: readonly AgentMeta[];
   emptyLabel?: string;
   /** 固定 md；保留 prop 仅兼容，页面不应再传 sm */
   size?: SegmentedSize;

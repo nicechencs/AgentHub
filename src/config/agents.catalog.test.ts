@@ -1,10 +1,12 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   AGENTS,
+  AGENT_IDS,
   AGENT_MAP,
   applyAgentCatalog,
   agentMetaFromCatalogEntry,
   resolveAgentMeta,
+  type AgentMeta,
 } from '@/config/agents';
 import {
   MOCK_AGENT_CATALOG,
@@ -69,6 +71,15 @@ describe('agent catalog façade', () => {
     const demo = merged.find((a) => a.agentId === 'unknown-demo');
     expect(demo?.installed).toBe(false);
     expect(demo?.capabilities?.skills?.level).toBe('unsupported');
+  });
+
+  it('applyAgentCatalog replaces a frozen snapshot', () => {
+    expect(Object.isFrozen(AGENTS)).toBe(true);
+    expect(Object.isFrozen(AGENT_MAP)).toBe(true);
+    expect(Object.isFrozen(AGENT_IDS)).toBe(true);
+    expect(() => {
+      (AGENTS as AgentMeta[]).push(resolveAgentMeta('injected'));
+    }).toThrow();
   });
 
   it('empty catalog does not invent agents from static list', () => {

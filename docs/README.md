@@ -39,6 +39,11 @@ updated: 2026-08-26
 - [Chat 与 Agent](concepts/chat-and-agents.md)
 - [插件、MCP 与技能](concepts/plugins-and-mcp.md)
 - [对象化与封装审查](architecture/objectization-encapsulation-audit.md)
+- [对象化与封装审查：前端与运行时](architecture/objectization-encapsulation-audit-frontend.md)
+- [对象化与封装审查：Core 剩余分区](architecture/objectization-encapsulation-audit-core.md)
+- [对象化与封装审查：OAuth](architecture/objectization-encapsulation-audit-oauth.md)
+- [对象化与封装审查：CLI、Tauri 与工具链](architecture/objectization-encapsulation-audit-cli-tauri.md)
+- [对象化与封装审查：测试、Mock 与 Fixture](architecture/objectization-encapsulation-audit-tests-fixtures.md)
 
 ### 查稳定契约
 

@@ -25,8 +25,8 @@ use agenthub_core::models::{
 };
 use agenthub_core::services::{
     oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
-    AdapterBridgeProviderProjection, AdapterBridgeRuntimeMaterial, AdapterSecretResolver,
-    ProviderLiveConfigSnapshot, ProviderLiveSagaGuard,
+    AdapterBridgeProviderProjection, AdapterBridgeRuntimeMaterial, ProviderLiveConfigSnapshot,
+    ProviderLiveSagaGuard,
 };
 use agenthub_core::AgentHub;
 
@@ -880,7 +880,7 @@ fn oauth_reload_for_material(
 ) -> Option<UpstreamAuthReload> {
     oauth_bridge_reload_callback(
         hub.accounts.clone(),
-        AdapterSecretResolver::new(hub.db.clone()),
+        hub.adapter_secret_resolver(),
         source_kind,
         source_id.to_owned(),
         material.protocol(),
@@ -947,7 +947,7 @@ fn resolve_v2_pool_members(
                     auth,
                     reload: oauth_bridge_reload_callback(
                         hub.accounts.clone(),
-                        AdapterSecretResolver::new(hub.db.clone()),
+                        hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
                         protocol,
@@ -973,7 +973,7 @@ fn resolve_v2_pool_members(
                     auth: agenthub_core::bridge::ResolvedAuth::bearer(""),
                     reload: oauth_bridge_reload_callback(
                         hub.accounts.clone(),
-                        AdapterSecretResolver::new(hub.db.clone()),
+                        hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
                         protocol,
@@ -1049,7 +1049,7 @@ fn resolve_pool_members(
                     auth,
                     reload: oauth_bridge_reload_callback(
                         hub.accounts.clone(),
-                        AdapterSecretResolver::new(hub.db.clone()),
+                        hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
                         protocol,
@@ -1075,7 +1075,7 @@ fn resolve_pool_members(
                     auth: agenthub_core::bridge::ResolvedAuth::bearer(""),
                     reload: oauth_bridge_reload_callback(
                         hub.accounts.clone(),
-                        AdapterSecretResolver::new(hub.db.clone()),
+                        hub.adapter_secret_resolver(),
                         member.source_kind,
                         member.source_id.clone(),
                         protocol,

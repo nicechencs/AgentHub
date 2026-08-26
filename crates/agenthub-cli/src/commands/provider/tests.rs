@@ -167,7 +167,7 @@ fn switch_result_redacts_provider_secrets() {
 fn switch_confirm_prompt_mentions_backfill_backup_and_process() {
     let dir = tempfile::tempdir().unwrap();
     let hub = AgentHub::open(Some(dir.path())).unwrap();
-    let prompt = switch_confirm_prompt(&hub, AgentId::Claude, "relay");
+    let prompt = switch_confirm_prompt(&hub, AgentId::Claude, "relay").unwrap();
     assert!(prompt.contains("backfill:"));
     assert!(prompt.contains("backup:"));
     assert!(prompt.contains("process:"));

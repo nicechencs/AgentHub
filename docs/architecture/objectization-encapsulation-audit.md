@@ -12,13 +12,15 @@ updated: 2026-08-26
 
 本轮在上一版重点审查基础上，补查了 `crates/agenthub-cli`、根目录脚本与发布配置、前端公共组件/配置/样式、core 的 adapter/integration/bridge/platform/runtime/catalog/usage/utils、测试/e2e/mock/fixture。依赖目录、二进制和生成的图标/静态数据不作为对象职责审查对象；纯凭据暴露、复制提示和发布参数等非对象化问题也不混入本记录。
 
+本轮继续按文件分区复核：前端 `src` 共 587 个文件（生产 392、测试/fixture 195）；Rust Core 共 468 个 `.rs/.sql` 文件，已补齐此前未明确覆盖的 OAuth 12 个文件；测试、Mock、Fixture 和测试脚本去重后约 400 个文件；CLI/Tauri/脚本/配置另有独立分区清单。分区结果拆分在：[前端与运行时](objectization-encapsulation-audit-frontend.md)、[Core 剩余分区](objectization-encapsulation-audit-core.md)、[OAuth](objectization-encapsulation-audit-oauth.md)、[CLI/Tauri 与工具链](objectization-encapsulation-audit-cli-tauri.md)、[测试、Mock 与 Fixture](objectization-encapsulation-audit-tests-fixtures.md)。
+
 ## 核实记录
 
 2026-08-26 对照源码复核：问题描述均能在当前代码中对上，建议方向大体合理。按风险与影响面，只落地了不改变 current / 锁 / 补偿语义的收窄：
 
 | 编号 | 核实 | 处理 |
 | --- | --- | --- |
-| O-01 | 仍存在：`AgentHub` 字段全部 `pub`，CLI / Tauri 直接读 `db`、`registry` | 暂缓。这是组合根，收窄公开面需要单独列调用方清单 |
+| O-01 | 仍存在：领域 Service 仍是 `pub` 字段 | 部分处理：`data_dir` / `db` / `registry` 收为 `pub(crate)`，对外只留访问器。生产路径的密钥解析走 `adapter_secret_resolver()`，不再从 CLI/Tauri 直接拿 `hub.db`。Service 字段仍待按领域收窄 |
 | O-02 | 仍存在：`Database::with_conn` 为 `pub`；生产路径曾用 `ProviderService::repo()` 读行 | 部分处理：生产读改为 `get_by_id` / `get_current`；Account / Backup 的 `repo()` 收为 `pub(crate)`。`with_conn` 与 Provider `repo()` 仍给测试和补偿事务用 |
 | O-03、O-04、O-05 | 仍存在 | 暂缓。页面拆 Hook / 把保存用例上收属于跨层设计 |
 | O-06 | 生产 Hook 已走共享连接池；`loadAdapterPageResources` 只留在测试 | 标注为测试辅助，页面不得再自行拉账号 / Provider |
@@ -28,14 +30,17 @@ updated: 2026-08-26
 | O-11–O-14 | 仍存在 | 暂缓。Service / Bridge 内部拆分要单独设计 |
 | O-15–O-19 | 仍存在 | 暂缓。宽对象和派生数据收窄会改契约 |
 | O-20 | mock Agent 用模块级可变状态 | 暂缓。已有 `resetMockAgentStatuses`；实例化隔离收益低于测试迁移成本 |
-| O-21、O-23、O-25 | 仍存在 | 暂缓。Agent catalog、通用组件和展示配置需要先明确唯一 owner |
+| O-21 | 产品集合曾是可变导出 | 已处理：`applyAgentCatalog` 整体替换并冻结 `AGENTS` / `AGENT_MAP` / `AGENT_IDS`。集合仍由 catalog 入口写入 |
+| O-23、O-25 | 仍存在 | 暂缓。通用组件拆分和 token 色板与 catalog 分离需要先明确唯一 owner |
 | O-24 | Sidebar Context 默认 setter 静默失效 | 已处理：缺少 Provider 时抛错 |
 | O-22 | `GenericConfigForm` 未把锁定状态传给 `SecretInput` | 已处理：`SecretInput` 接收 `disabled`/`readOnly` |
 | O-26–O-30 | 仍存在 | 暂缓。启动组合根、transport façade、Gateway 状态和协议策略需要分别设计 |
 | O-31–O-34 | 仍存在 | 暂缓。Usage normalizer、查询 filter 和模型映射的跨层收窄需保持统计语义 |
-| O-35–O-38 | 仍存在 | 暂缓。CLI 策略/预览与发布流程需要先统一结构化结果和脚本 owner |
+| O-35、O-37、O-38 | 仍存在 | 暂缓。CLI 运行策略、选择确认抽取和发布脚本收口需要单独设计 |
+| O-36 | CLI 切换确认曾 `.ok()` 吞掉列表读取错误 | 部分处理：读取失败改为返回错误，不再带着错误认知去确认。结构化切换预览仍待 core 提供 |
 | O-39 | mock `speaks` 与 core 对 GLM/DeepSeek 不一致 | 已处理：mock 补上 `openai-responses`。共享 fixture 仍未做 |
-| O-40–O-44 | 仍存在 | 暂缓。mock、fixture 和测试 fake 需先补共享 contract，再收窄依赖 |
+| O-40–O-42、O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
+| O-43 | 测试 fake 用 `_ => unsupported` 吞掉新 Capability | 已处理：`Capability::fake_state` 穷举所有变体；测试 fake 走该 helper |
 
 ## 结论
 
@@ -47,6 +52,20 @@ updated: 2026-08-26
 
 最高风险曾经是：调用方可以直接操作本应由领域对象维护的状态；写入成功后，多个前端读模型又可能各自刷新、静默失败或相互覆盖。票夹 bind/unbind 与账号 / Provider 变更的读模型刷新已收到 runtime coordinator；其余公开面和领域拆分仍待单独设计。
 
+## 全量复核新增问题索引
+
+以下问题来自本轮逐文件复核；详细位置、建议和覆盖说明见对应分册。编号从既有 O-01–O-44 继续，不重排旧记录。
+
+| 编号 | 主题 | 分册 |
+| --- | --- | --- |
+| O-45–O-48 | Core 检测缓存、日志数据库连接、Adapter 锁表、设置解析重复 | [Core 剩余分区](objectization-encapsulation-audit-core.md) |
+| O-49–O-53 | 前端 Hook 写入口、Store 异步隔离、Context/Store 双重订阅 | [前端与运行时](objectization-encapsulation-audit-frontend.md) |
+| O-54–O-61 | Skill/Config/OAuth/Ticket/Usage Mock、能力镜像和测试 Fixture 重复 | [测试、Mock 与 Fixture](objectization-encapsulation-audit-tests-fixtures.md) |
+| O-62–O-67 | Tauri 认证、设置、错误、卸载、桥接控制器和托盘职责 | [CLI/Tauri 与工具链](objectization-encapsulation-audit-cli-tauri.md) |
+| O-68–O-74 | OAuth 入口、Provider、流程状态、回调服务器和设备码会话职责 | [OAuth](objectization-encapsulation-audit-oauth.md) |
+
+全量复核后，当前审查文档共记录 74 个对象化/封装问题，其中已处理或部分处理项仍按“核实记录”标注；本轮没有把纯测试覆盖不足、凭据策略、发布参数或静态资源问题强行归入对象化问题。
+
 ## 发现的问题
 
 ### 一、封装边界过宽
@@ -54,8 +73,10 @@ updated: 2026-08-26
 #### O-01｜`AgentHub` 暴露完整内部对象
 
 - **严重程度：高**
-- **位置：** `crates/agenthub-core/src/lib.rs:53-93` 的 `AgentHub`；`src-tauri/src/state.rs:79-87` 的 `hub_arc`
+- **状态：部分处理**
+- **位置：** `crates/agenthub-core/src/lib.rs` 的 `AgentHub`；`src-tauri/src/state.rs` 的 `hub_arc`
 - **问题：** `data_dir`、`db`、`registry` 以及几乎所有 Service 都是 `pub`。拿到 `AgentHub` 的 CLI、Tauri 或其他模块可以直接访问数据库、注册表和 Service，绕过统一用例。
+- **当前：** `data_dir` / `db` / `registry` 为 `pub(crate)`，对外提供 `data_dir()`、`db()`、`registry()`、`adapter_secret_resolver()`。CLI 能力矩阵走 `registry()`；Tauri 本机路由启动不再用 `hub.db` 构造密钥解析器。领域 Service 仍是公开字段。
 - **建议：** 将字段改为私有；通过按领域划分的窄接口暴露必要的查询和用例。`data_dir`、注册表等确需读取的能力也应提供只读方法，而不是暴露整个对象。
 - **影响/风险：** 写入可能绕过锁、current 约束和补偿逻辑；替换内部实现时会扩大公开兼容面。
 
@@ -65,7 +86,7 @@ updated: 2026-08-26
 - **状态：部分处理**
 - **位置：** `crates/agenthub-core/src/storage/mod.rs:72-144`；`AccountService::repo()`；`ProviderService` 的 `repo()`
 - **问题：** `Database::with_conn` 把原始 `rusqlite::Connection` 暴露给上层，多个 Service 又暴露 repository 引用。业务调用方可以绕过 Service 的领域校验、事务和状态补偿直接操作 SQLite。
-- **当前：** 生产路径的 Provider 读取改为 `ProviderService::get_by_id` / `get_current`。Account / Backup 的 `repo()` 改为 `pub(crate)`。`with_conn` 仍是 crate 内事务原语，且 Tauri 测试会经过 `hub.db` 调用它；Provider `repo()` 仍给测试写行。
+- **当前：** 生产路径的 Provider 读取改为 `ProviderService::get_by_id` / `get_current`。Account / Backup 的 `repo()` 改为 `pub(crate)`。`with_conn` 仍是 crate 内事务原语，且 Tauri 测试会经过 `hub.db()` 调用它；Provider `repo()` 仍给测试写行。
 - **建议：** 让 SQL、事务和连接锁只留在 storage/repository 内部；Service 依赖窄的存储接口，并移除面向外部的 `with_conn` 与 `repo()` 暴露。
 - **影响/风险：** `is_current`、binding、trash 等状态可能被分开修改；数据库迁移或存储替换的成本增大。
 
@@ -234,8 +255,10 @@ updated: 2026-08-26
 #### O-21｜Agent 配置以可变集合公开，绕过目录状态 owner
 
 - **严重程度：高**
-- **位置：** `src/config/agents.ts:40-52`、`89-114` 的 `AGENTS`、`AGENT_MAP`、`AGENT_IDS`
+- **状态：已处理**
+- **位置：** `src/config/agents.ts` 的 `AGENTS`、`AGENT_MAP`、`AGENT_IDS`
 - **问题：** 共享 Agent 配置以可变数组和对象导出，外部可以直接修改集合内容；同时运行时 Agent catalog 也在提供产品 Agent 集合。
+- **当前：** `applyAgentCatalog` 整体替换并冻结三份快照；页面仍通过导出的只读集合读取，写入只走 catalog 入口。
 - **建议：** 将集合设为模块私有，通过只读快照和查询函数访问；更新只允许由 catalog 同步入口整体替换并通知订阅者。
 - **影响/风险：** 页面可能看到不同的 Agent 顺序、能力或显示信息，形成静态配置与运行时 catalog 的双重来源。
 
@@ -362,8 +385,10 @@ updated: 2026-08-26
 #### O-36｜CLI 切换确认直接读取领域状态并吞掉错误
 
 - **严重程度：中高**
-- **位置：** `crates/agenthub-cli/src/commands/account.rs:118`；`provider.rs:171` 的 `switch_confirm_prompt`
+- **状态：部分处理**
+- **位置：** `crates/agenthub-cli/src/commands/account.rs`；`provider.rs` 的 `switch_confirm_prompt`
 - **问题：** 确认提示函数直接读取 Account/Provider 列表并用 `.ok()` 忽略数据库错误，同时自行拼接备份目录、当前项和进程影响说明。
+- **当前：** 列表读取失败会返回错误，切换确认不再在读失败时继续。结构化预览仍由 CLI 自行拼接，尚未收到 core。
 - **建议：** 由 core 返回结构化切换预览（当前项、备份计划、进程影响、警告）；CLI 只渲染，读取失败必须显式返回。
 - **影响/风险：** 数据库异常时可能显示不准确的确认信息，用户在错误认知下执行切换。
 
@@ -420,8 +445,10 @@ updated: 2026-08-26
 #### O-43｜测试 fake 用 wildcard 掩盖能力枚举扩展
 
 - **严重程度：低**
-- **位置：** `crates/agenthub-core/src/services/adapter_apply_service/tests.rs:909-913`
+- **状态：已处理**
+- **位置：** `Capability::fake_state`；各 Service / Tauri 测试 fake
 - **问题：** fake 对 Capability 使用 `_ => unsupported`，生产新增能力时编译器会提示真实实现，但测试 fake 不会被迫更新。
+- **当前：** `fake_state` 穷举全部变体；测试 fake 改为调用它，新增能力会在 helper 编译失败。
 - **建议：** 测试 fake 对能力枚举使用显式穷举；新增能力时让测试模型和生产实现同时更新。
 - **影响/风险：** 测试覆盖模型可能静默落后，无法发现新增能力没有正确接入。
 
@@ -452,8 +479,8 @@ updated: 2026-08-26
 
 以下是建议的迁移顺序，不等同于已批准的实施任务：
 
-1. 先收窄 `AgentHub`、`Database` 和 repository 的公开面，补调用方清单与契约测试，保持现有 façade 行为。Provider 生产读取已离开 `repo()`；`with_conn` 与 `AgentHub` 字段仍待单独清单。
-2. ~~建立统一 runtime mutation coordinator，先接管 ticket bind/unbind 和 Provider 批量删除，解决静默刷新失败与重复刷新。~~ 已落地 `refreshRuntimeReadModels`；尚未做刷新失败的自动重试或页面提示。
+1. ~~先收窄 `AgentHub`、`Database` 和 repository 的公开面。~~ `data_dir` / `db` / `registry` 已收到访问器；领域 Service 字段和 `with_conn` 仍待继续收窄。
+2. ~~建立统一 runtime mutation coordinator，先接管 ticket bind/unbind 和 Provider 批量删除，解决静默刷新失败与重复刷新。~~ 已落地 `refreshRuntimeReadModels`；尚未做刷新失败的自动重试。
 3. ~~让 Chat 使用共享票夹；让 Adapter 页面只消费共享连接池。~~ 已落地。旧的 `loadAdapterPageResources` 仍作测试辅助。
 4. 在不改变 current、锁和补偿语义的前提下，分别为 Provider、Account、Backup 和 Bridge 做内部组件拆分；保留兼容门面。
 5. 最后收窄宽对象和重复派生：Agent/Account/Provider read model、route mapping、surface grouping、typed config value object，以及 mock 状态实例化。
