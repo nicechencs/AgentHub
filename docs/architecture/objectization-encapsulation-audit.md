@@ -23,7 +23,7 @@ updated: 2026-08-26
 | O-01 | 领域 Service 曾是 `pub` 字段 | 已处理：Service 字段改为 `pub(crate)`，对外只留访问器。CLI / 桌面端走 `accounts()` / `providers()` 等。隔离测试用 `set_providers` / `set_accounts`。按领域拆 Service 内部职责仍暂缓 |
 | O-02 | 仍存在：`Database::with_conn` 为 `pub`；生产路径曾用 `ProviderService::repo()` 读行 | 部分处理：生产读改为 `get_by_id` / `get_current`；Account / Backup 的 `repo()` 收为 `pub(crate)`。`with_conn` 与 Provider `repo()` 仍给测试和补偿事务用 |
 | O-03 | Chat 页面 Hook 同时承载会话、发送、连接和弹窗 | 部分处理：纯 UI 开关收到 `use-chat-page-chrome.ts`（侧栏 / 设置 / 危险确认 / 删除确认 / 侧栏查询）。发送、取消、世代、单飞、票夹订阅未动 |
-| O-04 | 仍存在 | 暂缓。页面拆 Hook 属于跨层设计 |
+| O-04 | Connections 页面编排探测、导入、切换、删除 | 部分处理：导入对话框的本机登录探测收到 `use-connection-import-probe.ts`。切换 / 绑定 / 删除 / 分享 / 路由侧栏未动 |
 | O-05 | 供应商保存编排曾在页面目录 | 已处理：`runProviderSaveFlow` 收到 `src/lib/api/provider-save.ts`；页面只保留 schema 闸门。validate/materialize/upsert 语义未改 |
 | O-06 | 生产 Hook 已走共享连接池；`loadAdapterPageResources` 只留在测试 | 标注为测试辅助，页面不得再自行拉账号 / Provider |
 | O-07 | 仍存在：多个模块级 store，`setBackend` 手工 reset | 部分处理：`setBackend` / `resetBackend` 会一起清空 catalog。统一 runtime context 仍暂缓 |
@@ -73,7 +73,7 @@ updated: 2026-08-26
 - 页面 Hook、Tauri controller 和部分 Service 同时承担状态、编排、持久化和补偿；
 - 同一业务概念在多个对象中分别保存或派生，尤其是 Agent 状态、连接池、票夹和路线信息。
 
-最高风险曾经是：调用方可以直接操作本应由领域对象维护的状态；写入成功后，多个前端读模型又可能各自刷新、静默失败或相互覆盖。票夹 bind/unbind 与账号 / Provider 变更的读模型刷新已收到 runtime coordinator；Chat 纯 UI 壳已抽出，会话 / 发送 / 连接仍在同一 Hook。Service 内部拆分和契约收窄仍待单独设计。
+最高风险曾经是：调用方可以直接操作本应由领域对象维护的状态；写入成功后，多个前端读模型又可能各自刷新、静默失败或相互覆盖。票夹 bind/unbind 与账号 / Provider 变更的读模型刷新已收到 runtime coordinator；Chat 纯 UI 壳已抽出，会话 / 发送 / 连接仍在同一 Hook。连接页导入探测已抽出，切换 / 删除仍在页面。Service 内部拆分和契约收窄仍待单独设计。
 
 ## 全量复核新增问题索引
 
@@ -128,9 +128,11 @@ updated: 2026-08-26
 #### O-04｜Connections 页面仍是多业务流程的总编排器
 
 - **严重程度：中高**
-- **位置：** `src/pages/connections/index.tsx:145-592`
+- **状态：部分处理**
+- **位置：** `src/pages/connections/index.tsx`；导入探测 `src/pages/connections/use-connection-import-probe.ts`
 - **问题：** 一个页面同时维护筛选、票夹加载、连接池同步、登录探测、导入、路线引导、分享、切换、刷新、删除和详情面板状态；页面直接组合多个 account/provider/ticket 写入行为。
-- **建议：** 将登录探测与导入、票据切换与绑定、删除确认和列表展示分别封装为功能内 Hook/model；页面只保留路由参数和组件编排。
+- **当前：** 导入对话框的本机登录探测（`loginImportOpen` / `importLiveProbe` / `importProbeLoading` / `importProbeGen` / `importingAccount`，打开时 `probeLiveAuth({ force: true })` 与 generation 丢弃）在 `use-connection-import-probe.ts`。切换、绑定、删除、分享/路由打开侧栏仍在页面。探测失败/成功与 generation 丢弃语义未改。
+- **建议：** 将登录探测与导入、连接切换与绑定、删除确认和列表展示分别封装为功能内 Hook/model；页面只保留路由参数和组件编排。
 - **影响/风险：** 一个流程的刷新、错误和取消语义容易影响其他流程；页面成为新的业务 Service。
 
 #### O-05｜Provider 配置保存业务仍在页面目录
