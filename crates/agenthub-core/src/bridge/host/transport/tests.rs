@@ -48,6 +48,7 @@ fn listener_state(
         mapping_target: None,
         custom_openai: false,
         route_index: None,
+        auth_reload: crate::bridge::auth_reload::AuthReloadCoordinator::new(),
         account_picker: crate::bridge::runtime::BridgeStartSpec::new(
             "transport-test",
             0,

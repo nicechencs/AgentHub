@@ -4,6 +4,7 @@
 //! listeners and in-memory credentials only; it never reads profiles or the database.
 
 pub mod account;
+pub mod auth_reload;
 pub mod grok_cli;
 pub mod host;
 pub mod protocol;
@@ -12,6 +13,7 @@ pub mod route_index;
 pub mod runtime;
 pub mod session;
 pub mod types;
+pub mod upstream_class;
 
 pub use account::{AccountPicker, BridgeMemberSpec, MemberHealth, MemberHealthSink, PickedMember};
 pub use host::{BridgeHostError, BridgeRuntimeHost};

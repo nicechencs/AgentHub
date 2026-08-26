@@ -210,6 +210,53 @@ fn affinity_key_is_route_scoped_not_raw_session() {
 }
 
 #[test]
+fn member_cooldown_skips_pick_but_does_not_mark_needs_login() {
+    let picker = picker(MemberHealth::Renewable, MemberHealth::Renewable);
+    picker.set_cooldown("acc-a", None, std::time::Duration::from_secs(60));
+    assert!(picker.is_cooling("acc-a", Some("m1")));
+    assert!(!picker.is_cooling("acc-b", Some("m1")));
+    assert_eq!(picker.health_of("acc-a"), Some(MemberHealth::Renewable));
+    assert_eq!(picker.cooldown_exclusions("m1"), vec!["acc-a".to_owned()]);
+    let picked = picker
+        .pick_from_candidates(
+            &candidates(&["acc-a", "acc-b"]),
+            None,
+            &picker.cooldown_exclusions("m1"),
+        )
+        .expect("b");
+    assert_eq!(picked.source_id, "acc-b");
+}
+
+#[test]
+fn member_model_cooldown_does_not_block_other_models() {
+    let picker = picker(MemberHealth::Renewable, MemberHealth::Renewable);
+    picker.set_cooldown("acc-a", Some("m1"), std::time::Duration::from_secs(60));
+    assert!(picker.is_cooling("acc-a", Some("m1")));
+    assert!(!picker.is_cooling("acc-a", Some("m2")));
+    assert_eq!(picker.cooldown_exclusions("m2"), Vec::<String>::new());
+}
+
+#[test]
+fn set_cooldown_keeps_the_later_deadline() {
+    let picker = picker(MemberHealth::Renewable, MemberHealth::Renewable);
+    picker.set_cooldown("acc-a", None, std::time::Duration::from_secs(60));
+    picker.set_cooldown("acc-a", None, std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    assert!(
+        picker.is_cooling("acc-a", Some("m1")),
+        "shorter Retry-After must not replace a later member cooldown"
+    );
+
+    picker.set_cooldown("acc-b", Some("m1"), std::time::Duration::from_secs(60));
+    picker.set_cooldown("acc-b", Some("m1"), std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    assert!(
+        picker.is_cooling("acc-b", Some("m1")),
+        "shorter Retry-After must not replace a later member-model cooldown"
+    );
+}
+
+#[test]
 fn isolate_sink_receives_only_that_account_id() {
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen_cb = seen.clone();
