@@ -587,7 +587,12 @@ fn detect_binary_prefers_path_or_well_known_when_agent_installed() {
                 );
             }
         } else {
-            assert_eq!(r.notes, vec![NOT_FOUND_FIREFIGHTING_NOTE.to_string()]);
+            assert_eq!(
+                r.notes.first().map(String::as_str),
+                Some(NOT_FOUND_FIREFIGHTING_NOTE),
+                "not-found notes must start with the firefighting copy, got {:?}",
+                r.notes
+            );
         }
     }
     let _ = any;

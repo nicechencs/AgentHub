@@ -482,9 +482,9 @@ export function AgentCard({
             )}
             {agent.extraCopies && agent.extraCopies.length > 0 ? (
               <div className="mt-1 space-y-0.5 font-mono text-xs text-muted">
-                <span title={t('agents.card.extraCopyUpgradeSpawnOnly')}>
+                <Tip label={t('agents.card.extraCopyUpgradeSpawnOnly')}>
                   {t('agents.card.extraCopies', { count: String(agent.extraCopies.length) })}
-                </span>
+                </Tip>
                 {agent.extraCopies.map((copy) => {
                   const versionLabel = formatAgentVersion(copy.version);
                   const updateHint = extraCopyUpdateHint(

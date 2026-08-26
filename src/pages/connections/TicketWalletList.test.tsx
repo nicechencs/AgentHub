@@ -982,7 +982,7 @@ describe('TicketWalletList bind actions', () => {
         wallet: sampleWallet(),
         onShareTicket() {},
         onRouteTicket() {},
-        routeActionForTicket: () => ({ disabled: false }),
+        routeActionForTicket: () => ({ disabled: false as const }),
         onEditTicket() {},
         onDeleteTicket() {},
       }),

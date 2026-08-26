@@ -1,6 +1,7 @@
 import type { KeyboardEvent, PointerEvent } from 'react';
 import { GripVertical } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Hint } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 export function SortHandle({
@@ -31,20 +32,21 @@ export function SortHandle({
   };
 
   return (
-    <span
-      role="button"
-      tabIndex={0}
-      aria-label={t('common.reorder')}
-      title={t('common.reorder')}
-      onPointerDown={(event) => onDragStartId(id, event)}
-      onKeyDown={onKeyDown}
-      className={cn(
-        'inline-flex h-7 w-5 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-btn text-muted',
-        'hover:bg-hover hover:text-primary active:cursor-grabbing',
-        className,
-      )}
-    >
-      <GripVertical className="pointer-events-none h-4 w-4" aria-hidden />
-    </span>
+    <Hint label={t('common.reorder')}>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label={t('common.reorder')}
+        onPointerDown={(event) => onDragStartId(id, event)}
+        onKeyDown={onKeyDown}
+        className={cn(
+          'inline-flex h-7 w-5 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-btn text-muted',
+          'hover:bg-hover hover:text-primary active:cursor-grabbing',
+          className,
+        )}
+      >
+        <GripVertical className="pointer-events-none h-4 w-4" aria-hidden />
+      </span>
+    </Hint>
   );
 }
