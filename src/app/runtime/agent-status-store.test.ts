@@ -480,6 +480,41 @@ describe('agent-status-store', () => {
     expect(getAgentStatusSnapshot().statuses[0]?.hidden).toBe(false);
   });
 
+  it('does not let a pre-reset response overwrite the new store or clear a newer inflight', async () => {
+    const staleAgents = deferred<Array<{ agentId: string; installed: boolean }>>();
+    const nextAgents = deferred<Array<{ agentId: string; installed: boolean }>>();
+    const firstBackend = {
+      agent: { listAgents: vi.fn(() => staleAgents.promise) },
+    } as unknown as Backend;
+    const secondBackend = {
+      agent: { listAgents: vi.fn(() => nextAgents.promise) },
+    } as unknown as Backend;
+
+    const stale = loadAgentStatuses(firstBackend);
+    await Promise.resolve();
+    resetAgentStatusStore();
+    const next = loadAgentStatuses(secondBackend);
+    expect(getAgentStatusSnapshot().state).toBe('loading');
+
+    staleAgents.resolve([{ agentId: 'claude', installed: true }]);
+    await stale;
+
+    expect(getAgentStatusSnapshot()).toMatchObject({
+      state: 'loading',
+      statuses: [],
+    });
+
+    nextAgents.resolve([{ agentId: 'codex', installed: true }]);
+    const loaded = await next;
+
+    expect(loaded).toMatchObject({
+      state: 'ready',
+      refreshing: false,
+      statuses: [{ agentId: 'codex', installed: true }],
+    });
+    expect(getAgentStatusSnapshot()).toEqual(loaded);
+  });
+
   it('reverts a local hide stamp', async () => {
     const backend = {
       agent: {

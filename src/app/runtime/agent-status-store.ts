@@ -51,6 +51,7 @@ let snapshot: AgentStatusSnapshot = {
   error: null,
 };
 
+let epoch = 0;
 let inflight: Promise<AgentStatus[]> | null = null;
 /** In-flight / unconfirmed visibility writes. Survives a stale listAgents. */
 const pendingHidden = new Map<AgentId, boolean>();
@@ -88,6 +89,7 @@ export function liveAuthProbeForAgent(
 }
 
 export function resetAgentStatusStore(): void {
+  epoch += 1;
   inflight = null;
   pendingHidden.clear();
   clearLiveAuthProbeCache();
@@ -247,10 +249,15 @@ export async function loadAgentStatuses(
   if (!opts.force && snapshot.state === 'ready') return snapshot;
   if (inflight) {
     const active = inflight;
+    const waitEpoch = epoch;
     try {
       await active;
     } catch (error) {
       if (!opts.force) throw error;
+    }
+    if (waitEpoch !== epoch) {
+      if (!opts.force) return snapshot;
+      return loadAgentStatuses(backend, { force: true });
     }
     if (!opts.force) return snapshot;
     // A force request that arrived during an older probe must not be lost.
@@ -263,6 +270,7 @@ export async function loadAgentStatuses(
   }
 
   const previousSnapshot = snapshot;
+  const startedEpoch = epoch;
   const isBackgroundRefresh = opts.force === true && previousSnapshot.state === 'ready';
 
   if (isBackgroundRefresh) {
@@ -285,9 +293,11 @@ export async function loadAgentStatuses(
     });
   }
 
-  inflight = backend.agent
+  let request!: Promise<AgentStatus[]>;
+  request = backend.agent
     .listAgents()
     .then(async (statuses) => {
+      if (startedEpoch !== epoch) return snapshot.statuses;
       // 三阶段：detect 先上屏；连接池复用共享 store；live-auth 最后补齐。
       settleConfirmedHidden(statuses);
       setSnapshot({
@@ -299,6 +309,7 @@ export async function loadAgentStatuses(
       });
 
       const withPool = await mergeConnectionPool(backend, statuses);
+      if (startedEpoch !== epoch) return snapshot.statuses;
       setSnapshot({
         state: 'ready',
         statuses: applyPendingHidden(withPool),
@@ -308,6 +319,7 @@ export async function loadAgentStatuses(
       });
 
       const enriched = await enrichWithLiveAuth(backend, withPool, opts.force === true);
+      if (startedEpoch !== epoch) return snapshot.statuses;
       const nextStatuses = applyPendingHidden(enriched.statuses);
       const next = {
         state: 'ready' as const,
@@ -320,6 +332,7 @@ export async function loadAgentStatuses(
       return nextStatuses;
     })
     .catch((error) => {
+      if (startedEpoch !== epoch) return snapshot.statuses;
       log.error('agent status load failed', { errorCode: errorCode(error) });
       if (isBackgroundRefresh) {
         // The last complete data remains a more truthful UI state than a
@@ -342,10 +355,11 @@ export async function loadAgentStatuses(
       throw error;
     })
     .finally(() => {
-      inflight = null;
+      if (inflight === request) inflight = null;
     });
+  inflight = request;
 
-  await inflight;
+  await request;
   return snapshot;
 }
 

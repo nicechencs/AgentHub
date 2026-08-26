@@ -34,15 +34,19 @@ updated: 2026-08-26
 
 ### O-51｜Agent 状态 Store 缺少 reset 后的异步隔离
 
-- **位置：** `src/app/runtime/agent-status-store.ts:77,288`
+- **位置：** `src/app/runtime/agent-status-store.ts`
+- **状态：已处理**
 - **问题：** reset 只清空 `inflight`，没有 epoch；旧 `listAgents()` 请求完成后仍可把旧 backend 数据写回新 Store。
+- **当前：** 与连接池 / 票夹一样按 epoch 丢弃过期写回；`finally` 只清理自己那次 inflight。
 - **建议：** 为请求记录开始时的 epoch，在所有成功和失败 continuation 写回前校验 epoch。
 - **影响：** 切换 backend、重新初始化或测试 reset 后可能出现旧数据污染。
 
 ### O-52｜Agent Catalog Store 缺少 reset 后的异步隔离
 
-- **位置：** `src/app/runtime/agent-catalog-store.ts:59,88`
+- **位置：** `src/app/runtime/agent-catalog-store.ts`
+- **状态：已处理**
 - **问题：** reset 后旧 catalog 请求仍可执行 `applyAgentCatalog` 和 `setSnapshot`，并改变全局 Agent 集合。
+- **当前：** catalog 有 epoch；`setBackend` / `resetBackend` 会一起清空 catalog。测试 setup 在 reset 之后会重新 seed。
 - **建议：** 增加 epoch；明确 `setBackend/resetBackend` 是否同时重置 catalog。
 - **影响：** 新 backend 可能被旧 catalog 覆盖。
 

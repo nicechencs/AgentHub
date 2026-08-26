@@ -33,6 +33,7 @@ let snapshot: AgentCatalogSnapshot = {
   hydrated: false,
 };
 
+let epoch = 0;
 const listeners = new Set<Listener>();
 
 function emit(): void {
@@ -57,6 +58,7 @@ export function subscribeAgentCatalog(listener: Listener): () => void {
 
 /** Test helper: clear store and product AGENTS list. */
 export function resetAgentCatalogStore(): void {
+  epoch += 1;
   applyAgentCatalog([]);
   snapshot = {
     status: 'idle',
@@ -72,6 +74,7 @@ export function resetAgentCatalogStore(): void {
  * Marks status ready.
  */
 export function seedAgentCatalog(entries: AgentCatalogEntryDto[]): void {
+  epoch += 1;
   applyAgentCatalog(entries);
   setSnapshot({
     status: 'ready',
@@ -86,6 +89,7 @@ export function seedAgentCatalog(entries: AgentCatalogEntryDto[]): void {
  * fall back to a static agent list.
  */
 export async function loadAgentCatalog(backend: Backend): Promise<AgentCatalogSnapshot> {
+  const startedEpoch = epoch;
   setSnapshot({
     status: 'loading',
     entries: snapshot.entries,
@@ -94,6 +98,7 @@ export async function loadAgentCatalog(backend: Backend): Promise<AgentCatalogSn
   });
   try {
     const entries = await backend.catalog.listAgentCatalog();
+    if (startedEpoch !== epoch) return snapshot;
     applyAgentCatalog(entries);
     const next: AgentCatalogSnapshot = {
       status: 'ready',
@@ -105,6 +110,7 @@ export async function loadAgentCatalog(backend: Backend): Promise<AgentCatalogSn
     log.info('agent catalog loaded', { count: entries.length });
     return next;
   } catch (e) {
+    if (startedEpoch !== epoch) return snapshot;
     log.error('agent catalog load failed', e);
     // Do not restore static AGENTS — leave product set empty / last good.
     applyAgentCatalog([]);
