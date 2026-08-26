@@ -49,6 +49,7 @@ import {
   retryTarget,
   sendBlockers,
 } from './chat-model';
+import { useChatPageChrome } from './use-chat-page-chrome';
 
 const STICK_THRESHOLD_PX = 80;
 
@@ -119,12 +120,19 @@ export function useChatPage() {
   const [sendingConversationId, setSendingConversationId] = useState<string | null>(null);
   const sendingConversationIdRef = useRef<string | null>(null);
   const [draft, setDraft] = useState('');
-  const [railOpen, setRailOpen] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [dangerConfirm, setDangerConfirm] = useState(false);
+  const {
+    railOpen,
+    setRailOpen,
+    settingsOpen,
+    setSettingsOpen,
+    dangerConfirm,
+    setDangerConfirm,
+    deleteConfirmId,
+    setDeleteConfirmId,
+    railQuery,
+    setRailQuery,
+  } = useChatPageChrome();
   const [switchingProvider, setSwitchingProvider] = useState(false);
-  const [railQuery, setRailQuery] = useState('');
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
