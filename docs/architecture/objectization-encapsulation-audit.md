@@ -51,7 +51,11 @@ updated: 2026-08-26
 | O-36 | CLI 切换确认曾 `.ok()` 吞掉列表读取错误，并自行拼接预览 | 已处理：读取失败返回错误；确认事实由 core `SwitchConfirmPreview` 生成。CLI 渲染英文；桌面端只把同一份事实译成界面文案 |
 | O-37 | CLI 多处重复解析 `--agent` | 已处理：共用 `agent_arg`；各命令错误原文保留 |
 | O-39 | mock `speaks` 与 core 对 GLM/DeepSeek 不一致 | 已处理：mock 补上 `openai-responses`。共用 `ticket-speaks.json`，core 与 mock 对照测试锁步 |
-| O-40–O-42、O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
+| O-40 | Mock 重复实现来源分类 | 部分处理：共用 `source-classify-contract.json`。core classify 与 mock 对照，缺产品失败。mock 仍自跑分类函数，未改为调 plan/apply |
+| O-41 | 连接流程 fixture 手工构造完整绑定 | 暂缓。整表绑定成功态重写不做 |
+| O-42 | Mock Ticket resolver 依赖过宽 | 暂缓。resolver 仍可读 accounts/providers/profiles 并调 plan/apply；本刀不扩、不重写绑定 |
+| O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
+| O-58 | 能力、安装渠道是手写生产镜像 | 部分处理：共用 `catalog-mirror-contract.json`。Agent / Capability / 本机渠道 id 缺项失败。未对照完整 schema 或能力文案 |
 | O-43 | 测试 fake 用 `_ => unsupported` 吞掉新 Capability | 已处理：`Capability::fake_state` 穷举所有变体；测试 fake 走该 helper |
 | O-46 | logging 自行打开 SQLite | 部分处理：启动窥探收到 `storage::peek_settings`；logging 不再手写 SQL。启动仍先于 Database 打开，不改 subscriber 生命周期 |
 | O-47 | Adapter 锁表随 profile id 永久增长 | 已处理：`lock_profile` 回收已无持有者的条目；Agent 锁仍按封闭枚举保留 |
@@ -449,8 +453,10 @@ updated: 2026-08-26
 #### O-40｜Mock 重复实现来源分类规则
 
 - **严重程度：中高**
-- **位置：** `src/dev/mocks/ticket.ts:121-245`；`src/dev/mocks/adapter/types.ts:59-117`；生产入口 `crates/agenthub-core/src/services/adapter_route_service/classify.rs:21-100`
+- **状态：部分处理**
+- **位置：** `src/lib/backend/contracts/source-classify-contract.json`；`src/dev/mocks/source-classify.ts`；生产入口 `crates/agenthub-core/src/services/adapter_route_service/classify.rs`
 - **问题：** mock 多处重复维护 Kimi、Anthropic、OpenAI、xAI、GLM、DeepSeek 的 preset、endpoint 和登录信息判断，生产侧另有一套实现。
+- **当前：** needles / tags / presets / 产品表与分类用例共用 JSON。core `classify_*_source_product` 与 mock `classifyAccountSource` / `classifyProviderSource` 对照；缺产品或缺用例失败。生产 classify 结果未改。mock 仍自跑分类，未改为调 plan/apply。
 - **建议：** mock 只读取共享分类 fixture/contract；规则判断由 core 的 plan/classify 结果提供，不在 mock 内复制业务分支。
 - **影响/风险：** 新增来源或路线时测试可能继续通过，但与真实后端分类不一致。
 

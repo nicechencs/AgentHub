@@ -211,3 +211,5 @@ fn native_command_display(agent: AgentId) -> (&'static str, Option<String>) {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod catalog_mirror;

@@ -53,8 +53,10 @@ updated: 2026-08-26
 
 ### O-58｜能力、安装渠道和配置 schema 是手写生产镜像
 
-- **位置：** `src/dev/mocks/capabilities.ts`、`src/dev/mocks/fixtures/install-catalog.ts`、`agent-catalog.ts`、`config.ts`，以及对应 Core catalog/config 测试
+- **位置：** `src/lib/backend/contracts/catalog-mirror-contract.json`；`src/dev/mocks/capabilities.ts`、`src/dev/mocks/fixtures/install-catalog.ts`、`agent-catalog.ts`、`config.ts`，以及对应 Core catalog/config 测试
+- **状态：部分处理**
 - **问题：** Agent 集合、渠道、版本、字段和能力分散维护，已有契约测试仍主要验证局部字段。
+- **当前：** Agent id、Capability 键、本机安装渠道 id 与 core `AgentId::ALL` / `Capability::ALL` / `list_install_catalog` 对照，缺项失败。未对照完整 config schema 或能力 reason 文案。
 - **建议：** 从共享契约 JSON/生成产物获得 fixture，至少增加完整 Agent/channel/schema/capability 对照测试。
 - **影响：** Vitest/E2E 可能通过，但 Tauri/Core 实际行为已漂移。
 

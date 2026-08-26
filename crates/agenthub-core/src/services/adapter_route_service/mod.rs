@@ -9,6 +9,8 @@ mod plan;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod classify_contract;
 
 // The following imports/re-exports are kept for the child `tests` module.
 #[allow(unused_imports)]
