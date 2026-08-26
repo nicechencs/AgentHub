@@ -22,6 +22,7 @@ pub mod plugin_inventory;
 pub mod project_service;
 pub mod provider_identity;
 pub mod provider_service;
+pub mod route_pool_service;
 pub mod run_service;
 pub mod settings_service;
 pub mod skill_market;
@@ -63,6 +64,7 @@ pub use plugin_inventory::{
 };
 pub use project_service::ProjectService;
 pub use provider_service::{ProviderLiveConfigSnapshot, ProviderLiveSagaGuard, ProviderService};
+pub use route_pool_service::RoutePoolService;
 pub use run_service::RunService;
 pub use settings_service::SettingsService;
 pub use skill_market::{

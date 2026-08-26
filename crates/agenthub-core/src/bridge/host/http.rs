@@ -64,7 +64,13 @@ async fn list_models(State(gateway): State<Gateway>, headers: HeaderMap) -> Resp
         Ok(state) => state,
         Err(response) => return response,
     };
-    let listed = gateway.listed_models_with_backup(&state);
+    let listed = if let Some(index) = &state.route_index {
+        index.list_models(DownstreamSurface::endpoint_key(
+            state.upstream.local_surface,
+        ))
+    } else {
+        gateway.listed_models_with_backup(&state)
+    };
     // Synthesized from the edge mapping table at start; never proxied.
     if listed.is_empty() {
         tracing::info!(

@@ -27,6 +27,14 @@ impl DownstreamSurface {
         }
     }
 
+    pub(super) fn endpoint_key(local: BridgeLocalSurface) -> &'static str {
+        match local {
+            BridgeLocalSurface::Responses => "responses",
+            BridgeLocalSurface::Messages => "messages",
+            BridgeLocalSurface::ChatCompletions => "chat_completions",
+        }
+    }
+
     pub(super) fn op(self) -> &'static str {
         match self {
             Self::Responses => "responses",

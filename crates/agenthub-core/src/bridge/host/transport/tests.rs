@@ -47,6 +47,7 @@ fn listener_state(
         mapping_source: None,
         mapping_target: None,
         custom_openai: false,
+        route_index: None,
         account_picker: crate::bridge::runtime::BridgeStartSpec::new(
             "transport-test",
             0,

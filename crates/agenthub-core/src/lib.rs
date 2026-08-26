@@ -34,8 +34,8 @@ use services::{
     check_agent_updates as probe_agent_updates, install_runtime_system, invalidate_latest_cache,
     AccountService, AdapterApplyService, AdapterBridgeService, AdapterRouteService, AgentService,
     AgentVisibilityService, BackupService, ChatService, ConnectionService, EnvService,
-    ProjectService, ProviderService, RunService, SettingsService, SkillService, TicketBindService,
-    TicketReadService, UsageService,
+    ProjectService, ProviderService, RoutePoolService, RunService, SettingsService, SkillService,
+    TicketBindService, TicketReadService, UsageService,
 };
 use storage::{ChatRepo, Database};
 use utils::command_exec::SystemCommandExecutor;
@@ -87,6 +87,8 @@ pub struct AgentHub {
     pub usage: UsageService,
     /// Soft-hide preference (UI only; detect / install unchanged).
     pub agent_visibility: AgentVisibilityService,
+    /// Flag-gated RoutePool persistence (`feature.route_pool_v2`). UI hidden.
+    pub route_pools: RoutePoolService,
 }
 
 impl AgentHub {
@@ -170,6 +172,7 @@ impl AgentHub {
         let agent_visibility = AgentVisibilityService::new(data_dir.clone());
         let usage =
             UsageService::with_live_scope(db.clone(), agent_visibility.clone(), agents.clone());
+        let route_pools = RoutePoolService::new(db.clone());
         tracing::info!(
             target: logging::targets::BOOT,
             module = logging::targets::BOOT,
@@ -202,6 +205,7 @@ impl AgentHub {
             projects,
             usage,
             agent_visibility,
+            route_pools,
         })
     }
 
