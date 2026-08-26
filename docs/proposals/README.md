@@ -26,7 +26,7 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [adapter-sidecar.md](adapter-sidecar.md) | proposed | Could a user-level process own the long-lived local route runtime while GUI and CLI remain clients? |
 | [tray-background-modes.md](tray-background-modes.md) | proposed | Could closing the window reduce WebView memory without changing route ownership or exit semantics? |
 | [modularity.md](modularity.md) | proposed | Which single-source and use-case boundaries should be tightened before any larger process change? |
-| [plugin-management.md](plugin-management.md) | proposed | Could AgentHub manage per-agent MCP live config (and later vendor plugin bundles) without becoming an MCP runtime? |
+| [plugin-management.md](plugin-management.md) | proposed | Could AgentHub list and manage per-agent plugin/extension packs (not MCP servers) via official CLIs, with a Routes-like workbench? |
 
 ## Proposal rules
 

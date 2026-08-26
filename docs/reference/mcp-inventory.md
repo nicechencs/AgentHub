@@ -9,7 +9,7 @@ updated: 2026-08-26
 
 # MCP inventory
 
-本页是 `list_mcp_inventory` 的现行契约。实现在 `crates/agenthub-core/src/services/mcp_inventory.rs`，Tauri command 为 `list_mcp_inventory`。这是检查，不是 `Capability::Mcp` 管理。
+本页是 `list_mcp_inventory` 的现行契约。实现在 `crates/agenthub-core/src/services/mcp_inventory.rs`，Tauri command 为 `list_mcp_inventory`。这是 **MCP server 条目** 的检查，不是插件（extension / plugin）包，也不是 `Capability::Mcp` 管理。插件包见 [Agent 插件表面](agent-plugin-surfaces.md) 与 [插件管理提案](../proposals/plugin-management.md)。
 
 ## 返回结构
 

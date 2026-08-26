@@ -1,148 +1,206 @@
 ---
-title: 插件与 MCP 管理
+title: 插件（extension / plugin）管理
 type: proposal
 status: proposed
 owner: maintainers
 updated: 2026-08-26
 ---
 
-# 插件与 MCP 管理
+# 插件（extension / plugin）管理
 
 > Status: proposed
 >
-> 这是候选模块，不是实施承诺。在 owner、兼容计划、失败行为和测试批准之前，不得把本页复制进当前功能列表，也不得把 `Capability::Mcp` 改成 Full。
+> 产品对象是各家 **plugin / extension 包**，不是 MCP server。`/mcp` 保持只读 MCP 清单。在 owner、兼容计划、失败行为和测试批准之前，不得把本页写成当前功能，也不得新增未实现的能力矩阵 Full。
+
+调研日期：2026-08-26。对照的是各家官方 CLI/文档与同类桌面管理器，不是实施承诺。
 
 ## 1. 当前基线
 
-- Skills 已由 `SkillService` 管理：共享源 `~/.agents/skills/`，投影到各 Agent 技能目录。见 [插件、MCP 与技能](../concepts/plugins-and-mcp.md)。
-- MCP 页 `/mcp` 只调用 `list_mcp_inventory`。扫描位置和缺口见 [MCP inventory](../reference/mcp-inventory.md)。
-- 全部内置 Agent 的 `Capability::Mcp` 都是 Planned（待验证接入）。inventory 明确不 `require(Mcp)`。
-- 厂商 Plugin 市场（Claude `/plugin`、Codex `/plugins`、Grok `plugin`）未接线。
-- 侧栏工作区固定包含 MCP，位于 Skills 与 Projects 之间。设置里没有 MCP/插件入口开关。页面是单栏表格，行内展开 snippet。
-- 路由页已是左右分栏，且设置「显示路由页面」可隐藏管理区入口、不禁用 `/routes`。
+- AgentHub **没有**插件页。工作区是 Chat / Agents / Skills / MCP / Projects。MCP 在 Skills 与 Projects 之间，单栏只读表。
+- 路由页已是左右分栏；设置「显示路由页面」可藏入口、不禁用 `/routes`。
+- Skills 已由 `SkillService` 管理。MCP 由 `list_mcp_inventory` 只读扫描。二者都不是插件包。
+- 无 `Capability::Plugins`。`Capability::Mcp` 仍是 Planned，且只约束 MCP 写入，不约束插件。
+- 厂商侧已经存在完整插件生命周期（见 [Agent 插件表面](../reference/agent-plugin-surfaces.md)）：Claude `claude plugin`、Codex `codex plugin`、Grok `grok plugin`、Pi `pi install`。
 
 ## 2. 候选目标
 
-在 AgentHub 里提供一个与 Routes 同构的**插件工作台**：只管理各 Agent 已验证的 MCP live 配置（以及后续单独切片的厂商 Plugin 包），让用户能看见、打开详情、在受测 Agent 上添加/移除/开关，而不把 AgentHub 做成第二套 MCP runtime。
+新增与 Routes 同构的 **插件工作台**（建议路径 `/plugins`）：
 
-产品对象默认是 **MCP server 条目**。页面中文可称「插件」，英文 `Plugins`，说明里保留 MCP。厂商 Plugin 包（marketplace bundle）不是第一刀。
+1. 左右两栏：左为已安装/可用列表，右为包详情（组件清单、范围、版本、路径）。
+2. 设置 → 偏好控制侧栏「插件」开关；关闭只藏入口，不禁用页面。
+3. 打开时工作区顺序为 `Chat → Agents → Skills → MCP → Projects → 插件`（插件在 **Projects 下方**）。MCP 项保持原意，不改名。
 
-## 3. 建议边界
+管理动作对齐厂商：浏览、安装、启用/停用、更新、卸载。AgentHub **不**运行插件代码，**不**当 MCP host，**不**合并各家市场为一个商店。
+
+## 3. 同类怎么管（2026-08 对照）
+
+三类产品，只抄第一类的纪律：
+
+| 模式 | 代表 | 真源 | AgentHub |
+|---|---|---|---|
+| **A. 写各家 live / 调官方 CLI** | Claude `/plugin`、Codex `/plugins`、Grok plugin TUI、`claude-code-marketplace`（全部委托 `claude plugin`）、Pi `pi install` | 各客户端自己的 cache + enabled 列表 | **采用**：插件页是这一类 |
+| **B. 本地网关，装一次同步到所有客户端** | mcpx、mcp-mux、Brightwing | 管理器自己的 registry + proxy | **不采用**：那是 MCP 网关，且常伴随密钥另存 |
+| **C. 自己当 host，启停 stdio 进程** | Cline MCP 面板、Goose Extensions、simple-mcp-manager | 本进程拉起 server | **不采用**：AgentHub 不是 MCP runtime；Goose 把 MCP 叫 extension，用词不要学 |
+
+各家 **plugin 包** 的共同点（A 类里要对齐的）：
+
+| 能力 | Claude | Codex | Grok | Pi |
+|---|---|---|---|---|
+| 安装 | `plugin install name@market` | `codex plugin add` / `/plugins` | `grok plugin install` | `pi install npm:\|git:` |
+| 卸载 | `plugin uninstall` | `codex plugin remove` | `grok plugin uninstall` | `pi remove` |
+| 启用/停用 | `enabledPlugins`；停用不等于卸载 | config 里 toggle；Space | `plugin enable/disable`；`[plugins] enabled/disabled` | 装上即加载；`/reload` |
+| 更新 | `plugin update`；市场 `marketplace update`；可开机自动更 | marketplace upgrade；cache 按 version 分目录 | `plugin update [name]`；市场 `marketplace update` | `pi update --extensions`；钉版本跳过 |
+| 检测更新 | 刷新 marketplace catalog，再比已装版本 | 市场 Ctrl+U / upgrade | 市场 `r` 刷新、`u` 更新插件 | `pi update` / 第三方 `/zmarketplace updates` |
+| 目录 | `~/.claude/plugins/cache`；数据 `plugins/data/{id}/` | `~/.codex/plugins/cache/$market/$plugin/$ver/` | `~/.grok/plugins/` | Pi settings 里的 package 列表 + npm/git 缓存 |
+| 信任 | 安装即加载组件；MCP 随插件启停 | 市场策略 `authentication` | **enable ≠ trust**：hooks/MCP/LSP 要 `--trust` | 扩展可执行任意代码，安装前审查 |
+| 范围 | user / project / local / managed | 全局 cache + 仓库 marketplace | cli / project / user | user settings；`-e` 一次性 |
+
+VS Code / Cursor IDE 的扩展市场是 IDE 插件，不是 `cursor-agent` CLI 的包系统。AgentHub 的 Cursor 适配器是 CLI：**不要**把 VS Code Marketplace 当成 Cursor Agent 插件源。
+
+Cline / Continue Hub / 官方 `registry.modelcontextprotocol.io` 管的是 **MCP 发现**，留给 `/mcp` 以后的提案，不进本插件页。
+
+**从同类抄过来的纪律**
+
+1. 启用/停用与卸载分开（Claude、Grok、Codex、VS Code 都如此）。
+2. 写前备份、失败可回滚（mcp-manager 的 apply 流程；Skills 已有同类纪律）。
+3. 能调官方 CLI 就不要自己改 cache 目录（`claude-code-marketplace` 只做 UI，操作全部 `claude plugin`）。
+4. 详情展示包内组件（skills / commands / agents / hooks / 附带 MCP），而不是把附带 MCP 提升成插件列表的主键。
+5. 更新检测 = 刷新市场目录 + 比较已装版本，不是 `mcp doctor` 连通性。
+6. 默认不扫项目级未信任目录里的插件源。
+
+**明确不抄**
+
+- 自建跨 Agent 插件商店或 Smithery 一键托管。
+- 本地 MCP 网关 / 加密凭据库（产品边界：不做落盘加密）。
+- 在 AgentHub 进程里启动插件或 MCP。
+- 把 Goose「extension = MCP」的叫法引进 UI。
+
+## 4. 建议边界
 
 ### 做
 
-- 补齐只读 inventory，使其与已验证的用户级 live 文件一致（至少补 Grok `[mcp_servers]` TOML）。
-- `/mcp` 改为左右分栏工作台：左列表、右详情（脱敏 snippet、来源路径、打开目录）。
-- 设置 → 偏好增加「显示插件页面」，持久化方式对齐 `routesNavVisible`。关闭只藏侧栏入口，不禁用页面、不改 `/mcp`。
-- 侧栏工作区在开关打开时把插件放在 **Projects 下方**：`Chat → Agents → Skills → Projects → 插件`。
-- 每个 Agent 一个稀疏 **MCP 端口**（paths + parse + 可选 write），注册在 `integrations/agents/<key>/`，平台 service 不再 `match AgentId` 堆新分支。今天的 `source_locations` 集中 match 是过渡实现，写入面不得再扩大这种 match。
-- 写入走显式 command（plan/apply 风格的「预览 → 确认 → 写 live → 刷新」），写前备份该 Agent 的 live 文件。失败可重试，不 force 删。
-- 密钥不进 UI；env/headers 只允许引用已有环境变量名或显示「已设置 / 未设置」。
+- 新路由 `/plugins`，全高 `WorkbenchSplitPage`。
+- 设置 `pluginsNavVisible`，对齐 `routesNavVisible`；默认显示。
+- 侧栏工作区在开关打开时把插件放在 Projects **下面**。
+- 每家一个稀疏 **Plugin 端口**：list / details / 可选 install、enable、disable、update、uninstall。优先封装官方 CLI 的 `--json` 输出。
+- 新增能力键须等实现 PR 才加进 `Capability`（穷尽 match）。未接线的 Agent 标 Unsupported 或 Planned，带原因。
+- 右栏只读展示：名称、市场、版本、范围、启用、信任、路径、组件列表。无密钥。
+- 破坏性动作（卸、装、更新）预览 → 确认 → 调 CLI → 刷新。失败可重试。
 
 ### 不做
 
-- 不把 MCP server 跑在 AgentHub 进程里，不做公网网关。
-- 不把 Skills 市场、Claude/Codex/Grok plugin marketplace 合成一个商店。
-- 不扫描未信任的项目级 MCP 文件（stdio 会拉起进程），除非单独做「仅展示、默认不加载」切片并写明信任模型。
-- 不把 DSH Cordis 插件、Pi `pi install` 扩展、Cursor IDE 私有库伪装成 MCP。
-- 不为 Kimi 或未验证 Agent 伪造 Full。
-- 不把凭据落盘加密或国产 OAuth 转 API 绑进本模块。
-- 不引入动态插件 ABI、第二套领域库、微服务。
+- 不改 `/mcp` 的产品含义，不把它改名为插件。
+- 不把 Skills 市场、MCP registry、各家 plugin marketplace 合成一个目录。
+- 不给 Cursor Agent、Kimi、WorkBuddy 伪造插件商店。
+- 不把 DSH Cordis 树、Pi `pi install` 扩展、Claude plugin 当成同一种包格式硬转。
+- 不为插件引入 AgentHub 自己的 `~/.agents/plugins` 真源（那是 Skills 模型）。
+- 不把凭据加密或国产 OAuth 绑进来。
 
-## 4. 模块形状（自顶向下）
+## 5. 模块形状
 
 ```text
-页面 /mcp（WorkbenchSplitPage）
-  → lib/api/mcp façade
-  → backend.mcp port
+页面 /plugins（WorkbenchSplitPage）
+  → lib/api/plugins façade
+  → backend.plugins port
   → Tauri commands
-  → core McpInventoryService / 未来 McpWriteService
-       ↳ AgentMcpContribution（每 Agent 稀疏端口）
-       ↳ live 文件 + 脱敏
-       ↳ BackupService（写前快照）
+  → core PluginInventoryService / PluginApplyService
+       ↳ AgentPluginContribution（每 Agent）
+            优先：官方 CLI --json
+            其次：已验证的 live 文件（enabledPlugins、cache 清单）
+       ↳ BackupService（改 live 设置前快照）
 ```
 
-| 层 | 职责 |
-|---|---|
-| UI | 列表、筛选、详情、设置开关、侧栏顺序。不解析 TOML/JSON |
-| contracts | inventory DTO、write plan/apply DTO、错误码 |
-| core service | 编排扫描、预览 diff、备份、写入、刷新 |
-| contribution | 该 Agent 的路径、格式、upsert/remove、可选 CLI 探测 |
-| 厂商 CLI | 可选诊断（如 `grok mcp doctor`）；不能当唯一真源，live 文件才是真源 |
+Live 文件仍是各 Agent 的。AgentHub 只编排与展示。CLI 不可用时 fail-closed，不手改 cache 冒充已装。
 
-Skills 的共享源模型**不**套用到 MCP：MCP 没有 `~/.agents/mcp/` 真源。一条 MCP 配置属于某一个 Agent 的 live 文件。跨 Agent 复用是「按格式复制条目」的显式动作，不是投影链接。
+## 6. 按 Agent 成熟度
 
-## 5. 写入策略（按 Agent 成熟度）
-
-第一刀只对 **live 文件形状已有测试** 的 Agent 开放 apply：
-
-| 优先级 | Agent | 写什么 | 依据 |
+| 优先级 | Agent | 只读 list 依据 | 写入 |
 |---|---|---|---|
-| P0 只读补齐 | Grok | 读取 `config.toml` `[mcp_servers]` | 官方契约已明确，scanner 现在漏了 |
-| P1 写入 | Claude | upsert/remove `mcpServers` 键 | JSON 形状已有 inventory 测试 |
-| P1 写入 | Codex | upsert/remove `[mcp_servers.name]` | TOML 形状已有 inventory 测试 |
-| P1 写入 | Cursor | upsert/remove `mcpServers` | JSON 与 Claude 同类 |
-| P2 写入 | Grok | upsert/remove `[mcp_servers]` | 与 Codex 同类 TOML |
-| P2 写入 | Pi | upsert `mcp.json` | 路径已探，需锁定发行版 schema fixture |
-| P3 | WorkBuddy | `.mcp.json` | 需 round-trip 测试 |
-| 关闭 | Kimi、DSH MCP | 保持探测或 Unsupported | 无稳定契约 |
-| 另开提案 | Claude/Codex/Grok Plugin 包 | marketplace install/update | 与 MCP 条目不同生命周期 |
+| P0 | Claude | `claude plugin list --json`；fallback `~/.claude/plugins/` + `enabledPlugins` | 封装 `claude plugin install/uninstall/update` 与 enable 设置 |
+| P0 | Grok | `grok plugin list --json`；`~/.grok/plugins/` | `grok plugin install/uninstall/update/enable/disable` |
+| P1 | Codex | `codex plugin list --json`；`~/.codex/plugins/cache/` | `codex plugin add/remove`；enable 走 config |
+| P1 | Pi | `pi list` / settings 里的 packages | `pi install` / `pi remove` / `pi update --extensions` |
+| P2 | DSH | 仅当 Cordis 插件清单有稳定只读形状 | 默认 Unsupported，不映射成 Claude 式 marketplace |
+| 关闭 | Cursor / Kimi / WorkBuddy | 无已验证 CLI 插件系统 | 保持 Unsupported |
 
-Apply 成功后只刷新 inventory，不启停 MCP 进程；进程由目标 Agent 下次会话拉起。Grok `mcp doctor` 可以作为可选「检查」动作，失败时显示厂商输出的脱敏摘要。
+附带 MCP 只在详情里列为组件。增删 MCP 条目继续走以后的 MCP 提案，不在本模块。
 
-## 6. UI 切片（与路由对齐）
+## 7. 更新怎么检测
 
-1. `/mcp` 进入 `isWorkbenchSplit`：紧凑页头 + Agent 条 + 左列表 + 右 `InspectSurface`。
-2. 行点击或「详情」打开右栏；去掉行内 `DetailsToggle` 展开。
-3. 右栏：名称、启用状态、传输、命令/地址、来源路径、打开目录、脱敏 snippet。无密钥。
-4. 空/加载/错误留在左栏。
-5. 设置偏好：「显示插件页面」，文案对齐路由（关入口不关页面）。
-6. 默认显示。打开时侧栏在 Projects 下。
-7. 路径保持 `/mcp`。中文导航「插件」，英文 `Plugins`。
+没有跨厂商协议。插件页只做三档，且必须在 UI 上分开：
 
-在写入面落地前，工作台仍是只读详情。不要先做灰掉的「添加」按钮。
+1. **市场目录过期**：`claude plugin marketplace update`、`grok plugin marketplace update`、Codex marketplace upgrade。这是「有新包可装」，不是「已装包已升级」。
+2. **已装包可升级**：`plugin update` / `pi update --extensions`。钉死版本的 Pi npm spec 应显示「已钉死」，不要当失败。
+3. **健康/信任**：Grok 未 trust 则 hooks/MCP 为 blocked；这不是版本问题。
 
-## 7. 候选切片
+禁止用 MCP `doctor` 或进程是否在跑来代表插件更新。
 
-不是排期，是评估顺序：
+## 8. 行动任务（可独立合入）
 
-### A. 文档与盘点真源
+每个 PR 只做一列范围。合入 `dev`，不碰 `release`。未列的文件不要改。
 
-现行概念/参考页（本提案的前置）保持与源码一致。补 Grok TOML 扫描和测试。不改能力矩阵。
+### PR-0 文档纠偏（本提案）
 
-### B. 只读工作台
+- **做完标准**：现行文档把「插件」定义为 extension/plugin 包；`/mcp` 不再被叫成插件页；`pnpm check:docs` 通过。
+- **不包含**：代码、能力键、新路由。
 
-分栏 UI、设置开关、侧栏顺序、page-patterns 更新为 current。仍只读。
+### PR-1 只读 inventory（Claude + Grok）
 
-### C. 单 Agent 写入狗粮
+- **做**：core 扫描/CLI 列表；脱敏路径；fixture。前端可暂不接。
+- **测试**：无 CLI 时 fail-closed；假 JSON 列表；不把 MCP `mcpServers` 算作插件行。
+- **点测**：本机已装 Claude/Grok 时 CLI 列表与目录一致。
+- **不做**：写入、Codex/Pi、UI。
 
-先选 Claude 或 Codex 一条 JSON/TOML upsert+remove：预览 diff、写前备份、失败重试、inventory 刷新。契约测试锁 round-trip 与脱敏。
+### PR-2 插件页壳 + 导航
 
-### D. 端口化
+- **做**：`/plugins` 左右分栏；设置开关；侧栏在 Projects 下；空/加载/错误。接 PR-1 的只读数据。
+- **测试**：`filterWorkspaceNavItems`；settings 文案；layout 用 `WorkbenchSplitPage`。
+- **点测**：开关开/关、顺序在 Projects 下、点行出详情、`/mcp` 仍在且名称仍是 MCP。
+- **不做**：安装按钮。
 
-把 `source_locations` 的集中 match 收成 contribution。新 Agent 按 [添加 Agent](../guides/adding-an-agent.md) 注册 mcp 端口；未注册则只有探测或隐藏写入。
+### PR-3 启用/停用（不卸载）
 
-### E. 厂商 Plugin 包（可选，另开）
+- **做**：对 PR-1 已接线 Agent 调官方 enable/disable；写前备份 settings/config。
+- **测试**：round-trip；CLI 失败不改文件。
+- **点测**：停用后厂商 CLI 仍 list 得到、状态为 disabled；MCP 页不因此丢无关 server。
 
-仅当 C/D 稳定且用户明确要商店：只包 Claude 或 Grok 之一的 marketplace，fail-closed 其余。不得阻塞 MCP 条目管理。
+### PR-4 安装 / 卸载（单市场狗粮）
 
-## 8. 决策门槛
+- **做**：先 Claude 官方市场或 Grok 本地/git 源之一。预览组件清单 → 确认 → CLI → 刷新。
+- **测试**：信任/确认失败停在预览；卸载不删 `plugins/data` 除非用户勾选（Grok `--keep-data`）。
+- **点测**：装一个无密钥官方示例包，再卸掉。
+- **不做**：自建市场、跨 Agent 复制包。
 
-提升为 current 之前必须同时成立：
+### PR-5 更新
 
-- inventory 对每个开放写入的 Agent 有脱敏 fixture 和 round-trip 测试。
-- 写失败不留下半份 JSON/TOML；备份可恢复。
-- `Capability::Mcp` 仅对**已开放写入**的 Agent 升 Partial/Full，其余保持 Planned/Unsupported。
-- 非 Tauri 生产页明确 unavailable，不静默 mock 写入。
-- `pnpm check:docs` 与相关 cargo/vitest 过滤测试通过。
-- 点测：开/关侧栏开关、Projects 下入口、打开详情、对一个已接线 Agent 添加再删除一条无密钥 stdio server。
+- **做**：`marketplace update` 与 `plugin update` 分成两个动作。钉版本显示清楚。
+- **测试**：无新版本 = 已是最新，不是错误。
+- **点测**：刷新市场后列表变化；更新已装包后版本号变。
 
-## 9. 相关页面
+### PR-6 Codex + Pi 端口
+
+- **做**：同样的 list/enable/install 端口，schema 各写各的。
+- **不做**：把 Pi npm 包硬转成 Claude `name@marketplace`。
+
+### PR-7（另开，可不上）MCP 页补 Grok TOML 等
+
+与插件页解耦。需要时从 [MCP inventory](../reference/mcp-inventory.md) 缺口单开 PR。
+
+## 9. 决策门槛
+
+插件页升为 current 之前：
+
+- 至少一家 Agent 的 list/enable/disable 有 CLI 或 live-file fixture，且点测过。
+- 卸载与停用行为与厂商一致。
+- `/mcp` 文案与导航仍表示 MCP。
+- 非 Tauri 生产页对写入 unavailable。
+- 相关 cargo/vitest/`pnpm check:docs` 通过。
+
+## 10. 相关页面
 
 - [插件、MCP 与技能](../concepts/plugins-and-mcp.md)
-- [MCP inventory](../reference/mcp-inventory.md)
 - [Agent 插件表面](../reference/agent-plugin-surfaces.md)
+- [MCP inventory](../reference/mcp-inventory.md)
 - [UI 页面模式](../ui/page-patterns.md)
-- [添加 Agent](../guides/adding-an-agent.md)
 - [产品边界](../decisions/product-boundaries.md)
 ---

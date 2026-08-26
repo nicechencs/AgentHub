@@ -9,15 +9,15 @@ updated: 2026-08-26
 
 # Agent 插件表面
 
-本页对照八个内置 Agent 在**厂商侧**如何安装、卸载、存放和更新扩展。来源是各家公开文档、本机可观察路径，以及 AgentHub adapter / inventory 已编码的路径。AgentHub 当前只对 MCP 做只读扫描、对 Skills 做完整管理；厂商 Plugin 市场未接线。能力等级以 [能力参考](capabilities.md) 为准。
+本页对照八个内置 Agent 在**厂商侧**的两类扩展：`plugin` / `extension` **包**，以及单独配置的 **MCP server**。AgentHub 计划中的「插件」页只对前者；`/mcp` 只读页只对后者。来源是各家公开文档、本机路径和 adapter。能力等级以 [能力参考](capabilities.md) 为准。
 
 术语：
 
-- **MCP server**：Agent 作为客户端连接的外部工具进程或 URL。
-- **Plugin 包**：可安装的发行单元，常常内含 MCP、skills、commands、hooks。
+- **插件包（plugin / extension）**：可安装的发行单元，常含 skills、commands、agents、hooks，**有时附带** MCP。
+- **MCP server**：Agent 作为客户端连接的外部工具进程或 URL；不是插件页的主键。
 - **技能投影**：AgentHub 把 `~/.agents/skills/<id>` 链到或复制到 Agent 自己的 skills 目录。
 
-未验证的单元格写「未验证」，不要据此把 `Capability::Mcp` 改成 Full。
+未验证的单元格写「未验证」。不要据此把 `Capability::Mcp` 改成 Full，也不要在实现前新增未接线的插件能力 Full。Goose 将 MCP 称为 extension，那不是本表的「插件包」。
 
 ## 总览
 
@@ -122,7 +122,7 @@ updated: 2026-08-26
 - 已观察/文档化的用户文件：`~/.pi/agent/mcp.json`（`PI_CODING_AGENT_DIR` 可改）。形状多为 `mcpServers`。
 - 发行版差异大：有的用内置 MCP，有的用 `pi-mcp-adapter` 等扩展；热加载、`/mcp` 命令、import cursor/claude 配置都不是所有 Pi 构建都有。
 - AgentHub 同时探 `mcp.json` 与 `.mcp.json`。项目级 `.pi/mcp.json` 不扫。
-- `pi install npm:…` 装的是 **Pi 扩展**，不要当成 MCP server 安装。
+- `pi install npm:…` / `git:…` 装的是 **Pi extension 包**（插件），不是 MCP server。卸载 `pi remove`，更新 `pi update --extensions`。这是 AgentHub 插件页应对齐的 Pi 表面。
 
 **技能**
 
@@ -165,7 +165,11 @@ Skills 已有完整写入面，MCP 管理应抄它的纪律，而不是抄它的
 
 ## 更新检测（厂商侧）
 
-没有跨 Agent 的统一「MCP 有新版本」协议。实际出现的是四类：
+**插件包**与 **MCP server** 不是同一套检测。
+
+插件包：刷新 marketplace catalog，再 `plugin update` / `pi update --extensions`。钉死版本不是失败。
+
+MCP server 没有跨 Agent 的统一「有新版本」协议。实际出现的是四类：
 
 1. **每次启动拉包**：`npx -y pkg@latest` / `uvx` 浮动标签。
 2. **钉死版本**：改 config 里的包名或 git ref。

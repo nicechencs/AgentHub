@@ -29,7 +29,8 @@ updated: 2026-08-26
 | live 配置 | live files | 第三方 Agent 实际读取的配置/登录文件 |
 | 数据目录 | `data_dir` / `AGENTHUB_HOME` | AgentHub 自己的 SQLite、备份、日志和缓存根目录 |
 | 共享技能真源 | `~/.agents/skills` | 跨 Agent 的技能源；各 Agent 可有自己的投影目录 |
-| 插件 / MCP | MCP server 条目（当前只读 inventory）；厂商 Plugin 包未接线 | 页面可称插件；不要与 Skills 或某家 `/plugin` 市场混成同一模块 |
+| 插件 | 各家 `plugin` / `extension` 包（Claude `/plugin`、Codex `/plugins`、Grok `plugin`、Pi `pi install`） | 可安装的发行单元，常含 skills/commands/hooks，有时附带 MCP。**不是** MCP server 条目，也不是 Skills 页 |
+| MCP | MCP server 条目；`/mcp` 只读 inventory | Agent 作为客户端连接的外部工具；`Capability::Mcp` 仍为 Planned |
 | mock backend | `src/dev/mocks` | 仅供 `pnpm dev:mock` 和 Vitest 使用的浏览器实现 |
 | Tauri adapter | `src/lib/backend/tauri` | 生产桌面 backend；唯一允许直接 `invoke` 的前端边界 |
 | fixture | test fixture | 脱敏、固定、最小的测试输入，不是用户数据备份 |
