@@ -88,7 +88,8 @@ pub struct AgentHub {
     /// Soft-hide preference (UI only; detect / install unchanged).
     pub(crate) agent_visibility: AgentVisibilityService,
     /// Flag-gated RoutePool persistence (`feature.route_pool_v2`).
-    /// Resolver attach is `feature.route_index_v2`. UI hidden.
+    /// Resolver attach is `feature.route_index_v2`. Mixed-provider composite
+    /// routes are `feature.mixed_provider_pool`. UI hidden.
     pub(crate) route_pools: RoutePoolService,
 }
 

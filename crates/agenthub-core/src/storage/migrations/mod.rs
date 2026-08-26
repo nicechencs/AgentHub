@@ -60,6 +60,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00018_usage_cache_read_write",
         include_str!("00018_usage_cache_read_write.sql"),
     ),
+    (
+        "00019_model_route_rules",
+        include_str!("00019_model_route_rules.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

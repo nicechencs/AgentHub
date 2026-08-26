@@ -7,8 +7,8 @@ use rusqlite::{
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AdapterSourceKind, AgentId, RouteDownstreamDialect, RouteDownstreamSurface, RouteMember,
-    RoutePool, RouteSchedulePolicy,
+    model_route_id_is_exact, AdapterSourceKind, AgentId, ModelRouteRule, RouteDownstreamDialect,
+    RouteDownstreamSurface, RouteMember, RoutePool, RouteSchedulePolicy,
 };
 use crate::storage::Database;
 
@@ -23,6 +23,12 @@ const POOL_COLUMNS: &str = r#"
 
 const MEMBER_COLUMNS: &str = r#"
     id, route_pool_id, source_kind, source_id, enabled, priority, position,
+    created_at, updated_at
+"#;
+
+const RULE_COLUMNS: &str = r#"
+    id, route_pool_id, public_model, endpoint_family, upstream_provider,
+    upstream_dialect, upstream_model, priority, equivalent_group, enabled,
     created_at, updated_at
 "#;
 
@@ -212,6 +218,68 @@ impl RoutePoolRepo {
         })
     }
 
+    pub fn add_rule(&self, rule: &ModelRouteRule) -> Result<ModelRouteRule> {
+        validate_rule(rule)?;
+        self.mutate(|conn| {
+            if get_pool_conn(conn, &rule.route_pool_id)?.is_none() {
+                return Err(AppError::NotFound(format!(
+                    "route pool not found: {}",
+                    rule.route_pool_id
+                )));
+            }
+            insert_rule_conn(conn, rule).map_err(map_rule_constraint)?;
+            bump_revision_conn(conn, &rule.route_pool_id)?;
+            get_rule_conn(conn, &rule.id)?.ok_or_else(|| {
+                AppError::message("db.model_route_rule", "rule missing after create")
+            })
+        })
+    }
+
+    pub fn get_rule(&self, id: &str) -> Result<Option<ModelRouteRule>> {
+        self.db.with_conn(|conn| get_rule_conn(conn, id))
+    }
+
+    pub fn list_rules(&self, pool_id: &str) -> Result<Vec<ModelRouteRule>> {
+        self.db.with_conn(|conn| list_rules_conn(conn, pool_id))
+    }
+
+    pub fn update_rule(&self, rule: &ModelRouteRule) -> Result<ModelRouteRule> {
+        validate_rule(rule)?;
+        self.mutate(|conn| {
+            let existing = get_rule_conn(conn, &rule.id)?.ok_or_else(|| {
+                AppError::NotFound(format!("model route rule not found: {}", rule.id))
+            })?;
+            if existing.route_pool_id != rule.route_pool_id {
+                return Err(AppError::InvalidArg(
+                    "model route rule pool is immutable".into(),
+                ));
+            }
+            let mut stored = rule.clone();
+            stored.created_at = existing.created_at;
+            stored.equivalent_group = stored
+                .equivalent_group
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+            update_rule_conn(conn, &stored).map_err(map_rule_constraint)?;
+            bump_revision_conn(conn, &stored.route_pool_id)?;
+            get_rule_conn(conn, &rule.id)?.ok_or_else(|| {
+                AppError::message("db.model_route_rule", "rule missing after update")
+            })
+        })
+    }
+
+    pub fn remove_rule(&self, id: &str) -> Result<()> {
+        self.mutate(|conn| {
+            let existing = get_rule_conn(conn, id)?
+                .ok_or_else(|| AppError::NotFound(format!("model route rule not found: {id}")))?;
+            conn.execute("DELETE FROM model_route_rules WHERE id = ?1", params![id])?;
+            bump_revision_conn(conn, &existing.route_pool_id)?;
+            Ok(())
+        })
+    }
+
     pub fn enroll_v2(
         &self,
         pool_id: &str,
@@ -276,6 +344,34 @@ fn validate_pool(pool: &RoutePool) -> Result<()> {
     if pool.created_at.trim().is_empty() || pool.updated_at.trim().is_empty() {
         return Err(AppError::InvalidArg(
             "route pool timestamps must not be empty".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_rule(rule: &ModelRouteRule) -> Result<()> {
+    for (field, value) in [
+        ("id", rule.id.as_str()),
+        ("route_pool_id", rule.route_pool_id.as_str()),
+        ("public_model", rule.public_model.as_str()),
+        ("endpoint_family", rule.endpoint_family.as_str()),
+        ("upstream_provider", rule.upstream_provider.as_str()),
+        ("upstream_dialect", rule.upstream_dialect.as_str()),
+        ("upstream_model", rule.upstream_model.as_str()),
+        ("created_at", rule.created_at.as_str()),
+        ("updated_at", rule.updated_at.as_str()),
+    ] {
+        if value.trim().is_empty() {
+            return Err(AppError::InvalidArg(format!(
+                "model route rule {field} must not be empty"
+            )));
+        }
+    }
+    if !model_route_id_is_exact(&rule.public_model)
+        || !model_route_id_is_exact(&rule.upstream_model)
+    {
+        return Err(AppError::InvalidArg(
+            "model route rules match exact model ids only".into(),
         ));
     }
     Ok(())
@@ -389,6 +485,82 @@ fn update_member_conn(conn: &Connection, member: &RouteMember) -> rusqlite::Resu
             member.updated_at,
         ],
     )
+}
+
+fn insert_rule_conn(conn: &Connection, rule: &ModelRouteRule) -> rusqlite::Result<usize> {
+    conn.execute(
+        r#"
+        INSERT INTO model_route_rules (
+            id, route_pool_id, public_model, endpoint_family, upstream_provider,
+            upstream_dialect, upstream_model, priority, equivalent_group, enabled,
+            created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+        "#,
+        params![
+            rule.id,
+            rule.route_pool_id,
+            rule.public_model.trim(),
+            rule.endpoint_family.trim(),
+            rule.upstream_provider.trim(),
+            rule.upstream_dialect.trim(),
+            rule.upstream_model.trim(),
+            rule.priority,
+            rule.normalized_equivalent_group(),
+            i64::from(rule.enabled),
+            rule.created_at,
+            rule.updated_at,
+        ],
+    )
+}
+
+fn update_rule_conn(conn: &Connection, rule: &ModelRouteRule) -> rusqlite::Result<usize> {
+    conn.execute(
+        r#"
+        UPDATE model_route_rules
+        SET public_model = ?2, endpoint_family = ?3, upstream_provider = ?4,
+            upstream_dialect = ?5, upstream_model = ?6, priority = ?7,
+            equivalent_group = ?8, enabled = ?9, updated_at = ?10
+        WHERE id = ?1
+        "#,
+        params![
+            rule.id,
+            rule.public_model.trim(),
+            rule.endpoint_family.trim(),
+            rule.upstream_provider.trim(),
+            rule.upstream_dialect.trim(),
+            rule.upstream_model.trim(),
+            rule.priority,
+            rule.normalized_equivalent_group(),
+            i64::from(rule.enabled),
+            rule.updated_at,
+        ],
+    )
+}
+
+fn get_rule_conn(conn: &Connection, id: &str) -> Result<Option<ModelRouteRule>> {
+    conn.query_row(
+        &format!("SELECT {RULE_COLUMNS} FROM model_route_rules WHERE id = ?1"),
+        params![id],
+        map_rule_row,
+    )
+    .optional()?
+    .map(RawModelRouteRule::into_rule)
+    .transpose()
+}
+
+fn list_rules_conn(conn: &Connection, pool_id: &str) -> Result<Vec<ModelRouteRule>> {
+    let mut stmt = conn.prepare(&format!(
+        r#"
+        SELECT {RULE_COLUMNS}
+        FROM model_route_rules
+        WHERE route_pool_id = ?1
+        ORDER BY priority ASC, id ASC
+        "#
+    ))?;
+    let rows = stmt.query_map(params![pool_id], map_rule_row)?;
+    rows.map(|row| row.and_then(|raw| raw.into_rule().map_err(to_sql_error)))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(AppError::from)
 }
 
 fn bump_revision_conn(conn: &Connection, pool_id: &str) -> Result<()> {
@@ -547,6 +719,60 @@ fn map_pool_row(row: &Row<'_>) -> rusqlite::Result<RawRoutePool> {
     })
 }
 
+struct RawModelRouteRule {
+    id: String,
+    route_pool_id: String,
+    public_model: String,
+    endpoint_family: String,
+    upstream_provider: String,
+    upstream_dialect: String,
+    upstream_model: String,
+    priority: i64,
+    equivalent_group: Option<String>,
+    enabled: i64,
+    created_at: String,
+    updated_at: String,
+}
+
+impl RawModelRouteRule {
+    fn into_rule(self) -> Result<ModelRouteRule> {
+        Ok(ModelRouteRule {
+            id: self.id,
+            route_pool_id: self.route_pool_id,
+            public_model: self.public_model,
+            endpoint_family: self.endpoint_family,
+            upstream_provider: self.upstream_provider,
+            upstream_dialect: self.upstream_dialect,
+            upstream_model: self.upstream_model,
+            priority: self.priority,
+            equivalent_group: self
+                .equivalent_group
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty()),
+            enabled: parse_bool(self.enabled, "enabled")?,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        })
+    }
+}
+
+fn map_rule_row(row: &Row<'_>) -> rusqlite::Result<RawModelRouteRule> {
+    Ok(RawModelRouteRule {
+        id: row.get(0)?,
+        route_pool_id: row.get(1)?,
+        public_model: row.get(2)?,
+        endpoint_family: row.get(3)?,
+        upstream_provider: row.get(4)?,
+        upstream_dialect: row.get(5)?,
+        upstream_model: row.get(6)?,
+        priority: row.get(7)?,
+        equivalent_group: row.get(8)?,
+        enabled: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
+}
+
 fn map_member_row(row: &Row<'_>) -> rusqlite::Result<RawRouteMember> {
     Ok(RawRouteMember {
         id: row.get(0)?,
@@ -610,6 +836,16 @@ fn map_pool_constraint(error: rusqlite::Error) -> AppError {
 fn map_member_constraint(error: rusqlite::Error) -> AppError {
     if is_constraint(&error) {
         AppError::InvalidArg("duplicate route member authorization fingerprint".into())
+    } else {
+        AppError::from(error)
+    }
+}
+
+fn map_rule_constraint(error: rusqlite::Error) -> AppError {
+    if is_constraint(&error) {
+        AppError::InvalidArg(
+            "duplicate model route rule for the same pool, public model, endpoint, provider, and upstream model".into(),
+        )
     } else {
         AppError::from(error)
     }
