@@ -15,37 +15,80 @@ pub type UpstreamAuthReload = Arc<dyn Fn() -> Option<String> + Send + Sync>;
 ///
 /// The inner cell is shared across spec/listener clones so a 401 retry can swap
 /// the upstream bearer in place without restarting the loopback listener.
+/// `revision` is the compare-and-swap token for singleflight reload: a stale
+/// refresh must not overwrite a newer credential.
 #[derive(Clone)]
 pub struct ResolvedAuth {
-    bearer_token: Arc<Mutex<String>>,
+    cell: Arc<Mutex<AuthCell>>,
+}
+
+struct AuthCell {
+    token: String,
+    revision: u64,
 }
 
 impl ResolvedAuth {
     pub fn bearer(token: impl Into<String>) -> Self {
         Self {
-            bearer_token: Arc::new(Mutex::new(token.into())),
+            cell: Arc::new(Mutex::new(AuthCell {
+                token: token.into(),
+                revision: 0,
+            })),
         }
     }
 
     pub(crate) fn token(&self) -> String {
-        self.bearer_token
+        self.cell
             .lock()
-            .map(|guard| guard.clone())
+            .map(|guard| guard.token.clone())
             .unwrap_or_default()
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.cell.lock().map(|guard| guard.revision).unwrap_or(0)
     }
 
     /// Whether the cell currently holds a non-empty bearer. Does not expose the secret.
     pub fn has_token(&self) -> bool {
-        self.bearer_token
+        self.cell
             .lock()
-            .map(|guard| !guard.trim().is_empty())
+            .map(|guard| !guard.token.trim().is_empty())
             .unwrap_or(false)
     }
 
     pub(crate) fn replace_token(&self, token: impl Into<String>) {
-        if let Ok(mut guard) = self.bearer_token.lock() {
-            *guard = token.into();
+        if let Ok(mut guard) = self.cell.lock() {
+            guard.token = token.into();
+            guard.revision = guard.revision.saturating_add(1);
         }
+    }
+
+    /// Write only if `expected` still matches. Returns false when a newer
+    /// revision won or the token is unchanged.
+    pub(crate) fn replace_token_at_revision(&self, expected: u64, token: &str) -> bool {
+        let Ok(mut guard) = self.cell.lock() else {
+            return false;
+        };
+        if guard.revision != expected || guard.token == token {
+            return false;
+        }
+        guard.token = token.to_owned();
+        guard.revision = expected.saturating_add(1);
+        true
+    }
+
+    /// Adopt a token produced by a shared reload. Same-cell waiters already
+    /// hold it; other cells (cross-pool members) copy it.
+    pub(crate) fn apply_reloaded_token(&self, token: &str) -> bool {
+        let Ok(mut guard) = self.cell.lock() else {
+            return false;
+        };
+        if guard.token == token {
+            return true;
+        }
+        guard.token = token.to_owned();
+        guard.revision = guard.revision.saturating_add(1);
+        true
     }
 }
 

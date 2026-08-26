@@ -126,7 +126,12 @@ impl BridgeRuntimeHost {
 
         let cited_port = ensure_socket(&mut registry, spec.port, self.app.clone())?;
         let force_shutdown = CancellationToken::new();
-        let state = EdgeState::from_spec(&spec, upstream_url, force_shutdown);
+        let state = EdgeState::from_spec(
+            &spec,
+            upstream_url,
+            force_shutdown,
+            self.gateway.auth_reload.clone(),
+        );
         let runtime = EdgeRuntime {
             spec,
             cited_port,
@@ -199,6 +204,20 @@ impl BridgeRuntimeHost {
             .get(profile_id)
             .ok_or(BridgeHostError::NotRunning)?;
         runtime.state.account_picker.restore(source_id, health);
+        if health.is_eligible() {
+            if let Some(member) = runtime
+                .state
+                .account_picker
+                .members()
+                .iter()
+                .find(|member| member.source_id == source_id)
+            {
+                runtime
+                    .state
+                    .auth_reload
+                    .clear_isolated(&member.authorization_fingerprint());
+            }
+        }
         Ok(())
     }
 
