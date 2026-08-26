@@ -78,22 +78,29 @@ async fn apply_local_bridge_locked(
     .await?;
 
     let profile_id = prepared.profile().id.clone();
+    let runtime_material = attach_live_prior_index(
+        hub.clone(),
+        host.as_ref(),
+        prepared.profile().clone(),
+        prepared.runtime_material().clone(),
+    )
+    .await?;
     let reload = oauth_reload_for_material(
         hub.as_ref(),
-        prepared.runtime_material(),
+        &runtime_material,
         prepared.profile().source_kind,
         &prepared.profile().source_id,
     );
     let members = resolve_start_members(
         hub.as_ref(),
         prepared.profile(),
-        prepared.runtime_material(),
+        &runtime_material,
         reload.clone(),
     );
     let multi_account = local_bridge_multi_account(&prepared.profile().rule_id);
     let runtime = match ensure_bridge_listener(
         host.as_ref(),
-        prepared.runtime_material(),
+        &runtime_material,
         reload.clone(),
         members,
         multi_account,
@@ -116,7 +123,7 @@ async fn apply_local_bridge_locked(
     let owns_listener = runtime.owned_by_saga;
 
     let port = runtime.status.port;
-    if let Err(error) = prepared.runtime_material().verify_bound_health(port).await {
+    if let Err(error) = runtime_material.verify_bound_health(port).await {
         let _ = host.record_upstream_outcome(&profile_id, BridgeUpstreamStatus::Degraded);
         let code = error.code().to_owned();
         let listener_compensated =
@@ -134,7 +141,7 @@ async fn apply_local_bridge_locked(
         hub.clone(),
         host.as_ref(),
         prepared.profile().clone(),
-        prepared.runtime_material().clone(),
+        runtime_material,
         port,
         reload,
         multi_account,
@@ -357,22 +364,37 @@ pub(crate) fn restore_adapter_bridges(
                 }
             };
 
+            let runtime_material = match attach_live_prior_index(
+                hub.clone(),
+                host.as_ref(),
+                material.profile().clone(),
+                material.runtime_material().clone(),
+            )
+            .await
+            {
+                Ok(runtime_material) => runtime_material,
+                Err(error) => {
+                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
+                    tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge restore could not attach live index");
+                    continue;
+                }
+            };
             let reload = oauth_reload_for_material(
                 hub.as_ref(),
-                material.runtime_material(),
+                &runtime_material,
                 material.profile().source_kind,
                 &material.profile().source_id,
             );
             let members = resolve_start_members(
                 hub.as_ref(),
                 material.profile(),
-                material.runtime_material(),
+                &runtime_material,
                 reload.clone(),
             );
             let multi_account = local_bridge_multi_account(&material.profile().rule_id);
             let runtime = match ensure_bridge_listener(
                 host.as_ref(),
-                material.runtime_material(),
+                &runtime_material,
                 reload.clone(),
                 members,
                 multi_account,
@@ -392,8 +414,7 @@ pub(crate) fn restore_adapter_bridges(
                 }
             };
 
-            if let Err(error) = material
-                .runtime_material()
+            if let Err(error) = runtime_material
                 .verify_bound_health(runtime.status.port)
                 .await
             {
@@ -415,7 +436,7 @@ pub(crate) fn restore_adapter_bridges(
                 hub.clone(),
                 host.as_ref(),
                 material.profile().clone(),
-                material.runtime_material().clone(),
+                runtime_material,
                 runtime.status.port,
                 reload,
                 multi_account,
@@ -1045,6 +1066,34 @@ fn resolve_pool_members(
     members
 }
 
+async fn attach_live_prior_index(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    profile: AdapterProfile,
+    material: AdapterBridgeRuntimeMaterial,
+) -> Result<AdapterBridgeRuntimeMaterial, String> {
+    let seeded = match host.live_route_index(material.profile_id()) {
+        Ok(Some(live)) => material.with_prior_route_index(live),
+        Ok(None) => return Ok(material),
+        Err(error) => return Err(map_bridge_host_error(error)),
+    };
+    with_hub_blocking(hub, move |hub| {
+        Ok(hub.adapter_bridge.attach_route_index(seeded, &profile))
+    })
+    .await
+}
+
+fn seed_prior_from_host(
+    host: &BridgeRuntimeHost,
+    material: AdapterBridgeRuntimeMaterial,
+) -> Result<AdapterBridgeRuntimeMaterial, String> {
+    match host.live_route_index(material.profile_id()) {
+        Ok(Some(live)) => Ok(material.with_prior_route_index(live)),
+        Ok(None) => Ok(material),
+        Err(error) => Err(map_bridge_host_error(error)),
+    }
+}
+
 /// After a healthy bind, enroll the local-bridge pool and refresh the live
 /// start spec with the v2 index. Bind / health failures must not call this.
 /// Refresh uses the enrolled port and never falls back to port 0.
@@ -1067,11 +1116,12 @@ pub(crate) async fn enroll_v2_and_refresh_index(
     if !did_enroll {
         return Ok(material);
     }
+    let seeded = seed_prior_from_host(host, material)?;
     let profile_for_attach = profile.clone();
     let refreshed = with_hub_blocking(hub.clone(), move |hub| {
         Ok(hub
             .adapter_bridge
-            .attach_route_index(material, &profile_for_attach))
+            .attach_route_index(seeded, &profile_for_attach))
     })
     .await?;
     if refreshed.route_index().is_none() {
@@ -1084,6 +1134,11 @@ pub(crate) async fn enroll_v2_and_refresh_index(
     Ok(refreshed)
 }
 
+/// Start (or refresh) a loopback listener for one profile.
+///
+/// Identical running specs are reused. `ConflictingStart` stops then restarts.
+/// `Bind` on the preferred port retries with port `0` unless
+/// [`AdapterBridgeRuntimeMaterial::freeze_gateway_port`] is set.
 pub(crate) async fn ensure_bridge_listener(
     host: &BridgeRuntimeHost,
     material: &AdapterBridgeRuntimeMaterial,

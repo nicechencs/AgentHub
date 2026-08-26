@@ -4492,3 +4492,41 @@ async fn production_built_index_unions_models_and_never_crosses_members() {
     host.shutdown().await.expect("shutdown");
     task.abort();
 }
+
+#[tokio::test]
+async fn live_start_does_not_reuse_index_when_members_remap_same_models() {
+    let host = BridgeRuntimeHost::new();
+    let first = production_index(&[("acc-a", "m1"), ("acc-b", "m2")]);
+    let remapped = production_index(&[("acc-a", "m2"), ("acc-b", "m1")]);
+    assert_eq!(first.generation, remapped.generation);
+    assert_eq!(
+        first.list_models("responses"),
+        remapped.list_models("responses")
+    );
+    let members = vec![
+        pool_member("acc-a", "upstream-a"),
+        pool_member("acc-b", "upstream-b"),
+    ];
+    let listed = first.list_models("responses");
+    let spec = spec_with_token("pool-remap", 0, 9, TOKEN_A)
+        .with_members(members.clone())
+        .with_listed_models(listed.clone())
+        .with_route_index(first);
+    host.start(spec).await.expect("first start");
+    let reused = spec_with_token("pool-remap", 0, 9, TOKEN_A)
+        .with_members(members.clone())
+        .with_listed_models(listed.clone())
+        .with_route_index(production_index(&[("acc-a", "m1"), ("acc-b", "m2")]));
+    let status = host.start(reused).await.expect("identical index is reused");
+    assert!(status.running);
+    let next = spec_with_token("pool-remap", 0, 9, TOKEN_A)
+        .with_members(members)
+        .with_listed_models(listed)
+        .with_route_index(remapped);
+    let error = host
+        .start(next)
+        .await
+        .expect_err("remapped members must not reuse the live edge");
+    assert!(matches!(error, BridgeHostError::ConflictingStart));
+    host.shutdown().await.expect("shutdown");
+}

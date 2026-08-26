@@ -233,6 +233,35 @@ fn ensure_listener_rebinds_when_preferred_port_is_busy() {
 }
 
 #[test]
+fn index_enabled_for_test_freezes_preferred_port_without_index() {
+    tauri::async_runtime::block_on(async {
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy_port = blocker.local_addr().unwrap().port();
+        let host = BridgeRuntimeHost::new();
+        let material = AdapterBridgeRuntimeMaterial::for_test(
+            "profile-index-enabled-occupy",
+            Some(busy_port),
+            "local-bearer-index-enabled-occupy",
+            "upstream-bearer-index-enabled-occupy",
+        )
+        .with_index_enabled_for_test();
+
+        let error = match ensure_bridge_listener(&host, &material, None, Vec::new(), false).await {
+            Err(error) => error,
+            Ok(_) => panic!("index-enabled occupancy must fail bind"),
+        };
+        assert!(matches!(error, BridgeHostError::Bind(_)));
+        assert!(host
+            .status("profile-index-enabled-occupy")
+            .unwrap()
+            .is_none());
+
+        host.shutdown().await.unwrap();
+        drop(blocker);
+    });
+}
+
+#[test]
 fn frozen_v2_port_does_not_rebind_on_occupancy() {
     tauri::async_runtime::block_on(async {
         let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
@@ -352,6 +381,66 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
         );
 
         host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
+fn unenrolled_index_enabled_busy_preferred_port_does_not_rebind_or_enroll() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        hub.db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        ProviderRepo::new(hub.db.clone())
+            .create(&kimi_source(
+                "kimi-occupy-preferred",
+                "upstream-membership-secret",
+            ))
+            .unwrap();
+        let prepared = hub
+            .adapter_bridge
+            .prepare(&restore_prepare_request("kimi-occupy-preferred"))
+            .unwrap();
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy = blocker.local_addr().unwrap().port();
+        let mut profile = prepared.profile().clone();
+        profile.local_port = Some(busy);
+        AdapterProfileRepo::new(hub.db.clone())
+            .update(&profile)
+            .unwrap();
+        let prepared = hub
+            .adapter_bridge
+            .prepare(&restore_prepare_request("kimi-occupy-preferred"))
+            .unwrap();
+        assert!(
+            prepared.runtime_material().freeze_gateway_port(),
+            "index-enabled preferred port must occupancy-fail before enroll"
+        );
+
+        let host = BridgeRuntimeHost::new();
+        let error = match ensure_bridge_listener(
+            &host,
+            prepared.runtime_material(),
+            None,
+            Vec::new(),
+            false,
+        )
+        .await
+        {
+            Err(error) => error,
+            Ok(_) => panic!("busy preferred port must not rebind when index is enabled"),
+        };
+        assert!(matches!(error, BridgeHostError::Bind(_)));
+        assert!(
+            host.status(&profile.id).unwrap().is_none(),
+            "occupancy must not start a rewritten listener"
+        );
+        let pool = hub.route_pools.get(&profile.id).unwrap().unwrap();
+        assert!(!pool.v2_enrolled);
+        assert_eq!(pool.gateway_port, None);
+
+        host.shutdown().await.unwrap();
+        drop(blocker);
     });
 }
 

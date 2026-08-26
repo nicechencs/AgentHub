@@ -108,6 +108,7 @@ impl AdapterBridgeService {
                 upstream_auth,
                 local_bearer,
                 route_index: None,
+                index_enabled: false,
             },
             &profile,
         );

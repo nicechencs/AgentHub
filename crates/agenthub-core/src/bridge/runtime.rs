@@ -198,9 +198,7 @@ impl BridgeStartSpec {
         self
     }
 
-    /// Live picker for this spec. Closed gate keeps only the lead unless a
-    /// v2 index is attached; the index path keeps every member so the
-    /// scheduler can shrink resolver output without opening `multi_account`.
+    /// `route_index` skips the RFC §7 lead-only trim.
     pub fn account_picker(&self) -> AccountPicker {
         let members = if self.members.is_empty() {
             vec![self.lead_member()]
