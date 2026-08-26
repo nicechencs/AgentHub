@@ -886,7 +886,7 @@ export const en = {
     },
     direct: {
       title: "Direct",
-      description: "Official direct connection. You can switch it to local forwarding when needed.",
+      description: "Logins that current rules can send through local forwarding, but that are not on the local entry yet.",
     },
   },
   dashboard: {

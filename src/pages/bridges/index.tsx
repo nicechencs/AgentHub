@@ -359,6 +359,7 @@ export default function BridgesPage() {
     try {
       await enrollNativeToGateway(profile.id);
       toast({ title: t('routes.pool.enrollSuccess'), variant: 'success' });
+      inspect.close();
       reloadThenClearProfileErrors();
     } catch (error) {
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
