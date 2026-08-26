@@ -1,0 +1,41 @@
+{
+  "agents": ["claude", "codex", "kimi", "grok", "pi", "workbuddy", "cursor", "dsh"],
+  "capabilities": [
+    "configWrite",
+    "accountSwitch",
+    "apiKeyAccount",
+    "skills",
+    "liveBackup",
+    "structuredStream",
+    "dangerousMode",
+    "projectHistory",
+    "projectDelete",
+    "providerPresets",
+    "usage",
+    "mcp",
+    "modelSelect",
+    "sessionResume"
+  ],
+  "channels": {
+    "unix": {
+      "claude": ["native", "npm"],
+      "codex": ["npm"],
+      "kimi": ["native", "npm"],
+      "grok": ["native"],
+      "pi": ["npm"],
+      "workbuddy": ["native"],
+      "cursor": ["native"],
+      "dsh": ["npm"]
+    },
+    "windows": {
+      "claude": ["native", "npm"],
+      "codex": ["npm", "native"],
+      "kimi": ["native", "npm"],
+      "grok": ["native"],
+      "pi": ["npm"],
+      "workbuddy": ["native"],
+      "cursor": ["native"],
+      "dsh": ["npm"]
+    }
+  }
+}
