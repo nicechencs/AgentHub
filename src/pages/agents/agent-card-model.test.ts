@@ -127,24 +127,26 @@ describe('extra copy labels', () => {
     expect(extraCopyKindLabel('ide', (key) => key)).toBe('agents.card.extraCopyIde');
   });
 
-  it('wires copy-path on the primary binary and extra copies', () => {
+  it('copies the version, not the install path, and keeps copy rows to one line', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
-    expect(card).toContain('copyInstallPath');
-    expect(card).toContain('CopyInstallPathButton');
-    expect(card).toContain('agents.card.copyPath');
+    expect(card).toContain('copyVersion');
+    expect(card).toContain('CopyVersionButton');
+    expect(card).toContain('agents.card.copyVersion');
     expect(card).toContain('extraCopyKindLabel');
     expect(card).toContain('listAgentInstalls');
-    expect(card).toContain('agents.card.installSource');
-    expect(card).toContain('agents.card.updateChannel');
-    expect(card).toContain('agents.card.uninstallMethod');
+    expect(card).not.toContain('agents.card.installSource');
+    expect(card).not.toContain('agents.card.updateChannel');
+    expect(card).not.toContain('agents.card.uninstallMethod');
+    expect(card).not.toContain('agents.card.installLocation');
+    expect(card).not.toContain('copyInstallPath');
     expect(card).toContain('<Hint label={inst.location}');
     expect(card).not.toMatch(/<p[^>]*\stitle=\{inst\.location\}/);
     expect(card).toContain('specialChannelUpdateTargets');
     expect(card).toContain('updateViaDesktop');
-    expect(zh.agents.card.copyPath).toBe('复制路径');
+    expect(zh.agents.card.copyVersion).toBe('复制版本');
     expect(zh.agents.card.updateViaDesktop).toBe('请到桌面应用更新');
     expect(zh.agents.card.updateViaIde).toBe('请到 IDE 插件更新');
-    expect(zh.agents.card.installAlongsideHint).toContain('npm');
+    expect(zh.agents.card.installAlongsideHint).toBe('也可再装其他渠道');
     expect(zh.agents.dialog.installAlongsideDesc).toContain('不会被替换');
     expect(zh.agents.card.extraCopyDesktop).toBe('桌面应用');
   });
