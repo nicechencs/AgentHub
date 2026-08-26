@@ -175,6 +175,10 @@ pub struct BridgeStartSpec {
     pub custom_openai: bool,
     /// Shared resolver snapshot. `None` keeps lead + `switch_edge_for_model`.
     pub route_index: Option<EffectiveRouteIndex>,
+    /// `feature.codex_ingress_grok_upstream`. Fail-closed default.
+    pub codex_ingress_grok_upstream: bool,
+    /// `feature.grok_ingress_codex_upstream`. Fail-closed default.
+    pub grok_ingress_codex_upstream: bool,
 }
 
 impl fmt::Debug for BridgeStartSpec {
@@ -195,6 +199,14 @@ impl fmt::Debug for BridgeStartSpec {
             .field(
                 "route_index",
                 &self.route_index.as_ref().map(|index| index.generation),
+            )
+            .field(
+                "codex_ingress_grok_upstream",
+                &self.codex_ingress_grok_upstream,
+            )
+            .field(
+                "grok_ingress_codex_upstream",
+                &self.grok_ingress_codex_upstream,
             )
             .finish()
     }
@@ -220,6 +232,8 @@ impl BridgeStartSpec {
             mapping_target: None,
             custom_openai: false,
             route_index: None,
+            codex_ingress_grok_upstream: false,
+            grok_ingress_codex_upstream: false,
         }
     }
 
@@ -293,6 +307,16 @@ impl BridgeStartSpec {
 
     pub fn with_reload_upstream_auth(mut self, reload: Option<UpstreamAuthReload>) -> Self {
         self.reload_upstream_auth = reload;
+        self
+    }
+
+    pub fn with_pair_adapter_flags(
+        mut self,
+        codex_ingress_grok_upstream: bool,
+        grok_ingress_codex_upstream: bool,
+    ) -> Self {
+        self.codex_ingress_grok_upstream = codex_ingress_grok_upstream;
+        self.grok_ingress_codex_upstream = grok_ingress_codex_upstream;
         self
     }
 }

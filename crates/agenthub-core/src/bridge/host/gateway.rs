@@ -143,6 +143,9 @@ pub(super) struct EdgeState {
     pub(super) custom_openai: bool,
     pub(super) route_index: Option<crate::bridge::route_index::EffectiveRouteIndex>,
     pub(super) auth_reload: AuthReloadCoordinator,
+    pub(super) codex_ingress_grok_upstream: bool,
+    pub(super) grok_ingress_codex_upstream: bool,
+    pub(super) continuations: std::sync::Arc<super::continuation::ContinuationBindings>,
 }
 
 pub(super) enum GatewayAuthError {
@@ -389,6 +392,9 @@ impl EdgeState {
             custom_openai: spec.custom_openai,
             route_index: spec.route_index.clone(),
             auth_reload,
+            codex_ingress_grok_upstream: spec.codex_ingress_grok_upstream,
+            grok_ingress_codex_upstream: spec.grok_ingress_codex_upstream,
+            continuations: std::sync::Arc::new(super::continuation::ContinuationBindings::new()),
         };
         // stop+start is how production rotates a login; host-wide 401
         // isolation must not outlive the old picker.

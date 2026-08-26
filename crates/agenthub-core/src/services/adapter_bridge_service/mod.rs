@@ -502,6 +502,8 @@ pub struct AdapterBridgeRuntimeMaterial {
     /// When the v2 index flag is on, a non-zero preferred port is occupancy-failed
     /// instead of rebound, even before the pool is enrolled.
     index_enabled: bool,
+    codex_ingress_grok_upstream: bool,
+    grok_ingress_codex_upstream: bool,
 }
 
 impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
@@ -526,6 +528,14 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
                 &self.route_index.as_ref().map(|index| index.generation),
             )
             .field("index_enabled", &self.index_enabled)
+            .field(
+                "codex_ingress_grok_upstream",
+                &self.codex_ingress_grok_upstream,
+            )
+            .field(
+                "grok_ingress_codex_upstream",
+                &self.grok_ingress_codex_upstream,
+            )
             .finish()
     }
 }
@@ -571,6 +581,8 @@ impl AdapterBridgeRuntimeMaterial {
             local_bearer: local_bearer.into(),
             route_index: None,
             index_enabled: false,
+            codex_ingress_grok_upstream: false,
+            grok_ingress_codex_upstream: false,
         }
     }
 
@@ -602,7 +614,11 @@ impl AdapterBridgeRuntimeMaterial {
             },
         )
         .with_listed_models(lead_listed)
-        .with_mapping(self.source, self.target_agent, custom);
+        .with_mapping(self.source, self.target_agent, custom)
+        .with_pair_adapter_flags(
+            self.codex_ingress_grok_upstream,
+            self.grok_ingress_codex_upstream,
+        );
         if let Some(index) = &self.route_index {
             spec = spec
                 .with_listed_models(index.list_models(index_endpoint_key(self.local_surface)))
@@ -926,6 +942,9 @@ impl AdapterBridgeService {
         profile: &AdapterProfile,
     ) -> AdapterBridgeRuntimeMaterial {
         material.index_enabled = self.route_pools.index_enabled();
+        let (codex_to_grok, grok_to_codex) = self.route_pools.pair_adapter_flags();
+        material.codex_ingress_grok_upstream = codex_to_grok;
+        material.grok_ingress_codex_upstream = grok_to_codex;
         let _ = self.route_pools.ensure_legacy_pool(profile);
         if let Some(index) = self.route_index_for_material(&material, profile) {
             if let Ok(Some(pool)) = self.route_pools.get(&material.profile_id) {

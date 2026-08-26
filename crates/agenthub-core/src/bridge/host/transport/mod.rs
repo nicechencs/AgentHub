@@ -167,6 +167,10 @@ impl UpstreamChannel {
     /// Whether the upstream wire protocol is identical to the requested
     /// downstream surface. Keep this surface-aware: a Responses upstream must
     /// never be accidentally relayed to a Messages or Chat client.
+    ///
+    /// Codex and Grok both speak Responses; that match alone is not
+    /// transparent. Cross-product pair adapters consult feature flags via
+    /// [`super::pair_policy::identity_relay`].
     pub(super) fn passthrough_for(self, surface: DownstreamSurface) -> bool {
         matches!(
             (self, surface),
@@ -253,6 +257,7 @@ pub(super) async fn send_upstream(
     member: PickedMember,
     candidates: Option<&[DispatchCandidate]>,
     public_model: &str,
+    continuation_locked: bool,
 ) -> Result<UpstreamSendOutcome, Response> {
     if state.route_index.is_some() {
         return failover::send_upstream_v2(
@@ -267,6 +272,7 @@ pub(super) async fn send_upstream(
             member,
             candidates.unwrap_or(&[]),
             public_model,
+            continuation_locked,
         )
         .await;
     }
@@ -329,6 +335,19 @@ pub(super) async fn send_upstream(
                     &mut grok_strip_attempt,
                 ) {
                     AuthFollowup::Reload => continue,
+                    AuthFollowup::Switch if continuation_locked => {
+                        let detail = read_error_detail(response, &state.force_shutdown).await?;
+                        return Err(map_upstream_http_error(
+                            state,
+                            request_id,
+                            started,
+                            status,
+                            retry_after,
+                            detail.as_deref(),
+                            Some(&member),
+                            failover_from.as_deref(),
+                        ));
+                    }
                     AuthFollowup::Switch => break,
                     AuthFollowup::Fail => {
                         let detail = read_error_detail(response, &state.force_shutdown).await?;

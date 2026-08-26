@@ -266,6 +266,8 @@ impl AdapterBridgeService {
                 local_bearer: local_bearer_from_provider(&provider)?,
                 route_index: None,
                 index_enabled: false,
+                codex_ingress_grok_upstream: false,
+                grok_ingress_codex_upstream: false,
             },
             &profile,
         );

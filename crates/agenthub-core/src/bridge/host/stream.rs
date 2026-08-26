@@ -16,6 +16,9 @@ use crate::bridge::protocol::anthropic_messages::{
     anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse, AnthropicStreamToIr,
 };
 use crate::bridge::protocol::chat::{encode_chat_from_ir, encode_chat_sse, ChatStreamToIr};
+use crate::bridge::protocol::pair::{
+    sanitize_pair_response, sanitize_pair_sse_event, PairDirection,
+};
 use crate::bridge::protocol::responses::{
     encode_responses_from_ir, responses_output_to_ir, IrToResponsesSse, ResponsesStreamToIr,
 };
@@ -263,6 +266,7 @@ pub(super) async fn passthrough_json_response(
     _permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
     member: PickedMember,
+    pair: Option<PairDirection>,
 ) -> Response {
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
     let content_type = response
@@ -284,7 +288,7 @@ pub(super) async fn passthrough_json_response(
             );
         }
     };
-    let value = match serde_json::from_slice::<Value>(&body) {
+    let mut value = match serde_json::from_slice::<Value>(&body) {
         Ok(value) => value,
         Err(_) => {
             state.record_upstream_failure();
@@ -302,6 +306,26 @@ pub(super) async fn passthrough_json_response(
         partition_account(&state, &member),
         &value,
     );
+    state
+        .continuations
+        .record_response(&value, replay_seed.as_deref(), &member.source_id);
+    let body = if let Some(direction) = pair {
+        sanitize_pair_response(direction, &mut value);
+        match serde_json::to_vec(&value) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                state.record_upstream_failure();
+                return error_response(
+                    StatusCode::BAD_GATEWAY,
+                    "upstream_error",
+                    "The upstream model provider returned an invalid response.",
+                    None,
+                );
+            }
+        }
+    } else {
+        body
+    };
     state.record_upstream_success();
     tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "passthrough", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
     let content_type = HeaderValue::from_str(&content_type)
@@ -547,6 +571,23 @@ fn is_known_responses_event_type(kind: &str) -> bool {
     )
 }
 
+fn rewrite_pair_sse_frame(frame: Vec<u8>, pair: Option<PairDirection>) -> Result<Vec<u8>, ()> {
+    let Some(direction) = pair else {
+        return Ok(frame);
+    };
+    let Some(payload) = sse_data_payload(&frame)? else {
+        return Ok(frame);
+    };
+    if payload.is_empty() {
+        return Ok(frame);
+    }
+    let mut value = serde_json::from_str::<Value>(&payload).map_err(|_| ())?;
+    sanitize_pair_sse_event(direction, &mut value);
+    let event_type = value.get("type").and_then(Value::as_str).unwrap_or("error");
+    let data = serde_json::to_string(&value).map_err(|_| ())?;
+    Ok(format!("event: {event_type}\ndata: {data}\n\n").into_bytes())
+}
+
 fn event_stream_response(
     output: impl futures_util::Stream<Item = Result<axum::body::Bytes, Infallible>> + Send + 'static,
 ) -> Response {
@@ -569,10 +610,12 @@ pub(super) fn passthrough_sse_response(
     replay_seed: Option<String>,
     member: PickedMember,
     surface: DownstreamSurface,
+    pair: Option<PairDirection>,
 ) -> Response {
     let profile_id = state.profile_id.clone();
     let account_id = member.source_id.clone();
     let ticket_id = member.ticket_id.clone();
+    let member_id = member.source_id.clone();
     let partition = partition_account(&state, &member).map(str::to_owned);
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
@@ -683,10 +726,31 @@ pub(super) fn passthrough_sse_response(
                     ));
                     return;
                 }
+                if let Ok(Some(payload)) = sse_data_payload(&frame) {
+                    if let Ok(value) = serde_json::from_str::<Value>(&payload) {
+                        observed.continuations.record_response(
+                            &value,
+                            replay_seed.as_deref(),
+                            &member_id,
+                        );
+                    }
+                }
                 let terminal = info.terminal;
                 saw_responses_terminal |= terminal;
                 let trailing_bytes = responses_buffer.len();
-                yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
+                let outbound = match rewrite_pair_sse_frame(frame, pair) {
+                    Ok(frame) => frame,
+                    Err(()) => {
+                        observed.record_upstream_failure();
+                        warn_stream_fail(&request_id, "stream_error");
+                        yield Ok::<_, Infallible>(stream_fail_frame(
+                            DownstreamSurface::Responses,
+                            next_sequence_number,
+                        ));
+                        return;
+                    }
+                };
+                yield Ok::<_, Infallible>(axum::body::Bytes::from(outbound));
                 if terminal {
                     responses_buffer.clear();
                     if trailing_bytes <= capture.len() {

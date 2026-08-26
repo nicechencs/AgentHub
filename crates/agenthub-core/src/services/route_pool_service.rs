@@ -12,8 +12,9 @@ use crate::error::{AppError, Result};
 use crate::models::{
     choose_default_pool_id, feature_flag_enabled, generate_hub_token, AdapterProfile,
     AdapterProfileFilter, AdapterRoute, AdapterSourceKind, AgentId, RouteDownstreamDialect,
-    RouteDownstreamSurface, RouteMember, RoutePool, RouteSchedulePolicy, FEATURE_ROUTE_INDEX_V2,
-    FEATURE_ROUTE_POOL_V2,
+    RouteDownstreamSurface, RouteMember, RoutePool, RouteSchedulePolicy,
+    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 use crate::storage::{binding_get_conn, AdapterProfileRepo, Database, RoutePoolRepo};
 
@@ -52,6 +53,27 @@ impl RoutePoolService {
                     .flatten()
                     .as_deref(),
             )
+    }
+
+    /// Independent Codex↔Grok pair-adapter flags. Fail-closed; does not
+    /// require `route_pool_v2`.
+    pub fn pair_adapter_flags(&self) -> (bool, bool) {
+        (
+            feature_flag_enabled(
+                self.db
+                    .get_setting(FEATURE_CODEX_INGRESS_GROK_UPSTREAM)
+                    .ok()
+                    .flatten()
+                    .as_deref(),
+            ),
+            feature_flag_enabled(
+                self.db
+                    .get_setting(FEATURE_GROK_INGRESS_CODEX_UPSTREAM)
+                    .ok()
+                    .flatten()
+                    .as_deref(),
+            ),
+        )
     }
 
     pub fn get(&self, pool_id: &str) -> Result<Option<RoutePool>> {
