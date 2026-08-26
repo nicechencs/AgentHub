@@ -18,6 +18,7 @@ describe('mcp layout wiring', () => {
     expect(page).not.toContain('ListSkeleton');
     expect(page.indexOf('<AgentTabStrip')).toBeLessThan(page.indexOf('<TableSkeleton'));
     expect(page).toContain('agents={installedAgents}');
+    expect(page).toContain('filterByPageVisibleAgent');
   });
 
   it('uses the shared 详情 toggle (label + chevron)', () => {

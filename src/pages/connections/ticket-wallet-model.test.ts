@@ -19,6 +19,7 @@ import {
   buildTicketWalletRows,
   countTicketsByFilter,
   filterTicketsByAgentUsage,
+  filterWalletByExcludedAgents,
   dashboardBindingMetaText,
   extrasFromPoolSource,
   filterTickets,
@@ -122,6 +123,32 @@ function sampleWallet(): TicketWallet {
     surfaceGroups: [],
   };
 }
+
+describe('filterWalletByExcludedAgents', () => {
+  it('drops tickets and bindings for omitted (hidden or uninstalled) agents', () => {
+    const wallet = sampleWallet();
+    const next = filterWalletByExcludedAgents(wallet, ['claude']);
+    expect(next?.tickets.map((ticket) => ticket.id)).toEqual(['provider:kimi-1']);
+    expect(next?.bindings.map((binding) => `${binding.ticketId}:${binding.agentId}`)).toEqual([
+      'provider:kimi-1:codex',
+    ]);
+  });
+
+  it('keeps an omitted-owner ticket that is still bound to a visible agent', () => {
+    const wallet = sampleWallet();
+    const next = filterWalletByExcludedAgents(wallet, ['kimi']);
+    expect(next?.tickets.map((ticket) => ticket.id)).toContain('provider:kimi-1');
+    expect(
+      next?.bindings.map((binding) => `${binding.ticketId}:${binding.agentId}`),
+    ).toEqual(expect.arrayContaining(['provider:kimi-1:claude', 'provider:kimi-1:codex']));
+  });
+
+  it('returns the same wallet when the exclude set is empty', () => {
+    const wallet = sampleWallet();
+    expect(filterWalletByExcludedAgents(wallet, [])).toBe(wallet);
+    expect(filterWalletByExcludedAgents(null, ['kimi'])).toBeNull();
+  });
+});
 
 describe('ticket wallet filter', () => {
   it('counts and filters 未识别 by surface (production unknown + api_key shape)', () => {

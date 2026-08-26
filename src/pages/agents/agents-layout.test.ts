@@ -32,7 +32,8 @@ describe('agents layout wiring', () => {
     const overview = source('pages/dashboard/AgentOverview.tsx');
     expect(overview).toContain('StorageKey.agentsCatalogOrder');
     const dashboard = source('pages/dashboard/index.tsx');
-    expect(dashboard).toContain('applyStoredAgentOrder');
+    expect(dashboard).toContain('installedAgents');
+    expect(dashboard).toContain('omittedIds');
     const hook = source('lib/hooks/useInstalledAgents.ts');
     expect(hook).toContain('StorageKey.agentsCatalogOrder');
     const prefs = source('lib/ui-preferences.ts');

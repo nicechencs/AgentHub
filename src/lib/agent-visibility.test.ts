@@ -3,10 +3,13 @@ import { AGENTS } from '@/config/agents';
 import type { AgentStatus, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import {
   applyStoredAgentOrder,
+  filterByPageVisibleAgent,
   filterVisibleTrend,
   filterVisibleUsage,
   firstVisibleAgentId,
   hiddenAgentIdSet,
+  isPageVisibleAgent,
+  omittedAgentIds,
   sortAgentsForManagePage,
   visibleCatalogAgents,
   visibleInstalledIds,
@@ -146,5 +149,34 @@ describe('agent-visibility', () => {
     expect(firstVisibleAgentId('claude', ['codex', 'grok'])).toBe('codex');
     expect(firstVisibleAgentId('codex', ['codex', 'grok'])).toBe('codex');
     expect(firstVisibleAgentId(null, [])).toBe('claude');
+  });
+
+  it('omits uninstalled and hidden agents, sorted', () => {
+    expect(
+      omittedAgentIds([
+        status('codex'),
+        status('claude', { hidden: true }),
+        status('kimi', { installed: false }),
+      ]),
+    ).toEqual(['claude', 'kimi']);
+    expect(omittedAgentIds([])).toEqual([]);
+  });
+
+  it('keeps uninstalled rows only while detect is still loading', () => {
+    const hidden = new Set(['kimi']);
+    const installed = new Set(['codex']);
+    expect(isPageVisibleAgent('kimi', hidden, installed, false)).toBe(false);
+    expect(isPageVisibleAgent('claude', hidden, installed, false)).toBe(true);
+    expect(isPageVisibleAgent('claude', hidden, installed, true)).toBe(false);
+    expect(isPageVisibleAgent('codex', hidden, installed, true)).toBe(true);
+    expect(
+      filterByPageVisibleAgent(
+        [{ agent: 'claude' }, { agent: 'codex' }, { agent: 'kimi' }],
+        (row) => row.agent,
+        ['kimi'],
+        ['codex'],
+        true,
+      ).map((row) => row.agent),
+    ).toEqual(['codex']);
   });
 });

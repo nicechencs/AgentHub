@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
+import { filterByPageVisibleAgent } from '@/lib/agent-visibility';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { listPluginInventory } from '@/lib/api/plugins';
 import { openPathInFileManager } from '@/lib/api/skill';
@@ -29,8 +30,7 @@ function agentName(id: AgentId): string {
 export default function PluginsPage() {
   const { t } = useI18n();
   const { toast } = useToast();
-  const { hiddenIds, installedAgents } = useInstalledAgents();
-  const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  const { hiddenIds, installedIds, installedAgents, loading: agentsLoading } = useInstalledAgents();
   const [data, setData] = useState<PluginInventory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | string | null>(null);
@@ -64,8 +64,14 @@ export default function PluginsPage() {
 
   const visiblePlugins = useMemo(() => {
     if (!data) return [] as PluginEntry[];
-    return data.plugins.filter((p) => !hiddenSet.has(p.agent));
-  }, [data, hiddenSet]);
+    return filterByPageVisibleAgent(
+      data.plugins,
+      (p) => p.agent,
+      hiddenIds,
+      installedIds,
+      !agentsLoading,
+    );
+  }, [data, hiddenIds, installedIds, agentsLoading]);
 
   const plugins = useMemo(() => {
     if (filterAgent === 'all') return visiblePlugins;

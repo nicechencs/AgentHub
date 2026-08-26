@@ -21,7 +21,6 @@ import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { Notice } from '@/components/shared/Notice';
 import { UsageParserHealth } from '@/components/shared/UsageParserHealth';
 import { useUsageSync } from '@/components/shared/UsageSyncProvider';
@@ -40,10 +39,7 @@ import { Skeleton, TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 
 import {
-  applyStoredAgentOrder,
   filterVisibleTrend,
-  hiddenAgentIdSet,
-  visibleCatalogAgents,
   visibleInstalledIds,
 } from '@/lib/agent-visibility';
 import {
@@ -83,6 +79,11 @@ import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 import type { AgentId, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { typeScalePx } from '@/styles/tokens';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
+import {
+  formatTrendTick,
+  formatTrendTooltipLabel,
+  zeroFillTrendSeries,
+} from '@/lib/usage-trend';
 import { cn, fmtTokens } from '@/lib/utils';
 import { AgentOverview, AgentOverviewSkeleton } from './AgentOverview';
 import {
@@ -145,6 +146,8 @@ export default function DashboardPage() {
     error: agentsError,
     reload: reloadAgentStatuses,
     installedIds,
+    installedAgents,
+    omittedIds,
   } = useInstalledAgents();
   const catalog = useAgentCatalogOptional();
 
@@ -155,8 +158,6 @@ export default function DashboardPage() {
   const showAgentError = agentState === 'error' && statuses.length === 0;
 
   const [runtimes, setRuntimes] = useState<RuntimeDetect[]>([]);
-  const hiddenIds = useMemo(() => hiddenAgentIdSet(agents), [agents]);
-  const hiddenAgentList = useMemo(() => [...hiddenIds].sort(), [hiddenIds]);
 
   // —— 页面级共享筛选（时间 + Agent + 模型；指标 / 趋势 / 分布 / 明细共用）——
   const [dateRange, setDateRange] = useState<DateRange>('7d');
@@ -396,7 +397,7 @@ export default function DashboardPage() {
       const { days, since } = usageWindowBound(dateRange);
       const agentId = agentFilter === 'all' ? undefined : agentFilter;
       const model = modelFilter === 'all' || modelFilter === '' ? undefined : modelFilter;
-      const excludeAgentIds = hiddenAgentList.length > 0 ? hiddenAgentList : undefined;
+      const excludeAgentIds = omittedIds.length > 0 ? omittedIds : undefined;
       try {
         const [availability, overview, trend] = await Promise.all([
           getUsageAvailability(),
@@ -443,7 +444,7 @@ export default function DashboardPage() {
         }
       }
     },
-    [dateRange, agentFilter, modelFilter, hiddenAgentList],
+    [dateRange, agentFilter, modelFilter, omittedIds],
   );
 
   useEffect(() => {
@@ -488,27 +489,23 @@ export default function DashboardPage() {
     return () => window.removeEventListener(USAGE_COLLECTED_EVENT, onCollected);
   }, [loadUsage]);
 
-  const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
-  const visibleAgentMetas = useMemo(
-    () => applyStoredAgentOrder(visibleCatalogAgents(hiddenIds), (meta) => meta.id, agentCatalogOrder),
-    [agentCatalogOrder, hiddenIds],
-  );
   const parseVisibleIds = useMemo(
     () => (agentsLoading ? undefined : visibleInstalledIds(agents)),
     [agents, agentsLoading],
   );
 
   useEffect(() => {
-    if (agentFilter !== 'all' && hiddenIds.has(agentFilter)) {
+    if (agentFilter === 'all' || agentsLoading) return;
+    if (!installedIds.includes(agentFilter)) {
       setAgentFilter('all');
     }
-  }, [agentFilter, hiddenIds]);
+  }, [agentFilter, agentsLoading, installedIds]);
 
   const groupedByAgent = agentFilter === 'all';
   const visibleOverview = useMemo(() => {
     if (!usageOverview) return null;
-    return filterHiddenUsageOverview(usageOverview, hiddenIds, groupedByAgent);
-  }, [usageOverview, hiddenIds, groupedByAgent]);
+    return filterHiddenUsageOverview(usageOverview, omittedIds, groupedByAgent);
+  }, [usageOverview, omittedIds, groupedByAgent]);
 
   const modelOptions = visibleOverview?.models ?? [];
   const effectiveModelFilter = coerceModelFilter(modelFilter, modelOptions);
@@ -519,10 +516,12 @@ export default function DashboardPage() {
     }
   }, [modelFilter, effectiveModelFilter]);
 
-  const rangedTrend = useMemo(
-    () => filterVisibleTrend(usageTrendPoints, hiddenIds),
-    [usageTrendPoints, hiddenIds],
-  );
+  const rangedTrend = useMemo(() => {
+    const visible = filterVisibleTrend(usageTrendPoints, omittedIds);
+    const ids =
+      agentFilter === 'all' ? installedAgents.map((meta) => meta.id) : [agentFilter];
+    return zeroFillTrendSeries(visible, ids);
+  }, [usageTrendPoints, omittedIds, agentFilter, installedAgents]);
 
   const metrics = useMemo(() => {
     const m = overviewToUsageMetrics(
@@ -545,10 +544,10 @@ export default function DashboardPage() {
     [visibleOverview, agentFilter],
   );
 
-  /** 明细表仍用 capped rows + 既有客户端过滤（隐藏 Agent / 分页） */
+  /** 明细表仍用 capped rows + 既有客户端过滤（隐藏/未安装 Agent / 分页） */
   const windowUsage = useMemo(
-    () => filterWindowUsage(usage ?? [], dateRange, hiddenIds),
-    [usage, dateRange, hiddenIds],
+    () => filterWindowUsage(usage ?? [], dateRange, omittedIds),
+    [usage, dateRange, omittedIds],
   );
   const agentScopedUsage = useMemo(
     () => filterByAgent(windowUsage, agentFilter),
@@ -560,7 +559,7 @@ export default function DashboardPage() {
   );
   const tableRows = useMemo(() => sortUsageRowsDesc(scopedUsage), [scopedUsage]);
 
-  const trendAgents = agentFilter === 'all' ? visibleAgentMetas : [AGENT_MAP[agentFilter]];
+  const trendAgents = agentFilter === 'all' ? installedAgents : [AGENT_MAP[agentFilter]];
   const maxTokens = distribution[0]?.tokens ?? 0;
   const installedCount = agents?.filter((a) => a.installed && !a.hidden).length ?? 0;
   const overviewSkeletonCount = dashboardOverviewSkeletonCount(
@@ -632,7 +631,7 @@ export default function DashboardPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t('dashboard.page.allAgents')}</SelectItem>
-              {visibleAgentMetas.map((a) => (
+              {installedAgents.map((a) => (
                 <SelectItem key={a.id} value={a.id}>
                   {a.name}
                 </SelectItem>
@@ -777,7 +776,9 @@ export default function DashboardPage() {
                           tick={{ fill: 'var(--text-muted)', fontSize: typeScalePx('meta') }}
                           tickLine={false}
                           axisLine={{ stroke: 'var(--border)' }}
-                          tickFormatter={(d: string) => d.slice(5)}
+                          minTickGap={28}
+                          interval="preserveStartEnd"
+                          tickFormatter={(d: string) => formatTrendTick(d)}
                         />
                         <YAxis
                           tick={{ fill: 'var(--text-muted)', fontSize: typeScalePx('meta') }}
@@ -795,6 +796,7 @@ export default function DashboardPage() {
                           itemStyle={{
                             fontSize: 'var(--font-meta-size)',
                           }}
+                          labelFormatter={(label) => formatTrendTooltipLabel(String(label))}
                           formatter={(value, name) => [
                             fmtTokens(Number(value)),
                             agentDisplayName(name as AgentId),

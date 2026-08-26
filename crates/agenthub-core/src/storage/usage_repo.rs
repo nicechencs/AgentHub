@@ -240,13 +240,15 @@ impl UsageRepo {
         })
     }
 
-    /// Daily token trend bucketed by **local calendar day**.
+    /// Token trend for the dashboard area chart.
     ///
     /// Look-back matches `overview` / `query`: rolling `unixepoch('now', '-N days')`
     /// so RFC3339 (`T` / `Z` / offset) and SQLite datetime strings compare as
     /// instants. When `since` is present it is AND-ed (dashboard "today" passes
-    /// local midnight). Cards stay rolling; the chart only rebuckets included
-    /// rows into local `YYYY-MM-DD`.
+    /// local midnight). Cards stay rolling; the chart rebuckets included rows
+    /// into local hours (`YYYY-MM-DD HH:00`) when `days <= 1`, otherwise local
+    /// days (`YYYY-MM-DD`), then fills empty buckets so a 1-day window is not a
+    /// single point on a categorical axis.
     pub fn trend(
         &self,
         days: u32,
@@ -256,6 +258,7 @@ impl UsageRepo {
         exclude_agent_ids: &[AgentId],
     ) -> Result<Vec<UsageTrendPoint>> {
         let days = days.max(1) as i64;
+        let grain = TrendGrain::from_days(days);
         self.db.with_conn(|conn| {
             let mut sql = String::from(
                 r#"
@@ -270,7 +273,7 @@ impl UsageRepo {
             push_since_filter(&mut sql, &mut args, since);
             push_agent_model_filters(&mut sql, &mut args, agent, model);
             push_exclude_agents(&mut sql, &mut args, exclude_agent_ids);
-            // Bucketing by local day needs real timestamp parsing, which is
+            // Local hour/day buckets need real timestamp parsing, which is
             // done below in Rust; SQL only pre-aggregates per raw ts value.
             sql.push_str(" GROUP BY ts, agent_id");
 
@@ -284,15 +287,18 @@ impl UsageRepo {
                 let ts: String = row.get(0)?;
                 let agent_s: String = row.get(1)?;
                 let tokens: i64 = row.get(2)?;
-                let Some(day) = local_day_bucket(&ts) else {
+                let Some(bucket) = local_trend_bucket(&ts, grain) else {
                     continue;
                 };
                 let point = map
-                    .entry(day.clone())
-                    .or_insert_with(|| UsageTrendPoint::new(day));
+                    .entry(bucket.clone())
+                    .or_insert_with(|| UsageTrendPoint::new(bucket));
                 if let Some(aid) = AgentId::parse(&agent_s) {
                     point.add_tokens(aid, tokens);
                 }
+            }
+            if !map.is_empty() {
+                fill_trend_window(&mut map, days, since, grain);
             }
             Ok(map.into_values().collect())
         })
@@ -627,14 +633,98 @@ impl UsageRepo {
     }
 }
 
-/// Local calendar day (`YYYY-MM-DD`). UTC prefixes would split a local day
-/// around midnight; skip rows whose `ts` is not RFC3339.
-fn local_day_bucket(ts: &str) -> Option<String> {
+#[derive(Clone, Copy)]
+enum TrendGrain {
+    Hour,
+    Day,
+}
+
+impl TrendGrain {
+    fn from_days(days: i64) -> Self {
+        if days <= 1 {
+            Self::Hour
+        } else {
+            Self::Day
+        }
+    }
+
+    fn strftime(self) -> &'static str {
+        match self {
+            Self::Hour => "%Y-%m-%d %H:00",
+            Self::Day => "%Y-%m-%d",
+        }
+    }
+}
+
+/// Local hour (`YYYY-MM-DD HH:00`) or calendar day (`YYYY-MM-DD`).
+/// UTC prefixes would split a local day around midnight; skip non-RFC3339 `ts`.
+fn local_trend_bucket(ts: &str, grain: TrendGrain) -> Option<String> {
     chrono::DateTime::parse_from_rfc3339(ts).ok().map(|dt| {
         dt.with_timezone(&chrono::Local)
-            .format("%Y-%m-%d")
+            .format(grain.strftime())
             .to_string()
     })
+}
+
+fn truncate_local_hour(
+    dt: chrono::DateTime<chrono::Local>,
+) -> chrono::DateTime<chrono::Local> {
+    use chrono::Timelike;
+    let naive = dt
+        .date_naive()
+        .and_hms_opt(dt.hour(), 0, 0)
+        .expect("hour 0-23 is a valid naive time");
+    naive
+        .and_local_timezone(chrono::Local)
+        .earliest()
+        .unwrap_or(dt)
+}
+
+/// Fill missing hour/day keys so the series spans the look-back window.
+/// Skip when `map` is empty so a true-zero window stays an empty series.
+fn fill_trend_window(
+    map: &mut std::collections::BTreeMap<String, UsageTrendPoint>,
+    days: i64,
+    since: Option<&str>,
+    grain: TrendGrain,
+) {
+    let now = chrono::Local::now();
+    let rolling_start = now - chrono::Duration::days(days);
+    let start = since
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Local))
+        .filter(|s| *s > rolling_start)
+        .unwrap_or(rolling_start);
+
+    match grain {
+        TrendGrain::Hour => {
+            let mut t = truncate_local_hour(start);
+            let end = truncate_local_hour(now);
+            let mut n = 0usize;
+            while t <= end && n < 48 {
+                let key = t.format(grain.strftime()).to_string();
+                map.entry(key.clone())
+                    .or_insert_with(|| UsageTrendPoint::new(key));
+                t = t + chrono::Duration::hours(1);
+                n += 1;
+            }
+        }
+        TrendGrain::Day => {
+            let mut d = start.date_naive();
+            let end = now.date_naive();
+            let mut n = 0usize;
+            while d <= end && n < 40 {
+                let key = d.format(grain.strftime()).to_string();
+                map.entry(key.clone())
+                    .or_insert_with(|| UsageTrendPoint::new(key));
+                match d.checked_add_signed(chrono::Duration::days(1)) {
+                    Some(next) => d = next,
+                    None => break,
+                }
+                n += 1;
+            }
+        }
+    }
 }
 
 /// Appends a `since` lower bound compared as instants (`unixepoch`).

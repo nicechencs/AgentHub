@@ -10,6 +10,15 @@ function source(name: string): string {
 }
 
 describe('connections layout wiring', () => {
+  it('scopes tabs and wallet to installed agents after detect, omitting hidden and uninstalled', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('filterWalletByExcludedAgents(wallet, omittedSet)');
+    expect(page).toContain(
+      'const allowedAgents = installedIds.length > 0 || !loading ? installedIds : visibleIds',
+    );
+    expect(page).toContain('const tabAgentIds = allowedAgents');
+  });
+
   it('uses leftover-inactive filtered length for chips and footer; header descriptionCount stays unfiltered', () => {
     const page = source('index.tsx');
     const list = source('TicketWalletList.tsx');

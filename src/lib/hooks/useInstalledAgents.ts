@@ -9,6 +9,7 @@ import { AGENTS, type AgentMeta } from '@/config/agents';
 import {
   applyStoredAgentOrder,
   hiddenAgentIdSet,
+  omittedAgentIds,
   visibleCatalogIds,
   visibleInstalledIds,
 } from '@/lib/agent-visibility';
@@ -28,6 +29,11 @@ export function useInstalledAgents() {
   // （Connections 子页 load → onPoolChanged → setState 会形成加载死循环）
   const hiddenIds = useMemo<AgentId[]>(
     () => [...hiddenAgentIdSet(statuses)],
+    [statuses],
+  );
+
+  const omittedIds = useMemo<AgentId[]>(
+    () => omittedAgentIds(statuses),
     [statuses],
   );
 
@@ -61,6 +67,7 @@ export function useInstalledAgents() {
     error,
     statuses,
     hiddenIds,
+    omittedIds,
     visibleIds,
     installedIds,
     installedAgents,

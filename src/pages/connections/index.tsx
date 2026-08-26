@@ -54,6 +54,7 @@ import {
   buildTicketAddMenu,
   extrasFromPoolSource,
   filterTicketsByAgentUsage,
+  filterWalletByExcludedAgents,
   findTicketPoolSource,
   scheduleAfterMenuClose,
   shouldIgnoreMenuDialogDismiss,
@@ -128,14 +129,22 @@ function parseAgentParam(raw: string | null, allowed: AgentId[]): AgentId | null
 
 export default function ConnectionsPage() {
   const { t } = useI18n();
-  const { installedIds, visibleIds, hiddenIds, loading, state, error, reload } = useInstalledAgents();
+  const {
+    installedIds,
+    visibleIds,
+    omittedIds,
+    loading,
+    state,
+    error,
+    reload,
+  } = useInstalledAgents();
   const pool = useConnectionPool();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const allowedAgents = installedIds.length ? installedIds : visibleIds;
-  const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  const allowedAgents = installedIds.length > 0 || !loading ? installedIds : visibleIds;
+  const omittedSet = useMemo(() => new Set(omittedIds), [omittedIds]);
   const highlightAgentId = parseAgentParam(searchParams.get('agent'), allowedAgents);
   const resumeAgentId = parseResumeAgentId(searchParams.get('resume'), allowedAgents);
   const [filterAgent, setFilterAgent] = useState<AgentTabId>(highlightAgentId ?? 'all');
@@ -190,10 +199,11 @@ export default function ConnectionsPage() {
   }, [highlightAgentId]);
 
   useEffect(() => {
-    if (filterAgent !== 'all' && hiddenSet.has(filterAgent)) {
+    if (filterAgent === 'all' || loading) return;
+    if (!installedIds.includes(filterAgent)) {
       setFilterAgent('all');
     }
-  }, [filterAgent, hiddenSet]);
+  }, [filterAgent, installedIds, loading]);
 
   const discoveryAgentId: AgentId = filterAgent === 'all' ? addAgentId : filterAgent;
 
@@ -260,38 +270,29 @@ export default function ConnectionsPage() {
     if (walletState === 'idle') void walletEnsureLoaded();
   }, [walletEnsureLoaded, walletState]);
 
-  const visibleWallet = useMemo(() => {
-    if (!wallet) return null;
-    if (hiddenSet.size === 0) return wallet;
-    const tickets = wallet.tickets.filter((ticket) => !hiddenSet.has(ticket.agentId));
-    const bindings = wallet.bindings.filter((binding) => !hiddenSet.has(binding.agentId));
-    const ticketIds = new Set(tickets.map((ticket) => ticket.id));
-    const surfaceGroups = (wallet.surfaceGroups ?? [])
-      .map((group) => ({
-        ...group,
-        members: group.members.filter((member) => ticketIds.has(member.ticketId)),
-      }))
-      .filter((group) => group.members.length > 0);
-    return { ...wallet, tickets, bindings, surfaceGroups };
-  }, [hiddenSet, wallet]);
+  const visibleWallet = useMemo(
+    () => filterWalletByExcludedAgents(wallet, omittedSet),
+    [omittedSet, wallet],
+  );
 
+  const tabAgentIds = allowedAgents;
   const tabAgents = useMemo(
-    () => visibleIds.map((id) => resolveAgentMeta(id)),
-    [visibleIds],
+    () => tabAgentIds.map((id) => resolveAgentMeta(id)),
+    [tabAgentIds],
   );
 
   const agentCounts = useMemo(() => {
     const tickets = visibleWallet?.tickets ?? [];
     const counts: Partial<Record<AgentTabId, number>> = { all: tickets.length };
     if (!visibleWallet) {
-      for (const id of visibleIds) counts[id] = 0;
+      for (const id of tabAgentIds) counts[id] = 0;
       return counts;
     }
-    for (const id of visibleIds) {
+    for (const id of tabAgentIds) {
       counts[id] = filterTicketsByAgentUsage(visibleWallet, tickets, id).length;
     }
     return counts;
-  }, [visibleIds, visibleWallet]);
+  }, [tabAgentIds, visibleWallet]);
 
   const poolReload = pool.reload;
 
@@ -315,7 +316,7 @@ export default function ConnectionsPage() {
   }, [loadWallet, poolReload, reload, t]);
 
   useEffect(() => {
-    const allowed = installedIds.length ? installedIds : visibleIds;
+    const allowed = installedIds.length > 0 || !loading ? installedIds : visibleIds;
     const guide = readConnectGuide(searchParams, allowed);
     if (!guide) {
       consumedGuideKeyRef.current = null;
@@ -330,7 +331,7 @@ export default function ConnectionsPage() {
     const agentFromUrl = parseAgentParam(searchParams.get('agent'), allowed);
     if (agentFromUrl) setAddAgentId(agentFromUrl);
     setSearchParams(consumeConnectIntent(searchParams), { replace: true });
-  }, [installedIds, visibleIds, searchParams, setSearchParams]);
+  }, [installedIds, loading, visibleIds, searchParams, setSearchParams]);
 
   useEffect(() => {
     const intent = pendingGuide?.intent ?? null;
@@ -508,7 +509,7 @@ export default function ConnectionsPage() {
     tickets: visibleWallet?.tickets ?? [],
     accounts: pool.accounts,
     providers: pool.providers,
-    hiddenIds,
+    hiddenIds: omittedIds,
     poolReady: pool.state === 'ready' || pool.state === 'partial',
     deps: connectDeps,
     t,
