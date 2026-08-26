@@ -7,19 +7,11 @@ use agenthub_core::models::{Account, AccountSwitchResult, AgentId};
 use agenthub_core::AgentHub;
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
+use crate::agent_arg::parse_agent_filter;
 use crate::output::{confirm, print_json, OutputFormat};
 
-fn parse_agent_filter(agent_filter: Option<&str>) -> Result<Option<AgentId>> {
-    AgentId::parse_optional(agent_filter)
-}
-
 fn require_agent(agent_filter: Option<&str>, operation: &str) -> Result<AgentId> {
-    parse_agent_filter(agent_filter)?.ok_or_else(|| {
-        AppError::InvalidArg(format!(
-            "account {operation} requires --agent <{}>",
-            AgentId::expected_list()
-        ))
-    })
+    crate::agent_arg::require_agent(agent_filter, "account", operation)
 }
 
 /// List accounts (redacted).
@@ -115,32 +107,8 @@ pub fn undo(
     }
 }
 
-pub fn switch_confirm_prompt(
-    hub: &AgentHub,
-    agent: AgentId,
-    id_or_label: &str,
-) -> Result<String> {
-    let current = hub
-        .accounts()
-        .list(Some(agent))?
-        .into_iter()
-        .find(|a| a.is_current);
-    let backfill = match current {
-        Some(c) => format!("backfill: current live will be saved as 「{}」", c.label),
-        None => "backfill: no current account; live will be written directly".into(),
-    };
-    let backup = format!(
-        "backup: {}",
-        hub.backups()
-            .backups_root()
-            .join("live")
-            .join(agent.as_str())
-            .display()
-    );
-    Ok(format!(
-        "Switch {} to account {id_or_label}?\n  {backfill}\n  {backup}\n  process: running agent processes are not stopped",
-        agent.as_str()
-    ))
+pub fn switch_confirm_prompt(hub: &AgentHub, agent: AgentId, id_or_label: &str) -> Result<String> {
+    Ok(hub.account_switch_preview(agent, id_or_label)?.cli_prompt())
 }
 
 /// Print OAuth authorize URL for --agent (does not wait for callback).

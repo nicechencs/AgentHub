@@ -142,18 +142,13 @@ pub fn start_oauth(
             }
         });
 
-    st.insert(session::OAuthSession {
-        state: state.clone(),
+    st.insert(session::OAuthSession::new(
+        state.clone(),
         agent,
-        verifier: pkce.verifier().to_string(),
-        redirect_uri: redirect_uri.clone(),
-        provider_key: resolved_key.clone(),
-        status: OAuthStatus::Waiting,
-        code: None,
-        error: None,
-        created_at: std::time::Instant::now(),
-        completing: false,
-    })?;
+        pkce.verifier().to_string(),
+        redirect_uri.clone(),
+        resolved_key.clone(),
+    ))?;
 
     let st2 = Arc::clone(&st);
     let state2 = state.clone();
@@ -259,41 +254,41 @@ pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account>
     let session = st.take_ready(state)?;
     let result = (|| -> Result<Account> {
         let code = session
-            .code
-            .clone()
+            .code()
+            .map(str::to_string)
             .ok_or_else(|| AppError::message("oauth.no_code", "OAuth 回调未包含 code"))?;
 
-        let provider = resolve_pkce_provider(session.agent, session.provider_key.as_deref())
-            .ok_or_else(|| {
+        let provider =
+            resolve_pkce_provider(session.agent(), session.provider_key()).ok_or_else(|| {
                 AppError::Unsupported(format!(
                     "OAuth provider missing for {} ({})",
-                    session.agent.as_str(),
-                    session.provider_key.as_deref().unwrap_or("-")
+                    session.agent().as_str(),
+                    session.provider_key().unwrap_or("-")
                 ))
             })?;
 
         let tokens = provider
             .exchange_code_with_state(
                 &code,
-                &session.verifier,
-                &session.redirect_uri,
-                Some(&session.state),
+                session.verifier(),
+                session.redirect_uri(),
+                Some(session.state()),
             )
             .map_err(|error| AppError::message(error.code(), "OAuth token exchange failed"))?;
 
-        let account = if session.agent == AgentId::Pi {
+        let account = if session.agent() == AgentId::Pi {
             complete_pi_oauth(accounts, &session, tokens)?
         } else {
             // Codex live apply only accepts `format=auth_json` with a full auth.json
             // body. Convert the generic PKCE token bundle before pool insert so the
             // account is switchable immediately (not only after import-live).
-            let credentials = if session.agent == AgentId::Codex {
+            let credentials = if session.agent() == AgentId::Codex {
                 crate::adapters::normalize_codex_oauth_credentials(&tokens.credentials)?
             } else {
                 tokens.credentials
             };
             let live = LiveAccount {
-                agent: session.agent,
+                agent: session.agent(),
                 kind: AccountKind::Oauth,
                 credentials,
                 label_hint: tokens.label_hint.clone(),
@@ -302,10 +297,10 @@ pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account>
 
             let label = tokens
                 .label_hint
-                .unwrap_or_else(|| format!("{} oauth", session.agent.as_str()));
+                .unwrap_or_else(|| format!("{} oauth", session.agent().as_str()));
 
             accounts.create(AccountInput {
-                agent_id: session.agent,
+                agent_id: session.agent(),
                 kind: AccountKind::Oauth,
                 label,
                 credentials: live.credentials,
@@ -326,7 +321,7 @@ pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account>
             tracing::info!(
                 module = targets::OAUTH,
                 op = "complete",
-                agent = session.agent.as_str(),
+                agent = session.agent().as_str(),
                 account_id = %account.id,
                 "oauth account stored"
             );
@@ -347,8 +342,7 @@ fn complete_pi_oauth(
     tokens: TokenBundle,
 ) -> Result<Account> {
     let provider_key = session
-        .provider_key
-        .as_deref()
+        .provider_key()
         .and_then(pi_auth_json_key)
         .ok_or_else(|| {
             AppError::message(

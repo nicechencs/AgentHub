@@ -7,17 +7,10 @@ use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
 use crate::output::{confirm, print_json, OutputFormat};
 
-pub fn parse_agent_filter(agent_filter: Option<&str>) -> Result<Option<AgentId>> {
-    AgentId::parse_optional(agent_filter)
-}
+pub use crate::agent_arg::parse_agent_filter;
 
 fn require_agent(agent_filter: Option<&str>) -> Result<AgentId> {
-    parse_agent_filter(agent_filter)?.ok_or_else(|| {
-        AppError::InvalidArg(format!(
-            "skill operation requires --agent <{}>",
-            AgentId::expected_list()
-        ))
-    })
+    crate::agent_arg::require_agent(agent_filter, "skill", "operation")
 }
 
 pub fn list(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
@@ -227,7 +220,8 @@ pub fn uninstall(
             ),
             assume_yes,
         )?;
-        hub.skills().uninstall_skill(skill_id, Some(hub.backups()))?;
+        hub.skills()
+            .uninstall_skill(skill_id, Some(hub.backups()))?;
     }
     match format {
         OutputFormat::Quiet => Ok(()),

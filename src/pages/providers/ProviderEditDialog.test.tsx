@@ -1,6 +1,6 @@
 /**
  * R02: ProviderEditDialog Configuration fail-closed — pure flow tests.
- * Vitest runs in node (no jsdom); exercises real branch order via providerSaveFlow.
+ * Vitest runs in node (no jsdom); exercises real branch order via provider-save.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { MOCK_AGENT_CATALOG } from '@/dev/mocks/fixtures/agent-catalog';
@@ -19,18 +19,20 @@ import {
   type ProviderFormVars,
 } from '@/lib/provider-detect';
 import {
-  canSaveProviderForm,
-  canSaveWithSchemaStatus,
   parseJsonConfigBase,
   projectValuesToSchema,
-  planSchemaLoad,
-  resolveProjectorExpectation,
   resolveSavePath,
   runProviderSaveFlow,
   type ProviderSaveFlowDeps,
   type ProviderSaveFlowInput,
   type SchemaUiStatus,
-} from './providerSaveFlow';
+} from '@/lib/api/provider-save';
+import {
+  canSaveProviderForm,
+  canSaveWithSchemaStatus,
+  planSchemaLoad,
+  resolveProjectorExpectation,
+} from './provider-schema-gate';
 import { getConfigTextError } from './ProviderEditDialog';
 
 const TEST_CLAUDE_SCHEMA: AgentConfigSchemaDto = {

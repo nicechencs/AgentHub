@@ -1,6 +1,6 @@
 //! `agenthub provider` — pool reads, live import, safe switching, and presets.
 
-use agenthub_core::error::{AppError, Result};
+use agenthub_core::error::Result;
 use agenthub_core::models::{AgentId, Provider, ProviderPreset, ProviderSwitchResult};
 use agenthub_core::presets;
 use agenthub_core::AgentHub;
@@ -8,12 +8,7 @@ use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
 use crate::output::{confirm, print_json, OutputFormat};
 
-/// Parse optional global `-a/--agent` filter into [`AgentId`].
-///
-/// Invalid values become [`AppError::InvalidArg`] (CLI exit code 2).
-pub fn parse_agent_filter(agent_filter: Option<&str>) -> Result<Option<AgentId>> {
-    AgentId::parse_optional(agent_filter)
-}
+pub use crate::agent_arg::parse_agent_filter;
 
 /// Select presets for CLI output (thin pure wrapper over core registry).
 pub fn select_presets(agent_filter: Option<&str>) -> Result<Vec<ProviderPreset>> {
@@ -27,12 +22,7 @@ pub fn resolve_agent_filter(agent_filter: Option<&str>) -> Result<Option<AgentId
 }
 
 fn require_agent(agent_filter: Option<&str>, operation: &str) -> Result<AgentId> {
-    parse_agent_filter(agent_filter)?.ok_or_else(|| {
-        AppError::InvalidArg(format!(
-            "provider {operation} requires --agent <{}>",
-            AgentId::expected_list()
-        ))
-    })
+    crate::agent_arg::require_agent(agent_filter, "provider", operation)
 }
 
 pub fn presets(format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
@@ -168,32 +158,8 @@ pub fn test_latency(
     }
 }
 
-pub fn switch_confirm_prompt(
-    hub: &AgentHub,
-    agent: AgentId,
-    id_or_name: &str,
-) -> Result<String> {
-    let current = hub
-        .providers()
-        .list(Some(agent))?
-        .into_iter()
-        .find(|p| p.is_current);
-    let backfill = match current {
-        Some(c) => format!("backfill: current live will be saved as 「{}」", c.name),
-        None => "backfill: no current provider; live will be written directly".into(),
-    };
-    let backup = format!(
-        "backup: {}",
-        hub.backups()
-            .backups_root()
-            .join("live")
-            .join(agent.as_str())
-            .display()
-    );
-    Ok(format!(
-        "Switch {} to provider {id_or_name}?\n  {backfill}\n  {backup}\n  process: running agent processes are not stopped",
-        agent.as_str()
-    ))
+pub fn switch_confirm_prompt(hub: &AgentHub, agent: AgentId, id_or_name: &str) -> Result<String> {
+    Ok(hub.provider_switch_preview(agent, id_or_name)?.cli_prompt())
 }
 
 /// Pure presentation for list (testable without DB).

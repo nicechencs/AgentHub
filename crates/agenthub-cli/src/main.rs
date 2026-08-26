@@ -1,5 +1,6 @@
 //! agenthub CLI — thin shell over agenthub-core.
 
+mod agent_arg;
 mod commands;
 mod output;
 
