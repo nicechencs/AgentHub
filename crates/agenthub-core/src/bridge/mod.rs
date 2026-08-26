@@ -8,6 +8,7 @@ pub mod grok_cli;
 pub mod host;
 pub mod protocol;
 pub mod request_fsm;
+pub mod route_index;
 pub mod runtime;
 pub mod session;
 pub mod types;
@@ -15,6 +16,10 @@ pub mod types;
 pub use account::{AccountPicker, BridgeMemberSpec, MemberHealth, MemberHealthSink, PickedMember};
 pub use host::{BridgeHostError, BridgeRuntimeHost};
 pub use request_fsm::{AccountSwitchGate, RequestDecision, RequestFsm, SwitchClass};
+pub use route_index::{
+    DispatchCandidate, EffectiveRouteIndex, MemberCapability, MemberCapabilitySnapshot,
+    RouteResolveError,
+};
 pub use runtime::{
     BridgeLocalSurface, BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec,
     BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth,

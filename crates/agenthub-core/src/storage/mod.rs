@@ -9,6 +9,7 @@ mod connection_trash_repo;
 mod migrations;
 mod operation_repo;
 mod provider_repo;
+mod route_pool_repo;
 mod skill_repo;
 mod usage_repo;
 
@@ -24,6 +25,7 @@ pub use chat_repo::ChatRepo;
 pub use connection_trash_repo::ConnectionTrashRepo;
 pub use operation_repo::OperationRepo;
 pub use provider_repo::ProviderRepo;
+pub use route_pool_repo::RoutePoolRepo;
 
 // Connection-scoped helpers for multi-table transactions (ConnectionService).
 pub(crate) use account_repo::{

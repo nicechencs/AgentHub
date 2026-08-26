@@ -282,6 +282,64 @@ impl BridgeRuntimeHost {
     pub async fn drain(&self) -> Result<(), BridgeHostError> {
         self.shutdown().await
     }
+
+    /// Current unified loopback port, if any socket is live.
+    pub fn gateway_port(&self) -> Result<Option<u16>, BridgeHostError> {
+        let registry = self.gateway.lock()?;
+        Ok(registry
+            .primary_port
+            .filter(|port| registry.sockets.contains_key(port)))
+    }
+
+    /// Move the unified gateway socket to `port`.
+    ///
+    /// Occupancy or bind failure leaves existing sockets, citers, and client-facing
+    /// ports unchanged. Edges that already share the old primary follow the new
+    /// port; explicit alias ports stay bound until they have no remaining citers.
+    pub async fn set_gateway_port(&self, port: u16) -> Result<u16, BridgeHostError> {
+        if port == 0 {
+            return Err(BridgeHostError::InvalidGatewayPort);
+        }
+        if self.closing.load(Ordering::SeqCst) {
+            return Err(BridgeHostError::HostClosing);
+        }
+        let _registration = self.registration.lock().await;
+        if self.closing.load(Ordering::SeqCst) {
+            return Err(BridgeHostError::HostClosing);
+        }
+
+        let unbind = {
+            let mut registry = self.gateway.lock()?;
+            prune_dead_sockets(&mut registry);
+            if registry.primary_port == Some(port) && registry.sockets.contains_key(&port) {
+                return Ok(port);
+            }
+            let old_primary = registry.primary_port;
+            if !registry.sockets.contains_key(&port) {
+                let listener = bind_loopback(port)?;
+                let (bound, socket) = listen_on(listener, self.app.clone())?;
+                debug_assert_eq!(bound, port);
+                registry.sockets.insert(bound, socket);
+            }
+            registry.primary_port = Some(port);
+            if let Some(old) = old_primary.filter(|old| *old != port) {
+                for runtime in registry.runtimes.values_mut() {
+                    if runtime.cited_port == old {
+                        runtime.cited_port = port;
+                    }
+                }
+                if registry.remaining_citers(old, None) == 0 {
+                    take_socket_tasks(&mut registry, &[old])
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            }
+        };
+        let _ = drain_socket_tasks(unbind).await;
+        Ok(port)
+    }
 }
 
 fn ensure_socket(
@@ -302,6 +360,15 @@ fn ensure_socket(
     }
 
     let listener = bind_loopback(requested)?;
+    let (port, socket) = listen_on(listener, app)?;
+    registry.sockets.insert(port, socket);
+    if registry.primary_port.is_none() {
+        registry.primary_port = Some(port);
+    }
+    Ok(port)
+}
+
+fn listen_on(listener: TcpListener, app: Router) -> Result<(u16, SocketInstance), BridgeHostError> {
     let port = listener.local_addr()?.port();
     let accept_shutdown = CancellationToken::new();
     let task_shutdown = accept_shutdown.clone();
@@ -329,17 +396,13 @@ fn ensure_socket(
             }
         }
     });
-    registry.sockets.insert(
+    Ok((
         port,
         SocketInstance {
             accept_shutdown,
             task: Some(task),
         },
-    );
-    if registry.primary_port.is_none() {
-        registry.primary_port = Some(port);
-    }
-    Ok(port)
+    ))
 }
 
 fn prune_dead_sockets(registry: &mut GatewayRegistry) {
@@ -555,6 +618,23 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.listed_models == right.listed_models
         && left.multi_account == right.multi_account
         && member_fingerprint(left) == member_fingerprint(right)
+        && left.route_index.as_ref().map(|index| {
+            (
+                index.route_id.as_str(),
+                index.generation,
+                index.list_models("responses"),
+                index.list_models("messages"),
+                index.list_models("chat_completions"),
+            )
+        }) == right.route_index.as_ref().map(|index| {
+            (
+                index.route_id.as_str(),
+                index.generation,
+                index.list_models("responses"),
+                index.list_models("messages"),
+                index.list_models("chat_completions"),
+            )
+        })
 }
 
 fn member_fingerprint(spec: &BridgeStartSpec) -> Vec<(String, String, String)> {
