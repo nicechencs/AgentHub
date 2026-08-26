@@ -30,7 +30,7 @@ updated: 2026-08-26
 ## 阅读规则
 
 1. 先读架构总览，再读领域概念；实现细节以代码和 contract 为准。
-2. 看到“目标”“未来”“提案”时，不要当作当前能力；尤其是 `agenthub-adapterd` sidecar。
+2. 看到“目标”“未来”“提案”时，不要当作当前能力；尤其是 `agenthub-adapterd` sidecar 和本机同口授权池。
 3. 看到 `Ticket`、`Binding`、`Wallet` 时，按实现术语理解；产品表面统一用“登录”与“连接”。
 4. `dev`/`release` 分支与发布红线属于项目根 [AGENTS.md](../../AGENTS.md)；本目录只链接，不复制发布流程。
 

@@ -4,7 +4,7 @@ description: AgentHub 进程内 Gateway 的 loopback HTTP endpoint、鉴权和�
 type: reference
 audience: integrator
 status: current
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # 本机 Routes API
@@ -88,4 +88,11 @@ Authorization: Bearer <local-token>
 - 只绑定 loopback，不提供公网监听或 CORS 网关。
 - Route 的启动、停止、apply 和恢复由 backend/Tauri 控制面完成；不要手写第二个 listener。
 - `local_bridge` 只是三种 adapter route 之一；能用 `native_endpoint` 或 `config_sync` 时优先原生路径。
+
+## 相关页面
+
+- [Connections、Routes 与绑定](../concepts/connections-and-routing.md)
+- [Adapters 与本机 Bridge](../concepts/adapters-and-bridges.md)
+- [Route 兼容性](route-compatibility.md)
+- [本机同口授权池（提案）](../proposals/unified-loopback-pool.md)：固定端口、Hub 令牌和跨产品调度是候选方向，不是当前 endpoint 契约。
 

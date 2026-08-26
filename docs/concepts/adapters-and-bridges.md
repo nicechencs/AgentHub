@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: core, Tauri, and route/runtime contributors
 source-of-truth: AgentAdapter, adapter planner/apply ports, bridge host code, and the sidecar proposal
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # Adapters 与本机 Bridge
@@ -68,3 +68,4 @@ Adapter profile 是一条“source connection → target Agent”的受管投影
 - [Core and runtime](../architecture/core-runtime.md)
 - [Frontend and backend boundary](../architecture/frontend-backend.md)
 - [Sidecar proposal](../proposals/adapter-sidecar.md)
+- [本机同口授权池（提案）](../proposals/unified-loopback-pool.md)

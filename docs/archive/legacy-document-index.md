@@ -58,9 +58,9 @@ The destination paths below are the intended organized names. A destination may 
 |---|---|
 | `docs/archive/a4-unified-loopback-gateway.md` | Historical gateway design; current facts belong in `docs/reference/local-route-api.md` and `docs/concepts/adapters-and-bridges.md` |
 | `docs/archive/hub-redesign-plan.md` | Historical Hub Phase 1 record; current page behavior belongs in `docs/ui/page-patterns.md` and current product docs |
-| `docs/archive/multi-account-routing-rfc.md` | Historical multi-account RFC; current runtime/member facts belong in product/reference docs |
+| `docs/archive/multi-account-routing-rfc.md` | Historical same-surface multi-account RFC; current runtime facts belong in product/reference docs; the cross-product same-port candidate is `docs/proposals/unified-loopback-pool.md` |
 | `docs/archive/route-endpoint-audit-2026-08.md` | Dated audit snapshot; current endpoint facts belong in `docs/reference/local-route-api.md` |
-| `docs/archive/routing-connection-refactor-plan.md` | Historical implementation plan; future process options belong in `docs/proposals/adapter-sidecar.md` and `docs/proposals/modularity.md` |
+| `docs/archive/routing-connection-refactor-plan.md` | Historical implementation plan; future process options belong in `docs/proposals/adapter-sidecar.md`, `docs/proposals/modularity.md`, and `docs/proposals/unified-loopback-pool.md` |
 | `docs/archive/single-kernel-projections.md` | Completed single-kernel proposal, implementation slices, and dated E/F evaluation; current contract belongs in `docs/architecture/adapter-route-kernel.md` |
 
 ## Coverage check
