@@ -21,6 +21,7 @@ import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { useTheme } from '@/components/shared/ThemeProvider';
 import { Notice } from '@/components/shared/Notice';
 import { UsageParserHealth } from '@/components/shared/UsageParserHealth';
 import { useUsageSync } from '@/components/shared/UsageSyncProvider';
@@ -76,8 +77,9 @@ import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
 import { hasEnvIssues } from '@/lib/env';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
+import { resolveTheme } from '@/lib/theme';
 import type { AgentId, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
-import { typeScalePx } from '@/styles/tokens';
+import { resolveChartColor, typeScalePx } from '@/styles/tokens';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import {
   formatTrendTick,
@@ -138,6 +140,8 @@ export default function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { t } = useI18n();
+  const { theme } = useTheme();
+  const chartScheme = resolveTheme(theme);
   const usageSync = useUsageSync();
   const usageSectionRef = useRef<HTMLElement>(null);
   const {
@@ -559,7 +563,13 @@ export default function DashboardPage() {
   );
   const tableRows = useMemo(() => sortUsageRowsDesc(scopedUsage), [scopedUsage]);
 
-  const trendAgents = agentFilter === 'all' ? installedAgents : [AGENT_MAP[agentFilter]];
+  const trendAgents = useMemo(() => {
+    if (agentFilter !== 'all') {
+      const meta = AGENT_MAP[agentFilter];
+      return meta ? [meta] : [];
+    }
+    return installedAgents;
+  }, [agentFilter, installedAgents]);
   const maxTokens = distribution[0]?.tokens ?? 0;
   const installedCount = agents?.filter((a) => a.installed && !a.hidden).length ?? 0;
   const overviewSkeletonCount = dashboardOverviewSkeletonCount(
@@ -756,19 +766,22 @@ export default function DashboardPage() {
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={rangedTrend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                         <defs>
-                          {trendAgents.map((meta) => (
-                            <linearGradient
-                              key={`grad-${meta.id}`}
-                              id={`usage-fill-${meta.id}`}
-                              x1="0"
-                              y1="0"
-                              x2="0"
-                              y2="1"
-                            >
-                              <stop offset="0%" stopColor={meta.color} stopOpacity={0.18} />
-                              <stop offset="100%" stopColor={meta.color} stopOpacity={0.02} />
-                            </linearGradient>
-                          ))}
+                          {trendAgents.map((meta) => {
+                            const color = resolveChartColor(meta.color, chartScheme);
+                            return (
+                              <linearGradient
+                                key={`grad-${meta.id}`}
+                                id={`usage-fill-${meta.id}`}
+                                x1="0"
+                                y1="0"
+                                x2="0"
+                                y2="1"
+                              >
+                                <stop offset="0%" stopColor={color} stopOpacity={0.18} />
+                                <stop offset="100%" stopColor={color} stopOpacity={0.02} />
+                              </linearGradient>
+                            );
+                          })}
                         </defs>
                         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} strokeOpacity={0.6} />
                         <XAxis
@@ -797,20 +810,21 @@ export default function DashboardPage() {
                             fontSize: 'var(--font-meta-size)',
                           }}
                           labelFormatter={(label) => formatTrendTooltipLabel(String(label))}
-                          formatter={(value, name) => [
-                            fmtTokens(Number(value)),
-                            agentDisplayName(name as AgentId),
-                          ]}
+                          formatter={(value, name) => {
+                            const tokens = Number(value);
+                            if (!tokens) return null;
+                            return [fmtTokens(tokens), agentDisplayName(name as AgentId)];
+                          }}
                         />
                         {trendAgents.map((meta) => (
                           <Area
                             key={meta.id}
-                            type="monotone"
+                            type="linear"
                             dataKey={meta.id}
-                            stackId="total"
-                            stroke={meta.color}
+                            stroke={resolveChartColor(meta.color, chartScheme)}
                             strokeWidth={1.5}
                             fill={`url(#usage-fill-${meta.id})`}
+                            isAnimationActive={false}
                             activeDot={{ r: 3, strokeWidth: 0 }}
                           />
                         ))}

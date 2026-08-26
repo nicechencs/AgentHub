@@ -195,6 +195,26 @@ export function agentHex(id: TokenAgentId, scheme: ThemeScheme = 'light'): strin
   return AGENT_COLORS[id][scheme];
 }
 
+function isTokenAgentId(id: string): id is TokenAgentId {
+  return (TOKEN_AGENT_IDS as readonly string[]).includes(id);
+}
+
+/**
+ * SVG stroke / gradient stops cannot reliably paint `var(--agent-*)`.
+ * Resolve catalog CSS vars (and the muted fallback) to the scheme hex.
+ */
+export function resolveChartColor(color: string, scheme: ThemeScheme = 'light'): string {
+  const value = color.trim();
+  const agentVar = /^var\(--agent-([a-z0-9]+)\)$/.exec(value);
+  if (agentVar && isTokenAgentId(agentVar[1])) {
+    return AGENT_COLORS[agentVar[1]][scheme];
+  }
+  if (value === 'var(--text-muted)') {
+    return THEME[scheme]['text-muted'];
+  }
+  return value;
+}
+
 /** All agent CSS vars in catalog order (BootSplash dots, etc.). */
 export const AGENT_COLOR_VARS: ReadonlyArray<`var(--agent-${TokenAgentId})`> = TOKEN_AGENT_IDS.map(
   (id) => agentCssVar(id),

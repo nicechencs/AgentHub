@@ -9,6 +9,7 @@ import {
   TYPE_SCALE_ALIASES,
   agentCssVar,
   agentHex,
+  resolveChartColor,
   buildBootCriticalCss,
   buildDesignTokensCss,
   buildTailwindFontSize,
@@ -35,6 +36,15 @@ describe('design tokens SSOT', () => {
     for (const id of TOKEN_AGENT_IDS) {
       expect(AGENT_CSS_VAR_TO_HEX_LIGHT[agentCssVar(id)]).toBe(AGENT_COLORS[id].light);
     }
+  });
+
+  it('resolves chart colors from agent CSS vars to scheme hex', () => {
+    for (const id of TOKEN_AGENT_IDS) {
+      expect(resolveChartColor(agentCssVar(id))).toBe(AGENT_COLORS[id].light);
+      expect(resolveChartColor(agentCssVar(id), 'dark')).toBe(AGENT_COLORS[id].dark);
+    }
+    expect(resolveChartColor('var(--text-muted)', 'dark')).toBe(THEME.dark['text-muted']);
+    expect(resolveChartColor('#d97757')).toBe('#d97757');
   });
 
   it('builds :root / .dark CSS from THEME + AGENT_COLORS', () => {
