@@ -56,6 +56,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ),
     ("00016_route_pools", include_str!("00016_route_pools.sql")),
     ("00017_usage_fast", include_str!("00017_usage_fast.sql")),
+    (
+        "00018_usage_cache_read_write",
+        include_str!("00018_usage_cache_read_write.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

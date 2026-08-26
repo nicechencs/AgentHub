@@ -529,12 +529,19 @@ export default function DashboardPage() {
 
   const metrics = useMemo(() => {
     const m = overviewToUsageMetrics(
-      visibleOverview?.metrics ?? { billableInput: 0, output: 0, cache: 0, costUsd: 0 },
+      visibleOverview?.metrics ?? {
+        billableInput: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        costUsd: 0,
+      },
     );
     return {
       input: fmtTokens(m.billableInput),
       output: fmtTokens(m.output),
-      cacheHit: m.cacheHitPct == null ? '—' : `${m.cacheHitPct}%`,
+      cacheWrite: fmtTokens(m.cacheWrite),
+      cacheRead: fmtTokens(m.cacheRead),
       cost: `$${m.cost.toFixed(2)}`,
       totalIn: m.billableInput,
       totalOut: m.output,
@@ -735,7 +742,7 @@ export default function DashboardPage() {
               usageRefreshing ? 'opacity-60 transition-opacity' : 'transition-opacity',
             )}
           >
-            <div className={pageRhythm.metricGrid}>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               <MetricCard
                 label={t('dashboard.page.metricInput', { range: dayLabel })}
                 value={metrics.input}
@@ -744,7 +751,14 @@ export default function DashboardPage() {
                 label={t('dashboard.page.metricOutput', { range: dayLabel })}
                 value={metrics.output}
               />
-              <MetricCard label={t('dashboard.page.metricCacheHit')} value={metrics.cacheHit} />
+              <MetricCard
+                label={t('dashboard.page.metricCacheWrite', { range: dayLabel })}
+                value={metrics.cacheWrite}
+              />
+              <MetricCard
+                label={t('dashboard.page.metricCacheRead', { range: dayLabel })}
+                value={metrics.cacheRead}
+              />
               <MetricCard label={t('dashboard.page.metricCost')} value={metrics.cost} />
             </div>
 
@@ -969,8 +983,8 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 function UsageOverviewSkeleton() {
   return (
     <div className={pageRhythm.blocks}>
-      <div className={pageRhythm.metricGrid}>
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
           <Skeleton key={i} className="h-20" />
         ))}
       </div>

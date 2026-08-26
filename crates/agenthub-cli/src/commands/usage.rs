@@ -124,14 +124,16 @@ fn emit_stats(
 ) -> Result<()> {
     let mut input = 0i64;
     let mut output = 0i64;
-    let mut cache = 0i64;
+    let mut cache_read = 0i64;
+    let mut cache_write = 0i64;
     let mut cost = 0.0f64;
     for r in rows {
         // Storage is already ccusage layout: input = non-cached billable for all agents
         // (Codex peeled at parse time). Do not subtract cache again.
         input += r.input_tokens.max(0);
         output += r.output_tokens.max(0);
-        cache += r.cache_tokens.max(0);
+        cache_read += r.cache_read_tokens.max(0);
+        cache_write += r.cache_write_tokens.max(0);
         cost += r.cost_usd.unwrap_or(0.0);
     }
     let missing = missing_pricing_from_rows(rows);
@@ -141,7 +143,8 @@ fn emit_stats(
         "rows": rows.len(),
         "inputTokens": input,
         "outputTokens": output,
-        "cacheTokens": cache,
+        "cacheReadTokens": cache_read,
+        "cacheWriteTokens": cache_write,
         "costUsd": (cost * 100.0).round() / 100.0,
         "missingPricingModels": missing,
     });
@@ -154,7 +157,8 @@ fn emit_stats(
             println!("  rows:          {}", rows.len());
             println!("  input tokens:  {input}  (non-cached / billable)");
             println!("  output tokens: {output}");
-            println!("  cache tokens:  {cache}");
+            println!("  cache write:   {cache_write}");
+            println!("  cache read:    {cache_read}");
             println!("  est. cost USD: {:.2}", cost);
             if rows.is_empty() {
                 println!("  tip: run `agenthub usage collect` first");
@@ -210,7 +214,7 @@ fn missing_pricing_from_rows(rows: &[UsageRecord]) -> Vec<String> {
     use agenthub_core::usage::has_embedded_pricing;
     let mut set = std::collections::BTreeSet::new();
     for r in rows {
-        let tokens = r.input_tokens + r.output_tokens + r.cache_tokens;
+        let tokens = r.input_tokens + r.output_tokens + r.cache_tokens_total();
         if tokens > 0 && !has_embedded_pricing(&r.model) {
             set.insert(r.model.clone());
         }

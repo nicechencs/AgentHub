@@ -45,27 +45,31 @@ export function sumOverviewMetrics(
 ): UsageOverviewMetrics {
   let billableInput = 0;
   let output = 0;
-  let cache = 0;
+  let cacheRead = 0;
+  let cacheWrite = 0;
   let costUsd = 0;
   for (const slice of slices) {
     billableInput += slice.billableInput;
     output += slice.output;
-    cache += slice.cache;
+    cacheRead += slice.cacheRead;
+    cacheWrite += slice.cacheWrite;
     costUsd += slice.costUsd;
   }
-  return { billableInput, output, cache, costUsd };
+  return { billableInput, output, cacheRead, cacheWrite, costUsd };
 }
 
 export function overviewToUsageMetrics(metrics: UsageOverviewMetrics): UsageMetrics {
-  const fullInput = metrics.billableInput + metrics.cache;
+  const cache = metrics.cacheRead + metrics.cacheWrite;
+  const fullInput = metrics.billableInput + cache;
   return {
     billableInput: metrics.billableInput,
     output: metrics.output,
-    cacheRead: metrics.cache,
+    cacheRead: metrics.cacheRead,
+    cacheWrite: metrics.cacheWrite,
     fullInput,
     cost: metrics.costUsd,
-    // Stored `cache` is create+read. This is cache share of the prompt, not hit rate.
-    cacheHitPct: fullInput > 0 ? Math.round((metrics.cache / fullInput) * 100) : null,
+    // Combined write+read as a share of the prompt, not a hit rate.
+    cacheHitPct: fullInput > 0 ? Math.round((cache / fullInput) * 100) : null,
   };
 }
 
@@ -121,6 +125,7 @@ export interface UsageMetrics {
   billableInput: number;
   output: number;
   cacheRead: number;
+  cacheWrite: number;
   fullInput: number;
   cost: number;
   cacheHitPct: number | null;

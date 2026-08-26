@@ -9,6 +9,7 @@ describe('usageTokenParts (ccusage layout)', () => {
       agentId: 'codex',
       inputTokens: 750,
       cacheReadTokens: 250,
+      cacheWriteTokens: 0,
     });
     expect(p.billableInput).toBe(750);
     expect(p.cache).toBe(250);
@@ -23,6 +24,7 @@ describe('usageTokenParts (ccusage layout)', () => {
         agentId: 'codex',
         inputTokens: billable,
         cacheReadTokens: cache,
+        cacheWriteTokens: 0,
       });
       expect(p.billableInput).toBe(750);
       billable = p.billableInput;
@@ -34,6 +36,7 @@ describe('usageTokenParts (ccusage layout)', () => {
       agentId: 'grok',
       inputTokens: 7180,
       cacheReadTokens: 11264,
+      cacheWriteTokens: 0,
     });
     expect(p.billableInput).toBe(7180);
     expect(p.cache).toBe(11264);
@@ -45,6 +48,7 @@ describe('usageTokenParts (ccusage layout)', () => {
       agentId: 'claude',
       inputTokens: 100,
       cacheReadTokens: 50,
+      cacheWriteTokens: 0,
     });
     expect(p.billableInput).toBe(100);
     expect(p.cache).toBe(50);
@@ -53,9 +57,9 @@ describe('usageTokenParts (ccusage layout)', () => {
 
   it('sums billable input without double-subtract', () => {
     const total = sumBillableInput([
-      { agentId: 'codex', inputTokens: 750, cacheReadTokens: 250 },
-      { agentId: 'claude', inputTokens: 100, cacheReadTokens: 10 },
-      { agentId: 'grok', inputTokens: 7180, cacheReadTokens: 11264 },
+      { agentId: 'codex', inputTokens: 750, cacheReadTokens: 250, cacheWriteTokens: 0 },
+      { agentId: 'claude', inputTokens: 100, cacheReadTokens: 10, cacheWriteTokens: 0 },
+      { agentId: 'grok', inputTokens: 7180, cacheReadTokens: 11264, cacheWriteTokens: 0 },
     ]);
     expect(total).toBe(750 + 100 + 7180);
   });
@@ -65,8 +69,11 @@ describe('usageTokenParts (ccusage layout)', () => {
       agentId: 'codex',
       inputTokens: -5,
       cacheReadTokens: -1,
+      cacheWriteTokens: -2,
     });
     expect(p.billableInput).toBe(0);
+    expect(p.cacheRead).toBe(0);
+    expect(p.cacheWrite).toBe(0);
     expect(p.cache).toBe(0);
     expect(p.fullInput).toBe(0);
   });
@@ -77,9 +84,24 @@ describe('usageTokenParts (ccusage layout)', () => {
       agentId: 'codex',
       inputTokens: 10642,
       cacheReadTokens: 11008,
+      cacheWriteTokens: 0,
     });
     expect(p.billableInput).toBe(10642);
     expect(p.cache).toBe(11008);
     expect(p.fullInput).toBe(10642 + 11008);
+  });
+
+  it('keeps cache write and read as separate buckets', () => {
+    const p = usageTokenParts({
+      agentId: 'claude',
+      inputTokens: 100,
+      cacheReadTokens: 40,
+      cacheWriteTokens: 25,
+    });
+    expect(p.billableInput).toBe(100);
+    expect(p.cacheRead).toBe(40);
+    expect(p.cacheWrite).toBe(25);
+    expect(p.cache).toBe(65);
+    expect(p.fullInput).toBe(165);
   });
 });

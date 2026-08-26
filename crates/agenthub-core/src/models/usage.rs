@@ -15,8 +15,10 @@ pub struct UsageRecord {
     pub model: String,
     pub input_tokens: i64,
     pub output_tokens: i64,
-    /// Combined cache tokens (create + read) for DB column `cache_tokens`.
-    pub cache_tokens: i64,
+    /// Cache read tokens (hit / reuse). Billed at the cache-read rate.
+    pub cache_read_tokens: i64,
+    /// Cache write tokens (create + 1h ephemeral write). Billed at the write rate.
+    pub cache_write_tokens: i64,
     /// Estimated cost in pricing-table currency (USD). No FX conversion.
     pub cost_usd: Option<f64>,
     pub session_id: Option<String>,
@@ -26,6 +28,13 @@ pub struct UsageRecord {
     /// Codex Fast / Priority. Must persist so collect recompute keeps the multiplier.
     #[serde(default)]
     pub fast: bool,
+}
+
+impl UsageRecord {
+    /// Combined cache (write + read) for totals / trend.
+    pub fn cache_tokens_total(&self) -> i64 {
+        self.cache_write_tokens + self.cache_read_tokens
+    }
 }
 
 /// Query filter for listing usage rows.
@@ -48,14 +57,16 @@ pub struct UsageQuery {
 
 /// Dashboard metric totals from SQL aggregates.
 ///
-/// `billable_input` is stored `input_tokens` (non-cached). `cache` is stored
-/// `cache_tokens`. Full prompt size is billable + cache.
+/// `billable_input` is stored `input_tokens` (non-cached). Cache write and read
+/// are stored separately because they bill at different rates. Full prompt size
+/// is billable + write + read.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageMetrics {
     pub billable_input: i64,
     pub output: i64,
-    pub cache: i64,
+    pub cache_read: i64,
+    pub cache_write: i64,
     pub cost_usd: f64,
 }
 
@@ -68,7 +79,8 @@ pub struct UsageDistributionSlice {
     pub cost_usd: f64,
     pub billable_input: i64,
     pub output: i64,
-    pub cache: i64,
+    pub cache_read: i64,
+    pub cache_write: i64,
 }
 
 /// First-paint dashboard payload: totals + distribution + model dropdown.
@@ -153,7 +165,12 @@ pub struct ParsedUsageEvent {
 }
 
 impl ParsedUsageEvent {
+    /// Cache writes (5m create + 1h ephemeral). Stored as `cache_write_tokens`.
+    pub fn cache_write_tokens(&self) -> i64 {
+        self.cache_creation_tokens + self.cache_creation_1h_tokens
+    }
+
     pub fn cache_tokens_total(&self) -> i64 {
-        self.cache_creation_tokens + self.cache_creation_1h_tokens + self.cache_read_tokens
+        self.cache_write_tokens() + self.cache_read_tokens
     }
 }
