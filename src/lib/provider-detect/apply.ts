@@ -27,20 +27,72 @@ function ensureBaseText(
   return { text: scaffold.text, format: scaffold.format };
 }
 
+const STRUCTURED_PASTE_DETECTORS = new Set([
+  'claude-settings-json',
+  'claude-shell-export',
+  'claude-cmd-set',
+  'claude-powershell-env',
+  'claude-env-generic',
+  'codex-config-toml',
+  'grok-config-toml',
+]);
+
+function isKimiTomlPaste(text: string): boolean {
+  return /^\s*\[providers\./im.test(text) && /base_url\s*=/i.test(text);
+}
+
+function isJsonObjectPaste(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{')) return false;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return Boolean(parsed && typeof parsed === 'object' && !Array.isArray(parsed));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Complete config blobs (settings.json / env export / provider TOML) replace
+ * omitted model fields. URL/key fragments keep whatever is already in the form.
+ */
+export function isStructuredConfigPaste(
+  detect: ReturnType<typeof smartDetectUrlAndKey>,
+  paste: string,
+  agentId: AgentId,
+): boolean {
+  if (detect.rawConfigText?.trim()) return true;
+  if (detect.matchedDetectors?.some((id) => STRUCTURED_PASTE_DETECTORS.has(id))) {
+    return true;
+  }
+  if (agentId === 'kimi' && isKimiTomlPaste(paste)) return true;
+  if (
+    (agentId === 'claude' || agentId === 'pi' || agentId === 'workbuddy') &&
+    isJsonObjectPaste(paste)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * 合并智能识别结果到已有表单变量。
  * - 默认：识别到的字段**覆盖**（粘贴意图是填入/更新）
  * - `preferExisting: true`：仅填空槽（高级合并场景）
+ * - `replaceOmittedModel: true`：粘贴里没写模型名时清空表单里的旧模型，不沿用官方默认
  */
 export function mergeDetectIntoVars(
   vars: ProviderFormVars,
   detect: ReturnType<typeof smartDetectUrlAndKey>,
-  opts?: { preferExisting?: boolean },
+  opts?: { preferExisting?: boolean; replaceOmittedModel?: boolean },
 ): ProviderFormVars {
   const keep = opts?.preferExisting === true;
+  const replaceModel = opts?.replaceOmittedModel === true && !keep;
   const extra = detect.extraEnv ?? {};
+  const pastedModel = detect.model ?? extra.ANTHROPIC_MODEL;
   const pickRole = (envKey: string, current: string) => {
     if (keep && current.trim()) return current;
+    if (replaceModel) return extra[envKey] ?? '';
     return extra[envKey] ?? current;
   };
   return {
@@ -54,7 +106,7 @@ export function mergeDetectIntoVars(
     model:
       keep && vars.model.trim()
         ? vars.model
-        : detect.model ?? extra.ANTHROPIC_MODEL ?? vars.model,
+        : pastedModel ?? (replaceModel ? '' : vars.model),
     modelOpus: pickRole(CLAUDE_MODEL_ROLE_ENV.opus, vars.modelOpus),
     modelSonnet: pickRole(CLAUDE_MODEL_ROLE_ENV.sonnet, vars.modelSonnet),
     modelHaiku: pickRole(CLAUDE_MODEL_ROLE_ENV.haiku, vars.modelHaiku),
@@ -65,7 +117,9 @@ export function mergeDetectIntoVars(
         ? vars.contextWindow
         : extra.CLAUDE_CODE_MAX_CONTEXT_TOKENS != null
           ? parseContextWindowChoice(extra.CLAUDE_CODE_MAX_CONTEXT_TOKENS)
-          : vars.contextWindow,
+          : replaceModel
+            ? ''
+            : vars.contextWindow,
     claudeAuthEnv: detect.claudeAuthEnv ?? vars.claudeAuthEnv,
   };
 }
@@ -97,8 +151,10 @@ export function applySmartPaste(
     extractFormVars(agentId, base.text, base.format) ??
     { ...EMPTY_FORM_VARS };
 
+  const replaceOmittedModel = isStructuredConfigPaste(detect, paste, agentId);
   const vars = mergeDetectIntoVars(prevVars, detect, {
     preferExisting: current?.preferExisting,
+    replaceOmittedModel,
   });
   if (detect.claudeAuthEnv) {
     vars.claudeAuthEnv = detect.claudeAuthEnv;
@@ -107,12 +163,19 @@ export function applySmartPaste(
   if (detect.wireApi) vars.wireApi = detect.wireApi;
   if (detect.providerSlug) vars.providerSlug = detect.providerSlug;
 
-  // Codex/Grok：完整 TOML 粘贴优先保留全文，再叠表单字段。
-  // This keeps provider-specific tables and newer native options intact.
+  // Complete native documents replace the current body so leftover official
+  // models / `$schema` / provider tables from the form are not mixed in.
   let configBase = base.text;
   let outFormat: 'json' | 'toml' = base.format;
-  if ((agentId === 'codex' || agentId === 'grok') && detect.rawConfigText?.trim()) {
+  if (agentId === 'claude' && detect.rawConfigText?.trim()) {
     configBase = detect.rawConfigText;
+    outFormat = 'json';
+  } else if ((agentId === 'codex' || agentId === 'grok') && detect.rawConfigText?.trim()) {
+    configBase = detect.rawConfigText;
+    outFormat = 'toml';
+  } else if (agentId === 'kimi' && isKimiTomlPaste(paste)) {
+    const trimmed = paste.trim();
+    configBase = trimmed.endsWith('\n') ? trimmed : `${trimmed}\n`;
     outFormat = 'toml';
   }
 

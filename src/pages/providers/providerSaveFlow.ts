@@ -64,8 +64,9 @@ export function canSaveWithSchemaStatus(status: SchemaUiStatus): boolean {
 }
 
 /**
- * Dialog save gate. Model is never required — empty model is filled on save
- * via `withDefaultModel`. Fetch status does not participate.
+ * Dialog save gate. Model is never required. Custom connections may omit a
+ * model; official mode still locks the official model via `withDefaultModel`.
+ * Fetch status does not participate.
  */
 export function canSaveProviderForm(args: {
   schemaStatus: SchemaUiStatus;

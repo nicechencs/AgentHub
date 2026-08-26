@@ -499,7 +499,7 @@ export function ProviderEditDialog({
 
   // 新增必须填 Key；编辑可只改名称/官方开关（Key 留空保留）
   // schema idle/loading/error → fail closed，禁止保存
-  // model is optional; empty is filled on save via withDefaultModel
+  // model is optional; custom empty stays empty (official mode still locks its model)
   const canSave = canSaveProviderForm({
     schemaStatus,
     configError,

@@ -2,7 +2,11 @@
  * 智能识别规则表 — 后续按「各种样式配置」在此追加 Detector。
  */
 import type { ProviderConfigDetector } from './types';
-import { extractAllClaudeEnv, pickClaudeDetectFields } from './claudeEnv';
+import {
+  extractAllClaudeEnv,
+  extractClaudeSettingsDocument,
+  pickClaudeDetectFields,
+} from './claudeEnv';
 import {
   extractCodexDetectFields,
   extractOpenAiApiKey,
@@ -129,6 +133,7 @@ function extractClaudeBlock(text: string) {
     extraEnv: Object.keys(picked.extraEnv).length ? picked.extraEnv : undefined,
     claudeAuthEnv: picked.claudeAuthEnv,
     suggestedName: picked.baseUrl ? hostAsName(picked.baseUrl) : undefined,
+    rawConfigText: extractClaudeSettingsDocument(text) ?? undefined,
   };
 }
 

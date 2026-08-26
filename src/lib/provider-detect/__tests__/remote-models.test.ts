@@ -79,14 +79,14 @@ describe('default / resolve / withDefaultModel', () => {
     expect(defaultModelForAgent('cursor')).toBe(FALLBACK_CUSTOM_MODEL);
   });
 
-  it('keeps a typed model on custom save and fills empty', () => {
+  it('keeps a typed model on custom save and leaves empty blank', () => {
     expect(resolveModelForSave('claude', 'opus', false)).toBe('opus');
-    expect(resolveModelForSave('claude', '  ', false)).toBe('sonnet');
+    expect(resolveModelForSave('claude', '  ', false)).toBe('');
     expect(resolveModelForSave('claude', 'opus', true)).toBe('sonnet');
-    expect(resolveModelForSave('pi', '', false)).toBe(FALLBACK_CUSTOM_MODEL);
+    expect(resolveModelForSave('pi', '', false)).toBe('');
   });
 
-  it('empty model + withDefaultModel + applyFormVars writes the default (claude json)', () => {
+  it('empty custom model + withDefaultModel does not invent a Claude model id', () => {
     const vars = withDefaultModel(
       'claude',
       {
@@ -97,14 +97,14 @@ describe('default / resolve / withDefaultModel', () => {
       },
       false,
     );
-    expect(vars.model).toBe('sonnet');
+    expect(vars.model).toBe('');
     const text = applyFormVars('claude', '{"env":{}}', 'json', vars);
-    const parsed = JSON.parse(text) as { model: string; env: Record<string, string> };
-    expect(parsed.model).toBe('sonnet');
-    expect(parsed.env.ANTHROPIC_MODEL).toBe('sonnet');
+    const parsed = JSON.parse(text) as { model?: string; env: Record<string, string> };
+    expect(parsed.model).toBeUndefined();
+    expect(parsed.env.ANTHROPIC_MODEL).toBeUndefined();
   });
 
-  it('empty model + withDefaultModel + applyFormVars writes the default (kimi toml)', () => {
+  it('empty custom model + withDefaultModel does not invent a Kimi default_model', () => {
     const vars = withDefaultModel(
       'kimi',
       {
@@ -115,16 +115,29 @@ describe('default / resolve / withDefaultModel', () => {
       },
       false,
     );
-    expect(vars.model).toBe('kimi-k2');
+    expect(vars.model).toBe('');
     const text = applyFormVars(
       'kimi',
-      ['default_model = ""', '[providers.moonshot]', 'base_url = "https://mytokens.cc/v1"', ''].join(
-        '\n',
-      ),
+      [
+        'default_model = "kimi-k2"',
+        '[providers.moonshot]',
+        'base_url = "https://mytokens.cc/v1"',
+        '',
+      ].join('\n'),
       'toml',
       vars,
     );
-    expect(text).toContain('default_model = "kimi-k2"');
+    expect(text).not.toContain('default_model = "kimi-k2"');
+    expect(text).not.toMatch(/default_model\s*=/);
+  });
+
+  it('official mode still locks the official model', () => {
+    const vars = withDefaultModel(
+      'claude',
+      { ...EMPTY_FORM_VARS, model: 'opus' },
+      true,
+    );
+    expect(vars.model).toBe('sonnet');
   });
 });
 

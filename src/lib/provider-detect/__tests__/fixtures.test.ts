@@ -28,7 +28,12 @@ describe('CLAUDE_CODE_SAMPLES batch (shape only; values from fixtures)', () => {
 
     it(`applySmartPaste claude: ${sample.id}`, () => {
       const r = applySmartPaste('claude', sample.text);
-      const env = (JSON.parse(r.configText) as { env: Record<string, string> }).env;
+      const parsed = JSON.parse(r.configText) as {
+        $schema?: string;
+        model?: string;
+        env: Record<string, string>;
+      };
+      const env = parsed.env;
       expect(env.ANTHROPIC_BASE_URL).toBe(sample.expect.baseUrl);
       expect(env.ANTHROPIC_AUTH_TOKEN?.startsWith(sample.expect.apiKeyPrefix)).toBe(
         true,
@@ -40,6 +45,14 @@ describe('CLAUDE_CODE_SAMPLES batch (shape only; values from fixtures)', () => {
         expect(env.ANTHROPIC_MODEL).toBe(sample.expect.model);
         expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe(sample.expect.model);
         expect(env.CLAUDE_CODE_SUBAGENT_MODEL).toBe(sample.expect.model);
+      } else {
+        expect(parsed.model).toBeUndefined();
+        expect(env.ANTHROPIC_MODEL).toBeUndefined();
+      }
+      if (sample.id.startsWith('settings-json')) {
+        expect(parsed.$schema).toBe(
+          'https://json.schemastore.org/claude-code-settings.json',
+        );
       }
     });
   }

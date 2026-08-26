@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { applySmartPaste, initFormFromConfig } from '../index';
+import { applySmartPaste, EMPTY_FORM_VARS, initFormFromConfig } from '../index';
+import {
+  CLAUDE_CODE_BASH_EXPORT_BASIC,
+  CLAUDE_CODE_SETTINGS_JSON_BASIC,
+} from './fixtures/claude-code-samples';
+
+const OFFICIAL_CLAUDE_LEFTOVER = {
+  ...EMPTY_FORM_VARS,
+  model: 'sonnet',
+  modelOpus: 'opus',
+  modelSonnet: 'sonnet',
+  modelHaiku: 'haiku',
+  modelFable: 'sonnet',
+  modelSubagent: 'haiku',
+};
 
 describe('applySmartPaste', () => {
   it('fills claude scaffold from pasted json', () => {
@@ -39,6 +53,91 @@ describe('applySmartPaste', () => {
     expect(parsed.baseURL).toBeUndefined();
     expect(parsed.baseUrl).toBeUndefined();
     expect(parsed.apiKey).toBeUndefined();
+  });
+
+  it('does not keep leftover official models when pasting complete settings.json without a model', () => {
+    const r = applySmartPaste('claude', CLAUDE_CODE_SETTINGS_JSON_BASIC, {
+      vars: OFFICIAL_CLAUDE_LEFTOVER,
+      configText: JSON.stringify({ env: {}, model: 'sonnet' }, null, 2),
+      configFormat: 'json',
+    });
+    const parsed = JSON.parse(r.configText) as {
+      $schema?: string;
+      model?: string;
+      env: Record<string, string>;
+    };
+    expect(parsed.$schema).toBe('https://json.schemastore.org/claude-code-settings.json');
+    expect(parsed.model).toBeUndefined();
+    expect(parsed.env.ANTHROPIC_MODEL).toBeUndefined();
+    expect(parsed.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
+    expect(parsed.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBeUndefined();
+    expect(parsed.env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBeUndefined();
+    expect(parsed.env.ANTHROPIC_DEFAULT_FABLE_MODEL).toBeUndefined();
+    expect(parsed.env.CLAUDE_CODE_SUBAGENT_MODEL).toBeUndefined();
+    expect(parsed.env.ANTHROPIC_BASE_URL).toBe('https://relay.example.com');
+    expect(parsed.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC).toBe('1');
+    expect(parsed.env.CLAUDE_CODE_ATTRIBUTION_HEADER).toBe('0');
+    expect(r.vars.model).toBe('');
+    expect(r.vars.modelOpus).toBe('');
+  });
+
+  it('clears leftover official models from a Claude env export that omits MODEL', () => {
+    const r = applySmartPaste('claude', CLAUDE_CODE_BASH_EXPORT_BASIC, {
+      vars: OFFICIAL_CLAUDE_LEFTOVER,
+      configText: JSON.stringify({ env: {}, model: 'sonnet' }, null, 2),
+      configFormat: 'json',
+    });
+    const env = JSON.parse(r.configText).env as Record<string, string>;
+    expect(r.vars.model).toBe('');
+    expect(JSON.parse(r.configText).model).toBeUndefined();
+    expect(env.ANTHROPIC_MODEL).toBeUndefined();
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
+    expect(env.ANTHROPIC_BASE_URL).toMatch(/^https:\/\//);
+  });
+
+  it('keeps a typed model when the paste is only a URL and key', () => {
+    const r = applySmartPaste(
+      'claude',
+      'https://relay.example.com\nsk-abcdefghijklmnopqrstuvwxyz012345',
+      { vars: { ...EMPTY_FORM_VARS, model: 'opus' } },
+    );
+    expect(r.vars.model).toBe('opus');
+  });
+
+  it('does not overlay leftover Kimi official model onto a providers TOML paste that omitted default_model', () => {
+    const paste = [
+      '[providers.custom]',
+      'base_url = "https://relay.example.com/v1"',
+      'api_key = "sk-abcdefghijklmnopqrst"',
+      '',
+    ].join('\n');
+    const r = applySmartPaste('kimi', paste, {
+      vars: { ...EMPTY_FORM_VARS, model: 'kimi-k2' },
+      configText: 'default_model = "kimi-k2"\n',
+      configFormat: 'toml',
+    });
+    expect(r.vars.model).toBe('');
+    expect(r.configText).not.toMatch(/default_model\s*=/);
+    expect(r.configText).toContain('base_url = "https://relay.example.com/v1"');
+  });
+
+  it('does not overlay leftover Codex official model onto a TOML paste that omitted model', () => {
+    const paste = [
+      'model_provider = "custom"',
+      '[model_providers.custom]',
+      'name = "custom"',
+      'base_url = "https://relay.example.com/v1"',
+      'wire_api = "responses"',
+      '',
+    ].join('\n');
+    const r = applySmartPaste('codex', paste, {
+      vars: { ...EMPTY_FORM_VARS, model: 'gpt-5.1-codex' },
+      configText: 'model = "gpt-5.1-codex"\n',
+      configFormat: 'toml',
+    });
+    expect(r.vars.model).toBe('');
+    expect(r.configText).not.toMatch(/model\s*=\s*"gpt-5.1-codex"/);
+    expect(r.configText).toContain('base_url = "https://relay.example.com/v1"');
   });
 
   it('parses pasted Claude window env onto the form choice', () => {

@@ -80,11 +80,13 @@ export function resolveModelForSave(
     const official = officialApiDefaults(agentId);
     if (official) return official.model;
   }
-  const trimmed = model.trim();
-  return trimmed || defaultModelForAgent(agentId);
+  return model.trim();
 }
 
-/** Fill empty `model` (and lock official model) before validate / applyFormVars. */
+/**
+ * Lock the official model when that switch is on.
+ * Custom connections keep an empty model empty — do not invent a default id.
+ */
 export function withDefaultModel(
   agentId: AgentId,
   vars: ProviderFormVars,

@@ -50,6 +50,7 @@ export type { NativeConfigIssue } from './native-config';
 export {
   applySmartPaste,
   initFormFromConfig,
+  isStructuredConfigPaste,
   mergeDetectIntoVars,
 } from './apply';
 
@@ -73,7 +74,11 @@ export type {
   RemoteModelsStatusView,
 } from './remote-models';
 
-export { extractAllClaudeEnv, pickClaudeDetectFields } from './claudeEnv';
+export {
+  extractAllClaudeEnv,
+  extractClaudeSettingsDocument,
+  pickClaudeDetectFields,
+} from './claudeEnv';
 export {
   extractCodexDetectFields,
   extractOpenAiApiKey,

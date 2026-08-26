@@ -255,6 +255,11 @@ function tomlSet(text: string, key: string, value: string): string {
   return `${text}${pad}${line}`;
 }
 
+function tomlUnset(text: string, key: string): string {
+  const re = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*"[^"]*"\\s*(?:\\r?\\n)?`, 'm');
+  return text.replace(re, '');
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -619,6 +624,7 @@ export function applyFormVars(
     const slug = (vars.providerSlug || 'custom').trim() || 'custom';
     const table = `model_providers.${slug}`;
     if (vars.model.trim()) text = tomlSet(text, 'model', vars.model.trim());
+    else text = tomlUnset(text, 'model');
     text = tomlSet(text, 'model_provider', slug);
     if (vars.reasoningEffort.trim()) {
       text = tomlSet(text, 'model_reasoning_effort', vars.reasoningEffort.trim());
@@ -643,6 +649,7 @@ export function applyFormVars(
     const slug = (vars.providerSlug || 'custom').trim() || 'custom';
     const table = `providers.${slug}`;
     if (vars.model.trim()) text = tomlSet(text, 'default_model', vars.model.trim());
+    else text = tomlUnset(text, 'default_model');
     if (vars.baseUrl.trim()) {
       text = tomlTableSet(text, table, 'base_url', vars.baseUrl.trim());
     }

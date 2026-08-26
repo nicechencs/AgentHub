@@ -247,7 +247,7 @@ describe('save gate by schema status', () => {
     ).toBe(false);
   });
 
-  it('empty model plus withDefaultModel still upserts', async () => {
+  it('empty custom model still upserts without inventing a model id', async () => {
     const vars = withDefaultModel(
       'claude',
       {
@@ -258,7 +258,7 @@ describe('save gate by schema status', () => {
       },
       false,
     );
-    expect(vars.model).toBe('sonnet');
+    expect(vars.model).toBe('');
     const deps = mockDeps();
     const result = await runProviderSaveFlow(
       baseInput({ vars, saveVars: vars, schemaStatus: 'ready' }),
@@ -266,7 +266,7 @@ describe('save gate by schema status', () => {
     );
     expect(result.ok).toBe(true);
     expect(deps.upsertProvider).toHaveBeenCalledOnce();
-    expect(deps.materializeAgentConfig.mock.calls[0][1].model).toBe('sonnet');
+    expect(deps.materializeAgentConfig.mock.calls[0][1].model).toBe('');
   });
 
   it('loading/error path does not call materialize, applyFormVars, or upsert', async () => {
