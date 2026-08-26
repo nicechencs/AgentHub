@@ -463,9 +463,11 @@ export function AgentCard({
                           onCopy={copyInstallPath}
                         />
                       </div>
-                      <p className="min-w-0 truncate font-mono" title={inst.location}>
-                        {t('agents.card.installLocation')} {inst.location}
-                      </p>
+                      <Hint label={inst.location} contentClassName="max-w-xs break-all">
+                        <p className="min-w-0 truncate font-mono">
+                          {t('agents.card.installLocation')} {inst.location}
+                        </p>
+                      </Hint>
                       <p>
                         {t('agents.card.installSource')} {extraCopyKindLabel(inst.source, t)}
                         {' · '}
