@@ -2,9 +2,14 @@
 //!
 //! Hung on [`super::host`] `EdgeState`. Does not read storage. Health is an
 //! in-memory snapshot; isolation never reveals sibling accounts to callers.
+//! Cooldown is process-local and is not a capability change.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use axum::http::HeaderValue;
 
 use super::route_index::DispatchCandidate;
 use super::runtime::{ResolvedAuth, UpstreamAuthReload};
@@ -112,6 +117,17 @@ impl PickedMember {
     pub fn isolate(&self) {
         self.set_health(MemberHealth::NeedsLogin);
     }
+
+    /// Authorization identity shared across RoutePools for reload/isolate.
+    pub fn authorization_fingerprint(&self) -> String {
+        if !self.ticket_id.trim().is_empty() {
+            self.ticket_id.clone()
+        } else if !self.source_id.trim().is_empty() {
+            format!("{}:{}", self.source_kind, self.source_id)
+        } else {
+            self.source_id.clone()
+        }
+    }
 }
 
 /// Start-spec member list. Same shape as a live [`PickedMember`] without the
@@ -171,11 +187,17 @@ pub struct AccountPicker {
     inner: Arc<AccountPickerInner>,
 }
 
+struct MemberCooldowns {
+    member: HashMap<String, Instant>,
+    member_model: HashMap<(String, String), Instant>,
+}
+
 struct AccountPickerInner {
     members: Vec<PickedMember>,
     cursor: AtomicUsize,
     multi_account: bool,
     isolate_sink: Option<MemberHealthSink>,
+    cooldowns: Mutex<MemberCooldowns>,
 }
 
 impl AccountPicker {
@@ -194,6 +216,10 @@ impl AccountPicker {
                 cursor: AtomicUsize::new(0),
                 multi_account,
                 isolate_sink,
+                cooldowns: Mutex::new(MemberCooldowns {
+                    member: HashMap::new(),
+                    member_model: HashMap::new(),
+                }),
             }),
         }
     }
@@ -362,5 +388,84 @@ impl AccountPicker {
             .iter()
             .find(|member| member.source_id == source_id)
             .map(PickedMember::health)
+    }
+
+    /// `model = None` cools the whole member; otherwise only that model bucket.
+    pub fn set_cooldown(&self, member_id: &str, model: Option<&str>, duration: Duration) {
+        let until = Instant::now() + duration;
+        let Ok(mut guard) = self.inner.cooldowns.lock() else {
+            return;
+        };
+        match model.map(str::trim).filter(|value| !value.is_empty()) {
+            Some(model) => {
+                guard
+                    .member_model
+                    .insert((member_id.to_owned(), model.to_owned()), until);
+            }
+            None => {
+                guard.member.insert(member_id.to_owned(), until);
+            }
+        }
+    }
+
+    pub fn is_cooling(&self, member_id: &str, model: Option<&str>) -> bool {
+        let now = Instant::now();
+        let Ok(guard) = self.inner.cooldowns.lock() else {
+            return false;
+        };
+        if guard
+            .member
+            .get(member_id)
+            .is_some_and(|until| now < *until)
+        {
+            return true;
+        }
+        let Some(model) = model.map(str::trim).filter(|value| !value.is_empty()) else {
+            return false;
+        };
+        guard
+            .member_model
+            .get(&(member_id.to_owned(), model.to_owned()))
+            .is_some_and(|until| now < *until)
+    }
+
+    /// Members that must not be picked for `model` right now.
+    pub fn cooldown_exclusions(&self, model: &str) -> Vec<String> {
+        self.inner
+            .members
+            .iter()
+            .filter(|member| self.is_cooling(&member.source_id, Some(model)))
+            .map(|member| member.source_id.clone())
+            .collect()
+    }
+
+    pub fn soonest_retry_after(&self, model: &str) -> Option<HeaderValue> {
+        let now = Instant::now();
+        let Ok(guard) = self.inner.cooldowns.lock() else {
+            return None;
+        };
+        let mut remaining: Option<Duration> = None;
+        let take_until = |until: Instant, remaining: &mut Option<Duration>| {
+            if now < until {
+                let wait = until.saturating_duration_since(now);
+                *remaining = Some(remaining.map_or(wait, |current| current.min(wait)));
+            }
+        };
+        for member in &self.inner.members {
+            if let Some(until) = guard.member.get(&member.source_id) {
+                take_until(*until, &mut remaining);
+            }
+            if let Some(until) = guard
+                .member_model
+                .get(&(member.source_id.clone(), model.to_owned()))
+            {
+                take_until(*until, &mut remaining);
+            }
+        }
+        remaining.map(|wait| {
+            let secs = wait.as_secs().max(1);
+            HeaderValue::from_str(&secs.to_string())
+                .unwrap_or_else(|_| HeaderValue::from_static("1"))
+        })
     }
 }

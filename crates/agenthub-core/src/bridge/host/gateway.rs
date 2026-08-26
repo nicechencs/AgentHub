@@ -15,8 +15,10 @@ use tokio_util::sync::CancellationToken;
 
 use thiserror::Error;
 
-use crate::bridge::account::AccountPicker;
+use crate::bridge::account::{AccountPicker, PickedMember};
+use crate::bridge::auth_reload::AuthReloadCoordinator;
 use crate::bridge::grok_cli::GrokReasoningReplay;
+use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::runtime::{
     BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamStatus,
 };
@@ -92,6 +94,7 @@ impl CleanupCompletion {
 #[derive(Clone)]
 pub(super) struct Gateway {
     pub(super) registry: Arc<Mutex<GatewayRegistry>>,
+    pub(super) auth_reload: AuthReloadCoordinator,
 }
 
 pub(super) struct GatewayRegistry {
@@ -139,6 +142,7 @@ pub(super) struct EdgeState {
     pub(super) mapping_target: Option<crate::models::AgentId>,
     pub(super) custom_openai: bool,
     pub(super) route_index: Option<crate::bridge::route_index::EffectiveRouteIndex>,
+    pub(super) auth_reload: AuthReloadCoordinator,
 }
 
 pub(super) enum GatewayAuthError {
@@ -155,6 +159,7 @@ impl Gateway {
                 runtimes: HashMap::new(),
                 primary_port: None,
             })),
+            auth_reload: AuthReloadCoordinator::new(),
         }
     }
 
@@ -358,6 +363,7 @@ impl EdgeState {
         spec: &BridgeStartSpec,
         upstream_url: Url,
         force_shutdown: CancellationToken,
+        auth_reload: AuthReloadCoordinator,
     ) -> Self {
         Self {
             profile_id: Arc::from(spec.profile_id.clone()),
@@ -382,7 +388,36 @@ impl EdgeState {
             mapping_target: spec.mapping_target,
             custom_openai: spec.custom_openai,
             route_index: spec.route_index.clone(),
+            auth_reload,
         }
+    }
+
+    /// Indexed pick: shrink candidates, skip isolated / cooling / this-request exclusions.
+    pub(super) fn pick_v2(
+        &self,
+        candidates: &[DispatchCandidate],
+        model: &str,
+        extra_excluded: &[String],
+    ) -> Option<PickedMember> {
+        let mut excluded = extra_excluded.to_vec();
+        excluded.extend(self.account_picker.cooldown_exclusions(model));
+        for member in self.account_picker.members() {
+            if self
+                .auth_reload
+                .is_isolated(&member.authorization_fingerprint())
+            {
+                excluded.push(member.source_id.clone());
+                excluded.push(member.ticket_id.clone());
+            }
+        }
+        self.account_picker
+            .pick_from_candidates(candidates, None, &excluded)
+    }
+
+    pub(super) fn isolate_authorization(&self, member: &PickedMember) {
+        self.account_picker.isolate(&member.source_id);
+        self.auth_reload
+            .isolate(&member.authorization_fingerprint());
     }
 
     pub(super) fn observed_upstream(&self) -> BridgeUpstreamStatus {
