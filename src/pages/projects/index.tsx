@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   EyeOff,
@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { useSideSplit } from '@/components/layout/use-side-split';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -66,11 +68,8 @@ import {
   toggleSelectedSession,
   visibleSessionsForProject,
 } from './projects-list-model';
-import {
-  PREVIEW_FRAME_PAD_RIGHT,
-  PREVIEW_FRAME_PAD_Y,
-} from './projects-preview-model';
-import { useProjectPreview } from './use-project-preview';
+
+const PROJECTS_PREVIEW_WIDTH_KEY = 'agenthub.projects.previewWidth';
 
 export default function ProjectsPage() {
   const { t } = useI18n();
@@ -96,7 +95,8 @@ export default function ProjectsPage() {
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AgentSession | null>(null);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
-  const preview = useProjectPreview();
+  const preview = useSideSplit<AgentSession>({ storageKey: PROJECTS_PREVIEW_WIDTH_KEY });
+  const previewBodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (agentId) rememberProjectAgent(agentId);
@@ -229,7 +229,7 @@ export default function ProjectsPage() {
           return next;
         });
       }
-      if (preview.session?.projectId === project.id) preview.close();
+      if (preview.target?.projectId === project.id) preview.close();
       return;
     }
     setExpanded((prev) => new Set(prev).add(project.id));
@@ -390,7 +390,7 @@ export default function ProjectsPage() {
         next.delete(deleteTarget.id);
         return next;
       });
-      if (preview.sessionId === deleteTarget.id) preview.close();
+      if (preview.target?.id === deleteTarget.id) preview.close();
       toast({ title: t('projects.toast.deleted'), variant: 'success' });
       setDeleteTarget(null);
     } catch (e) {
@@ -430,7 +430,7 @@ export default function ProjectsPage() {
       );
       await reloadProjects();
       setSelected(new Set());
-      if (preview.sessionId && ids.includes(preview.sessionId)) preview.close();
+      if (preview.target?.id && ids.includes(preview.target.id)) preview.close();
       setBatchDeleteOpen(false);
       toast({
         title: n === ids.length
@@ -566,7 +566,7 @@ export default function ProjectsPage() {
           selected={selected}
           busy={busy}
           showDelete={showDelete}
-          previewSessionId={preview.sessionId}
+          previewSessionId={preview.target?.id ?? null}
           visibleSessions={visibleSessions}
           onToggleExpand={(p) => void toggleExpand(p)}
           onOpenProjectWorkspace={(p, e) => void openProjectWorkspace(p, e)}
@@ -583,11 +583,28 @@ export default function ProjectsPage() {
     </>
   );
 
+  const previewPanel = preview.target ? (
+    <ProjectConversationPreviewPanel
+      session={preview.target}
+      open
+      width={preview.paneWidth}
+      onClose={preview.close}
+      onContinue={goContinue}
+      busy={busy}
+      onOpenRecord={(s) => void openSessionRecord(s)}
+      contentRef={previewBodyRef}
+      className="h-full min-w-0 shrink-0"
+    />
+  ) : null;
+
   return (
-    <div className="flex h-full min-h-0 flex-col bg-canvas">
-      <div ref={preview.splitRef} className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className={pageRhythm.workbenchHeader}>
+    <>
+    <WorkbenchSplitPage
+      split={preview}
+      resizeAria={t('projects.preview.resizeAria')}
+      panel={previewPanel}
+      listOverflowX="hidden"
+      header={(
             <PageHeader
               size="compact"
               title={t('projects.page.title')}
@@ -636,69 +653,10 @@ export default function ProjectsPage() {
                 </div>
               }
             />
-          </div>
-          <div
-            className={cn(
-              'min-h-0 min-w-0 flex-1 overflow-y-auto bg-canvas',
-              preview.previewShellMounted
-                ? cn(pageRhythm.workbenchXSplit, 'overflow-x-hidden')
-                : cn(pageRhythm.workbenchX, 'overflow-x-auto'),
-              pageRhythm.workbenchY,
-            )}
-          >
-            {listPane}
-          </div>
-        </div>
-
-        {preview.previewShellMounted && preview.session ? (
-          <>
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label={t('projects.preview.resizeAria')}
-              aria-valuenow={preview.previewWidth}
-              aria-valuemin={preview.valuemin}
-              tabIndex={preview.previewExpanded ? 0 : -1}
-              onPointerDown={preview.previewExpanded ? preview.onPreviewResizeStart : undefined}
-              onDoubleClick={preview.previewExpanded ? preview.resetPreviewWidth : undefined}
-              onKeyDown={preview.previewExpanded ? preview.onPreviewSeparatorKeyDown : undefined}
-              className={cn(
-                'group relative z-10 w-1.5 shrink-0 cursor-col-resize bg-transparent outline-none',
-                'hover:bg-accent/40 focus-visible:bg-accent/40 active:bg-accent/60',
-                'before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:content-[""]',
-                !preview.previewExpanded && 'pointer-events-none opacity-0',
-              )}
-            />
-            <div
-              className={cn('h-full min-h-0 shrink-0 overflow-hidden', preview.previewWidthTransition)}
-              style={{ width: preview.previewShellWidth }}
-              onTransitionEnd={preview.onPreviewPaneTransitionEnd}
-            >
-              <div
-                className="box-border flex h-full min-h-0"
-                style={{
-                  width: preview.previewWidth + PREVIEW_FRAME_PAD_RIGHT,
-                  paddingTop: 0,
-                  paddingBottom: PREVIEW_FRAME_PAD_Y,
-                  paddingRight: PREVIEW_FRAME_PAD_RIGHT,
-                }}
-              >
-                <ProjectConversationPreviewPanel
-                  session={preview.session}
-                  open
-                  width={preview.previewWidth}
-                  onClose={preview.close}
-                  onContinue={goContinue}
-                  busy={busy}
-                  onOpenRecord={(s) => void openSessionRecord(s)}
-                  contentRef={preview.previewBodyRef}
-                  className="h-full min-w-0 shrink-0"
-                />
-              </div>
-            </div>
-          </>
-        ) : null}
-      </div>
+      )}
+    >
+      {listPane}
+    </WorkbenchSplitPage>
 
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent>
@@ -752,6 +710,6 @@ export default function ProjectsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

@@ -1,34 +1,4 @@
-import { pageEdgePx } from '@/components/layout/page-rhythm';
 import type { SkillMarketSource } from '@/lib/types';
-
-export const PREVIEW_WIDTH_DEFAULT = 440;
-/** 正常拖拽/记忆宽度下限 */
-export const PREVIEW_WIDTH_MIN = 300;
-/** 视口极窄时允许压到的硬底（仍可横滑看文档） */
-export const PREVIEW_WIDTH_FLOOR = 240;
-/** 预览打开时给左侧列表预留的舒适宽度 */
-export const MAIN_WIDTH_MIN = 380;
-/** 极窄时左侧可再让一点，避免预览被裁到消失 */
-export const MAIN_WIDTH_FLOOR = 280;
-/** 预览卡片水平 18 与 pageShell 一致；顶距由页头槽承担，底距用 pageEdgePx.previewY。 */
-export const PREVIEW_FRAME_PAD_RIGHT = pageEdgePx.x;
-export const PREVIEW_FRAME_PAD_Y = pageEdgePx.previewY;
-export const PREVIEW_SEPARATOR_W = pageEdgePx.separator;
-export const PREVIEW_WIDTH_STORAGE_KEY = 'agenthub.skills.previewWidth';
-export const PREVIEW_WIDTH_STEP = 16;
-export const PREVIEW_WIDTH_STEP_LARGE = 48;
-
-export function readStoredPreviewWidth(): number {
-  if (typeof window === 'undefined') return PREVIEW_WIDTH_DEFAULT;
-  try {
-    const raw = window.localStorage.getItem(PREVIEW_WIDTH_STORAGE_KEY);
-    const n = raw ? Number(raw) : NaN;
-    if (Number.isFinite(n) && n >= PREVIEW_WIDTH_MIN) return Math.round(n);
-  } catch {
-    // ignore
-  }
-  return PREVIEW_WIDTH_DEFAULT;
-}
 
 export function marketSourceLabel(source: SkillMarketSource): string {
   if (source === 'skillhub.cn') return 'skillhub.cn';
