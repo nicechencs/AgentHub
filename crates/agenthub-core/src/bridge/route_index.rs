@@ -159,6 +159,28 @@ impl EffectiveRouteIndex {
         }
         models
     }
+
+    /// Last successful member snapshots, used so a partial rebuild cannot
+    /// empty the pool index.
+    pub fn capability_snapshots(&self) -> Vec<MemberCapabilitySnapshot> {
+        let mut snapshots = Vec::new();
+        for ((endpoint, model), candidates) in &self.by_endpoint_model {
+            for candidate in candidates {
+                snapshots.push(MemberCapabilitySnapshot {
+                    member_id: candidate.member_id.clone(),
+                    public_model: model.clone(),
+                    endpoint: endpoint.clone(),
+                    upstream_provider: candidate.upstream_provider.clone(),
+                    upstream_dialect: candidate.upstream_dialect.clone(),
+                    upstream_model: candidate.upstream_model.clone(),
+                    upstream_endpoint: candidate.upstream_endpoint.clone(),
+                    transport_key: candidate.transport_key.clone(),
+                    capability: MemberCapability::Supported,
+                });
+            }
+        }
+        snapshots
+    }
 }
 
 /// One member's listed models used to build a production index.
