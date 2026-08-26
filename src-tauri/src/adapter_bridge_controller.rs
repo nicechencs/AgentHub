@@ -90,12 +90,13 @@ async fn apply_local_bridge_locked(
         prepared.runtime_material(),
         reload.clone(),
     );
+    let multi_account = local_bridge_multi_account(&prepared.profile().rule_id);
     let runtime = match ensure_bridge_listener(
         host.as_ref(),
         prepared.runtime_material(),
-        reload,
+        reload.clone(),
         members,
-        local_bridge_multi_account(&prepared.profile().rule_id),
+        multi_account,
     )
     .await
     {
@@ -128,6 +129,27 @@ async fn apply_local_bridge_locked(
         return Err(map_err_string("verify_adapter_bridge_health", error));
     }
     let _ = host.record_upstream_outcome(&profile_id, BridgeUpstreamStatus::Connected);
+
+    if let Err(error) = enroll_v2_and_refresh_index(
+        hub.clone(),
+        host.as_ref(),
+        prepared.profile().clone(),
+        prepared.runtime_material().clone(),
+        port,
+        reload,
+        multi_account,
+    )
+    .await
+    {
+        let listener_compensated =
+            compensate_started_bridge(&host, &profile_id, owns_listener).await;
+        if listener_compensated {
+            mark_retryable(hub, &profile_id, CODE_BRIDGE_START).await;
+        } else {
+            mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await;
+        }
+        return Err(error);
+    }
 
     // Keep the same Tauri target authority as every configuration/account/
     // provider mutation. Inside the blocking critical section, the Core guard
@@ -347,12 +369,13 @@ pub(crate) fn restore_adapter_bridges(
                 material.runtime_material(),
                 reload.clone(),
             );
+            let multi_account = local_bridge_multi_account(&material.profile().rule_id);
             let runtime = match ensure_bridge_listener(
                 host.as_ref(),
                 material.runtime_material(),
-                reload,
+                reload.clone(),
                 members,
-                local_bridge_multi_account(&material.profile().rule_id),
+                multi_account,
             )
             .await
             {
@@ -387,6 +410,23 @@ pub(crate) fn restore_adapter_bridges(
                 continue;
             }
             let _ = host.record_upstream_outcome(&profile.id, BridgeUpstreamStatus::Connected);
+
+            if let Err(error) = enroll_v2_and_refresh_index(
+                hub.clone(),
+                host.as_ref(),
+                material.profile().clone(),
+                material.runtime_material().clone(),
+                runtime.status.port,
+                reload,
+                multi_account,
+            )
+            .await
+            {
+                let _ = compensate_started_bridge(&host, &profile.id, runtime.owned_by_saga).await;
+                mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
+                tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge v2 enroll after restore failed");
+                continue;
+            }
 
             // Preferred-port rebind must rewrite profile.local_port and the
             // generated target endpoint; otherwise restore leaves a dead endpoint.
@@ -1003,6 +1043,45 @@ fn resolve_pool_members(
         }
     }
     members
+}
+
+/// After a healthy bind, enroll the local-bridge pool and refresh the live
+/// start spec with the v2 index. Bind / health failures must not call this.
+/// Refresh uses the enrolled port and never falls back to port 0.
+pub(crate) async fn enroll_v2_and_refresh_index(
+    hub: Arc<AgentHub>,
+    host: &BridgeRuntimeHost,
+    profile: AdapterProfile,
+    material: AdapterBridgeRuntimeMaterial,
+    port: u16,
+    reload: Option<UpstreamAuthReload>,
+    multi_account: bool,
+) -> Result<AdapterBridgeRuntimeMaterial, String> {
+    let profile_for_enroll = profile.clone();
+    let did_enroll = with_hub_blocking(hub.clone(), move |hub| {
+        hub.adapter_bridge
+            .enroll_v2_after_bind(&profile_for_enroll, port)
+            .map_err(|error| map_err_string("enroll_adapter_bridge_v2", error))
+    })
+    .await?;
+    if !did_enroll {
+        return Ok(material);
+    }
+    let profile_for_attach = profile.clone();
+    let refreshed = with_hub_blocking(hub.clone(), move |hub| {
+        Ok(hub
+            .adapter_bridge
+            .attach_route_index(material, &profile_for_attach))
+    })
+    .await?;
+    if refreshed.route_index().is_none() {
+        return Ok(refreshed);
+    }
+    let members = resolve_start_members(hub.as_ref(), &profile, &refreshed, reload.clone());
+    ensure_bridge_listener(host, &refreshed, reload, members, multi_account)
+        .await
+        .map_err(map_bridge_host_error)?;
+    Ok(refreshed)
 }
 
 pub(crate) async fn ensure_bridge_listener(

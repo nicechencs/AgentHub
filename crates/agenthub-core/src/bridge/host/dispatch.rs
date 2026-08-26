@@ -138,9 +138,6 @@ pub(super) async fn handle_conversation(
             }
         }
     }
-    // Re-prepare from this admitted body after the pick. Do not reuse a
-    // sibling member's mutated headers/body.
-    let original_body = admitted.body.clone();
     let Some(member) = (match &resolver_candidates {
         Some(candidates) => {
             admitted
@@ -152,7 +149,6 @@ pub(super) async fn handle_conversation(
     }) else {
         return no_eligible_member(&admitted.state, &admitted.request_id, admitted.started);
     };
-    admitted.body = original_body;
     admitted.member = Some(member);
     let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
     let prepared = match channel.prepare(surface, &admitted) {

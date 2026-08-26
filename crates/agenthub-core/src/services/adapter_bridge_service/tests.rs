@@ -2192,3 +2192,114 @@ fn production_start_spec_skips_index_when_route_index_flag_is_off() {
         "flag off must keep v1 lead dispatch"
     );
 }
+
+fn openai_source_with_listed(id: &str, api_key: &str, listed: &[&str]) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        name: "OpenAI API".into(),
+        settings_config: json!({
+            "apiKey": api_key,
+            "listedModels": listed,
+        }),
+        meta: json!({"preset": "openai"}),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    }
+}
+
+#[test]
+fn production_index_uses_each_member_listed_models_not_the_lead_catalog() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    let providers = ProviderRepo::new(db.clone());
+    providers
+        .create(&openai_source_with_listed(
+            "openai-a",
+            "sk-openai-a",
+            &["m1"],
+        ))
+        .unwrap();
+    providers
+        .create(&openai_source_with_listed(
+            "openai-b",
+            "sk-openai-b",
+            &["m2"],
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
+        .unwrap();
+    let pools = RoutePoolService::new(db.clone());
+    pools
+        .add_member(
+            &prepared.profile().id,
+            AdapterSourceKind::Provider,
+            "openai-b",
+        )
+        .unwrap();
+    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
+        .unwrap();
+    let index = prepared
+        .runtime_material()
+        .start_spec(Some(0))
+        .route_index
+        .expect("enrolled pool attaches production index");
+    assert_eq!(index.list_models("responses"), vec!["m1", "m2"]);
+    let m1 = index.resolve("responses", "m1").expect("m1");
+    assert_eq!(
+        m1.iter()
+            .map(|candidate| candidate.member_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["openai-a"]
+    );
+    let m2 = index.resolve("responses", "m2").expect("m2");
+    assert_eq!(
+        m2.iter()
+            .map(|candidate| candidate.member_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["openai-b"]
+    );
+}
+
+#[test]
+fn production_index_omits_sibling_when_member_snapshot_fails() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&openai_source_with_listed(
+            "openai-a",
+            "sk-openai-a",
+            &["m1"],
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
+        .unwrap();
+    let pools = RoutePoolService::new(db.clone());
+    pools
+        .add_member(
+            &prepared.profile().id,
+            AdapterSourceKind::Provider,
+            "openai-missing",
+        )
+        .unwrap();
+    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    let prepared = service
+        .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
+        .unwrap();
+    let index = prepared
+        .runtime_material()
+        .start_spec(Some(0))
+        .route_index
+        .expect("lead snapshot still builds an index");
+    assert_eq!(index.list_models("responses"), vec!["m1"]);
+    assert!(index.resolve("responses", "m2").is_err());
+}

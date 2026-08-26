@@ -13,6 +13,7 @@ use agenthub_core::error::{AppError, Result as CoreResult};
 use agenthub_core::models::{
     Account, AccountKind, AgentConfig, AuthState, Capability, CapabilityState, DetectResult,
     DetectStatus, InstallChannel, LiveAccount, Provider, RunOptions, RunSpec,
+    FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 use agenthub_core::services::{
     AccountService, AdapterBridgePrepareRequest, AdapterBridgePrepared,
@@ -272,6 +273,85 @@ fn frozen_v2_port_does_not_rebind_on_occupancy() {
 
         host.shutdown().await.unwrap();
         drop(blocker);
+    });
+}
+
+#[test]
+fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        hub.db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        ProviderRepo::new(hub.db.clone())
+            .create(&kimi_source(
+                "kimi-enroll-saga",
+                "upstream-membership-secret",
+            ))
+            .unwrap();
+        let prepared = hub
+            .adapter_bridge
+            .prepare(&restore_prepare_request("kimi-enroll-saga"))
+            .unwrap();
+        let profile = prepared.profile().clone();
+        assert!(
+            hub.route_pools
+                .get(&profile.id)
+                .unwrap()
+                .unwrap()
+                .v2_enrolled
+                == false
+        );
+
+        let host = BridgeRuntimeHost::new();
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let busy = blocker.local_addr().unwrap().port();
+        assert!(hub
+            .route_pools
+            .bind_then_enroll(&host, &profile.id, busy)
+            .await
+            .is_err());
+        let pool = hub.route_pools.get(&profile.id).unwrap().unwrap();
+        assert!(!pool.v2_enrolled);
+        assert_eq!(pool.gateway_port, None);
+        drop(blocker);
+
+        let material = prepared.runtime_material().clone();
+        let ensured = ensure_bridge_listener(&host, &material, None, Vec::new(), false)
+            .await
+            .unwrap();
+        assert!(ensured.status.running);
+        let still = hub.route_pools.get(&profile.id).unwrap().unwrap();
+        assert!(
+            !still.v2_enrolled,
+            "bind success without enroll helper must not enroll"
+        );
+
+        let refreshed = enroll_v2_and_refresh_index(
+            hub.clone(),
+            &host,
+            profile.clone(),
+            material,
+            ensured.status.port,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        let enrolled = hub.route_pools.get(&profile.id).unwrap().unwrap();
+        assert!(enrolled.v2_enrolled);
+        assert_eq!(enrolled.gateway_port, Some(ensured.status.port));
+        assert!(
+            refreshed.start_spec(None).route_index.is_some(),
+            "same-saga refresh must attach the index"
+        );
+        assert_eq!(
+            refreshed.start_spec(None).port,
+            ensured.status.port,
+            "refresh must freeze the enrolled port"
+        );
+
+        host.shutdown().await.unwrap();
     });
 }
 
