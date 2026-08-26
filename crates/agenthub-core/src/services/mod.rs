@@ -40,6 +40,7 @@ pub use adapter_apply_service::AdapterApplyService;
 pub use adapter_bridge_service::{
     AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
     AdapterBridgeRestoreMaterial, AdapterBridgeRuntimeMaterial, AdapterBridgeService,
+    BridgeProviderSnapshot, should_make_bridge_current,
 };
 pub use adapter_projection::{
     classify_account_live, classify_provider_config, leftover_live_flag, LiveOrigin,
