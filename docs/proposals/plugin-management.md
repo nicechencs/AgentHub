@@ -114,9 +114,13 @@ Live 文件仍是各 Agent 的。AgentHub 只编排与展示。CLI 不可用时 
 
 ## 6. 按 Agent 成熟度
 
+支持判定的现行真源是 [Agent 插件表面](../reference/agent-plugin-surfaces.md#厂商插件系统plugin--extension-包)。本表只写实现顺序。
+
+只读 list **优先**官方 CLI 的 JSON（Grok `plugin list --json`、Codex `plugin list --json` 已见于厂商文档）。Claude 以 `claude plugin` 子命令为准，若无 list JSON 则读 `~/.claude/plugins/` + `enabledPlugins`，不要发明 flag。
+
 | 优先级 | Agent | 只读 list 依据 | 写入 |
 |---|---|---|---|
-| P0 | Claude | `claude plugin list --json`；fallback `~/.claude/plugins/` + `enabledPlugins` | 封装 `claude plugin install/uninstall/update` 与 enable 设置 |
+| P0 | Claude | `claude plugin` 输出或 live：`~/.claude/plugins/` + `enabledPlugins` | 封装 `claude plugin install/uninstall/update` 与 enable 设置 |
 | P0 | Grok | `grok plugin list --json`；`~/.grok/plugins/` | `grok plugin install/uninstall/update/enable/disable` |
 | P1 | Codex | `codex plugin list --json`；`~/.codex/plugins/cache/` | `codex plugin add/remove`；enable 走 config |
 | P1 | Pi | `pi list` / settings 里的 packages | `pi install` / `pi remove` / `pi update --extensions` |
@@ -146,8 +150,8 @@ Live 文件仍是各 Agent 的。AgentHub 只编排与展示。CLI 不可用时 
 
 ### PR-1 只读 inventory（Claude + Grok）
 
-- **做**：core 扫描/CLI 列表；脱敏路径；fixture。前端可暂不接。
-- **测试**：无 CLI 时 fail-closed；假 JSON 列表；不把 MCP `mcpServers` 算作插件行。
+- **做**：core 扫描/CLI 列表；脱敏路径；fixture。前端可暂不接。Claude 以实际 `claude plugin --help` 为准，无 JSON 则读 live 文件。
+- **测试**：无 CLI 时 fail-closed；假列表；不把 MCP `mcpServers` 算作插件行。
 - **点测**：本机已装 Claude/Grok 时 CLI 列表与目录一致。
 - **不做**：写入、Codex/Pi、UI。
 

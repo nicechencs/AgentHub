@@ -28,7 +28,7 @@ The application is organized by work and management, with Agent filtering inside
 | Manage | Routes | `/routes` | Local route runtime list and details |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
-`Routes` is shown in the sidebar by default. The `routesNavVisible` preference can hide the sidebar item, but it does not disable the page or change `/routes`. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`.
+`Routes` is shown in the sidebar by default. The `routesNavVisible` preference can hide the sidebar item, but it does not disable the page or change `/routes`. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. There is no current sidebar Plugins item; a vendor plugin/extension pack page is a [proposal](../proposals/plugin-management.md), not current navigation.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 

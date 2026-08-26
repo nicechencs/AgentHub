@@ -19,6 +19,23 @@ updated: 2026-08-26
 
 未验证的单元格写「未验证」。不要据此把 `Capability::Mcp` 改成 Full，也不要在实现前新增未接线的插件能力 Full。Goose 将 MCP 称为 extension，那不是本表的「插件包」。
 
+## 厂商插件系统（plugin / extension 包）
+
+「支持」指该 Agent **自己**是否有可安装的 plugin/extension 包系统。AgentHub 尚未接线，所以本表最后一列全是未接线或不支持。
+
+| Agent | 厂商插件系统 | 判定依据 | AgentHub |
+|---|---|---|---|
+| Claude | **有** | `/plugin`、`claude plugin`；`~/.claude/plugins/`；`enabledPlugins` | 未接线 |
+| Grok | **有** | `grok plugin`；`~/.grok/plugins/`；启用与 trust 分开 | 未接线 |
+| Codex | **有** | `/plugins`、`codex plugin`；`~/.codex/plugins/cache/` | 未接线 |
+| Pi | **有**（叫 package / extension） | `pi install` / `pi remove` / `pi update --extensions` | 未接线 |
+| DSH | **另一套**（Cordis） | `cordis.patch.yml` 插件树，不是 `name@marketplace` 包 | 关闭，不硬转 |
+| Cursor | **无** | AgentHub 管 `cursor-agent` CLI；VS Code/Cursor IDE 扩展市场不算 | 不支持 |
+| Kimi | **无已验证契约** | 无官方 plugin CLI / 目录 | 不支持 |
+| WorkBuddy | **未验证** | 无稳定 plugin CLI | 不支持 |
+
+实现顺序见 [插件管理提案](../proposals/plugin-management.md) §6：Claude、Grok → Codex、Pi → DSH 保持关闭 → Cursor / Kimi / WorkBuddy 明确不支持。
+
 ## 总览
 
 | Agent | MCP 配置（用户级） | MCP 管理命令 | Plugin 包 | 技能目录（AgentHub 投影） | `Capability::Mcp` | `Capability::Skills` |
@@ -26,11 +43,11 @@ updated: 2026-08-26
 | Claude | `~/.claude.json` 的 `mcpServers`；`<claude-home>/settings.json` | `claude mcp add/list`；会话 `/mcp` | `/plugin` 市场；`enabledPlugins`；数据 `~/.claude/plugins/` | `~/.claude/skills` | Planned | Full |
 | Codex | `~/.codex/config.toml` 的 `[mcp_servers.<name>]` | `codex mcp add/list`；TUI `/mcp` | `/plugins` 与 `codex plugin`；缓存 `~/.codex/plugins/cache/` | `~/.codex/skills` | Planned | Full |
 | Grok | `~/.grok/config.toml` 的 `[mcp_servers.<name>]` | `grok mcp add/list/remove/doctor` | `grok plugin` / marketplace；`~/.grok/plugins/` | `~/.grok/skills` | Planned | Full |
-| Cursor | `~/.cursor/mcp.json` 的 `mcpServers` | IDE MCP 设置；改 JSON 后重载 | 未验证独立 CLI 市场 | `~/.cursor/skills-cursor` | Planned | Full |
+| Cursor | `~/.cursor/mcp.json` 的 `mcpServers` | IDE MCP 设置；改 JSON 后重载 | CLI **无**插件包系统；IDE 扩展市场不是 cursor-agent | `~/.cursor/skills-cursor` | Planned | Full |
 | Pi | `~/.pi/agent/mcp.json`（或 `$PI_CODING_AGENT_DIR`） | 扩展/适配器读取该文件；热更因发行而异 | `pi install` 装的是 Pi 扩展，不是 MCP server | `~/.pi/agent/skills` | Planned | Full |
 | WorkBuddy | `<config>/.mcp.json` | 未验证稳定 CLI | 未验证 | `<config>/skills` | Planned | Full |
 | Kimi | 无已验证契约；inventory 只探 `mcp.json` | 未验证 | 未验证 | 无（Skills Unsupported） | Planned | Unsupported |
-| DSH | 无已验证 MCP 契约；inventory 只探 JSON | 未验证 | Cordis 插件是 DeepSeek Harness 自己的插件树，**不是** MCP | `~/.dsh/skills` | Planned | Full |
+| DSH | 无已验证 MCP 契约；inventory 只探 JSON | 未验证 | Cordis 插件树，**不是** Claude 式 plugin 包，也不是 MCP | `~/.dsh/skills` | Planned | Full |
 
 ## Claude Code
 
@@ -102,6 +119,11 @@ updated: 2026-08-26
 
 ## Cursor Agent
 
+**Plugin 包**
+
+- `cursor-agent` CLI **没有**已验证的 `/plugin` 或 marketplace。
+- Cursor **IDE** 走 VS Code 扩展市场，那不是 AgentHub 的 Cursor 适配器。不要把 IDE 扩展列进插件页。
+
 **MCP**
 
 - 全局：`~/.cursor/mcp.json`，根键 `mcpServers`。
@@ -117,18 +139,30 @@ updated: 2026-08-26
 
 ## Pi
 
+**Plugin 包**
+
+- 安装：`pi install npm:<pkg>` / `git:github.com/…` / 本地路径。
+- 卸载：`pi remove`。
+- 更新：`pi update --extensions`；钉死 `npm:pkg@1.2.3` 的包跳过更新，不是失败。
+- 装上即加载，改完 `/reload`。扩展可执行任意代码，安装前审查源码。
+- 包格式（`package.json` 的 `pi` 键）与 Claude `name@marketplace` **不是**同一套，插件页不要硬转。
+
 **MCP**
 
 - 已观察/文档化的用户文件：`~/.pi/agent/mcp.json`（`PI_CODING_AGENT_DIR` 可改）。形状多为 `mcpServers`。
 - 发行版差异大：有的用内置 MCP，有的用 `pi-mcp-adapter` 等扩展；热加载、`/mcp` 命令、import cursor/claude 配置都不是所有 Pi 构建都有。
 - AgentHub 同时探 `mcp.json` 与 `.mcp.json`。项目级 `.pi/mcp.json` 不扫。
-- `pi install npm:…` / `git:…` 装的是 **Pi extension 包**（插件），不是 MCP server。卸载 `pi remove`，更新 `pi update --extensions`。这是 AgentHub 插件页应对齐的 Pi 表面。
+- `pi install` 装的是上一节的 extension 包，不要当成 MCP server 安装。
 
 **技能**
 
 - 投影根：`~/.pi/agent/skills`。
 
 ## WorkBuddy
+
+**Plugin 包**
+
+- 无已验证的 plugin / extension CLI 或市场。插件页标不支持，不要伪造商店。
 
 **MCP**
 
@@ -141,19 +175,27 @@ updated: 2026-08-26
 
 ## Kimi
 
+**Plugin 包**
+
+- 无已验证 plugin CLI / 目录。插件页标不支持。
+
 - Skills：Unsupported，「Kimi 不支持技能目录」。
 - MCP：无已验证路径。inventory 探测 `<kimi-home>/mcp.json` 与 `.mcp.json` 以便 UI 显示未发现，不表示格式已确认。
 - 不要为填矩阵伪造 Full。
 
 ## DeepSeek Harness (DSH)
 
+**Plugin 包**
+
+- Cordis / `cordis.patch.yml` 里的「插件」是 Harness 自己的 LLM 插件行，**既不是** Claude/Grok 式 marketplace 包，**也不是** MCP server。
+- 默认关闭，不映射到插件页的安装/卸载。
+
 - Skills：`~/.dsh/skills`，Full。
 - MCP：无已验证契约；inventory 只探 JSON。
-- Cordis / `cordis.patch.yml` 里的「插件」是 Harness 自己的 LLM 插件行，**不是** MCP server，不能映射到 MCP 页的添加/卸载。
 
 ## AgentHub 技能管理（对照）
 
-Skills 已有完整写入面，MCP 管理应抄它的纪律，而不是抄它的目录模型（技能有共享真源；MCP live 文件属于各 Agent）。
+Skills 已有完整写入面。插件管理应抄它的**纪律**（staging、备份、失败不半写入），不要抄它的**共享真源**模型：技能在 `~/.agents/skills/`；插件包属于各 Agent 的 cache / enabled 列表。MCP live 文件同样属于各 Agent，且是另一页。
 
 | 动作 | Skills 今天怎么做 |
 |---|---|
