@@ -151,12 +151,13 @@ fn attach_extra_binary_copies_skips_primary_leftover_and_duplicates() {
         channel: Some("native".into()),
         env_ready: true,
         notes: Vec::new(),
-        extra_copies: vec![DetectedBinaryCopy {
-            path: leftover.clone(),
-            kind: "leftover-agenthub".into(),
-            version: Some("9.9.9".into()),
-            channel: Some("npm".into()),
-        }],
+        extra_copies: vec![DetectedBinaryCopy::from_kind(
+            AgentId::Claude,
+            leftover.clone(),
+            "leftover-agenthub",
+            Some("9.9.9".into()),
+            Some("npm".into()),
+        )],
     };
     attach_extra_binary_copies(
         &mut result,
@@ -220,12 +221,13 @@ fn attach_extra_binary_copies_refreshes_note_when_ide_copy_is_added() {
         channel: Some("npm".into()),
         env_ready: true,
         notes: vec!["另有 1 份 Codex：stale".into()],
-        extra_copies: vec![DetectedBinaryCopy {
-            path: npm.clone(),
-            kind: "npm".into(),
-            version: Some("0.1.0".into()),
-            channel: Some("npm".into()),
-        }],
+        extra_copies: vec![DetectedBinaryCopy::from_kind(
+            AgentId::Codex,
+            npm.clone(),
+            "npm",
+            Some("0.1.0".into()),
+            Some("npm".into()),
+        )],
     };
     attach_extra_binary_copies(
         &mut result,
@@ -277,12 +279,13 @@ fn attach_extra_binary_copies_promotes_desktop_when_not_found() {
         channel: None,
         env_ready: true,
         notes: vec![NOT_FOUND_FIREFIGHTING_NOTE.into()],
-        extra_copies: vec![DetectedBinaryCopy {
-            path: leftover.clone(),
-            kind: "leftover-agenthub".into(),
-            version: Some("9.9.9".into()),
-            channel: Some("npm".into()),
-        }],
+        extra_copies: vec![DetectedBinaryCopy::from_kind(
+            AgentId::Codex,
+            leftover.clone(),
+            "leftover-agenthub",
+            Some("9.9.9".into()),
+            Some("npm".into()),
+        )],
     };
     attach_extra_binary_copies(
         &mut result,
@@ -328,6 +331,47 @@ fn attach_extra_binary_copies_promotes_desktop_when_not_found() {
         .extra_copies
         .iter()
         .all(|c| c.path != desktop));
+    let ide_copy = result
+        .extra_copies
+        .iter()
+        .find(|c| c.kind == "ide")
+        .expect("ide copy");
+    assert_eq!(ide_copy.source, "ide");
+    assert_eq!(ide_copy.update_via, "ide");
+    assert_eq!(ide_copy.uninstall_via, "ide");
+    let leftover_copy = result
+        .extra_copies
+        .iter()
+        .find(|c| c.kind == "leftover-agenthub")
+        .expect("leftover");
+    assert_eq!(leftover_copy.uninstall_via, "leftover");
+}
+
+#[test]
+fn install_lifecycle_aligns_all_agents() {
+    use crate::models::install_lifecycle;
+    for agent in AgentId::ALL {
+        let npm = install_lifecycle(agent, "npm");
+        assert_eq!(npm.source, "npm");
+        assert_eq!(npm.update_via, "in_app");
+        assert_eq!(npm.uninstall_via, "in_app");
+        let native = install_lifecycle(agent, "native");
+        assert_eq!(native.source, "native");
+        if agent == AgentId::WorkBuddy {
+            assert_eq!(native.update_via, "official");
+            assert_eq!(native.uninstall_via, "in_app");
+        } else {
+            assert_eq!(native.update_via, "in_app");
+            assert_eq!(native.uninstall_via, "in_app");
+        }
+        let ide = install_lifecycle(agent, "ide");
+        assert_eq!((ide.source, ide.update_via, ide.uninstall_via), ("ide", "ide", "ide"));
+        let desktop = install_lifecycle(agent, "desktop");
+        assert_eq!(
+            (desktop.source, desktop.update_via, desktop.uninstall_via),
+            ("desktop", "desktop", "desktop")
+        );
+    }
 }
 
 #[test]
@@ -347,12 +391,13 @@ fn leftover_extra_copy_alone_does_not_count_as_installed() {
         channel: None,
         env_ready: true,
         notes: vec![NOT_FOUND_FIREFIGHTING_NOTE.into()],
-        extra_copies: vec![DetectedBinaryCopy {
-            path: leftover.clone(),
-            kind: "leftover-agenthub".into(),
-            version: Some("9.9.9".into()),
-            channel: Some("npm".into()),
-        }],
+        extra_copies: vec![DetectedBinaryCopy::from_kind(
+            AgentId::Codex,
+            leftover.clone(),
+            "leftover-agenthub",
+            Some("9.9.9".into()),
+            Some("npm".into()),
+        )],
     };
     attach_extra_binary_copies(&mut result, Vec::new(), &["--version"], &[]);
 

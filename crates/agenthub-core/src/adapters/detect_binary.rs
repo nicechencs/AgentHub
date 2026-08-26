@@ -179,12 +179,13 @@ pub(crate) fn attach_extra_binary_copies(
             "ide" | "desktop" => None,
             other => Some(other.to_string()),
         };
-        result.extra_copies.push(DetectedBinaryCopy {
+        result.extra_copies.push(DetectedBinaryCopy::from_kind(
+            result.agent,
             path,
-            kind: kind.into(),
+            kind,
             version,
             channel,
-        });
+        ));
         added += 1;
     }
     if added > 0 {
@@ -314,12 +315,13 @@ fn attach_leftover_agenthub_npm_copy(
         "发现数据目录遗留 npm 副本 @ {}（不会用于启动，也不会再往 ~/.agenthub/npm 安装）",
         path.display()
     ));
-    result.extra_copies.push(DetectedBinaryCopy {
+    result.extra_copies.push(DetectedBinaryCopy::from_kind(
+        agent,
         path,
-        kind: "leftover-agenthub".into(),
+        "leftover-agenthub",
         version,
-        channel: Some("npm".into()),
-    });
+        Some("npm".into()),
+    ));
 }
 
 fn leftover_paths_equal(a: &Path, b: &Path) -> bool {

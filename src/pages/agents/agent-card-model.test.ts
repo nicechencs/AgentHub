@@ -9,7 +9,11 @@ import {
   extraCopyKindLabel,
   extraCopyKindLabelKey,
   extraCopyUpdateHint,
+  canInstallAlongsideSpecial,
+  canUninstallProgramInApp,
+  installLifecycle,
   isInAppUpgradeChannel,
+  listAgentInstalls,
   isNodeTooOldUpdateNote,
   isSpecialInstallChannel,
   openAgentCardUninstallConfirm,
@@ -61,6 +65,8 @@ describe('agent-card menu wiring', () => {
     expect(card).toContain('openAgentCardUninstallConfirm');
     expect(card).toContain("onSelect={(event) => openUninstallConfirm(event, 'program')}");
     expect(card).toContain("onSelect={(event) => openUninstallConfirm(event, 'config')}");
+    expect(card).toContain('canUninstallProgramInApp');
+    expect(card).toContain('canInstallAlongsideSpecial');
     expect(card).toContain('onCloseAutoFocus={(event) => event.preventDefault()}');
     expect(card).toContain('shouldIgnoreMenuDialogDismiss');
     expect(card).not.toMatch(/onSelect=\{\(\) => setConfirmDialog\('program'\)\}/);
@@ -127,12 +133,17 @@ describe('extra copy labels', () => {
     expect(card).toContain('CopyInstallPathButton');
     expect(card).toContain('agents.card.copyPath');
     expect(card).toContain('extraCopyKindLabel');
-    expect(card).toContain('extraCopyUpdateHint');
+    expect(card).toContain('listAgentInstalls');
+    expect(card).toContain('agents.card.installSource');
+    expect(card).toContain('agents.card.updateChannel');
+    expect(card).toContain('agents.card.uninstallMethod');
     expect(card).toContain('specialChannelUpdateTargets');
     expect(card).toContain('updateViaDesktop');
     expect(zh.agents.card.copyPath).toBe('复制路径');
     expect(zh.agents.card.updateViaDesktop).toBe('请到桌面应用更新');
     expect(zh.agents.card.updateViaIde).toBe('请到 IDE 插件更新');
+    expect(zh.agents.card.installAlongsideHint).toContain('npm');
+    expect(zh.agents.dialog.installAlongsideDesc).toContain('不会被替换');
     expect(zh.agents.card.extraCopyDesktop).toBe('桌面应用');
   });
 
@@ -146,20 +157,100 @@ describe('extra copy labels', () => {
     expect(extraCopyUpdateHint('npm', undefined, '1.2.0')).toBeUndefined();
   });
 
-  it('treats npm/native as in-app upgrade and ide/desktop as external', () => {
+  it('objectifies each copy: source, location, update, uninstall', () => {
+    expect(installLifecycle('npm')).toEqual({
+      source: 'npm',
+      updateVia: 'in_app',
+      uninstallVia: 'in_app',
+    });
+    expect(installLifecycle('native', 'workbuddy')).toEqual({
+      source: 'native',
+      updateVia: 'official',
+      uninstallVia: 'in_app',
+    });
+    expect(installLifecycle('ide', 'claude')).toEqual({
+      source: 'ide',
+      updateVia: 'ide',
+      uninstallVia: 'ide',
+    });
+    const rows = listAgentInstalls({
+      agentId: 'codex',
+      installed: true,
+      channel: 'desktop',
+      binPath: 'C:\\Store\\codex.exe',
+      version: '0.50.0',
+      extraCopies: [
+        {
+          path: 'C:\\Users\\x\\.vscode\\extensions\\openai.chatgpt\\codex.exe',
+          kind: 'ide',
+          version: '0.49.0',
+        },
+      ],
+    });
+    expect(rows).toEqual([
+      {
+        source: 'desktop',
+        location: 'C:\\Store\\codex.exe',
+        version: '0.50.0',
+        updateVia: 'desktop',
+        uninstallVia: 'desktop',
+        spawn: true,
+        kind: 'desktop',
+      },
+      {
+        source: 'ide',
+        location: 'C:\\Users\\x\\.vscode\\extensions\\openai.chatgpt\\codex.exe',
+        version: '0.49.0',
+        updateVia: 'ide',
+        uninstallVia: 'ide',
+        spawn: false,
+        kind: 'ide',
+      },
+    ]);
     expect(isInAppUpgradeChannel('npm')).toBe(true);
-    expect(isInAppUpgradeChannel('native')).toBe(true);
-    expect(isInAppUpgradeChannel(undefined)).toBe(true);
     expect(isInAppUpgradeChannel('desktop')).toBe(false);
-    expect(isInAppUpgradeChannel('ide')).toBe(false);
     expect(isSpecialInstallChannel('desktop')).toBe(true);
-    expect(isSpecialInstallChannel('npm')).toBe(false);
+    expect(
+      canUninstallProgramInApp({
+        agentId: 'codex',
+        installed: true,
+        channel: 'npm',
+        binPath: '/npm/codex',
+      }),
+    ).toBe(true);
+    expect(
+      canUninstallProgramInApp({
+        agentId: 'codex',
+        installed: true,
+        channel: 'ide',
+        binPath: '/ide/codex',
+      }),
+    ).toBe(false);
+    expect(
+      canInstallAlongsideSpecial({
+        agentId: 'codex',
+        installed: true,
+        channel: 'desktop',
+        binPath: '/store/codex',
+      }),
+    ).toBe(true);
+    expect(
+      canInstallAlongsideSpecial({
+        agentId: 'codex',
+        installed: true,
+        channel: 'npm',
+        binPath: '/npm/codex',
+      }),
+    ).toBe(false);
   });
 
   it('hints after the agent name for special copies that cannot be upgraded here', () => {
     expect(
       specialChannelUpdateTargets({
+        agentId: 'codex',
+        installed: true,
         channel: 'desktop',
+        binPath: '/store/codex',
         extraCopies: [],
         latestVersion: '0.51.0',
         update: { agentId: 'codex', state: 'update_available', latestVersion: '0.51.0' },
@@ -167,7 +258,10 @@ describe('extra copy labels', () => {
     ).toEqual([{ kind: 'desktop', outdated: true }]);
     expect(
       specialChannelUpdateTargets({
+        agentId: 'codex',
+        installed: true,
         channel: 'npm',
+        binPath: '/npm/codex',
         extraCopies: [
           {
             path: '/ide/codex',
@@ -182,7 +276,10 @@ describe('extra copy labels', () => {
     ).toEqual([{ kind: 'ide', outdated: true }]);
     expect(
       specialChannelUpdateTargets({
+        agentId: 'codex',
+        installed: true,
         channel: 'desktop',
+        binPath: '/store/codex',
         extraCopies: [],
         latestVersion: '0.50.0',
         update: { agentId: 'codex', state: 'up_to_date', latestVersion: '0.50.0' },
@@ -199,6 +296,8 @@ describe('agent-card install confirm', () => {
     expect(card).not.toMatch(/onClick=\{\(\) => startAgentInstall\(selectedChannel\)\}/);
     expect(dialogs).toContain('agents.dialog.confirmInstall');
     expect(dialogs).toContain('onConfirmInstall');
+    expect(dialogs).toContain('installAlongsideDesc');
+    expect(dialogs).toContain('uninstallConfigKeepsApp');
   });
 
   it('keeps retry as a secondary card action after a failed task', () => {

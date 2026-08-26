@@ -110,6 +110,9 @@ export interface AgentStatus {
     kind: string;
     version?: string | null;
     channel?: string | null;
+    source?: string | null;
+    updateVia?: string | null;
+    uninstallVia?: string | null;
   }>;
   notes?: string[];
   authStatus: AuthStatus;

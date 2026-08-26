@@ -40,13 +40,18 @@ import { shouldIgnoreMenuDialogDismiss } from '@/pages/connections/ticket-wallet
 import { buildAgentInstallPreview, buildEnvInstallPreview } from './install-preview';
 import {
   agentTaskLogTitleKey,
+  canInstallAlongsideSpecial,
+  canUninstallProgramInApp,
   extraCopyKindLabel,
   extraCopyUpdateHint,
   formatAgentVersion,
-  isInAppUpgradeChannel,
   isNodeTooOldUpdateNote,
   isSpecialInstallChannel,
+  listAgentInstalls,
   openAgentCardUninstallConfirm,
+  spawnInstall,
+  uninstallViaLabel,
+  updateViaLabel,
   resolveOfficialSetupUrl,
   specialChannelUpdateTargets,
 } from './agent-card-model';
@@ -175,7 +180,9 @@ export function AgentCard({
 
   const updateState = agent.update?.state;
   const checkingUpdate = updateState === 'checking';
-  const inAppChannel = isInAppUpgradeChannel(agent.channel);
+  const installs = listAgentInstalls(agent);
+  const spawn = spawnInstall(agent);
+  const inAppChannel = spawn?.updateVia === 'in_app';
   const specialTargets = specialChannelUpdateTargets(agent);
   const upgradable =
     agent.installed &&
@@ -191,7 +198,11 @@ export function AgentCard({
     meta.installChannels,
   );
   const canForceUpgrade = agent.installed && inAppChannel && !updateUnsupported;
-  const showInAppUpgrade = agent.installed && (inAppChannel || updateUnsupported);
+  const showInAppUpgrade =
+    agent.installed &&
+    (inAppChannel || spawn?.updateVia === 'official' || updateUnsupported);
+  const installAlongside = canInstallAlongsideSpecial(agent);
+  const canUninstallProgram = canUninstallProgramInApp(agent);
   const latestLabel =
     agent.update?.latestVersion ?? agent.latestVersion ?? undefined;
   const versionLabel = formatAgentVersion(agent.version);
@@ -423,29 +434,55 @@ export function AgentCard({
               )}
             </div>
 
-            {agent.installed ? (
-              <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-xs text-muted">
-                {agent.binPath ? (
-                  <span className="inline-flex min-w-0 max-w-full items-center gap-1">
-                    <span className="truncate">{agent.binPath}</span>
-                    <CopyInstallPathButton
-                      path={agent.binPath}
-                      label={t('agents.card.copyPath')}
-                      title={t('agents.card.copyPathTitle')}
-                      onCopy={copyInstallPath}
-                    />
-                  </span>
-                ) : null}
-                {agent.channel && (
-                  <Badge>
-                    {isSpecialInstallChannel(agent.channel)
-                      ? extraCopyKindLabel(agent.channel, t)
-                      : agent.channel}
-                  </Badge>
-                )}
+            {installs.length > 0 ? (
+              <div className="mt-1 space-y-1.5 text-xs text-muted">
+                {installs.map((inst) => {
+                  const versionText = formatAgentVersion(inst.version);
+                  const updateHint = extraCopyUpdateHint(
+                    inst.source,
+                    inst.version,
+                    latestLabel,
+                  );
+                  return (
+                    <div key={`${inst.source}:${inst.location}`} className="min-w-0">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1">
+                        {inst.spawn ? <Badge>{t('agents.card.spawnCopy')}</Badge> : null}
+                        <span className="font-medium text-secondary">
+                          {extraCopyKindLabel(inst.source, t)}
+                        </span>
+                        {versionText ? <span>{versionText}</span> : null}
+                        {updateHint === 'update_available' ? (
+                          <span className="text-success">
+                            {t('agents.card.extraCopyCanUpdate')}
+                          </span>
+                        ) : null}
+                        <CopyInstallPathButton
+                          path={inst.location}
+                          label={t('agents.card.copyPath')}
+                          title={t('agents.card.copyPathTitle')}
+                          onCopy={copyInstallPath}
+                        />
+                      </div>
+                      <p className="min-w-0 truncate font-mono" title={inst.location}>
+                        {t('agents.card.installLocation')} {inst.location}
+                      </p>
+                      <p>
+                        {t('agents.card.installSource')} {extraCopyKindLabel(inst.source, t)}
+                        {' · '}
+                        {t('agents.card.updateChannel')} {updateViaLabel(inst.updateVia, t)}
+                        {' · '}
+                        {t('agents.card.uninstallMethod')} {uninstallViaLabel(inst.uninstallVia, t)}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
-            ) : (
+            ) : null}
+            {installAlongside || !agent.installed ? (
               <div className="mt-1 space-y-1 text-xs text-muted">
+                {installAlongside ? (
+                  <p>{t('agents.card.installAlongsideHint')}</p>
+                ) : null}
                 <div className="flex flex-wrap items-center gap-2">
                   <span>{t('agents.card.channel')}</span>
                   <div className="flex flex-wrap gap-1">
@@ -478,7 +515,7 @@ export function AgentCard({
                     })}
                   </div>
                 </div>
-                {cardState === 'env_missing' && (
+                {!agent.installed && cardState === 'env_missing' ? (
                   <Tip
                     className="truncate text-secondary"
                     label={
@@ -507,47 +544,7 @@ export function AgentCard({
                       ...envCheck.broken,
                     ])}
                   </Tip>
-                )}
-              </div>
-            )}
-            {agent.extraCopies && agent.extraCopies.length > 0 ? (
-              <div className="mt-1 space-y-0.5 font-mono text-xs text-muted">
-                <Tip label={t('agents.card.extraCopyUpgradeSpawnOnly')}>
-                  {t('agents.card.extraCopies', { count: String(agent.extraCopies.length) })}
-                </Tip>
-                {agent.extraCopies.map((copy) => {
-                  const versionLabel = formatAgentVersion(copy.version);
-                  const updateHint = extraCopyUpdateHint(
-                    copy.kind,
-                    copy.version,
-                    latestLabel,
-                  );
-                  return (
-                    <div
-                      key={copy.path}
-                      className="flex min-w-0 items-center gap-1 pl-2"
-                    >
-                      <span className="min-w-0 truncate">
-                        {extraCopyKindLabel(copy.kind, t)}
-                        {versionLabel ? ` ${versionLabel}` : ''}
-                        {updateHint === 'update_available' ? (
-                          <span className="text-success">
-                            {` ${t('agents.card.extraCopyCanUpdate')}`}
-                          </span>
-                        ) : updateHint === 'up_to_date' ? (
-                          <span>{` ${t('agents.card.extraCopyIsLatest')}`}</span>
-                        ) : null}
-                        {` · ${copy.path}`}
-                      </span>
-                      <CopyInstallPathButton
-                        path={copy.path}
-                        label={t('agents.card.copyPath')}
-                        title={t('agents.card.copyPathTitle')}
-                        onCopy={copyInstallPath}
-                      />
-                    </div>
-                  );
-                })}
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -568,6 +565,24 @@ export function AgentCard({
             </Button>
           ) : agent.installed ? (
             <>
+              {installAlongside ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() =>
+                    installFailed ? retryAction() : setConfirmDialog('install')
+                  }
+                  disabled={busy}
+                  title={
+                    installFailed
+                      ? t('agents.card.retry')
+                      : t('agents.card.installWithChannel', { id: selectedChannel.id })
+                  }
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  {installFailed ? t('agents.card.retry') : t('agents.card.install')}
+                </Button>
+              ) : null}
               {showInAppUpgrade ? (
                 <Button
                   size="icon"
@@ -640,11 +655,19 @@ export function AgentCard({
                       <DropdownMenuSeparator />
                     </>
                   ) : null}
-                  <DropdownMenuItem
-                    onSelect={(event) => openUninstallConfirm(event, 'program')}
-                  >
-                    {t('agents.card.uninstallProgram')}
-                  </DropdownMenuItem>
+                  {canUninstallProgram ? (
+                    <DropdownMenuItem
+                      onSelect={(event) => openUninstallConfirm(event, 'program')}
+                    >
+                      {t('agents.card.uninstallProgram')}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem disabled>
+                      {spawn
+                        ? uninstallViaLabel(spawn.uninstallVia, t)
+                        : t('agents.card.uninstallViaDesktop')}
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem
                     className="text-danger"
                     onSelect={(event) => openUninstallConfirm(event, 'config')}
@@ -828,6 +851,7 @@ export function AgentCard({
         shouldIgnoreDismiss={(open) =>
           shouldIgnoreMenuDialogDismiss(ignoreMenuDialogDismissRef.current, open)
         }
+        specialInstall={isSpecialInstallChannel(agent.channel)}
       />
     </Card>
   );
