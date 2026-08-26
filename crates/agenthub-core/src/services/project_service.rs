@@ -428,7 +428,7 @@ impl ProjectService {
         Ok(ok)
     }
 
-    /// Load truncated conversation text for summarize / continue context.
+    /// Load conversation turns for project preview / continue context.
     pub fn excerpts(&self, ids: &[String]) -> Result<Vec<AgentProjectExcerpt>> {
         let started = Instant::now();
         let mut out = Vec::with_capacity(ids.len());

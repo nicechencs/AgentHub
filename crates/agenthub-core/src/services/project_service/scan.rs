@@ -12,11 +12,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::catalog::limits::{
-    PROJECT_ASSISTANT_TURN_EXCERPT_CHARS as ASSISTANT_TURN_EXCERPT_CHARS,
-    PROJECT_EXCERPT_CHARS as EXCERPT_CHARS, PROJECT_EXCERPT_KEEP_BYTES as EXCERPT_KEEP_BYTES,
     PROJECT_EXCERPT_READ_BYTES as EXCERPT_READ_BYTES, PROJECT_LIST_HEAD_BYTES as LIST_HEAD_BYTES,
     PROJECT_PREVIEW_CHARS as PREVIEW_CHARS, PROJECT_SCAN_BYTES as SCAN_BYTES,
-    PROJECT_USER_TURN_EXCERPT_CHARS as USER_TURN_EXCERPT_CHARS,
 };
 use crate::error::{AppError, Result};
 use crate::models::{AgentId, AgentProject, AgentProjectExcerpt, AgentSession};
@@ -2277,6 +2274,7 @@ fn merge_grok_excerpt_turns(
 }
 
 /// Role-tagged turns so markdown `---` inside a reply is not a splitter.
+/// Keep every extracted turn in full, including long sessions.
 fn format_excerpt_turns(turns: &[ExcerptTurn]) -> String {
     let mut body = String::new();
     for t in turns {
@@ -2284,32 +2282,11 @@ fn format_excerpt_turns(turns: &[ExcerptTurn]) -> String {
         if text.is_empty() {
             continue;
         }
-        let used = body.chars().count();
-        if used >= EXCERPT_CHARS {
-            break;
-        }
-        let header = format!("---turn:{}---\n", t.role);
-        let header_len = header.chars().count();
-        let remaining = EXCERPT_CHARS.saturating_sub(used.saturating_add(header_len + 1));
-        if remaining == 0 {
-            break;
-        }
-        // A wrapped prompt or a long first reply must not hide later turns.
-        let per_turn = if t.role == "user" {
-            USER_TURN_EXCERPT_CHARS
-        } else {
-            ASSISTANT_TURN_EXCERPT_CHARS
-        };
-        let budget = remaining.min(per_turn);
-        if budget == 0 {
-            continue;
-        }
-        let piece = truncate_chars(text, budget);
         if !body.is_empty() {
             body.push('\n');
         }
-        body.push_str(&header);
-        body.push_str(&piece);
+        body.push_str(&format!("---turn:{}---\n", t.role));
+        body.push_str(text);
     }
     body
 }
@@ -2353,13 +2330,9 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
             session_id: native_session_id_from_path(agent, &abs_path),
         }
     });
-    let filtered = read_jsonl_matching(
-        &abs_path,
-        transcript_line_might_be_turn,
-        EXCERPT_KEEP_BYTES,
-        EXCERPT_READ_BYTES,
-    )
-    .unwrap_or_default();
+    let filtered =
+        read_jsonl_matching(&abs_path, transcript_line_might_be_turn, EXCERPT_READ_BYTES)
+            .unwrap_or_default();
     let chat_text = if filtered.trim().is_empty() {
         read_head(&abs_path, SCAN_BYTES.saturating_mul(2)).unwrap_or_default()
     } else {
@@ -2372,7 +2345,6 @@ pub(crate) fn load_excerpt(id: &str, home_override: Option<&Path>) -> Result<Age
             read_jsonl_matching(
                 &updates,
                 grok_updates_line_might_be_message,
-                EXCERPT_KEEP_BYTES,
                 EXCERPT_READ_BYTES,
             )
             .map(|u| extract_grok_update_turns(&u))
@@ -2619,19 +2591,16 @@ fn transcript_line_might_be_turn(line: &str) -> bool {
 
 const LINE_PREFIX_BYTES: usize = 2048;
 
-/// Stream a jsonl, keep matching lines, stop after `max_kept_bytes` of kept
-/// content or `max_read_bytes` of the file. Non-matching lines are skipped
-/// after a small prefix so multi-MB tool dumps do not fill the excerpt window.
+/// Stream a jsonl and keep every matching turn line, up to `max_read_bytes` of
+/// the file. Non-matching lines (tool dumps) are skipped after a small prefix.
 fn read_jsonl_matching(
     path: &Path,
     keep: impl Fn(&str) -> bool,
-    max_kept_bytes: u64,
     max_read_bytes: u64,
 ) -> Option<String> {
     let file = fs::File::open(path).ok()?;
     let mut reader = BufReader::new(file.take(max_read_bytes));
     let mut out = String::new();
-    let mut kept = 0u64;
     loop {
         let (mut buf, had_nl) = read_line_prefix(&mut reader, LINE_PREFIX_BYTES)?;
         if buf.is_empty() && !had_nl {
@@ -2645,31 +2614,24 @@ fn read_jsonl_matching(
             continue;
         }
         if !had_nl {
-            let extra = (max_kept_bytes.saturating_sub(kept) as usize)
-                .saturating_add(8)
-                .min(512 * 1024);
-            let (rest, rest_nl) = read_line_prefix(&mut reader, extra.max(1))?;
-            buf.extend_from_slice(&rest);
-            if !rest_nl {
-                skip_rest_of_line(&mut reader);
+            loop {
+                let (rest, rest_nl) = read_line_prefix(&mut reader, 64 * 1024)?;
+                buf.extend_from_slice(&rest);
+                if rest_nl || rest.is_empty() {
+                    break;
+                }
             }
         }
         while matches!(buf.last(), Some(b'\n' | b'\r')) {
             buf.pop();
         }
-        let line = String::from_utf8_lossy(&buf);
-        let add = line.len() as u64 + 1;
-        if kept > 0 && kept.saturating_add(add) > max_kept_bytes {
-            break;
+        if buf.is_empty() {
+            continue;
         }
         if !out.is_empty() {
             out.push('\n');
         }
-        out.push_str(&line);
-        kept = kept.saturating_add(add);
-        if kept >= max_kept_bytes {
-            break;
-        }
+        out.push_str(&String::from_utf8_lossy(&buf));
     }
     Some(out)
 }
