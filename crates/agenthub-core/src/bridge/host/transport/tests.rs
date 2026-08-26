@@ -18,6 +18,9 @@ use super::super::admission::AdmittedRequest;
 use super::super::http::EdgeState;
 use super::super::surface::DownstreamSurface;
 use super::super::ANTHROPIC_API_VERSION;
+use crate::models::{AdapterSourceProduct, AgentId};
+
+use super::super::pair_policy::{identity_relay, pair_adapter_active, pair_edge_can_apply};
 use super::{RecoveryPolicy, UpstreamChannel};
 
 fn listener_state(
@@ -49,6 +52,9 @@ fn listener_state(
         custom_openai: false,
         route_index: None,
         auth_reload: crate::bridge::auth_reload::AuthReloadCoordinator::new(),
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        continuations: std::sync::Arc::new(super::super::continuation::ContinuationBindings::new()),
         account_picker: crate::bridge::runtime::BridgeStartSpec::new(
             "transport-test",
             0,
@@ -129,6 +135,165 @@ fn passthrough_is_declared_only_for_matching_wire_surfaces() {
     assert!(UpstreamChannel::CodexResponses.passthrough_for(DownstreamSurface::Responses));
     assert!(UpstreamChannel::Grok.passthrough_for(DownstreamSurface::Responses));
     assert!(!UpstreamChannel::Grok.passthrough_for(DownstreamSurface::Messages));
+}
+
+fn pair_admitted(
+    protocol: BridgeUpstreamProtocol,
+    source: AdapterSourceProduct,
+    target: AgentId,
+    codex_to_grok: bool,
+    grok_to_codex: bool,
+    body: serde_json::Value,
+) -> AdmittedRequest {
+    let mut request = admitted(protocol, BridgeLocalSurface::Responses, body);
+    request.state.mapping_source = Some(source);
+    request.state.mapping_target = Some(target);
+    request.state.codex_ingress_grok_upstream = codex_to_grok;
+    request.state.grok_ingress_codex_upstream = grok_to_codex;
+    request.state.listed_models = Arc::from(vec!["grok-4.5".to_owned(), "gpt-5.4".to_owned()]);
+    request
+}
+
+#[test]
+fn flag_off_keeps_responses_identity_relay_for_codex_and_grok() {
+    let grok = pair_admitted(
+        BridgeUpstreamProtocol::XaiResponsesOauth,
+        AdapterSourceProduct::XaiGrokSubscription,
+        AgentId::Codex,
+        false,
+        false,
+        json!({ "model": "grok-4.5", "input": "hi" }),
+    );
+    assert!(identity_relay(
+        UpstreamChannel::Grok,
+        DownstreamSurface::Responses,
+        &grok.state
+    ));
+    assert!(!pair_adapter_active(&grok.state, UpstreamChannel::Grok));
+    let codex = pair_admitted(
+        BridgeUpstreamProtocol::CodexResponsesOauth,
+        AdapterSourceProduct::CodexChatGptSubscription,
+        AgentId::Grok,
+        false,
+        false,
+        json!({ "model": "gpt-5.4", "input": "hi" }),
+    );
+    assert!(identity_relay(
+        UpstreamChannel::CodexResponses,
+        DownstreamSurface::Responses,
+        &codex.state
+    ));
+}
+
+#[test]
+fn flag_on_disables_implicit_responses_passthrough_for_cross_product() {
+    let grok = pair_admitted(
+        BridgeUpstreamProtocol::XaiResponsesOauth,
+        AdapterSourceProduct::XaiGrokSubscription,
+        AgentId::Codex,
+        true,
+        false,
+        json!({ "model": "grok-4.5", "store": true, "input": "hi" }),
+    );
+    assert!(UpstreamChannel::Grok.passthrough_for(DownstreamSurface::Responses));
+    assert!(!identity_relay(
+        UpstreamChannel::Grok,
+        DownstreamSurface::Responses,
+        &grok.state
+    ));
+    assert!(pair_adapter_active(&grok.state, UpstreamChannel::Grok));
+}
+
+#[test]
+fn same_dialect_does_not_force_pair_adapter_when_flags_on() {
+    let same = pair_admitted(
+        BridgeUpstreamProtocol::XaiResponsesOauth,
+        AdapterSourceProduct::XaiGrokSubscription,
+        AgentId::Grok,
+        true,
+        true,
+        json!({ "model": "grok-4.5", "input": "hi" }),
+    );
+    assert!(identity_relay(
+        UpstreamChannel::Grok,
+        DownstreamSurface::Responses,
+        &same.state
+    ));
+    assert!(!pair_adapter_active(&same.state, UpstreamChannel::Grok));
+}
+
+#[test]
+fn closed_matrix_cell_does_not_use_pair_adapter() {
+    assert!(pair_edge_can_apply(
+        Some(AdapterSourceProduct::XaiGrokSubscription),
+        Some(AgentId::Codex)
+    ));
+    assert!(pair_edge_can_apply(
+        Some(AdapterSourceProduct::CodexChatGptSubscription),
+        Some(AgentId::Grok)
+    ));
+    assert!(!pair_edge_can_apply(
+        Some(AdapterSourceProduct::ClaudeSubscription),
+        Some(AgentId::Codex)
+    ));
+}
+
+#[test]
+fn flag_on_codex_to_grok_prepare_strips_store_and_system_items() {
+    let admitted = pair_admitted(
+        BridgeUpstreamProtocol::XaiResponsesOauth,
+        AdapterSourceProduct::XaiGrokSubscription,
+        AgentId::Codex,
+        true,
+        false,
+        json!({
+            "model": "grok-4.5",
+            "store": true,
+            "metadata": { "x": 1 },
+            "input": [
+                {
+                    "type": "message",
+                    "role": "system",
+                    "content": [{ "type": "input_text", "text": "sys" }]
+                },
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hi" }]
+                }
+            ]
+        }),
+    );
+    let prepared = UpstreamChannel::Grok
+        .prepare(DownstreamSurface::Responses, &admitted)
+        .expect("prepare");
+    assert!(prepared.body.get("store").is_none(), "{}", prepared.body);
+    assert!(prepared.body.get("metadata").is_none(), "{}", prepared.body);
+    assert_no_system_or_developer_items(&prepared.body);
+    assert!(prepared.grok_identity.is_some());
+}
+
+#[test]
+fn flag_on_grok_to_codex_prepare_uses_official_allowlist_without_grok_identity() {
+    let admitted = pair_admitted(
+        BridgeUpstreamProtocol::CodexResponsesOauth,
+        AdapterSourceProduct::CodexChatGptSubscription,
+        AgentId::Grok,
+        false,
+        true,
+        json!({
+            "model": "gpt-5.4",
+            "prompt_cache_key": "cache-1",
+            "store": true,
+            "input": "hi"
+        }),
+    );
+    let prepared = UpstreamChannel::CodexResponses
+        .prepare(DownstreamSurface::Responses, &admitted)
+        .expect("prepare");
+    assert_eq!(prepared.body["store"], false);
+    assert!(prepared.body.get("prompt_cache_key").is_none());
+    assert!(prepared.grok_identity.is_none());
 }
 
 #[test]
