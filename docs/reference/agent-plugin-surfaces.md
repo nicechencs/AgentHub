@@ -21,12 +21,12 @@ updated: 2026-08-26
 
 ## 厂商插件系统（plugin / extension 包）
 
-「支持」指该 Agent **自己**是否有可安装的 plugin/extension 包系统。AgentHub 尚未接线，所以本表最后一列全是未接线或不支持。
+「支持」指该 Agent **自己**是否有可安装的 plugin/extension 包系统。AgentHub 对 Claude / Grok 只读 list；写入和其他 Agent 仍未接线。
 
 | Agent | 厂商插件系统 | 判定依据 | AgentHub |
 |---|---|---|---|
-| Claude | **有** | `/plugin`、`claude plugin`；`~/.claude/plugins/`；`enabledPlugins` | 未接线 |
-| Grok | **有** | `grok plugin`；`~/.grok/plugins/`；启用与 trust 分开 | 未接线 |
+| Claude | **有** | `/plugin`、`claude plugin`；`~/.claude/plugins/`；`enabledPlugins` | 只读 list |
+| Grok | **有** | `grok plugin`；`~/.grok/plugins/`；启用与 trust 分开 | 只读 list |
 | Codex | **有** | `/plugins`、`codex plugin`；`~/.codex/plugins/cache/` | 未接线 |
 | Pi | **有**（叫 package / extension） | `pi install` / `pi remove` / `pi update --extensions` | 未接线 |
 | DSH | **另一套**（Cordis） | `cordis.patch.yml` 插件树，不是 `name@marketplace` 包 | 关闭，不硬转 |

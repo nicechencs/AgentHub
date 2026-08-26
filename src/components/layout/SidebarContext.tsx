@@ -7,6 +7,8 @@ interface SidebarContextValue {
   toggle: () => void;
   routesNavVisible: boolean;
   setRoutesNavVisible: (v: boolean) => void;
+  pluginsNavVisible: boolean;
+  setPluginsNavVisible: (v: boolean) => void;
 }
 
 const SidebarContext = React.createContext<SidebarContextValue>({
@@ -15,19 +17,24 @@ const SidebarContext = React.createContext<SidebarContextValue>({
   toggle: () => {},
   routesNavVisible: true,
   setRoutesNavVisible: () => {},
+  pluginsNavVisible: true,
+  setPluginsNavVisible: () => {},
 });
 
 export function useSidebar() {
   return React.useContext(SidebarContext);
 }
 
-/** 侧栏 UI 偏好（折叠、路由入口可见性；持久化到 localStorage） */
+/** 侧栏 UI 偏好（折叠、路由/插件入口可见性；持久化到 localStorage） */
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsedState] = React.useState(
     () => loadBool(StorageKey.sidebarCollapsed, false),
   );
   const [routesNavVisible, setRoutesNavVisibleState] = React.useState(
     () => loadBool(StorageKey.routesNavVisible, true),
+  );
+  const [pluginsNavVisible, setPluginsNavVisibleState] = React.useState(
+    () => loadBool(StorageKey.pluginsNavVisible, true),
   );
 
   const setCollapsed = React.useCallback((v: boolean) => {
@@ -40,6 +47,11 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     saveBool(StorageKey.routesNavVisible, v);
   }, []);
 
+  const setPluginsNavVisible = React.useCallback((v: boolean) => {
+    setPluginsNavVisibleState(v);
+    saveBool(StorageKey.pluginsNavVisible, v);
+  }, []);
+
   const toggle = React.useCallback(() => {
     setCollapsedState((prev) => {
       const next = !prev;
@@ -49,8 +61,24 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = React.useMemo(
-    () => ({ collapsed, setCollapsed, toggle, routesNavVisible, setRoutesNavVisible }),
-    [collapsed, setCollapsed, toggle, routesNavVisible, setRoutesNavVisible],
+    () => ({
+      collapsed,
+      setCollapsed,
+      toggle,
+      routesNavVisible,
+      setRoutesNavVisible,
+      pluginsNavVisible,
+      setPluginsNavVisible,
+    }),
+    [
+      collapsed,
+      setCollapsed,
+      toggle,
+      routesNavVisible,
+      setRoutesNavVisible,
+      pluginsNavVisible,
+      setPluginsNavVisible,
+    ],
   );
 
   return <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>;

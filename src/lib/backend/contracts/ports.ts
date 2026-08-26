@@ -27,6 +27,7 @@ export type { DoctorPort } from './doctor-port';
 export * from './env-port';
 export * from './install-port';
 export type { McpPort } from './mcp-types';
+export type { PluginPort } from './plugin-types';
 export * from './project-port';
 export * from './provider-port';
 export * from './settings-port';
@@ -74,5 +75,6 @@ export interface Backend {
   update: UpdatePort;
   trash: TrashPort;
   mcp: import('./mcp-types').McpPort;
+  plugins: import('./plugin-types').PluginPort;
 }
 export type CreateBackend = () => Backend;

@@ -16,6 +16,8 @@ export const StorageKey = {
   sidebarCollapsed: `${PREFIX}sidebar-collapsed`,
   /** 侧栏是否显示「路由」入口；缺省为可见 */
   routesNavVisible: `${PREFIX}routes-nav-visible`,
+  /** 侧栏是否显示「插件」入口；缺省为可见 */
+  pluginsNavVisible: `${PREFIX}plugins-nav-visible`,
   /** epoch ms of last successful usage collect (manual or auto) */
   usageLastCollectAt: `${PREFIX}usage-last-collect-at`,
   /** SemVer last dismissed via “稍后” on the update prompt */

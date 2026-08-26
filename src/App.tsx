@@ -13,6 +13,7 @@ import ConnectionsPage from '@/pages/connections';
 import BridgesPage from '@/pages/bridges';
 import SkillsPage from '@/pages/skills';
 import McpPage from '@/pages/mcp';
+import PluginsPage from '@/pages/plugins';
 import ProjectsPage from '@/pages/projects';
 import SettingsPage from '@/pages/settings';
 import { onTrayNavigate } from '@/lib/backend/tauri/tray-events';
@@ -62,7 +63,8 @@ export default function App() {
     pathname === '/skills' ||
     pathname === '/projects' ||
     pathname === '/connections' ||
-    pathname === '/routes';
+    pathname === '/routes' ||
+    pathname === '/plugins';
   const fullBleed = isChat || isWorkbenchSplit;
   const updateHandleRef = useRef<UpdatePromptHandle | null>(null);
 
@@ -135,6 +137,7 @@ export default function App() {
                 <Route path="/skills" element={<SkillsPage />} />
                 <Route path="/mcp" element={<McpPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/plugins" element={<PluginsPage />} />
                 <Route path="/usage" element={<LegacyUsageRedirect />} />
                 <Route path="/backups" element={<LegacyBackupsRedirect />} />
                 <Route
