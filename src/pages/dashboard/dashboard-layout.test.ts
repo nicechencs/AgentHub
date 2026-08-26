@@ -40,10 +40,10 @@ describe('dashboard layout wiring', () => {
   it('plots overlay usage series in agent brand hex, not a stacked CSS-var area', () => {
     const page = source('index.tsx');
     expect(page).toContain('resolveChartColor');
-    expect(page).toContain('type="linear"');
+    expect(page).toContain('type="monotone"');
     expect(page).toContain('isAnimationActive={false}');
     expect(page).not.toContain('stackId');
-    expect(page).not.toContain('type="monotone"');
+    expect(page).not.toContain('type="linear"');
     expect(page).not.toContain('stroke={meta.color}');
     expect(page).not.toContain('stopColor={meta.color}');
   });
