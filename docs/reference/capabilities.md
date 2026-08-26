@@ -4,7 +4,7 @@ description: AgentHub 能力键、四级状态和当前 Agent 能力快照。
 type: reference
 audience: contributor
 status: current
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # 能力参考
@@ -51,5 +51,5 @@ agenthub agent capabilities --markdown
 | ModelSelect | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
 | SessionResume | Partial | Partial | Planned | Planned | Planned | Planned | Planned | Planned |
 
-能力矩阵不承载 npm 包名、安装 URL、home 路径或账号识别算法；这些是 adapter/port 数据。只读 MCP inventory 也不等于 `Mcp` 管理能力，本机 Routes 的 models endpoint 也不改变 `ModelSelect` 状态。
+能力矩阵不承载 npm 包名、安装 URL、home 路径或账号识别算法；这些是 adapter/port 数据。只读 MCP inventory 也不等于 `Mcp` 管理能力，本机 Routes 的 models endpoint 也不改变 `ModelSelect` 状态。MCP 扫描路径见 [MCP inventory](mcp-inventory.md)；各家厂商表面见 [Agent 插件表面](agent-plugin-surfaces.md)；写入管理仍是 [提案](../proposals/plugin-management.md)。
 

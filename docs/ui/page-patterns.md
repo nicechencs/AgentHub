@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # UI Page Patterns
@@ -174,7 +174,7 @@ Agents is the lifecycle surface: installed state, runtime readiness, install/upd
 
 ### MCP
 
-MCP is a read-only inventory of known configuration files. It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported.
+MCP is a read-only inventory of known configuration files. It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported. The current page is a standard single-column table, not the Routes workbench split. A future management workbench is a [proposal](../proposals/plugin-management.md), not this contract.
 
 ## 10. Responsive and interaction constraints
 

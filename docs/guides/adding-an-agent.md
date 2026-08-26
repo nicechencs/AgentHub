@@ -4,7 +4,7 @@ description: 按稀疏端口、能力声明和目录注册把一个 Agent 接入
 type: guide
 audience: contributor
 status: current
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # 添加 Agent
@@ -59,6 +59,7 @@ updated: 2026-08-25
 | `install` / `lifecycle` | 有可审计的 npm/native 安装渠道 |
 | `config` | 能安全读取/合并公开配置字段；无法保证 round-trip 时保持只读或 fail-closed |
 | `skills` | 有稳定的技能目标目录 |
+| MCP inventory 路径 | 仅当用户级 live 文件形状已验证；写入仍要求 `Capability::Mcp` 不再是 Planned |
 | `usage` | 有脱敏 fixture 锁定日志字段 |
 | `projects` | 有明确的会话/项目根和安全删除边界 |
 | `stream` | 已验证结构化 stdout/事件协议 |
