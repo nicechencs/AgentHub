@@ -138,7 +138,7 @@ impl AgentAdapter for FakeAdapter {
             }
             Capability::AccountSwitch => CapabilityState::unsupported("fake account switch off"),
             Capability::LiveBackup => CapabilityState::full(),
-            _ => CapabilityState::unsupported("fake"),
+            other => other.fake_state(&[]),
         }
     }
 

@@ -32,10 +32,10 @@ use models::{
 use platform::{LifecycleCoordinator, LifecycleResult};
 use services::{
     check_agent_updates as probe_agent_updates, install_runtime_system, invalidate_latest_cache,
-    AccountService, AdapterApplyService, AdapterBridgeService, AdapterRouteService, AgentService,
-    AgentVisibilityService, BackupService, ChatService, ConnectionService, EnvService,
-    ProjectService, ProviderService, RoutePoolService, RunService, SettingsService, SkillService,
-    TicketBindService, TicketReadService, UsageService,
+    AccountService, AdapterApplyService, AdapterBridgeService, AdapterRouteService,
+    AdapterSecretResolver, AgentService, AgentVisibilityService, BackupService, ChatService,
+    ConnectionService, EnvService, ProjectService, ProviderService, RoutePoolService, RunService,
+    SettingsService, SkillService, TicketBindService, TicketReadService, UsageService,
 };
 use storage::{ChatRepo, Database};
 use utils::command_exec::SystemCommandExecutor;
@@ -52,9 +52,9 @@ pub use platform::{
 
 /// Application facade shared by CLI and (future) GUI.
 pub struct AgentHub {
-    pub data_dir: PathBuf,
-    pub db: Database,
-    pub registry: AdapterRegistry,
+    pub(crate) data_dir: PathBuf,
+    pub(crate) db: Database,
+    pub(crate) registry: AdapterRegistry,
     /// Read-only agent directory (key / capabilities / install channels).
     pub catalog: AgentCatalogService,
     /// Install-family lifecycle (operation records + redetect).
@@ -208,6 +208,24 @@ impl AgentHub {
             agent_visibility,
             route_pools,
         })
+    }
+
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
+    pub fn registry(&self) -> &AdapterRegistry {
+        &self.registry
+    }
+
+    /// Storage handle for composition and tests.
+    /// Domain writes go through the corresponding service.
+    pub fn db(&self) -> &Database {
+        &self.db
+    }
+
+    pub fn adapter_secret_resolver(&self) -> AdapterSecretResolver {
+        AdapterSecretResolver::new(self.db.clone())
     }
 
     /// Fan-out the same prompt to one or more agents (parallel or sequential).

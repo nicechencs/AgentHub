@@ -13,7 +13,7 @@ fn open_isolated_hub(dir: &Path) -> AgentHub {
 fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
     let dir = tempfile::tempdir().expect("tempdir");
     let hub = open_isolated_hub(dir.path());
-    assert_eq!(hub.data_dir, dir.path());
+    assert_eq!(hub.data_dir(), dir.path());
 
     let report = hub.doctor();
     assert_eq!(
@@ -38,7 +38,7 @@ fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
         }),
         "parser health must omit uninstalled agents"
     );
-    assert_eq!(hub.registry.all().len(), crate::models::AgentId::ALL.len());
+    assert_eq!(hub.registry().all().len(), crate::models::AgentId::ALL.len());
     assert!(report.db_ok);
     assert!(report.ok);
     assert_eq!(report.version, AgentHub::version());
@@ -70,9 +70,9 @@ fn agent_hub_open_freezes_relative_data_dir_before_lifecycle_use() {
     fs::create_dir_all(&skills).expect("isolated skills root");
     let hub = AgentHub::open_with_skills_root(Some(relative), Some(&skills))
         .expect("open relative data dir");
-    assert!(hub.data_dir.is_absolute());
+    assert!(hub.data_dir().is_absolute());
     assert_eq!(
-        hub.data_dir,
+        hub.data_dir(),
         crate::utils::paths::normalize_data_dir(relative).expect("normalize relative data dir")
     );
 }

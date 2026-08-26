@@ -92,10 +92,7 @@ impl AgentAdapter for FakeClaudeAdapter {
         Err(AppError::Unsupported("fake".into()))
     }
     fn capability(&self, capability: Capability) -> CapabilityState {
-        match capability {
-            Capability::ConfigWrite | Capability::LiveBackup => CapabilityState::full(),
-            _ => CapabilityState::unsupported("fake"),
-        }
+        capability.fake_state(&[Capability::ConfigWrite, Capability::LiveBackup])
     }
     fn skills_dir(&self) -> Option<PathBuf> {
         None
@@ -907,10 +904,7 @@ impl AgentAdapter for FakePiAdapter {
         Err(AppError::Unsupported("fake".into()))
     }
     fn capability(&self, capability: Capability) -> CapabilityState {
-        match capability {
-            Capability::ConfigWrite | Capability::LiveBackup => CapabilityState::full(),
-            _ => CapabilityState::unsupported("fake"),
-        }
+        capability.fake_state(&[Capability::ConfigWrite, Capability::LiveBackup])
     }
     fn skills_dir(&self) -> Option<PathBuf> {
         None
@@ -2065,10 +2059,7 @@ impl AgentAdapter for FakeDshAdapter {
         Err(AppError::Unsupported("fake".into()))
     }
     fn capability(&self, capability: Capability) -> CapabilityState {
-        match capability {
-            Capability::ConfigWrite | Capability::LiveBackup => CapabilityState::full(),
-            _ => CapabilityState::unsupported("fake"),
-        }
+        capability.fake_state(&[Capability::ConfigWrite, Capability::LiveBackup])
     }
     fn skills_dir(&self) -> Option<PathBuf> {
         None

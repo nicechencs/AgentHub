@@ -310,9 +310,9 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
     tauri::async_runtime::block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
-        hub.db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
-        hub.db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
-        ProviderRepo::new(hub.db.clone())
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        hub.db().set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        ProviderRepo::new(hub.db().clone())
             .create(&kimi_source(
                 "kimi-enroll-saga",
                 "upstream-membership-secret",
@@ -393,9 +393,9 @@ fn enroll_refresh_replace_of_reused_listener_is_compensated() {
     tauri::async_runtime::block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
-        hub.db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
-        hub.db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
-        ProviderRepo::new(hub.db.clone())
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        hub.db().set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        ProviderRepo::new(hub.db().clone())
             .create(&kimi_source(
                 "kimi-enroll-replace-own",
                 "upstream-membership-secret",
@@ -464,9 +464,9 @@ fn enroll_refresh_reuse_of_indexed_spec_is_not_compensated() {
     tauri::async_runtime::block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
-        hub.db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
-        hub.db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
-        ProviderRepo::new(hub.db.clone())
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        hub.db().set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        ProviderRepo::new(hub.db().clone())
             .create(&kimi_source(
                 "kimi-enroll-reuse-own",
                 "upstream-membership-secret",
@@ -537,9 +537,9 @@ fn unenrolled_index_enabled_busy_preferred_port_does_not_rebind_or_enroll() {
     tauri::async_runtime::block_on(async {
         let dir = tempfile::tempdir().unwrap();
         let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
-        hub.db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
-        hub.db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
-        ProviderRepo::new(hub.db.clone())
+        hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        hub.db().set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        ProviderRepo::new(hub.db().clone())
             .create(&kimi_source(
                 "kimi-occupy-preferred",
                 "upstream-membership-secret",
@@ -553,7 +553,7 @@ fn unenrolled_index_enabled_busy_preferred_port_does_not_rebind_or_enroll() {
         let busy = blocker.local_addr().unwrap().port();
         let mut profile = prepared.profile().clone();
         profile.local_port = Some(busy);
-        AdapterProfileRepo::new(hub.db.clone())
+        AdapterProfileRepo::new(hub.db().clone())
             .update(&profile)
             .unwrap();
         let prepared = hub
@@ -688,7 +688,7 @@ fn busy_preferred_port_rebind_then_realign_updates_projection() {
 
         realign_restored_bridge_port(&hub, &profile.id, ensured.status.port).unwrap();
 
-        let persisted = AdapterProfileRepo::new(hub.db.clone())
+        let persisted = AdapterProfileRepo::new(hub.db().clone())
             .get(&profile.id)
             .unwrap()
             .unwrap();
@@ -842,7 +842,7 @@ fn direct_remove_waits_for_the_same_target_coordinator() {
             created_at: "now".into(),
             updated_at: "now".into(),
         };
-        AdapterProfileRepo::new(hub.db.clone())
+        AdapterProfileRepo::new(hub.db().clone())
             .create(&direct_profile)
             .unwrap();
 
@@ -871,7 +871,7 @@ fn direct_remove_waits_for_the_same_target_coordinator() {
         );
         drop(target);
         pending.await.unwrap().unwrap();
-        assert!(AdapterProfileRepo::new(hub.db.clone())
+        assert!(AdapterProfileRepo::new(hub.db().clone())
             .get("direct-remove-profile")
             .unwrap()
             .is_none());
@@ -911,7 +911,7 @@ fn create_projection(hub: &AgentHub, prepared: &AdapterBridgePrepared, port: u16
 }
 
 fn seed_active_bridge(hub: &AgentHub, source_id: &str, old_port: u16) -> AdapterProfile {
-    ProviderRepo::new(hub.db.clone())
+    ProviderRepo::new(hub.db().clone())
         .create(&kimi_source(source_id, "upstream-membership-secret"))
         .unwrap();
     let prepared = hub
@@ -937,7 +937,7 @@ fn provider_content_contains(hub: &AgentHub, provider_id: &str, needle: &str) ->
 }
 
 fn install_sql_trigger(hub: &AgentHub, sql: &str) {
-    hub.db
+    hub.db()
         .with_conn(|conn| {
             conn.execute_batch(sql)?;
             Ok(())
@@ -954,7 +954,7 @@ fn realign_restored_bridge_port_updates_provider_and_profile() {
 
     realign_restored_bridge_port(&hub, &profile.id, 43155).unwrap();
 
-    let persisted = AdapterProfileRepo::new(hub.db.clone())
+    let persisted = AdapterProfileRepo::new(hub.db().clone())
         .get(&profile.id)
         .unwrap()
         .unwrap();
@@ -997,7 +997,7 @@ fn realign_restored_bridge_port_rolls_back_when_provider_update_fails() {
         "update-stage failure must not need compensation: {error}"
     );
 
-    let persisted = AdapterProfileRepo::new(hub.db.clone())
+    let persisted = AdapterProfileRepo::new(hub.db().clone())
         .get(&profile.id)
         .unwrap()
         .unwrap();
@@ -1042,7 +1042,7 @@ fn realign_restored_bridge_port_rolls_back_provider_when_persist_fails() {
         "successful compensation must not report adapter.bridge_rollback: {error}"
     );
 
-    let persisted = AdapterProfileRepo::new(hub.db.clone())
+    let persisted = AdapterProfileRepo::new(hub.db().clone())
         .get(&profile.id)
         .unwrap()
         .unwrap();
@@ -1131,10 +1131,7 @@ impl AgentAdapter for IsolatedCodexAdapter {
     }
 
     fn capability(&self, cap: Capability) -> CapabilityState {
-        match cap {
-            Capability::ConfigWrite | Capability::LiveBackup => CapabilityState::full(),
-            _ => CapabilityState::unsupported("isolated"),
-        }
+        cap.fake_state(&[Capability::ConfigWrite, Capability::LiveBackup])
     }
 
     fn skills_dir(&self) -> Option<PathBuf> {
@@ -1167,7 +1164,7 @@ fn isolated_restore_hub(
     let mut registry = AdapterRegistry::new();
     registry.register(adapter.clone());
     hub.providers = ProviderService::with_live(
-        hub.db.clone(),
+        hub.db().clone(),
         registry,
         dir.path().join("isolated-backups"),
     );
@@ -1209,7 +1206,7 @@ fn realign_restored_bridge_port_rolls_back_when_switch_fails() {
         "successful compensation must not report adapter.bridge_rollback: {error}"
     );
 
-    let persisted = AdapterProfileRepo::new(hub.db.clone())
+    let persisted = AdapterProfileRepo::new(hub.db().clone())
         .get(&profile.id)
         .unwrap()
         .unwrap();
@@ -1311,12 +1308,11 @@ impl AgentAdapter for IsolatedLiveAdapter {
     }
 
     fn capability(&self, cap: Capability) -> CapabilityState {
-        match cap {
-            Capability::ConfigWrite | Capability::LiveBackup | Capability::AccountSwitch => {
-                CapabilityState::full()
-            }
-            _ => CapabilityState::unsupported("isolated"),
-        }
+        cap.fake_state(&[
+            Capability::ConfigWrite,
+            Capability::LiveBackup,
+            Capability::AccountSwitch,
+        ])
     }
 
     fn skills_dir(&self) -> Option<PathBuf> {
@@ -1393,13 +1389,13 @@ fn isolated_route_hub(
     registry.register(source_adapter.clone());
     registry.register(target_adapter.clone());
     let backups = dir.path().join("isolated-backups");
-    hub.providers = ProviderService::with_live(hub.db.clone(), registry.clone(), backups.clone());
-    hub.accounts = AccountService::with_live(hub.db.clone(), registry, backups);
+    hub.providers = ProviderService::with_live(hub.db().clone(), registry.clone(), backups.clone());
+    hub.accounts = AccountService::with_live(hub.db().clone(), registry, backups);
     (dir, hub, source_adapter, target_adapter)
 }
 
 fn seed_current_target_provider(hub: &AgentHub, target: AgentId) {
-    ProviderRepo::new(hub.db.clone())
+    ProviderRepo::new(hub.db().clone())
         .create(&Provider {
             id: "target-current".into(),
             agent_id: target,
@@ -1442,7 +1438,7 @@ fn oauth_local_bridge_bind_reuses_login_row_and_does_not_occupy_live() {
     for (label, source_agent, target_agent, request) in cases {
         let (_dir, hub, source_adapter, target_adapter) =
             isolated_route_hub(source_agent, target_agent);
-        AccountRepo::new(hub.db.clone())
+        AccountRepo::new(hub.db().clone())
             .create(&grok_oauth_account("grok-subscription"))
             .unwrap();
         seed_current_target_provider(&hub, target_agent);
@@ -1474,7 +1470,7 @@ fn oauth_local_bridge_bind_reuses_login_row_and_does_not_occupy_live() {
         )
         .unwrap();
 
-        let accounts = AccountRepo::new(hub.db.clone()).list(None).unwrap();
+        let accounts = AccountRepo::new(hub.db().clone()).list(None).unwrap();
         assert_eq!(accounts.len(), 1, "{label}");
         assert_eq!(accounts[0].id, "grok-subscription", "{label}");
         assert_eq!(accounts[0].agent_id, AgentId::Grok, "{label}");
@@ -1518,7 +1514,7 @@ fn oauth_local_bridge_bind_reuses_login_row_and_does_not_occupy_live() {
 fn rollback_skips_live_switch_when_bind_did_not_occupy() {
     let (_dir, hub, source_adapter, target_adapter) =
         isolated_route_hub(AgentId::Grok, AgentId::Claude);
-    AccountRepo::new(hub.db.clone())
+    AccountRepo::new(hub.db().clone())
         .create(&grok_oauth_account("grok-subscription"))
         .unwrap();
     seed_current_target_provider(&hub, AgentId::Claude);
@@ -1581,7 +1577,7 @@ fn apply_local_bridge_from_grok_oauth_does_not_occupy_claude_current() {
     tauri::async_runtime::block_on(async {
         let (_dir, hub, source_adapter, target_adapter) =
             isolated_route_hub(AgentId::Grok, AgentId::Claude);
-        AccountRepo::new(hub.db.clone())
+        AccountRepo::new(hub.db().clone())
             .create(&grok_oauth_account("grok-subscription"))
             .unwrap();
         seed_current_target_provider(&hub, AgentId::Claude);
@@ -1605,7 +1601,7 @@ fn apply_local_bridge_from_grok_oauth_does_not_occupy_claude_current() {
         .await
         .unwrap();
 
-        let accounts = AccountRepo::new(hub.db.clone()).list(None).unwrap();
+        let accounts = AccountRepo::new(hub.db().clone()).list(None).unwrap();
         assert_eq!(accounts.len(), 1);
         assert_eq!(accounts[0].id, "grok-subscription");
         assert!(!result.provider.is_current);

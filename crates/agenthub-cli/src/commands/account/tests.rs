@@ -50,7 +50,7 @@ fn read_key_arg_rejects_empty() {
 fn switch_confirm_prompt_mentions_three_elements() {
     let dir = tempfile::tempdir().unwrap();
     let hub = AgentHub::open(Some(dir.path())).unwrap();
-    let prompt = switch_confirm_prompt(&hub, AgentId::Grok, "acct-1");
+    let prompt = switch_confirm_prompt(&hub, AgentId::Grok, "acct-1").unwrap();
     assert!(prompt.contains("backfill:"));
     assert!(prompt.contains("backup:"));
     assert!(prompt.contains("process:"));

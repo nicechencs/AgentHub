@@ -16,7 +16,7 @@
 
 export type ThemeScheme = 'light' | 'dark';
 
-/** Agent ids that own a brand color (keep in sync with `AgentId`). */
+/** Brand-color keys only — not the product agent catalog. */
 export const TOKEN_AGENT_IDS = [
   'claude',
   'codex',

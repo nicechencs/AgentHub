@@ -65,6 +65,33 @@ impl Capability {
         }
     }
 
+    /// Test-fake helper. The match is exhaustive so a new variant fails here
+    /// instead of being swallowed by `_ => unsupported` in each fake adapter.
+    pub fn fake_state(self, supported: &[Self]) -> CapabilityState {
+        match self {
+            Self::ConfigWrite
+            | Self::AccountSwitch
+            | Self::ApiKeyAccount
+            | Self::Skills
+            | Self::LiveBackup
+            | Self::StructuredStream
+            | Self::DangerousMode
+            | Self::ProjectHistory
+            | Self::ProjectDelete
+            | Self::ProviderPresets
+            | Self::Usage
+            | Self::Mcp
+            | Self::ModelSelect
+            | Self::SessionResume => {
+                if supported.contains(&self) {
+                    CapabilityState::full()
+                } else {
+                    CapabilityState::unsupported("fake")
+                }
+            }
+        }
+    }
+
     /// Short Chinese label for error messages / CLI.
     pub fn label(self) -> &'static str {
         match self {

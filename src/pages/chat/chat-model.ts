@@ -71,7 +71,7 @@ export function isChatAgentSelectable(status: AgentStatus | undefined): boolean 
  * 已安装且未隐藏的 Agent：未配置授权的置底、灰显不可选。隐藏的不进列表。
  */
 export function chatAgentPickerRows(input: {
-  catalogIds: AgentId[];
+  catalogIds: readonly AgentId[];
   agentStatus: AgentStatus[];
 }): ChatAgentPickerRow[] {
   const byId = new Map(input.agentStatus.map((a) => [a.agentId, a]));

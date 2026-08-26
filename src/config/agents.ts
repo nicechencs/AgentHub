@@ -37,10 +37,9 @@ export interface AgentMeta {
 }
 
 /** Pure display decoration for known agents — not the product set. */
-export const AGENT_DISPLAY: Record<
-  string,
-  { letter: string; colorKey: TokenAgentId }
-> = {
+export const AGENT_DISPLAY: Readonly<
+  Record<string, { readonly letter: string; readonly colorKey: TokenAgentId }>
+> = Object.freeze({
   claude: { letter: 'C', colorKey: 'claude' },
   codex: { letter: 'X', colorKey: 'codex' },
   kimi: { letter: 'K', colorKey: 'kimi' },
@@ -49,7 +48,7 @@ export const AGENT_DISPLAY: Record<
   workbuddy: { letter: 'W', colorKey: 'workbuddy' },
   cursor: { letter: 'R', colorKey: 'cursor' },
   dsh: { letter: 'D', colorKey: 'dsh' },
-};
+});
 
 const FALLBACK_COLOR = 'var(--text-muted)';
 
@@ -85,33 +84,35 @@ export function agentMetaFromCatalogEntry(entry: AgentCatalogEntryDto): AgentMet
 /**
  * Runtime agent list — filled only by {@link applyAgentCatalog}.
  * Not a static closed set; starts empty until catalog load/seed.
+ * The snapshot is frozen; replace it via {@link applyAgentCatalog}.
  */
-export const AGENTS: AgentMeta[] = [];
+export let AGENTS: readonly AgentMeta[] = Object.freeze([]);
 
-/** Lookup map; keys cleared/rebuilt with {@link applyAgentCatalog}. */
-export const AGENT_MAP: Record<string, AgentMeta> = Object.create(null) as Record<
-  string,
-  AgentMeta
->;
+/** Lookup map; replaced wholesale with {@link applyAgentCatalog}. */
+export let AGENT_MAP: Readonly<Record<string, AgentMeta>> = Object.freeze(
+  Object.create(null) as Record<string, AgentMeta>,
+);
 
 /** Convenience id list; mirrors AGENTS order. */
-export let AGENT_IDS: AgentId[] = [];
+export let AGENT_IDS: readonly AgentId[] = Object.freeze([]);
 
 /**
  * Replace product agent set from backend catalog entries.
  * Call sites that need the full list must run after this (boot / mock seed).
  */
 export function applyAgentCatalog(entries: AgentCatalogEntryDto[]): void {
-  AGENTS.length = 0;
-  for (const k of Object.keys(AGENT_MAP)) {
-    delete AGENT_MAP[k];
-  }
+  const next: AgentMeta[] = [];
+  const map: Record<string, AgentMeta> = Object.create(null);
   for (const entry of entries) {
     const meta = agentMetaFromCatalogEntry(entry);
-    AGENTS.push(meta);
-    AGENT_MAP[meta.id] = meta;
+    Object.freeze(meta.installChannels);
+    Object.freeze(meta);
+    next.push(meta);
+    map[meta.id] = meta;
   }
-  AGENT_IDS = AGENTS.map((a) => a.id);
+  AGENTS = Object.freeze(next);
+  AGENT_MAP = Object.freeze(map);
+  AGENT_IDS = Object.freeze(next.map((a) => a.id));
 }
 
 /** Resolve display meta for any key (catalog row or pure fallback). */

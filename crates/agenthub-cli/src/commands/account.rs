@@ -77,7 +77,7 @@ pub fn switch(
     assume_yes: bool,
 ) -> Result<()> {
     let agent = require_agent(agent_filter, "switch")?;
-    confirm(&switch_confirm_prompt(hub, agent, id_or_label), assume_yes)?;
+    confirm(&switch_confirm_prompt(hub, agent, id_or_label)?, assume_yes)?;
     let result = hub.accounts.switch(id_or_label, agent)?;
     emit_switch(&result, format)
 }
@@ -115,12 +115,16 @@ pub fn undo(
     }
 }
 
-pub fn switch_confirm_prompt(hub: &AgentHub, agent: AgentId, id_or_label: &str) -> String {
+pub fn switch_confirm_prompt(
+    hub: &AgentHub,
+    agent: AgentId,
+    id_or_label: &str,
+) -> Result<String> {
     let current = hub
         .accounts
-        .list(Some(agent))
-        .ok()
-        .and_then(|items| items.into_iter().find(|a| a.is_current));
+        .list(Some(agent))?
+        .into_iter()
+        .find(|a| a.is_current);
     let backfill = match current {
         Some(c) => format!("backfill: current live will be saved as 「{}」", c.label),
         None => "backfill: no current account; live will be written directly".into(),
@@ -133,10 +137,10 @@ pub fn switch_confirm_prompt(hub: &AgentHub, agent: AgentId, id_or_label: &str) 
             .join(agent.as_str())
             .display()
     );
-    format!(
+    Ok(format!(
         "Switch {} to account {id_or_label}?\n  {backfill}\n  {backup}\n  process: running agent processes are not stopped",
         agent.as_str()
-    )
+    ))
 }
 
 /// Print OAuth authorize URL for --agent (does not wait for callback).
