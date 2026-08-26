@@ -78,8 +78,14 @@ function contractAccount(id: string, source: ContractCase['source']): Account {
   };
 }
 
-function upsertLiveAccount(account: Account): void {
-  upsertMockAccount(account);
+function upsertLiveAccount(
+  account: Omit<Account, 'tokenValid'> & {
+    tokenValid?: boolean;
+    credentials?: Record<string, unknown>;
+    extra?: Record<string, unknown>;
+  },
+): void {
+  upsertMockAccount(account as Account);
 }
 
 async function planFor(
@@ -308,7 +314,7 @@ describe('mock golden lookup', () => {
       tokenValid: true,
       authHealth: 'renewable',
       credentials: {},
-    } as Account);
+    });
 
     const hit = lookupGoldenExpect(resolver, {
       sourceKind: 'account',
@@ -330,7 +336,7 @@ describe('mock golden lookup', () => {
       isCurrent: false,
       tokenValid: false,
       credentials: {},
-    } as Account);
+    });
 
     const plan = await planFor('account', 'claude-empty-bag-invalid', 'pi');
     expect(plan.canApply).toBe(false);
@@ -346,7 +352,7 @@ describe('mock golden lookup', () => {
       isCurrent: false,
       extra: { provider: 'kimi-code-membership' },
       credentials: {},
-    } as Account);
+    });
 
     const request = {
       sourceKind: 'account' as const,
@@ -368,7 +374,7 @@ describe('mock golden lookup', () => {
       label: 'Claude unknown empty slot',
       isCurrent: false,
       credentials: { access_token: '' },
-    } as Account);
+    });
 
     const plan = await planFor('account', 'claude-unknown-empty-slot', 'pi');
     expect(plan.canApply).toBe(false);
@@ -384,7 +390,7 @@ describe('mock golden lookup', () => {
       isCurrent: false,
       extra: { provider: 'kimi-code-membership' },
       credentials: { format: 'api_key', api_key: 'must-not-leak' },
-    } as Account);
+    });
     upsertLiveAccount({
       id: 'claude-unknown-with-token',
       agentId: 'claude',
@@ -392,7 +398,7 @@ describe('mock golden lookup', () => {
       label: 'Claude unknown with token',
       isCurrent: false,
       credentials: { access_token: 'must-not-leak' },
-    } as Account);
+    });
 
     const kimiHit = lookupGoldenExpect(resolver, {
       sourceKind: 'account',
@@ -432,7 +438,7 @@ describe('mock golden lookup', () => {
       tokenValid: false,
       authHealth: 'needs_login',
       extra: { provider: 'kimi-code-membership' },
-    } as Account);
+    });
 
     const membership = await planFor('account', 'kimi-membership-needs-login', 'claude');
     expect(membership.canApply).toBe(false);
@@ -489,7 +495,7 @@ describe('mock golden lookup', () => {
       tokenValid: false,
       authHealth: 'needs_login',
       extra: { provider: 'kimi-code-membership' },
-    } as Account);
+    });
 
     const request = {
       sourceKind: 'account' as const,
