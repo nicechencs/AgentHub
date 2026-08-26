@@ -314,7 +314,8 @@ export interface UsageRecord {
 }
 
 export interface UsageTrendPoint {
-  date: string; // YYYY-MM-DD
+  /** Local `YYYY-MM-DD`, or `YYYY-MM-DD HH:00` when the window is `days <= 1`. */
+  date: string;
   /** 各 agent 的 input + cache + output token 数 */
   [agentId: string]: number | string;
 }

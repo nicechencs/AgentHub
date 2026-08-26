@@ -24,6 +24,7 @@ describe('plugins layout wiring', () => {
     expect(page).not.toContain('onInstall');
     expect(page).not.toContain('installPlugin');
     expect(page).not.toContain('listMcpInventory');
+    expect(page).toContain('filterByPageVisibleAgent');
   });
 
   it('opens pack details in the right-hand inspect pane', () => {

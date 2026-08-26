@@ -898,11 +898,11 @@ fn usage_trend_days1_rolling_includes_20h_unless_since_clips() {
             .collect()
     }
 
-    fn local_day(ts: &str) -> String {
+    fn local_hour(ts: &str) -> String {
         chrono::DateTime::parse_from_rfc3339(ts)
             .unwrap()
             .with_timezone(&chrono::Local)
-            .format("%Y-%m-%d")
+            .format("%Y-%m-%d %H:00")
             .to_string()
     }
 
@@ -914,10 +914,15 @@ fn usage_trend_days1_rolling_includes_20h_unless_since_clips() {
         132,
         "days=1 without since is rolling 24h, so a 20h-ago row stays"
     );
+    assert!(
+        (20..=28).contains(&rolling.len()),
+        "days=1 fills hourly buckets across the 24h window, got {}",
+        rolling.len()
+    );
     for ts in [&older, &newer] {
         assert!(
-            point_dates(&rolling).contains(&local_day(ts)),
-            "trend day is local %Y-%m-%d of the row, not a UTC prefix"
+            point_dates(&rolling).contains(&local_hour(ts)),
+            "trend hour is local %Y-%m-%d %H:00 of the row, not a UTC prefix"
         );
     }
 
@@ -941,8 +946,43 @@ fn usage_trend_days1_rolling_includes_20h_unless_since_clips() {
     assert_eq!(claude_tokens(&today), expected_today);
     for ts in [&older, &newer] {
         if ts.as_str() >= since.as_str() {
-            assert!(point_dates(&today).contains(&local_day(ts)));
+            assert!(point_dates(&today).contains(&local_hour(ts)));
         }
+    }
+}
+
+#[test]
+fn usage_trend_days7_fills_empty_local_days() {
+    let root = tempfile::tempdir().unwrap();
+    let db = Database::open(&root.path().join("usage.db")).unwrap();
+    let repo = UsageRepo::new(db);
+    let ts = recent_ts(1);
+    repo.insert_batch(&[overview_row(
+        AgentId::Claude,
+        "opus",
+        10,
+        1,
+        0,
+        0.1,
+        &ts,
+        "one-day",
+    )])
+    .unwrap();
+
+    let points = repo
+        .trend(7, Some(AgentId::Claude), None, None, &[])
+        .unwrap();
+    assert!(
+        (7..=9).contains(&points.len()),
+        "7-day window fills empty local days so the categorical axis spans the range, got {}",
+        points.len()
+    );
+    for p in &points {
+        let date = p.0.get("date").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            date.len() == 10 && date.as_bytes().get(4) == Some(&b'-'),
+            "days>1 stays YYYY-MM-DD, got {date}"
+        );
     }
 }
 

@@ -23,7 +23,7 @@ export function usageWindowBound(
   return { days };
 }
 
-/** Drop hidden-agent slices (all-agents grouping) and re-sum metrics from the rest. */
+/** Drop omitted-agent slices (hidden / uninstalled) when grouping by agent, then re-sum. */
 export function filterHiddenUsageOverview(
   overview: UsageOverview,
   hiddenIds: Iterable<string>,
@@ -79,7 +79,7 @@ export function isLocalToday(iso: string, now = new Date()): boolean {
   );
 }
 
-/** 时间窗 + 隐藏 Agent：模型下拉与后续筛选的公共窗口 */
+/** 时间窗 + 省略 Agent（隐藏 / 未安装）：模型下拉与后续筛选的公共窗口 */
 export function filterWindowUsage(
   records: readonly UsageRecord[],
   dateRange: DateRange,

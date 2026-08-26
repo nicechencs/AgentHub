@@ -24,6 +24,48 @@ export function visibleInstalledIds(
   return statuses.filter((row) => row.installed && !row.hidden).map((row) => row.agentId);
 }
 
+/**
+ * Ids other pages omit from lists and aggregates: uninstalled or hidden.
+ * Empty while detect has not reported rows, so first paint does not blank out.
+ */
+export function omittedAgentIds(
+  statuses: ReadonlyArray<Pick<AgentStatus, 'agentId' | 'installed' | 'hidden'>>,
+): AgentId[] {
+  return statuses
+    .filter((row) => !row.installed || Boolean(row.hidden))
+    .map((row) => row.agentId)
+    .sort();
+}
+
+/**
+ * Non-manage pages: drop hidden always; after detect, keep installed only.
+ * While `agentsReady` is false, uninstalled rows stay so the list does not flash empty.
+ */
+export function isPageVisibleAgent(
+  agentId: string,
+  hiddenIds: ReadonlySet<string>,
+  installedIds: ReadonlySet<string>,
+  agentsReady: boolean,
+): boolean {
+  if (hiddenIds.has(agentId)) return false;
+  if (!agentsReady) return true;
+  return installedIds.has(agentId);
+}
+
+export function filterByPageVisibleAgent<T>(
+  rows: readonly T[],
+  getAgentId: (row: T) => string,
+  hiddenIds: Iterable<string>,
+  installedIds: readonly string[],
+  agentsReady: boolean,
+): T[] {
+  const hidden = toHiddenIdSet(hiddenIds);
+  const installed = new Set(installedIds);
+  return rows.filter((row) =>
+    isPageVisibleAgent(getAgentId(row), hidden, installed, agentsReady),
+  );
+}
+
 export function visibleCatalogAgents(hiddenIds: Iterable<string>): AgentMeta[] {
   const hidden = toHiddenIdSet(hiddenIds);
   return AGENTS.filter((agent) => !hidden.has(agent.id));

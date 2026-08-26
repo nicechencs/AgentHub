@@ -40,6 +40,39 @@ import {
 
 export { activeBindingForAgent, filterTicketsByAgentUsage };
 
+/**
+ * Hide omitted agents' own tickets unless an installed agent still has an
+ * active binding to them. Bindings to omitted agents always drop.
+ */
+export function filterWalletByExcludedAgents(
+  wallet: TicketWallet | null,
+  excludedIds: Iterable<string>,
+): TicketWallet | null {
+  if (!wallet) return null;
+  const excluded = excludedIds instanceof Set ? excludedIds : new Set(excludedIds);
+  if (excluded.size === 0) return wallet;
+  const tickets = wallet.tickets.filter((ticket) => {
+    if (!excluded.has(ticket.agentId)) return true;
+    return wallet.bindings.some(
+      (binding) =>
+        binding.ticketId === ticket.id &&
+        binding.active &&
+        !excluded.has(binding.agentId),
+    );
+  });
+  const ticketIds = new Set(tickets.map((ticket) => ticket.id));
+  const bindings = wallet.bindings.filter(
+    (binding) => ticketIds.has(binding.ticketId) && !excluded.has(binding.agentId),
+  );
+  const surfaceGroups = (wallet.surfaceGroups ?? [])
+    .map((group) => ({
+      ...group,
+      members: group.members.filter((member) => ticketIds.has(member.ticketId)),
+    }))
+    .filter((group) => group.members.length > 0);
+  return { ...wallet, tickets, bindings, surfaceGroups };
+}
+
 export type TicketWalletFilter = 'all' | TicketCredentialClass;
 
 export const TICKET_WALLET_FILTERS: Array<{ value: TicketWalletFilter; label: string }> = [

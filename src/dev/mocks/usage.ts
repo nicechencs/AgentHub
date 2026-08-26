@@ -3,6 +3,7 @@ import type { UsageOverview, UsageQuery } from '@/lib/backend/contracts/usage-ty
 import { delay } from '@/dev/mocks/delay';
 import { isCapabilityUsable } from '@/lib/capability';
 import type { AgentId, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
+import { denseTrendBuckets, localTrendBucket, trendGrain } from '@/lib/usage-trend';
 import { usageTokenParts } from '@/lib/usage-tokens';
 import { MOCK_CAPABILITIES } from './capabilities';
 
@@ -156,24 +157,32 @@ export function createMockUsagePort(): UsagePort {
 
     async usageTrend(days, agentId, model, since, excludeAgentIds) {
       await delay(30 + Math.random() * 50);
-      const byDay = new Map<string, UsageTrendPoint>();
+      const grain = trendGrain(days);
+      const emptyPoint = (key: string): UsageTrendPoint => {
+        const point: UsageTrendPoint = { date: key };
+        for (const a of DEMO_USAGE_AGENTS) point[a] = 0;
+        return point;
+      };
+      const byBucket = new Map<string, UsageTrendPoint>();
       for (const r of records) {
         if (!inUsageWindow(r, days, since)) continue;
         if (agentId && agentId !== 'all' && r.agentId !== agentId) continue;
         if (excludeAgentIds?.includes(r.agentId)) continue;
         if (model && model !== 'all' && r.model !== model) continue;
-        const day = r.timestamp.slice(0, 10);
-        if (!byDay.has(day)) {
-          const point: UsageTrendPoint = { date: day };
-          for (const a of DEMO_USAGE_AGENTS) point[a] = 0;
-          byDay.set(day, point);
-        }
-        const point = byDay.get(day)!;
+        const key = localTrendBucket(r.timestamp, grain);
+        if (!key) continue;
+        if (!byBucket.has(key)) byBucket.set(key, emptyPoint(key));
+        const point = byBucket.get(key)!;
         const p = usageTokenParts(r);
         point[r.agentId] =
           (point[r.agentId] as number) + p.billableInput + p.cache + r.outputTokens;
       }
-      return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
+      if (byBucket.size > 0) {
+        for (const key of denseTrendBuckets(days, since)) {
+          if (!byBucket.has(key)) byBucket.set(key, emptyPoint(key));
+        }
+      }
+      return [...byBucket.values()].sort((a, b) => a.date.localeCompare(b.date));
     },
 
     async listModels() {

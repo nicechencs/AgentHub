@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hiddenAgentIdSet, visibleInstalledIds } from '@/lib/agent-visibility';
+import { hiddenAgentIdSet, omittedAgentIds, visibleInstalledIds } from '@/lib/agent-visibility';
 import type { AgentStatus } from '@/lib/types';
 
 function status(
@@ -25,6 +25,7 @@ describe('useInstalledAgents selection', () => {
     ];
     expect(visibleInstalledIds(statuses)).toEqual(['codex']);
     expect([...hiddenAgentIdSet(statuses)]).toEqual(['claude']);
+    expect(omittedAgentIds(statuses)).toEqual(['claude', 'kimi']);
   });
 
   it('keeps a stable empty hidden set when nobody is hidden', () => {

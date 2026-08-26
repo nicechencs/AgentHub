@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
+import { filterByPageVisibleAgent } from '@/lib/agent-visibility';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { listMcpInventory } from '@/lib/api/mcp';
 import { openPathInFileManager } from '@/lib/api/skill';
@@ -26,8 +27,7 @@ function agentName(id: AgentId): string {
 export default function McpPage() {
   const { t } = useI18n();
   const { toast } = useToast();
-  const { hiddenIds, installedAgents } = useInstalledAgents();
-  const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  const { hiddenIds, installedIds, installedAgents, loading: agentsLoading } = useInstalledAgents();
   const [data, setData] = useState<McpInventory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | string | null>(null);
@@ -59,7 +59,15 @@ export default function McpPage() {
   }, [filterAgent, installedAgents]);
 
   const agentCounts = useMemo(() => {
-    const visibleServers = data?.servers.filter((s) => !hiddenSet.has(s.agent)) ?? [];
+    const visibleServers = data
+      ? filterByPageVisibleAgent(
+          data.servers,
+          (s) => s.agent,
+          hiddenIds,
+          installedIds,
+          !agentsLoading,
+        )
+      : [];
     const counts: Partial<Record<AgentTabId, number>> = {
       all: visibleServers.length,
     };
@@ -68,14 +76,20 @@ export default function McpPage() {
       counts[s.agent] = (counts[s.agent] ?? 0) + 1;
     }
     return counts;
-  }, [data, hiddenSet, installedAgents]);
+  }, [data, hiddenIds, installedIds, agentsLoading, installedAgents]);
 
   const servers = useMemo(() => {
     if (!data) return [] as McpServerEntry[];
-    const visible = data.servers.filter((s) => !hiddenSet.has(s.agent));
+    const visible = filterByPageVisibleAgent(
+      data.servers,
+      (s) => s.agent,
+      hiddenIds,
+      installedIds,
+      !agentsLoading,
+    );
     if (filterAgent === 'all') return visible;
     return visible.filter((s) => s.agent === filterAgent);
-  }, [data, filterAgent, hiddenSet]);
+  }, [data, filterAgent, hiddenIds, installedIds, agentsLoading]);
 
   const agentGroups = useMemo(() => groupMcpServersByAgentAndFile(servers), [servers]);
 

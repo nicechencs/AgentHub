@@ -79,7 +79,7 @@ describe('filterHiddenUsageOverview', () => {
     expect(ui.cacheHitPct).toBeNull();
   });
 
-  it('drops hidden agent slices and re-sums metrics', () => {
+  it('drops omitted (hidden or uninstalled) agent slices and re-sums metrics', () => {
     const next = filterHiddenUsageOverview(overview, ['kimi'], true);
     expect(next.distribution.map((d) => d.key)).toEqual(['claude']);
     expect(next.metrics).toEqual({
@@ -111,7 +111,7 @@ describe('filterWindowUsage', () => {
   const today = new Date(2026, 7, 23, 10, 0, 0).toISOString();
   const yesterday = new Date(2026, 7, 22, 10, 0, 0).toISOString();
 
-  it('keeps the full list for non-today ranges and drops hidden agents', () => {
+  it('keeps the full list for non-today ranges and drops omitted agents', () => {
     const rows = [
       row({ id: '1', timestamp: yesterday, agentId: 'claude', model: 'opus' }),
       row({ id: '2', timestamp: today, agentId: 'kimi', model: 'k2' }),

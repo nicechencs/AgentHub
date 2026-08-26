@@ -78,6 +78,10 @@ pub struct UsageOverview {
 }
 
 /// Trend chart point: `{ date, claude?: n, codex?: n, ... }` (dynamic agent keys).
+///
+/// `date` is local `YYYY-MM-DD` when `days > 1`, or local `YYYY-MM-DD HH:00`
+/// when `days <= 1` (dashboard today / last 24h). Empty buckets in the window
+/// are filled so a short range is not a single categorical point.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UsageTrendPoint(pub Map<String, Value>);
 
