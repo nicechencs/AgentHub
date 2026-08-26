@@ -120,9 +120,8 @@ async fn apply_local_bridge_locked(
     };
     // Own any listener this saga started or replaced. An idempotent reuse of an
     // already-running identical spec is not compensated on later projection failure.
-    let owns_listener = runtime.owned_by_saga;
-
-    let port = runtime.status.port;
+    let mut owns_listener = runtime.owned_by_saga;
+    let mut port = runtime.status.port;
     if let Err(error) = runtime_material.verify_bound_health(port).await {
         let _ = host.record_upstream_outcome(&profile_id, BridgeUpstreamStatus::Degraded);
         let code = error.code().to_owned();
@@ -137,7 +136,7 @@ async fn apply_local_bridge_locked(
     }
     let _ = host.record_upstream_outcome(&profile_id, BridgeUpstreamStatus::Connected);
 
-    if let Err(error) = enroll_v2_and_refresh_index(
+    match enroll_v2_and_refresh_index(
         hub.clone(),
         host.as_ref(),
         prepared.profile().clone(),
@@ -148,14 +147,19 @@ async fn apply_local_bridge_locked(
     )
     .await
     {
-        let listener_compensated =
-            compensate_started_bridge(&host, &profile_id, owns_listener).await;
-        if listener_compensated {
-            mark_retryable(hub, &profile_id, CODE_BRIDGE_START).await;
-        } else {
-            mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await;
+        Ok(refresh) => {
+            refresh.fold_into(&mut owns_listener, &mut port);
         }
-        return Err(error);
+        Err(error) => {
+            let listener_compensated =
+                compensate_started_bridge(&host, &profile_id, owns_listener).await;
+            if listener_compensated {
+                mark_retryable(hub, &profile_id, CODE_BRIDGE_START).await;
+            } else {
+                mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await;
+            }
+            return Err(error);
+        }
     }
 
     // Keep the same Tauri target authority as every configuration/account/
@@ -414,14 +418,13 @@ pub(crate) fn restore_adapter_bridges(
                 }
             };
 
-            if let Err(error) = runtime_material
-                .verify_bound_health(runtime.status.port)
-                .await
-            {
+            let mut owns_listener = runtime.owned_by_saga;
+            let mut port = runtime.status.port;
+            if let Err(error) = runtime_material.verify_bound_health(port).await {
                 let _ = host.record_upstream_outcome(&profile.id, BridgeUpstreamStatus::Degraded);
                 let code = error.code().to_owned();
                 let listener_compensated =
-                    compensate_started_bridge(&host, &profile.id, runtime.owned_by_saga).await;
+                    compensate_started_bridge(&host, &profile.id, owns_listener).await;
                 if listener_compensated {
                     mark_retryable(hub.clone(), &profile.id, &code).await;
                 } else {
@@ -432,36 +435,39 @@ pub(crate) fn restore_adapter_bridges(
             }
             let _ = host.record_upstream_outcome(&profile.id, BridgeUpstreamStatus::Connected);
 
-            if let Err(error) = enroll_v2_and_refresh_index(
+            match enroll_v2_and_refresh_index(
                 hub.clone(),
                 host.as_ref(),
                 material.profile().clone(),
                 runtime_material,
-                runtime.status.port,
+                port,
                 reload,
                 multi_account,
             )
             .await
             {
-                let _ = compensate_started_bridge(&host, &profile.id, runtime.owned_by_saga).await;
-                mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
-                tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge v2 enroll after restore failed");
-                continue;
+                Ok(refresh) => {
+                    refresh.fold_into(&mut owns_listener, &mut port);
+                }
+                Err(error) => {
+                    let _ = compensate_started_bridge(&host, &profile.id, owns_listener).await;
+                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
+                    tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge v2 enroll after restore failed");
+                    continue;
+                }
             }
 
             // Preferred-port rebind must rewrite profile.local_port and the
             // generated target endpoint; otherwise restore leaves a dead endpoint.
-            if Some(runtime.status.port) != profile.local_port || material.needs_reprojection() {
+            if Some(port) != profile.local_port || material.needs_reprojection() {
                 let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
                 if let Err(error) = with_hub_blocking(hub.clone(), {
                     let profile_id = profile.id.clone();
-                    let port = runtime.status.port;
                     move |hub| realign_restored_bridge_port(hub, &profile_id, port)
                 })
                 .await
                 {
-                    let _ =
-                        compensate_started_bridge(&host, &profile.id, runtime.owned_by_saga).await;
+                    let _ = compensate_started_bridge(&host, &profile.id, owns_listener).await;
                     mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_PROJECTION).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "bridge rebound to a new port but provider projection could not be realigned");
                     continue;
@@ -842,6 +848,27 @@ pub(crate) struct EnsuredBridgeListener {
     pub(crate) owned_by_saga: bool,
 }
 
+pub(crate) struct EnrolledIndexRefresh {
+    pub(crate) material: AdapterBridgeRuntimeMaterial,
+    pub(crate) listener: Option<EnsuredBridgeListener>,
+}
+
+impl EnrolledIndexRefresh {
+    fn material_only(material: AdapterBridgeRuntimeMaterial) -> Self {
+        Self {
+            material,
+            listener: None,
+        }
+    }
+
+    fn fold_into(self, owns_listener: &mut bool, port: &mut u16) {
+        if let Some(listener) = self.listener {
+            *owns_listener |= listener.owned_by_saga;
+            *port = listener.status.port;
+        }
+    }
+}
+
 /// Start (or refresh) a loopback listener for one profile.
 ///
 /// - Identical running specs are reused without ownership.
@@ -1097,6 +1124,7 @@ fn seed_prior_from_host(
 /// After a healthy bind, enroll the local-bridge pool and refresh the live
 /// start spec with the v2 index. Bind / health failures must not call this.
 /// Refresh uses the enrolled port and never falls back to port 0.
+/// A replacement listener is returned so later compensation can stop it.
 pub(crate) async fn enroll_v2_and_refresh_index(
     hub: Arc<AgentHub>,
     host: &BridgeRuntimeHost,
@@ -1105,7 +1133,7 @@ pub(crate) async fn enroll_v2_and_refresh_index(
     port: u16,
     reload: Option<UpstreamAuthReload>,
     multi_account: bool,
-) -> Result<AdapterBridgeRuntimeMaterial, String> {
+) -> Result<EnrolledIndexRefresh, String> {
     let profile_for_enroll = profile.clone();
     let did_enroll = with_hub_blocking(hub.clone(), move |hub| {
         hub.adapter_bridge
@@ -1114,7 +1142,7 @@ pub(crate) async fn enroll_v2_and_refresh_index(
     })
     .await?;
     if !did_enroll {
-        return Ok(material);
+        return Ok(EnrolledIndexRefresh::material_only(material));
     }
     let seeded = seed_prior_from_host(host, material)?;
     let profile_for_attach = profile.clone();
@@ -1125,13 +1153,16 @@ pub(crate) async fn enroll_v2_and_refresh_index(
     })
     .await?;
     if refreshed.route_index().is_none() {
-        return Ok(refreshed);
+        return Ok(EnrolledIndexRefresh::material_only(refreshed));
     }
     let members = resolve_start_members(hub.as_ref(), &profile, &refreshed, reload.clone());
-    ensure_bridge_listener(host, &refreshed, reload, members, multi_account)
+    let listener = ensure_bridge_listener(host, &refreshed, reload, members, multi_account)
         .await
         .map_err(map_bridge_host_error)?;
-    Ok(refreshed)
+    Ok(EnrolledIndexRefresh {
+        material: refreshed,
+        listener: Some(listener),
+    })
 }
 
 /// Start (or refresh) a loopback listener for one profile.

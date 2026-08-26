@@ -371,13 +371,161 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
         assert!(enrolled.v2_enrolled);
         assert_eq!(enrolled.gateway_port, Some(ensured.status.port));
         assert!(
-            refreshed.start_spec(None).route_index.is_some(),
+            refreshed.material.start_spec(None).route_index.is_some(),
             "same-saga refresh must attach the index"
         );
         assert_eq!(
-            refreshed.start_spec(None).port,
+            refreshed.material.start_spec(None).port,
             ensured.status.port,
             "refresh must freeze the enrolled port"
+        );
+        assert!(
+            host.live_route_index(&profile.id).unwrap().is_some(),
+            "refresh must install the index on the running listener"
+        );
+
+        host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
+fn enroll_refresh_replace_of_reused_listener_is_compensated() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        hub.db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        ProviderRepo::new(hub.db.clone())
+            .create(&kimi_source(
+                "kimi-enroll-replace-own",
+                "upstream-membership-secret",
+            ))
+            .unwrap();
+        let prepared = hub
+            .adapter_bridge
+            .prepare(&restore_prepare_request("kimi-enroll-replace-own"))
+            .unwrap();
+        let profile = prepared.profile().clone();
+        let material = prepared.runtime_material().clone();
+        let host = BridgeRuntimeHost::new();
+
+        let first = ensure_bridge_listener(&host, &material, None, Vec::new(), false)
+            .await
+            .unwrap();
+        assert!(first.owned_by_saga);
+        let reused = ensure_bridge_listener(&host, &material, None, Vec::new(), false)
+            .await
+            .unwrap();
+        assert!(
+            !reused.owned_by_saga,
+            "second ensure of the unenrolled spec must be a reuse"
+        );
+
+        let refresh = enroll_v2_and_refresh_index(
+            hub.clone(),
+            &host,
+            profile.clone(),
+            material,
+            reused.status.port,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        let listener = refresh
+            .listener
+            .as_ref()
+            .expect("index attach must replace the unenrolled listener");
+        assert!(
+            listener.owned_by_saga,
+            "replacing an unenrolled reuse must be owned by this saga"
+        );
+        assert!(host.live_route_index(&profile.id).unwrap().is_some());
+
+        let mut owns_listener = reused.owned_by_saga;
+        let mut port = reused.status.port;
+        refresh.fold_into(&mut owns_listener, &mut port);
+        assert!(
+            owns_listener,
+            "compensation must own the listener after index replace"
+        );
+        assert!(compensate_started_bridge(&host, &profile.id, owns_listener).await);
+        assert!(
+            host.status(&profile.id).unwrap().is_none(),
+            "later apply failure must stop the replaced indexed listener"
+        );
+
+        host.shutdown().await.unwrap();
+    });
+}
+
+#[test]
+fn enroll_refresh_reuse_of_indexed_spec_is_not_compensated() {
+    tauri::async_runtime::block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
+        hub.db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+        hub.db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        ProviderRepo::new(hub.db.clone())
+            .create(&kimi_source(
+                "kimi-enroll-reuse-own",
+                "upstream-membership-secret",
+            ))
+            .unwrap();
+        let prepared = hub
+            .adapter_bridge
+            .prepare(&restore_prepare_request("kimi-enroll-reuse-own"))
+            .unwrap();
+        let profile = prepared.profile().clone();
+        let material = prepared.runtime_material().clone();
+        let host = BridgeRuntimeHost::new();
+
+        let first = ensure_bridge_listener(&host, &material, None, Vec::new(), false)
+            .await
+            .unwrap();
+        let first_refresh = enroll_v2_and_refresh_index(
+            hub.clone(),
+            &host,
+            profile.clone(),
+            material.clone(),
+            first.status.port,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(first_refresh.listener.as_ref().unwrap().owned_by_saga);
+
+        let again = enroll_v2_and_refresh_index(
+            hub.clone(),
+            &host,
+            profile.clone(),
+            first_refresh.material.clone(),
+            first.status.port,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        let reused = again
+            .listener
+            .as_ref()
+            .expect("already-enrolled refresh still calls ensure");
+        assert!(
+            !reused.owned_by_saga,
+            "identical indexed spec must be reused, not replaced"
+        );
+
+        let mut owns_listener = false;
+        let mut port = reused.status.port;
+        again.fold_into(&mut owns_listener, &mut port);
+        assert!(!owns_listener);
+        assert!(compensate_started_bridge(&host, &profile.id, owns_listener).await);
+        assert!(
+            host.status(&profile.id)
+                .unwrap()
+                .is_some_and(|status| status.running),
+            "projection failure on an identical reuse must leave the listener running"
         );
 
         host.shutdown().await.unwrap();
