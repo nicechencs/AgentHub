@@ -7,9 +7,9 @@
 //!    and returns non-serializable runtime material.
 //! 2. The host starts and probes a [`crate::bridge::BridgeRuntimeHost`] using
 //!    [`AdapterBridgePrepared::start_spec`].
-//! 3. The host persists the returned [`AdapterBridgeProviderProjection`] via
-//!    `ProviderService`, switches it through the normal live-config owner,
-//!    then calls [`AdapterBridgeService::finalize`].
+//! 3. The host calls [`AdapterBridgeService::persist_bridge_projection_inner`]
+//!    (or restore-port realign) with the same [`crate::services::ProviderService`]
+//!    that issued the live saga guard, then [`AdapterBridgeService::finalize`].
 //! 4. Any failure is recorded through
 //!    [`AdapterBridgeService::mark_needs_attention`].
 //!
@@ -364,9 +364,12 @@ const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
 ];
 
 mod finalize;
+mod persist_saga;
 pub(super) mod prepare;
 mod removal;
 mod rules;
+
+pub use persist_saga::{should_make_bridge_current, BridgeProviderSnapshot};
 
 use rules::*;
 
