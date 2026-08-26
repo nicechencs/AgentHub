@@ -37,12 +37,14 @@ describe('dashboard layout wiring', () => {
     expect(source('index.tsx')).not.toContain("t('dashboard.overview.manage')");
   });
 
-  it('wires 立即备份 to Settings backups instead of createBackup on the first agent', () => {
+  it('does not open a connect popup from overview cards or show quick actions', () => {
     const page = source('index.tsx');
-    expect(page).toContain('dashboardBackupNowHref');
-    expect(page).toContain('handleBackupNow');
+    expect(page).not.toContain('onConnectRequest');
+    expect(page).not.toContain("t('dashboard.page.quickActions')");
+    expect(page).not.toContain('openForAgentConnect');
+    expect(page).not.toContain('handleBackupNow');
     expect(page).not.toContain('createBackup');
     expect(page).not.toContain('handleBackupAll');
-    expect(source('dashboard-actions.ts')).toContain("settingsSearch('backups')");
+    expect(page).toContain('<ConnectFlowDialog');
   });
 });

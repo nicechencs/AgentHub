@@ -10,9 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import {
-  ArrowLeftRight,
   BarChart3,
-  DatabaseBackup,
   RefreshCw,
 } from 'lucide-react';
 
@@ -109,7 +107,6 @@ import {
   usageWindowBound,
   type DateRange,
 } from './usageOverviewModel';
-import { dashboardBackupNowHref } from './dashboard-actions';
 
 const DATE_RANGE_OPTIONS: { value: DateRange; days: number }[] = [
   { value: 'today', days: 1 },
@@ -207,7 +204,7 @@ export default function DashboardPage() {
     }
   }, [loadRuntimes, reloadAgentStatuses]);
 
-  // —— 连接流程（Hub 主入口）：卡片徽标数据 + ConnectFlowDialog 接线 ——
+  // —— 连接流程：卡片徽标数据 + `/?connect=` 回跳打开 ConnectFlowDialog ——
   const pool = useConnectionPool();
   const {
     wallet,
@@ -346,24 +343,6 @@ export default function DashboardPage() {
     return inputs;
   }, [adapterBadgeHits, bridgeStates, wallet, t]);
 
-  const handleConnectRequest = useCallback((agentId: AgentId) => {
-    setConnectEntry({ mode: 'for-agent', targetAgentId: agentId });
-  }, []);
-
-  /** 快捷操作：打开卡片同款 for-agent ConnectFlow（新钱包页无 mode=providers 切换）。 */
-  const openForAgentConnect = useCallback(() => {
-    const installed = agents?.filter((item) => item.installed && !item.hidden).map((item) => item.agentId) ?? [];
-    const target =
-      agentFilter !== 'all' && installed.includes(agentFilter)
-        ? agentFilter
-        : installed[0] ?? null;
-    if (!target) {
-      toast({ title: t('dashboard.page.installFirst'), variant: 'danger' });
-      return;
-    }
-    handleConnectRequest(target);
-  }, [agents, agentFilter, handleConnectRequest, toast, t]);
-
   /** 回跳 `/?connect=`：agents 就绪后打开对应 ConnectFlow，并 replace 掉 query，避免关窗后重开。 */
   const consumedConnectRef = useRef<string | null>(null);
   useEffect(() => {
@@ -480,10 +459,6 @@ export default function DashboardPage() {
     }, 80);
     return () => window.clearTimeout(scrollTimer);
   }, [searchParams, agentsLoading, usageLoading]);
-
-  const handleBackupNow = () => {
-    navigate(dashboardBackupNowHref());
-  };
 
   const usageUnavailable = usageAvailability?.status === 'unavailable';
   const usageUnavailableReason =
@@ -632,7 +607,6 @@ export default function DashboardPage() {
             )}
             <AgentOverview
               agents={agents}
-              onConnectRequest={handleConnectRequest}
               badgeInputs={badgeInputs}
             />
             {walletError ? (
@@ -765,22 +739,21 @@ export default function DashboardPage() {
               <MetricCard label={t('dashboard.page.metricCost')} value={metrics.cost} />
             </div>
 
-            <div className="grid grid-cols-3 items-start gap-4">
-              <Card className="col-span-2">
-                <CardHeader>
-                  <CardTitle>
-                    {t('dashboard.page.tokenUsageTitle', { range: dayLabel })}
-                  </CardTitle>
-                  <p className="text-xs text-muted">
-                    {t('dashboard.page.tokenUsageSummary', {
-                      in: fmtTokens(metrics.totalIn),
-                      out: fmtTokens(metrics.totalOut),
-                      cost: metrics.totalCost.toFixed(1),
-                    })}
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-56">
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  {t('dashboard.page.tokenUsageTitle', { range: dayLabel })}
+                </CardTitle>
+                <p className="text-xs text-muted">
+                  {t('dashboard.page.tokenUsageSummary', {
+                    in: fmtTokens(metrics.totalIn),
+                    out: fmtTokens(metrics.totalOut),
+                    cost: metrics.totalCost.toFixed(1),
+                  })}
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="h-56">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={rangedTrend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                         <defs>
@@ -842,34 +815,8 @@ export default function DashboardPage() {
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t('dashboard.page.quickActions')}</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="justify-start"
-                    onClick={openForAgentConnect}
-                  >
-                    <ArrowLeftRight className="h-3.5 w-3.5" /> {t('dashboard.page.connectSwitch')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="justify-start"
-                    onClick={handleBackupNow}
-                  >
-                    <DatabaseBackup className="h-3.5 w-3.5" />
-                    {t('dashboard.page.backupNow')}
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader>
@@ -1011,18 +958,10 @@ function UsageOverviewSkeleton() {
           <Skeleton key={i} className="h-20" />
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="col-span-2 p-4">
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="mt-4 h-56 w-full" />
-        </Card>
-        <Card className="space-y-2 p-4">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-9 w-full" />
-          <Skeleton className="h-9 w-full" />
-          <Skeleton className="h-9 w-full" />
-        </Card>
-      </div>
+      <Card className="p-4">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="mt-4 h-56 w-full" />
+      </Card>
       <Card className="space-y-3 p-4">
         <Skeleton className="h-4 w-28" />
         <Skeleton className="h-4 w-full" />
