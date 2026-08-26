@@ -99,10 +99,14 @@ export function unavailableBridgeStatusForPoll(
 }
 
 /**
- * Loads each page resource independently. A failed pool must never erase a
- * successfully loaded pool (in particular, profiles must not look empty when
- * their request failed). Runtime bridge inspection is intentionally best
- * effort: a status failure still returns every persisted profile.
+ * Test helper for independent resource loading. The Bridges page reads
+ * connection rows from the shared connection pool via `useAdapterResources`;
+ * do not call this from production page code.
+ *
+ * A failed pool must never erase a successfully loaded pool (in particular,
+ * profiles must not look empty when their request failed). Runtime bridge
+ * inspection is intentionally best effort: a status failure still returns
+ * every persisted profile.
  */
 export async function loadAdapterPageResources(loaders: AdapterResourceLoaders): Promise<AdapterPageResources> {
   const [accountsResult, providersResult, profilesResult] = await Promise.allSettled([

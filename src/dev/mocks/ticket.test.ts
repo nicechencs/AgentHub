@@ -466,11 +466,11 @@ describe('mock ticket wallet', () => {
     });
     expect(wallet.tickets.find((t) => t.id === 'account:glm-acc')).toMatchObject({
       surface: 'glm-coding-plan',
-      speaks: ['anthropic-messages', 'openai-chat'],
+      speaks: ['anthropic-messages', 'openai-chat', 'openai-responses'],
     });
     expect(wallet.tickets.find((t) => t.id === 'provider:deepseek-src')).toMatchObject({
       surface: 'deepseek-api',
-      speaks: ['anthropic-messages', 'openai-chat'],
+      speaks: ['anthropic-messages', 'openai-chat', 'openai-responses'],
     });
     expect(wallet.tickets.find((t) => t.id === 'provider:relay')?.surface).toBe('unknown');
   });

@@ -130,7 +130,8 @@ impl BackupService {
         &self.backups_root
     }
 
-    pub fn repo(&self) -> &BackupRepo {
+    #[cfg(test)]
+    pub(crate) fn repo(&self) -> &BackupRepo {
         &self.repo
     }
 

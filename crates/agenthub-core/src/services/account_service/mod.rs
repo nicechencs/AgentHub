@@ -106,7 +106,8 @@ impl AccountService {
         }
     }
 
-    pub fn repo(&self) -> &AccountRepo {
+    #[cfg(test)]
+    pub(crate) fn repo(&self) -> &AccountRepo {
         &self.repo
     }
 

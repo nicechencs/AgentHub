@@ -2,8 +2,7 @@
 import {
   getBackend,
   loadTicketWallet,
-  notifyConnectionPoolChanged,
-  notifyTicketWalletChanged,
+  refreshRuntimeReadModels,
 } from '@/app/runtime';
 import type {
   AdapterApplyPlan,
@@ -36,15 +35,11 @@ export {
 } from '@/lib/backend/contracts/ticket';
 
 async function refreshAfterTicketMutation(): Promise<void> {
-  const backend = getBackend();
-  await Promise.all([
-    notifyConnectionPoolChanged(backend).catch(() => {
-      // The mutation itself succeeded. The pool store keeps previous rows.
-    }),
-    notifyTicketWalletChanged(backend).catch(() => {
-      // Same: keep the last good wallet and let the next page read retry.
-    }),
-  ]);
+  // Write success is returned to the caller even when a follow-up read fails.
+  // Refresh errors stay on the shared pool / wallet snapshots.
+  await refreshRuntimeReadModels(getBackend(), {
+    models: ['connectionPool', 'ticketWallet'],
+  });
 }
 
 /** Load the global ticket wallet (tickets + bindings). Shared process cache. */

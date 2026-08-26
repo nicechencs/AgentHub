@@ -595,7 +595,6 @@ fn persist_bridge_projection_inner(
         // exist for the result, but this read happens only on the no-op path,
         // before any new projection has been written by this saga.
         hub.providers
-            .repo()
             .get_by_id(&provider_id)
             .map_err(|error| map_err_string("load_adapter_bridge_provider", error))?
             .ok_or_else(|| "adapter bridge provider missing after projection".to_string())?
@@ -644,14 +643,12 @@ fn capture_provider_snapshot(
     let generated = match generated_provider_id {
         Some(id) => hub
             .providers
-            .repo()
             .get_by_id(id)
             .map_err(|error| map_err_string("snapshot_adapter_bridge_provider", error))?,
         None => None,
     };
     let current_provider = hub
         .providers
-        .repo()
         .get_current(target_agent)
         .map_err(|error| map_err_string("snapshot_adapter_bridge_provider", error))?;
     let live_config = hub

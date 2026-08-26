@@ -5,12 +5,9 @@ import {
   beginConnectionPoolMutation,
   endConnectionPoolMutation,
   getBackend,
-  loadAgentStatuses,
   markConnectionCurrent,
-  notifyConnectionPoolChanged,
-  notifyTicketWalletChanged,
+  refreshRuntimeReadModels,
 } from '@/app/runtime';
-import { clearLiveAuthProbeCache } from '@/lib/backend/contracts/live-auth-probe-cache';
 import type { AgentId, Provider, SwitchPreview } from '@/lib/types';
 
 export type {
@@ -30,11 +27,10 @@ export async function listProviders(agentId?: AgentId): Promise<Provider[]> {
 }
 
 function providerAuthStateChanged(agentId: AgentId): void {
-  clearLiveAuthProbeCache(agentId);
-  const backend = getBackend();
-  void loadAgentStatuses(backend, { force: true }).catch(() => {});
-  void notifyConnectionPoolChanged(backend).catch(() => {});
-  void notifyTicketWalletChanged(backend).catch(() => {});
+  void refreshRuntimeReadModels(getBackend(), {
+    agentId,
+    clearProbe: true,
+  });
 }
 
 export async function upsertProvider(p: Provider): Promise<Provider> {
@@ -64,17 +60,23 @@ export async function switchProvider(agentId: AgentId, toProviderId: string): Pr
   providerAuthStateChanged(agentId);
 }
 
-/** Deletes every listed Provider and refreshes the shared pool once. */
+/** Deletes every listed Provider and refreshes shared read models once. */
 export async function deleteProviders(agentId: AgentId, providerIds: readonly string[]): Promise<void> {
   if (providerIds.length === 0) return;
+  const backend = getBackend();
   beginConnectionPoolMutation();
   try {
     for (const providerId of providerIds) {
-      await deleteProvider(agentId, providerId);
+      await backend.provider.deleteProvider(agentId, providerId);
     }
   } finally {
-    await endConnectionPoolMutation(getBackend());
+    await endConnectionPoolMutation(backend);
   }
+  void refreshRuntimeReadModels(backend, {
+    agentId,
+    clearProbe: true,
+    models: ['agentStatus', 'ticketWallet'],
+  });
 }
 
 export async function undoSwitch(agentId: AgentId): Promise<boolean> {
