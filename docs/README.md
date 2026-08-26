@@ -38,6 +38,7 @@ updated: 2026-08-26
 - [账号与授权](concepts/accounts-and-authorization.md)
 - [Chat 与 Agent](concepts/chat-and-agents.md)
 - [插件、MCP 与技能](concepts/plugins-and-mcp.md)
+- [对象化与封装审查](architecture/objectization-encapsulation-audit.md)
 
 ### 查稳定契约
 
