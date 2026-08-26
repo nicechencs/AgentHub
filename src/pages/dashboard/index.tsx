@@ -819,7 +819,7 @@ export default function DashboardPage() {
                         {trendAgents.map((meta) => (
                           <Area
                             key={meta.id}
-                            type="linear"
+                            type="monotone"
                             dataKey={meta.id}
                             stroke={resolveChartColor(meta.color, chartScheme)}
                             strokeWidth={1.5}
