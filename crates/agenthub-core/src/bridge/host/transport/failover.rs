@@ -244,7 +244,12 @@ pub(super) async fn send_upstream_v2(
                 failover_from.as_deref(),
             ));
         }
-        let Some(next) = state.pick_v2(candidates, public_model, &excluded) else {
+        let Some(next) = state.pick_v2_in_lane(
+            candidates,
+            public_model,
+            &excluded,
+            Some(member.source_id.as_str()),
+        ) else {
             return Err(exhausted(
                 state,
                 request_id,

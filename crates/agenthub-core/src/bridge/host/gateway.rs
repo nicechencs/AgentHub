@@ -23,6 +23,7 @@ use crate::bridge::runtime::{
     BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamStatus,
 };
 
+use super::surface::DownstreamSurface;
 use super::{MAX_IN_FLIGHT_REQUESTS_PER_PROFILE, UPSTREAM_CONNECT_TIMEOUT};
 
 #[derive(Debug, Error)]
@@ -412,11 +413,22 @@ impl EdgeState {
     }
 
     /// Indexed pick: shrink candidates, skip isolated / cooling / this-request exclusions.
+    /// Mixed-provider indexes pick a lane first, then a member inside that lane.
     pub(super) fn pick_v2(
         &self,
         candidates: &[DispatchCandidate],
         model: &str,
         extra_excluded: &[String],
+    ) -> Option<PickedMember> {
+        self.pick_v2_in_lane(candidates, model, extra_excluded, None)
+    }
+
+    pub(super) fn pick_v2_in_lane(
+        &self,
+        candidates: &[DispatchCandidate],
+        model: &str,
+        extra_excluded: &[String],
+        last_member_id: Option<&str>,
     ) -> Option<PickedMember> {
         let mut excluded = extra_excluded.to_vec();
         excluded.extend(self.account_picker.cooldown_exclusions(model));
@@ -429,8 +441,18 @@ impl EdgeState {
                 excluded.push(member.ticket_id.clone());
             }
         }
+        let lane_candidates = match &self.route_index {
+            Some(index) => index.schedule_lane(
+                DownstreamSurface::endpoint_key(self.upstream.local_surface),
+                model,
+                candidates,
+                &excluded,
+                last_member_id,
+            ),
+            None => candidates.to_vec(),
+        };
         self.account_picker
-            .pick_from_candidates(candidates, None, &excluded)
+            .pick_from_candidates(&lane_candidates, None, &excluded)
     }
 
     pub(super) fn isolate_authorization(&self, member: &PickedMember) {
