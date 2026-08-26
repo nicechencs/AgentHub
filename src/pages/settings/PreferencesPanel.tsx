@@ -46,7 +46,8 @@ export function PreferencesPanel({
   const { toast } = useToast();
   const { setTheme } = useTheme();
   const { t, setLanguage } = useI18n();
-  const { routesNavVisible, setRoutesNavVisible } = useSidebar();
+  const { routesNavVisible, setRoutesNavVisible, pluginsNavVisible, setPluginsNavVisible } =
+    useSidebar();
   const usageBaselineRef = useRef(settings.usageCollectIntervalMin);
   const persistenceTrackerRef = useRef<ReturnType<typeof createSettingsPersistenceTracker> | null>(null);
 
@@ -191,6 +192,16 @@ export function PreferencesPanel({
           <Switch
             checked={routesNavVisible}
             onCheckedChange={setRoutesNavVisible}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.pluginsNavVisibleLabel')}
+          description={t('settings.general.pluginsNavVisibleDescription')}
+          descriptionTip={t('settings.general.pluginsNavVisibleTip')}
+        >
+          <Switch
+            checked={pluginsNavVisible}
+            onCheckedChange={setPluginsNavVisible}
           />
         </SettingsRow>
         <SettingsRow

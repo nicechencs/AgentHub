@@ -23,12 +23,13 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Skills | `/skills` | Shared/private skill inventory and preview |
 | Workspace | MCP | `/mcp` | Read-only configuration inventory |
 | Workspace | Projects | `/projects` | Project/session tree and read-only preview |
+| Workspace | Plugins | `/plugins` | Read-only vendor plugin / extension pack inventory |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
 | Manage | Connections | `/connections` | Global login list and connection actions |
 | Manage | Routes | `/routes` | Local route runtime list and details |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
-`Routes` is shown in the sidebar by default. The `routesNavVisible` preference can hide the sidebar item, but it does not disable the page or change `/routes`. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. There is no current sidebar Plugins item; a vendor plugin/extension pack page is a [proposal](../proposals/plugin-management.md), not current navigation.
+`Routes` is shown in the sidebar by default. The `routesNavVisible` preference can hide the sidebar item, but it does not disable the page or change `/routes`. `Plugins` is shown in the workspace nav under Projects by default. The `pluginsNavVisible` preference can hide that sidebar item, but it does not disable `/plugins`. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 
@@ -50,7 +51,7 @@ The page title is one line plus one short metadata line. Do not repeat the same 
 
 ### 2.2 Full-height workbench
 
-Chat, Skills, and Projects manage their own vertical scrolling and use `fullBleed`. Full-height does not create a third content width: Chat messages use the reading column, while Skills and Projects use the edge column with a split preview surface. The workbench header uses the compact page-header rhythm.
+Chat, Skills, Projects, and Plugins manage their own vertical scrolling and use `fullBleed`. Full-height does not create a third content width: Chat messages use the reading column, while Skills, Projects, and Plugins use the edge column with a split preview surface. The workbench header uses the compact page-header rhythm.
 
 ### 2.3 Settings reading page
 
@@ -58,7 +59,7 @@ Settings keeps the standard shell and a reading-column content area. The four pa
 
 | Tab | Query | Contents |
 |---|---|---|
-| Preferences | `?tab=preferences` | Language, theme, startup, close-to-tray, Routes visibility, skill source, usage interval |
+| Preferences | `?tab=preferences` | Language, theme, startup, close-to-tray, Routes visibility, Plugins visibility, skill source, usage interval |
 | This device | `?tab=local` | Data directory, log level, retention, log directory |
 | Backups | `?tab=backups` | Agent live configuration snapshots and restore/delete |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
@@ -69,7 +70,7 @@ Invalid or old tab values replace to the nearest current tab. Tab changes use `r
 
 ### 3.1 Agent filtering
 
-Use `AgentTabStrip` where content is naturally scoped by Agent: Connections, Skills, Projects, and Backups. Installed Agents appear first; hidden Agents do not occupy the default strip unless they have recoverable data. Do not turn every page into an Agent-first two-level navigation.
+Use `AgentTabStrip` where content is naturally scoped by Agent: Connections, Skills, Projects, Plugins, and Backups. Installed Agents appear first; hidden Agents do not occupy the default strip unless they have recoverable data. Do not turn every page into an Agent-first two-level navigation.
 
 ### 3.2 Four states
 
@@ -147,9 +148,9 @@ Chat is a one-conversation, one-Agent workbench with a session rail, transcript,
 - Switching conversations clears in-memory process buffers for the old view but does not cancel the active operation. The target conversation shows a “sending elsewhere” recovery line.
 - Copy is available for completed user/Agent messages. Running messages do not show copy or retry.
 
-## 8. Skills and Projects
+## 8. Skills, Projects, and Plugins
 
-Both are full-height workbenches with a left inventory and an optional right preview.
+Skills, Projects, and Plugins are full-height workbenches with a left inventory and an optional right preview.
 
 ### Skills
 
@@ -166,6 +167,12 @@ Both are full-height workbenches with a left inventory and an optional right pre
 - A project/session can bootstrap a new Chat conversation through the documented session storage handoff. It does not silently edit the original Agent log.
 - Agent capabilities such as transcript support are explicit. Unsupported actions are hidden or disabled with a hint.
 
+### Plugins
+
+- Left column lists installed plugin / extension packs (Claude and Grok today). Clicking a row opens the right-hand details pane.
+- Details show name, marketplace, version, scope, enabled, trusted, path, and components. Bundled MCP is a component, not a list row.
+- Loading, empty, and error states stay in the list column. There is no install button. Hiding the sidebar item does not disable `/plugins`.
+
 ## 9. Agents and MCP
 
 ### Agents
@@ -174,7 +181,7 @@ Agents is the lifecycle surface: installed state, runtime readiness, install/upd
 
 ### MCP
 
-MCP is a read-only inventory of known **MCP server** configuration files. It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported, and it is not the plugin/extension pack manager. The current page is a standard single-column table. A future **plugin pack** workbench (`/plugins`) is a [proposal](../proposals/plugin-management.md), not this contract.
+MCP is a read-only inventory of known **MCP server** configuration files. It lists Agent, server, transport, source path, and enabled status. Parse errors, missing files, and an empty inventory each get their own recoverable state. Inventory does not imply that editing or injection is supported, and it is not the plugin/extension pack manager. The current page is a standard single-column table. Plugin / extension packs live on `/plugins`.
 
 ## 10. Responsive and interaction constraints
 

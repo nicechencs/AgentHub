@@ -18,4 +18,14 @@ describe('settings layout wiring', () => {
     expect(page).not.toMatch(/readingColumn\}>\s*<PageHeader/);
     expect(page).not.toMatch(/TabsContent value="[^"]+" className=/);
   });
+
+  it('exposes a plugins nav toggle next to the routes toggle', () => {
+    const prefs = source('PreferencesPanel.tsx');
+    expect(prefs).toContain("t('settings.general.routesNavVisibleLabel')");
+    expect(prefs).toContain("t('settings.general.pluginsNavVisibleLabel')");
+    expect(prefs).toContain('setPluginsNavVisible');
+    expect(prefs.indexOf("t('settings.general.routesNavVisibleLabel')")).toBeLessThan(
+      prefs.indexOf("t('settings.general.pluginsNavVisibleLabel')"),
+    );
+  });
 });
