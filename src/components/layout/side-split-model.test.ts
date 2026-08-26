@@ -35,11 +35,19 @@ describe('clampSideSplitWidth', () => {
     expect(width).toBeLessThan(1000);
   });
 
-  it('caps a remembered width to half the workbench when list reserve would allow more', () => {
-    const container = 1100;
+  it('lets the pane grow past half the workbench while the list still has room', () => {
+    const container = 1200;
+    const half = Math.floor(usableWidth(container) * 0.5);
     const width = clampSideSplitWidth(700, container);
+    expect(width).toBe(700);
+    expect(width).toBeGreaterThan(half);
+  });
+
+  it('caps a remembered width to the max share when list reserve would allow more', () => {
+    const container = 2000;
+    const width = clampSideSplitWidth(1600, container);
     expect(width).toBe(Math.floor(usableWidth(container) * SIDE_SPLIT_MAX_SHARE));
-    expect(width).toBeLessThan(700);
+    expect(width).toBeLessThan(1600);
   });
 
   it('keeps a remembered width once the workbench is wide enough', () => {
