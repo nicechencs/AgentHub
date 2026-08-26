@@ -335,3 +335,6 @@ pub fn parse_ticket_id(ticket_id: &str) -> Result<(AdapterSourceKind, String), S
     }
     Ok((kind, source_id.to_owned()))
 }
+
+#[cfg(test)]
+mod tests;

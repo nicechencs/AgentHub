@@ -49,7 +49,7 @@ updated: 2026-08-26
 | O-35、O-38 | 仍存在 | 暂缓。CLI 运行策略和发布脚本收口需要单独设计 |
 | O-36 | CLI 切换确认曾 `.ok()` 吞掉列表读取错误，并自行拼接预览 | 已处理：读取失败返回错误；确认事实由 core `SwitchConfirmPreview` 生成。CLI 渲染英文；桌面端只把同一份事实译成界面文案 |
 | O-37 | CLI 多处重复解析 `--agent` | 已处理：共用 `agent_arg`；各命令错误原文保留 |
-| O-39 | mock `speaks` 与 core 对 GLM/DeepSeek 不一致 | 已处理：mock 补上 `openai-responses`。共享 fixture 仍未做 |
+| O-39 | mock `speaks` 与 core 对 GLM/DeepSeek 不一致 | 已处理：mock 补上 `openai-responses`。共用 `ticket-speaks.json`，core 与 mock 对照测试锁步 |
 | O-40–O-42、O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
 | O-43 | 测试 fake 用 `_ => unsupported` 吞掉新 Capability | 已处理：`Capability::fake_state` 穷举所有变体；测试 fake 走该 helper |
 | O-46 | logging 自行打开 SQLite | 部分处理：启动窥探收到 `storage::peek_settings`；logging 不再手写 SQL。启动仍先于 Database 打开，不改 subscriber 生命周期 |
