@@ -126,8 +126,7 @@ pub struct BridgeStartSpec {
     pub mapping_source: Option<AdapterSourceProduct>,
     pub mapping_target: Option<AgentId>,
     pub custom_openai: bool,
-    /// Present only when `route_index_v2` built an index for this edge.
-    /// Absence keeps today's lead-edge + `switch_edge_for_model` path.
+    /// Shared resolver snapshot. `None` keeps lead + `switch_edge_for_model`.
     pub route_index: Option<EffectiveRouteIndex>,
 }
 

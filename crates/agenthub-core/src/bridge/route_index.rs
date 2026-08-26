@@ -1,8 +1,8 @@
-//! Shared resolver index for v2 route pools.
+//! Shared resolver snapshot for v2 route pools.
 //!
-//! `resolve` and `list_models` read the same snapshot. Production dispatch is
-//! not wired here until `route_index_v2` is enabled (P2/P3). Unknown and
-//! ambiguous models fail closed; the scheduler may only shrink this set.
+//! `resolve` and `list_models` read the same map. Absent index keeps v1 lead
+//! + `switch_edge_for_model`; a present index fail-closes unknown and
+//! ambiguous models and does not scan sibling profiles.
 
 use std::collections::{BTreeMap, BTreeSet};
 
