@@ -29,6 +29,7 @@ CLI 整体是薄壳：参数解析、输出和退出码集中，业务操作委�
 ### O-63｜Tauri 设置读取、默认值和同步职责散落
 
 - **位置：** `src-tauri/src/commands/settings.rs:14-104`、`src-tauri/src/state.rs:160-168`、`src-tauri/src/tray.rs:352-360`、`src-tauri/src/commands/settings/pick_directory.rs:44-55`
+- **状态：部分处理**
 - **问题：** 设置读取、默认值、运行时同步和语言读取由多个入口分别维护。
 - **建议：** 由 Settings/AppPreferences 对象提供强类型读取、更新和变更通知；命令、托盘和目录选择只消费该对象。
 - **影响：** 设置 key、默认值和同步时机需要多处共同维护。
