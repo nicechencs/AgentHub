@@ -4,10 +4,8 @@
  */
 import {
   getBackend,
-  loadAgentStatuses,
   markConnectionCurrent,
-  notifyConnectionPoolChanged,
-  notifyTicketWalletChanged,
+  refreshRuntimeReadModels,
 } from '@/app/runtime';
 import type {
   AuthState,
@@ -50,7 +48,7 @@ export async function reconcileAccountPool(agentId?: AgentId): Promise<void> {
   const backend = getBackend();
   if (!backend.account.reconcileAccounts) return;
   await backend.account.reconcileAccounts(agentId);
-  await notifyConnectionPoolChanged(backend);
+  await refreshRuntimeReadModels(backend, { models: ['connectionPool'] });
 }
 
 /**
@@ -59,14 +57,10 @@ export async function reconcileAccountPool(agentId?: AgentId): Promise<void> {
  * sync without every mutation handler issuing its own live probe.
  */
 function authStateChanged(agentId: AgentId): void {
-  clearProbeCache(agentId);
-  const backend = getBackend();
-  void loadAgentStatuses(backend, { force: true }).catch(() => {
-    // The mutation itself succeeded. Keep the old display until a later
-    // normal refresh can read the live config again.
+  void refreshRuntimeReadModels(getBackend(), {
+    agentId,
+    clearProbe: true,
   });
-  void notifyConnectionPoolChanged(backend).catch(() => {});
-  void notifyTicketWalletChanged(backend).catch(() => {});
 }
 
 /** Reconcile an externally rotated/current login through the shared store. */
@@ -206,6 +200,6 @@ export async function refreshQuota(
   const port = getBackend().account;
   if (!port.refreshQuota) return undefined;
   const account = await port.refreshQuota(agentId, accountId);
-  void notifyConnectionPoolChanged(getBackend()).catch(() => {});
+  void refreshRuntimeReadModels(getBackend(), { models: ['connectionPool'] });
   return account;
 }

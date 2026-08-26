@@ -226,6 +226,16 @@ impl ProviderService {
         }
     }
 
+    /// Load a pool row by primary key. Missing is `Ok(None)`; no name fallback.
+    pub fn get_by_id(&self, id: &str) -> Result<Option<Provider>> {
+        self.repo.get_by_id(id)
+    }
+
+    /// The unique current provider for `agent`, if any.
+    pub fn get_current(&self, agent: AgentId) -> Result<Option<Provider>> {
+        self.repo.get_current(agent)
+    }
+
     /// Create a new provider. Core owns timestamps.
     ///
     /// Duplicate id → [`AppError::InvalidArg`].
@@ -1176,7 +1186,8 @@ impl ProviderService {
         probe_url_latency_ms(&url)
     }
 
-    /// Storage access for tests / future write paths (not used by list/show CLI).
+    /// Storage access for tests. Production reads should use [`Self::get_by_id`]
+    /// / [`Self::get_current`] instead of reaching into the repository.
     pub fn repo(&self) -> &ProviderRepo {
         &self.repo
     }

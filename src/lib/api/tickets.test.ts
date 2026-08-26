@@ -42,4 +42,14 @@ describe('tickets API façade', () => {
     const wallet = await listTicketWallet();
     expect(wallet.bindings.some((row) => row.ticketId === ticketId && row.agentId === 'pi')).toBe(false);
   });
+
+  it('bindTicket still returns when the follow-up wallet refresh fails', async () => {
+    getBackend();
+    const { kimiMembership } = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
+    const ticketId = `provider:${kimiMembership.id}`;
+    vi.spyOn(getBackend().ticket, 'listWallet').mockRejectedValue(new Error('wallet refresh failed'));
+    const { binding } = await bindTicket(ticketId, 'pi');
+    expect(binding.active).toBe(true);
+    expect(binding.ticketId).toBe(ticketId);
+  });
 });

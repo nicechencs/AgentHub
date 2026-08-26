@@ -236,7 +236,7 @@ impl AdapterApplyService {
         // Capture compensation inputs before demote/create: a repair demotes a
         // current generated row, so get_current after that would miss the
         // pre-saga binding needed for full inverse.
-        let previous_current = match self.providers.repo().get_current(spec.target_agent) {
+        let previous_current = match self.providers.get_current(spec.target_agent) {
             Ok(current) => current,
             Err(error) => return Err(self.fail_profile(profile, &error)),
         };
@@ -456,7 +456,7 @@ impl AdapterApplyService {
         }
 
         let source_id = request.source_id.trim();
-        let Some(provider) = self.providers.repo().get_by_id(source_id)? else {
+        let Some(provider) = self.providers.get_by_id(source_id)? else {
             return Ok(());
         };
         if provider.agent_id == AgentId::Kimi

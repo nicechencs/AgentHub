@@ -203,6 +203,8 @@ export function GenericConfigForm({
                 <SecretInput
                   value={typeof raw === 'string' ? raw : raw == null ? '' : String(raw)}
                   onChange={(v) => patch(field.key, v)}
+                  disabled={fieldDisabled}
+                  readOnly={fieldDisabled}
                   placeholder={
                     typeof raw === 'string' && raw === SECRET_REDACTED
                       ? t('connections.providerDialog.secretConfigured')

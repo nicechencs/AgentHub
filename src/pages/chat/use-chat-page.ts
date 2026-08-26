@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTicketWallet } from '@/app/runtime';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_IDS } from '@/config/agents';
@@ -17,7 +18,7 @@ import {
 import { switchAccount } from '@/lib/api/account';
 import { listProviders, switchProvider } from '@/lib/api/provider';
 import { pickDirectory } from '@/lib/api/settings';
-import { bindTicket, isActiveBindingForAgent, listTicketWallet } from '@/lib/api/tickets';
+import { bindTicket, isActiveBindingForAgent } from '@/lib/api/tickets';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
 import { processKey, reduceProcessEvent, type ProcessMap } from '@/lib/chat-process';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
@@ -92,9 +93,12 @@ export function createSingleFlight<T>() {
   };
 }
 
+const EMPTY_WALLET: TicketWallet = { tickets: [], bindings: [], surfaceGroups: [] };
+
 export function useChatPage() {
   const { t } = useI18n();
   const { toast } = useToast();
+  const ticketWallet = useTicketWallet();
   const [searchParams, setSearchParams] = useSearchParams();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -103,9 +107,9 @@ export function useChatPage() {
   /** listAgents 成功后才为 true；失败/未完成时不得把「未知」当成「没有可用 Agent」 */
   const [agentsReady, setAgentsReady] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [wallet, setWallet] = useState<TicketWallet | null>(null);
+  const wallet = ticketWallet.wallet;
+  const walletReady = ticketWallet.state === 'ready' || ticketWallet.state === 'error';
   const providersGenRef = useRef(0);
-  const walletGenRef = useRef(0);
   const [error, setError] = useState<unknown>(null);
   /** 会话列表骨架（不再用整页 spinner 挡住消息区） */
   const [listLoading, setListLoading] = useState(true);
@@ -289,17 +293,9 @@ export function useChatPage() {
     }
   }, []);
 
-  const loadWallet = useCallback(async () => {
-    const gen = ++walletGenRef.current;
-    try {
-      const next = await listTicketWallet();
-      if (gen !== walletGenRef.current) return;
-      setWallet(next);
-    } catch {
-      if (gen !== walletGenRef.current) return;
-      setWallet((prev) => prev ?? { tickets: [], bindings: [], surfaceGroups: [] });
-    }
-  }, []);
+  useEffect(() => {
+    void ticketWallet.ensureLoaded();
+  }, [ticketWallet.ensureLoaded]);
 
   useEffect(() => {
     const generation = ++loadGenerationRef.current;
@@ -412,10 +408,6 @@ export function useChatPage() {
     void loadProviders(primaryAgent);
   }, [primaryAgent, loadProviders]);
 
-  useEffect(() => {
-    void loadWallet();
-  }, [primaryAgent, loadWallet]);
-
   const onTranscriptScroll = useCallback(() => {
     const el = transcriptRef.current;
     if (!el) return;
@@ -479,10 +471,10 @@ export function useChatPage() {
   const connectionOptions = useMemo(
     () =>
       chatConnectionOptions(t, {
-        wallet,
+        wallet: wallet ?? (walletReady ? EMPTY_WALLET : null),
         agentId: primaryAgent,
       }),
-    [wallet, primaryAgent, t],
+    [wallet, walletReady, primaryAgent, t],
   );
 
   const activeLogin = connectionOptions.find((option) => option.isCurrent) ?? null;
@@ -503,7 +495,7 @@ export function useChatPage() {
           ? { title: activeLogin.title, subtitle: activeLogin.subtitle }
           : null,
         leftoverCurrent,
-        walletReady: wallet !== null,
+        walletReady,
       }),
     [
       primaryAgent,
@@ -512,7 +504,7 @@ export function useChatPage() {
       leftoverCurrent,
       currentProvider,
       activeLogin,
-      wallet,
+      walletReady,
       t,
     ],
   );
@@ -666,7 +658,7 @@ export function useChatPage() {
         }
       }
       await Promise.all([
-        loadWallet(),
+        ticketWallet.reload(),
         loadProviders(primaryAgent),
         refreshAgents({ force: true }).catch(() => []),
       ]);

@@ -259,7 +259,7 @@ function speaksOf(surface: TicketSurface): string[] {
   if (surface === 'openai-api') return ['openai-chat'];
   if (surface === 'xai-api') return ['openai-responses', 'openai-chat'];
   if (surface === 'glm-coding-plan' || surface === 'deepseek-api') {
-    return ['anthropic-messages', 'openai-chat'];
+    return ['anthropic-messages', 'openai-chat', 'openai-responses'];
   }
   if (surface === 'codex-chatgpt-subscription') return ['openai-responses', 'openai-codex-pkce'];
   if (surface === 'claude-subscription') return ['anthropic-messages', 'anthropic-pkce'];

@@ -63,6 +63,8 @@ export type {
   TicketWalletSnapshot,
 } from './ticket-wallet-store';
 export { useTicketWallet } from './TicketWalletProvider';
+export { refreshRuntimeReadModels } from './mutation-coordinator';
+export type { RuntimeReadModel } from './mutation-coordinator';
 
 export {
   getAppUpdateAvailable,
