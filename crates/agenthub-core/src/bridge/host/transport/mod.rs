@@ -6,6 +6,7 @@
 
 mod anthropic;
 mod codex;
+mod failover;
 mod grok;
 mod openai_chat;
 
@@ -21,6 +22,7 @@ use crate::bridge::grok_cli::{
     GrokCliRequestIdentity,
 };
 use crate::bridge::request_fsm::{RequestDecision, RequestFsm, SwitchClass};
+use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::runtime::BridgeUpstreamProtocol;
 
 use super::admission::AdmittedRequest;
@@ -249,7 +251,25 @@ pub(super) async fn send_upstream(
     body: Value,
     cache_seed: Option<&str>,
     member: PickedMember,
+    candidates: Option<&[DispatchCandidate]>,
+    public_model: &str,
 ) -> Result<UpstreamSendOutcome, Response> {
+    if state.route_index.is_some() {
+        return failover::send_upstream_v2(
+            state,
+            url,
+            channel,
+            request_id,
+            started,
+            identity,
+            body,
+            cache_seed,
+            member,
+            candidates.unwrap_or(&[]),
+            public_model,
+        )
+        .await;
+    }
     let recovery = channel.recovery();
     let original_body = body;
     let original_identity = identity;
