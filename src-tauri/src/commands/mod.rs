@@ -11,6 +11,7 @@ pub mod doctor;
 pub mod install;
 pub mod lifecycle;
 pub mod mcp;
+pub mod plugins;
 pub mod oauth;
 pub mod project;
 pub mod provider;

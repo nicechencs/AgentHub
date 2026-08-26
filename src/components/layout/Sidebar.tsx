@@ -9,6 +9,7 @@ import {
   Cable,
   Plug,
   FolderKanban,
+  Puzzle,
   Settings2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -24,7 +25,7 @@ import {
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
-import { filterManageNavItems } from '@/components/layout/sidebar-nav';
+import { filterManageNavItems, filterWorkspaceNavItems } from '@/components/layout/sidebar-nav';
 import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
@@ -41,6 +42,7 @@ const NAV_WORKSPACE = [
   { to: '/skills', navKey: 'nav.skills', icon: Blocks },
   { to: '/mcp', navKey: 'nav.mcp', icon: Plug },
   { to: '/projects', navKey: 'nav.projects', icon: FolderKanban },
+  { to: '/plugins', navKey: 'nav.plugins', icon: Puzzle },
 ] as const;
 
 /** 管理 */
@@ -153,7 +155,7 @@ function agentDotLabel(
 
 /** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
 export function Sidebar() {
-  const { collapsed, toggle, routesNavVisible } = useSidebar();
+  const { collapsed, toggle, routesNavVisible, pluginsNavVisible } = useSidebar();
   const { t } = useI18n();
   const { statuses: agents } = useAgentStatusesOptional();
   const appUpdate = useAppUpdateAvailable();
@@ -183,6 +185,10 @@ export function Sidebar() {
     installedCatalogAgents(AGENTS, agents),
     (meta) => meta.id,
     agentCatalogOrder,
+  );
+  const visibleWorkspaceNav = React.useMemo(
+    () => filterWorkspaceNavItems(NAV_WORKSPACE, pluginsNavVisible),
+    [pluginsNavVisible],
   );
   const visibleManageNav = React.useMemo(
     () => filterManageNavItems(NAV_MANAGE, routesNavVisible),
@@ -250,7 +256,7 @@ export function Sidebar() {
         )}
       >
         <NavGroup label={t('nav.workspace')} collapsed={collapsed}>
-          {NAV_WORKSPACE.map((item) => (
+          {visibleWorkspaceNav.map((item) => (
             <SidebarNavLink key={item.to} item={item} collapsed={collapsed} itemClass={itemClass} />
           ))}
         </NavGroup>

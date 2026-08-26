@@ -25,6 +25,7 @@ import { createMockEnvPort } from './env';
 import { MOCK_AGENT_CATALOG } from './fixtures/agent-catalog';
 import { createMockInstallPort } from './install';
 import { createMockMcpPort } from './mcp';
+import { createMockPluginPort } from './plugins';
 import { createMockProjectPort, resetProjectMock } from './project';
 import {
   createMockProviderPort,
@@ -123,6 +124,7 @@ export const createBackend: CreateBackend = () => {
       restoreProvider: restoreMockProvider,
     }),
     mcp: createMockMcpPort(),
+    plugins: createMockPluginPort(),
   } as Backend;
 
   backend.env = createMockEnvPort(backend);

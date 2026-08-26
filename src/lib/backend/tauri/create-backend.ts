@@ -12,6 +12,7 @@ import { createTauriDoctorPort } from './doctor';
 import { createTauriEnvPort } from './env';
 import { createTauriInstallPort } from './install';
 import { createTauriMcpPort } from './mcp';
+import { createTauriPluginPort } from './plugins';
 import { createTauriProjectPort } from './project';
 import { createTauriProviderPort } from './provider';
 import { createTauriSettingsPort } from './settings';
@@ -49,6 +50,7 @@ export const createBackend: CreateBackend = () => {
     update: createTauriUpdatePort(),
     trash: createTauriTrashPort(),
     mcp: createTauriMcpPort(),
+    plugins: createTauriPluginPort(),
   } as Backend;
 
   backend.env = createTauriEnvPort(backend);

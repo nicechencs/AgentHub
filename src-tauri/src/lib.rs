@@ -132,6 +132,8 @@ pub fn run() {
             commands::agent_visibility::set_agent_hidden,
             // MCP inventory (read-only)
             commands::mcp::list_mcp_inventory_cmd,
+            // Plugin / extension pack inventory (read-only; not MCP)
+            commands::plugins::list_plugin_inventory_cmd,
             // Provider
             commands::provider::list_provider_presets,
             commands::provider::list_providers,
