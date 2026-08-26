@@ -262,7 +262,7 @@ fn anthropic_provider_and_explicit_api_key_account_plan_for_pi() {
             agent_id: AgentId::Claude,
             kind: AccountKind::ApiKey,
             label: "Anthropic key".into(),
-            credentials: serde_json::json!({"api_key": "must-not-leak"}),
+            credentials: serde_json::json!({"format": "api_key", "api_key": "must-not-leak"}),
             extra: serde_json::json!({"provider": "anthropic"}),
             status: "active".into(),
             is_current: false,
@@ -314,13 +314,71 @@ fn anthropic_provider_and_explicit_api_key_account_plan_for_pi() {
     assert!(account_plan.changes[1].value.is_none());
 }
 
+#[test]
+fn anthropic_account_without_api_key_format_is_unwritable() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "anthropic-bare".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            label: "Anthropic key".into(),
+            credentials: serde_json::json!({"api_key": "must-not-leak"}),
+            extra: serde_json::json!({"provider": "anthropic"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let plan = AdapterRouteService::new(db)
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "anthropic-bare",
+            AgentId::Pi,
+        ))
+        .unwrap();
+    assert!(!plan.can_apply);
+}
+
+#[test]
+fn grok_subscription_masked_access_token_is_unwritable() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-masked".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "Grok subscription".into(),
+            credentials: serde_json::json!({
+                "format": "oauth",
+                "access_token": "***"
+            }),
+            extra: serde_json::json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let plan = AdapterRouteService::new(db)
+        .plan(&request(
+            AdapterSourceKind::Account,
+            "grok-masked",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+    assert!(!plan.can_apply);
+}
+
 fn api_key_account(id: &str, provider: &str) -> Account {
     Account {
         id: id.into(),
         agent_id: AgentId::Claude,
         kind: AccountKind::ApiKey,
         label: format!("{provider} key"),
-        credentials: serde_json::json!({"api_key": "must-not-leak"}),
+        credentials: serde_json::json!({"format": "api_key", "api_key": "must-not-leak"}),
         extra: serde_json::json!({"provider": provider}),
         status: "active".into(),
         is_current: false,

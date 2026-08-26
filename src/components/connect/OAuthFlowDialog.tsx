@@ -15,6 +15,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
 import { Tip } from '@/components/ui/tooltip';
 import {
+  cancelOAuth,
   finishDeviceOAuth,
   finishOAuth,
   listOAuthOptions,
@@ -67,6 +68,42 @@ export async function openManualCallbackFallbackIfCurrent(
   await openLink(url);
 }
 
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+function normalizeCallbackPath(path: string): string {
+  if (!path) return '/';
+  return path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
+}
+
+/** Loopback PKCE callback pasted from the browser. Rejects arbitrary URLs. */
+export function validateManualCallbackUrl(
+  raw: string,
+  redirectUri: string,
+  expectedState: string,
+): { ok: true; href: string } | { ok: false } {
+  const trimmed = raw.trim();
+  if (!trimmed || !redirectUri.trim() || !expectedState.trim()) return { ok: false };
+  let pasted: URL;
+  let expected: URL;
+  try {
+    pasted = new URL(trimmed);
+    expected = new URL(redirectUri);
+  } catch {
+    return { ok: false };
+  }
+  if (pasted.protocol !== 'http:') return { ok: false };
+  if (!LOOPBACK_HOSTS.has(pasted.hostname.toLowerCase())) return { ok: false };
+  if (pasted.port !== expected.port) return { ok: false };
+  if (normalizeCallbackPath(pasted.pathname) !== normalizeCallbackPath(expected.pathname)) {
+    return { ok: false };
+  }
+  if (pasted.searchParams.get('state') !== expectedState) return { ok: false };
+  const code = pasted.searchParams.get('code')?.trim();
+  const error = pasted.searchParams.get('error')?.trim();
+  if (!code && !error) return { ok: false };
+  return { ok: true, href: pasted.href };
+}
+
 /**
  * OAuth 对话框：
  * - 单 provider：直接 PKCE 浏览器流
@@ -101,12 +138,16 @@ export function OAuthFlowDialog({
   const meta = AGENT_MAP[agentId];
   const flowGenerationRef = React.useRef(0);
   const flowTokenRef = React.useRef<OAuthFlowToken | null>(null);
+  const sessionStateRef = React.useRef<string | null>(null);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       if (flowTokenRef.current) flowTokenRef.current.cancelled = true;
       flowTokenRef.current = null;
       flowGenerationRef.current += 1;
+      const state = sessionStateRef.current;
+      sessionStateRef.current = null;
+      if (state) void cancelOAuth(state).catch(() => {});
     }
     onOpenChange(nextOpen);
   };
@@ -134,6 +175,7 @@ export function OAuthFlowDialog({
     setOptions([]);
     setSelected(null);
     setDeviceInfo(null);
+    sessionStateRef.current = null;
 
     void (async () => {
       try {
@@ -190,6 +232,7 @@ export function OAuthFlowDialog({
     try {
       const start = await startOAuth(agentId, true, selected?.id ?? null);
       if (!isCurrent()) return;
+      sessionStateRef.current = start.state;
       setOauthState(start.state);
       setAuthorizeUrl(start.authorizeUrl);
       setRedirectUri(start.redirectUri);
@@ -228,6 +271,7 @@ export function OAuthFlowDialog({
     try {
       const start = await startDeviceOAuth(agentId, selected.id);
       if (!isCurrent()) return;
+      sessionStateRef.current = start.state;
       setDeviceInfo(start);
       setOauthState(start.state);
       setCountdown(start.expiresInSecs || 900);
@@ -277,12 +321,20 @@ export function OAuthFlowDialog({
     const token = flowTokenRef.current;
     if (!token) return;
     const isCurrent = () => isOAuthFlowTokenCurrent(flowTokenRef.current, token);
+    const parsed = validateManualCallbackUrl(url, redirectUri ?? '', oauthState ?? '');
+    if (!parsed.ok) {
+      toast({
+        title: t('connect.oauth.invalidCallback'),
+        variant: 'danger',
+      });
+      return;
+    }
     setSubmittingManual(true);
     try {
       try {
-        await fetch(url, { mode: 'no-cors', credentials: 'omit' });
+        await fetch(parsed.href, { mode: 'no-cors', credentials: 'omit' });
       } catch {
-        await openManualCallbackFallbackIfCurrent(url, isCurrent).catch(() => {});
+        await openManualCallbackFallbackIfCurrent(parsed.href, isCurrent).catch(() => {});
       }
       if (!isCurrent()) return;
       toast({ title: t('connect.oauth.submittedCallback') });

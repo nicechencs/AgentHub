@@ -113,7 +113,8 @@ export default defineConfig(({ mode, command }) => {
       alias: {
         '@': path.resolve(rootDir, 'src'),
         '#backend': backendEntry,
-        // OAuth 演示对话框仅 mock 模式；生产只解析 unavailable 实现
+        // Kept for optional `#oauth-flow-dialog` imports. Production Connections
+        // mounts `src/components/connect/OAuthFlowDialog.tsx` directly.
         '#oauth-flow-dialog': oauthDialogEntry,
       },
     },

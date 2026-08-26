@@ -557,12 +557,14 @@ export function TicketAddMenu({
   agents,
   focusedAgentId = null,
   onImportLogin,
+  onOauth,
   onAddKey,
   variant = 'default',
 }: {
   agents: TicketAddMenuAgent[];
   focusedAgentId?: AgentId | null;
   onImportLogin?: (agentId: AgentId) => void;
+  onOauth?: (agentId: AgentId) => void;
   onAddKey?: (agentId: AgentId) => void;
   variant?: 'default' | 'outline' | 'secondary';
 }) {
@@ -574,10 +576,17 @@ export function TicketAddMenu({
     agent.actions.map((action) => (
       <DropdownMenuItem
         key={action.kind}
-        disabled={action.kind === 'import-login' ? !onImportLogin : !onAddKey}
+        disabled={
+          action.kind === 'import-login'
+            ? !onImportLogin
+            : action.kind === 'oauth'
+              ? !onOauth
+              : !onAddKey
+        }
         onSelect={(event) =>
           handleTicketAddMenuSelect(event, action.kind, agent.id, {
             onImportLogin,
+            onOauth,
             onAddKey,
             onMenuClose: () => setOpen(false),
           })
@@ -655,6 +664,7 @@ export function TicketWalletList({
   activeTicketId,
   onAddKey,
   onImportLogin,
+  onOauth,
   onClearAgentFilter,
   installedAgentIds,
 }: {
@@ -675,6 +685,7 @@ export function TicketWalletList({
   activeTicketId?: string | null;
   onAddKey?: (agentId: AgentId) => void;
   onImportLogin?: (agentId: AgentId) => void;
+  onOauth?: (agentId: AgentId) => void;
   onClearAgentFilter?: () => void;
   installedAgentIds?: readonly AgentId[];
 }) {
@@ -719,6 +730,7 @@ export function TicketWalletList({
       agents={addAgents}
       focusedAgentId={agentFilterId}
       onImportLogin={onImportLogin}
+      onOauth={onOauth}
       onAddKey={onAddKey}
       variant={variant}
     />

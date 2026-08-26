@@ -18,7 +18,7 @@ use crate::models::{
     TicketSurfaceGroup, TicketSurfaceMember, TicketWallet, PROJECTION_NOT_A_TICKET,
 };
 use crate::services::adapter_projection::classify_account_live;
-use crate::services::AdapterRouteService;
+use crate::services::{AdapterRouteService, ConnectionService};
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 
 /// Aggregates Ticket / Binding read models and thin `plan(ticket, agent)` wrapping.
@@ -28,6 +28,7 @@ pub struct TicketReadService {
     providers: ProviderRepo,
     profiles: AdapterProfileRepo,
     routes: AdapterRouteService,
+    connections: ConnectionService,
 }
 
 impl TicketReadService {
@@ -36,13 +37,15 @@ impl TicketReadService {
             accounts: AccountRepo::new(db.clone()),
             providers: ProviderRepo::new(db.clone()),
             profiles: AdapterProfileRepo::new(db.clone()),
-            routes: AdapterRouteService::new(db),
+            routes: AdapterRouteService::new(db.clone()),
+            connections: ConnectionService::new(db),
         }
     }
 
     /// List all true tickets and derived bindings. Generated projection and
     /// leftover 本机路由 providers are not tickets.
     pub fn list_wallet(&self) -> Result<TicketWallet> {
+        self.connections.reconcile_known_agents(None);
         let accounts = self.accounts.list(None)?;
         let providers = self.providers.list(None)?;
         let profiles = self.profiles.list_filtered(&Default::default())?;

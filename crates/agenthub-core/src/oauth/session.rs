@@ -173,6 +173,37 @@ impl SessionStore {
         Ok(())
     }
 
+    pub fn is_waiting(&self, state: &str) -> bool {
+        matches!(
+            self.get_info(state),
+            Ok(info) if info.status == OAuthStatus::Waiting
+        )
+    }
+
+    /// Fail every waiting session whose redirect URI uses `port` so its listener
+    /// can drop the socket. Used before rebinding a provider-fixed loopback port.
+    pub fn cancel_waiting_on_port(&self, port: u16) -> Result<usize> {
+        let mut g = self
+            .inner
+            .lock()
+            .map_err(|_| AppError::message("oauth.store", "session store poisoned"))?;
+        self.purge_locked(&mut g);
+        let mut n = 0;
+        for session in g.values_mut() {
+            if session.status != OAuthStatus::Waiting {
+                continue;
+            }
+            if redirect_loopback_port(&session.redirect_uri) != Some(port) {
+                continue;
+            }
+            session.status = OAuthStatus::Failed;
+            session.error = Some("OAuth authorization failed".into());
+            session.scrub_secrets();
+            n += 1;
+        }
+        Ok(n)
+    }
+
     /// Take session for token exchange (must have code).
     pub fn take_ready(&self, state: &str) -> Result<OAuthSession> {
         let mut g = self
@@ -215,6 +246,12 @@ fn purge_at(g: &mut HashMap<String, OAuthSession>, now: Instant) {
         now.checked_duration_since(s.created_at)
             .is_some_and(|age| age < TTL)
     });
+}
+
+pub(crate) fn redirect_loopback_port(redirect_uri: &str) -> Option<u16> {
+    let rest = redirect_uri.strip_prefix("http://")?;
+    let hostport = rest.split('/').next()?;
+    hostport.rsplit_once(':')?.1.parse().ok()
 }
 
 impl OAuthSession {

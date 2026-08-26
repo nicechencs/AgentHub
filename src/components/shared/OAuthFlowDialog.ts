@@ -6,5 +6,6 @@ export {
   createOAuthFlowToken,
   isOAuthFlowTokenCurrent,
   openManualCallbackFallbackIfCurrent,
+  validateManualCallbackUrl,
   type OAuthFlowToken,
 } from '@/components/connect/OAuthFlowDialog';

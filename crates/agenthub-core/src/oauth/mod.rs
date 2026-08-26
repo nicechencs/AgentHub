@@ -103,7 +103,11 @@ pub fn start_oauth(
     let state = pkce::random_state()?;
 
     // Prefer fixed redirect ports when the provider requires them; else ephemeral.
-    let listener = server::bind_listener(provider.redirect_port)?;
+    let st = store();
+    if let Some(port) = provider.redirect_port {
+        let _ = st.cancel_waiting_on_port(port);
+    }
+    let listener = server::bind_listener_retry(provider.redirect_port)?;
     let port = listener.local_addr()?.port();
     let path = if provider.redirect_path.is_empty() {
         "/callback"
@@ -133,7 +137,6 @@ pub fn start_oauth(
             }
         });
 
-    let st = store();
     st.insert(session::OAuthSession {
         state: state.clone(),
         agent,
@@ -149,8 +152,9 @@ pub fn start_oauth(
 
     let st2 = Arc::clone(&st);
     let state2 = state.clone();
+    let path2 = path.to_string();
     thread::spawn(move || {
-        if let Err(e) = spawn_callback_listener(listener, st2, &state2) {
+        if let Err(e) = spawn_callback_listener(listener, st2, &state2, &path2) {
             let err_msg = redact_text(&e.to_string());
             tracing::warn!(
                 module = targets::OAUTH,
@@ -198,6 +202,16 @@ pub fn start_oauth(
         provider_key: resolved_key,
         browser_opened,
     })
+}
+
+/// Stop a PKCE or device-code session. Idempotent if the state is unknown.
+pub fn cancel_oauth(state: &str) -> Result<()> {
+    let state = state.trim();
+    if state.is_empty() {
+        return Ok(());
+    }
+    store().mark_error(state, "cancelled")?;
+    device::cancel_device_oauth(state)
 }
 
 /// Poll session until success/error/timeout.

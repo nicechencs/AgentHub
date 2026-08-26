@@ -567,10 +567,10 @@ fn profile_with_missing_source_row_is_skipped() {
 }
 
 #[test]
-fn each_agent_has_at_most_one_active_binding_provider_wins() {
+fn each_agent_has_at_most_one_active_binding_reconcile_prefers_account() {
     let (_dir, db) = test_db();
-    // Both current on Claude — the Claude OAuth account is now a subscription
-    // ticket, but provider still wins the active binding.
+    // Dual current is dirty legacy state. list_wallet reconciles via
+    // ConnectionService, which prefers the account over the provider.
     AccountRepo::new(db.clone())
         .create(&account(
             "claude-acct",
@@ -636,7 +636,7 @@ fn each_agent_has_at_most_one_active_binding_provider_wins() {
         .filter(|b| b.agent_id == AgentId::Claude && b.active)
         .collect();
     assert_eq!(claude_active.len(), 1);
-    assert_eq!(claude_active[0].ticket_id, "provider:anth");
+    assert_eq!(claude_active[0].ticket_id, "account:claude-acct");
     assert_eq!(claude_active[0].route, TicketBindingRoute::Native);
 
     let idle = wallet
@@ -1345,14 +1345,13 @@ fn current_codex_leftover_does_not_become_native_ticket_when_oauth_account_curre
         .bindings
         .iter()
         .any(|binding| binding.ticket_id == "provider:codex-leftover"));
-    assert!(!wallet
+    let codex_active: Vec<_> = wallet
         .bindings
         .iter()
-        .any(|binding| binding.agent_id == AgentId::Codex && binding.active));
-    assert!(!wallet
-        .bindings
-        .iter()
-        .any(|binding| binding.ticket_id == "account:codex-oauth" && binding.active));
+        .filter(|binding| binding.agent_id == AgentId::Codex && binding.active)
+        .collect();
+    assert_eq!(codex_active.len(), 1);
+    assert_eq!(codex_active[0].ticket_id, "account:codex-oauth");
 }
 
 #[test]
@@ -1766,12 +1765,10 @@ fn ticket_connection_active_binding_matches_wallet_reshape_projection() {
     assert_eq!(active.route, TicketBindingRoute::Reshape);
 }
 
-/// Detector for D3: mutating only `accounts.is_current` (AccountRepo.update,
-/// which does not dual-write `agent_active_bindings`) must diverge from the
-/// raw pointer. The committed assertion is the divergence itself. To demo a
-/// red PR: change the final `assert_ne` to `assert_eq` after the same mutate.
+/// One-sided `is_current` writes used to drift the wallet from the pointer.
+/// `list_wallet` now reconciles `get_active` first, so the pointer wins.
 #[test]
-fn ticket_connection_wallet_vs_pointer_detects_one_sided_is_current_drift() {
+fn ticket_connection_wallet_repairs_one_sided_is_current_drift() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
         .create(&account(
@@ -1811,10 +1808,13 @@ fn ticket_connection_wallet_vs_pointer_detects_one_sided_is_current_drift() {
     let after = TicketReadService::new(db.clone()).list_wallet().unwrap();
     let derived = wallet_active_connection_pointer(&after, &[], AgentId::Claude);
     let pointer = raw_active_pointer(&db, AgentId::Claude);
-    assert_eq!(derived, (Some("acc-b".into()), None));
     assert_eq!(pointer, (Some("acc-a".into()), None));
-    assert_ne!(
-        derived, pointer,
-        "one-sided is_current write must diverge from agent_active_bindings"
+    assert_eq!(derived, pointer);
+    assert!(
+        AccountRepo::new(db)
+            .get_by_id("acc-a")
+            .unwrap()
+            .unwrap()
+            .is_current
     );
 }

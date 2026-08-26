@@ -948,10 +948,14 @@ describe('buildTicketAddMenu', () => {
     expect(menu.map((item) => item.id)).toEqual(['claude', 'kimi']);
     expect(menu[0]?.name).toBe(agentDisplayName('claude'));
     expect(menu.map((item) => item.actions.map((a) => a.kind))).toEqual([
-      ['import-login', 'api-key'],
+      ['import-login', 'oauth', 'api-key'],
       ['import-login', 'api-key'],
     ]);
-    expect(menu[0]?.actions.map((a) => a.label)).toEqual(['导入当前授权', '添加 API Key']);
+    expect(menu[0]?.actions.map((a) => a.label)).toEqual([
+      '导入当前授权',
+      '官方登录',
+      '添加 API Key',
+    ]);
   });
 
   it('is empty when no Agent is installed', () => {
@@ -986,6 +990,7 @@ describe('dispatchTicketAddAction', () => {
 
   it('no-ops when the matching handler is missing', () => {
     expect(() => dispatchTicketAddAction('import-login', 'kimi', {})).not.toThrow();
+    expect(() => dispatchTicketAddAction('oauth', 'claude', {})).not.toThrow();
     expect(() => dispatchTicketAddAction('api-key', 'claude', {})).not.toThrow();
   });
 });
@@ -995,14 +1000,23 @@ describe('ticketAddDialogState', () => {
     expect(ticketAddDialogState('import-login', 'codex')).toEqual({
       addAgentId: 'codex',
       loginImportOpen: true,
+      oauthDialogOpen: false,
       apiKeyDialogOpen: false,
       clearEditProvider: false,
     });
     expect(ticketAddDialogState('api-key', 'grok')).toEqual({
       addAgentId: 'grok',
       loginImportOpen: false,
+      oauthDialogOpen: false,
       apiKeyDialogOpen: true,
       clearEditProvider: true,
+    });
+    expect(ticketAddDialogState('oauth', 'claude')).toEqual({
+      addAgentId: 'claude',
+      loginImportOpen: false,
+      oauthDialogOpen: true,
+      apiKeyDialogOpen: false,
+      clearEditProvider: false,
     });
   });
 });

@@ -149,6 +149,10 @@ export function createTauriAccountPort(): AccountPort {
       return mapCoreAccount(row);
     },
 
+    async cancelOAuth(state) {
+      await invoke('oauth_cancel', { oauthState: state });
+    },
+
     async startDeviceOAuth(agentId, providerKey) {
       return invoke('oauth_device_start', { agentId, providerKey });
     },

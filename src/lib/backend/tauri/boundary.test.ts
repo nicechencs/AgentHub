@@ -66,6 +66,7 @@ describe('production Account OAuth', () => {
     expect(typeof backend.account.startOAuth).toBe('function');
     expect(typeof backend.account.waitOAuth).toBe('function');
     expect(typeof backend.account.finishOAuth).toBe('function');
+    expect(typeof backend.account.cancelOAuth).toBe('function');
   });
 });
 

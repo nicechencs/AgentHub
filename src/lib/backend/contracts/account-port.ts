@@ -168,6 +168,8 @@ export interface AccountPort {
   waitOAuth(state: string, timeoutSecs?: number): Promise<OAuthWaitInfo>;
   /** Exchange code for the given PKCE state and store account. */
   finishOAuth(state: string): Promise<Account>;
+  /** Fail an in-flight PKCE or device-code session and release its loopback port. */
+  cancelOAuth(state: string): Promise<void>;
   /** Device-code flow (Pi xAI). */
   startDeviceOAuth(agentId: AgentId, providerKey: string): Promise<DeviceOAuthStartInfo>;
   pollDeviceOAuth(state: string): Promise<DeviceOAuthPollInfo>;

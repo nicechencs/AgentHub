@@ -158,6 +158,10 @@ export async function finishOAuth(state: string): Promise<Account> {
   return account;
 }
 
+export async function cancelOAuth(state: string): Promise<void> {
+  await getBackend().account.cancelOAuth(state);
+}
+
 export async function startDeviceOAuth(
   agentId: AgentId,
   providerKey: string,

@@ -4,6 +4,7 @@ import {
   createOAuthFlowToken,
   isOAuthFlowTokenCurrent,
   openManualCallbackFallbackIfCurrent,
+  validateManualCallbackUrl,
   type OAuthFlowToken,
 } from './OAuthFlowDialog';
 
@@ -57,5 +58,39 @@ describe('OAuth flow identity', () => {
     );
 
     expect(openLink).not.toHaveBeenCalled();
+  });
+});
+
+describe('validateManualCallbackUrl', () => {
+  const redirect = 'http://127.0.0.1:1455/callback';
+  const state = 'abc';
+
+  it('accepts a loopback callback with matching state and code', () => {
+    const got = validateManualCallbackUrl(
+      `${redirect}?code=ok&state=${state}`,
+      redirect,
+      state,
+    );
+    expect(got.ok).toBe(true);
+  });
+
+  it('rejects a public URL even when it contains code=', () => {
+    expect(
+      validateManualCallbackUrl(
+        `https://evil.example/steal?code=ok&state=${state}`,
+        redirect,
+        state,
+      ).ok,
+    ).toBe(false);
+  });
+
+  it('rejects a loopback URL with the wrong state', () => {
+    expect(
+      validateManualCallbackUrl(
+        `${redirect}?code=ok&state=other`,
+        redirect,
+        state,
+      ).ok,
+    ).toBe(false);
   });
 });
