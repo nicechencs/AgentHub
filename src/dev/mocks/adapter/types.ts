@@ -38,6 +38,7 @@ export interface MockAdapterState {
   profiles: AdapterProfile[];
   bridgeStatuses: Map<string, AdapterBridgeRuntimeStatus>;
   generatedProviders: Map<string, Provider>;
+  resolver: MockAdapterSourceResolver;
   removeGeneratedProvider?: (provider: Provider) => void;
   routePoolV2: boolean;
   defaultPools: DefaultRoutePoolOverview[];
