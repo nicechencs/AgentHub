@@ -144,7 +144,7 @@ impl AdapterBridgeService {
         validate_generated_provider(&provider, &profile, profile.local_port)?;
         let local_bearer = local_bearer_from_provider(&provider)?;
         let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
-            AppError::InvalidArg("adapter profile is not a supported local bridge".into())
+            AppError::InvalidArg("这条本机路由已失效，无法启动。请删除后重建。".into())
         })?;
         let (_url, model, _listed, _protocol, window) = super::prepare::openai_source_upstream(
             self,
@@ -233,7 +233,7 @@ impl AdapterBridgeService {
         })?;
         validate_generated_provider(&provider, &profile, Some(local_port))?;
         let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
-            AppError::InvalidArg("adapter profile is not a supported local bridge".into())
+            AppError::InvalidArg("这条本机路由已失效，无法启动。请删除后重建。".into())
         })?;
         let upstream_auth =
             self.resolve_upstream_auth(&rule, profile.source_kind, &profile.source_id)?;

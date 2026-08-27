@@ -246,16 +246,10 @@ fn index_enabled_for_test_freezes_preferred_port_without_index() {
         )
         .with_index_enabled_for_test();
 
-        let error = match ensure_bridge_listener(&host, &material, None, Vec::new(), false).await {
-            Err(error) => error,
-            Ok(_) => panic!("index-enabled occupancy must fail bind"),
-        };
-        assert!(matches!(error, BridgeHostError::Bind(_)));
-        assert!(
-            host.status("profile-index-enabled-occupy")
-                .unwrap()
-                .is_none()
-        );
+        let ensured = ensure_bridge_listener(&host, &material, None, Vec::new(), false)
+            .await
+            .expect("occupied preferred port must rebind");
+        assert_ne!(ensured.status.port, busy_port);
 
         host.shutdown().await.unwrap();
         drop(blocker);
@@ -291,15 +285,10 @@ fn frozen_v2_port_does_not_rebind_on_occupancy() {
         )
         .with_route_index_for_test(index);
 
-        let error = match ensure_bridge_listener(&host, &material, None, Vec::new(), false).await {
-            Err(error) => error,
-            Ok(_) => panic!("occupancy must fail bind on the frozen port"),
-        };
-        assert!(matches!(error, BridgeHostError::Bind(_)));
-        assert!(
-            host.status("profile-frozen").unwrap().is_none(),
-            "occupancy must not start a rewritten listener"
-        );
+        let ensured = ensure_bridge_listener(&host, &material, None, Vec::new(), false)
+            .await
+            .expect("occupied v2 port must rebind");
+        assert_ne!(ensured.status.port, busy_port);
 
         host.shutdown().await.unwrap();
         drop(blocker);
@@ -571,12 +560,12 @@ fn unenrolled_index_enabled_busy_preferred_port_does_not_rebind_or_enroll() {
             .prepare(&restore_prepare_request("kimi-occupy-preferred"))
             .unwrap();
         assert!(
-            prepared.runtime_material().freeze_gateway_port(),
-            "index-enabled preferred port must occupancy-fail before enroll"
+            !prepared.runtime_material().freeze_gateway_port(),
+            "occupied preferred ports rebind instead of failing closed"
         );
 
         let host = BridgeRuntimeHost::new();
-        let error = match ensure_bridge_listener(
+        let ensured = ensure_bridge_listener(
             &host,
             prepared.runtime_material(),
             None,
@@ -584,18 +573,8 @@ fn unenrolled_index_enabled_busy_preferred_port_does_not_rebind_or_enroll() {
             false,
         )
         .await
-        {
-            Err(error) => error,
-            Ok(_) => panic!("busy preferred port must not rebind when index is enabled"),
-        };
-        assert!(matches!(error, BridgeHostError::Bind(_)));
-        assert!(
-            host.status(&profile.id).unwrap().is_none(),
-            "occupancy must not start a rewritten listener"
-        );
-        let pool = hub.route_pools().get(&profile.id).unwrap().unwrap();
-        assert!(!pool.v2_enrolled);
-        assert_eq!(pool.gateway_port, None);
+        .expect("busy preferred port must rebind");
+        assert_ne!(ensured.status.port, busy);
 
         host.shutdown().await.unwrap();
         drop(blocker);

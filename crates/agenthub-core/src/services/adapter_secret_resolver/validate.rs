@@ -193,6 +193,41 @@ impl AdapterSecretResolver {
             .map(ResolvedAuth::bearer)
     }
 
+    /// Any stored API-key login (official or custom relay) for an OpenAI-compat bridge.
+    pub(crate) fn resolve_openai_compat_auth(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<ResolvedAuth> {
+        let source_id = source_id.trim();
+        if source_id.is_empty() {
+            return Err(invalid_reference());
+        }
+        let blob = match source_kind {
+            AdapterSourceKind::Provider => {
+                let source = self
+                    .providers
+                    .get_by_id(source_id)?
+                    .ok_or_else(invalid_reference)?;
+                source.settings_config
+            }
+            AdapterSourceKind::Account => {
+                let account = self
+                    .accounts
+                    .get_by_id(source_id)?
+                    .ok_or_else(invalid_reference)?;
+                if account.kind != crate::models::AccountKind::ApiKey {
+                    return Err(invalid_reference());
+                }
+                account.credentials
+            }
+        };
+        crate::utils::redact::api_key_secret(&blob)
+            .filter(|value| !value.trim().is_empty() && value != "***")
+            .map(ResolvedAuth::bearer)
+            .ok_or_else(invalid_reference)
+    }
+
     /// Resolve only the current Codex OAuth access token for a bridge upstream.
     /// Refresh is intentionally owned by the next Codex login sync; this
     /// adapter does not persist or return refresh material.

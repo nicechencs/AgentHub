@@ -70,7 +70,7 @@ function Fail([string]$msg) {
 # Keeping this guard before version/build work also makes accidental
 # `-Publish` invocations side-effect free.
 if ($Publish) {
-    Fail "Local publishing is disabled. Push a matching v* tag after updating the release branch and let .github/workflows/release.yml publish the release."
+    Fail "Local publishing is disabled. Merge dev into release, tag on dev, push the v* tag after release:preflight passes, and let .github/workflows/release.yml publish the release."
 }
 
 function Read-PackageVersion {
@@ -666,9 +666,13 @@ if ($VersionOnly) {
     Write-Host "Tag     : $tag"
     Write-Host ""
     Write-Host "Next:" -ForegroundColor Yellow
-    Write-Host "  git add package.json Cargo.toml Cargo.lock src-tauri/tauri.conf.json"
+    Write-Host "  git add package.json Cargo.toml Cargo.lock"
     Write-Host "  git commit -m `"chore(release): bump version to $Version`""
-    Write-Host "  git push origin release"
+    Write-Host "  git push origin dev"
+    Write-Host "  pnpm release:preflight"
+    Write-Host "  git tag -a $tag -m `"AgentHub $tag`""
+    Write-Host "  git push origin $tag"
+    Write-Host "  # After GitHub Release succeeds, merge dev into release."
     Write-Host ""
     exit 0
 }
@@ -729,5 +733,6 @@ Write-Host "Tag     : $tag"
 Write-Host "OutDir  : $OutDir"
 Write-Host "Feed URL: https://github.com/$Repo/releases/latest/download/latest.json"
 Write-Host ""
-Write-Host "Publishing is CI-only: push a matching v* tag after updating the release branch and let .github/workflows/release.yml publish the release." -ForegroundColor Yellow
+Write-Host "Publishing is CI-only: merge dev into release, tag on dev, push the v* tag after release:preflight passes, and let .github/workflows/release.yml publish the release." -ForegroundColor Yellow
+Write-Host "After GitHub Release succeeds, merge dev into release." -ForegroundColor Yellow
 Write-Host ""

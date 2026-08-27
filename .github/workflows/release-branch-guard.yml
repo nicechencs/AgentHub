@@ -1,0 +1,103 @@
+name: Release branch guard
+
+on:
+  pull_request:
+    branches:
+      - release
+  push:
+    branches:
+      - release
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-branch-guard-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  pr-source-must-be-dev:
+    if: github.event_name == 'pull_request'
+    name: PR source must be dev
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Reject pull requests not opened from dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ github.base_ref }}"
+          head="${{ github.head_ref }}"
+          head_repo="${{ github.event.pull_request.head.repo.full_name }}"
+          canonical="${{ github.repository }}"
+
+          if [ "$base" != "release" ]; then
+            echo "Unexpected base branch: $base" >&2
+            exit 1
+          fi
+
+          if [ "$head" != "dev" ]; then
+            echo "release only accepts pull requests from dev; received head=$head base=$base" >&2
+            exit 1
+          fi
+
+          if [ "$head_repo" != "$canonical" ]; then
+            echo "release only accepts pull requests from this repository's dev branch; received $head_repo" >&2
+            exit 1
+          fi
+
+          echo "Pull request source is dev -> release."
+
+  push-must-come-from-dev:
+    if: github.event_name == 'push'
+    name: Push must come from dev merge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout with history
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Reject direct commits on release
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          after="${{ github.sha }}"
+
+          if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+            echo "Refusing to validate a newly created release branch from CI." >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin dev release
+
+          invalid=0
+          while IFS= read -r commit; do
+            [ -n "$commit" ] || continue
+
+            if git merge-base --is-ancestor "$commit" origin/dev; then
+              echo "Commit $commit is on origin/dev."
+              continue
+            fi
+
+            parent_count="$(git rev-list --parents -n 1 "$commit" | awk '{print NF - 1}')"
+            if [ "$parent_count" -eq 2 ]; then
+              second_parent="$(git rev-parse "${commit}^2")"
+              if git merge-base --is-ancestor "$second_parent" origin/dev; then
+                echo "Commit $commit merges origin/dev into release."
+                continue
+              fi
+            fi
+
+            echo "Commit $commit is not reachable from a dev merge into release." >&2
+            invalid=1
+          done < <(git rev-list "${before}..${after}")
+
+          if [ "$invalid" -ne 0 ]; then
+            echo "release only accepts commits merged from dev. Bump version on dev, merge dev into release, then tag on release." >&2
+            exit 1
+          fi
+
+          echo "All commits pushed to release came from dev."

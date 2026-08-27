@@ -1,8 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { shouldIgnoreMenuDialogDismiss } from '@/lib/menu-dialog-arm';
+import { describe, expect, it } from 'vitest';
 import { zh } from '@/lib/i18n/locales/zh';
 import {
   agentTaskLogTitleKey,
@@ -17,63 +16,31 @@ import {
   listAgentInstalls,
   isNodeTooOldUpdateNote,
   isSpecialInstallChannel,
-  openAgentCardUninstallConfirm,
   specialChannelUpdateTargets,
+  uniqueInstallVersions,
 } from './agent-card-model';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 
-afterEach(() => {
-  vi.useRealTimers();
-});
-
-describe('openAgentCardUninstallConfirm', () => {
-  it('swallows select, opens program/config, and arms the leftover dismiss', () => {
-    vi.useFakeTimers();
-    const event = { preventDefault: vi.fn() };
-    const openConfirm = vi.fn();
-    const ignoreRef = { current: false };
-
-    openAgentCardUninstallConfirm(event, 'program', openConfirm, ignoreRef);
-
-    expect(event.preventDefault).toHaveBeenCalledOnce();
-    expect(openConfirm).toHaveBeenCalledOnce();
-    expect(openConfirm).toHaveBeenCalledWith('program');
-    expect(ignoreRef.current).toBe(true);
-    expect(shouldIgnoreMenuDialogDismiss(ignoreRef.current, false)).toBe(true);
-    vi.advanceTimersByTime(100);
-    expect(ignoreRef.current).toBe(false);
-  });
-
-  it('opens the delete-config confirm without touching navigate/copy/install', () => {
-    vi.useFakeTimers();
-    const event = { preventDefault: vi.fn() };
-    const openConfirm = vi.fn();
-    const ignoreRef = { current: false };
-
-    openAgentCardUninstallConfirm(event, 'config', openConfirm, ignoreRef);
-
-    expect(openConfirm).toHaveBeenCalledWith('config');
-    expect(event.preventDefault).toHaveBeenCalledOnce();
-  });
-});
-
 describe('agent-card menu wiring', () => {
-  it('only the uninstall items open a Dialog through the menu helper', () => {
+  it('keeps install/update/hide on the card and puts uninstall in the inspect pane', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
+    const detail = readFileSync(path.join(dir, 'AgentDetailPanel.tsx'), 'utf8');
     const dialogs = readFileSync(path.join(dir, 'AgentCardDialogs.tsx'), 'utf8');
 
-    expect(card).toContain('openAgentCardUninstallConfirm');
-    expect(card).toContain("onSelect={(event) => openUninstallConfirm(event, 'program')}");
-    expect(card).toContain("onSelect={(event) => openUninstallConfirm(event, 'config')}");
-    expect(card).toContain('canUninstallProgramInApp');
     expect(card).toContain('canInstallAlongsideSpecial');
-    expect(card).toContain('onCloseAutoFocus={(event) => event.preventDefault()}');
-    expect(card).toContain('shouldIgnoreMenuDialogDismiss');
-    expect(card).not.toMatch(/onSelect=\{\(\) => setConfirmDialog\('program'\)\}/);
-    expect(card).not.toMatch(/onSelect=\{\(\) => setConfirmDialog\('config'\)\}/);
-    expect(card).toMatch(/onSelect=\{\(\) => \{\s*void openBinDir\(\);/);
-    expect(card).toContain('onSelect={startOneClickEnvOnly}');
+    expect(card).toContain('uniqueInstallVersions');
+    expect(card).toContain("t('agents.card.seeDetails')");
+    expect(card).not.toContain('openAgentCardUninstallConfirm');
+    expect(card).not.toContain("t('agents.card.uninstallProgram')");
+    expect(card).not.toContain("t('agents.card.uninstallConfig')");
+    expect(card).not.toContain('openBinDir');
+    expect(card).not.toContain('DropdownMenu');
+    expect(detail).toContain('canUninstallProgramInApp');
+    expect(detail).toContain("setConfirmDialog('program')");
+    expect(detail).toContain("setConfirmDialog('config')");
+    expect(detail).toContain('openPathInFileManager');
+    expect(detail).toContain('installs.map');
     expect(dialogs).toContain('shouldIgnoreDismiss');
   });
 });
@@ -116,6 +83,7 @@ describe('agent-card install log title', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
     expect(card).toContain('needsNode22');
     expect(card).toContain('isNodeTooOldUpdateNote');
+    expect(zh.agents.card.needsNode22).toBe('需要 Node 22');
   });
 });
 
@@ -132,28 +100,38 @@ describe('extra copy labels', () => {
     expect(extraCopyKindLabel('ide', (key) => key)).toBe('agents.card.extraCopyIde');
   });
 
-  it('copies the version, not the install path, and keeps copy rows to one line', () => {
+  it('lists unique versions on the card and points extra copies to details', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
-    expect(card).toContain('copyVersion');
-    expect(card).toContain('CopyVersionButton');
-    expect(card).toContain('agents.card.copyVersion');
-    expect(card).toContain('extraCopyKindLabel');
+    expect(card).toContain('uniqueInstallVersions');
     expect(card).toContain('listAgentInstalls');
+    expect(card).toContain("t('agents.card.seeDetails')");
+    expect(card).not.toContain('CopyVersionButton');
+    expect(card).not.toContain('copyVersion');
+    expect(card).not.toContain('extraCopyKindLabel');
     expect(card).not.toContain('agents.card.installSource');
     expect(card).not.toContain('agents.card.updateChannel');
     expect(card).not.toContain('agents.card.uninstallMethod');
     expect(card).not.toContain('agents.card.installLocation');
     expect(card).not.toContain('copyInstallPath');
-    expect(card).toContain('<Hint label={inst.location}');
-    expect(card).not.toMatch(/<p[^>]*\stitle=\{inst\.location\}/);
-    expect(card).toContain('specialChannelUpdateTargets');
-    expect(card).toContain('updateViaDesktop');
-    expect(zh.agents.card.copyVersion).toBe('复制版本');
+    expect(card).not.toContain('<Hint label={inst.location}');
+    expect(card).not.toContain('specialChannelUpdateTargets');
+    expect(card).not.toContain('updateViaDesktop');
+    expect(zh.agents.card.seeDetails).toBe('多个版本，点开看详情');
     expect(zh.agents.card.updateViaDesktop).toBe('请到桌面应用更新');
     expect(zh.agents.card.updateViaIde).toBe('请到 IDE 插件更新');
-    expect(zh.agents.card.installAlongsideHint).toBe('也可再装其他渠道');
     expect(zh.agents.dialog.installAlongsideDesc).toContain('不会被替换');
     expect(zh.agents.card.extraCopyDesktop).toBe('桌面应用');
+  });
+
+  it('dedupes install versions for the compact card', () => {
+    expect(
+      uniqueInstallVersions([
+        { version: '0.50.0' },
+        { version: 'v0.50.0' },
+        { version: '0.49.0' },
+        { version: null },
+      ]),
+    ).toEqual(['v0.50.0', 'v0.49.0']);
   });
 
   it('compares extra copies against the shared remote latest, skipping leftover', () => {

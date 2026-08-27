@@ -28,7 +28,7 @@ const KEY_PATTERNS: RegExp[] = [
 
 const NAMED_KEY_RES: RegExp[] = [
   /"OPENAI_API_KEY"\s*:\s*"([^"]+)"/i,
-  /(?:export\s+|set\s+|\$env:)?(?:OPENAI_API_KEY|OPENROUTER_API_KEY|API_KEY)["']?\s*=\s*["']?([^\s"',}\\]+)/i,
+  /(?:export\s+|set\s+|\$env:)?(?:OPENAI_API_KEY|OPENROUTER_API_KEY|XAI_API_KEY|API_KEY)["']?\s*=\s*["']?([^\s"',}\\]+)/i,
   /(?:^|["\s])api_key["']?\s*[=:]\s*["']([^"']+)["']/im,
 ];
 

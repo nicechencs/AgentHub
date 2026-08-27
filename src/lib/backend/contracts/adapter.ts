@@ -167,7 +167,7 @@ export interface AdapterBridgeInboundRequest {
   ok: boolean;
 }
 
-/** Deliberately excludes the local bearer and all upstream credentials. */
+/** Loopback listener status. `localToken` is the bearer that actually authenticates. */
 export interface AdapterBridgeRuntimeStatus {
   profileId: string;
   state: AdapterBridgeRuntimeState;
@@ -177,6 +177,8 @@ export interface AdapterBridgeRuntimeStatus {
   upstreamStatus?: AdapterBridgeUpstreamStatus | string | null;
   /** Newest first. Empty when no tool has connected yet. */
   recentInbound?: AdapterBridgeInboundRequest[];
+  /** Loopback bearer (`ahb_…`) accepted by this listener. */
+  localToken?: string | null;
 }
 
 export type AdapterApplyRequest = AdapterRouteRequest;

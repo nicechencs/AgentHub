@@ -18,7 +18,7 @@ pnpm tauri:dev        # 真实 Tauri 桌面端
 ## 分支与 PR
 
 - 日常开发分支是 `dev`。从 `dev` 创建短期工作分支，PR 的目标分支是 `dev`。
-- `release` 只用于正式发版，不用于日常集成；不要把 `dev` 合并进 `release`。
+- `release` 是正式发版线，不用于日常集成；**禁止直接在 `release` 上提交**，只能将 `dev` 合入 `release` 后再打 tag。守卫说明见 [release 分支保护](docs/guides/release-branch-protection.md)。
 - PR 描述应说明行为变化、影响范围、验证命令和文档变化。涉及界面时使用 `pnpm dev:mock` 的合成数据，不提交真实账号、令牌、路径或日志。
 - 安全问题不要创建公开 Issue；按 [SECURITY.md](SECURITY.md) 私下披露。
 
@@ -50,11 +50,21 @@ Rust CLI 或 GUI 改动分别补跑 `cargo test -p agenthub-cli --locked` 和 `c
 
 ## 发布流程
 
-正式发布由推送 `v*` tag 的 GitHub Actions 完成，本地发布命令不会上传发行物：
+正式发布由推送 `v*` tag 的 GitHub Actions 完成，本地发布命令不会上传发行物。顺序是：**在 `dev` 升版并写更新说明 → 合入 `release` → 在 `dev` 打 tag 触发 CI**。
 
-1. 在 `release` 分支准备发布提交。
-2. 同时更新 `package.json`、`Cargo.toml` 的 `[workspace.package]` 和 `src-tauri/tauri.conf.json` 三处版本号。
-3. 运行 `pnpm release:check` 及相关前端、Rust、文档检查。
-4. 创建并推送匹配的 `vX.Y.Z` tag。tag 必须指向 `release` 上的提交，不能覆盖已有 tag。
+1. 确认 **`dev`** 上待发版改动已合并完成。
+2. 在 **`dev`** 准备发布提交：
+   - **只改 `package.json` 的 `version`**，运行 `pnpm release:sync-version` 同步 Rust 侧版本（或使用 `pnpm release:bump` 自动升版并同步）；
+   - 在 **`CHANGELOG.md`** 新增对应版本一节（至少一条 `-` 更新说明）。
+3. 运行发版预检：`pnpm release:preflight`（或至少 `pnpm release:check --require-changelog`、`pnpm typecheck:test`、`pnpm test`、`cargo test --workspace --locked`）。
+4. 提交并推送 **`dev`**。
+5. 将 **`dev` 合入 `release`**（推荐 PR；使用 merge commit 或 fast-forward，不要用 squash）。
+6. 在 **`dev` 的当前提交**（与 `release` 合并后指向同一 SHA）创建并推送匹配的 `vX.Y.Z` tag。
+7. 等待 GitHub Actions Release workflow 完成构建与发布；若失败，在 **`dev`** 修复后重新从步骤 2 闭环：
+   - 尚未对外发布的 tag 可以删除并重建；
+   - 已发布的 tag 不可覆盖，需用新的 patch 版本继续。
+8. 确认 GitHub Release 已发布、资产齐全、Latest 标记正确，且 Release 正文来自 `CHANGELOG.md`。
 
-GitHub Actions 会校验版本一致性、tag 所在分支和发布元数据，并生成 Windows、macOS 与 Linux 发行物。日常 PR 不应修改发布线或手工上传发行物。
+**关于 tag：** tag 绑的是提交 SHA，不是分支名。在 `dev` 打 tag 后，把同一提交合入 `release`，tag 无需在 `release` 上重打；推送 tag 前必须先完成 `dev` → `release` 合并。
+
+GitHub Actions 会校验版本一致性、tag 是否同时在 `dev`/`release` 上、`CHANGELOG.md` 是否有对应版本说明，并生成 Windows、macOS 与 Linux 发行物。

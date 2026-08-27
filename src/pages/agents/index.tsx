@@ -3,6 +3,8 @@ import { PackageSearch } from 'lucide-react';
 import { getAgentStatusSnapshot, useAgentStatuses } from '@/app/runtime';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { EnvRemediationPanel } from '@/components/shared/EnvRemediationPanel';
 import { EnvStatusBar } from '@/components/shared/EnvStatusBar';
@@ -21,6 +23,9 @@ import { listRuntimes, resolveAutoInstallPlan } from '@/lib/api/env';
 import { hasEnvIssues } from '@/lib/env';
 import type { AgentId, AgentStatus, AgentUpdateInfo, RuntimeDetect, RuntimeId } from '@/lib/types';
 import { AgentCard } from './agent-card';
+import { AgentDetailPanel } from './AgentDetailPanel';
+
+const AGENTS_PREVIEW_WIDTH_KEY = 'agenthub.agents.previewWidth';
 
 /** Agents 安装管理页 — 环境检测 + Agent 安装（backend 由构建时 composition root 选择） */
 export default function AgentsPage() {
@@ -215,15 +220,38 @@ export default function AgentsPage() {
   const showAgentSkeleton = statuses.length === 0 && (state === 'idle' || state === 'loading');
   const pageError =
     statuses.length === 0 ? (state === 'error' ? error : envError) : null;
+  const inspect = useSideSplit<AgentId>({ storageKey: AGENTS_PREVIEW_WIDTH_KEY });
+  const inspectAgent = orderedAgents.find((row) => row.agentId === inspect.target);
+
+  React.useEffect(() => {
+    if (!inspect.target) return;
+    if (!inspectAgent?.installed) inspect.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- close when the selected agent is gone or not installed
+  }, [inspect.target, inspectAgent?.installed]);
+
+  const inspectPanel = inspectAgent?.installed ? (
+    <AgentDetailPanel
+      agent={inspectAgent}
+      width={inspect.paneWidth}
+      onClose={() => inspect.close()}
+      onChanged={refreshAgents}
+    />
+  ) : null;
 
   return (
-    <div>
-      <PageHeader
-        title={t('agents.page.title')}
-        description={t('agents.page.description')}
-        descriptionTip={t('agents.page.descriptionTip')}
-      />
-
+    <WorkbenchSplitPage
+      split={inspect}
+      resizeAria={t('common.resizeSidePanel')}
+      panel={inspectPanel}
+      header={(
+        <PageHeader
+          size="compact"
+          title={t('agents.page.title')}
+          description={t('agents.page.description')}
+          descriptionTip={t('agents.page.descriptionTip')}
+        />
+      )}
+    >
       <div className={pageRhythm.lead}>
         <EnvStatusBar
           runtimes={runtimes}
@@ -276,7 +304,7 @@ export default function AgentsPage() {
           onAction={retry}
         />
       ) : (
-        <div className={pageRhythm.stack}>
+        <div className={pageRhythm.stackDense}>
           {orderedAgents.map((a) => {
             const sortable = rowProps(a.agentId);
             return (
@@ -284,6 +312,8 @@ export default function AgentsPage() {
                 <AgentCard
                   agent={a}
                   runtimes={runtimes}
+                  selected={inspect.target === a.agentId}
+                  onSelect={a.installed ? () => inspect.open(a.agentId) : undefined}
                   onChanged={refreshAgents}
                   onEnvChanged={() => void refreshEnv()}
                   onRecheckUpdate={() => refreshAgentUpdate(a.agentId)}
@@ -300,6 +330,6 @@ export default function AgentsPage() {
           })}
         </div>
       )}
-    </div>
+    </WorkbenchSplitPage>
   );
 }

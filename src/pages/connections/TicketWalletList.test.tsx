@@ -57,7 +57,7 @@ describe('TicketWalletList details', () => {
     expect(markup).toContain('用到其他工具');
     expect(markup).toContain('本机转发');
     expect(markup).not.toContain('接到…');
-    expect(markup).toContain('详情');
+    expect(markup).not.toContain('详情');
     expect(markup).not.toContain('搜索登录或用途');
     expect(markup).not.toContain('aria-label="搜索登录"');
     expect(markup).not.toContain('aria-label="登录类型筛选"');

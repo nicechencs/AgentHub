@@ -179,6 +179,11 @@ impl ConnectionService {
                 &now,
             )?;
             tx.commit()?;
+            crate::services::connection_service::trash::log_recycle(
+                source.agent_id,
+                &source.id,
+                &source.label,
+            );
             Ok((updated, binding.into(), source))
         })
     }

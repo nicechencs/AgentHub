@@ -16,6 +16,7 @@ import type {
 } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { cn } from '@/lib/utils';
+import { fmtAbsoluteI18n } from '@/pages/backups/backup-format';
 import { AdapterErrorLines } from './adapter-components';
 import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { readCreateRouteCapabilities } from './create-route-flow';
@@ -195,7 +196,7 @@ function RouteDetailBody({
   busy?: boolean;
 }) {
   const { toast } = useToast();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const isBridge = profile.route === 'local_bridge';
   const endpointParts = isBridge ? adapterBridgeHostPort(profile, bridgeStatus) : null;
   const graph = buildRouteGraph({
@@ -292,7 +293,11 @@ function RouteDetailBody({
         <InboundRequestsSection rows={bridgeStatus?.recentInbound ?? []} />
 
         {routePoolMembersSectionVisible(routePoolV2, defaultPool) && defaultPool ? (
-          <RoutePoolOverviewSection pool={defaultPool} entries={entries} />
+          <RoutePoolOverviewSection
+            pool={defaultPool}
+            entries={entries}
+            localToken={bridgeStatus?.localToken}
+          />
         ) : null}
 
         {nativeEnrollCtaVisible({
@@ -338,8 +343,8 @@ function RouteDetailBody({
             <DetailRow label={t('routes.profileId')} value={profile.id} mono />
             <DetailRow label={t('routes.rule')} value={`${profile.ruleId} · v${profile.ruleVersion}`} mono />
             {profile.lastErrorCode ? <DetailRow label={t('routes.lastError')} value={profile.lastErrorCode} mono /> : null}
-            <DetailRow label={t('routes.createdAt')} value={profile.createdAt} mono />
-            <DetailRow label={t('routes.updatedAt')} value={profile.updatedAt} mono />
+            <DetailRow label={t('routes.createdAt')} value={fmtAbsoluteI18n(profile.createdAt, lang)} mono />
+            <DetailRow label={t('routes.updatedAt')} value={fmtAbsoluteI18n(profile.updatedAt, lang)} mono />
             {source.upstreamUrls.map((url) => (
               <DetailRow key={url} label={t('routes.panel.upstreamUrl')} value={url} mono />
             ))}
@@ -371,9 +376,11 @@ function RouteDetailBody({
 function RoutePoolOverviewSection({
   pool,
   entries,
+  localToken,
 }: {
   pool: DefaultRoutePoolOverview;
   entries: ConnectionEntry[];
+  localToken?: string | null;
 }) {
   const { t } = useI18n();
   const entry = defaultPoolEntryUrl(pool.gatewayPort);
@@ -437,7 +444,21 @@ function RoutePoolOverviewSection({
             </ul>
           )}
         </div>
-        <p className="text-meta text-muted">{t('routes.pool.tokenSaved')}</p>
+        {localToken ? (
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <dt className="w-12 shrink-0 text-muted">{t('routes.write.fieldLocalToken')}</dt>
+            <dd className="min-w-0">
+              <CopyableEndpoint
+                text={localToken}
+                url={localToken}
+                ariaLabel={t('routes.write.fieldLocalToken')}
+                className="text-sm font-medium"
+              />
+            </dd>
+          </div>
+        ) : (
+          <p className="text-meta text-muted">{t('routes.pool.tokenSaved')}</p>
+        )}
       </div>
     </section>
   );

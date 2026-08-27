@@ -1828,7 +1828,7 @@ wire_api = "responses"
 }
 
 #[test]
-fn upsert_same_secret_url_does_not_heal_secret_url_duplicates() {
+fn upsert_same_secret_url_merges_into_existing_row() {
     let secret = "sk-or-v1-fixture-aaaa6aa9-not-real";
     let url = "https://openrouter.ai/api/v1";
     let (_dir, svc) = svc();
@@ -1857,24 +1857,15 @@ fn upsert_same_secret_url_does_not_heal_secret_url_duplicates() {
     uuid.settings_config = backup.settings_config.clone();
     uuid.meta = json!({ "preset": "openrouter" });
     let stored = svc.upsert(&uuid).unwrap();
-    assert_eq!(
-        stored.id,
-        "openai-compat-0e08e310-97ba-4575-a50b-3e3db6eec38c"
-    );
     let listed = svc.list(Some(AgentId::Codex)).unwrap();
     let user_rows: Vec<_> = listed
         .iter()
         .filter(|row| row.meta.get("generatedBy").and_then(|v| v.as_str()) != Some("adapter"))
         .collect();
-    assert_eq!(user_rows.len(), 2);
-    assert!(svc
-        .get("openai-compat-openrouter-backup", Some(AgentId::Codex))
-        .is_ok());
-    assert!(svc
-        .connections
-        .list_trash(Some(AgentId::Codex))
-        .unwrap()
-        .is_empty());
+    assert_eq!(user_rows.len(), 1, "same key+url must merge");
+    assert_eq!(user_rows[0].id, stored.id);
+    let trash = svc.connections.list_trash(Some(AgentId::Codex)).unwrap();
+    assert_eq!(trash.len(), 1);
     let hash = stored.meta["secretHash"].as_str().expect("persisted hash");
     assert_eq!(hash, crate::utils::redact::secret_sha256_hex(secret));
     assert!(!stored.meta.to_string().contains(secret));

@@ -23,10 +23,11 @@ import { MOCK_CAPABILITIES } from './capabilities';
 
 const log = logger.scope('dev:mock:agent');
 
-const hiddenAgentIds = new Set<AgentId>();
+const hiddenAgentIds = new Set<AgentId>(['cursor' as AgentId]);
 
 export function resetMockAgentVisibility(): void {
   hiddenAgentIds.clear();
+  hiddenAgentIds.add('cursor');
 }
 
 function stampHidden(agents: AgentStatus[]): AgentStatus[] {
