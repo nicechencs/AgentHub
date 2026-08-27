@@ -81,7 +81,7 @@ AgentHub 默认只处理本机数据。常见数据位置是 `~/.agenthub/`（�
 - [文档状态](docs/STATUS.md)：当前实现事实与未实现边界。
 - [文档风格](docs/STYLE.md)：元数据、分类、链接和维护规则。
 
-日常开发和 PR 使用 `dev` 分支。正式发布只从 `release` 分支创建匹配的 `vX.Y.Z` tag；详见 [贡献指南](CONTRIBUTING.md)。
+日常开发和 PR 使用 `dev` 分支。正式发布先在 `dev` 创建匹配的 `vX.Y.Z` tag，闭环后再合入 `release`；详见 [贡献指南](CONTRIBUTING.md)。
 
 ## 许可证
 
