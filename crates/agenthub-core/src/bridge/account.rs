@@ -211,6 +211,14 @@ struct EligibleMember<'a> {
     candidate: &'a DispatchCandidate,
 }
 
+enum StickyLookup {
+    Hit(PickedMember),
+    /// Bound member is still valid in the resolver set but skipped for this
+    /// request (cooldown, isolation wait, or this-request exclusion).
+    Held,
+    Miss,
+}
+
 struct AccountPickerInner {
     members: Vec<PickedMember>,
     cursor: AtomicUsize,
@@ -344,9 +352,12 @@ impl AccountPicker {
             .map(str::trim)
             .filter(|key| !key.is_empty())
             .map(str::to_owned);
+        let mut sticky_held = false;
         if let Some(key) = affinity.as_deref() {
-            if let Some(picked) = self.pick_sticky(&eligible, key) {
-                return Some(picked);
+            match self.lookup_sticky(candidates, excluded_members, key) {
+                StickyLookup::Hit(picked) => return Some(picked),
+                StickyLookup::Held => sticky_held = true,
+                StickyLookup::Miss => {}
             }
         }
         let picked = match self.inner.schedule_policy {
@@ -354,11 +365,31 @@ impl AccountPicker {
             RouteSchedulePolicy::PriorityFailover => pick_priority_failover(&eligible),
         }?;
         if let Some(key) = affinity.as_deref() {
-            if let Some(candidate) = matching_candidate(&picked, candidates) {
-                self.record_sticky(key, &picked, candidate);
+            if !sticky_held {
+                if let Some(candidate) = matching_candidate(&picked, candidates) {
+                    self.record_sticky(key, &picked, candidate);
+                }
             }
         }
         Some(picked)
+    }
+
+    /// Prefer a still-valid sticky member from the full resolver set, before
+    /// lane filtering. Cooldown / this-request exclusion skips the member for
+    /// this pick without deleting the binding.
+    pub fn try_sticky(
+        &self,
+        candidates: &[DispatchCandidate],
+        affinity_key: Option<&str>,
+        excluded_members: &[String],
+    ) -> Option<PickedMember> {
+        let key = affinity_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty())?;
+        match self.lookup_sticky(candidates, excluded_members, key) {
+            StickyLookup::Hit(picked) => Some(picked),
+            StickyLookup::Held | StickyLookup::Miss => None,
+        }
     }
 
     /// New request: from cursor, first eligible member; then cursor = (idx+1)%n.
@@ -493,27 +524,45 @@ impl AccountPicker {
             .collect()
     }
 
-    fn pick_sticky(&self, eligible: &[EligibleMember<'_>], key: &str) -> Option<PickedMember> {
+    fn lookup_sticky(
+        &self,
+        universe: &[DispatchCandidate],
+        excluded_members: &[String],
+        key: &str,
+    ) -> StickyLookup {
         let binding = {
             let Ok(guard) = self.inner.sticky.lock() else {
-                return None;
+                return StickyLookup::Miss;
             };
             guard.get(key).cloned()
         };
         let Some(binding) = binding else {
-            return None;
+            return StickyLookup::Miss;
         };
-        let hit = eligible.iter().find(|item| {
-            sticky_member_matches(item.member, &binding.member_id)
-                && sticky_still_valid(&binding, item.member, item.candidate)
-        });
-        match hit {
-            Some(item) => Some(item.member.clone()),
-            None => {
-                self.drop_sticky(key);
-                None
-            }
+        let Some(member) = self
+            .inner
+            .members
+            .iter()
+            .find(|member| sticky_member_matches(member, &binding.member_id))
+        else {
+            self.drop_sticky(key);
+            return StickyLookup::Miss;
+        };
+        let Some(candidate) = universe
+            .iter()
+            .find(|candidate| Self::matches_candidate(member, candidate))
+        else {
+            self.drop_sticky(key);
+            return StickyLookup::Miss;
+        };
+        if !sticky_still_valid(&binding, member, candidate) || !member.is_eligible() {
+            self.drop_sticky(key);
+            return StickyLookup::Miss;
         }
+        if Self::is_excluded(member, excluded_members) {
+            return StickyLookup::Held;
+        }
+        StickyLookup::Hit(member.clone())
     }
 
     fn pick_round_robin(&self, eligible: &[EligibleMember<'_>]) -> Option<PickedMember> {
@@ -539,14 +588,15 @@ impl AccountPicker {
             &lead.candidate.upstream_dialect,
         );
         let start = match self.inner.rr_cursors.lock() {
-            Ok(mut cursors) => *cursors.entry(cursor_key.clone()).or_insert(0) % n,
+            Ok(mut cursors) => {
+                let slot = cursors.entry(cursor_key).or_insert(0);
+                let start = *slot % n;
+                *slot = (start + 1) % n;
+                start
+            }
             Err(_) => 0,
         };
-        let picked = group[start].member.clone();
-        if let Ok(mut cursors) = self.inner.rr_cursors.lock() {
-            cursors.insert(cursor_key, (start + 1) % n);
-        }
-        Some(picked)
+        Some(group[start].member.clone())
     }
 
     fn record_sticky(&self, key: &str, member: &PickedMember, candidate: &DispatchCandidate) {
