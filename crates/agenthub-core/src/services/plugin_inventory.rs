@@ -90,9 +90,12 @@ pub struct PluginScanContext<'a> {
     pub runner: &'a dyn PluginCliRunner,
 }
 
-/// Runs `plugin list --json` without touching vendor cache.
+/// Runs official `plugin` subcommands without AgentHub writing vendor cache.
 pub trait PluginCliRunner: Send + Sync {
     fn run_list_json(&self, program: &Path) -> CliRun;
+    fn run_plugin(&self, program: &Path, args: &[&str]) -> CliRun {
+        run_cli(program, args, CLI_TIMEOUT)
+    }
 }
 
 #[derive(Debug, Clone)]

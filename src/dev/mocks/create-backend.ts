@@ -25,7 +25,7 @@ import { createMockEnvPort } from './env';
 import { MOCK_AGENT_CATALOG } from './fixtures/agent-catalog';
 import { createMockInstallPort } from './install';
 import { createMockMcpPort } from './mcp';
-import { createMockPluginPort } from './plugins';
+import { createMockPluginPort, resetMockPlugins } from './plugins';
 import { createMockProjectPort, resetProjectMock } from './project';
 import {
   createMockProviderPort,
@@ -75,6 +75,7 @@ export const createBackend: CreateBackend = () => {
   resetMockProviders();
   resetMockAgentStatuses();
   resetMockAgentVisibility();
+  resetMockPlugins();
   // Seed full agent catalog (ids / names / channels / capabilities).
   seedAgentCatalog(MOCK_AGENT_CATALOG);
 

@@ -1916,9 +1916,12 @@ export const zh = {
   mcp: {
     page: {
       title: "MCP",
-      description: "只读查看各工具的额外能力",
+      description: "这一页只列出已经发现的 MCP，不会安装。",
       descriptionTip:
-        "MCP 是工具可调用的额外能力。这里只列出已发现的项，不会改各工具自己的设置。",
+        "不会改各工具自己的设置。要动手，点列表里的「目录」，{next}。",
+      empty: "这一页只扫描、列出找到的项，不会安装。有列表时，点「目录」，{next}。",
+      emptyAgent: "「{name}」下还没有发现 MCP。这一页只扫描，不会安装。",
+      nextStep: "去这份配置里改",
       refresh: "刷新",
       countAll: "{n} 个 server",
       countAgent: "{name} · {n} 个",
@@ -1968,6 +1971,16 @@ export const zh = {
       disabled: '已停用',
       enabled: '已启用',
       untrusted: '未信任',
+    },
+    actions: {
+      enable: '启用',
+      disable: '停用',
+      enabling: '正在启用…',
+      disabling: '正在停用…',
+      enabled: '已启用',
+      disabled: '已停用',
+      enableFailed: '未能启用',
+      disableFailed: '未能停用',
     },
     detail: {
       name: '名称',
