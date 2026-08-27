@@ -12,6 +12,35 @@ import { invoke } from './invoke';
 
 const log = logger.scope('backend:tauri:provider');
 
+export const CURSOR_LIVE_WRITE_UNSUPPORTED =
+  'Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。';
+
+function errorPayloadText(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return '';
+}
+
+function isUnsupportedProviderSwitch(text: string): boolean {
+  return /provider\.switch\.rollback|\bunsupported\b|\[unsupported\]/i.test(text)
+    || text.includes('暂时不能把这份登录写到本机配置')
+    || text.includes('live config writes are not supported for cursor');
+}
+
+/** Map a switch rejection onto a Chinese Error the UI can toast. */
+export function mapProviderSwitchError(agentId: string, error: unknown): Error {
+  const text = errorPayloadText(error);
+  if (agentId === 'cursor' && isUnsupportedProviderSwitch(text)) {
+    return new Error(CURSOR_LIVE_WRITE_UNSUPPORTED);
+  }
+  if (error instanceof Error && error.message.trim()) return error;
+  return new Error(text || '切换失败');
+}
+
 export function createTauriProviderPort(): ProviderPort {
   return {
     async listProviders(agentId) {
@@ -79,7 +108,7 @@ export function createTauriProviderPort(): ProviderPort {
         });
       } catch (e) {
         log.error('switch_provider failed', e);
-        throw e;
+        throw mapProviderSwitchError(agentId, e);
       }
     },
 

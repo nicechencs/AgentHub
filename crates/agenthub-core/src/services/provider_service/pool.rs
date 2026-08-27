@@ -9,10 +9,7 @@ use crate::models::{
     attach_persisted_surface, Account, AgentId, PersistedTicketSurface, Provider, ProviderInput,
     TicketSurface,
 };
-use crate::services::provider_identity::{
-    pick_identity_keeper, provider_identity, retarget_profiles_from_loser, stamp_secret_hash,
-    ProviderIdentity,
-};
+use crate::services::provider_identity::{provider_identity, stamp_secret_hash};
 use crate::services::switch_undo::{extract_probe_url, probe_url_latency_ms};
 use crate::services::AdapterRouteService;
 use crate::storage::{
@@ -452,39 +449,10 @@ impl ProviderService {
         })
     }
 
-    pub(super) fn heal_secret_url_duplicates(&self, agent: AgentId) -> Result<()> {
-        let rows = self.repo.list(Some(agent))?;
-        let profiles =
-            AdapterProfileRepo::new(self.db.clone()).list_filtered(&Default::default())?;
-        let mut groups: Vec<(ProviderIdentity, Vec<Provider>)> = Vec::new();
-        for row in rows {
-            let Some(identity) = provider_identity(&row) else {
-                continue;
-            };
-            if let Some((_, members)) = groups.iter_mut().find(|(key, _)| *key == identity) {
-                members.push(row);
-            } else {
-                groups.push((identity, vec![row]));
-            }
-        }
-        for (_, members) in groups {
-            if members.len() < 2 {
-                continue;
-            }
-            let Some(keeper) = pick_identity_keeper(&members, &profiles) else {
-                continue;
-            };
-            let keeper_id = keeper.id.clone();
-            let mut profiles = profiles.clone();
-            for loser in members.iter().filter(|row| row.id != keeper_id) {
-                let changed = retarget_profiles_from_loser(&mut profiles, &loser.id, &keeper_id);
-                let profile_repo = AdapterProfileRepo::new(self.db.clone());
-                for index in changed {
-                    profile_repo.update(&profiles[index])?;
-                }
-                self.delete_inner(&loser.id, agent)?;
-            }
-        }
+    /// Secret+url identity is display/merge metadata, not a license to recycle
+    /// another user-saved login. Paste-merge of identical logins belongs to the
+    /// frontend. Create/update of the same primary key is unaffected.
+    pub(super) fn heal_secret_url_duplicates(&self, _agent: AgentId) -> Result<()> {
         Ok(())
     }
 
