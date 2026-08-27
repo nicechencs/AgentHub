@@ -586,8 +586,36 @@ fn file_starts_with_shebang(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn npm_global_bin_dirs_from_cli() -> Vec<PathBuf> {
+    use which::which;
+    let npm = match which("npm").or_else(|_| which("npm.cmd")) {
+        Ok(path) => path,
+        Err(_) => return Vec::new(),
+    };
+    let output = match std::process::Command::new(&npm)
+        .args(["prefix", "-g"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        _ => return Vec::new(),
+    };
+    let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if prefix.is_empty() {
+        return Vec::new();
+    }
+    let prefix = PathBuf::from(prefix);
+    #[cfg(windows)]
+    {
+        vec![prefix]
+    }
+    #[cfg(not(windows))]
+    {
+        vec![prefix.join("bin")]
+    }
+}
+
 fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
+    let mut dirs = npm_global_bin_dirs_from_cli();
     #[cfg(windows)]
     {
         if let Ok(appdata) = std::env::var("APPDATA") {

@@ -1,7 +1,7 @@
 import type { InstallChannelMeta } from '@/config/agents';
 import type { MessageKey } from '@/lib/i18n';
 import type { AgentStatus } from '@/lib/types';
-import { handleMenuDialogSelect } from '@/pages/connections/ticket-wallet-model';
+import { handleMenuDialogSelect } from '@/lib/menu-dialog-arm';
 
 export type AgentCardTaskAction = 'install' | 'upgrade' | 'oneclick';
 export type AgentCardTaskStatus = 'running' | 'done' | 'failed';

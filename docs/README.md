@@ -47,6 +47,11 @@ updated: 2026-08-27
 - [对象化与封装审查：测试、Mock 与 Fixture](architecture/objectization-encapsulation-audit-tests-fixtures.md)
 - [读模型 owner 与兼容策略（提案）](architecture/read-model-owners.md)
 
+### 状态与审查
+
+- [当前实现状态](STATUS.md)
+- [Codex 安装与连接/路由模块化审查](status/codex-install-modularity-review.md)
+
 ### 查稳定契约
 
 - [CLI 与配置](reference/cli-and-config.md)

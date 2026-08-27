@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { shouldIgnoreMenuDialogDismiss } from '@/pages/connections/ticket-wallet-model';
+import { shouldIgnoreMenuDialogDismiss } from '@/lib/menu-dialog-arm';
 import { zh } from '@/lib/i18n/locales/zh';
 import {
   agentTaskLogTitleKey,

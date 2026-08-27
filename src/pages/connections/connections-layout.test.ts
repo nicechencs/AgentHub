@@ -99,7 +99,7 @@ describe('connections layout wiring', () => {
   });
 
   it('keeps live config chrome to the path and folder button; hint is hover-only', () => {
-    const provider = source('../providers/ProviderEditDialog.tsx');
+    const provider = source('../../components/connections/ProviderEditDialog.tsx');
     expect(provider).toContain('Tip label={livePaths.hint}');
     expect(provider).toContain('isLiveFilePath(livePaths.auth)');
     expect(provider).not.toContain('<p className="text-muted">{livePaths.hint}</p>');
@@ -118,8 +118,8 @@ describe('connections layout wiring', () => {
   });
 
   it('keeps key hints on the key field and shows cancel in the inspect header', () => {
-    const provider = source('../providers/ProviderEditDialog.tsx');
-    const account = source('../accounts/ApiKeyAccountDialog.tsx');
+    const provider = source('../../components/connections/ProviderEditDialog.tsx');
+    const account = source('../../components/connections/ApiKeyAccountDialog.tsx');
     expect(provider).toContain("t('connections.apiKeyDialog.keyHint')");
     expect(provider).toContain('fieldHints');
     expect(provider).toContain("t('common.cancel')");

@@ -52,6 +52,7 @@ updated: 2026-08-27
 - 不落地 sccache，也不把 `agenthub-core` 拆成多个 crate。CI 使用 `Swatinem/rust-cache`。Windows worktree 不得共享 `target/`。2026-08-25 的热缓存过滤测试约 3.5 秒、冷 worktree 首次编译依赖约 42 秒是历史快照，不是当前固定规模；过程见 [单一内核提案归档](archive/single-kernel-projections.md)。
 - DeepSeek Harness 的 StructuredStream 仍是规划项；已落地部分以源码和集成文档为准。
 - 插件包的启用/安装/更新仍是提案，不从 MCP inventory 推导。见 [插件管理](proposals/plugin-management.md)。MCP 写入同样未做，且是另一条线。
+- Codex 安装、外部渠道 Chat 调用与连接/路由模块化审查见 [Codex 安装与模块化审查](status/codex-install-modularity-review.md)（2026-08-27）。
 - 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。
 
 ## 真源优先级

@@ -61,7 +61,7 @@ import {
 
 import type { MessageKey } from '@/lib/i18n';
 import { activeBindingForAgent } from '@/lib/ticket-wallet';
-import { connectionStateRouteLabel } from '@/pages/connections/ticket-wallet-model';
+import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import { consumeConnectResume, parseConnectResumeParam } from '@/lib/connect-flow/connect-intent';
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';

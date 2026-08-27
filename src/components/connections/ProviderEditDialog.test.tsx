@@ -32,7 +32,7 @@ import {
   canSaveWithSchemaStatus,
   planSchemaLoad,
   resolveProjectorExpectation,
-} from './provider-schema-gate';
+} from '@/pages/providers/provider-schema-gate';
 import { getConfigTextError } from './ProviderEditDialog';
 
 const TEST_CLAUDE_SCHEMA: AgentConfigSchemaDto = {

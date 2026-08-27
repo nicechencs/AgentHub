@@ -15,7 +15,7 @@ import {
 } from '@/lib/connection-kind';
 import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId, Provider } from '@/lib/types';
-import { isLeftoverLocalRouteProvider } from '@/pages/chat/chat-model';
+import { isLeftoverLocalRouteProvider } from '@/lib/leftover-local-route';
 
 export type { ConnectionKind };
 export type {

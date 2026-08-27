@@ -30,6 +30,19 @@ cargo run -p agenthub-cli -- agent list
 
 检查 binary 是否在 PATH、Runtime 是否就绪以及 install channel 是否适用于宿主平台。缺少 Node/npm 等共享 Runtime 时，先用 `env install <runtime>` 或按输出的 remediation 手工安装；`agent install` 不应假装成功，也不会自动卸载共享 Runtime。
 
+### Codex 安装
+
+| 现象 | 常见原因 | 处理 |
+| --- | --- | --- |
+| macOS/Linux 无「官方脚本」渠道 | OpenAI 仅发布 Windows PowerShell 安装脚本 | 使用 npm 全局安装：`npm i -g @openai/codex`，或先在 Agents 页一键装 Node/npm |
+| `env.not_ready` / 无法一键安装 | 缺少 Node.js 或 npm | Agents 页打开环境面板，或 `agenthub agent install codex --install-deps` |
+| 命令成功但仍显示未安装 | npm 全局 bin 不在 GUI 进程 PATH | **完全退出并重启 AgentHub**；doctor 会扫描 `npm prefix -g` 与常见目录 |
+| `EACCES` / 权限错误 | 全局 npm 无写权限 | 配置用户级 npm prefix（如 `npm config set prefix ~/.npm-global`）后重装 |
+| Chat 里看不到 Codex | Agent 被软隐藏 | Agents 卡显示「已隐藏」；取消隐藏即可（安装/检测不受影响） |
+| 已装 VS Code 插件或桌面 App | 非缺陷：Chat 直接 spawn CLI | 需检测到 `codex` 二进制且 `~/.codex/auth.json` 有效；见 [Chat 与 Agent](../concepts/chat-and-agents.md#codex-外部安装) |
+
+完整审查清单见 [Codex 安装与模块化审查](../status/codex-install-modularity-review.md)。
+
 ## 登录或配置问题
 
 - 先在 Connections 检查登录状态和 health，再尝试重新导入 live 配置。
