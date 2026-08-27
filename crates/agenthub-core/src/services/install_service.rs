@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 use std::path::{Path, PathBuf};
 
-use crate::adapters::AdapterRegistry;
+use crate::adapters::{
+    is_under_agenthub_user_npm_prefix, user_writable_npm_prefix, AdapterRegistry,
+};
 use crate::catalog::limits::{
     INSTALL_AGENT_TIMEOUT as AGENT_TIMEOUT, INSTALL_ENV_TIMEOUT as ENV_TIMEOUT,
     INSTALL_MAX_OUTPUT_BYTES as MAX_OUTPUT,
@@ -34,8 +36,9 @@ fn elapsed_ms(started: Instant) -> u64 {
 
 /// Leftover AgentHub data-dir npm prefix (`<data>/npm`). **Not an install target.**
 ///
-/// Installs use the user's real npm global (`npm i -g`). This path is only
-/// probed so uninstall can clean copies written by older AgentHub versions.
+/// Installs use a user-writable prefix detect already scans (`~/.npm-global` /
+/// `%APPDATA%\npm`). This path is only probed so uninstall can clean copies
+/// written by older AgentHub versions.
 pub(crate) fn leftover_agenthub_npm_prefix() -> Result<PathBuf> {
     Ok(crate::utils::paths::resolve_data_dir(None)?.join("npm"))
 }
@@ -54,9 +57,39 @@ fn leftover_agenthub_npm_prefix_candidates() -> Vec<PathBuf> {
     out
 }
 
+fn npm_prefix_populated(prefix: &Path) -> bool {
+    prefix.join("node_modules").is_dir() || prefix.join("lib").join("node_modules").is_dir()
+}
+
 fn leftover_prefix_populated(prefix: &Path) -> bool {
-    prefix.join("node_modules").is_dir()
-        || prefix.join("lib").join("node_modules").is_dir()
+    npm_prefix_populated(prefix)
+}
+
+/// User-writable npm prefix that detect already scans. Never leftover `~/.agenthub/npm`.
+pub(crate) fn detect_scanned_user_npm_prefix() -> Result<PathBuf> {
+    let prefix = user_writable_npm_prefix().ok_or_else(|| {
+        AppError::message(
+            "install.npm_prefix",
+            "cannot resolve a user-writable npm prefix",
+        )
+    })?;
+    if is_under_agenthub_user_npm_prefix(&prefix)
+        || leftover_agenthub_npm_prefix_candidates()
+            .iter()
+            .any(|leftover| leftover == &prefix)
+    {
+        return Err(AppError::message(
+            "install.npm_prefix",
+            "refusing leftover AgentHub data-dir npm prefix as install target",
+        ));
+    }
+    Ok(prefix)
+}
+
+fn ensure_detect_scanned_user_npm_prefix() -> Result<PathBuf> {
+    let prefix = detect_scanned_user_npm_prefix()?;
+    std::fs::create_dir_all(&prefix)?;
+    Ok(prefix)
 }
 
 /// Prefixes that still contain packages written by older AgentHub versions.
@@ -1354,8 +1387,7 @@ fn special_uninstall_purge_note(kind: &str) -> String {
     if kind == "ide" {
         "当前是 IDE 插件安装，程序请到 IDE 插件中卸载；将仅清理配置目录".into()
     } else {
-        "当前是桌面应用安装，程序请到桌面应用或 Microsoft Store 卸载；将仅清理配置目录"
-            .into()
+        "当前是桌面应用安装，程序请到桌面应用或 Microsoft Store 卸载；将仅清理配置目录".into()
     }
 }
 
@@ -2019,26 +2051,47 @@ fn npm_uninstall_global_then_leftover(
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<bool> {
+    let mut removed = false;
+    // Current in-app install target. Never create this dir on uninstall.
+    if let Ok(prefix) = detect_scanned_user_npm_prefix() {
+        if npm_prefix_populated(&prefix) {
+            let user_res = npm_uninstall_prefixed(
+                pkg,
+                &prefix,
+                "user npm prefix detect already scans",
+                executor,
+                logs,
+            )?;
+            removed = removed || user_res.success();
+        }
+    }
     let global_res = npm_uninstall_legacy_global(pkg, executor, logs)?;
-    let mut removed = global_res.success();
+    removed = removed || global_res.success();
     // Older AgentHub versions wrote into `<data>/npm`. Never create that dir here.
     for prefix in leftover_agenthub_npm_prefixes_present() {
-        let leftover_res = npm_uninstall_leftover_prefix(pkg, &prefix, executor, logs)?;
+        let leftover_res = npm_uninstall_prefixed(
+            pkg,
+            &prefix,
+            "leftover AgentHub data-dir copy",
+            executor,
+            logs,
+        )?;
         removed = removed || leftover_res.success();
     }
     Ok(removed)
 }
 
-fn npm_uninstall_leftover_prefix(
+fn npm_uninstall_prefixed(
     pkg: &str,
     prefix: &Path,
+    note: &str,
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
     let prefix_text = prefix.display().to_string();
     push_log(
         logs,
-        format!("# npm uninstall -g --prefix {prefix_text} {pkg} (leftover AgentHub data-dir copy)"),
+        format!("# npm uninstall -g --prefix {prefix_text} {pkg} ({note})"),
     );
     let npm = resolve_bin(&["npm", "npm.cmd"])?;
     let req = ExecRequest {
@@ -2094,16 +2147,36 @@ fn run_npm_install(
     } else {
         format!(" {}", extra.join(" "))
     };
+    let prefix = ensure_detect_scanned_user_npm_prefix()?;
+    let prefix_text = prefix.display().to_string();
     push_log(
         logs,
-        format!("# npm {label} -g{extra_note} {pkg}"),
+        format!("# npm {label} -g --prefix {prefix_text}{extra_note} {pkg}"),
     );
     push_log(logs, format!("使用 npm： {npm}"));
     push_log(
         logs,
+        format!("安装目录：{prefix_text}（检测会扫描此目录，无需重启）"),
+    );
+    push_log(
+        logs,
         format!("# 正在通过 npm 下载安装 {pkg}（可能需数分钟，请保持网络畅通）…"),
     );
-    let mut args = vec!["install".into(), "-g".into()];
+    tracing::info!(
+        target: crate::logging::targets::INSTALL,
+        module = crate::logging::targets::INSTALL,
+        op = "npm_install",
+        agent = agent_label,
+        prefix = %prefix_text,
+        pkg = pkg,
+        "npm install into user-writable prefix detect already scans"
+    );
+    let mut args = vec![
+        "install".into(),
+        "-g".into(),
+        "--prefix".into(),
+        prefix_text,
+    ];
     for flag in extra {
         args.push((*flag).into());
     }
