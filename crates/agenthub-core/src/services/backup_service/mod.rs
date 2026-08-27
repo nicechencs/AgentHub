@@ -30,22 +30,24 @@ use std::time::Instant;
 use serde::Serialize;
 
 use crate::adapters::AdapterRegistry;
-use crate::error::Result;
 use crate::services::LiveWriteAuthority;
 use crate::storage::{BackupRepo, Database};
 
 // Re-export helpers so `tests` (`use super::*`) keep seeing them.
 #[allow(unused_imports)]
-use crate::error::AppError;
+use crate::error::{AppError, Result};
 #[allow(unused_imports)]
 use crate::models::{AgentId, BackupKind, BackupRecord};
 #[allow(unused_imports)]
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
 pub(super) use path_safety::{
     allocate_dest_name, ensure_existing_path_strictly_inside, is_path_inside, sanitize_basename,
 };
+#[cfg(test)]
 pub(super) use restore::{apply_restore_plan, RestoreItem};
+#[cfg(test)]
 pub(super) use snapshot::{
     write_manifest, BackupManifest, ManifestEntry, MANIFEST_FILE, MANIFEST_VERSION,
 };

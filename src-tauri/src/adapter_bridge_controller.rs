@@ -656,6 +656,9 @@ pub(crate) struct EnsuredBridgeListener {
 }
 
 pub(crate) struct EnrolledIndexRefresh {
+    /// Indexed start spec after enroll. Tests chain a second enroll with this;
+    /// production `fold_into` only takes listener ownership and port.
+    #[allow(dead_code)]
     pub(crate) material: AdapterBridgeRuntimeMaterial,
     pub(crate) listener: Option<EnsuredBridgeListener>,
 }

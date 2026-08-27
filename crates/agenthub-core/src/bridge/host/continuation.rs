@@ -11,7 +11,7 @@ use axum::http::HeaderMap;
 use serde_json::Value;
 
 use crate::bridge::grok_cli::extract_prompt_cache_seed;
-use crate::bridge::protocol::pair::{completed_response_id, is_stateful_continuation};
+use crate::bridge::protocol::pair::completed_response_id;
 
 #[derive(Default)]
 pub(super) struct ContinuationBindings {
@@ -64,10 +64,6 @@ impl ContinuationBindings {
         for key in keys {
             guard.insert(key, member_id.to_owned());
         }
-    }
-
-    pub(super) fn has_stateful_fields(body: &Value, headers: &HeaderMap) -> bool {
-        is_stateful_continuation(body) || extract_prompt_cache_seed(headers, body).is_some()
     }
 }
 
