@@ -28,8 +28,9 @@
 
 - 日常开发与 PR 合入 `dev`，不要把 `main` 或 `release` 当作日常集成线。
 - 正式发版时，同时修改 `package.json`、`Cargo.toml` 的 `[workspace.package]` 和 `src-tauri/tauri.conf.json` 三处版本号。
-- 更新 `release` 分支后，创建并推送匹配的 `vX.Y.Z` tag；tag 必须指向 `release` 上的对应提交且不可覆盖已有版本。
-- GitHub Actions 只在推送 `v*` tag 时出包。`dev` 与 `release` 是无关历史，不要把 `dev` 合并进 `release`。
+- **发版顺序**：先在 `dev` 升版并推送匹配的 `vX.Y.Z` tag；CI 构建发布并闭环处理问题后，再将 `dev` 合入 `release` 同步发版线。tag 必须指向 `dev` 上已通过发版的提交，且不可覆盖已有**已发布**版本。
+- GitHub Actions 只在推送 `v*` tag 时出包；Release workflow 只接受 tag 落在 `origin/dev` 上的提交。
+- `release` 是发版成功后的同步分支，不在发版前提前合 `dev`。
 - Agent 隐藏以 `dev` 的 store-stamp 为准，只影响界面，不是旧 release 线的软隐藏。
 - 当前界面使用「登录」，不使用「票」。实现里的 Ticket / TicketPort 仍是内部名称。
 

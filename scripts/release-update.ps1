@@ -66,11 +66,11 @@ function Fail([string]$msg) {
 
 # Publishing from a developer worktree is intentionally disabled. GitHub
 # Actions is the single release authority: it validates a v* tag on the
-# release branch and refuses existing releases/assets before any write.
+# dev branch and refuses existing releases/assets before any write.
 # Keeping this guard before version/build work also makes accidental
 # `-Publish` invocations side-effect free.
 if ($Publish) {
-    Fail "Local publishing is disabled. Push a matching v* tag after updating the release branch and let .github/workflows/release.yml publish the release."
+    Fail "Local publishing is disabled. Push a matching v* tag from dev after release:preflight passes and let .github/workflows/release.yml publish the release."
 }
 
 function Read-PackageVersion {
@@ -668,7 +668,11 @@ if ($VersionOnly) {
     Write-Host "Next:" -ForegroundColor Yellow
     Write-Host "  git add package.json Cargo.toml Cargo.lock src-tauri/tauri.conf.json"
     Write-Host "  git commit -m `"chore(release): bump version to $Version`""
-    Write-Host "  git push origin release"
+    Write-Host "  git push origin dev"
+    Write-Host "  pnpm release:preflight"
+    Write-Host "  git tag -a $tag -m `"AgentHub $tag`""
+    Write-Host "  git push origin $tag"
+    Write-Host "  # After GitHub Release succeeds, merge dev into release."
     Write-Host ""
     exit 0
 }
@@ -729,5 +733,6 @@ Write-Host "Tag     : $tag"
 Write-Host "OutDir  : $OutDir"
 Write-Host "Feed URL: https://github.com/$Repo/releases/latest/download/latest.json"
 Write-Host ""
-Write-Host "Publishing is CI-only: push a matching v* tag after updating the release branch and let .github/workflows/release.yml publish the release." -ForegroundColor Yellow
+Write-Host "Publishing is CI-only: push a matching v* tag from dev after release:preflight passes and let .github/workflows/release.yml publish the release." -ForegroundColor Yellow
+Write-Host "After GitHub Release succeeds, merge dev into release." -ForegroundColor Yellow
 Write-Host ""
