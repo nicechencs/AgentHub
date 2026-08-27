@@ -46,6 +46,12 @@ describe('locale key parity', () => {
     expect(keys).toContain('connections.providerDialog.remoteModelsLoading');
     expect(keys).toContain('connections.providerDialog.remoteModelsFailed');
     expect(keys).toContain('connections.providerDialog.remoteModelsEmpty');
+    expect(keys).toContain('routes.endpoint.messages');
+    expect(keys).toContain('routes.endpoint.responses');
+    expect(keys).toContain('routes.endpoint.chatCompletions');
+    expect(keys).toContain('routes.endpoint.models');
+    expect(keys).toContain('routes.inbound.title');
+    expect(keys).toContain('routes.inbound.empty');
   });
 
   it('all user copy avoids banned jargon', () => {
@@ -81,5 +87,9 @@ describe('locale key parity', () => {
     expect(translate('en', 'connections.providerDialog.remoteModelsEmpty')).toBe(
       'This address has no model list. Leave blank or type one',
     );
+    expect(translate('zh', 'routes.endpoint.messages')).toBe('Claude 对话');
+    expect(translate('en', 'routes.endpoint.messages')).toBe('Claude chat');
+    expect(translate('zh', 'routes.inbound.empty')).toBe('还没有工具连上');
+    expect(translate('en', 'routes.inbound.empty')).toBe('No tool has connected yet');
   });
 });
