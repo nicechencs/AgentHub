@@ -92,7 +92,7 @@ impl PickedMember {
             priority: 0,
             position: 0,
             health: Arc::new(Mutex::new(health)),
-            concurrency: Arc::new(Semaphore::new(1)),
+            concurrency: Arc::new(Semaphore::new(4)),
         }
     }
 
