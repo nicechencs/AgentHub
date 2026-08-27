@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -13,15 +13,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
 import { Button } from '@/components/ui/button';
 import { Boxes } from 'lucide-react';
-import {
-  enrollNativeToGateway,
-  listDefaultRoutePools,
-  planAdapter,
-  startAdapterBridge,
-  stopAdapterBridge,
-} from '@/lib/api/adapter';
-import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
-import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
+import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import { useToast } from '@/components/ui/toast';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
 import { CreateRouteDialog } from './CreateRouteDialog';
@@ -39,7 +31,6 @@ import {
   bridgesPageViewState,
   canonicalizeLocalBridgeOrderIds,
   groupLocalBridgeProfiles,
-  localBridgeProfilesForSource,
   localBridgeSourceKey,
   partitionLocalBridgeRuntimes,
 } from './adapter-view-model';
@@ -48,6 +39,8 @@ import {
   matchDefaultPoolForProfile,
 } from './route-pool-view-model';
 import { useAdapterResources } from './use-bridge-resources';
+import { useBridgeRuntimeActions } from './use-bridge-runtime-actions';
+import { useRoutePoolState } from './use-route-pool-state';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   closeConfirmationOnOpenChange,
@@ -61,42 +54,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-
-type WalletSnapshot = {
-  settled: boolean;
-  lastWalletBridgeCount: number;
-  bindingProfileIds: ReadonlySet<string>;
-};
-
-/** One route plus the endpoint graph its client-config write is derived from. */
-type WriteTarget = { profile: AdapterProfile; graph: RouteGraphView };
-
-type RouteInspect =
-  | { kind: 'create' }
-  | { kind: 'import' }
-  | { kind: 'write'; target: WriteTarget }
-  | { kind: 'edit'; profile: AdapterProfile }
-  | { kind: 'detail'; profile: AdapterProfile };
-
-function inspectProfileId(target: RouteInspect | null): string | null {
-  if (!target) return null;
-  if (target.kind === 'edit' || target.kind === 'detail') return target.profile.id;
-  if (target.kind === 'write') return target.target.profile.id;
-  return null;
-}
-
-function liveInspectProfile(
-  snapshot: AdapterProfile,
-  profiles: readonly AdapterProfile[],
-): AdapterProfile {
-  return profiles.find((profile) => profile.id === snapshot.id) ?? snapshot;
-}
-
-const ROUTES_INSPECT_WIDTH_KEY = 'agenthub.routes.inspectWidth';
+import {
+  inspectProfileId,
+  liveInspectProfile,
+  ROUTES_INSPECT_WIDTH_KEY,
+  type RouteInspect,
+} from './route-inspect';
 
 /**
- * Local-bridge runtime ops page. Creating bindings lives in Dashboard and
- * Connections ConnectFlow. Do not mount analyze fan-out, plan, or apply here.
+ * Routes（本机转发）页：bridge 运行时 ops 为主；创建/导入路由并 bind 为产品例外
+ * （亦可在 Dashboard / Connections ConnectFlow 完成）。不在此挂载 ConnectFlow
+ * analyze fan-out；native enroll 预览走 planTicket。
  */
 export default function BridgesPage() {
   const { t } = useI18n();
@@ -108,6 +76,7 @@ export default function BridgesPage() {
     errors: resourceErrors,
     profileState,
     loading,
+    wallet,
     reload,
     reloadProfiles,
     updateBridgeStatus,
@@ -115,148 +84,44 @@ export default function BridgesPage() {
   } = useAdapterResources();
   const { hiddenIds } = useInstalledAgents();
   const hiddenTargetIds = useMemo(() => new Set(hiddenIds), [hiddenIds]);
-  const [wallet, setWallet] = useState<WalletSnapshot>({
-    settled: false,
-    lastWalletBridgeCount: 0,
-    bindingProfileIds: new Set(),
-  });
-  const [removeConfirm, setRemoveConfirm] = useState<AdapterProfile | null>(null);
-  const [stopConfirm, setStopConfirm] = useState<AdapterProfile | null>(null);
-  const [removingProfileId, setRemovingProfileId] = useState<string | null>(null);
-  const [profileErrors, setProfileErrors] = useState<Record<string, unknown>>({});
-  const [busyProfileIds, setBusyProfileIds] = useState<Record<string, boolean>>({});
   const inspect = useSideSplit<RouteInspect>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
   const routeOrder = useStoredIdOrder(StorageKey.routesProfileOrder);
-  const [routePoolV2, setRoutePoolV2] = useState(false);
-  const [defaultPools, setDefaultPools] = useState<DefaultRoutePoolOverview[]>([]);
-  const [nativeCanApplyById, setNativeCanApplyById] = useState<Record<string, boolean>>({});
-  const [enrollingProfileId, setEnrollingProfileId] = useState<string | null>(null);
 
-  const setProfileBusy = (profileId: string, busy: boolean) => {
-    setBusyProfileIds((current) => ({ ...current, [profileId]: busy }));
-  };
+  const runtime = useBridgeRuntimeActions({
+    profiles,
+    hiddenTargetIds,
+    reloadProfiles,
+    updateBridgeStatus,
+    removeProfile,
+    t,
+    toast,
+    onEnrollDone: () => inspect.close(),
+  });
 
-  const clearProfileError = (profileId: string) => {
-    setProfileErrors((current) => {
-      const { [profileId]: _ignored, ...remaining } = current;
-      return remaining;
-    });
-  };
+  const {
+    removeConfirm,
+    setRemoveConfirm,
+    stopConfirm,
+    setStopConfirm,
+    removingProfileId,
+    profileErrors,
+    busyProfileIds,
+    enrollingProfileId,
+    handleStartBridge,
+    confirmStopBridge,
+    confirmRemove,
+    handleEnrollNative,
+  } = runtime;
 
-  const reloadThenClearProfileErrors = () => {
-    void reloadProfiles().then(
-      () => { setProfileErrors({}); },
-      () => undefined,
-    );
-  };
+  const inspectTarget = inspect.target;
+  const detailTarget = inspectTarget?.kind === 'detail'
+    ? liveInspectProfile(inspectTarget.profile, profiles)
+    : null;
 
-  const handleStartBridge = async (profile: AdapterProfile) => {
-    const members = localBridgeProfilesForSource(profiles, profile)
-      .filter((member) => !hiddenTargetIds.has(member.targetAgentId));
-    if (members.length === 0) return;
-    for (const member of members) {
-      setProfileBusy(member.id, true);
-      clearProfileError(member.id);
-    }
-    try {
-      for (const member of members) {
-        updateBridgeStatus(await startAdapterBridge(member.id));
-      }
-      reloadThenClearProfileErrors();
-    } catch (error) {
-      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
-    } finally {
-      for (const member of members) setProfileBusy(member.id, false);
-    }
-  };
-
-  const confirmStopBridge = async () => {
-    if (!stopConfirm) return;
-    const profile = stopConfirm;
-    const members = localBridgeProfilesForSource(profiles, profile);
-    for (const member of members) {
-      setProfileBusy(member.id, true);
-      clearProfileError(member.id);
-    }
-    try {
-      for (const member of members) {
-        updateBridgeStatus(await stopAdapterBridge(member.id));
-      }
-      setStopConfirm(null);
-      reloadThenClearProfileErrors();
-    } catch (error) {
-      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
-    } finally {
-      for (const member of members) setProfileBusy(member.id, false);
-    }
-  };
-
-  const confirmRemove = async () => {
-    if (!removeConfirm || hiddenTargetIds.has(removeConfirm.targetAgentId)) return;
-    const profile = removeConfirm;
-    const members = localBridgeProfilesForSource(profiles, profile);
-    const profileId = profile.id;
-    setRemovingProfileId(profileId);
-    clearProfileError(profileId);
-    try {
-      const wallet = await listTicketWallet();
-      for (const member of members) {
-        const binding = wallet.bindings.find((row) => row.profileId === member.id);
-        const ticketId = binding?.ticketId ?? ticketIdFor(member.sourceKind, member.sourceId);
-        const agentId = binding?.agentId ?? member.targetAgentId;
-        await unbindTicket(ticketId, agentId);
-        removeProfile(member.id);
-      }
-      setRemoveConfirm(null);
-      reloadThenClearProfileErrors();
-    } catch (error) {
-      setProfileErrors((errors) => ({ ...errors, [profileId]: error }));
-    } finally {
-      setRemovingProfileId(null);
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    void listTicketWallet()
-      .then((next) => {
-        if (cancelled) return;
-        setWallet({
-          settled: true,
-          lastWalletBridgeCount: next.bindings.filter((binding) => binding.route === 'bridge').length,
-          bindingProfileIds: new Set(
-            next.bindings
-              .map((binding) => binding.profileId)
-              .filter((id): id is string => typeof id === 'string' && id.length > 0),
-          ),
-        });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setWallet((current) => ({ ...current, settled: true }));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [profiles]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void listDefaultRoutePools()
-      .then((listed) => {
-        if (cancelled) return;
-        setRoutePoolV2(listed.enabled);
-        setDefaultPools(listed.pools);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setRoutePoolV2(false);
-        setDefaultPools([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [profiles]);
+  const { routePoolV2, defaultPools, nativeCanApplyById } = useRoutePoolState({
+    profiles,
+    detailTarget,
+  });
 
   const { bound, orphan } = useMemo(
     () => partitionLocalBridgeRuntimes(profiles, {
@@ -310,12 +175,8 @@ export default function BridgesPage() {
     removeConfirm && orphan.some((profile) => profile.id === removeConfirm.id),
   );
 
-  const inspectTarget = inspect.target;
   const writeTarget = inspectTarget?.kind === 'write' ? inspectTarget.target : null;
   const editTarget = inspectTarget?.kind === 'edit'
-    ? liveInspectProfile(inspectTarget.profile, profiles)
-    : null;
-  const detailTarget = inspectTarget?.kind === 'detail'
     ? liveInspectProfile(inspectTarget.profile, profiles)
     : null;
   const activeProfileId = inspectProfileId(inspectTarget);
@@ -326,47 +187,6 @@ export default function BridgesPage() {
   const detailPool = detailTarget && routePoolV2
     ? matchDefaultPoolForProfile(defaultPools, detailTarget)
     : null;
-
-  useEffect(() => {
-    if (!routePoolV2 || !detailTarget) return;
-    if (detailTarget.route !== 'native_endpoint' && detailTarget.route !== 'config_sync') return;
-    const profileId = detailTarget.id;
-    let cancelled = false;
-    void planAdapter({
-      sourceKind: detailTarget.sourceKind,
-      sourceId: detailTarget.sourceId,
-      targetAgentId: detailTarget.targetAgentId,
-    })
-      .then((plan) => {
-        if (cancelled) return;
-        setNativeCanApplyById((current) => ({
-          ...current,
-          [profileId]: plan.canApply && plan.analysis.route === 'local_bridge',
-        }));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setNativeCanApplyById((current) => ({ ...current, [profileId]: false }));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [routePoolV2, detailTarget]);
-
-  const handleEnrollNative = async (profile: AdapterProfile) => {
-    setEnrollingProfileId(profile.id);
-    clearProfileError(profile.id);
-    try {
-      await enrollNativeToGateway(profile.id);
-      toast({ title: t('routes.pool.enrollSuccess'), variant: 'success' });
-      inspect.close();
-      reloadThenClearProfileErrors();
-    } catch (error) {
-      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
-    } finally {
-      setEnrollingProfileId(null);
-    }
-  };
 
   const listProps = {
     bridgeStatuses,

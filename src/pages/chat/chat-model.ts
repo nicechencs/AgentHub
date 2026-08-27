@@ -5,7 +5,6 @@
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { agentDisplayName } from '@/config/agents';
 import { sliceAgentStatus } from '@/lib/backend/contracts/agent-status-view';
-import { isInternalGeneratedName } from '@/lib/backend/contracts/agent-connection';
 import type {
   BindingRoute,
   TicketView,
@@ -24,7 +23,6 @@ import type {
   ChatMessage,
   ChatMessageStatus,
   Conversation,
-  Provider,
 } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
 
@@ -531,20 +529,7 @@ export type ChatConnectionOption = {
   action: ChatConnectionSwitchAction;
 };
 
-const AGENTHUB_BRIDGE_SLUG = /agenthub_[^\s"'\\]*_bridge/i;
-
-/** Leftover generated 本机路由 rows — never labeled 官方登录. Loopback URL alone is not leftover. */
-export function isLeftoverLocalRouteProvider(
-  provider: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>,
-): boolean {
-  if (isInternalGeneratedName(provider.name) || isInternalGeneratedName(provider.id)) return true;
-  const haystack = `${provider.id}\n${provider.name}\n${provider.preset ?? ''}\n${provider.configText ?? ''}`;
-  return haystack.includes('本机路由') || AGENTHUB_BRIDGE_SLUG.test(haystack);
-}
-
-export function leftoverProviderIsCurrent(providers: readonly Provider[]): boolean {
-  return providers.some((provider) => provider.isCurrent && isLeftoverLocalRouteProvider(provider));
-}
+export { isLeftoverLocalRouteProvider, leftoverProviderIsCurrent } from '@/lib/leftover-local-route';
 
 /** Native pool row → switch; a login born on another Agent → bind. */
 export function chatConnectionSwitchAction(

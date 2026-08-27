@@ -52,17 +52,19 @@ describe('routes layout wiring', () => {
 
   it('groups Claude/Codex/Grok profiles that share one source onto one card', () => {
     const page = source('pages/bridges/index.tsx');
+    const actions = source('pages/bridges/use-bridge-runtime-actions.ts');
     expect(page).toContain('groupLocalBridgeProfiles');
-    expect(page).toContain('localBridgeProfilesForSource');
     expect(page).toContain('localBridgeSourceKey');
+    expect(actions).toContain('localBridgeProfilesForSource');
     const model = source('pages/bridges/adapter-view-model.ts');
     expect(model).toContain('One list card per upstream source');
   });
 
   it('opens edit and detail in the same right-hand inspect pane', () => {
     const page = source('pages/bridges/index.tsx');
-    expect(page).toContain("{ kind: 'edit'; profile: AdapterProfile }");
-    expect(page).toContain("{ kind: 'detail'; profile: AdapterProfile }");
+    const inspect = source('pages/bridges/route-inspect.ts');
+    expect(inspect).toContain("{ kind: 'edit'; profile: AdapterProfile }");
+    expect(inspect).toContain("{ kind: 'detail'; profile: AdapterProfile }");
     expect(page).toContain('onShowDetail');
     expect(page).toContain("kind: 'detail'");
     expect(page).toContain('<RouteDetailPanel');
