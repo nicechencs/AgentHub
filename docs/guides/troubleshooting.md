@@ -58,6 +58,7 @@ AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`�
 
 | 现象 | 常见原因 | 处理 |
 | --- | --- | --- |
+| 侧栏/连接页看不到 Cursor | dev 线 store-stamp 默认软隐藏 | Agents 管理页找到 Cursor Agent 卡片，点「取消隐藏」。兼容修复完成前产品面暂不开放 |
 | Cursor 点「用这份登录」后出现中文错误 | Cursor 没有稳定的本机登录文件可写 | 用 Cursor 自己的登录，或设置 `CURSOR_API_KEY`。登录仍可保存在登录列表 |
 | 保存第二张登录后第一张进了回收站 | 旧版会按同一把钥匙合并 | 现行不会因同一把钥匙悄悄删除另一张 |
 | Kimi 对话失败、模型不在配置里 | 本机 `config.toml` 缺模型表 | 再切换一次该登录，会写出带 `kimi-k2` 的完整配置 |

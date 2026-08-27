@@ -29,7 +29,9 @@ describe('routes layout wiring', () => {
     expect(list).not.toContain('RouteDetailPanel');
     const connections = source('pages/connections/TicketWalletList.tsx');
     expect(connections).not.toContain('DetailsToggle');
-    expect(connections).toContain("t('connections.list.details')");
+    expect(connections).toContain('onShowDetail');
+    expect(connections).toContain('onOpen=');
+    expect(connections).not.toContain("t('connections.list.details')");
     const importDialog = source('pages/bridges/ImportRouteDialog.tsx');
     expect(importDialog).toContain('DetailsToggle');
     expect(importDialog).toContain("t('connections.list.details')");

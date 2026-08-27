@@ -4,7 +4,7 @@ description: agenthub-cli 的当前命令树、全局参数、退出码和数据
 type: reference
 audience: user-and-contributor
 status: current
-updated: 2026-08-25
+updated: 2026-08-27
 ---
 
 # CLI 与配置参考
@@ -25,6 +25,8 @@ CLI 二进制名称为 `agenthub`，实现位于 `crates/agenthub-cli`，业务�
 | `-q`, `--quiet` | 等同 `--output quiet` |
 
 当前 Agent id 由 `AgentId::ALL` 提供，通常包含 `claude`、`codex`、`kimi`、`grok`、`pi`、`workbuddy`、`cursor`、`dsh`。以 `agenthub agent list` 和 CLI help 为准。
+
+**dev 线 UI store-stamp**（`agent_visibility.json` 的 `store_stamp_version`）默认软隐藏 **Cursor Agent**：侧栏、Connections、Chat 等页面不展示，CLI/detect 仍可看到；Agents 管理页可取消隐藏。release 线不受此 stamp 影响。
 
 ## 命令树
 

@@ -11,6 +11,23 @@ fn missing_file_defaults_empty() {
 }
 
 #[test]
+fn store_stamp_hides_cursor_once() {
+    let dir = tempdir().unwrap();
+    let svc = AgentVisibilityService::new(dir.path().to_path_buf());
+    svc.ensure_store_stamp().unwrap();
+    assert_eq!(svc.list_hidden_agents().unwrap(), vec!["cursor"]);
+    assert!(svc.is_hidden(AgentId::Cursor).unwrap());
+
+    svc.ensure_store_stamp().unwrap();
+    assert_eq!(svc.list_hidden_agents().unwrap(), vec!["cursor"]);
+
+    svc.set_agent_hidden(AgentId::Cursor, false).unwrap();
+    assert!(svc.list_hidden_agents().unwrap().is_empty());
+    svc.ensure_store_stamp().unwrap();
+    assert!(svc.list_hidden_agents().unwrap().is_empty());
+}
+
+#[test]
 fn set_and_unset_are_idempotent() {
     let dir = tempdir().unwrap();
     let svc = AgentVisibilityService::new(dir.path().to_path_buf());
