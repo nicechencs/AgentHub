@@ -158,6 +158,15 @@ export type AdapterBridgeUpstreamStatus =
   | 'degraded'
   | 'unavailable';
 
+/** One inbound local-route request. Never includes Authorization, bodies, or keys. */
+export interface AdapterBridgeInboundRequest {
+  at: string;
+  method: string;
+  path: string;
+  status: number;
+  ok: boolean;
+}
+
 /** Deliberately excludes the local bearer and all upstream credentials. */
 export interface AdapterBridgeRuntimeStatus {
   profileId: string;
@@ -166,6 +175,8 @@ export interface AdapterBridgeRuntimeStatus {
   endpoint?: string | null;
   startedAt?: string | null;
   upstreamStatus?: AdapterBridgeUpstreamStatus | string | null;
+  /** Newest first. Empty when no tool has connected yet. */
+  recentInbound?: AdapterBridgeInboundRequest[];
 }
 
 export type AdapterApplyRequest = AdapterRouteRequest;

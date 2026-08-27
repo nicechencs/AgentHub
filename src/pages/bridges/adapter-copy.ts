@@ -50,12 +50,12 @@ export function adapterTabLabel(tab: AdapterTab | AdapterCredentialFilter): stri
 export const BRIDGES_PAGE_TITLE = '路由';
 export const BRIDGES_PAGE_DESCRIPTION = '本机转发 · 仅 127.0.0.1 · 含端口';
 export const BRIDGES_PAGE_DESCRIPTION_TIP =
-  '登录信息在连接页，不展示不复制。多数连接不需要本机转发。需保持托盘运行。日志不记请求正文。';
+  '登录信息在连接页，不展示不复制。客户端填本机地址：/v1/messages Claude 对话、/v1/responses Codex / Grok 对话、/v1/chat/completions Kimi 等补全、GET /models 模型名单。需保持托盘运行。';
 export const BRIDGES_EMPTY_TITLE = '没有本机路由';
 export const BRIDGES_EMPTY_DESCRIPTION =
-  '多数连接不需要本机转发。只有两边说的话对不上时，才会在这台电脑上开一层转换。若刚接到需要转发的登录，到总览看对应工具上的路由状态。';
+  '点「新建路由」，填供应商登录并勾选客户端。多数连接不需要这一步。';
 export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = '登录列表里有本机路由，但找不到正在运行的转发';
-export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = '可重试读取。不是「没有本机路由」。';
+export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = '点重试。不是「没有本机路由」。';
 export { BRIDGES_NAV_LABEL, BRIDGES_PATH, bridgesHrefForProfile, legacyBridgesRedirectTo };
 
 /** Unknown or missing `?profile=` stays on the list; do not toast. */
@@ -66,7 +66,7 @@ export function resolveBridgesProfileQuery(
   if (!profileId) return null;
   return profiles.some((profile) => profile.id === profileId) ? profileId : null;
 }
-export const BRIDGES_MUTATION_FAILURE = '本机路由操作失败';
+export const BRIDGES_MUTATION_FAILURE = '本机路由操作失败，可点重试。';
 
 export function adapterPageDescription(): string {
   return BRIDGES_PAGE_DESCRIPTION;

@@ -235,7 +235,7 @@ pub(crate) async fn start_local_bridge(
         .status(&applied.profile.id)
         .map_err(map_bridge_host_error)?
         .ok_or_else(|| "bridge listener did not report a runtime status".to_string())?;
-    Ok(AdapterBridgeStatusDto::from_runtime(status))
+    Ok(status_dto(&host, &applied.profile.id, AdapterBridgeStatusDto::from_runtime(status)))
 }
 
 /// Stop a bridge without altering its generated provider or auto-start choice.
@@ -252,7 +252,7 @@ pub(crate) async fn stop_local_bridge(
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
     let profile = load_bridge_profile(hub, profile_id).await?;
     let status = stop_bridge_runtime(&host, &profile).await?;
-    Ok(AdapterBridgeStatusDto::from_runtime(status))
+    Ok(status_dto(&host, &profile.id, AdapterBridgeStatusDto::from_runtime(status)))
 }
 
 /// Return an observable bridge state without returning any bearer or upstream
@@ -264,9 +264,21 @@ pub(crate) async fn local_bridge_status(
 ) -> Result<AdapterBridgeStatusDto, String> {
     let profile = load_bridge_profile(hub, profile_id).await?;
     let status = host.status(&profile.id).map_err(map_bridge_host_error)?;
-    Ok(status
-        .map(AdapterBridgeStatusDto::from_runtime)
-        .unwrap_or_else(|| AdapterBridgeStatusDto::stopped(&profile)))
+    Ok(status_dto(
+        &host,
+        &profile.id,
+        status
+            .map(AdapterBridgeStatusDto::from_runtime)
+            .unwrap_or_else(|| AdapterBridgeStatusDto::stopped(&profile)),
+    ))
+}
+
+fn status_dto(
+    host: &BridgeRuntimeHost,
+    profile_id: &str,
+    dto: AdapterBridgeStatusDto,
+) -> AdapterBridgeStatusDto {
+    dto.with_recent_inbound(host.recent_inbound(profile_id))
 }
 
 /// Persist an existing bridge profile's auto-start preference.  It controls

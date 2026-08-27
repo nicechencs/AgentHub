@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
+use crate::bridge::host::InboundRequestRecord;
 use crate::bridge::{BridgeRuntimeState, BridgeRuntimeStatus, BridgeUpstreamStatus};
 use crate::models::AdapterProfile;
 
@@ -24,6 +25,9 @@ pub struct AdapterBridgeStatus {
     pub source_connection_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at_unix_ms: Option<u128>,
+    /// Newest first. Empty when no tool has connected since this process started.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_inbound: Vec<InboundRequestRecord>,
 }
 
 impl AdapterBridgeStatus {
@@ -36,6 +40,7 @@ impl AdapterBridgeStatus {
             upstream_status: "stopped".into(),
             source_connection_id: Some(profile.source_id.clone()),
             started_at_unix_ms: None,
+            recent_inbound: Vec::new(),
         }
     }
 
@@ -48,7 +53,13 @@ impl AdapterBridgeStatus {
             upstream_status: upstream_status_name(status.upstream_status).into(),
             source_connection_id: status.source_connection_id,
             started_at_unix_ms: system_time_millis(status.started_at),
+            recent_inbound: Vec::new(),
         }
+    }
+
+    pub fn with_recent_inbound(mut self, recent_inbound: Vec<InboundRequestRecord>) -> Self {
+        self.recent_inbound = recent_inbound;
+        self
     }
 }
 

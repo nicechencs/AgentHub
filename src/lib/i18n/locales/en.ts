@@ -574,19 +574,18 @@ export const en = {
     page: {
       title: "Routes",
       description: "Local forwarding · 127.0.0.1 only · includes port",
-      descriptionTip: "Login details stay in Connections; not shown or copied here. Most connections don't need local forwarding. Keep the tray running. Logs never record request bodies.",
+      descriptionTip: "Login details stay in Connections; not shown or copied here. Clients use local addresses: /v1/messages Claude chat, /v1/responses Codex / Grok chat, /v1/chat/completions Kimi and other completions, GET /models model list. Keep the tray running.",
     },
     empty: {
       title: "No local routes",
-      description:
-        "Most connections don't need local forwarding. A converter starts on this computer only when the two sides don't speak the same protocol. If you just connected a login that needs forwarding, check route status on that tool in Dashboard.",
+      description: "Tap New route, enter the vendor login, and check the clients. Most connections skip this.",
     },
     walletWithoutRuntime: {
       title: "The login list has a local route, but no running forwarder was found",
-      description: "Retry the read. This is not “no local routes”.",
+      description: "Tap retry. This is not “no local routes”.",
     },
-    mutationFailure: "Local route action failed",
-    loadError: "Couldn't read local routes",
+    mutationFailure: "Local route action failed. You can retry.",
+    loadError: "Couldn't read local routes. Retry, or check that the tray is still running.",
     profileStatus: {
       active: "Active",
       applying: "Applying",
@@ -692,7 +691,7 @@ export const en = {
     create: {
       action: "New route",
       title: "New route",
-      description: "Pick an upstream, enter the login, and check clients.",
+      description: "Pick a vendor, enter the login, and check the clients to connect. Local addresses are listed on each client.",
       name: "Name",
       url: "URL",
       key: "Key",
@@ -709,7 +708,7 @@ export const en = {
       targets: "Connect to",
       targetsHint: "Checked clients are capabilities of this one route. They do not create extra list rows.",
       upstreamEndpoints: "Upstream endpoints",
-      upstreamEndpointsHint: "Pick the clients this route should serve. Codex and Grok can both be selected.",
+      upstreamEndpointsHint: "Pick the clients this route should serve. Codex and Grok can both be selected. Writing config fills the matching local address.",
       upstreamUrlFor: "{target} upstream URL",
       vendorLabel: "Upstream",
       vendor: { openrouter: "OpenRouter", openai: "OpenAI", glm: "Zhipu", kimi: "Kimi", deepseek: "DeepSeek", grok: "Grok", claude: "Claude", custom: "Custom" },
@@ -866,6 +865,21 @@ export const en = {
       },
       copyPortPending: "Copy after the port is assigned",
       upstreamUrl: "Upstream URL",
+    },
+    endpoint: {
+      messages: "Claude chat",
+      responses: "Codex / Grok chat",
+      chatCompletions: "Kimi and other completions",
+      models: "Model list",
+      legendTitle: "Local addresses",
+      hint: "Clients use these local addresses.",
+      modelsLine: "GET /models · model list",
+    },
+    inbound: {
+      title: "Recent requests",
+      empty: "No tool has connected yet",
+      ok: "OK",
+      fail: "Failed",
     },
     pool: {
       entry: "Local entry",

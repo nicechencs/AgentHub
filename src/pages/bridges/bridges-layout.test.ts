@@ -37,6 +37,15 @@ describe('routes layout wiring', () => {
     expect(detail).toContain('asPanel');
     expect(detail).toContain('InspectSurface as DialogOrSide');
     expect(detail).toContain("t('routes.edit.action')");
+    expect(detail).toContain("t('routes.inbound.title')");
+    expect(detail).toContain("t('routes.inbound.empty')");
+    expect(detail).toContain('ROUTE_LOCAL_ADDRESS_LEGEND');
+    const create = source('pages/bridges/CreateRouteDialog.tsx');
+    expect(create).toContain('localAddressCopyForTarget');
+    expect(create).toContain("t('routes.endpoint.modelsLine')");
+    const write = source('pages/bridges/WriteClientConfigDialog.tsx');
+    expect(write).toContain('routeEndpointCopyKey');
+    expect(write).toContain("t('routes.endpoint.modelsLine')");
     expect(list).toContain("t('routes.edit.action')");
     expect(list).toContain('variant="outline"');
   });
