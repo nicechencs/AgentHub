@@ -58,7 +58,8 @@ impl AgentAdapter for FakeAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![], extra_copies: Vec::new(),
+            notes: vec![],
+            extra_copies: Vec::new(),
         }
     }
 
@@ -1827,7 +1828,7 @@ wire_api = "responses"
 }
 
 #[test]
-fn upsert_merges_same_secret_url_and_heals_backup_slug() {
+fn upsert_same_secret_url_does_not_heal_secret_url_duplicates() {
     let secret = "sk-or-v1-fixture-aaaa6aa9-not-real";
     let url = "https://openrouter.ai/api/v1";
     let (_dir, svc) = svc();
@@ -1865,14 +1866,93 @@ fn upsert_merges_same_secret_url_and_heals_backup_slug() {
         .iter()
         .filter(|row| row.meta.get("generatedBy").and_then(|v| v.as_str()) != Some("adapter"))
         .collect();
-    assert_eq!(user_rows.len(), 1);
-    assert_eq!(user_rows[0].id, stored.id);
+    assert_eq!(user_rows.len(), 2);
     assert!(svc
         .get("openai-compat-openrouter-backup", Some(AgentId::Codex))
-        .is_err());
+        .is_ok());
+    assert!(svc
+        .connections
+        .list_trash(Some(AgentId::Codex))
+        .unwrap()
+        .is_empty());
     let hash = stored.meta["secretHash"].as_str().expect("persisted hash");
     assert_eq!(hash, crate::utils::redact::secret_sha256_hex(secret));
     assert!(!stored.meta.to_string().contains(secret));
+}
+
+#[test]
+fn heal_secret_url_duplicates_keeps_same_last4_different_names() {
+    let secret = "sk-cursor-fixture-xxxx8660";
+    let url = "https://api.cursor.com/v1";
+    let (_dir, svc) = svc();
+    let mut first = input("cursor-mytokens", AgentId::Cursor, "mytokens.cc", false);
+    first.settings_config = json!({
+        "api_key": secret,
+        "base_url": url,
+    });
+    let mut second = input(
+        "cursor-qa-manual",
+        AgentId::Cursor,
+        "QA Cursor manual",
+        false,
+    );
+    second.settings_config = json!({
+        "api_key": secret,
+        "base_url": url,
+    });
+    svc.upsert(&first).unwrap();
+    svc.upsert(&second).unwrap();
+
+    let listed = svc.list(Some(AgentId::Cursor)).unwrap();
+    let ids: Vec<_> = listed.iter().map(|row| row.id.as_str()).collect();
+    assert_eq!(
+        listed.len(),
+        2,
+        "heal must not recycle a distinct named login"
+    );
+    assert!(ids.contains(&"cursor-mytokens"));
+    assert!(ids.contains(&"cursor-qa-manual"));
+    assert_eq!(
+        crate::utils::redact::mask_secret_tail(secret).as_deref(),
+        Some("**8660")
+    );
+    assert!(svc
+        .connections
+        .list_trash(Some(AgentId::Cursor))
+        .unwrap()
+        .is_empty());
+
+    let mut renamed = first.clone();
+    renamed.name = "mytokens.cc updated".into();
+    let updated = svc.upsert(&renamed).unwrap();
+    assert_eq!(updated.id, "cursor-mytokens");
+    assert_eq!(updated.name, "mytokens.cc updated");
+    assert_eq!(svc.list(Some(AgentId::Cursor)).unwrap().len(), 2);
+}
+
+#[test]
+fn cursor_switch_fails_closed_with_chinese_reason() {
+    let root = tempdir().unwrap();
+    let db = Database::open(&root.path().join("ah.db")).unwrap();
+    let mut registry = AdapterRegistry::new();
+    registry.register(Arc::new(crate::adapters::cursor::CursorAdapter));
+    let svc = ProviderService::with_live(db, registry, root.path().join("backups"));
+    let mut row = input("cursor-a", AgentId::Cursor, "QA Cursor manual", false);
+    row.settings_config = json!({
+        "api_key": "sk-cursor-fixture-xxxx8660",
+        "base_url": "https://api.cursor.com/v1",
+    });
+    svc.create(&row).unwrap();
+
+    let error = svc.switch("cursor-a", AgentId::Cursor).unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+    let message = error.to_string();
+    assert!(
+        message.contains("CURSOR_API_KEY"),
+        "gui must receive the fail-closed reason: {message}"
+    );
+    assert!(message.contains("Cursor"), "{message}");
+    assert!(!svc.get("cursor-a", None).unwrap().is_current);
 }
 
 #[test]
