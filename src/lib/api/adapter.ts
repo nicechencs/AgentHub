@@ -1,5 +1,5 @@
 /** Adapter route preview and the narrow, supported apply façade. */
-import { getBackend, notifyConnectionPoolChanged } from '@/app/runtime';
+import { getBackend, refreshRuntimeReadModels } from '@/app/runtime';
 import type {
   AdapterApplyPlan,
   AdapterApplyRequest,
@@ -62,7 +62,7 @@ export async function enrollNativeToGateway(profileId: string): Promise<DefaultR
 
 async function refreshConnectionPoolAfterAdapterMutation(): Promise<void> {
   try {
-    await notifyConnectionPoolChanged(getBackend());
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool'] });
   } catch {
     // The mutation itself succeeded. The pool store keeps previous rows and
     // exposes the refresh error instead of pretending the list is current.
