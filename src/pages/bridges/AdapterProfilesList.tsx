@@ -249,16 +249,15 @@ function AdapterProfileRow({
               <span className="text-xs text-muted">{t('routes.supports')}</span>
               {supportedAgents.map((agent) => {
                 const local = localAddressCopyForTarget(agent);
+                const copyHint = `${local.path} · ${t(local.copyKey)}`;
                 return (
-                  <span
-                    key={agent}
-                    className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-1.5 py-0.5 text-meta font-medium text-secondary"
-                    title={`${local.path} · ${t(local.copyKey)}`}
-                  >
-                    <AgentDot agentId={agent} size="sm" title={null} />
-                    {routeDetailTargetLabel(agent, t)}
-                    <span className="font-mono font-normal text-muted">{local.path}</span>
-                  </span>
+                  <Tip key={agent} label={copyHint} className="inline-flex">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-1.5 py-0.5 text-meta font-medium text-secondary">
+                      <AgentDot agentId={agent} size="sm" title={null} />
+                      {routeDetailTargetLabel(agent, t)}
+                      <span className="font-mono font-normal text-muted">{local.path}</span>
+                    </span>
+                  </Tip>
                 );
               })}
             </div>

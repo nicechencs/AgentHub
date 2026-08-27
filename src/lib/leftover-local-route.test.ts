@@ -9,7 +9,7 @@ describe('isLeftoverLocalRouteProvider', () => {
         {
           id: 'agenthub_claude_bridge_abc',
           name: 'Claude bridge',
-          preset: null,
+          preset: '',
           configText: '',
           configFormat: 'json',
         } satisfies Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>,
@@ -21,7 +21,7 @@ describe('isLeftoverLocalRouteProvider', () => {
     const leftover = {
       id: 'prov-1',
       name: 'Custom',
-      preset: null,
+      preset: '',
       configText: 'baseUrl = "http://127.0.0.1:8787"\n# 本机路由',
       configFormat: 'toml',
     } satisfies Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>;
