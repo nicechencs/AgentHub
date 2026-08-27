@@ -18,9 +18,9 @@ updated: 2026-08-27
 | --- | --- | --- | --- | --- |
 | A1 | macOS/Linux 仅暴露 npm 渠道（OpenAI 无 Unix native 脚本） | P1 | **已记录** | 产品/上游限制；见 [排障指南](../guides/troubleshooting.md#codex-安装) 与 [Chat 与 Agent](../concepts/chat-and-agents.md#codex-外部安装) |
 | A2 | npm 渠道依赖 Node.js + npm，环境未就绪时安装失败 | P0 | **已缓解** | 排障文档区分 `env.not_ready`；Agents 页已有环境面板与一键装环境 |
-| A3 | 安装命令成功但重检找不到二进制（PATH / npm prefix） | P0 | **已修复** | `detect_binary` 增加 `npm prefix -g` 动态探测；排障文档补充重启说明 |
+| A3 | 安装命令成功但重检找不到二进制（PATH / npm prefix） | P0 | **已修复** | `detect_binary` 跑 `npm prefix -g`；PATH 无 npm 时改从常见目录找 npm，并读 `~/.npmrc` 的 prefix；排障文档补充重启说明 |
 | A4 | 全局 npm 权限不足（EACCES） | P2 | **已记录** | 安装服务已分类；排障文档补充权限 remediation |
-| A5 | Agent 软隐藏被误判为「未安装」 | P2 | **已缓解** | Agents 卡已有「已隐藏」Badge；排障文档说明 `agent_visibility.json` |
+| A5 | Agent 软隐藏被误判为「未安装」 | P2 | **已缓解** | Agents 卡已有「已隐藏」Badge；排障文档说明取消隐藏即可（安装/检测不受影响） |
 | A6 | Codex 并非 Adapter/安装计划缺失（常见误解） | — | **已澄清** | 文档明确已注册；排查从 `doctor` 开始 |
 
 ## B. 外部渠道 Codex → Chat
