@@ -1,5 +1,32 @@
 use super::*;
 use crate::commands::{adapter_error_from_string, is_adapter_error_retryable};
+use serde::Deserialize;
+use std::path::PathBuf;
+
+const RETRYABLE_ERROR_CONTRACT_WATCH: &str =
+    include_str!("../../../../src/lib/backend/contracts/retryable-error-contract.json");
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RetryableErrorContract {
+    retryable_exact: Vec<String>,
+    retryable_prefixes: Vec<String>,
+    retryable_prefix_examples: Vec<String>,
+    not_retryable_examples: Vec<String>,
+}
+
+fn load_retryable_error_contract() -> RetryableErrorContract {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../src/lib/backend/contracts/retryable-error-contract.json");
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|err| {
+        panic!(
+            "read retryable-error-contract.json from {}: {err}",
+            path.display()
+        )
+    });
+    let _ = RETRYABLE_ERROR_CONTRACT_WATCH;
+    serde_json::from_str(&text).expect("retryable-error-contract.json")
+}
 
 #[test]
 fn command_input_only_accepts_connection_table_kinds() {
@@ -69,25 +96,33 @@ fn adapter_error_from_string_marks_rollback_and_stop_as_not_retryable() {
 }
 
 #[test]
-fn adapter_retryable_classification_covers_restore_and_retryable_prefix() {
-    // Keep in lockstep with `isAdapterErrorCodeRetryable` in
-    // `src/lib/backend/contracts/adapter.test.ts`.
-    for code in [
-        "retryable:adapter.port_in_use",
-        "adapter.port_in_use",
-        "adapter.bridge_start",
-        "adapter.bridge_upstream_auth",
-        "adapter.bridge_restore_source",
-        "adapter.bridge_restore_port",
-    ] {
+fn adapter_retryable_classification_matches_shared_contract() {
+    let contract = load_retryable_error_contract();
+    for code in &contract.retryable_exact {
         assert!(is_adapter_error_retryable(code), "{code}");
     }
-    for code in [
-        "needs_attention",
-        "adapter.bridge_rollback",
-        "adapter.bridge_stop",
-        "not_found",
-    ] {
+    for example in &contract.retryable_prefix_examples {
+        assert!(
+            contract
+                .retryable_prefixes
+                .iter()
+                .any(|prefix| example.starts_with(prefix.as_str())),
+            "{example} is not covered by retryablePrefixes"
+        );
+        assert!(is_adapter_error_retryable(example), "{example}");
+    }
+    for prefix in &contract.retryable_prefixes {
+        assert!(
+            contract
+                .retryable_prefix_examples
+                .iter()
+                .any(|example| example.starts_with(prefix.as_str())),
+            "missing prefix example for {prefix}"
+        );
+        let sample = format!("{prefix}x");
+        assert!(is_adapter_error_retryable(&sample), "{sample}");
+    }
+    for code in &contract.not_retryable_examples {
         assert!(!is_adapter_error_retryable(code), "{code}");
     }
 }
