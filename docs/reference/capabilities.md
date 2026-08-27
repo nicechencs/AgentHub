@@ -4,7 +4,7 @@ description: AgentHub 能力键、四级状态和当前 Agent 能力快照。
 type: reference
 audience: contributor
 status: current
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # 能力参考
@@ -50,6 +50,8 @@ agenthub agent capabilities --markdown
 | Mcp | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
 | ModelSelect | Planned | Planned | Planned | Planned | Planned | Planned | Planned | Planned |
 | SessionResume | Partial | Partial | Planned | Planned | Planned | Planned | Planned | Planned |
+
+Cursor 的 `ConfigWrite` / `AccountSwitch` 为 Unsupported：没有稳定的本机登录文件可写。界面切换失败时给出中文说明，不静默。WorkBuddy 本机安装只打开官网，不当成脚本安装失败。
 
 能力矩阵不承载 npm 包名、安装 URL、home 路径或账号识别算法；这些是 adapter/port 数据。只读 MCP inventory 也不等于 `Mcp` 管理能力，更不等于厂商 plugin/extension 包。本机 Routes 的 models endpoint 也不改变 `ModelSelect` 状态。MCP 扫描见 [MCP inventory](mcp-inventory.md)；各家插件包与 MCP 表面见 [Agent 插件表面](agent-plugin-surfaces.md)；插件页仍是 [提案](../proposals/plugin-management.md)。
 

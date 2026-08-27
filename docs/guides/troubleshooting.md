@@ -41,14 +41,34 @@ cargo run -p agenthub-cli -- agent list
 | Chat 里看不到 Codex | Agent 被软隐藏 | Agents 卡显示「已隐藏」；取消隐藏即可（安装/检测不受影响） |
 | 已装 VS Code 插件或桌面 App | 非缺陷：Chat 直接 spawn CLI | 需检测到 `codex` 二进制且 `~/.codex/auth.json` 有效；见 [Chat 与 Agent](../concepts/chat-and-agents.md#codex-外部安装) |
 
+AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`），**不会**装进 `~/.agenthub`。那里若还有旧的 `npm` 目录，只是遗留，不能当启动路径。
+
+需要完全退出时：若设置了「关闭到托盘」，关窗口不会退出，请从托盘选退出后再打开。
+
 完整审查清单见 [Codex 安装与模块化审查](../status/codex-install-modularity-review.md)。
+
+### WorkBuddy 安装
+
+| 现象 | 常见原因 | 处理 |
+| --- | --- | --- |
+| 点安装后打开官网 | WorkBuddy 没有脚本安装，只打开官网安装页 | 这是指引，不是安装失败。在官网装完后，从托盘退出并重新打开 AgentHub |
+| 失败面板全是下载进度 | 旧版把 npm HTTP 当正文 | 现行失败面板先显示诊断，下载进度会折叠 |
+
+### Cursor / Kimi 登录
+
+| 现象 | 常见原因 | 处理 |
+| --- | --- | --- |
+| Cursor 点「用这份登录」后出现中文错误 | Cursor 没有稳定的本机登录文件可写 | 用 Cursor 自己的登录，或设置 `CURSOR_API_KEY`。登录仍可保存在登录列表 |
+| 保存第二张登录后第一张进了回收站 | 旧版会按同一把钥匙合并 | 现行不会因同一把钥匙悄悄删除另一张 |
+| Kimi 对话失败、模型不在配置里 | 本机 `config.toml` 缺模型表 | 再切换一次该登录，会写出带 `kimi-k2` 的完整配置 |
 
 ## 登录或配置问题
 
-- 先在 Connections 检查登录状态和 health，再尝试重新导入 live 配置。
-- provider/account 切换是危险写入：先 backfill 当前 live、创建 backup，再 apply；切换失败应查看 backup 和日志。
+- 先在 Connections 检查登录状态和 health，再尝试重新导入本机正在用的配置。
+- 切换登录会先备份、再写本机配置；成功 toast 会说明已写入本机配置。失败应查看备份和日志，Cursor 会给出中文原因。
+- 「使用官方服务」勾选后仍可粘贴做智能识别。高级编辑器不回显明文钥匙。
 - CLI 使用 `account add-apikey --key -` 从 stdin 读取 key，避免把 key 放进 shell history。
-- OAuth 浏览器流程以 GUI 为主；CLI 的 `account oauth-url` 只打印授权 URL，不能替代完整 loopback 流程。
+- OAuth 浏览器流程以 GUI 为主；CLI 的 `account oauth-url` 只打印授权 URL，不能替代完整本机回调流程。
 - 当前项目沿用既有凭据存储方案，不规划额外加密或国产 OAuth 转 API。
 
 ## Routes 返回错误
