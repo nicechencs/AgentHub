@@ -51,7 +51,7 @@ updated: 2026-08-27
 | O-36 | CLI 切换确认曾 `.ok()` 吞掉列表读取错误，并自行拼接预览 | 已处理：读取失败返回错误；确认事实由 core `SwitchConfirmPreview` 生成。CLI 渲染英文；桌面端只把同一份事实译成界面文案 |
 | O-37 | CLI 多处重复解析 `--agent` | 已处理：共用 `agent_arg`；各命令错误原文保留 |
 | O-39 | mock `speaks` 与 core 对 GLM/DeepSeek 不一致 | 已处理：mock 补上 `openai-responses`。共用 `ticket-speaks.json`，core 与 mock 对照测试锁步 |
-| O-40 | Mock 重复实现来源分类 | 部分处理：共用 `source-classify-contract.json`。core classify 与 mock 对照，缺产品失败。mock 仍自跑分类函数，未改为调 plan/apply |
+| O-40 | Mock 重复实现来源分类 | 已处理：共用 `source-classify-contract.json`。core classify 与 mock 对照，缺产品失败。mock 运行时从 plan 读取来源产品；classify helper 只给 plan 内部和 lockstep 测试用 |
 | O-41 | 连接流程 fixture 手工构造完整绑定 | 暂缓。整表绑定成功态重写不做 |
 | O-42 | Mock Ticket resolver 依赖过宽 | 暂缓。resolver 仍可读 accounts/providers/profiles 并调 plan/apply；本刀不扩、不重写绑定 |
 | O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
@@ -453,10 +453,10 @@ updated: 2026-08-27
 #### O-40｜Mock 重复实现来源分类规则
 
 - **严重程度：中高**
-- **状态：部分处理**
+- **状态：已处理**
 - **位置：** `src/lib/backend/contracts/source-classify-contract.json`；`src/dev/mocks/source-classify.ts`；生产入口 `crates/agenthub-core/src/services/adapter_route_service/classify.rs`
 - **问题：** mock 多处重复维护 Kimi、Anthropic、OpenAI、xAI、GLM、DeepSeek 的 preset、endpoint 和登录信息判断，生产侧另有一套实现。
-- **当前：** needles / tags / presets / 产品表与分类用例共用 JSON。core `classify_*_source_product` 与 mock `classifyAccountSource` / `classifyProviderSource` 对照；缺产品或缺用例失败。生产 classify 结果未改。mock 仍自跑分类，未改为调 plan/apply。
+- **当前：** needles / tags / presets / 产品表与分类用例共用 JSON。core `classify_*_source_product` 与 mock `classifyAccountSource` / `classifyProviderSource` 对照；缺产品或缺用例失败。生产 classify 结果未改。mock 运行时（ticket wallet、adapter source ticket）从 plan 的来源产品读取，不再自跑 classify*。classify helper 只给 mock `plan()` 内部和 `source-classify-contract.test.ts` 使用。
 - **建议：** mock 只读取共享分类 fixture/contract；规则判断由 core 的 plan/classify 结果提供，不在 mock 内复制业务分支。
 - **影响/风险：** 新增来源或路线时测试可能继续通过，但与真实后端分类不一致。
 
