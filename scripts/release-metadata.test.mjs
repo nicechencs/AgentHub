@@ -5,12 +5,15 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  assertReleaseChangelog,
   assertTagMatchesMetadata,
+  extractChangelogSection,
   isPrerelease,
   parseCliArgs,
   readCargoLockWorkspaceVersions,
   readCargoWorkspaceVersion,
   readReleaseMetadata,
+  readReleaseNotesForVersion,
   readTauriConfigVersion,
   syncReleaseVersionFromPackageJson,
 } from './release-metadata.mjs';
@@ -20,6 +23,7 @@ function writeReleaseFixture({
   cargoVersion = packageVersion,
   tauriVersion = packageVersion,
   lockVersions = { 'agenthub-cli': packageVersion, 'agenthub-core': packageVersion, 'agenthub-gui': packageVersion },
+  changelog = null,
 } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agenthub-release-metadata-'));
   fs.mkdirSync(path.join(root, 'src-tauri'));
@@ -35,6 +39,9 @@ function writeReleaseFixture({
       .join('\n'),
   );
   fs.writeFileSync(path.join(root, 'src-tauri', 'tauri.conf.json'), JSON.stringify({ version: tauriVersion }));
+  if (changelog != null) {
+    fs.writeFileSync(path.join(root, 'CHANGELOG.md'), changelog);
+  }
   return root;
 }
 
@@ -130,4 +137,28 @@ test('syncReleaseVersionFromPackageJson propagates package.json into cargo files
     'agenthub-core': '2.1.0',
     'agenthub-gui': '2.1.0',
   });
+});
+
+test('extractChangelogSection ignores headings inside fenced examples', () => {
+  const content = `# Changelog\n\n\`\`\`markdown\n## [1.2.3] - example\n- demo\n\`\`\`\n\n## [1.2.3] - 2026-08-27\n\n- real note\n\n## [1.2.2]\n- old\n`;
+  assert.match(extractChangelogSection(content, '1.2.3'), /real note/);
+  assert.doesNotMatch(extractChangelogSection(content, '1.2.3'), /demo/);
+  assert.equal(extractChangelogSection(content, '9.9.9'), null);
+});
+
+test('assertReleaseChangelog requires a section with at least one bullet', () => {
+  const root = writeReleaseFixture({
+    packageVersion: '1.2.3',
+    changelog: '# Changelog\n\n## [1.2.3] - 2026-08-27\n\n### Fixed\n- ship it\n',
+  });
+  assert.match(readReleaseNotesForVersion(root, '1.2.3'), /ship it/);
+
+  const missing = writeReleaseFixture({ packageVersion: '1.2.3' });
+  assert.throws(() => assertReleaseChangelog(missing, '1.2.3'), /Missing CHANGELOG\.md/);
+
+  const empty = writeReleaseFixture({
+    packageVersion: '1.2.3',
+    changelog: '# Changelog\n\n## [1.2.3] - 2026-08-27\n\n### Fixed\n',
+  });
+  assert.throws(() => assertReleaseChangelog(empty, '1.2.3'), /at least one '- ' release note bullet/);
 });

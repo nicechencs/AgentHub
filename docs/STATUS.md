@@ -40,7 +40,7 @@ updated: 2026-08-27
 - 前端检查包括 `pnpm typecheck`、`pnpm typecheck:test`、`pnpm test` 和 `pnpm build`；浏览器 DOM 冒烟用 `pnpm test:e2e:browser`，只覆盖 `dev:mock`，不覆盖 Tauri。贡献者流程见 [测试与验证](guides/testing-and-validation.md)。
 - Rust 核心、CLI 和 GUI 分别由对应 crate 的 `cargo test --locked` 验证。
 - `pnpm check:docs` 检查活跃 Markdown 的本地链接、标题锚点、元数据和已废弃路径标注。
-- PR CI 运行前端类型检查、构建、测试、三个 Rust crate 测试，以及独立的 Playwright Chromium 浏览器冒烟 job；正式发布由 **`release` 分支上的 `v*` tag** 触发（发版前先将 `dev` 合入 `release`）。
+- PR CI 运行前端类型检查、构建、测试、三个 Rust crate 测试，以及独立的 Playwright Chromium 浏览器冒烟 job；正式发布由 **`dev` 上推送的 `v*` tag** 触发，且 tag 指向的提交必须已在 `release` 上（先合 `dev` → `release`，再在 `dev` 打 tag）。
 - 发布前以 **`package.json` 为版本真源**；`pnpm release:sync-version` 同步 `Cargo.toml` 与 `Cargo.lock`，`tauri.conf.json` 引用 `../package.json`。
 
 ## 已知边界

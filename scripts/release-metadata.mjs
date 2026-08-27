@@ -128,6 +128,81 @@ function isPrerelease(version) {
   return version.split('+', 1)[0].includes('-');
 }
 
+const CHANGELOG_PATH = 'CHANGELOG.md';
+const CHANGELOG_SECTION =
+  /^##\s+\[?(?<version>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?)\]?(?:\s+-\s+\d{4}-\d{2}-\d{2})?\s*$/;
+
+function readChangelogContents(root = defaultRoot) {
+  const changelogPath = path.join(root, CHANGELOG_PATH);
+  try {
+    return fs.readFileSync(changelogPath, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `Missing ${CHANGELOG_PATH}. Add a release notes section for this version before publishing.`,
+    );
+  }
+}
+
+function extractChangelogSection(content, version) {
+  const lines = content.split(/\r?\n/);
+  let start = -1;
+  let inFence = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^```/.test(line.trim())) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+
+    const match = line.match(CHANGELOG_SECTION);
+    if (match?.groups?.version === version) {
+      start = index + 1;
+      break;
+    }
+  }
+  if (start === -1) {
+    return null;
+  }
+
+  const body = [];
+  inFence = false;
+  for (let index = start; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^```/.test(line.trim())) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    if (/^##\s+/.test(line)) break;
+    body.push(line);
+  }
+
+  while (body.length > 0 && body[0].trim() === '') body.shift();
+  while (body.length > 0 && body[body.length - 1].trim() === '') body.pop();
+  return body.join('\n');
+}
+
+function assertReleaseChangelog(root, version) {
+  const section = extractChangelogSection(readChangelogContents(root), version);
+  if (section == null) {
+    throw new Error(
+      `${CHANGELOG_PATH} is missing a release section for version ${version}. Use a heading like '## [${version}] - YYYY-MM-DD'.`,
+    );
+  }
+  const hasBullet = section.split(/\r?\n/).some((line) => /^\s*[-*]\s+\S/.test(line));
+  if (!hasBullet) {
+    throw new Error(
+      `${CHANGELOG_PATH} section for version ${version} must include at least one '- ' release note bullet.`,
+    );
+  }
+  return section;
+}
+
+function readReleaseNotesForVersion(root, version) {
+  return assertReleaseChangelog(root, version);
+}
+
 function readReleaseMetadata(root = defaultRoot) {
   const packageVersion = readJsonVersion(path.join(root, 'package.json'), 'package.json');
   const cargoPath = path.join(root, 'Cargo.toml');
@@ -231,7 +306,13 @@ function assertTagMatchesMetadata(metadata, gitTag) {
 }
 
 function parseCliArgs(argv) {
-  const options = { root: defaultRoot, githubOutput: null, expectTag: null };
+  const options = {
+    root: defaultRoot,
+    githubOutput: null,
+    expectTag: null,
+    requireChangelog: false,
+    notesOut: null,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--root') {
@@ -246,9 +327,15 @@ function parseCliArgs(argv) {
       const value = argv[++index];
       if (!value) throw new Error('--expect-tag requires a tag name');
       options.expectTag = value;
+    } else if (argument === '--require-changelog') {
+      options.requireChangelog = true;
+    } else if (argument === '--notes-out') {
+      const value = argv[++index];
+      if (!value) throw new Error('--notes-out requires a file path');
+      options.notesOut = path.resolve(value);
     } else if (argument === '--help' || argument === '-h') {
       console.log(
-        'Usage: node scripts/release-metadata.mjs [--root DIR] [--github-output FILE] [--expect-tag TAG]',
+        'Usage: node scripts/release-metadata.mjs [--root DIR] [--github-output FILE] [--expect-tag TAG] [--require-changelog] [--notes-out FILE]',
       );
       process.exit(0);
     } else {
@@ -264,6 +351,13 @@ function main() {
   if (options.expectTag) {
     assertTagMatchesMetadata(metadata, options.expectTag);
   }
+  let releaseNotes = null;
+  if (options.requireChangelog || options.expectTag || options.notesOut) {
+    releaseNotes = readReleaseNotesForVersion(options.root, metadata.version);
+  }
+  if (options.notesOut && releaseNotes != null) {
+    fs.writeFileSync(options.notesOut, `${releaseNotes}\n`, 'utf8');
+  }
   if (options.githubOutput) {
     fs.appendFileSync(
       options.githubOutput,
@@ -271,18 +365,21 @@ function main() {
       'utf8',
     );
   }
-  console.log(JSON.stringify(metadata));
+  console.log(JSON.stringify({ ...metadata, releaseNotes }));
 }
 
 export {
   STRICT_SEMVER,
+  assertReleaseChangelog,
   assertStrictSemVer,
   assertTagMatchesMetadata,
+  extractChangelogSection,
   isPrerelease,
   parseCliArgs,
   readCargoLockWorkspaceVersions,
   readCargoWorkspaceVersion,
   readReleaseMetadata,
+  readReleaseNotesForVersion,
   readTauriConfigVersion,
   syncReleaseVersionFromPackageJson,
 };
