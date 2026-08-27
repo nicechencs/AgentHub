@@ -240,9 +240,63 @@ describe('applySmartPaste', () => {
     expect(r.configText).toContain('[auth]');
     expect(r.configText).toContain('mode = "api_key"');
   });
+
+  it('keeps a custom grok upstream when the add form still has the official URL', () => {
+    const paste = [
+      'export XAI_API_KEY=xai-not-a-real-key',
+      '[models]',
+      'default = "grok"',
+      '',
+      '[model."grok"]',
+      'model = "grok-4.5"',
+      'base_url = "https://mytokens.cc/v1"',
+      'api_backend = "responses"',
+      '',
+      '[model."fast"]',
+      'model = "grok-code-fast-1"',
+      'base_url = "https://mytokens.cc/v1"',
+      '',
+    ].join('\n');
+    const r = applySmartPaste('grok', paste, {
+      vars: { ...EMPTY_FORM_VARS, baseUrl: 'https://api.x.ai/v1', model: 'grok-code-fast-1' },
+      configText: 'model = "grok-code-fast-1"\nbase_url = "https://api.x.ai/v1"\n',
+      configFormat: 'toml',
+    });
+    expect(r.vars.baseUrl).toBe('https://mytokens.cc/v1');
+    expect(r.configText).toContain('https://mytokens.cc/v1');
+    expect(r.configText).not.toContain('api.x.ai');
+    expect(r.configText).not.toContain('xai-not-a-real-key');
+    expect(r.configText).not.toMatch(/export\s+XAI_API_KEY/i);
+    expect(r.configText).toContain('api_backend = "responses"');
+    const backends = r.configText.match(/api_backend\s*=\s*"responses"/g) ?? [];
+    expect(backends.length).toBeGreaterThanOrEqual(2);
+  });
 });
 
 describe('initFormFromConfig', () => {
+  it('backfills grok registry fields from a field-redacted toml', () => {
+    const toml = [
+      '[models]',
+      'default = "grok"',
+      '',
+      '[model."grok"]',
+      'model = "grok-4.5"',
+      'base_url = "https://mytokens.cc/v1"',
+      'api_key = "***"',
+      'api_backend = "responses"',
+      '',
+      '[endpoints]',
+      'api = "https://mytokens.cc/v1"',
+      '',
+      '[auth]',
+      'mode = "api_key"',
+      '',
+    ].join('\n');
+    const vars = initFormFromConfig('grok', toml, 'toml');
+    expect(vars.model).toBe('grok-4.5');
+    expect(vars.baseUrl).toBe('https://mytokens.cc/v1');
+    expect(vars.apiKey).toBe('');
+  });
   it('loads codex auth key from authApiKey', () => {
     const vars = initFormFromConfig(
       'codex',

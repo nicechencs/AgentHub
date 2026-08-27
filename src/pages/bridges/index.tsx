@@ -276,6 +276,8 @@ export default function BridgesPage() {
         sourceMissing={writeTarget.graph.source.missing}
         listedModels={writeTarget.graph.listedModels}
         contextWindowTokens={writeTarget.graph.contextWindowTokens}
+        localToken={bridgeStatuses[writeTarget.profile.id]?.localToken}
+        siblingProfiles={profiles}
         hiddenTargetIds={hiddenTargetIds}
         onWritten={() => { void reload(); }}
       />

@@ -158,7 +158,16 @@ impl RunSpec {
             parts.push(format!("{k}={v}"));
         }
         parts.push(quote_if_needed(&self.program.display().to_string()));
+        let mut hide_next = false;
         for a in &self.args {
+            if hide_next {
+                parts.push("<prompt>".into());
+                hide_next = false;
+                continue;
+            }
+            if a == "-p" || a == "--prompt" {
+                hide_next = true;
+            }
             parts.push(quote_if_needed(a));
         }
         parts.join(" ")
