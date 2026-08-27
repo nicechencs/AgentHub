@@ -57,11 +57,11 @@ function hostAsName(url: string): string | undefined {
 }
 
 export function isGrokTomlPaste(text: string): boolean {
+  // Registry paste: [models] + [model."alias"] is enough even if one overlay
+  // field (model / base_url / api_key) is missing.
   return (
     /^\s*\[models\]\s*$/im.test(text) &&
-    /^\s*\[model\.(?:"[^"]+"|[^\]]+)\]\s*$/im.test(text) &&
-    /(^|\n)\s*model\s*=\s*["']/i.test(text) &&
-    /(^|\n)\s*base_url\s*=\s*["']/i.test(text)
+    /^\s*\[model\.(?:"[^"]+"|[^\]]+)\]\s*$/im.test(text)
   );
 }
 
@@ -69,10 +69,9 @@ export function extractGrokDetectFields(text: string): GrokDetectFields | null {
   if (!isGrokTomlPaste(text)) return null;
   const alias = modelAlias(text);
   const body = sectionBody(text, modelTableHeader(text, alias));
-  if (!body) return null;
-  const model = stringValue(body, 'model') || undefined;
-  const baseUrl = stringValue(body, 'base_url') || undefined;
-  const rawKey = stringValue(body, 'api_key');
+  const model = body ? stringValue(body, 'model') || undefined : undefined;
+  const baseUrl = body ? stringValue(body, 'base_url') || undefined : undefined;
+  const rawKey = body ? stringValue(body, 'api_key') : '';
   const apiKey = rawKey && rawKey !== '***' ? rawKey : undefined;
   return {
     model,

@@ -6,6 +6,7 @@ import { parseContextWindowChoice } from '@/lib/claude-client-env';
 import type { AgentId } from '@/lib/types';
 import { smartDetectUrlAndKey } from './detect';
 import { applyFormVars, extractFormVars } from './fields';
+import { isGrokTomlPaste } from './grokToml';
 import { defaultConfigScaffold } from './scaffold';
 import {
   CLAUDE_MODEL_ROLE_ENV,
@@ -170,8 +171,15 @@ export function applySmartPaste(
   if (agentId === 'claude' && detect.rawConfigText?.trim()) {
     configBase = detect.rawConfigText;
     outFormat = 'json';
-  } else if ((agentId === 'codex' || agentId === 'grok') && detect.rawConfigText?.trim()) {
+  } else if (agentId === 'codex' && detect.rawConfigText?.trim()) {
     configBase = detect.rawConfigText;
+    outFormat = 'toml';
+  } else if (
+    agentId === 'grok' &&
+    (detect.rawConfigText?.trim() || isGrokTomlPaste(paste))
+  ) {
+    const grokBody = (detect.rawConfigText ?? paste).trim();
+    configBase = grokBody.endsWith('\n') ? grokBody : `${grokBody}\n`;
     outFormat = 'toml';
   } else if (agentId === 'kimi' && isKimiTomlPaste(paste)) {
     const trimmed = paste.trim();
