@@ -107,7 +107,11 @@ describe('connections layout wiring', () => {
     expect(form).toContain('configFieldHint');
     expect(form).toContain('configFieldLabel');
     expect(form).toContain('configFieldOptionLabel');
+    expect(form).toContain('configFieldUnsupported');
+    expect(form).toContain('configFieldSecretPlaceholder');
     expect(form).not.toContain('field.help?.trim()');
+    expect(form).not.toContain("connections.providerDialog.remoteModelsPick");
+    expect(form).not.toContain("connections.providerDialog.remoteModelsCustom");
   });
 
   it('keeps key hints on the key field and shows cancel in the inspect header', () => {
