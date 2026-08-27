@@ -31,6 +31,11 @@ Every proposal in this directory has `Status: proposed`. A proposal may be resea
 | [Service 内部 owner 拆分](../architecture/service-internal-owners.md) | proposed | Concrete internal owner split for O-11 ProviderService, O-12 AccountService, O-13 BackupService, and O-14/O-66 local-route persist — façades and switch semantics stay |
 | [plugin-management.md](plugin-management.md) | proposed | Could AgentHub list and manage per-agent plugin/extension packs (not MCP servers) via official CLIs, with a Routes-like workbench? |
 | [read-model-owners.md](../architecture/read-model-owners.md) | proposed | Could O-15–O-19 be narrowed with unique mapper owners without changing wire DTO or splitting public types? |
+| [runtime-context-owners.md](../architecture/runtime-context-owners.md) | proposed | Could store reset/invalidation live in one runtime context (O-07) without changing plan/bind/switch? |
+| [form-sidebar-owners.md](../architecture/form-sidebar-owners.md) | proposed | Could GenericConfigForm and Sidebar split schema/nav/stats owners (O-23) without restyling chrome? |
+| [startup-gateway-owners.md](../architecture/startup-gateway-owners.md) | proposed | Concrete owners for AgentHub bootstrap, registry vs catalog, transport, Gateway, and protocol vs vendor policy (O-26–O-30) |
+| [usage-owners.md](../architecture/usage-owners.md) | proposed | Usage filter/normalizer/model-switch owners (O-31–O-34) without changing totals or reasoning_tokens |
+| [test-fixture-owners.md](../architecture/test-fixture-owners.md) | proposed | Connect-flow fixtures, mock ticket resolver width, and OAuth device test store scope (O-41/O-42/O-44) |
 
 ## Proposal rules
 

@@ -26,7 +26,7 @@ updated: 2026-08-27
 | O-04 | Connections 页面编排探测、导入、切换、删除 | 部分处理：导入对话框的本机登录探测收到 `use-connection-import-probe.ts`。切换 / 删除确认收到 `use-connection-page-actions.ts`。分享 / 路由侧栏收到 `use-connection-share-route.ts`。页面仍保留票夹、连接池、筛选和详情 inspect。切换 / 绑定 / 删除语义未改 |
 | O-05 | 供应商保存编排曾在页面目录 | 已处理：`runProviderSaveFlow` 收到 `src/lib/api/provider-save.ts`；页面只保留 schema 闸门。validate/materialize/upsert 语义未改 |
 | O-06 | 生产 Hook 已走共享连接池；`loadAdapterPageResources` 只留在测试 | 标注为测试辅助，页面不得再自行拉账号 / Provider |
-| O-07 | 仍存在：多个模块级 store，`setBackend` 手工 reset | 部分处理：`setBackend` / `resetBackend` 会一起清空 catalog。统一 runtime context 仍暂缓 |
+| O-07 | 仍存在：多个模块级 store，`setBackend` 手工 reset | 部分处理：`setBackend` / `resetBackend` 会一起清空 catalog。设计见 [runtime-context-owners.md](runtime-context-owners.md)。实现未开始 |
 | O-51、O-52 | Agent 状态 / catalog reset 后旧请求仍可写回 | 已处理：按 epoch 丢弃过期写回；catalog 随 backend 一起 reset |
 | O-50 | 项目列表 Hook 曾返回通用 `setData` | 已处理：只暴露 `replaceProjectListFromMutation` |
 | O-54、O-55、O-61 | Skill / Config / Usage mock 跨实例污染 | 已处理：factory reset；config 读取返回拷贝 |
@@ -37,24 +37,24 @@ updated: 2026-08-27
 | O-60 | 协议测试两套 fixture 映射 | 已处理：共用 test-only loader |
 | O-08、O-09 | 三处 façade 各自刷新，ticket bind 曾 `.catch(() => {})` | 已处理：统一刷新；失败留在 snapshot。连接页和 Chat 可看到并重试 |
 | O-10 | Chat 曾本地 `listTicketWallet` | 已处理：Chat 订阅共享票夹 |
-| O-11–O-14 | 仍存在 | 暂缓。Service / Bridge 内部拆分要单独设计 |
-| O-15–O-19 | 仍存在 | 暂缓。宽对象和派生数据收窄会改契约 |
+| O-11–O-14 | Service / Bridge 内部拆分 | 已处理内部模块：Backup catalog/snapshot/restore；Provider lock/pool/live/switch/compensate；Account 本已拆分；本机转发 persist saga。设计见 [service-internal-owners.md](service-internal-owners.md) |
+| O-15–O-19 | 宽对象和派生数据 | 已处理 mapper / port 携带 / JSON 已知键访问器，未拆公开 DTO。设计见 [read-model-owners.md](read-model-owners.md) |
 | O-20 | mock Agent 用模块级可变状态 | 暂缓。已有 `resetMockAgentStatuses`；实例化隔离收益低于测试迁移成本 |
 | O-21 | 产品集合曾是可变导出 | 已处理：`applyAgentCatalog` 整体替换并冻结 `AGENTS` / `AGENT_MAP` / `AGENT_IDS`。集合仍由 catalog 入口写入 |
-| O-23 | 仍存在 | 暂缓。通用表单 / 侧栏业务规则拆分需先明确唯一 owner |
+| O-23 | 通用表单 / 侧栏聚合业务规则 | 设计见 [form-sidebar-owners.md](form-sidebar-owners.md)。实现未开始 |
 | O-25 | token 层曾单独维护 Agent ID 列表 | 已处理：`TOKEN_AGENT_IDS` 从色板 `AGENT_COLORS` 派生，不再平行维护产品集合。展示 meta 与安装命令仍在 catalog 映射 |
 | O-24 | Sidebar Context 默认 setter 静默失效 | 已处理：缺少 Provider 时抛错 |
 | O-22 | `GenericConfigForm` 未把锁定状态传给 `SecretInput` | 已处理：`SecretInput` 接收 `disabled`/`readOnly` |
-| O-26–O-30 | 仍存在 | 暂缓。启动组合根、transport façade、Gateway 状态和协议策略需要分别设计 |
-| O-31–O-34 | 仍存在 | 暂缓。Usage normalizer、查询 filter 和模型映射的跨层收窄需保持统计语义 |
+| O-26–O-30 | 启动组合根、transport、Gateway、协议策略 | 设计见 [startup-gateway-owners.md](startup-gateway-owners.md)。实现未开始 |
+| O-31–O-34 | Usage 归并 / 查询过滤 / 模型切边 | 设计见 [usage-owners.md](usage-owners.md)。实现未开始 |
 | O-35、O-38 | 仍存在 | 暂缓。CLI 运行策略和发布脚本收口需要单独设计 |
 | O-36 | CLI 切换确认曾 `.ok()` 吞掉列表读取错误，并自行拼接预览 | 已处理：读取失败返回错误；确认事实由 core `SwitchConfirmPreview` 生成。CLI 渲染英文；桌面端只把同一份事实译成界面文案 |
 | O-37 | CLI 多处重复解析 `--agent` | 已处理：共用 `agent_arg`；各命令错误原文保留 |
 | O-39 | mock `speaks` 与 core 对 GLM/DeepSeek 不一致 | 已处理：mock 补上 `openai-responses`。共用 `ticket-speaks.json`，core 与 mock 对照测试锁步 |
 | O-40 | Mock 重复实现来源分类 | 已处理：共用 `source-classify-contract.json`。core classify 与 mock 对照，缺产品失败。mock 运行时从 plan 读取来源产品；classify helper 只给 plan 内部和 lockstep 测试用 |
-| O-41 | 连接流程 fixture 手工构造完整绑定 | 暂缓。整表绑定成功态重写不做 |
-| O-42 | Mock Ticket resolver 依赖过宽 | 暂缓。resolver 仍可读 accounts/providers/profiles 并调 plan/apply；本刀不扩、不重写绑定 |
-| O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
+| O-41 | 连接流程 fixture 手工构造完整绑定 | 设计见 [test-fixture-owners.md](test-fixture-owners.md)。实现未开始 |
+| O-42 | Mock Ticket resolver 依赖过宽 | 设计见 [test-fixture-owners.md](test-fixture-owners.md)。实现未开始 |
+| O-44 | OAuth 测试直接操作共享 store | 设计见 [test-fixture-owners.md](test-fixture-owners.md)。实现未开始 |
 | O-58 | 能力、安装渠道是手写生产镜像 | 部分处理：共用 `catalog-mirror-contract.json`。Agent / Capability / 本机渠道 id、能力界面标签、config schema 字段名、每格 capability reason 文案缺项或再漂移失败。mock reason 已对齐 core，`knownMismatches` 为空；catalog 仍是手写镜像（ids/labels/schema/reasons 由契约锁住） |
 | O-43 | 测试 fake 用 `_ => unsupported` 吞掉新 Capability | 已处理：`Capability::fake_state` 穷举所有变体；测试 fake 走该 helper |
 | O-46 | logging 自行打开 SQLite | 部分处理：启动窥探收到 `storage::peek_settings`；logging 不再手写 SQL。启动仍先于 Database 打开，不改 subscriber 生命周期 |
