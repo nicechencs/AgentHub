@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { flattenKeys, translate } from '@/lib/i18n';
+import { en } from '@/lib/i18n/locales/en';
+import { zh } from '@/lib/i18n/locales/zh';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -133,5 +136,47 @@ describe('connections layout wiring', () => {
     expect(page).toContain(
       'guideOpenedApiKeyRef.current = false;\n            inspect.close();',
     );
+  });
+
+  it('labels official login and API Key as two kinds, not cryptic statuses', () => {
+    const list = source('TicketWalletList.tsx');
+    expect(list).toContain("t('kind.oauth')");
+    expect(list).toContain("t('kind.apikey')");
+    expect(list).not.toContain("t('connections.list.oauthAccount')");
+    expect(list).not.toContain("t('connections.list.apiKeyAuth')");
+    expect(translate('zh', 'kind.oauth')).toBe('官方登录');
+    expect(translate('zh', 'kind.apikey')).toBe('API Key');
+    expect(translate('en', 'kind.oauth')).toBe('Official login');
+    expect(translate('en', 'kind.apikey')).toBe('API Key');
+    expect(translate('zh', 'connections.list.oauthAccount')).toBe(translate('zh', 'kind.oauth'));
+    expect(translate('zh', 'connections.list.apiKeyAuth')).toBe(translate('zh', 'kind.apikey'));
+    expect(translate('en', 'connections.list.oauthAccount')).toBe(translate('en', 'kind.oauth'));
+    expect(translate('en', 'connections.list.apiKeyAuth')).toBe(translate('en', 'kind.apikey'));
+  });
+});
+
+const BANNED_UI = /票|钱包|投影|真源|PKCE|loopback|\bTicket\b|\bwallet\b|\bAdapter\b|\bwire/i;
+
+function lookup(obj: unknown, key: string): string {
+  let cur: unknown = obj;
+  for (const part of key.split('.')) {
+    if (cur == null || typeof cur !== 'object' || !(part in cur)) return key;
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  return typeof cur === 'string' ? cur : key;
+}
+
+describe('connections user-facing copy', () => {
+  it('keeps connections / dashboard / connect copy free of banned jargon', () => {
+    const keys = flattenKeys(zh).filter((key) =>
+      key.startsWith('connections.')
+      || key.startsWith('dashboard.')
+      || key.startsWith('connect.'),
+    );
+    expect(keys.length).toBeGreaterThan(50);
+    for (const key of keys) {
+      expect(lookup(zh, key), key).not.toMatch(BANNED_UI);
+      expect(lookup(en, key), key).not.toMatch(BANNED_UI);
+    }
   });
 });

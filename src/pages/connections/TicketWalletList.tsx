@@ -84,7 +84,7 @@ function CredentialMark({
   const { t } = useI18n();
   const color = resolveAgentMeta(agentId).color;
   if (cls === 'oauth') {
-    const label = t('connections.list.oauthAccount');
+    const label = t('kind.oauth');
     return (
       <Hint label={label}>
         <span className="inline-flex" style={{ color }} aria-label={label}>
@@ -94,7 +94,7 @@ function CredentialMark({
     );
   }
   if (cls === 'api_key') {
-    const label = t('connections.list.apiKeyAuth');
+    const label = t('kind.apikey');
     return (
       <Hint label={label}>
         <span className="inline-flex" style={{ color }} aria-label={label}>

@@ -28,7 +28,7 @@ export async function goNav(page: Page, name: string): Promise<void> {
 
 async function waitForConnectionsReady(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: '连接' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '添加授权' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '添加登录' })).toBeVisible();
 }
 
 function loginRow(page: Page) {
@@ -43,7 +43,7 @@ export async function addClaudeApiKeyAndSwitch(page: Page): Promise<void> {
   await waitForConnectionsReady(page);
 
   await page.getByRole('tab', { name: /^Claude / }).click();
-  await page.getByRole('button', { name: '添加授权' }).click();
+  await page.getByRole('button', { name: '添加登录' }).click();
   await page.getByRole('menuitem', { name: '添加 API Key' }).click();
 
   const panel = page.locator('[data-side-inspect]');
@@ -52,8 +52,8 @@ export async function addClaudeApiKeyAndSwitch(page: Page): Promise<void> {
   const keyField = panel.getByPlaceholder('API Key').or(panel.locator('input[type="password"]'));
   await expect(keyField.first()).toBeVisible({ timeout: 20_000 });
   await keyField.first().fill(MOCK_API_KEY);
-  await expect(panel.getByRole('button', { name: '添加授权' })).toBeEnabled();
-  await panel.getByRole('button', { name: '添加授权' }).click();
+  await expect(panel.getByRole('button', { name: '添加 API Key' })).toBeEnabled();
+  await panel.getByRole('button', { name: '添加 API Key' }).click();
 
   const row = loginRow(page);
   await expect(row).toBeVisible({ timeout: 20_000 });

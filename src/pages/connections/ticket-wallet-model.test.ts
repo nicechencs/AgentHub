@@ -240,7 +240,7 @@ describe('binding usage text', () => {
       active: true,
       profileId: null,
       bridge: null,
-    }], 'codex')).toBe(`${agentDisplayName('codex')}（切换）`);
+    }], 'codex')).toBe(`${agentDisplayName('codex')}（直连）`);
     expect(formatTicketUsageText([{
       ticketId: 'account:codex-1',
       agentId: 'codex',
@@ -952,7 +952,7 @@ describe('buildTicketAddMenu', () => {
       ['import-login', 'api-key'],
     ]);
     expect(menu[0]?.actions.map((a) => a.label)).toEqual([
-      '导入当前授权',
+      '导入当前登录',
       '官方登录',
       '添加 API Key',
     ]);
@@ -1047,7 +1047,7 @@ describe('handleTicketAddMenuSelect', () => {
     expect(onMenuClose).toHaveBeenCalledOnce();
   });
 
-  it('opens the import dialog for 导入当前授权 instead of failing silently', () => {
+  it('opens the import dialog for 导入当前登录 instead of failing silently', () => {
     const event = { preventDefault: vi.fn() };
     const onImportLogin = vi.fn();
     handleTicketAddMenuSelect(event, 'import-login', 'claude', { onImportLogin });
@@ -1234,10 +1234,10 @@ describe('resolveTicketRouteAction', () => {
 
   it('disables with the oauth reason when login is incomplete', () => {
     expect(resolveTicketRouteAction([
-      { status: 'blocked_oauth', reason: '官方登录未完成，先到连接页授权。' },
+      { status: 'blocked_oauth', reason: '官方登录未完成，先到连接页完成登录。' },
     ])).toEqual({
       disabled: true,
-      reason: '官方登录未完成，先到连接页授权。',
+      reason: '官方登录未完成，先到连接页完成登录。',
     });
   });
 

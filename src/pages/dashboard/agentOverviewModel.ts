@@ -230,11 +230,11 @@ export function buildAgentCardView(
     kind === 'account'
       ? t
         ? t('dashboard.overview.hintAccount')
-        : '当前账号/密钥'
+        : '官方登录'
       : kind === 'api'
         ? t
           ? t('dashboard.overview.hintApi')
-          : '当前 API 配置'
+          : 'API Key'
         : t
           ? t('dashboard.overview.hintConnection')
           : '当前连接';
