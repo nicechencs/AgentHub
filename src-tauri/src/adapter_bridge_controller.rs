@@ -20,19 +20,19 @@ use agenthub_core::bridge::{
     BridgeUpstreamStatus, MemberHealth, UpstreamAuthReload,
 };
 use agenthub_core::models::{
-    local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile,
-    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AgentId,
+    AdapterApplyResult, AdapterProfile, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
+    AgentId, local_bridge_multi_account, ticket_id,
 };
 use agenthub_core::services::{
-    oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
-    AdapterBridgeProviderProjection, AdapterBridgeRuntimeMaterial, BridgeProviderSnapshot,
-    ProviderLiveSagaGuard,
+    AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
+    AdapterBridgeRuntimeMaterial, BridgeProviderSnapshot, ProviderLiveSagaGuard,
+    oauth_bridge_reload_callback,
 };
 
+use agenthub_core::AgentHub;
 #[cfg(test)]
 #[allow(unused_imports)]
 use agenthub_core::services::should_make_bridge_current;
-use agenthub_core::AgentHub;
 
 use crate::commands::{map_err_string, with_hub_blocking};
 use crate::exit_coordinator::LifecycleShutdownBarrier;
@@ -82,7 +82,7 @@ async fn apply_local_bridge_locked(
     .await?;
 
     let profile_id = prepared.profile().id.clone();
-    let runtime_material = attach_live_prior_index(
+    let mut runtime_material = attach_live_prior_index(
         hub.clone(),
         host.as_ref(),
         prepared.profile().clone(),
@@ -372,7 +372,7 @@ pub(crate) fn restore_adapter_bridges(
                 }
             };
 
-            let runtime_material = match attach_live_prior_index(
+            let mut runtime_material = match attach_live_prior_index(
                 hub.clone(),
                 host.as_ref(),
                 material.profile().clone(),

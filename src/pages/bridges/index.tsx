@@ -592,6 +592,8 @@ export default function BridgesPage() {
               >
                 <AdapterProfiles
                   {...listProps}
+                  onRequestWrite={undefined}
+                  onRequestEdit={undefined}
                   profiles={directProfiles}
                   loading={false}
                   loadError={null}

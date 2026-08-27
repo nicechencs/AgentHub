@@ -1,26 +1,26 @@
 use super::*;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use agenthub_core::AgentHub;
 use agenthub_core::adapters::{AdapterRegistry, AgentAdapter};
 use agenthub_core::bridge::{
-    index_from_member_listings, BridgeHostError, BridgeStartSpec, BridgeUpstreamConfig,
-    BridgeUpstreamStatus, MemberListing, ResolvedAuth,
+    BridgeHostError, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamStatus, MemberListing,
+    ResolvedAuth, index_from_member_listings,
 };
 use agenthub_core::error::{AppError, Result as CoreResult};
 use agenthub_core::models::{
     Account, AccountKind, AgentConfig, AuthState, Capability, CapabilityState, DetectResult,
-    DetectStatus, InstallChannel, LiveAccount, Provider, RunOptions, RunSpec,
-    FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    DetectStatus, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, InstallChannel, LiveAccount,
+    Provider, RunOptions, RunSpec,
 };
 use agenthub_core::services::{
     AccountService, AdapterBridgePrepareRequest, AdapterBridgePrepared,
     AdapterBridgeProviderProjection, AdapterBridgeRuntimeMaterial, ProviderService,
 };
 use agenthub_core::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
-use agenthub_core::AgentHub;
 use serde_json::json;
 
 fn profile(
@@ -251,10 +251,11 @@ fn index_enabled_for_test_freezes_preferred_port_without_index() {
             Ok(_) => panic!("index-enabled occupancy must fail bind"),
         };
         assert!(matches!(error, BridgeHostError::Bind(_)));
-        assert!(host
-            .status("profile-index-enabled-occupy")
-            .unwrap()
-            .is_none());
+        assert!(
+            host.status("profile-index-enabled-occupy")
+                .unwrap()
+                .is_none()
+        );
 
         host.shutdown().await.unwrap();
         drop(blocker);
@@ -311,7 +312,9 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
         let dir = tempfile::tempdir().unwrap();
         let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
         hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
-        hub.db().set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        hub.db()
+            .set_setting(FEATURE_ROUTE_INDEX_V2, "true")
+            .unwrap();
         ProviderRepo::new(hub.db().clone())
             .create(&kimi_source(
                 "kimi-enroll-saga",
@@ -335,11 +338,12 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
         let host = BridgeRuntimeHost::new();
         let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let busy = blocker.local_addr().unwrap().port();
-        assert!(hub
-            .route_pools()
-            .bind_then_enroll(&host, &profile.id, busy)
-            .await
-            .is_err());
+        assert!(
+            hub.route_pools()
+                .bind_then_enroll(&host, &profile.id, busy)
+                .await
+                .is_err()
+        );
         let pool = hub.route_pools().get(&profile.id).unwrap().unwrap();
         assert!(!pool.v2_enrolled);
         assert_eq!(pool.gateway_port, None);
@@ -394,7 +398,9 @@ fn enroll_refresh_replace_of_reused_listener_is_compensated() {
         let dir = tempfile::tempdir().unwrap();
         let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
         hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
-        hub.db().set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        hub.db()
+            .set_setting(FEATURE_ROUTE_INDEX_V2, "true")
+            .unwrap();
         ProviderRepo::new(hub.db().clone())
             .create(&kimi_source(
                 "kimi-enroll-replace-own",
@@ -465,7 +471,9 @@ fn enroll_refresh_reuse_of_indexed_spec_is_not_compensated() {
         let dir = tempfile::tempdir().unwrap();
         let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
         hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
-        hub.db().set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        hub.db()
+            .set_setting(FEATURE_ROUTE_INDEX_V2, "true")
+            .unwrap();
         ProviderRepo::new(hub.db().clone())
             .create(&kimi_source(
                 "kimi-enroll-reuse-own",
@@ -538,7 +546,9 @@ fn unenrolled_index_enabled_busy_preferred_port_does_not_rebind_or_enroll() {
         let dir = tempfile::tempdir().unwrap();
         let hub = Arc::new(AgentHub::open(Some(dir.path())).unwrap());
         hub.db().set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
-        hub.db().set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+        hub.db()
+            .set_setting(FEATURE_ROUTE_INDEX_V2, "true")
+            .unwrap();
         ProviderRepo::new(hub.db().clone())
             .create(&kimi_source(
                 "kimi-occupy-preferred",
@@ -871,10 +881,12 @@ fn direct_remove_waits_for_the_same_target_coordinator() {
         );
         drop(target);
         pending.await.unwrap().unwrap();
-        assert!(AdapterProfileRepo::new(hub.db().clone())
-            .get("direct-remove-profile")
-            .unwrap()
-            .is_none());
+        assert!(
+            AdapterProfileRepo::new(hub.db().clone())
+                .get("direct-remove-profile")
+                .unwrap()
+                .is_none()
+        );
     });
 }
 

@@ -11,15 +11,15 @@ use super::AdapterRouteService;
 use crate::bridge::BridgeRuntimeHost;
 use crate::error::{AppError, Result};
 use crate::models::{
-    choose_default_pool_id, enroll_native_plan_is_open, feature_flag_enabled, generate_hub_token,
-    list_local_bridge_models, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter, AdapterRoute,
-    AdapterRouteRequest, AdapterSourceKind, AgentId, DefaultRoutePoolList,
-    DefaultRoutePoolOverview, ModelRouteRule, RouteDownstreamDialect, RouteDownstreamSurface,
-    RouteMember, RouteMemberOverview, RoutePool, RouteSchedulePolicy,
+    AdapterApplyPlan, AdapterProfile, AdapterProfileFilter, AdapterRoute, AdapterRouteRequest,
+    AdapterSourceKind, AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
-    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, ModelRouteRule,
+    RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RouteMemberOverview, RoutePool,
+    RouteSchedulePolicy, choose_default_pool_id, enroll_native_plan_is_open, feature_flag_enabled,
+    generate_hub_token, list_local_bridge_models,
 };
-use crate::storage::{binding_get_conn, AdapterProfileRepo, Database, RoutePoolRepo};
+use crate::storage::{AdapterProfileRepo, Database, RoutePoolRepo, binding_get_conn};
 
 #[cfg(test)]
 mod tests;
@@ -149,6 +149,11 @@ impl RoutePoolService {
                     source_kind: member.source_kind,
                     source_id: member.source_id,
                     enabled: member.enabled,
+                    availability: Some(if member.enabled {
+                        crate::models::MemberAvailability::Ready
+                    } else {
+                        crate::models::MemberAvailability::Disabled
+                    }),
                 })
                 .collect(),
             listed_models,

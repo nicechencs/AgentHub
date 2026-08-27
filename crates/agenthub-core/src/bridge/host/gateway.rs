@@ -3,7 +3,7 @@
 //! One [`Gateway`] per [`super::BridgeRuntimeHost`]. Local bearer is the only
 //! request-path identity; AccountPicker hangs off [`EdgeState`].
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -147,6 +147,10 @@ pub(super) struct EdgeState {
     pub(super) codex_ingress_grok_upstream: bool,
     pub(super) grok_ingress_codex_upstream: bool,
     pub(super) continuations: std::sync::Arc<super::continuation::ContinuationBindings>,
+    /// Runtime evidence: (member_id, public_model) pairs that 403/404 entitlement
+    /// marked unsupported. Availability only; next `/models` omits the id when
+    /// no other candidate remains.
+    pub(super) member_model_denials: Arc<Mutex<HashSet<(String, String)>>>,
 }
 
 pub(super) enum GatewayAuthError {
@@ -396,6 +400,7 @@ impl EdgeState {
             codex_ingress_grok_upstream: spec.codex_ingress_grok_upstream,
             grok_ingress_codex_upstream: spec.grok_ingress_codex_upstream,
             continuations: std::sync::Arc::new(super::continuation::ContinuationBindings::new()),
+            member_model_denials: Arc::new(Mutex::new(HashSet::new())),
         };
         // stop+start is how production rotates a login; host-wide 401
         // isolation must not outlive the old picker.
@@ -434,6 +439,7 @@ impl EdgeState {
     ) -> Option<PickedMember> {
         let mut excluded = extra_excluded.to_vec();
         excluded.extend(self.account_picker.cooldown_exclusions(model));
+        excluded.extend(self.denied_member_ids(model));
         for member in self.account_picker.members() {
             if self
                 .auth_reload
@@ -482,6 +488,47 @@ impl EdgeState {
         Some(crate::bridge::account::route_scoped_affinity_key(
             route_id, dialect, &session,
         ))
+    }
+
+    pub(super) fn deny_member_model(&self, member_id: &str, public_model: &str) {
+        let member_id = member_id.trim();
+        let public_model = public_model.trim();
+        if member_id.is_empty() || public_model.is_empty() {
+            return;
+        }
+        if let Ok(mut guard) = self.member_model_denials.lock() {
+            guard.insert((member_id.to_owned(), public_model.to_owned()));
+        }
+    }
+
+    pub(super) fn denied_member_ids(&self, public_model: &str) -> Vec<String> {
+        let Ok(guard) = self.member_model_denials.lock() else {
+            return Vec::new();
+        };
+        guard
+            .iter()
+            .filter(|(_, model)| model == public_model)
+            .map(|(member_id, _)| member_id.clone())
+            .collect()
+    }
+
+    pub(super) fn models_after_denials(&self, listed: Vec<String>) -> Vec<String> {
+        let Some(index) = &self.route_index else {
+            return listed;
+        };
+        let endpoint = DownstreamSurface::endpoint_key(self.upstream.local_surface);
+        listed
+            .into_iter()
+            .filter(|model| {
+                let Ok(candidates) = index.resolve(endpoint, model) else {
+                    return false;
+                };
+                let denied = self.denied_member_ids(model);
+                candidates
+                    .iter()
+                    .any(|candidate| !denied.iter().any(|id| id == &candidate.member_id))
+            })
+            .collect()
     }
 
     pub(super) fn isolate_authorization(&self, member: &PickedMember) {

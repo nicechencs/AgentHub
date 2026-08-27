@@ -285,14 +285,16 @@ function AdapterProfileRow({
               </Button>
             </Hint>
           ) : null}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy || targetHidden || graph.rows.length === 0}
-            onClick={() => onRequestWrite?.(profile, graph)}
-          >
-            {t('routes.write.action')}
-          </Button>
+          {profile.route === 'local_bridge' ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || targetHidden || graph.rows.length === 0}
+              onClick={() => onRequestWrite?.(profile, graph)}
+            >
+              {t('routes.write.action')}
+            </Button>
+          ) : null}
           {onRequestEdit ? (
             <Button
               variant="outline"

@@ -7,11 +7,11 @@ use std::time::Duration;
 use async_stream::stream;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::Notify;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -20,13 +20,13 @@ use tokio::{
 
 use super::host::{CleanupCompletion, MAX_IN_FLIGHT_REQUESTS_PER_PROFILE};
 use super::{
-    index_from_member_listings, protocol::responses::is_leftover_bridge_model, BridgeHostError,
-    BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec,
-    BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, EffectiveRouteIndex,
-    MemberCapability, MemberCapabilitySnapshot, MemberHealth, MemberListing, ResolvedAuth,
-    UpstreamAuthReload,
+    BridgeHostError, BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState,
+    BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus,
+    EffectiveRouteIndex, MemberCapability, MemberCapabilitySnapshot, MemberHealth, MemberListing,
+    ResolvedAuth, UpstreamAuthReload, index_from_member_listings,
+    protocol::responses::is_leftover_bridge_model,
 };
-use crate::models::{list_local_bridge_models, AdapterSourceProduct, AgentId, ModelRouteRule};
+use crate::models::{AdapterSourceProduct, AgentId, ModelRouteRule, list_local_bridge_models};
 
 fn spec_with_token(
     profile_id: &str,
@@ -609,9 +609,11 @@ async fn stop_drains_an_inflight_request_before_returning() {
     reached_upstream.await;
     let draining_host = host.clone();
     let mut stop = tokio::spawn(async move { draining_host.stop("drain").await });
-    assert!(tokio::time::timeout(Duration::from_millis(75), &mut stop)
-        .await
-        .is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(75), &mut stop)
+            .await
+            .is_err()
+    );
     assert!(matches!(
         host.start(spec("drain", 0, upstream_port)).await,
         Err(BridgeHostError::Stopping)
@@ -838,9 +840,11 @@ async fn slow_unauthorized_body_is_rejected_before_json_extraction() {
         .await
         .expect("unauthorized request must not wait for body")
         .expect("read response");
-    assert!(std::str::from_utf8(&response[..received])
-        .expect("http response")
-        .starts_with("HTTP/1.1 401"));
+    assert!(
+        std::str::from_utf8(&response[..received])
+            .expect("http response")
+            .starts_with("HTTP/1.1 401")
+    );
     host.stop("slow-auth").await.expect("stop");
     upstream_task.abort();
 }
@@ -969,18 +973,20 @@ async fn stopping_one_profile_does_not_block_starting_or_stopping_another() {
     reached_upstream.await;
     let draining_host = host.clone();
     let stop = tokio::spawn(async move { draining_host.stop("cross-a").await });
-    assert!(tokio::time::timeout(
-        Duration::from_millis(100),
-        host.start(spec_with_token(
-            "cross-b",
-            0,
-            upstream_port,
-            "local-token-cross-b-bbbbbb",
-        )),
-    )
-    .await
-    .expect("unrelated profile start must not queue")
-    .is_ok());
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(100),
+            host.start(spec_with_token(
+                "cross-b",
+                0,
+                upstream_port,
+                "local-token-cross-b-bbbbbb",
+            )),
+        )
+        .await
+        .expect("unrelated profile start must not queue")
+        .is_ok()
+    );
     release.notify_waiters();
     assert!(stop.await.expect("stop task").is_ok());
     assert!(request.await.expect("request task").is_ok());
@@ -1013,9 +1019,11 @@ async fn repeated_shutdown_joins_the_same_inflight_cleanup() {
     let first = tokio::spawn(async move { first_host.shutdown().await });
     let second_host = host.clone();
     let mut second = tokio::spawn(async move { second_host.shutdown().await });
-    assert!(tokio::time::timeout(Duration::from_millis(75), &mut second)
-        .await
-        .is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(75), &mut second)
+            .await
+            .is_err()
+    );
     release.notify_waiters();
     assert!(first.await.expect("first shutdown task").is_ok());
     assert!(second.await.expect("second shutdown task").is_ok());
@@ -1138,10 +1146,11 @@ async fn status_and_health_report_last_observed_upstream_without_a_new_probe() {
     let stopped = host.stop("observed").await.expect("stop");
     assert_eq!(stopped.state, BridgeRuntimeState::Stopped);
     assert_eq!(stopped.upstream_status, BridgeUpstreamStatus::Stopped);
-    assert!(host
-        .status("observed")
-        .expect("status after stop")
-        .is_none());
+    assert!(
+        host.status("observed")
+            .expect("status after stop")
+            .is_none()
+    );
     upstream_task.abort();
 }
 
@@ -1435,8 +1444,8 @@ async fn grok_responses_upstream() -> (u16, tokio::task::JoinHandle<()>) {
     (port, task)
 }
 
-async fn capturing_grok_responses_upstream(
-) -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
+async fn capturing_grok_responses_upstream()
+-> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
     async fn responses(
         State(captured): State<Arc<Mutex<Vec<Value>>>>,
         Json(body): Json<Value>,
@@ -1653,8 +1662,8 @@ async fn codex_responses_sse_upstream() -> (u16, tokio::task::JoinHandle<()>) {
     (port, task)
 }
 
-async fn capturing_codex_responses_sse_upstream(
-) -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
+async fn capturing_codex_responses_sse_upstream()
+-> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
     async fn responses(
         State(captured): State<Arc<Mutex<Vec<Value>>>>,
         headers: axum::http::HeaderMap,
@@ -2454,9 +2463,11 @@ async fn grok_claude_thinking_maps_to_upstream_reasoning() {
     assert_eq!(captured[0].body["reasoning"]["effort"], "high");
     assert_eq!(captured[0].body["reasoning"]["summary"], "detailed");
     let include = captured[0].body["include"].as_array().expect("include");
-    assert!(include
-        .iter()
-        .any(|item| item == "reasoning.encrypted_content"));
+    assert!(
+        include
+            .iter()
+            .any(|item| item == "reasoning.encrypted_content")
+    );
     assert!(captured[0].body.get("thinking").is_none());
     assert_eq!(captured[0].body["model"], "grok-4.5");
 
@@ -4989,8 +5000,8 @@ async fn v2_entitlement_403_matches_404_scope() {
     assert_eq!(again.status(), StatusCode::OK);
     assert_eq!(
         captured_tokens(&captured),
-        vec!["Bearer token-a".to_owned(), "Bearer token-b".to_owned()],
-        "entitlement is this-request only; A is not isolated"
+        vec!["Bearer token-b".to_owned()],
+        "entitlement 403/404 updates member-model capability; A is skipped on later m1"
     );
     host.shutdown().await.expect("shutdown");
     task.abort();
@@ -5783,6 +5794,56 @@ async fn callback_responses_upstream(
     (port, captured, task)
 }
 
+async fn callback_responses_v1_only(
+    callback: ResponsesCallback,
+) -> (
+    u16,
+    Arc<Mutex<Vec<CapturedResponsesAttempt>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    async fn responses(
+        uri: axum::http::Uri,
+        State((callback, captured)): State<(
+            ResponsesCallback,
+            Arc<Mutex<Vec<CapturedResponsesAttempt>>>,
+        )>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Response {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        let attempt = CapturedResponsesAttempt {
+            path: uri.path().to_owned(),
+            bearer,
+            headers,
+            body,
+        };
+        captured.lock().expect("lock").push(attempt.clone());
+        callback(&attempt)
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind v1-only responses");
+    let port = listener.local_addr().expect("addr").port();
+    let state = (callback, captured.clone());
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(state),
+        )
+        .await
+        .expect("serve v1-only responses");
+    });
+    (port, captured, task)
+}
+
 fn p10_codex_lead_spec(
     profile_id: &str,
     grok_port: u16,
@@ -6220,6 +6281,41 @@ async fn v2_same_provider_failover_reprepares_other_endpoint() {
     host.shutdown().await.expect("shutdown");
     a_task.abort();
     b_task.abort();
+}
+
+#[tokio::test]
+async fn v2_candidate_base_without_trailing_slash_keeps_v1() {
+    let grok_cb: ResponsesCallback = Arc::new(|_attempt| responses_ok());
+    let (grok_port, grok_captured, grok_task) = callback_responses_v1_only(grok_cb).await;
+    let grok_ep = format!("http://127.0.0.1:{grok_port}/v1");
+    let index = index_from_member_listings(
+        "pool-v2-p10-slash",
+        1,
+        "responses",
+        &[p7_listing("grok-member", "grok", &["m1"], &grok_ep)],
+        None,
+    )
+    .with_mixed_provider_rules(true, vec![p7_rule("r-grok", "grok", "grok-4.5", 0, None)]);
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            spec_with_token("p10-slash", 0, grok_port, TOKEN_A)
+                .with_members(vec![pool_member("grok-member", "token-grok")])
+                .with_listed_models(index.list_models("responses"))
+                .with_route_index(index),
+        )
+        .await
+        .expect("start");
+    let response = post_store_true(status.port, "m1").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let grok = grok_captured.lock().expect("lock").clone();
+    assert_eq!(grok.len(), 1);
+    assert_eq!(
+        grok[0].path, "/v1/responses",
+        "production /v1 bases without a trailing slash must keep /v1"
+    );
+    host.shutdown().await.expect("shutdown");
+    grok_task.abort();
 }
 
 #[tokio::test]

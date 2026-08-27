@@ -67,7 +67,13 @@ export function directProfilesForRoutePoolV2<T extends AdapterProfile>(
 export function routePoolMemberLabels(
   members: readonly RouteMemberOverview[],
   entries: readonly Pick<ConnectionEntry, 'source' | 'id' | 'title'>[],
-): { title: string; enabled: boolean; sourceKind: RouteMemberOverview['sourceKind']; sourceId: string }[] {
+): {
+  title: string;
+  enabled: boolean;
+  availability?: RouteMemberOverview['availability'];
+  sourceKind: RouteMemberOverview['sourceKind'];
+  sourceId: string;
+}[] {
   return members.map((member) => {
     const match = entries.find(
       (entry) => entry.source === member.sourceKind && entry.id === member.sourceId,
@@ -75,6 +81,7 @@ export function routePoolMemberLabels(
     return {
       title: match?.title?.trim() || member.sourceId,
       enabled: member.enabled,
+      availability: member.availability,
       sourceKind: member.sourceKind,
       sourceId: member.sourceId,
     };

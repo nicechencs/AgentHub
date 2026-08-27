@@ -71,7 +71,13 @@ describe('route pool v2 view-model', () => {
       { source: 'provider', id: 'kimi-1', title: 'Kimi 会员' },
     ];
     expect(routePoolMemberLabels(overview.members, entries)).toEqual([
-      { title: 'Kimi 会员', enabled: true, sourceKind: 'provider', sourceId: 'kimi-1' },
+      {
+        title: 'Kimi 会员',
+        enabled: true,
+        availability: undefined,
+        sourceKind: 'provider',
+        sourceId: 'kimi-1',
+      },
     ]);
     expect(JSON.stringify(overview)).not.toContain('hubToken');
     expect(JSON.stringify(overview)).not.toContain('ahb_');
