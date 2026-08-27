@@ -78,6 +78,7 @@ pub(crate) fn open_with_skills_root(
     let settings = SettingsService::new(data_dir.clone(), db.clone());
     let projects = ProjectService::new(registry.clone(), data_dir.clone());
     let agent_visibility = AgentVisibilityService::new(data_dir.clone());
+    agent_visibility.ensure_store_stamp()?;
     let usage = UsageService::with_live_scope(db.clone(), agent_visibility.clone(), agents.clone());
     let route_pools = RoutePoolService::new(db.clone());
     tracing::info!(
