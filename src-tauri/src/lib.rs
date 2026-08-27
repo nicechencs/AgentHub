@@ -227,6 +227,7 @@ pub fn run() {
             commands::settings::get_app_settings,
             commands::settings::get_path_info,
             commands::settings::set_setting,
+            commands::settings::log_gui_event,
             commands::settings::open_logs_dir,
             commands::settings::open_external_url,
             commands::settings::pick_directory::pick_directory,

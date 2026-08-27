@@ -82,7 +82,7 @@ export const en = {
       closeToTrayLabel: 'Close to tray',
       closeToTrayDescription: 'Hide instead of quit',
       closeToTrayTip:
-        'The close button hides the window to the system tray and keeps the process running. Restore from the tray icon on Windows, or the menu-bar tray / Dock icon on macOS.',
+        'The close button hides the window to the system tray and keeps the process running. You can quit from the tray. Restore from the tray icon on Windows, or the menu-bar tray / Dock icon on macOS.',
       routesNavVisibleLabel: 'Show Routes in sidebar',
       routesNavVisibleDescription:
         'Show the Routes entry in the left nav. Hiding it does not disable the page.',
@@ -1374,6 +1374,10 @@ export const en = {
         thinkingOn: "On",
         thinkingOff: "Off",
       },
+      noOfficialTemplateHint: "No official service template. Enter your own service URL.",
+      cursorNoOfficialHint: "Cursor has no official service template, and can't write local config yet.",
+      configParseFailedHint: "Couldn't parse the config. Check the JSON.",
+      configTomlParseFailedHint: "Couldn't parse the config. Check the TOML.",
     },
   },
   connect: {

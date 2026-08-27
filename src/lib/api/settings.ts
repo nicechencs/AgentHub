@@ -29,6 +29,21 @@ export async function pickDirectory(options?: {
   return getBackend().settings.pickDirectory(options);
 }
 
+/** GUI log line (op + agent + last4). Best-effort; never pass a raw key. */
+export async function logGuiEvent(
+  op: string,
+  detail?: { agent?: string; last4?: string },
+): Promise<void> {
+  try {
+    const port = getBackend().settings;
+    if (typeof port.logGuiEvent === 'function') {
+      await port.logGuiEvent(op, detail);
+    }
+  } catch {
+    // Logging must not break the form.
+  }
+}
+
 /** Static options (avoid module-init getBackend for tree-shaking / SSR-less safety). */
 export const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
   { value: 'error', label: 'error — 仅错误' },
