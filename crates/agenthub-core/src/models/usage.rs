@@ -1,11 +1,21 @@
-//! Usage / token statistics models.
+//! Usage persist, parse, and dashboard DTOs.
+//!
+//! Role owners (public names stay; this is not a rename):
+//! - [`UsageRecord`]: persisted row and CLI/desktop camelCase wire. No
+//!   `reasoning_tokens` column (that field belongs to protocol Usage IR).
+//! - [`ParsedUsageEvent`]: session-log parse intermediate. Service fills
+//!   `id` / `cost_usd`. `raw_hash` and 1h cache stay here, not on the row.
+//! - Billing conversion: `usage_service/cost.rs` (`cost_for_event` /
+//!   `event_missing_pricing`). Do not put unit-price formulas on these types.
+//! - Display totals: [`UsageMetrics`] / [`UsageOverview`]. Frontend
+//!   `usageTokenParts` must not peel cache again.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::AgentId;
 
-/// One persisted usage row (from agent session logs).
+/// Persisted usage row (from agent session logs) and camelCase wire DTO.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageRecord {
@@ -141,9 +151,10 @@ pub struct CollectResult {
     pub missing_pricing_models: Vec<String>,
 }
 
-/// Parsed line before insert (service fills id / cost).
+/// Parse intermediate before insert (service fills id / cost).
 ///
 /// Token layout follows ccusage `TokenUsageRaw` (cache create vs read split).
+/// Grok `reasoning_tokens` may appear in the log; they are not stored here.
 #[derive(Debug, Clone)]
 pub struct ParsedUsageEvent {
     pub agent_id: AgentId,
