@@ -68,14 +68,14 @@ const BUILTIN: &[PresetDef] = &[
         id: "moonshot",
         label: "Moonshot 官方",
         format: ConfigFormat::Toml,
-        template: "default_model = \"kimi-k2\"\n",
+        template: "default_model = \"kimi-k2\"\ndefault_provider = \"moonshot\"\n\n[providers.moonshot]\ntype = \"openai\"\nbase_url = \"https://api.moonshot.cn/v1\"\napi_key = \"\"\n\n[models.\"kimi-k2\"]\nprovider = \"moonshot\"\nmodel = \"kimi-k2\"\nmax_context_size = 131072\n",
     },
     PresetDef {
         agent: AgentId::Kimi,
         id: "openai-compatible",
         label: "OpenAI 兼容",
         format: ConfigFormat::Toml,
-        template: "default_model = \"kimi-k2\"\n\n[providers.custom]\nbase_url = \"https://your-relay.example.com/v1\"\napi_key = \"sk-xxxxxxxx\"\n",
+        template: "default_model = \"kimi-k2\"\ndefault_provider = \"custom\"\n\n[providers.custom]\ntype = \"openai\"\nbase_url = \"https://your-relay.example.com/v1\"\napi_key = \"sk-xxxxxxxx\"\n\n[models.\"kimi-k2\"]\nprovider = \"custom\"\nmodel = \"kimi-k2\"\nmax_context_size = 131072\n",
     },
     // --- grok ---
     PresetDef {

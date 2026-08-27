@@ -83,3 +83,53 @@ pub(crate) fn ensure_kimi_model_alias(
     }
     Ok(())
 }
+
+/// Backfill provider `type` and `[models."<alias>"]` after a pool/live merge.
+///
+/// Switch writes `settings_config` through [`write_toml_config`] and does not
+/// run the projector. Old logins with only `default_model` + `[providers.*]`
+/// must still land a complete file. A membership-only doc with no providers
+/// is left unchanged.
+pub(crate) fn complete_kimi_live_toml(doc: &mut DocumentMut) -> Result<()> {
+    let slug = doc
+        .get("default_provider")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            doc.get("providers")
+                .and_then(|p| p.as_table())
+                .and_then(|t| t.iter().next().map(|(k, _)| k.to_string()))
+        });
+    let Some(slug) = slug else {
+        return Ok(());
+    };
+    if doc
+        .get("default_provider")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_none()
+    {
+        doc["default_provider"] = toml_edit::value(slug.as_str());
+    }
+    ensure_kimi_provider_entry(doc, slug.as_str())?;
+    let alias = doc
+        .get("default_model")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| DEFAULT_MODEL_ALIAS.to_string());
+    if doc
+        .get("default_model")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_none()
+    {
+        doc["default_model"] = toml_edit::value(alias.as_str());
+    }
+    ensure_kimi_model_alias(doc, slug.as_str(), &alias)
+}
