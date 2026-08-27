@@ -1,4 +1,12 @@
-//! Production adapter registry and capability lookups.
+//! Adapter registry: behavior owner (detect / install / run / capability / require).
+//!
+//! [`register_all`] is the builtin adapter-set source of truth.
+//! `shared_registry()` is that same set for capability hot paths — not a second
+//! product table. Catalog snapshots are built only via
+//! [`crate::platform::AgentCatalogService::from_registry`]. CLI capability
+//! matrix uses this registry; the UI product directory uses catalog. Catalog
+//! must not run detect/install; this registry is not the UI directory source of
+//! truth.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
