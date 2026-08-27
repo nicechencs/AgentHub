@@ -66,7 +66,15 @@ impl AgentAdapter for GrokAdapter {
 
     fn write_config(&self, config: &AgentConfig) -> Result<()> {
         let path = agent_home(AgentId::Grok)?.join("config.toml");
-        write_toml_config(AgentId::Grok, &path, config)
+        write_toml_config(AgentId::Grok, &path, config)?;
+        tracing::info!(
+            module = crate::logging::targets::PROVIDER,
+            op = "switch_write",
+            agent = "grok",
+            path = %path.display(),
+            "switch_write"
+        );
+        Ok(())
     }
 
     fn read_auth(&self) -> Result<AuthState> {
@@ -143,8 +151,16 @@ impl AgentAdapter for GrokAdapter {
                     .get("api_key")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::InvalidArg("Grok api_key is required".into()))?;
-                write_grok_api_key(&home.join("config.toml"), key)?;
-                verify_grok_field(&home.join("config.toml"), "api_key", key)?;
+                let path = home.join("config.toml");
+                write_grok_api_key(&path, key)?;
+                verify_grok_field(&path, "api_key", key)?;
+                tracing::info!(
+                    module = crate::logging::targets::PROVIDER,
+                    op = "switch_write",
+                    agent = "grok",
+                    path = %path.display(),
+                    "switch_write"
+                );
                 Ok(())
             }
             "auth_json" | "" | "oauth" => {

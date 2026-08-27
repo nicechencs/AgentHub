@@ -17,9 +17,36 @@ export const FALLBACK_CUSTOM_MODEL = 'custom-model';
 export function openaiModelsUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim();
   if (!trimmed) return '';
-  const stripped = trimmed.replace(/\/+$/, '');
+  const stripped = trimmed.replace(/\/+$/, '').replace(/\/anthropic$/i, '');
+  try {
+    const host = new URL(stripped).host.toLowerCase();
+    if (host === 'api.deepseek.com') return `${stripped}/models`;
+  } catch {
+    /* fall through */
+  }
   if (/\/v1$/i.test(stripped)) return `${stripped}/models`;
   return `${stripped}/v1/models`;
+}
+
+/** Drop models that belong to another product so Claude/Kimi do not list grok-*. */
+export function filterRemoteModelsForAgent(agentId: AgentId, ids: readonly string[]): string[] {
+  const list = ids.map((id) => id.trim()).filter(Boolean);
+  if (list.length === 0) return [];
+  const grok = (id: string) => /^grok[-_]/i.test(id);
+  const kimi = (id: string) => /kimi|moonshot/i.test(id);
+  const claude = (id: string) => /claude|anthropic|sonnet|opus|haiku|fable/i.test(id);
+  const deepseek = (id: string) => /deepseek/i.test(id);
+  let kept: string[] = list;
+  if (agentId === 'kimi') kept = list.filter(kimi);
+  else if (agentId === 'claude') kept = list.filter(claude);
+  else if (agentId === 'dsh') kept = list.filter(deepseek);
+  else if (agentId === 'grok') kept = list.filter(grok);
+  if (kept.length > 0) return kept;
+  if (agentId === 'kimi' || agentId === 'claude') {
+    const withoutGrok = list.filter((id) => !grok(id));
+    if (withoutGrok.length > 0) return withoutGrok;
+  }
+  return [...list];
 }
 
 function pushModelId(out: string[], seen: Set<string>, raw: unknown): void {

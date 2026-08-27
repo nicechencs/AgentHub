@@ -10,9 +10,10 @@ import type {
 import {
   activeBindingForAgent,
   filterTicketsByAgentUsage,
+  filterTicketsByOwner,
 } from '@/lib/ticket-wallet';
 
-export { activeBindingForAgent, filterTicketsByAgentUsage };
+export { activeBindingForAgent, filterTicketsByAgentUsage, filterTicketsByOwner };
 
 export function filterWalletByExcludedAgents(
   wallet: TicketWallet | null,

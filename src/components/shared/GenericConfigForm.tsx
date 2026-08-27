@@ -3,6 +3,7 @@
  * Unknown field types render unavailable; does not parse JSON/TOML.
  */
 import * as React from 'react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -136,13 +137,14 @@ export function SuggestableInput({
       />
       {statusLabel ? (
         statusRetry ? (
-          <button
+          <Button
             type="button"
-            className="self-start text-left text-meta text-accent hover:underline"
+            size="sm"
+            className="self-start"
             onClick={statusRetry}
           >
             {statusLabel}
-          </button>
+          </Button>
         ) : (
           <p className="text-meta text-muted">{statusLabel}</p>
         )

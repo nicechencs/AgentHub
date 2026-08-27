@@ -53,7 +53,7 @@ impl AccountService {
         // Leftover 本机路由 live (config.toml still needs strip, or leftover
         // provider is current) must not throw account.identity_conflict when
         // switching back to 官方登录. apply_account still strips leftover keys.
-        if agent != AgentId::Pi {
+        if agent != AgentId::Pi && !(agent == AgentId::Grok && target.kind == AccountKind::ApiKey) {
             if let Some(live) = live_before
                 .as_ref()
                 .filter(|live| !live_account_is_empty(live))

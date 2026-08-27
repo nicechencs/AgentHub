@@ -31,6 +31,14 @@ fn openai_models_url_normalizes_trailing_slash_and_v1() {
         openai_models_url("https://mytokens.cc/V1/"),
         "https://mytokens.cc/V1/models"
     );
+    assert_eq!(
+        openai_models_url("https://api.deepseek.com"),
+        "https://api.deepseek.com/models"
+    );
+    assert_eq!(
+        openai_models_url("https://api.deepseek.com/anthropic"),
+        "https://api.deepseek.com/models"
+    );
 }
 
 #[test]

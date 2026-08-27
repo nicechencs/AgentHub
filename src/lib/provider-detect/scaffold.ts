@@ -128,6 +128,23 @@ export function defaultConfigScaffold(agentId: string): {
         preset: 'custom',
         text: JSON.stringify({ note: 'cursor-pool-only' }, null, 2),
       };
+    case 'dsh':
+      return {
+        format: 'json',
+        preset: 'custom',
+        text: JSON.stringify(
+          {
+            provider: 'deepseek-official',
+            model: 'deepseek-v4-flash',
+            baseUrl: 'https://api.deepseek.com',
+            baseURL: 'https://api.deepseek.com',
+            apiKeyEnv: 'DEEPSEEK_API_KEY',
+            apiKey: '',
+          },
+          null,
+          2,
+        ),
+      };
     default:
       return {
         format: 'json',
@@ -208,6 +225,13 @@ export function liveConfigPaths(agentId: string): {
         config: '无稳定 provider 配置文件',
         openDir: '~/.cursor',
         hint: '暂时不能把连接写回 Cursor 的本机配置。',
+      };
+    case 'dsh':
+      return {
+        config: '~/.dsh/cordis.patch.yml',
+        auth: '~/.dsh/.credentials.yaml',
+        openDir: '~/.dsh',
+        hint: '服务设置写在 cordis.patch.yml，密钥写在 .credentials.yaml。切换后才会写到本机。官方 DeepSeek 用 https://api.deepseek.com，不要加 /anthropic。',
       };
     default:
       return {

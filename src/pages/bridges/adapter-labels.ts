@@ -90,6 +90,9 @@ function localizeAdapterCopy(raw: string): string {
   if (/unknown custom relay provider/i.test(trimmed)) {
     return '这份自定义上游还缺有效的服务地址，没法开本机转发。请补上地址后重试。';
   }
+  if (/invalid adapter secret reference/i.test(trimmed)) {
+    return '没法把本机令牌写进客户端配置。请点重试。';
+  }
   return trimmed.replace(INTERNAL_ID_RE, '').replace(/\s{2,}/g, ' ').trim();
 }
 
