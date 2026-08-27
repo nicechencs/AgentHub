@@ -4,7 +4,7 @@ import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { StatusPin } from '@/components/shared/StatusPin';
-import { AGENTS } from '@/config/agents';
+import { AGENTS, type AgentMeta } from '@/config/agents';
 import {
   useAgentStatusesOptional,
   useAppUpdateAvailable,
@@ -17,12 +17,14 @@ import {
   type SidebarNavItem,
   workspaceNavItems,
 } from '@/components/layout/sidebar-nav';
-import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
+import {
+  agentHasCatalogUpdate,
+  sidebarInstallStats,
+} from '@/components/layout/sidebar-stats';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
-import { applyStoredAgentOrder } from '@/lib/agent-visibility';
 import { StorageKey } from '@/lib/ui-preferences';
 
 const ICON_CLASS = 'h-4 w-4 shrink-0';
@@ -113,7 +115,7 @@ function NavGroup({
 }
 
 function agentDotLabel(
-  meta: (typeof AGENTS)[number],
+  meta: AgentMeta,
   status: AgentStatus | undefined,
   hasUpdate: boolean,
   upgradeable: string,
@@ -121,6 +123,84 @@ function agentDotLabel(
   const ver = status?.version ? ` v${status.version}` : '';
   const up = hasUpdate ? upgradeable : '';
   return `${meta.name}${ver}${up}`;
+}
+
+/** agent 在线状态迷你条：最底部 */
+function SidebarAgentStrip({
+  collapsed,
+  agents,
+  installedCount,
+  visibleTotal,
+  orderedInstalledMetas,
+}: {
+  collapsed: boolean;
+  agents: readonly AgentStatus[];
+  installedCount: number;
+  visibleTotal: number;
+  orderedInstalledMetas: readonly AgentMeta[];
+}) {
+  const { t } = useI18n();
+  const fractionLabel = t('nav.agentsInstalled', {
+    installed: installedCount,
+    total: visibleTotal,
+  });
+
+  return (
+    <div className={cn('shrink-0 border-t border-border', collapsed ? 'px-1.5 py-2.5' : 'px-3 py-2.5')}>
+      {collapsed ? (
+        <Hint label={fractionLabel} side="right">
+          <div
+            className="flex cursor-default flex-wrap items-center justify-center gap-1.5 rounded-btn py-0.5"
+            aria-label={fractionLabel}
+          >
+            {orderedInstalledMetas.map((meta) => {
+              const status = agents.find((row) => row.agentId === meta.id);
+              const hasUpdate = agentHasCatalogUpdate(status);
+              return (
+                <AgentDot
+                  key={meta.id}
+                  agentId={meta.id}
+                  color={meta.color}
+                  title={null}
+                  ring={!hasUpdate}
+                  growOnHover
+                  className={cn(hasUpdate && 'ring-2 ring-warning')}
+                />
+              );
+            })}
+          </div>
+        </Hint>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          {orderedInstalledMetas.map((meta) => {
+            const status = agents.find((row) => row.agentId === meta.id);
+            const hasUpdate = agentHasCatalogUpdate(status);
+            return (
+              <AgentDot
+                key={meta.id}
+                agentId={meta.id}
+                color={meta.color}
+                title={agentDotLabel(
+                  meta,
+                  status,
+                  hasUpdate,
+                  t('nav.upgradeable', { version: status?.latestVersion ?? '' }),
+                )}
+                growOnHover
+                className={cn(hasUpdate && 'ring-2 ring-warning')}
+              />
+            );
+          })}
+          {installedCount === 0 && (
+            <span className="text-xs text-muted">{t('nav.noAgentInstalled')}</span>
+          )}
+          <span className="ml-auto shrink-0 text-xs text-muted">
+            {installedCount}/{visibleTotal}
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
@@ -133,13 +213,6 @@ export function Sidebar() {
     ? { label: t('nav.updateAvailable', { version: appUpdate.version }) }
     : null;
 
-  const hiddenIds = React.useMemo(
-    () => new Set(agents.filter((a) => a.hidden).map((a) => a.agentId)),
-    [agents],
-  );
-  const installed = agents.filter((a) => a.installed && !a.hidden).length;
-  const visibleTotal = AGENTS.filter((meta) => !hiddenIds.has(meta.id)).length;
-
   const itemClass = (isActive: boolean) =>
     cn(
       'group flex h-8 w-full items-center rounded-btn text-sm transition-colors duration-150',
@@ -151,10 +224,9 @@ export function Sidebar() {
     );
 
   const { stored: agentCatalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
-  const installedMetas = applyStoredAgentOrder(
-    installedCatalogAgents(AGENTS, agents),
-    (meta) => meta.id,
-    agentCatalogOrder,
+  const stats = React.useMemo(
+    () => sidebarInstallStats(AGENTS, agents, agentCatalogOrder),
+    [agents, agentCatalogOrder],
   );
   const visibleWorkspaceNav = React.useMemo(
     () => workspaceNavItems(pluginsNavVisible),
@@ -243,69 +315,13 @@ export function Sidebar() {
         </NavGroup>
       </nav>
 
-      {/* agent 在线状态迷你条：最底部 */}
-      <div className={cn('shrink-0 border-t border-border', collapsed ? 'px-1.5 py-2.5' : 'px-3 py-2.5')}>
-        {collapsed ? (
-          <Hint label={t('nav.agentsInstalled', { installed, total: visibleTotal })} side="right">
-            <div
-              className="flex cursor-default flex-wrap items-center justify-center gap-1.5 rounded-btn py-0.5"
-              aria-label={t('nav.agentsInstalled', { installed, total: visibleTotal })}
-            >
-              {installedMetas.map((meta) => {
-                const status = agents.find((a) => a.agentId === meta.id);
-                const hasUpdate = Boolean(
-                  status?.installed &&
-                    status.latestVersion &&
-                    status.version !== status.latestVersion,
-                );
-                return (
-                  <AgentDot
-                    key={meta.id}
-                    agentId={meta.id}
-                    color={meta.color}
-                    title={null}
-                    ring={!hasUpdate}
-                    growOnHover
-                    className={cn(hasUpdate && 'ring-2 ring-warning')}
-                  />
-                );
-              })}
-            </div>
-          </Hint>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            {installedMetas.map((meta) => {
-              const status = agents.find((a) => a.agentId === meta.id);
-              const hasUpdate = Boolean(
-                status?.installed &&
-                  status.latestVersion &&
-                  status.version !== status.latestVersion,
-              );
-              return (
-                <AgentDot
-                  key={meta.id}
-                  agentId={meta.id}
-                  color={meta.color}
-                  title={agentDotLabel(
-                    meta,
-                    status,
-                    hasUpdate,
-                    t('nav.upgradeable', { version: status?.latestVersion ?? '' }),
-                  )}
-                  growOnHover
-                  className={cn(hasUpdate && 'ring-2 ring-warning')}
-                />
-              );
-            })}
-            {installed === 0 && (
-              <span className="text-xs text-muted">{t('nav.noAgentInstalled')}</span>
-            )}
-            <span className="ml-auto shrink-0 text-xs text-muted">
-              {installed}/{visibleTotal}
-            </span>
-          </div>
-        )}
-      </div>
+      <SidebarAgentStrip
+        collapsed={collapsed}
+        agents={agents}
+        installedCount={stats.installedCount}
+        visibleTotal={stats.visibleTotal}
+        orderedInstalledMetas={stats.orderedInstalledMetas}
+      />
     </aside>
   );
 }
