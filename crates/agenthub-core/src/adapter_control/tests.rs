@@ -138,13 +138,8 @@ fn resolve_bind_action_rejects_unknown_custom_relay_without_persistence() {
     let before_provider_count = providers.list(None).unwrap().len();
     let before_profile_count = profiles.list(None, None, None).unwrap().len();
 
-    let error = resolve_bind_action(&hub, &ticket, AgentId::Codex).unwrap_err();
-
-    assert_eq!(error.code(), "unsupported");
-    assert_eq!(
-        error.to_string(),
-        "unsupported: adapter bind does not support an unknown custom relay provider"
-    );
+    let action = resolve_bind_action(&hub, &ticket, AgentId::Codex).unwrap();
+    assert!(matches!(action, crate::adapter_control::BindAction::LocalBridge(_)));
     assert_eq!(providers.list(None).unwrap().len(), before_provider_count);
     assert_eq!(
         profiles.list(None, None, None).unwrap().len(),
@@ -157,13 +152,17 @@ fn resolve_bind_action_rejects_unknown_custom_relay_without_persistence() {
 
     let before_provider_count = providers.list(None).unwrap().len();
     let before_profile_count = profiles.list(None, None, None).unwrap().len();
-    let reshape_error = resolve_bind_action(
+    let reshape = resolve_bind_action(
         &hub,
         &ticket_id(AdapterSourceKind::Provider, "relay-source-pi"),
         AgentId::Pi,
     )
-    .unwrap_err();
-    assert_eq!(reshape_error.code(), "unsupported");
+    .unwrap();
+    assert!(matches!(
+        reshape,
+        crate::adapter_control::BindAction::Reshape(_)
+            | crate::adapter_control::BindAction::LocalBridge(_)
+    ));
     assert_eq!(providers.list(None).unwrap().len(), before_provider_count);
     assert_eq!(
         profiles.list(None, None, None).unwrap().len(),

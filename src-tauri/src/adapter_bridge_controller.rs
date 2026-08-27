@@ -119,6 +119,13 @@ async fn apply_local_bridge_locked(
                 CODE_BRIDGE_START
             };
             mark_retryable(hub, &profile_id, code).await;
+            tracing::error!(
+                target: "core.adapter",
+                op = "start",
+                profile_id = %profile_id,
+                code,
+                "本机转发启动失败"
+            );
             return Err(map_bridge_host_error(error));
         }
     };
@@ -278,7 +285,9 @@ fn status_dto(
     profile_id: &str,
     dto: AdapterBridgeStatusDto,
 ) -> AdapterBridgeStatusDto {
+    let token = host.local_token(profile_id).ok().flatten();
     dto.with_recent_inbound(host.recent_inbound(profile_id))
+        .with_local_token(token)
 }
 
 /// Persist an existing bridge profile's auto-start preference.  It controls
@@ -590,7 +599,7 @@ async fn load_bridge_profile(
             AdapterSourceKind::Provider | AdapterSourceKind::Account
         )
     {
-        return Err("adapter profile is not a supported local bridge".into());
+        return Err("这条本机路由已失效，无法启动。请删除后重建。".into());
     }
     Ok(profile)
 }
@@ -1153,7 +1162,17 @@ async fn bridge_profile_id_for_request(
 fn map_bridge_host_error(error: BridgeHostError) -> String {
     // Host error implementations intentionally contain no bearer; still use a
     // stable GUI-facing code and do not serialize the Debug representation.
-    format!("本机路由无法启动或停止 [{CODE_BRIDGE_START}]: {error}")
+    match &error {
+        BridgeHostError::Bind(io) if io.kind() == std::io::ErrorKind::AddrInUse => {
+            format!(
+                "本机端口已被占用。将自动换一个空闲端口并写回，请点重试。 [{CODE_BRIDGE_PORT_IN_USE}]"
+            )
+        }
+        BridgeHostError::Bind(_) => {
+            format!("本机转发无法监听端口，请点重试。 [{CODE_BRIDGE_PORT_IN_USE}]")
+        }
+        _ => format!("本机转发无法启动或停止，请点重试。 [{CODE_BRIDGE_START}]"),
+    }
 }
 
 /// Replace the raw English resolver failure with a Chinese sentence the

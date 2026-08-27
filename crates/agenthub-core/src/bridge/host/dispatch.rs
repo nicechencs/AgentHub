@@ -208,11 +208,10 @@ pub(super) async fn handle_conversation(
         }
     } else {
         match &resolver_candidates {
-            Some(candidates) => {
-                admitted
-                    .state
-                    .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref())
-            }
+            Some(candidates) => admitted
+                .state
+                .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref())
+                .or_else(|| admitted.state.account_picker.pick_new()),
             None => admitted.state.account_picker.pick_new(),
         }
     }) else {

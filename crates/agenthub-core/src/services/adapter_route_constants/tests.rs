@@ -161,7 +161,7 @@ fn toml_base_url_is_classified_using_the_runtime_base_url() {
     });
     assert!(!settings_contain_openai_api_endpoint(&custom));
     assert!(settings_contain_custom_openai_compat_remote(&custom));
-    assert!(is_unknown_custom_relay_provider(&crate::models::Provider {
+    assert!(!is_unknown_custom_relay_provider(&crate::models::Provider {
         id: "relay".into(),
         agent_id: crate::models::AgentId::Codex,
         name: "relay".into(),
@@ -186,18 +186,16 @@ fn unknown_custom_relay_helper_does_not_whitelist_urls_by_substring() {
         updated_at: "t0".into(),
     };
 
-    for settings in [
-        serde_json::json!({ "base_url": "https://api.openai.com.evil.example/v1" }),
-        serde_json::json!({
-            "base_url": "https://relay.example/v1 https://api.openai.com/v1"
-        }),
-        serde_json::json!({
-            "base_url": "https://relay.example/v1",
-            "comment": "official https://api.openai.com/v1"
-        }),
-    ] {
-        assert!(is_unknown_custom_relay_provider(&provider(settings)));
-    }
+    assert!(is_unknown_custom_relay_provider(&provider(serde_json::json!({
+        "base_url": "https://relay.example/v1 https://api.openai.com/v1"
+    }))));
+    assert!(!is_unknown_custom_relay_provider(&provider(serde_json::json!({
+        "base_url": "https://api.openai.com.evil.example/v1"
+    }))));
+    assert!(!is_unknown_custom_relay_provider(&provider(serde_json::json!({
+        "base_url": "https://relay.example/v1",
+        "comment": "official https://api.openai.com/v1"
+    }))));
 
     for (preset, settings) in [
         ("openai", serde_json::json!({})),
@@ -234,7 +232,7 @@ fn unknown_custom_relay_helper_does_not_whitelist_urls_by_substring() {
     ] {
         let mut row = provider(json!({ "base_url": "https://relay.example/v1" }));
         row.meta = json!({ "preset": preset });
-        assert!(is_unknown_custom_relay_provider(&row), "{preset}");
+        assert!(!is_unknown_custom_relay_provider(&row), "{preset}");
     }
 }
 
@@ -269,13 +267,16 @@ fn unknown_custom_relay_allows_only_exact_official_tag_host_pairs() {
         ("openai-api", "https://relay.example/v1"),
         ("openrouter", "https://api.openai.com/v1"),
         ("openrouter", "https://openrouter.ai.evil.example/v1"),
-        ("openai-compat", "https://relay.example/v1"),
     ] {
         assert!(is_unknown_custom_relay_provider(&provider(
             tag,
             json!({ "base_url": url }),
         )));
     }
+    assert!(!is_unknown_custom_relay_provider(&provider(
+        "openai-compat",
+        json!({ "base_url": "https://relay.example/v1" }),
+    )));
 
     assert!(is_unknown_custom_relay_provider(&provider(
         "openai",

@@ -5,7 +5,7 @@ impl AdapterBridgeService {
     pub fn preflight_remove(&self, profile_id: &str) -> Result<AdapterBridgeRemoval> {
         let profile = self.bridge_profile(profile_id)?;
         let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
-            AppError::InvalidArg("adapter profile is not a supported local bridge".into())
+            AppError::InvalidArg("这条本机路由已失效，无法启动。请删除后重建。".into())
         })?;
         let expected_provider_id = stable_id(rule.provider_prefix, &profile.source_id);
         if profile.generated_provider_id.as_deref() != Some(expected_provider_id.as_str()) {
