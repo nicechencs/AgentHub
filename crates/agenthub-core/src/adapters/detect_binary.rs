@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::models::{AgentId, DetectedBinaryCopy, DetectResult, DetectStatus};
+use crate::models::{AgentId, DetectResult, DetectStatus, DetectedBinaryCopy};
 use crate::utils::redact::redact_text;
 
 /// Shared detect helper used by adapters.
@@ -11,6 +11,8 @@ use crate::utils::redact::redact_text;
 /// - PATH / `which` with Win suffixes (`.cmd` / `.exe` / bare)
 /// - well-known install dirs that do **not** require the GUI process PATH
 ///   (Tauri often inherits a stale PATH after installs)
+/// - npm global bin: `npm prefix -g` (npm itself may be off PATH; probe
+///   well-known node dirs and `~/.npmrc` `prefix=`)
 pub(crate) fn detect_binary(
     agent: AgentId,
     candidates: &[&str],
@@ -51,87 +53,106 @@ pub(crate) fn detect_binary_with_env(
     }
 
     let mut result = (|| {
-    for name in &names {
-        if let Ok(path) = which(name) {
-            if !is_direct_spawnable(&path) {
-                continue;
+        for name in &names {
+            if let Ok(path) = which(name) {
+                if !is_direct_spawnable(&path) {
+                    continue;
+                }
+                if is_under_agenthub_user_npm_prefix(&path) {
+                    tracing::info!(
+                        target: crate::logging::targets::DETECT,
+                        module = crate::logging::targets::DETECT,
+                        op = "detect_binary",
+                        agent = agent.as_str(),
+                        via = "path_leftover_skip",
+                        path = %path.display(),
+                        "skipping leftover AgentHub data-dir npm copy on PATH; not an install target"
+                    );
+                    continue;
+                }
+                let channel = infer_channel(&path, channel_hint);
+                tracing::debug!(
+                    target: crate::logging::targets::DETECT,
+                    module = crate::logging::targets::DETECT,
+                    op = "detect_binary",
+                    agent = agent.as_str(),
+                    via = "path",
+                    channel = %channel,
+                    path = %path.display(),
+                    "agent binary resolved on PATH"
+                );
+                return finish_detect(
+                    agent,
+                    path,
+                    version_args,
+                    Some(channel.as_str()),
+                    env_ready,
+                    false,
+                    extra_env,
+                );
             }
+        }
+
+        // Remaining well-known dirs (OS npm global, ~/.local/bin, …).
+        // Never spawn from leftover `~/.agenthub/npm` — that directory is not
+        // an install target for any agent.
+        for (path, channel) in well_known_bin_paths(agent) {
             if is_under_agenthub_user_npm_prefix(&path) {
+                tracing::info!(
+                    target: crate::logging::targets::DETECT,
+                    module = crate::logging::targets::DETECT,
+                    op = "detect_binary",
+                    agent = agent.as_str(),
+                    via = "well_known_leftover_skip",
+                    channel = channel,
+                    path = %path.display(),
+                    "skipping leftover AgentHub data-dir npm copy in well-known dirs; not an install target"
+                );
                 continue;
             }
-            let channel = infer_channel(&path, channel_hint);
-            tracing::debug!(
-                target: crate::logging::targets::DETECT,
-                module = crate::logging::targets::DETECT,
-                op = "detect_binary",
-                agent = agent.as_str(),
-                via = "path",
-                channel = %channel,
-                path = %path.display(),
-                "agent binary resolved on PATH"
-            );
-            return finish_detect(
-                agent,
-                path,
-                version_args,
-                Some(channel.as_str()),
-                env_ready,
-                false,
-                extra_env,
-            );
+            if path.is_file() && is_direct_spawnable(&path) {
+                // PATH miss but disk hit — common after install without AgentHub restart.
+                tracing::info!(
+                    target: crate::logging::targets::DETECT,
+                    module = crate::logging::targets::DETECT,
+                    op = "detect_binary",
+                    agent = agent.as_str(),
+                    via = "well_known",
+                    channel = channel,
+                    path = %path.display(),
+                    "agent binary found outside process PATH (well-known dir); restart may refresh PATH"
+                );
+                return finish_detect(
+                    agent,
+                    path,
+                    version_args,
+                    Some(channel),
+                    env_ready,
+                    true,
+                    extra_env,
+                );
+            }
         }
-    }
 
-    // Remaining well-known dirs (OS npm global, ~/.local/bin, …).
-    // Never spawn from leftover `~/.agenthub/npm` — that directory is not
-    // an install target for any agent.
-    for (path, channel) in well_known_bin_paths(agent) {
-        if is_under_agenthub_user_npm_prefix(&path) {
-            continue;
+        tracing::debug!(
+            target: crate::logging::targets::DETECT,
+            module = crate::logging::targets::DETECT,
+            op = "detect_binary",
+            agent = agent.as_str(),
+            candidates = ?names,
+            "agent binary not found on PATH or well-known dirs"
+        );
+
+        DetectResult {
+            agent,
+            status: DetectStatus::NotFound,
+            version: None,
+            binary_path: None,
+            channel: None,
+            env_ready,
+            notes: vec![NOT_FOUND_FIREFIGHTING_NOTE.into()],
+            extra_copies: Vec::new(),
         }
-        if path.is_file() && is_direct_spawnable(&path) {
-            // PATH miss but disk hit — common after install without AgentHub restart.
-            tracing::info!(
-                target: crate::logging::targets::DETECT,
-                module = crate::logging::targets::DETECT,
-                op = "detect_binary",
-                agent = agent.as_str(),
-                via = "well_known",
-                channel = channel,
-                path = %path.display(),
-                "agent binary found outside process PATH (well-known dir); restart may refresh PATH"
-            );
-            return finish_detect(
-                agent,
-                path,
-                version_args,
-                Some(channel),
-                env_ready,
-                true,
-                extra_env,
-            );
-        }
-    }
-
-    tracing::debug!(
-        target: crate::logging::targets::DETECT,
-        module = crate::logging::targets::DETECT,
-        op = "detect_binary",
-        agent = agent.as_str(),
-        candidates = ?names,
-        "agent binary not found on PATH or well-known dirs"
-    );
-
-    DetectResult {
-        agent,
-        status: DetectStatus::NotFound,
-        version: None,
-        binary_path: None,
-        channel: None,
-        env_ready,
-        notes: vec![NOT_FOUND_FIREFIGHTING_NOTE.into()],
-        extra_copies: Vec::new(),
-    }
     })();
     attach_leftover_agenthub_npm_copy(&mut result, agent, &names, extra_env);
     attach_extra_binary_copies(
@@ -302,7 +323,7 @@ fn attach_leftover_agenthub_npm_copy(
         return;
     }
     let version = probe_bin_version(&path, &["--version"], extra_env);
-    tracing::debug!(
+    tracing::info!(
         target: crate::logging::targets::DETECT,
         module = crate::logging::targets::DETECT,
         op = "detect_binary",
@@ -396,10 +417,7 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
             }
             // Legacy local npm install from older Claude Code versions.
             push_npm(&mut paths, home.join(".claude").join("local"));
-            push_npm(
-                &mut paths,
-                home.join(".claude").join("local").join("bin"),
-            );
+            push_npm(&mut paths, home.join(".claude").join("local").join("bin"));
         }
         AgentId::Codex => {
             for npm_dir in npm_global_bin_dirs(&home) {
@@ -489,6 +507,41 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
     }
 
     paths
+}
+
+/// User-writable npm prefix that [`well_known_bin_paths`] already scans.
+///
+/// Not leftover `~/.agenthub/npm`. Unix: `~/.npm-global` (bins in `prefix/bin`).
+/// Windows: `%APPDATA%\npm` (bins in the prefix root).
+pub(crate) fn user_writable_npm_prefix() -> Option<PathBuf> {
+    let home = crate::utils::paths::home_dir().ok()?;
+    #[cfg(windows)]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let prefix = PathBuf::from(appdata).join("npm");
+            if !is_under_agenthub_user_npm_prefix(&prefix) {
+                return Some(prefix);
+            }
+        }
+        let fallback = home.join("AppData").join("Roaming").join("npm");
+        if is_under_agenthub_user_npm_prefix(&fallback) {
+            return None;
+        }
+        Some(fallback)
+    }
+    #[cfg(not(windows))]
+    {
+        let prefix = home.join(".npm-global");
+        if is_under_agenthub_user_npm_prefix(&prefix) {
+            return None;
+        }
+        Some(prefix)
+    }
+}
+
+/// Bin dir under [`user_writable_npm_prefix`] (Windows: prefix root; Unix: `prefix/bin`).
+pub(crate) fn user_writable_npm_bin_dir() -> Option<PathBuf> {
+    user_writable_npm_prefix().map(npm_prefix_to_bin_dir)
 }
 
 /// Leftover AgentHub data-dir npm prefix roots (`<data>/npm` and `~/.agenthub/npm`).
@@ -586,40 +639,197 @@ fn file_starts_with_shebang(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
+/// Last `prefix=` in npmrc text. Comments skipped; `~` / `$HOME` / `${HOME}` expand via `home`.
+pub(crate) fn parse_npmrc_global_prefix(text: &str, home: &Path) -> Option<PathBuf> {
+    let mut found = None;
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim() != "prefix" {
+            continue;
+        }
+        let mut value = value.trim();
+        if let Some(stripped) = value
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .or_else(|| value.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+        {
+            value = stripped.trim();
+        }
+        if value.is_empty() {
+            continue;
+        }
+        found = Some(expand_npmrc_path(value, home));
+    }
+    found
+}
+
+fn expand_npmrc_path(value: &str, home: &Path) -> PathBuf {
+    if value == "~" {
+        return home.to_path_buf();
+    }
+    if let Some(rest) = value
+        .strip_prefix("~/")
+        .or_else(|| value.strip_prefix("~\\"))
+    {
+        return home.join(rest);
+    }
+    let home_str = home.to_string_lossy();
+    PathBuf::from(
+        value
+            .replace("${HOME}", home_str.as_ref())
+            .replace("$HOME", home_str.as_ref()),
+    )
+}
+
+/// `npm prefix -g` stdout → shim dir (Windows: prefix root; Unix: `prefix/bin`).
+pub(crate) fn npm_prefix_stdout_to_bin_dir(stdout: &str) -> Option<PathBuf> {
+    let prefix = stdout.trim();
+    if prefix.is_empty() {
+        return None;
+    }
+    Some(npm_prefix_to_bin_dir(PathBuf::from(prefix)))
+}
+
+/// Directories that commonly hold the `npm` CLI when the GUI PATH is stale.
+pub(crate) fn well_known_npm_cli_dirs(home: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     #[cfg(windows)]
     {
+        for key in ["ProgramFiles", "ProgramFiles(x86)"] {
+            if let Ok(pf) = std::env::var(key) {
+                push_unique_dir(&mut dirs, PathBuf::from(pf).join("nodejs"));
+            }
+        }
+        let _ = home;
+    }
+    #[cfg(not(windows))]
+    {
+        push_unique_dir(&mut dirs, PathBuf::from("/opt/homebrew/bin"));
+        push_unique_dir(&mut dirs, PathBuf::from("/usr/local/bin"));
+        push_unique_dir(&mut dirs, home.join(".local").join("bin"));
+        let nvm = std::env::var_os("NVM_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".nvm"));
+        push_latest_nvm_node_bin(&mut dirs, &nvm);
+    }
+    dirs
+}
+
+fn push_unique_dir(dirs: &mut Vec<PathBuf>, dir: PathBuf) {
+    if !dirs.iter().any(|existing| existing == &dir) {
+        dirs.push(dir);
+    }
+}
+
+#[cfg(not(windows))]
+fn push_latest_nvm_node_bin(dirs: &mut Vec<PathBuf>, nvm_root: &Path) {
+    let Ok(rd) = std::fs::read_dir(nvm_root.join("versions").join("node")) else {
+        return;
+    };
+    let mut versions: Vec<PathBuf> = rd
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_dir())
+        .collect();
+    versions.sort();
+    if let Some(latest) = versions.pop() {
+        push_unique_dir(dirs, latest.join("bin"));
+    }
+}
+
+fn path_with_dir_prepended(dir: &Path) -> std::ffi::OsString {
+    let mut out = dir.as_os_str().to_os_string();
+    if let Some(rest) = std::env::var_os("PATH") {
+        out.push(if cfg!(windows) { ";" } else { ":" });
+        out.push(rest);
+    }
+    out
+}
+
+fn find_npm_cli(home: &Path) -> Option<PathBuf> {
+    use which::which;
+    if let Ok(path) = which("npm").or_else(|_| which("npm.cmd")) {
+        if is_direct_spawnable(&path) {
+            return Some(path);
+        }
+        if let Some(parent) = path.parent() {
+            if let Some(sibling) =
+                first_existing_named_bin(&[parent.to_path_buf()], &expand_binary_names("npm"))
+            {
+                return Some(sibling);
+            }
+        }
+    }
+    first_existing_named_bin(&well_known_npm_cli_dirs(home), &expand_binary_names("npm"))
+}
+
+fn npm_global_bin_dirs_from_cli(home: &Path) -> Vec<PathBuf> {
+    let Some(npm) = find_npm_cli(home) else {
+        return Vec::new();
+    };
+    let mut cmd = std::process::Command::new(&npm);
+    cmd.args(["prefix", "-g"]);
+    if let Some(dir) = npm.parent() {
+        // npm.cmd / `#!/usr/bin/env node` need sibling `node` even when GUI PATH is empty.
+        cmd.env("PATH", path_with_dir_prepended(dir));
+    }
+    let output = match cmd.output() {
+        Ok(output) if output.status.success() => output,
+        _ => return Vec::new(),
+    };
+    npm_prefix_stdout_to_bin_dir(&String::from_utf8_lossy(&output.stdout))
+        .into_iter()
+        .collect()
+}
+
+fn npm_global_bin_dirs_from_npmrc(home: &Path) -> Vec<PathBuf> {
+    let Ok(text) = std::fs::read_to_string(home.join(".npmrc")) else {
+        return Vec::new();
+    };
+    parse_npmrc_global_prefix(&text, home)
+        .map(npm_prefix_to_bin_dir)
+        .into_iter()
+        .filter(|dir| !is_under_agenthub_user_npm_prefix(dir))
+        .collect()
+}
+
+pub(crate) fn npm_global_bin_dirs(home: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    for dir in npm_global_bin_dirs_from_cli(home) {
+        if !is_under_agenthub_user_npm_prefix(&dir) {
+            push_unique_dir(&mut dirs, dir);
+        }
+    }
+    for dir in npm_global_bin_dirs_from_npmrc(home) {
+        push_unique_dir(&mut dirs, dir);
+    }
+    #[cfg(windows)]
+    {
         if let Ok(appdata) = std::env::var("APPDATA") {
-            dirs.push(PathBuf::from(appdata).join("npm"));
+            push_unique_dir(&mut dirs, PathBuf::from(appdata).join("npm"));
         }
         if let Ok(local) = std::env::var("LOCALAPPDATA") {
-            dirs.push(PathBuf::from(local).join("npm"));
+            push_unique_dir(&mut dirs, PathBuf::from(local).join("npm"));
         }
         // Fallback when APPDATA is missing (rare): classic Roaming path under home.
-        dirs.push(home.join("AppData").join("Roaming").join("npm"));
+        push_unique_dir(&mut dirs, home.join("AppData").join("Roaming").join("npm"));
     }
     #[cfg(not(windows))]
     {
         // Common npm global bin locations on macOS/Linux (PATH may omit them in GUI).
-        dirs.push(PathBuf::from("/usr/local/bin"));
-        dirs.push(home.join(".npm-global").join("bin"));
-        dirs.push(home.join(".local").join("bin"));
-        // nvm default current
-        if let Ok(nvm) = std::env::var("NVM_DIR") {
-            let nvm_dir = PathBuf::from(nvm);
-            if let Ok(rd) = std::fs::read_dir(nvm_dir.join("versions").join("node")) {
-                // Prefer newest version dir by name (v22.x > v18.x).
-                let mut versions: Vec<PathBuf> = rd
-                    .filter_map(|e| e.ok().map(|e| e.path()))
-                    .filter(|p| p.is_dir())
-                    .collect();
-                versions.sort();
-                if let Some(latest) = versions.pop() {
-                    dirs.push(latest.join("bin"));
-                }
-            }
-        }
+        push_unique_dir(&mut dirs, PathBuf::from("/opt/homebrew/bin"));
+        push_unique_dir(&mut dirs, PathBuf::from("/usr/local/bin"));
+        push_unique_dir(&mut dirs, home.join(".npm-global").join("bin"));
+        push_unique_dir(&mut dirs, home.join(".local").join("bin"));
+        let nvm = std::env::var_os("NVM_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".nvm"));
+        push_latest_nvm_node_bin(&mut dirs, &nvm);
     }
     dirs
 }

@@ -6,6 +6,7 @@ import {
   getAgentStatusSnapshot,
   getBackend,
   loadAgentStatuses,
+  refreshRuntimeReadModels,
   revertAgentHidden,
 } from '@/app/runtime';
 import type { InstallOutcome } from '@/lib/backend/contracts/install-types';
@@ -25,9 +26,9 @@ export async function listAgents(opts: { force?: boolean } = {}): Promise<AgentS
 
 async function refreshAgentStatusStore(): Promise<void> {
   try {
-    await loadAgentStatuses(getBackend(), { force: true });
+    await refreshRuntimeReadModels(getBackend(), { models: ['agentStatus'] });
   } catch {
-    // The mutation result remains authoritative; a later page read can retry detection.
+    // The mutation result remains authoritative; refresh errors stay on the status snapshot.
   }
 }
 

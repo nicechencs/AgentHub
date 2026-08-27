@@ -4,7 +4,7 @@
  */
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { agentDisplayName } from '@/config/agents';
-import { isInternalGeneratedName } from '@/lib/backend/contracts/agent-connection';
+import { sliceAgentStatus } from '@/lib/backend/contracts/agent-status-view';
 import type {
   BindingRoute,
   TicketView,
@@ -23,7 +23,6 @@ import type {
   ChatMessage,
   ChatMessageStatus,
   Conversation,
-  Provider,
 } from '@/lib/types';
 import type { TurnGroup } from './chat-format';
 
@@ -45,25 +44,33 @@ export type ChatAgentPickerRow = {
 /** Pi Chat needs Node 22.19 (`envReady`); other agents' envReady is install-channel only. */
 export function agentChatEnvReady(status: AgentStatus | undefined): boolean {
   if (!status || status.agentId !== 'pi') return true;
-  return status.envReady !== false;
+  return sliceAgentStatus(status).env.ready !== false;
 }
 
 /** 已绑定登录 / API Key 才算配置了授权；未配置或未登录不可选。 */
 export function agentHasConfiguredAuth(status: AgentStatus | undefined): boolean {
   if (!status?.installed) return false;
-  if (status.effectiveKind && status.effectiveKind !== 'none') return true;
-  if (status.authHealth === 'verified' || status.authHealth === 'renewable' || status.authHealth === 'configured') {
+  const view = sliceAgentStatus(status);
+  if (view.effectiveConnection.kind !== 'unset' && view.effectiveConnection.kind !== 'none') {
     return true;
   }
-  if (status.authHealth === 'missing' || status.authHealth === 'needs_login') return false;
-  if (status.authLabel === 'API') return true;
-  if (status.authStatus === 'valid' || status.authStatus === 'expiring') return true;
+  if (
+    view.liveAuth.health === 'verified'
+    || view.liveAuth.health === 'renewable'
+    || view.liveAuth.health === 'configured'
+  ) {
+    return true;
+  }
+  if (view.liveAuth.health === 'missing' || view.liveAuth.health === 'needs_login') return false;
   return false;
 }
 
 export function isChatAgentSelectable(status: AgentStatus | undefined): boolean {
   return Boolean(
-    status?.installed && !status.hidden && agentHasConfiguredAuth(status) && agentChatEnvReady(status),
+    status?.installed
+      && sliceAgentStatus(status).hidden !== 'hidden'
+      && agentHasConfiguredAuth(status)
+      && agentChatEnvReady(status),
   );
 }
 
@@ -78,7 +85,7 @@ export function chatAgentPickerRows(input: {
   const rows: ChatAgentPickerRow[] = [];
   for (const id of input.catalogIds) {
     const status = byId.get(id);
-    if (status?.installed !== true || status.hidden) continue;
+    if (status?.installed !== true || sliceAgentStatus(status).hidden === 'hidden') continue;
     const envNotReady = !agentChatEnvReady(status);
     const noAuth = !agentHasConfiguredAuth(status);
     const reason: ChatAgentPickerReason | null = envNotReady
@@ -388,10 +395,12 @@ export function chatConnectionKind(
   status: AgentStatus | undefined,
   hasCurrentProvider: boolean,
 ): ChatConnectionPickerKind {
-  if (status?.effectiveKind === 'account') return 'account';
-  if (status?.effectiveKind === 'api') return 'api';
+  const kind = sliceAgentStatus(status ?? {}).effectiveConnection.kind;
+  if (kind === 'account') return 'account';
+  if (kind === 'api') return 'api';
   if (agentHasConfiguredAuth(status)) {
-    if (status?.authLabel === 'API' || status?.authHealth === 'configured') return 'api';
+    const health = sliceAgentStatus(status ?? {}).liveAuth.health;
+    if (health === 'configured') return 'api';
     return 'account';
   }
   if (hasCurrentProvider) return 'api';
@@ -399,7 +408,10 @@ export function chatConnectionKind(
 }
 
 function accountConnectionTitle(t: TranslateFn, status: AgentStatus | undefined): string {
-  const label = status?.effectiveLabel?.trim() || status?.currentProvider?.trim();
+  const conn = sliceAgentStatus(status ?? {}).effectiveConnection;
+  const label =
+    (conn.label !== 'unset' ? conn.label.trim() : '')
+    || (conn.currentProvider !== 'unset' ? conn.currentProvider.trim() : '');
   if (label && label !== t('chat.connection.unconfiguredLabel')) return label;
   return t('chat.connection.signedIn');
 }
@@ -517,20 +529,7 @@ export type ChatConnectionOption = {
   action: ChatConnectionSwitchAction;
 };
 
-const AGENTHUB_BRIDGE_SLUG = /agenthub_[^\s"'\\]*_bridge/i;
-
-/** Leftover generated 本机路由 rows — never labeled 官方登录. Loopback URL alone is not leftover. */
-export function isLeftoverLocalRouteProvider(
-  provider: Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>,
-): boolean {
-  if (isInternalGeneratedName(provider.name) || isInternalGeneratedName(provider.id)) return true;
-  const haystack = `${provider.id}\n${provider.name}\n${provider.preset ?? ''}\n${provider.configText ?? ''}`;
-  return haystack.includes('本机路由') || AGENTHUB_BRIDGE_SLUG.test(haystack);
-}
-
-export function leftoverProviderIsCurrent(providers: readonly Provider[]): boolean {
-  return providers.some((provider) => provider.isCurrent && isLeftoverLocalRouteProvider(provider));
-}
+export { isLeftoverLocalRouteProvider, leftoverProviderIsCurrent } from '@/lib/leftover-local-route';
 
 /** Native pool row → switch; a login born on another Agent → bind. */
 export function chatConnectionSwitchAction(

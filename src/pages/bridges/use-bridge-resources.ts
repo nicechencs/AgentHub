@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useConnectionPool } from '@/app/runtime';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useConnectionPool, useTicketWallet } from '@/app/runtime';
 import { getAdapterBridgeStatus, listAdapterProfiles } from '@/lib/api/adapter';
+import { bridgeWalletSnapshotFromWallet } from '@/lib/bridge-wallet-snapshot';
 import { mergeConnectionEntries } from '@/lib/connection-entry';
 import {
   ADAPTER_BRIDGE_STATUS_POLL_MS,
@@ -85,6 +86,7 @@ function connectionStateFromPool(
 /** Owns independent resource refreshes and rejects stale responses. */
 export function useAdapterResources() {
   const pool = useConnectionPool();
+  const ticketWallet = useTicketWallet();
   const [resources, setResources] = useState<AdapterPageResources>(initialResources);
   const [profilesLoading, setProfilesLoading] = useState(true);
   const generation = useRef(0);
@@ -134,6 +136,15 @@ export function useAdapterResources() {
   useEffect(() => {
     if (pool.state === 'idle') void pool.ensureLoaded();
   }, [pool.ensureLoaded, pool.state]);
+
+  useEffect(() => {
+    if (ticketWallet.state === 'idle') void ticketWallet.ensureLoaded();
+  }, [ticketWallet.ensureLoaded, ticketWallet.state]);
+
+  const wallet = useMemo(
+    () => bridgeWalletSnapshotFromWallet(ticketWallet.wallet, ticketWallet.state),
+    [ticketWallet.state, ticketWallet.wallet],
+  );
 
   useEffect(() => {
     void reloadProfiles();
@@ -202,6 +213,7 @@ export function useAdapterResources() {
 
   return {
     ...resources,
+    wallet,
     loading: profilesLoading || poolPending,
     reload,
     reloadProfiles,

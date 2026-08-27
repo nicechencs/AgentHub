@@ -151,6 +151,51 @@ describe('Tauri adapter route port', () => {
     });
     expect(JSON.stringify(invokeMock.mock.calls)).not.toContain('token');
   });
+
+  it('maps default route pool overviews without a hub token', async () => {
+    invokeMock.mockResolvedValueOnce({
+      enabled: true,
+      pools: [{
+        id: 'pool-1',
+        targetAgentId: 'codex',
+        surface: 'responses',
+        dialect: 'codex',
+        v2Enrolled: true,
+        gatewayPort: 43121,
+        members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
+        listedModels: ['kimi-k2.5'],
+      }],
+    });
+    const port = createTauriAdapterPort();
+    const listed = await port.listDefaultRoutePools();
+    expect(invokeMock).toHaveBeenCalledWith('list_default_route_pools', {});
+    expect(listed.enabled).toBe(true);
+    expect(listed.pools[0]).toMatchObject({
+      id: 'pool-1',
+      surface: 'responses',
+      gatewayPort: 43121,
+      members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
+    });
+    expect(JSON.stringify(listed)).not.toContain('hubToken');
+    expect(JSON.stringify(listed)).not.toContain('ahb_');
+  });
+
+  it('forwards enroll_native_to_gateway by profile id and drops any token field', async () => {
+    invokeMock.mockResolvedValueOnce({
+      id: 'pool-1',
+      targetAgentId: 'codex',
+      surface: 'responses',
+      dialect: 'codex',
+      v2Enrolled: true,
+      gatewayPort: 43121,
+      members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
+    });
+    const port = createTauriAdapterPort();
+    const enrolled = await port.enrollNativeToGateway('native-1');
+    expect(invokeMock).toHaveBeenCalledWith('enroll_native_to_gateway', { profileId: 'native-1' });
+    expect(enrolled.v2Enrolled).toBe(true);
+    expect(JSON.stringify(enrolled)).not.toContain('hubToken');
+  });
 });
 
 describe('mapAdapterInvokeError', () => {

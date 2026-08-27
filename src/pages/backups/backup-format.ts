@@ -38,6 +38,7 @@ export function isInternalBackupNote(note: string | undefined | null): boolean {
   const n = note.trim();
   if (!n) return true;
   if (/before provider switch/i.test(n)) return true;
+  if (/after provider (upsert|update)/i.test(n)) return true;
   if (/adapter-bridge/i.test(n)) return true;
   if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(n)) return true;
   if (/[0-9a-f]{16,}/i.test(n)) return true;

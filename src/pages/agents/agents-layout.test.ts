@@ -28,7 +28,8 @@ describe('agents layout wiring', () => {
   it('applies the same remembered order on sidebar, dashboard, and installed lists', () => {
     const sidebar = source('components/layout/Sidebar.tsx');
     expect(sidebar).toContain('StorageKey.agentsCatalogOrder');
-    expect(sidebar).toContain('applyStoredAgentOrder');
+    const sidebarStats = source('components/layout/sidebar-stats.ts');
+    expect(sidebarStats).toContain('applyStoredAgentOrder');
     const overview = source('pages/dashboard/AgentOverview.tsx');
     expect(overview).toContain('StorageKey.agentsCatalogOrder');
     const dashboard = source('pages/dashboard/index.tsx');

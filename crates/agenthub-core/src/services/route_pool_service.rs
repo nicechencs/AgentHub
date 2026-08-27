@@ -1,21 +1,26 @@
-//! RoutePool control plane. Gated by `feature.route_pool_v2` (fail-closed).
-//! `feature.route_index_v2` attaches the shared resolver on enrolled start.
-//! UI stays hidden.
+//! RoutePool control plane. `feature.route_pool_v2` ships on; explicit off
+//! disables. `feature.route_index_v2` attaches the shared resolver on enrolled
+//! start (also default on). Mixed-provider and pair-adapter flags stay
+//! fail-closed.
 
 use std::collections::HashMap;
 
 use chrono::Utc;
 use uuid::Uuid;
 
+use super::AdapterRouteService;
 use crate::bridge::BridgeRuntimeHost;
 use crate::error::{AppError, Result};
 use crate::models::{
-    choose_default_pool_id, feature_flag_enabled, generate_hub_token, AdapterProfile,
-    AdapterProfileFilter, AdapterRoute, AdapterSourceKind, AgentId, RouteDownstreamDialect,
-    RouteDownstreamSurface, RouteMember, RoutePool, RouteSchedulePolicy, FEATURE_ROUTE_INDEX_V2,
-    FEATURE_ROUTE_POOL_V2,
+    AdapterApplyPlan, AdapterProfile, AdapterProfileFilter, AdapterRoute, AdapterRouteRequest,
+    AdapterSourceKind, AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview,
+    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, ModelRouteRule,
+    RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RouteMemberOverview, RoutePool,
+    RouteSchedulePolicy, choose_default_pool_id, enroll_native_plan_is_open, feature_flag_enabled,
+    generate_hub_token, list_local_bridge_models, product_flag_enabled,
 };
-use crate::storage::{binding_get_conn, AdapterProfileRepo, Database, RoutePoolRepo};
+use crate::storage::{AdapterProfileRepo, Database, RoutePoolRepo, binding_get_conn};
 
 #[cfg(test)]
 mod tests;
@@ -36,7 +41,7 @@ impl RoutePoolService {
     }
 
     pub fn enabled(&self) -> Result<bool> {
-        Ok(feature_flag_enabled(
+        Ok(product_flag_enabled(
             self.db.get_setting(FEATURE_ROUTE_POOL_V2)?.as_deref(),
         ))
     }
@@ -45,9 +50,44 @@ impl RoutePoolService {
     /// still controls dispatch and `/models` together.
     pub fn index_enabled(&self) -> bool {
         self.enabled().unwrap_or(false)
-            && feature_flag_enabled(
+            && product_flag_enabled(
                 self.db
                     .get_setting(FEATURE_ROUTE_INDEX_V2)
+                    .ok()
+                    .flatten()
+                    .as_deref(),
+            )
+    }
+
+    /// Independent Codex↔Grok pair-adapter flags. Fail-closed; does not
+    /// require `route_pool_v2`.
+    pub fn pair_adapter_flags(&self) -> (bool, bool) {
+        (
+            feature_flag_enabled(
+                self.db
+                    .get_setting(FEATURE_CODEX_INGRESS_GROK_UPSTREAM)
+                    .ok()
+                    .flatten()
+                    .as_deref(),
+            ),
+            feature_flag_enabled(
+                self.db
+                    .get_setting(FEATURE_GROK_INGRESS_CODEX_UPSTREAM)
+                    .ok()
+                    .flatten()
+                    .as_deref(),
+            ),
+        )
+    }
+
+    /// Mixed-provider resolve. Persistence writes stay on `route_pool_v2`;
+    /// this flag additionally gates the index path and does not activate v1
+    /// `switch_edge_for_model`.
+    pub fn mixed_provider_enabled(&self) -> bool {
+        self.index_enabled()
+            && feature_flag_enabled(
+                self.db
+                    .get_setting(FEATURE_MIXED_PROVIDER_POOL)
                     .ok()
                     .flatten()
                     .as_deref(),
@@ -66,6 +106,98 @@ impl RoutePoolService {
     ) -> Result<Vec<RoutePool>> {
         self.require_enabled()?;
         self.pools.list_pools(target_agent_id, surface)
+    }
+
+    pub fn get_adapter_profile(&self, id: &str) -> Result<Option<AdapterProfile>> {
+        self.profiles.get(id)
+    }
+
+    /// Default pools only. Explicit flag off returns `{ enabled: false, pools: [] }`
+    /// so the Routes page can hide pool chrome without treating this as an error.
+    pub fn list_default_overviews(&self) -> Result<DefaultRoutePoolList> {
+        if !self.enabled()? {
+            return Ok(DefaultRoutePoolList {
+                enabled: false,
+                pools: Vec::new(),
+            });
+        }
+        let mut overviews = Vec::new();
+        for pool in self.pools.list_pools(None, None)? {
+            if !pool.is_default {
+                continue;
+            }
+            overviews.push(self.overview_from_pool(&pool)?);
+        }
+        Ok(DefaultRoutePoolList {
+            enabled: true,
+            pools: overviews,
+        })
+    }
+
+    pub fn overview_from_pool(&self, pool: &RoutePool) -> Result<DefaultRoutePoolOverview> {
+        let members = self.pools.list_members(&pool.id)?;
+        let listed_models = self.listed_models_for_pool(pool, &members);
+        Ok(DefaultRoutePoolOverview {
+            id: pool.id.clone(),
+            target_agent_id: pool.target_agent_id,
+            surface: pool.downstream_surface,
+            dialect: pool.downstream_dialect,
+            v2_enrolled: pool.v2_enrolled,
+            gateway_port: pool.gateway_port,
+            members: members
+                .into_iter()
+                .map(|member| RouteMemberOverview {
+                    source_kind: member.source_kind,
+                    source_id: member.source_id,
+                    enabled: member.enabled,
+                    availability: Some(if member.enabled {
+                        crate::models::MemberAvailability::Ready
+                    } else {
+                        crate::models::MemberAvailability::Disabled
+                    }),
+                })
+                .collect(),
+            listed_models,
+        })
+    }
+
+    /// `plan()` then refuse unless the matrix allows a local-bridge write now.
+    pub fn evaluate_enroll_native(&self, profile: &AdapterProfile) -> Result<AdapterApplyPlan> {
+        self.require_enabled()?;
+        let routes = AdapterRouteService::new(self.db.clone());
+        let plan = routes.plan(&AdapterRouteRequest {
+            source_kind: profile.source_kind,
+            source_id: profile.source_id.clone(),
+            target_agent_id: profile.target_agent_id,
+        })?;
+        enroll_native_plan_is_open(profile, &plan)?;
+        Ok(plan)
+    }
+
+    /// Persist v2 enrollment only after a healthy local-bridge bind.
+    /// Occupancy / bind failure must not call this.
+    pub fn persist_enroll_after_native_bind(
+        &self,
+        bound_profile: &AdapterProfile,
+        port: u16,
+    ) -> Result<DefaultRoutePoolOverview> {
+        self.require_enabled()?;
+        if bound_profile.route != AdapterRoute::LocalBridge {
+            return Err(AppError::Unsupported(
+                "native enroll persist requires a local_bridge profile".into(),
+            ));
+        }
+        self.ensure_legacy_pool(bound_profile)?;
+        let enrolled = self.enroll_v2(&bound_profile.id, port)?;
+        // Bind just made this login the Agent's active route; it is the default
+        // pool for that surface. A leftover sibling default would hide this
+        // overview from list_default_overviews.
+        let pool = if enrolled.is_default {
+            enrolled
+        } else {
+            self.pools.set_default(&enrolled.id)?
+        };
+        self.overview_from_pool(&pool)
     }
 
     pub fn list_members(&self, pool_id: &str) -> Result<Vec<RouteMember>> {
@@ -140,6 +272,86 @@ impl RoutePoolService {
         self.pools.remove_member(member_id)?;
         self.sync_lead_projection(&member.route_pool_id)?;
         Ok(())
+    }
+
+    pub fn list_rules(&self, pool_id: &str) -> Result<Vec<ModelRouteRule>> {
+        self.require_enabled()?;
+        self.pools.list_rules(pool_id)
+    }
+
+    pub fn get_rule(&self, rule_id: &str) -> Result<Option<ModelRouteRule>> {
+        self.require_enabled()?;
+        self.pools.get_rule(rule_id)
+    }
+
+    /// Operators insert rules explicitly. Listed member models are not copied.
+    pub fn add_rule(
+        &self,
+        pool_id: &str,
+        public_model: &str,
+        endpoint_family: &str,
+        upstream_provider: &str,
+        upstream_dialect: &str,
+        upstream_model: &str,
+        priority: i64,
+        equivalent_group: Option<&str>,
+    ) -> Result<ModelRouteRule> {
+        self.require_enabled()?;
+        let now = now();
+        self.pools.add_rule(&ModelRouteRule {
+            id: Uuid::new_v4().to_string(),
+            route_pool_id: pool_id.to_owned(),
+            public_model: public_model.to_owned(),
+            endpoint_family: endpoint_family.to_owned(),
+            upstream_provider: upstream_provider.to_owned(),
+            upstream_dialect: upstream_dialect.to_owned(),
+            upstream_model: upstream_model.to_owned(),
+            priority,
+            equivalent_group: equivalent_group
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned),
+            enabled: true,
+            created_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    pub fn set_rule_enabled(&self, rule_id: &str, enabled: bool) -> Result<ModelRouteRule> {
+        self.require_enabled()?;
+        let mut rule = self.require_rule(rule_id)?;
+        rule.enabled = enabled;
+        rule.updated_at = now();
+        self.pools.update_rule(&rule)
+    }
+
+    pub fn set_rule_priority(&self, rule_id: &str, priority: i64) -> Result<ModelRouteRule> {
+        self.require_enabled()?;
+        let mut rule = self.require_rule(rule_id)?;
+        rule.priority = priority;
+        rule.updated_at = now();
+        self.pools.update_rule(&rule)
+    }
+
+    pub fn set_rule_equivalent_group(
+        &self,
+        rule_id: &str,
+        equivalent_group: Option<&str>,
+    ) -> Result<ModelRouteRule> {
+        self.require_enabled()?;
+        let mut rule = self.require_rule(rule_id)?;
+        rule.equivalent_group = equivalent_group
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+        rule.updated_at = now();
+        self.pools.update_rule(&rule)
+    }
+
+    pub fn remove_rule(&self, rule_id: &str) -> Result<()> {
+        self.require_enabled()?;
+        let _rule = self.require_rule(rule_id)?;
+        self.pools.remove_rule(rule_id)
     }
 
     /// Persist the one-time v2 enrollment after the gateway port is already live.
@@ -376,10 +588,27 @@ impl RoutePoolService {
         Ok(active)
     }
 
+    fn listed_models_for_pool(&self, pool: &RoutePool, members: &[RouteMember]) -> Vec<String> {
+        let Some(lead) = members.iter().find(|member| member.enabled) else {
+            return Vec::new();
+        };
+        let routes = AdapterRouteService::new(self.db.clone());
+        let Ok(product) = routes.classify_source_product(lead.source_kind, &lead.source_id) else {
+            return Vec::new();
+        };
+        list_local_bridge_models(product, pool.target_agent_id, None)
+    }
+
     fn require_member(&self, member_id: &str) -> Result<RouteMember> {
         self.pools
             .get_member(member_id)?
             .ok_or_else(|| AppError::NotFound(format!("route member not found: {member_id}")))
+    }
+
+    fn require_rule(&self, rule_id: &str) -> Result<ModelRouteRule> {
+        self.pools
+            .get_rule(rule_id)?
+            .ok_or_else(|| AppError::NotFound(format!("model route rule not found: {rule_id}")))
     }
 
     fn require_enabled(&self) -> Result<()> {

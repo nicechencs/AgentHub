@@ -1,0 +1,30 @@
+{
+  "model": "gpt-5.4",
+  "prompt_cache_key": "grok-cache-1",
+  "previous_response_id": "resp_prior",
+  "reasoning": { "effort": "high", "summary": "detailed" },
+  "include": ["reasoning.encrypted_content"],
+  "store": true,
+  "metadata": { "grok_client": "cli" },
+  "max_output_tokens": 128,
+  "input": [
+    {
+      "type": "message",
+      "role": "system",
+      "content": [{ "type": "input_text", "text": "Stay in English." }]
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": [{ "type": "input_text", "text": "ping" }]
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "lookup",
+      "parameters": { "type": "object", "properties": {} }
+    }
+  ],
+  "stream": false
+}

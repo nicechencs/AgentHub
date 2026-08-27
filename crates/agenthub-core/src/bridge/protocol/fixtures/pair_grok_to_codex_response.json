@@ -1,0 +1,34 @@
+{
+  "id": "resp_codex_pair",
+  "object": "response",
+  "created_at": 1,
+  "model": "gpt-5.4",
+  "status": "completed",
+  "store": false,
+  "service_tier": "default",
+  "metadata": { "codex_only": true },
+  "output": [
+    {
+      "id": "fc_1",
+      "type": "function_call",
+      "status": "completed",
+      "call_id": "call_lookup",
+      "name": "lookup",
+      "arguments": "{\"q\":\"weather\"}"
+    },
+    {
+      "id": "msg_codex",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [{ "type": "output_text", "text": "called lookup" }]
+    }
+  ],
+  "usage": {
+    "input_tokens": 8,
+    "output_tokens": 4,
+    "total_tokens": 12,
+    "reasoning_tokens": 0,
+    "output_tokens_details": { "reasoning_tokens": 0 }
+  }
+}

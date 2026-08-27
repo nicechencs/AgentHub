@@ -13,7 +13,7 @@ import {
   stripClaudeContextMarker,
   type ClaudeContextWindowChoice,
 } from '@/lib/claude-client-env';
-import { isLeftoverLocalRouteProvider } from '@/pages/chat/chat-model';
+import { isLeftoverLocalRouteProvider } from '@/lib/leftover-local-route';
 import { detectUpstreamChannelFromUrl } from './adapter-route-detail-model';
 
 export const CREATE_ROUTE_TARGETS = ['claude', 'codex', 'grok'] as const;

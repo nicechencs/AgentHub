@@ -3,13 +3,14 @@ use super::*;
 use crate::models::{
     Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
     AdapterSourceKind, AdapterSourceProduct, AdapterTargetProtocol, AdapterUpstreamTransport,
-    Provider, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
+    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
+    Provider, RouteSchedulePolicy,
 };
 use crate::services::{ProviderService, RoutePoolService};
-use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
+use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo, RoutePoolRepo};
+use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::get;
-use axum::Router;
 use tokio::net::TcpListener;
 
 async fn health_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()>) {
@@ -317,21 +318,27 @@ fn prepare_project_finalize_and_restore_keep_source_secret_out_of_persistence() 
             .len(),
         47
     );
-    assert!(generated.settings_config["content"]
-        .as_str()
-        .unwrap()
-        .contains("http://127.0.0.1:43121/v1"));
-    assert!(!serde_json::to_string(&generated)
-        .unwrap()
-        .contains("upstream-membership-secret"));
+    assert!(
+        generated.settings_config["content"]
+            .as_str()
+            .unwrap()
+            .contains("http://127.0.0.1:43121/v1")
+    );
+    assert!(
+        !serde_json::to_string(&generated)
+            .unwrap()
+            .contains("upstream-membership-secret")
+    );
 
     let finalized = service.finalize(&prepared, 43121).unwrap();
     assert_eq!(finalized.status, AdapterProfileStatus::Active);
     assert_eq!(finalized.local_port, Some(43121));
     assert!(finalized.auto_start);
-    assert!(!serde_json::to_string(&finalized)
-        .unwrap()
-        .contains("upstream-membership-secret"));
+    assert!(
+        !serde_json::to_string(&finalized)
+            .unwrap()
+            .contains("upstream-membership-secret")
+    );
 
     let restorable = service.list_auto_start_profiles().unwrap();
     assert_eq!(restorable, vec![finalized.clone()]);
@@ -358,9 +365,11 @@ fn account_prepare_projects_without_plaintext_and_oauth_is_rejected() {
 
     let generated = create_projection(&db, &prepared, 43123);
     assert_eq!(generated.meta["adapterSourceRef"]["kind"], "account");
-    assert!(!serde_json::to_string(&generated)
-        .unwrap()
-        .contains("account-upstream-secret"));
+    assert!(
+        !serde_json::to_string(&generated)
+            .unwrap()
+            .contains("account-upstream-secret")
+    );
 
     let (_oauth_dir, oauth_db) = test_db();
     AccountRepo::new(oauth_db.clone())
@@ -413,10 +422,12 @@ fn retry_reuses_local_bearer_and_requests_provider_update_after_rebind() {
         first_bearer
     );
     let updated = ProviderService::new(db.clone()).update(&input).unwrap();
-    assert!(updated.settings_config["content"]
-        .as_str()
-        .unwrap()
-        .contains("127.0.0.1:43122/v1"));
+    assert!(
+        updated.settings_config["content"]
+            .as_str()
+            .unwrap()
+            .contains("127.0.0.1:43122/v1")
+    );
     let finalized = service.finalize(&retry, 43122).unwrap();
     assert_eq!(finalized.local_port, Some(43122));
 }
@@ -432,10 +443,12 @@ fn invalid_source_and_provider_collision_fail_without_creating_profile() {
         service.prepare(&request("missing-key")).unwrap_err().code(),
         "invalid_arg"
     );
-    assert!(AdapterProfileRepo::new(db.clone())
-        .list(None, None, None)
-        .unwrap()
-        .is_empty());
+    assert!(
+        AdapterProfileRepo::new(db.clone())
+            .list(None, None, None)
+            .unwrap()
+            .is_empty()
+    );
 
     let source = kimi_source("colliding-source", "upstream-membership-secret");
     ProviderRepo::new(db.clone()).create(&source).unwrap();
@@ -454,10 +467,12 @@ fn invalid_source_and_provider_collision_fail_without_creating_profile() {
         service.prepare(&request(&source.id)).unwrap_err().code(),
         "adapter.provider_conflict"
     );
-    assert!(AdapterProfileRepo::new(db)
-        .list(None, None, None)
-        .unwrap()
-        .is_empty());
+    assert!(
+        AdapterProfileRepo::new(db)
+            .list(None, None, None)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -531,10 +546,12 @@ fn auto_start_and_attention_are_profile_only_state_transitions() {
         attention.last_error_code.as_deref(),
         Some("adapter.port_in_use")
     );
-    assert!(ProviderRepo::new(db)
-        .list(Some(AgentId::Codex))
-        .unwrap()
-        .is_empty());
+    assert!(
+        ProviderRepo::new(db)
+            .list(Some(AgentId::Codex))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -820,7 +837,7 @@ fn restored_port_projection_and_persist_realign_active_profile() {
 #[tokio::test]
 async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
     let (upstream_port, upstream_task) = health_upstream(StatusCode::UNAUTHORIZED).await;
-    let material = AdapterBridgeRuntimeMaterial {
+    let mut material = AdapterBridgeRuntimeMaterial {
         profile_id: "health-profile".into(),
         source_connection_id: "kimi-membership".into(),
         preferred_port: None,
@@ -836,6 +853,9 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -852,7 +872,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
 
 #[tokio::test]
 async fn codex_responses_health_probe_does_not_request_models() {
-    let material = AdapterBridgeRuntimeMaterial {
+    let mut material = AdapterBridgeRuntimeMaterial {
         profile_id: "codex-health-profile".into(),
         source_connection_id: "codex-subscription".into(),
         preferred_port: None,
@@ -868,6 +888,9 @@ async fn codex_responses_health_probe_does_not_request_models() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -882,7 +905,7 @@ async fn codex_responses_health_probe_does_not_request_models() {
 
 #[tokio::test]
 async fn xai_responses_health_probe_does_not_request_models() {
-    let material = AdapterBridgeRuntimeMaterial {
+    let mut material = AdapterBridgeRuntimeMaterial {
         profile_id: "grok-health-profile".into(),
         source_connection_id: "grok-subscription".into(),
         preferred_port: None,
@@ -898,6 +921,9 @@ async fn xai_responses_health_probe_does_not_request_models() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -928,6 +954,9 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.is_empty());
@@ -958,6 +987,9 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
@@ -983,6 +1015,9 @@ fn start_spec_empty_when_mapping_and_default_are_missing() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     assert!(material.start_spec(Some(0)).listed_models.is_empty());
 }
@@ -1005,6 +1040,9 @@ fn start_spec_lists_configured_default_when_mapping_is_missing() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
@@ -1030,6 +1068,9 @@ fn start_spec_lists_openai_to_codex_without_kimi_ids() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert_eq!(listed, vec![OPENAI_DEFAULT_MODEL.to_string()]);
@@ -1114,10 +1155,12 @@ fn bridge_remove_preflight_requires_owned_non_current_provider_then_removes_prof
 
     ProviderRepo::new(db.clone()).delete(&generated.id).unwrap();
     service.complete_remove(&removal).unwrap();
-    assert!(AdapterProfileRepo::new(db)
-        .get(&profile.id)
-        .unwrap()
-        .is_none());
+    assert!(
+        AdapterProfileRepo::new(db)
+            .get(&profile.id)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -1349,18 +1392,26 @@ fn prepare_codex_subscription_projects_only_claude_loopback_env() {
         "http://127.0.0.1:43144"
     );
     assert_eq!(input.settings_config["env"]["ANTHROPIC_MODEL"], "gpt-5.4");
-    assert!(input.settings_config["env"]
-        .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
-        .is_none());
-    assert!(input.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"]
-        .as_str()
-        .is_some_and(|token| token.starts_with("ahb_")));
-    assert!(!serde_json::to_string(&input)
-        .unwrap()
-        .contains("codex-upstream-access-secret"));
-    assert!(!serde_json::to_string(&input)
-        .unwrap()
-        .contains("refresh-must-not-enter-bridge"));
+    assert!(
+        input.settings_config["env"]
+            .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+            .is_none()
+    );
+    assert!(
+        input.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"]
+            .as_str()
+            .is_some_and(|token| token.starts_with("ahb_"))
+    );
+    assert!(
+        !serde_json::to_string(&input)
+            .unwrap()
+            .contains("codex-upstream-access-secret")
+    );
+    assert!(
+        !serde_json::to_string(&input)
+            .unwrap()
+            .contains("refresh-must-not-enter-bridge")
+    );
 }
 
 #[test]
@@ -1433,9 +1484,11 @@ fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
             !haystack.contains("gpt-"),
             "{target:?} invented ChatGPT model"
         );
-        assert!(!serde_json::to_string(&input)
-            .unwrap()
-            .contains("codex-upstream-access-secret"));
+        assert!(
+            !serde_json::to_string(&input)
+                .unwrap()
+                .contains("codex-upstream-access-secret")
+        );
     }
 }
 
@@ -1494,9 +1547,11 @@ fn prepare_anthropic_provider_projects_messages_bridge_not_kimi() {
     assert!(content.contains(ANTHROPIC_DEFAULT_MODEL));
     assert!(!content.contains(PROVIDER_SLUG));
     assert!(!content.contains("kimi-k2.5"));
-    assert!(!serde_json::to_string(&generated)
-        .unwrap()
-        .contains("sk-ant-secret"));
+    assert!(
+        !serde_json::to_string(&generated)
+            .unwrap()
+            .contains("sk-ant-secret")
+    );
 }
 
 #[test]
@@ -1583,9 +1638,11 @@ fn prepare_openai_provider_projects_chat_completions_bridge() {
     assert!(!content.contains(PROVIDER_SLUG));
     assert!(!content.contains("kimi-k2.5"));
     assert!(!content.contains("grok-"));
-    assert!(!serde_json::to_string(&generated)
-        .unwrap()
-        .contains("sk-openai-secret"));
+    assert!(
+        !serde_json::to_string(&generated)
+            .unwrap()
+            .contains("sk-openai-secret")
+    );
 }
 
 #[test]
@@ -1829,12 +1886,14 @@ fn legacy_toml_with_drifted_port_still_conflicts() {
     service.finalize(&prepared, 43145).unwrap();
     let mut drifted = generated.clone();
     let content = drifted.settings_config["content"].as_str().unwrap();
-    drifted.settings_config["content"] = json!(content
-        .replace(
-            "api_backend = \"responses\"",
-            "api_backend = \"chat_completions\""
-        )
-        .replace("43145", "43199"));
+    drifted.settings_config["content"] = json!(
+        content
+            .replace(
+                "api_backend = \"responses\"",
+                "api_backend = \"chat_completions\""
+            )
+            .replace("43145", "43199")
+    );
     persist_mutated_provider(&db, drifted);
     assert_eq!(
         service
@@ -1863,6 +1922,9 @@ fn start_spec_lists_stealth_ox_alpha_for_custom_openai() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(
@@ -1889,12 +1951,17 @@ fn start_spec_keeps_every_user_listed_model() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "openai/gpt-4o"));
-    assert!(listed
-        .iter()
-        .any(|model| model == "anthropic/claude-sonnet-4"));
+    assert!(
+        listed
+            .iter()
+            .any(|model| model == "anthropic/claude-sonnet-4")
+    );
     assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
 }
 
@@ -1916,6 +1983,9 @@ fn start_spec_strips_claude_1m_marker_from_listed_models() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
@@ -1940,6 +2010,9 @@ fn start_spec_official_openai_does_not_list_stealth() {
         local_bearer: "local-secret".into(),
         route_index: None,
         index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.iter().any(|model| model == "stealth/ox-alpha"));
@@ -1994,9 +2067,11 @@ fn prepare_glm_claude_uses_anthropic_endpoint() {
     };
     assert_eq!(input.settings_config["model"], "glm-4.6");
     assert_eq!(input.settings_config["env"]["ANTHROPIC_MODEL"], "glm-4.6");
-    assert!(input.settings_config["env"]
-        .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
-        .is_none());
+    assert!(
+        input.settings_config["env"]
+            .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+            .is_none()
+    );
 }
 
 #[test]
@@ -2180,12 +2255,49 @@ fn production_start_spec_attaches_index_when_flags_on_and_pool_enrolled() {
     let index = spec.route_index.expect("enrolled v2 start attaches index");
     assert!(!index.list_models("responses").is_empty());
     assert!(index.resolve("responses", "unknown-model").is_err());
+    assert_eq!(
+        spec.schedule_policy,
+        RouteSchedulePolicy::PriorityFailover,
+        "default pool policy remains priority_failover"
+    );
+}
+
+#[test]
+fn production_start_spec_attaches_pool_schedule_policy() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-membership", "upstream-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    RoutePoolService::new(db.clone())
+        .enroll_v2(&prepared.profile().id, 43155)
+        .unwrap();
+    let mut pool = RoutePoolService::new(db.clone())
+        .get(&prepared.profile().id)
+        .unwrap()
+        .expect("legacy pool");
+    pool.schedule_policy = RouteSchedulePolicy::RoundRobin;
+    RoutePoolRepo::new(db.clone())
+        .update_pool(&pool)
+        .expect("persist round_robin");
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    assert_eq!(
+        prepared
+            .runtime_material()
+            .start_spec(Some(0))
+            .schedule_policy,
+        RouteSchedulePolicy::RoundRobin
+    );
 }
 
 #[test]
 fn production_start_spec_skips_index_when_route_index_flag_is_off() {
     let (_dir, db) = test_db();
     db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "off").unwrap();
     ProviderRepo::new(db.clone())
         .create(&kimi_source("kimi-membership", "upstream-secret"))
         .unwrap();
@@ -2203,6 +2315,16 @@ fn production_start_spec_skips_index_when_route_index_flag_is_off() {
             .is_none(),
         "flag off must keep v1 lead dispatch"
     );
+}
+
+#[test]
+fn parse_openai_models_json_reads_data_ids() {
+    let body = br#"{"data":[{"id":"gpt-4o"},{"id":" gpt-4.1 "},{"id":""}]}"#;
+    assert_eq!(
+        parse_openai_models_json(body).as_deref(),
+        Some(["gpt-4o".to_owned(), "gpt-4.1".to_owned()].as_slice())
+    );
+    assert!(parse_openai_models_json(br#"{"data":[]}"#).is_none());
 }
 
 fn openai_source_with_listed(id: &str, api_key: &str, listed: &[&str]) -> Provider {
@@ -2276,6 +2398,88 @@ fn production_index_uses_each_member_listed_models_not_the_lead_catalog() {
             .map(|candidate| candidate.member_id.as_str())
             .collect::<Vec<_>>(),
         vec!["openai-b"]
+    );
+}
+
+#[test]
+fn production_index_labels_members_by_their_own_provider() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    db.set_setting(FEATURE_MIXED_PROVIDER_POOL, "true").unwrap();
+    AccountRepo::new(db.clone())
+        .create(&grok_subscription_account(
+            "grok-subscription",
+            "grok-upstream-secret",
+        ))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account(
+            "codex-subscription",
+            "codex-upstream-access-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&grok_codex_account_request("grok-subscription"))
+        .unwrap();
+    let pools = RoutePoolService::new(db.clone());
+    pools
+        .add_member(
+            &prepared.profile().id,
+            AdapterSourceKind::Account,
+            "codex-subscription",
+        )
+        .unwrap();
+    pools
+        .add_rule(
+            &prepared.profile().id,
+            "m1",
+            "responses",
+            "grok",
+            "grok",
+            "grok-4.5",
+            0,
+            Some("shared"),
+        )
+        .unwrap();
+    pools
+        .add_rule(
+            &prepared.profile().id,
+            "m1",
+            "responses",
+            "codex",
+            "codex",
+            "gpt-5.4",
+            10,
+            Some("shared"),
+        )
+        .unwrap();
+    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    let prepared = service
+        .prepare(&grok_codex_account_request("grok-subscription"))
+        .unwrap();
+    let index = prepared
+        .runtime_material()
+        .start_spec(Some(0))
+        .route_index
+        .expect("enrolled mixed pool attaches index");
+    let providers: Vec<_> = index
+        .capability_snapshots()
+        .into_iter()
+        .map(|snapshot| (snapshot.member_id, snapshot.upstream_provider))
+        .collect();
+    assert!(
+        providers
+            .iter()
+            .any(|(id, provider)| id == "grok-subscription" && provider == "grok"),
+        "grok member must keep grok provider, got {providers:?}"
+    );
+    assert!(
+        providers
+            .iter()
+            .any(|(id, provider)| id == "codex-subscription" && provider == "codex"),
+        "codex member must not inherit the grok lead provider, got {providers:?}"
     );
 }
 

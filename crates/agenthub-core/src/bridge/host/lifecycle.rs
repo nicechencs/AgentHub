@@ -21,6 +21,7 @@ use super::gateway::{
     SocketInstance,
 };
 use super::http::router;
+use super::inbound::InboundRequestRecord;
 use super::{
     DRAIN_TIMEOUT, FORCE_CANCEL_GRACE, MAX_IN_FLIGHT_REQUESTS_PER_PROFILE, TASK_POLL_INTERVAL,
 };
@@ -163,6 +164,11 @@ impl BridgeRuntimeHost {
             .runtimes
             .get(profile_id)
             .map(|runtime| runtime.status(live)))
+    }
+
+    /// Last inbound requests for this profile (newest first). Credential-free.
+    pub fn recent_inbound(&self, profile_id: &str) -> Vec<InboundRequestRecord> {
+        self.gateway.inbound.recent(profile_id)
     }
 
     pub fn statuses(&self) -> Result<Vec<BridgeRuntimeStatus>, BridgeHostError> {
@@ -650,6 +656,7 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.multi_account == right.multi_account
         && member_fingerprint(left) == member_fingerprint(right)
         && left.route_index == right.route_index
+        && left.schedule_policy == right.schedule_policy
 }
 
 fn member_fingerprint(spec: &BridgeStartSpec) -> Vec<(String, String, String)> {

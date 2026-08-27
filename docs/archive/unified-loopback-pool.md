@@ -1,16 +1,20 @@
 ---
 title: 本机同口授权池
-type: proposal
-status: proposed
+type: archive
+status: archived
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # 本机同口授权池
 
-> 状态：提案
+> **归档（2026-08-27）**。默认同口授权池已落地，不是待办。现行契约见 [Connections、Routes 与绑定](../concepts/connections-and-routing.md)、[本机 Routes API](../reference/local-route-api.md) 和 [当前实现状态](../STATUS.md)。下文是当时的设计稿，不要按「未实施」派工。
 >
-> 这是尚未承诺实施的候选方向，不是当前实现契约。不得据此宣称已经同口调度、已经按模型选授权，或把 Routes 页改写成网关管理大盘。
+> 已作为产品默认打开：每个目标 Agent/surface 一个默认池、route/surface 级本机令牌、共享 resolver 与 `/models` 并集、默认 `priority_failover`、显式 enrollment、官方直连不自动入池、空 `/models` fail-closed。
+>
+> 仍保持实验开关、默认关闭：`feature.mixed_provider_pool`（跨供应商复合路由）、`feature.codex_ingress_grok_upstream` / `feature.grok_ingress_codex_upstream`（Codex↔Grok 双向 Responses）。
+>
+> **Archived / 已归档**: Historical design record. Preserve the body for context; do not use it as the current implementation contract, capability switch, or TODO list.
 
 ## 1. 当前基线
 
@@ -24,7 +28,7 @@ updated: 2026-08-26
    - `AccountPicker` / `RequestFsm` 只聚合同一 `TicketSurface + credentialClass` 的成员，且所有 local-bridge 边 `multi_account = false`。
    - `switch_edge_for_model` 只在 lead 映射 miss 时做请求级切边；`GET /models` 不合并多授权名单；上游 401 / 配额失败不会因此换号。
 
-现行契约见 [Connections、Routes 与绑定](../concepts/connections-and-routing.md)、[本机 Routes API](../reference/local-route-api.md) 和 [Route 兼容性](../reference/route-compatibility.md)。同类多号的历史设计见归档 [multi-account-routing-rfc.md](../archive/multi-account-routing-rfc.md)；它只覆盖同票面轮询，不是本文的跨产品同口池。
+现行契约见 [Connections、Routes 与绑定](../concepts/connections-and-routing.md)、[本机 Routes API](../reference/local-route-api.md) 和 [Route 兼容性](../reference/route-compatibility.md)。同类多号的历史设计见归档 [multi-account-routing-rfc.md](multi-account-routing-rfc.md)；它只覆盖同票面轮询，不是本文的跨产品同口池。
 
 ## 2. 候选目标
 
@@ -424,16 +428,16 @@ Routes 展示固定入口、surface、成员、稳定模型能力和临时 avail
 - 在页面层做调度。调度必须留在 `bridge` host，资格仍由 `plan()` 决定。
 - 根据模型名前缀猜 Provider，或在未声明等价关系时跨 Provider 自动 fallback。
 - weight、least-conn、余额调度、公网监听、计费、多租户。
-- sidecar 进程迁移（见 [Local Route Sidecar](adapter-sidecar.md)）；本提案不改变 runtime 进程边界。
+- sidecar 进程迁移（见 [Local Route Sidecar](../proposals/adapter-sidecar.md)）；本提案不改变 runtime 进程边界。
 - 凭据落盘加密；国产 OAuth 开边或 OAuth 转 API。
 
 ## 13. 与历史记录的关系
 
 | 记录 | 关系 |
 |---|---|
-| [a4-unified-loopback-gateway.md](../archive/a4-unified-loopback-gateway.md) | 已落地的同口 Gateway；本提案建立在它上面，不重做 listener |
-| [multi-account-routing-rfc.md](../archive/multi-account-routing-rfc.md) | 同类多号内核；对应本提案 P4，不是 P7 跨产品池 |
-| [routing-connection-refactor-plan.md](../archive/routing-connection-refactor-plan.md) | 历史泳道拆分；其中 C2 仍部分未闭环，不得当作现行待办 |
+| [a4-unified-loopback-gateway.md](a4-unified-loopback-gateway.md) | 已落地的同口 Gateway；本提案建立在它上面，不重做 listener |
+| [multi-account-routing-rfc.md](multi-account-routing-rfc.md) | 同类多号内核；对应本提案 P4，不是 P7 跨产品池 |
+| [routing-connection-refactor-plan.md](routing-connection-refactor-plan.md) | 历史泳道拆分；其中 C2 仍部分未闭环，不得当作现行待办 |
 
 ## 相关页面
 
@@ -442,5 +446,5 @@ Routes 展示固定入口、surface、成员、稳定模型能力和临时 avail
 - [本机 Routes API](../reference/local-route-api.md)
 - [Route 兼容性](../reference/route-compatibility.md)
 - [产品边界](../decisions/product-boundaries.md)
-- [Local Route Sidecar](adapter-sidecar.md)
-- [提案索引](README.md)
+- [Local Route Sidecar](../proposals/adapter-sidecar.md)
+- [提案索引](../proposals/README.md)

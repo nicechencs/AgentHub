@@ -3,6 +3,12 @@
  * Do not import this type from a page module.
  * Core fields come from `toCredentialRow` (P2-7); this type adds UI/list extras.
  */
+import {
+  liveAuthOf,
+  savedAuthOf,
+  wrapBareAccount,
+  type AccountAuthView,
+} from '@/lib/backend/contracts/account-map';
 import type { AuthHealth } from '@/lib/backend/contracts/auth-state';
 import type { ConnectionKind } from '@/lib/connection-kind';
 import {
@@ -53,8 +59,13 @@ export function authStatusOfAccount(a: Account): AuthStatus {
   return toCredentialRow({ source: 'account', account: a }).auth.status;
 }
 
-export function authHealthOfAccount(a: Account): AuthHealth {
-  return toCredentialRow({ source: 'account', account: a }).auth.health ?? 'unknown';
+export function authHealthOfAccount(a: Account | AccountAuthView): AuthHealth {
+  const view = 'savedAuth' in a && 'account' in a ? a : wrapBareAccount(a);
+  const live = liveAuthOf(view);
+  if (live !== 'unset') return live;
+  const saved = savedAuthOf(view);
+  if (saved !== 'unset') return saved;
+  return toCredentialRow({ source: 'account', account: view.account }).auth.health ?? 'unknown';
 }
 
 function attachUsage(entry: ConnectionEntry, usageMap?: ConnectionUsageMap): ConnectionEntry {
@@ -63,29 +74,37 @@ function attachUsage(entry: ConnectionEntry, usageMap?: ConnectionUsageMap): Con
   return usage === undefined ? entry : { ...entry, usage };
 }
 
-export function accountToEntry(a: Account, usageMap?: ConnectionUsageMap): ConnectionEntry {
-  const row = toCredentialRow({ source: 'account', account: a });
+export function accountToEntry(
+  a: Account | AccountAuthView,
+  usageMap?: ConnectionUsageMap,
+): ConnectionEntry {
+  const view = 'savedAuth' in a && 'account' in a ? a : wrapBareAccount(a);
+  const account = view.account;
+  const row = toCredentialRow({ source: 'account', account });
+  const saved = savedAuthOf(view);
+  const live = liveAuthOf(view);
+  const authHealth = live !== 'unset' ? live : saved !== 'unset' ? saved : row.auth.health;
   return attachUsage(
     {
       key: row.key,
       source: row.source,
-      kind: a.kind === 'apikey' ? 'apikey' : 'oauth',
+      kind: account.kind === 'apikey' ? 'apikey' : 'oauth',
       id: row.id,
       agentId: row.agentId,
       title: row.title,
       subtitle: row.subtitle,
       isCurrent: row.isCurrent,
       authStatus: row.auth.status,
-      authHealth: row.auth.health,
-      sortKey: a.updatedAt || a.lastUsedAt || a.createdAt || '',
-      identityLabel: a.identityLabel,
-      subscription: a.subscription,
-      quota5hPct: a.quota5hPct,
-      quota7dPct: a.quota7dPct,
-      quotaResetIn: a.quotaResetIn,
-      quota7dResetIn: a.quota7dResetIn,
-      endpointMode: a.kind === 'apikey' ? 'official' : undefined,
-      account: a,
+      authHealth,
+      sortKey: account.updatedAt || account.lastUsedAt || account.createdAt || '',
+      identityLabel: account.identityLabel,
+      subscription: account.subscription,
+      quota5hPct: account.quota5hPct,
+      quota7dPct: account.quota7dPct,
+      quotaResetIn: account.quotaResetIn,
+      quota7dResetIn: account.quota7dResetIn,
+      endpointMode: account.kind === 'apikey' ? 'official' : undefined,
+      account,
     },
     usageMap,
   );
@@ -118,7 +137,7 @@ export function providerToEntry(p: Provider, usageMap?: ConnectionUsageMap): Con
 
 /** 合并两池：当前项优先，再按更新时间降序 */
 export function mergeConnectionEntries(
-  accounts: Account[],
+  accounts: Array<Account | AccountAuthView>,
   providers: Provider[],
   usageMap?: ConnectionUsageMap,
 ): ConnectionEntry[] {

@@ -1,15 +1,19 @@
 use super::auth_revision::AuthCredentialMetadata;
 use super::codex_copies::ide_codex_bins_under;
+#[cfg(not(windows))]
+use super::detect_binary::well_known_npm_cli_dirs;
 use super::detect_binary::{
     agenthub_user_npm_prefix_roots, attach_extra_binary_copies, detect_binary, expand_binary_names,
     first_existing_named_bin, infer_channel, is_under_agenthub_user_npm_prefix,
-    well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
+    npm_global_bin_dirs, npm_prefix_stdout_to_bin_dir, parse_npmrc_global_prefix,
+    user_writable_npm_bin_dir, user_writable_npm_prefix, well_known_bin_paths,
+    NOT_FOUND_FIREFIGHTING_NOTE,
 };
 use super::*;
 use crate::error::AppError;
 use crate::models::{
-    AccountKind, AgentConfig, AgentId, DetectResult, DetectStatus, DetectedBinaryCopy, Capability,
-    CapabilityLevel,
+    AccountKind, AgentConfig, AgentId, Capability, CapabilityLevel, DetectResult, DetectStatus,
+    DetectedBinaryCopy,
 };
 use crate::utils::atomic::atomic_write;
 use serde_json::json;
@@ -17,7 +21,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-// Only exercised by unix-gated tests below.
+// Serializes tests that mutate HOME / PATH / AGENTHUB_HOME.
 static DETECT_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn restore_env(key: &str, prev: Option<OsString>) {
@@ -193,7 +197,10 @@ fn attach_extra_binary_copies_skips_primary_leftover_and_duplicates() {
         assert_eq!(v, "2.0.0");
     }
     assert!(
-        result.notes.iter().any(|n| n.contains("另有 1 份 Claude Code")),
+        result
+            .notes
+            .iter()
+            .any(|n| n.contains("另有 1 份 Claude Code")),
         "channel extra note must name the agent and skip leftover: {:?}",
         result.notes
     );
@@ -229,12 +236,7 @@ fn attach_extra_binary_copies_refreshes_note_when_ide_copy_is_added() {
             Some("npm".into()),
         )],
     };
-    attach_extra_binary_copies(
-        &mut result,
-        vec![(ide.clone(), "ide")],
-        &["--version"],
-        &[],
-    );
+    attach_extra_binary_copies(&mut result, vec![(ide.clone(), "ide")], &["--version"], &[]);
 
     assert_eq!(result.extra_copies.len(), 2);
     assert_eq!(result.extra_copies[1].kind, "ide");
@@ -327,10 +329,7 @@ fn attach_extra_binary_copies_promotes_desktop_when_not_found() {
         .extra_copies
         .iter()
         .any(|c| c.kind == "ide" && c.path == ide));
-    assert!(result
-        .extra_copies
-        .iter()
-        .all(|c| c.path != desktop));
+    assert!(result.extra_copies.iter().all(|c| c.path != desktop));
     let ide_copy = result
         .extra_copies
         .iter()
@@ -365,7 +364,10 @@ fn install_lifecycle_aligns_all_agents() {
             assert_eq!(native.uninstall_via, "in_app");
         }
         let ide = install_lifecycle(agent, "ide");
-        assert_eq!((ide.source, ide.update_via, ide.uninstall_via), ("ide", "ide", "ide"));
+        assert_eq!(
+            (ide.source, ide.update_via, ide.uninstall_via),
+            ("ide", "ide", "ide")
+        );
         let desktop = install_lifecycle(agent, "desktop");
         assert_eq!(
             (desktop.source, desktop.update_via, desktop.uninstall_via),
@@ -436,7 +438,8 @@ fn infer_channel_from_npm_and_native_paths() {
         assert_eq!(infer_channel(&native, None), "native");
         let kimi = PathBuf::from(r"C:\Users\demo\.kimi-code\bin\kimi.exe");
         assert_eq!(infer_channel(&kimi, Some("native")), "native");
-        let official = PathBuf::from(r"C:\Users\demo\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe");
+        let official =
+            PathBuf::from(r"C:\Users\demo\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe");
         assert_eq!(infer_channel(&official, Some("npm")), "native");
     }
     #[cfg(not(windows))]
@@ -614,6 +617,27 @@ fn detect_binary_path_wins_over_leftover_agenthub_npm_prefix() {
 }
 
 #[test]
+fn well_known_scans_user_writable_npm_for_codex_pi_dsh() {
+    let prefix = user_writable_npm_prefix().expect("user-writable npm prefix");
+    assert!(
+        !is_under_agenthub_user_npm_prefix(&prefix),
+        "install prefix {prefix:?} must not be leftover ~/.agenthub/npm"
+    );
+    let bin = user_writable_npm_bin_dir().expect("user-writable npm bin dir");
+    for agent in [AgentId::Codex, AgentId::Pi, AgentId::Dsh] {
+        let paths = well_known_bin_paths(agent);
+        assert!(
+            paths
+                .iter()
+                .any(|(p, ch)| *ch == "npm" && p.starts_with(&bin)),
+            "{} must scan user npm bin {} so install can redetect without restart: {paths:?}",
+            agent.as_str(),
+            bin.display()
+        );
+    }
+}
+
+#[test]
 fn leftover_agenthub_npm_is_never_the_spawn_target() {
     let _guard = DETECT_ENV_LOCK
         .lock()
@@ -712,6 +736,121 @@ fn is_under_agenthub_user_npm_prefix_excludes_legacy_global() {
                     .join("codex.cmd")
             ));
         }
+    }
+}
+
+#[test]
+fn parse_npmrc_global_prefix_last_wins_and_expands_home() {
+    let home = PathBuf::from("/Users/demo");
+    assert_eq!(
+        parse_npmrc_global_prefix("prefix=~/.npm-global\n", &home),
+        Some(home.join(".npm-global"))
+    );
+    assert_eq!(
+        parse_npmrc_global_prefix("prefix=\"${HOME}\"\n", &home),
+        Some(home.clone())
+    );
+    assert_eq!(
+        parse_npmrc_global_prefix("prefix=$HOME\n", &home),
+        Some(home.clone())
+    );
+    let text = "# ignore\nprefix=/first\nprefix = /second\n; prefix=/commented\n";
+    assert_eq!(
+        parse_npmrc_global_prefix(text, &home),
+        Some(PathBuf::from("/second"))
+    );
+    assert_eq!(parse_npmrc_global_prefix("; prefix=/no\n", &home), None);
+    assert_eq!(parse_npmrc_global_prefix("cache=/tmp\n", &home), None);
+}
+
+#[test]
+fn npm_prefix_stdout_to_bin_dir_trims_and_maps_platform_bin() {
+    assert_eq!(npm_prefix_stdout_to_bin_dir("   \n"), None);
+    #[cfg(not(windows))]
+    assert_eq!(
+        npm_prefix_stdout_to_bin_dir("  /opt/homebrew \n"),
+        Some(PathBuf::from("/opt/homebrew/bin"))
+    );
+    #[cfg(windows)]
+    assert_eq!(
+        npm_prefix_stdout_to_bin_dir("  C:\\Users\\demo\\AppData\\Roaming\\npm \r\n"),
+        Some(PathBuf::from(r"C:\Users\demo\AppData\Roaming\npm"))
+    );
+}
+
+#[cfg(not(windows))]
+#[test]
+fn well_known_npm_cli_dirs_include_homebrew_without_path() {
+    let home = PathBuf::from("/Users/demo");
+    let dirs = well_known_npm_cli_dirs(&home);
+    assert!(
+        dirs.contains(&PathBuf::from("/opt/homebrew/bin")),
+        "macOS GUI PATH often omits Homebrew: {dirs:?}"
+    );
+    assert!(dirs.contains(&PathBuf::from("/usr/local/bin")), "{dirs:?}");
+}
+
+#[cfg(not(windows))]
+#[test]
+fn well_known_npm_cli_dirs_use_home_nvm_when_nvm_dir_unset() {
+    let _guard = DETECT_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let bin = home
+        .join(".nvm")
+        .join("versions")
+        .join("node")
+        .join("v22.11.0")
+        .join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let prev = std::env::var_os("NVM_DIR");
+    std::env::remove_var("NVM_DIR");
+    let dirs = well_known_npm_cli_dirs(home);
+    restore_env("NVM_DIR", prev);
+    assert!(
+        dirs.contains(&bin),
+        "GUI env often omits NVM_DIR; ~/.nvm must still be probed: {dirs:?}"
+    );
+}
+
+#[test]
+fn npm_global_bin_dirs_read_npmrc_without_npm_on_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let prefix = home.join("custom-npm-prefix");
+    std::fs::write(
+        home.join(".npmrc"),
+        format!("prefix={}\n", prefix.display()),
+    )
+    .unwrap();
+    let dirs = npm_global_bin_dirs(home);
+    #[cfg(windows)]
+    let expected = prefix.clone();
+    #[cfg(not(windows))]
+    let expected = prefix.join("bin");
+    assert!(
+        dirs.iter().any(|d| d == &expected),
+        "custom ~/.npmrc prefix must be scanned when PATH has no npm: {dirs:?}"
+    );
+}
+
+#[test]
+fn well_known_codex_npm_paths_include_npm_global_bin_dirs() {
+    let Ok(home) = crate::utils::paths::home_dir() else {
+        return;
+    };
+    let dirs = npm_global_bin_dirs(&home);
+    let paths = well_known_bin_paths(AgentId::Codex);
+    for dir in dirs {
+        assert!(
+            paths
+                .iter()
+                .any(|(p, ch)| *ch == "npm" && p.starts_with(&dir)),
+            "Codex well-known npm scan must include {dir:?}: {paths:?}"
+        );
     }
 }
 
@@ -1912,6 +2051,33 @@ fn codex_chat_run_spec_skips_git_repo_trust_check() {
 }
 
 #[test]
+fn write_kimi_api_key_ensures_models_table_for_default_model() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"default_model = "kimi-k2"
+[providers.moonshot]
+base_url = "https://mytokens.cc/v1"
+api_key = "old"
+"#,
+    )
+    .unwrap();
+    kimi::write_kimi_api_key(&path, "sk-new-key").unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("sk-new-key"), "{text}");
+    assert!(
+        text.contains("[models.\"kimi-k2\"]") || text.contains("[models.kimi-k2]"),
+        "{text}"
+    );
+    assert!(text.contains("provider = \"moonshot\""), "{text}");
+    assert!(text.contains("model = \"kimi-k2\""), "{text}");
+    assert!(text.contains("max_context_size = 131072"), "{text}");
+    assert!(text.contains("type = \"openai\""), "{text}");
+    assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+}
+
+#[test]
 fn kimi_write_config_points_base_url_at_loopback() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
@@ -1936,6 +2102,33 @@ fn kimi_write_config_points_base_url_at_loopback() {
     assert!(text.contains("http://127.0.0.1:32123/v1"));
     assert!(text.contains("agenthub_codex_bridge"));
     assert!(!text.contains("gpt-"));
+}
+
+#[test]
+fn kimi_switch_write_backfills_models_table_from_incomplete_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    write_toml_config(
+        AgentId::Kimi,
+        &path,
+        &AgentConfig {
+            agent: AgentId::Kimi,
+            raw: json!({
+                "format": "toml",
+                "content": "default_model = \"kimi-k2\"\n\n[providers.moonshot]\nbase_url = \"https://mytokens.cc/v1\"\napi_key = \"sk-pool\"\n",
+            }),
+        },
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("sk-pool"), "{text}");
+    assert!(
+        text.contains("[models.\"kimi-k2\"]") || text.contains("[models.kimi-k2]"),
+        "{text}"
+    );
+    assert!(text.contains("provider = \"moonshot\""), "{text}");
+    assert!(text.contains("max_context_size = 131072"), "{text}");
+    assert!(text.contains("type = \"openai\""), "{text}");
 }
 
 #[test]

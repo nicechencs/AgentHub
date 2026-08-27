@@ -5,28 +5,53 @@
 
 use std::fmt;
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 
-use super::{AdapterSourceKind, AgentId};
+use super::{AdapterApplyPlan, AdapterProfile, AdapterRoute, AdapterSourceKind, AgentId};
 use crate::error::{AppError, Result};
 
 #[cfg(test)]
 mod tests;
 
-/// Settings key. Absent / anything other than an explicit on-value is fail-closed.
+/// Settings key. Default on. Explicit `0` / `false` / `off` / `no` disables.
 pub const FEATURE_ROUTE_POOL_V2: &str = "feature.route_pool_v2";
 
-/// Shared resolver + `/models` index. Off keeps lead + `switch_edge_for_model`.
+/// Shared resolver + `/models` index. Default on with the pool flag.
+/// Off keeps lead + `switch_edge_for_model`.
 /// One flag controls both dispatch and `GET /models`.
 pub const FEATURE_ROUTE_INDEX_V2: &str = "feature.route_index_v2";
 
+/// Codex client `/v1/responses` → Grok upstream pair adapter. Independent of
+/// the reverse direction. Off keeps today's Experimental passthrough.
+pub const FEATURE_CODEX_INGRESS_GROK_UPSTREAM: &str = "feature.codex_ingress_grok_upstream";
+
+/// Grok client `/v1/responses` → Codex upstream pair adapter. Independent of
+/// the reverse direction. Off keeps today's Experimental passthrough.
+pub const FEATURE_GROK_INGRESS_CODEX_UPSTREAM: &str = "feature.grok_ingress_codex_upstream";
+
+/// Explicit mixed-provider composite routes. Off keeps `AmbiguousModel` when
+/// candidates span more than one upstream provider. UI hidden.
+pub const FEATURE_MIXED_PROVIDER_POOL: &str = "feature.mixed_provider_pool";
+
+/// Fail-closed experimental flags. Absent / anything other than an explicit
+/// on-value is off. Used by mixed-provider and pair-adapter flags.
 pub fn feature_flag_enabled(raw: Option<&str>) -> bool {
     matches!(
         raw.map(|value| value.trim().to_ascii_lowercase())
             .as_deref(),
         Some("1" | "true" | "on" | "yes")
+    )
+}
+
+/// Product flags that ship on. Absent is on; only explicit off-values disable.
+/// Used by `feature.route_pool_v2` and `feature.route_index_v2`.
+pub fn product_flag_enabled(raw: Option<&str>) -> bool {
+    !matches!(
+        raw.map(|value| value.trim().to_ascii_lowercase())
+            .as_deref(),
+        Some("0" | "false" | "off" | "no")
     )
 }
 
@@ -214,6 +239,50 @@ impl RouteMember {
     }
 }
 
+/// Exact `public_model` → one upstream lane. Never inferred from a model-name
+/// prefix. Cross-provider failover only when `equivalent_group` matches.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRouteRule {
+    pub id: String,
+    pub route_pool_id: String,
+    pub public_model: String,
+    pub endpoint_family: String,
+    pub upstream_provider: String,
+    pub upstream_dialect: String,
+    pub upstream_model: String,
+    pub priority: i64,
+    /// Same non-empty group marks lanes equivalent for pre-commit failover.
+    /// Default is not equivalent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub equivalent_group: Option<String>,
+    pub enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl ModelRouteRule {
+    pub fn lane_key(&self) -> (&str, &str) {
+        (
+            self.upstream_provider.as_str(),
+            self.upstream_dialect.as_str(),
+        )
+    }
+
+    pub fn normalized_equivalent_group(&self) -> Option<&str> {
+        self.equivalent_group
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    }
+}
+
+/// Exact model ids only. Globs would guess a lane from a name pattern.
+pub fn model_route_id_is_exact(value: &str) -> bool {
+    let trimmed = value.trim();
+    !trimmed.is_empty() && !trimmed.contains(['*', '?', '['])
+}
+
 pub fn authorization_fingerprint(kind: AdapterSourceKind, source_id: &str) -> String {
     format!("{}:{source_id}", kind.as_str())
 }
@@ -224,6 +293,52 @@ pub fn generate_hub_token() -> Result<String> {
         AppError::message("route_pool.hub_token", format!("random failed: {error}"))
     })?;
     Ok(format!("ahb_{}", URL_SAFE_NO_PAD.encode(bytes)))
+}
+
+/// Temporary availability for Routes. Not a stable capability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MemberAvailability {
+    Ready,
+    Cooling,
+    Isolated,
+    Disabled,
+}
+
+/// Member reference on the default-pool overview. No secrets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteMemberOverview {
+    pub source_kind: AdapterSourceKind,
+    pub source_id: String,
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability: Option<MemberAvailability>,
+}
+
+/// Default-pool overview for Routes. Never includes `hub_token`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultRoutePoolOverview {
+    pub id: String,
+    pub target_agent_id: AgentId,
+    pub surface: RouteDownstreamSurface,
+    pub dialect: RouteDownstreamDialect,
+    pub v2_enrolled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gateway_port: Option<u16>,
+    pub members: Vec<RouteMemberOverview>,
+    /// Stable capability names from mapping / index when present. No health.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub listed_models: Vec<String>,
+}
+
+/// Flag-gated list of default pools. Flag off → `enabled=false` and no pools.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultRoutePoolList {
+    pub enabled: bool,
+    pub pools: Vec<DefaultRoutePoolOverview>,
 }
 
 /// Pick the unique default pool among candidates for one Agent / surface.
@@ -245,4 +360,28 @@ pub fn choose_default_pool_id<'a>(
         }
     }
     ids.first().map(|id| (*id).to_owned())
+}
+
+/// Whether an existing native_endpoint / config_sync profile may be converted
+/// into the target Agent default local-bridge pool. `plan()` must already have
+/// been called; this never invents a matrix cell.
+pub fn enroll_native_plan_is_open(profile: &AdapterProfile, plan: &AdapterApplyPlan) -> Result<()> {
+    match profile.route {
+        AdapterRoute::NativeEndpoint | AdapterRoute::ConfigSync => {}
+        AdapterRoute::LocalBridge => {
+            return Err(AppError::Unsupported("already a local route".into()));
+        }
+        AdapterRoute::Unsupported => {
+            return Err(AppError::Unsupported("unsupported route".into()));
+        }
+    }
+    if !plan.can_apply {
+        return Err(AppError::Unsupported(plan.reason.clone()));
+    }
+    if plan.analysis.route != AdapterRoute::LocalBridge {
+        return Err(AppError::Unsupported(
+            "this login cannot use the local gateway for that tool".into(),
+        ));
+    }
+    Ok(())
 }

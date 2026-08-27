@@ -24,6 +24,7 @@ import {
   type ClientWriteStatus,
 } from './client-config-model';
 import { applyLocalRouteToAgents, type CreateRouteTarget } from './create-route-flow';
+import { routeEndpointCopyKey } from './route-endpoint-copy';
 import type { RouteGraphRow } from './route-graph-model';
 
 function statusVariant(status: ClientWriteStatus): 'success' | 'accent' | 'default' {
@@ -166,6 +167,7 @@ export function WriteClientConfigDialog({
               ))}
             </ul>
           </fieldset>
+          <p className="text-meta text-muted">{t('routes.endpoint.modelsLine')}</p>
           {missingSelection ? (
             <p className="text-sm text-danger" role="alert">{t('routes.write.required')}</p>
           ) : null}
@@ -224,6 +226,7 @@ function WriteTargetRow({
             endpointId={spec.endpointId}
             className="text-meta"
           />
+          <span className="mt-0.5 block text-muted">{t(routeEndpointCopyKey(spec.endpointId))}</span>
         </dd>
         <dt className="text-muted">{t('routes.write.wireLabel')}</dt>
         <dd className="min-w-0 text-secondary">{clientWriteWireNote(spec.agent, t)}</dd>

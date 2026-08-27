@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: core, Tauri, CLI, and runtime contributors
 source-of-truth: crates/agenthub-core, src-tauri, and current adapter control/bridge code
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # Core 与 Runtime
@@ -69,7 +69,7 @@ Tauri AppState
        └─ 127.0.0.1 listener + protocol conversion
 ```
 
-当前 listener 是 Tauri 进程内 `local_bridge`，只听 loopback；生成的本地 bearer 是运行时材料，不是用户登录，也不进入 Connections 登录列表。`native_endpoint`/`config_sync` 不依赖 bridge。
+当前 listener 是 Tauri 进程内 `local_bridge`，只听 loopback。默认每个目标 Agent/surface 一个授权池：本机令牌挂在池上，成员引用 Connections 登录；`GET /models` 与 dispatch 共用 resolver。生成的本机令牌是运行时材料，不是用户登录，也不进入 Connections 登录列表。`native_endpoint`/`config_sync` 不依赖 bridge，也不会自动入池。
 
 方向态（提案，不是当前部署）：
 
@@ -93,5 +93,5 @@ sidecar 只承接 `local_bridge` runtime 和它的 lifecycle；Account、Provide
 - [Adapters and bridges](../concepts/adapters-and-bridges.md)
 - [Chat and agents](../concepts/chat-and-agents.md)
 - [Sidecar proposal](../proposals/adapter-sidecar.md)
-- [本机同口授权池（提案）](../proposals/unified-loopback-pool.md)
+- [本机同口授权池（归档）](../archive/unified-loopback-pool.md)
 - [Legacy document index](../archive/legacy-document-index.md)

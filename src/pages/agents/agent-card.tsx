@@ -36,7 +36,7 @@ import { checkChannelEnv, formatMissingList } from '@/lib/env';
 import { normalizeOpenPath } from '@/lib/path-open';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { shouldIgnoreMenuDialogDismiss } from '@/pages/connections/ticket-wallet-model';
+import { shouldIgnoreMenuDialogDismiss } from '@/lib/menu-dialog-arm';
 import { buildAgentInstallPreview, buildEnvInstallPreview } from './install-preview';
 import {
   agentTaskLogTitleKey,
@@ -45,6 +45,7 @@ import {
   extraCopyKindLabel,
   extraCopyUpdateHint,
   formatAgentVersion,
+  installRetryButtonVariant,
   isNodeTooOldUpdateNote,
   isSpecialInstallChannel,
   listAgentInstalls,
@@ -562,7 +563,7 @@ export function AgentCard({
               {installAlongside ? (
                 <Button
                   size="sm"
-                  variant="secondary"
+                  variant={installRetryButtonVariant(task?.status)}
                   onClick={() =>
                     installFailed ? retryAction() : openConfirm('install')
                   }
@@ -726,7 +727,7 @@ export function AgentCard({
             <>
               <Button
                 size="sm"
-                variant="secondary"
+                variant={installRetryButtonVariant(task?.status)}
                 onClick={() => (installFailed ? retryAction() : openConfirm('install'))}
                 disabled={busy}
                 title={installFailed ? t('agents.card.retry') : t('agents.card.installWithChannel', { id: selectedChannel.id })}
@@ -803,7 +804,7 @@ export function AgentCard({
                 <Copy className="h-3.5 w-3.5" /> {t('agents.card.copy')}
               </Button>
               {task.status === 'failed' && (
-                <Button size="sm" variant="secondary" onClick={retryAction}>
+                <Button size="sm" variant="default" onClick={retryAction}>
                   {t('agents.card.retry')}
                 </Button>
               )}
@@ -814,6 +815,9 @@ export function AgentCard({
               )}
             </div>
           </div>
+          {task.diagnosis ? (
+            <p className="mb-1 text-xs text-secondary">{task.diagnosis}</p>
+          ) : null}
           <InlineTerminal
             lines={task.lines}
             status={task.status}

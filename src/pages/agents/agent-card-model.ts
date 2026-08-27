@@ -1,16 +1,18 @@
+import type { TerminalStatus } from '@/components/shared/InlineTerminal';
 import type { InstallChannelMeta } from '@/config/agents';
 import type { MessageKey } from '@/lib/i18n';
 import type { AgentStatus } from '@/lib/types';
-import { handleMenuDialogSelect } from '@/pages/connections/ticket-wallet-model';
+import { handleMenuDialogSelect } from '@/lib/menu-dialog-arm';
 
 export type AgentCardTaskAction = 'install' | 'upgrade' | 'oneclick';
-export type AgentCardTaskStatus = 'running' | 'done' | 'failed';
+export type AgentCardTaskStatus = TerminalStatus;
 
-/** Inline install-log header: branch on status (`done` / `failed`), not action alone. */
+/** Inline install-log header: branch on status (`done` / `failed` / `guided`), not action alone. */
 export function agentTaskLogTitleKey(
   action: AgentCardTaskAction,
   status: AgentCardTaskStatus,
 ): MessageKey {
+  if (status === 'guided') return 'agents.lifecycle.setupGuide';
   if (status === 'done') {
     if (action === 'oneclick') return 'agents.lifecycle.oneclickDone';
     if (action === 'install') return 'agents.lifecycle.installComplete';
@@ -24,6 +26,13 @@ export function agentTaskLogTitleKey(
   if (action === 'oneclick') return 'agents.card.oneclickProgress';
   if (action === 'install') return 'agents.card.installing';
   return 'agents.card.upgrading';
+}
+
+/** Real failures use the page CTA. Opening an official setup page is not a failure. */
+export function installRetryButtonVariant(
+  status: AgentCardTaskStatus | undefined,
+): 'default' | 'secondary' {
+  return status === 'failed' ? 'default' : 'secondary';
 }
 
 /** Update chip: Node-too-old (Pi) is not a generic "update unknown". */

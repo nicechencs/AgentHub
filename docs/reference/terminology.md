@@ -4,7 +4,7 @@ description: AgentHub 用户界面、领域模型和内部实现术语的对应�
 type: reference
 audience: all
 status: current
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # 术语表
@@ -21,6 +21,8 @@ updated: 2026-08-26
 | 直接配置 | `native_endpoint` | 将来源端点写入目标 Agent 自己的配置 |
 | 写进对方认的登录 | `config_sync` | 将登录投影到目标 Agent 能识别的配置/登录契约 |
 | 本机转发 | `local_bridge` | 通过 loopback listener 转发或转换协议 |
+| 本机令牌 | Hub token / local bearer | 默认池给目标客户端用的本机凭据；不等于上游 API Key。增删池内登录不改这把令牌 |
+| 默认池 | default RoutePool | 每个目标 Agent/surface 一个授权池；Routes 日常只展示默认池 |
 | 能力 | `Capability` | adapter 对某操作的静态声明，不等于安装状态 |
 | 完整 | `Full` | 能力已经接入且契约完整 |
 | 部分支持 | `Partial` | 可用但有降级，必须提示 |
@@ -40,6 +42,6 @@ updated: 2026-08-26
 - 页面、菜单和用户提示用“登录”“Routes/路由”“供应商”。
 - 架构和代码说明可以写 `Ticket`、`Binding`、`bridge`，但首次出现应解释它们与用户术语的关系。
 - `local_bridge` 不等于所有 adapter；它只是三种 route 之一。
-- `Capability::ModelSelect` 不等于 Routes 的 `/v1/models`；后者是本机 Route 的只读映射列表。
+- `Capability::ModelSelect` 不等于 Routes 的 `/v1/models`；后者是本机默认池当前可服务模型的并集。
 - 凭据落盘沿用当前实现方案；不要在文档中引入 keyring、AES、主密码或国产 OAuth 转 API 计划。
 

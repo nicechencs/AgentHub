@@ -3,6 +3,8 @@
  * is_current + profiles → bindings. Generated providers are excluded.
  * Keep lockstep with crates/agenthub-core TicketReadService derive rules.
  * Generated projections and leftover 本机路由 providers are not tickets.
+ * Unpersisted surfaces come from planAdapter sourceProduct, not a second classify.
+ * Wallet reads MockTicketWalletSources; plan/bind/unbind delegate to MockTicketAdapter.
  */
 import {
   adapterCommandError,
@@ -11,8 +13,6 @@ import {
   type AdapterApplyResult,
   type AdapterBridgeRuntimeStatus,
   type AdapterProfile,
-  type AdapterRoute,
-  type BindingRoute,
   type BindTicketResult,
   type TicketCredentialClass,
   type TicketPort,
@@ -20,29 +20,35 @@ import {
   type TicketView,
   type TicketWallet,
   type BindingView,
+  adapterRouteToBinding,
   groupTicketSurfaceMembers,
   memberHealthFromAuthHealth,
 } from '@/lib/backend/contracts';
 import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
 import { ticketSurfaceSpeaks } from '@/lib/backend/contracts/ticket-speaks';
 import type { Account, AgentId, Provider } from '@/lib/types';
+import type { ClassifyProductId } from '@/lib/backend/contracts/source-classify-contract';
 import { delay } from './delay';
-import { getMockAccountById } from './account';
-import { getMockProviderById } from './provider';
+import { sourceProductOfPlan } from './adapter/source-product';
 import {
-  classifyAccountSource,
-  classifyProviderSource,
   jsonString,
   type ClassifiableAccount,
   type ClassifiableProvider,
-  type MockSourceId,
 } from './source-classify';
 
-export interface MockTicketSourceResolver {
+/** Accounts/providers/profiles/bridge snapshot used to derive the wallet. */
+export interface MockTicketWalletSources {
   listAccounts(): Account[];
   listProviders(): Provider[];
   listProfiles(): AdapterProfile[];
   getBridgeStatus(profileId: string): AdapterBridgeRuntimeStatus | undefined;
+}
+
+/**
+ * Adapter delegate for TicketPort writes. `planAdapter` is required (O-40
+ * unpersisted surface). Unwired `applyAdapter` / `removeBinding` stay unsupported.
+ */
+export interface MockTicketAdapter {
   planAdapter(request: {
     sourceKind: 'account' | 'provider';
     sourceId: string;
@@ -51,6 +57,8 @@ export interface MockTicketSourceResolver {
   applyAdapter?(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
   removeBinding?(profileId: string): void;
 }
+
+type MockTicketWalletRuntime = MockTicketWalletSources & Pick<MockTicketAdapter, 'planAdapter'>;
 
 const TICKET_SURFACES: readonly TicketSurface[] = [
   'kimi-code-membership',
@@ -74,37 +82,19 @@ function persistedSurface(blob: unknown): TicketSurface | undefined {
   return TICKET_SURFACES.find((surface) => surface === raw);
 }
 
-function adapterRouteToBinding(route: Exclude<AdapterRoute, 'unsupported'>): BindingRoute {
-  if (route === 'local_bridge') return 'bridge';
-  // config_sync + native_endpoint are reshape (same protocol, different config shape).
-  if (route === 'config_sync' || route === 'native_endpoint') return 'reshape';
-  return 'native';
+function ticketSurfaceFromProduct(product: ClassifyProductId): TicketSurface {
+  if (product === 'other') return 'unknown';
+  return TICKET_SURFACES.find((surface) => surface === product) ?? 'unknown';
 }
 
-function classifyProviderSurface(provider: Provider): TicketSurface {
-  const id = classifyProviderSource(provider);
-  return id ? ticketSurfaceFromMockSource(id) : 'unknown';
-}
-
-function classifyAccountSurface(account: Account): TicketSurface {
-  const id = classifyAccountSource(account as ClassifiableAccount, {
-    includeAnthropicEndpoint: true,
-  });
-  return id ? ticketSurfaceFromMockSource(id) : 'unknown';
-}
-
-function ticketSurfaceFromMockSource(id: MockSourceId): TicketSurface {
-  if (id === 'kimi-code-membership') return 'kimi-code-membership';
-  if (id === 'anthropic') return 'anthropic-api';
-  if (id === 'openai') return 'openai-api';
-  if (id === 'xai') return 'xai-api';
-  if (id === 'glm-coding-plan') return 'glm-coding-plan';
-  if (id === 'deepseek-api') return 'deepseek-api';
-  if (id === 'claude-oauth') return 'claude-subscription';
-  if (id === 'grok-oauth') return 'grok-xai-subscription';
-  // Codex OAuth with or without auth_json share the ChatGPT subscription surface.
-  if (id === 'codex-auth-json' || id === 'codex-oauth') return 'codex-chatgpt-subscription';
-  return 'unknown';
+async function surfaceFromPlan(
+  resolver: MockTicketWalletRuntime,
+  sourceKind: 'account' | 'provider',
+  sourceId: string,
+  targetAgentId: AgentId,
+): Promise<TicketSurface> {
+  const plan = await resolver.planAdapter({ sourceKind, sourceId, targetAgentId });
+  return ticketSurfaceFromProduct(sourceProductOfPlan(plan));
 }
 
 function credentialClassOfAccount(account: Account): TicketCredentialClass {
@@ -144,7 +134,7 @@ function rejectIfProjection(
   ticketIdValue: string,
   sourceKind: 'account' | 'provider',
   sourceId: string,
-  resolver: MockTicketSourceResolver,
+  resolver: MockTicketWalletRuntime,
 ): void {
   if (sourceKind === 'account') {
     const account = resolver.listAccounts().find((row) => row.id === sourceId);
@@ -169,15 +159,19 @@ function rejectIfProjection(
   }
 }
 
-function requireTicketSource(sourceKind: 'account' | 'provider', sourceId: string): void {
-  if (sourceKind === 'account' && !getMockAccountById(sourceId)) {
+function requireTicketSource(
+  sources: MockTicketWalletSources,
+  sourceKind: 'account' | 'provider',
+  sourceId: string,
+): void {
+  if (sourceKind === 'account' && !sources.listAccounts().some((row) => row.id === sourceId)) {
     throw adapterCommandError({
       code: 'not_found',
       message: `account not found: ${sourceId}`,
       retryable: false,
     });
   }
-  if (sourceKind === 'provider' && !getMockProviderById(sourceId)) {
+  if (sourceKind === 'provider' && !sources.listProviders().some((row) => row.id === sourceId)) {
     throw adapterCommandError({
       code: 'not_found',
       message: `provider not found: ${sourceId}`,
@@ -199,9 +193,13 @@ function parseTicketId(ticketIdValue: string): { sourceKind: 'account' | 'provid
   return { sourceKind, sourceId };
 }
 
-function accountToTicket(account: Account): TicketView {
+async function accountToTicket(
+  account: Account,
+  resolver: MockTicketWalletRuntime,
+): Promise<TicketView> {
   const row = account as ClassifiableAccount;
-  const surface = persistedSurface(row.extra) ?? classifyAccountSurface(account);
+  const surface = persistedSurface(row.extra)
+    ?? await surfaceFromPlan(resolver, 'account', account.id, account.agentId);
   return {
     id: ticketId('account', account.id),
     sourceKind: 'account',
@@ -215,9 +213,13 @@ function accountToTicket(account: Account): TicketView {
   };
 }
 
-function providerToTicket(provider: Provider): TicketView {
+async function providerToTicket(
+  provider: Provider,
+  resolver: MockTicketWalletRuntime,
+): Promise<TicketView> {
   const row = provider as ClassifiableProvider;
-  const surface = persistedSurface(row.meta) ?? classifyProviderSurface(provider);
+  const surface = persistedSurface(row.meta)
+    ?? await surfaceFromPlan(resolver, 'provider', provider.id, provider.agentId);
   return {
     id: ticketId('provider', provider.id),
     sourceKind: 'provider',
@@ -241,7 +243,7 @@ function generatedProviderIds(profiles: readonly AdapterProfile[]): Set<string> 
 
 function bridgeFromProfile(
   profile: AdapterProfile,
-  resolver: MockTicketSourceResolver,
+  resolver: MockTicketWalletRuntime,
 ): BindingView['bridge'] {
   if (profile.route !== 'local_bridge') return null;
   const bridgeStatus = resolver.getBridgeStatus(profile.id);
@@ -258,21 +260,23 @@ function bindingFromProfile(
   profile: AdapterProfile,
   active: boolean,
   ticketIds: ReadonlySet<string>,
-  resolver: MockTicketSourceResolver,
+  resolver: MockTicketWalletRuntime,
 ): BindingView | null {
   const tid = ticketId(profile.sourceKind, profile.sourceId);
   if (!ticketIds.has(tid)) return null;
+  const route = adapterRouteToBinding(profile.route);
+  if (route == null) return null;
   return {
     ticketId: tid,
     agentId: profile.targetAgentId,
-    route: adapterRouteToBinding(profile.route),
+    route,
     active,
     profileId: profile.id,
     bridge: bridgeFromProfile(profile, resolver),
   };
 }
 
-function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
+async function buildWallet(resolver: MockTicketWalletRuntime): Promise<TicketWallet> {
   const profiles = resolver.listProfiles();
   const generatedIds = generatedProviderIds(profiles);
   const accounts = resolver.listAccounts();
@@ -280,8 +284,14 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
   const ticketProviders = allProviders.filter((p) => !providerIsNotATicket(p, generatedIds));
 
   const tickets: TicketView[] = [
-    ...accounts.filter((account) => !accountIsProjection(account)).map(accountToTicket),
-    ...ticketProviders.map(providerToTicket),
+    ...await Promise.all(
+      accounts
+        .filter((account) => !accountIsProjection(account))
+        .map((account) => accountToTicket(account, resolver)),
+    ),
+    ...await Promise.all(
+      ticketProviders.map((provider) => providerToTicket(provider, resolver)),
+    ),
   ];
   tickets.sort((a, b) => a.id.localeCompare(b.id));
 
@@ -405,25 +415,33 @@ function attachSurfaceMemberHealth(
   }));
 }
 
-export function createMockTicketPort(resolver: MockTicketSourceResolver): TicketPort {
+export function createMockTicketPort(args: {
+  sources: MockTicketWalletSources;
+  adapter: MockTicketAdapter;
+}): TicketPort {
+  const { sources, adapter } = args;
+  const resolver: MockTicketWalletRuntime = {
+    ...sources,
+    planAdapter: (request) => adapter.planAdapter(request),
+  };
   return {
     async listWallet() {
       await delay(15);
-      return buildWallet(resolver);
+      return await buildWallet(resolver);
     },
     async plan(ticketIdValue, targetAgentId) {
       await delay(15);
       const { sourceKind, sourceId } = parseTicketId(ticketIdValue);
       rejectIfProjection(ticketIdValue, sourceKind, sourceId, resolver);
-      requireTicketSource(sourceKind, sourceId);
-      return resolver.planAdapter({ sourceKind, sourceId, targetAgentId });
+      requireTicketSource(sources, sourceKind, sourceId);
+      return adapter.planAdapter({ sourceKind, sourceId, targetAgentId });
     },
     async bind(ticketIdValue, targetAgentId): Promise<BindTicketResult> {
       await delay(15);
       const { sourceKind, sourceId } = parseTicketId(ticketIdValue);
       rejectIfProjection(ticketIdValue, sourceKind, sourceId, resolver);
-      requireTicketSource(sourceKind, sourceId);
-      const plan = await resolver.planAdapter({ sourceKind, sourceId, targetAgentId });
+      requireTicketSource(sources, sourceKind, sourceId);
+      const plan = await adapter.planAdapter({ sourceKind, sourceId, targetAgentId });
       if (!plan.canApply) {
         throw adapterCommandError({
           code: 'unsupported',
@@ -431,15 +449,15 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
           retryable: false,
         });
       }
-      if (!resolver.applyAdapter) {
+      if (!adapter.applyAdapter) {
         throw adapterCommandError({
           code: 'unsupported',
           message: 'ticket bind is not wired',
           retryable: false,
         });
       }
-      await resolver.applyAdapter({ sourceKind, sourceId, targetAgentId });
-      const wallet = buildWallet(resolver);
+      await adapter.applyAdapter({ sourceKind, sourceId, targetAgentId });
+      const wallet = await buildWallet(resolver);
       const binding = wallet.bindings.find(
         (row) => row.ticketId === ticketIdValue && row.agentId === targetAgentId && row.active,
       );
@@ -455,13 +473,13 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
     async unbind(ticketIdValue, agentId) {
       await delay(15);
       const { sourceKind, sourceId } = parseTicketId(ticketIdValue);
-      const profile = resolver.listProfiles().find(
+      const profile = sources.listProfiles().find(
         (row) =>
           row.sourceKind === sourceKind
           && row.sourceId === sourceId
           && row.targetAgentId === agentId,
       );
-      const walletBinding = buildWallet(resolver).bindings.find(
+      const walletBinding = (await buildWallet(resolver)).bindings.find(
         (row) => row.ticketId === ticketIdValue && row.agentId === agentId,
       );
       const profileId = profile?.id ?? walletBinding?.profileId;
@@ -472,19 +490,21 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
           retryable: false,
         });
       }
-      if (!resolver.removeBinding) {
+      if (!adapter.removeBinding) {
         throw adapterCommandError({
           code: 'unsupported',
           message: 'ticket unbind is not wired',
           retryable: false,
         });
       }
-      resolver.removeBinding(profileId);
+      adapter.removeBinding(profileId);
     },
   };
 }
 
-/** Pure helper for tests: build wallet without delay. */
-export function buildMockTicketWallet(resolver: MockTicketSourceResolver): TicketWallet {
+/** Helper for tests: build wallet without the ticket-port delay. */
+export function buildMockTicketWallet(
+  resolver: MockTicketWalletRuntime,
+): Promise<TicketWallet> {
   return buildWallet(resolver);
 }

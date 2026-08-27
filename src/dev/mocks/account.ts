@@ -1,4 +1,5 @@
 import type { AccountPort } from '@/lib/backend/contracts';
+import { wrapBareAccount } from '@/lib/backend/contracts/account-map';
 import { delay, randomLatency } from '@/dev/mocks/delay';
 import type { Account, AgentId } from '@/lib/types';
 import { moveMockAccountToTrash } from './trash';
@@ -77,10 +78,10 @@ export function createMockAccountPort(): AccountPort {
     async listAccounts(agentId) {
       await delay(randomLatency());
       if (agentId) {
-        return (mockState[agentId] ?? []).map((a) => ({ ...a }));
+        return (mockState[agentId] ?? []).map((a) => wrapBareAccount({ ...a }));
       }
       return (Object.keys(mockState) as AgentId[]).flatMap((id) =>
-        (mockState[id] ?? []).map((a) => ({ ...a })),
+        (mockState[id] ?? []).map((a) => wrapBareAccount({ ...a })),
       );
     },
 

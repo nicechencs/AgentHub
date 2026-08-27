@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   test:
+    if: github.event_name == 'pull_request'
     name: Typecheck and tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -91,6 +92,7 @@ jobs:
         run: cargo test -p agenthub-gui --locked
 
   browser-e2e:
+    if: github.event_name == 'pull_request'
     name: Browser mock smoke (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 20

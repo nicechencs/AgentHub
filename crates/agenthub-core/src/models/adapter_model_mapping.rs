@@ -11,6 +11,9 @@
 //! - OpenAI API → Grok / Codex
 //! - Grok subscription → Claude Code
 //! - Codex ChatGPT subscription → Grok (local GET /models)
+//!
+//! Request-scoped edge pick (`decide_model_switch`) lives in
+//! `bridge::model_switch`, not here. This file is the static table.
 
 use super::{AdapterSourceProduct, AdapterTargetProtocol, AgentId};
 
@@ -449,104 +452,6 @@ pub fn mapping_table_is_active(table: &AdapterModelMappingTable) -> bool {
     table.allow_passthrough || table.default_target_model.is_some() || !table.entries.is_empty()
 }
 
-/// One running (or known) edge the model-switch helper can pick.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ModelSwitchCandidate {
-    pub profile_id: String,
-    pub source: AdapterSourceProduct,
-    pub target: AgentId,
-    pub custom_openai_compat: bool,
-    /// Same local surface as the authenticated lead. Cross-surface is never switched.
-    pub same_surface: bool,
-    pub running: bool,
-    /// Models this edge advertises on GET /v1/models. A hit stays on the lead
-    /// even when the mapping table is reserved-empty.
-    pub listed_models: Vec<String>,
-}
-
-/// Per-request pick after the lead EdgeState is authenticated and the body model is known.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ModelSwitchDecision {
-    /// Stay on the authenticated lead.
-    Stay,
-    /// Use this other running edge for this request only.
-    SwitchTo { profile_id: String },
-    /// Lead cannot map the model, and no running alternate can serve it.
-    Unavailable,
-}
-
-/// After gateway auth, if the lead mapping is Missing and another running
-/// edge can serve the model (Mapped or Passthrough), switch for this request.
-/// AccountPicker is not used here — that is same-class failover, not cross-vendor.
-pub fn decide_model_switch(
-    lead: &ModelSwitchCandidate,
-    model: &str,
-    others: &[ModelSwitchCandidate],
-) -> ModelSwitchDecision {
-    let lead_result = map_edge_model(lead.source, lead.target, model, lead.custom_openai_compat);
-    if lead_serves(lead, model, lead_result) {
-        return ModelSwitchDecision::Stay;
-    }
-
-    let mut capable_running: Option<&ModelSwitchCandidate> = None;
-    for candidate in others {
-        if candidate.profile_id == lead.profile_id {
-            continue;
-        }
-        if candidate.target != lead.target || !candidate.same_surface {
-            continue;
-        }
-        let result = map_edge_model(
-            candidate.source,
-            candidate.target,
-            model,
-            candidate.custom_openai_compat,
-        );
-        if !matches!(
-            result,
-            AdapterModelMapResult::Mapped(_) | AdapterModelMapResult::Passthrough
-        ) {
-            continue;
-        }
-        if candidate.running && capable_running.is_none() {
-            capable_running = Some(candidate);
-        }
-    }
-
-    if let Some(alternate) = capable_running {
-        return ModelSwitchDecision::SwitchTo {
-            profile_id: alternate.profile_id.clone(),
-        };
-    }
-    ModelSwitchDecision::Unavailable
-}
-
-fn lead_serves(lead: &ModelSwitchCandidate, model: &str, result: AdapterModelMapResult) -> bool {
-    match result {
-        AdapterModelMapResult::Mapped(_) | AdapterModelMapResult::Passthrough => true,
-        AdapterModelMapResult::Missing => {
-            let needle = model.trim();
-            if !needle.is_empty()
-                && lead
-                    .listed_models
-                    .iter()
-                    .any(|listed| super::listed_model_matches(listed, needle))
-            {
-                return true;
-            }
-            if lead.custom_openai_compat && lead.listed_models.is_empty() {
-                return true;
-            }
-            if lead.custom_openai_compat && is_openrouter_backup_model(needle) {
-                return true;
-            }
-            find_adapter_model_mapping(lead.source, lead.target)
-                .is_none_or(|table| !mapping_table_is_active(table))
-                && lead.listed_models.is_empty()
-        }
-    }
-}
-
 fn push_listed_model(listed: &mut Vec<String>, model: &str, drop_leftover: bool) {
     let model = model.trim();
     if model.is_empty() {
@@ -560,9 +465,6 @@ fn push_listed_model(listed: &mut Vec<String>, model: &str, drop_leftover: bool)
     }
     listed.push(model.to_owned());
 }
-
-#[cfg(test)]
-mod switch_tests;
 
 #[cfg(test)]
 mod tests {
@@ -681,24 +583,6 @@ mod tests {
         assert!(find_adapter_model_mapping(AdapterSourceProduct::Other, AgentId::Claude).is_none());
     }
 
-    fn cand(
-        id: &str,
-        source: AdapterSourceProduct,
-        target: AgentId,
-        custom: bool,
-        running: bool,
-    ) -> ModelSwitchCandidate {
-        ModelSwitchCandidate {
-            profile_id: id.into(),
-            source,
-            target,
-            custom_openai_compat: custom,
-            same_surface: true,
-            running,
-            listed_models: Vec::new(),
-        }
-    }
-
     #[test]
     fn custom_openai_passthroughs_stealth_ox_alpha() {
         for target in [AgentId::Claude, AgentId::Codex, AgentId::Grok] {
@@ -720,41 +604,6 @@ mod tests {
                 false,
             ),
             AdapterModelMapResult::Missing
-        );
-    }
-
-    #[test]
-    fn model_switch_picks_running_openrouter_when_lead_misses() {
-        let lead = cand(
-            "official-claude",
-            AdapterSourceProduct::XaiGrokSubscription,
-            AgentId::Claude,
-            false,
-            true,
-        );
-        let alt = cand(
-            "openrouter-claude",
-            AdapterSourceProduct::OpenaiApi,
-            AgentId::Claude,
-            true,
-            true,
-        );
-        assert_eq!(
-            decide_model_switch(&lead, "stealth/ox-alpha", &[alt.clone()]),
-            ModelSwitchDecision::SwitchTo {
-                profile_id: "openrouter-claude".into()
-            }
-        );
-        let stopped = cand(
-            "openrouter-claude",
-            AdapterSourceProduct::OpenaiApi,
-            AgentId::Claude,
-            true,
-            false,
-        );
-        assert_eq!(
-            decide_model_switch(&lead, "stealth/ox-alpha", &[stopped]),
-            ModelSwitchDecision::Unavailable
         );
     }
 

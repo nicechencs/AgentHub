@@ -1,9 +1,8 @@
 import type { Account, Provider } from '@/lib/types';
-import type { AdapterBridgeRuntimeStatus, AdapterProfile } from '@/lib/backend/contracts';
 import { markMockAgentInstalled } from './agent';
 import { upsertMockAccount } from './account';
 import { upsertMockProvider } from './provider';
-import { seedMockAdapterProfiles } from './adapter';
+import { seedAppliedBinding } from './adapter';
 
 /**
  * ConnectFlow / Adapter / ticket-wallet fixtures.
@@ -12,7 +11,7 @@ import { seedMockAdapterProfiles } from './adapter';
  * `createBackend()` stays an empty pool — call this after the factory.
  *
  * Seeded tickets (at least):
- * - Kimi membership (bound Claude reshape + Codex bridge when profiles seeded)
+ * - Kimi membership (Claude reshape + Codex bridge via apply when seedBindings)
  * - Kimi membership stale sibling (NeedsLogin; same-surface poll-pool demo)
  * - Anthropic API
  * - unknown custom provider
@@ -96,94 +95,6 @@ export function connectFlowKimiMembershipStaleAccount(): Account {
   } as Account;
 }
 
-/**
- * Seed demo profiles so wallet bindings show Kimi → Claude reshape + Codex bridge.
- * Requires at least one live mock adapter port (createBackend already created).
- */
-export function seedTicketWalletBindingProfiles(): {
-  claudeProfile: AdapterProfile;
-  codexProfile: AdapterProfile;
-} {
-  const now = '2026-08-15T00:00:00.000Z';
-  const kimiId = CONNECT_FLOW_FIXTURE_IDS.kimiMembership;
-  const claudeGenId = `claude-kimi-adapter-${kimiId}`;
-  const codexGenId = `codex-kimi-bridge-${kimiId}`;
-
-  upsertMockProvider({
-    id: claudeGenId,
-    agentId: 'claude',
-    name: 'Kimi → Claude (demo)',
-    preset: 'anthropic-compatible',
-    configText: JSON.stringify({
-      env: {
-        ANTHROPIC_BASE_URL: 'https://api.kimi.com/coding/',
-        ANTHROPIC_AUTH_TOKEN: '$AGENTHUB_CONNECTION_SECRET$',
-      },
-    }),
-    configFormat: 'json',
-    isCurrent: true,
-  });
-  upsertMockProvider({
-    id: codexGenId,
-    agentId: 'codex',
-    name: 'Kimi → Codex 本机路由 (demo)',
-    preset: 'openai-compatible',
-    configText: JSON.stringify({
-      baseUrl: 'http://127.0.0.1:32123/v1',
-      model: 'kimi-k2.5',
-    }),
-    configFormat: 'json',
-    isCurrent: true,
-  });
-
-  const claudeProfile: AdapterProfile = {
-    id: `adapter-kimi-claude-${kimiId}`,
-    name: `Kimi → Claude (${kimiId})`,
-    sourceKind: 'provider',
-    sourceId: kimiId,
-    targetAgentId: 'claude',
-    route: 'native_endpoint',
-    mode: 'api',
-    status: 'active',
-    ruleId: 'kimi-membership-to-claude-v1',
-    ruleVersion: '1',
-    generatedProviderId: claudeGenId,
-    localPort: null,
-    autoStart: false,
-    createdAt: now,
-    updatedAt: now,
-  };
-  const codexProfile: AdapterProfile = {
-    id: `adapter-kimi-codex-bridge-${kimiId}`,
-    name: `Kimi → Codex 本机路由 (${kimiId})`,
-    sourceKind: 'provider',
-    sourceId: kimiId,
-    targetAgentId: 'codex',
-    route: 'local_bridge',
-    mode: 'api',
-    status: 'active',
-    ruleId: 'kimi-membership-to-codex-v1',
-    ruleVersion: '1',
-    generatedProviderId: codexGenId,
-    localPort: 32123,
-    autoStart: false,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const bridge: AdapterBridgeRuntimeStatus = {
-    profileId: codexProfile.id,
-    state: 'running',
-    port: 32123,
-    endpoint: 'http://127.0.0.1:32123/v1',
-    startedAt: now,
-    upstreamStatus: 'unknown',
-  };
-  seedMockAdapterProfiles([claudeProfile, codexProfile], { [codexProfile.id]: bridge });
-
-  return { claudeProfile, codexProfile };
-}
-
 export function seedConnectFlowAdapterFixtures(options?: {
   includeAnthropic?: boolean;
   includeUnknown?: boolean;
@@ -212,7 +123,9 @@ export function seedConnectFlowAdapterFixtures(options?: {
     markMockAgentInstalled('pi');
   }
   if (options?.seedBindings === true) {
-    seedTicketWalletBindingProfiles();
+    const sourceId = CONNECT_FLOW_FIXTURE_IDS.kimiMembership;
+    seedAppliedBinding({ sourceKind: 'provider', sourceId, targetAgentId: 'claude' });
+    seedAppliedBinding({ sourceKind: 'provider', sourceId, targetAgentId: 'codex' });
   }
   return { kimiMembership, anthropic, unknown, oauthAccount, staleKimiAccount };
 }

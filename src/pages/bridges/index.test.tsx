@@ -273,6 +273,9 @@ describe('Bridges page', () => {
     expect(markup).toContain('Claude');
     expect(markup).toContain('Codex');
     expect(markup).toContain('Grok');
+    expect(markup).toContain('/v1/messages');
+    expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('GET /models');
     expect(markup).toContain('写入客户端');
     expect(markup).not.toContain('一键配置');
     expect(markup).not.toContain('将勾选项写入客户端配置');
@@ -320,6 +323,13 @@ describe('Bridges page', () => {
     expect(markup).toContain('Grok');
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('/v1/chat/completions');
+    expect(markup).toContain('Claude 对话');
+    expect(markup).toContain('Codex / Grok 对话');
+    expect(markup).toContain('Kimi 等补全');
+    expect(markup).toContain('GET /models');
+    expect(markup).toContain('模型名单');
+    expect(markup).toContain('还没有工具连上');
     expect(markup).toContain('复制本机端点 http://127.0.0.1:43121/v1/messages');
     expect(markup).toContain('仅放行：stealth/ox-alpha（其余模型将被拒绝）');
     expect(markup).not.toContain('转换');
@@ -378,6 +388,127 @@ describe('Bridges page', () => {
     expect(markup).not.toContain('role="dialog"');
     expect(markup).not.toContain('运行中');
     expect(markup).toContain('本机入口');
+    expect(markup).not.toContain('交给本机网关');
+    expect(markup).not.toContain('已接入的登录');
+    expect(markup).not.toContain('本机令牌已保存');
+  });
+
+  it('shows default pool members when flag is on, and hides them when off', () => {
+    const profile = localBridgeProfile();
+    const pool = {
+      id: profile.id,
+      targetAgentId: 'codex' as const,
+      surface: 'responses' as const,
+      dialect: 'codex' as const,
+      v2Enrolled: true,
+      gatewayPort: 43121,
+      members: [{ sourceKind: 'provider' as const, sourceId: 'kimi-1', enabled: true }],
+      listedModels: ['kimi-k2.5'],
+    };
+    const off = renderDetail({
+      profile,
+      bridgeStatus: runningStatus(profile.id),
+      entries: [openRouterEntry()],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+      routePoolV2: false,
+      defaultPool: pool,
+    });
+    expect(off).not.toContain('已接入的登录');
+    expect(off).not.toContain('本机令牌已保存');
+    const on = renderDetail({
+      profile,
+      bridgeStatus: runningStatus(profile.id),
+      entries: [openRouterEntry()],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+      routePoolV2: true,
+      defaultPool: pool,
+    });
+    expect(on).toContain('http://127.0.0.1:43121');
+    expect(on).toContain('回复接口');
+    expect(on).toContain('已接入的登录');
+    expect(on).toContain('OpenRouter');
+    expect(on).toContain('本机令牌已保存');
+    expect(on).toContain('kimi-k2.5');
+    expect(on).not.toContain('hubToken');
+    expect(on).not.toContain('ahb_');
+  });
+
+  it('shows enroll CTA only when flag is on, route is native, and plan allows local_bridge', () => {
+    const native = { ...localBridgeProfile(), id: 'native-1', route: 'native_endpoint' as const, localPort: null };
+    const hidden = renderDetail({
+      profile: native,
+      entries: [],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+      routePoolV2: true,
+      canApplyLocalBridge: false,
+      onEnrollNative: vi.fn(),
+    });
+    expect(hidden).not.toContain('交给本机网关');
+    const shown = renderDetail({
+      profile: native,
+      entries: [],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+      routePoolV2: true,
+      canApplyLocalBridge: true,
+      onEnrollNative: vi.fn(),
+    });
+    expect(shown).toContain('交给本机网关');
+  });
+
+  it('shows recent inbound requests newest first, and empty copy when none', () => {
+    const profile = localBridgeProfile();
+    const empty = renderDetail({
+      profile,
+      bridgeStatus: runningStatus(profile.id),
+      entries: [openRouterEntry()],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+    });
+    expect(empty).toContain('最近请求');
+    expect(empty).toContain('还没有工具连上');
+    expect(empty).not.toContain('票');
+    expect(empty).not.toContain('钱包');
+    expect(empty).not.toContain('投影');
+    expect(empty).not.toContain('PKCE');
+    expect(empty).not.toContain('loopback');
+
+    const listed = renderDetail({
+      profile,
+      bridgeStatus: {
+        ...runningStatus(profile.id),
+        recentInbound: [
+          { at: '2026-08-12T00:00:02.000Z', method: 'POST', path: '/v1/responses', status: 200, ok: true },
+          { at: '2026-08-12T00:00:01.000Z', method: 'GET', path: '/models', status: 401, ok: false },
+        ],
+      },
+      entries: [openRouterEntry()],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+    });
+    expect(listed).toContain('最近请求');
+    expect(listed).not.toContain('还没有工具连上');
+    expect(listed).toContain('POST');
+    expect(listed).toContain('/v1/responses');
+    expect(listed).toContain('200');
+    expect(listed).toContain('成功');
+    expect(listed).toContain('/models');
+    expect(listed).toContain('401');
+    expect(listed).toContain('失败');
+    const inbound = listed.slice(listed.indexOf('data-route-inbound'));
+    expect(inbound.indexOf('/v1/responses')).toBeLessThan(inbound.indexOf('/models'));
+    expect(listed).not.toContain('Authorization');
+    expect(listed).not.toContain('sk-');
+    expect(listed).not.toContain('ahb_');
   });
 
   it('opens detail as the same inspect chrome as edit', () => {

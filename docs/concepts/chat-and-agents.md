@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: chat, adapter, and frontend contributors
 source-of-truth: ChatService/RunService, ChatEvent, stream parsers, Tauri Channel adapter, and chat process reducer
-updated: 2026-08-25
+updated: 2026-08-27
 ---
 
 # Chat 与 Agent 运行
@@ -46,6 +46,20 @@ Tauri transport 使用 `ipc::Channel<ChatEvent>`，不是 SSE。阻塞进程执�
 Claude、Codex、Kimi、Grok、Pi 当前可走 `ProcessMode::Auto` 的结构化解析；WorkBuddy、Cursor 没有结构化 parser 时按 text 展示。解析失败降级为 raw/text 事件，不因某一行 JSON 不可识别而丢弃整次对话；CLI 不支持 flag 时不得静默重试成另一种语义。
 
 过程数据目前主要是内存视图：最终 assistant 文本和会话消息入库，命令、stderr、步骤在刷新后不保证可回放。过程步骤落库、过程内 usage、交互式 tool approval 和完整原生多轮 session 不属于当前契约。
+
+## Codex 外部安装
+
+Chat **不**调用 VS Code 扩展或 Codex 桌面 App 的 UI/API；它 spawn 检测到的 `codex` CLI（`codex exec --skip-git-repo-check [--json] …`）。
+
+| 安装来源 | AgentHub 如何识别 | Chat 前置条件 |
+| --- | --- | --- |
+| npm 全局 | PATH 或 `npm prefix -g` / 常见目录 | `~/.codex/auth.json` 有效；已选工作目录；Agent 未隐藏 |
+| VS Code / Cursor 插件 | 扫描 `openai.chatgpt-*` 扩展目录 | 同上 |
+| Windows / macOS 桌面 App | 扫描 `%LOCALAPPDATA%\\Programs\\OpenAI\\Codex` 或 `/Applications/Codex.app` | 同上 |
+
+IDE/桌面副本在 Agents 页标记为「在 IDE/桌面 App 内更新」；不影响 Chat，只要 detect 为已安装且登录态可用。
+
+审查与修复状态见 [Codex 安装与模块化审查](../status/codex-install-modularity-review.md)。
 
 ## Agent 能力边界
 

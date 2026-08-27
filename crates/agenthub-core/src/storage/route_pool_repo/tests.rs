@@ -1,6 +1,6 @@
 use crate::models::{
-    AdapterSourceKind, AgentId, RouteDownstreamDialect, RouteDownstreamSurface, RouteMember,
-    RoutePool, RouteSchedulePolicy,
+    AdapterSourceKind, AgentId, ModelRouteRule, RouteDownstreamDialect, RouteDownstreamSurface,
+    RouteMember, RoutePool, RouteSchedulePolicy,
 };
 use crate::storage::{Database, RoutePoolRepo};
 
@@ -24,6 +24,29 @@ fn pool(id: &str, agent: AgentId, is_default: bool, token: &str) -> RoutePool {
         policy_revision: 1,
         auto_start: true,
         gateway_port: None,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+fn rule(
+    id: &str,
+    pool_id: &str,
+    public_model: &str,
+    provider: &str,
+    upstream_model: &str,
+) -> ModelRouteRule {
+    ModelRouteRule {
+        id: id.into(),
+        route_pool_id: pool_id.into(),
+        public_model: public_model.into(),
+        endpoint_family: "responses".into(),
+        upstream_provider: provider.into(),
+        upstream_dialect: provider.into(),
+        upstream_model: upstream_model.into(),
+        priority: 0,
+        equivalent_group: None,
+        enabled: true,
         created_at: "t0".into(),
         updated_at: "t0".into(),
     }
@@ -59,6 +82,15 @@ fn migration_creates_normalized_tables_and_indexes() {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         assert!(indexes.iter().any(|name| name == "idx_route_pools_default"));
         assert!(indexes.iter().any(|name| name == "idx_route_members_auth"));
+        let rules_version: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = '00019_model_route_rules'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(rules_version, 1);
+        assert!(indexes
+            .iter()
+            .any(|name| name == "idx_model_route_rules_lane"));
         Ok(())
     })
     .unwrap();
@@ -221,4 +253,45 @@ fn old_profiles_are_not_merged_into_one_pool() {
     );
     assert_eq!(repo.list_members("profile-a").unwrap().len(), 1);
     assert_eq!(repo.list_members("profile-b").unwrap().len(), 1);
+}
+
+#[test]
+fn model_route_rule_crud_bumps_revision_and_rejects_duplicates() {
+    let (_dir, _db, repo) = tmp();
+    repo.create_pool(&pool("pool-a", AgentId::Codex, true, "ahb_token-a"))
+        .unwrap();
+    assert_eq!(repo.get_pool("pool-a").unwrap().unwrap().policy_revision, 1);
+    let saved = repo
+        .add_rule(&rule("r1", "pool-a", "m1", "grok", "grok-4"))
+        .unwrap();
+    assert_eq!(saved.public_model, "m1");
+    assert_eq!(saved.upstream_model, "grok-4");
+    assert!(saved.equivalent_group.is_none());
+    assert_eq!(repo.get_pool("pool-a").unwrap().unwrap().policy_revision, 2);
+    let error = repo
+        .add_rule(&rule("r2", "pool-a", "m1", "grok", "grok-4"))
+        .unwrap_err();
+    assert_eq!(error.code(), "invalid_arg");
+    let mut updated = repo.get_rule("r1").unwrap().unwrap();
+    updated.priority = 3;
+    updated.equivalent_group = Some("shared".into());
+    repo.update_rule(&updated).unwrap();
+    let stored = repo.get_rule("r1").unwrap().unwrap();
+    assert_eq!(stored.priority, 3);
+    assert_eq!(stored.equivalent_group.as_deref(), Some("shared"));
+    assert_eq!(repo.get_pool("pool-a").unwrap().unwrap().policy_revision, 3);
+    repo.remove_rule("r1").unwrap();
+    assert!(repo.list_rules("pool-a").unwrap().is_empty());
+    assert_eq!(repo.get_pool("pool-a").unwrap().unwrap().policy_revision, 4);
+}
+
+#[test]
+fn model_route_rule_rejects_glob_ids() {
+    let (_dir, _db, repo) = tmp();
+    repo.create_pool(&pool("pool-a", AgentId::Codex, true, "ahb_token-a"))
+        .unwrap();
+    let error = repo
+        .add_rule(&rule("r1", "pool-a", "gpt-*", "openai", "gpt-4"))
+        .unwrap_err();
+    assert_eq!(error.code(), "invalid_arg");
 }

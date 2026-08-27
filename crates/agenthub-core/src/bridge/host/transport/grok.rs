@@ -6,6 +6,7 @@ use crate::bridge::grok_cli::{
     apply_grok_cli_identity_with, extract_prompt_cache_seed, grok_cli_request_identity_for_account,
     inject_prompt_cache_key, normalize_grok_build_tools, GrokCliRequestIdentity,
 };
+use crate::bridge::protocol::pair::adapt_codex_request_for_grok_upstream;
 use crate::bridge::protocol::responses::to_grok_responses_request;
 
 use super::super::admission::AdmittedRequest;
@@ -42,6 +43,12 @@ impl UpstreamTransport for GrokTransport {
                 let grok_identity = grok_identity(admitted);
                 let cache_seed = extract_prompt_cache_seed(&admitted.headers, &admitted.body);
                 let (mut body, stream) = passthrough_responses_object(admitted.body.clone())?;
+                if super::super::pair_policy::pair_adapter_active(
+                    &admitted.state,
+                    super::UpstreamChannel::Grok,
+                ) {
+                    adapt_codex_request_for_grok_upstream(&mut body);
+                }
                 if let Some(model) = &admitted.state.upstream.model {
                     if !model.trim().is_empty() {
                         body["model"] = Value::String(model.clone());

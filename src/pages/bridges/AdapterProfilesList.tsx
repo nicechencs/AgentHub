@@ -28,6 +28,7 @@ import {
   routeGraphSupportedAgents,
   type RouteGraphView,
 } from './route-graph-model';
+import { localAddressCopyForTarget } from './route-endpoint-copy';
 import {
   adapterProfilePrimaryAction,
   adapterProfileRecoveryGuide,
@@ -246,16 +247,23 @@ function AdapterProfileRow({
           {supportedAgents.length > 0 ? (
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               <span className="text-xs text-muted">{t('routes.supports')}</span>
-              {supportedAgents.map((agent) => (
-                <span
-                  key={agent}
-                  className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-1.5 py-0.5 text-meta font-medium text-secondary"
-                >
-                  <AgentDot agentId={agent} size="sm" title={null} />
-                  {routeDetailTargetLabel(agent, t)}
-                </span>
-              ))}
+              {supportedAgents.map((agent) => {
+                const local = localAddressCopyForTarget(agent);
+                const copyHint = `${local.path} · ${t(local.copyKey)}`;
+                return (
+                  <Tip key={agent} label={copyHint} className="inline-flex">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-1.5 py-0.5 text-meta font-medium text-secondary">
+                      <AgentDot agentId={agent} size="sm" title={null} />
+                      {routeDetailTargetLabel(agent, t)}
+                      <span className="font-mono font-normal text-muted">{local.path}</span>
+                    </span>
+                  </Tip>
+                );
+              })}
             </div>
+          ) : null}
+          {supportedAgents.length > 0 ? (
+            <p className="text-meta text-muted">{t('routes.endpoint.modelsLine')}</p>
           ) : null}
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {source.missing ? (
@@ -285,14 +293,16 @@ function AdapterProfileRow({
               </Button>
             </Hint>
           ) : null}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy || targetHidden || graph.rows.length === 0}
-            onClick={() => onRequestWrite?.(profile, graph)}
-          >
-            {t('routes.write.action')}
-          </Button>
+          {profile.route === 'local_bridge' ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || targetHidden || graph.rows.length === 0}
+              onClick={() => onRequestWrite?.(profile, graph)}
+            >
+              {t('routes.write.action')}
+            </Button>
+          ) : null}
           {onRequestEdit ? (
             <Button
               variant="outline"

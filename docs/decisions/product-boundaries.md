@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, design, frontend, and core contributors
 source-of-truth: root AGENTS.md, current planner contracts, and connection/account services
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # 产品边界与术语决策
@@ -54,7 +54,7 @@ updated: 2026-08-26
 
 `agenthub-adapterd` sidecar 仅是 `local_bridge` 的进程边界提案。当前 listener、saga 和退出 drain 仍在 Tauri `AppState` 进程内；sidecar 未迁移前，任何“IPC 已可用”“sidecar 负责写表”的表述都不准确。见 [Adapters and bridges](../concepts/adapters-and-bridges.md)。
 
-本机同口授权池（一份 Hub 令牌、跨产品成员、按模型选号）仅是调度提案。当前本机令牌仍对应单条边，每个 Agent 同时只有一条 active binding；未实施前不得写成已同口调度。见 [本机同口授权池](../proposals/unified-loopback-pool.md)。
+本机同口授权池是当前默认能力：每个目标 Agent/surface 一个默认池，客户端只认固定 loopback 口和本机令牌；池内按模型与健康选成员。每个 Agent 同时仍只有一条 active binding；官方 `native_endpoint` / `config_sync` 不自动入池。混合供应商复合路由仍默认关闭，未声明等价关系时不得跨供应商转发。设计记录见 [本机同口授权池（归档）](../archive/unified-loopback-pool.md)。
 
 分支与发布红线不在本文重复：日常开发只在 `dev`，发布流程和 `release` 约束以根 [AGENTS.md](../../AGENTS.md) 为准。
 
@@ -65,4 +65,4 @@ updated: 2026-08-26
 - [Accounts and authorization](../concepts/accounts-and-authorization.md)
 - [Adapters and bridges](../concepts/adapters-and-bridges.md)
 - [Architecture overview](../architecture/overview.md)
-- [本机同口授权池（提案）](../proposals/unified-loopback-pool.md)
+- [本机同口授权池（归档）](../archive/unified-loopback-pool.md)

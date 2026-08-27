@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use super::account::{AccountPicker, BridgeMemberSpec, MemberHealth, PickedMember};
 use super::route_index::EffectiveRouteIndex;
-use crate::models::{AdapterSourceProduct, AgentId};
+use crate::models::{AdapterSourceProduct, AgentId, RouteSchedulePolicy};
 
 /// Opaque callback that may rotate the in-memory upstream bearer.
 /// The host must not depend on AccountService types.
@@ -175,6 +175,12 @@ pub struct BridgeStartSpec {
     pub custom_openai: bool,
     /// Shared resolver snapshot. `None` keeps lead + `switch_edge_for_model`.
     pub route_index: Option<EffectiveRouteIndex>,
+    /// `feature.codex_ingress_grok_upstream`. Fail-closed default.
+    pub codex_ingress_grok_upstream: bool,
+    /// `feature.grok_ingress_codex_upstream`. Fail-closed default.
+    pub grok_ingress_codex_upstream: bool,
+    /// Copied from the RoutePool. Default remains `priority_failover`.
+    pub schedule_policy: RouteSchedulePolicy,
 }
 
 impl fmt::Debug for BridgeStartSpec {
@@ -196,6 +202,15 @@ impl fmt::Debug for BridgeStartSpec {
                 "route_index",
                 &self.route_index.as_ref().map(|index| index.generation),
             )
+            .field(
+                "codex_ingress_grok_upstream",
+                &self.codex_ingress_grok_upstream,
+            )
+            .field(
+                "grok_ingress_codex_upstream",
+                &self.grok_ingress_codex_upstream,
+            )
+            .field("schedule_policy", &self.schedule_policy)
             .finish()
     }
 }
@@ -220,6 +235,9 @@ impl BridgeStartSpec {
             mapping_target: None,
             custom_openai: false,
             route_index: None,
+            codex_ingress_grok_upstream: false,
+            grok_ingress_codex_upstream: false,
+            schedule_policy: RouteSchedulePolicy::PriorityFailover,
         }
     }
 
@@ -252,8 +270,14 @@ impl BridgeStartSpec {
         } else {
             self.members.iter().map(PickedMember::from).collect()
         };
+        let v2_pool = self.route_index.is_some() && members.len() > 1;
         if self.route_index.is_some() {
-            AccountPicker::with_sink(members, self.multi_account, None)
+            AccountPicker::with_policy(
+                members,
+                self.multi_account || v2_pool,
+                None,
+                self.schedule_policy,
+            )
         } else {
             AccountPicker::from_members(members, self.multi_account, None)
         }
@@ -293,6 +317,21 @@ impl BridgeStartSpec {
 
     pub fn with_reload_upstream_auth(mut self, reload: Option<UpstreamAuthReload>) -> Self {
         self.reload_upstream_auth = reload;
+        self
+    }
+
+    pub fn with_pair_adapter_flags(
+        mut self,
+        codex_ingress_grok_upstream: bool,
+        grok_ingress_codex_upstream: bool,
+    ) -> Self {
+        self.codex_ingress_grok_upstream = codex_ingress_grok_upstream;
+        self.grok_ingress_codex_upstream = grok_ingress_codex_upstream;
+        self
+    }
+
+    pub fn with_schedule_policy(mut self, schedule_policy: RouteSchedulePolicy) -> Self {
+        self.schedule_policy = schedule_policy;
         self
     }
 }

@@ -236,7 +236,7 @@ describe('buildAgentCardView', () => {
     expect(view.metaClass).toBe('text-muted');
     expect(view.titleFull).toBe('xx云中转 · relay.xxyun.example.com · API');
     expect(view.ariaLabel).toBe(
-      'Claude Code，v2.1.218，API，当前 API 配置 xx云中转 · relay.xxyun.example.com，点击管理连接',
+      'Claude Code，v2.1.218，API，API Key xx云中转 · relay.xxyun.example.com，点击管理连接',
     );
     expect(view.action).toEqual({ kind: 'connect' });
     expect(view.authStatus).toBe('valid');
@@ -259,7 +259,7 @@ describe('buildAgentCardView', () => {
     expect(view.versionText).toBe('v2.1.218');
     expect(view.metaText).toBe('me@example.com');
     expect(view.action).toEqual({ kind: 'connect' });
-    expect(view.ariaLabel).toContain('当前账号/密钥 me@example.com');
+    expect(view.ariaLabel).toContain('官方登录 me@example.com');
   });
 
   it('installed with empty connection uses 未配置 fallbacks', () => {

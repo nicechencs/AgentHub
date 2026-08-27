@@ -67,3 +67,21 @@ export function configFieldOptionLabel(fieldKey: string, option: string, t: Tran
   }
   return option;
 }
+
+export function configFieldUnsupported(label: string, t: TranslateFn): string {
+  return t('connections.providerDialog.unsupportedField', { label });
+}
+
+export function configFieldSecretPlaceholder(configured: boolean, t: TranslateFn): string {
+  return configured
+    ? t('connections.providerDialog.secretConfigured')
+    : t('connections.apiKeyDialog.key');
+}
+
+export function configFieldSuggestionPickLabel(t: TranslateFn): string {
+  return t('connections.providerDialog.remoteModelsPick');
+}
+
+export function configFieldSuggestionCustomLabel(t: TranslateFn): string {
+  return t('connections.providerDialog.remoteModelsCustom');
+}

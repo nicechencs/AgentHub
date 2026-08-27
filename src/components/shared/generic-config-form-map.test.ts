@@ -4,6 +4,7 @@ import { SECRET_REDACTED } from '@/lib/backend/contracts/config-types';
 import {
   emptyValuesFromSchema,
   fieldControlKind,
+  isSecretRedacted,
   isSecretUnchanged,
   mergeDocumentValues,
   issuesByField,
@@ -52,6 +53,12 @@ describe('generic-config-form-map', () => {
     expect(isSecretUnchanged('')).toBe(true);
     expect(isSecretUnchanged(SECRET_REDACTED)).toBe(true);
     expect(isSecretUnchanged('sk-x')).toBe(false);
+  });
+
+  it('isSecretRedacted is only the stored marker', () => {
+    expect(isSecretRedacted(SECRET_REDACTED)).toBe(true);
+    expect(isSecretRedacted('')).toBe(false);
+    expect(isSecretRedacted('sk-x')).toBe(false);
   });
 
   it('fieldControlKind maps secret and unsupported', () => {

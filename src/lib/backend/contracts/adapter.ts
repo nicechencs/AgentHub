@@ -1,4 +1,5 @@
 import type { AgentId } from '@/lib/types';
+import retryableErrorContract from './retryable-error-contract.json';
 
 /** Saved connection table selected for a read-only adapter route preview. */
 export type AdapterSourceKind = 'account' | 'provider';
@@ -157,6 +158,15 @@ export type AdapterBridgeUpstreamStatus =
   | 'degraded'
   | 'unavailable';
 
+/** One inbound local-route request. Never includes Authorization, bodies, or keys. */
+export interface AdapterBridgeInboundRequest {
+  at: string;
+  method: string;
+  path: string;
+  status: number;
+  ok: boolean;
+}
+
 /** Deliberately excludes the local bearer and all upstream credentials. */
 export interface AdapterBridgeRuntimeStatus {
   profileId: string;
@@ -165,6 +175,8 @@ export interface AdapterBridgeRuntimeStatus {
   endpoint?: string | null;
   startedAt?: string | null;
   upstreamStatus?: AdapterBridgeUpstreamStatus | string | null;
+  /** Newest first. Empty when no tool has connected yet. */
+  recentInbound?: AdapterBridgeInboundRequest[];
 }
 
 export type AdapterApplyRequest = AdapterRouteRequest;
@@ -207,13 +219,10 @@ export class AdapterCommandError extends Error implements AdapterCommandErrorFie
   }
 }
 
-/** Keep in lockstep with `is_adapter_error_retryable` in src-tauri/src/commands/mod.rs. */
+/** Shared with desktop `is_adapter_error_retryable` via retryable-error-contract.json. */
 export function isAdapterErrorCodeRetryable(code: string): boolean {
-  if (code.startsWith('retryable:')) return true;
-  return code === 'adapter.port_in_use'
-    || code === 'adapter.bridge_start'
-    || code === 'adapter.bridge_upstream_auth'
-    || code.startsWith('adapter.bridge_restore_');
+  if (retryableErrorContract.retryableExact.some((item) => item === code)) return true;
+  return retryableErrorContract.retryablePrefixes.some((prefix) => code.startsWith(prefix));
 }
 
 export function adapterCommandError(fields: {
@@ -230,10 +239,42 @@ export function adapterCommandError(fields: {
   });
 }
 
+export type RoutePoolSurface = 'messages' | 'responses' | 'chat_completions';
+export type RoutePoolDialect = 'claude' | 'codex' | 'grok' | 'kimi' | 'dsh' | 'generic';
+
+export type MemberAvailability = 'ready' | 'cooling' | 'isolated' | 'disabled';
+
+/** Credential-free member row. Never includes login secrets or Hub tokens. */
+export interface RouteMemberOverview {
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+  enabled: boolean;
+  availability?: MemberAvailability;
+}
+
+/** Credential-free default-pool overview. Never includes `hubToken`. */
+export interface DefaultRoutePoolOverview {
+  id: string;
+  targetAgentId: AgentId;
+  surface: RoutePoolSurface;
+  dialect: RoutePoolDialect;
+  v2Enrolled: boolean;
+  gatewayPort?: number | null;
+  members: RouteMemberOverview[];
+  listedModels?: string[];
+}
+
+export interface DefaultRoutePoolList {
+  enabled: boolean;
+  pools: DefaultRoutePoolOverview[];
+}
+
 export interface AdapterPort {
   analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
   listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
+  listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
+  enrollNativeToGateway(profileId: string): Promise<DefaultRoutePoolOverview>;
   apply(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
   remove(profileId: string): Promise<void>;
   startBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus>;

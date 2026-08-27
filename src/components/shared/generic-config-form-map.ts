@@ -48,6 +48,11 @@ export function isSecretUnchanged(value: unknown): boolean {
   return value === '' || value === SECRET_REDACTED;
 }
 
+/** Stored secret is shown as the redacted marker, not an empty field. */
+export function isSecretRedacted(value: unknown): boolean {
+  return typeof value === 'string' && value === SECRET_REDACTED;
+}
+
 export function issuesByField(
   issues: ConfigValidationIssueDto[] | undefined,
 ): Record<string, string> {

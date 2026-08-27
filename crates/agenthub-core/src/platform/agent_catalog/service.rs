@@ -1,4 +1,12 @@
-//! Agent catalog aggregation service (read-only).
+//! Agent catalog: read-only projection of descriptors (key / capabilities /
+//! install channels / schema version).
+//!
+//! [`AgentCatalogService::from_registry`] is the only path that builds a catalog
+//! from a live registry. After hub open the catalog is a snapshot, not a
+//! mutable dual-write with the registry. Production composition walks
+//! registered keys (insertion order → [`AgentKey`]), not [`AgentId::ALL`].
+//! Catalog must not execute detect/install; registry is not the UI directory
+//! source of truth.
 
 use std::collections::{BTreeMap, HashMap};
 

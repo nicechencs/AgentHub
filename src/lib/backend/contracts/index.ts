@@ -27,3 +27,4 @@ export * from './adapter-wire';
 export * from './ticket';
 export * from './agent-connection';
 export * from './doctor-map';
+export * from './agent-status-view';

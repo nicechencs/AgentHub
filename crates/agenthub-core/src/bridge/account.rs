@@ -4,15 +4,19 @@
 //! in-memory snapshot; isolation never reveals sibling accounts to callers.
 //! Cooldown is process-local and is not a capability change.
 
+use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::http::HeaderValue;
+use sha2::{Digest, Sha256};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use super::route_index::DispatchCandidate;
 use super::runtime::{ResolvedAuth, UpstreamAuthReload};
+use crate::models::RouteSchedulePolicy;
 
 #[cfg(test)]
 mod tests;
@@ -48,6 +52,7 @@ pub struct PickedMember {
     pub priority: i64,
     pub position: i64,
     health: Arc<Mutex<MemberHealth>>,
+    concurrency: Arc<Semaphore>,
 }
 
 impl std::fmt::Debug for PickedMember {
@@ -87,7 +92,13 @@ impl PickedMember {
             priority: 0,
             position: 0,
             health: Arc::new(Mutex::new(health)),
+            concurrency: Arc::new(Semaphore::new(4)),
         }
+    }
+
+    /// One in-flight attempt per member. Full → skip this member for the request.
+    pub fn try_acquire(&self) -> Option<OwnedSemaphorePermit> {
+        self.concurrency.clone().try_acquire_owned().ok()
     }
 
     pub fn with_schedule(mut self, priority: i64, position: i64) -> Self {
@@ -192,12 +203,41 @@ struct MemberCooldowns {
     member_model: HashMap<(String, String), Instant>,
 }
 
+/// Per-pool sticky record. Keyed by [`route_scoped_affinity_key`], never by
+/// the raw session string, and never shared across edges/bearers.
+#[derive(Clone, Debug)]
+struct StickyBinding {
+    member_id: String,
+    provider: String,
+    upstream_dialect: String,
+    index_generation: u64,
+    auth_fingerprint: String,
+}
+
+struct EligibleMember<'a> {
+    member: &'a PickedMember,
+    candidate: &'a DispatchCandidate,
+}
+
+enum StickyLookup {
+    Hit(PickedMember),
+    /// Bound member is still valid in the resolver set but skipped for this
+    /// request (cooldown, isolation wait, or this-request exclusion).
+    Held,
+    Miss,
+}
+
 struct AccountPickerInner {
     members: Vec<PickedMember>,
     cursor: AtomicUsize,
     multi_account: bool,
     isolate_sink: Option<MemberHealthSink>,
     cooldowns: Mutex<MemberCooldowns>,
+    schedule_policy: RouteSchedulePolicy,
+    sticky: Mutex<HashMap<String, StickyBinding>>,
+    /// Round-robin cursors keyed by isomorphic group (priority + transport + dialect).
+    /// Distinct from the v1 [`AccountPicker::pick_new`] cursor.
+    rr_cursors: Mutex<HashMap<String, usize>>,
 }
 
 impl AccountPicker {
@@ -210,16 +250,33 @@ impl AccountPicker {
         multi_account: bool,
         isolate_sink: Option<MemberHealthSink>,
     ) -> Self {
+        Self::with_policy(
+            members,
+            multi_account,
+            isolate_sink,
+            RouteSchedulePolicy::PriorityFailover,
+        )
+    }
+
+    pub fn with_policy(
+        members: Vec<PickedMember>,
+        multi_account: bool,
+        isolate_sink: Option<MemberHealthSink>,
+        schedule_policy: RouteSchedulePolicy,
+    ) -> Self {
         Self {
             inner: Arc::new(AccountPickerInner {
                 members,
                 cursor: AtomicUsize::new(0),
                 multi_account,
                 isolate_sink,
+                schedule_policy,
                 cooldowns: Mutex::new(MemberCooldowns {
                     member: HashMap::new(),
                     member_model: HashMap::new(),
                 }),
+                sticky: Mutex::new(HashMap::new()),
+                rr_cursors: Mutex::new(HashMap::new()),
             }),
         }
     }
@@ -273,44 +330,74 @@ impl AccountPicker {
         })
     }
 
-    /// Shrink `resolve` output only. Order is priority, position, id.
+    /// Shrink `resolve` output only. Sticky (if valid) beats policy; otherwise
+    /// `priority_failover` (stable) or pool-scoped `round_robin` among the
+    /// highest-priority isomorphic group.
     pub fn pick_from_candidates(
         &self,
         candidates: &[DispatchCandidate],
         affinity_key: Option<&str>,
         excluded_members: &[String],
     ) -> Option<PickedMember> {
-        let mut eligible: Vec<&PickedMember> = self
+        let eligible: Vec<EligibleMember<'_>> = self
             .inner
             .members
             .iter()
-            .filter(|member| {
-                candidates
+            .filter_map(|member| {
+                if !member.is_eligible() || Self::is_excluded(member, excluded_members) {
+                    return None;
+                }
+                let candidate = candidates
                     .iter()
-                    .any(|candidate| Self::matches_candidate(member, candidate))
-                    && member.is_eligible()
-                    && !Self::is_excluded(member, excluded_members)
+                    .find(|candidate| Self::matches_candidate(member, candidate))?;
+                Some(EligibleMember { member, candidate })
             })
             .collect();
         if eligible.is_empty() {
             return None;
         }
-        if let Some(affinity) = affinity_key.map(str::trim).filter(|key| !key.is_empty()) {
-            if let Some(sticky) = eligible.iter().find(|member| {
-                member.source_id == affinity
-                    || member.ticket_id == affinity
-                    || member.label == affinity
-            }) {
-                return Some((*sticky).clone());
+        let affinity = affinity_key
+            .map(str::trim)
+            .filter(|key| !key.is_empty())
+            .map(str::to_owned);
+        let mut sticky_held = false;
+        if let Some(key) = affinity.as_deref() {
+            match self.lookup_sticky(candidates, excluded_members, key) {
+                StickyLookup::Hit(picked) => return Some(picked),
+                StickyLookup::Held => sticky_held = true,
+                StickyLookup::Miss => {}
             }
         }
-        eligible.sort_by(|left, right| {
-            left.priority
-                .cmp(&right.priority)
-                .then(left.position.cmp(&right.position))
-                .then(left.source_id.cmp(&right.source_id))
-        });
-        eligible.first().map(|member| (*member).clone())
+        let picked = match self.inner.schedule_policy {
+            RouteSchedulePolicy::RoundRobin => self.pick_round_robin(&eligible),
+            RouteSchedulePolicy::PriorityFailover => pick_priority_failover(&eligible),
+        }?;
+        if let Some(key) = affinity.as_deref() {
+            if !sticky_held {
+                if let Some(candidate) = matching_candidate(&picked, candidates) {
+                    self.record_sticky(key, &picked, candidate);
+                }
+            }
+        }
+        Some(picked)
+    }
+
+    /// Prefer a still-valid sticky member from the full resolver set, before
+    /// lane filtering. Cooldown / this-request exclusion skips the member for
+    /// this pick without deleting the binding.
+    pub fn try_sticky(
+        &self,
+        candidates: &[DispatchCandidate],
+        affinity_key: Option<&str>,
+        excluded_members: &[String],
+    ) -> Option<PickedMember> {
+        let key = affinity_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty())?;
+        match self.lookup_sticky(candidates, excluded_members, key) {
+            StickyLookup::Hit(picked) => Some(picked),
+            StickyLookup::Held | StickyLookup::Miss => None,
+        }
     }
 
     /// New request: from cursor, first eligible member; then cursor = (idx+1)%n.
@@ -366,6 +453,7 @@ impl AccountPicker {
         {
             member.isolate();
         }
+        self.drop_sticky_for_member(source_id);
         if let Some(sink) = &self.inner.isolate_sink {
             sink(source_id);
         }
@@ -444,6 +532,126 @@ impl AccountPicker {
             .collect()
     }
 
+    fn lookup_sticky(
+        &self,
+        universe: &[DispatchCandidate],
+        excluded_members: &[String],
+        key: &str,
+    ) -> StickyLookup {
+        let binding = {
+            let Ok(guard) = self.inner.sticky.lock() else {
+                return StickyLookup::Miss;
+            };
+            guard.get(key).cloned()
+        };
+        let Some(binding) = binding else {
+            return StickyLookup::Miss;
+        };
+        let Some(member) = self
+            .inner
+            .members
+            .iter()
+            .find(|member| sticky_member_matches(member, &binding.member_id))
+        else {
+            self.drop_sticky(key);
+            return StickyLookup::Miss;
+        };
+        let Some(candidate) = universe
+            .iter()
+            .find(|candidate| Self::matches_candidate(member, candidate))
+        else {
+            self.drop_sticky(key);
+            return StickyLookup::Miss;
+        };
+        if !sticky_still_valid(&binding, member, candidate) || !member.is_eligible() {
+            self.drop_sticky(key);
+            return StickyLookup::Miss;
+        }
+        if Self::is_excluded(member, excluded_members) {
+            return StickyLookup::Held;
+        }
+        StickyLookup::Hit(member.clone())
+    }
+
+    fn pick_round_robin(&self, eligible: &[EligibleMember<'_>]) -> Option<PickedMember> {
+        let mut ordered: Vec<&EligibleMember<'_>> = eligible.iter().collect();
+        ordered.sort_by(|left, right| cmp_schedule(left, right));
+        let lead = *ordered.first()?;
+        let group: Vec<&EligibleMember<'_>> = ordered
+            .iter()
+            .copied()
+            .filter(|item| {
+                item.member.priority == lead.member.priority
+                    && item.candidate.transport_key == lead.candidate.transport_key
+                    && item.candidate.upstream_dialect == lead.candidate.upstream_dialect
+            })
+            .collect();
+        let n = group.len();
+        if n == 0 {
+            return None;
+        }
+        let cursor_key = isomorphic_cursor_key(
+            lead.member.priority,
+            &lead.candidate.transport_key,
+            &lead.candidate.upstream_dialect,
+        );
+        let start = match self.inner.rr_cursors.lock() {
+            Ok(mut cursors) => {
+                let slot = cursors.entry(cursor_key).or_insert(0);
+                let start = *slot % n;
+                *slot = (start + 1) % n;
+                start
+            }
+            Err(_) => 0,
+        };
+        Some(group[start].member.clone())
+    }
+
+    fn record_sticky(&self, key: &str, member: &PickedMember, candidate: &DispatchCandidate) {
+        let Ok(mut guard) = self.inner.sticky.lock() else {
+            return;
+        };
+        guard.insert(
+            key.to_owned(),
+            StickyBinding {
+                member_id: member.source_id.clone(),
+                provider: candidate.upstream_provider.clone(),
+                upstream_dialect: candidate.upstream_dialect.clone(),
+                index_generation: candidate.capability_generation,
+                auth_fingerprint: member.authorization_fingerprint(),
+            },
+        );
+    }
+
+    fn drop_sticky(&self, key: &str) {
+        if let Ok(mut guard) = self.inner.sticky.lock() {
+            guard.remove(key);
+        }
+    }
+
+    fn drop_sticky_for_member(&self, source_id: &str) {
+        let Ok(mut guard) = self.inner.sticky.lock() else {
+            return;
+        };
+        guard.retain(|_, binding| {
+            binding.member_id != source_id
+                && !self.inner.members.iter().any(|member| {
+                    member.source_id == source_id
+                        && sticky_member_matches(member, &binding.member_id)
+                })
+        });
+    }
+
+    #[cfg(test)]
+    pub(super) fn rewrite_sticky_fingerprint(&self, affinity_key: &str, fingerprint: &str) {
+        let Ok(mut guard) = self.inner.sticky.lock() else {
+            return;
+        };
+        if let Some(binding) = guard.get_mut(affinity_key) {
+            binding.auth_fingerprint = fingerprint.to_owned();
+        }
+    }
+
     pub fn soonest_retry_after(&self, model: &str) -> Option<HeaderValue> {
         let now = Instant::now();
         let Ok(guard) = self.inner.cooldowns.lock() else {
@@ -479,4 +687,75 @@ fn keep_later_deadline(existing: &mut Instant, until: Instant) {
     if until > *existing {
         *existing = until;
     }
+}
+
+/// Route-scoped sticky key: `(route_id, downstream_dialect, hash(session))`.
+/// Never the raw session string, and never a process-global map key.
+pub fn route_scoped_affinity_key(
+    route_id: &str,
+    downstream_dialect: &str,
+    session_identifier: &str,
+) -> String {
+    format!(
+        "{}\x1f{}\x1f{}",
+        route_id.trim(),
+        downstream_dialect.trim(),
+        hash_session_identifier(session_identifier.trim())
+    )
+}
+
+fn hash_session_identifier(session: &str) -> String {
+    let digest = Sha256::digest(session.as_bytes());
+    digest
+        .iter()
+        .take(16)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn matching_candidate<'a>(
+    member: &PickedMember,
+    candidates: &'a [DispatchCandidate],
+) -> Option<&'a DispatchCandidate> {
+    candidates
+        .iter()
+        .find(|candidate| AccountPicker::matches_candidate(member, candidate))
+}
+
+fn sticky_member_matches(member: &PickedMember, bound_id: &str) -> bool {
+    member.source_id == bound_id || member.ticket_id == bound_id || member.label == bound_id
+}
+
+fn sticky_still_valid(
+    binding: &StickyBinding,
+    member: &PickedMember,
+    candidate: &DispatchCandidate,
+) -> bool {
+    // Index generation is stored on the binding so a later snapshot can
+    // re-validate. A bump that still includes this member with the same
+    // provider/dialect stays valid; a bump that dropped the member never
+    // reaches here because `eligible` is the current resolver set.
+    let _ = binding.index_generation;
+    member.is_eligible()
+        && binding.provider == candidate.upstream_provider
+        && binding.upstream_dialect == candidate.upstream_dialect
+        && binding.auth_fingerprint == member.authorization_fingerprint()
+}
+
+fn cmp_schedule(left: &EligibleMember<'_>, right: &EligibleMember<'_>) -> CmpOrdering {
+    left.member
+        .priority
+        .cmp(&right.member.priority)
+        .then(left.member.position.cmp(&right.member.position))
+        .then(left.member.source_id.cmp(&right.member.source_id))
+}
+
+fn pick_priority_failover(eligible: &[EligibleMember<'_>]) -> Option<PickedMember> {
+    let mut ordered: Vec<&EligibleMember<'_>> = eligible.iter().collect();
+    ordered.sort_by(|left, right| cmp_schedule(left, right));
+    ordered.first().map(|item| item.member.clone())
+}
+
+fn isomorphic_cursor_key(priority: i64, transport_key: &str, dialect: &str) -> String {
+    format!("{priority}\x1f{transport_key}\x1f{dialect}")
 }

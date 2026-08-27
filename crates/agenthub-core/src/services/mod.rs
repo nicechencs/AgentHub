@@ -18,6 +18,7 @@ pub mod install_progress;
 pub mod install_service;
 pub mod live_write_authority;
 pub mod mcp_inventory;
+pub mod plugin_apply;
 pub mod plugin_inventory;
 pub mod project_service;
 pub mod provider_identity;
@@ -40,6 +41,7 @@ pub use adapter_apply_service::AdapterApplyService;
 pub use adapter_bridge_service::{
     AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
     AdapterBridgeRestoreMaterial, AdapterBridgeRuntimeMaterial, AdapterBridgeService,
+    BridgeProviderSnapshot, should_make_bridge_current,
 };
 pub use adapter_projection::{
     classify_account_live, classify_provider_config, leftover_live_flag, LiveOrigin,
@@ -59,6 +61,9 @@ pub use install_service::{
 };
 pub use live_write_authority::{LiveWriteAuthority, LiveWriteGuard};
 pub use mcp_inventory::{list_mcp_inventory, McpInventory, McpServerEntry, McpSourceFile};
+pub use plugin_apply::{
+    disable_plugin, disable_plugin_with, enable_plugin, enable_plugin_with, PluginApplyContext,
+};
 pub use plugin_inventory::{
     list_plugin_inventory, PluginAgentStatus, PluginComponent, PluginEntry, PluginInventory,
 };

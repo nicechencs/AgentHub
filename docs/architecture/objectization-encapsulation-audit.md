@@ -3,7 +3,7 @@ title: 对象化与封装审查
 type: explanation
 status: current
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # 对象化与封装审查
@@ -22,11 +22,11 @@ updated: 2026-08-26
 | --- | --- | --- |
 | O-01 | 领域 Service 曾是 `pub` 字段 | 已处理：Service 字段改为 `pub(crate)`，对外只留访问器。CLI / 桌面端走 `accounts()` / `providers()` 等。隔离测试用 `set_providers` / `set_accounts`。按领域拆 Service 内部职责仍暂缓 |
 | O-02 | 仍存在：`Database::with_conn` 为 `pub`；生产路径曾用 `ProviderService::repo()` 读行 | 部分处理：生产读改为 `get_by_id` / `get_current`；Account / Backup 的 `repo()` 收为 `pub(crate)`。`with_conn` 与 Provider `repo()` 仍给测试和补偿事务用 |
-| O-03 | Chat 页面 Hook 同时承载会话、发送、连接和弹窗 | 部分处理：纯 UI 开关收到 `use-chat-page-chrome.ts`（侧栏 / 设置 / 危险确认 / 删除确认 / 侧栏查询）。发送、取消、世代、单飞、票夹订阅未动 |
-| O-04 | Connections 页面编排探测、导入、切换、删除 | 部分处理：导入对话框的本机登录探测收到 `use-connection-import-probe.ts`。切换 / 绑定 / 删除 / 分享 / 路由侧栏未动 |
+| O-03 | Chat 页面 Hook 同时承载会话、发送、连接和弹窗 | 部分处理：UI 壳在 `use-chat-page-chrome.ts`；发送 / 取消 / 流式过程在 `use-chat-page-send.ts`；会话列表在 `use-chat-page-sessions.ts`；连接切换和票夹订阅在 `use-chat-page-connection.ts`。世代仍在 `useChatPage`。发送 / 取消 / 切会话行为未改 |
+| O-04 | Connections 页面编排探测、导入、切换、删除 | 部分处理：导入对话框的本机登录探测收到 `use-connection-import-probe.ts`。切换 / 删除确认收到 `use-connection-page-actions.ts`。分享 / 路由侧栏收到 `use-connection-share-route.ts`。页面仍保留票夹、连接池、筛选和详情 inspect。切换 / 绑定 / 删除语义未改 |
 | O-05 | 供应商保存编排曾在页面目录 | 已处理：`runProviderSaveFlow` 收到 `src/lib/api/provider-save.ts`；页面只保留 schema 闸门。validate/materialize/upsert 语义未改 |
 | O-06 | 生产 Hook 已走共享连接池；`loadAdapterPageResources` 只留在测试 | 标注为测试辅助，页面不得再自行拉账号 / Provider |
-| O-07 | 仍存在：多个模块级 store，`setBackend` 手工 reset | 部分处理：`setBackend` / `resetBackend` 会一起清空 catalog。统一 runtime context 仍暂缓 |
+| O-07 | 仍存在：多个模块级 store，`setBackend` 手工 reset | 部分处理：`setBackend` / `resetBackend` 会一起清空 catalog。设计见 [runtime-context-owners.md](runtime-context-owners.md)。实现未开始 |
 | O-51、O-52 | Agent 状态 / catalog reset 后旧请求仍可写回 | 已处理：按 epoch 丢弃过期写回；catalog 随 backend 一起 reset |
 | O-50 | 项目列表 Hook 曾返回通用 `setData` | 已处理：只暴露 `replaceProjectListFromMutation` |
 | O-54、O-55、O-61 | Skill / Config / Usage mock 跨实例污染 | 已处理：factory reset；config 读取返回拷贝 |
@@ -37,25 +37,25 @@ updated: 2026-08-26
 | O-60 | 协议测试两套 fixture 映射 | 已处理：共用 test-only loader |
 | O-08、O-09 | 三处 façade 各自刷新，ticket bind 曾 `.catch(() => {})` | 已处理：统一刷新；失败留在 snapshot。连接页和 Chat 可看到并重试 |
 | O-10 | Chat 曾本地 `listTicketWallet` | 已处理：Chat 订阅共享票夹 |
-| O-11–O-14 | 仍存在 | 暂缓。Service / Bridge 内部拆分要单独设计 |
-| O-15–O-19 | 仍存在 | 暂缓。宽对象和派生数据收窄会改契约 |
+| O-11–O-14 | Service / Bridge 内部拆分 | 已处理内部模块：Backup catalog/snapshot/restore；Provider lock/pool/live/switch/compensate；Account 本已拆分；本机转发 persist saga。设计见 [service-internal-owners.md](service-internal-owners.md) |
+| O-15–O-19 | 宽对象和派生数据 | 已处理 mapper / port 携带 / JSON 已知键访问器，未拆公开 DTO。设计见 [read-model-owners.md](read-model-owners.md) |
 | O-20 | mock Agent 用模块级可变状态 | 暂缓。已有 `resetMockAgentStatuses`；实例化隔离收益低于测试迁移成本 |
 | O-21 | 产品集合曾是可变导出 | 已处理：`applyAgentCatalog` 整体替换并冻结 `AGENTS` / `AGENT_MAP` / `AGENT_IDS`。集合仍由 catalog 入口写入 |
-| O-23 | 仍存在 | 暂缓。通用表单 / 侧栏业务规则拆分需先明确唯一 owner |
+| O-23 | 通用表单 / 侧栏聚合业务规则 | 设计见 [form-sidebar-owners.md](form-sidebar-owners.md)。实现未开始 |
 | O-25 | token 层曾单独维护 Agent ID 列表 | 已处理：`TOKEN_AGENT_IDS` 从色板 `AGENT_COLORS` 派生，不再平行维护产品集合。展示 meta 与安装命令仍在 catalog 映射 |
 | O-24 | Sidebar Context 默认 setter 静默失效 | 已处理：缺少 Provider 时抛错 |
 | O-22 | `GenericConfigForm` 未把锁定状态传给 `SecretInput` | 已处理：`SecretInput` 接收 `disabled`/`readOnly` |
-| O-26–O-30 | 仍存在 | 暂缓。启动组合根、transport façade、Gateway 状态和协议策略需要分别设计 |
-| O-31–O-34 | 仍存在 | 暂缓。Usage normalizer、查询 filter 和模型映射的跨层收窄需保持统计语义 |
+| O-26–O-30 | 启动组合根、transport、Gateway、协议策略 | 设计见 [startup-gateway-owners.md](startup-gateway-owners.md)。实现未开始 |
+| O-31–O-34 | Usage 归并 / 查询过滤 / 模型切边 | 设计见 [usage-owners.md](usage-owners.md)。实现未开始 |
 | O-35、O-38 | 仍存在 | 暂缓。CLI 运行策略和发布脚本收口需要单独设计 |
 | O-36 | CLI 切换确认曾 `.ok()` 吞掉列表读取错误，并自行拼接预览 | 已处理：读取失败返回错误；确认事实由 core `SwitchConfirmPreview` 生成。CLI 渲染英文；桌面端只把同一份事实译成界面文案 |
 | O-37 | CLI 多处重复解析 `--agent` | 已处理：共用 `agent_arg`；各命令错误原文保留 |
 | O-39 | mock `speaks` 与 core 对 GLM/DeepSeek 不一致 | 已处理：mock 补上 `openai-responses`。共用 `ticket-speaks.json`，core 与 mock 对照测试锁步 |
-| O-40 | Mock 重复实现来源分类 | 部分处理：共用 `source-classify-contract.json`。core classify 与 mock 对照，缺产品失败。mock 仍自跑分类函数，未改为调 plan/apply |
-| O-41 | 连接流程 fixture 手工构造完整绑定 | 暂缓。整表绑定成功态重写不做 |
-| O-42 | Mock Ticket resolver 依赖过宽 | 暂缓。resolver 仍可读 accounts/providers/profiles 并调 plan/apply；本刀不扩、不重写绑定 |
-| O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
-| O-58 | 能力、安装渠道是手写生产镜像 | 部分处理：共用 `catalog-mirror-contract.json`。Agent / Capability / 本机渠道 id 缺项失败。未对照完整 schema 或能力文案 |
+| O-40 | Mock 重复实现来源分类 | 已处理：共用 `source-classify-contract.json`。core classify 与 mock 对照，缺产品失败。mock 运行时从 plan 读取来源产品；classify helper 只给 plan 内部和 lockstep 测试用 |
+| O-41 | 连接流程 fixture 手工构造完整绑定 | 设计见 [test-fixture-owners.md](test-fixture-owners.md)。实现未开始 |
+| O-42 | Mock Ticket resolver 依赖过宽 | 设计见 [test-fixture-owners.md](test-fixture-owners.md)。实现未开始 |
+| O-44 | OAuth 测试直接操作共享 store | 设计见 [test-fixture-owners.md](test-fixture-owners.md)。实现未开始 |
+| O-58 | 能力、安装渠道是手写生产镜像 | 部分处理：共用 `catalog-mirror-contract.json`。Agent / Capability / 本机渠道 id、能力界面标签、config schema 字段名、每格 capability reason 文案缺项或再漂移失败。mock reason 已对齐 core，`knownMismatches` 为空；catalog 仍是手写镜像（ids/labels/schema/reasons 由契约锁住） |
 | O-43 | 测试 fake 用 `_ => unsupported` 吞掉新 Capability | 已处理：`Capability::fake_state` 穷举所有变体；测试 fake 走该 helper |
 | O-46 | logging 自行打开 SQLite | 部分处理：启动窥探收到 `storage::peek_settings`；logging 不再手写 SQL。启动仍先于 Database 打开，不改 subscriber 生命周期 |
 | O-47 | Adapter 锁表随 profile id 永久增长 | 已处理：`lock_profile` 回收已无持有者的条目；Agent 锁仍按封闭枚举保留 |
@@ -67,7 +67,7 @@ updated: 2026-08-26
 | O-74 | `PkcePair` 字段公开可变 | 已处理：字段私有，只读 `verifier()` / `challenge()` |
 | O-71 | `OAuthSession` 字段公开 | 已处理：构造器 + 只读访问器；状态机 / TTL / `mark_error` 未改 |
 | O-63 | 设置语言读取散落 | 已处理：托盘和选目录共用 `language_from_hub`。关闭到托盘的两个布尔解析器语义不同，未合并 |
-| O-64 | 可重试错误码两端各维护一份 | 部分处理：界面优先用返回的 retryable；两端对照测试锁住同一组码。未做生成契约 |
+| O-64 | 可重试错误码两端各维护一份 | 已处理：共用 `retryable-error-contract.json`；界面仍优先用返回的 retryable 字段 |
 
 ## 结论
 
@@ -77,7 +77,7 @@ updated: 2026-08-26
 - 页面 Hook、Tauri controller 和部分 Service 同时承担状态、编排、持久化和补偿；
 - 同一业务概念在多个对象中分别保存或派生，尤其是 Agent 状态、连接池、票夹和路线信息。
 
-最高风险曾经是：调用方可以直接操作本应由领域对象维护的状态；写入成功后，多个前端读模型又可能各自刷新、静默失败或相互覆盖。票夹 bind/unbind 与账号 / Provider 变更的读模型刷新已收到 runtime coordinator；Chat 纯 UI 壳已抽出，会话 / 发送 / 连接仍在同一 Hook。连接页导入探测已抽出，切换 / 删除仍在页面。Service 内部拆分和契约收窄仍待单独设计。
+最高风险曾经是：调用方可以直接操作本应由领域对象维护的状态；写入成功后，多个前端读模型又可能各自刷新、静默失败或相互覆盖。票夹 bind/unbind 与账号 / Provider 变更的读模型刷新已收到 runtime coordinator；Chat 纯 UI 壳、发送 / 取消、会话列表、连接切换与票夹订阅已抽出，世代仍在页面 Hook。连接页导入探测、切换 / 删除确认与分享 / 路由侧栏已抽出，页面仍保留票夹、连接池、筛选和详情 inspect。切换 / 绑定 / 删除语义未改。Service 内部拆分和契约收窄仍待单独设计。
 
 ## 全量复核新增问题索引
 
@@ -123,9 +123,9 @@ updated: 2026-08-26
 
 - **严重程度：高**
 - **状态：部分处理**
-- **位置：** `src/pages/chat/use-chat-page.ts`；UI 壳 `src/pages/chat/use-chat-page-chrome.ts`
+- **位置：** `src/pages/chat/use-chat-page.ts`；UI 壳 `src/pages/chat/use-chat-page-chrome.ts`；发送 `src/pages/chat/use-chat-page-send.ts`；会话列表 `src/pages/chat/use-chat-page-sessions.ts`；连接 `src/pages/chat/use-chat-page-connection.ts`
 - **问题：** `useChatPage` 同时维护会话、消息、Agent 状态、Provider、票夹、发送状态、流式过程、弹窗、项目跳转和竞态代数，并直接执行加载、创建、切换、发送、取消和恢复。
-- **当前：** 纯 UI 壳（`railOpen` / `settingsOpen` / `dangerConfirm` / `deleteConfirmId` / `railQuery`）在 `use-chat-page-chrome.ts`。会话、发送、连接、世代和票夹订阅仍在 `useChatPage`。发送 / 取消 / 切会话行为未改。
+- **当前：** 纯 UI 壳在 `use-chat-page-chrome.ts`。发送 / 取消 / 流式事件 / 过程面板在 `use-chat-page-send.ts`（世代仍走 `isCurrentChatRequest`）。会话列表（加载 / 新建 / 删除 / 项目跳转 / 单飞）在 `use-chat-page-sessions.ts`。连接切换和票夹订阅在 `use-chat-page-connection.ts`。世代仍在 `useChatPage`。发送 / 取消 / 切会话行为未改。
 - **建议：** 拆为会话控制器、消息/流式发送控制器、连接信息查询 Hook 和页面交互状态 Hook；页面只负责组合和展示。
 - **影响/风险：** 状态之间的竞态保护集中在一个 Hook，新增需求容易继续堆叠，测试难以区分领域行为和视图行为。
 
@@ -133,9 +133,9 @@ updated: 2026-08-26
 
 - **严重程度：中高**
 - **状态：部分处理**
-- **位置：** `src/pages/connections/index.tsx`；导入探测 `src/pages/connections/use-connection-import-probe.ts`
+- **位置：** `src/pages/connections/index.tsx`；导入探测 `src/pages/connections/use-connection-import-probe.ts`；切换 / 删除 `src/pages/connections/use-connection-page-actions.ts`；分享 / 路由 `src/pages/connections/use-connection-share-route.ts`
 - **问题：** 一个页面同时维护筛选、票夹加载、连接池同步、登录探测、导入、路线引导、分享、切换、刷新、删除和详情面板状态；页面直接组合多个 account/provider/ticket 写入行为。
-- **当前：** 导入对话框的本机登录探测（`loginImportOpen` / `importLiveProbe` / `importProbeLoading` / `importProbeGen` / `importingAccount`，打开时 `probeLiveAuth({ force: true })` 与 generation 丢弃）在 `use-connection-import-probe.ts`。切换、绑定、删除、分享/路由打开侧栏仍在页面。探测失败/成功与 generation 丢弃语义未改。
+- **当前：** 导入对话框的本机登录探测（`loginImportOpen` / `importLiveProbe` / `importProbeLoading` / `importProbeGen` / `importingAccount`，打开时 `probeLiveAuth({ force: true })` 与 generation 丢弃）在 `use-connection-import-probe.ts`。切换当前登录（`handleSwitchTicket` / `switchingTicketId` / `switchGen`）和删除确认（`deleteTicket` / `confirmDeleteTicket`：`deleteAccount` vs `deleteProvider`）在 `use-connection-page-actions.ts`。分享 / 路由侧栏（`openConnectForTicket` / `handleShareTicket` / `handleRouteTicket`，inspect 目标 `{ kind: 'connect' }`，打开时不 close inspect）在 `use-connection-share-route.ts`。ConnectFlowDialog asPanel 与票夹、连接池、筛选、详情 inspect 仍在页面。探测 / 切换 / 绑定 / 删除语义未改。
 - **建议：** 将登录探测与导入、连接切换与绑定、删除确认和列表展示分别封装为功能内 Hook/model；页面只保留路由参数和组件编排。
 - **影响/风险：** 一个流程的刷新、错误和取消语义容易影响其他流程；页面成为新的业务 Service。
 
@@ -453,10 +453,10 @@ updated: 2026-08-26
 #### O-40｜Mock 重复实现来源分类规则
 
 - **严重程度：中高**
-- **状态：部分处理**
+- **状态：已处理**
 - **位置：** `src/lib/backend/contracts/source-classify-contract.json`；`src/dev/mocks/source-classify.ts`；生产入口 `crates/agenthub-core/src/services/adapter_route_service/classify.rs`
 - **问题：** mock 多处重复维护 Kimi、Anthropic、OpenAI、xAI、GLM、DeepSeek 的 preset、endpoint 和登录信息判断，生产侧另有一套实现。
-- **当前：** needles / tags / presets / 产品表与分类用例共用 JSON。core `classify_*_source_product` 与 mock `classifyAccountSource` / `classifyProviderSource` 对照；缺产品或缺用例失败。生产 classify 结果未改。mock 仍自跑分类，未改为调 plan/apply。
+- **当前：** needles / tags / presets / 产品表与分类用例共用 JSON。core `classify_*_source_product` 与 mock `classifyAccountSource` / `classifyProviderSource` 对照；缺产品或缺用例失败。生产 classify 结果未改。mock 运行时（ticket wallet、adapter source ticket）从 plan 的来源产品读取，不再自跑 classify*。classify helper 只给 mock `plan()` 内部和 `source-classify-contract.test.ts` 使用。
 - **建议：** mock 只读取共享分类 fixture/contract；规则判断由 core 的 plan/classify 结果提供，不在 mock 内复制业务分支。
 - **影响/风险：** 新增来源或路线时测试可能继续通过，但与真实后端分类不一致。
 

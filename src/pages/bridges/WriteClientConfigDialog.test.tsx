@@ -106,6 +106,9 @@ describe('WriteClientConfigDialog', () => {
 
     expect(markup).toContain(t('routes.write.title'));
     expect(markup).toContain(t('routes.write.description'));
+    expect(markup).toContain(t('routes.endpoint.messages'));
+    expect(markup).toContain(t('routes.endpoint.responses'));
+    expect(markup).toContain(t('routes.endpoint.modelsLine'));
     expect(markup).toContain('~/.codex/config.toml');
     expect(markup).toContain('~/.grok/config.toml');
     expect(markup).not.toContain('wire_api');
