@@ -1,4 +1,5 @@
 import type { AgentId } from '@/lib/types';
+import retryableErrorContract from './retryable-error-contract.json';
 
 /** Saved connection table selected for a read-only adapter route preview. */
 export type AdapterSourceKind = 'account' | 'provider';
@@ -207,13 +208,10 @@ export class AdapterCommandError extends Error implements AdapterCommandErrorFie
   }
 }
 
-/** Keep in lockstep with `is_adapter_error_retryable` in src-tauri/src/commands/mod.rs. */
+/** Shared with desktop `is_adapter_error_retryable` via retryable-error-contract.json. */
 export function isAdapterErrorCodeRetryable(code: string): boolean {
-  if (code.startsWith('retryable:')) return true;
-  return code === 'adapter.port_in_use'
-    || code === 'adapter.bridge_start'
-    || code === 'adapter.bridge_upstream_auth'
-    || code.startsWith('adapter.bridge_restore_');
+  if (retryableErrorContract.retryableExact.some((item) => item === code)) return true;
+  return retryableErrorContract.retryablePrefixes.some((prefix) => code.startsWith(prefix));
 }
 
 export function adapterCommandError(fields: {
