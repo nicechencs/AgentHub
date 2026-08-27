@@ -21,7 +21,7 @@ concurrency:
 jobs:
   validate:
     name: Validate release metadata
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
       version: ${{ steps.metadata.outputs.version }}
@@ -441,7 +441,7 @@ jobs:
   build-linux:
     name: Build Linux (x64)
     needs: validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Checkout validated commit
@@ -577,7 +577,7 @@ jobs:
       - build-windows
       - build-macos
       - build-linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
