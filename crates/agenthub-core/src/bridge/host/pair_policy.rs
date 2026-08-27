@@ -4,7 +4,6 @@ use crate::bridge::protocol::pair::{
     dialect_compatibility, explicit_transparent_relay, sanitizer_allows_transparent,
     DialectCompatibility, PairDirection, ResponsesDialect,
 };
-use crate::bridge::runtime::BridgeUpstreamProtocol;
 use crate::models::{listed_model_matches, AdapterSourceProduct, AgentId, LOCAL_BRIDGE_EDGES};
 
 use super::gateway::EdgeState;

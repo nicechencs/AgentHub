@@ -68,6 +68,7 @@ pub(crate) fn leftover_agenthub_npm_prefixes_present() -> Vec<PathBuf> {
 }
 
 /// True when an older AgentHub actually wrote packages under a leftover prefix.
+#[cfg(test)]
 pub(crate) fn leftover_agenthub_npm_prefix_present() -> Option<PathBuf> {
     leftover_agenthub_npm_prefixes_present().into_iter().next()
 }
