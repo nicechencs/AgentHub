@@ -6,7 +6,6 @@ export { getBackend, resetBackend, setBackend } from './backend-runtime';
 export {
   getAgentCatalogSnapshot,
   loadAgentCatalog,
-  resetAgentCatalogStore,
   seedAgentCatalog,
   subscribeAgentCatalog,
 } from './agent-catalog-store';
@@ -17,7 +16,6 @@ export {
   getAgentStatusSnapshot,
   liveAuthProbeForAgent,
   loadAgentStatuses,
-  resetAgentStatusStore,
   revertAgentHidden,
   subscribeAgentStatuses,
 } from './agent-status-store';
@@ -38,7 +36,6 @@ export {
   markConnectionCurrent,
   notifyConnectionPoolChanged,
   providersForAgent,
-  resetConnectionPoolStore,
   subscribeConnectionPool,
 } from './connection-pool-store';
 export type {
@@ -51,7 +48,6 @@ export {
   getTicketWalletSnapshot,
   loadTicketWallet,
   notifyTicketWalletChanged,
-  resetTicketWalletStore,
   subscribeTicketWallet,
 } from './ticket-wallet-store';
 export type {
@@ -64,7 +60,6 @@ export type { RuntimeReadModel } from './mutation-coordinator';
 
 export {
   getAppUpdateAvailable,
-  resetAppUpdateStore,
   setAppUpdateAvailable,
   subscribeAppUpdate,
 } from './app-update-store';
