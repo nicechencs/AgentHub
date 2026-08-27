@@ -645,5 +645,69 @@ describe('provider-detect fields', () => {
     expect(vars.apiKey).toBe('sk-from-auth');
     expect(vars.baseUrl).toBe('');
   });
+
+  it('renames the Kimi provider table and default_provider instead of appending', () => {
+    const src = [
+      'default_model = "kimi-k2"',
+      'default_provider = "moonshot"',
+      '',
+      '[providers.moonshot]',
+      'type = "openai"',
+      'base_url = "https://mytokens.cc/v1"',
+      'api_key = "***"',
+      '',
+      '[models."kimi-k2"]',
+      'provider = "moonshot"',
+      'model = "kimi-k2"',
+      '',
+    ].join('\n');
+    const vars = extractFormVars('kimi', src, 'toml');
+    expect(vars.providerSlug).toBe('moonshot');
+    const out = applyFormVars('kimi', src, 'toml', { ...vars, providerSlug: 'moonshot2' });
+    expect(out).toContain('default_provider = "moonshot2"');
+    expect(out).toContain('[providers.moonshot2]');
+    expect(out).not.toContain('[providers.moonshot]');
+    expect(out).toContain('provider = "moonshot2"');
+    expect(out).not.toContain('default_provider = "moonshot"');
+  });
+
+  it('does not keep a grok model on a Kimi login', () => {
+    const src = [
+      'default_model = "grok-4.5"',
+      'default_provider = "moonshot"',
+      '',
+      '[providers.moonshot]',
+      'base_url = "https://mytokens.cc/v1"',
+      'api_key = "***"',
+      '',
+    ].join('\n');
+    const vars = extractFormVars('kimi', src, 'toml');
+    expect(vars.model).toBe('kimi-k2');
+    const out = applyFormVars('kimi', src, 'toml', vars);
+    expect(out).toContain('default_model = "kimi-k2"');
+    expect(out).not.toContain('grok-4.5');
+  });
+
+  it('backfills DeepSeek provider and strips /anthropic from the service URL', () => {
+    const src = JSON.stringify({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+      baseUrl: 'https://api.deepseek.com/anthropic',
+      apiKey: '***',
+    });
+    const vars = extractFormVars('dsh', src, 'json');
+    expect(vars.providerSlug).toBe('deepseek-official');
+    expect(vars.baseUrl).toBe('https://api.deepseek.com');
+    expect(vars.model).toBe('deepseek-v4-flash');
+    const out = applyFormVars('dsh', src, 'json', {
+      ...vars,
+      providerSlug: 'deepseek-official',
+      baseUrl: 'https://api.deepseek.com',
+    });
+    const parsed = JSON.parse(out) as Record<string, unknown>;
+    expect(parsed.provider).toBe('deepseek-official');
+    expect(parsed.baseUrl).toBe('https://api.deepseek.com');
+    expect(parsed.env).toBeUndefined();
+  });
 });
 

@@ -29,8 +29,9 @@ use toml_edit::DocumentMut;
 
 use crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL;
 use crate::bridge::{
-    BridgeLocalSurface, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol,
-    EffectiveRouteIndex, MemberListing, ResolvedAuth, index_from_member_listings,
+    BridgeLocalSurface, BridgeMemberSpec, BridgeStartSpec, BridgeUpstreamConfig,
+    BridgeUpstreamProtocol, EffectiveRouteIndex, MemberHealth, MemberListing, ResolvedAuth,
+    index_from_member_listings,
 };
 use crate::error::{AppError, Result};
 use crate::models::{
@@ -631,6 +632,23 @@ impl AdapterBridgeRuntimeMaterial {
                 .with_listed_models(index.list_models(index_endpoint_key(self.local_surface)))
                 .with_route_index(index.clone());
         }
+        let source_id = self.source_connection_id.clone();
+        let ticket_id = if source_id.is_empty() {
+            String::new()
+        } else {
+            format!("account:{source_id}")
+        };
+        spec = spec.with_members(vec![BridgeMemberSpec {
+            ticket_id,
+            source_kind: "account".into(),
+            source_id,
+            label: self.profile_id.clone(),
+            auth: self.upstream_auth.clone(),
+            reload: None,
+            health: MemberHealth::Renewable,
+            priority: 0,
+            position: 0,
+        }]);
         spec
     }
 

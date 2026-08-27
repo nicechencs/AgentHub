@@ -29,7 +29,7 @@ import {
   releaseConnectionTrashBusy,
   subscribeConnectionTrashBusy,
 } from './connection-trash-lock';
-import { dedupTrashItems, humanizeTrashLabel } from './connection-trash-model';
+import { dedupTrashItems, humanizeTrashLabel, trashItemEndpoint, trashItemSecretTail } from './connection-trash-model';
 
 function dateLabel(value: string): string {
   const isoLike = value.replace(' ', 'T');
@@ -180,11 +180,25 @@ export function ConnectionTrashButton({
                     <div className="min-w-0">
                       <p className="truncate text-body font-medium">{title}</p>
                       <p className="text-meta text-muted">
-                        {t('connections.trash.deletedAt', {
-                          agent: agentName,
-                          kind: kindLabel,
-                          when: dateLabel(item.deletedAt),
-                        })}
+                        {[
+                          t('connections.trash.deletedAt', {
+                            agent: agentName,
+                            kind: kindLabel,
+                            when: dateLabel(item.deletedAt),
+                          }),
+                          trashItemSecretTail(item)
+                            ? t('connections.trash.last4', { last4: trashItemSecretTail(item) ?? '' })
+                            : '',
+                          (() => {
+                            const endpoint = trashItemEndpoint(item);
+                            if (!endpoint) return '';
+                            try {
+                              return new URL(endpoint).host;
+                            } catch {
+                              return endpoint;
+                            }
+                          })(),
+                        ].filter(Boolean).join(' · ')}
                       </p>
                       <p className="text-meta text-muted">
                         {item.wasCurrent ? t('connections.trash.wasCurrent') : ''}

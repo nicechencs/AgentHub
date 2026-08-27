@@ -364,7 +364,7 @@ describe('eligibility labels with translator', () => {
     expect(planMaturityLabel('stable', t)).toBe('Stable');
     expect(planMaturityLabel('preview', t)).toBe('Preview');
     expect(planMaturityLabel('experimental', t)).toBe('');
-    expect(oauthIncompleteMessage(t)).toContain('Connections');
+    expect(oauthIncompleteMessage(t)).toMatch(/official login is not finished/i);
     const bridge = plan({ analysis: analysis({ route: 'local_bridge' }) });
     expect(planRouteSummary(bridge, t)).toBe('Local route');
     const reuse = plan({ reusePath: 'native_subscription', analysis: analysis({ route: 'config_sync' }) });
