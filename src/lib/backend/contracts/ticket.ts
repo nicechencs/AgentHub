@@ -457,11 +457,9 @@ export interface TicketPort {
   unbind(ticketId: string, agentId: AgentId): Promise<void>;
 }
 
-/** Route label for Connections「正用于」line. */
+/** Route label for Connections usage line and Dashboard card meta. */
 export function bindingRouteUsageLabel(route: BindingRoute): string {
-  if (route === 'reshape') return '改配置';
-  if (route === 'bridge') return '本机路由';
-  return '切换';
+  return bindingRouteDashboardLabel(route);
 }
 
 /** Route label for Dashboard card meta. */

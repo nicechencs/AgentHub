@@ -22,10 +22,10 @@ describe('ticketRouteHintFromEligibility', () => {
   it('keeps oauth and plan reasons', () => {
     expect(ticketRouteHintFromEligibility({
       kind: 'blocked_oauth',
-      message: '官方登录未完成，先到连接页授权。',
+      message: '官方登录未完成，先到连接页完成登录。',
     })).toEqual({
       status: 'blocked_oauth',
-      reason: '官方登录未完成，先到连接页授权。',
+      reason: '官方登录未完成，先到连接页完成登录。',
     });
 
     const ready: PlanEligibility = {

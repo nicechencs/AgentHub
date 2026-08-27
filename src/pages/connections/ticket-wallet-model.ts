@@ -22,7 +22,6 @@ import type {
 } from '@/lib/backend/contracts/ticket';
 import {
   bindingRouteDashboardLabel,
-  bindingRouteUsageLabel,
   surfaceGroupMemberCount,
   ticketCredentialClassLabel,
   ticketSurfaceLabel,
@@ -86,7 +85,7 @@ export const TICKET_WALLET_FILTERS: Array<{ value: TicketWalletFilter; label: st
 export type TicketAddKind = 'import-login' | 'oauth' | 'api-key';
 
 export const TICKET_ADD_ACTIONS: Array<{ kind: TicketAddKind; label: string }> = [
-  { kind: 'import-login', label: '导入当前授权' },
+  { kind: 'import-login', label: '导入当前登录' },
   { kind: 'oauth', label: '官方登录' },
   { kind: 'api-key', label: '添加 API Key' },
 ];
@@ -111,7 +110,7 @@ export function ticketWalletFilterLabel(
 
 export function ticketAddActionLabel(kind: TicketAddKind, t?: TranslateFn): string {
   if (!t) {
-    return TICKET_ADD_ACTIONS.find((item) => item.kind === kind)?.label ?? '导入当前授权';
+    return TICKET_ADD_ACTIONS.find((item) => item.kind === kind)?.label ?? '导入当前登录';
   }
   if (kind === 'import-login') return t('connections.list.importLogin');
   if (kind === 'oauth') return t('connections.list.addOauth');
@@ -146,18 +145,20 @@ export function ticketSurfaceChipLabel(surface: TicketSurface, t?: TranslateFn):
   return t('connections.list.unrecognized');
 }
 
-function bindingUsageRouteLabel(route: BindingRoute, t?: TranslateFn): string {
-  if (!t) return bindingRouteUsageLabel(route);
-  if (route === 'reshape') return t('connections.list.routeReshape');
-  if (route === 'bridge') return t('kind.route.localRoute');
-  return t('connections.list.routeSwitch');
-}
-
-function bindingDashboardRouteLabel(route: BindingRoute, t?: TranslateFn): string {
+/** Same connection-state words on Connections cards and Dashboard agent cards. */
+export function connectionStateRouteLabel(route: BindingRoute, t?: TranslateFn): string {
   if (!t) return bindingRouteDashboardLabel(route);
   if (route === 'reshape') return t('connections.list.routeReshape');
   if (route === 'bridge') return t('kind.route.localRoute');
   return t('kind.route.direct');
+}
+
+function bindingUsageRouteLabel(route: BindingRoute, t?: TranslateFn): string {
+  return connectionStateRouteLabel(route, t);
+}
+
+function bindingDashboardRouteLabel(route: BindingRoute, t?: TranslateFn): string {
+  return connectionStateRouteLabel(route, t);
 }
 
 export interface TicketAddMenuAgent {
@@ -256,7 +257,7 @@ export function handleMenuDialogSelect(
 }
 
 /**
- * Menu item select for 导入当前授权 / 添加 API Key.
+ * Menu item select for 导入当前登录 / 添加 API Key.
  * preventDefault keeps the menu mounted through the click so the Dialog is
  * not dismissed and the pointer cannot hit the segmented filter underneath.
  * Close is delayed until after the click settles — timeout 0 unmounts the

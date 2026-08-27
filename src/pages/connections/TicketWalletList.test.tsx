@@ -63,13 +63,22 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('aria-label="登录类型筛选"');
     expect(markup).toContain('1 份登录');
     expect(markup).not.toContain('钱包');
-    expect(markup).toContain('密钥授权');
+    expect(markup).toContain('API Key');
     expect(markup).toContain('var(--agent-kimi)');
     expect(markup).toMatch(/color:\s*var\(--agent-kimi\)/);
     expect(markup).not.toContain('●');
     expect(markup).not.toContain('○');
     expect(markup).not.toContain('搜票');
     expect(markup).not.toContain('张票');
+    expect(markup).not.toContain('账号登录');
+    expect(markup).not.toContain('密钥授权');
+    expect(markup).not.toContain('Ticket');
+    expect(markup).not.toContain('wallet');
+    expect(markup).not.toContain('Adapter');
+    expect(markup).not.toContain('loopback');
+    expect(markup).not.toContain('PKCE');
+    expect(markup).not.toContain('投影');
+    expect(markup).not.toContain('真源');
     expect(markup).not.toContain('移入回收站');
     expect(markup).not.toContain('编辑配置');
     expect(markup).not.toContain('编辑 API Key');
@@ -196,11 +205,11 @@ describe('TicketWalletList details', () => {
       }),
     );
     expect(markup).toContain('user@example.com');
-    expect(markup).toContain('账号登录');
+    expect(markup).toContain('官方登录');
     expect(markup).not.toContain('aria-label="刷新"');
     expect(markup).toContain('var(--agent-codex)');
     expect(markup).toMatch(/color:\s*var\(--agent-codex\)/);
-    expect(markup).toContain('Codex（切换）');
+    expect(markup).toContain('Codex（直连）');
     expect(markup).not.toContain('正用于：');
     expect(markup).not.toContain('mt-1 pl-5');
   });
@@ -516,7 +525,7 @@ describe('TicketWalletList details', () => {
     expect(allMarkup).toContain('2 份登录');
   });
 
-  it('does not put 添加授权 in the list chrome when logins exist', () => {
+  it('does not put 添加登录 in the list chrome when logins exist', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -529,12 +538,12 @@ describe('TicketWalletList details', () => {
         onImportLogin() {},
       }),
     );
-    expect(markup).not.toContain('添加授权');
+    expect(markup).not.toContain('添加登录');
     expect(markup).not.toContain('aria-label="登录类型筛选"');
     expect(markup).not.toContain('新 API Key');
   });
 
-  it('keeps 添加授权 on the empty-wallet next action', () => {
+  it('keeps 添加登录 on the empty-wallet next action', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: { tickets: [], bindings: [], surfaceGroups: [] },
@@ -547,7 +556,7 @@ describe('TicketWalletList details', () => {
         onImportLogin() {},
       }),
     );
-    expect(markup).toContain('添加授权');
+    expect(markup).toContain('添加登录');
     expect(markup).toContain('还没有登录');
   });
 
