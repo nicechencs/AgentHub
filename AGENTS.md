@@ -31,7 +31,7 @@
 - **发版顺序**：先在 `dev` 升版并推送匹配的 `vX.Y.Z` tag；CI 构建发布并闭环处理问题后，再将 `dev` 合入 `release` 同步发版线。tag 必须指向 `dev` 上已通过发版的提交，且不可覆盖已有**已发布**版本。
 - GitHub Actions 只在推送 `v*` tag 时出包；Release workflow 只接受 tag 落在 `origin/dev` 上的提交。
 - `release` 是发版成功后的同步分支，不在发版前提前合 `dev`。
-- Agent 隐藏以 `dev` 的 store-stamp 为准，只影响界面，不是旧 release 线的软隐藏。
+- Agent 隐藏以 `dev` 的 store-stamp 为准，只影响界面，不是旧 release 线的软隐藏。当前 stamp（`store_stamp_version = 1`）默认软隐藏 **Cursor Agent**，待兼容修复后再 bump 或移除；用户可在 Agents 管理页取消隐藏。
 - 当前界面使用「登录」，不使用「票」。实现里的 Ticket / TicketPort 仍是内部名称。
 
 ## 前端 backend 分层与 Adapter

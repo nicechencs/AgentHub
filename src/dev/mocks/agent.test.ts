@@ -7,8 +7,10 @@ describe('mock agent visibility', () => {
     resetMockAgentVisibility();
   });
 
-  it('stamps hidden after setAgentHidden and reset clears it', async () => {
+  it('stamps hidden after setAgentHidden and reset clears ad-hoc hides but keeps store-stamp', async () => {
     const backend = createBackend();
+    expect((await backend.agent.getAgent('cursor')).hidden).toBe(true);
+
     await backend.agent.setAgentHidden('claude', true);
     const hidden = await backend.agent.getAgent('claude');
     expect(hidden.hidden).toBe(true);
@@ -20,5 +22,6 @@ describe('mock agent visibility', () => {
     resetMockAgentVisibility();
     const backend2 = createBackend();
     expect((await backend2.agent.getAgent('claude')).hidden).toBe(false);
+    expect((await backend2.agent.getAgent('cursor')).hidden).toBe(true);
   }, 15_000);
 });
