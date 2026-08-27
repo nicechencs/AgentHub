@@ -3,7 +3,7 @@ title: AgentHub 当前实现状态
 type: status
 status: current
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # 当前实现状态
@@ -46,7 +46,7 @@ updated: 2026-08-26
 ## 已知边界
 
 - `agenthub-adapterd` sidecar 目标架构尚未替代当前桌面进程内的路由运行时。
-- 本机同口授权池（固定端口、每 Agent 一把 Hub 令牌、跨产品按模型选号）仍是未实施方案，不从它派生当前任务。见 [本机同口授权池](proposals/unified-loopback-pool.md)。
+- 本机同口授权池已作为默认 Routes 能力打开：每个目标 Agent/surface 一个默认池，共用 loopback 入口和本机令牌；`GET /models` 与 dispatch 共用 resolver；默认 `priority_failover`；官方直连不自动入池。混合供应商复合路由和 Codex↔Grok 双向 Responses 仍是实验开关、默认关闭。现行契约见 [连接与路由](concepts/connections-and-routing.md) 和 [本机 Routes API](reference/local-route-api.md)；设计稿见 [本机同口授权池（归档）](archive/unified-loopback-pool.md)。
 - 托盘低内存后台模式仍是未实施方案，不从它派生当前任务。
 - `AdapterRouteService::plan()` 是 Adapter / route 的唯一产品决策者。`adapter-capability-contract.json` 是它对冻结入参的只读投影；Rust 测试在 JSON 与内核输出不一致时失败。browser mock 只按来源特征查表并维护内存状态；凭据可用性必须精确匹配；未命中 fail-closed 为 unsupported，不回退 classify。route / support / ruleId / gateKind / canApply 的产品正确性在 Rust；Vitest 覆盖查表、脱敏、内存 apply 和页面听从 plan。见 [Adapter 路线内核](architecture/adapter-route-kernel.md)。
 - 不落地 sccache，也不把 `agenthub-core` 拆成多个 crate。CI 使用 `Swatinem/rust-cache`。Windows worktree 不得共享 `target/`。2026-08-25 的热缓存过滤测试约 3.5 秒、冷 worktree 首次编译依赖约 42 秒是历史快照，不是当前固定规模；过程见 [单一内核提案归档](archive/single-kernel-projections.md)。

@@ -26,7 +26,7 @@ export function resetMockAdapters(): void {
     state.profiles.length = 0;
     state.bridgeStatuses.clear();
     state.generatedProviders.clear();
-    state.routePoolV2 = false;
+    state.routePoolV2 = true;
     state.defaultPools.length = 0;
   });
 }
@@ -102,7 +102,7 @@ export function seedMockAdapterProfiles(
   }
 }
 
-/** Opt-in for Routes pool UI tests. Default mock keeps the flag off. */
+/** Override the Routes pool product flag. Mock default matches production (on). */
 export function setMockRoutePoolV2(enabled: boolean): void {
   for (const state of adapterStates) {
     state.routePoolV2 = enabled;
@@ -175,7 +175,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     generatedProviders: new Map(),
     resolver,
     removeGeneratedProvider: resolver.removeGeneratedProvider,
-    routePoolV2: false,
+    routePoolV2: true,
     defaultPools: [],
   };
   adapterStates.add(state);

@@ -3,7 +3,7 @@ title: AgentHub 文档索引
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # AgentHub 文档
@@ -71,11 +71,10 @@ updated: 2026-08-26
 
 - [提案索引](proposals/README.md)：尚未承诺实施的候选方向。
 - [Adapter sidecar](proposals/adapter-sidecar.md)
-- [本机同口授权池](proposals/unified-loopback-pool.md)
 - [托盘后台模式](proposals/tray-background-modes.md)
 - [模块化改进](proposals/modularity.md)
 - [插件（extension / plugin）管理](proposals/plugin-management.md)
-- [归档索引](archive/README.md)：不可作为当前契约。
+- [归档索引](archive/README.md)：不可作为当前契约。已落地的同口授权池设计稿在 [本机同口授权池（归档）](archive/unified-loopback-pool.md)。
 - [单一内核与查表投影（历史）](archive/single-kernel-projections.md)
 - [旧文档迁移索引](archive/legacy-document-index.md)：旧路径到新真源的完整映射。
 

@@ -2,7 +2,7 @@
 
 > Status: archive migration record
 > 
-> This index covers every legacy flat document that was present directly under `docs/` at the start of the documentation reorganization, plus the five retained archive records. It records where the content belongs after the reorganization. It is not a second current navigation index.
+> This index covers every legacy flat document that was present directly under `docs/` at the start of the documentation reorganization, plus the retained archive records. It records where the content belongs after the reorganization. It is not a second current navigation index.
 
 ## Migration rules
 
@@ -52,17 +52,18 @@ The destination paths below are the intended organized names. A destination may 
 | `docs/ui-design.md` | `docs/ui/page-patterns.md` | Extract current shells, pages, and interactions |
 | `docs/ui-experience-alignment.md` | `docs/ui/design-system.md` + `docs/archive/README.md` | Keep stable UI constraints current; record the dated comparison only as history |
 
-## Retained archive records (6)
+## Retained archive records (7)
 
 | Archive file | Current destination or explanation |
 |---|---|
 | `docs/archive/a4-unified-loopback-gateway.md` | Historical gateway design; current facts belong in `docs/reference/local-route-api.md` and `docs/concepts/adapters-and-bridges.md` |
 | `docs/archive/hub-redesign-plan.md` | Historical Hub Phase 1 record; current page behavior belongs in `docs/ui/page-patterns.md` and current product docs |
-| `docs/archive/multi-account-routing-rfc.md` | Historical same-surface multi-account RFC; current runtime facts belong in product/reference docs; the cross-product same-port candidate is `docs/proposals/unified-loopback-pool.md` |
+| `docs/archive/multi-account-routing-rfc.md` | Historical same-surface multi-account RFC; current runtime facts belong in product/reference docs; the shipped default pool is documented in `docs/concepts/connections-and-routing.md` |
 | `docs/archive/route-endpoint-audit-2026-08.md` | Dated audit snapshot; current endpoint facts belong in `docs/reference/local-route-api.md` |
-| `docs/archive/routing-connection-refactor-plan.md` | Historical implementation plan; future process options belong in `docs/proposals/adapter-sidecar.md`, `docs/proposals/modularity.md`, and `docs/proposals/unified-loopback-pool.md` |
+| `docs/archive/routing-connection-refactor-plan.md` | Historical implementation plan; future process options belong in `docs/proposals/adapter-sidecar.md` and `docs/proposals/modularity.md` |
 | `docs/archive/single-kernel-projections.md` | Completed single-kernel proposal, implementation slices, and dated E/F evaluation; current contract belongs in `docs/architecture/adapter-route-kernel.md` |
+| `docs/archive/unified-loopback-pool.md` | Design record for the same-port authorization pool; current contract belongs in `docs/concepts/connections-and-routing.md` and `docs/reference/local-route-api.md` |
 
 ## Coverage check
 
-The flat set is intentionally listed as 31 rows, including the legacy `README.md`. The retained archive set is intentionally listed as 6 rows. When a root file is removed, its row must remain here and the destination document must contain the stable content or an explicit archived explanation. No row authorizes credential encryption work or domestic OAuth/API conversion.
+The flat set is intentionally listed as 31 rows, including the legacy `README.md`. The retained archive set is intentionally listed as 7 rows. When a root file is removed, its row must remain here and the destination document must contain the stable content or an explicit archived explanation. No row authorizes credential encryption work or domestic OAuth/API conversion.

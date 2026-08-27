@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # UI Page Patterns
@@ -127,7 +127,9 @@ Do not infer “running” from a durable database row when the runtime host is 
 
 ### 6.2 Detail
 
-The detail panel is a focused dialog or side surface opened from the list. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, and member health when the runtime reports members. It never shows local bearer values or refresh credentials.
+The detail panel is a focused dialog or side surface opened from the list. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
+
+Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Connections remains the login list; Routes does not become a second place to add credentials.
 
 The primary runtime actions are start, stop, retry, and remove/unbind where the product flow permits them. A stop or unbind confirmation explains listener impact and whether the current live configuration will be restored. A failed unbind remains retryable; it must not fall back to force deletion.
 

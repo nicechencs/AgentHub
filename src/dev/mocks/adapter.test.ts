@@ -153,6 +153,8 @@ describe('mock adapter projection', () => {
       createdAt: '2026-08-12T00:00:00Z',
       updatedAt: '2026-08-12T00:00:00Z',
     }]);
+    await expect(adapter.listDefaultRoutePools()).resolves.toMatchObject({ enabled: true });
+    setMockRoutePoolV2(false);
     await expect(adapter.listDefaultRoutePools()).resolves.toEqual({ enabled: false, pools: [] });
     await expect(adapter.enrollNativeToGateway(nativeId)).rejects.toMatchObject({
       code: 'unsupported',

@@ -3,7 +3,7 @@ use crate::models::{
     FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
     FEATURE_ROUTE_POOL_V2, RouteDownstreamDialect, RouteDownstreamSurface, RouteSchedulePolicy,
     authorization_fingerprint, choose_default_pool_id, feature_flag_enabled, generate_hub_token,
-    model_route_id_is_exact,
+    model_route_id_is_exact, product_flag_enabled,
 };
 
 #[test]
@@ -27,6 +27,19 @@ fn feature_flags_are_fail_closed() {
     );
     assert_eq!(FEATURE_MIXED_PROVIDER_POOL, "feature.mixed_provider_pool");
     assert!(feature_flag_enabled(Some("yes")));
+}
+
+#[test]
+fn product_flags_default_on() {
+    assert!(product_flag_enabled(None));
+    assert!(product_flag_enabled(Some("")));
+    assert!(product_flag_enabled(Some("true")));
+    assert!(product_flag_enabled(Some("1")));
+    assert!(product_flag_enabled(Some("ON")));
+    assert!(!product_flag_enabled(Some("0")));
+    assert!(!product_flag_enabled(Some("false")));
+    assert!(!product_flag_enabled(Some("OFF")));
+    assert!(!product_flag_enabled(Some("no")));
 }
 
 #[test]

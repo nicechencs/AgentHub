@@ -1,6 +1,7 @@
-//! RoutePool control plane. Gated by `feature.route_pool_v2` (fail-closed).
-//! `feature.route_index_v2` attaches the shared resolver on enrolled start.
-//! UI stays hidden.
+//! RoutePool control plane. `feature.route_pool_v2` ships on; explicit off
+//! disables. `feature.route_index_v2` attaches the shared resolver on enrolled
+//! start (also default on). Mixed-provider and pair-adapter flags stay
+//! fail-closed.
 
 use std::collections::HashMap;
 
@@ -17,7 +18,7 @@ use crate::models::{
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, ModelRouteRule,
     RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RouteMemberOverview, RoutePool,
     RouteSchedulePolicy, choose_default_pool_id, enroll_native_plan_is_open, feature_flag_enabled,
-    generate_hub_token, list_local_bridge_models,
+    generate_hub_token, list_local_bridge_models, product_flag_enabled,
 };
 use crate::storage::{AdapterProfileRepo, Database, RoutePoolRepo, binding_get_conn};
 
@@ -40,7 +41,7 @@ impl RoutePoolService {
     }
 
     pub fn enabled(&self) -> Result<bool> {
-        Ok(feature_flag_enabled(
+        Ok(product_flag_enabled(
             self.db.get_setting(FEATURE_ROUTE_POOL_V2)?.as_deref(),
         ))
     }
@@ -49,7 +50,7 @@ impl RoutePoolService {
     /// still controls dispatch and `/models` together.
     pub fn index_enabled(&self) -> bool {
         self.enabled().unwrap_or(false)
-            && feature_flag_enabled(
+            && product_flag_enabled(
                 self.db
                     .get_setting(FEATURE_ROUTE_INDEX_V2)
                     .ok()
@@ -111,8 +112,8 @@ impl RoutePoolService {
         self.profiles.get(id)
     }
 
-    /// Default pools only. Flag off returns `{ enabled: false, pools: [] }` so
-    /// the Routes page can stay unchanged without treating this as an error.
+    /// Default pools only. Explicit flag off returns `{ enabled: false, pools: [] }`
+    /// so the Routes page can hide pool chrome without treating this as an error.
     pub fn list_default_overviews(&self) -> Result<DefaultRoutePoolList> {
         if !self.enabled()? {
             return Ok(DefaultRoutePoolList {
