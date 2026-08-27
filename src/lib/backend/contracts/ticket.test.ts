@@ -526,7 +526,7 @@ describe('Ticket Rust wire mappers', () => {
 
 describe('ticket / binding display labels', () => {
   it('maps route labels for usage and dashboard', () => {
-    expect(bindingRouteUsageLabel('native')).toBe('切换');
+    expect(bindingRouteUsageLabel('native')).toBe('直连');
     expect(bindingRouteUsageLabel('reshape')).toBe('改配置');
     expect(bindingRouteUsageLabel('bridge')).toBe('本机路由');
     expect(bindingRouteDashboardLabel('native')).toBe('直连');
