@@ -36,7 +36,7 @@ import { checkChannelEnv, formatMissingList } from '@/lib/env';
 import { normalizeOpenPath } from '@/lib/path-open';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { shouldIgnoreMenuDialogDismiss } from '@/pages/connections/ticket-wallet-model';
+import { shouldIgnoreMenuDialogDismiss } from '@/lib/menu-dialog-arm';
 import { buildAgentInstallPreview, buildEnvInstallPreview } from './install-preview';
 import {
   agentTaskLogTitleKey,

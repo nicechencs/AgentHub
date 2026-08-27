@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getConfigTextError } from '@/pages/providers/ProviderEditDialog';
+import { getConfigTextError } from '@/components/connections/ProviderEditDialog';
 import {
   tomlSyntaxIssue,
   validateNativeConfigText,

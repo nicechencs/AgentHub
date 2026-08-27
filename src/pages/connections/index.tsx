@@ -44,8 +44,8 @@ import {
   oauthListActionProbesQuota,
 } from '@/lib/backend/contracts/account-actions';
 import type { AgentId } from '@/lib/types';
-import { ApiKeyAccountDialog } from '@/pages/accounts/ApiKeyAccountDialog';
-import { ProviderEditDialog } from '@/pages/providers/ProviderEditDialog';
+import { ApiKeyAccountDialog } from '@/components/connections/ApiKeyAccountDialog';
+import { ProviderEditDialog } from '@/components/connections/ProviderEditDialog';
 import { ConnectionTrashButton } from './ConnectionTrashButton';
 import { TicketAddMenu, TicketDetailPanel, TicketWalletList } from './TicketWalletList';
 import {

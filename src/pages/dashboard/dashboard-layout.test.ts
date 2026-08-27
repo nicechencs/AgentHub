@@ -65,7 +65,7 @@ describe('dashboard layout wiring', () => {
   it('uses the same connection-state words as Connections', () => {
     const page = source('index.tsx');
     expect(page).toContain('connectionStateRouteLabel');
-    expect(page).toContain("from '@/pages/connections/ticket-wallet-model'");
+    expect(page).toContain("from '@/lib/ticket-wallet-labels'");
     expect(translate('zh', 'dashboard.overview.hintAccount')).toBe(translate('zh', 'kind.oauth'));
     expect(translate('zh', 'dashboard.overview.hintApi')).toBe(translate('zh', 'kind.apikey'));
     expect(translate('zh', 'dashboard.overview.viaCompatible')).toBe(

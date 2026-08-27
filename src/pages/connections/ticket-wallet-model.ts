@@ -21,7 +21,6 @@ import type {
   TicketWallet,
 } from '@/lib/backend/contracts/ticket';
 import {
-  bindingRouteDashboardLabel,
   surfaceGroupMemberCount,
   ticketCredentialClassLabel,
   ticketSurfaceLabel,
@@ -37,6 +36,11 @@ import {
   activeBindingForAgent,
   filterTicketsByAgentUsage,
 } from '@/lib/ticket-wallet';
+import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
+import {
+  MENU_DIALOG_DISMISS_CLEAR_MS,
+  scheduleAfterMenuClose,
+} from '@/lib/menu-dialog-arm';
 
 export { activeBindingForAgent, filterTicketsByAgentUsage };
 
@@ -145,13 +149,14 @@ export function ticketSurfaceChipLabel(surface: TicketSurface, t?: TranslateFn):
   return t('connections.list.unrecognized');
 }
 
-/** Same connection-state words on Connections cards and Dashboard agent cards. */
-export function connectionStateRouteLabel(route: BindingRoute, t?: TranslateFn): string {
-  if (!t) return bindingRouteDashboardLabel(route);
-  if (route === 'reshape') return t('connections.list.routeReshape');
-  if (route === 'bridge') return t('kind.route.localRoute');
-  return t('kind.route.direct');
-}
+export {
+  armMenuDialogOpen,
+  handleMenuDialogSelect,
+  MENU_DIALOG_DISMISS_CLEAR_MS,
+  scheduleAfterMenuClose,
+  shouldIgnoreMenuDialogDismiss,
+} from '@/lib/menu-dialog-arm';
+export { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
 
 function bindingUsageRouteLabel(route: BindingRoute, t?: TranslateFn): string {
   return connectionStateRouteLabel(route, t);
@@ -205,55 +210,6 @@ export function dispatchTicketAddAction(
     return;
   }
   handlers.onAddKey?.(agentId);
-}
-
-/** After the originating click, so menu unmount cannot dismiss the new dialog. */
-export function scheduleAfterMenuClose(action: () => void, delayMs = 0): void {
-  const schedule = globalThis.setTimeout;
-  if (typeof schedule === 'function') {
-    schedule(action, delayMs);
-    return;
-  }
-  action();
-}
-
-/** Swallow a leftover Dialog `onOpenChange(false)` from the opening click. */
-export function shouldIgnoreMenuDialogDismiss(armed: boolean, nextOpen: boolean): boolean {
-  return armed && !nextOpen;
-}
-
-/** Connections `openTicketAdd` and AgentCard uninstall: clear the arm after the click settles. */
-export const MENU_DIALOG_DISMISS_CLEAR_MS = 100;
-
-type MenuDialogSchedule = (fn: () => void, delayMs?: number) => void;
-
-/** Arm ignore-dismiss, open the dialog, then clear the arm after `delayMs`. */
-export function armMenuDialogOpen(
-  arm: { current: boolean },
-  open: () => void,
-  delayMs = MENU_DIALOG_DISMISS_CLEAR_MS,
-  schedule: MenuDialogSchedule = scheduleAfterMenuClose,
-): void {
-  arm.current = true;
-  open();
-  schedule(() => {
-    arm.current = false;
-  }, delayMs);
-}
-
-/**
- * Menu item that opens a Dialog: preventDefault keeps the menu mounted through
- * the click; arm + delayed clear swallows the leftover dismiss.
- */
-export function handleMenuDialogSelect(
-  event: { preventDefault: () => void },
-  arm: { current: boolean },
-  open: () => void,
-  delayMs = MENU_DIALOG_DISMISS_CLEAR_MS,
-  schedule: MenuDialogSchedule = scheduleAfterMenuClose,
-): void {
-  event.preventDefault();
-  armMenuDialogOpen(arm, open, delayMs, schedule);
 }
 
 /**

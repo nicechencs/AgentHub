@@ -16,11 +16,10 @@ import { Boxes } from 'lucide-react';
 import {
   enrollNativeToGateway,
   listDefaultRoutePools,
-  planAdapter,
   startAdapterBridge,
   stopAdapterBridge,
 } from '@/lib/api/adapter';
-import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
+import { listTicketWallet, planTicket, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import { useToast } from '@/components/ui/toast';
 import { AdapterErrorLines, AdapterProfiles } from './adapter-components';
@@ -62,13 +61,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-type WalletSnapshot = {
-  settled: boolean;
-  lastWalletBridgeCount: number;
-  bindingProfileIds: ReadonlySet<string>;
-};
-
-/** One route plus the endpoint graph its client-config write is derived from. */
 type WriteTarget = { profile: AdapterProfile; graph: RouteGraphView };
 
 type RouteInspect =
@@ -95,8 +87,9 @@ function liveInspectProfile(
 const ROUTES_INSPECT_WIDTH_KEY = 'agenthub.routes.inspectWidth';
 
 /**
- * Local-bridge runtime ops page. Creating bindings lives in Dashboard and
- * Connections ConnectFlow. Do not mount analyze fan-out, plan, or apply here.
+ * Routes（本机转发）页：bridge 运行时 ops 为主；创建/导入路由并 bind 为产品例外
+ * （亦可在 Dashboard / Connections ConnectFlow 完成）。不在此挂载 ConnectFlow
+ * analyze fan-out；native enroll 预览走 planTicket。
  */
 export default function BridgesPage() {
   const { t } = useI18n();
@@ -108,6 +101,7 @@ export default function BridgesPage() {
     errors: resourceErrors,
     profileState,
     loading,
+    wallet,
     reload,
     reloadProfiles,
     updateBridgeStatus,
@@ -115,11 +109,6 @@ export default function BridgesPage() {
   } = useAdapterResources();
   const { hiddenIds } = useInstalledAgents();
   const hiddenTargetIds = useMemo(() => new Set(hiddenIds), [hiddenIds]);
-  const [wallet, setWallet] = useState<WalletSnapshot>({
-    settled: false,
-    lastWalletBridgeCount: 0,
-    bindingProfileIds: new Set(),
-  });
   const [removeConfirm, setRemoveConfirm] = useState<AdapterProfile | null>(null);
   const [stopConfirm, setStopConfirm] = useState<AdapterProfile | null>(null);
   const [removingProfileId, setRemovingProfileId] = useState<string | null>(null);
@@ -218,30 +207,6 @@ export default function BridgesPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void listTicketWallet()
-      .then((next) => {
-        if (cancelled) return;
-        setWallet({
-          settled: true,
-          lastWalletBridgeCount: next.bindings.filter((binding) => binding.route === 'bridge').length,
-          bindingProfileIds: new Set(
-            next.bindings
-              .map((binding) => binding.profileId)
-              .filter((id): id is string => typeof id === 'string' && id.length > 0),
-          ),
-        });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setWallet((current) => ({ ...current, settled: true }));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [profiles]);
-
-  useEffect(() => {
-    let cancelled = false;
     void listDefaultRoutePools()
       .then((listed) => {
         if (cancelled) return;
@@ -332,11 +297,10 @@ export default function BridgesPage() {
     if (detailTarget.route !== 'native_endpoint' && detailTarget.route !== 'config_sync') return;
     const profileId = detailTarget.id;
     let cancelled = false;
-    void planAdapter({
-      sourceKind: detailTarget.sourceKind,
-      sourceId: detailTarget.sourceId,
-      targetAgentId: detailTarget.targetAgentId,
-    })
+    void planTicket(
+      ticketIdFor(detailTarget.sourceKind, detailTarget.sourceId),
+      detailTarget.targetAgentId,
+    )
       .then((plan) => {
         if (cancelled) return;
         setNativeCanApplyById((current) => ({

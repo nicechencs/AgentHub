@@ -86,7 +86,7 @@ import {
   officialToggleNext,
   type OfficialToggleForm,
   type OfficialToggleSnapshot,
-} from './official-toggle';
+} from '@/pages/providers/official-toggle';
 import {
   canSaveProviderForm,
   canSaveWithSchemaStatus,
@@ -94,8 +94,8 @@ import {
   resolveProjectorExpectation,
   schemaErrorMessage,
   type SchemaUiStatus,
-} from './provider-schema-gate';
-import { requestRemoteModels } from './remote-models-request';
+} from '@/pages/providers/provider-schema-gate';
+import { requestRemoteModels } from '@/pages/providers/remote-models-request';
 
 const REMOTE_MODELS_DEBOUNCE_MS = 400;
 
