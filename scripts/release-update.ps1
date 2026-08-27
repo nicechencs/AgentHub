@@ -70,7 +70,7 @@ function Fail([string]$msg) {
 # Keeping this guard before version/build work also makes accidental
 # `-Publish` invocations side-effect free.
 if ($Publish) {
-    Fail "Local publishing is disabled. Merge dev into release, push a matching v* tag from release after release:preflight passes, and let .github/workflows/release.yml publish the release."
+    Fail "Local publishing is disabled. Merge dev into release, tag on dev, push the v* tag after release:preflight passes, and let .github/workflows/release.yml publish the release."
 }
 
 function Read-PackageVersion {
@@ -733,6 +733,6 @@ Write-Host "Tag     : $tag"
 Write-Host "OutDir  : $OutDir"
 Write-Host "Feed URL: https://github.com/$Repo/releases/latest/download/latest.json"
 Write-Host ""
-Write-Host "Publishing is CI-only: merge dev into release, push a matching v* tag from release after release:preflight passes, and let .github/workflows/release.yml publish the release." -ForegroundColor Yellow
+Write-Host "Publishing is CI-only: merge dev into release, tag on dev, push the v* tag after release:preflight passes, and let .github/workflows/release.yml publish the release." -ForegroundColor Yellow
 Write-Host "After GitHub Release succeeds, merge dev into release." -ForegroundColor Yellow
 Write-Host ""

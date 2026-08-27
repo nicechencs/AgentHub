@@ -39,7 +39,7 @@
     "tauri:build:macos": "tauri build --bundles app --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
     "tauri:build:linux": "tauri build --bundles deb,appimage --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
     "updater:latest-json": "node scripts/build-latest-json.mjs",
-    "release:check": "node scripts/release-metadata.mjs",
+    "release:check": "node scripts/release-metadata.mjs --require-changelog",
     "release:sync-version": "node scripts/release-sync-version.mjs",
     "release:preflight": "pnpm release:sync-version && pnpm release:check && pnpm release:test && pnpm typecheck && pnpm typecheck:test && pnpm test && cargo test --workspace --locked",
     "release:test": "node --test scripts/release-metadata.test.mjs scripts/build-latest-json.test.mjs scripts/check-linux-prereqs.test.mjs scripts/pick-github-release.test.mjs",
@@ -47,7 +47,7 @@
     "release:bump": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpPatch -VersionOnly",
     "release:bump:minor": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpMinor -VersionOnly",
     "release:bump:major": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/release-update.ps1 -BumpMajor -VersionOnly",
-    "release:update:publish": "node -e \"console.error('Local publishing is disabled; merge dev into release, push a matching v* tag from release after release:preflight passes, and let .github/workflows/release.yml publish the release.'); process.exit(1)\""
+    "release:update:publish": "node -e \"console.error('Local publishing is disabled; merge dev into release, tag on dev, push the v* tag after release:preflight passes, and let .github/workflows/release.yml publish the release.'); process.exit(1)\""
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.1",

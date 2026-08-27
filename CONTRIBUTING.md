@@ -50,17 +50,21 @@ Rust CLI 或 GUI 改动分别补跑 `cargo test -p agenthub-cli --locked` 和 `c
 
 ## 发布流程
 
-正式发布由推送 `v*` tag 的 GitHub Actions 完成，本地发布命令不会上传发行物。顺序是：**在 `dev` 升版 → 合入 `release` → 在 `release` 打 tag 触发 CI**。
+正式发布由推送 `v*` tag 的 GitHub Actions 完成，本地发布命令不会上传发行物。顺序是：**在 `dev` 升版并写更新说明 → 合入 `release` → 在 `dev` 打 tag 触发 CI**。
 
 1. 确认 **`dev`** 上待发版改动已合并完成。
-2. 在 **`dev`** 准备发布提交：**只改 `package.json` 的 `version`**，运行 `pnpm release:sync-version` 同步 Rust 侧版本（或使用 `pnpm release:bump` 自动升版并同步）。
-3. 运行发版预检：`pnpm release:preflight`（或至少 `pnpm release:check`、`pnpm typecheck:test`、`pnpm test`、`cargo test --workspace --locked`）。
+2. 在 **`dev`** 准备发布提交：
+   - **只改 `package.json` 的 `version`**，运行 `pnpm release:sync-version` 同步 Rust 侧版本（或使用 `pnpm release:bump` 自动升版并同步）；
+   - 在 **`CHANGELOG.md`** 新增对应版本一节（至少一条 `-` 更新说明）。
+3. 运行发版预检：`pnpm release:preflight`（或至少 `pnpm release:check --require-changelog`、`pnpm typecheck:test`、`pnpm test`、`cargo test --workspace --locked`）。
 4. 提交并推送 **`dev`**。
 5. 将 **`dev` 合入 `release`**（推荐 PR；使用 merge commit 或 fast-forward，不要用 squash）。
-6. 在 **`release` 的合并结果**上创建并推送匹配的 `vX.Y.Z` tag。Release workflow 只接受 tag 落在 `origin/release` 上的提交。
+6. 在 **`dev` 的当前提交**（与 `release` 合并后指向同一 SHA）创建并推送匹配的 `vX.Y.Z` tag。
 7. 等待 GitHub Actions Release workflow 完成构建与发布；若失败，在 **`dev`** 修复后重新从步骤 2 闭环：
    - 尚未对外发布的 tag 可以删除并重建；
    - 已发布的 tag 不可覆盖，需用新的 patch 版本继续。
-8. 确认 GitHub Release 已发布、资产齐全，且 Latest 标记正确。
+8. 确认 GitHub Release 已发布、资产齐全、Latest 标记正确，且 Release 正文来自 `CHANGELOG.md`。
 
-GitHub Actions 会校验版本一致性、tag 是否在 `release` 上、以及发布元数据，并生成 Windows、macOS 与 Linux 发行物。`release-branch-guard` 工作流会拒绝非 `dev` 来源的 PR 与直接提交。
+**关于 tag：** tag 绑的是提交 SHA，不是分支名。在 `dev` 打 tag 后，把同一提交合入 `release`，tag 无需在 `release` 上重打；推送 tag 前必须先完成 `dev` → `release` 合并。
+
+GitHub Actions 会校验版本一致性、tag 是否同时在 `dev`/`release` 上、`CHANGELOG.md` 是否有对应版本说明，并生成 Windows、macOS 与 Linux 发行物。

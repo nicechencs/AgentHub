@@ -22,9 +22,12 @@ updated: 2026-08-27
 
 因此正确做法是：
 
-1. 在 **`dev`** 升版、跑预检、推送。
-2. 用 PR 或 merge 把 **`dev` 合入 `release`**（不要用 squash，以免 guard 无法识别来源）。
-3. 在 **`release` 的合并结果**上打 `vX.Y.Z` tag。
+1. 在 **`dev`** 升版、填写 `CHANGELOG.md`、跑预检、推送。
+2. 用 PR 或 merge 把 **`dev` 合入 `release`**（不要用 squash）。
+3. 在 **`dev`** 对当前提交打 `vX.Y.Z` tag 并推送（与 `release` 合并后指向同一 SHA）。
+
+**tag 会不会随合并带过去？**  
+会。Git tag 指向提交 SHA，不绑分支名。`dev` 合入 `release` 后，同一提交同时在两条分支上，在 `dev` 打的 tag 无需在 `release` 重打。推送 tag 前必须先完成 `dev` → `release` 合并，否则 Release CI 会拒绝。
 
 ## 仓库管理员需手动开启的 GitHub 设置
 
@@ -46,7 +49,7 @@ Cloud Agent 没有权限直接改 GitHub 分支保护，需要仓库管理员在
 ## 常见问题
 
 **为什么不在 `release` 上直接升版本？**  
-Guard 会把这类提交视为「非 dev 来源」而拒绝。版本号应在 `dev` 改好，再合入 `release`。
+Guard 会把这类提交视为「非 dev 来源」而拒绝。版本号与 `CHANGELOG.md` 应在 `dev` 改好，再合入 `release`。
 
 **可以用 squash merge 吗？**  
 不建议。Squash 会产生一个不在 `dev` 历史上的新提交，push guard 会失败。请用 **merge commit** 或 **fast-forward**。
