@@ -81,7 +81,7 @@ export const zh = {
       closeToTrayLabel: '关闭到托盘',
       closeToTrayDescription: '关窗不退出',
       closeToTrayTip:
-        '点击关闭按钮后隐藏到系统托盘，进程保持运行。Windows 可从托盘图标恢复；macOS 可从菜单栏托盘或 Dock 图标恢复。',
+        '点击关闭按钮后隐藏到系统托盘，进程保持运行。可从托盘退出。Windows 可从托盘图标恢复；macOS 可从菜单栏托盘或 Dock 图标恢复。',
       routesNavVisibleLabel: '显示路由页面',
       routesNavVisibleDescription: '在侧栏显示路由入口；关闭后仍可用链接打开。',
       routesNavVisibleTip: '隐藏侧栏入口不禁用路由页；仍可通过链接打开。',
@@ -1365,6 +1365,10 @@ export const zh = {
         thinkingOn: "开启",
         thinkingOff: "关闭",
       },
+      noOfficialTemplateHint: "没有官方服务模板，请填写自己的服务地址。",
+      cursorNoOfficialHint: "Cursor 没有官方服务模板，暂时不能写回本机配置。",
+      configParseFailedHint: "配置没法解析，请检查 JSON 格式。",
+      configTomlParseFailedHint: "配置没法解析，请检查 TOML 格式。",
     },
   },
   connect: {
