@@ -56,7 +56,7 @@ describe('catalog mirror contract', () => {
     }
   });
 
-  it('covers every per-cell capability reason for mock and records known core drift', () => {
+  it('covers every per-cell capability reason and requires mock to match core', () => {
     expect(Object.keys(CAPABILITY_REASONS.core).sort()).toEqual([...catalog.agents].sort());
     expect(Object.keys(CAPABILITY_REASONS.mock).sort()).toEqual([...catalog.agents].sort());
     const mismatched: ReasonMismatch[] = [];
@@ -76,7 +76,8 @@ describe('catalog mirror contract', () => {
         }
       }
     }
-    expect(mismatched).toEqual(CAPABILITY_REASONS.knownMismatches);
+    expect(CAPABILITY_REASONS.knownMismatches).toEqual([]);
+    expect(mismatched).toEqual([]);
   });
 
   it('covers production config schema field names served by mock', async () => {

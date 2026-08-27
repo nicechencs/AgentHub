@@ -55,7 +55,7 @@ updated: 2026-08-27
 | O-41 | 连接流程 fixture 手工构造完整绑定 | 暂缓。整表绑定成功态重写不做 |
 | O-42 | Mock Ticket resolver 依赖过宽 | 暂缓。resolver 仍可读 accounts/providers/profiles 并调 plan/apply；本刀不扩、不重写绑定 |
 | O-44 | 仍存在 | 暂缓。mock、fixture 需先补共享 contract，再收窄依赖 |
-| O-58 | 能力、安装渠道是手写生产镜像 | 部分处理：共用 `catalog-mirror-contract.json`。Agent / Capability / 本机渠道 id、能力界面标签、config schema 字段名、每格 capability reason 文案缺项失败。mock 与 core 已知不一致（Claude 等 Usage；Codex / Cursor 若干 reason 原文）列入 `knownMismatches`，不改产品文案 |
+| O-58 | 能力、安装渠道是手写生产镜像 | 部分处理：共用 `catalog-mirror-contract.json`。Agent / Capability / 本机渠道 id、能力界面标签、config schema 字段名、每格 capability reason 文案缺项或再漂移失败。mock reason 已对齐 core，`knownMismatches` 为空；catalog 仍是手写镜像（ids/labels/schema/reasons 由契约锁住） |
 | O-43 | 测试 fake 用 `_ => unsupported` 吞掉新 Capability | 已处理：`Capability::fake_state` 穷举所有变体；测试 fake 走该 helper |
 | O-46 | logging 自行打开 SQLite | 部分处理：启动窥探收到 `storage::peek_settings`；logging 不再手写 SQL。启动仍先于 Database 打开，不改 subscriber 生命周期 |
 | O-47 | Adapter 锁表随 profile id 永久增长 | 已处理：`lock_profile` 回收已无持有者的条目；Agent 锁仍按封闭枚举保留 |
