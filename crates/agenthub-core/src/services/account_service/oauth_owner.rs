@@ -34,11 +34,7 @@ fn access_jwt_expired(token: Option<&str>) -> bool {
 }
 
 fn oauth_source(account: &Account) -> &str {
-    account
-        .extra
-        .get("source")
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
+    account.source().unwrap_or("")
 }
 
 /// Hub PKCE / Hub-refreshed grants. Anything else on Grok/Codex OAuth is CLI-owned.
