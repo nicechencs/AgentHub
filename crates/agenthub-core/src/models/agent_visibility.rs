@@ -11,6 +11,9 @@ pub struct AgentVisibilityFile {
     pub version: u32,
     #[serde(default)]
     pub hidden_agent_ids: Vec<String>,
+    /// Dev store-stamp generation applied to this file (one-time default hides).
+    #[serde(default)]
+    pub store_stamp_version: u32,
 }
 
 impl Default for AgentVisibilityFile {
@@ -18,6 +21,7 @@ impl Default for AgentVisibilityFile {
         Self {
             version: 1,
             hidden_agent_ids: Vec::new(),
+            store_stamp_version: 0,
         }
     }
 }

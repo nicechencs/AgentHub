@@ -50,6 +50,18 @@ fn other_vendor_urls_are_not_openai_compat() {
 }
 
 #[test]
+fn upstream_models_health_probe_skips_deepseek_glm_and_anthropic_relays() {
+    assert!(!upstream_models_health_probe_supported("https://api.deepseek.com"));
+    assert!(!upstream_models_health_probe_supported("https://api.deepseek.com/anthropic"));
+    assert!(!upstream_models_health_probe_supported(
+        "https://open.bigmodel.cn/api/anthropic",
+    ));
+    assert!(upstream_models_health_probe_supported("https://api.openai.com/v1"));
+    assert!(upstream_models_health_probe_supported("https://api.anthropic.com/v1"));
+    assert!(upstream_models_health_probe_supported("https://openrouter.ai/api/v1"));
+}
+
+#[test]
 fn non_openai_tags_cannot_be_promoted_by_openai_or_relay_urls() {
     for tag in [
         "anthropic",
