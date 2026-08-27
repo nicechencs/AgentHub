@@ -16,8 +16,6 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import {
-  bindTicket,
-  isActiveBindingForAgent,
   ticketIdFor,
   type TicketView,
 } from '@/lib/api/tickets';
@@ -65,9 +63,9 @@ import {
 } from './ticket-wallet-model';
 import { useTicketBindActions } from './use-ticket-route-actions';
 import { useConnectionImportProbe } from './use-connection-import-probe';
+import { useConnectionPageActions } from './use-connection-page-actions';
 import {
   deleteConnectionDialogDescription,
-  deleteConnectionToastDescription,
   liveAuthCoexistenceNotice,
   liveAuthImportGate,
   liveApiKeyImportGate,
@@ -90,7 +88,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  deleteAccount,
   importCurrentLogin,
   probeLiveAuth,
   refreshQuota,
@@ -98,7 +95,7 @@ import {
   switchAccount,
   type LiveAuthProbe,
 } from '@/lib/api/account';
-import { deleteProvider, importProviderLive, switchPreview, switchProvider } from '@/lib/api/provider';
+import { importProviderLive } from '@/lib/api/provider';
 import type { Account, Provider } from '@/lib/types';
 
 type ConnectionInspect =
@@ -153,8 +150,6 @@ export default function ConnectionsPage() {
   const [refreshingTicketId, setRefreshingTicketId] = useState<string | null>(null);
   const refreshGen = useRef(0);
   const refreshInFlightRef = useRef(false);
-  const [switchingTicketId, setSwitchingTicketId] = useState<string | null>(null);
-  const switchGen = useRef(0);
 
   const [pendingGuide, setPendingGuide] = useState<ConnectGuide | null>(null);
   const consumedGuideKeyRef = useRef<string | null>(null);
@@ -189,8 +184,6 @@ export default function ConnectionsPage() {
     importingAccount,
     setImportingAccount,
   } = useConnectionImportProbe({ addAgentId, discoveryProbe });
-  const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
   const guideOpenedApiKeyRef = useRef(false);
   const ignoreMenuDialogDismissRef = useRef(false);
 
@@ -369,44 +362,6 @@ export default function ConnectionsPage() {
     openConnectForTicket(ticket, 'route');
   }, [openConnectForTicket]);
 
-  const handleSwitchTicket = useCallback(async (ticket: TicketView) => {
-    const targetAgent = filterAgent === 'all' ? ticket.agentId : filterAgent;
-    const tabCurrentId = wallet
-      ? activeBindingForAgent(wallet, targetAgent)?.ticket.id ?? null
-      : null;
-    if (tabCurrentId === ticket.id) return;
-    const generation = ++switchGen.current;
-    setSwitchingTicketId(ticket.id);
-    try {
-      if (ticket.agentId === targetAgent) {
-        if (ticket.sourceKind === 'account') {
-          await switchAccount(ticket.agentId, ticket.sourceId);
-        } else {
-          await switchPreview(ticket.agentId, ticket.sourceId);
-          await switchProvider(ticket.agentId, ticket.sourceId);
-        }
-      } else {
-        const { binding } = await bindTicket(ticket.id, targetAgent);
-        if (!isActiveBindingForAgent(binding, targetAgent)) {
-          throw new Error(t('connections.list.switchFail'));
-        }
-      }
-      if (switchGen.current !== generation) return;
-      toast({ title: t('connections.list.switchOk'), variant: 'success' });
-      await poolReload().catch(() => {});
-      await loadWallet();
-    } catch (e) {
-      if (switchGen.current !== generation) return;
-      toast({
-        title: t('connections.list.switchFail'),
-        description: e instanceof Error ? e.message : String(e),
-        variant: 'danger',
-      });
-    } finally {
-      if (switchGen.current === generation) setSwitchingTicketId(null);
-    }
-  }, [filterAgent, loadWallet, poolReload, t, toast, wallet]);
-
   const handleRefreshTicket = useCallback(async (ticket: TicketView) => {
     if (refreshInFlightRef.current) return;
     if (ticket.sourceKind !== 'account') return;
@@ -513,6 +468,21 @@ export default function ConnectionsPage() {
     },
     [filterAgent, pool.accounts, pool.providers, t, wallet],
   );
+
+  const {
+    switchingTicketId,
+    handleSwitchTicket,
+    deleteTicket,
+    setDeleteTicket,
+    deleteBusy,
+    confirmDeleteTicket,
+  } = useConnectionPageActions({
+    filterAgent,
+    wallet,
+    extrasForTicket,
+    loadWallet,
+    poolReload,
+  });
 
   const openTicketAdd = useCallback((kind: TicketAddKind, agentId: AgentId) => {
     const next = ticketAddDialogState(kind, agentId);
@@ -636,35 +606,6 @@ export default function ConnectionsPage() {
       });
     } finally {
       setImportingAccount(false);
-    }
-  };
-
-  const confirmDeleteTicket = async () => {
-    if (!deleteTicket) return;
-    const extras = extrasForTicket(deleteTicket);
-    setDeleteBusy(true);
-    try {
-      if (deleteTicket.sourceKind === 'account') {
-        await deleteAccount(deleteTicket.agentId, deleteTicket.sourceId);
-      } else {
-        await deleteProvider(deleteTicket.agentId, deleteTicket.sourceId);
-      }
-      setDeleteTicket(null);
-      toast({
-        title: t('connections.delete.toastOk'),
-        description: deleteConnectionToastDescription({ isCurrent: extras?.isCurrent === true }, t),
-        variant: 'success',
-      });
-      await loadWallet();
-      await poolReload().catch(() => {});
-    } catch (e) {
-      toast({
-        title: t('connections.delete.toastFail'),
-        description: e instanceof Error ? e.message : String(e),
-        variant: 'danger',
-      });
-    } finally {
-      setDeleteBusy(false);
     }
   };
 
