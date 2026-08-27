@@ -3,7 +3,7 @@ title: 对象化与封装审查：CLI、Tauri 与工具链
 type: explanation
 status: current
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # 对象化与封装审查：CLI、Tauri 与工具链
@@ -36,9 +36,10 @@ CLI 整体是薄壳：参数解析、输出和退出码集中，业务操作委�
 
 ### O-64｜Adapter 错误分类在 Tauri 层与前端重复维护
 
-- **位置：** `src-tauri/src/commands/mod.rs:78-110`
-- **状态：部分处理**
+- **位置：** `src/lib/backend/contracts/retryable-error-contract.json`；`src/lib/backend/contracts/adapter.ts`；`src-tauri/src/commands/mod.rs`
+- **状态：已处理**
 - **问题：** 错误码和 retryable 规则硬编码在 Tauri 层，并要求与前端另处同步。
+- **当前：** 两端从同一份 JSON 契约读取 exact / prefix 规则；界面仍优先用返回的 retryable 字段，缺省时再按契约分类。
 - **建议：** 提供共享错误分类契约，或由单一注册表生成两端映射。
 - **影响：** 跨层错误行为容易漂移。
 

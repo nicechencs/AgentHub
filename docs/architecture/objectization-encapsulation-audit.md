@@ -67,7 +67,7 @@ updated: 2026-08-27
 | O-74 | `PkcePair` 字段公开可变 | 已处理：字段私有，只读 `verifier()` / `challenge()` |
 | O-71 | `OAuthSession` 字段公开 | 已处理：构造器 + 只读访问器；状态机 / TTL / `mark_error` 未改 |
 | O-63 | 设置语言读取散落 | 已处理：托盘和选目录共用 `language_from_hub`。关闭到托盘的两个布尔解析器语义不同，未合并 |
-| O-64 | 可重试错误码两端各维护一份 | 部分处理：界面优先用返回的 retryable；两端对照测试锁住同一组码。未做生成契约 |
+| O-64 | 可重试错误码两端各维护一份 | 已处理：共用 `retryable-error-contract.json`；界面仍优先用返回的 retryable 字段 |
 
 ## 结论
 

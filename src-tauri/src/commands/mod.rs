@@ -20,14 +20,14 @@ pub mod skill;
 pub mod trash;
 pub mod usage;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use agenthub_core::error::AppError;
 use agenthub_core::logging::{self, targets};
 use agenthub_core::models::AgentId;
 use agenthub_core::AgentHub;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Structured GUI error (keeps `code` for diagnostics).
 ///
@@ -75,22 +75,34 @@ impl From<AppError> for GuiError {
     }
 }
 
-/// Retryable Adapter command codes. Keep in lockstep with
-/// `isAdapterErrorCodeRetryable` on the frontend.
+const RETRYABLE_ERROR_CONTRACT_JSON: &str =
+    include_str!("../../../src/lib/backend/contracts/retryable-error-contract.json");
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RetryableErrorContract {
+    retryable_exact: Vec<String>,
+    retryable_prefixes: Vec<String>,
+}
+
+fn retryable_error_contract() -> &'static RetryableErrorContract {
+    static CONTRACT: OnceLock<RetryableErrorContract> = OnceLock::new();
+    CONTRACT.get_or_init(|| {
+        serde_json::from_str(RETRYABLE_ERROR_CONTRACT_JSON).expect("retryable-error-contract.json")
+    })
+}
+
+/// Retryable Adapter command codes from `retryable-error-contract.json`.
+/// Keep in lockstep with `isAdapterErrorCodeRetryable` on the frontend.
 ///
-/// Retryable: `adapter.port_in_use`, `adapter.bridge_start`,
-/// `adapter.bridge_restore_*`, `adapter.bridge_upstream_auth`, and the
-/// `retryable:*` family.
-/// Not retryable: `adapter.bridge_rollback`, `adapter.bridge_stop`
-/// compensation, and `needs_attention`.
+/// The UI still prefers the structured `retryable` field on the error.
 pub(crate) fn is_adapter_error_retryable(code: &str) -> bool {
-    if code.starts_with("retryable:") {
-        return true;
-    }
-    matches!(
-        code,
-        "adapter.port_in_use" | "adapter.bridge_start" | "adapter.bridge_upstream_auth"
-    ) || code.starts_with("adapter.bridge_restore_")
+    let contract = retryable_error_contract();
+    contract.retryable_exact.iter().any(|item| item == code)
+        || contract
+            .retryable_prefixes
+            .iter()
+            .any(|prefix| code.starts_with(prefix.as_str()))
 }
 
 fn is_structured_error_code(code: &str) -> bool {

@@ -1,0 +1,22 @@
+{
+  "retryableExact": [
+    "adapter.port_in_use",
+    "adapter.bridge_start",
+    "adapter.bridge_upstream_auth"
+  ],
+  "retryablePrefixes": [
+    "retryable:",
+    "adapter.bridge_restore_"
+  ],
+  "retryablePrefixExamples": [
+    "retryable:adapter.port_in_use",
+    "adapter.bridge_restore_source",
+    "adapter.bridge_restore_port"
+  ],
+  "notRetryableExamples": [
+    "needs_attention",
+    "adapter.bridge_rollback",
+    "adapter.bridge_stop",
+    "not_found"
+  ]
+}
