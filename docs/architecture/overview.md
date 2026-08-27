@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: contributors and maintainers
 source-of-truth: current source tree and linked contract pages
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # AgentHub 架构总览
@@ -54,7 +54,7 @@ flowchart LR
 - `storage`：SQLite schema、迁移、repository。
 - `adapters` / `integrations`：Agent 特有路径、配置、账号、运行和流解析贡献。
 - `platform`：catalog、capability、configuration、lifecycle、skills、usage 等平台能力。MCP 目前只有 service 级只读 inventory。厂商 plugin/extension 包尚未进入 platform 端口。
-- `bridge`：loopback listener 与 Messages/Responses/Chat 转换；当前是进程内运行时。
+- `bridge`：loopback listener、默认授权池与 Messages/Responses/Chat 转换；当前是进程内运行时。
 - `runtime` / `utils`：共享运行时检测、进程、路径、脱敏与流解析工具。
 
 平台能力按依赖方向调用端口和基础设施；Agent 集成不得反向调用页面、Tauri command 或其他 Agent 集成。当前仍保留 `AgentId`/legacy adapter façade；`AgentKey` 是新平台 registry 和跨端契约的开放标识。
@@ -72,4 +72,4 @@ flowchart LR
 - [Adapter 路线内核](adapter-route-kernel.md)：`plan()` 是唯一决策者；golden 是只读投影；mock 只查表。
 - [Connections and routing](../concepts/connections-and-routing.md)：登录、绑定和路线的领域模型。
 - [Product boundaries](../decisions/product-boundaries.md)：不做什么以及术语约束。
-- [本机同口授权池（提案）](../proposals/unified-loopback-pool.md)：同口调度与按模型选授权是候选方向，不是当前运行前提。
+- [本机同口授权池（归档）](../archive/unified-loopback-pool.md)：默认同口池的设计记录；现行行为见 [Connections and routing](../concepts/connections-and-routing.md)。

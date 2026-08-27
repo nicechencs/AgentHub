@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: core, Tauri, and route/runtime contributors
 source-of-truth: AgentAdapter, adapter planner/apply ports, bridge host code, and the sidecar proposal
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # Adapters 与本机 Bridge
@@ -51,7 +51,9 @@ Adapter profile 是一条“source connection → target Agent”的受管投影
 
 ## 当前 local_bridge
 
-当前实现是 Tauri 进程内 host：`AppState` 持有 `BridgeRuntimeHost`、bridge controller 和控制协调器，core 的 bridge 服务负责 admission、listener、transport、stream 与协议转换。运行面只绑定 `127.0.0.1`/`localhost`/`::1`，目标客户端使用本地 bearer；上游 secret 不写进目标配置。
+当前实现是 Tauri 进程内 host：`AppState` 持有 `BridgeRuntimeHost`、bridge controller 和控制协调器，core 的 bridge 服务负责 admission、listener、transport、stream 与协议转换。运行面只绑定 `127.0.0.1`/`localhost`/`::1`，目标客户端使用本机令牌；上游 secret 不写进目标配置。
+
+默认每个目标 Agent/surface 一个授权池：listener 共用 loopback 口，令牌挂在池上，成员引用 Connections 里的登录。`GET /models` 与 dispatch 共用 resolver。混合供应商复合路由和 Codex↔Grok 双向 Responses 仍是实验开关、默认关闭。
 
 本机入口包括 Messages、Responses、Chat Completions；同协议直接转发，或转成上游协议。完整 endpoint 与转换表在 [本机路由 API](../reference/local-route-api.md)，本文不重复维护厂商端点清单。
 
@@ -68,4 +70,4 @@ Adapter profile 是一条“source connection → target Agent”的受管投影
 - [Core and runtime](../architecture/core-runtime.md)
 - [Frontend and backend boundary](../architecture/frontend-backend.md)
 - [Sidecar proposal](../proposals/adapter-sidecar.md)
-- [本机同口授权池（提案）](../proposals/unified-loopback-pool.md)
+- [本机同口授权池（归档）](../archive/unified-loopback-pool.md)

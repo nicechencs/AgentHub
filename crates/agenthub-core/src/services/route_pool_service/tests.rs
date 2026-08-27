@@ -49,6 +49,7 @@ fn bridge_profile(id: &str, source_id: &str, agent: AgentId, auto_start: bool) -
 fn flag_off_is_fail_closed() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("flag-off.db")).unwrap();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "off").unwrap();
     let service = RoutePoolService::new(db);
     let error = service.list(None, None).unwrap_err();
     assert_eq!(error.code(), "unsupported");
@@ -59,6 +60,17 @@ fn flag_off_is_fail_closed() {
             .code(),
         "unsupported"
     );
+}
+
+#[test]
+fn product_flags_default_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("flag-default-on.db")).unwrap();
+    let service = RoutePoolService::new(db);
+    assert!(service.enabled().unwrap());
+    assert!(service.index_enabled());
+    assert_eq!(service.pair_adapter_flags(), (false, false));
+    assert!(!service.mixed_provider_enabled());
 }
 
 #[test]
@@ -227,10 +239,12 @@ fn enroll_v2_rejects_native_endpoint_and_config_sync() {
 #[test]
 fn index_enabled_requires_both_flags() {
     let (_dir, db, service, _profiles) = tmp();
+    assert!(service.index_enabled());
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "off").unwrap();
     assert!(!service.index_enabled());
     db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
     assert!(service.index_enabled());
-    db.set_setting(FEATURE_ROUTE_INDEX_V2, "off").unwrap();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "off").unwrap();
     assert!(!service.index_enabled());
 }
 
@@ -411,6 +425,7 @@ fn kimi_provider(id: &str) -> Provider {
 fn list_default_overviews_is_empty_when_flag_off() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("flag-off-overview.db")).unwrap();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "false").unwrap();
     let service = RoutePoolService::new(db);
     let listed = service.list_default_overviews().unwrap();
     assert!(!listed.enabled);

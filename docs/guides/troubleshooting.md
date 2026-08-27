@@ -4,7 +4,7 @@ description: 按启动、环境、登录、Routes、日志和测试症状定位�
 type: guide
 audience: user-and-contributor
 status: current
-updated: 2026-08-25
+updated: 2026-08-27
 ---
 
 # 排障指南
@@ -46,8 +46,9 @@ cargo run -p agenthub-cli -- agent list
 |---|---|---|
 | `401 invalid_api_key` | 客户端没有发送或发送了错误的本地 token | 从该 Route 的配置读取脱敏后的本地凭据，重新配置客户端 |
 | `404` / `surface_mismatch` | 请求路径和 Route 的 downstream surface 不匹配 | Responses、Messages、Chat Completions 使用各自的 Route surface |
-| `400 listed_models_reject` 或 `model_unavailable` | 模型不在 Route 的映射/名单中 | 使用 `GET /v1/models` 查看当前 Route 的模型列表 |
+| `400 listed_models_reject` 或 `model_unavailable` | 模型不在当前默认池可服务名单中 | 使用 `GET /v1/models` 查看当前 Route 的模型列表 |
 | `429 bridge_overloaded` | 本机并发门限已满 | 等待正在运行的请求完成，或停止重复客户端 |
+| `503 pool_exhausted` | 默认池当前没有可服务该请求的成员 | 检查 Routes 里已接入登录是否可用；有 `Retry-After` 时等待后再试 |
 | `502 upstream_error` | 上游登录、网络或协议失败 | 看日志中的 `request_id`、`profile_id` 和脱敏 `upstream_detail` |
 | `504 upstream_timeout` | 上游在超时窗口内未返回 | 检查上游 URL、网络和服务状态 |
 
