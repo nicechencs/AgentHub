@@ -16,6 +16,49 @@
     "modelSelect",
     "sessionResume"
   ],
+  "capabilityLabels": {
+    "configWrite": "配置写入",
+    "accountSwitch": "账号切换",
+    "apiKeyAccount": "API Key 账号",
+    "skills": "技能",
+    "liveBackup": "Live 备份",
+    "structuredStream": "结构化流式输出",
+    "dangerousMode": "危险模式",
+    "projectHistory": "项目历史",
+    "projectDelete": "项目删除",
+    "providerPresets": "供应商预设",
+    "usage": "用量统计",
+    "mcp": "MCP",
+    "modelSelect": "模型选择",
+    "sessionResume": "会话续接"
+  },
+  "schemaFields": {
+    "claude": [
+      "baseUrl",
+      "apiKey",
+      "claudeAuthEnv",
+      "model",
+      "modelOpus",
+      "modelSonnet",
+      "modelHaiku",
+      "modelFable",
+      "modelSubagent",
+      "contextWindow"
+    ],
+    "codex": ["baseUrl", "apiKey", "model", "reasoningEffort", "wireApi", "providerSlug"],
+    "kimi": ["model", "baseUrl", "apiKey", "providerSlug"],
+    "grok": ["model", "baseUrl", "apiKey"],
+    "dsh": [
+      "provider",
+      "model",
+      "baseUrl",
+      "thinking",
+      "reasoningEffort",
+      "maxTokens",
+      "apiKeyEnv",
+      "apiKey"
+    ]
+  },
   "channels": {
     "unix": {
       "claude": ["native", "npm"],
