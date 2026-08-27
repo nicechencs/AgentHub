@@ -18,6 +18,7 @@ pub(super) struct AdmittedRequest {
     pub headers: HeaderMap,
     pub body: Value,
     pub member: Option<PickedMember>,
+    pub affinity_key: Option<String>,
 }
 
 /// Shutdown, per-edge semaphore, read JSON. Auth has already bound the edge.
@@ -52,5 +53,6 @@ pub(super) async fn admit_conversation(
         headers,
         body,
         member: None,
+        affinity_key: None,
     })
 }

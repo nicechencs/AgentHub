@@ -37,10 +37,10 @@ use crate::models::{
     list_local_bridge_models, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
-    LocalBridgeEdge, Provider, ProviderInput, RouteMember, ANTHROPIC_CODEX_EDGE,
-    CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE,
-    GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE,
-    OPENAI_GROK_BRIDGE_EDGE,
+    LocalBridgeEdge, Provider, ProviderInput, RouteMember, RouteSchedulePolicy,
+    ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE, CODEX_GROK_EDGE,
+    CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE,
+    OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver, RoutePoolService};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -507,6 +507,7 @@ pub struct AdapterBridgeRuntimeMaterial {
     index_enabled: bool,
     codex_ingress_grok_upstream: bool,
     grok_ingress_codex_upstream: bool,
+    schedule_policy: RouteSchedulePolicy,
 }
 
 impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
@@ -539,6 +540,7 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
                 "grok_ingress_codex_upstream",
                 &self.grok_ingress_codex_upstream,
             )
+            .field("schedule_policy", &self.schedule_policy)
             .finish()
     }
 }
@@ -586,6 +588,7 @@ impl AdapterBridgeRuntimeMaterial {
             index_enabled: false,
             codex_ingress_grok_upstream: false,
             grok_ingress_codex_upstream: false,
+            schedule_policy: RouteSchedulePolicy::PriorityFailover,
         }
     }
 
@@ -621,7 +624,8 @@ impl AdapterBridgeRuntimeMaterial {
         .with_pair_adapter_flags(
             self.codex_ingress_grok_upstream,
             self.grok_ingress_codex_upstream,
-        );
+        )
+        .with_schedule_policy(self.schedule_policy);
         if let Some(index) = &self.route_index {
             spec = spec
                 .with_listed_models(index.list_models(index_endpoint_key(self.local_surface)))
@@ -949,6 +953,9 @@ impl AdapterBridgeService {
         material.codex_ingress_grok_upstream = codex_to_grok;
         material.grok_ingress_codex_upstream = grok_to_codex;
         let _ = self.route_pools.ensure_legacy_pool(profile);
+        if let Ok(Some(pool)) = self.route_pools.get(&material.profile_id) {
+            material.schedule_policy = pool.schedule_policy;
+        }
         if let Some(index) = self.route_index_for_material(&material, profile) {
             if let Ok(Some(pool)) = self.route_pools.get(&material.profile_id) {
                 if let Some(port) = pool.gateway_port {

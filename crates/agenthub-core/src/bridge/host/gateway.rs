@@ -419,8 +419,9 @@ impl EdgeState {
         candidates: &[DispatchCandidate],
         model: &str,
         extra_excluded: &[String],
+        affinity_key: Option<&str>,
     ) -> Option<PickedMember> {
-        self.pick_v2_in_lane(candidates, model, extra_excluded, None)
+        self.pick_v2_in_lane(candidates, model, extra_excluded, None, affinity_key)
     }
 
     pub(super) fn pick_v2_in_lane(
@@ -429,6 +430,7 @@ impl EdgeState {
         model: &str,
         extra_excluded: &[String],
         last_member_id: Option<&str>,
+        affinity_key: Option<&str>,
     ) -> Option<PickedMember> {
         let mut excluded = extra_excluded.to_vec();
         excluded.extend(self.account_picker.cooldown_exclusions(model));
@@ -452,7 +454,28 @@ impl EdgeState {
             None => candidates.to_vec(),
         };
         self.account_picker
-            .pick_from_candidates(&lane_candidates, None, &excluded)
+            .pick_from_candidates(&lane_candidates, affinity_key, &excluded)
+    }
+
+    pub(super) fn affinity_key_for(
+        &self,
+        body: &serde_json::Value,
+        headers: &HeaderMap,
+    ) -> Option<String> {
+        let session = super::continuation::session_identifier(body, headers)?;
+        let route_id = self
+            .route_index
+            .as_ref()
+            .map(|index| index.route_id.as_str())
+            .unwrap_or(self.profile_id.as_ref());
+        let dialect = self
+            .mapping_target
+            .map(crate::models::RouteDownstreamDialect::for_agent)
+            .unwrap_or(crate::models::RouteDownstreamDialect::Generic)
+            .as_str();
+        Some(crate::bridge::account::route_scoped_affinity_key(
+            route_id, dialect, &session,
+        ))
     }
 
     pub(super) fn isolate_authorization(&self, member: &PickedMember) {

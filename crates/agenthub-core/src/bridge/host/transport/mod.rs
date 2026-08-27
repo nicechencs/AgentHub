@@ -259,6 +259,7 @@ pub(super) async fn send_upstream(
     candidates: Option<&[DispatchCandidate]>,
     public_model: &str,
     continuation_locked: bool,
+    affinity_key: Option<&str>,
 ) -> Result<UpstreamSendOutcome, Response> {
     if state.route_index.is_some() {
         return failover::send_upstream_v2(
@@ -275,6 +276,7 @@ pub(super) async fn send_upstream(
             candidates.unwrap_or(&[]),
             public_model,
             continuation_locked,
+            affinity_key,
         )
         .await;
     }

@@ -71,6 +71,16 @@ impl ContinuationBindings {
     }
 }
 
+/// Session identifier for route-scoped sticky. Reuses continuation /
+/// prompt-cache / conversation / client session extractors. Never used as a
+/// raw global map key.
+pub(super) fn session_identifier(body: &Value, headers: &HeaderMap) -> Option<String> {
+    if let Some(id) = crate::bridge::protocol::pair::previous_response_id(body) {
+        return Some(id.to_owned());
+    }
+    extract_prompt_cache_seed(headers, body)
+}
+
 fn continuation_keys(body: &Value, headers: &HeaderMap) -> Vec<String> {
     let mut keys = Vec::new();
     if let Some(id) = body
