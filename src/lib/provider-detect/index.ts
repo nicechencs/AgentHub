@@ -36,7 +36,10 @@ export {
   formFieldVisibility,
   FORM_FIELD_LABELS,
   looksRedactedOrPlaceholder,
+  maskConfigSecrets,
   parseJsonObjectConfig,
+  resolveFormApiKeyFromEditor,
+  writableSecret,
 } from './fields';
 export type { JsonObjectParseResult } from './fields';
 export {
@@ -86,3 +89,4 @@ export {
   isCodexTomlPaste,
   stripCodexPasteNoise,
 } from './codexToml';
+export { extractGrokDetectFields, isGrokTomlPaste } from './grokToml';

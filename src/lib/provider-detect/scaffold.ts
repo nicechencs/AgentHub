@@ -38,10 +38,17 @@ export function defaultConfigScaffold(agentId: string): {
         preset: 'custom',
         text: [
           'default_model = "kimi-k2"',
+          'default_provider = "custom"',
           '',
           '[providers.custom]',
+          'type = "openai"',
           'base_url = "https://your-relay.example.com/v1"',
           'api_key = "sk-xxxxxxxx"',
+          '',
+          '[models."kimi-k2"]',
+          'provider = "custom"',
+          'model = "kimi-k2"',
+          'max_context_size = 131072',
           '',
         ].join('\n'),
       };
@@ -114,6 +121,12 @@ export function defaultConfigScaffold(agentId: string): {
           null,
           2,
         ),
+      };
+    case 'cursor':
+      return {
+        format: 'json',
+        preset: 'custom',
+        text: JSON.stringify({ note: 'cursor-pool-only' }, null, 2),
       };
     default:
       return {
