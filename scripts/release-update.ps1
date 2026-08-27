@@ -666,7 +666,7 @@ if ($VersionOnly) {
     Write-Host "Tag     : $tag"
     Write-Host ""
     Write-Host "Next:" -ForegroundColor Yellow
-    Write-Host "  git add package.json Cargo.toml Cargo.lock src-tauri/tauri.conf.json"
+    Write-Host "  git add package.json Cargo.toml Cargo.lock"
     Write-Host "  git commit -m `"chore(release): bump version to $Version`""
     Write-Host "  git push origin dev"
     Write-Host "  pnpm release:preflight"

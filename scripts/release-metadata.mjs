@@ -29,6 +29,32 @@ function readJsonVersion(filePath, label) {
   return parsed.version;
 }
 
+/** Resolve tauri.conf.json version: literal semver, ../package.json path, or Cargo fallback. */
+function readTauriConfigVersion(root = defaultRoot) {
+  const tauriPath = path.join(root, 'src-tauri', 'tauri.conf.json');
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(tauriPath, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `Unable to read src-tauri/tauri.conf.json: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const raw = parsed.version;
+  if (raw == null || raw === '') {
+    const cargoContents = fs.readFileSync(path.join(root, 'Cargo.toml'), 'utf8');
+    return readCargoWorkspaceVersion(cargoContents);
+  }
+  if (typeof raw !== 'string') {
+    throw new Error('src-tauri/tauri.conf.json version must be a string, package.json path, or omitted');
+  }
+  if (/package\.json$/i.test(raw.trim())) {
+    const packagePath = path.resolve(path.dirname(tauriPath), raw);
+    return readJsonVersion(packagePath, `tauri.conf.json version path (${raw})`);
+  }
+  return raw;
+}
+
 /** Read only [workspace.package].version, never an unrelated Cargo section. */
 function readCargoWorkspaceVersion(cargoToml) {
   let inWorkspacePackage = false;
@@ -119,7 +145,7 @@ function readReleaseMetadata(root = defaultRoot) {
     throw new Error(`Unable to read Cargo.lock: ${error instanceof Error ? error.message : String(error)}`);
   }
   const cargoLockVersions = readCargoLockWorkspaceVersions(cargoLockContents);
-  const tauriVersion = readJsonVersion(path.join(root, 'src-tauri', 'tauri.conf.json'), 'src-tauri/tauri.conf.json');
+  const tauriVersion = readTauriConfigVersion(root);
 
   for (const [source, version] of [
     ['package.json', packageVersion],
@@ -149,6 +175,50 @@ function readReleaseMetadata(root = defaultRoot) {
     tag: `v${packageVersion}`,
     prerelease: isPrerelease(packageVersion),
   };
+}
+
+const WORKSPACE_LOCK_PACKAGES = ['agenthub-cli', 'agenthub-core', 'agenthub-gui'];
+
+/** Propagate package.json version into Cargo.toml and Cargo.lock workspace entries. */
+function syncReleaseVersionFromPackageJson(root = defaultRoot, explicitVersion) {
+  const packagePath = path.join(root, 'package.json');
+  const version = explicitVersion ?? readJsonVersion(packagePath, 'package.json');
+  assertStrictSemVer(version, 'package.json');
+
+  const cargoPath = path.join(root, 'Cargo.toml');
+  let cargoContents = fs.readFileSync(cargoPath, 'utf8');
+  const currentCargoVersion = readCargoWorkspaceVersion(cargoContents);
+  if (currentCargoVersion !== version) {
+    const cargoUpdated = cargoContents.replace(
+      /(\[workspace\.package\][\s\S]*?version\s*=\s*")[^"]+(")/m,
+      `$1${version}$2`,
+    );
+    if (cargoUpdated === cargoContents) {
+      throw new Error('Failed to patch Cargo.toml [workspace.package].version');
+    }
+    fs.writeFileSync(cargoPath, cargoUpdated);
+    cargoContents = cargoUpdated;
+  }
+
+  const lockPath = path.join(root, 'Cargo.lock');
+  let lockContents = fs.readFileSync(lockPath, 'utf8');
+  const lockVersions = readCargoLockWorkspaceVersions(lockContents);
+  const lockMismatch = WORKSPACE_LOCK_PACKAGES.some((name) => lockVersions[name] !== version);
+  if (lockMismatch) {
+    for (const name of WORKSPACE_LOCK_PACKAGES) {
+      const pattern = new RegExp(
+        `(\\[\\[package\\]\\]\\s*name\\s*=\\s*"${name}"\\s*version\\s*=\\s*")[^"]+(")`,
+        'm',
+      );
+      if (!pattern.test(lockContents)) {
+        throw new Error(`Cargo.lock must contain exactly one workspace package entry for ${name}`);
+      }
+      lockContents = lockContents.replace(pattern, `$1${version}$2`);
+    }
+    fs.writeFileSync(lockPath, lockContents);
+  }
+
+  return readReleaseMetadata(root);
 }
 
 function assertTagMatchesMetadata(metadata, gitTag) {
@@ -213,6 +283,8 @@ export {
   readCargoLockWorkspaceVersions,
   readCargoWorkspaceVersion,
   readReleaseMetadata,
+  readTauriConfigVersion,
+  syncReleaseVersionFromPackageJson,
 };
 
 const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;

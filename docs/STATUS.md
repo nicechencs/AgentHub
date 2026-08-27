@@ -41,7 +41,7 @@ updated: 2026-08-27
 - Rust 核心、CLI 和 GUI 分别由对应 crate 的 `cargo test --locked` 验证。
 - `pnpm check:docs` 检查活跃 Markdown 的本地链接、标题锚点、元数据和已废弃路径标注。
 - PR CI 运行前端类型检查、构建、测试、三个 Rust crate 测试，以及独立的 Playwright Chromium 浏览器冒烟 job；正式发布由 **`dev` 分支上的 `v*` tag** 触发，闭环后再合入 `release`。
-- 发布前必须同步 `package.json`、`Cargo.toml` workspace package、`src-tauri/tauri.conf.json` 和 `Cargo.lock` 的版本号。
+- 发布前以 **`package.json` 为版本真源**；`pnpm release:sync-version` 同步 `Cargo.toml` 与 `Cargo.lock`，`tauri.conf.json` 引用 `../package.json`。
 
 ## 已知边界
 
