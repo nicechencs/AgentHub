@@ -1,5 +1,5 @@
 use super::*;
-use crate::adapters::{register_all, AgentAdapter};
+use crate::adapters::{is_under_agenthub_user_npm_prefix, register_all, AgentAdapter};
 use crate::catalog::install::{
     native_ps1_url, native_setup_url, native_sh_url, npm_install_extra_flags, npm_package,
 };
@@ -179,15 +179,21 @@ fn install_from_contribution_uses_npm_allowlist_without_agent_id() {
     let out = install_from_contribution(&key, &FakeContrib, "npm", false, &ex).unwrap();
     assert!(out.ok, "msg={}", out.message);
     let commands = calls.lock().unwrap();
+    let user_prefix = detect_scanned_user_npm_prefix()
+        .expect("user-writable npm prefix")
+        .display()
+        .to_string();
     assert!(
         commands.iter().any(|c| {
             c.contains("install")
                 && c.contains("-g")
-                && !c.contains("--prefix")
+                && c.contains("--prefix")
+                && c.contains(&user_prefix)
+                && !c.contains(".agenthub")
                 && c.contains("--ignore-scripts")
                 && c.contains("@agenthub/p1-2-fake-npm")
         }),
-        "expected contribution npm install without data-dir prefix, got {commands:?}"
+        "expected contribution npm install into detect-scanned user prefix {user_prefix}, got {commands:?}"
     );
 }
 
@@ -1022,6 +1028,26 @@ fn leftover_agenthub_npm_prefix_is_under_data_dir() {
 }
 
 #[test]
+fn detect_scanned_user_npm_prefix_is_not_leftover() {
+    let prefix = detect_scanned_user_npm_prefix().unwrap();
+    let leftover = leftover_agenthub_npm_prefix().unwrap();
+    assert_ne!(
+        prefix, leftover,
+        "Codex/Pi/DSH must not install into leftover data-dir npm"
+    );
+    assert!(
+        !is_under_agenthub_user_npm_prefix(&prefix),
+        "user install prefix {prefix:?} must stay outside leftover roots"
+    );
+    assert!(
+        leftover_agenthub_npm_prefix_candidates()
+            .iter()
+            .all(|p| p != &prefix),
+        "user prefix {prefix:?} must not match leftover candidates"
+    );
+}
+
+#[test]
 fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
     let registry = register_all();
     let calls = Arc::new(Mutex::new(Vec::new()));
@@ -1051,9 +1077,19 @@ fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
     );
     assert!(!out.message.contains("请检查 PATH"), "msg={}", out.message);
     let commands = calls.lock().unwrap();
+    let user_prefix = detect_scanned_user_npm_prefix()
+        .expect("user-writable npm prefix")
+        .display()
+        .to_string();
     assert!(
-        commands.iter().any(|c| c.contains("install") && c.contains("-g") && !c.contains("--prefix")),
-        "expected global npm install without data-dir prefix, got {commands:?}"
+        commands.iter().any(|c| {
+            c.contains("install")
+                && c.contains("-g")
+                && c.contains("--prefix")
+                && c.contains(&user_prefix)
+                && !c.contains(".agenthub")
+        }),
+        "expected npm install into detect-scanned user prefix {user_prefix}, got {commands:?}"
     );
 }
 
@@ -1084,7 +1120,8 @@ impl AgentAdapter for StickyNpmAdapter {
             binary_path: installed.then(|| PathBuf::from("/tmp/fake-npm-agent")),
             channel: Some("npm".into()),
             env_ready: true,
-            notes: vec![], extra_copies: Vec::new(),
+            notes: vec![],
+            extra_copies: Vec::new(),
         }
     }
 
@@ -1158,13 +1195,16 @@ fn npm_uninstall_uses_global_then_optional_leftover_prefix() {
         "expected at least a global npm uninstall; got {commands:?}"
     );
     assert!(
-        uninstalls[0].contains("uninstall") && !uninstalls[0].contains("--prefix"),
-        "first uninstall must be real npm global: {}",
-        uninstalls[0]
+        uninstalls
+            .iter()
+            .any(|c| c.contains("uninstall") && !c.contains("--prefix")),
+        "legacy global uninstall required: {uninstalls:?}"
     );
     if leftover_agenthub_npm_prefix_present().is_some() {
         assert!(
-            uninstalls.iter().any(|c| c.contains("--prefix")),
+            uninstalls
+                .iter()
+                .any(|c| c.contains("--prefix") && c.contains("npm")),
             "leftover data-dir npm must also be uninstalled: {uninstalls:?}"
         );
     }
