@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::models::{AgentId, DetectedBinaryCopy, DetectResult, DetectStatus};
+use crate::models::{AgentId, DetectResult, DetectStatus, DetectedBinaryCopy};
 use crate::utils::redact::redact_text;
 
 /// Shared detect helper used by adapters.
@@ -51,87 +51,106 @@ pub(crate) fn detect_binary_with_env(
     }
 
     let mut result = (|| {
-    for name in &names {
-        if let Ok(path) = which(name) {
-            if !is_direct_spawnable(&path) {
-                continue;
+        for name in &names {
+            if let Ok(path) = which(name) {
+                if !is_direct_spawnable(&path) {
+                    continue;
+                }
+                if is_under_agenthub_user_npm_prefix(&path) {
+                    tracing::info!(
+                        target: crate::logging::targets::DETECT,
+                        module = crate::logging::targets::DETECT,
+                        op = "detect_binary",
+                        agent = agent.as_str(),
+                        via = "path_leftover_skip",
+                        path = %path.display(),
+                        "skipping leftover AgentHub data-dir npm copy on PATH; not an install target"
+                    );
+                    continue;
+                }
+                let channel = infer_channel(&path, channel_hint);
+                tracing::debug!(
+                    target: crate::logging::targets::DETECT,
+                    module = crate::logging::targets::DETECT,
+                    op = "detect_binary",
+                    agent = agent.as_str(),
+                    via = "path",
+                    channel = %channel,
+                    path = %path.display(),
+                    "agent binary resolved on PATH"
+                );
+                return finish_detect(
+                    agent,
+                    path,
+                    version_args,
+                    Some(channel.as_str()),
+                    env_ready,
+                    false,
+                    extra_env,
+                );
             }
+        }
+
+        // Remaining well-known dirs (OS npm global, ~/.local/bin, …).
+        // Never spawn from leftover `~/.agenthub/npm` — that directory is not
+        // an install target for any agent.
+        for (path, channel) in well_known_bin_paths(agent) {
             if is_under_agenthub_user_npm_prefix(&path) {
+                tracing::info!(
+                    target: crate::logging::targets::DETECT,
+                    module = crate::logging::targets::DETECT,
+                    op = "detect_binary",
+                    agent = agent.as_str(),
+                    via = "well_known_leftover_skip",
+                    channel = channel,
+                    path = %path.display(),
+                    "skipping leftover AgentHub data-dir npm copy in well-known dirs; not an install target"
+                );
                 continue;
             }
-            let channel = infer_channel(&path, channel_hint);
-            tracing::debug!(
-                target: crate::logging::targets::DETECT,
-                module = crate::logging::targets::DETECT,
-                op = "detect_binary",
-                agent = agent.as_str(),
-                via = "path",
-                channel = %channel,
-                path = %path.display(),
-                "agent binary resolved on PATH"
-            );
-            return finish_detect(
-                agent,
-                path,
-                version_args,
-                Some(channel.as_str()),
-                env_ready,
-                false,
-                extra_env,
-            );
+            if path.is_file() && is_direct_spawnable(&path) {
+                // PATH miss but disk hit — common after install without AgentHub restart.
+                tracing::info!(
+                    target: crate::logging::targets::DETECT,
+                    module = crate::logging::targets::DETECT,
+                    op = "detect_binary",
+                    agent = agent.as_str(),
+                    via = "well_known",
+                    channel = channel,
+                    path = %path.display(),
+                    "agent binary found outside process PATH (well-known dir); restart may refresh PATH"
+                );
+                return finish_detect(
+                    agent,
+                    path,
+                    version_args,
+                    Some(channel),
+                    env_ready,
+                    true,
+                    extra_env,
+                );
+            }
         }
-    }
 
-    // Remaining well-known dirs (OS npm global, ~/.local/bin, …).
-    // Never spawn from leftover `~/.agenthub/npm` — that directory is not
-    // an install target for any agent.
-    for (path, channel) in well_known_bin_paths(agent) {
-        if is_under_agenthub_user_npm_prefix(&path) {
-            continue;
+        tracing::debug!(
+            target: crate::logging::targets::DETECT,
+            module = crate::logging::targets::DETECT,
+            op = "detect_binary",
+            agent = agent.as_str(),
+            candidates = ?names,
+            "agent binary not found on PATH or well-known dirs"
+        );
+
+        DetectResult {
+            agent,
+            status: DetectStatus::NotFound,
+            version: None,
+            binary_path: None,
+            channel: None,
+            env_ready,
+            notes: vec![NOT_FOUND_FIREFIGHTING_NOTE.into()],
+            extra_copies: Vec::new(),
         }
-        if path.is_file() && is_direct_spawnable(&path) {
-            // PATH miss but disk hit — common after install without AgentHub restart.
-            tracing::info!(
-                target: crate::logging::targets::DETECT,
-                module = crate::logging::targets::DETECT,
-                op = "detect_binary",
-                agent = agent.as_str(),
-                via = "well_known",
-                channel = channel,
-                path = %path.display(),
-                "agent binary found outside process PATH (well-known dir); restart may refresh PATH"
-            );
-            return finish_detect(
-                agent,
-                path,
-                version_args,
-                Some(channel),
-                env_ready,
-                true,
-                extra_env,
-            );
-        }
-    }
-
-    tracing::debug!(
-        target: crate::logging::targets::DETECT,
-        module = crate::logging::targets::DETECT,
-        op = "detect_binary",
-        agent = agent.as_str(),
-        candidates = ?names,
-        "agent binary not found on PATH or well-known dirs"
-    );
-
-    DetectResult {
-        agent,
-        status: DetectStatus::NotFound,
-        version: None,
-        binary_path: None,
-        channel: None,
-        env_ready,
-        notes: vec![NOT_FOUND_FIREFIGHTING_NOTE.into()],
-        extra_copies: Vec::new(),
-    }
     })();
     attach_leftover_agenthub_npm_copy(&mut result, agent, &names, extra_env);
     attach_extra_binary_copies(
@@ -302,7 +321,7 @@ fn attach_leftover_agenthub_npm_copy(
         return;
     }
     let version = probe_bin_version(&path, &["--version"], extra_env);
-    tracing::debug!(
+    tracing::info!(
         target: crate::logging::targets::DETECT,
         module = crate::logging::targets::DETECT,
         op = "detect_binary",
@@ -396,10 +415,7 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
             }
             // Legacy local npm install from older Claude Code versions.
             push_npm(&mut paths, home.join(".claude").join("local"));
-            push_npm(
-                &mut paths,
-                home.join(".claude").join("local").join("bin"),
-            );
+            push_npm(&mut paths, home.join(".claude").join("local").join("bin"));
         }
         AgentId::Codex => {
             for npm_dir in npm_global_bin_dirs(&home) {
@@ -489,6 +505,41 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
     }
 
     paths
+}
+
+/// User-writable npm prefix that [`well_known_bin_paths`] already scans.
+///
+/// Not leftover `~/.agenthub/npm`. Unix: `~/.npm-global` (bins in `prefix/bin`).
+/// Windows: `%APPDATA%\npm` (bins in the prefix root).
+pub(crate) fn user_writable_npm_prefix() -> Option<PathBuf> {
+    let home = crate::utils::paths::home_dir().ok()?;
+    #[cfg(windows)]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let prefix = PathBuf::from(appdata).join("npm");
+            if !is_under_agenthub_user_npm_prefix(&prefix) {
+                return Some(prefix);
+            }
+        }
+        let fallback = home.join("AppData").join("Roaming").join("npm");
+        if is_under_agenthub_user_npm_prefix(&fallback) {
+            return None;
+        }
+        Some(fallback)
+    }
+    #[cfg(not(windows))]
+    {
+        let prefix = home.join(".npm-global");
+        if is_under_agenthub_user_npm_prefix(&prefix) {
+            return None;
+        }
+        Some(prefix)
+    }
+}
+
+/// Bin dir under [`user_writable_npm_prefix`] (Windows: prefix root; Unix: `prefix/bin`).
+pub(crate) fn user_writable_npm_bin_dir() -> Option<PathBuf> {
+    user_writable_npm_prefix().map(npm_prefix_to_bin_dir)
 }
 
 /// Leftover AgentHub data-dir npm prefix roots (`<data>/npm` and `~/.agenthub/npm`).

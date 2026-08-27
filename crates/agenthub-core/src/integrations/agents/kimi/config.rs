@@ -6,7 +6,9 @@ use std::path::Path;
 use serde_json::{json, Value};
 use toml_edit::DocumentMut;
 
+use super::managed::{ensure_kimi_model_alias, ensure_kimi_provider_entry};
 use crate::error::{AppError, Result};
+use crate::logging::targets;
 use crate::models::AgentId;
 use crate::platform::AgentKey;
 use crate::utils::atomic::atomic_write;
@@ -176,33 +178,43 @@ impl KimiConfigProjector {
             }
         }
 
-        if doc.get("providers").is_none() {
-            doc["providers"] = toml_edit::table();
-        }
-        let providers = doc["providers"]
-            .as_table_mut()
-            .ok_or_else(|| AppError::InvalidArg("Kimi providers must be a table".into()))?;
-        if providers.get(slug.as_str()).is_none() {
-            providers.insert(slug.as_str(), toml_edit::table());
-        }
-        let entry = providers.get_mut(slug.as_str()).unwrap();
-        if let Some(base) = get_str_map(desired, "baseUrl") {
-            let t = base.trim();
-            if t.is_empty() {
-                if let Some(t) = entry.as_table_mut() {
-                    t.remove("base_url");
+        doc["default_provider"] = toml_edit::value(slug.as_str());
+        ensure_kimi_provider_entry(&mut doc, slug.as_str())?;
+        {
+            let providers = doc["providers"]
+                .as_table_mut()
+                .ok_or_else(|| AppError::InvalidArg("Kimi providers must be a table".into()))?;
+            let entry = providers.get_mut(slug.as_str()).ok_or_else(|| {
+                AppError::InvalidArg(format!("Kimi providers.{slug} must be a table"))
+            })?;
+            if let Some(base) = get_str_map(desired, "baseUrl") {
+                let t = base.trim();
+                if t.is_empty() {
+                    if let Some(t) = entry.as_table_mut() {
+                        t.remove("base_url");
+                    }
+                } else {
+                    entry["base_url"] = toml_edit::value(t);
                 }
-            } else {
-                entry["base_url"] = toml_edit::value(t);
+            }
+            if let Some(key) = get_str_map(desired, "apiKey") {
+                if !secret_unchanged(Some(&key)) {
+                    entry["api_key"] = toml_edit::value(key.trim());
+                } else {
+                    // keep existing; if redacted in desired, leave native
+                    let _ = SECRET_REDACTED;
+                }
             }
         }
-        if let Some(key) = get_str_map(desired, "apiKey") {
-            if !secret_unchanged(Some(&key)) {
-                entry["api_key"] = toml_edit::value(key.trim());
-            } else {
-                // keep existing; if redacted in desired, leave native
-                let _ = SECRET_REDACTED;
-            }
+
+        let alias = doc
+            .get("default_model")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        if let Some(alias) = alias {
+            ensure_kimi_model_alias(&mut doc, slug.as_str(), &alias)?;
         }
         Ok(doc)
     }
@@ -283,6 +295,13 @@ impl AgentConfigProjector for KimiConfigProjector {
             std::fs::create_dir_all(parent)?;
         }
         atomic_write(&path, merged.to_string().as_bytes())?;
+        tracing::info!(
+            module = targets::PROVIDER,
+            op = "write_live",
+            agent = "kimi",
+            path = %path.display(),
+            "write_live"
+        );
         finish_apply(
             AgentKey::from_agent_id(AgentId::Kimi),
             &schema,

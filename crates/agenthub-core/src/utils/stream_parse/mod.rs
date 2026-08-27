@@ -210,7 +210,7 @@ impl StreamSession {
             self.step_count += 1;
             return vec![StreamOutput::Step(ProcessStep::Raw {
                 text: line.chars().take(200).collect(),
-                note: Some("line too long".into()),
+                note: Some("输出行过长".into()),
             })];
         }
 
@@ -231,7 +231,7 @@ impl StreamSession {
                         self.step_count += 1;
                         vec![StreamOutput::Step(ProcessStep::Raw {
                             text: line.chars().take(400).collect(),
-                            note: Some("unrecognized structured line".into()),
+                            note: Some("无法识别的输出行".into()),
                         })]
                     } else {
                         Vec::new()
@@ -248,7 +248,7 @@ impl StreamSession {
                         self.step_count += 1;
                         out.push(StreamOutput::Step(ProcessStep::Raw {
                             text: line.chars().take(400).collect(),
-                            note: Some("non-json line in structured mode".into()),
+                            note: Some("结构化模式下出现非 JSON 行".into()),
                         }));
                     }
                     out

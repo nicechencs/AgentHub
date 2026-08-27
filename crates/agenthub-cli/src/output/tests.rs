@@ -53,6 +53,15 @@ fn map_install_failure_uses_structured_codes() {
 
     let other = InstallOutcome::failure("agent_install", vec![], "npm failed");
     assert_eq!(map_install_failure(&other).code(), "install.failed");
+
+    let guide = InstallOutcome::failure(
+        "agent_install",
+        vec![],
+        "workbuddy 已打开官网安装页，请完成安装后重启 AgentHub",
+    )
+    .with_code("setup_guide", None);
+    assert_eq!(map_install_failure(&guide).code(), "setup_guide");
+    assert!(!guide.message.contains("失败"));
 }
 
 #[test]

@@ -3,13 +3,14 @@ use super::codex_copies::ide_codex_bins_under;
 use super::detect_binary::{
     agenthub_user_npm_prefix_roots, attach_extra_binary_copies, detect_binary, expand_binary_names,
     first_existing_named_bin, infer_channel, is_under_agenthub_user_npm_prefix,
-    well_known_bin_paths, NOT_FOUND_FIREFIGHTING_NOTE,
+    user_writable_npm_bin_dir, user_writable_npm_prefix, well_known_bin_paths,
+    NOT_FOUND_FIREFIGHTING_NOTE,
 };
 use super::*;
 use crate::error::AppError;
 use crate::models::{
-    AccountKind, AgentConfig, AgentId, DetectResult, DetectStatus, DetectedBinaryCopy, Capability,
-    CapabilityLevel,
+    AccountKind, AgentConfig, AgentId, Capability, CapabilityLevel, DetectResult, DetectStatus,
+    DetectedBinaryCopy,
 };
 use crate::utils::atomic::atomic_write;
 use serde_json::json;
@@ -17,7 +18,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-// Only exercised by unix-gated tests below.
+// Serializes tests that mutate HOME / PATH / AGENTHUB_HOME.
 static DETECT_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn restore_env(key: &str, prev: Option<OsString>) {
@@ -193,7 +194,10 @@ fn attach_extra_binary_copies_skips_primary_leftover_and_duplicates() {
         assert_eq!(v, "2.0.0");
     }
     assert!(
-        result.notes.iter().any(|n| n.contains("另有 1 份 Claude Code")),
+        result
+            .notes
+            .iter()
+            .any(|n| n.contains("另有 1 份 Claude Code")),
         "channel extra note must name the agent and skip leftover: {:?}",
         result.notes
     );
@@ -229,12 +233,7 @@ fn attach_extra_binary_copies_refreshes_note_when_ide_copy_is_added() {
             Some("npm".into()),
         )],
     };
-    attach_extra_binary_copies(
-        &mut result,
-        vec![(ide.clone(), "ide")],
-        &["--version"],
-        &[],
-    );
+    attach_extra_binary_copies(&mut result, vec![(ide.clone(), "ide")], &["--version"], &[]);
 
     assert_eq!(result.extra_copies.len(), 2);
     assert_eq!(result.extra_copies[1].kind, "ide");
@@ -327,10 +326,7 @@ fn attach_extra_binary_copies_promotes_desktop_when_not_found() {
         .extra_copies
         .iter()
         .any(|c| c.kind == "ide" && c.path == ide));
-    assert!(result
-        .extra_copies
-        .iter()
-        .all(|c| c.path != desktop));
+    assert!(result.extra_copies.iter().all(|c| c.path != desktop));
     let ide_copy = result
         .extra_copies
         .iter()
@@ -365,7 +361,10 @@ fn install_lifecycle_aligns_all_agents() {
             assert_eq!(native.uninstall_via, "in_app");
         }
         let ide = install_lifecycle(agent, "ide");
-        assert_eq!((ide.source, ide.update_via, ide.uninstall_via), ("ide", "ide", "ide"));
+        assert_eq!(
+            (ide.source, ide.update_via, ide.uninstall_via),
+            ("ide", "ide", "ide")
+        );
         let desktop = install_lifecycle(agent, "desktop");
         assert_eq!(
             (desktop.source, desktop.update_via, desktop.uninstall_via),
@@ -436,7 +435,8 @@ fn infer_channel_from_npm_and_native_paths() {
         assert_eq!(infer_channel(&native, None), "native");
         let kimi = PathBuf::from(r"C:\Users\demo\.kimi-code\bin\kimi.exe");
         assert_eq!(infer_channel(&kimi, Some("native")), "native");
-        let official = PathBuf::from(r"C:\Users\demo\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe");
+        let official =
+            PathBuf::from(r"C:\Users\demo\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe");
         assert_eq!(infer_channel(&official, Some("npm")), "native");
     }
     #[cfg(not(windows))]
@@ -611,6 +611,27 @@ fn detect_binary_path_wins_over_leftover_agenthub_npm_prefix() {
         "leftover data-dir npm must be listed as extra, not spawned: {:?}",
         result.extra_copies
     );
+}
+
+#[test]
+fn well_known_scans_user_writable_npm_for_codex_pi_dsh() {
+    let prefix = user_writable_npm_prefix().expect("user-writable npm prefix");
+    assert!(
+        !is_under_agenthub_user_npm_prefix(&prefix),
+        "install prefix {prefix:?} must not be leftover ~/.agenthub/npm"
+    );
+    let bin = user_writable_npm_bin_dir().expect("user-writable npm bin dir");
+    for agent in [AgentId::Codex, AgentId::Pi, AgentId::Dsh] {
+        let paths = well_known_bin_paths(agent);
+        assert!(
+            paths
+                .iter()
+                .any(|(p, ch)| *ch == "npm" && p.starts_with(&bin)),
+            "{} must scan user npm bin {} so install can redetect without restart: {paths:?}",
+            agent.as_str(),
+            bin.display()
+        );
+    }
 }
 
 #[test]
@@ -1912,6 +1933,33 @@ fn codex_chat_run_spec_skips_git_repo_trust_check() {
 }
 
 #[test]
+fn write_kimi_api_key_ensures_models_table_for_default_model() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"default_model = "kimi-k2"
+[providers.moonshot]
+base_url = "https://mytokens.cc/v1"
+api_key = "old"
+"#,
+    )
+    .unwrap();
+    kimi::write_kimi_api_key(&path, "sk-new-key").unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("sk-new-key"), "{text}");
+    assert!(
+        text.contains("[models.\"kimi-k2\"]") || text.contains("[models.kimi-k2]"),
+        "{text}"
+    );
+    assert!(text.contains("provider = \"moonshot\""), "{text}");
+    assert!(text.contains("model = \"kimi-k2\""), "{text}");
+    assert!(text.contains("max_context_size = 131072"), "{text}");
+    assert!(text.contains("type = \"openai\""), "{text}");
+    assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+}
+
+#[test]
 fn kimi_write_config_points_base_url_at_loopback() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
@@ -1936,6 +1984,33 @@ fn kimi_write_config_points_base_url_at_loopback() {
     assert!(text.contains("http://127.0.0.1:32123/v1"));
     assert!(text.contains("agenthub_codex_bridge"));
     assert!(!text.contains("gpt-"));
+}
+
+#[test]
+fn kimi_switch_write_backfills_models_table_from_incomplete_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    write_toml_config(
+        AgentId::Kimi,
+        &path,
+        &AgentConfig {
+            agent: AgentId::Kimi,
+            raw: json!({
+                "format": "toml",
+                "content": "default_model = \"kimi-k2\"\n\n[providers.moonshot]\nbase_url = \"https://mytokens.cc/v1\"\napi_key = \"sk-pool\"\n",
+            }),
+        },
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("sk-pool"), "{text}");
+    assert!(
+        text.contains("[models.\"kimi-k2\"]") || text.contains("[models.kimi-k2]"),
+        "{text}"
+    );
+    assert!(text.contains("provider = \"moonshot\""), "{text}");
+    assert!(text.contains("max_context_size = 131072"), "{text}");
+    assert!(text.contains("type = \"openai\""), "{text}");
 }
 
 #[test]

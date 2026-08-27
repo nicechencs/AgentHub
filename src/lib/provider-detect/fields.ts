@@ -38,6 +38,83 @@ function sanitizeSecretForForm(v: string): string {
   return looksRedactedOrPlaceholder(v) ? '' : v;
 }
 
+/** Empty / `***` / last4 masks are never a new secret. */
+export function writableSecret(v: string): string {
+  const trimmed = v.trim();
+  return looksRedactedOrPlaceholder(trimmed) ? '' : trimmed;
+}
+
+/**
+ * Advanced-editor overlay: `***` (or other masks) keep the previous form
+ * secret instead of becoming the new API Key.
+ */
+export function resolveFormApiKeyFromEditor(
+  extracted: string,
+  detected: string,
+  previous: string,
+): string {
+  const next = extracted || detected || '';
+  if (!next || looksRedactedOrPlaceholder(next)) return previous;
+  return next;
+}
+
+const JSON_SECRET_KEYS = new Set([
+  'apikey',
+  'api_key',
+  'anthropic_api_key',
+  'anthropic_auth_token',
+  'openai_api_key',
+  'cursor_api_key',
+]);
+
+function isJsonSecretKey(key: string, value: string): boolean {
+  if (JSON_SECRET_KEYS.has(key.toLowerCase())) return true;
+  if (key !== 'key' || looksRedactedOrPlaceholder(value) || value.length < 16) {
+    return false;
+  }
+  return /^(sk-|cr_|ak-|xai-|sk-ant-)/i.test(value);
+}
+
+function redactJsonSecrets(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactJsonSecrets);
+  if (!value || typeof value !== 'object') return value;
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(obj)) {
+    if (typeof child === 'string' && child && isJsonSecretKey(key, child)) {
+      out[key] = REDACTED_MARKER;
+    } else {
+      out[key] = redactJsonSecrets(child);
+    }
+  }
+  return out;
+}
+
+const JSON_SECRET_TEXT_RE =
+  /("(?:ANTHROPIC_AUTH_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|CURSOR_API_KEY|apiKey|api_key)"\s*:\s*)"(?:\\.|[^"\\])*"/gi;
+const TOML_API_KEY_LINE_RE = /^(\s*api_key\s*=\s*)(["']).*?\2/gim;
+
+/**
+ * Mask secret values in the advanced editor (`***`). Never invent a live key.
+ * `env_key` names are left intact.
+ */
+export function maskConfigSecrets(
+  _agentId: AgentId,
+  configText: string,
+  format: 'json' | 'toml',
+): string {
+  const trimmed = configText.trim();
+  if (!trimmed || trimmed === REDACTED_MARKER) return configText;
+  if (format === 'toml') {
+    return configText.replace(TOML_API_KEY_LINE_RE, `$1"${REDACTED_MARKER}"`);
+  }
+  const parsed = parseJsonObjectConfig(configText);
+  if (parsed.ok) {
+    return JSON.stringify(redactJsonSecrets(parsed.value), null, 2);
+  }
+  return configText.replace(JSON_SECRET_TEXT_RE, `$1"${REDACTED_MARKER}"`);
+}
+
 function objectValue(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -136,7 +213,7 @@ function extractWorkBuddyModelVars(root: unknown): ProviderFormVars {
 
 function applyPiProviderVars(root: Record<string, unknown>, vars: ProviderFormVars): string {
   const slug = vars.providerSlug.trim() || 'custom';
-  const key = vars.apiKey.trim();
+  const key = writableSecret(vars.apiKey);
   const url = vars.baseUrl.trim();
   const authSlot = isPiAuthJsonSlot(slug);
   // Official slots without a relay URL stay on Pi builtins (auth.json only).
@@ -222,7 +299,7 @@ function applyWorkBuddyModelVars(root: Record<string, unknown>, vars: ProviderFo
   model.id = modelId;
   if (typeof model.name !== 'string' || !model.name) model.name = modelId;
   if (vars.baseUrl.trim()) model.url = vars.baseUrl.trim();
-  if (vars.apiKey.trim()) model.apiKey = vars.apiKey.trim();
+  if (writableSecret(vars.apiKey)) model.apiKey = writableSecret(vars.apiKey);
   else if (typeof model.apiKey === 'string') model.apiKey = REDACTED_MARKER;
   models[0] = model;
   native.models = models;
@@ -234,6 +311,34 @@ function applyWorkBuddyModelVars(root: Record<string, unknown>, vars: ProviderFo
   if (!nextAvailable.includes(modelId)) nextAvailable.push(modelId);
   native.availableModels = nextAvailable;
   if (native !== root) root.models = native;
+  return JSON.stringify(root, null, 2);
+}
+
+function extractCursorFormVars(root: Record<string, unknown>): ProviderFormVars {
+  return {
+    ...EMPTY_FORM_VARS,
+    baseUrl: firstNonEmptyString(root.baseUrl, root.base_url, root.baseURL),
+    apiKey: sanitizeSecretForForm(
+      firstNonEmptyString(root.apiKey, root.api_key, root.CURSOR_API_KEY),
+    ),
+    model: firstNonEmptyString(root.model),
+  };
+}
+
+function applyCursorFormVars(
+  root: Record<string, unknown>,
+  vars: ProviderFormVars,
+): string {
+  // Pool-only: never project Claude ANTHROPIC_* env.
+  delete root.env;
+  if (vars.baseUrl.trim()) root.baseUrl = vars.baseUrl.trim();
+  if (vars.model.trim()) root.model = vars.model.trim();
+  const secret = writableSecret(vars.apiKey);
+  if (secret) root.apiKey = secret;
+  else if (typeof root.apiKey === 'string' || typeof root.api_key === 'string') {
+    root.apiKey = REDACTED_MARKER;
+  }
+  if (Object.keys(root).length === 0) root.note = 'cursor-pool-only';
   return JSON.stringify(root, null, 2);
 }
 
@@ -341,17 +446,37 @@ function ensureGrokRegistry(text: string, alias: string): string {
   return out;
 }
 
+function grokHasRegistry(text: string): boolean {
+  return /^\s*\[models\]\s*$/m.test(text) || /^\s*\[model\./m.test(text);
+}
+
+/** Extra TOML tables (endpoints / auth / …) kept when migrating legacy grok. */
+function grokPreservedTables(text: string): string {
+  const re = /^\[([^\]]+)\]\s*$/gm;
+  const matches = [...text.matchAll(re)];
+  let extra = '';
+  for (let i = 0; i < matches.length; i++) {
+    const header = matches[i]?.[1] ?? '';
+    if (/^models$/i.test(header) || /^model\./i.test(header)) continue;
+    const start = matches[i]?.index ?? 0;
+    const end =
+      i + 1 < matches.length ? (matches[i + 1]?.index ?? text.length) : text.length;
+    extra += text.slice(start, end);
+  }
+  return extra.trim();
+}
+
 function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
-  const hasRegistry = /^\s*\[models\]\s*$/m.test(configText);
   let text = configText;
-  if (!hasRegistry) {
-    // Migrate the legacy top-level shape while retaining any existing values.
+  if (!grokHasRegistry(text)) {
+    // Migrate the legacy top-level shape while retaining extra tables.
     const legacyModel = tomlGet(configText, 'model');
     const legacyBaseUrl = tomlGet(configText, 'base_url');
-    const legacyApiKey = tomlGet(configText, 'api_key');
+    const legacyApiKey = writableSecret(tomlGet(configText, 'api_key'));
     const model = vars.model.trim() || legacyModel || 'grok-4.5';
     const baseUrl = vars.baseUrl.trim() || legacyBaseUrl;
-    const apiKey = vars.apiKey.trim() || legacyApiKey;
+    const apiKey = writableSecret(vars.apiKey) || legacyApiKey;
+    const extra = grokPreservedTables(configText);
     text = [
       '[models]',
       'default = "grok"',
@@ -362,7 +487,11 @@ function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
       ...(baseUrl ? [`base_url = "${baseUrl}"`] : []),
       ...(apiKey ? [`api_key = "${apiKey}"`] : []),
       '',
-    ].join('\n');
+      extra,
+    ]
+      .filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
+      .join('\n');
+    if (text && !text.endsWith('\n')) text += '\n';
   }
 
   const alias = grokDefaultAlias(text);
@@ -372,8 +501,12 @@ function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
   if (vars.baseUrl.trim()) {
     text = tomlTableSet(text, table, 'base_url', vars.baseUrl.trim());
   }
-  if (vars.apiKey.trim() && vars.apiKey.trim() !== REDACTED_MARKER) {
-    text = tomlTableSet(text, table, 'api_key', vars.apiKey.trim());
+  const hasEnvKey = Boolean(tomlTableGet(text, table, 'env_key'));
+  const secret = writableSecret(vars.apiKey);
+  if (hasEnvKey) {
+    // Prefer env_key; never materialize a live api_key into the document.
+  } else if (secret) {
+    text = tomlTableSet(text, table, 'api_key', secret);
   } else if (tomlTableGet(text, table, 'api_key')) {
     // Empty / redacted means keep the native secret on materialize.
     text = tomlTableSet(text, table, 'api_key', REDACTED_MARKER);
@@ -399,6 +532,7 @@ export function extractFormVars(
       const root = JSON.parse(configText || '{}') as Record<string, unknown>;
       if (agentId === 'pi') return extractPiProviderVars(root);
       if (agentId === 'workbuddy') return extractWorkBuddyModelVars(root);
+      if (agentId === 'cursor') return extractCursorFormVars(root);
 
       const env =
         root.env && typeof root.env === 'object' && !Array.isArray(root.env)
@@ -474,7 +608,23 @@ export function extractFormVars(
     };
   }
 
-  // grok / 其它
+  if (agentId === 'grok') {
+    const alias = grokDefaultAlias(configText);
+    const table = grokModelTable(configText, alias);
+    const rawKey =
+      tomlTableGet(configText, table, 'api_key') || tomlGet(configText, 'api_key');
+    return {
+      ...EMPTY_FORM_VARS,
+      model:
+        tomlTableGet(configText, table, 'model') || tomlGet(configText, 'model'),
+      baseUrl:
+        tomlTableGet(configText, table, 'base_url') ||
+        tomlGet(configText, 'base_url'),
+      apiKey: sanitizeSecretForForm(rawKey),
+    };
+  }
+
+  // 其它顶层 TOML
   return {
     ...EMPTY_FORM_VARS,
     model: tomlGet(configText, 'model'),
@@ -507,6 +657,7 @@ export function applyFormVars(
     if (!parsed.ok) return configText;
     if (agentId === 'pi') return applyPiProviderVars({ ...parsed.value }, vars);
     if (agentId === 'workbuddy') return applyWorkBuddyModelVars({ ...parsed.value }, vars);
+    if (agentId === 'cursor') return applyCursorFormVars({ ...parsed.value }, vars);
 
     const root: Record<string, unknown> =
       agentId === 'claude'
@@ -528,10 +679,11 @@ export function applyFormVars(
         ? 'ANTHROPIC_API_KEY'
         : 'ANTHROPIC_AUTH_TOKEN';
     delete env[other];
-    if (vars.apiKey.trim()) {
-      env[vars.claudeAuthEnv] = vars.apiKey.trim();
+    const secret = writableSecret(vars.apiKey);
+    if (secret) {
+      env[vars.claudeAuthEnv] = secret;
     } else if (env[vars.claudeAuthEnv] != null || configText.includes('ANTHROPIC_')) {
-      // 留空 = 保留：回写 redaction marker
+      // 留空 / *** = 保留：回写 redaction marker，不当成新密钥
       env[vars.claudeAuthEnv] = REDACTED_MARKER;
     }
 
@@ -653,20 +805,22 @@ export function applyFormVars(
     if (vars.baseUrl.trim()) {
       text = tomlTableSet(text, table, 'base_url', vars.baseUrl.trim());
     }
-    if (vars.apiKey.trim()) {
-      text = tomlTableSet(text, table, 'api_key', vars.apiKey.trim());
+    const secret = writableSecret(vars.apiKey);
+    if (secret) {
+      text = tomlTableSet(text, table, 'api_key', secret);
     } else if (tomlTableGet(text, table, 'api_key')) {
       text = tomlTableSet(text, table, 'api_key', REDACTED_MARKER);
     }
     return text;
   }
 
-  if (agentId === 'grok') return applyGrokFormVars(configText, vars);
+  if (agentId === 'grok') return applyGrokFormVars(text, vars);
 
   // 其它顶层字段
   if (vars.model.trim()) text = tomlSet(text, 'model', vars.model.trim());
   if (vars.baseUrl.trim()) text = tomlSet(text, 'base_url', vars.baseUrl.trim());
-  if (vars.apiKey.trim()) text = tomlSet(text, 'api_key', vars.apiKey.trim());
+  const secret = writableSecret(vars.apiKey);
+  if (secret) text = tomlSet(text, 'api_key', secret);
   else if (tomlGet(text, 'api_key')) text = tomlSet(text, 'api_key', REDACTED_MARKER);
   return text;
 }
@@ -688,11 +842,18 @@ function defaultTomlScaffold(agentId: AgentId, vars: ProviderFormVars): string {
     ].join('\n');
   }
   if (agentId === 'kimi') {
+    const model = vars.model.trim() || 'kimi-k2';
     return [
-      `default_model = "${vars.model.trim() || 'kimi-k2'}"`,
+      `default_model = "${model}"`,
+      `default_provider = "${slug}"`,
       `[providers.${slug}]`,
+      'type = "openai"',
       `base_url = "${vars.baseUrl.trim() || 'https://your-relay.example.com/v1'}"`,
       'api_key = "sk-xxxxxxxx"',
+      `[models."${model}"]`,
+      `provider = "${slug}"`,
+      `model = "${model}"`,
+      'max_context_size = 131072',
       '',
     ].join('\n');
   }

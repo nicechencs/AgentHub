@@ -210,9 +210,8 @@ impl ChatService {
         on_event: &(dyn Fn(ChatEvent) + Send + Sync),
     ) -> Result<()> {
         let started = Instant::now();
-        let result = self.send_inner(conversation_id, user_input, on_event);
-        match &result {
-            Ok(()) => {
+        match self.send_inner(conversation_id, user_input, on_event) {
+            Ok(true) => {
                 tracing::info!(
                     module = targets::CHAT,
                     op = "send",
@@ -220,12 +219,23 @@ impl ChatService {
                     elapsed_ms = elapsed_ms(started),
                     "send ok"
                 );
+                Ok(())
+            }
+            Ok(false) => {
+                tracing::error!(
+                    module = targets::CHAT,
+                    op = "send",
+                    conversation_id = conversation_id,
+                    elapsed_ms = elapsed_ms(started),
+                    "send failed"
+                );
+                Ok(())
             }
             Err(e) => {
-                logging::log_app_error(targets::CHAT, "send", e);
+                logging::log_app_error(targets::CHAT, "send", &e);
+                Err(e)
             }
         }
-        result
     }
 
     /// Best-effort: drop a stale native session so the next send uses full history.
@@ -265,7 +275,7 @@ impl ChatService {
         conversation_id: &str,
         user_input: &str,
         on_event: &(dyn Fn(ChatEvent) + Send + Sync),
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let user_input = user_input.trim();
         if user_input.is_empty() {
             return Err(AppError::InvalidArg("prompt must not be empty".into()));
@@ -592,7 +602,7 @@ impl ChatService {
             ok: report_ok,
             cancelled: results.iter().any(|r| r.status == RunStatus::Cancelled),
         });
-        Ok(())
+        Ok(report_ok)
     }
 }
 

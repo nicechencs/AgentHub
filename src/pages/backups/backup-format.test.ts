@@ -95,4 +95,13 @@ describe('backupRowTitle', () => {
     expect(backupNoteSubtitle(undefined)).toBeNull();
     expect(backupNoteSubtitle('Dashboard 手动备份')).toBe('Dashboard 手动备份');
   });
+
+  it('hides after-provider-upsert notes from the visible title', () => {
+    expect(isInternalBackupNote('after provider upsert')).toBe(true);
+    expect(isInternalBackupNote('after provider update')).toBe(true);
+    expect(backupNoteSubtitle('after provider upsert claude')).toBeNull();
+    expect(
+      backupRowTitle({ kind: 'auto-switch', createdAt: isoMinutesAgo(3) }, tZh),
+    ).not.toMatch(/after provider|upsert/i);
+  });
 });

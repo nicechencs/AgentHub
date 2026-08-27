@@ -11,5 +11,13 @@ export interface SettingsPort {
     title?: string;
     defaultPath?: string | null;
   }): Promise<string | null>;
+  /**
+   * Best-effort GUI log line. `last4` only — never a raw key.
+   * Mock is a no-op.
+   */
+  logGuiEvent?(
+    op: string,
+    detail?: { agent?: string; last4?: string },
+  ): Promise<void>;
   logLevelOptions: { value: LogLevel; label: string }[];
 }

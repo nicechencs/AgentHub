@@ -95,6 +95,16 @@ impl ProviderService {
     }
 }
 
+pub(super) fn log_switch_write(agent: AgentId, path: &str) {
+    tracing::info!(
+        module = targets::PROVIDER,
+        op = "switch_write",
+        agent = agent.as_str(),
+        path,
+        "wrote live config"
+    );
+}
+
 fn log_provider_op<T>(op: &str, agent: AgentId, started: Instant, result: &Result<T>) {
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     match result {

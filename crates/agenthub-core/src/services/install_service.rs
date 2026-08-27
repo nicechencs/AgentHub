@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 use std::path::{Path, PathBuf};
 
-use crate::adapters::AdapterRegistry;
+use crate::adapters::{
+    is_under_agenthub_user_npm_prefix, user_writable_npm_prefix, AdapterRegistry,
+};
 use crate::catalog::limits::{
     INSTALL_AGENT_TIMEOUT as AGENT_TIMEOUT, INSTALL_ENV_TIMEOUT as ENV_TIMEOUT,
     INSTALL_MAX_OUTPUT_BYTES as MAX_OUTPUT,
@@ -34,8 +36,9 @@ fn elapsed_ms(started: Instant) -> u64 {
 
 /// Leftover AgentHub data-dir npm prefix (`<data>/npm`). **Not an install target.**
 ///
-/// Installs use the user's real npm global (`npm i -g`). This path is only
-/// probed so uninstall can clean copies written by older AgentHub versions.
+/// Installs use a user-writable prefix detect already scans (`~/.npm-global` /
+/// `%APPDATA%\npm`). This path is only probed so uninstall can clean copies
+/// written by older AgentHub versions.
 pub(crate) fn leftover_agenthub_npm_prefix() -> Result<PathBuf> {
     Ok(crate::utils::paths::resolve_data_dir(None)?.join("npm"))
 }
@@ -54,9 +57,39 @@ fn leftover_agenthub_npm_prefix_candidates() -> Vec<PathBuf> {
     out
 }
 
+fn npm_prefix_populated(prefix: &Path) -> bool {
+    prefix.join("node_modules").is_dir() || prefix.join("lib").join("node_modules").is_dir()
+}
+
 fn leftover_prefix_populated(prefix: &Path) -> bool {
-    prefix.join("node_modules").is_dir()
-        || prefix.join("lib").join("node_modules").is_dir()
+    npm_prefix_populated(prefix)
+}
+
+/// User-writable npm prefix that detect already scans. Never leftover `~/.agenthub/npm`.
+pub(crate) fn detect_scanned_user_npm_prefix() -> Result<PathBuf> {
+    let prefix = user_writable_npm_prefix().ok_or_else(|| {
+        AppError::message(
+            "install.npm_prefix",
+            "cannot resolve a user-writable npm prefix",
+        )
+    })?;
+    if is_under_agenthub_user_npm_prefix(&prefix)
+        || leftover_agenthub_npm_prefix_candidates()
+            .iter()
+            .any(|leftover| leftover == &prefix)
+    {
+        return Err(AppError::message(
+            "install.npm_prefix",
+            "refusing leftover AgentHub data-dir npm prefix as install target",
+        ));
+    }
+    Ok(prefix)
+}
+
+fn ensure_detect_scanned_user_npm_prefix() -> Result<PathBuf> {
+    let prefix = detect_scanned_user_npm_prefix()?;
+    std::fs::create_dir_all(&prefix)?;
+    Ok(prefix)
 }
 
 /// Prefixes that still contain packages written by older AgentHub versions.
@@ -104,6 +137,108 @@ fn install_command_failure_message(agent_label: &str, res: &ExecResult) -> Strin
     format!("{agent_label} 安装失败（退出码 {code}）")
 }
 
+/// Native channel that only opens an official Setup page (WorkBuddy).
+const SETUP_GUIDE_CODE: &str = "setup_guide";
+
+fn is_native_setup_guide(contribution: &dyn InstallContribution, channel: &str) -> bool {
+    channel == "native"
+        && contribution.native_setup_url().is_some()
+        && contribution.native_ps1_url().is_none()
+        && contribution.native_sh_url().is_none()
+}
+
+fn setup_guide_message(agent_label: &str) -> String {
+    format!("{agent_label} 已打开官网安装页，请完成安装后重启 AgentHub")
+}
+
+fn setup_guide_diagnosis() -> &'static str {
+    "诊断：该 Agent 没有脚本安装，已打开官网安装页。请完成安装后，完全退出并重启 AgentHub。"
+}
+
+fn command_failure_diagnosis(res: &ExecResult) -> String {
+    if looks_like_permission_failure(res) {
+        "诊断：没有写入权限，不是 PATH 问题。".into()
+    } else if res.timed_out {
+        "诊断：安装超时。".into()
+    } else if res.spawn_error.is_some() {
+        "诊断：安装命令无法启动。".into()
+    } else {
+        format!(
+            "诊断：安装命令未成功退出（退出码 {}）。",
+            res.exit_code.unwrap_or(-1)
+        )
+    }
+}
+
+/// Put the short human diagnosis above raw installer output.
+fn prepend_diagnosis(logs: &mut Vec<String>, diagnosis: impl Into<String>) {
+    let diagnosis = diagnosis.into();
+    if logs.first().is_some_and(|line| line == &diagnosis) {
+        return;
+    }
+    logs.insert(0, diagnosis);
+}
+
+fn is_installer_progress_noise(line: &str) -> bool {
+    let lower = line.trim().to_ascii_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+    lower.contains("http fetch")
+        || lower.contains("npm http")
+        || lower.contains("npm notice")
+        || (lower.starts_with("get ") && lower.contains("http"))
+        || (lower.starts_with("put ") && lower.contains("http"))
+        || lower.contains("content-length")
+        || (lower.contains("timing") && lower.contains("http"))
+        || lower.contains("cache hit")
+        || lower.contains("cache miss")
+}
+
+/// Keep diagnosis / command / errors; collapse npm HTTP progress into one line.
+fn summarize_installer_output_lines(lines: impl IntoIterator<Item = impl AsRef<str>>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut skipped_noise = 0usize;
+    let flush_noise = |out: &mut Vec<String>, skipped_noise: &mut usize| {
+        if *skipped_noise == 0 {
+            return;
+        }
+        out.push(format!("（已省略 {skipped_noise} 行下载进度）"));
+        *skipped_noise = 0;
+    };
+    for line in lines {
+        let line = line.as_ref();
+        if line.trim().is_empty() {
+            continue;
+        }
+        if is_installer_progress_noise(line) {
+            skipped_noise += 1;
+            continue;
+        }
+        flush_noise(&mut out, &mut skipped_noise);
+        out.push(line.to_string());
+    }
+    flush_noise(&mut out, &mut skipped_noise);
+    const BODY_CAP: usize = 40;
+    if out.len() <= BODY_CAP {
+        return out;
+    }
+    let mut capped = Vec::with_capacity(BODY_CAP + 1);
+    let keep_head = 12;
+    let keep_tail = BODY_CAP - keep_head;
+    capped.extend(out.iter().take(keep_head).cloned());
+    capped.push(format!(
+        "（已省略 {} 行安装输出）",
+        out.len() - keep_head - keep_tail
+    ));
+    capped.extend(out.iter().rev().take(keep_tail).rev().cloned());
+    capped
+}
+
+fn setup_guide_open_failed(res: &ExecResult) -> bool {
+    res.spawn_error.is_some() || res.timed_out
+}
+
 /// Log start/end for install-family ops. Business failures (`Ok(outcome.ok=false)`)
 /// are ERROR; hard `Err` uses structured app-error helpers.
 fn log_install_result(
@@ -124,6 +259,18 @@ fn log_install_result(
                 action = %out.action,
                 elapsed_ms = elapsed,
                 "ok"
+            );
+        }
+        Ok(out) if out.code.as_deref() == Some(SETUP_GUIDE_CODE) => {
+            tracing::info!(
+                module = targets::INSTALL,
+                op = op,
+                agent = agent.unwrap_or("-"),
+                runtime = runtime.unwrap_or("-"),
+                action = %out.action,
+                elapsed_ms = elapsed,
+                code = SETUP_GUIDE_CODE,
+                "opened official setup page"
             );
         }
         Ok(out) => {
@@ -300,14 +447,15 @@ fn push_exec_logs(logs: &mut Vec<String>, res: &ExecResult, timeout_secs: u64) {
         return;
     }
     // Body lines were already streamed live via emit_install_log while the
-    // process ran; still append to the outcome buffer (dedupe not required —
-    // GUI replaces with final logs on complete).
-    for line in res.stdout.lines().chain(res.stderr.lines()) {
-        if !line.trim().is_empty() {
-            let safe = redact_text(line);
-            logs.push(safe);
-        }
-    }
+    // process ran; the outcome buffer is the fail-panel body, so collapse
+    // npm HTTP progress instead of dumping thousands of lines.
+    let raw_body: Vec<String> = res
+        .stdout
+        .lines()
+        .chain(res.stderr.lines())
+        .map(redact_text)
+        .collect();
+    logs.extend(summarize_installer_output_lines(raw_body));
     if res.timed_out {
         let line = format!("✗ timed out after {timeout_secs}s");
         push_log(logs, line.clone());
@@ -903,15 +1051,10 @@ pub fn install_agent_with_contribution(
             }
         };
 
-        let setup_guide = contribution.native_setup_url().is_some()
-            && contribution.native_ps1_url().is_none()
-            && contribution.native_sh_url().is_none()
-            && channel == "native";
-        if !res.success() && !setup_guide {
+        let setup_guide = is_native_setup_guide(contribution, &channel);
+        if !res.success() && !(setup_guide && !setup_guide_open_failed(&res)) {
+            prepend_diagnosis(&mut logs, command_failure_diagnosis(&res));
             logs.push("安装命令未成功退出，已判定失败。".into());
-            if looks_like_permission_failure(&res) {
-                logs.push("诊断：没有写入权限，不是 PATH 问题。".into());
-            }
             let msg = install_command_failure_message(agent.as_str(), &res);
             return Ok(InstallOutcome::failure(action, logs, msg));
         }
@@ -955,22 +1098,20 @@ pub fn install_agent_with_contribution(
                 logs.push(n.clone());
             }
             if setup_guide {
+                prepend_diagnosis(&mut logs, setup_guide_diagnosis());
                 logs.push("请在官网完成安装后，完全退出并重启 AgentHub。".into());
             } else {
-                logs.push(
-                    "诊断：命令已成功退出，但当前进程仍未找到新二进制。请完全退出并重启 AgentHub。"
-                        .into(),
+                prepend_diagnosis(
+                    &mut logs,
+                    "诊断：命令已成功退出，但当前进程仍未找到新二进制。请完全退出并重启 AgentHub。",
                 );
             }
-            Ok(InstallOutcome {
+            let mut outcome = InstallOutcome {
                 ok: false,
                 action: action.into(),
                 logs,
                 message: if setup_guide {
-                    format!(
-                        "{} 已打开官网安装页，请完成安装后重启 AgentHub",
-                        agent.as_str()
-                    )
+                    setup_guide_message(agent.as_str())
                 } else {
                     format!(
                         "{} 安装命令已成功退出，但未找到二进制（请重启 AgentHub）",
@@ -980,7 +1121,11 @@ pub fn install_agent_with_contribution(
                 agent: Some(detect),
                 runtime: None,
                 ..Default::default()
-            })
+            };
+            if setup_guide {
+                outcome = outcome.with_code(SETUP_GUIDE_CODE, None);
+            }
+            Ok(outcome)
         }
     })();
 
@@ -1103,14 +1248,26 @@ pub fn install_from_contribution(
         };
 
         // No adapter redetect here — coordinator observes via DetectorRegistry.
-        // Setup-guide channels intentionally return non-zero; treat command
-        // success as the execute-layer result for allowlisted npm/script installs.
+        // Setup-guide channels intentionally return non-zero so upgrade cannot
+        // claim success; opening the official page is not an install failure.
+        let setup_guide = is_native_setup_guide(contribution, &channel);
+        if setup_guide && !setup_guide_open_failed(&res) {
+            prepend_diagnosis(&mut logs, setup_guide_diagnosis());
+            return Ok(InstallOutcome {
+                ok: false,
+                action: action.into(),
+                logs,
+                message: setup_guide_message(key.as_str()),
+                agent: None,
+                runtime: None,
+                ..Default::default()
+            }
+            .with_code(SETUP_GUIDE_CODE, None));
+        }
         let ok = res.success();
         if !ok {
+            prepend_diagnosis(&mut logs, command_failure_diagnosis(&res));
             logs.push("安装命令未成功退出，已判定失败。".into());
-            if looks_like_permission_failure(&res) {
-                logs.push("诊断：没有写入权限，不是 PATH 问题。".into());
-            }
         }
         Ok(InstallOutcome {
             ok,
@@ -1354,8 +1511,7 @@ fn special_uninstall_purge_note(kind: &str) -> String {
     if kind == "ide" {
         "当前是 IDE 插件安装，程序请到 IDE 插件中卸载；将仅清理配置目录".into()
     } else {
-        "当前是桌面应用安装，程序请到桌面应用或 Microsoft Store 卸载；将仅清理配置目录"
-            .into()
+        "当前是桌面应用安装，程序请到桌面应用或 Microsoft Store 卸载；将仅清理配置目录".into()
     }
 }
 
@@ -2019,26 +2175,47 @@ fn npm_uninstall_global_then_leftover(
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<bool> {
+    let mut removed = false;
+    // Current in-app install target. Never create this dir on uninstall.
+    if let Ok(prefix) = detect_scanned_user_npm_prefix() {
+        if npm_prefix_populated(&prefix) {
+            let user_res = npm_uninstall_prefixed(
+                pkg,
+                &prefix,
+                "user npm prefix detect already scans",
+                executor,
+                logs,
+            )?;
+            removed = removed || user_res.success();
+        }
+    }
     let global_res = npm_uninstall_legacy_global(pkg, executor, logs)?;
-    let mut removed = global_res.success();
+    removed = removed || global_res.success();
     // Older AgentHub versions wrote into `<data>/npm`. Never create that dir here.
     for prefix in leftover_agenthub_npm_prefixes_present() {
-        let leftover_res = npm_uninstall_leftover_prefix(pkg, &prefix, executor, logs)?;
+        let leftover_res = npm_uninstall_prefixed(
+            pkg,
+            &prefix,
+            "leftover AgentHub data-dir copy",
+            executor,
+            logs,
+        )?;
         removed = removed || leftover_res.success();
     }
     Ok(removed)
 }
 
-fn npm_uninstall_leftover_prefix(
+fn npm_uninstall_prefixed(
     pkg: &str,
     prefix: &Path,
+    note: &str,
     executor: &dyn CommandExecutor,
     logs: &mut Vec<String>,
 ) -> Result<ExecResult> {
     let prefix_text = prefix.display().to_string();
     push_log(
         logs,
-        format!("# npm uninstall -g --prefix {prefix_text} {pkg} (leftover AgentHub data-dir copy)"),
+        format!("# npm uninstall -g --prefix {prefix_text} {pkg} ({note})"),
     );
     let npm = resolve_bin(&["npm", "npm.cmd"])?;
     let req = ExecRequest {
@@ -2094,16 +2271,36 @@ fn run_npm_install(
     } else {
         format!(" {}", extra.join(" "))
     };
+    let prefix = ensure_detect_scanned_user_npm_prefix()?;
+    let prefix_text = prefix.display().to_string();
     push_log(
         logs,
-        format!("# npm {label} -g{extra_note} {pkg}"),
+        format!("# npm {label} -g --prefix {prefix_text}{extra_note} {pkg}"),
     );
     push_log(logs, format!("使用 npm： {npm}"));
     push_log(
         logs,
+        format!("安装目录：{prefix_text}（检测会扫描此目录，无需重启）"),
+    );
+    push_log(
+        logs,
         format!("# 正在通过 npm 下载安装 {pkg}（可能需数分钟，请保持网络畅通）…"),
     );
-    let mut args = vec!["install".into(), "-g".into()];
+    tracing::info!(
+        target: crate::logging::targets::INSTALL,
+        module = crate::logging::targets::INSTALL,
+        op = "npm_install",
+        agent = agent_label,
+        prefix = %prefix_text,
+        pkg = pkg,
+        "npm install into user-writable prefix detect already scans"
+    );
+    let mut args = vec![
+        "install".into(),
+        "-g".into(),
+        "--prefix".into(),
+        prefix_text,
+    ];
     for flag in extra {
         args.push((*flag).into());
     }
@@ -2162,9 +2359,9 @@ fn run_native_setup_guide(
         return Err(AppError::InvalidArg("setup URL must be https".into()));
     }
     logs.push(format!(
-        "# {agent_label} has no scripted installer — open official Setup page"
+        "# {agent_label} 没有脚本安装器，改为打开官网安装页"
     ));
-    logs.push(format!("# setup url: {url}"));
+    logs.push(format!("# 安装页：{url}"));
     tracing::info!(
         target: crate::logging::targets::INSTALL,
         module = crate::logging::targets::INSTALL,
