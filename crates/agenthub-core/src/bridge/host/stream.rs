@@ -36,7 +36,9 @@ use super::{
 };
 
 fn upstream_decode(state: &EdgeState) -> UpstreamDecode {
-    UpstreamChannel::from_protocol(state.upstream.protocol).decode_kind()
+    UpstreamChannel::from_protocol(state.upstream.protocol)
+        .transport()
+        .decode_kind()
 }
 
 fn partition_account<'a>(state: &'a EdgeState, member: &'a PickedMember) -> Option<&'a str> {

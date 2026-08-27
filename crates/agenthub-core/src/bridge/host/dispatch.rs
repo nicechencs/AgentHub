@@ -235,7 +235,8 @@ pub(super) async fn handle_conversation(
         )
         .await;
     }
-    let prepared = match channel.prepare(surface, &admitted) {
+    let transport = channel.transport();
+    let prepared = match transport.prepare(surface, &admitted) {
         Ok(prepared) => prepared,
         Err(response) => return response,
     };

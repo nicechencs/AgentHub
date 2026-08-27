@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::Response;
 use serde_json::Value;
 use tokio::sync::Semaphore;
@@ -17,20 +17,20 @@ use crate::bridge::account::PickedMember;
 use crate::bridge::grok_cli::{is_reasoning_decode_failure, strip_encrypted_reasoning};
 use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::upstream_class::{
-    FailoverDecision, UpstreamErrorClass, classify_http, cooldown_from_retry_after,
+    classify_http, cooldown_from_retry_after, FailoverDecision, UpstreamErrorClass,
 };
 
 use super::super::admission::AdmittedRequest;
-use super::super::http::{EdgeState, error_response, stopping_response};
+use super::super::http::{error_response, stopping_response, EdgeState};
 use super::super::stream::UpstreamBodyError;
 use super::super::surface::DownstreamSurface;
 use super::super::upstream::{
-    UpstreamConnectError, extract_upstream_error_detail, grok_replay_model, join_upstream,
-    map_upstream_http_error, map_v2_request_error, pool_exhausted_response, post_upstream_attempt,
-    read_bounded_upstream_error, replay_session,
+    extract_upstream_error_detail, grok_replay_model, join_upstream, map_upstream_http_error,
+    map_v2_request_error, pool_exhausted_response, post_upstream_attempt,
+    read_bounded_upstream_error, replay_session, UpstreamConnectError,
 };
 use super::{
-    UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome, identity_for_member, log_serving_account,
+    identity_for_member, log_serving_account, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome,
 };
 
 const V2_MAX_ATTEMPTS: usize = 8;
@@ -115,7 +115,8 @@ pub async fn send_upstream_v2(
             candidate,
             public_model,
         )?;
-        let recovery = attempt_channel.recovery();
+        let transport = attempt_channel.transport();
+        let recovery = transport.recovery();
         let fingerprint = member.authorization_fingerprint();
         let account_id = state
             .account_picker
@@ -151,7 +152,7 @@ pub async fn send_upstream_v2(
 
         loop {
             let token = member.auth.token();
-            let builder = attempt_channel.apply_auth(
+            let builder = transport.apply_auth(
                 state.client.post(attempt_url.clone()).json(&body),
                 &token,
                 identity.as_ref(),
@@ -382,7 +383,7 @@ fn prepare_candidate_attempt(
         member: Some(member.clone()),
         affinity_key: None,
     };
-    let prepared = channel.prepare(surface, &admitted)?;
+    let prepared = channel.transport().prepare(surface, &admitted)?;
     let url = attempt_url(state, prepared.path, candidate)?;
     Ok((channel, url, prepared))
 }
