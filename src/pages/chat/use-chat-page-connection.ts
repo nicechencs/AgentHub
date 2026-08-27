@@ -139,6 +139,9 @@ export function useChatPageConnection(input: {
     if (!option || option.isCurrent) return;
     setSwitchingProvider(true);
     try {
+      const wroteLocal =
+        option.action.type === 'switch-account' ||
+        option.action.type === 'switch-provider';
       if (option.action.type === 'switch-account') {
         await switchAccount(primaryAgent, option.action.accountId);
       } else if (option.action.type === 'switch-provider') {
@@ -154,7 +157,10 @@ export function useChatPageConnection(input: {
         loadProviders(primaryAgent),
         refreshAgents({ force: true }).catch(() => []),
       ]);
-      toast({ title: SWITCH_WROTE_LIVE, variant: 'success' });
+      toast({
+        title: wroteLocal ? SWITCH_WROTE_LIVE : t('chat.connection.switched'),
+        variant: 'success',
+      });
     } catch (e) {
       toast({
         title: t('connections.list.switchFail'),

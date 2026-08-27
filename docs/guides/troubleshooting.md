@@ -65,7 +65,7 @@ AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`�
 ## 登录或配置问题
 
 - 先在 Connections 检查登录状态和 health，再尝试重新导入本机正在用的配置。
-- 切换登录会先备份、再写本机配置；成功 toast 会说明已写入本机配置。失败应查看备份和日志，Cursor 会给出中文原因。
+- 切换同一工具的登录会先备份、再写本机配置，成功 toast 会说明已写入本机配置。接到本机路由不会改对方工具的本机文件。失败应查看备份和日志，Cursor 会给出中文原因。
 - 「使用官方服务」勾选后仍可粘贴做智能识别。高级编辑器不回显明文钥匙。
 - CLI 使用 `account add-apikey --key -` 从 stdin 读取 key，避免把 key 放进 shell history。
 - OAuth 浏览器流程以 GUI 为主；CLI 的 `account oauth-url` 只打印授权 URL，不能替代完整本机回调流程。
