@@ -1933,6 +1933,33 @@ fn codex_chat_run_spec_skips_git_repo_trust_check() {
 }
 
 #[test]
+fn write_kimi_api_key_ensures_models_table_for_default_model() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"default_model = "kimi-k2"
+[providers.moonshot]
+base_url = "https://mytokens.cc/v1"
+api_key = "old"
+"#,
+    )
+    .unwrap();
+    kimi::write_kimi_api_key(&path, "sk-new-key").unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("sk-new-key"), "{text}");
+    assert!(
+        text.contains("[models.\"kimi-k2\"]") || text.contains("[models.kimi-k2]"),
+        "{text}"
+    );
+    assert!(text.contains("provider = \"moonshot\""), "{text}");
+    assert!(text.contains("model = \"kimi-k2\""), "{text}");
+    assert!(text.contains("max_context_size = 131072"), "{text}");
+    assert!(text.contains("type = \"openai\""), "{text}");
+    assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+}
+
+#[test]
 fn kimi_write_config_points_base_url_at_loopback() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
