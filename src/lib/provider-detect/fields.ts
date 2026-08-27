@@ -106,7 +106,16 @@ export function maskConfigSecrets(
   const trimmed = configText.trim();
   if (!trimmed || trimmed === REDACTED_MARKER) return configText;
   if (format === 'toml') {
-    return configText.replace(TOML_API_KEY_LINE_RE, `$1"${REDACTED_MARKER}"`);
+    const withoutExports = configText
+      .split('\n')
+      .filter((line) => {
+        const trimmed = line.trim();
+        return !/^(export\s+|set\s+|\$env:)?[A-Za-z_][A-Za-z0-9_]*(_API_KEY|_AUTH_TOKEN|_TOKEN|_SECRET|API_KEY)\s*=/i.test(
+          trimmed,
+        );
+      })
+      .join('\n');
+    return withoutExports.replace(TOML_API_KEY_LINE_RE, `$1"${REDACTED_MARKER}"`);
   }
   const parsed = parseJsonObjectConfig(configText);
   if (parsed.ok) {
@@ -466,6 +475,25 @@ function grokPreservedTables(text: string): string {
   return extra.trim();
 }
 
+function isOfficialXaiUrl(url: string): boolean {
+  return /api\.x\.ai/i.test(url.trim());
+}
+
+function grokModelTables(text: string): string[] {
+  const tables: string[] = [];
+  const re = /^\[model\.(?:"([^"]+)"|([^\]]+))\]\s*$/gm;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const alias = (match[1] ?? match[2] ?? '').trim();
+    if (!alias) continue;
+    const quoted = `model."${alias}"`;
+    const bare = `model.${alias}`;
+    const header = text.includes(`[${quoted}]`) ? quoted : bare;
+    if (!tables.includes(header)) tables.push(header);
+  }
+  return tables;
+}
+
 function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
   let text = configText;
   if (!grokHasRegistry(text)) {
@@ -475,7 +503,6 @@ function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
     const legacyApiKey = writableSecret(tomlGet(configText, 'api_key'));
     const model = vars.model.trim() || legacyModel || 'grok-4.5';
     const baseUrl = vars.baseUrl.trim() || legacyBaseUrl;
-    const apiKey = writableSecret(vars.apiKey) || legacyApiKey;
     const extra = grokPreservedTables(configText);
     text = [
       '[models]',
@@ -485,12 +512,16 @@ function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
       '[model."grok"]',
       `model = "${model}"`,
       ...(baseUrl ? [`base_url = "${baseUrl}"`] : []),
-      ...(apiKey ? [`api_key = "${apiKey}"`] : []),
+      'env_key = "XAI_API_KEY"',
+      'api_backend = "responses"',
       '',
       extra,
     ]
       .filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
       .join('\n');
+    if (legacyApiKey && !text.includes('env_key')) {
+      text = tomlTableSet(text, 'model."grok"', 'api_key', legacyApiKey);
+    }
     if (text && !text.endsWith('\n')) text += '\n';
   }
 
@@ -499,7 +530,12 @@ function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
   const table = grokModelTable(text, alias);
   if (vars.model.trim()) text = tomlTableSet(text, table, 'model', vars.model.trim());
   if (vars.baseUrl.trim()) {
-    text = tomlTableSet(text, table, 'base_url', vars.baseUrl.trim());
+    const existing = tomlTableGet(text, table, 'base_url');
+    const next = vars.baseUrl.trim();
+    const keepCustom = Boolean(existing) && !isOfficialXaiUrl(existing) && isOfficialXaiUrl(next);
+    if (!keepCustom) {
+      text = tomlTableSet(text, table, 'base_url', next);
+    }
   }
   const hasEnvKey = Boolean(tomlTableGet(text, table, 'env_key'));
   const secret = writableSecret(vars.apiKey);
@@ -510,6 +546,11 @@ function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
   } else if (tomlTableGet(text, table, 'api_key')) {
     // Empty / redacted means keep the native secret on materialize.
     text = tomlTableSet(text, table, 'api_key', REDACTED_MARKER);
+  }
+  for (const modelTable of grokModelTables(text)) {
+    if (!tomlTableGet(text, modelTable, 'api_backend')) {
+      text = tomlTableSet(text, modelTable, 'api_backend', 'responses');
+    }
   }
   return text;
 }
@@ -857,10 +898,17 @@ function defaultTomlScaffold(agentId: AgentId, vars: ProviderFormVars): string {
       '',
     ].join('\n');
   }
+  const grokModel = vars.model.trim() || 'grok-4.5';
   return [
-    `model = "${vars.model.trim() || 'grok-code-fast-1'}"`,
+    '[models]',
+    'default = "grok"',
+    'web_search = "grok"',
+    '',
+    '[model."grok"]',
+    `model = "${grokModel}"`,
     `base_url = "${vars.baseUrl.trim() || 'https://your-relay.example.com/v1'}"`,
-    'api_key = "sk-xxxxxxxx"',
+    'env_key = "XAI_API_KEY"',
+    'api_backend = "responses"',
     '',
   ].join('\n');
 }

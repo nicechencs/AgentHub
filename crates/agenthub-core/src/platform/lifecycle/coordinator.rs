@@ -688,6 +688,8 @@ impl LifecycleCoordinator {
                 };
                 let err_code = if outcome.ok {
                     None
+                } else if outcome.code.as_deref() == Some("setup_guide") {
+                    Some("setup_guide")
                 } else {
                     Some("install.failed")
                 };
@@ -768,6 +770,18 @@ impl LifecycleCoordinator {
         );
         if lifecycle.outcome.ok {
             log_lifecycle_info("lifecycle_finalize", key, &op_id, kind, Some(status), &msg);
+        } else if lifecycle.outcome.code.as_deref() == Some("setup_guide") {
+            tracing::info!(
+                module = targets::INSTALL,
+                code = "setup_guide",
+                op = "lifecycle_finalize",
+                agent = key.as_str(),
+                operation_id = op_id.as_str(),
+                kind = kind.as_str(),
+                status = "guided",
+                observed = obs_status.unwrap_or("unknown"),
+                "opened official setup page"
+            );
         } else {
             // Execute body reported failure but coordination completed (DB finalized).
             let msg = redact_text(&msg);

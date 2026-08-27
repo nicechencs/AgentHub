@@ -478,7 +478,9 @@ pub(crate) fn is_unknown_custom_relay_provider(provider: &Provider) -> bool {
         return false;
     }
 
-    settings_contain_custom_openai_compat_remote(&provider.settings_config)
+    // Custom OpenAI-compat remotes (mytokens and similar) are bindable when the
+    // HTTP host parses. Only a claimed custom URL without a host stays closed.
+    host.is_none() && settings_contain_custom_openai_compat_remote(&provider.settings_config)
 }
 
 /// First usable OpenAI-compat base URL in a settings / credentials blob.

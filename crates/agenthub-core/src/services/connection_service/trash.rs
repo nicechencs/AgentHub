@@ -175,7 +175,7 @@ impl ConnectionService {
     }
 }
 
-fn log_recycle(agent: AgentId, id: &str, name: &str) {
+pub(crate) fn log_recycle(agent: AgentId, id: &str, name: &str) {
     tracing::info!(
         module = targets::PROVIDER,
         op = "recycle",

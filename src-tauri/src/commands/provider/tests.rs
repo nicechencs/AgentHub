@@ -153,7 +153,10 @@ fn upsert_preserves_opaque_toml_when_content_is_marker() {
         },
     )
     .unwrap();
-    assert_eq!(created.settings_config["content"], "***");
+    let listed = created.settings_config["content"].as_str().unwrap();
+    assert!(listed.contains("model = \"grok\""), "{listed}");
+    assert!(!listed.contains("xai-secret"), "{listed}");
+    assert!(listed.contains("***"), "{listed}");
 
     let _ = upsert_provider_inner(
         &hub,

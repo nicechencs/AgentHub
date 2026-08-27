@@ -28,6 +28,10 @@ pub struct AdapterBridgeStatus {
     /// Newest first. Empty when no tool has connected since this process started.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recent_inbound: Vec<InboundRequestRecord>,
+    /// Loopback bearer the listener accepts (`ahb_…`). Shown so the user can copy
+    /// the token that actually authenticates; never the unused pool hub token.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_token: Option<String>,
 }
 
 impl AdapterBridgeStatus {
@@ -41,6 +45,7 @@ impl AdapterBridgeStatus {
             source_connection_id: Some(profile.source_id.clone()),
             started_at_unix_ms: None,
             recent_inbound: Vec::new(),
+            local_token: None,
         }
     }
 
@@ -54,7 +59,21 @@ impl AdapterBridgeStatus {
             source_connection_id: status.source_connection_id,
             started_at_unix_ms: system_time_millis(status.started_at),
             recent_inbound: Vec::new(),
+            local_token: None,
         }
+    }
+
+    pub fn with_local_token(mut self, local_token: Option<String>) -> Self {
+        let token = local_token.and_then(|value| {
+            let trimmed = value.trim().to_owned();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
+        self.local_token = token;
+        self
     }
 
     pub fn with_recent_inbound(mut self, recent_inbound: Vec<InboundRequestRecord>) -> Self {
