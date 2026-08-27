@@ -64,6 +64,7 @@ import {
 import { useTicketBindActions } from './use-ticket-route-actions';
 import { useConnectionImportProbe } from './use-connection-import-probe';
 import { useConnectionPageActions } from './use-connection-page-actions';
+import { useConnectionShareRoute } from './use-connection-share-route';
 import {
   deleteConnectionDialogDescription,
   liveAuthCoexistenceNotice,
@@ -332,35 +333,11 @@ export default function ConnectionsPage() {
     if (resume) navigate(buildResumeConnectUrl(resume));
   }, [navigate, pendingGuide, resumeAgentId]);
 
-  const openConnectForTicket = useCallback((ticket: TicketView, purpose: 'share' | 'route') => {
-    setLoginImportOpen(false);
-    if (
-      inspect.target?.kind === 'connect'
-      && inspect.target.entry.purpose === purpose
-      && inspect.target.entry.source.kind === ticket.sourceKind
-      && inspect.target.entry.source.id === ticket.sourceId
-    ) {
-      // Repeated activation is idempotent. The share/route action is an
-      // opener, so clicking it again must not collapse the already-open pane.
-      return;
-    }
-    inspect.open({
-      kind: 'connect',
-      entry: {
-        mode: 'for-source',
-        source: { kind: ticket.sourceKind, id: ticket.sourceId },
-        purpose,
-      },
-    });
-  }, [inspect.close, inspect.open, inspect.target]);
-
-  const handleShareTicket = useCallback((ticket: TicketView) => {
-    openConnectForTicket(ticket, 'share');
-  }, [openConnectForTicket]);
-
-  const handleRouteTicket = useCallback((ticket: TicketView) => {
-    openConnectForTicket(ticket, 'route');
-  }, [openConnectForTicket]);
+  const { handleShareTicket, handleRouteTicket } = useConnectionShareRoute({
+    inspectTarget: inspect.target,
+    inspectOpen: inspect.open,
+    setLoginImportOpen,
+  });
 
   const handleRefreshTicket = useCallback(async (ticket: TicketView) => {
     if (refreshInFlightRef.current) return;
