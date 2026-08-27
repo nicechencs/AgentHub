@@ -1,14 +1,37 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { getBackend } from '@/app/runtime';
 import type { AdapterProfile } from '@/lib/backend/contracts';
 import type { Account, Provider } from '@/lib/types';
 import { upsertMockAccount } from './account';
+import { buildPlan, type MockAdapterApplyPlan } from './adapter/plan';
 import { upsertMockProvider } from './provider';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
   seedConnectFlowAdapterFixtures,
 } from './connect-flow-fixtures';
-import { buildMockTicketWallet } from './ticket';
+import { buildMockTicketWallet, type MockTicketSourceResolver } from './ticket';
+
+function ticketResolver(args: {
+  accounts?: Account[];
+  providers?: Provider[];
+  profiles?: AdapterProfile[];
+}): MockTicketSourceResolver {
+  const accounts = args.accounts ?? [];
+  const providers = args.providers ?? [];
+  return {
+    listAccounts: () => accounts,
+    listProviders: () => providers,
+    listProfiles: () => args.profiles ?? [],
+    getBridgeStatus: () => undefined,
+    planAdapter: async (request) => buildPlan({
+      getAccountById: (id) => accounts.find((row) => row.id === id),
+      getProviderById: (id) => providers.find((row) => row.id === id),
+    }, request),
+  };
+}
 
 describe('mock ticket wallet', () => {
   it('lists Kimi / Anthropic / unknown / oauth tickets and excludes generated projections', async () => {
@@ -85,9 +108,9 @@ describe('mock ticket wallet', () => {
     ).toBe(true);
   });
 
-  it('provider current wins over account current for the same agent', () => {
-    const wallet = buildMockTicketWallet({
-      listAccounts: () => [
+  it('provider current wins over account current for the same agent', async () => {
+    const wallet = await buildMockTicketWallet(ticketResolver({
+      accounts: [
         {
           id: 'claude-acct',
           agentId: 'claude',
@@ -97,7 +120,7 @@ describe('mock ticket wallet', () => {
           tokenValid: true,
         },
       ],
-      listProviders: () => [
+      providers: [
         {
           id: 'anth',
           agentId: 'claude',
@@ -108,12 +131,7 @@ describe('mock ticket wallet', () => {
           isCurrent: true,
         },
       ],
-      listProfiles: () => [],
-      getBridgeStatus: () => undefined,
-      planAdapter: async () => {
-        throw new Error('not used');
-      },
-    });
+    }));
 
     const claudeActive = wallet.bindings.filter((b) => b.agentId === 'claude' && b.active);
     expect(claudeActive).toHaveLength(1);
@@ -121,7 +139,7 @@ describe('mock ticket wallet', () => {
     expect(claudeActive[0]?.route).toBe('native');
   });
 
-  it('skips profile bindings when source ticket row is missing (no ghost)', () => {
+  it('skips profile bindings when source ticket row is missing (no ghost)', async () => {
     const orphanProfile: AdapterProfile = {
       id: 'orphan-p',
       name: 'Orphan',
@@ -139,9 +157,8 @@ describe('mock ticket wallet', () => {
       createdAt: '2026-08-15T00:00:00.000Z',
       updatedAt: '2026-08-15T00:00:00.000Z',
     };
-    const wallet = buildMockTicketWallet({
-      listAccounts: () => [],
-      listProviders: () => [
+    const wallet = await buildMockTicketWallet(ticketResolver({
+      providers: [
         {
           id: 'orphan-proj',
           agentId: 'claude',
@@ -152,19 +169,15 @@ describe('mock ticket wallet', () => {
           isCurrent: true,
         },
       ],
-      listProfiles: () => [orphanProfile],
-      getBridgeStatus: () => undefined,
-      planAdapter: async () => {
-        throw new Error('not used');
-      },
-    });
+      profiles: [orphanProfile],
+    }));
 
     expect(wallet.tickets).toEqual([]);
     expect(wallet.bindings).toEqual([]);
     expect(wallet.surfaceGroups).toEqual([]);
   });
 
-  it('groups same surface+class, mixes account/provider, skips unknown and projections', () => {
+  it('groups same surface+class, mixes account/provider, skips unknown and projections', async () => {
     const generated: AdapterProfile = {
       id: 'proj-p',
       name: 'Generated',
@@ -182,8 +195,8 @@ describe('mock ticket wallet', () => {
       createdAt: '2026-08-15T00:00:00.000Z',
       updatedAt: '2026-08-15T00:00:00.000Z',
     };
-    const wallet = buildMockTicketWallet({
-      listAccounts: () => [
+    const wallet = await buildMockTicketWallet(ticketResolver({
+      accounts: [
         {
           id: 'kimi-key',
           agentId: 'kimi',
@@ -210,7 +223,7 @@ describe('mock ticket wallet', () => {
           tokenValid: true,
         },
       ],
-      listProviders: () => [
+      providers: [
         {
           id: 'kimi-a',
           agentId: 'kimi',
@@ -248,12 +261,8 @@ describe('mock ticket wallet', () => {
           isCurrent: true,
         },
       ],
-      listProfiles: () => [generated],
-      getBridgeStatus: () => undefined,
-      planAdapter: async () => {
-        throw new Error('not used');
-      },
-    });
+      profiles: [generated],
+    }));
 
     expect(wallet.tickets.some((t) => t.id === 'provider:proj-claude')).toBe(false);
     const kimi = wallet.surfaceGroups.find(
@@ -275,9 +284,9 @@ describe('mock ticket wallet', () => {
     expect(wallet.tickets.some((t) => t.id === 'provider:opaque' && t.surface === 'unknown')).toBe(true);
   });
 
-  it('sets speaks and importedFrom lockstep with core TicketSurface rules', () => {
-    const wallet = buildMockTicketWallet({
-      listAccounts: () => [
+  it('sets speaks and importedFrom lockstep with core TicketSurface rules', async () => {
+    const wallet = await buildMockTicketWallet(ticketResolver({
+      accounts: [
         {
           id: 'codex-oauth',
           agentId: 'codex',
@@ -312,7 +321,7 @@ describe('mock ticket wallet', () => {
           tokenValid: true,
         },
       ],
-      listProviders: () => [
+      providers: [
         {
           id: 'kimi-src',
           agentId: 'kimi',
@@ -341,12 +350,7 @@ describe('mock ticket wallet', () => {
           isCurrent: false,
         },
       ],
-      listProfiles: () => [],
-      getBridgeStatus: () => undefined,
-      planAdapter: async () => {
-        throw new Error('not used');
-      },
-    });
+    }));
 
     const kimi = wallet.tickets.find((t) => t.id === 'provider:kimi-src');
     expect(kimi?.surface).toBe('kimi-code-membership');
@@ -385,9 +389,9 @@ describe('mock ticket wallet', () => {
     expect(relay?.importedFrom).toBe('claude');
   });
 
-  it('classifies openai/xai/glm/deepseek by explicit markers and leaves custom relays unknown', () => {
-    const wallet = buildMockTicketWallet({
-      listAccounts: () => [
+  it('classifies openai/xai/glm/deepseek by explicit markers and leaves custom relays unknown', async () => {
+    const wallet = await buildMockTicketWallet(ticketResolver({
+      accounts: [
         {
           id: 'openai-acc',
           agentId: 'codex',
@@ -407,7 +411,7 @@ describe('mock ticket wallet', () => {
           extra: { provider: 'glm-coding-plan' },
         } as Account,
       ],
-      listProviders: () => [
+      providers: [
         {
           id: 'openai-src',
           agentId: 'codex',
@@ -445,12 +449,7 @@ describe('mock ticket wallet', () => {
           isCurrent: false,
         },
       ],
-      listProfiles: () => [],
-      getBridgeStatus: () => undefined,
-      planAdapter: async () => {
-        throw new Error('not used');
-      },
-    });
+    }));
 
     expect(wallet.tickets.find((t) => t.id === 'provider:openai-src')).toMatchObject({
       surface: 'openai-api',
@@ -475,9 +474,9 @@ describe('mock ticket wallet', () => {
     expect(wallet.tickets.find((t) => t.id === 'provider:relay')?.surface).toBe('unknown');
   });
 
-  it('uses persisted extra.surface / meta.surface when fixture provides them', () => {
-    const wallet = buildMockTicketWallet({
-      listAccounts: () => [
+  it('uses persisted extra.surface / meta.surface when fixture provides them', async () => {
+    const wallet = await buildMockTicketWallet(ticketResolver({
+      accounts: [
         {
           id: 'stamped-acct',
           agentId: 'grok',
@@ -488,7 +487,7 @@ describe('mock ticket wallet', () => {
           extra: { surface: 'anthropic-api' },
         } as Account,
       ],
-      listProviders: () => [
+      providers: [
         {
           id: 'stamped-prov',
           agentId: 'claude',
@@ -500,12 +499,7 @@ describe('mock ticket wallet', () => {
           meta: { surface: 'kimi-code-membership' },
         } as Provider,
       ],
-      listProfiles: () => [],
-      getBridgeStatus: () => undefined,
-      planAdapter: async () => {
-        throw new Error('not used');
-      },
-    });
+    }));
 
     expect(wallet.tickets.find((t) => t.id === 'account:stamped-acct')?.surface).toBe(
       'anthropic-api',
@@ -519,9 +513,9 @@ describe('mock ticket wallet', () => {
     ]);
   });
 
-  it('reclassifies persisted unknown OAuth surfaces without writing unknown back', () => {
-    const wallet = buildMockTicketWallet({
-      listAccounts: () => [
+  it('reclassifies persisted unknown OAuth surfaces without writing unknown back', async () => {
+    const wallet = await buildMockTicketWallet(ticketResolver({
+      accounts: [
         {
           id: 'unknown-claude',
           agentId: 'claude',
@@ -541,13 +535,7 @@ describe('mock ticket wallet', () => {
           extra: { surface: 'unknown' },
         } as Account,
       ],
-      listProviders: () => [],
-      listProfiles: () => [],
-      getBridgeStatus: () => undefined,
-      planAdapter: async () => {
-        throw new Error('not used');
-      },
-    });
+    }));
 
     expect(wallet.tickets.find((t) => t.id === 'account:unknown-claude')?.surface)
       .toBe('claude-subscription');
@@ -720,5 +708,45 @@ describe('mock ticket wallet', () => {
     const wallet = await getBackend().ticket.listWallet();
     expect(wallet.tickets.some((row) => row.id === ticketId)).toBe(true);
     expect(wallet.bindings.some((row) => row.ticketId === ticketId && row.agentId === 'pi')).toBe(false);
+  });
+
+  it('does not import classify* on the runtime ticket path', () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const ticketSrc = readFileSync(path.join(dir, 'ticket.ts'), 'utf8');
+    expect(ticketSrc).not.toMatch(/\bclassify(Account|Provider)Source\b/);
+  });
+
+  it('wallet surfaces match plan sourceProduct for unpersisted sources', async () => {
+    getBackend();
+    seedConnectFlowAdapterFixtures({
+      includeUnknown: true,
+      includeOauthAccount: true,
+    });
+    const wallet = await getBackend().ticket.listWallet();
+    const kimi = wallet.tickets.find(
+      (row) => row.id === `provider:${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`,
+    );
+    const oauth = wallet.tickets.find(
+      (row) => row.id === `account:${CONNECT_FLOW_FIXTURE_IDS.claudeOauth}`,
+    );
+    const unknown = wallet.tickets.find(
+      (row) => row.id === `provider:${CONNECT_FLOW_FIXTURE_IDS.unknownProvider}`,
+    );
+    const kimiPlan = await getBackend().ticket.plan(
+      `provider:${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`,
+      'claude',
+    ) as MockAdapterApplyPlan;
+    const oauthPlan = await getBackend().ticket.plan(
+      `account:${CONNECT_FLOW_FIXTURE_IDS.claudeOauth}`,
+      'pi',
+    ) as MockAdapterApplyPlan;
+    const unknownPlan = await getBackend().ticket.plan(
+      `provider:${CONNECT_FLOW_FIXTURE_IDS.unknownProvider}`,
+      'claude',
+    ) as MockAdapterApplyPlan;
+    expect(kimi?.surface).toBe(kimiPlan.sourceProduct);
+    expect(oauth?.surface).toBe(oauthPlan.sourceProduct);
+    expect(unknown?.surface).toBe('unknown');
+    expect(unknownPlan.sourceProduct).toBe('other');
   });
 });

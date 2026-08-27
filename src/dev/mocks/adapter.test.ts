@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AdapterCommandError } from '@/lib/backend/contracts/adapter';
 import type { Account } from '@/lib/types';
@@ -8,6 +11,7 @@ import {
   seedMockAdapterProfiles,
   setMockRoutePoolV2,
 } from './adapter';
+import type { MockAdapterApplyPlan } from './adapter/plan';
 import { getMockAccountById } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
@@ -33,6 +37,35 @@ describe('mock adapter projection', () => {
     resetMockAdapters();
     resetMockProviders();
     resetGoldenLookupStats();
+  });
+
+  it('does not import classify* on the runtime source-ticket path', () => {
+    const src = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), 'adapter/source-ticket.ts'),
+      'utf8',
+    );
+    expect(src).not.toMatch(/\bclassify(Account|Provider)Source\b/);
+  });
+
+  it('plan carries sourceProduct from the plan owner', async () => {
+    const sourceId = `kimi-product-${Date.now()}-${Math.random()}`;
+    await createMockProviderPort().upsertProvider({
+      id: sourceId,
+      agentId: 'kimi',
+      name: 'Kimi membership',
+      preset: 'kimi-code-membership',
+      configText: 'api_key = "must-not-leak"',
+      configFormat: 'toml',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    const plan = await adapter.plan({
+      sourceKind: 'provider',
+      sourceId,
+      targetAgentId: 'claude',
+    }) as MockAdapterApplyPlan;
+    expect(plan.sourceProduct).toBe('kimi-code-membership');
+    expect(plan.analysis.route).toBe('native_endpoint');
   });
 
   it('keeps secrets out of analyze, plan, and apply', async () => {
