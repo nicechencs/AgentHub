@@ -2297,6 +2297,7 @@ fn production_start_spec_attaches_pool_schedule_policy() {
 fn production_start_spec_skips_index_when_route_index_flag_is_off() {
     let (_dir, db) = test_db();
     db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "off").unwrap();
     ProviderRepo::new(db.clone())
         .create(&kimi_source("kimi-membership", "upstream-secret"))
         .unwrap();

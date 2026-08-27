@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, core, and connection UI contributors
 source-of-truth: AccountService, Account/LiveAccount models, adapter authorization hooks, and ConnectionService
-updated: 2026-08-25
+updated: 2026-08-27
 ---
 
 # Accounts 与 Authorization Pool
@@ -27,7 +27,7 @@ updated: 2026-08-25
 - identity 不明确时 fail closed，不根据 label、token preview 或猜测合并。
 - Pi 还要按官方 live slot 区分；同一人位于不同 provider 槽仍是不同账号行。
 - 每个 Agent 的 live 生效位最多一条；切换不会删除池内其他授权。
-- `local_bridge` 的本机路由槽按 Agent 只保留一个，端口/bearer 更新覆盖；它不与官方 OAuth/API Key 合并，也不出现在登录列表。
+- `local_bridge` 的默认池按目标 Agent/surface 唯一；本机口和本机令牌更新覆盖。池内可以有多份合格登录，但不与官方 OAuth/API Key 合并，也不出现在登录列表。
 
 Adapter 的 `authorization_key` 用于识别同一授权（通常是 token/key hash）；OAuth 同身份覆盖另由 service 使用稳定 identity label/字段判断。不要把 email 当 authorization key，也不要把 capability 枚举当去重规则。
 
