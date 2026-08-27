@@ -349,6 +349,23 @@ export function liveAuthOf(
   return 'unset';
 }
 
+/** Mock / uncarried pool rows: no CoreAccount provenance. */
+export function wrapBareAccount(account: Account): AccountAuthView {
+  return {
+    account,
+    savedAuth: 'unset',
+    liveAuthFromExtra: normalizeAuthHealth(account.liveAuthHealth) ?? 'unset',
+  };
+}
+
+export function unwrapAccount(row: AccountAuthView | Account): Account {
+  return isAccountAuthView(row) ? row.account : row;
+}
+
+export function unwrapAccounts(rows: readonly (AccountAuthView | Account)[]): Account[] {
+  return rows.map(unwrapAccount);
+}
+
 function remainingSecFromExpiresAt(raw: unknown): number | undefined {
   if (raw == null) return undefined;
   let expMs: number | undefined;

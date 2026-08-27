@@ -17,8 +17,8 @@ describe('mock OAuth sessions', () => {
     expect(acc.agentId).toBe('grok');
     expect(acc.kind).toBe('oauth');
     expect(acc.subscription).toBe('SuperGrok');
-    expect((await accounts.listAccounts('grok')).some((row) => row.id === acc.id)).toBe(true);
-    expect((await accounts.listAccounts('claude')).some((row) => row.id === acc.id)).toBe(false);
+    expect((await accounts.listAccounts('grok')).some((row) => row.account.id === acc.id)).toBe(true);
+    expect((await accounts.listAccounts('claude')).some((row) => row.account.id === acc.id)).toBe(false);
   });
 
   it('finishOAuth forwards the session providerKey', async () => {
@@ -38,7 +38,7 @@ describe('mock OAuth sessions', () => {
     const acc = await accounts.finishDeviceOAuth(start.state);
     expect(acc.agentId).toBe('grok');
     expect(acc.kind).toBe('oauth');
-    expect((await accounts.listAccounts('pi')).some((row) => row.id === acc.id)).toBe(false);
+    expect((await accounts.listAccounts('pi')).some((row) => row.account.id === acc.id)).toBe(false);
   });
 
   it('rejects unknown state instead of finishing as claude or pi', async () => {

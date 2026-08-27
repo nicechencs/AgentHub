@@ -3,6 +3,8 @@
  * Adapter, Connections, and badges subscribe here so route changes do not
  * turn one listAccounts/listProviders pass into several competing requests.
  */
+import type { AccountAuthView } from '@/lib/backend/contracts/account-map';
+import { unwrapAccounts, wrapBareAccount } from '@/lib/backend/contracts/account-map';
 import type { Account, AgentId, Provider } from '@/lib/types';
 import type { Backend } from '@/lib/backend/contracts';
 import { logger } from '@/lib/logger';
@@ -14,6 +16,7 @@ export type ConnectionPoolLoadState = 'idle' | 'loading' | 'ready' | 'partial' |
 export type ConnectionPoolSnapshot = {
   state: ConnectionPoolLoadState;
   accounts: Account[];
+  accountViews: AccountAuthView[];
   providers: Provider[];
   refreshing: boolean;
   errors: {
@@ -27,10 +30,28 @@ type Listener = () => void;
 let snapshot: ConnectionPoolSnapshot = {
   state: 'idle',
   accounts: [],
+  accountViews: [],
   providers: [],
   refreshing: false,
   errors: {},
 };
+
+function snapshotWithViews(
+  views: AccountAuthView[],
+  rest: Omit<ConnectionPoolSnapshot, 'accounts' | 'accountViews'>,
+): ConnectionPoolSnapshot {
+  return {
+    ...rest,
+    accountViews: views,
+    accounts: unwrapAccounts(views),
+  };
+}
+
+function normalizeAccountViews(rows: readonly AccountAuthView[] | readonly Account[]): AccountAuthView[] {
+  return rows.map((row) =>
+    'savedAuth' in row && 'account' in row ? row : wrapBareAccount(row),
+  );
+}
 
 let inflight: Promise<ConnectionPoolSnapshot> | null = null;
 let epoch = 0;
@@ -82,6 +103,7 @@ export function resetConnectionPoolStore(): void {
   setSnapshot({
     state: 'idle',
     accounts: [],
+    accountViews: [],
     providers: [],
     refreshing: false,
     errors: {},
@@ -97,21 +119,29 @@ export function markConnectionCurrent(
   source: 'account' | 'provider',
   id: string,
 ): void {
-  setSnapshot({
-    ...snapshot,
-    accounts: snapshot.accounts.map((account) => ({
-      ...account,
-      isCurrent: account.agentId === agentId
-        ? source === 'account' && account.id === id
-        : account.isCurrent,
-    })),
+  const views = (snapshot.accountViews.length
+    ? snapshot.accountViews
+    : snapshot.accounts.map(wrapBareAccount)
+  ).map((view) => ({
+    ...view,
+    account: {
+      ...view.account,
+      isCurrent: view.account.agentId === agentId
+        ? source === 'account' && view.account.id === id
+        : view.account.isCurrent,
+    },
+  }));
+  setSnapshot(snapshotWithViews(views, {
+    state: snapshot.state,
     providers: snapshot.providers.map((provider) => ({
       ...provider,
       isCurrent: provider.agentId === agentId
         ? source === 'provider' && provider.id === id
         : provider.isCurrent,
     })),
-  });
+    refreshing: snapshot.refreshing,
+    errors: snapshot.errors,
+  }));
 }
 
 /** Collapse N façade notifies (e.g. delete-all) into one refresh. */
@@ -194,6 +224,7 @@ export async function loadConnectionPool(
     setSnapshot({
       state: 'loading',
       accounts: previousSnapshot.accounts,
+      accountViews: previousSnapshot.accountViews,
       providers: previousSnapshot.providers,
       refreshing: false,
       errors: {},
@@ -230,6 +261,7 @@ export async function loadConnectionPool(
         const failed: ConnectionPoolSnapshot = {
           state: hasCompletedPoolData(previousSnapshot.state) ? previousSnapshot.state : 'error',
           accounts: previousSnapshot.accounts,
+          accountViews: previousSnapshot.accountViews,
           providers: previousSnapshot.providers,
           refreshing: false,
           errors: {
@@ -241,16 +273,18 @@ export async function loadConnectionPool(
         return failed;
       }
 
-      const next: ConnectionPoolSnapshot = {
+      const views = accountsOk
+        ? normalizeAccountViews(accountsResult.value)
+        : previousSnapshot.accountViews;
+      const next = snapshotWithViews(views, {
         state: accountsOk && providersOk ? 'ready' : 'partial',
-        accounts: accountsOk ? accountsResult.value : previousSnapshot.accounts,
         providers: providersOk ? providersResult.value : previousSnapshot.providers,
         refreshing: false,
         errors: {
           ...(accountsError ? { accounts: accountsError } : {}),
           ...(providersError ? { providers: providersError } : {}),
         },
-      };
+      });
       setSnapshot(next);
       return next;
     } finally {
