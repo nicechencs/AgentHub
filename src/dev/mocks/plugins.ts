@@ -1,5 +1,6 @@
 import type { PluginPort } from '@/lib/backend/contracts';
 import type { PluginInventory } from '@/lib/backend/contracts/plugin-types';
+import type { AgentId } from '@/lib/types';
 import { delay } from '@/dev/mocks/delay';
 
 const DEMO: PluginInventory = {
@@ -60,11 +61,45 @@ const DEMO: PluginInventory = {
   ],
 };
 
+let inventory: PluginInventory = structuredClone(DEMO);
+
+export function resetMockPlugins(): void {
+  inventory = structuredClone(DEMO);
+}
+
+function assertListedAgent(agent: AgentId): void {
+  if (agent !== 'claude' && agent !== 'grok') {
+    throw new Error('enable/disable is only available for listed Claude and Grok plugin packs');
+  }
+}
+
+function setEnabled(agent: AgentId, name: string, marketplace: string | null | undefined, enabled: boolean) {
+  assertListedAgent(agent);
+  const row = inventory.plugins.find(
+    (p) =>
+      p.agent === agent &&
+      p.name === name &&
+      (marketplace == null || marketplace === '' || p.marketplace === marketplace),
+  );
+  if (!row) {
+    throw new Error(`plugin not listed: ${name}`);
+  }
+  row.enabled = enabled;
+}
+
 export function createMockPluginPort(): PluginPort {
   return {
     async listInventory() {
       await delay(150);
-      return structuredClone(DEMO);
+      return structuredClone(inventory);
+    },
+    async enable(agent, name, marketplace) {
+      await delay(40);
+      setEnabled(agent, name, marketplace, true);
+    },
+    async disable(agent, name, marketplace) {
+      await delay(40);
+      setEnabled(agent, name, marketplace, false);
     },
   };
 }

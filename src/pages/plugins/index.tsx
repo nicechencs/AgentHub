@@ -14,7 +14,7 @@ import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
 import { filterByPageVisibleAgent } from '@/lib/agent-visibility';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { listPluginInventory } from '@/lib/api/plugins';
+import { disablePlugin, enablePlugin, listPluginInventory } from '@/lib/api/plugins';
 import { openPathInFileManager } from '@/lib/api/skill';
 import type { PluginEntry, PluginInventory } from '@/lib/backend/contracts/plugin-types';
 import type { AgentId } from '@/lib/types';
@@ -37,15 +37,17 @@ export default function PluginsPage() {
   const [filterAgent, setFilterAgent] = useState<AgentTabId>('all');
   const inspect = useSideSplit<PluginEntry>({ storageKey: PLUGINS_PREVIEW_WIDTH_KEY });
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<PluginInventory | null> => {
     setLoading(true);
     setError(null);
     try {
       const inv = await listPluginInventory();
       setData(inv);
+      return inv;
     } catch (e) {
       setError(e instanceof Error ? e : String(e));
       setData(null);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -107,12 +109,36 @@ export default function PluginsPage() {
     }
   }
 
+  async function togglePlugin(plugin: PluginEntry, enabled: boolean) {
+    try {
+      if (enabled) {
+        await enablePlugin(plugin.agent, plugin.name, plugin.marketplace);
+      } else {
+        await disablePlugin(plugin.agent, plugin.name, plugin.marketplace);
+      }
+      const inv = await load();
+      const next = inv?.plugins.find((row) => row.id === plugin.id);
+      if (next) inspect.open(next);
+      toast({
+        title: enabled ? t('plugins.actions.enabled') : t('plugins.actions.disabled'),
+        variant: 'success',
+      });
+    } catch (e) {
+      toast({
+        title: enabled ? t('plugins.actions.enableFailed') : t('plugins.actions.disableFailed'),
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    }
+  }
+
   const inspectPanel = inspect.target ? (
     <PluginDetailPanel
       plugin={inspect.target}
       width={inspect.paneWidth}
       onClose={() => inspect.close()}
       onLocate={locateSource}
+      onToggle={togglePlugin}
     />
   ) : null;
 

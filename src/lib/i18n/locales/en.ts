@@ -1925,9 +1925,12 @@ export const en = {
   mcp: {
     page: {
       title: "MCP",
-      description: "Read-only view of extra tools",
+      description: "This page only lists MCP that was found. It does not install anything.",
       descriptionTip:
-        "MCP is extra tools an agent can call. This page only lists what it finds; it does not change each agent's own settings.",
+        "It does not change each tool’s own settings. To edit, tap Folder in the list and {next}.",
+      empty: "This page only scans and lists what it finds; it does not install. When a row appears, tap Folder and {next}.",
+      emptyAgent: "No MCP found under {name}. This page only scans; it does not install.",
+      nextStep: "go change that config",
       refresh: "Refresh",
       countAll: "{n} servers",
       countAgent: "{name} · {n}",
@@ -1977,6 +1980,16 @@ export const en = {
       disabled: 'Disabled',
       enabled: 'Enabled',
       untrusted: 'Untrusted',
+    },
+    actions: {
+      enable: 'Enable',
+      disable: 'Disable',
+      enabling: 'Enabling…',
+      disabling: 'Disabling…',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      enableFailed: "Couldn't enable",
+      disableFailed: "Couldn't disable",
     },
     detail: {
       name: 'Name',

@@ -27,4 +27,16 @@ describe('mcp layout wiring', () => {
     expect(table).toContain("t('mcp.table.details')");
     expect(table).not.toContain('h-6 px-1.5 text-xs');
   });
+
+  it('says the page only scans and points at the existing folder button', () => {
+    const page = source('index.tsx');
+    expect(page).toContain("t('mcp.page.description')");
+    expect(page).toContain("t('mcp.page.empty'");
+    expect(page).toContain("t('mcp.page.nextStep')");
+    expect(page).not.toContain('installMcp');
+    expect(page).not.toContain('onInstall');
+    expect(page).not.toContain('mcp.install');
+    const table = source('McpServerTable.tsx');
+    expect(table).toContain("t('mcp.table.directory')");
+  });
 });
