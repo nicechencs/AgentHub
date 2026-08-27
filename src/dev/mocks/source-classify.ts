@@ -1,7 +1,7 @@
 /**
- * Shared mock source feature detectors.
- * Ticket mock maps MockSourceId → TicketSurface; adapter mock maps → SourceTicketKey.
- * Unique branches (kimi-non-membership, kimi account membership) stay in each consumer.
+ * Shared mock source feature detectors and classify helpers.
+ * classifyAccountSource / classifyProviderSource are for mock plan() internals
+ * and source-classify-contract.test.ts. Runtime modules must not call them.
  */
 import type { Account, Provider } from '@/lib/types';
 import { SOURCE_CLASSIFY_CONTRACT } from '@/lib/backend/contracts/source-classify-contract';
@@ -155,7 +155,7 @@ export function accountCredentialFormat(account: ClassifiableAccount): string | 
 }
 
 export type ClassifyProviderSourceOptions = {
-  /** Adapter mock also treats the GLM Responses URL as glm-coding-plan. Ticket mock does not. */
+  /** Plan owner treats the GLM Responses URL as glm-coding-plan. */
   includeGlmResponses?: boolean;
 };
 
@@ -175,9 +175,9 @@ export function classifyProviderSource(
 }
 
 export type ClassifyAccountSourceOptions = {
-  /** Adapter mock also treats the GLM Responses URL as glm-coding-plan. Ticket mock does not. */
+  /** Plan owner treats the GLM Responses URL as glm-coding-plan. */
   includeGlmResponses?: boolean;
-  /** Ticket mock also classifies apikey accounts whose credentials/extra mention the Anthropic host. */
+  /** Plan owner classifies apikey accounts whose credentials/extra mention the Anthropic host. */
   includeAnthropicEndpoint?: boolean;
 };
 
