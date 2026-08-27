@@ -91,6 +91,7 @@ fn admitted(
         headers: HeaderMap::new(),
         body,
         member: None,
+        affinity_key: None,
     }
 }
 

@@ -171,6 +171,9 @@ pub(super) async fn handle_conversation(
         );
     }
     let pair_active = pair_adapter_active(&admitted.state, channel);
+    admitted.affinity_key = admitted
+        .state
+        .affinity_key_for(&admitted.body, &admitted.headers);
     let required_member = if pair_active {
         admitted
             .state
@@ -203,7 +206,11 @@ pub(super) async fn handle_conversation(
         }
     } else {
         match &resolver_candidates {
-            Some(candidates) => admitted.state.pick_v2(candidates, &model, &[]),
+            Some(candidates) => {
+                admitted
+                    .state
+                    .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref())
+            }
             None => admitted.state.account_picker.pick_new(),
         }
     }) else {
@@ -351,6 +358,7 @@ async fn forward_upstream(
         headers: _,
         body: _,
         member,
+        affinity_key,
     } = admitted;
     let member = member.expect("handle_conversation always picks before forward");
     let UpstreamPrepare {
@@ -378,6 +386,7 @@ async fn forward_upstream(
         candidates.as_deref(),
         &public_model,
         continuation_locked,
+        affinity_key.as_deref(),
     )
     .await
     {

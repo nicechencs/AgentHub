@@ -15,7 +15,10 @@ pub mod session;
 pub mod types;
 pub mod upstream_class;
 
-pub use account::{AccountPicker, BridgeMemberSpec, MemberHealth, MemberHealthSink, PickedMember};
+pub use account::{
+    route_scoped_affinity_key, AccountPicker, BridgeMemberSpec, MemberHealth, MemberHealthSink,
+    PickedMember,
+};
 pub use host::{BridgeHostError, BridgeRuntimeHost};
 pub use request_fsm::{AccountSwitchGate, RequestDecision, RequestFsm, SwitchClass};
 pub use route_index::{
