@@ -6,8 +6,7 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
-# Releases start from a v* tag whose commit is on origin/dev.
-# After a successful publish, merge dev into release to sync the release line.
+# Releases start from a v* tag whose commit is on origin/release.
 # Build runs must never be cancelled midway after a later run of the same
 # tag. Only the publish job receives a write token, and it runs after
 # every platform build. CI never creates or moves tags.
@@ -45,13 +44,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require tagged commit is on origin/dev
+      - name: Require tagged commit is on origin/release
         shell: bash
         run: |
           set -euo pipefail
           found=0
           for attempt in 1 2 3 4 5 6; do
-            if git fetch --no-tags origin dev; then
+            if git fetch --no-tags origin release; then
               if git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
                 found=1
                 break
@@ -62,7 +61,7 @@ jobs:
             fi
           done
           if [ "$found" -ne 1 ]; then
-            echo "Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on origin/dev; refusing to release." >&2
+            echo "Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on origin/release; refusing to release." >&2
             exit 1
           fi
 
