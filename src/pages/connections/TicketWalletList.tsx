@@ -1,7 +1,7 @@
 /**
  * Global ticket wallet list UI (Connections).
  * Data from listTicketWallet; per-row 用到其他工具 / 本机转发 for true tickets.
- * 「详情」opens the workbench inspect pane; edit stays on the card.
+ * Click the card to open details in the workbench inspect pane; edit stays a button.
  */
 import * as React from 'react';
 import { Link } from 'react-router-dom';
@@ -22,7 +22,8 @@ import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { ListRow } from '@/components/shared/ListRow';
+import { AgentLogo } from '@/components/shared/AgentLogo';
+import { LIST_ROW_PAD, ListRow, ListRowBody } from '@/components/shared/ListRow';
 import { SortHandle } from '@/components/shared/SortHandle';
 import { useSortableDrag } from '@/components/shared/use-sortable-drag';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
@@ -461,94 +462,92 @@ function TicketRow({
     <ListRow
       active={active || (highlighted && !suppressHighlight)}
       indicatorColor={resolveAgentMeta(ticket.agentId).color}
-      className="p-3"
+      className={LIST_ROW_PAD}
+      onOpen={onShowDetail ? () => onShowDetail(ticket) : undefined}
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        {sortHandle}
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-          <AgentDot agentId={ticket.agentId} />
-          <CredentialMark cls={ticket.credentialClass} agentId={ticket.agentId} />
-          <Tip className="truncate text-body font-medium" label={title}>
-            {title}
-          </Tip>
-          {authChip ? (
-            <Badge variant="default" className={authChip.mono ? 'font-mono' : undefined}>
-              {authChip.label}
-            </Badge>
-          ) : null}
-          <span className="text-meta text-secondary">
-            {(usageParts ?? []).map((part, index) => (
-              part.kind === 'bridge' ? (
-                <Link
-                  key={`${part.href}:${index}`}
-                  to={part.href}
-                  className="text-info underline"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  {part.label}
-                </Link>
-              ) : part.kind === 'endpoint' ? (
-                <RouteEndpointUrl
-                  key={`endpoint:${index}`}
-                  path={part.path}
-                  port={part.port}
-                  endpointId={part.endpointId}
-                  className="text-meta"
-                />
-              ) : (
-                <span key={`text:${index}`}>{part.text}</span>
-              )
-            ))}
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {nativeSwitch ? (
+      <ListRowBody
+        leading={sortHandle}
+        main={(
+          <>
+            <AgentLogo agentId={ticket.agentId} size="sm" />
+            <CredentialMark cls={ticket.credentialClass} agentId={ticket.agentId} />
+            <Tip className="truncate text-body font-medium" label={title}>
+              {title}
+            </Tip>
+            {authChip ? (
+              <Badge variant="default" className={authChip.mono ? 'font-mono' : undefined}>
+                {authChip.label}
+              </Badge>
+            ) : null}
+            <span className="text-meta text-secondary">
+              {(usageParts ?? []).map((part, index) => (
+                part.kind === 'bridge' ? (
+                  <Link
+                    key={`${part.href}:${index}`}
+                    to={part.href}
+                    className="text-info underline"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {part.label}
+                  </Link>
+                ) : part.kind === 'endpoint' ? (
+                  <RouteEndpointUrl
+                    key={`endpoint:${index}`}
+                    path={part.path}
+                    port={part.port}
+                    endpointId={part.endpointId}
+                    className="text-meta"
+                  />
+                ) : (
+                  <span key={`text:${index}`}>{part.text}</span>
+                )
+              ))}
+            </span>
+          </>
+        )}
+        actions={(
+          <>
+            {nativeSwitch ? (
+              <DisabledReasonButton
+                disabled={switchChip.kind === 'in-use' || switchBusy || !onSwitch}
+                reason={ticketSwitchDisabledReason({
+                  kind: switchChip.kind,
+                  switchBusy,
+                  canSwitch: Boolean(onSwitch),
+                }, t)}
+                ariaLabel={switchChip.label}
+                onClick={() => {
+                  if (!onSwitch) return;
+                  onSwitch(ticket);
+                }}
+              >
+                {switching ? t('connections.list.switching') : switchChip.label}
+              </DisabledReasonButton>
+            ) : null}
             <DisabledReasonButton
-              disabled={switchChip.kind === 'in-use' || switchBusy || !onSwitch}
-              reason={ticketSwitchDisabledReason({
-                kind: switchChip.kind,
-                switchBusy,
-                canSwitch: Boolean(onSwitch),
-              }, t)}
-              ariaLabel={switchChip.label}
-              onClick={() => {
-                if (!onSwitch) return;
-                onSwitch(ticket);
-              }}
+              disabled={shareAction.disabled}
+              reason={shareAction.disabled ? shareAction.reason : undefined}
+              ariaLabel={t('connections.list.share')}
+              onClick={() => onShare(ticket)}
             >
-              {switching ? t('connections.list.switching') : switchChip.label}
+              <Share2 className="h-3.5 w-3.5" /> {t('connections.list.share')}
             </DisabledReasonButton>
-          ) : null}
-          <DisabledReasonButton
-            disabled={shareAction.disabled}
-            reason={shareAction.disabled ? shareAction.reason : undefined}
-            ariaLabel={t('connections.list.share')}
-            onClick={() => onShare(ticket)}
-          >
-            <Share2 className="h-3.5 w-3.5" /> {t('connections.list.share')}
-          </DisabledReasonButton>
-          <DisabledReasonButton
-            disabled={routeAction.disabled}
-            reason={routeAction.disabled ? routeAction.reason : undefined}
-            ariaLabel={t('connections.list.route')}
-            onClick={() => onRoute(ticket)}
-          >
-            <Cable className="h-3.5 w-3.5" /> {t('connections.list.route')}
-          </DisabledReasonButton>
-          {editLabel ? (
-            <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
-              <Pencil className="h-3.5 w-3.5" /> {editLabel}
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onShowDetail?.(ticket)}
-          >
-            {t('connections.list.details')}
-          </Button>
-        </div>
-      </div>
+            <DisabledReasonButton
+              disabled={routeAction.disabled}
+              reason={routeAction.disabled ? routeAction.reason : undefined}
+              ariaLabel={t('connections.list.route')}
+              onClick={() => onRoute(ticket)}
+            >
+              <Cable className="h-3.5 w-3.5" /> {t('connections.list.route')}
+            </DisabledReasonButton>
+            {editLabel ? (
+              <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
+                <Pencil className="h-3.5 w-3.5" /> {editLabel}
+              </Button>
+            ) : null}
+          </>
+        )}
+      />
     </ListRow>
   );
 }
