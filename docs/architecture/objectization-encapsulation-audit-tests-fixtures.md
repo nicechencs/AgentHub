@@ -56,7 +56,7 @@ updated: 2026-08-27
 - **位置：** `src/lib/backend/contracts/catalog-mirror-contract.json`；`src/dev/mocks/capabilities.ts`、`src/dev/mocks/fixtures/install-catalog.ts`、`agent-catalog.ts`、`config.ts`，以及对应 Core catalog/config 测试
 - **状态：部分处理**
 - **问题：** Agent 集合、渠道、版本、字段和能力分散维护，已有契约测试仍主要验证局部字段。
-- **当前：** Agent id、Capability 键、本机安装渠道 id、能力界面标签（`Capability::label()`）与 config schema 字段名对照 core / mock，缺项失败。未对照每格 capability reason 文案。
+- **当前：** Agent id、Capability 键、本机安装渠道 id、能力界面标签（`Capability::label()`）、config schema 字段名、每格 capability reason 文案对照 core / mock，缺项失败。mock 与 core 已知不一致（Claude/Codex/Kimi/Grok/Pi/WorkBuddy 的 Usage 仍为 mock「待验证接入」；Codex `apiKeyAccount`、Cursor `apiKeyAccount` / `projectDelete` 原文不同）列入 `knownMismatches`，不改产品或 mock 文案。
 - **建议：** 从共享契约 JSON/生成产物获得 fixture，至少增加完整 Agent/channel/schema/capability 对照测试。
 - **影响：** Vitest/E2E 可能通过，但 Tauri/Core 实际行为已漂移。
 
