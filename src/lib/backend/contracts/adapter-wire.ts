@@ -7,6 +7,7 @@ import type {
   AdapterAction,
   AdapterApplyPlan,
   AdapterApplyResult,
+  AdapterBridgeInboundRequest,
   AdapterBridgeRuntimeState,
   AdapterBridgeRuntimeStatus,
   AdapterEvidence,
@@ -67,6 +68,15 @@ export interface AdapterApplyResultWire {
   provider: CoreProviderWire;
 }
 
+/** Exact camelCase shape serialized by Tauri's inbound log row. */
+export interface AdapterBridgeInboundRequestWire {
+  atUnixMs?: number;
+  method?: unknown;
+  path?: unknown;
+  status?: unknown;
+  ok?: unknown;
+}
+
 /** Exact camelCase shape serialized by Tauri's `AdapterBridgeStatusDto`. */
 export interface AdapterBridgeStatusDtoWire {
   profileId: string;
@@ -76,6 +86,7 @@ export interface AdapterBridgeStatusDtoWire {
   upstreamStatus: string;
   sourceConnectionId?: string;
   startedAtUnixMs?: number;
+  recentInbound?: AdapterBridgeInboundRequestWire[];
 }
 
 export interface AdapterActionWire {
@@ -394,6 +405,46 @@ export function mapAdapterApplyResult(wire: AdapterApplyResultWireInput): Adapte
   };
 }
 
+const INBOUND_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+
+function stripInboundPath(path: string): string {
+  const base = path.split(/[?#]/, 1)[0] ?? path;
+  const cleaned = base.replace(/[^a-zA-Z0-9/_.-]/g, '').slice(0, 128);
+  return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+}
+
+/** Allow-listed inbound row. Extra wire fields (Authorization, body, token) are dropped. */
+export function mapInboundRequest(wire: unknown): AdapterBridgeInboundRequest | null {
+  if (!wire || typeof wire !== 'object') return null;
+  const row = wire as Record<string, unknown>;
+  const rawMethod = typeof row.method === 'string' ? row.method : '';
+  const method = rawMethod.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 16);
+  if (!INBOUND_METHODS.has(method)) return null;
+  const rawPath = typeof row.path === 'string' ? row.path : '';
+  const path = stripInboundPath(rawPath);
+  if (path === '/') return null;
+  const status = typeof row.status === 'number' && Number.isInteger(row.status) ? row.status : NaN;
+  if (status < 100 || status > 599) return null;
+  return {
+    at: mapStartedAt(typeof row.atUnixMs === 'number' ? row.atUnixMs : undefined) ?? '',
+    method,
+    path,
+    status,
+    ok: typeof row.ok === 'boolean' ? row.ok : status < 400,
+  };
+}
+
+function mapInboundRequests(wire: AdapterBridgeInboundRequestWire[] | undefined): AdapterBridgeInboundRequest[] {
+  if (!Array.isArray(wire)) return [];
+  const rows: AdapterBridgeInboundRequest[] = [];
+  for (const item of wire) {
+    const mapped = mapInboundRequest(item);
+    if (mapped) rows.push(mapped);
+    if (rows.length >= 20) break;
+  }
+  return rows;
+}
+
 export function mapAdapterBridgeStatusDto(
   wire: AdapterBridgeStatusDtoWire,
 ): AdapterBridgeRuntimeStatus {
@@ -405,6 +456,7 @@ export function mapAdapterBridgeStatusDto(
     endpoint: port ? `http://127.0.0.1:${port}/v1` : null,
     startedAt: mapStartedAt(wire.startedAtUnixMs),
     upstreamStatus: mapUpstreamStatus(wire.upstreamStatus),
+    recentInbound: mapInboundRequests(wire.recentInbound),
   };
 }
 

@@ -18,6 +18,7 @@ use thiserror::Error;
 use tokio::sync::watch;
 
 use crate::bridge::auth_reload::AuthReloadCoordinator;
+use crate::bridge::host::inbound::InboundRequestLog;
 
 pub(super) use edge::EdgeState;
 pub(super) use registry::{EdgeRuntime, GatewayRegistry, SocketInstance};
@@ -92,6 +93,7 @@ impl CleanupCompletion {
 pub(super) struct Gateway {
     pub(super) registry: Arc<Mutex<GatewayRegistry>>,
     pub(super) auth_reload: AuthReloadCoordinator,
+    pub(super) inbound: InboundRequestLog,
 }
 
 pub(super) enum GatewayAuthError {
@@ -105,6 +107,7 @@ impl Gateway {
         Self {
             registry: Arc::new(Mutex::new(GatewayRegistry::new())),
             auth_reload: AuthReloadCoordinator::new(),
+            inbound: InboundRequestLog::new(),
         }
     }
 

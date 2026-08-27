@@ -76,6 +76,7 @@ function unavailableBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeS
     endpoint: null,
     startedAt: null,
     upstreamStatus: 'unavailable',
+    recentInbound: [],
   };
 }
 
@@ -95,6 +96,7 @@ export function unavailableBridgeStatusForPoll(
     endpoint: previous?.endpoint ?? null,
     startedAt: previous?.startedAt ?? null,
     upstreamStatus: 'unavailable',
+    recentInbound: previous?.recentInbound ?? [],
   };
 }
 
