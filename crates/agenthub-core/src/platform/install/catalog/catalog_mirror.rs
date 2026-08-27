@@ -167,9 +167,14 @@ fn shared_catalog_fixture_covers_capability_reasons() {
             }
         }
     }
+    assert!(
+        reasons.known_mismatches.is_empty(),
+        "knownMismatches must stay empty; align mock capability reasons to core"
+    );
     assert_eq!(
-        reasons.known_mismatches, expected_mismatches,
-        "knownMismatches drifted from core vs mock capabilityReasons"
+        expected_mismatches,
+        Vec::<ReasonMismatch>::new(),
+        "core vs mock capabilityReasons drifted: {expected_mismatches:?}"
     );
 }
 
