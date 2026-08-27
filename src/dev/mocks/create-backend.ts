@@ -86,13 +86,17 @@ export const createBackend: CreateBackend = () => {
   });
 
   const ticket = createMockTicketPort({
-    listAccounts: listMockAccounts,
-    listProviders: listMockProviders,
-    listProfiles: listMockAdapterProfiles,
-    getBridgeStatus: getMockBridgeStatusSync,
-    planAdapter: (request) => adapter.plan(request),
-    applyAdapter: (request) => adapter.apply(request),
-    removeBinding: (profileId) => removeMockAdapterBinding(profileId),
+    sources: {
+      listAccounts: listMockAccounts,
+      listProviders: listMockProviders,
+      listProfiles: listMockAdapterProfiles,
+      getBridgeStatus: getMockBridgeStatusSync,
+    },
+    adapter: {
+      planAdapter: (request) => adapter.plan(request),
+      applyAdapter: (request) => adapter.apply(request),
+      removeBinding: (profileId) => removeMockAdapterBinding(profileId),
+    },
   });
 
   if (!import.meta.env.VITEST && import.meta.env.MODE !== 'test') {
