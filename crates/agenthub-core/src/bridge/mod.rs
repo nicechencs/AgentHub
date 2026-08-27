@@ -7,6 +7,7 @@ pub mod account;
 pub mod auth_reload;
 pub mod grok_cli;
 pub mod host;
+mod model_switch;
 pub mod protocol;
 pub mod request_fsm;
 pub mod route_index;
@@ -21,6 +22,7 @@ pub use account::{
     PickedMember,
 };
 pub use host::{BridgeHostError, BridgeRuntimeHost};
+pub(crate) use model_switch::{decide_model_switch, ModelSwitchCandidate, ModelSwitchDecision};
 pub use request_fsm::{AccountSwitchGate, RequestDecision, RequestFsm, SwitchClass};
 pub use route_index::{
     index_from_member_listings, DispatchCandidate, EffectiveRouteIndex, MemberCapability,

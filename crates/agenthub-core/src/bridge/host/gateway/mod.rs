@@ -169,7 +169,7 @@ impl Gateway {
         lead: &EdgeState,
         model: &str,
     ) -> ModelSwitchOutcome {
-        use crate::models::{decide_model_switch, ModelSwitchCandidate, ModelSwitchDecision};
+        use crate::bridge::{decide_model_switch, ModelSwitchCandidate, ModelSwitchDecision};
         let Some(source) = lead.mapping_source else {
             return ModelSwitchOutcome::Stay;
         };
