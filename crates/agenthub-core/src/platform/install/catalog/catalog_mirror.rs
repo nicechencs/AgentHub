@@ -21,8 +21,23 @@ struct CatalogMirror {
     agents: Vec<String>,
     capabilities: Vec<String>,
     capability_labels: BTreeMap<String, String>,
+    capability_reasons: CapabilityReasons,
     schema_fields: BTreeMap<String, Vec<String>>,
     channels: CatalogChannels,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CapabilityReasons {
+    core: BTreeMap<String, BTreeMap<String, Option<String>>>,
+    mock: BTreeMap<String, BTreeMap<String, Option<String>>>,
+    known_mismatches: Vec<ReasonMismatch>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+struct ReasonMismatch {
+    agent: String,
+    capability: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +103,73 @@ fn shared_catalog_fixture_covers_capability_labels() {
     assert_eq!(
         contract.capability_labels, expected,
         "capabilityLabels drifted from Capability::label()"
+    );
+}
+
+#[test]
+fn shared_catalog_fixture_covers_capability_reasons() {
+    let contract = load_contract();
+    let reasons = &contract.capability_reasons;
+    let reg = crate::adapters::register_all();
+    let mut expected_mismatches = Vec::new();
+    assert_eq!(reasons.core.len(), AgentId::ALL.len());
+    assert_eq!(reasons.mock.len(), AgentId::ALL.len());
+    for agent in AgentId::ALL {
+        let core_row = reasons
+            .core
+            .get(agent.as_str())
+            .unwrap_or_else(|| panic!("missing core capabilityReasons for {}", agent.as_str()));
+        let mock_row = reasons
+            .mock
+            .get(agent.as_str())
+            .unwrap_or_else(|| panic!("missing mock capabilityReasons for {}", agent.as_str()));
+        assert_eq!(
+            core_row.len(),
+            Capability::ALL.len(),
+            "core {}",
+            agent.as_str()
+        );
+        assert_eq!(
+            mock_row.len(),
+            Capability::ALL.len(),
+            "mock {}",
+            agent.as_str()
+        );
+        let adapter = reg.get(agent).expect("adapter");
+        for cap in Capability::ALL {
+            let key = cap.as_str();
+            assert!(
+                core_row.contains_key(key),
+                "missing core capabilityReasons cell {} {}",
+                agent.as_str(),
+                key
+            );
+            assert!(
+                mock_row.contains_key(key),
+                "missing mock capabilityReasons cell {} {}",
+                agent.as_str(),
+                key
+            );
+            let core_reason = core_row.get(key).and_then(Option::as_deref);
+            let mock_reason = mock_row.get(key).and_then(Option::as_deref);
+            assert_eq!(
+                adapter.capability(cap).reason,
+                core_reason,
+                "core reason drifted {} {}",
+                agent.as_str(),
+                key
+            );
+            if core_reason != mock_reason {
+                expected_mismatches.push(ReasonMismatch {
+                    agent: agent.as_str().to_string(),
+                    capability: key.to_string(),
+                });
+            }
+        }
+    }
+    assert_eq!(
+        reasons.known_mismatches, expected_mismatches,
+        "knownMismatches drifted from core vs mock capabilityReasons"
     );
 }
 
