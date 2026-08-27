@@ -12,13 +12,18 @@ import {
   CONNECT_FLOW_FIXTURE_IDS,
   seedConnectFlowAdapterFixtures,
 } from './connect-flow-fixtures';
-import { buildMockTicketWallet, type MockTicketSourceResolver } from './ticket';
+import {
+  buildMockTicketWallet,
+  createMockTicketPort,
+  type MockTicketAdapter,
+  type MockTicketWalletSources,
+} from './ticket';
 
 function ticketResolver(args: {
   accounts?: Account[];
   providers?: Provider[];
   profiles?: AdapterProfile[];
-}): MockTicketSourceResolver {
+}): MockTicketWalletSources & Pick<MockTicketAdapter, 'planAdapter'> {
   const accounts = args.accounts ?? [];
   const providers = args.providers ?? [];
   return {
@@ -31,6 +36,27 @@ function ticketResolver(args: {
       getProviderById: (id) => providers.find((row) => row.id === id),
     }, request),
   };
+}
+
+function isolatedTicketPort(args: {
+  accounts?: Account[];
+  providers?: Provider[];
+  profiles?: AdapterProfile[];
+  adapter?: Partial<MockTicketAdapter>;
+}) {
+  const runtime = ticketResolver(args);
+  return createMockTicketPort({
+    sources: {
+      listAccounts: runtime.listAccounts,
+      listProviders: runtime.listProviders,
+      listProfiles: runtime.listProfiles,
+      getBridgeStatus: runtime.getBridgeStatus,
+    },
+    adapter: {
+      planAdapter: runtime.planAdapter,
+      ...args.adapter,
+    },
+  });
 }
 
 describe('mock ticket wallet', () => {
@@ -714,6 +740,96 @@ describe('mock ticket wallet', () => {
     const dir = path.dirname(fileURLToPath(import.meta.url));
     const ticketSrc = readFileSync(path.join(dir, 'ticket.ts'), 'utf8');
     expect(ticketSrc).not.toMatch(/\bclassify(Account|Provider)Source\b/);
+    expect(ticketSrc).not.toMatch(/\bgetMock(Account|Provider)ById\b/);
+  });
+
+  it('plan looks up sources through the injected wallet lists, not module getters', async () => {
+    getBackend();
+    upsertMockAccount({
+      id: 'module-only-acct',
+      agentId: 'claude',
+      kind: 'oauth',
+      label: 'module',
+      isCurrent: false,
+      tokenValid: true,
+    });
+    const port = isolatedTicketPort({
+      accounts: [
+        {
+          id: 'double-only-acct',
+          agentId: 'claude',
+          kind: 'oauth',
+          label: 'double',
+          isCurrent: false,
+          tokenValid: true,
+        },
+      ],
+    });
+    await expect(port.plan('account:module-only-acct', 'claude')).rejects.toMatchObject({
+      code: 'not_found',
+      message: 'account not found: module-only-acct',
+    });
+    const plan = await port.plan('account:double-only-acct', 'claude');
+    expect(plan.targetAgentId).toBe('claude');
+  });
+
+  it('bind stays unsupported when applyAdapter is not wired', async () => {
+    const port = isolatedTicketPort({
+      accounts: [
+        {
+          id: 'anth-unwired',
+          agentId: 'claude',
+          kind: 'apikey',
+          label: 'Anthropic key',
+          isCurrent: false,
+          tokenValid: true,
+          extra: { provider: 'anthropic' },
+        } as Account,
+      ],
+    });
+    await expect(port.bind('account:anth-unwired', 'pi')).rejects.toMatchObject({
+      code: 'unsupported',
+      message: 'ticket bind is not wired',
+    });
+  });
+
+  it('unbind stays unsupported when removeBinding is not wired', async () => {
+    const port = isolatedTicketPort({
+      providers: [
+        {
+          id: 'kimi-unwired',
+          agentId: 'kimi',
+          name: 'Kimi membership',
+          preset: 'kimi-code-membership',
+          configText: '{}',
+          configFormat: 'json',
+          isCurrent: false,
+        },
+      ],
+      profiles: [
+        {
+          id: 'unwired-profile',
+          name: 'Unwired',
+          sourceKind: 'provider',
+          sourceId: 'kimi-unwired',
+          targetAgentId: 'claude',
+          route: 'native_endpoint',
+          mode: 'api',
+          status: 'active',
+          ruleId: 'kimi-membership-to-claude-v1',
+          ruleVersion: '1',
+          generatedProviderId: null,
+          localPort: null,
+          autoStart: false,
+          createdAt: '2026-08-15T00:00:00.000Z',
+          updatedAt: '2026-08-15T00:00:00.000Z',
+        },
+      ],
+    });
+    await expect(port.unbind('provider:kimi-unwired', 'claude')).rejects.toMatchObject({
+      code: 'unsupported',
+      message: 'ticket unbind is not wired',
+    });
   });
 
   it('wallet surfaces match plan sourceProduct for unpersisted sources', async () => {
