@@ -1,4 +1,5 @@
 import type { Account, AgentId } from '@/lib/types';
+import type { AccountAuthView } from './account-map';
 import { normalizeAuthHealth, type AuthHealth } from './auth-state';
 
 /** PKCE start result from backend. */
@@ -131,12 +132,12 @@ export function normalizeAuthState(
 }
 
 export interface AccountPort {
-  listAccounts(agentId?: AgentId): Promise<Account[]>;
+  listAccounts(agentId?: AgentId): Promise<AccountAuthView[]>;
   /**
    * Re-read live auth files into the pool. No upstream quota HTTP.
    * Optional so mocks can omit it.
    */
-  reconcileAccounts?(agentId?: AgentId): Promise<Account[]>;
+  reconcileAccounts?(agentId?: AgentId): Promise<AccountAuthView[]>;
   probeLiveAuth(agentId: AgentId): Promise<LiveAuthProbe>;
   switchAccount(agentId: AgentId, accountId: string): Promise<void>;
   undoSwitchAccount(agentId: AgentId): Promise<boolean>;

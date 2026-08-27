@@ -22,11 +22,11 @@ describe('mock connection trash', () => {
     const deleted = await trash.list('claude');
     const item = deleted.find((row) => row.sourceId === created.id);
     expect(item?.kind).toBe('account');
-    expect((await accounts.listAccounts('claude')).some((row) => row.id === created.id)).toBe(false);
+    expect((await accounts.listAccounts('claude')).some((row) => row.account.id === created.id)).toBe(false);
 
     await trash.restore(item!.id);
-    const restored = (await accounts.listAccounts('claude')).find((row) => row.id === created.id);
-    expect(restored?.isCurrent).toBe(false);
+    const restored = (await accounts.listAccounts('claude')).find((row) => row.account.id === created.id);
+    expect(restored?.account.isCurrent).toBe(false);
     expect(await trash.list('claude')).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Backend } from '@/lib/backend/contracts';
+import { wrapBareAccount } from '@/lib/backend/contracts/account-map';
 import type { Account, Provider } from '@/lib/types';
 import {
   accountsForAgent,
@@ -61,7 +62,7 @@ describe('connection-pool-store', () => {
   beforeEach(() => resetConnectionPoolStore());
 
   it('reuses a completed snapshot instead of force-refreshing on a later non-force load', async () => {
-    const listAccounts = vi.fn(async () => [account('claude', 'acc-1')]);
+    const listAccounts = vi.fn(async () => [wrapBareAccount(account('claude', 'acc-1'))]);
     const listProviders = vi.fn(async () => [provider('claude', 'prov-1')]);
     const backend = poolBackend({ listAccounts, listProviders });
 
@@ -74,7 +75,7 @@ describe('connection-pool-store', () => {
   });
 
   it('deduplicates concurrent loads so the backend is called once', async () => {
-    const listAccounts = vi.fn(async () => [account('claude', 'acc-1')]);
+    const listAccounts = vi.fn(async () => [wrapBareAccount(account('claude', 'acc-1'))]);
     const listProviders = vi.fn(async () => [provider('claude', 'prov-1')]);
     const backend = poolBackend({ listAccounts, listProviders });
 

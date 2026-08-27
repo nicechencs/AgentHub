@@ -1,5 +1,6 @@
 import { resolveAgentMeta, type AgentMeta } from '@/config/agents';
-import { authDisplayForAgentStatus } from '@/lib/backend/contracts/auth-state';
+import { sliceAgentStatus } from '@/lib/backend/contracts/agent-status-view';
+import { authDisplayForAgentStatus, authHealthLabel } from '@/lib/backend/contracts/auth-state';
 import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
 
@@ -51,12 +52,10 @@ export function agentCardBridgeLabel(state: AgentCardBridgeState, t?: TranslateF
 /** 异常 = 未安装 / 环境未就绪 / 认证临期或失效 */
 export function isAgentIssue(status: AgentStatus | undefined): boolean {
   if (!status || !status.installed) return true;
-  if (status.envReady === false) return true;
-  const display = authDisplayForAgentStatus(status);
-  if (display.health === 'needs_login') return true;
-  // Legacy doctor rows may still report expiring; explicit renewable health
-  // must take precedence so Dashboard does not call it an outage.
-  if (status.authHealth) return false;
+  const view = sliceAgentStatus(status);
+  if (view.env.ready === false) return true;
+  if (view.liveAuth.health === 'needs_login') return true;
+  if (view.liveAuth.health !== 'unset') return false;
   if (status.authStatus === 'expired' || status.authStatus === 'expiring') return true;
   return false;
 }
@@ -87,7 +86,9 @@ export function installedOverviewScope(
   agentMetas: readonly AgentMeta[],
   agents: readonly AgentStatus[],
 ): { metas: AgentMeta[]; statuses: AgentStatus[] } {
-  const statuses = agents.filter((a) => a.installed && !a.hidden);
+  const statuses = agents.filter(
+    (a) => a.installed && sliceAgentStatus(a).hidden !== 'hidden',
+  );
   if (agentMetas.length === 0) {
     // Catalog not hydrated / failed: still show doctor-detected rows.
     return {
@@ -122,7 +123,11 @@ export function cardAuthStatus(
   status: AgentStatus | undefined,
   missing: boolean,
 ): AuthStatus {
-  if (missing) return 'none';
+  if (missing || !status) return 'none';
+  const health = sliceAgentStatus(status).liveAuth.health;
+  if (health !== 'unset') {
+    return authDisplayForAgentStatus({ ...status, authHealth: health }).legacyStatus;
+  }
   return authDisplayForAgentStatus(status).legacyStatus;
 }
 
@@ -184,14 +189,21 @@ export function buildAgentCardView(
     ? { kind: 'navigate', to: '/agents' }
     : { kind: 'connect' };
 
-  const kind = status?.effectiveKind ?? 'none';
+  const view = sliceAgentStatus(status ?? {});
+  const kind = view.effectiveConnection.kind === 'unset' ? 'none' : view.effectiveConnection.kind;
   const unconfigured = t ? t('dashboard.overview.unconfigured') : '未配置';
   const effective =
-    status?.effectiveLabel ?? status?.currentProvider ?? unconfigured;
+    view.effectiveConnection.label !== 'unset'
+      ? view.effectiveConnection.label
+      : view.effectiveConnection.currentProvider !== 'unset'
+        ? view.effectiveConnection.currentProvider
+        : unconfigured;
   const version = status?.version ?? '—';
   const versionText = missing ? null : `v${version}`;
-  const authDisplay = authDisplayForAgentStatus(status);
-  const authLabel = (status?.authHealth ? authDisplay.label : status?.authLabel) || '—';
+  const authLabel =
+    view.liveAuth.health === 'unset'
+      ? (status?.authLabel || '—')
+      : authHealthLabel(view.liveAuth.health, t);
 
   let metaText: string;
   let metaClass: 'text-muted' | 'text-warning' = 'text-muted';
@@ -298,7 +310,7 @@ export function buildAgentCardView(
     ariaLabel,
     statusDotTitle,
     authStatus,
-    authHealth: authDisplay.health,
+    authHealth: view.liveAuth.health === 'unset' ? 'unknown' : view.liveAuth.health,
     twoLineLayout: true,
     ...(viaAdapter ? { viaAdapter } : {}),
     ...(binding ? { binding } : {}),

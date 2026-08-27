@@ -20,6 +20,7 @@ import {
   clearLiveAuthProbeCache as clearProbeCache,
   probeLiveAuthWithPort,
 } from '@/lib/backend/contracts/live-auth-probe-cache';
+import { unwrapAccounts } from '@/lib/backend/contracts/account-map';
 import type { Account, AgentId } from '@/lib/types';
 import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
 
@@ -40,7 +41,7 @@ export type {
 export { OAUTH_WAIT_TIMEOUT_SECS };
 
 export async function listAccounts(agentId?: AgentId): Promise<Account[]> {
-  return getBackend().account.listAccounts(agentId);
+  return unwrapAccounts(await getBackend().account.listAccounts(agentId));
 }
 
 /** Re-read live files into the pool, then refresh the shared store. */
