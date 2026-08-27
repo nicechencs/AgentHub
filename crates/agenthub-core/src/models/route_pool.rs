@@ -15,10 +15,11 @@ use crate::error::{AppError, Result};
 #[cfg(test)]
 mod tests;
 
-/// Settings key. Absent / anything other than an explicit on-value is fail-closed.
+/// Settings key. Default on. Explicit `0` / `false` / `off` / `no` disables.
 pub const FEATURE_ROUTE_POOL_V2: &str = "feature.route_pool_v2";
 
-/// Shared resolver + `/models` index. Off keeps lead + `switch_edge_for_model`.
+/// Shared resolver + `/models` index. Default on with the pool flag.
+/// Off keeps lead + `switch_edge_for_model`.
 /// One flag controls both dispatch and `GET /models`.
 pub const FEATURE_ROUTE_INDEX_V2: &str = "feature.route_index_v2";
 
@@ -34,11 +35,23 @@ pub const FEATURE_GROK_INGRESS_CODEX_UPSTREAM: &str = "feature.grok_ingress_code
 /// candidates span more than one upstream provider. UI hidden.
 pub const FEATURE_MIXED_PROVIDER_POOL: &str = "feature.mixed_provider_pool";
 
+/// Fail-closed experimental flags. Absent / anything other than an explicit
+/// on-value is off. Used by mixed-provider and pair-adapter flags.
 pub fn feature_flag_enabled(raw: Option<&str>) -> bool {
     matches!(
         raw.map(|value| value.trim().to_ascii_lowercase())
             .as_deref(),
         Some("1" | "true" | "on" | "yes")
+    )
+}
+
+/// Product flags that ship on. Absent is on; only explicit off-values disable.
+/// Used by `feature.route_pool_v2` and `feature.route_index_v2`.
+pub fn product_flag_enabled(raw: Option<&str>) -> bool {
+    !matches!(
+        raw.map(|value| value.trim().to_ascii_lowercase())
+            .as_deref(),
+        Some("0" | "false" | "off" | "no")
     )
 }
 

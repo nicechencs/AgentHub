@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: Ticket/Connection services, adapter planner contracts, and product boundary decisions
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # Connections、Routes 与绑定
@@ -63,10 +63,13 @@ unbind(binding)        → 停桥（若有）、恢复上一份 live、保留登
 
 ## 登录列表与 Routes
 
-- Connections 列出真实 accounts/providers；列表不包含 bridge 生成的 local Provider。
+- Connections 列出真实 accounts/providers；列表不包含 bridge 生成的 local Provider。登录仍由 Connections 管理。
 - 行入口使用“分享 / 路由”，规划器按目的过滤可行目标；不可行项显示原因而不是隐藏。
-- Routes 只管理 `local_bridge` runtime：loopback 地址、端口、启停、自动恢复、失败详情和解绑。
-- 生成的 local token 只给目标客户端使用，上游 credential 留在 Hub/host；不监听公网，不做多人共享或转售。
+- Routes 管理本机转发 runtime：固定 loopback 入口、本机令牌、默认池成员、模型名单、启停、自动恢复、失败详情和解绑。
+- 接到本机转发后，目标客户端只认一个 loopback 口和一把本机令牌。默认每个目标 Agent/surface 一个池；往池里增删合格登录不改客户端配置。
+- 调度留在本机网关：先解析模型和协议，再从合格成员里按默认 `priority_failover` 选择；`GET /models` 与实际请求共用同一份 resolver。未声明等价关系时，不会把请求发到另一个供应商。
+- 官方直连（`native_endpoint` / `config_sync`）不自动入池。Routes 对仍可改成本机转发的直连提供「交给本机网关」。
+- 生成的本机令牌只给目标客户端使用，上游登录信息留在 Hub；不监听公网，不做多人共享或转售。
 
 ## 相关页面
 
@@ -74,4 +77,4 @@ unbind(binding)        → 停桥（若有）、恢复上一份 live、保留登
 - [Adapters and bridges](adapters-and-bridges.md)
 - [Product boundaries](../decisions/product-boundaries.md)
 - [Local route API](../reference/local-route-api.md)
-- [本机同口授权池（提案）](../proposals/unified-loopback-pool.md)
+- [本机同口授权池（归档）](../archive/unified-loopback-pool.md)
