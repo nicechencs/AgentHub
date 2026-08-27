@@ -60,6 +60,7 @@ export {
 export {
   FALLBACK_CUSTOM_MODEL,
   defaultModelForAgent,
+  filterRemoteModelsForAgent,
   isLivePastedApiKey,
   looksLikeLast4Mask,
   maskApiKeyLast4,

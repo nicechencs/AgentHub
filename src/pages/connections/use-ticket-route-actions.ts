@@ -121,7 +121,7 @@ export function useTicketBindActions(input: {
           })),
         )
       ));
-      return resolveTicketBindAction(hints, purpose, t);
+      return resolveTicketBindAction(hints, purpose, t, ticket.credentialClass);
     };
   }, [eligibilities, t, targetIds]);
 
