@@ -3,7 +3,7 @@
  * Wire shapes match Tauri `list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`.
  */
 import type { AgentId } from '@/lib/types';
-import type { AdapterApplyPlan } from './adapter';
+import type { AdapterApplyPlan, AdapterRoute } from './adapter';
 import {
   mapAdapterApplyPlan,
   type AdapterApplyPlanWire,
@@ -28,6 +28,16 @@ export type TicketCredentialClass = 'api_key' | 'oauth' | 'unknown';
 
 /** Binding route in the domain model (not AdapterRoute wire names). */
 export type BindingRoute = 'native' | 'reshape' | 'bridge';
+
+/**
+ * Plan-route → binding-route. `native` is never synthesized here; it only
+ * comes from a current login/provider row with no profile.
+ */
+export function adapterRouteToBinding(route: AdapterRoute): BindingRoute | null {
+  if (route === 'local_bridge') return 'bridge';
+  if (route === 'config_sync' || route === 'native_endpoint') return 'reshape';
+  return null;
+}
 
 export type TicketSourceKind = 'account' | 'provider';
 
