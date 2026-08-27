@@ -11,8 +11,6 @@ import {
   type AdapterApplyResult,
   type AdapterBridgeRuntimeStatus,
   type AdapterProfile,
-  type AdapterRoute,
-  type BindingRoute,
   type BindTicketResult,
   type TicketCredentialClass,
   type TicketPort,
@@ -20,6 +18,7 @@ import {
   type TicketView,
   type TicketWallet,
   type BindingView,
+  adapterRouteToBinding,
   groupTicketSurfaceMembers,
   memberHealthFromAuthHealth,
 } from '@/lib/backend/contracts';
@@ -72,13 +71,6 @@ function persistedSurface(blob: unknown): TicketSurface | undefined {
   if (!raw) return undefined;
   if (raw === 'unknown') return undefined;
   return TICKET_SURFACES.find((surface) => surface === raw);
-}
-
-function adapterRouteToBinding(route: Exclude<AdapterRoute, 'unsupported'>): BindingRoute {
-  if (route === 'local_bridge') return 'bridge';
-  // config_sync + native_endpoint are reshape (same protocol, different config shape).
-  if (route === 'config_sync' || route === 'native_endpoint') return 'reshape';
-  return 'native';
 }
 
 function classifyProviderSurface(provider: Provider): TicketSurface {
@@ -262,10 +254,12 @@ function bindingFromProfile(
 ): BindingView | null {
   const tid = ticketId(profile.sourceKind, profile.sourceId);
   if (!ticketIds.has(tid)) return null;
+  const route = adapterRouteToBinding(profile.route);
+  if (route == null) return null;
   return {
     ticketId: tid,
     agentId: profile.targetAgentId,
-    route: adapterRouteToBinding(profile.route),
+    route,
     active,
     profileId: profile.id,
     bridge: bridgeFromProfile(profile, resolver),

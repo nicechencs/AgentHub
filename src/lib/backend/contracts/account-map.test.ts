@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { groupAccountsByIdentity, mapCoreAccount, type CoreAccount } from './account-map';
+import {
+  groupAccountsByIdentity,
+  liveAuthFromCore,
+  liveAuthOf,
+  mapCoreAccount,
+  mapCoreAccountView,
+  savedAuthFromCore,
+  savedAuthOf,
+  type CoreAccount,
+} from './account-map';
+import type { LiveAuthProbe } from './account-port';
 
 function core(partial: Partial<CoreAccount> & Pick<CoreAccount, 'id'>): CoreAccount {
   return {
@@ -329,5 +339,62 @@ describe('groupAccountsByIdentity', () => {
     expect(groups[0]!.identity).toBe('same-label');
     expect(groups[0]!.accounts).toHaveLength(2);
     expect(groups[0]!.accounts[0]!.id).toBe('t2');
+  });
+});
+
+describe('AccountAuthView provenance', () => {
+  it('reads savedAuth from pool health, not collapsed live extra.authHealth', () => {
+    const row = core({
+      id: 'a1',
+      extra: { authHealth: 'verified' },
+    });
+    expect(savedAuthFromCore(row)).toBe('unset');
+    expect(mapCoreAccount(row).authHealth).toBe('verified');
+    expect(mapCoreAccountView(row).savedAuth).toBe('unset');
+    expect(mapCoreAccountView(row).liveAuthFromExtra).toBe('verified');
+  });
+
+  it('uses extra.health for savedAuth when core.health is omitted', () => {
+    expect(savedAuthFromCore(core({ id: 'a1', extra: { health: 'configured' } }))).toBe(
+      'configured',
+    );
+  });
+
+  it('prefers probe health over extra.authHealth for liveAuthFromCore', () => {
+    const row = core({ id: 'a1', extra: { authHealth: 'configured' } });
+    const probe: LiveAuthProbe = {
+      agentId: 'grok',
+      summary: 'ok',
+      hasCredentials: true,
+      health: 'verified',
+    };
+    expect(liveAuthFromCore(row)).toBe('configured');
+    expect(liveAuthFromCore(row, probe)).toBe('verified');
+  });
+
+  it('never treats a bare Account as savedAuth', () => {
+    const account = mapCoreAccount(
+      core({ id: 'a1', health: 'configured', extra: { authHealth: 'verified' } }),
+    );
+    expect(account.authHealth).toBe('configured');
+    expect(savedAuthOf(account)).toBe('unset');
+    expect(savedAuthOf(mapCoreAccountView(core({ id: 'a1', health: 'configured' })))).toBe(
+      'configured',
+    );
+  });
+
+  it('liveAuthOf prefers probe, then liveAuthHealth, then view extra', () => {
+    const view = mapCoreAccountView(core({ id: 'a1', extra: { authHealth: 'configured' } }));
+    expect(liveAuthOf(view)).toBe('configured');
+    expect(
+      liveAuthOf(view, {
+        agentId: 'grok',
+        summary: 'ok',
+        hasCredentials: true,
+        health: 'renewable',
+      }),
+    ).toBe('renewable');
+    expect(liveAuthOf({ ...view.account, liveAuthHealth: 'needs_login' })).toBe('needs_login');
+    expect(liveAuthOf(mapCoreAccount(core({ id: 'a1' })))).toBe('unset');
   });
 });

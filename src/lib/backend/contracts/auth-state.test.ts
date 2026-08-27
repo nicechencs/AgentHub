@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sliceAgentStatus } from './agent-status-view';
 import { authDisplayForAccount, authDisplayForAgentStatus } from './auth-state';
 import type { Account, AgentStatus } from '@/lib/types';
 
@@ -43,6 +44,18 @@ describe('auth state display mapping', () => {
     );
 
     expect(display).toMatchObject({ health: 'unknown', label: '状态未知', legacyStatus: 'expiring' });
+  });
+
+  it('does not treat doctor placeholder authStatus none as liveAuth when slicing', () => {
+    const status: AgentStatus = {
+      agentId: 'grok',
+      installed: true,
+      authStatus: 'none',
+      authLabel: '未检测登录态',
+      running: false,
+    };
+    expect(sliceAgentStatus(status).liveAuth.health).toBe('unset');
+    expect(authDisplayForAgentStatus(status).health).toBe('missing');
   });
 
   it('accepts old AgentStatus rows and keeps renewable rows healthy', () => {

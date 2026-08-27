@@ -1,5 +1,6 @@
 import type { Account, AccountKind, AgentId } from '@/lib/types';
-import { normalizeAuthHealth } from './auth-state';
+import type { LiveAuthProbe } from './account-port';
+import { normalizeAuthHealth, type AuthHealth } from './auth-state';
 
 export interface CoreAccount {
   id: string;
@@ -290,6 +291,62 @@ function buildCredentialSummary(
     parts.push('oauth=set');
   }
   return parts.length ? parts.join(' · ') : undefined;
+}
+
+export type AccountAuthView = {
+  account: Account;
+  savedAuth: AuthHealth | 'unset';
+  /** `extra.authHealth` before overlaying a live probe. */
+  liveAuthFromExtra: AuthHealth | 'unset';
+};
+
+function extraRecord(core: CoreAccount): Record<string, unknown> {
+  return core.extra ?? {};
+}
+
+/** Pool-row health only. Does not read collapsed `Account.authHealth`. */
+export function savedAuthFromCore(core: CoreAccount): AuthHealth | 'unset' {
+  return normalizeAuthHealth(core.health ?? extraRecord(core).health) ?? 'unset';
+}
+
+export function liveAuthFromCore(
+  core: CoreAccount,
+  probe?: LiveAuthProbe,
+): AuthHealth | 'unset' {
+  const fromProbe = normalizeAuthHealth(probe?.health);
+  if (fromProbe) return fromProbe;
+  return normalizeAuthHealth(extraRecord(core).authHealth) ?? 'unset';
+}
+
+export function mapCoreAccountView(core: CoreAccount): AccountAuthView {
+  return {
+    account: mapCoreAccount(core),
+    savedAuth: savedAuthFromCore(core),
+    liveAuthFromExtra: normalizeAuthHealth(extraRecord(core).authHealth) ?? 'unset',
+  };
+}
+
+function isAccountAuthView(row: AccountAuthView | Account): row is AccountAuthView {
+  return 'savedAuth' in row && 'liveAuthFromExtra' in row && 'account' in row;
+}
+
+/** Bare Account (mock / uncarried pool row) is always unset. */
+export function savedAuthOf(row: AccountAuthView | Account): AuthHealth | 'unset' {
+  if (isAccountAuthView(row)) return row.savedAuth;
+  return 'unset';
+}
+
+export function liveAuthOf(
+  row: AccountAuthView | Account,
+  probe?: LiveAuthProbe,
+): AuthHealth | 'unset' {
+  const fromProbe = normalizeAuthHealth(probe?.health);
+  if (fromProbe) return fromProbe;
+  const account = isAccountAuthView(row) ? row.account : row;
+  const fromLive = normalizeAuthHealth(account.liveAuthHealth);
+  if (fromLive) return fromLive;
+  if (isAccountAuthView(row)) return row.liveAuthFromExtra;
+  return 'unset';
 }
 
 function remainingSecFromExpiresAt(raw: unknown): number | undefined {
