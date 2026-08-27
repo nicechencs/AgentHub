@@ -120,7 +120,7 @@ export function Hint({
   );
 
   return (
-    <Tooltip delayDuration={delayDuration} disableHoverableContent>
+    <Tooltip delayDuration={delayDuration}>
       <TooltipTrigger asChild>{trigger}</TooltipTrigger>
       <TooltipContent side={side} sideOffset={sideOffset}>
         <TooltipBody contentClassName={contentClassName}>{label}</TooltipBody>
