@@ -2,7 +2,7 @@ import type {
   ConnectionTrashItem,
   TrashPort,
 } from '@/lib/backend/contracts/ports';
-import { mapCoreAccount, type CoreAccount } from '@/lib/backend/contracts/account-map';
+import { mapCoreAccountView, type CoreAccount } from '@/lib/backend/contracts/account-map';
 import { mapCoreProvider, type CoreProvider } from '@/lib/backend/contracts/provider-map';
 import { invoke } from './invoke';
 import { logger } from '@/lib/logger';
@@ -17,7 +17,7 @@ type CoreTrashItem = Omit<ConnectionTrashItem, 'account' | 'provider'> & {
 function mapTrashItem(item: CoreTrashItem): ConnectionTrashItem {
   return {
     ...item,
-    account: item.account ? mapCoreAccount(item.account) : undefined,
+    account: item.account ? mapCoreAccountView(item.account).account : undefined,
     provider: item.provider ? mapCoreProvider(item.provider) : undefined,
   };
 }

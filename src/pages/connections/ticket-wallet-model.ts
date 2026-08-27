@@ -979,12 +979,6 @@ export function buildTicketDetailFields(
   };
 }
 
-function bindingRouteLabel(route: BindingRoute, t?: TranslateFn): string {
-  if (route === 'bridge') return t ? t('kind.route.localRoute') : '本机路由';
-  if (route === 'reshape') return t ? t('connections.list.routeReshape') : '改配置';
-  return t ? t('connections.list.routeNative') : '直连';
-}
-
 export function buildTicketBindingRows(
   bindings: readonly BindingView[] | null | undefined,
   t?: TranslateFn,
@@ -994,7 +988,7 @@ export function buildTicketBindingRows(
     agentId: binding.agentId,
     agentLabel: agentDisplayName(binding.agentId),
     status: ticketBindingStatus(binding, t),
-    routeLabel: bindingRouteLabel(binding.route, t),
+    routeLabel: bindingDashboardRouteLabel(binding.route, t),
     localUrl: binding.route === 'bridge'
       ? formatRouteEndpointHttpUrl({
           path: routeEndpointPathForBinding({ agentId: binding.agentId }),

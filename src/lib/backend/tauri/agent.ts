@@ -1,4 +1,5 @@
 import { AGENT_MAP, AGENTS } from '@/config/agents';
+import { unwrapAccounts } from '@/lib/backend/contracts/account-map';
 import { enrichStatusesWithConnections } from '@/lib/backend/contracts/agent-connection';
 import type { Backend, AgentPort } from '@/lib/backend/contracts';
 import { mergeAgentListWithCatalog } from '@/lib/backend/contracts/agent-catalog';
@@ -60,7 +61,7 @@ async function withConnectionEnrichment(
       accounts: accounts.length,
       providers: providers.length,
     });
-    return enrichStatusesWithConnections(agents, accounts, providers);
+    return enrichStatusesWithConnections(agents, unwrapAccounts(accounts), providers);
   } catch (e) {
     log.warn('connection enrichment failed; showing detect-only status', {
       agents: agents.length,
