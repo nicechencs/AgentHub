@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   describeProviderSwitchError,
@@ -38,5 +39,11 @@ describe('describeProviderSwitchError', () => {
 describe('switch toast copy', () => {
   it('names a successful live write', () => {
     expect(SWITCH_WROTE_LIVE).toBe('已写入本机配置');
+  });
+
+  it('keeps 已写入本机配置 off the bind-to-route success path', () => {
+    const src = readFileSync(new URL('./use-connection-page-actions.ts', import.meta.url), 'utf8');
+    expect(src).toContain('wroteLocal ? SWITCH_WROTE_LIVE : t(\'connections.list.switchOk\')');
+    expect(src).toMatch(/const wroteLocal =\s*ticket\.agentId === targetAgent/);
   });
 });

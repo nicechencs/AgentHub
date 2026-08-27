@@ -72,7 +72,9 @@ export function useConnectionPageActions(input: {
     const generation = ++switchGen.current;
     setSwitchingTicketId(ticket.id);
     try {
-      if (ticket.agentId === targetAgent) {
+      const wroteLocal =
+        ticket.agentId === targetAgent;
+      if (wroteLocal) {
         if (ticket.sourceKind === 'account') {
           await switchAccount(ticket.agentId, ticket.sourceId);
         } else {
@@ -86,7 +88,10 @@ export function useConnectionPageActions(input: {
         }
       }
       if (switchGen.current !== generation) return;
-      toast({ title: SWITCH_WROTE_LIVE, variant: 'success' });
+      toast({
+        title: wroteLocal ? SWITCH_WROTE_LIVE : t('connections.list.switchOk'),
+        variant: 'success',
+      });
       await poolReload().catch(() => {});
       await loadWallet();
     } catch (e) {
