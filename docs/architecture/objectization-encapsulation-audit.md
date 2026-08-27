@@ -22,7 +22,7 @@ updated: 2026-08-26
 | --- | --- | --- |
 | O-01 | 领域 Service 曾是 `pub` 字段 | 已处理：Service 字段改为 `pub(crate)`，对外只留访问器。CLI / 桌面端走 `accounts()` / `providers()` 等。隔离测试用 `set_providers` / `set_accounts`。按领域拆 Service 内部职责仍暂缓 |
 | O-02 | 仍存在：`Database::with_conn` 为 `pub`；生产路径曾用 `ProviderService::repo()` 读行 | 部分处理：生产读改为 `get_by_id` / `get_current`；Account / Backup 的 `repo()` 收为 `pub(crate)`。`with_conn` 与 Provider `repo()` 仍给测试和补偿事务用 |
-| O-03 | Chat 页面 Hook 同时承载会话、发送、连接和弹窗 | 部分处理：纯 UI 开关收到 `use-chat-page-chrome.ts`（侧栏 / 设置 / 危险确认 / 删除确认 / 侧栏查询）。发送、取消、世代、单飞、票夹订阅未动 |
+| O-03 | Chat 页面 Hook 同时承载会话、发送、连接和弹窗 | 部分处理：UI 壳在 `use-chat-page-chrome.ts`；发送 / 取消 / 流式过程在 `use-chat-page-send.ts`。会话列表、连接切换、世代、单飞、票夹订阅仍在 `useChatPage`。发送 / 取消 / 切会话行为未改 |
 | O-04 | Connections 页面编排探测、导入、切换、删除 | 部分处理：导入对话框的本机登录探测收到 `use-connection-import-probe.ts`。切换 / 绑定 / 删除 / 分享 / 路由侧栏未动 |
 | O-05 | 供应商保存编排曾在页面目录 | 已处理：`runProviderSaveFlow` 收到 `src/lib/api/provider-save.ts`；页面只保留 schema 闸门。validate/materialize/upsert 语义未改 |
 | O-06 | 生产 Hook 已走共享连接池；`loadAdapterPageResources` 只留在测试 | 标注为测试辅助，页面不得再自行拉账号 / Provider |
@@ -77,7 +77,7 @@ updated: 2026-08-26
 - 页面 Hook、Tauri controller 和部分 Service 同时承担状态、编排、持久化和补偿；
 - 同一业务概念在多个对象中分别保存或派生，尤其是 Agent 状态、连接池、票夹和路线信息。
 
-最高风险曾经是：调用方可以直接操作本应由领域对象维护的状态；写入成功后，多个前端读模型又可能各自刷新、静默失败或相互覆盖。票夹 bind/unbind 与账号 / Provider 变更的读模型刷新已收到 runtime coordinator；Chat 纯 UI 壳已抽出，会话 / 发送 / 连接仍在同一 Hook。连接页导入探测已抽出，切换 / 删除仍在页面。Service 内部拆分和契约收窄仍待单独设计。
+最高风险曾经是：调用方可以直接操作本应由领域对象维护的状态；写入成功后，多个前端读模型又可能各自刷新、静默失败或相互覆盖。票夹 bind/unbind 与账号 / Provider 变更的读模型刷新已收到 runtime coordinator；Chat 纯 UI 壳和发送 / 取消已抽出，会话列表与连接切换仍在页面 Hook。连接页导入探测已抽出，切换 / 删除仍在页面。Service 内部拆分和契约收窄仍待单独设计。
 
 ## 全量复核新增问题索引
 
@@ -123,9 +123,9 @@ updated: 2026-08-26
 
 - **严重程度：高**
 - **状态：部分处理**
-- **位置：** `src/pages/chat/use-chat-page.ts`；UI 壳 `src/pages/chat/use-chat-page-chrome.ts`
+- **位置：** `src/pages/chat/use-chat-page.ts`；UI 壳 `src/pages/chat/use-chat-page-chrome.ts`；发送 `src/pages/chat/use-chat-page-send.ts`
 - **问题：** `useChatPage` 同时维护会话、消息、Agent 状态、Provider、票夹、发送状态、流式过程、弹窗、项目跳转和竞态代数，并直接执行加载、创建、切换、发送、取消和恢复。
-- **当前：** 纯 UI 壳（`railOpen` / `settingsOpen` / `dangerConfirm` / `deleteConfirmId` / `railQuery`）在 `use-chat-page-chrome.ts`。会话、发送、连接、世代和票夹订阅仍在 `useChatPage`。发送 / 取消 / 切会话行为未改。
+- **当前：** 纯 UI 壳在 `use-chat-page-chrome.ts`。发送 / 取消 / 流式事件 / 过程面板在 `use-chat-page-send.ts`（世代仍走 `isCurrentChatRequest`）。会话列表、连接切换、单飞和票夹订阅仍在 `useChatPage`。发送 / 取消 / 切会话行为未改。
 - **建议：** 拆为会话控制器、消息/流式发送控制器、连接信息查询 Hook 和页面交互状态 Hook；页面只负责组合和展示。
 - **影响/风险：** 状态之间的竞态保护集中在一个 Hook，新增需求容易继续堆叠，测试难以区分领域行为和视图行为。
 

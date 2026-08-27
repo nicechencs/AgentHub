@@ -6,8 +6,6 @@ import { useToast } from '@/components/ui/toast';
 import { AGENT_IDS } from '@/config/agents';
 import { listAgents } from '@/lib/api/agent';
 import {
-  chatCancel,
-  chatSend,
   createConversation,
   deleteConversation,
   ensureDefaultConversation,
@@ -20,12 +18,10 @@ import { listProviders, switchProvider } from '@/lib/api/provider';
 import { pickDirectory } from '@/lib/api/settings';
 import { bindTicket, isActiveBindingForAgent } from '@/lib/api/tickets';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
-import { processKey, reduceProcessEvent, type ProcessMap } from '@/lib/chat-process';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
 import type {
   AgentId,
   AgentStatus,
-  ChatEvent,
   ChatMessage,
   Conversation,
   Provider,
@@ -39,60 +35,27 @@ import {
   chatConnectionOptions,
   chatConnectionPickerView,
   connectionPickerCaption,
-  conversationTitle,
   filterConversations,
   groupConversationsByDay,
   isChatAgentSelectable,
   leftoverProviderIsCurrent,
   newConversationDefaults,
   selectConversationAgent,
-  retryTarget,
-  sendBlockers,
 } from './chat-model';
+import {
+  conversationListState,
+  createSingleFlight,
+} from './chat-request';
 import { useChatPageChrome } from './use-chat-page-chrome';
+import { useChatPageSend } from './use-chat-page-send';
+
+export {
+  conversationListState,
+  createSingleFlight,
+  isCurrentChatRequest,
+} from './chat-request';
 
 const STICK_THRESHOLD_PX = 80;
-
-/** A send continuation may only write to the still-current conversation. */
-export function isCurrentChatRequest(
-  activeId: string | null,
-  activeGeneration: number,
-  requestId: string,
-  requestGeneration: number,
-): boolean {
-  return activeId === requestId && activeGeneration === requestGeneration;
-}
-
-/** The list and its initial selection are one generation-checked commit. */
-export function conversationListState(conversations: Conversation[]): {
-  conversations: Conversation[];
-  activeId: string | null;
-} {
-  return {
-    conversations,
-    activeId: conversations[0]?.id ?? null,
-  };
-}
-
-/** Keep initialization idempotent across StrictMode effect replays. */
-export function createSingleFlight<T>() {
-  let inFlight: Promise<T> | null = null;
-
-  return (factory: () => Promise<T>): Promise<T> => {
-    if (inFlight) return inFlight;
-    const next = factory();
-    inFlight = next;
-    next.then(
-      () => {
-        if (inFlight === next) inFlight = null;
-      },
-      () => {
-        if (inFlight === next) inFlight = null;
-      },
-    );
-    return next;
-  };
-}
 
 const EMPTY_WALLET: TicketWallet = { tickets: [], bindings: [], surfaceGroups: [] };
 
@@ -116,9 +79,6 @@ export function useChatPage() {
   const [listLoading, setListLoading] = useState(true);
   /** 当前会话消息 / provider 加载 */
   const [messagesLoading, setMessagesLoading] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [sendingConversationId, setSendingConversationId] = useState<string | null>(null);
-  const sendingConversationIdRef = useRef<string | null>(null);
   const [draft, setDraft] = useState('');
   const {
     railOpen,
@@ -136,7 +96,6 @@ export function useChatPage() {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
-  const streamingRef = useRef<Record<string, string>>({});
   const activeIdRef = useRef<string | null>(null);
   const activeGenerationRef = useRef(0);
   const generationActiveIdRef = useRef<string | null>(null);
@@ -147,8 +106,6 @@ export function useChatPage() {
     null,
   );
   const loadGenerationRef = useRef(0);
-  /** 当轮过程面板：命令 / stderr / 细状态（仅内存，不落库） */
-  const [processMap, setProcessMap] = useState<ProcessMap>({});
   /** Projects 页跳转：bootstrap 只处理一次 */
   const bootstrapDoneRef = useRef(false);
   activeIdRef.current = activeId;
@@ -161,22 +118,6 @@ export function useChatPage() {
     () => conversations.find((c) => c.id === activeId) ?? null,
     [conversations, activeId],
   );
-
-  useEffect(() => {
-    if (!active || sending) return;
-    if (active.agentIds.length <= 1) return;
-    const next = selectConversationAgent({
-      currentIds: [],
-      nextId: active.agentIds[0],
-      allowDangerous: active.allowDangerous,
-    });
-    if (!next) return;
-    void updateConversation(active.id, next)
-      .then((updated) => {
-        setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      })
-      .catch(() => {});
-  }, [active, sending]);
 
   const installed = useMemo(() => {
     const m = new Map<AgentId, boolean>();
@@ -202,6 +143,48 @@ export function useChatPage() {
       ),
     [agentStatus],
   );
+
+  const loadMessages = useCallback(async (id: string) => {
+    return listChatMessages(id);
+  }, []);
+
+  const turns = useMemo(() => groupByTurn(messages), [messages]);
+
+  const send = useChatPageSend({
+    active,
+    activeId,
+    messages,
+    setMessages,
+    setConversations,
+    conversations,
+    hiddenIds,
+    envNotReadyIds,
+    unconfiguredAuthIds,
+    activeIdRef,
+    activeGenerationRef,
+    loadMessages,
+    draft,
+    setDraft,
+    turns,
+  });
+  const sending = send.sending;
+
+  useEffect(() => {
+    if (!active || sending) return;
+    if (active.agentIds.length <= 1) return;
+    const next = selectConversationAgent({
+      currentIds: [],
+      nextId: active.agentIds[0],
+      allowDangerous: active.allowDangerous,
+    });
+    if (!next) return;
+    void updateConversation(active.id, next)
+      .then((updated) => {
+        setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      })
+      .catch(() => {});
+  }, [active, sending]);
+
   const pickerRows = useMemo(
     () =>
       chatAgentPickerRows({
@@ -276,18 +259,10 @@ export function useChatPage() {
     }
     // 以服务端 sending 为准恢复页级 Stop；list 尚未带上 sending 时不要清掉进行中的本地 send
     const inflight = next.find((c) => c.sending)?.id ?? null;
-    if (inflight) {
-      sendingConversationIdRef.current = inflight;
-      setSendingConversationId(inflight);
-      setSending(true);
-    }
+    send.adoptInflight(inflight);
       return next;
     });
   }, [ensureConversation, refreshAgents]);
-
-  const loadMessages = useCallback(async (id: string) => {
-    return listChatMessages(id);
-  }, []);
 
   const loadProviders = useCallback(async (agentId: AgentId) => {
     const gen = ++providersGenRef.current;
@@ -379,9 +354,6 @@ export function useChatPage() {
 
   // messages 与 providers 独立并发（不再串在 loadList 之后的瀑布里）
   useEffect(() => {
-    // 过程面板仅内存；切会话时清空，避免串台
-    setProcessMap({});
-    streamingRef.current = {};
     stickToBottomRef.current = true;
     if (!activeId) {
       setMessages([]);
@@ -428,33 +400,6 @@ export function useChatPage() {
     bottomRef.current?.scrollIntoView({ block: 'nearest' });
   }, [messages, sending]);
 
-  const turns = useMemo(() => groupByTurn(messages), [messages]);
-
-  const liveSendingConversationId = useMemo(() => {
-    if (!sendingConversationId) return null;
-    return conversations.some((c) => c.id === sendingConversationId)
-      ? sendingConversationId
-      : null;
-  }, [conversations, sendingConversationId]);
-
-  const sendingTitle = useMemo(() => {
-    if (!liveSendingConversationId) return '';
-    const row = conversations.find((c) => c.id === liveSendingConversationId);
-    return conversationTitle(t, row?.title ?? '');
-  }, [conversations, liveSendingConversationId, t]);
-
-  const blockers = useMemo(() => {
-    if (!active) return [];
-    return sendBlockers({
-      conversation: active,
-      hiddenIds,
-      envNotReadyIds,
-      unconfiguredAuthIds,
-      sendingConversationId: liveSendingConversationId,
-      sendingTitle,
-    });
-  }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, liveSendingConversationId, sendingTitle]);
-
   const railGroups = useMemo(() => {
     const filtered = filterConversations(conversations, railQuery);
     return groupConversationsByDay(filtered, Date.now(), t);
@@ -464,8 +409,6 @@ export function useChatPage() {
     () => filterConversations(conversations, railQuery).length,
     [conversations, railQuery],
   );
-
-  const retry = useMemo(() => retryTarget(turns, sending), [turns, sending]);
 
   const agentPickerLabel = useMemo(() => agentPickerLabelOf(t, active), [active, t]);
 
@@ -553,12 +496,7 @@ export function useChatPage() {
 
   async function handleDelete(id: string) {
     try {
-      if (sendingConversationId === id) {
-        await chatCancel(id).catch(() => {});
-        sendingConversationIdRef.current = null;
-        setSending(false);
-        setSendingConversationId(null);
-      }
+      await send.cancelIfSending(id);
       await deleteConversation(id);
       const rest = conversations.filter((c) => c.id !== id);
       if (rest.length === 0) {
@@ -678,201 +616,6 @@ export function useChatPage() {
     }
   }
 
-  function applyEvent(ev: ChatEvent, sendConvId: string, sendGeneration: number) {
-    if (
-      !isCurrentChatRequest(
-        activeIdRef.current,
-        activeGenerationRef.current,
-        sendConvId,
-        sendGeneration,
-      )
-    ) {
-      if (ev.type === 'error') toast({ title: ev.message, variant: 'danger' });
-      return;
-    }
-    // 过程面板状态（命令 / stderr / 细状态）与 messages 并行维护
-    setProcessMap((prev) => reduceProcessEvent(prev, ev));
-
-    if (ev.type === 'started') {
-      streamingRef.current = {};
-      for (const agent of ev.agents) {
-        streamingRef.current[processKey(ev.turn, agent)] = '';
-        setMessages((prev) => {
-          const hasRunning = prev.some(
-            (m) => m.turn === ev.turn && m.role === 'agent' && m.agentId === agent,
-          );
-          if (hasRunning) return prev;
-          return [
-            ...prev,
-            {
-              id: `local-${ev.turn}-${agent}`,
-              conversationId: sendConvId,
-              turn: ev.turn,
-              role: 'agent',
-              agentId: agent,
-              content: '',
-              status: 'running',
-              durationMs: 0,
-              createdAt: new Date().toISOString(),
-            },
-          ];
-        });
-      }
-      return;
-    }
-    if (ev.type === 'agentChunk' && ev.stream === 'stdout') {
-      const key = processKey(ev.turn, ev.agent);
-      streamingRef.current[key] = (streamingRef.current[key] ?? '') + ev.text;
-      const content = streamingRef.current[key];
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.role === 'agent' &&
-          m.agentId === ev.agent &&
-          m.turn === ev.turn &&
-          m.status === 'running'
-            ? { ...m, content }
-            : m,
-        ),
-      );
-      return;
-    }
-    if (ev.type === 'agentFinished') {
-      setMessages((prev) => {
-        const withoutLocal = prev.filter(
-          (m) =>
-            !(
-              m.role === 'agent' &&
-              m.agentId === ev.agent &&
-              m.turn === ev.turn &&
-              (m.status === 'running' || m.id.startsWith('local-'))
-            ),
-        );
-        return [...withoutLocal, ev.message];
-      });
-      return;
-    }
-    if (ev.type === 'error') {
-      toast({ title: ev.message, variant: 'danger' });
-    }
-  }
-
-  async function sendPrompt(prompt: string, clearDraft: boolean) {
-    if (!active || sending) return;
-    if (sendBlockers({
-      conversation: active,
-      hiddenIds,
-      envNotReadyIds,
-      unconfiguredAuthIds,
-      sendingConversationId: liveSendingConversationId,
-      sendingTitle,
-    }).length > 0) {
-      return;
-    }
-    if (!prompt) return;
-
-    const sendConvId = active.id;
-    const sendGeneration = activeGenerationRef.current;
-    sendingConversationIdRef.current = sendConvId;
-    setSending(true);
-    setSendingConversationId(sendConvId);
-    if (clearDraft) setDraft('');
-    const turnGuess = messages.reduce((max, m) => Math.max(max, m.turn), 0) + 1;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `local-user-${Date.now()}`,
-        conversationId: sendConvId,
-        turn: turnGuess,
-        role: 'user',
-        content: prompt,
-        status: 'ok',
-        durationMs: 0,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-
-    try {
-      await chatSend(sendConvId, prompt, (ev) => applyEvent(ev, sendConvId, sendGeneration));
-      // Events from the original generation are deliberately ignored after
-      // A → B → A. If A is current again when the send finishes, use the
-      // current generation for a fresh DB convergence read so the final
-      // persisted reply/running state cannot be lost with the old stream.
-      if (activeIdRef.current !== sendConvId) return;
-      const refreshGeneration = activeGenerationRef.current;
-      const convs = await listConversations();
-      if (
-        !isCurrentChatRequest(
-          activeIdRef.current,
-          activeGenerationRef.current,
-          sendConvId,
-          refreshGeneration,
-        )
-      ) {
-        return;
-      }
-      setConversations(convs);
-      const rows = await listChatMessages(sendConvId);
-      if (
-        isCurrentChatRequest(
-          activeIdRef.current,
-          activeGenerationRef.current,
-          sendConvId,
-          refreshGeneration,
-        )
-      ) {
-        setMessages(rows);
-      }
-    } catch (e) {
-      toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
-      if (activeIdRef.current === sendConvId) {
-        const refreshGeneration = activeGenerationRef.current;
-        const rows = await loadMessages(sendConvId).catch(() => null);
-        if (
-          rows &&
-          isCurrentChatRequest(
-            activeIdRef.current,
-            activeGenerationRef.current,
-            sendConvId,
-            refreshGeneration,
-          )
-        ) {
-          setMessages(rows);
-        }
-      }
-    } finally {
-      if (sendingConversationIdRef.current === sendConvId) {
-        sendingConversationIdRef.current = null;
-        setSending(false);
-        setSendingConversationId(null);
-      }
-    }
-  }
-
-  async function handleSend() {
-    await sendPrompt(draft.trim(), true);
-  }
-
-  async function retryLast() {
-    const target = retryTarget(turns, sending);
-    if (!target) return;
-    await sendPrompt(target.prompt, false);
-  }
-
-  async function handleCancel() {
-    if (!sendingConversationId) return;
-    try {
-      await chatCancel(sendingConversationId);
-      toast({
-        title: t('chat.toast.cancelRequested'),
-        description: t('chat.toast.cancelRequestedDesc'),
-        variant: 'success',
-        duration: 4000,
-      });
-    } catch (e) {
-      toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
-    }
-  }
-
   function retryLoad() {
     const generation = ++loadGenerationRef.current;
     let cancelled = false;
@@ -898,8 +641,6 @@ export function useChatPage() {
     setActiveId(id);
   }
 
-  const sendingHere = Boolean(sending && sendingConversationId === active?.id);
-
   return {
     conversations,
     activeId,
@@ -912,9 +653,9 @@ export function useChatPage() {
     error,
     listLoading,
     messagesLoading,
-    sending,
-    sendingHere,
-    sendingConversationId: liveSendingConversationId,
+    sending: send.sending,
+    sendingHere: send.sendingHere,
+    sendingConversationId: send.sendingConversationId,
     draft,
     setDraft,
     railOpen,
@@ -928,7 +669,7 @@ export function useChatPage() {
     setRailQuery,
     deleteConfirmId,
     setDeleteConfirmId,
-    processMap,
+    processMap: send.processMap,
     hiddenIds,
     unconfiguredAuthIds,
     pickerRows,
@@ -942,10 +683,10 @@ export function useChatPage() {
     connectionCaption,
     walletError: ticketWallet.error,
     reloadWallet: ticketWallet.reload,
-    blockers,
+    blockers: send.blockers,
     railGroups,
     filteredCount,
-    retry,
+    retry: send.retry,
     transcriptRef,
     bottomRef,
     onTranscriptScroll,
@@ -956,10 +697,10 @@ export function useChatPage() {
     renameTitle,
     selectConversationAgentId,
     handleSwitchConnection,
-    handleSend,
-    retryLast,
-    handleCancel,
-    cancelSending: handleCancel,
+    handleSend: send.handleSend,
+    retryLast: send.retryLast,
+    handleCancel: send.handleCancel,
+    cancelSending: send.handleCancel,
     retryLoad,
     focusConversation,
   };
