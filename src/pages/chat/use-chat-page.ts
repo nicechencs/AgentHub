@@ -1,31 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTicketWallet } from '@/app/runtime';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_IDS } from '@/config/agents';
 import { listChatMessages, updateConversation } from '@/lib/api/chat';
-import { switchAccount } from '@/lib/api/account';
-import { listProviders, switchProvider } from '@/lib/api/provider';
 import { pickDirectory } from '@/lib/api/settings';
-import { bindTicket, isActiveBindingForAgent } from '@/lib/api/tickets';
-import type { TicketWallet } from '@/lib/backend/contracts/ticket';
-import type { AgentId, ChatMessage, Provider } from '@/lib/types';
-import { extractModel, groupByTurn } from './chat-format';
+import type { AgentId, ChatMessage } from '@/lib/types';
+import { groupByTurn } from './chat-format';
 import {
   agentChatEnvReady,
   agentHasConfiguredAuth,
   agentPickerLabel as agentPickerLabelOf,
   chatAgentPickerRows,
-  chatConnectionOptions,
-  chatConnectionPickerView,
-  connectionPickerCaption,
   filterConversations,
   groupConversationsByDay,
   isChatAgentSelectable,
-  leftoverProviderIsCurrent,
   selectConversationAgent,
 } from './chat-model';
 import { useChatPageChrome } from './use-chat-page-chrome';
+import { useChatPageConnection } from './use-chat-page-connection';
 import { useChatPageSend } from './use-chat-page-send';
 import { useChatPageSessions } from './use-chat-page-sessions';
 
@@ -37,17 +29,10 @@ export {
 
 const STICK_THRESHOLD_PX = 80;
 
-const EMPTY_WALLET: TicketWallet = { tickets: [], bindings: [], surfaceGroups: [] };
-
 export function useChatPage() {
   const { t } = useI18n();
   const { toast } = useToast();
-  const ticketWallet = useTicketWallet();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const wallet = ticketWallet.wallet;
-  const walletReady = ticketWallet.state === 'ready' || ticketWallet.state === 'error';
-  const providersGenRef = useRef(0);
   /** 当前会话消息 / provider 加载 */
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [draft, setDraft] = useState('');
@@ -63,7 +48,6 @@ export function useChatPage() {
     railQuery,
     setRailQuery,
   } = useChatPageChrome();
-  const [switchingProvider, setSwitchingProvider] = useState(false);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -190,28 +174,15 @@ export function useChatPage() {
 
   const primaryAgent = active?.agentIds[0] ?? null;
 
-  const currentProvider = useMemo(
-    () => providers.find((p) => p.isCurrent) ?? null,
-    [providers],
-  );
-
   const hasUsableAgent = agentsReady && agentStatus.some((a) => isChatAgentSelectable(a));
 
-  const loadProviders = useCallback(async (agentId: AgentId) => {
-    const gen = ++providersGenRef.current;
-    try {
-      const list = await listProviders(agentId);
-      if (gen !== providersGenRef.current) return;
-      setProviders(list);
-    } catch {
-      if (gen !== providersGenRef.current) return;
-      setProviders([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    void ticketWallet.ensureLoaded();
-  }, [ticketWallet.ensureLoaded]);
+  const connection = useChatPageConnection({
+    primaryAgent,
+    active,
+    hiddenIds,
+    agentStatus,
+    refreshAgents,
+  });
 
   // messages 与 providers 独立并发（不再串在 loadList 之后的瀑布里）
   useEffect(() => {
@@ -239,16 +210,6 @@ export function useChatPage() {
     };
   }, [activeId, loadMessages]);
 
-  useEffect(() => {
-    if (!primaryAgent) {
-      providersGenRef.current += 1;
-      setProviders([]);
-      return;
-    }
-    setProviders([]);
-    void loadProviders(primaryAgent);
-  }, [primaryAgent, loadProviders]);
-
   const onTranscriptScroll = useCallback(() => {
     const el = transcriptRef.current;
     if (!el) return;
@@ -272,65 +233,6 @@ export function useChatPage() {
   );
 
   const agentPickerLabel = useMemo(() => agentPickerLabelOf(t, active), [active, t]);
-
-  const primaryStatus = useMemo(
-    () => (primaryAgent ? agentStatus.find((a) => a.agentId === primaryAgent) : undefined),
-    [agentStatus, primaryAgent],
-  );
-
-  const leftoverCurrent = leftoverProviderIsCurrent(providers);
-
-  const connectionOptions = useMemo(
-    () =>
-      chatConnectionOptions(t, {
-        wallet: wallet ?? (walletReady ? EMPTY_WALLET : null),
-        agentId: primaryAgent,
-      }),
-    [wallet, walletReady, primaryAgent, t],
-  );
-
-  const activeLogin = connectionOptions.find((option) => option.isCurrent) ?? null;
-
-  const connectionView = useMemo(
-    () =>
-      chatConnectionPickerView(t, {
-        primaryAgent,
-        switching: switchingProvider,
-        status: primaryStatus,
-        currentProviderName: leftoverCurrent ? null : currentProvider?.name ?? null,
-        currentProviderModel: leftoverCurrent
-          ? null
-          : currentProvider
-            ? extractModel(currentProvider.configText)
-            : null,
-        activeLogin: activeLogin
-          ? { title: activeLogin.title, subtitle: activeLogin.subtitle }
-          : null,
-        leftoverCurrent,
-        walletReady,
-      }),
-    [
-      primaryAgent,
-      switchingProvider,
-      primaryStatus,
-      leftoverCurrent,
-      currentProvider,
-      activeLogin,
-      walletReady,
-      t,
-    ],
-  );
-
-  const connectionCaption = useMemo(
-    () =>
-      active
-        ? connectionPickerCaption(t, {
-            agentIds: active.agentIds,
-            primaryAgent,
-          })
-        : null,
-    [active, primaryAgent, t],
-  );
 
   async function patchActive(patch: Parameters<typeof updateConversation>[1]) {
     if (!active) return;
@@ -387,35 +289,6 @@ export function useChatPage() {
     await patchActive(next);
   }
 
-  async function handleSwitchConnection(ticketId: string) {
-    if (!primaryAgent || switchingProvider || hiddenIds.has(primaryAgent)) return;
-    const option = connectionOptions.find((row) => row.ticketId === ticketId);
-    if (!option || option.isCurrent) return;
-    setSwitchingProvider(true);
-    try {
-      if (option.action.type === 'switch-account') {
-        await switchAccount(primaryAgent, option.action.accountId);
-      } else if (option.action.type === 'switch-provider') {
-        await switchProvider(primaryAgent, option.action.providerId);
-      } else {
-        const { binding } = await bindTicket(option.action.ticketId, primaryAgent);
-        if (!isActiveBindingForAgent(binding, primaryAgent)) {
-          throw new Error(t('chat.connection.bindNotCurrent'));
-        }
-      }
-      await Promise.all([
-        ticketWallet.reload(),
-        loadProviders(primaryAgent),
-        refreshAgents({ force: true }).catch(() => []),
-      ]);
-      toast({ title: t('chat.connection.switched'), variant: 'success' });
-    } catch (e) {
-      toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
-    } finally {
-      setSwitchingProvider(false);
-    }
-  }
-
   return {
     conversations,
     activeId,
@@ -424,7 +297,7 @@ export function useChatPage() {
     turns,
     agentStatus,
     agentsReady,
-    providers,
+    providers: connection.providers,
     error,
     listLoading,
     messagesLoading,
@@ -439,7 +312,7 @@ export function useChatPage() {
     setSettingsOpen,
     dangerConfirm,
     setDangerConfirm,
-    switchingProvider,
+    switchingProvider: connection.switchingProvider,
     railQuery,
     setRailQuery,
     deleteConfirmId,
@@ -453,11 +326,11 @@ export function useChatPage() {
     hasUsableAgent,
     activeHasHidden,
     agentPickerLabel,
-    connectionView,
-    connectionOptions,
-    connectionCaption,
-    walletError: ticketWallet.error,
-    reloadWallet: ticketWallet.reload,
+    connectionView: connection.connectionView,
+    connectionOptions: connection.connectionOptions,
+    connectionCaption: connection.connectionCaption,
+    walletError: connection.walletError,
+    reloadWallet: connection.reloadWallet,
     blockers: send.blockers,
     railGroups,
     filteredCount,
@@ -471,7 +344,7 @@ export function useChatPage() {
     pickWorkingDirectory,
     renameTitle,
     selectConversationAgentId,
-    handleSwitchConnection,
+    handleSwitchConnection: connection.handleSwitchConnection,
     handleSend: send.handleSend,
     retryLast: send.retryLast,
     handleCancel: send.handleCancel,
