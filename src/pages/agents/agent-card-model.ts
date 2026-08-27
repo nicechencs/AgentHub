@@ -2,7 +2,6 @@ import type { TerminalStatus } from '@/components/shared/InlineTerminal';
 import type { InstallChannelMeta } from '@/config/agents';
 import type { MessageKey } from '@/lib/i18n';
 import type { AgentStatus } from '@/lib/types';
-import { handleMenuDialogSelect } from '@/lib/menu-dialog-arm';
 
 export type AgentCardTaskAction = 'install' | 'upgrade' | 'oneclick';
 export type AgentCardTaskStatus = TerminalStatus;
@@ -38,18 +37,6 @@ export function installRetryButtonVariant(
 /** Update chip: Node-too-old (Pi) is not a generic "update unknown". */
 export function isNodeTooOldUpdateNote(note?: string | null): boolean {
   return !!note && /node too old/i.test(note);
-}
-
-export type AgentCardUninstallConfirmKind = 'program' | 'config';
-
-/** Same menu→Dialog path as Connections add-menu: preventDefault, arm, open, clear. */
-export function openAgentCardUninstallConfirm(
-  event: { preventDefault: () => void },
-  kind: AgentCardUninstallConfirmKind,
-  openConfirm: (kind: AgentCardUninstallConfirmKind) => void,
-  ignoreRef: { current: boolean },
-): void {
-  handleMenuDialogSelect(event, ignoreRef, () => openConfirm(kind));
 }
 
 export function resolveOfficialSetupUrl(
@@ -390,6 +377,23 @@ function compareVersionCores(
     if (d !== 0) return d < 0 ? -1 : 1;
   }
   return 0;
+}
+
+/** Unique formatted versions for the compact card; order follows install list. */
+export function uniqueInstallVersions(
+  installs: Array<{ version?: string | null }>,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const inst of installs) {
+    const v = formatAgentVersion(inst.version);
+    if (!v) continue;
+    const key = v.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+  }
+  return out;
 }
 
 /**
