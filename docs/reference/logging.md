@@ -4,7 +4,7 @@ description: CLI、GUI、core 和本机 Routes 共用的日志文件、级别、
 type: reference
 audience: user-and-contributor
 status: current
-updated: 2026-08-25
+updated: 2026-08-27
 ---
 
 # 日志参考
@@ -44,12 +44,28 @@ CLI 和 GUI 都调用 `agenthub-core::logging` 初始化同一套 tracing。生�
 | `code` | 稳定错误码 |
 | `op` | 短操作名 |
 | `agent` | Agent id（若适用） |
+| `path` | 切换写入的本机配置路径 |
+| `last4` | 钥匙末四位（`**xxxx`），从不是明文 |
 | `profile_id` | Route profile |
 | `request_id` | 单次本机请求关联 id |
 | `route` | `config_sync`、`native_endpoint` 或 `local_bridge` |
 | `protocol` / `stream` / `model` | 上游协议、流式标志、改写后的模型 |
 | `status` / `elapsed_ms` | HTTP 状态、耗时 |
 | `upstream_detail` | 脱敏后的上游短原因，最多 512 字 |
+
+登录相关操作（对照 GUI 排障）：
+
+| `module` | `op` | 何时出现 |
+|---|---|---|
+| `gui` | `recognize` | 智能识别粘贴成功 |
+| `gui` | `use_official` | 勾选或取消「使用官方服务」 |
+| `core.provider` | `recycle` | 登录被送进回收站 |
+| `core.provider` | `switch_write` | 切换真正写了本机配置路径 |
+| `core.provider` | `switch` | 切换结束；失败时带 `code=provider.switch.rollback` |
+| `core.chat` | `send` | 对话一轮结束；Agent 失败时记 `send failed`，不记 `send ok` |
+| `core.install` | `install_agent` | 安装结束；只打开官网时带 `code=setup_guide`，不是安装失败 |
+
+前端 `logger.ts` 只打开发控制台。要进当天 `.log` 文件，GUI 事件必须走桌面后端（例如 `log_gui_event`）。
 
 ## 必须脱敏
 
