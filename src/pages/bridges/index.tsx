@@ -181,8 +181,8 @@ export default function BridgesPage() {
     : null;
   const activeProfileId = inspectProfileId(inspectTarget);
   const directProfiles = useMemo(
-    () => directProfilesForRoutePoolV2(routePoolV2, profiles),
-    [routePoolV2, profiles],
+    () => directProfilesForRoutePoolV2(routePoolV2, profiles, bridgeStatuses),
+    [routePoolV2, profiles, bridgeStatuses],
   );
   const detailPool = detailTarget && routePoolV2
     ? matchDefaultPoolForProfile(defaultPools, detailTarget)
