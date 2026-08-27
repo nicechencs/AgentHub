@@ -11,6 +11,48 @@ function source(rel: string): string {
 }
 
 describe('agents layout wiring', () => {
+  it('uses WorkbenchSplitPage and opens installed-agent details in the right pane', () => {
+    const page = source('pages/agents/index.tsx');
+    const detail = source('pages/agents/AgentDetailPanel.tsx');
+    const card = source('pages/agents/agent-card.tsx');
+    expect(page).toContain('WorkbenchSplitPage');
+    expect(page).toContain("size=\"compact\"");
+    expect(page).toContain("t('common.resizeSidePanel')");
+    expect(page).toContain('<AgentDetailPanel');
+    expect(page).toContain('inspect.open(a.agentId)');
+    expect(page).toContain('a.installed ? () => inspect.open(a.agentId) : undefined');
+    expect(page).toContain('if (!inspectAgent?.installed) inspect.close()');
+    expect(page).toContain('ListSkeleton');
+    expect(page).toContain('<ErrorState');
+    expect(page).toContain('<EmptyState');
+    expect(detail).toContain('InspectSurface');
+    expect(detail).toContain("t('agents.detail.installLocations')");
+    expect(detail).toContain("t('agents.detail.openFolder')");
+    expect(detail).toContain('flex items-center justify-between gap-2');
+    expect(detail).toContain('<OpenDirButton');
+    expect(detail).toContain("title={t('agents.card.openConfigDirTitle')}");
+    expect(detail).toContain("title={t('agents.card.openInstallDir')}");
+    expect(card).toContain("t('agents.card.seeDetails')");
+    expect(detail).toContain("t('agents.card.uninstallProgram')");
+    expect(detail).toContain("t('agents.card.uninstallConfig')");
+    expect(detail).toContain('listAgentInstalls');
+    expect(detail).toContain('openPathInFileManager');
+    expect(detail).toContain('openAgentConfig');
+    expect(card).toContain('onSelect?:');
+    expect(card).toContain('selected?:');
+    expect(card).toContain('onOpen={onSelect}');
+    expect(card).toContain('ListRowBody');
+    expect(card).toContain('LIST_ROW_PAD');
+    expect(card).toContain('size="sm"');
+    expect(card).not.toContain('min-h-20');
+    expect(card).toContain("t('agents.card.seeDetails')");
+    expect(card).toContain('uniqueInstallVersions');
+    expect(card).not.toContain("t('agents.card.openInstallDir')");
+    expect(card).not.toContain("t('agents.card.uninstallProgram')");
+    expect(card).not.toContain('<Hint label={inst.location}');
+    expect(page).toContain('pageRhythm.stackDense');
+  });
+
   it('drag-reorders Agent cards and remembers the catalog order', () => {
     const page = source('pages/agents/index.tsx');
     expect(page).toContain('SortHandle');
@@ -22,7 +64,7 @@ describe('agents layout wiring', () => {
     expect(page).toContain('sortHandle=');
     const card = source('pages/agents/agent-card.tsx');
     expect(card).toContain('sortHandle?:');
-    expect(card).toContain('{sortHandle}');
+    expect(card).toContain('leading={sortHandle}');
   });
 
   it('applies the same remembered order on sidebar, dashboard, and installed lists', () => {
