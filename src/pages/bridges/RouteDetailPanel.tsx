@@ -401,7 +401,15 @@ function RoutePoolOverviewSection({
                   className="flex min-w-0 flex-wrap items-center gap-x-2 py-0.5 text-sm"
                 >
                   <span className="truncate">{member.title}</span>
-                  {member.enabled ? null : (
+                  {member.availability && member.availability !== 'ready' ? (
+                    <span className="text-meta text-muted">
+                      {member.availability === 'cooling'
+                        ? t('routes.pool.availabilityCooling')
+                        : member.availability === 'isolated'
+                          ? t('routes.pool.availabilityIsolated')
+                          : t('routes.pool.availabilityDisabled')}
+                    </span>
+                  ) : member.enabled ? null : (
                     <span className="text-meta text-muted">{t('routes.pool.memberOff')}</span>
                   )}
                 </li>

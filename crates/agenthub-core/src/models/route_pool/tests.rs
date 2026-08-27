@@ -1,9 +1,9 @@
 use crate::models::{
-    authorization_fingerprint, choose_default_pool_id, feature_flag_enabled, generate_hub_token,
-    model_route_id_is_exact, AdapterSourceKind, AgentId, RouteDownstreamDialect,
-    RouteDownstreamSurface, RouteSchedulePolicy, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
+    AdapterSourceKind, AgentId, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
     FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
-    FEATURE_ROUTE_POOL_V2,
+    FEATURE_ROUTE_POOL_V2, RouteDownstreamDialect, RouteDownstreamSurface, RouteSchedulePolicy,
+    authorization_fingerprint, choose_default_pool_id, feature_flag_enabled, generate_hub_token,
+    model_route_id_is_exact,
 };
 
 #[test]
@@ -117,6 +117,7 @@ fn default_overview_json_never_includes_hub_token() {
             source_kind: AdapterSourceKind::Account,
             source_id: "acc-1".into(),
             enabled: true,
+            availability: None,
         }],
         listed_models: vec!["gpt-4o".into()],
     };

@@ -5,8 +5,8 @@
 
 use std::fmt;
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 
 use super::{AdapterApplyPlan, AdapterProfile, AdapterRoute, AdapterSourceKind, AgentId};
@@ -282,6 +282,16 @@ pub fn generate_hub_token() -> Result<String> {
     Ok(format!("ahb_{}", URL_SAFE_NO_PAD.encode(bytes)))
 }
 
+/// Temporary availability for Routes. Not a stable capability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MemberAvailability {
+    Ready,
+    Cooling,
+    Isolated,
+    Disabled,
+}
+
 /// Member reference on the default-pool overview. No secrets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -289,6 +299,8 @@ pub struct RouteMemberOverview {
     pub source_kind: AdapterSourceKind,
     pub source_id: String,
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability: Option<MemberAvailability>,
 }
 
 /// Default-pool overview for Routes. Never includes `hub_token`.

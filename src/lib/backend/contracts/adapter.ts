@@ -231,11 +231,14 @@ export function adapterCommandError(fields: {
 export type RoutePoolSurface = 'messages' | 'responses' | 'chat_completions';
 export type RoutePoolDialect = 'claude' | 'codex' | 'grok' | 'kimi' | 'dsh' | 'generic';
 
+export type MemberAvailability = 'ready' | 'cooling' | 'isolated' | 'disabled';
+
 /** Credential-free member row. Never includes login secrets or Hub tokens. */
 export interface RouteMemberOverview {
   sourceKind: AdapterSourceKind;
   sourceId: string;
   enabled: boolean;
+  availability?: MemberAvailability;
 }
 
 /** Credential-free default-pool overview. Never includes `hubToken`. */

@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use axum::http::HeaderValue;
 use sha2::{Digest, Sha256};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use super::route_index::DispatchCandidate;
 use super::runtime::{ResolvedAuth, UpstreamAuthReload};
@@ -51,6 +52,7 @@ pub struct PickedMember {
     pub priority: i64,
     pub position: i64,
     health: Arc<Mutex<MemberHealth>>,
+    concurrency: Arc<Semaphore>,
 }
 
 impl std::fmt::Debug for PickedMember {
@@ -90,7 +92,13 @@ impl PickedMember {
             priority: 0,
             position: 0,
             health: Arc::new(Mutex::new(health)),
+            concurrency: Arc::new(Semaphore::new(4)),
         }
+    }
+
+    /// One in-flight attempt per member. Full → skip this member for the request.
+    pub fn try_acquire(&self) -> Option<OwnedSemaphorePermit> {
+        self.concurrency.clone().try_acquire_owned().ok()
     }
 
     pub fn with_schedule(mut self, priority: i64, position: i64) -> Self {

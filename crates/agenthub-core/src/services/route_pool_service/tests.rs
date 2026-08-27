@@ -1,9 +1,10 @@
 use crate::models::{
-    enroll_native_plan_is_open, AdapterApplyPlan, AdapterGateKind, AdapterMaturity, AdapterProfile,
-    AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
-    AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId, Provider,
+    AdapterApplyPlan, AdapterGateKind, AdapterMaturity, AdapterProfile, AdapterProfileMode,
+    AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
+    AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
-    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, Provider,
+    enroll_native_plan_is_open,
 };
 use crate::services::RoutePoolService;
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -316,10 +317,12 @@ async fn occupancy_failure_does_not_enroll_or_rewrite_client() {
     let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let busy = blocker.local_addr().unwrap().port();
     let host = crate::bridge::BridgeRuntimeHost::new();
-    assert!(service
-        .bind_then_enroll(&host, "profile-a", busy)
-        .await
-        .is_err());
+    assert!(
+        service
+            .bind_then_enroll(&host, "profile-a", busy)
+            .await
+            .is_err()
+    );
     let pool = service.get("profile-a").unwrap().unwrap();
     assert!(!pool.v2_enrolled);
     assert_eq!(pool.gateway_port, None);
