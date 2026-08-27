@@ -28,11 +28,59 @@ fn session(state: &str, status: DeviceOAuthStatus, expires_at: Instant) -> (Stri
     )
 }
 
-fn insert_session(state: &str, session: DeviceSession) {
+/// Removes only this test's `state` on drop (panic, early return, or end of test).
+#[must_use = "device store guard removes the session on drop"]
+struct DeviceStoreGuard {
+    state: String,
+}
+
+impl Drop for DeviceStoreGuard {
+    fn drop(&mut self) {
+        if let Ok(mut sessions) = store().lock() {
+            sessions.remove(&self.state);
+        }
+    }
+}
+
+fn insert_session(state: &str, session: DeviceSession) -> DeviceStoreGuard {
     store()
         .lock()
         .expect("device store lock")
         .insert(state.into(), session);
+    DeviceStoreGuard {
+        state: state.into(),
+    }
+}
+
+#[test]
+fn device_store_guard_removes_only_its_own_key_on_drop() {
+    let own = "guard-drop-own-key";
+    let other = "guard-drop-other-key";
+    let (_, own_session) = session(
+        own,
+        DeviceOAuthStatus::Pending,
+        Instant::now() + Duration::from_secs(60),
+    );
+    let (_, other_session) = session(
+        other,
+        DeviceOAuthStatus::Pending,
+        Instant::now() + Duration::from_secs(60),
+    );
+    let other_guard = insert_session(other, other_session);
+    {
+        let _guard = insert_session(own, own_session);
+        assert!(store().lock().expect("device store lock").contains_key(own));
+        assert!(store()
+            .lock()
+            .expect("device store lock")
+            .contains_key(other));
+    }
+    {
+        let sessions = store().lock().expect("device store lock");
+        assert!(!sessions.contains_key(own));
+        assert!(sessions.contains_key(other));
+    }
+    drop(other_guard);
 }
 
 #[test]
@@ -130,7 +178,7 @@ fn concurrent_poll_claim_does_not_issue_a_second_request() {
     value.access = None;
     value.refresh = None;
     value.expires_at_ms = None;
-    insert_session(state, value);
+    let _guard = insert_session(state, value);
 
     let (started_tx, started_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
@@ -162,8 +210,6 @@ fn concurrent_poll_claim_does_not_issue_a_second_request() {
         .expect("first poll thread")
         .expect("poll result");
     assert_eq!(first.status, DeviceOAuthStatus::Pending);
-
-    store().lock().expect("device store lock").remove(state);
 }
 
 #[test]
@@ -179,7 +225,7 @@ fn superseded_poll_response_cannot_revert_complete_session_or_clear_tokens() {
     value.access = None;
     value.refresh = None;
     value.expires_at_ms = None;
-    insert_session(state, value);
+    let _guard = insert_session(state, value);
 
     let result = poll_device_oauth_with(state, |_| {
         let mut guard = store().lock().expect("device store lock");
@@ -204,7 +250,6 @@ fn superseded_poll_response_cannot_revert_complete_session_or_clear_tokens() {
     assert!(current.expires_at_ms.is_none());
     assert!(current.poll_claim.is_none());
     drop(guard);
-    store().lock().expect("device store lock").remove(state);
 }
 
 #[test]
@@ -220,7 +265,7 @@ fn complete_session_survives_device_code_expiry_until_completion_ttl() {
     value.access = None;
     value.refresh = None;
     value.expires_at_ms = None;
-    insert_session(state, value);
+    let _guard = insert_session(state, value);
 
     let initial = poll_device_oauth_with(state, |_| {
         Ok(json!({
@@ -248,8 +293,6 @@ fn complete_session_survives_device_code_expiry_until_completion_ttl() {
         device_oauth_agent(state).expect("agent remains resolvable"),
         AgentId::Pi
     );
-
-    store().lock().expect("device store lock").remove(state);
 }
 
 #[test]
@@ -261,7 +304,7 @@ fn complete_session_is_purged_after_completion_ttl() {
         Instant::now() + Duration::from_secs(60),
     );
     value.completion_expires_at = Some(Instant::now() - Duration::from_secs(1));
-    insert_session(state, value);
+    let _guard = insert_session(state, value);
 
     purge_locked(&mut store().lock().expect("device store lock"), None);
     assert!(!store()
