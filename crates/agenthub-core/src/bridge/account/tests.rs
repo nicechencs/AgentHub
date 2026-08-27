@@ -143,9 +143,11 @@ fn pick_from_candidates_cannot_select_member_absent_from_resolve() {
         .pick_from_candidates(&candidates(&["acc-a"]), None, &[])
         .expect("A");
     assert_eq!(picked.source_id, "acc-a");
-    assert!(picker
-        .pick_from_candidates(&candidates(&["acc-missing"]), None, &[])
-        .is_none());
+    assert!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-missing"]), None, &[])
+            .is_none()
+    );
 }
 
 #[test]
@@ -436,6 +438,66 @@ fn unbound_sticky_falls_back_to_policy_pick() {
         picker
             .pick_from_candidates(&both, Some(&key), &["acc-b".to_owned()])
             .expect("first-turn failover")
+            .source_id,
+        "acc-a"
+    );
+}
+
+#[test]
+fn sticky_exclusion_does_not_steal_binding() {
+    let picker = pf_picker();
+    let key = route_scoped_affinity_key("route-a", "codex", "conv-exclude");
+    let only_a = candidates(&["acc-a"]);
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&only_a, Some(&key), &[])
+            .expect("bind A")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &["acc-a".to_owned()])
+            .expect("this request skips A")
+            .source_id,
+        "acc-b"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &[])
+            .expect("sticky A still held")
+            .source_id,
+        "acc-a",
+        "cooldown / this-request exclusion must not rebind sticky to the failover member"
+    );
+}
+
+#[test]
+fn sticky_cooldown_skips_member_but_keeps_binding() {
+    let picker = pf_picker();
+    let key = route_scoped_affinity_key("route-a", "codex", "conv-cool");
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-a"]), Some(&key), &[])
+            .expect("bind A")
+            .source_id,
+        "acc-a"
+    );
+    picker.set_cooldown("acc-a", Some("m1"), std::time::Duration::from_secs(60));
+    let excluded = picker.cooldown_exclusions("m1");
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &excluded)
+            .expect("skip cooling A")
+            .source_id,
+        "acc-b"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &[])
+            .expect("sticky kept after skip")
             .source_id,
         "acc-a"
     );

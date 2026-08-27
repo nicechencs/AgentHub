@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use axum::http::{header, HeaderMap};
+use axum::http::{HeaderMap, header};
 use reqwest::Url;
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -228,7 +228,7 @@ impl Gateway {
         lead: &EdgeState,
         model: &str,
     ) -> ModelSwitchOutcome {
-        use crate::models::{decide_model_switch, ModelSwitchCandidate, ModelSwitchDecision};
+        use crate::models::{ModelSwitchCandidate, ModelSwitchDecision, decide_model_switch};
         let Some(source) = lead.mapping_source else {
             return ModelSwitchOutcome::Stay;
         };
@@ -442,6 +442,12 @@ impl EdgeState {
                 excluded.push(member.source_id.clone());
                 excluded.push(member.ticket_id.clone());
             }
+        }
+        if let Some(picked) = self
+            .account_picker
+            .try_sticky(candidates, affinity_key, &excluded)
+        {
+            return Some(picked);
         }
         let lane_candidates = match &self.route_index {
             Some(index) => index.schedule_lane(
