@@ -1,8 +1,11 @@
 use super::auth_revision::AuthCredentialMetadata;
 use super::codex_copies::ide_codex_bins_under;
+#[cfg(not(windows))]
+use super::detect_binary::well_known_npm_cli_dirs;
 use super::detect_binary::{
     agenthub_user_npm_prefix_roots, attach_extra_binary_copies, detect_binary, expand_binary_names,
     first_existing_named_bin, infer_channel, is_under_agenthub_user_npm_prefix,
+    npm_global_bin_dirs, npm_prefix_stdout_to_bin_dir, parse_npmrc_global_prefix,
     user_writable_npm_bin_dir, user_writable_npm_prefix, well_known_bin_paths,
     NOT_FOUND_FIREFIGHTING_NOTE,
 };
@@ -733,6 +736,121 @@ fn is_under_agenthub_user_npm_prefix_excludes_legacy_global() {
                     .join("codex.cmd")
             ));
         }
+    }
+}
+
+#[test]
+fn parse_npmrc_global_prefix_last_wins_and_expands_home() {
+    let home = PathBuf::from("/Users/demo");
+    assert_eq!(
+        parse_npmrc_global_prefix("prefix=~/.npm-global\n", &home),
+        Some(home.join(".npm-global"))
+    );
+    assert_eq!(
+        parse_npmrc_global_prefix("prefix=\"${HOME}\"\n", &home),
+        Some(home.clone())
+    );
+    assert_eq!(
+        parse_npmrc_global_prefix("prefix=$HOME\n", &home),
+        Some(home.clone())
+    );
+    let text = "# ignore\nprefix=/first\nprefix = /second\n; prefix=/commented\n";
+    assert_eq!(
+        parse_npmrc_global_prefix(text, &home),
+        Some(PathBuf::from("/second"))
+    );
+    assert_eq!(parse_npmrc_global_prefix("; prefix=/no\n", &home), None);
+    assert_eq!(parse_npmrc_global_prefix("cache=/tmp\n", &home), None);
+}
+
+#[test]
+fn npm_prefix_stdout_to_bin_dir_trims_and_maps_platform_bin() {
+    assert_eq!(npm_prefix_stdout_to_bin_dir("   \n"), None);
+    #[cfg(not(windows))]
+    assert_eq!(
+        npm_prefix_stdout_to_bin_dir("  /opt/homebrew \n"),
+        Some(PathBuf::from("/opt/homebrew/bin"))
+    );
+    #[cfg(windows)]
+    assert_eq!(
+        npm_prefix_stdout_to_bin_dir("  C:\\Users\\demo\\AppData\\Roaming\\npm \r\n"),
+        Some(PathBuf::from(r"C:\Users\demo\AppData\Roaming\npm"))
+    );
+}
+
+#[cfg(not(windows))]
+#[test]
+fn well_known_npm_cli_dirs_include_homebrew_without_path() {
+    let home = PathBuf::from("/Users/demo");
+    let dirs = well_known_npm_cli_dirs(&home);
+    assert!(
+        dirs.contains(&PathBuf::from("/opt/homebrew/bin")),
+        "macOS GUI PATH often omits Homebrew: {dirs:?}"
+    );
+    assert!(dirs.contains(&PathBuf::from("/usr/local/bin")), "{dirs:?}");
+}
+
+#[cfg(not(windows))]
+#[test]
+fn well_known_npm_cli_dirs_use_home_nvm_when_nvm_dir_unset() {
+    let _guard = DETECT_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let bin = home
+        .join(".nvm")
+        .join("versions")
+        .join("node")
+        .join("v22.11.0")
+        .join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let prev = std::env::var_os("NVM_DIR");
+    std::env::remove_var("NVM_DIR");
+    let dirs = well_known_npm_cli_dirs(home);
+    restore_env("NVM_DIR", prev);
+    assert!(
+        dirs.contains(&bin),
+        "GUI env often omits NVM_DIR; ~/.nvm must still be probed: {dirs:?}"
+    );
+}
+
+#[test]
+fn npm_global_bin_dirs_read_npmrc_without_npm_on_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let prefix = home.join("custom-npm-prefix");
+    std::fs::write(
+        home.join(".npmrc"),
+        format!("prefix={}\n", prefix.display()),
+    )
+    .unwrap();
+    let dirs = npm_global_bin_dirs(home);
+    #[cfg(windows)]
+    let expected = prefix.clone();
+    #[cfg(not(windows))]
+    let expected = prefix.join("bin");
+    assert!(
+        dirs.iter().any(|d| d == &expected),
+        "custom ~/.npmrc prefix must be scanned when PATH has no npm: {dirs:?}"
+    );
+}
+
+#[test]
+fn well_known_codex_npm_paths_include_npm_global_bin_dirs() {
+    let Ok(home) = crate::utils::paths::home_dir() else {
+        return;
+    };
+    let dirs = npm_global_bin_dirs(&home);
+    let paths = well_known_bin_paths(AgentId::Codex);
+    for dir in dirs {
+        assert!(
+            paths
+                .iter()
+                .any(|(p, ch)| *ch == "npm" && p.starts_with(&dir)),
+            "Codex well-known npm scan must include {dir:?}: {paths:?}"
+        );
     }
 }
 
