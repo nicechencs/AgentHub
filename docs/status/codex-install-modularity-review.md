@@ -42,8 +42,8 @@ updated: 2026-08-27
 | C2 | 连接页嵌入 `pages/accounts`、`pages/providers` Dialog | P1 | **已修复** | Dialog 迁至 `src/components/connections/`；旧路径保留 re-export |
 | C3 | `isLeftoverLocalRouteProvider` 定义在 Chat 页 | P1 | **已修复** | 迁至 `src/lib/leftover-local-route.ts`；Chat 页 re-export |
 | C4 | plan fan-out 在 Connections 与 ConnectFlow 重复 | P2 | **已缓解** | 两处均通过 `createPlanFanout`；共享 deps 在 `lib/connect-flow/default-deps.ts` |
-| C5 | 路由页 `index.tsx` 编排过重 | P2 | **部分** | wallet 读模型并入 `useAdapterResources`；其余 dialog 状态仍 inline |
-| C6 | `ticket-wallet-model.ts` 过大（~1024 行） | P2 | **部分** | 抽出跨页共享模块；Connections 专用逻辑仍留页内 |
+| C5 | 路由页 `index.tsx` 编排过重 | P2 | **已修复** | 抽出 `use-bridge-runtime-actions`、`use-route-pool-state`、`route-inspect`；wallet 读模型在 `useAdapterResources` |
+| C6 | `ticket-wallet-model.ts` 过大（~1024 行） | P2 | **已修复** | 拆为 `ticket-wallet-filters` / `ticket-add-menu` / `ticket-binding-usage` / `ticket-card-detail` / `ticket-bind-action`；原文件保留 barrel re-export |
 | C7 | 路由页注释与创建 bind 行为不一致 | P2 | **已修复** | 注释更新为「运行时为主，创建/导入为产品例外」 |
 | C8 | 路由页单独 `listTicketWallet` 做孤儿分区 | P2 | **已修复** | 改用 `useTicketWallet` 共享 store（经 `useAdapterResources`） |
 | C9 | 路由页 `planAdapter` 与 ConnectFlow `planTicket` 不统一 | P2 | **已修复** | native enroll 预览改用 `planTicket` + `ticketIdFor` |
@@ -54,10 +54,12 @@ updated: 2026-08-27
 
 ```bash
 pnpm typecheck
-pnpm exec vitest run src/lib/leftover-local-route.test.ts src/pages/chat/chat-model.test.ts src/pages/connections/ticket-wallet-model.test.ts src/pages/bridges/create-route-flow.test.ts src/pages/dashboard/dashboard-layout.test.ts
+pnpm exec vitest run src/lib/leftover-local-route.test.ts src/lib/bridge-wallet-snapshot.test.ts src/pages/chat/chat-model.test.ts src/pages/connections/ticket-wallet-model.test.ts src/pages/bridges/create-route-flow.test.ts src/pages/dashboard/dashboard-layout.test.ts src/pages/connections/connections-layout.test.ts
 cargo test -p agenthub-core detect_binary --locked
 pnpm check:docs
 ```
+
+C5/C6 落地后：`bridges/index.tsx` ≈487 行；`ticket-wallet-model.ts` 为 barrel，实现拆入五个 sibling 模块。
 
 ## 相关文档
 
