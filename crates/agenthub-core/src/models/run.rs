@@ -337,7 +337,8 @@ mod tests {
         };
         let s = spec.display_command();
         assert!(s.contains('\"'));
-        assert!(s.contains("hello world"));
+        assert!(s.contains("<prompt>"));
+        assert!(!s.contains("hello world"));
     }
 
     #[test]
