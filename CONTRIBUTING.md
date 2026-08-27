@@ -52,7 +52,7 @@ Rust CLI 或 GUI 改动分别补跑 `cargo test -p agenthub-cli --locked` 和 `c
 
 正式发布由推送 `v*` tag 的 GitHub Actions 完成，本地发布命令不会上传发行物。顺序是：**先在 `dev` 打 tag 并闭环，再合 `release`**。
 
-1. 在 **`dev`** 准备发布提交：同时更新 `package.json`、`Cargo.toml` 的 `[workspace.package]`、`src-tauri/tauri.conf.json` 和 `Cargo.lock` 中的 workspace 版本。
+1. 在 **`dev`** 准备发布提交：**只改 `package.json` 的 `version`**，运行 `pnpm release:sync-version` 同步 Rust 侧版本（或使用 `pnpm release:bump` 自动升版并同步）。
 2. 运行发版预检：`pnpm release:preflight`（或至少 `pnpm release:check`、`pnpm typecheck:test`、`pnpm test`、`cargo test --workspace --locked`）。
 3. 提交并推送 `dev`。
 4. 在 **`dev` 的对应提交**上创建并推送匹配的 `vX.Y.Z` tag。Release workflow 只接受 tag 落在 `origin/dev` 上的提交。

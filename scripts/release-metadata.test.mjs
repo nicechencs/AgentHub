@@ -11,6 +11,8 @@ import {
   readCargoLockWorkspaceVersions,
   readCargoWorkspaceVersion,
   readReleaseMetadata,
+  readTauriConfigVersion,
+  syncReleaseVersionFromPackageJson,
 } from './release-metadata.mjs';
 
 function writeReleaseFixture({
@@ -105,4 +107,27 @@ test('requires exactly one Cargo workspace.package version', () => {
     () => readCargoWorkspaceVersion('[workspace.package]\nname = "AgentHub"\n'),
     /exactly one string version/,
   );
+});
+
+test('reads tauri version from ../package.json path', () => {
+  const root = writeReleaseFixture({ packageVersion: '2.0.0', tauriVersion: '../package.json', cargoVersion: '2.0.0' });
+  assert.equal(readTauriConfigVersion(root), '2.0.0');
+  assert.deepEqual(readReleaseMetadata(root).version, '2.0.0');
+});
+
+test('syncReleaseVersionFromPackageJson propagates package.json into cargo files', () => {
+  const root = writeReleaseFixture({
+    packageVersion: '2.1.0',
+    cargoVersion: '2.0.0',
+    tauriVersion: '../package.json',
+    lockVersions: { 'agenthub-cli': '2.0.0', 'agenthub-core': '2.0.0', 'agenthub-gui': '2.0.0' },
+  });
+  const metadata = syncReleaseVersionFromPackageJson(root);
+  assert.deepEqual(metadata, { version: '2.1.0', tag: 'v2.1.0', prerelease: false });
+  assert.equal(readCargoWorkspaceVersion(fs.readFileSync(path.join(root, 'Cargo.toml'), 'utf8')), '2.1.0');
+  assert.deepEqual(readCargoLockWorkspaceVersions(fs.readFileSync(path.join(root, 'Cargo.lock'), 'utf8')), {
+    'agenthub-cli': '2.1.0',
+    'agenthub-core': '2.1.0',
+    'agenthub-gui': '2.1.0',
+  });
 });
