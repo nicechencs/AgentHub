@@ -75,18 +75,24 @@ describe('connections layout wiring', () => {
 
   it('opens 用到其他工具 / 本机转发 in the same right-hand inspect pane', () => {
     const page = source('index.tsx');
+    const shareRoute = source('use-connection-share-route.ts');
     expect(page).toContain("{ kind: 'connect'");
-    expect(page).toContain("openConnectForTicket(ticket, 'share')");
-    expect(page).toContain("openConnectForTicket(ticket, 'route')");
+    expect(shareRoute).toContain("{ kind: 'connect'");
+    expect(shareRoute).toContain("openConnectForTicket(ticket, 'share')");
+    expect(shareRoute).toContain("openConnectForTicket(ticket, 'route')");
     expect(page).toContain('asPanel');
     expect(page).toContain('<ConnectFlowDialog');
     expect(page).not.toContain('const [connectEntry');
     expect(page).toContain("inspectTarget?.kind === 'connect'");
-    const openerStart = page.indexOf('const openConnectForTicket');
-    const openerEnd = page.indexOf('const handleShareTicket', openerStart);
+    expect(page).toContain('useConnectionShareRoute');
+    expect(page).toContain('onShareTicket={handleShareTicket}');
+    expect(page).toContain('onRouteTicket={handleRouteTicket}');
+    const openerStart = shareRoute.indexOf('const openConnectForTicket');
+    const openerEnd = shareRoute.indexOf('const handleShareTicket', openerStart);
     expect(openerStart).toBeGreaterThanOrEqual(0);
     expect(openerEnd).toBeGreaterThan(openerStart);
-    expect(page.slice(openerStart, openerEnd)).not.toContain('inspect.close()');
+    expect(shareRoute.slice(openerStart, openerEnd)).not.toContain('inspect.close()');
+    expect(shareRoute).not.toContain('inspect.close()');
   });
 
   it('keeps live config chrome to the path and folder button; hint is hover-only', () => {
