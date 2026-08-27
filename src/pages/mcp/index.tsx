@@ -110,7 +110,7 @@ export default function McpPage() {
       <PageHeader
         title={t('mcp.page.title')}
         description={t('mcp.page.description')}
-        descriptionTip={t('mcp.page.descriptionTip')}
+        descriptionTip={t('mcp.page.descriptionTip', { next: t('mcp.page.nextStep') })}
         actions={
           <Button
             size="sm"
@@ -155,8 +155,8 @@ export default function McpPage() {
             title={t('mcp.empty.title')}
             description={
               filterAgent === 'all'
-                ? t('mcp.empty.all')
-                : t('mcp.empty.agent', { name: agentName(filterAgent) })
+                ? t('mcp.page.empty', { next: t('mcp.page.nextStep') })
+                : t('mcp.page.emptyAgent', { name: agentName(filterAgent) })
             }
             action={
               <Button

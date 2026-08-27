@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import { InspectSurface } from '@/components/layout/InspectSurface';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -5,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { agentDisplayName } from '@/config/agents';
 import type { PluginComponent, PluginEntry } from '@/lib/backend/contracts/plugin-types';
 import type { TranslateFn } from '@/lib/i18n';
+import { canToggleListedPlugin } from './can-toggle';
 
 function kindLabel(kind: string, t: TranslateFn): string {
   switch (kind) {
@@ -58,19 +60,54 @@ export function PluginDetailPanel({
   width,
   onClose,
   onLocate,
+  onToggle,
 }: {
   plugin: PluginEntry;
   width: number;
   onClose: () => void;
   onLocate: (path: string) => void;
+  onToggle?: (plugin: PluginEntry, enabled: boolean) => Promise<void>;
 }) {
   const { t } = useI18n();
+  const [busy, setBusy] = useState<'enable' | 'disable' | null>(null);
+  const canToggle = canToggleListedPlugin(plugin.agent) && Boolean(onToggle);
   const sourceLabel =
     plugin.source === 'cli'
       ? t('plugins.detail.sourceCli')
       : plugin.source === 'live'
         ? t('plugins.detail.sourceLive')
         : plugin.source;
+
+  async function toggle(enabled: boolean) {
+    if (!onToggle || busy) return;
+    setBusy(enabled ? 'enable' : 'disable');
+    try {
+      await onToggle(plugin, enabled);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const actions = canToggle ? (
+    <>
+      <Button
+        size="sm"
+        variant={plugin.enabled === true ? 'outline' : 'default'}
+        disabled={busy !== null || plugin.enabled === true}
+        onClick={() => void toggle(true)}
+      >
+        {busy === 'enable' ? t('plugins.actions.enabling') : t('plugins.actions.enable')}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy !== null || plugin.enabled === false}
+        onClick={() => void toggle(false)}
+      >
+        {busy === 'disable' ? t('plugins.actions.disabling') : t('plugins.actions.disable')}
+      </Button>
+    </>
+  ) : undefined;
 
   return (
     <InspectSurface
@@ -82,6 +119,7 @@ export function PluginDetailPanel({
       title={plugin.name}
       description={plugin.version ?? undefined}
       showCancel={false}
+      primary={actions}
       width={width}
     >
       <dl className="flex flex-col gap-2">
