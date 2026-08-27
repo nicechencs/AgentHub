@@ -14,6 +14,19 @@
 - 说明
 ```
 
+## [0.3.5] - 2026-08-27
+
+### 发版与 CI
+- 统一发版流程：在 `dev` 升版并写 `CHANGELOG.md`，合入 `release` 后在 `dev` 打 tag
+- `release` 分支守卫：只接受来自 `dev` 的合并
+- 发版必须填写 `CHANGELOG.md`；GitHub Release 正文取自该文件
+
+### 功能与修复
+- Agents 列表分栏打开详情；dev 线默认软隐藏 Cursor Agent
+- DeepSeek 新建路由健康检查与单条记录展示
+- QA 批次：登录去重、Grok 回填、本机转发与 Grok TOML 脱敏修复
+- 命令行展示隐藏 `-p` 后的 prompt 内容
+
 ## [0.3.4] - 2026-08-27
 
 ### 发版与 CI
