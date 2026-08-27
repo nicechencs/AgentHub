@@ -302,6 +302,26 @@ pub(crate) fn settings_contain_deepseek_api_endpoint(value: &Value) -> bool {
     value_contains_needle(value, DEEPSEEK_API_ENDPOINT_NEEDLE)
 }
 
+/// Whether a bridge may call `GET {base}/models` during bind-time health check.
+///
+/// DeepSeek / GLM and Anthropic-compatible relays on non-Anthropic hosts do not
+/// reliably expose an OpenAI-style model list; the loopback health check is
+/// enough and the first real request remains the upstream probe.
+pub(crate) fn upstream_models_health_probe_supported(base_url: &str) -> bool {
+    let blob = Value::String(base_url.trim().to_string());
+    if settings_contain_deepseek_api_endpoint(&blob)
+        || settings_contain_glm_coding_plan_endpoint(&blob)
+    {
+        return false;
+    }
+    if looks_like_anthropic_messages_url(base_url)
+        && !settings_contain_anthropic_api_endpoint(&blob)
+    {
+        return false;
+    }
+    true
+}
+
 /// Explicit product tag from preset / extra.provider / credentials.provider.
 pub(crate) fn explicit_provider_tag_matches(tag: Option<&str>, accepted: &[&str]) -> bool {
     tag.is_some_and(|value| {

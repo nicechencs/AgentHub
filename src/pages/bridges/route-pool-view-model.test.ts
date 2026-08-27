@@ -119,6 +119,25 @@ describe('route pool v2 view-model', () => {
       .toEqual(['native-1']);
   });
 
+  it('collapses multiple native profiles from one source into one direct row', () => {
+    const claude = profile({
+      id: 'native-claude',
+      route: 'native_endpoint',
+      sourceId: 'ds-1',
+      targetAgentId: 'claude',
+      createdAt: '2026-08-12T00:00:02Z',
+    });
+    const codex = profile({
+      id: 'native-codex',
+      route: 'native_endpoint',
+      sourceId: 'ds-1',
+      targetAgentId: 'codex',
+      createdAt: '2026-08-12T00:00:00Z',
+    });
+    expect(directProfilesForRoutePoolV2(true, [claude, codex]).map((item) => item.id))
+      .toEqual(['native-codex']);
+  });
+
   it('matches a default pool by profile id', () => {
     expect(matchDefaultPoolForProfile([pool()], profile())?.id).toBe('bridge-1');
     expect(matchDefaultPoolForProfile(

@@ -2,6 +2,7 @@
  * Pure view-model for Routes pool v2 (flag-gated). No React, no IO.
  */
 import type {
+  AdapterBridgeRuntimeStatus,
   AdapterProfile,
   DefaultRoutePoolOverview,
   RouteMemberOverview,
@@ -9,6 +10,7 @@ import type {
 } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { TranslateFn } from '@/lib/i18n';
+import { groupLocalBridgeProfiles } from './adapter-view-model';
 
 export function defaultPoolEntryUrl(port?: number | null): { url: string | null; pending: boolean } {
   if (typeof port === 'number' && port > 0) {
@@ -51,9 +53,10 @@ export function matchDefaultPoolForProfile(
 export function directProfilesForRoutePoolV2<T extends AdapterProfile>(
   flagOn: boolean,
   profiles: readonly T[],
+  statuses: Record<string, AdapterBridgeRuntimeStatus> = {},
 ): T[] {
   if (!flagOn) return [];
-  return profiles.filter((profile) => {
+  const filtered = profiles.filter((profile) => {
     if (profile.route !== 'native_endpoint' && profile.route !== 'config_sync') return false;
     return !profiles.some((sibling) => (
       sibling.route === 'local_bridge'
@@ -62,6 +65,15 @@ export function directProfilesForRoutePoolV2<T extends AdapterProfile>(
       && sibling.targetAgentId === profile.targetAgentId
     ));
   });
+  return groupRouteProfilesBySource(filtered, statuses);
+}
+
+/** One list card per upstream source (native/config_sync/direct pool rows). */
+export function groupRouteProfilesBySource<T extends AdapterProfile>(
+  profiles: readonly T[],
+  statuses: Record<string, AdapterBridgeRuntimeStatus> = {},
+): T[] {
+  return groupLocalBridgeProfiles(profiles, statuses);
 }
 
 export function routePoolMemberLabels(
