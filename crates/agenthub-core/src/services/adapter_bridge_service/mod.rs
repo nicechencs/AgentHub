@@ -19,28 +19,28 @@
 
 use std::time::Duration;
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use toml_edit::DocumentMut;
 
 use crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL;
 use crate::bridge::{
-    index_from_member_listings, BridgeLocalSurface, BridgeStartSpec, BridgeUpstreamConfig,
-    BridgeUpstreamProtocol, EffectiveRouteIndex, MemberListing, ResolvedAuth,
+    BridgeLocalSurface, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol,
+    EffectiveRouteIndex, MemberListing, ResolvedAuth, index_from_member_listings,
 };
 use crate::error::{AppError, Result};
 use crate::models::{
-    list_local_bridge_models, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
+    ANTHROPIC_CODEX_EDGE, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
-    LocalBridgeEdge, Provider, ProviderInput, RouteMember, RouteSchedulePolicy,
-    ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE, CODEX_GROK_EDGE,
-    CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE,
-    OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
+    CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE,
+    GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE, LocalBridgeEdge, OPENAI_CLAUDE_EDGE,
+    OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE, Provider, ProviderInput, RouteMember,
+    RouteSchedulePolicy, list_local_bridge_models,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver, RoutePoolService};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -369,7 +369,7 @@ pub(super) mod prepare;
 mod removal;
 mod rules;
 
-pub use persist_saga::{should_make_bridge_current, BridgeProviderSnapshot};
+pub use persist_saga::{BridgeProviderSnapshot, should_make_bridge_current};
 
 use rules::*;
 
@@ -667,7 +667,7 @@ impl AdapterBridgeRuntimeMaterial {
     ///
     /// The method deliberately exposes only stable error codes. Runtime
     /// bearers and endpoint details remain in this in-process object.
-    pub async fn verify_bound_health(&self, port: u16) -> Result<()> {
+    pub async fn verify_bound_health(&mut self, port: u16) -> Result<()> {
         validate_bound_port(port)?;
         let client = reqwest::Client::builder()
             .connect_timeout(BRIDGE_HEALTH_TIMEOUT)
@@ -729,6 +729,11 @@ impl AdapterBridgeRuntimeMaterial {
             )
         })?;
         if upstream.status().is_success() {
+            if let Ok(bytes) = upstream.bytes().await {
+                if let Some(ids) = parse_openai_models_json(&bytes) {
+                    self.configured_listed_models = ids;
+                }
+            }
             return Ok(());
         }
 
@@ -743,6 +748,22 @@ impl AdapterBridgeRuntimeMaterial {
             "upstream health probe was not successful",
         ))
     }
+}
+
+pub(crate) fn parse_openai_models_json(bytes: &[u8]) -> Option<Vec<String>> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let data = value.get("data")?.as_array()?;
+    let ids: Vec<String> = data
+        .iter()
+        .filter_map(|row| {
+            row.get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned)
+        })
+        .collect();
+    if ids.is_empty() { None } else { Some(ids) }
 }
 
 /// A prepared bridge saga. This is an in-process only object: it carries

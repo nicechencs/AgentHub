@@ -270,8 +270,14 @@ impl BridgeStartSpec {
         } else {
             self.members.iter().map(PickedMember::from).collect()
         };
+        let v2_pool = self.route_index.is_some() && members.len() > 1;
         if self.route_index.is_some() {
-            AccountPicker::with_policy(members, self.multi_account, None, self.schedule_policy)
+            AccountPicker::with_policy(
+                members,
+                self.multi_account || v2_pool,
+                None,
+                self.schedule_policy,
+            )
         } else {
             AccountPicker::from_members(members, self.multi_account, None)
         }

@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
 use serde_json::Value;
 use tokio::sync::Semaphore;
@@ -17,20 +17,20 @@ use crate::bridge::account::PickedMember;
 use crate::bridge::grok_cli::{is_reasoning_decode_failure, strip_encrypted_reasoning};
 use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::upstream_class::{
-    classify_http, cooldown_from_retry_after, FailoverDecision, UpstreamErrorClass,
+    FailoverDecision, UpstreamErrorClass, classify_http, cooldown_from_retry_after,
 };
 
 use super::super::admission::AdmittedRequest;
-use super::super::http::{stopping_response, EdgeState};
+use super::super::http::{EdgeState, error_response, stopping_response};
 use super::super::stream::UpstreamBodyError;
 use super::super::surface::DownstreamSurface;
 use super::super::upstream::{
-    extract_upstream_error_detail, grok_replay_model, join_upstream, map_upstream_http_error,
-    map_v2_request_error, pool_exhausted_response, post_upstream_attempt,
-    read_bounded_upstream_error, replay_session, UpstreamConnectError,
+    UpstreamConnectError, extract_upstream_error_detail, grok_replay_model, join_upstream,
+    map_upstream_http_error, map_v2_request_error, pool_exhausted_response, post_upstream_attempt,
+    read_bounded_upstream_error, replay_session,
 };
 use super::{
-    identity_for_member, log_serving_account, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome,
+    UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome, identity_for_member, log_serving_account,
 };
 
 const V2_MAX_ATTEMPTS: usize = 8;
@@ -74,6 +74,36 @@ pub async fn send_upstream_v2(
             ));
         }
         let candidate = candidate_for_member(candidates, &member);
+        let Some(_member_permit) = member.try_acquire() else {
+            exclude_member(&mut excluded, &member);
+            if continuation_locked {
+                return Err(exhausted(
+                    state,
+                    request_id,
+                    started,
+                    public_model,
+                    failover_from.as_deref(),
+                ));
+            }
+            let Some(next) = state.pick_v2_in_lane(
+                candidates,
+                public_model,
+                &excluded,
+                Some(member.source_id.as_str()),
+                affinity_key,
+            ) else {
+                return Err(exhausted(
+                    state,
+                    request_id,
+                    started,
+                    public_model,
+                    failover_from.as_deref(),
+                ));
+            };
+            failover_from = Some(member.source_id.clone());
+            member = next;
+            continue;
+        };
         let (attempt_channel, attempt_url, prepared) = prepare_candidate_attempt(
             state,
             surface,
@@ -226,6 +256,7 @@ pub async fn send_upstream_v2(
                 }
                 FailoverDecision::ExcludeMemberModel => {
                     last_fail = Some((class, status, retry_after, detail));
+                    state.deny_member_model(&member.source_id, public_model);
                     exclude_member(&mut excluded, &member);
                     break;
                 }
@@ -384,13 +415,40 @@ fn attempt_url(
         .map(|candidate| candidate.upstream_endpoint.trim())
         .filter(|endpoint| !endpoint.is_empty())
     {
-        if let Ok(base) = reqwest::Url::parse(endpoint) {
-            if let Ok(url) = base.join(path) {
-                return Ok(url);
-            }
-        }
+        return join_candidate_endpoint(state, endpoint, path);
     }
     join_upstream(state, path)
+}
+
+/// Same trailing-slash rule as `validate_start_spec`: `Url::join` treats a
+/// last segment without `/` as a file, so `https://api.example/v1` + `responses`
+/// would drop `/v1`.
+fn join_candidate_endpoint(
+    state: &EdgeState,
+    endpoint: &str,
+    path: &str,
+) -> Result<reqwest::Url, Response> {
+    let Ok(mut base) = reqwest::Url::parse(endpoint) else {
+        return candidate_url_error(state);
+    };
+    if !base.path().ends_with('/') {
+        let with_slash = format!("{}/", base.path());
+        base.set_path(&with_slash);
+    }
+    match base.join(path) {
+        Ok(url) => Ok(url),
+        Err(_) => candidate_url_error(state),
+    }
+}
+
+fn candidate_url_error(state: &EdgeState) -> Result<reqwest::Url, Response> {
+    state.record_upstream_failure();
+    Err(error_response(
+        StatusCode::BAD_GATEWAY,
+        "upstream_error",
+        "The upstream model provider is unavailable.",
+        None,
+    ))
 }
 
 fn channel_from_transport_key(key: &str) -> Option<UpstreamChannel> {
