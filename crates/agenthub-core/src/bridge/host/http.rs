@@ -1,11 +1,11 @@
 use std::time::Instant;
 
 use axum::extract::{Request, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::bridge::types::ProtocolError;
 
@@ -65,9 +65,9 @@ async fn list_models(State(gateway): State<Gateway>, headers: HeaderMap) -> Resp
         Err(response) => return response,
     };
     let listed = if let Some(index) = &state.route_index {
-        index.list_models(DownstreamSurface::endpoint_key(
+        state.models_after_denials(index.list_models(DownstreamSurface::endpoint_key(
             state.upstream.local_surface,
-        ))
+        )))
     } else {
         gateway.listed_models_with_backup(&state)
     };
@@ -115,7 +115,7 @@ pub(super) async fn read_request_json(request: Request) -> Result<Value, Respons
                 "invalid_request",
                 "The request body is invalid or too large.",
                 None,
-            ))
+            ));
         }
         Err(_) => {
             return Err(error_response(
@@ -123,7 +123,7 @@ pub(super) async fn read_request_json(request: Request) -> Result<Value, Respons
                 "request_timeout",
                 "The request body timed out.",
                 None,
-            ))
+            ));
         }
     };
     serde_json::from_slice::<Value>(&body).map_err(|_| {

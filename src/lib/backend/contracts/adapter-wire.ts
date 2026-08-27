@@ -412,6 +412,7 @@ export interface RouteMemberOverviewWire {
   sourceKind: AdapterSourceKind;
   sourceId: string;
   enabled: boolean;
+  availability?: string;
 }
 
 export interface DefaultRoutePoolOverviewWire {
@@ -451,11 +452,19 @@ function mapPoolDialect(value: string): RoutePoolDialect {
   return invalidWireValue('dialect', value);
 }
 
+function mapAvailability(value: string | undefined): RouteMemberOverview['availability'] {
+  if (value === 'ready' || value === 'cooling' || value === 'isolated' || value === 'disabled') {
+    return value;
+  }
+  return undefined;
+}
+
 function mapMemberOverview(wire: RouteMemberOverviewWire): RouteMemberOverview {
   return {
     sourceKind: mapSourceKind(wire.sourceKind),
     sourceId: wire.sourceId,
     enabled: wire.enabled === true,
+    availability: mapAvailability(wire.availability),
   };
 }
 

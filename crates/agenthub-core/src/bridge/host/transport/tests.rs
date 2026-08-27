@@ -55,6 +55,9 @@ fn listener_state(
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         continuations: std::sync::Arc::new(super::super::continuation::ContinuationBindings::new()),
+        member_model_denials: std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::HashSet::new(),
+        )),
         account_picker: crate::bridge::runtime::BridgeStartSpec::new(
             "transport-test",
             0,
