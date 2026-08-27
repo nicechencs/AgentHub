@@ -47,6 +47,14 @@ fn write_toml_config_reads_the_same_managed_lists() {
         grok::managed::PROVIDER_TOML_KEYS
     );
     assert!(managed_toml_provider_keys(AgentId::Claude).is_err());
+    assert!(
+        kimi::managed::PROVIDER_TOML_KEYS.contains(&"models"),
+        "kimi provider switch must replace [models]"
+    );
+    assert!(
+        kimi::managed::PROJECTOR_TOML_KEYS.contains(&"models"),
+        "kimi projector must write [models]"
+    );
 }
 
 #[test]

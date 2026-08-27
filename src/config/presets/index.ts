@@ -37,10 +37,17 @@ const CODEX_COMPAT = [
 
 const KIMI_COMPAT = [
   'default_model = "kimi-k2"',
+  'default_provider = "custom"',
   '',
   '[providers.custom]',
+  'type = "openai"',
   'base_url = "https://your-relay.example.com/v1"',
   'api_key = "sk-xxxxxxxx"',
+  '',
+  '[models."kimi-k2"]',
+  'provider = "custom"',
+  'model = "kimi-k2"',
+  'max_context_size = 131072',
   '',
 ].join('\n');
 
@@ -93,7 +100,21 @@ export const PRESETS: Record<AgentId, ProviderPreset[]> = {
       id: 'moonshot',
       label: 'Moonshot 官方',
       format: 'toml',
-      template: 'default_model = "kimi-k2"\n',
+      template: [
+        'default_model = "kimi-k2"',
+        'default_provider = "moonshot"',
+        '',
+        '[providers.moonshot]',
+        'type = "openai"',
+        'base_url = "https://api.moonshot.cn/v1"',
+        'api_key = ""',
+        '',
+        '[models."kimi-k2"]',
+        'provider = "moonshot"',
+        'model = "kimi-k2"',
+        'max_context_size = 131072',
+        '',
+      ].join('\n'),
     },
     {
       id: 'openai-compatible',

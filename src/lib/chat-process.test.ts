@@ -143,6 +143,19 @@ describe('chat-process reduceProcessEvent', () => {
     expect(map['1:claude']?.command).toBe('x');
   });
 
+  it('maps English raw step notes to Chinese', () => {
+    expect(
+      stepSummary({ type: 'raw', text: '{…}', note: 'unrecognized structured line' }, t),
+    ).toBe('无法识别的输出行');
+    expect(
+      stepSummary({ type: 'raw', text: 'oops', note: 'non-json line in structured mode' }, t),
+    ).toBe('结构化模式下出现非 JSON 行');
+    expect(stepSummary({ type: 'raw', text: 'x', note: 'line too long' }, t)).toBe('输出行过长');
+    expect(stepSummary({ type: 'raw', text: '{…}', note: '无法识别的输出行' }, t)).toBe(
+      '无法识别的输出行',
+    );
+  });
+
   it('phaseFromMessageStatus and labels', () => {
     expect(phaseFromMessageStatus('cancelled')).toBe('cancelled');
     expect(phaseFromMessageStatus('failed')).toBe('failed');

@@ -1,6 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
+use crate::integrations::agents::kimi::managed::{
+    ensure_kimi_model_alias, ensure_kimi_provider_entry, DEFAULT_MODEL_ALIAS,
+};
+use crate::logging::targets;
 use crate::models::{
     AccountKind, AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult,
     LiveAccount, RunOptions, RunSpec,
@@ -59,7 +63,15 @@ impl AgentAdapter for KimiAdapter {
 
     fn write_config(&self, config: &AgentConfig) -> Result<()> {
         let path = agent_home(AgentId::Kimi)?.join("config.toml");
-        write_toml_config(AgentId::Kimi, &path, config)
+        write_toml_config(AgentId::Kimi, &path, config)?;
+        tracing::info!(
+            module = targets::PROVIDER,
+            op = "switch_write",
+            agent = "kimi",
+            path = %path.display(),
+            "switch_write"
+        );
+        Ok(())
     }
 
     fn read_auth(&self) -> Result<AuthState> {
@@ -390,7 +402,7 @@ fn read_kimi_api_key(path: &Path) -> Result<Option<String>> {
     Ok(None)
 }
 
-fn write_kimi_api_key(path: &Path, key: &str) -> Result<()> {
+pub(crate) fn write_kimi_api_key(path: &Path, key: &str) -> Result<()> {
     let live = match std::fs::read_to_string(path) {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -415,20 +427,47 @@ fn write_kimi_api_key(path: &Path, key: &str) -> Result<()> {
         })
         .unwrap_or_else(|| "moonshot".into());
 
-    if doc.get("default_provider").is_none() {
+    if doc
+        .get("default_provider")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_none()
+    {
         doc["default_provider"] = toml_edit::value(provider_name.as_str());
     }
-    if doc.get("providers").is_none() {
-        doc["providers"] = toml_edit::table();
+    ensure_kimi_provider_entry(&mut doc, provider_name.as_str())?;
+    let model_alias = doc
+        .get("default_model")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| DEFAULT_MODEL_ALIAS.to_string());
+    if doc
+        .get("default_model")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_none()
+    {
+        doc["default_model"] = toml_edit::value(model_alias.as_str());
     }
-    let providers = doc["providers"]
-        .as_table_mut()
-        .ok_or_else(|| AppError::InvalidArg("Kimi config.toml providers must be a table".into()))?;
-    if providers.get(provider_name.as_str()).is_none() {
-        providers.insert(provider_name.as_str(), toml_edit::table());
+    ensure_kimi_model_alias(&mut doc, provider_name.as_str(), &model_alias)?;
+    {
+        let providers = doc["providers"].as_table_mut().ok_or_else(|| {
+            AppError::InvalidArg("Kimi config.toml providers must be a table".into())
+        })?;
+        providers[provider_name.as_str()]["api_key"] = toml_edit::value(key);
     }
-    providers[provider_name.as_str()]["api_key"] = toml_edit::value(key);
     atomic_write(path, doc.to_string().as_bytes())?;
+    tracing::info!(
+        module = targets::PROVIDER,
+        op = "write_live",
+        agent = "kimi",
+        path = %path.display(),
+        "write_live"
+    );
 
     let verified = read_kimi_api_key(path)?;
     if verified.as_deref() != Some(key) {
