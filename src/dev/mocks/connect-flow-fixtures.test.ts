@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getBackend } from '@/app/runtime';
 import { resetMockAccounts } from './account';
@@ -30,6 +33,31 @@ describe('seedConnectFlowAdapterFixtures', () => {
     const seeded = seedConnectFlowAdapterFixtures({ includeAnthropic: false });
     expect(seeded.anthropic).toBeUndefined();
     expect(getMockProviderById(CONNECT_FLOW_FIXTURE_IDS.anthropic)).toBeUndefined();
+  });
+
+  it('does not hand-write apply success fields', () => {
+    const src = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), 'connect-flow-fixtures.ts'),
+      'utf8',
+    );
+    expect(src).not.toMatch(/ruleId/);
+    expect(src).not.toMatch(/32123/);
+    expect(src).not.toMatch(/state:\s*['"]running['"]/);
+    expect(src).not.toMatch(/\bclassify(Account|Provider)Source\b/);
+  });
+
+  it('observes Kimi → Claude reshape and Codex bridge after seedBindings', async () => {
+    getBackend();
+    seedConnectFlowAdapterFixtures({ seedBindings: true });
+    const wallet = await getBackend().ticket.listWallet();
+    const kimiBindings = wallet.bindings.filter(
+      (binding) => binding.ticketId === `provider:${CONNECT_FLOW_FIXTURE_IDS.kimiMembership}`,
+    );
+    expect(kimiBindings.some((binding) => binding.agentId === 'claude' && binding.route === 'reshape'))
+      .toBe(true);
+    expect(kimiBindings.some((binding) => binding.agentId === 'codex' && binding.route === 'bridge'))
+      .toBe(true);
+    expect(JSON.stringify(wallet)).not.toContain('must-not-leak');
   });
 });
 
