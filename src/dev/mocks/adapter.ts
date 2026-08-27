@@ -119,11 +119,61 @@ export function seedMockDefaultRoutePools(pools: readonly DefaultRoutePoolOvervi
   }
 }
 
+function applyBindingToState(
+  state: MockAdapterState,
+  request: AdapterApplyRequest,
+): AdapterApplyResult {
+  const resolver = state.resolver;
+  const plan = buildPlan(resolver, request);
+  if (!plan.canApply) {
+    throw adapterCommandError({
+      code: 'unsupported',
+      message: '当前适配路径尚不可应用',
+      retryable: false,
+    });
+  }
+  const existing = state.profiles.find(
+    (profile) =>
+      profile.sourceKind === request.sourceKind &&
+      profile.sourceId === request.sourceId &&
+      profile.targetAgentId === request.targetAgentId,
+  );
+  const now = new Date().toISOString();
+  const { profile, provider } = materializeApply(request, plan, existing, now);
+  if (!existing) state.profiles.push(profile);
+  if (plan.analysis.route === 'local_bridge') {
+    state.bridgeStatuses.set(profile.id, runningBridgeStatus(profile));
+  }
+  const generated = resolver.upsertGeneratedProvider?.(provider) ?? provider;
+  state.generatedProviders.set(generated.id, { ...generated });
+  return {
+    profile: { ...profile },
+    provider: { ...generated },
+  };
+}
+
+/** Same write as AdapterPort.apply (buildPlan + materializeApply), without delay. */
+export function seedAppliedBinding(request: AdapterApplyRequest): AdapterApplyResult {
+  let last: AdapterApplyResult | undefined;
+  for (const state of adapterStates) {
+    last = applyBindingToState(state, request);
+  }
+  if (!last) {
+    throw adapterCommandError({
+      code: 'not_found',
+      message: 'no live mock adapter to apply into',
+      retryable: false,
+    });
+  }
+  return last;
+}
+
 export function createMockAdapterPort(resolver: MockAdapterSourceResolver): AdapterPort {
   const state: MockAdapterState = {
     profiles: [],
     bridgeStatuses: new Map(),
     generatedProviders: new Map(),
+    resolver,
     removeGeneratedProvider: resolver.removeGeneratedProvider,
     routePoolV2: false,
     defaultPools: [],
@@ -237,32 +287,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     },
     async apply(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
       await delay(20);
-      const plan = buildPlan(resolver, request);
-      if (!plan.canApply) {
-        throw adapterCommandError({
-          code: 'unsupported',
-          message: '当前适配路径尚不可应用',
-          retryable: false,
-        });
-      }
-      const existing = state.profiles.find(
-        (profile) =>
-          profile.sourceKind === request.sourceKind &&
-          profile.sourceId === request.sourceId &&
-          profile.targetAgentId === request.targetAgentId,
-      );
-      const now = new Date().toISOString();
-      const { profile, provider } = materializeApply(request, plan, existing, now);
-      if (!existing) state.profiles.push(profile);
-      if (plan.analysis.route === 'local_bridge') {
-        state.bridgeStatuses.set(profile.id, runningBridgeStatus(profile));
-      }
-      const generated = resolver.upsertGeneratedProvider?.(provider) ?? provider;
-      state.generatedProviders.set(generated.id, { ...generated });
-      return {
-        profile: { ...profile },
-        provider: { ...generated },
-      };
+      return applyBindingToState(state, request);
     },
     async remove(profileId: string) {
       await delay(20);
