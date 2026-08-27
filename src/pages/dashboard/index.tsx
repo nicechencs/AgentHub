@@ -61,6 +61,7 @@ import {
 
 import type { MessageKey } from '@/lib/i18n';
 import { activeBindingForAgent } from '@/lib/ticket-wallet';
+import { connectionStateRouteLabel } from '@/pages/connections/ticket-wallet-model';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import { consumeConnectResume, parseConnectResumeParam } from '@/lib/connect-flow/connect-intent';
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
@@ -330,12 +331,7 @@ export default function DashboardPage() {
       const binding = active
         ? {
             ticketLabel: active.ticket.label,
-            routeLabel:
-              active.binding.route === 'reshape'
-                ? t('connections.list.routeReshape')
-                : active.binding.route === 'bridge'
-                  ? t('kind.route.localRoute')
-                  : t('kind.route.direct'),
+            routeLabel: connectionStateRouteLabel(active.binding.route, t),
           }
         : null;
       if (!hit && !binding) continue;
