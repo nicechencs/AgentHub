@@ -20,7 +20,16 @@ pub fn openai_models_url(base_url: &str) -> String {
     if trimmed.is_empty() {
         return String::new();
     }
-    let stripped = trimmed.trim_end_matches('/');
+    let stripped = trimmed.trim_end_matches('/').trim_end_matches("/anthropic");
+    let stripped = stripped.trim_end_matches('/');
+    if let Ok(url) = reqwest::Url::parse(stripped) {
+        if url
+            .host_str()
+            .is_some_and(|host| host.eq_ignore_ascii_case("api.deepseek.com"))
+        {
+            return format!("{stripped}/models");
+        }
+    }
     let ends_with_v1 = stripped
         .rsplit_once('/')
         .is_some_and(|(_, last)| last.eq_ignore_ascii_case("v1"));

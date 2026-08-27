@@ -143,6 +143,14 @@ fn stamp_secret_hash_writes_meta_not_raw_secret() {
 fn normalize_base_url_strips_trailing_slash() {
     assert_eq!(
         normalize_base_url(" https://openrouter.ai/api/v1/ "),
-        "https://openrouter.ai/api/v1"
+        "https://openrouter.ai/api"
+    );
+    assert_eq!(
+        normalize_base_url("https://mytokens.cc/v1"),
+        "https://mytokens.cc"
+    );
+    assert_eq!(
+        normalize_base_url("https://mytokens.cc"),
+        "https://mytokens.cc"
     );
 }

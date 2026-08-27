@@ -93,6 +93,20 @@ export function humanizeTrashLabel(item: ConnectionTrashItem, t?: TranslateFn): 
   return `${title} · ${identity}`;
 }
 
+export function trashItemSecretTail(item: ConnectionTrashItem): string | undefined {
+  const tail = item.account?.secretTail?.trim() || item.provider?.secretTail?.trim();
+  if (!tail) return undefined;
+  const last4 = tail.replace(/^\*+/, '').slice(-4);
+  return last4 || undefined;
+}
+
+export function trashItemEndpoint(item: ConnectionTrashItem): string | undefined {
+  if (item.provider) {
+    return extractProviderEndpoint(item.provider.configText, item.provider.configFormat);
+  }
+  return undefined;
+}
+
 function parseDeletedAt(value: string): number {
   const isoLike = value.replace(' ', 'T');
   const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(isoLike) ? isoLike : `${isoLike}Z`;

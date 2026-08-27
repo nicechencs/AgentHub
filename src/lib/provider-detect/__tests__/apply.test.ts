@@ -271,6 +271,45 @@ describe('applySmartPaste', () => {
     const backends = r.configText.match(/api_backend\s*=\s*"responses"/g) ?? [];
     expect(backends.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('extracts grok TOML from mixed paste with 格式1 and export lines', () => {
+    const paste = [
+      '格式1：',
+      'export GROK_MODELS_BASE_URL="https://mytokens.cc/v1"',
+      'export XAI_API_KEY=xai-fixture-key-xxxx8660',
+      '',
+      '[endpoints]',
+      'api = "https://mytokens.cc/v1"',
+      '',
+      '[auth]',
+      'preferred_method = "api_key"',
+      '',
+      '[models]',
+      'default = "grok"',
+      '',
+      '[model."grok-4.5"]',
+      'model = "grok-4.5"',
+      'base_url = "https://mytokens.cc/v1"',
+      'api_backend = "responses"',
+      '',
+      '[model."grok-4.3"]',
+      'model = "grok-4.3"',
+      'base_url = "https://mytokens.cc/v1"',
+      '',
+    ].join('\n');
+    const r = applySmartPaste('grok', paste);
+    expect(r.vars.baseUrl).toBe('https://mytokens.cc/v1');
+    expect(r.vars.model).toBe('grok-4.5');
+    expect(r.vars.apiKey).toMatch(/8660$/);
+    expect(r.configText).not.toContain('格式1');
+    expect(r.configText).not.toMatch(/export\s+/i);
+    expect(r.configText).not.toContain('xai-fixture-key');
+    expect(r.configText).toContain('[endpoints]');
+    expect(r.configText).toContain('[auth]');
+    expect(r.configText).toContain('api_backend = "responses"');
+    const backends = r.configText.match(/api_backend\s*=\s*"responses"/g) ?? [];
+    expect(backends.length).toBeGreaterThanOrEqual(2);
+  });
 });
 
 describe('initFormFromConfig', () => {

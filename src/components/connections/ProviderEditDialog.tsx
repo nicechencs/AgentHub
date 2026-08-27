@@ -68,6 +68,7 @@ import {
   defaultConfigScaffold,
   EMPTY_FORM_VARS,
   extractFormVars,
+  filterRemoteModelsForAgent,
   formFieldVisibility,
   initFormFromConfig,
   isLiveFilePath,
@@ -231,7 +232,6 @@ export function ProviderEditDialog({
   const [remoteModels, setRemoteModels] = React.useState<string[]>([]);
   const [remoteModelsError, setRemoteModelsError] = React.useState(false);
   const [remoteModelsLoading, setRemoteModelsLoading] = React.useState(false);
-  const [remoteModelsRetry, setRemoteModelsRetry] = React.useState(0);
   const [remoteModelsTested, setRemoteModelsTested] = React.useState(false);
   const remoteModelsSeq = React.useRef(0);
   const remoteModelsInputRef = React.useRef('');
@@ -454,9 +454,13 @@ export function ProviderEditDialog({
       if (result.detect.baseUrl || result.detect.apiKey || result.detect.rawConfigText) {
         void logGuiEvent('recognize', {
           agent: agentId,
-          last4: maskApiKeyLast4(result.vars.apiKey) || undefined,
+          last4:
+            maskApiKeyLast4(result.vars.apiKey)
+            || maskApiKeyLast4(result.detect.apiKey ?? '')
+            || undefined,
         });
       }
+      setPasteBuf(maskConfigSecrets(agentId, raw, result.configFormat));
       return { ...result, configText: nextText };
     },
     [agentId, configText, configFormat, vars, t, useOfficial],
@@ -568,7 +572,7 @@ export function ProviderEditDialog({
   const remoteModelsInput = `${resolvedBaseUrl}\u0000${vars.apiKey}`;
 
   const testRemoteModels = React.useCallback(async () => {
-    if (agentId !== 'codex' || useOfficial || !shouldFetch) return;
+    if (useOfficial || !shouldFetch) return;
     const seq = ++remoteModelsSeq.current;
     remoteModelsInputRef.current = remoteModelsInput;
     setRemoteModelsTested(true);
@@ -588,7 +592,7 @@ export function ProviderEditDialog({
         },
       );
       if (seq !== remoteModelsSeq.current) return;
-      setRemoteModels(ids);
+      setRemoteModels(filterRemoteModelsForAgent(agentId, ids));
       setRemoteModelsError(false);
       toast({
         title: t('connections.providerDialog.testModelsSuccess'),
@@ -602,6 +606,10 @@ export function ProviderEditDialog({
       if (seq !== remoteModelsSeq.current) return;
       setRemoteModels([]);
       setRemoteModelsError(true);
+      void logGuiEvent('list_remote', {
+        agent: agentId,
+        last4: maskApiKeyLast4(vars.apiKey) || undefined,
+      });
       toast({
         title: t('connections.providerDialog.testModelsFailed'),
         description: e instanceof Error ? e.message : String(e),
@@ -632,16 +640,14 @@ export function ProviderEditDialog({
         : open && shouldFetch,
   });
   const retryRemoteModels = React.useCallback(() => {
-    if (agentId === 'codex') {
-      void testRemoteModels();
-      return;
-    }
-    setRemoteModelsRetry((token) => token + 1);
-  }, [agentId, testRemoteModels]);
+    void testRemoteModels();
+  }, [testRemoteModels]);
   const modelFieldStatus =
     (agentId === 'codex' ? remoteModelsTested : shouldFetch) && remoteStatus.labelKey
       ? {
-          label: t(remoteStatus.labelKey),
+          label: remoteStatus.showRetry
+            ? t('connections.providerDialog.testModelsFailed')
+            : t(remoteStatus.labelKey),
           onRetry: remoteStatus.showRetry ? retryRemoteModels : undefined,
         }
       : undefined;
@@ -692,13 +698,17 @@ export function ProviderEditDialog({
       void request
         .then((ids) => {
           if (seq !== remoteModelsSeq.current) return;
-          setRemoteModels(ids);
+          setRemoteModels(filterRemoteModelsForAgent(agentId, ids));
           setRemoteModelsError(false);
         })
         .catch(() => {
           if (seq !== remoteModelsSeq.current) return;
           setRemoteModels([]);
           setRemoteModelsError(true);
+          void logGuiEvent('list_remote', {
+            agent: agentId,
+            last4: maskApiKeyLast4(vars.apiKey) || undefined,
+          });
         })
         .finally(() => {
           if (seq !== remoteModelsSeq.current) return;
@@ -715,7 +725,6 @@ export function ProviderEditDialog({
     resolvedBaseUrl,
     vars.apiKey,
     provider?.id,
-    remoteModelsRetry,
     agentId,
   ]);
 
@@ -737,8 +746,9 @@ export function ProviderEditDialog({
     }
   }, [agentId, open, remoteModelsInput, useOfficial]);
 
+  const showFetchModelsButton = !useOfficial && (agentId === 'codex' || agentId === 'grok' || agentId === 'kimi' || agentId === 'dsh');
   const testModelsAction =
-    agentId === 'codex' && !useOfficial ? (
+    showFetchModelsButton ? (
       <Button
         type="button"
         size="sm"
@@ -748,9 +758,11 @@ export function ProviderEditDialog({
         onClick={() => void testRemoteModels()}
       >
         <RefreshCw className={cn('h-3.5 w-3.5', remoteModelsLoading && 'animate-spin')} />
-        {remoteModelsTested
-          ? t('connections.providerDialog.testModelsAgain')
-          : t('connections.providerDialog.testModels')}
+        {remoteModelsLoading
+          ? t('connections.providerDialog.remoteModelsLoading')
+          : remoteModelsTested || remoteModels.length > 0
+            ? t('connections.providerDialog.testModelsAgain')
+            : t('connections.providerDialog.testModels')}
       </Button>
     ) : null;
 
@@ -986,10 +998,21 @@ export function ProviderEditDialog({
 
           {/* 智能识别始终可粘贴；勾选官方不灰掉这块。粘贴成功会改成自定义。 */}
           <div className="flex flex-col gap-1.5 rounded-card border border-border bg-canvas p-3">
-            <Hint label={t('connections.providerDialog.smartDetectHint')}>
+            <Hint
+              label={
+                useOfficial
+                  ? t('connections.providerDialog.smartDetectOfficialHint')
+                  : t('connections.providerDialog.smartDetectHint')
+              }
+            >
               <span className="flex items-center gap-1 text-xs font-medium text-secondary">
                 <Sparkles className="h-3.5 w-3.5" />
                 {t('connections.providerDialog.smartDetect')}
+                {useOfficial ? (
+                  <span className="font-normal text-muted">
+                    {t('connections.providerDialog.smartDetectOfficialPaste')}
+                  </span>
+                ) : null}
               </span>
             </Hint>
             <textarea
@@ -1087,7 +1110,11 @@ export function ProviderEditDialog({
           {configSchema && schemaStatus === 'ready' ? (
             <GenericConfigForm
               schema={configSchema}
-              values={vars as unknown as Record<string, unknown>}
+              values={
+                (agentId === 'dsh'
+                  ? { ...vars, provider: vars.providerSlug, baseURL: vars.baseUrl }
+                  : vars) as unknown as Record<string, unknown>
+              }
               onChange={(next) => {
                 if (useOfficial) {
                   // Official mode: only allow secret edits
@@ -1095,7 +1122,14 @@ export function ProviderEditDialog({
                   if (key !== vars.apiKey) patchVars({ apiKey: key });
                   return;
                 }
-                patchVars(next as Partial<ProviderFormVars>);
+                const patch: Partial<ProviderFormVars> = { ...(next as Partial<ProviderFormVars>) };
+                if (agentId === 'dsh') {
+                  if (typeof next.provider === 'string') patch.providerSlug = next.provider;
+                  if (typeof next.baseURL === 'string' && !String(next.baseUrl ?? '').trim()) {
+                    patch.baseUrl = next.baseURL;
+                  }
+                }
+                patchVars(patch);
               }}
               readOnlyKeys={schemaReadOnlyKeys}
               disabled={false}
@@ -1104,9 +1138,18 @@ export function ProviderEditDialog({
               }
               fieldStatus={modelFieldStatus ? { model: modelFieldStatus } : undefined}
               fieldActions={
-                testModelsAction ? { apiKey: testModelsAction } : undefined
+                testModelsAction
+                  ? agentId === 'codex'
+                    ? { apiKey: testModelsAction }
+                    : { model: testModelsAction }
+                  : undefined
               }
-              fieldHints={keyHint ? { apiKey: keyHint } : undefined}
+              fieldHints={{
+                ...(keyHint ? { apiKey: keyHint } : {}),
+                ...(agentId === 'dsh'
+                  ? { baseUrl: t('connections.providerDialog.fieldHints.dshBaseUrl') }
+                  : {}),
+              }}
             />
           ) : schemaStatus === 'unsupported' ? (
             <>

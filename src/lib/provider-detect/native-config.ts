@@ -269,7 +269,12 @@ export function validateNativeConfigText(
   const trimmed = configText.trim();
   if (!trimmed || trimmed === REDACTED_MARKER) return null;
 
-  const jsonLike = format === 'json' || agentId === 'claude' || agentId === 'pi' || agentId === 'workbuddy';
+  const jsonLike =
+    format === 'json'
+    || agentId === 'claude'
+    || agentId === 'pi'
+    || agentId === 'workbuddy'
+    || agentId === 'dsh';
   if (jsonLike) {
     const parsed = parseJsonObject(configText);
     const issue = jsonIssue(parsed);

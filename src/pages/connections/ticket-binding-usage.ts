@@ -18,7 +18,7 @@ import type {
 import { surfaceGroupMemberCount } from '@/lib/backend/contracts/ticket';
 import { bridgesHrefForProfile } from '@/lib/bridges-path';
 import type { TranslateFn } from '@/lib/i18n';
-import { filterTicketsByAgentUsage } from '@/lib/ticket-wallet';
+import { filterTicketsByOwner } from '@/lib/ticket-wallet';
 import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
 import {
   filterTickets,
@@ -71,7 +71,7 @@ export function formatBindingUsageParts(
   if (binding.route === 'bridge') {
     const path = routeEndpointPathForBinding({ agentId: binding.agentId });
     const endpointId = routeEndpointIdForBinding({ agentId: binding.agentId });
-    const port = binding.bridge?.port ?? null;
+    const port = binding.bridge?.running ? binding.bridge.port ?? null : null;
     const suffix = binding.bridge?.running
       ? `${poolSuffix}${t ? t('connections.list.runningSuffix') : ' · 运行中'}`
       : binding.bridge && !binding.bridge.running
@@ -172,7 +172,7 @@ export function buildTicketWalletRows(
 
   let tickets = filterTickets(wallet.tickets, filter);
   if (agentFilterId) {
-    tickets = filterTicketsByAgentUsage(wallet, tickets, agentFilterId);
+    tickets = filterTicketsByOwner(tickets, agentFilterId);
   }
 
   return tickets.map((ticket) => {

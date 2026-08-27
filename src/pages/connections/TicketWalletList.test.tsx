@@ -434,7 +434,7 @@ describe('TicketWalletList details', () => {
     expect(allMarkup).toContain('2 份登录');
   });
 
-  it('does not keep a Grok ticket for a leftover inactive Claude binding; keeps a Codex ticket with an active Claude binding', () => {
+  it('counts each login once under its owner agent so tab chips sum to the total', () => {
     const wallet: TicketWallet = {
       tickets: [
         {
@@ -491,11 +491,10 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(claudeMarkup).toContain('me@openai.com');
+    expect(claudeMarkup).not.toContain('me@openai.com');
     expect(claudeMarkup).not.toContain('user@x.ai');
-    expect(claudeMarkup).toContain('1 份登录');
-    expect(claudeMarkup).not.toContain('2 份登录');
-    expect(claudeMarkup).not.toContain('没有匹配的登录');
+    expect(claudeMarkup).toContain('0 份登录');
+    expect(claudeMarkup).not.toContain('1 份登录');
 
     const grokMarkup = renderWithTooltip(
       createElement(TicketWalletList, {

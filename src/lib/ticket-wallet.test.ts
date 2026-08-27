@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
-import { activeBindingForAgent, filterTicketsByAgentUsage } from './ticket-wallet';
+import { activeBindingForAgent, filterTicketsByAgentUsage, filterTicketsByOwner } from './ticket-wallet';
 
 function wallet(): TicketWallet {
   return {
@@ -102,6 +102,29 @@ describe('ticket-wallet', () => {
     expect(filterTicketsByAgentUsage(all, all.tickets, 'grok').map((row) => row.id)).toEqual(['t3']);
     expect(filterTicketsByAgentUsage(all, all.tickets, 'pi')).toEqual([]);
     expect(filterTicketsByAgentUsage(all, all.tickets, 'cursor')).toEqual([]);
+  });
+
+  it('counts each ticket once under its owner agent', () => {
+    const all = wallet();
+    all.tickets.push({
+      id: 't2',
+      sourceKind: 'account',
+      sourceId: 'codex-1',
+      agentId: 'codex',
+      label: 'me@openai.com',
+      surface: 'codex-chatgpt-subscription',
+      credentialClass: 'oauth',
+      speaks: [],
+      importedFrom: 'codex',
+    });
+    expect(filterTicketsByOwner(all.tickets, 'kimi').map((row) => row.id)).toEqual(['t1']);
+    expect(filterTicketsByOwner(all.tickets, 'claude')).toEqual([]);
+    expect(filterTicketsByOwner(all.tickets, 'codex').map((row) => row.id)).toEqual(['t2']);
+    const ownerSum =
+      filterTicketsByOwner(all.tickets, 'kimi').length
+      + filterTicketsByOwner(all.tickets, 'codex').length
+      + filterTicketsByOwner(all.tickets, 'claude').length;
+    expect(ownerSum).toBe(all.tickets.length);
   });
 
   it('drops a leftover inactive Claude binding on a Grok ticket and keeps a Codex ticket with an active Claude binding', () => {

@@ -18,7 +18,6 @@ import {
   buildTicketDetailFields,
   buildTicketWalletRows,
   countTicketsByFilter,
-  filterTicketsByAgentUsage,
   filterWalletByExcludedAgents,
   dashboardBindingMetaText,
   extrasFromPoolSource,
@@ -273,14 +272,16 @@ describe('buildTicketWalletRows', () => {
     const wallet = sampleWallet();
     const claude = buildTicketWalletRows(wallet, { agentFilterId: 'claude' });
     const grok = buildTicketWalletRows(wallet, { agentFilterId: 'grok' });
+    const kimi = buildTicketWalletRows(wallet, { agentFilterId: 'kimi' });
     expect(claude.map((row) => row.ticket.id).sort()).toEqual([
       'account:oauth-1',
       'provider:ant-1',
-      'provider:kimi-1',
       'provider:unk-1',
     ].sort());
-    expect(claude.some((row) => row.ticket.agentId === 'kimi')).toBe(true);
+    expect(claude.some((row) => row.ticket.agentId === 'kimi')).toBe(false);
+    expect(kimi.map((row) => row.ticket.id)).toEqual(['provider:kimi-1']);
     expect(grok).toEqual([]);
+    expect(claude.length + kimi.length + grok.length).toBe(wallet.tickets.length);
   });
 
   it('does not keep a Grok ticket for a leftover inactive Claude binding; keeps a Codex ticket with an active Claude binding', () => {
@@ -331,7 +332,7 @@ describe('buildTicketWalletRows', () => {
     };
 
     const claude = buildTicketWalletRows(wallet, { agentFilterId: 'claude' });
-    expect(claude.map((row) => row.ticket.id)).toEqual(['account:codex-1']);
+    expect(claude.map((row) => row.ticket.id)).toEqual([]);
     expect(claude.some((row) => row.ticket.agentId === 'grok')).toBe(false);
 
     const grok = buildTicketWalletRows(wallet, { agentFilterId: 'grok' });
@@ -389,21 +390,18 @@ describe('buildTicketWalletRows', () => {
     };
 
     const t = createTranslator('zh');
-    const claudeFiltered = filterTicketsByAgentUsage(wallet, wallet.tickets, 'claude');
     const claudeRows = buildTicketWalletRows(wallet, { agentFilterId: 'claude' });
-    const chipCount = claudeFiltered.length;
-    const footerCount = claudeRows.length;
-    expect(chipCount).toBe(1);
-    expect(footerCount).toBe(1);
-    expect(footerCount).toBe(chipCount);
-    expect(t('connections.page.countAgent', { name: agentDisplayName('claude'), n: chipCount })).toBe(
-      `${agentDisplayName('claude')} 1 份`,
-    );
-    expect(t('connections.list.count', { n: footerCount })).toBe('1 份登录');
+    const grokRows = buildTicketWalletRows(wallet, { agentFilterId: 'grok' });
+    const codexRows = buildTicketWalletRows(wallet, { agentFilterId: 'codex' });
+    const chipCount = claudeRows.length + grokRows.length + codexRows.length;
+    expect(claudeRows).toHaveLength(0);
+    expect(grokRows).toHaveLength(1);
+    expect(codexRows).toHaveLength(1);
+    expect(chipCount).toBe(wallet.tickets.length);
+    expect(t('connections.list.count', { n: grokRows.length })).toBe('1 份登录');
 
     const descriptionCount = wallet.tickets.length;
     expect(descriptionCount).toBe(2);
-    expect(descriptionCount).not.toBe(chipCount);
     expect(t('connections.page.descriptionCount', { n: descriptionCount })).toBe('2 份登录');
   });
 
@@ -1234,10 +1232,10 @@ describe('resolveTicketRouteAction', () => {
 
   it('disables with the oauth reason when login is incomplete', () => {
     expect(resolveTicketRouteAction([
-      { status: 'blocked_oauth', reason: '官方登录未完成，先到连接页完成登录。' },
+      { status: 'blocked_oauth', reason: '这份官方登录还没完成，请先完成登录。' },
     ])).toEqual({
       disabled: true,
-      reason: '官方登录未完成，先到连接页完成登录。',
+      reason: '这份官方登录还没完成，请先完成登录。',
     });
   });
 

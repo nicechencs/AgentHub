@@ -260,6 +260,23 @@ function RouteDetailBody({
                   )}
                 </dd>
               </div>
+              {isBridge ? (
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <dt className="w-12 shrink-0 text-muted">{t('routes.write.fieldLocalToken')}</dt>
+                  <dd className="min-w-0">
+                    {bridgeStatus?.localToken ? (
+                      <CopyableEndpoint
+                        text={bridgeStatus.localToken}
+                        url={bridgeStatus.localToken}
+                        ariaLabel={t('routes.write.fieldLocalToken')}
+                        className="text-sm font-medium"
+                      />
+                    ) : (
+                      <span className="text-muted">{t('routes.write.localToken')}</span>
+                    )}
+                  </dd>
+                </div>
+              ) : null}
             </dl>
 
             <div className="space-y-1">
