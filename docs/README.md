@@ -25,6 +25,7 @@ updated: 2026-08-27
 - [添加 Adapter](guides/adding-an-adapter.md)
 - [Adapter dogfood](guides/adapter-dogfood.md)
 - [测试与验证](guides/testing-and-validation.md)
+- [release 分支保护](guides/release-branch-protection.md)
 - [故障排查](guides/troubleshooting.md)
 
 ### 理解系统

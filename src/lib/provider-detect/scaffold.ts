@@ -64,7 +64,7 @@ export function defaultConfigScaffold(agentId: string): {
           '[model."grok"]',
           'model = "grok-4.5"',
           'base_url = "https://your-relay.example.com/v1"',
-          'api_key = "sk-xxxxxxxx"',
+          'env_key = "XAI_API_KEY"',
           'api_backend = "responses"',
           'context_window = 1000000',
           'supports_backend_search = true',

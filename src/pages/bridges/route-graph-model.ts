@@ -132,7 +132,7 @@ function upstreamBaseFor(input: {
 export function buildRouteGraph(input: {
   profile: Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'name' | 'mode' | 'targetAgentId' | 'ruleId' | 'route'>;
   entries: readonly ConnectionEntry[];
-  siblingProfiles: readonly Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'targetAgentId' | 'generatedProviderId' | 'route'>[];
+  siblingProfiles: readonly Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'targetAgentId' | 'generatedProviderId' | 'route' | 'localPort'>[];
   host?: string;
   port?: number | null;
 }): RouteGraphView {
@@ -153,8 +153,16 @@ export function buildRouteGraph(input: {
   const port = typeof input.port === 'number' && input.port > 0 ? input.port : null;
 
   const rows = graphTargetsToEmit(hasDeclaredEndpoints, surfaces).map((agent): RouteGraphRow => {
-    const surface = surfaces.find((row) => row.target === agent)
-      ?? surfaceForCreateRouteTarget(agent);
+    const sibling = input.siblingProfiles.find(
+      (profile) => profile.route === 'local_bridge' && profile.targetAgentId === agent,
+    );
+    const surface = sibling
+      ? surfaceForCreateRouteTarget(agent)
+      : (surfaces.find((row) => row.target === agent) ?? surfaceForCreateRouteTarget(agent));
+    const siblingPort = typeof sibling?.localPort === 'number' && sibling.localPort > 0
+      ? sibling.localPort
+      : null;
+    const rowPort = siblingPort ?? port;
     const upstreamBaseUrl = upstreamBaseFor({
       missing: source.missing,
       endpoints: caps.endpoints,
@@ -174,7 +182,7 @@ export function buildRouteGraph(input: {
       localEndpointId: surface.endpointId,
       localUrl: routeEndpointHttpParts({
         path: surface.path,
-        port,
+        port: rowPort,
         host,
         endpointId: surface.endpointId,
       }).href,

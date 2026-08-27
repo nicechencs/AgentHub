@@ -27,10 +27,11 @@
 ## 分支与发布
 
 - 日常开发与 PR 合入 `dev`，不要把 `main` 或 `release` 当作日常集成线。
-- 正式发版时，同时修改 `package.json`、`Cargo.toml` 的 `[workspace.package]` 和 `src-tauri/tauri.conf.json` 三处版本号。
-- 更新 `release` 分支后，创建并推送匹配的 `vX.Y.Z` tag；tag 必须指向 `release` 上的对应提交且不可覆盖已有版本。
-- GitHub Actions 只在推送 `v*` tag 时出包。`dev` 与 `release` 是无关历史，不要把 `dev` 合并进 `release`。
-- Agent 隐藏以 `dev` 的 store-stamp 为准，只影响界面，不是旧 release 线的软隐藏。
+- 正式发版时，**只需修改 `package.json` 的 `version`**，然后运行 `pnpm release:sync-version` 同步 `Cargo.toml` 与 `Cargo.lock`；`src-tauri/tauri.conf.json` 引用 `../package.json`，无需重复填写。
+- **发版顺序**：日常改动先合入 `dev`；在 `dev` 升版、填写 `CHANGELOG.md` 并跑预检后，将 `dev` 合入 `release`，再在 **`dev` 打并推送 `vX.Y.Z` tag**（tag 指向同一提交，合并到 `release` 后会一并生效）；CI 构建发布并闭环处理问题。tag 不可覆盖已有**已发布**版本。
+- GitHub Actions 只在推送 `v*` tag 时出包；Release workflow 要求 tag 指向的提交同时在 `origin/dev` 与 `origin/release` 上，且 `CHANGELOG.md` 含对应版本更新说明。
+- `release` 是正式发版线；**禁止直接在 `release` 上提交**，所有改动只能经 `dev` 合并进入。见 [release 分支保护](docs/guides/release-branch-protection.md)。
+- Agent 隐藏以 `dev` 的 store-stamp 为准，只影响界面，不是旧 release 线的软隐藏。当前 stamp（`store_stamp_version = 1`）默认软隐藏 **Cursor Agent**，待兼容修复后再 bump 或移除；用户可在 Agents 管理页取消隐藏。
 - 当前界面使用「登录」，不使用「票」。实现里的 Ticket / TicketPort 仍是内部名称。
 
 ## 前端 backend 分层与 Adapter

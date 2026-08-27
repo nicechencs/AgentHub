@@ -639,8 +639,8 @@ impl AdapterBridgeRuntimeMaterial {
     }
 
     pub fn freeze_gateway_port(&self) -> bool {
-        self.preferred_port.is_some_and(|port| port != 0)
-            && (self.route_index.is_some() || self.index_enabled)
+        // Occupied preferred ports must rebind to a free loopback port.
+        false
     }
 
     /// Seed last-successful snapshots so a partial rebuild can keep them.
@@ -696,11 +696,15 @@ impl AdapterBridgeRuntimeMaterial {
         }
 
         // ChatGPT Codex Responses and the xAI CLI chat-proxy have no `/models`
-        // endpoint. The authenticated loopback health check is the only safe
-        // preflight; the first real request remains the upstream probe.
+        // endpoint. DeepSeek / GLM and Anthropic-compatible relays on other
+        // hosts likewise skip the list probe. The authenticated loopback
+        // health check is the only safe preflight; the first real request
+        // remains the upstream probe.
         if matches!(
             self.protocol,
             BridgeUpstreamProtocol::CodexResponsesOauth | BridgeUpstreamProtocol::XaiResponsesOauth
+        ) || !crate::services::adapter_route_constants::upstream_models_health_probe_supported(
+            &self.upstream_base_url,
         ) {
             return Ok(());
         }
@@ -737,12 +741,22 @@ impl AdapterBridgeRuntimeMaterial {
             return Ok(());
         }
 
-        let code = match upstream.status() {
+        let status = upstream.status();
+        let code = match status {
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => "adapter.bridge_upstream_auth",
             StatusCode::TOO_MANY_REQUESTS => "adapter.bridge_upstream_throttled",
-            status if status.is_server_error() => "adapter.bridge_upstream_unavailable",
+            s if s.is_server_error() => "adapter.bridge_upstream_unavailable",
             _ => "adapter.bridge_health_upstream",
         };
+        tracing::warn!(
+            target: "core.adapter",
+            op = "bridge_health_upstream",
+            profile_id = %self.profile_id,
+            upstream_base = %self.upstream_base_url,
+            status = %status.as_u16(),
+            code = %code,
+            "upstream models health probe was not successful"
+        );
         Err(AppError::message(
             code,
             "upstream health probe was not successful",

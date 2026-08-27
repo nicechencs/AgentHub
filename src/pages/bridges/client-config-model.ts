@@ -98,10 +98,13 @@ function localAddressField(origin: string, t?: TranslateFn): ClientWriteField {
   };
 }
 
-function localTokenField(t?: TranslateFn): ClientWriteField {
+function localTokenField(token: string | null | undefined, t?: TranslateFn): ClientWriteField {
+  const value = token?.trim()
+    ? token.trim()
+    : writeText(t, 'routes.write.localToken', WRITE_COPY.localToken);
   return {
     key: writeText(t, 'routes.write.fieldLocalToken', WRITE_COPY.fieldLocalToken),
-    value: writeText(t, 'routes.write.localToken', WRITE_COPY.localToken),
+    value,
   };
 }
 
@@ -114,11 +117,12 @@ export function clientWriteTargetSpec(
     t?: TranslateFn;
     model?: string;
     contextWindowTokens?: number | null;
+    localToken?: string | null;
   },
 ): { configPath: string; fields: ClientWriteField[] } {
   const origin = writeOrigin(normalizeHost(input.host), normalizePort(input.port));
   if (agent === 'claude') {
-    const fields = [localAddressField(origin, input.t), localTokenField(input.t)];
+    const fields = [localAddressField(origin, input.t), localTokenField(input.localToken, input.t)];
     const model = input.model?.trim() ?? '';
     if (model) {
       fields.push({
@@ -171,6 +175,7 @@ export function buildClientWriteSpecs(input: {
   hiddenTargetIds?: ReadonlySet<string>;
   listedModels?: readonly string[];
   contextWindowTokens?: number | null;
+  localToken?: string | null;
   t?: TranslateFn;
 }): ClientWriteSpec[] {
   const host = normalizeHost(input.host);
@@ -184,6 +189,7 @@ export function buildClientWriteSpecs(input: {
       t: input.t,
       model,
       contextWindowTokens: input.contextWindowTokens,
+      localToken: input.localToken,
     });
     const status = resolveClientWriteStatus({
       sourceMissing: input.sourceMissing,

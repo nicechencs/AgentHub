@@ -443,21 +443,148 @@ fn redact_assignment(input: &str, key: &str) -> String {
     result
 }
 
+/// Field-redact a TOML document: secret keys become `"***"`, structure stays.
+/// Invalid TOML still keeps models / URLs via line masking.
+pub fn redact_toml_content(content: &str) -> String {
+    let stripped = strip_secret_export_lines(content);
+    if let Ok(mut doc) = stripped.parse::<toml_edit::DocumentMut>() {
+        redact_toml_table(doc.as_table_mut());
+        let rendered = doc.to_string();
+        if rendered.contains("***") || rendered.contains("api_key") {
+            return mask_toml_secret_lines(&rendered);
+        }
+    }
+    mask_toml_secret_lines(&stripped)
+}
+
+fn is_secret_export_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    let Some(body) = trimmed
+        .strip_prefix("export ")
+        .or_else(|| trimmed.strip_prefix("EXPORT "))
+        .or_else(|| trimmed.strip_prefix("set "))
+        .or_else(|| trimmed.strip_prefix("SET "))
+        .or_else(|| trimmed.strip_prefix("$env:"))
+        .or_else(|| trimmed.strip_prefix("$Env:"))
+    else {
+        return false;
+    };
+    let Some((key, _)) = body.split_once('=') else {
+        return false;
+    };
+    let key = key.trim().trim_matches(['"', '\'']);
+    let upper = key.to_ascii_uppercase();
+    upper.ends_with("_API_KEY")
+        || upper.ends_with("_AUTH_TOKEN")
+        || upper.ends_with("_TOKEN")
+        || upper.ends_with("_SECRET")
+        || upper == "API_KEY"
+        || upper == "AUTH_TOKEN"
+}
+
+fn is_toml_secret_assignment_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    let Some((key, _)) = trimmed.split_once('=') else {
+        return false;
+    };
+    is_secret_key(key.trim())
+}
+
+fn strip_secret_export_lines(content: &str) -> String {
+    content
+        .lines()
+        .filter(|line| !is_secret_export_line(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn mask_toml_secret_lines(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
+    for (i, line) in content.lines().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        if is_toml_secret_assignment_line(line) {
+            if let Some((prefix, _)) = line.split_once('=') {
+                out.push_str(prefix);
+                out.push_str("= \"***\"");
+                continue;
+            }
+        }
+        out.push_str(line);
+    }
+    if content.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+fn redact_toml_item(item: &mut toml_edit::Item) {
+    match item {
+        toml_edit::Item::None => {}
+        toml_edit::Item::Value(value) => redact_toml_value(value, false),
+        toml_edit::Item::Table(table) => redact_toml_table(table),
+        toml_edit::Item::ArrayOfTables(arr) => {
+            for table in arr.iter_mut() {
+                redact_toml_table(table);
+            }
+        }
+    }
+}
+
+fn redact_toml_table(table: &mut toml_edit::Table) {
+    let keys: Vec<String> = table.iter().map(|(key, _)| key.to_string()).collect();
+    for key in keys {
+        if is_secret_key(&key) {
+            table[&key] = toml_edit::value("***");
+            continue;
+        }
+        if let Some(item) = table.get_mut(&key) {
+            redact_toml_item(item);
+        }
+    }
+}
+
+fn redact_toml_value(value: &mut toml_edit::Value, mask_all_strings: bool) {
+    match value {
+        toml_edit::Value::String(_) if mask_all_strings => {
+            *value = toml_edit::Value::from("***");
+        }
+        toml_edit::Value::InlineTable(table) => {
+            let keys: Vec<String> = table.iter().map(|(key, _)| key.to_string()).collect();
+            for key in keys {
+                if is_secret_key(&key) {
+                    table.insert(&key, toml_edit::Value::from("***"));
+                    continue;
+                }
+                if let Some(inner) = table.get_mut(&key) {
+                    redact_toml_value(inner, mask_all_strings);
+                }
+            }
+        }
+        toml_edit::Value::Array(arr) => {
+            for inner in arr.iter_mut() {
+                redact_toml_value(inner, mask_all_strings);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Recursively redact secret keys in a JSON value. Non-object/array leaves are
 /// cloned as-is. Secret values become the string `"***"`.
 pub fn redact_json(value: &Value) -> Value {
     match value {
         Value::Object(map) => {
             let mut out = Map::new();
-            // TOML live configs are stored losslessly as an opaque string.
-            // Without a full TOML-aware secret schema, exposing any part of
-            // that string could leak inline api_key/token values or secrets
-            // embedded in comments. Fail closed and mask the complete body.
-            let opaque_toml = map.get("format").and_then(Value::as_str) == Some("toml")
+            let toml_content = map.get("format").and_then(Value::as_str) == Some("toml")
                 && map.get("content").is_some_and(Value::is_string);
             for (k, v) in map {
-                if is_secret_key(k) || (opaque_toml && k == "content") {
+                if is_secret_key(k) {
                     out.insert(k.clone(), Value::String("***".into()));
+                } else if toml_content && k == "content" {
+                    let content = v.as_str().unwrap_or("");
+                    out.insert(k.clone(), Value::String(redact_toml_content(content)));
                 } else {
                     out.insert(k.clone(), redact_json(v));
                 }
@@ -523,14 +650,33 @@ mod tests {
     }
 
     #[test]
-    fn opaque_toml_content_is_masked_completely() {
+    fn toml_content_field_redacts_secrets_and_keeps_structure() {
         let input = json!({
             "format": "toml",
-            "content": "model = 'grok'\napi_key = 'xai-secret'\n# token: also-secret\n"
+            "content": "[models]\ndefault = \"grok\"\n\n[model.\"grok\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://mytokens.cc/v1\"\napi_key = \"xai-secret\"\napi_backend = \"responses\"\n\n[endpoints]\napi = \"https://mytokens.cc/v1\"\n"
         });
         let output = redact_json(&input);
         assert_eq!(output["format"], "toml");
-        assert_eq!(output["content"], "***");
+        let content = output["content"].as_str().expect("content");
+        assert!(content.contains("grok-4.5"), "{content}");
+        assert!(content.contains("https://mytokens.cc/v1"), "{content}");
+        assert!(content.contains("api_backend"), "{content}");
+        assert!(content.contains("[endpoints]"), "{content}");
+        assert!(!content.contains("xai-secret"), "{content}");
+        assert!(content.contains("***"), "{content}");
+    }
+
+    #[test]
+    fn toml_content_strips_export_secret_lines() {
+        let input = json!({
+            "format": "toml",
+            "content": "export XAI_API_KEY=xai-not-real\n[models]\ndefault = \"grok\"\n"
+        });
+        let output = redact_json(&input);
+        let content = output["content"].as_str().expect("content");
+        assert!(!content.contains("xai-not-real"), "{content}");
+        assert!(!content.to_ascii_lowercase().contains("export xai_api_key"), "{content}");
+        assert!(content.contains("[models]"), "{content}");
     }
 
     #[test]

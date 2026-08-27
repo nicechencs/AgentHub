@@ -253,7 +253,11 @@ impl AdapterBridgeService {
             }
             (BridgeUpstreamProtocol::OpenAiChatCompletions, _) => self
                 .secrets
-                .resolve_kimi_membership_auth(source_kind, source_id),
+                .resolve_openai_compat_auth(source_kind, source_id)
+                .or_else(|_| {
+                    self.secrets
+                        .resolve_kimi_membership_auth(source_kind, source_id)
+                }),
             (BridgeUpstreamProtocol::AnthropicMessages, _) => {
                 self.secrets.resolve_anthropic_auth(source_kind, source_id)
             }
@@ -275,7 +279,9 @@ impl AdapterBridgeService {
         source_id: &str,
     ) -> Result<crate::bridge::ResolvedAuth> {
         let rule = rule_for_id(rule_id).ok_or_else(|| {
-            AppError::InvalidArg("adapter profile is not a supported local bridge".into())
+            AppError::InvalidArg(
+                "这条本机路由已失效，无法启动。请删除后重建。".into(),
+            )
         })?;
         self.resolve_upstream_auth(&rule, source_kind, source_id)
     }
@@ -315,7 +321,7 @@ impl AdapterBridgeService {
                 .is_none_or(|rule| profile.target_agent_id != rule.target_agent)
         {
             return Err(AppError::InvalidArg(
-                "adapter profile is not a supported local bridge".into(),
+                "这条本机路由已失效，无法启动。请删除后重建。".into(),
             ));
         }
         Ok(profile)

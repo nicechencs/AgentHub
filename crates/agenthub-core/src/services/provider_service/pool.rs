@@ -449,10 +449,52 @@ impl ProviderService {
         })
     }
 
-    /// Secret+url identity is display/merge metadata, not a license to recycle
-    /// another user-saved login. Paste-merge of identical logins belongs to the
-    /// frontend. Create/update of the same primary key is unaffected.
-    pub(super) fn heal_secret_url_duplicates(&self, _agent: AgentId) -> Result<()> {
+    /// Merge same-agent rows that share secret hash + base URL into one keeper.
+    /// Losers go to the recovery bin with a recycle log. Cursor is left alone.
+    pub(super) fn heal_secret_url_duplicates(&self, agent: AgentId) -> Result<()> {
+        if agent == AgentId::Cursor {
+            return Ok(());
+        }
+        use std::collections::HashMap;
+
+        use crate::services::provider_identity::{
+            pick_identity_keeper, retarget_profiles_from_loser, ProviderIdentity,
+        };
+
+        let rows = self.repo.list(Some(agent))?;
+        let profile_repo = AdapterProfileRepo::new(self.db.clone());
+        let mut profiles = profile_repo.list_filtered(&Default::default())?;
+        let mut groups: HashMap<ProviderIdentity, Vec<Provider>> = HashMap::new();
+        for row in rows {
+            let Some(identity) = provider_identity(&row) else {
+                continue;
+            };
+            groups.entry(identity).or_default().push(row);
+        }
+        for group in groups.into_values() {
+            if group.len() < 2 {
+                continue;
+            }
+            let Some(keeper) = pick_identity_keeper(&group, &profiles).cloned() else {
+                continue;
+            };
+            for loser in group.iter().filter(|row| row.id != keeper.id) {
+                let changed = retarget_profiles_from_loser(&mut profiles, &loser.id, &keeper.id);
+                for index in changed {
+                    let _ = profile_repo.update(&profiles[index]);
+                }
+                tracing::info!(
+                    module = crate::logging::targets::PROVIDER,
+                    op = "recycle",
+                    agent = agent.as_str(),
+                    id = loser.id.as_str(),
+                    name = loser.name.as_str(),
+                    keeper_id = keeper.id.as_str(),
+                    "merged duplicate login into existing row"
+                );
+                self.connections.delete_provider(&loser.id, agent)?;
+            }
+        }
         Ok(())
     }
 

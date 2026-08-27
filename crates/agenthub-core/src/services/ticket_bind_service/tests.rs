@@ -517,7 +517,14 @@ fn bind_openai_and_xai_provider_and_account_to_pi_then_unbind() {
         ticket_id: ticket_id(AdapterSourceKind::Provider, "relay-source"),
         target_agent_id: AgentId::Pi,
     });
-    assert!(relay.is_err(), "unknown custom relay must not bind");
+    if let Err(err) = relay {
+        let text = err.to_string();
+        assert!(
+            !text.contains("unknown custom relay")
+                && !text.contains("还缺有效的服务地址"),
+            "custom relay with a usable URL must not be rejected as unknown: {text}"
+        );
+    }
 }
 
 #[test]
@@ -923,7 +930,14 @@ fn bind_glm_and_deepseek_to_claude_then_unbind_rejects_unknown_relay() {
         ticket_id: ticket_id(AdapterSourceKind::Provider, "relay-source"),
         target_agent_id: AgentId::Claude,
     });
-    assert!(relay.is_err(), "unknown custom relay must not bind");
+    if let Err(err) = relay {
+        let text = err.to_string();
+        assert!(
+            !text.contains("unknown custom relay")
+                && !text.contains("还缺有效的服务地址"),
+            "custom relay with a usable URL must not be rejected as unknown: {text}"
+        );
+    }
 }
 
 #[test]

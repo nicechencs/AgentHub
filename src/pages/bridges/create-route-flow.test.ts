@@ -110,6 +110,7 @@ describe('create-route-flow', () => {
     expect(defaultCreateRouteEndpoints('openai')).toEqual(['codex', 'grok']);
     expect(defaultCreateRouteEndpoints('claude')).toEqual(['claude']);
     expect(defaultCreateRouteEndpoints('kimi')).toEqual(['codex', 'grok']);
+    expect(defaultCreateRouteEndpoints('deepseek')).toEqual(['claude', 'codex']);
     expect(defaultCreateRouteEndpoints('grok')).toEqual(['codex', 'grok']);
     expect(defaultCreateRouteEndpoints('custom')).toEqual([]);
   });

@@ -6,7 +6,9 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
-# Releases start from a v* tag whose commit is on origin/release.
+# Releases start from a v* tag on a commit that lives on both origin/dev and
+# origin/release. Tag on dev after merging dev into release; the tag stays on
+# the same commit SHA and does not need to be recreated on release.
 # Build runs must never be cancelled midway after a later run of the same
 # tag. Only the publish job receives a write token, and it runs after
 # every platform build. CI never creates or moves tags.
@@ -44,26 +46,29 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require tagged commit is on origin/release
+      - name: Require tagged commit is on origin/dev and origin/release
         shell: bash
         run: |
           set -euo pipefail
-          found=0
-          for attempt in 1 2 3 4 5 6; do
-            if git fetch --no-tags origin release; then
-              if git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
-                found=1
-                break
+          for branch in dev release; do
+            found=0
+            for attempt in 1 2 3 4 5 6; do
+              if git fetch --no-tags origin "$branch"; then
+                if git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+                  found=1
+                  break
+                fi
               fi
-            fi
-            if [ "$attempt" -lt 6 ]; then
-              sleep 5
+              if [ "$attempt" -lt 6 ]; then
+                sleep 5
+              fi
+            done
+            if [ "$found" -ne 1 ]; then
+              echo "Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on origin/$branch; refusing to release." >&2
+              echo "Merge dev into release first, then tag on dev and push the tag." >&2
+              exit 1
             fi
           done
-          if [ "$found" -ne 1 ]; then
-            echo "Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on origin/release; refusing to release." >&2
-            exit 1
-          fi
 
       - name: Setup Node
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -106,7 +111,19 @@ jobs:
 
       - name: Validate release version
         id: metadata
-        run: node scripts/release-metadata.mjs --github-output "$GITHUB_OUTPUT" --expect-tag "$GITHUB_REF_NAME"
+        run: |
+          node scripts/release-metadata.mjs \
+            --github-output "$GITHUB_OUTPUT" \
+            --expect-tag "$GITHUB_REF_NAME" \
+            --require-changelog \
+            --notes-out release-notes.md
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
 
       - name: Test release scripts
         run: |
@@ -610,6 +627,12 @@ jobs:
           name: release-linux
           path: build-tree/target/release/bundle
 
+      - name: Download release notes
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-notes
+          path: release-notes
+
       - name: Validate publish target and prepare assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -926,13 +949,13 @@ jobs:
             gh release edit "$target" \
               --repo "$GITHUB_REPOSITORY" \
               --title "AgentHub $TAG" \
-              --notes "AgentHub $TAG"
+              --notes-file release-notes/release-notes.md
             persist_release_identity
           elif [ "$PRERELEASE" = true ]; then
             create_out="$(gh release create "$TAG" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --title "AgentHub $TAG" \
-              --notes "AgentHub $TAG" \
+              --notes-file release-notes/release-notes.md \
               --draft \
               --prerelease \
               --verify-tag)"
@@ -942,7 +965,7 @@ jobs:
             create_out="$(gh release create "$TAG" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --title "AgentHub $TAG" \
-              --notes "AgentHub $TAG" \
+              --notes-file release-notes/release-notes.md \
               --draft \
               --verify-tag)"
             printf '%s\n' "$create_out"
@@ -981,18 +1004,27 @@ jobs:
           release_name="$(printf '%s' "$release_json" | jq -r '.name // empty')"
           release_draft="$(printf '%s' "$release_json" | jq -r '.draft // empty')"
           release_prerelease="$(printf '%s' "$release_json" | jq -r '.prerelease // empty')"
-          if { [ "$release_tag" != "$TAG" ] && [ "$release_name" != "AgentHub $TAG" ]; } \
-            || [ "$release_draft" != "true" ] || [ "$release_prerelease" != "$PRERELEASE" ]; then
-            echo "GitHub Release $TAG is not the expected draft/prerelease after asset upload; refusing to publish." >&2
-            exit 1
-          fi
           expected_assets="$(find release-assets -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
           remote_assets="$(printf '%s' "$release_json" | jq -r '.assets[]?.name' | LC_ALL=C sort)"
           if ! diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$remote_assets"); then
             echo "GitHub Release $TAG assets do not exactly match this run after upload; refusing to publish." >&2
             exit 1
           fi
-          echo "Verified GitHub Release $TAG draft metadata and exact asset names before publishing."
+          if [ "$release_draft" = "true" ]; then
+            if { [ "$release_tag" != "$TAG" ] && [ "$release_name" != "AgentHub $TAG" ]; } \
+              || [ "$release_prerelease" != "$PRERELEASE" ]; then
+              echo "GitHub Release $TAG is not the expected draft/prerelease after asset upload; refusing to publish." >&2
+              exit 1
+            fi
+            echo "Verified GitHub Release $TAG draft metadata and exact asset names before publishing."
+          elif [ "$release_draft" = "false" ] && [ "$release_prerelease" = "$PRERELEASE" ] \
+            && { [ "$release_tag" = "$TAG" ] || [ "$release_name" = "AgentHub $TAG" ]; }; then
+            echo "RELEASE_STATE=published" >> "$GITHUB_ENV"
+            echo "GitHub Release $TAG is already published with the expected assets; will ensure latest/prerelease flags."
+          else
+            echo "GitHub Release $TAG is not the expected draft/prerelease after asset upload; refusing to publish." >&2
+            exit 1
+          fi
 
       - name: Publish release and mark latest
         env:
@@ -1002,10 +1034,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$RELEASE_STATE" = published ]; then
-            echo "GitHub Release $TAG is already published with the expected assets; skipping publish mutation."
-            exit 0
-          fi
           if ! tag_line="$(git ls-remote --refs origin "refs/tags/$TAG")"; then
             echo "Unable to confirm remote tag $TAG before publishing the draft." >&2
             exit 1
@@ -1037,6 +1065,9 @@ jobs:
             gh release edit "$target" --repo "$GITHUB_REPOSITORY" --tag "$TAG" --draft=false --prerelease
           else
             gh release edit "$target" --repo "$GITHUB_REPOSITORY" --tag "$TAG" --draft=false --latest
+          fi
+          if [ "$RELEASE_STATE" = published ]; then
+            echo "Ensured GitHub Release $TAG latest/prerelease flags after an already-published retry."
           fi
 
       - name: Write release summary

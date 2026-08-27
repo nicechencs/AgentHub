@@ -125,7 +125,10 @@ fn provider_redacted_masks_opaque_toml_body() {
 
     let redacted = p.redacted();
     assert_eq!(redacted.settings_config["format"], "toml");
-    assert_eq!(redacted.settings_config["content"], "***");
+    let content = redacted.settings_config["content"].as_str().expect("content");
+    assert!(content.contains("model = 'grok'"), "{content}");
+    assert!(content.contains("api_key = \"***\""), "{content}");
+    assert!(!content.contains("xai-secret"), "{content}");
     assert_eq!(redacted.meta["secretTail"], "**cret");
     let hash = redacted.meta["secretHash"].as_str().expect("hash");
     assert_eq!(hash.len(), 64);
