@@ -982,18 +982,27 @@ jobs:
           release_name="$(printf '%s' "$release_json" | jq -r '.name // empty')"
           release_draft="$(printf '%s' "$release_json" | jq -r '.draft // empty')"
           release_prerelease="$(printf '%s' "$release_json" | jq -r '.prerelease // empty')"
-          if { [ "$release_tag" != "$TAG" ] && [ "$release_name" != "AgentHub $TAG" ]; } \
-            || [ "$release_draft" != "true" ] || [ "$release_prerelease" != "$PRERELEASE" ]; then
-            echo "GitHub Release $TAG is not the expected draft/prerelease after asset upload; refusing to publish." >&2
-            exit 1
-          fi
           expected_assets="$(find release-assets -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
           remote_assets="$(printf '%s' "$release_json" | jq -r '.assets[]?.name' | LC_ALL=C sort)"
           if ! diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$remote_assets"); then
             echo "GitHub Release $TAG assets do not exactly match this run after upload; refusing to publish." >&2
             exit 1
           fi
-          echo "Verified GitHub Release $TAG draft metadata and exact asset names before publishing."
+          if [ "$release_draft" = "true" ]; then
+            if { [ "$release_tag" != "$TAG" ] && [ "$release_name" != "AgentHub $TAG" ]; } \
+              || [ "$release_prerelease" != "$PRERELEASE" ]; then
+              echo "GitHub Release $TAG is not the expected draft/prerelease after asset upload; refusing to publish." >&2
+              exit 1
+            fi
+            echo "Verified GitHub Release $TAG draft metadata and exact asset names before publishing."
+          elif [ "$release_draft" = "false" ] && [ "$release_prerelease" = "$PRERELEASE" ] \
+            && { [ "$release_tag" = "$TAG" ] || [ "$release_name" = "AgentHub $TAG" ]; }; then
+            echo "RELEASE_STATE=published" >> "$GITHUB_ENV"
+            echo "GitHub Release $TAG is already published with the expected assets; will ensure latest/prerelease flags."
+          else
+            echo "GitHub Release $TAG is not the expected draft/prerelease after asset upload; refusing to publish." >&2
+            exit 1
+          fi
 
       - name: Publish release and mark latest
         env:
@@ -1003,10 +1012,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$RELEASE_STATE" = published ]; then
-            echo "GitHub Release $TAG is already published with the expected assets; skipping publish mutation."
-            exit 0
-          fi
           if ! tag_line="$(git ls-remote --refs origin "refs/tags/$TAG")"; then
             echo "Unable to confirm remote tag $TAG before publishing the draft." >&2
             exit 1
@@ -1038,6 +1043,9 @@ jobs:
             gh release edit "$target" --repo "$GITHUB_REPOSITORY" --tag "$TAG" --draft=false --prerelease
           else
             gh release edit "$target" --repo "$GITHUB_REPOSITORY" --tag "$TAG" --draft=false --latest
+          fi
+          if [ "$RELEASE_STATE" = published ]; then
+            echo "Ensured GitHub Release $TAG latest/prerelease flags after an already-published retry."
           fi
 
       - name: Write release summary
