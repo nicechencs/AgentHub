@@ -1987,6 +1987,33 @@ fn kimi_write_config_points_base_url_at_loopback() {
 }
 
 #[test]
+fn kimi_switch_write_backfills_models_table_from_incomplete_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    write_toml_config(
+        AgentId::Kimi,
+        &path,
+        &AgentConfig {
+            agent: AgentId::Kimi,
+            raw: json!({
+                "format": "toml",
+                "content": "default_model = \"kimi-k2\"\n\n[providers.moonshot]\nbase_url = \"https://mytokens.cc/v1\"\napi_key = \"sk-pool\"\n",
+            }),
+        },
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("sk-pool"), "{text}");
+    assert!(
+        text.contains("[models.\"kimi-k2\"]") || text.contains("[models.kimi-k2]"),
+        "{text}"
+    );
+    assert!(text.contains("provider = \"moonshot\""), "{text}");
+    assert!(text.contains("max_context_size = 131072"), "{text}");
+    assert!(text.contains("type = \"openai\""), "{text}");
+}
+
+#[test]
 fn ide_codex_bins_under_finds_openai_chatgpt_extension() {
     let dir = tempfile::tempdir().unwrap();
     let ext = dir
