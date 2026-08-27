@@ -54,11 +54,13 @@ pub fn emit_install_outcome(outcome: &InstallOutcome, format: OutputFormat) -> R
         OutputFormat::Quiet => {}
         OutputFormat::Json => print_json(outcome)?,
         OutputFormat::Table => {
-            println!(
-                "{} — {}",
-                if outcome.ok { "OK" } else { "FAILED" },
-                outcome.message
-            );
+            if outcome.ok {
+                println!("OK — {}", outcome.message);
+            } else if outcome.code.as_deref() == Some("setup_guide") {
+                println!("{}", outcome.message);
+            } else {
+                println!("FAILED — {}", outcome.message);
+            }
         }
     }
     if outcome.ok {
@@ -70,6 +72,7 @@ pub fn emit_install_outcome(outcome: &InstallOutcome, format: OutputFormat) -> R
 
 pub fn map_install_failure(outcome: &InstallOutcome) -> AppError {
     match outcome.code.as_deref() {
+        Some("setup_guide") => AppError::message("setup_guide", outcome.message.clone()),
         Some("env.not_ready") => {
             let payload = outcome
                 .details

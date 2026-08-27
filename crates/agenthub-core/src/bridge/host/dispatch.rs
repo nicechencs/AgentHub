@@ -8,13 +8,18 @@ use tokio::sync::OwnedSemaphorePermit;
 use super::admission::{admit_conversation, AdmittedRequest};
 use super::gateway::{Gateway, GatewayAuthError, ModelSwitchOutcome};
 use super::http::{error_response, reject_invalid_local_auth, stopping_response, EdgeState};
+use super::pair_policy::{
+    identity_relay, pair_adapter_active, pair_direction, pair_model_servable,
+};
 use super::stream::{
     chat_non_stream_response, chat_stream_response, messages_non_stream_response,
     messages_stream_response, non_stream_response, passthrough_json_response,
     passthrough_sse_response, stream_response,
 };
 use super::surface::DownstreamSurface;
-use super::transport::{send_upstream, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome};
+use super::transport::{
+    send_upstream, send_upstream_v2, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome,
+};
 use super::upstream::{join_upstream, pool_exhausted_response};
 use super::UPSTREAM_NON_STREAM_TIMEOUT;
 use crate::bridge::account::PickedMember;
@@ -115,7 +120,13 @@ pub(super) async fn handle_conversation(
                     .iter()
                     .any(|item| crate::models::listed_model_matches(item, &model));
                 let listed_restricted = !admitted.state.listed_models.is_empty();
-                let code = if listed_restricted && !listed_hit && !model.is_empty() {
+                let pair_active = pair_adapter_active(
+                    &admitted.state,
+                    UpstreamChannel::from_protocol(admitted.state.upstream.protocol),
+                );
+                let code = if pair_active {
+                    "model_unavailable"
+                } else if listed_restricted && !listed_hit && !model.is_empty() {
                     "listed_models_reject"
                 } else {
                     "model_unavailable"
@@ -140,9 +151,70 @@ pub(super) async fn handle_conversation(
             }
         }
     }
-    let Some(member) = (match &resolver_candidates {
-        Some(candidates) => admitted.state.pick_v2(candidates, &model, &[]),
-        None => admitted.state.account_picker.pick_new(),
+    let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
+    if pair_adapter_active(&admitted.state, channel)
+        && !pair_model_servable(&admitted.state, &model)
+    {
+        tracing::warn!(
+            target: "core.adapter",
+            profile_id = %admitted.state.profile_id,
+            request_id = %admitted.request_id,
+            model,
+            op = "upstream",
+            code = "model_unavailable",
+            status = 400_u16,
+            "pair adapter has no upstream mapping for this model"
+        );
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "model_unavailable",
+            "No running route can serve this model.",
+            None,
+        );
+    }
+    let pair_active = pair_adapter_active(&admitted.state, channel);
+    admitted.affinity_key = admitted
+        .state
+        .affinity_key_for(&admitted.body, &admitted.headers);
+    let required_member = if pair_active {
+        admitted
+            .state
+            .continuations
+            .required_member(&admitted.body, &admitted.headers)
+    } else {
+        None
+    };
+    if pair_active
+        && crate::bridge::protocol::pair::previous_response_id(&admitted.body).is_some()
+        && required_member.is_none()
+    {
+        return continuation_unavailable(&admitted.state, &admitted.request_id, admitted.started);
+    }
+    let Some(member) = (if let Some(required_id) = required_member.as_deref() {
+        match pick_bound_member(
+            &admitted.state,
+            resolver_candidates.as_deref(),
+            required_id,
+            &model,
+        ) {
+            Some(member) => Some(member),
+            None => {
+                return continuation_unavailable(
+                    &admitted.state,
+                    &admitted.request_id,
+                    admitted.started,
+                );
+            }
+        }
+    } else {
+        match &resolver_candidates {
+            Some(candidates) => {
+                admitted
+                    .state
+                    .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref())
+            }
+            None => admitted.state.account_picker.pick_new(),
+        }
     }) else {
         return no_eligible_member(
             &admitted.state,
@@ -151,9 +223,20 @@ pub(super) async fn handle_conversation(
             &model,
         );
     };
+    let continuation_locked = pair_active && required_member.is_some();
     admitted.member = Some(member);
-    let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
-    let prepared = match channel.prepare(surface, &admitted) {
+    if admitted.state.route_index.is_some() {
+        return forward_upstream_v2(
+            surface,
+            admitted,
+            resolver_candidates,
+            model,
+            continuation_locked,
+        )
+        .await;
+    }
+    let transport = channel.transport();
+    let prepared = match transport.prepare(surface, &admitted) {
         Ok(prepared) => prepared,
         Err(response) => return response,
     };
@@ -165,15 +248,62 @@ pub(super) async fn handle_conversation(
         to = prepared.path,
         "downstream surface converted to upstream path"
     );
-    forward_upstream(
-        surface,
-        admitted,
-        channel,
-        prepared,
-        resolver_candidates,
-        model,
+    forward_upstream(surface, admitted, channel, prepared, continuation_locked).await
+}
+
+fn pick_bound_member(
+    state: &EdgeState,
+    candidates: Option<&[DispatchCandidate]>,
+    member_id: &str,
+    model: &str,
+) -> Option<crate::bridge::account::PickedMember> {
+    let _ = model;
+    let matches_id = |member: &crate::bridge::account::PickedMember| {
+        member.source_id == member_id || member.ticket_id == member_id || member.label == member_id
+    };
+    state
+        .account_picker
+        .members()
+        .iter()
+        .find(|member| {
+            if !matches_id(member) || !member.is_eligible() {
+                return false;
+            }
+            if state
+                .auth_reload
+                .is_isolated(&member.authorization_fingerprint())
+            {
+                return false;
+            }
+            match candidates {
+                Some(candidates) if !candidates.is_empty() => candidates.iter().any(|candidate| {
+                    member.source_id == candidate.member_id
+                        || member.ticket_id == candidate.member_id
+                        || member.label == candidate.member_id
+                }),
+                _ => true,
+            }
+        })
+        .cloned()
+}
+
+fn continuation_unavailable(state: &EdgeState, request_id: &str, started: Instant) -> Response {
+    tracing::warn!(
+        target: "core.adapter",
+        profile_id = %state.profile_id,
+        request_id = %request_id,
+        op = "upstream",
+        code = "continuation_unavailable",
+        status = 400_u16,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "stateful continuation cannot keep the original login"
+    );
+    error_response(
+        StatusCode::BAD_REQUEST,
+        "continuation_unavailable",
+        "This conversation cannot continue because the original login is no longer available.",
+        None,
     )
-    .await
 }
 
 fn no_eligible_member(
@@ -215,13 +345,60 @@ fn no_eligible_member(
     )
 }
 
+async fn forward_upstream_v2(
+    surface: DownstreamSurface,
+    admitted: AdmittedRequest,
+    candidates: Option<Vec<DispatchCandidate>>,
+    public_model: String,
+    continuation_locked: bool,
+) -> Response {
+    let AdmittedRequest {
+        state,
+        request_id,
+        started,
+        permit,
+        headers,
+        body,
+        member,
+        affinity_key,
+    } = admitted;
+    let member = member.expect("handle_conversation always picks before forward");
+    let UpstreamSendOutcome {
+        response,
+        member,
+        channel,
+        cache_seed,
+        stream,
+    } = match send_upstream_v2(
+        &state,
+        surface,
+        &request_id,
+        started,
+        &headers,
+        &body,
+        member,
+        candidates.as_deref().unwrap_or(&[]),
+        &public_model,
+        continuation_locked,
+        affinity_key.as_deref(),
+    )
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(response) => return response,
+    };
+    finish_upstream(
+        surface, channel, state, response, request_id, started, permit, cache_seed, member, stream,
+    )
+    .await
+}
+
 async fn forward_upstream(
     surface: DownstreamSurface,
     admitted: AdmittedRequest,
     channel: UpstreamChannel,
     prepared: UpstreamPrepare,
-    candidates: Option<Vec<DispatchCandidate>>,
-    public_model: String,
+    continuation_locked: bool,
 ) -> Response {
     let AdmittedRequest {
         state,
@@ -231,6 +408,7 @@ async fn forward_upstream(
         headers: _,
         body: _,
         member,
+        affinity_key: _,
     } = admitted;
     let member = member.expect("handle_conversation always picks before forward");
     let UpstreamPrepare {
@@ -244,7 +422,9 @@ async fn forward_upstream(
         Ok(url) => url,
         Err(response) => return response,
     };
-    let UpstreamSendOutcome { response, member } = match send_upstream(
+    let UpstreamSendOutcome {
+        response, member, ..
+    } = match send_upstream(
         &state,
         url,
         channel,
@@ -254,14 +434,40 @@ async fn forward_upstream(
         body,
         cache_seed.as_deref(),
         member,
-        candidates.as_deref(),
-        &public_model,
+        continuation_locked,
     )
     .await
     {
         Ok(outcome) => outcome,
         Err(response) => return response,
     };
+    finish_upstream(
+        surface,
+        channel,
+        state,
+        response,
+        request_id,
+        started,
+        permit,
+        cache_seed,
+        member,
+        stream_requested,
+    )
+    .await
+}
+
+async fn finish_upstream(
+    surface: DownstreamSurface,
+    channel: UpstreamChannel,
+    state: EdgeState,
+    response: reqwest::Response,
+    request_id: String,
+    started: Instant,
+    permit: OwnedSemaphorePermit,
+    cache_seed: Option<String>,
+    member: PickedMember,
+    stream_requested: bool,
+) -> Response {
     if stream_requested {
         return forward_stream(
             surface, channel, state, response, request_id, started, permit, cache_seed, member,
@@ -299,10 +505,27 @@ fn forward_stream(
     cache_seed: Option<String>,
     member: PickedMember,
 ) -> Response {
-    if channel.passthrough_for(surface) {
+    if identity_relay(channel, surface, &state) {
         return passthrough_sse_response(
-            state, response, request_id, started, permit, cache_seed, member, surface,
+            state, response, request_id, started, permit, cache_seed, member, surface, None,
         );
+    }
+    if surface == DownstreamSurface::Responses {
+        if let Some(direction) = pair_direction(&state, channel) {
+            if pair_adapter_active(&state, channel) {
+                return passthrough_sse_response(
+                    state,
+                    response,
+                    request_id,
+                    started,
+                    permit,
+                    cache_seed,
+                    member,
+                    surface,
+                    Some(direction),
+                );
+            }
+        }
     }
     match surface {
         DownstreamSurface::Responses => {
@@ -331,11 +554,28 @@ async fn forward_non_stream(
     cache_seed: Option<String>,
     member: PickedMember,
 ) -> Response {
-    if channel.passthrough_for(surface) {
+    if identity_relay(channel, surface, &state) {
         return passthrough_json_response(
-            state, response, request_id, started, permit, cache_seed, member,
+            state, response, request_id, started, permit, cache_seed, member, None,
         )
         .await;
+    }
+    if surface == DownstreamSurface::Responses {
+        if let Some(direction) = pair_direction(&state, channel) {
+            if pair_adapter_active(&state, channel) {
+                return passthrough_json_response(
+                    state,
+                    response,
+                    request_id,
+                    started,
+                    permit,
+                    cache_seed,
+                    member,
+                    Some(direction),
+                )
+                .await;
+            }
+        }
     }
     match surface {
         DownstreamSurface::Responses => {

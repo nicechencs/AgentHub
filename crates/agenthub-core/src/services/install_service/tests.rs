@@ -1,5 +1,5 @@
 use super::*;
-use crate::adapters::{register_all, AgentAdapter};
+use crate::adapters::{is_under_agenthub_user_npm_prefix, register_all, AgentAdapter};
 use crate::catalog::install::{
     native_ps1_url, native_setup_url, native_sh_url, npm_install_extra_flags, npm_package,
 };
@@ -179,15 +179,21 @@ fn install_from_contribution_uses_npm_allowlist_without_agent_id() {
     let out = install_from_contribution(&key, &FakeContrib, "npm", false, &ex).unwrap();
     assert!(out.ok, "msg={}", out.message);
     let commands = calls.lock().unwrap();
+    let user_prefix = detect_scanned_user_npm_prefix()
+        .expect("user-writable npm prefix")
+        .display()
+        .to_string();
     assert!(
         commands.iter().any(|c| {
             c.contains("install")
                 && c.contains("-g")
-                && !c.contains("--prefix")
+                && c.contains("--prefix")
+                && c.contains(&user_prefix)
+                && !c.contains(".agenthub")
                 && c.contains("--ignore-scripts")
                 && c.contains("@agenthub/p1-2-fake-npm")
         }),
-        "expected contribution npm install without data-dir prefix, got {commands:?}"
+        "expected contribution npm install into detect-scanned user prefix {user_prefix}, got {commands:?}"
     );
 }
 
@@ -578,7 +584,85 @@ fn workbuddy_setup_channel_never_reports_success() {
     )
     .unwrap();
     assert!(!result.success());
-    assert!(logs.iter().any(|line| line.contains("Setup")));
+    assert!(
+        logs.iter().any(|line| line.contains("官网安装页")),
+        "expected Chinese setup-guide copy, got {logs:?}"
+    );
+    assert!(
+        logs.iter()
+            .all(|line| !line.to_ascii_lowercase().contains("failed")),
+        "opening the official page is not an installer failure: {logs:?}"
+    );
+    assert_eq!(calls.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn workbuddy_native_install_is_setup_guide_not_failure() {
+    let registry = register_all();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let out = install_agent(&registry, AgentId::WorkBuddy, "native", false, &ex).unwrap();
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    if out.ok {
+        // Already installed on this machine: still must not have installed
+        // into leftover AgentHub data-dir npm.
+        assert_ne!(out.code.as_deref(), Some("setup_guide"));
+        return;
+    }
+    assert_eq!(out.code.as_deref(), Some("setup_guide"));
+    assert!(
+        !out.message.contains("失败"),
+        "UI must not treat opening the official page as install failed: {}",
+        out.message
+    );
+    assert!(
+        out.message.contains("官网安装页"),
+        "expected Chinese setup-guide message, got {}",
+        out.message
+    );
+    assert_eq!(
+        out.logs.first().map(String::as_str),
+        Some(setup_guide_diagnosis())
+    );
+    let joined = out.logs.join("\n");
+    assert!(joined.contains("诊断："));
+    assert!(!joined.contains("安装命令未成功退出"));
+}
+
+#[test]
+fn setup_guide_contribution_is_not_command_failure() {
+    struct GuideContrib;
+    impl InstallContribution for GuideContrib {
+        fn agent_key(&self) -> AgentKey {
+            AgentKey::parse("guide-only").unwrap()
+        }
+        fn native_setup_url(&self) -> Option<&'static str> {
+            Some("https://www.codebuddy.cn/work/")
+        }
+    }
+
+    let key = AgentKey::parse("guide-only").unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let out = install_from_contribution(&key, &GuideContrib, "native", false, &ex).unwrap();
+    assert!(!out.ok);
+    assert_eq!(out.code.as_deref(), Some("setup_guide"));
+    assert!(!out.message.contains("失败"));
+    assert!(out.message.contains("官网安装页"));
+    assert_eq!(
+        out.logs.first().map(String::as_str),
+        Some(setup_guide_diagnosis())
+    );
     assert_eq!(calls.lock().unwrap().len(), 1);
 }
 
@@ -1022,6 +1106,26 @@ fn leftover_agenthub_npm_prefix_is_under_data_dir() {
 }
 
 #[test]
+fn detect_scanned_user_npm_prefix_is_not_leftover() {
+    let prefix = detect_scanned_user_npm_prefix().unwrap();
+    let leftover = leftover_agenthub_npm_prefix().unwrap();
+    assert_ne!(
+        prefix, leftover,
+        "Codex/Pi/DSH must not install into leftover data-dir npm"
+    );
+    assert!(
+        !is_under_agenthub_user_npm_prefix(&prefix),
+        "user install prefix {prefix:?} must stay outside leftover roots"
+    );
+    assert!(
+        leftover_agenthub_npm_prefix_candidates()
+            .iter()
+            .all(|p| p != &prefix),
+        "user prefix {prefix:?} must not match leftover candidates"
+    );
+}
+
+#[test]
 fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
     let registry = register_all();
     let calls = Arc::new(Mutex::new(Vec::new()));
@@ -1036,11 +1140,19 @@ fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
     }
     let out = install_agent(&registry, AgentId::Codex, "npm", false, &ex).unwrap();
     assert!(!out.ok);
+    assert_ne!(out.code.as_deref(), Some("setup_guide"));
     assert!(out.message.contains("失败"), "msg={}", out.message);
     assert!(
         out.message.contains("EACCES") || out.message.contains("权限"),
         "msg={}",
         out.message
+    );
+    assert!(
+        out.logs
+            .first()
+            .is_some_and(|line| line.starts_with("诊断：") && line.contains("写入权限")),
+        "diagnosis must sit above raw installer output, got {:?}",
+        out.logs
     );
     let joined = out.logs.join("\n");
     assert!(!joined.contains("可能已成功"), "logs={joined}");
@@ -1050,10 +1162,92 @@ fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
         out.message
     );
     assert!(!out.message.contains("请检查 PATH"), "msg={}", out.message);
-    let commands = calls.lock().unwrap();
+}
+
+#[test]
+fn installer_fail_panel_collapses_npm_http_progress() {
+    let noisy: Vec<String> = (0..80)
+        .map(|i| format!("npm http fetch GET 200 https://registry.npmjs.org/@openai/codex/-/{i}.tgz"))
+        .collect();
+    let mut body = vec!["$ npm install -g @openai/codex".into()];
+    body.extend(noisy);
+    body.push("npm ERR! code EACCES".into());
+    body.push("npm ERR! syscall mkdir".into());
+    let summarized = summarize_installer_output_lines(body);
+    assert_eq!(summarized[0], "$ npm install -g @openai/codex");
     assert!(
-        commands.iter().any(|c| c.contains("install") && c.contains("-g") && !c.contains("--prefix")),
-        "expected global npm install without data-dir prefix, got {commands:?}"
+        summarized.iter().any(|line| line.contains("已省略") && line.contains("下载进度")),
+        "expected collapsed download progress, got {summarized:?}"
+    );
+    assert!(summarized.iter().any(|line| line.contains("EACCES")));
+    assert!(
+        summarized
+            .iter()
+            .filter(|line| line.contains("http fetch") || line.contains("registry.npmjs.org"))
+            .count()
+            < 5,
+        "raw npm HTTP must not be the fail-panel body: {summarized:?}"
+    );
+    assert!(summarized.len() < 20, "too many lines: {}", summarized.len());
+}
+
+#[test]
+fn npm_nonzero_permission_failure_keeps_diagnosis_and_collapses_http() {
+    let registry = register_all();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let mut stderr = String::new();
+    for i in 0..60 {
+        stderr.push_str(&format!(
+            "npm http fetch GET 200 https://registry.npmjs.org/pkg-{i}\n"
+        ));
+    }
+    stderr.push_str("npm ERR! code EACCES\nnpm ERR! syscall mkdir\n");
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 243,
+        stdout: String::new(),
+        stderr,
+    };
+    if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
+        return;
+    }
+    let out = install_agent(&registry, AgentId::Codex, "npm", false, &ex).unwrap();
+    assert!(!out.ok);
+    assert!(
+        out.logs
+            .first()
+            .is_some_and(|line| line.starts_with("诊断：") && line.contains("写入权限")),
+        "diagnosis first, got {:?}",
+        out.logs
+    );
+    assert!(
+        out.logs.iter().any(|line| line.contains("已省略") && line.contains("下载进度")),
+        "fail panel must collapse npm HTTP, got {:?}",
+        out.logs
+    );
+    assert!(
+        out.logs
+            .iter()
+            .filter(|line| line.contains("http fetch"))
+            .count()
+            < 3,
+        "raw HTTP dumped: {:?}",
+        out.logs
+    );
+    let commands = calls.lock().unwrap();
+    let user_prefix = detect_scanned_user_npm_prefix()
+        .expect("user-writable npm prefix")
+        .display()
+        .to_string();
+    assert!(
+        commands.iter().any(|c| {
+            c.contains("install")
+                && c.contains("-g")
+                && c.contains("--prefix")
+                && c.contains(&user_prefix)
+                && !c.contains(".agenthub")
+        }),
+        "expected npm install into detect-scanned user prefix {user_prefix}, got {commands:?}"
     );
 }
 
@@ -1084,7 +1278,8 @@ impl AgentAdapter for StickyNpmAdapter {
             binary_path: installed.then(|| PathBuf::from("/tmp/fake-npm-agent")),
             channel: Some("npm".into()),
             env_ready: true,
-            notes: vec![], extra_copies: Vec::new(),
+            notes: vec![],
+            extra_copies: Vec::new(),
         }
     }
 
@@ -1158,13 +1353,16 @@ fn npm_uninstall_uses_global_then_optional_leftover_prefix() {
         "expected at least a global npm uninstall; got {commands:?}"
     );
     assert!(
-        uninstalls[0].contains("uninstall") && !uninstalls[0].contains("--prefix"),
-        "first uninstall must be real npm global: {}",
-        uninstalls[0]
+        uninstalls
+            .iter()
+            .any(|c| c.contains("uninstall") && !c.contains("--prefix")),
+        "legacy global uninstall required: {uninstalls:?}"
     );
     if leftover_agenthub_npm_prefix_present().is_some() {
         assert!(
-            uninstalls.iter().any(|c| c.contains("--prefix")),
+            uninstalls
+                .iter()
+                .any(|c| c.contains("--prefix") && c.contains("npm")),
             "leftover data-dir npm must also be uninstalled: {uninstalls:?}"
         );
     }

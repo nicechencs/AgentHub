@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  adapterRouteToBinding,
   bindingRouteDashboardLabel,
   bindingRouteUsageLabel,
   groupTicketSurfaceMembers,
@@ -110,6 +111,40 @@ describe('Ticket Rust wire mappers', () => {
         ],
       },
     ]);
+  });
+
+  it('keeps empty surfaceGroups and only regroups when the field is not an array', () => {
+    const tickets = [
+      {
+        id: 'account:kimi-a',
+        sourceKind: 'account',
+        sourceId: 'kimi-a',
+        agentId: 'kimi',
+        label: 'A',
+        surface: 'kimi-code-membership',
+        credentialClass: 'api_key',
+        speaks: [],
+        importedFrom: 'kimi',
+      },
+    ];
+    expect(
+      mapTicketWallet({ tickets, bindings: [], surfaceGroups: [] }).surfaceGroups,
+    ).toEqual([]);
+    expect(mapTicketWallet({ tickets, bindings: [] }).surfaceGroups).toHaveLength(1);
+    expect(
+      mapTicketWallet({
+        tickets,
+        bindings: [],
+        surfaceGroups: 'not-an-array' as unknown as [],
+      }).surfaceGroups,
+    ).toHaveLength(1);
+  });
+
+  it('adapterRouteToBinding never returns native', () => {
+    expect(adapterRouteToBinding('native_endpoint')).toBe('reshape');
+    expect(adapterRouteToBinding('config_sync')).toBe('reshape');
+    expect(adapterRouteToBinding('local_bridge')).toBe('bridge');
+    expect(adapterRouteToBinding('unsupported')).toBeNull();
   });
 
   it('maps explicit surfaceGroups and does not regroup unknown surfaces', () => {
@@ -491,7 +526,7 @@ describe('Ticket Rust wire mappers', () => {
 
 describe('ticket / binding display labels', () => {
   it('maps route labels for usage and dashboard', () => {
-    expect(bindingRouteUsageLabel('native')).toBe('切换');
+    expect(bindingRouteUsageLabel('native')).toBe('直连');
     expect(bindingRouteUsageLabel('reshape')).toBe('改配置');
     expect(bindingRouteUsageLabel('bridge')).toBe('本机路由');
     expect(bindingRouteDashboardLabel('native')).toBe('直连');

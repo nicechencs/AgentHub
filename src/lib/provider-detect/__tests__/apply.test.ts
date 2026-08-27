@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { applySmartPaste, EMPTY_FORM_VARS, initFormFromConfig } from '../index';
+import {
+  applySmartPaste,
+  EMPTY_FORM_VARS,
+  initFormFromConfig,
+  isGrokTomlPaste,
+} from '../index';
 import {
   CLAUDE_CODE_BASH_EXPORT_BASIC,
   CLAUDE_CODE_SETTINGS_JSON_BASIC,
@@ -197,6 +202,43 @@ describe('applySmartPaste', () => {
     expect(r.configText).toContain('name = "Grok 4.5"');
     expect(r.configText).toContain('api_backend = "responses"');
     expect(r.configText).toContain('supports_backend_search = true');
+  });
+
+  it('keeps grok api_backend, extra models, and endpoints when paste omits base_url', () => {
+    const paste = [
+      '[models]',
+      'default = "grok"',
+      'web_search = "grok"',
+      '',
+      '[model."grok"]',
+      'model = "grok-4.5"',
+      'api_backend = "responses"',
+      'context_window = 1000000',
+      'supports_backend_search = true',
+      '',
+      '[model."fast"]',
+      'model = "grok-code-fast-1"',
+      'base_url = "https://api.x.ai/v1"',
+      '',
+      '[endpoints]',
+      'chat = "/v1/chat/completions"',
+      '',
+      '[auth]',
+      'mode = "api_key"',
+      '',
+    ].join('\n');
+    expect(isGrokTomlPaste(paste)).toBe(true);
+    const r = applySmartPaste('grok', paste);
+    expect(r.vars.model).toBe('grok-4.5');
+    expect(r.configFormat).toBe('toml');
+    expect(r.configText).toContain('api_backend = "responses"');
+    expect(r.configText).toContain('context_window = 1000000');
+    expect(r.configText).toContain('[model."fast"]');
+    expect(r.configText).toContain('grok-code-fast-1');
+    expect(r.configText).toContain('[endpoints]');
+    expect(r.configText).toContain('chat = "/v1/chat/completions"');
+    expect(r.configText).toContain('[auth]');
+    expect(r.configText).toContain('mode = "api_key"');
   });
 });
 

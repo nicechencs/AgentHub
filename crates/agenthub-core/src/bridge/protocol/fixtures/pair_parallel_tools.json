@@ -1,0 +1,44 @@
+{
+  "model": "grok-4.5",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [{ "type": "input_text", "text": "Check weather and calendar." }]
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_weather",
+      "name": "weather",
+      "arguments": "{\"city\":\"Taipei\"}"
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_calendar",
+      "name": "calendar",
+      "arguments": "{\"date\":\"2026-08-12\"}"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_weather",
+      "output": "Sunny"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_calendar",
+      "output": "No meetings"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "weather",
+      "parameters": { "type": "object", "properties": { "city": { "type": "string" } } }
+    },
+    {
+      "type": "function",
+      "name": "calendar",
+      "parameters": { "type": "object", "properties": { "date": { "type": "string" } } }
+    }
+  ]
+}

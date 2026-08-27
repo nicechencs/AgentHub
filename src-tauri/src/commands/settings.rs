@@ -76,6 +76,28 @@ pub async fn open_external_url(url: String) -> Result<(), String> {
     })
 }
 
+/// Invoke: `log_gui_event` — append a GUI op line (no raw secrets).
+#[tauri::command]
+pub async fn log_gui_event(
+    op: String,
+    agent: Option<String>,
+    last4: Option<String>,
+) -> Result<(), String> {
+    let op = op.trim().to_string();
+    if op.is_empty() {
+        return Err("op is empty".into());
+    }
+    tracing::info!(
+        target: targets::GUI,
+        module = targets::GUI,
+        op = %op,
+        agent = agent.as_deref().unwrap_or("-"),
+        last4 = last4.as_deref().unwrap_or(""),
+        "gui event"
+    );
+    Ok(())
+}
+
 /// Invoke: `open_logs_dir` — ensure logs dir exists and open in file manager.
 #[tauri::command]
 pub async fn open_logs_dir(state: State<'_, AppState>) -> Result<String, String> {

@@ -1,9 +1,6 @@
 import type { Backend } from '@/lib/backend/contracts';
 import { createBackend } from '@/lib/backend/current';
-import { resetAgentCatalogStore } from './agent-catalog-store';
-import { resetAgentStatusStore } from './agent-status-store';
-import { resetConnectionPoolStore } from './connection-pool-store';
-import { resetTicketWalletStore } from './ticket-wallet-store';
+import { resetRuntimeContext } from './runtime-context';
 
 let instance: Backend | null = null;
 
@@ -12,20 +9,13 @@ export function getBackend(): Backend {
   return instance;
 }
 
-/** Tests / advanced: replace backend instance. */
-function resetRuntimeStores(): void {
-  resetAgentCatalogStore();
-  resetAgentStatusStore();
-  resetConnectionPoolStore();
-  resetTicketWalletStore();
-}
-
+/** Tests / advanced: replace backend instance, then reset shared stores. */
 export function setBackend(backend: Backend): void {
   instance = backend;
-  resetRuntimeStores();
+  resetRuntimeContext();
 }
 
 export function resetBackend(): void {
   instance = null;
-  resetRuntimeStores();
+  resetRuntimeContext();
 }

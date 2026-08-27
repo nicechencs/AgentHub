@@ -1,16 +1,18 @@
 use std::time::Instant;
 
 use axum::extract::{Request, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::bridge::types::ProtocolError;
 
 use super::dispatch::handle_conversation;
 use super::gateway::{Gateway, GatewayAuthError};
+use super::inbound::InboundRequestRecord;
 use super::surface::DownstreamSurface;
 use super::{BODY_LIMIT_BYTES, REQUEST_BODY_TIMEOUT};
 
@@ -26,7 +28,28 @@ pub(super) fn router(gateway: Gateway) -> Router {
         .route("/v1/chat/completions", post(chat_completions))
         .route("/chat/completions", post(chat_completions))
         .layer(axum::extract::DefaultBodyLimit::max(BODY_LIMIT_BYTES))
+        .layer(middleware::from_fn_with_state(
+            gateway.clone(),
+            record_inbound,
+        ))
         .with_state(gateway)
+}
+
+async fn record_inbound(State(gateway): State<Gateway>, request: Request, next: Next) -> Response {
+    let method = request.method().as_str().to_owned();
+    let path = request.uri().path().to_owned();
+    let profile_id = gateway
+        .authenticate(request.headers())
+        .ok()
+        .map(|edge| edge.profile_id.to_string());
+    let response = next.run(request).await;
+    if let Some(profile_id) = profile_id {
+        gateway.inbound.push(
+            &profile_id,
+            InboundRequestRecord::new(method, path, response.status().as_u16()),
+        );
+    }
+    response
 }
 
 fn edge_from_headers(
@@ -65,9 +88,9 @@ async fn list_models(State(gateway): State<Gateway>, headers: HeaderMap) -> Resp
         Err(response) => return response,
     };
     let listed = if let Some(index) = &state.route_index {
-        index.list_models(DownstreamSurface::endpoint_key(
+        state.models_after_denials(index.list_models(DownstreamSurface::endpoint_key(
             state.upstream.local_surface,
-        ))
+        )))
     } else {
         gateway.listed_models_with_backup(&state)
     };
@@ -115,7 +138,7 @@ pub(super) async fn read_request_json(request: Request) -> Result<Value, Respons
                 "invalid_request",
                 "The request body is invalid or too large.",
                 None,
-            ))
+            ));
         }
         Err(_) => {
             return Err(error_response(
@@ -123,7 +146,7 @@ pub(super) async fn read_request_json(request: Request) -> Result<Value, Respons
                 "request_timeout",
                 "The request body timed out.",
                 None,
-            ))
+            ));
         }
     };
     serde_json::from_slice::<Value>(&body).map_err(|_| {

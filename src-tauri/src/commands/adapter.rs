@@ -4,11 +4,14 @@
 //! [`agenthub_core::adapter_control::AdapterControl`] (desktop host impl).
 
 use agenthub_core::adapter_control::AdapterControl;
+use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
-    TicketBinding, TicketBindingRoute, TicketPlanRequest, TicketWallet,
+    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, TicketBinding, TicketBindingRoute,
+    TicketPlanRequest, TicketWallet,
 };
+use agenthub_core::AgentHub;
 use tauri::State;
 
 use crate::adapter_bridge_controller::AdapterBridgeStatusDto;
@@ -244,6 +247,50 @@ pub async fn set_adapter_bridge_auto_start(
         .map_err(adapter_error_from_string)
 }
 
+/// Default RoutePool overview for the Routes page. Hub token is never serialized.
+#[tauri::command]
+pub async fn list_default_route_pools(
+    state: State<'_, AppState>,
+) -> Result<DefaultRoutePoolList, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .list_default_overviews()
+            .map_err(|err| map_err_string("list_default_route_pools", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Convert a native_endpoint / config_sync login into the target Agent default
+/// local-bridge pool. Binds first; occupancy / bind failure does not enroll.
+#[tauri::command]
+pub async fn enroll_native_to_gateway(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<DefaultRoutePoolOverview, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    let control = state.adapter_control().map_err(adapter_error_from_string)?;
+    let host = state.bridge_host();
+    let (ticket, target) = {
+        let profile_id = profile_id.clone();
+        with_hub_blocking(hub.clone(), move |hub| {
+            prepare_enroll_native(hub, &profile_id)
+        })
+        .await
+        .map_err(adapter_error_from_string)?
+    };
+    let binding = match control.bind(ticket, target).await {
+        Ok(binding) => binding,
+        Err(error) => return Err(adapter_error_from_string(error)),
+    };
+    with_hub_blocking(hub, move |hub| {
+        persist_enroll_native_if_bound(hub, host.as_ref(), Ok(binding))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
 /// Remove an adapter profile and its generated provider when it is not current.
 #[tauri::command]
 pub async fn remove_adapter(
@@ -314,6 +361,53 @@ fn parse_route(route: &str) -> Result<AdapterRoute, String> {
 
 fn parse_route_opt(route: Option<&str>) -> Result<Option<AdapterRoute>, String> {
     route.map(parse_route).transpose()
+}
+
+fn prepare_enroll_native(hub: &AgentHub, profile_id: &str) -> Result<(String, AgentId), String> {
+    let profile = hub
+        .route_pools()
+        .get_adapter_profile(profile_id)
+        .map_err(|err| map_err_string("enroll_native_to_gateway", err))?
+        .ok_or_else(|| format!("adapter profile not found: {profile_id}"))?;
+    hub.route_pools()
+        .evaluate_enroll_native(&profile)
+        .map_err(|err| map_err_string("enroll_native_to_gateway", err))?;
+    Ok((
+        ticket_id(profile.source_kind, &profile.source_id),
+        profile.target_agent_id,
+    ))
+}
+
+/// Enroll only after a successful bind. Occupancy / bind errors must not call this
+/// with `Ok`; passing `Err` leaves the pool unenrolled.
+pub(crate) fn persist_enroll_native_if_bound(
+    hub: &AgentHub,
+    host: &BridgeRuntimeHost,
+    bind: Result<TicketBinding, String>,
+) -> Result<DefaultRoutePoolOverview, String> {
+    let binding = bind?;
+    let bound_id = binding.profile_id.clone().ok_or_else(|| {
+        "bind did not persist an adapter profile [adapter.profile_missing]".to_string()
+    })?;
+    let port = match host.status(&bound_id) {
+        Ok(Some(status)) if status.port > 0 => status.port,
+        _ => binding
+            .bridge
+            .as_ref()
+            .and_then(|bridge| bridge.port)
+            .unwrap_or(0),
+    };
+    if port == 0 {
+        return Err("local route has no port after bind [adapter.bridge_start]".into());
+    }
+    let profile = hub
+        .route_pools()
+        .get_adapter_profile(&bound_id)
+        .map_err(|err| map_err_string("enroll_native_to_gateway", err))?
+        .ok_or_else(|| format!("adapter profile not found: {bound_id}"))?;
+    hub.route_pools()
+        .persist_enroll_after_native_bind(&profile, port)
+        .map_err(|err| map_err_string("enroll_native_to_gateway", err))
 }
 
 /// Best-effort fill of `bridge.running` from the process-local listener host.

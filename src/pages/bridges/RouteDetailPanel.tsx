@@ -9,8 +9,10 @@ import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { openLogsDir } from '@/lib/api/settings';
 import type {
+  AdapterBridgeInboundRequest,
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
+  DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { cn } from '@/lib/utils';
@@ -34,6 +36,18 @@ import {
 import {
   adapterProfileRecoveryGuide,
 } from './adapter-view-model';
+import {
+  defaultPoolEntryUrl,
+  nativeEnrollCtaVisible,
+  routePoolMemberLabels,
+  routePoolMembersSectionVisible,
+  routePoolSurfaceLabel,
+} from './route-pool-view-model';
+import {
+  formatInboundAt,
+  ROUTE_LOCAL_ADDRESS_LEGEND,
+  routeEndpointCopyKey,
+} from './route-endpoint-copy';
 
 /**
  * Route detail: login, local address, who is connected. No protocol graph.
@@ -54,6 +68,11 @@ export function RouteDetailPanel({
   open = true,
   onOpenChange,
   width,
+  routePoolV2 = false,
+  defaultPool = null,
+  canApplyLocalBridge = false,
+  onEnrollNative,
+  enrolling = false,
 }: {
   id?: string;
   profile: AdapterProfile | null;
@@ -69,6 +88,11 @@ export function RouteDetailPanel({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   width?: number;
+  routePoolV2?: boolean;
+  defaultPool?: DefaultRoutePoolOverview | null;
+  canApplyLocalBridge?: boolean;
+  onEnrollNative?: (profile: AdapterProfile) => void;
+  enrolling?: boolean;
 }) {
   const { t } = useI18n();
   if (!profile) return null;
@@ -95,6 +119,12 @@ export function RouteDetailPanel({
       entries={entries}
       siblingProfiles={siblingProfiles}
       error={error}
+      routePoolV2={routePoolV2}
+      defaultPool={defaultPool}
+      canApplyLocalBridge={canApplyLocalBridge}
+      onEnrollNative={onEnrollNative}
+      enrolling={enrolling}
+      busy={busy}
     />
   );
 
@@ -145,12 +175,24 @@ function RouteDetailBody({
   entries,
   siblingProfiles,
   error,
+  routePoolV2 = false,
+  defaultPool = null,
+  canApplyLocalBridge = false,
+  onEnrollNative,
+  enrolling = false,
+  busy = false,
 }: {
   profile: AdapterProfile;
   bridgeStatus?: AdapterBridgeRuntimeStatus;
   entries: ConnectionEntry[];
   siblingProfiles: readonly AdapterProfile[];
   error: unknown;
+  routePoolV2?: boolean;
+  defaultPool?: DefaultRoutePoolOverview | null;
+  canApplyLocalBridge?: boolean;
+  onEnrollNative?: (profile: AdapterProfile) => void;
+  enrolling?: boolean;
+  busy?: boolean;
 }) {
   const { toast } = useToast();
   const { t } = useI18n();
@@ -219,6 +261,18 @@ function RouteDetailBody({
               </div>
             </dl>
 
+            <div className="space-y-1">
+              <h4 className="text-sm font-medium">{t('routes.endpoint.legendTitle')}</h4>
+              <ul className="space-y-0.5 text-meta text-muted">
+                {ROUTE_LOCAL_ADDRESS_LEGEND.map((row) => (
+                  <li key={row.path} className="font-mono">
+                    {row.method} {row.path} · {t(row.copyKey)}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-meta text-muted">{t('routes.endpoint.hint')}</p>
+            </div>
+
             <div className="space-y-1.5">
               <h4 className="text-sm font-medium">{t('routes.graph.clientsTitle')}</h4>
               {graph.rows.length === 0 ? (
@@ -234,6 +288,29 @@ function RouteDetailBody({
           </div>
           <p className="text-meta text-muted">{routeModelsSummary(capabilities.models, t)}</p>
         </section>
+
+        <InboundRequestsSection rows={bridgeStatus?.recentInbound ?? []} />
+
+        {routePoolMembersSectionVisible(routePoolV2, defaultPool) && defaultPool ? (
+          <RoutePoolOverviewSection pool={defaultPool} entries={entries} />
+        ) : null}
+
+        {nativeEnrollCtaVisible({
+          flagOn: routePoolV2,
+          route: profile.route,
+          canApplyLocalBridge,
+        }) && onEnrollNative ? (
+          <section className="space-y-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || enrolling}
+              onClick={() => onEnrollNative(profile)}
+            >
+              {enrolling ? t('routes.pool.enrolling') : t('routes.pool.enrollNative')}
+            </Button>
+          </section>
+        ) : null}
 
         {recovery ? (
           <section className="space-y-1.5" role="status">
@@ -291,6 +368,81 @@ function RouteDetailBody({
   );
 }
 
+function RoutePoolOverviewSection({
+  pool,
+  entries,
+}: {
+  pool: DefaultRoutePoolOverview;
+  entries: ConnectionEntry[];
+}) {
+  const { t } = useI18n();
+  const entry = defaultPoolEntryUrl(pool.gatewayPort);
+  const members = routePoolMemberLabels(pool.members, entries);
+  return (
+    <section className="space-y-2" data-route-pool={pool.id}>
+      <h3 className="text-body font-medium">{t('routes.pool.entry')}</h3>
+      <div className="rounded-card border border-border bg-subtle p-3 space-y-3">
+        <dl className="grid gap-2 text-sm">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <dt className="w-12 shrink-0 text-muted">{t('routes.pool.entry')}</dt>
+            <dd className="min-w-0">
+              {entry.url ? (
+                <CopyableEndpoint
+                  text={entry.url}
+                  url={entry.url}
+                  ariaLabel={t('routes.graph.copyLocal', { endpoint: entry.url })}
+                  className="text-sm font-medium"
+                />
+              ) : (
+                <span className="text-muted">{t('routes.pool.entryPending')}</span>
+              )}
+            </dd>
+          </div>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <dt className="w-12 shrink-0 text-muted">{t('routes.pool.surfaceLabel')}</dt>
+            <dd className="min-w-0 text-sm">{routePoolSurfaceLabel(pool.surface, t)}</dd>
+          </div>
+          {pool.listedModels && pool.listedModels.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+              <dt className="w-12 shrink-0 text-muted">{t('routes.capabilities.models')}</dt>
+              <dd className="min-w-0 text-sm">{pool.listedModels.join(', ')}</dd>
+            </div>
+          ) : null}
+        </dl>
+        <div className="space-y-1.5">
+          <h4 className="text-sm font-medium">{t('routes.pool.members')}</h4>
+          {members.length === 0 ? (
+            <p className="text-sm text-muted">{t('routes.graph.empty')}</p>
+          ) : (
+            <ul className="space-y-1">
+              {members.map((member) => (
+                <li
+                  key={`${member.sourceKind}:${member.sourceId}`}
+                  className="flex min-w-0 flex-wrap items-center gap-x-2 py-0.5 text-sm"
+                >
+                  <span className="truncate">{member.title}</span>
+                  {member.availability && member.availability !== 'ready' ? (
+                    <span className="text-meta text-muted">
+                      {member.availability === 'cooling'
+                        ? t('routes.pool.availabilityCooling')
+                        : member.availability === 'isolated'
+                          ? t('routes.pool.availabilityIsolated')
+                          : t('routes.pool.availabilityDisabled')}
+                    </span>
+                  ) : member.enabled ? null : (
+                    <span className="text-meta text-muted">{t('routes.pool.memberOff')}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <p className="text-meta text-muted">{t('routes.pool.tokenSaved')}</p>
+      </div>
+    </section>
+  );
+}
+
 function ClientRow({ row }: { row: RouteGraphRow }) {
   const { t } = useI18n();
   const label = routeDetailTargetLabel(row.agent, t);
@@ -319,8 +471,38 @@ function ClientRow({ row }: { row: RouteGraphRow }) {
           url={url}
           ariaLabel={t('routes.graph.copyLocal', { endpoint: url || row.localPath })}
         />
+        <span className="ml-1 text-meta text-muted">{t(routeEndpointCopyKey(row.localEndpointId))}</span>
       </span>
     </li>
+  );
+}
+
+function InboundRequestsSection({ rows }: { rows: readonly AdapterBridgeInboundRequest[] }) {
+  const { t } = useI18n();
+  return (
+    <section className="space-y-2" data-route-inbound>
+      <h3 className="text-body font-medium">{t('routes.inbound.title')}</h3>
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted">{t('routes.inbound.empty')}</p>
+      ) : (
+        <ul className="space-y-1 rounded-card border border-border bg-subtle p-3">
+          {rows.map((row, index) => (
+            <li
+              key={`${row.at}:${row.method}:${row.path}:${row.status}:${index}`}
+              className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-meta"
+            >
+              <span className="text-muted">{formatInboundAt(row.at)}</span>
+              <span>{row.method}</span>
+              <span className="min-w-0 truncate">{row.path}</span>
+              <span>{row.status}</span>
+              <span className={row.ok ? 'text-success' : 'text-danger'}>
+                {row.ok ? t('routes.inbound.ok') : t('routes.inbound.fail')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

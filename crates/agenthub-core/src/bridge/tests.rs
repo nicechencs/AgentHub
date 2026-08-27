@@ -7,11 +7,11 @@ use std::time::Duration;
 use async_stream::stream;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::Notify;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -20,13 +20,13 @@ use tokio::{
 
 use super::host::{CleanupCompletion, MAX_IN_FLIGHT_REQUESTS_PER_PROFILE};
 use super::{
-    index_from_member_listings, protocol::responses::is_leftover_bridge_model, BridgeHostError,
-    BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec,
-    BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, EffectiveRouteIndex,
-    MemberCapability, MemberCapabilitySnapshot, MemberHealth, MemberListing, ResolvedAuth,
-    UpstreamAuthReload,
+    BridgeHostError, BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState,
+    BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus,
+    EffectiveRouteIndex, MemberCapability, MemberCapabilitySnapshot, MemberHealth, MemberListing,
+    ResolvedAuth, UpstreamAuthReload, index_from_member_listings,
+    protocol::responses::is_leftover_bridge_model,
 };
-use crate::models::{list_local_bridge_models, AdapterSourceProduct, AgentId};
+use crate::models::{AdapterSourceProduct, AgentId, ModelRouteRule, list_local_bridge_models};
 
 fn spec_with_token(
     profile_id: &str,
@@ -609,9 +609,11 @@ async fn stop_drains_an_inflight_request_before_returning() {
     reached_upstream.await;
     let draining_host = host.clone();
     let mut stop = tokio::spawn(async move { draining_host.stop("drain").await });
-    assert!(tokio::time::timeout(Duration::from_millis(75), &mut stop)
-        .await
-        .is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(75), &mut stop)
+            .await
+            .is_err()
+    );
     assert!(matches!(
         host.start(spec("drain", 0, upstream_port)).await,
         Err(BridgeHostError::Stopping)
@@ -838,9 +840,11 @@ async fn slow_unauthorized_body_is_rejected_before_json_extraction() {
         .await
         .expect("unauthorized request must not wait for body")
         .expect("read response");
-    assert!(std::str::from_utf8(&response[..received])
-        .expect("http response")
-        .starts_with("HTTP/1.1 401"));
+    assert!(
+        std::str::from_utf8(&response[..received])
+            .expect("http response")
+            .starts_with("HTTP/1.1 401")
+    );
     host.stop("slow-auth").await.expect("stop");
     upstream_task.abort();
 }
@@ -969,18 +973,20 @@ async fn stopping_one_profile_does_not_block_starting_or_stopping_another() {
     reached_upstream.await;
     let draining_host = host.clone();
     let stop = tokio::spawn(async move { draining_host.stop("cross-a").await });
-    assert!(tokio::time::timeout(
-        Duration::from_millis(100),
-        host.start(spec_with_token(
-            "cross-b",
-            0,
-            upstream_port,
-            "local-token-cross-b-bbbbbb",
-        )),
-    )
-    .await
-    .expect("unrelated profile start must not queue")
-    .is_ok());
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(100),
+            host.start(spec_with_token(
+                "cross-b",
+                0,
+                upstream_port,
+                "local-token-cross-b-bbbbbb",
+            )),
+        )
+        .await
+        .expect("unrelated profile start must not queue")
+        .is_ok()
+    );
     release.notify_waiters();
     assert!(stop.await.expect("stop task").is_ok());
     assert!(request.await.expect("request task").is_ok());
@@ -1013,9 +1019,11 @@ async fn repeated_shutdown_joins_the_same_inflight_cleanup() {
     let first = tokio::spawn(async move { first_host.shutdown().await });
     let second_host = host.clone();
     let mut second = tokio::spawn(async move { second_host.shutdown().await });
-    assert!(tokio::time::timeout(Duration::from_millis(75), &mut second)
-        .await
-        .is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(75), &mut second)
+            .await
+            .is_err()
+    );
     release.notify_waiters();
     assert!(first.await.expect("first shutdown task").is_ok());
     assert!(second.await.expect("second shutdown task").is_ok());
@@ -1138,10 +1146,11 @@ async fn status_and_health_report_last_observed_upstream_without_a_new_probe() {
     let stopped = host.stop("observed").await.expect("stop");
     assert_eq!(stopped.state, BridgeRuntimeState::Stopped);
     assert_eq!(stopped.upstream_status, BridgeUpstreamStatus::Stopped);
-    assert!(host
-        .status("observed")
-        .expect("status after stop")
-        .is_none());
+    assert!(
+        host.status("observed")
+            .expect("status after stop")
+            .is_none()
+    );
     upstream_task.abort();
 }
 
@@ -1435,8 +1444,8 @@ async fn grok_responses_upstream() -> (u16, tokio::task::JoinHandle<()>) {
     (port, task)
 }
 
-async fn capturing_grok_responses_upstream(
-) -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
+async fn capturing_grok_responses_upstream()
+-> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
     async fn responses(
         State(captured): State<Arc<Mutex<Vec<Value>>>>,
         Json(body): Json<Value>,
@@ -1653,8 +1662,8 @@ async fn codex_responses_sse_upstream() -> (u16, tokio::task::JoinHandle<()>) {
     (port, task)
 }
 
-async fn capturing_codex_responses_sse_upstream(
-) -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
+async fn capturing_codex_responses_sse_upstream()
+-> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
     async fn responses(
         State(captured): State<Arc<Mutex<Vec<Value>>>>,
         headers: axum::http::HeaderMap,
@@ -2454,9 +2463,11 @@ async fn grok_claude_thinking_maps_to_upstream_reasoning() {
     assert_eq!(captured[0].body["reasoning"]["effort"], "high");
     assert_eq!(captured[0].body["reasoning"]["summary"], "detailed");
     let include = captured[0].body["include"].as_array().expect("include");
-    assert!(include
-        .iter()
-        .any(|item| item == "reasoning.encrypted_content"));
+    assert!(
+        include
+            .iter()
+            .any(|item| item == "reasoning.encrypted_content")
+    );
     assert!(captured[0].body.get("thinking").is_none());
     assert_eq!(captured[0].body["model"], "grok-4.5");
 
@@ -4400,7 +4411,8 @@ async fn v2_models_catalog_comes_from_the_same_index() {
     upstream_task.abort();
 }
 
-fn production_index(members: &[(&str, &str)]) -> EffectiveRouteIndex {
+fn production_index(upstream_port: u16, members: &[(&str, &str)]) -> EffectiveRouteIndex {
+    let endpoint = format!("http://127.0.0.1:{upstream_port}");
     let listings: Vec<MemberListing> = members
         .iter()
         .map(|(member_id, model)| MemberListing {
@@ -4408,7 +4420,7 @@ fn production_index(members: &[(&str, &str)]) -> EffectiveRouteIndex {
             listed_models: vec![(*model).into()],
             upstream_provider: "openai".into(),
             upstream_dialect: "generic".into(),
-            upstream_endpoint: "http://127.0.0.1/v1".into(),
+            upstream_endpoint: endpoint.clone(),
             transport_key: "openai:generic".into(),
             snapshot_ok: true,
         })
@@ -4419,7 +4431,7 @@ fn production_index(members: &[(&str, &str)]) -> EffectiveRouteIndex {
 #[tokio::test]
 async fn production_built_index_unions_models_and_never_crosses_members() {
     let (upstream_port, captured, task) = capturing_chat_upstream().await;
-    let index = production_index(&[("acc-b", "m2"), ("acc-a", "m1")]);
+    let index = production_index(upstream_port, &[("acc-b", "m2"), ("acc-a", "m1")]);
     assert_eq!(index.list_models("responses"), vec!["m1", "m2"]);
     let host = BridgeRuntimeHost::new();
     let mut spec = spec_with_token("pool-v2", 0, upstream_port, TOKEN_A)
@@ -4496,8 +4508,8 @@ async fn production_built_index_unions_models_and_never_crosses_members() {
 #[tokio::test]
 async fn live_start_does_not_reuse_index_when_members_remap_same_models() {
     let host = BridgeRuntimeHost::new();
-    let first = production_index(&[("acc-a", "m1"), ("acc-b", "m2")]);
-    let remapped = production_index(&[("acc-a", "m2"), ("acc-b", "m1")]);
+    let first = production_index(9, &[("acc-a", "m1"), ("acc-b", "m2")]);
+    let remapped = production_index(9, &[("acc-a", "m2"), ("acc-b", "m1")]);
     assert_eq!(first.generation, remapped.generation);
     assert_eq!(
         first.list_models("responses"),
@@ -4516,7 +4528,7 @@ async fn live_start_does_not_reuse_index_when_members_remap_same_models() {
     let reused = spec_with_token("pool-remap", 0, 9, TOKEN_A)
         .with_members(members.clone())
         .with_listed_models(listed.clone())
-        .with_route_index(production_index(&[("acc-a", "m1"), ("acc-b", "m2")]));
+        .with_route_index(production_index(9, &[("acc-a", "m1"), ("acc-b", "m2")]));
     let status = host.start(reused).await.expect("identical index is reused");
     assert!(status.running);
     let next = spec_with_token("pool-remap", 0, 9, TOKEN_A)
@@ -4590,22 +4602,23 @@ async fn callback_chat_upstream(
     (port, captured, task)
 }
 
-fn p5_listing(member_id: &str, models: &[&str]) -> MemberListing {
+fn p5_listing(member_id: &str, models: &[&str], endpoint: &str) -> MemberListing {
     MemberListing {
         member_id: member_id.into(),
         listed_models: models.iter().map(|model| (*model).to_string()).collect(),
         upstream_provider: "openai".into(),
         upstream_dialect: "generic".into(),
-        upstream_endpoint: "http://127.0.0.1/v1".into(),
+        upstream_endpoint: endpoint.into(),
         transport_key: "openai:generic".into(),
         snapshot_ok: true,
     }
 }
 
-fn p5_index(members: &[(&str, &[&str])]) -> EffectiveRouteIndex {
+fn p5_index(upstream_port: u16, members: &[(&str, &[&str])]) -> EffectiveRouteIndex {
+    let endpoint = format!("http://127.0.0.1:{upstream_port}");
     let listings: Vec<MemberListing> = members
         .iter()
-        .map(|(id, models)| p5_listing(id, models))
+        .map(|(id, models)| p5_listing(id, models, &endpoint))
         .collect();
     index_from_member_listings("pool-v2-p5", 1, "responses", &listings, None)
 }
@@ -4653,7 +4666,10 @@ async fn v2_401_after_failed_reload_failovers_to_second_member() {
     });
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
-    let index = p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]);
+    let index = p5_index(
+        upstream_port,
+        &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+    );
     let status = host
         .start(p5_pool_spec(
             "p5-401-failover",
@@ -4703,7 +4719,10 @@ async fn v2_stop_and_start_with_new_token_clears_host_isolation() {
     });
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
-    let index = p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]);
+    let index = p5_index(
+        upstream_port,
+        &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+    );
     let status = host
         .start(p5_pool_spec(
             "p5-401-restart-clears",
@@ -4767,7 +4786,7 @@ async fn v2_concurrent_401_reload_is_singleflight() {
     });
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
-    let index = p5_index(&[("acc-a", &["m1"][..])]);
+    let index = p5_index(upstream_port, &[("acc-a", &["m1"][..])]);
     let status = host
         .start(p5_pool_spec(
             "p5-401-singleflight",
@@ -4815,7 +4834,10 @@ async fn v2_400_does_not_switch_members() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -4858,7 +4880,10 @@ async fn v2_policy_403_does_not_switch_members() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -4904,7 +4929,10 @@ async fn v2_entitlement_excludes_member_for_model_not_account() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1", "m2"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1", "m2"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -4954,7 +4982,10 @@ async fn v2_entitlement_403_matches_404_scope() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -4969,8 +5000,8 @@ async fn v2_entitlement_403_matches_404_scope() {
     assert_eq!(again.status(), StatusCode::OK);
     assert_eq!(
         captured_tokens(&captured),
-        vec!["Bearer token-a".to_owned(), "Bearer token-b".to_owned()],
-        "entitlement is this-request only; A is not isolated"
+        vec!["Bearer token-b".to_owned()],
+        "entitlement 403/404 updates member-model capability; A is skipped on later m1"
     );
     host.shutdown().await.expect("shutdown");
     task.abort();
@@ -5000,7 +5031,10 @@ async fn v2_429_cools_member_and_keeps_models_catalog() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5058,7 +5092,10 @@ async fn v2_5xx_failovers_before_downstream_commit() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5097,7 +5134,10 @@ async fn v2_does_not_replay_after_first_sse_byte() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5128,7 +5168,10 @@ async fn v2_pool_exhausted_when_both_members_fail() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5160,7 +5203,10 @@ async fn v2_pool_exhausted_includes_retry_after_from_cooldown() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5213,4 +5259,1109 @@ async fn v1_without_index_does_not_enter_pool_exhausted() {
     );
     host.shutdown().await.expect("shutdown");
     task.abort();
+}
+
+fn grok_codex_pair_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
+    grok_codex_spec(profile_id, port, upstream_port)
+        .with_mapping(
+            AdapterSourceProduct::XaiGrokSubscription,
+            AgentId::Codex,
+            false,
+        )
+        .with_pair_adapter_flags(true, false)
+        .with_listed_models(vec!["grok-4.5".into()])
+}
+
+fn codex_grok_pair_spec(profile_id: &str, port: u16, upstream_port: u16) -> BridgeStartSpec {
+    let mut spec = spec(profile_id, port, upstream_port);
+    spec.upstream.base_url = format!("http://127.0.0.1:{upstream_port}/v1/");
+    spec.upstream.model = Some("gpt-5.4".to_owned());
+    spec.upstream.protocol = BridgeUpstreamProtocol::CodexResponsesOauth;
+    spec.upstream.local_surface = BridgeLocalSurface::Responses;
+    spec.upstream.auth = ResolvedAuth::bearer("oauth-upstream-token");
+    spec.with_mapping(
+        AdapterSourceProduct::CodexChatGptSubscription,
+        AgentId::Grok,
+        false,
+    )
+    .with_pair_adapter_flags(false, true)
+    .with_listed_models(vec!["gpt-5.4".into()])
+}
+
+async fn counting_responses_upstream() -> (u16, Arc<AtomicUsize>, tokio::task::JoinHandle<()>) {
+    async fn responses(State(hits): State<Arc<AtomicUsize>>) -> Json<Value> {
+        hits.fetch_add(1, Ordering::SeqCst);
+        Json(grok_completed_response("hello"))
+    }
+    let hits = Arc::new(AtomicUsize::new(0));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind counting upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let state = hits.clone();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(state),
+        )
+        .await
+        .expect("serve counting upstream");
+    });
+    (port, hits, task)
+}
+
+async fn capturing_codex_pair_upstream() -> (
+    u16,
+    Arc<Mutex<Vec<CapturedGrokRequest>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    async fn responses(
+        State(captured): State<Arc<Mutex<Vec<CapturedGrokRequest>>>>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Json<Value> {
+        captured
+            .lock()
+            .expect("lock")
+            .push(CapturedGrokRequest { headers, body });
+        Json(json!({
+            "id": "resp_codex_pair",
+            "object": "response",
+            "created_at": 1,
+            "model": "gpt-5.4",
+            "status": "completed",
+            "store": false,
+            "service_tier": "default",
+            "metadata": { "codex_only": true },
+            "output": [{
+                "id": "msg_codex",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{ "type": "output_text", "text": "hello from codex" }]
+            }],
+            "usage": {
+                "input_tokens": 2,
+                "output_tokens": 3,
+                "total_tokens": 5,
+                "reasoning_tokens": 0,
+                "output_tokens_details": { "reasoning_tokens": 0 }
+            }
+        }))
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind capturing Codex pair");
+    let port = listener.local_addr().expect("addr").port();
+    let state = captured.clone();
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(state),
+        )
+        .await
+        .expect("serve capturing Codex pair");
+    });
+    (port, captured, task)
+}
+
+#[tokio::test]
+async fn pair_flag_on_codex_to_grok_adapts_request_and_strips_grok_identity() {
+    let reply = json!({
+        "id": "resp_grok",
+        "object": "response",
+        "created_at": 1,
+        "model": "grok-4.5",
+        "status": "completed",
+        "prompt_cache_key": "grok-cache-secret",
+        "session_id": "grok-session-secret",
+        "output": [{
+            "id": "msg_grok",
+            "type": "message",
+            "status": "completed",
+            "role": "assistant",
+            "content": [{ "type": "output_text", "text": "hello" }]
+        }],
+        "usage": {
+            "input_tokens": 2,
+            "output_tokens": 3,
+            "total_tokens": 5,
+            "reasoning_tokens": 0,
+            "output_tokens_details": { "reasoning_tokens": 0 }
+        }
+    });
+    let (upstream_port, captured, upstream_task) = capturing_grok_requests_with_reply(reply).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_pair_spec("pair-c2g", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "store": true,
+            "metadata": { "codex": true },
+            "input": [
+                {
+                    "type": "message",
+                    "role": "system",
+                    "content": [{ "type": "input_text", "text": "sys" }]
+                },
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }
+            ]
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["output"][0]["content"][0]["text"], "hello");
+    assert!(body.get("prompt_cache_key").is_none(), "{body}");
+    assert!(body.get("session_id").is_none(), "{body}");
+
+    let captured = captured.lock().expect("lock").clone();
+    assert_eq!(captured.len(), 1);
+    assert!(
+        captured[0].body.get("store").is_none(),
+        "{}",
+        captured[0].body
+    );
+    assert!(captured[0].body.get("metadata").is_none());
+    assert!(captured[0].headers.get("x-grok-client-version").is_some());
+
+    host.stop("pair-c2g").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn pair_flag_on_grok_to_codex_uses_allowlist_without_grok_headers() {
+    let (upstream_port, captured, upstream_task) = capturing_codex_pair_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_grok_pair_spec("pair-g2c", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "gpt-5.4",
+            "prompt_cache_key": "grok-cache-1",
+            "store": true,
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["output"][0]["content"][0]["text"], "hello from codex");
+    assert!(body.get("store").is_none(), "{body}");
+    assert!(body.get("service_tier").is_none(), "{body}");
+    assert!(body.get("metadata").is_none(), "{body}");
+
+    let captured = captured.lock().expect("lock").clone();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].body["store"], false);
+    assert!(captured[0].body.get("prompt_cache_key").is_none());
+    assert!(captured[0].headers.get("x-grok-client-version").is_none());
+    assert!(captured[0].headers.get("x-grok-session-id").is_none());
+
+    host.stop("pair-g2c").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn pair_flag_on_missing_model_does_not_call_upstream() {
+    let (upstream_port, hits, upstream_task) = counting_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_pair_spec("pair-miss", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "not-a-mapped-model",
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "model_unavailable");
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+
+    host.stop("pair-miss").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn pair_flag_on_continuation_does_not_call_other_member() {
+    let reject_a = Arc::new(AtomicBool::new(false));
+    let (upstream_port, captured, upstream_task) =
+        grok_account_gated_upstream(reject_a.clone()).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            grok_codex_pair_spec("pair-sticky", 0, upstream_port)
+                .with_members(vec![
+                    pool_member("acc-a", "token-a"),
+                    pool_member("acc-b", "token-b"),
+                ])
+                .with_multi_account(true),
+        )
+        .await
+        .expect("start");
+    let first = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({ "model": "grok-4.5", "input": "hello" }))
+        .send()
+        .await
+        .expect("first");
+    assert_eq!(first.status(), StatusCode::OK);
+    let first_body: Value = first.json().await.expect("first json");
+    let response_id = first_body["id"].as_str().expect("id").to_owned();
+
+    reject_a.store(true, Ordering::SeqCst);
+    let second = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "previous_response_id": response_id,
+            "input": "again"
+        }))
+        .send()
+        .await
+        .expect("second");
+    assert_ne!(second.status(), StatusCode::OK);
+    let bearers = captured.lock().expect("lock").clone();
+    assert!(
+        bearers.iter().all(|item| item != "Bearer token-b"),
+        "continuation must not replay onto the other member: {bearers:?}"
+    );
+    assert!(bearers.iter().any(|item| item == "Bearer token-a"));
+
+    host.stop("pair-sticky").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn pair_flag_on_unbound_previous_response_id_does_not_call_upstream() {
+    let (upstream_port, hits, upstream_task) = counting_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            grok_codex_pair_spec("pair-unbound", 0, upstream_port)
+                .with_members(vec![
+                    pool_member("acc-a", "token-a"),
+                    pool_member("acc-b", "token-b"),
+                ])
+                .with_multi_account(true),
+        )
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "previous_response_id": "resp_unknown",
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "continuation_unavailable");
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+
+    host.stop("pair-unbound").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn pair_flag_off_keeps_experimental_grok_codex_passthrough() {
+    let (upstream_port, captured, upstream_task) = capturing_grok_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(grok_codex_spec("pair-off", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "store": true,
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let upstream = captured.lock().expect("lock").clone();
+    assert_eq!(upstream.len(), 1);
+    assert_eq!(upstream[0]["store"], true);
+
+    host.stop("pair-off").await.expect("stop");
+    upstream_task.abort();
+}
+
+fn p7_listing(member_id: &str, provider: &str, models: &[&str], endpoint: &str) -> MemberListing {
+    MemberListing {
+        member_id: member_id.into(),
+        listed_models: models.iter().map(|model| (*model).to_string()).collect(),
+        upstream_provider: provider.into(),
+        upstream_dialect: provider.into(),
+        upstream_endpoint: endpoint.into(),
+        transport_key: format!("{provider}:{provider}"),
+        snapshot_ok: true,
+    }
+}
+
+fn p7_rule(
+    id: &str,
+    provider: &str,
+    upstream_model: &str,
+    priority: i64,
+    equivalent: Option<&str>,
+) -> ModelRouteRule {
+    ModelRouteRule {
+        id: id.into(),
+        route_pool_id: "pool-v2-p7".into(),
+        public_model: "m1".into(),
+        endpoint_family: "responses".into(),
+        upstream_provider: provider.into(),
+        upstream_dialect: provider.into(),
+        upstream_model: upstream_model.into(),
+        priority,
+        equivalent_group: equivalent.map(ToOwned::to_owned),
+        enabled: true,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+fn p7_index(mixed: bool, rules: Vec<ModelRouteRule>, endpoint: &str) -> EffectiveRouteIndex {
+    index_from_member_listings(
+        "pool-v2-p7",
+        1,
+        "responses",
+        &[
+            p7_listing("grok-member", "grok", &["m1"], endpoint),
+            p7_listing("codex-member", "codex", &["m1"], endpoint),
+        ],
+        None,
+    )
+    .with_mixed_provider_rules(mixed, rules)
+}
+
+fn p7_members() -> Vec<BridgeMemberSpec> {
+    vec![
+        {
+            let mut codex = pool_member("codex-member", "token-codex");
+            codex.position = 0;
+            codex
+        },
+        {
+            let mut grok = pool_member("grok-member", "token-grok");
+            grok.position = 1;
+            grok
+        },
+    ]
+}
+
+fn p7_pool_spec(
+    profile_id: &str,
+    upstream_port: u16,
+    mixed: bool,
+    rules: Vec<ModelRouteRule>,
+) -> BridgeStartSpec {
+    let endpoint = format!("http://127.0.0.1:{upstream_port}/v1/");
+    let index = p7_index(mixed, rules, &endpoint);
+    spec_with_token(profile_id, 0, upstream_port, TOKEN_A)
+        .with_members(p7_members())
+        .with_listed_models(index.list_models("responses"))
+        .with_route_index(index)
+}
+
+#[derive(Clone)]
+struct CapturedResponsesAttempt {
+    path: String,
+    bearer: String,
+    headers: axum::http::HeaderMap,
+    body: Value,
+}
+
+type ResponsesCallback = Arc<dyn Fn(&CapturedResponsesAttempt) -> Response + Send + Sync>;
+
+fn responses_ok() -> Response {
+    Json(grok_completed_response("hello")).into_response()
+}
+
+fn response_bearers(captured: &Mutex<Vec<CapturedResponsesAttempt>>) -> Vec<String> {
+    captured
+        .lock()
+        .expect("lock")
+        .iter()
+        .map(|attempt| attempt.bearer.clone())
+        .collect()
+}
+
+fn grok_identity_headers_present(headers: &axum::http::HeaderMap) -> bool {
+    headers.get("x-grok-client-version").is_some()
+        && headers
+            .get("x-xai-token-auth")
+            .and_then(|value| value.to_str().ok())
+            == Some("xai-grok-cli")
+}
+
+async fn callback_responses_upstream(
+    callback: ResponsesCallback,
+) -> (
+    u16,
+    Arc<Mutex<Vec<CapturedResponsesAttempt>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    async fn responses(
+        uri: axum::http::Uri,
+        State((callback, captured)): State<(
+            ResponsesCallback,
+            Arc<Mutex<Vec<CapturedResponsesAttempt>>>,
+        )>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Response {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        let attempt = CapturedResponsesAttempt {
+            path: uri.path().to_owned(),
+            bearer,
+            headers,
+            body,
+        };
+        captured.lock().expect("lock").push(attempt.clone());
+        callback(&attempt)
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind scripted responses");
+    let port = listener.local_addr().expect("addr").port();
+    let state = (callback, captured.clone());
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .route("/responses", post(responses))
+                .route("/chat/completions", post(responses))
+                .with_state(state),
+        )
+        .await
+        .expect("serve scripted responses");
+    });
+    (port, captured, task)
+}
+
+async fn callback_responses_v1_only(
+    callback: ResponsesCallback,
+) -> (
+    u16,
+    Arc<Mutex<Vec<CapturedResponsesAttempt>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    async fn responses(
+        uri: axum::http::Uri,
+        State((callback, captured)): State<(
+            ResponsesCallback,
+            Arc<Mutex<Vec<CapturedResponsesAttempt>>>,
+        )>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Response {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        let attempt = CapturedResponsesAttempt {
+            path: uri.path().to_owned(),
+            bearer,
+            headers,
+            body,
+        };
+        captured.lock().expect("lock").push(attempt.clone());
+        callback(&attempt)
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind v1-only responses");
+    let port = listener.local_addr().expect("addr").port();
+    let state = (callback, captured.clone());
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .with_state(state),
+        )
+        .await
+        .expect("serve v1-only responses");
+    });
+    (port, captured, task)
+}
+
+fn p10_codex_lead_spec(
+    profile_id: &str,
+    grok_port: u16,
+    codex_port: u16,
+    mixed: bool,
+    rules: Vec<ModelRouteRule>,
+) -> BridgeStartSpec {
+    let grok_ep = format!("http://127.0.0.1:{grok_port}/v1/");
+    let codex_ep = format!("http://127.0.0.1:{codex_port}/v1/");
+    let index = index_from_member_listings(
+        "pool-v2-p10",
+        1,
+        "responses",
+        &[
+            p7_listing("grok-member", "grok", &["m1"], &grok_ep),
+            p7_listing("codex-member", "codex", &["m1"], &codex_ep),
+        ],
+        None,
+    )
+    .with_mixed_provider_rules(mixed, rules);
+    let mut spec = spec_with_token(profile_id, 0, codex_port, TOKEN_A);
+    spec.upstream.base_url = format!("http://127.0.0.1:{codex_port}/v1/");
+    spec.upstream.model = Some("gpt-5.4".to_owned());
+    spec.upstream.protocol = BridgeUpstreamProtocol::CodexResponsesOauth;
+    spec.upstream.local_surface = BridgeLocalSurface::Responses;
+    spec.upstream.auth = ResolvedAuth::bearer("lead-unused");
+    spec.with_members(p7_members())
+        .with_listed_models(index.list_models("responses"))
+        .with_route_index(index)
+}
+
+async fn post_store_true(port: u16, model: &str) -> reqwest::Response {
+    client()
+        .await
+        .post(format!("http://127.0.0.1:{port}/v1/responses"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .json(&json!({
+            "model": model,
+            "store": true,
+            "prompt_cache_key": "cache-1",
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("p10 request")
+}
+
+async fn listed_model_ids(port: u16) -> Vec<String> {
+    let listed = client()
+        .await
+        .get(format!("http://127.0.0.1:{port}/v1/models"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .send()
+        .await
+        .expect("models")
+        .json::<Value>()
+        .await
+        .expect("models json");
+    listed["data"]
+        .as_array()
+        .expect("data")
+        .iter()
+        .filter_map(|row| row["id"].as_str().map(ToOwned::to_owned))
+        .collect()
+}
+
+#[tokio::test]
+async fn p7_flag_off_hides_mixed_model_and_does_not_call_upstream() {
+    let callback: ChatCallback = Arc::new(|_bearer, _body| chat_ok());
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p7_pool_spec("p7-flag-off", upstream_port, false, vec![]))
+        .await
+        .expect("start");
+    assert!(listed_model_ids(status.port).await.is_empty());
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(captured.lock().expect("lock").is_empty());
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn p7_flag_on_without_rules_does_not_guess_provider() {
+    let callback: ChatCallback = Arc::new(|_bearer, _body| chat_ok());
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p7_pool_spec("p7-no-rules", upstream_port, true, vec![]))
+        .await
+        .expect("start");
+    assert!(listed_model_ids(status.port).await.is_empty());
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(captured.lock().expect("lock").is_empty());
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn p7_unknown_model_does_not_call_upstream() {
+    let callback: ChatCallback = Arc::new(|_bearer, _body| chat_ok());
+    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p7_pool_spec(
+            "p7-unknown",
+            upstream_port,
+            true,
+            vec![p7_rule("r-grok", "grok", "m1", 0, None)],
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "missing-model", false).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(captured.lock().expect("lock").is_empty());
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn p7_equivalent_lanes_failover_on_5xx_not_400() {
+    let callback: ResponsesCallback = Arc::new(|attempt| {
+        if attempt.bearer == "Bearer token-grok" {
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        } else {
+            responses_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_responses_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p7_pool_spec(
+            "p7-equiv-5xx",
+            upstream_port,
+            true,
+            vec![
+                p7_rule("r-grok", "grok", "m1", 0, Some("shared")),
+                p7_rule("r-codex", "codex", "m1", 10, Some("shared")),
+            ],
+        ))
+        .await
+        .expect("start");
+    assert_eq!(listed_model_ids(status.port).await, vec!["m1".to_owned()]);
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response_bearers(&captured),
+        vec![
+            "Bearer token-grok".to_owned(),
+            "Bearer token-codex".to_owned()
+        ],
+        "first lane is grok by rule priority, then equivalent codex on 5xx"
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+
+    let callback_400: ResponsesCallback = Arc::new(|attempt| {
+        if attempt.bearer == "Bearer token-grok" {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": {"message": "bad schema"}})),
+            )
+                .into_response()
+        } else {
+            responses_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_responses_upstream(callback_400).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p7_pool_spec(
+            "p7-equiv-400",
+            upstream_port,
+            true,
+            vec![
+                p7_rule("r-grok", "grok", "m1", 0, Some("shared")),
+                p7_rule("r-codex", "codex", "m1", 10, Some("shared")),
+            ],
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_bearers(&captured),
+        vec!["Bearer token-grok".to_owned()],
+        "400 must not hop to the other provider"
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn p7_non_equivalent_lanes_do_not_failover_on_5xx() {
+    let callback: ResponsesCallback = Arc::new(|attempt| {
+        if attempt.bearer == "Bearer token-grok" {
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        } else {
+            responses_ok()
+        }
+    });
+    let (upstream_port, captured, task) = callback_responses_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p7_pool_spec(
+            "p7-no-equiv-5xx",
+            upstream_port,
+            true,
+            vec![
+                p7_rule("r-grok", "grok", "m1", 0, None),
+                p7_rule("r-codex", "codex", "m1", 10, None),
+            ],
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_ne!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response_bearers(&captured),
+        vec!["Bearer token-grok".to_owned()],
+        "without equivalence, 5xx on lane A must not call lane B"
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn p7_declared_grok_lane_does_not_pick_codex_member() {
+    let callback: ResponsesCallback = Arc::new(|_attempt| responses_ok());
+    let (upstream_port, captured, task) = callback_responses_upstream(callback).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p7_pool_spec(
+            "p7-grok-only",
+            upstream_port,
+            true,
+            vec![p7_rule("r-grok", "grok", "m1", 0, None)],
+        ))
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response_bearers(&captured),
+        vec!["Bearer token-grok".to_owned()]
+    );
+    host.shutdown().await.expect("shutdown");
+    task.abort();
+}
+
+#[tokio::test]
+async fn p7_equivalent_failover_uses_the_other_lane_endpoint() {
+    let grok_cb: ResponsesCallback =
+        Arc::new(|_attempt| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    let codex_cb: ResponsesCallback = Arc::new(|_attempt| responses_ok());
+    let (grok_port, grok_captured, grok_task) = callback_responses_upstream(grok_cb).await;
+    let (codex_port, codex_captured, codex_task) = callback_responses_upstream(codex_cb).await;
+    let grok_ep = format!("http://127.0.0.1:{grok_port}/v1/");
+    let codex_ep = format!("http://127.0.0.1:{codex_port}/v1/");
+    let index = index_from_member_listings(
+        "pool-v2-p7",
+        1,
+        "responses",
+        &[
+            p7_listing("grok-member", "grok", &["m1"], &grok_ep),
+            p7_listing("codex-member", "codex", &["m1"], &codex_ep),
+        ],
+        None,
+    )
+    .with_mixed_provider_rules(
+        true,
+        vec![
+            p7_rule("r-grok", "grok", "m1", 0, Some("shared")),
+            p7_rule("r-codex", "codex", "m1", 10, Some("shared")),
+        ],
+    );
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            spec_with_token("p7-lane-url", 0, grok_port, TOKEN_A)
+                .with_members(p7_members())
+                .with_listed_models(index.list_models("responses"))
+                .with_route_index(index),
+        )
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response_bearers(&grok_captured).len(), 1);
+    assert_eq!(
+        response_bearers(&codex_captured),
+        vec!["Bearer token-codex".to_owned()]
+    );
+    host.shutdown().await.expect("shutdown");
+    grok_task.abort();
+    codex_task.abort();
+}
+
+#[tokio::test]
+async fn v2_grok_candidate_on_codex_lead_reprepares_grok_transport() {
+    let grok_cb: ResponsesCallback = Arc::new(|_attempt| responses_ok());
+    let codex_cb: ResponsesCallback =
+        Arc::new(|_attempt| panic!("Codex origin must not receive the first grok-lane pick"));
+    let (grok_port, grok_captured, grok_task) = callback_responses_upstream(grok_cb).await;
+    let (codex_port, codex_captured, codex_task) = callback_responses_upstream(codex_cb).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p10_codex_lead_spec(
+            "p10-grok-first",
+            grok_port,
+            codex_port,
+            true,
+            vec![p7_rule("r-grok", "grok", "grok-4.5", 0, None)],
+        ))
+        .await
+        .expect("start");
+    let response = post_store_true(status.port, "m1").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let grok = grok_captured.lock().expect("lock").clone();
+    assert!(codex_captured.lock().expect("lock").is_empty());
+    assert_eq!(grok.len(), 1);
+    assert_eq!(grok[0].path, "/v1/responses");
+    assert_eq!(grok[0].bearer, "Bearer token-grok");
+    assert!(
+        grok_identity_headers_present(&grok[0].headers),
+        "grok-lane prepare must inject Grok identity headers"
+    );
+    assert_ne!(
+        grok[0].body.get("store"),
+        Some(&json!(false)),
+        "must not reuse Codex store:false leftovers: {}",
+        grok[0].body
+    );
+    assert_eq!(grok[0].body["model"], "grok-4.5");
+    assert_eq!(grok[0].body["prompt_cache_key"], "cache-1");
+    host.shutdown().await.expect("shutdown");
+    grok_task.abort();
+    codex_task.abort();
+}
+
+#[tokio::test]
+async fn v2_equivalent_5xx_reprepares_other_origin_transport() {
+    let grok_cb: ResponsesCallback =
+        Arc::new(|_attempt| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    let codex_cb: ResponsesCallback = Arc::new(|_attempt| responses_ok());
+    let (grok_port, grok_captured, grok_task) = callback_responses_upstream(grok_cb).await;
+    let (codex_port, codex_captured, codex_task) = callback_responses_upstream(codex_cb).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p10_codex_lead_spec(
+            "p10-equiv-reprepare",
+            grok_port,
+            codex_port,
+            true,
+            vec![
+                p7_rule("r-grok", "grok", "grok-4.5", 0, Some("shared")),
+                p7_rule("r-codex", "codex", "gpt-5.4", 10, Some("shared")),
+            ],
+        ))
+        .await
+        .expect("start");
+    let response = post_store_true(status.port, "m1").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let grok = grok_captured.lock().expect("lock").clone();
+    let codex = codex_captured.lock().expect("lock").clone();
+    assert_eq!(grok.len(), 1, "first attempt stays on the grok origin");
+    assert_eq!(grok[0].path, "/v1/responses");
+    assert_eq!(grok[0].bearer, "Bearer token-grok");
+    assert!(grok_identity_headers_present(&grok[0].headers));
+    assert_eq!(grok[0].body["model"], "grok-4.5");
+    assert_eq!(codex.len(), 1);
+    assert_eq!(codex[0].path, "/v1/responses");
+    assert_eq!(codex[0].bearer, "Bearer token-codex");
+    assert!(
+        !grok_identity_headers_present(&codex[0].headers),
+        "codex-lane prepare must not keep Grok identity headers"
+    );
+    assert_eq!(codex[0].body["store"], false);
+    assert_eq!(codex[0].body["model"], "gpt-5.4");
+    assert!(
+        codex[0].body.get("prompt_cache_key").is_none(),
+        "codex allowlist must drop grok cache key: {}",
+        codex[0].body
+    );
+    host.shutdown().await.expect("shutdown");
+    grok_task.abort();
+    codex_task.abort();
+}
+
+#[tokio::test]
+async fn v2_same_provider_failover_reprepares_other_endpoint() {
+    let a_cb: ChatCallback =
+        Arc::new(|_bearer, _body| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    let b_cb: ChatCallback = Arc::new(|_bearer, _body| chat_ok());
+    let (a_port, a_captured, a_task) = callback_chat_upstream(a_cb).await;
+    let (b_port, b_captured, b_task) = callback_chat_upstream(b_cb).await;
+    let a_ep = format!("http://127.0.0.1:{a_port}");
+    let b_ep = format!("http://127.0.0.1:{b_port}");
+    let index = index_from_member_listings(
+        "pool-v2-p5",
+        1,
+        "responses",
+        &[
+            p5_listing("acc-a", &["m1"], &a_ep),
+            p5_listing("acc-b", &["m1"], &b_ep),
+        ],
+        None,
+    );
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            spec_with_token("p10-same-provider-url", 0, a_port, TOKEN_A)
+                .with_members(vec![
+                    pool_member("acc-a", "token-a"),
+                    pool_member("acc-b", "token-b"),
+                ])
+                .with_listed_models(index.list_models("responses"))
+                .with_route_index(index),
+        )
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&a_captured),
+        vec!["Bearer token-a".to_owned()]
+    );
+    assert_eq!(
+        captured_tokens(&b_captured),
+        vec!["Bearer token-b".to_owned()],
+        "same-provider members with different endpoints must re-prepare onto B"
+    );
+    host.shutdown().await.expect("shutdown");
+    a_task.abort();
+    b_task.abort();
+}
+
+#[tokio::test]
+async fn v2_candidate_base_without_trailing_slash_keeps_v1() {
+    let grok_cb: ResponsesCallback = Arc::new(|_attempt| responses_ok());
+    let (grok_port, grok_captured, grok_task) = callback_responses_v1_only(grok_cb).await;
+    let grok_ep = format!("http://127.0.0.1:{grok_port}/v1");
+    let index = index_from_member_listings(
+        "pool-v2-p10-slash",
+        1,
+        "responses",
+        &[p7_listing("grok-member", "grok", &["m1"], &grok_ep)],
+        None,
+    )
+    .with_mixed_provider_rules(true, vec![p7_rule("r-grok", "grok", "grok-4.5", 0, None)]);
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            spec_with_token("p10-slash", 0, grok_port, TOKEN_A)
+                .with_members(vec![pool_member("grok-member", "token-grok")])
+                .with_listed_models(index.list_models("responses"))
+                .with_route_index(index),
+        )
+        .await
+        .expect("start");
+    let response = post_store_true(status.port, "m1").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let grok = grok_captured.lock().expect("lock").clone();
+    assert_eq!(grok.len(), 1);
+    assert_eq!(
+        grok[0].path, "/v1/responses",
+        "production /v1 bases without a trailing slash must keep /v1"
+    );
+    host.shutdown().await.expect("shutdown");
+    grok_task.abort();
+}
+
+#[tokio::test]
+async fn v2_unbound_previous_response_id_does_not_call_upstream() {
+    let (upstream_port, hits, upstream_task) = counting_responses_upstream().await;
+    let endpoint = format!("http://127.0.0.1:{upstream_port}/v1/");
+    let index = index_from_member_listings(
+        "pair-unbound-v2",
+        1,
+        "responses",
+        &[
+            p7_listing("acc-a", "grok", &["grok-4.5"], &endpoint),
+            p7_listing("acc-b", "grok", &["grok-4.5"], &endpoint),
+        ],
+        None,
+    );
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            grok_codex_pair_spec("pair-unbound-v2", 0, upstream_port)
+                .with_members(vec![
+                    pool_member("acc-a", "token-a"),
+                    pool_member("acc-b", "token-b"),
+                ])
+                .with_multi_account(true)
+                .with_listed_models(index.list_models("responses"))
+                .with_route_index(index),
+        )
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "previous_response_id": "resp_unknown",
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "continuation_unavailable");
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+    host.stop("pair-unbound-v2").await.expect("stop");
+    upstream_task.abort();
 }

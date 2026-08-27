@@ -82,7 +82,7 @@ fn grok_acp_jsonrpc_reaches_assistant_text() {
     assert_eq!(s.assistant_text(), "Hello world.");
     assert!(!out.iter().any(|o| matches!(
         o,
-        StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. }) if n.contains("unrecognized")
+        StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. }) if n.contains("无法识别")
     )));
 }
 
@@ -95,7 +95,7 @@ fn grok_unknown_legacy_type_is_raw_not_assistant_text() {
     );
     assert!(out.iter().any(|o| matches!(
         o,
-        StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. }) if n.contains("unrecognized")
+        StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. }) if n.contains("无法识别")
     )));
     assert_eq!(s.assistant_text(), "");
 }
@@ -283,7 +283,7 @@ fn unknown_event_type_raw_fallback() {
         out.iter().any(|o| matches!(
             o,
             StreamOutput::Step(ProcessStep::Raw { note: Some(n), .. })
-                if n.contains("unrecognized")
+                if n.contains("无法识别")
         )) || out.is_empty()
             || out
                 .iter()

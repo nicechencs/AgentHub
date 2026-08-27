@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { flattenKeys, translate } from '@/lib/i18n';
+import { en } from '@/lib/i18n/locales/en';
+import { zh } from '@/lib/i18n/locales/zh';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -75,22 +78,28 @@ describe('connections layout wiring', () => {
 
   it('opens 用到其他工具 / 本机转发 in the same right-hand inspect pane', () => {
     const page = source('index.tsx');
+    const shareRoute = source('use-connection-share-route.ts');
     expect(page).toContain("{ kind: 'connect'");
-    expect(page).toContain("openConnectForTicket(ticket, 'share')");
-    expect(page).toContain("openConnectForTicket(ticket, 'route')");
+    expect(shareRoute).toContain("{ kind: 'connect'");
+    expect(shareRoute).toContain("openConnectForTicket(ticket, 'share')");
+    expect(shareRoute).toContain("openConnectForTicket(ticket, 'route')");
     expect(page).toContain('asPanel');
     expect(page).toContain('<ConnectFlowDialog');
     expect(page).not.toContain('const [connectEntry');
     expect(page).toContain("inspectTarget?.kind === 'connect'");
-    const openerStart = page.indexOf('const openConnectForTicket');
-    const openerEnd = page.indexOf('const handleShareTicket', openerStart);
+    expect(page).toContain('useConnectionShareRoute');
+    expect(page).toContain('onShareTicket={handleShareTicket}');
+    expect(page).toContain('onRouteTicket={handleRouteTicket}');
+    const openerStart = shareRoute.indexOf('const openConnectForTicket');
+    const openerEnd = shareRoute.indexOf('const handleShareTicket', openerStart);
     expect(openerStart).toBeGreaterThanOrEqual(0);
     expect(openerEnd).toBeGreaterThan(openerStart);
-    expect(page.slice(openerStart, openerEnd)).not.toContain('inspect.close()');
+    expect(shareRoute.slice(openerStart, openerEnd)).not.toContain('inspect.close()');
+    expect(shareRoute).not.toContain('inspect.close()');
   });
 
   it('keeps live config chrome to the path and folder button; hint is hover-only', () => {
-    const provider = source('../providers/ProviderEditDialog.tsx');
+    const provider = source('../../components/connections/ProviderEditDialog.tsx');
     expect(provider).toContain('Tip label={livePaths.hint}');
     expect(provider).toContain('isLiveFilePath(livePaths.auth)');
     expect(provider).not.toContain('<p className="text-muted">{livePaths.hint}</p>');
@@ -101,12 +110,16 @@ describe('connections layout wiring', () => {
     expect(form).toContain('configFieldHint');
     expect(form).toContain('configFieldLabel');
     expect(form).toContain('configFieldOptionLabel');
+    expect(form).toContain('configFieldUnsupported');
+    expect(form).toContain('configFieldSecretPlaceholder');
     expect(form).not.toContain('field.help?.trim()');
+    expect(form).not.toContain("connections.providerDialog.remoteModelsPick");
+    expect(form).not.toContain("connections.providerDialog.remoteModelsCustom");
   });
 
   it('keeps key hints on the key field and shows cancel in the inspect header', () => {
-    const provider = source('../providers/ProviderEditDialog.tsx');
-    const account = source('../accounts/ApiKeyAccountDialog.tsx');
+    const provider = source('../../components/connections/ProviderEditDialog.tsx');
+    const account = source('../../components/connections/ApiKeyAccountDialog.tsx');
     expect(provider).toContain("t('connections.apiKeyDialog.keyHint')");
     expect(provider).toContain('fieldHints');
     expect(provider).toContain("t('common.cancel')");
@@ -123,5 +136,47 @@ describe('connections layout wiring', () => {
     expect(page).toContain(
       'guideOpenedApiKeyRef.current = false;\n            inspect.close();',
     );
+  });
+
+  it('labels official login and API Key as two kinds, not cryptic statuses', () => {
+    const list = source('TicketWalletList.tsx');
+    expect(list).toContain("t('kind.oauth')");
+    expect(list).toContain("t('kind.apikey')");
+    expect(list).not.toContain("t('connections.list.oauthAccount')");
+    expect(list).not.toContain("t('connections.list.apiKeyAuth')");
+    expect(translate('zh', 'kind.oauth')).toBe('官方登录');
+    expect(translate('zh', 'kind.apikey')).toBe('API Key');
+    expect(translate('en', 'kind.oauth')).toBe('Official login');
+    expect(translate('en', 'kind.apikey')).toBe('API Key');
+    expect(translate('zh', 'connections.list.oauthAccount')).toBe(translate('zh', 'kind.oauth'));
+    expect(translate('zh', 'connections.list.apiKeyAuth')).toBe(translate('zh', 'kind.apikey'));
+    expect(translate('en', 'connections.list.oauthAccount')).toBe(translate('en', 'kind.oauth'));
+    expect(translate('en', 'connections.list.apiKeyAuth')).toBe(translate('en', 'kind.apikey'));
+  });
+});
+
+const BANNED_UI = /票|钱包|投影|真源|PKCE|loopback|\bTicket\b|\bwallet\b|\bAdapter\b|\bwire/i;
+
+function lookup(obj: unknown, key: string): string {
+  let cur: unknown = obj;
+  for (const part of key.split('.')) {
+    if (cur == null || typeof cur !== 'object' || !(part in cur)) return key;
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  return typeof cur === 'string' ? cur : key;
+}
+
+describe('connections user-facing copy', () => {
+  it('keeps connections / dashboard / connect copy free of banned jargon', () => {
+    const keys = flattenKeys(zh).filter((key) =>
+      key.startsWith('connections.')
+      || key.startsWith('dashboard.')
+      || key.startsWith('connect.'),
+    );
+    expect(keys.length).toBeGreaterThan(50);
+    for (const key of keys) {
+      expect(lookup(zh, key), key).not.toMatch(BANNED_UI);
+      expect(lookup(en, key), key).not.toMatch(BANNED_UI);
+    }
   });
 });

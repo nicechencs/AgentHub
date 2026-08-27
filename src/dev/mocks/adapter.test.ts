@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AdapterCommandError } from '@/lib/backend/contracts/adapter';
 import type { Account } from '@/lib/types';
@@ -5,7 +8,10 @@ import {
   createMockAdapterPort,
   resetGoldenLookupStats,
   resetMockAdapters,
+  seedMockAdapterProfiles,
+  setMockRoutePoolV2,
 } from './adapter';
+import type { MockAdapterApplyPlan } from './adapter/plan';
 import { getMockAccountById } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
@@ -31,6 +37,35 @@ describe('mock adapter projection', () => {
     resetMockAdapters();
     resetMockProviders();
     resetGoldenLookupStats();
+  });
+
+  it('does not import classify* on the runtime source-ticket path', () => {
+    const src = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), 'adapter/source-ticket.ts'),
+      'utf8',
+    );
+    expect(src).not.toMatch(/\bclassify(Account|Provider)Source\b/);
+  });
+
+  it('plan carries sourceProduct from the plan owner', async () => {
+    const sourceId = `kimi-product-${Date.now()}-${Math.random()}`;
+    await createMockProviderPort().upsertProvider({
+      id: sourceId,
+      agentId: 'kimi',
+      name: 'Kimi membership',
+      preset: 'kimi-code-membership',
+      configText: 'api_key = "must-not-leak"',
+      configFormat: 'toml',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    const plan = await adapter.plan({
+      sourceKind: 'provider',
+      sourceId,
+      targetAgentId: 'claude',
+    }) as MockAdapterApplyPlan;
+    expect(plan.sourceProduct).toBe('kimi-code-membership');
+    expect(plan.analysis.route).toBe('native_endpoint');
   });
 
   it('keeps secrets out of analyze, plan, and apply', async () => {
@@ -86,6 +121,51 @@ describe('mock adapter projection', () => {
     expect((await adapter.setBridgeAutoStart(applied.profile.id, false)).autoStart).toBe(false);
     expect(JSON.stringify({ plan, applied, visible })).not.toContain('must-not-leak');
     expect(JSON.stringify({ plan, applied, visible })).not.toContain('token');
+  });
+
+  it('enrolls a native login into the default local pool only when the flag is on', async () => {
+    const sourceId = `kimi-enroll-${Date.now()}-${Math.random()}`;
+    await createMockProviderPort().upsertProvider({
+      id: sourceId,
+      agentId: 'kimi',
+      name: 'Kimi membership',
+      preset: 'kimi-code-membership',
+      configText: 'api_key = "must-not-leak"',
+      configFormat: 'toml',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    const nativeId = `native-${sourceId}`;
+    seedMockAdapterProfiles([{
+      id: nativeId,
+      name: 'Kimi',
+      sourceKind: 'provider',
+      sourceId,
+      targetAgentId: 'codex',
+      route: 'native_endpoint',
+      mode: 'api',
+      status: 'active',
+      ruleId: 'kimi-membership-to-codex-v1',
+      ruleVersion: '1',
+      generatedProviderId: null,
+      localPort: null,
+      autoStart: false,
+      createdAt: '2026-08-12T00:00:00Z',
+      updatedAt: '2026-08-12T00:00:00Z',
+    }]);
+    await expect(adapter.listDefaultRoutePools()).resolves.toMatchObject({ enabled: true });
+    setMockRoutePoolV2(false);
+    await expect(adapter.listDefaultRoutePools()).resolves.toEqual({ enabled: false, pools: [] });
+    await expect(adapter.enrollNativeToGateway(nativeId)).rejects.toMatchObject({
+      code: 'unsupported',
+    });
+    setMockRoutePoolV2(true);
+    const enrolled = await adapter.enrollNativeToGateway(nativeId);
+    expect(enrolled.v2Enrolled).toBe(true);
+    expect(enrolled.gatewayPort).toBeGreaterThan(0);
+    expect(JSON.stringify(enrolled)).not.toContain('must-not-leak');
+    expect(JSON.stringify(enrolled)).not.toContain('hubToken');
+    expect(JSON.stringify(enrolled)).not.toContain('ahb_');
   });
 
   it('removes the active generated Connection and its provider', async () => {

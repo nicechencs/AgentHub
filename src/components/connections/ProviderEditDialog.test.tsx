@@ -32,7 +32,8 @@ import {
   canSaveWithSchemaStatus,
   planSchemaLoad,
   resolveProjectorExpectation,
-} from './provider-schema-gate';
+} from '@/pages/providers/provider-schema-gate';
+import { createTranslator } from '@/lib/i18n';
 import { getConfigTextError } from './ProviderEditDialog';
 
 const TEST_CLAUDE_SCHEMA: AgentConfigSchemaDto = {
@@ -373,6 +374,17 @@ describe('projector path fail-closed', () => {
         'json',
       ),
     ).toMatch(/ANTHROPIC_BASE_URL/);
+  });
+
+  it('JSON parse banner stays Chinese without SyntaxError English', () => {
+    const tZh = createTranslator('zh');
+    const malformed = '{"env":{"CUSTOM":"keep-me"}';
+    const msg = getConfigTextError('claude', malformed, 'json', tZh);
+    expect(msg).toMatch(/配置没法解析/);
+    expect(msg).not.toMatch(/Unexpected|SyntaxError|JSON\.parse/i);
+    expect(getConfigTextError('claude', malformed, 'json')).not.toMatch(
+      /Unexpected|SyntaxError/i,
+    );
   });
 
   it('validate ok=false does not materialize or upsert', async () => {

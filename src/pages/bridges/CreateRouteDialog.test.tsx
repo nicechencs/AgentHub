@@ -53,8 +53,12 @@ describe('CreateRouteDialog', () => {
     expect(markup).toContain('type="submit"');
     expect(markup).toContain('收起');
     expect(markup).toContain('取消');
-    expect(markup).not.toContain('/v1/messages');
-    expect(markup).not.toContain('/v1/responses');
+    expect(markup).toContain('/v1/messages');
+    expect(markup).toContain('Claude 对话');
+    expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('Codex / Grok 对话');
+    expect(markup).toContain('GET /models');
+    expect(markup).toContain('模型名单');
     expect(markup).not.toContain('协议桥');
   });
 
@@ -63,6 +67,9 @@ describe('CreateRouteDialog', () => {
     expect(markup).toContain('确认应用');
     expect(markup).toContain('disabled');
     expect(markup).toContain('上游端点');
+    expect(markup).toContain('/v1/messages');
+    expect(markup).toContain('Claude 对话');
+    expect(markup).toContain('GET /models · 模型名单');
     expect(markup).toContain(endpointUrlFor('openrouter', 'claude', vendorById('openrouter').url));
     expect(markup).toContain('type="submit"');
     expect(markup).toContain('自动（不写入）');
@@ -316,8 +323,11 @@ describe('EditRouteDialog', () => {
     expect(markup).toContain('删除路由');
     expect(markup.indexOf('取消')).toBeLessThan(markup.indexOf('删除路由'));
     expect(markup).not.toContain('justify-start gap-2 border-t');
-    expect(markup).not.toContain('/v1/messages');
-    expect(markup).not.toContain('/v1/responses');
+    expect(markup).toContain('/v1/messages');
+    expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('Claude 对话');
+    expect(markup).toContain('Codex / Grok 对话');
+    expect(markup).toContain('GET /models');
   });
 
   it('shows the unavailable copy for an account-sourced route', () => {

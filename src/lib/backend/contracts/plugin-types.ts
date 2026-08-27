@@ -39,4 +39,6 @@ export interface PluginInventory {
 
 export interface PluginPort {
   listInventory(): Promise<PluginInventory>;
+  enable(agent: AgentId, name: string, marketplace?: string | null): Promise<void>;
+  disable(agent: AgentId, name: string, marketplace?: string | null): Promise<void>;
 }

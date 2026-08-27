@@ -21,7 +21,7 @@ const INCOMPLETE_OAUTH_HEALTH = new Set(['needs_login', 'missing']);
 const INCOMPLETE_OAUTH_STATUS = new Set(['expired', 'none']);
 
 /** Canonical in this module. */
-export const OAUTH_INCOMPLETE_MESSAGE = '官方登录未完成，先到连接页授权。';
+export const OAUTH_INCOMPLETE_MESSAGE = '官方登录未完成，先到连接页完成登录。';
 
 export function oauthIncompleteMessage(t?: TranslateFn): string {
   return t ? t('connect.select.oauthIncomplete') : OAUTH_INCOMPLETE_MESSAGE;

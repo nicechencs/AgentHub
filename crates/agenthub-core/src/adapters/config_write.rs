@@ -155,6 +155,10 @@ fn merge_toml_provider_config(expected: AgentId, live: &str, desired: &str) -> R
         live_doc.as_table_mut().insert(key, item.clone());
     }
 
+    if expected == AgentId::Kimi {
+        crate::integrations::agents::kimi::managed::complete_kimi_live_toml(&mut live_doc)?;
+    }
+
     let rendered = live_doc.to_string();
     if leading_trivia.is_empty() || rendered.starts_with(leading_trivia) {
         Ok(rendered)

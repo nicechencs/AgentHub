@@ -19,14 +19,22 @@ import type {
   AgentConfigSchemaDto,
   ConfigValidationIssueDto,
 } from '@/lib/backend/contracts/config-types';
-import { SECRET_REDACTED } from '@/lib/backend/contracts/config-types';
 import { cn } from '@/lib/utils';
 import {
   fieldControlKind,
+  isSecretRedacted,
   issuesByField,
   type FormValues,
 } from './generic-config-form-map';
-import { configFieldHint, configFieldLabel, configFieldOptionLabel } from './config-field-copy';
+import {
+  configFieldHint,
+  configFieldLabel,
+  configFieldOptionLabel,
+  configFieldSecretPlaceholder,
+  configFieldSuggestionCustomLabel,
+  configFieldSuggestionPickLabel,
+  configFieldUnsupported,
+} from './config-field-copy';
 
 export interface GenericConfigFormProps {
   schema: AgentConfigSchemaDto;
@@ -64,6 +72,8 @@ export function SuggestableInput({
   className,
   statusLabel,
   statusRetry,
+  pickLabel,
+  customLabel,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -76,11 +86,15 @@ export function SuggestableInput({
   statusLabel?: string | null;
   /** When set, `statusLabel` is the primary retry action. */
   statusRetry?: () => void;
+  pickLabel?: string;
+  customLabel?: string;
 }) {
   const { t } = useI18n();
   const opts = (suggestions ?? []).map((id) => id.trim()).filter(Boolean);
   const showPicker = opts.length > 0 && !disabled && !readOnly;
   const selected = value && opts.includes(value) ? value : CUSTOM_SUGGESTION;
+  const pick = pickLabel ?? configFieldSuggestionPickLabel(t);
+  const custom = customLabel ?? configFieldSuggestionCustomLabel(t);
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -96,11 +110,11 @@ export function SuggestableInput({
           }}
         >
           <SelectTrigger>
-            <SelectValue placeholder={t('connections.providerDialog.remoteModelsPick')} />
+            <SelectValue placeholder={pick} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={CUSTOM_SUGGESTION}>
-              {t('connections.providerDialog.remoteModelsCustom')}
+              {custom}
             </SelectItem>
             {opts.map((id) => (
               <SelectItem key={id} value={id}>
@@ -181,7 +195,7 @@ export function GenericConfigForm({
               key={field.key}
               className="rounded-card border border-border bg-canvas px-2.5 py-2 text-meta text-muted"
             >
-              {t('connections.providerDialog.unsupportedField', { label: field.label })}
+              {configFieldUnsupported(field.label, t)}
             </div>
           );
         }
@@ -205,11 +219,7 @@ export function GenericConfigForm({
                   onChange={(v) => patch(field.key, v)}
                   disabled={fieldDisabled}
                   readOnly={fieldDisabled}
-                  placeholder={
-                    typeof raw === 'string' && raw === SECRET_REDACTED
-                      ? t('connections.providerDialog.secretConfigured')
-                      : t('connections.apiKeyDialog.key')
-                  }
+                  placeholder={configFieldSecretPlaceholder(isSecretRedacted(raw), t)}
                 />
               ) : null}
               {kind === 'string' ? (

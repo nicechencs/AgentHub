@@ -1,6 +1,7 @@
 use super::*;
 use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::runtime::ResolvedAuth;
+use crate::models::RouteSchedulePolicy;
 
 fn member(id: &str, token: &str, health: MemberHealth) -> PickedMember {
     PickedMember::new(
@@ -142,9 +143,11 @@ fn pick_from_candidates_cannot_select_member_absent_from_resolve() {
         .pick_from_candidates(&candidates(&["acc-a"]), None, &[])
         .expect("A");
     assert_eq!(picked.source_id, "acc-a");
-    assert!(picker
-        .pick_from_candidates(&candidates(&["acc-missing"]), None, &[])
-        .is_none());
+    assert!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-missing"]), None, &[])
+            .is_none()
+    );
 }
 
 #[test]
@@ -202,11 +205,469 @@ fn scheduler_picks_are_always_in_the_resolver_set() {
     }
 }
 
+fn candidate_at(
+    id: &str,
+    provider: &str,
+    dialect: &str,
+    transport_key: &str,
+    generation: u64,
+) -> DispatchCandidate {
+    DispatchCandidate {
+        member_id: id.into(),
+        upstream_provider: provider.into(),
+        upstream_dialect: dialect.into(),
+        transport_key: transport_key.into(),
+        capability_generation: generation,
+        ..candidate()
+    }
+}
+
+fn pf_picker() -> AccountPicker {
+    AccountPicker::with_policy(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable).with_schedule(1, 0),
+            member("acc-b", "token-b", MemberHealth::Renewable).with_schedule(0, 0),
+        ],
+        false,
+        None,
+        RouteSchedulePolicy::PriorityFailover,
+    )
+}
+
+fn rr_picker(priority_a: i64, priority_b: i64) -> AccountPicker {
+    AccountPicker::with_policy(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable).with_schedule(priority_a, 0),
+            member("acc-b", "token-b", MemberHealth::Renewable).with_schedule(priority_b, 1),
+        ],
+        false,
+        None,
+        RouteSchedulePolicy::RoundRobin,
+    )
+}
+
 #[test]
-#[ignore = "route-scoped sticky is deferred; do not ship a global session map"]
 fn affinity_key_is_route_scoped_not_raw_session() {
-    let _key = "(route_id, downstream_dialect, hash(session))";
-    panic!("sticky affinity is not implemented in this slice");
+    let session = "shared-session-id";
+    let key_a = route_scoped_affinity_key("route-a", "codex", session);
+    let key_b = route_scoped_affinity_key("route-b", "codex", session);
+    assert_ne!(key_a, session);
+    assert!(
+        !key_a.contains(session),
+        "raw session must not appear in the sticky map key"
+    );
+    assert_ne!(key_a, key_b, "different route_id must not share a key");
+
+    let picker = pf_picker();
+    let only_a = candidates(&["acc-a"]);
+    let both = candidates(&["acc-a", "acc-b"]);
+
+    assert_eq!(
+        picker
+            .pick_from_candidates(&only_a, Some(&key_a), &[])
+            .expect("bind A")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key_b), &[])
+            .expect("other route")
+            .source_id,
+        "acc-b",
+        "same session string on a different route_id must not reuse sticky"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key_a), &[])
+            .expect("sticky A")
+            .source_id,
+        "acc-a",
+        "same route + hashed session must reuse the bound member"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(session), &[])
+            .expect("raw session is not a key")
+            .source_id,
+        "acc-b",
+        "raw session id must not hit the hashed route-scoped record"
+    );
+
+    let other_bearer = pf_picker();
+    assert_eq!(
+        other_bearer
+            .pick_from_candidates(&both, Some(&key_a), &[])
+            .expect("other pool")
+            .source_id,
+        "acc-b",
+        "same session hash on another Hub bearer / pool must not hit this record"
+    );
+}
+
+#[test]
+fn sticky_reuses_member_until_invalidated() {
+    let picker = pf_picker();
+    let key = route_scoped_affinity_key("route-a", "codex", "conv-1");
+    let only_a = candidates(&["acc-a"]);
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&only_a, Some(&key), &[])
+            .expect("bind")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &[])
+            .expect("reuse")
+            .source_id,
+        "acc-a"
+    );
+
+    assert_eq!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-b"]), Some(&key), &[])
+            .expect("member left resolver set")
+            .source_id,
+        "acc-b"
+    );
+}
+
+#[test]
+fn sticky_invalidates_on_disable_and_falls_back_to_policy() {
+    let picker = pf_picker();
+    let key = route_scoped_affinity_key("route-a", "codex", "conv-disable");
+    assert_eq!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-a"]), Some(&key), &[])
+            .expect("bind")
+            .source_id,
+        "acc-a"
+    );
+    picker.isolate("acc-a");
+    assert_eq!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-a", "acc-b"]), Some(&key), &[])
+            .expect("policy after disable")
+            .source_id,
+        "acc-b"
+    );
+}
+
+#[test]
+fn sticky_invalidates_on_fingerprint_change() {
+    let picker = pf_picker();
+    let key = route_scoped_affinity_key("route-a", "codex", "conv-fp");
+    assert_eq!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-a"]), Some(&key), &[])
+            .expect("bind")
+            .source_id,
+        "acc-a"
+    );
+    picker.rewrite_sticky_fingerprint(&key, "stale-fingerprint");
+    assert_eq!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-a", "acc-b"]), Some(&key), &[])
+            .expect("policy after fingerprint change")
+            .source_id,
+        "acc-b"
+    );
+}
+
+#[test]
+fn sticky_invalidates_on_dialect_change_keeps_generation_if_still_valid() {
+    let picker = pf_picker();
+    let key = route_scoped_affinity_key("route-a", "codex", "conv-dialect");
+    let gen1_a = vec![candidate_at(
+        "acc-a",
+        "openai",
+        "generic",
+        "openai:generic",
+        1,
+    )];
+    assert_eq!(
+        picker
+            .pick_from_candidates(&gen1_a, Some(&key), &[])
+            .expect("bind")
+            .source_id,
+        "acc-a"
+    );
+
+    let gen2_same_lane = vec![
+        candidate_at("acc-a", "openai", "generic", "openai:generic", 2),
+        candidate_at("acc-b", "openai", "generic", "openai:generic", 2),
+    ];
+    assert_eq!(
+        picker
+            .pick_from_candidates(&gen2_same_lane, Some(&key), &[])
+            .expect("still valid for current generation")
+            .source_id,
+        "acc-a"
+    );
+
+    let dialect_changed = vec![
+        candidate_at("acc-a", "openai", "codex", "openai:codex", 3),
+        candidate_at("acc-b", "openai", "generic", "openai:generic", 3),
+    ];
+    assert_eq!(
+        picker
+            .pick_from_candidates(&dialect_changed, Some(&key), &[])
+            .expect("dialect change drops sticky")
+            .source_id,
+        "acc-b"
+    );
+}
+
+#[test]
+fn unbound_sticky_falls_back_to_policy_pick() {
+    let picker = pf_picker();
+    let key = route_scoped_affinity_key("route-a", "codex", "fresh-header");
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &[])
+            .expect("no binding yet")
+            .source_id,
+        "acc-b",
+        "a session header without a recorded binding must not freeze failover"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &["acc-b".to_owned()])
+            .expect("first-turn failover")
+            .source_id,
+        "acc-a"
+    );
+}
+
+#[test]
+fn sticky_exclusion_does_not_steal_binding() {
+    let picker = pf_picker();
+    let key = route_scoped_affinity_key("route-a", "codex", "conv-exclude");
+    let only_a = candidates(&["acc-a"]);
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&only_a, Some(&key), &[])
+            .expect("bind A")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &["acc-a".to_owned()])
+            .expect("this request skips A")
+            .source_id,
+        "acc-b"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &[])
+            .expect("sticky A still held")
+            .source_id,
+        "acc-a",
+        "cooldown / this-request exclusion must not rebind sticky to the failover member"
+    );
+}
+
+#[test]
+fn sticky_cooldown_skips_member_but_keeps_binding() {
+    let picker = pf_picker();
+    let key = route_scoped_affinity_key("route-a", "codex", "conv-cool");
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&candidates(&["acc-a"]), Some(&key), &[])
+            .expect("bind A")
+            .source_id,
+        "acc-a"
+    );
+    picker.set_cooldown("acc-a", Some("m1"), std::time::Duration::from_secs(60));
+    let excluded = picker.cooldown_exclusions("m1");
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &excluded)
+            .expect("skip cooling A")
+            .source_id,
+        "acc-b"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &[])
+            .expect("sticky kept after skip")
+            .source_id,
+        "acc-a"
+    );
+}
+
+#[test]
+fn priority_failover_keeps_stable_order() {
+    let picker = AccountPicker::with_sink(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable).with_schedule(0, 1),
+            member("acc-b", "token-b", MemberHealth::Renewable).with_schedule(0, 0),
+        ],
+        false,
+        None,
+    );
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, None, &[])
+            .expect("b by position")
+            .source_id,
+        "acc-b"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, None, &[])
+            .expect("still b")
+            .source_id,
+        "acc-b",
+        "default priority_failover must not rotate"
+    );
+}
+
+#[test]
+fn round_robin_alternates_isomorphic_members() {
+    let picker = rr_picker(0, 0);
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, None, &[])
+            .expect("first")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, None, &[])
+            .expect("second")
+            .source_id,
+        "acc-b"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, None, &[])
+            .expect("third")
+            .source_id,
+        "acc-a"
+    );
+}
+
+#[test]
+fn round_robin_does_not_advance_v1_pick_new_cursor() {
+    let picker = rr_picker(0, 0);
+    let both = candidates(&["acc-a", "acc-b"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, None, &[])
+            .expect("rr a")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker.pick_new().expect("v1 cursor untouched").source_id,
+        "acc-a",
+        "v2 round-robin must not reuse the v1 pick_new cursor"
+    );
+}
+
+#[test]
+fn round_robin_sticky_beats_rotation() {
+    let picker = rr_picker(0, 0);
+    let both = candidates(&["acc-a", "acc-b"]);
+    let key = route_scoped_affinity_key("route-a", "codex", "sticky-rr");
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &[])
+            .expect("first")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&both, Some(&key), &[])
+            .expect("sticky")
+            .source_id,
+        "acc-a"
+    );
+}
+
+#[test]
+fn round_robin_prefers_higher_priority_over_worse_rotation() {
+    let picker = AccountPicker::with_policy(
+        vec![
+            member("acc-a", "token-a", MemberHealth::Renewable).with_schedule(0, 0),
+            member("acc-b", "token-b", MemberHealth::Renewable).with_schedule(1, 0),
+            member("acc-c", "token-c", MemberHealth::Renewable).with_schedule(1, 1),
+        ],
+        false,
+        None,
+        RouteSchedulePolicy::RoundRobin,
+    );
+    let all = candidates(&["acc-a", "acc-b", "acc-c"]);
+    assert_eq!(
+        picker
+            .pick_from_candidates(&all, None, &[])
+            .expect("lead")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&all, None, &[])
+            .expect("still lead")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&all, None, &["acc-a".to_owned()])
+            .expect("b")
+            .source_id,
+        "acc-b"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&all, None, &["acc-a".to_owned()])
+            .expect("c")
+            .source_id,
+        "acc-c"
+    );
+}
+
+#[test]
+fn round_robin_does_not_cross_transport_dialect() {
+    let picker = rr_picker(0, 0);
+    let mixed = vec![
+        candidate_at("acc-a", "openai", "generic", "openai:generic", 1),
+        candidate_at("acc-b", "anthropic", "claude", "anthropic:claude", 1),
+    ];
+    assert_eq!(
+        picker
+            .pick_from_candidates(&mixed, None, &[])
+            .expect("lead dialect")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&mixed, None, &[])
+            .expect("must not rotate into the other dialect")
+            .source_id,
+        "acc-a"
+    );
+    assert_eq!(
+        picker
+            .pick_from_candidates(&mixed, None, &["acc-a".to_owned()])
+            .expect("other dialect only after lead excluded")
+            .source_id,
+        "acc-b"
+    );
 }
 
 #[test]

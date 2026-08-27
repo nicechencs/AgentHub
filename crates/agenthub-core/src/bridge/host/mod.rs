@@ -4,10 +4,13 @@
 //! [`crate::bridge::host::{BridgeRuntimeHost, BridgeHostError}`].
 
 mod admission;
+mod continuation;
 mod dispatch;
 mod gateway;
 mod http;
+pub(crate) mod inbound;
 mod lifecycle;
+mod pair_policy;
 mod stream;
 mod surface;
 mod transport;
@@ -17,6 +20,7 @@ pub use gateway::BridgeHostError;
 // Re-exported for bridge tests.
 #[allow(unused_imports)]
 pub(super) use gateway::CleanupCompletion;
+pub use inbound::InboundRequestRecord;
 pub use lifecycle::BridgeRuntimeHost;
 
 #[cfg(test)]

@@ -1,9 +1,14 @@
 use crate::models::{
-    AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterSourceKind,
-    AgentId, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    AdapterApplyPlan, AdapterGateKind, AdapterMaturity, AdapterProfile, AdapterProfileMode,
+    AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
+    AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId,
+    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, Provider,
+    enroll_native_plan_is_open,
 };
 use crate::services::RoutePoolService;
-use crate::storage::{AdapterProfileRepo, Database};
+use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
+use serde_json::json;
 
 fn tmp() -> (
     tempfile::TempDir,
@@ -44,9 +49,28 @@ fn bridge_profile(id: &str, source_id: &str, agent: AgentId, auto_start: bool) -
 fn flag_off_is_fail_closed() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("flag-off.db")).unwrap();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "off").unwrap();
     let service = RoutePoolService::new(db);
     let error = service.list(None, None).unwrap_err();
     assert_eq!(error.code(), "unsupported");
+    assert_eq!(
+        service
+            .add_rule("pool", "m1", "responses", "grok", "grok", "grok-4", 0, None)
+            .unwrap_err()
+            .code(),
+        "unsupported"
+    );
+}
+
+#[test]
+fn product_flags_default_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("flag-default-on.db")).unwrap();
+    let service = RoutePoolService::new(db);
+    assert!(service.enabled().unwrap());
+    assert!(service.index_enabled());
+    assert_eq!(service.pair_adapter_flags(), (false, false));
+    assert!(!service.mixed_provider_enabled());
 }
 
 #[test]
@@ -215,11 +239,85 @@ fn enroll_v2_rejects_native_endpoint_and_config_sync() {
 #[test]
 fn index_enabled_requires_both_flags() {
     let (_dir, db, service, _profiles) = tmp();
-    assert!(!service.index_enabled());
-    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
     assert!(service.index_enabled());
     db.set_setting(FEATURE_ROUTE_INDEX_V2, "off").unwrap();
     assert!(!service.index_enabled());
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    assert!(service.index_enabled());
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "off").unwrap();
+    assert!(!service.index_enabled());
+}
+
+#[test]
+fn pair_adapter_flags_are_independent_and_fail_closed() {
+    let (_dir, db, service, _profiles) = tmp();
+    assert_eq!(service.pair_adapter_flags(), (false, false));
+    db.set_setting(FEATURE_CODEX_INGRESS_GROK_UPSTREAM, "on")
+        .unwrap();
+    assert_eq!(service.pair_adapter_flags(), (true, false));
+    db.set_setting(FEATURE_GROK_INGRESS_CODEX_UPSTREAM, "yes")
+        .unwrap();
+    assert_eq!(service.pair_adapter_flags(), (true, true));
+    db.set_setting(FEATURE_CODEX_INGRESS_GROK_UPSTREAM, "off")
+        .unwrap();
+    assert_eq!(service.pair_adapter_flags(), (false, true));
+}
+
+#[test]
+fn mixed_provider_requires_index_and_mixed_flags() {
+    let (_dir, db, service, _profiles) = tmp();
+    assert!(!service.mixed_provider_enabled());
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    assert!(!service.mixed_provider_enabled());
+    db.set_setting(FEATURE_MIXED_PROVIDER_POOL, "true").unwrap();
+    assert!(service.mixed_provider_enabled());
+    db.set_setting(FEATURE_MIXED_PROVIDER_POOL, "off").unwrap();
+    assert!(!service.mixed_provider_enabled());
+}
+
+#[test]
+fn rule_crud_is_gated_by_pool_flag_and_does_not_copy_member_models() {
+    let (_dir, _db, service, profiles) = tmp();
+    let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
+    profiles.create(&profile).unwrap();
+    service
+        .create_legacy_pool(&profile, "ahb_stable-token", true)
+        .unwrap();
+    assert!(service.list_rules("profile-a").unwrap().is_empty());
+    let grok = service
+        .add_rule(
+            "profile-a",
+            "m1",
+            "responses",
+            "grok",
+            "grok",
+            "grok-4",
+            0,
+            None,
+        )
+        .unwrap();
+    let _codex = service
+        .add_rule(
+            "profile-a",
+            "m1",
+            "responses",
+            "codex",
+            "codex",
+            "gpt-5",
+            1,
+            Some("shared"),
+        )
+        .unwrap();
+    service.set_rule_enabled(&grok.id, false).unwrap();
+    let listed = service.list_rules("profile-a").unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(!listed.iter().any(|rule| rule.public_model == "acc-a"));
+    assert!(!listed[0].enabled);
+    assert_eq!(listed[1].equivalent_group.as_deref(), Some("shared"));
+    service.remove_rule(&listed[0].id).unwrap();
+    assert_eq!(service.list_rules("profile-a").unwrap().len(), 1);
+    let revision = service.get("profile-a").unwrap().unwrap().policy_revision;
+    assert!(revision > 1);
 }
 
 #[tokio::test]
@@ -233,10 +331,12 @@ async fn occupancy_failure_does_not_enroll_or_rewrite_client() {
     let blocker = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let busy = blocker.local_addr().unwrap().port();
     let host = crate::bridge::BridgeRuntimeHost::new();
-    assert!(service
-        .bind_then_enroll(&host, "profile-a", busy)
-        .await
-        .is_err());
+    assert!(
+        service
+            .bind_then_enroll(&host, "profile-a", busy)
+            .await
+            .is_err()
+    );
     let pool = service.get("profile-a").unwrap().unwrap();
     assert!(!pool.v2_enrolled);
     assert_eq!(pool.gateway_port, None);
@@ -275,4 +375,195 @@ async fn bind_then_enroll_writes_port_only_after_bind() {
         "enroll must not rewrite the historical client port"
     );
     host.shutdown().await.unwrap();
+}
+
+fn native_profile(id: &str, source_id: &str, agent: AgentId) -> AdapterProfile {
+    let mut profile = bridge_profile(id, source_id, agent, false);
+    profile.source_kind = AdapterSourceKind::Provider;
+    profile.route = AdapterRoute::NativeEndpoint;
+    profile.local_port = None;
+    profile.auto_start = false;
+    profile
+}
+
+fn sample_plan(route: AdapterRoute, can_apply: bool, reason: &str) -> AdapterApplyPlan {
+    AdapterApplyPlan {
+        analysis: AdapterRouteAnalysis {
+            route,
+            support: AdapterSupport::Stable,
+            reason: reason.into(),
+            actions: Vec::new(),
+            limitations: Vec::new(),
+            evidence: Vec::new(),
+            rule_id: None,
+            gate_kind: AdapterGateKind::None,
+        },
+        target_agent_id: AgentId::Codex,
+        can_apply,
+        maturity: AdapterMaturity::Stable,
+        reuse_path: AdapterReusePath::LocalBridge,
+        reason: reason.into(),
+        service_impact: AdapterServiceImpact::RequiresLocalBridge,
+        changes: Vec::new(),
+    }
+}
+
+fn kimi_provider(id: &str) -> Provider {
+    Provider {
+        id: id.into(),
+        agent_id: AgentId::Kimi,
+        name: "Kimi membership".into(),
+        settings_config: json!({"apiKey": "kimi-secret"}),
+        meta: json!({"preset": "kimi-code-membership"}),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+#[test]
+fn list_default_overviews_is_empty_when_flag_off() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("flag-off-overview.db")).unwrap();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "false").unwrap();
+    let service = RoutePoolService::new(db);
+    let listed = service.list_default_overviews().unwrap();
+    assert!(!listed.enabled);
+    assert!(listed.pools.is_empty());
+}
+
+#[test]
+fn list_default_overviews_omits_non_default_and_hub_token() {
+    let (_dir, _db, service, profiles) = tmp();
+    let default_profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
+    let extra = bridge_profile("profile-b", "acc-b", AgentId::Codex, false);
+    profiles.create(&default_profile).unwrap();
+    profiles.create(&extra).unwrap();
+    service
+        .create_legacy_pool(&default_profile, "ahb_secret-must-not-leak", true)
+        .unwrap();
+    service
+        .create_legacy_pool(&extra, "ahb_other-secret", false)
+        .unwrap();
+    let listed = service.list_default_overviews().unwrap();
+    assert!(listed.enabled);
+    assert_eq!(listed.pools.len(), 1);
+    assert_eq!(listed.pools[0].id, "profile-a");
+    assert_eq!(listed.pools[0].members.len(), 1);
+    assert_eq!(listed.pools[0].members[0].source_id, "acc-a");
+    assert!(listed.pools[0].members[0].enabled);
+    let json = serde_json::to_string(&listed).unwrap();
+    assert!(!json.contains("hubToken"));
+    assert!(!json.contains("ahb_secret-must-not-leak"));
+    assert!(!json.contains("ahb_other-secret"));
+}
+
+#[test]
+fn enroll_native_plan_rejects_closed_matrix_and_non_native_routes() {
+    let native = native_profile("native-1", "acc-1", AgentId::Codex);
+    let closed = sample_plan(AdapterRoute::LocalBridge, false, "matrix closed");
+    let error = enroll_native_plan_is_open(&native, &closed).unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+    assert!(error.to_string().contains("matrix closed"));
+
+    let official = sample_plan(AdapterRoute::NativeEndpoint, true, "official login");
+    let error = enroll_native_plan_is_open(&native, &official).unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+
+    let bridge = bridge_profile("bridge-1", "acc-1", AgentId::Codex, true);
+    let open = sample_plan(AdapterRoute::LocalBridge, true, "ok");
+    let error = enroll_native_plan_is_open(&bridge, &open).unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+
+    enroll_native_plan_is_open(&native, &open).unwrap();
+}
+
+#[test]
+fn evaluate_enroll_native_rejects_when_plan_is_not_local_bridge() {
+    let (_dir, db, service, profiles) = tmp();
+    ProviderRepo::new(db)
+        .create(&kimi_provider("kimi-native"))
+        .unwrap();
+    let profile = native_profile("native-claude", "kimi-native", AgentId::Claude);
+    profiles.create(&profile).unwrap();
+    let error = service.evaluate_enroll_native(&profile).unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+}
+
+#[test]
+fn evaluate_enroll_native_allows_kimi_to_codex_local_bridge() {
+    let (_dir, db, service, profiles) = tmp();
+    ProviderRepo::new(db)
+        .create(&kimi_provider("kimi-gateway"))
+        .unwrap();
+    let profile = native_profile("native-codex", "kimi-gateway", AgentId::Codex);
+    profiles.create(&profile).unwrap();
+    let plan = service.evaluate_enroll_native(&profile).unwrap();
+    assert!(plan.can_apply);
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+}
+
+#[test]
+fn persist_enroll_after_native_bind_sets_v2_without_hub_token() {
+    let (_dir, _db, service, profiles) = tmp();
+    let bound = bridge_profile("bound-1", "acc-a", AgentId::Codex, true);
+    profiles.create(&bound).unwrap();
+    let overview = service
+        .persist_enroll_after_native_bind(&bound, 43155)
+        .unwrap();
+    assert!(overview.v2_enrolled);
+    assert_eq!(overview.gateway_port, Some(43155));
+    assert_eq!(overview.id, "bound-1");
+    assert!(service.get("bound-1").unwrap().unwrap().is_default);
+    let json = serde_json::to_string(&overview).unwrap();
+    assert!(!json.contains("hubToken"));
+    assert!(!json.contains("ahb_"));
+}
+
+#[test]
+fn persist_enroll_after_native_bind_promotes_over_sibling_default() {
+    let (_dir, _db, service, profiles) = tmp();
+    let previous = bridge_profile("old-default", "acc-old", AgentId::Codex, true);
+    let bound = bridge_profile("bound-new", "acc-a", AgentId::Codex, true);
+    profiles.create(&previous).unwrap();
+    profiles.create(&bound).unwrap();
+    service
+        .create_legacy_pool(&previous, "ahb_old-token", true)
+        .unwrap();
+    let overview = service
+        .persist_enroll_after_native_bind(&bound, 43155)
+        .unwrap();
+    assert_eq!(overview.id, "bound-new");
+    assert!(service.get("bound-new").unwrap().unwrap().is_default);
+    assert!(!service.get("old-default").unwrap().unwrap().is_default);
+    let listed = service.list_default_overviews().unwrap();
+    assert_eq!(listed.pools.len(), 1);
+    assert_eq!(listed.pools[0].id, "bound-new");
+}
+
+#[test]
+fn persist_enroll_after_native_bind_rejects_native_profile() {
+    let (_dir, _db, service, profiles) = tmp();
+    let native = native_profile("native-1", "acc-a", AgentId::Codex);
+    profiles.create(&native).unwrap();
+    let error = service
+        .persist_enroll_after_native_bind(&native, 43155)
+        .unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+    assert!(service.get("native-1").unwrap().is_none());
+}
+
+#[test]
+fn occupancy_fail_skips_persist_and_leaves_unenrolled() {
+    let (_dir, _db, service, profiles) = tmp();
+    let bound = bridge_profile("bound-occ", "acc-a", AgentId::Codex, true);
+    profiles.create(&bound).unwrap();
+    service
+        .create_legacy_pool(&bound, "ahb_stable-token", true)
+        .unwrap();
+    let bind_failed: Result<(AdapterProfile, u16), String> = Err("adapter.port_in_use".into());
+    assert!(bind_failed.is_err());
+    let stored = service.get("bound-occ").unwrap().unwrap();
+    assert!(!stored.v2_enrolled);
+    assert_eq!(stored.gateway_port, None);
 }

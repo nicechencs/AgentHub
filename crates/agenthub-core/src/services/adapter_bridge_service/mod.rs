@@ -7,9 +7,9 @@
 //!    and returns non-serializable runtime material.
 //! 2. The host starts and probes a [`crate::bridge::BridgeRuntimeHost`] using
 //!    [`AdapterBridgePrepared::start_spec`].
-//! 3. The host persists the returned [`AdapterBridgeProviderProjection`] via
-//!    `ProviderService`, switches it through the normal live-config owner,
-//!    then calls [`AdapterBridgeService::finalize`].
+//! 3. The host calls [`AdapterBridgeService::persist_bridge_projection_inner`]
+//!    (or restore-port realign) with the same [`crate::services::ProviderService`]
+//!    that issued the live saga guard, then [`AdapterBridgeService::finalize`].
 //! 4. Any failure is recorded through
 //!    [`AdapterBridgeService::mark_needs_attention`].
 //!
@@ -19,28 +19,28 @@
 
 use std::time::Duration;
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use toml_edit::DocumentMut;
 
 use crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL;
 use crate::bridge::{
-    index_from_member_listings, BridgeLocalSurface, BridgeStartSpec, BridgeUpstreamConfig,
-    BridgeUpstreamProtocol, EffectiveRouteIndex, MemberListing, ResolvedAuth,
+    BridgeLocalSurface, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol,
+    EffectiveRouteIndex, MemberListing, ResolvedAuth, index_from_member_listings,
 };
 use crate::error::{AppError, Result};
 use crate::models::{
-    list_local_bridge_models, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
+    ANTHROPIC_CODEX_EDGE, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
-    LocalBridgeEdge, Provider, ProviderInput, RouteMember, ANTHROPIC_CODEX_EDGE,
     CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE,
-    GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE,
-    OPENAI_GROK_BRIDGE_EDGE,
+    GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE, LocalBridgeEdge, OPENAI_CLAUDE_EDGE,
+    OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE, Provider, ProviderInput, RouteMember,
+    RouteSchedulePolicy, list_local_bridge_models,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver, RoutePoolService};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -364,9 +364,12 @@ const LIVE_BRIDGE_RULES: &[CodexBridgeRule] = &[
 ];
 
 mod finalize;
+mod persist_saga;
 pub(super) mod prepare;
 mod removal;
 mod rules;
+
+pub use persist_saga::{BridgeProviderSnapshot, should_make_bridge_current};
 
 use rules::*;
 
@@ -502,6 +505,9 @@ pub struct AdapterBridgeRuntimeMaterial {
     /// When the v2 index flag is on, a non-zero preferred port is occupancy-failed
     /// instead of rebound, even before the pool is enrolled.
     index_enabled: bool,
+    codex_ingress_grok_upstream: bool,
+    grok_ingress_codex_upstream: bool,
+    schedule_policy: RouteSchedulePolicy,
 }
 
 impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
@@ -526,6 +532,15 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
                 &self.route_index.as_ref().map(|index| index.generation),
             )
             .field("index_enabled", &self.index_enabled)
+            .field(
+                "codex_ingress_grok_upstream",
+                &self.codex_ingress_grok_upstream,
+            )
+            .field(
+                "grok_ingress_codex_upstream",
+                &self.grok_ingress_codex_upstream,
+            )
+            .field("schedule_policy", &self.schedule_policy)
             .finish()
     }
 }
@@ -571,6 +586,9 @@ impl AdapterBridgeRuntimeMaterial {
             local_bearer: local_bearer.into(),
             route_index: None,
             index_enabled: false,
+            codex_ingress_grok_upstream: false,
+            grok_ingress_codex_upstream: false,
+            schedule_policy: RouteSchedulePolicy::PriorityFailover,
         }
     }
 
@@ -602,7 +620,12 @@ impl AdapterBridgeRuntimeMaterial {
             },
         )
         .with_listed_models(lead_listed)
-        .with_mapping(self.source, self.target_agent, custom);
+        .with_mapping(self.source, self.target_agent, custom)
+        .with_pair_adapter_flags(
+            self.codex_ingress_grok_upstream,
+            self.grok_ingress_codex_upstream,
+        )
+        .with_schedule_policy(self.schedule_policy);
         if let Some(index) = &self.route_index {
             spec = spec
                 .with_listed_models(index.list_models(index_endpoint_key(self.local_surface)))
@@ -644,7 +667,7 @@ impl AdapterBridgeRuntimeMaterial {
     ///
     /// The method deliberately exposes only stable error codes. Runtime
     /// bearers and endpoint details remain in this in-process object.
-    pub async fn verify_bound_health(&self, port: u16) -> Result<()> {
+    pub async fn verify_bound_health(&mut self, port: u16) -> Result<()> {
         validate_bound_port(port)?;
         let client = reqwest::Client::builder()
             .connect_timeout(BRIDGE_HEALTH_TIMEOUT)
@@ -706,6 +729,11 @@ impl AdapterBridgeRuntimeMaterial {
             )
         })?;
         if upstream.status().is_success() {
+            if let Ok(bytes) = upstream.bytes().await {
+                if let Some(ids) = parse_openai_models_json(&bytes) {
+                    self.configured_listed_models = ids;
+                }
+            }
             return Ok(());
         }
 
@@ -720,6 +748,22 @@ impl AdapterBridgeRuntimeMaterial {
             "upstream health probe was not successful",
         ))
     }
+}
+
+pub(crate) fn parse_openai_models_json(bytes: &[u8]) -> Option<Vec<String>> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let data = value.get("data")?.as_array()?;
+    let ids: Vec<String> = data
+        .iter()
+        .filter_map(|row| {
+            row.get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned)
+        })
+        .collect();
+    if ids.is_empty() { None } else { Some(ids) }
 }
 
 /// A prepared bridge saga. This is an in-process only object: it carries
@@ -926,7 +970,13 @@ impl AdapterBridgeService {
         profile: &AdapterProfile,
     ) -> AdapterBridgeRuntimeMaterial {
         material.index_enabled = self.route_pools.index_enabled();
+        let (codex_to_grok, grok_to_codex) = self.route_pools.pair_adapter_flags();
+        material.codex_ingress_grok_upstream = codex_to_grok;
+        material.grok_ingress_codex_upstream = grok_to_codex;
         let _ = self.route_pools.ensure_legacy_pool(profile);
+        if let Ok(Some(pool)) = self.route_pools.get(&material.profile_id) {
+            material.schedule_policy = pool.schedule_policy;
+        }
         if let Some(index) = self.route_index_for_material(&material, profile) {
             if let Ok(Some(pool)) = self.route_pools.get(&material.profile_id) {
                 if let Some(port) = pool.gateway_port {
@@ -977,13 +1027,23 @@ impl AdapterBridgeService {
         for member in members.into_iter().filter(|member| member.enabled) {
             listings.push(self.listing_for_member(material, &rule, profile, &member));
         }
-        Some(index_from_member_listings(
-            pool.id,
+        let index = index_from_member_listings(
+            pool.id.clone(),
             pool.policy_revision.max(0) as u64,
             endpoint,
             &listings,
             prior.as_deref(),
-        ))
+        );
+        if self.route_pools.mixed_provider_enabled() {
+            let rules = self
+                .route_pools
+                .list_rules(&pool.id)
+                .ok()
+                .unwrap_or_default();
+            Some(index.with_mixed_provider_rules(true, rules))
+        } else {
+            Some(index)
+        }
     }
 
     fn listing_for_member(
@@ -993,8 +1053,13 @@ impl AdapterBridgeService {
         profile: &AdapterProfile,
         member: &RouteMember,
     ) -> MemberListing {
-        let provider = index_provider_key(material.source);
-        let transport = index_transport_key(material.protocol);
+        let product = self
+            .routes
+            .classify_source_product(member.source_kind, &member.source_id)
+            .unwrap_or(material.source);
+        let member_rule =
+            rule_for_member_product(product, profile.target_agent_id).unwrap_or(*rule);
+        let provider = index_provider_key(product);
         let is_lead = member.source_kind == profile.source_kind
             && member.source_id == material.source_connection_id;
         if is_lead {
@@ -1004,7 +1069,7 @@ impl AdapterBridgeService {
             return MemberListing {
                 member_id: member.source_id.clone(),
                 listed_models: listed_models_for_bridge(
-                    material.source,
+                    product,
                     material.target_agent,
                     &material.upstream_model,
                     custom,
@@ -1013,12 +1078,12 @@ impl AdapterBridgeService {
                 upstream_provider: provider.to_owned(),
                 upstream_dialect: provider.to_owned(),
                 upstream_endpoint: material.upstream_base_url.clone(),
-                transport_key: transport.to_owned(),
+                transport_key: index_transport_key(material.protocol).to_owned(),
                 snapshot_ok: true,
             };
         }
         let snapshot_ok = self
-            .resolve_member_auth(rule.rule_id, member.source_kind, &member.source_id)
+            .resolve_member_auth(member_rule.rule_id, member.source_kind, &member.source_id)
             .map(|auth| auth.has_token())
             .unwrap_or(false);
         if !snapshot_ok {
@@ -1027,19 +1092,23 @@ impl AdapterBridgeService {
                 listed_models: Vec::new(),
                 upstream_provider: provider.to_owned(),
                 upstream_dialect: provider.to_owned(),
-                upstream_endpoint: material.upstream_base_url.clone(),
-                transport_key: transport.to_owned(),
+                upstream_endpoint: member_rule.upstream_base_url.to_owned(),
+                transport_key: index_transport_key(member_rule.protocol).to_owned(),
                 snapshot_ok: false,
             };
         }
-        let (url, model, configured, _protocol, _) =
-            prepare::openai_source_upstream(self, rule, member.source_kind, &member.source_id);
+        let (url, model, configured, protocol, _) = prepare::openai_source_upstream(
+            self,
+            &member_rule,
+            member.source_kind,
+            &member.source_id,
+        );
         let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(&url);
         MemberListing {
             member_id: member.source_id.clone(),
             listed_models: listed_models_for_bridge(
-                rule.source,
-                rule.target_agent,
+                product,
+                member_rule.target_agent,
                 &model,
                 custom,
                 &configured,
@@ -1047,8 +1116,24 @@ impl AdapterBridgeService {
             upstream_provider: provider.to_owned(),
             upstream_dialect: provider.to_owned(),
             upstream_endpoint: url,
-            transport_key: transport.to_owned(),
+            transport_key: index_transport_key(protocol).to_owned(),
             snapshot_ok: true,
         }
     }
+}
+
+fn rule_for_member_product(
+    product: AdapterSourceProduct,
+    target_agent: AgentId,
+) -> Option<CodexBridgeRule> {
+    LIVE_BRIDGE_RULES
+        .iter()
+        .copied()
+        .find(|rule| rule.source == product && rule.target_agent == target_agent)
+        .or_else(|| {
+            LIVE_BRIDGE_RULES
+                .iter()
+                .copied()
+                .find(|rule| rule.source == product)
+        })
 }

@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { applyPort, removePort, notifyConnectionPoolChanged } = vi.hoisted(() => ({
+const { applyPort, removePort, enrollPort, refreshRuntimeReadModels } = vi.hoisted(() => ({
   applyPort: vi.fn(),
   removePort: vi.fn(),
-  notifyConnectionPoolChanged: vi.fn(),
+  enrollPort: vi.fn(),
+  refreshRuntimeReadModels: vi.fn(),
 }));
 
 vi.mock('@/app/runtime', () => ({
@@ -11,12 +12,13 @@ vi.mock('@/app/runtime', () => ({
     adapter: {
       apply: applyPort,
       remove: removePort,
+      enrollNativeToGateway: enrollPort,
     },
   }),
-  notifyConnectionPoolChanged,
+  refreshRuntimeReadModels,
 }));
 
-import { applyAdapter, removeAdapter } from './adapter';
+import { applyAdapter, enrollNativeToGateway, removeAdapter } from './adapter';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -26,17 +28,25 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function expectPoolRefreshOnly(): void {
+  expect(refreshRuntimeReadModels).toHaveBeenCalledOnce();
+  expect(refreshRuntimeReadModels).toHaveBeenCalledWith(expect.anything(), {
+    models: ['connectionPool'],
+  });
+}
+
 describe('adapter façade pool refresh', () => {
   beforeEach(() => {
     applyPort.mockReset();
     removePort.mockReset();
-    notifyConnectionPoolChanged.mockReset();
+    enrollPort.mockReset();
+    refreshRuntimeReadModels.mockReset();
   });
 
   it('does not resolve apply until the shared pool refresh finishes', async () => {
     const pool = deferred<void>();
     applyPort.mockResolvedValue({ profile: { id: 'profile-1' } });
-    notifyConnectionPoolChanged.mockReturnValue(pool.promise);
+    refreshRuntimeReadModels.mockReturnValue(pool.promise);
 
     let settled = false;
     const apply = applyAdapter({
@@ -50,7 +60,7 @@ describe('adapter façade pool refresh', () => {
 
     await Promise.resolve();
     expect(settled).toBe(false);
-    expect(notifyConnectionPoolChanged).toHaveBeenCalledOnce();
+    expectPoolRefreshOnly();
 
     pool.resolve();
     await expect(apply).resolves.toEqual({ profile: { id: 'profile-1' } });
@@ -60,7 +70,7 @@ describe('adapter façade pool refresh', () => {
   it('does not resolve remove until the shared pool refresh finishes', async () => {
     const pool = deferred<void>();
     removePort.mockResolvedValue(undefined);
-    notifyConnectionPoolChanged.mockReturnValue(pool.promise);
+    refreshRuntimeReadModels.mockReturnValue(pool.promise);
 
     let settled = false;
     const remove = removeAdapter('profile-1').then(() => {
@@ -73,11 +83,32 @@ describe('adapter façade pool refresh', () => {
     pool.resolve();
     await remove;
     expect(settled).toBe(true);
+    expectPoolRefreshOnly();
+  });
+
+  it('does not resolve enroll until the shared pool refresh finishes', async () => {
+    const pool = deferred<void>();
+    enrollPort.mockResolvedValue({ enabled: true, pools: [] });
+    refreshRuntimeReadModels.mockReturnValue(pool.promise);
+
+    let settled = false;
+    const enroll = enrollNativeToGateway('profile-1').then((result) => {
+      settled = true;
+      return result;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    pool.resolve();
+    await expect(enroll).resolves.toEqual({ enabled: true, pools: [] });
+    expect(settled).toBe(true);
+    expectPoolRefreshOnly();
   });
 
   it('still returns the mutation result when the follow-up pool refresh fails', async () => {
     applyPort.mockResolvedValue({ profile: { id: 'profile-1' } });
-    notifyConnectionPoolChanged.mockRejectedValue(new Error('pool refresh failed'));
+    refreshRuntimeReadModels.mockRejectedValue(new Error('pool refresh failed'));
 
     await expect(applyAdapter({
       sourceKind: 'provider',

@@ -38,4 +38,18 @@ describe('plugins layout wiring', () => {
     expect(detail).not.toContain('onInstall');
     expect(detail).not.toContain('installPlugin');
   });
+
+  it('shows enable/disable for listed Claude and Grok packs only', () => {
+    const page = source('index.tsx');
+    const detail = source('PluginDetailPanel.tsx');
+    expect(page).toContain('enablePlugin');
+    expect(page).toContain('disablePlugin');
+    expect(page).not.toContain('installPlugin');
+    expect(page).not.toContain('uninstallPlugin');
+    expect(detail).toContain("t('plugins.actions.enable')");
+    expect(detail).toContain("t('plugins.actions.disable')");
+    expect(detail).toContain('canToggleListedPlugin');
+    expect(detail).not.toContain('installPlugin');
+    expect(detail).not.toContain('marketplaceInstall');
+  });
 });

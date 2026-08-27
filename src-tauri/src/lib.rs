@@ -102,6 +102,8 @@ pub fn run() {
             commands::adapter::bind_ticket,
             commands::adapter::unbind_ticket,
             commands::adapter::list_adapter_profiles,
+            commands::adapter::list_default_route_pools,
+            commands::adapter::enroll_native_to_gateway,
             commands::adapter::apply_adapter,
             commands::adapter::start_adapter_bridge,
             commands::adapter::stop_adapter_bridge,
@@ -132,8 +134,10 @@ pub fn run() {
             commands::agent_visibility::set_agent_hidden,
             // MCP inventory (read-only)
             commands::mcp::list_mcp_inventory_cmd,
-            // Plugin / extension pack inventory (read-only; not MCP)
+            // Plugin / extension pack inventory + enable/disable (not MCP)
             commands::plugins::list_plugin_inventory_cmd,
+            commands::plugins::enable_plugin_cmd,
+            commands::plugins::disable_plugin_cmd,
             // Provider
             commands::provider::list_provider_presets,
             commands::provider::list_providers,
@@ -223,6 +227,7 @@ pub fn run() {
             commands::settings::get_app_settings,
             commands::settings::get_path_info,
             commands::settings::set_setting,
+            commands::settings::log_gui_event,
             commands::settings::open_logs_dir,
             commands::settings::open_external_url,
             commands::settings::pick_directory::pick_directory,

@@ -22,6 +22,7 @@ import {
   type CreateRouteTarget,
   type EditRouteInput,
 } from './create-route-flow';
+import { localAddressCopyForTarget } from './route-endpoint-copy';
 
 function targetLabel(t: TranslateFn, target: CreateRouteTarget): string {
   if (target === 'claude') return t('routes.create.target.claude');
@@ -233,6 +234,7 @@ export function EditRouteDialog({
                     const checked = endpoints.includes(target);
                     const targetUrl = endpointUrlFor(storedVendor, target, url, endpointUrls);
                     const canEditUrl = storedVendor === 'custom';
+                    const local = localAddressCopyForTarget(target);
                     return (
                       <div key={target} className="space-y-1.5 rounded-card border border-border bg-subtle/40 p-2">
                         <label className="flex items-start gap-2 text-sm">
@@ -244,6 +246,9 @@ export function EditRouteDialog({
                           />
                           <span className="min-w-0">
                             <span className="block font-medium">{targetLabel(t, target)}</span>
+                            <span className="block font-mono text-meta text-muted">
+                              {local.path} · {t(local.copyKey)}
+                            </span>
                           </span>
                         </label>
                         {checked && canEditUrl ? (
@@ -266,6 +271,7 @@ export function EditRouteDialog({
                     );
                   })}
                   <p className="text-meta text-muted">{t('routes.create.upstreamEndpointsHint')}</p>
+                  <p className="text-meta text-muted">{t('routes.endpoint.modelsLine')}</p>
                   <p className="text-meta text-muted">{t('routes.edit.endpointsHint')}</p>
                 </fieldset>
               </>

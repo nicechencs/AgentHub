@@ -15,7 +15,7 @@ import {
 } from '@/lib/connection-kind';
 import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId, Provider } from '@/lib/types';
-import { isLeftoverLocalRouteProvider } from '@/pages/chat/chat-model';
+import { isLeftoverLocalRouteProvider } from '@/lib/leftover-local-route';
 
 export type { ConnectionKind };
 export type {
@@ -228,7 +228,7 @@ export function liveApiKeyImportGate(
     return { enabled: true, reason: '' };
   }
   if (kind === 'oauth' || kind === 'file-auth' || kind === 'file-auth.json') {
-    return { enabled: false, reason: t ? t('connections.list.isOauthImportLogin') : '这台电脑上是官方登录。请改用「导入当前授权」。' };
+    return { enabled: false, reason: t ? t('connections.list.isOauthImportLogin') : '这台电脑上是官方登录。请改用「导入当前登录」。' };
   }
   if (kind === 'desktop-login') {
     return { enabled: false, reason: t ? t('connections.list.desktopNoApiKey') : '这是桌面版登录，没法直接导入 API Key' };

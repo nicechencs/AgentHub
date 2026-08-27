@@ -296,10 +296,10 @@ impl AgentAdapter for CursorAdapter {
     }
 
     fn write_config(&self, _config: &AgentConfig) -> Result<()> {
+        // Fail-closed: no models.json / config.toml, and never an ANTHROPIC_* or
+        // OpenAI-style /v1 writer.
         Err(AppError::Unsupported(
-            "live config writes are not supported for cursor \
-              (no stable models.json/config.toml provider contract; \
-               use CURSOR_API_KEY or `cursor-agent login`)"
+            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。"
                 .into(),
         ))
     }
@@ -407,9 +407,7 @@ impl AgentAdapter for CursorAdapter {
 
     fn apply_account(&self, _account: &LiveAccount) -> Result<()> {
         Err(AppError::Unsupported(
-            "applying Cursor accounts to live is not supported; \
-             set CURSOR_API_KEY in the environment or run `cursor-agent login` \
-             (IDE private account stores are intentionally not used)"
+            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。"
                 .into(),
         ))
     }

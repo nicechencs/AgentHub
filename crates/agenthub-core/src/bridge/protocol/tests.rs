@@ -65,6 +65,51 @@ fn responses_request_maps_text_tools_options_and_unicode() {
 }
 
 #[test]
+fn parse_keeps_developer_role_and_kimi_renders_system() {
+    let request = json!({
+        "model": "kimi-k2.5",
+        "input": [
+            {
+                "type": "message",
+                "role": "developer",
+                "content": [{ "type": "input_text", "text": "Be terse." }]
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{ "type": "input_text", "text": "hello" }]
+            }
+        ]
+    });
+    let bridge = parse_responses_request(&request).expect("developer input parses");
+    assert!(
+        bridge
+            .input
+            .iter()
+            .any(|message| matches!(message.role, crate::bridge::types::MessageRole::Developer)),
+        "parser must keep Developer, not fold it to System"
+    );
+    assert!(
+        !bridge
+            .input
+            .iter()
+            .any(|message| matches!(message.role, crate::bridge::types::MessageRole::System)),
+        "parser must not rewrite developer to system: {:?}",
+        bridge
+            .input
+            .iter()
+            .map(|message| &message.role)
+            .collect::<Vec<_>>()
+    );
+
+    let kimi = to_kimi_chat_request(&bridge);
+    assert_eq!(kimi["messages"][0]["role"], "system");
+    assert_eq!(kimi["messages"][0]["content"], "Be terse.");
+    assert_eq!(kimi["messages"][1]["role"], "user");
+    assert_eq!(kimi["messages"][1]["content"], "hello");
+}
+
+#[test]
 fn streaming_request_opt_in_preserves_final_usage_chunk() {
     let mut request = fixture("responses_text");
     request["stream"] = Value::Bool(true);

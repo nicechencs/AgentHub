@@ -6,7 +6,7 @@ import {
   type OAuthWaitInfo,
 } from '@/lib/backend/contracts';
 import {
-  mapCoreAccount,
+  mapCoreAccountView,
   type CoreAccount,
   type CoreAccountSwitchResult,
 } from '@/lib/backend/contracts/account-map';
@@ -25,7 +25,7 @@ export function createTauriAccountPort(): AccountPort {
         const rows = await invoke<CoreAccount[]>('list_accounts', {
           agentId: agentId ?? null,
         });
-        return rows.map(mapCoreAccount);
+        return rows.map(mapCoreAccountView);
       } catch (e) {
         log.error('list_accounts failed', e);
         throw e;
@@ -37,7 +37,7 @@ export function createTauriAccountPort(): AccountPort {
         const rows = await invoke<CoreAccount[]>('reconcile_accounts', {
           agentId: agentId ?? null,
         });
-        return rows.map(mapCoreAccount);
+        return rows.map(mapCoreAccountView);
       } catch (e) {
         log.error('reconcile_accounts failed', e);
         throw e;
@@ -84,7 +84,7 @@ export function createTauriAccountPort(): AccountPort {
           envKey: envKey?.trim() ? envKey.trim() : null,
           productMarker: productMarker?.trim() ? productMarker.trim() : null,
         });
-        return mapCoreAccount(row);
+        return mapCoreAccountView(row).account;
       } catch (e) {
         log.error('add_api_key_account failed', e);
         throw e;
@@ -99,7 +99,7 @@ export function createTauriAccountPort(): AccountPort {
           label: opts.label?.trim() ? opts.label.trim() : null,
           key: opts.key?.trim() ? opts.key.trim() : null,
         });
-        return mapCoreAccount(row);
+        return mapCoreAccountView(row).account;
       } catch (e) {
         log.error('update_api_key_account failed', e);
         throw e;
@@ -112,7 +112,7 @@ export function createTauriAccountPort(): AccountPort {
           agentId,
           name: null,
         });
-        return mapCoreAccount(row);
+        return mapCoreAccountView(row).account;
       } catch (e) {
         log.error('import_account_live failed', e);
         throw e;
@@ -146,7 +146,7 @@ export function createTauriAccountPort(): AccountPort {
       const row = await invoke<CoreAccount>('oauth_complete', {
         oauthState: state,
       });
-      return mapCoreAccount(row);
+      return mapCoreAccountView(row).account;
     },
 
     async cancelOAuth(state) {
@@ -165,7 +165,7 @@ export function createTauriAccountPort(): AccountPort {
       const row = await invoke<CoreAccount>('oauth_device_complete', {
         oauthState: state,
       });
-      return mapCoreAccount(row);
+      return mapCoreAccountView(row).account;
     },
 
     async completeOAuth(agentId: AgentId, providerKey) {
@@ -173,7 +173,7 @@ export function createTauriAccountPort(): AccountPort {
       if (!supported) {
         throw unsupportedError(
           'OAuth 浏览器授权',
-          '该 Agent 未配置 OAuth；请使用「导入当前账号」或「添加 API Key」',
+          '这个工具还不支持官方登录。请改用「导入当前登录」或「添加 API Key」',
         );
       }
       const options = await this.listOAuthOptions(agentId);
@@ -230,7 +230,7 @@ export function createTauriAccountPort(): AccountPort {
           agentId,
           idOrLabel: accountId,
         });
-        return mapCoreAccount(raw);
+        return mapCoreAccountView(raw).account;
       } catch (e) {
         log.error('refresh_account_quota failed', e);
         throw e;

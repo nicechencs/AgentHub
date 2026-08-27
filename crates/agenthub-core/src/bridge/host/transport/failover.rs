@@ -1,51 +1,53 @@
 //! v2 indexed failover: typed errors, candidate exclusion, cooldown, pool_exhausted.
 //!
-//! Only used when `EdgeState.route_index` is Some. v1 `send_upstream` stays
-//! byte-for-byte on edges without an index.
+//! Only used when `EdgeState.route_index` is Some. Each attempt re-prepares
+//! from the original admitted request using that candidate's transport. v1
+//! `send_upstream` stays byte-for-byte on edges without an index.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Instant;
 
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::Response;
 use serde_json::Value;
+use tokio::sync::Semaphore;
 
 use crate::bridge::account::PickedMember;
-use crate::bridge::grok_cli::{
-    is_reasoning_decode_failure, strip_encrypted_reasoning, GrokCliRequestIdentity,
-};
+use crate::bridge::grok_cli::{is_reasoning_decode_failure, strip_encrypted_reasoning};
 use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::upstream_class::{
     classify_http, cooldown_from_retry_after, FailoverDecision, UpstreamErrorClass,
 };
 
-use super::super::http::{stopping_response, EdgeState};
+use super::super::admission::AdmittedRequest;
+use super::super::http::{error_response, stopping_response, EdgeState};
 use super::super::stream::UpstreamBodyError;
+use super::super::surface::DownstreamSurface;
 use super::super::upstream::{
-    apply_grok_replay, extract_upstream_error_detail, grok_replay_model, map_upstream_http_error,
+    extract_upstream_error_detail, grok_replay_model, join_upstream, map_upstream_http_error,
     map_v2_request_error, pool_exhausted_response, post_upstream_attempt,
     read_bounded_upstream_error, replay_session, UpstreamConnectError,
 };
-use super::{identity_for_member, log_serving_account, UpstreamChannel, UpstreamSendOutcome};
+use super::{
+    identity_for_member, log_serving_account, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome,
+};
 
 const V2_MAX_ATTEMPTS: usize = 8;
 
-pub(super) async fn send_upstream_v2(
+pub async fn send_upstream_v2(
     state: &EdgeState,
-    url: reqwest::Url,
-    channel: UpstreamChannel,
+    surface: DownstreamSurface,
     request_id: &str,
     started: Instant,
-    identity: Option<GrokCliRequestIdentity>,
-    body: Value,
-    cache_seed: Option<&str>,
+    headers: &HeaderMap,
+    original_body: &Value,
     member: PickedMember,
     candidates: &[DispatchCandidate],
     public_model: &str,
+    continuation_locked: bool,
+    affinity_key: Option<&str>,
 ) -> Result<UpstreamSendOutcome, Response> {
-    let recovery = channel.recovery();
-    let original_body = body;
-    let original_identity = identity;
     let mut member = member;
     let mut excluded: Vec<String> = Vec::new();
     let mut reloaded: HashSet<String> = HashSet::new();
@@ -53,6 +55,12 @@ pub(super) async fn send_upstream_v2(
     let mut grok_strip_attempt = 0u8;
     let max_attempts = candidates.len().clamp(1, V2_MAX_ATTEMPTS);
     let mut attempts = 0usize;
+    let mut last_fail: Option<(
+        UpstreamErrorClass,
+        StatusCode,
+        Option<HeaderValue>,
+        Option<String>,
+    )> = None;
 
     loop {
         attempts += 1;
@@ -65,16 +73,68 @@ pub(super) async fn send_upstream_v2(
                 failover_from.as_deref(),
             ));
         }
+        let candidate = candidate_for_member(candidates, &member);
+        let Some(_member_permit) = member.try_acquire() else {
+            exclude_member(&mut excluded, &member);
+            if continuation_locked {
+                return Err(exhausted(
+                    state,
+                    request_id,
+                    started,
+                    public_model,
+                    failover_from.as_deref(),
+                ));
+            }
+            let Some(next) = state.pick_v2_in_lane(
+                candidates,
+                public_model,
+                &excluded,
+                Some(member.source_id.as_str()),
+                affinity_key,
+            ) else {
+                return Err(exhausted(
+                    state,
+                    request_id,
+                    started,
+                    public_model,
+                    failover_from.as_deref(),
+                ));
+            };
+            failover_from = Some(member.source_id.clone());
+            member = next;
+            continue;
+        };
+        let (attempt_channel, attempt_url, prepared) = prepare_candidate_attempt(
+            state,
+            surface,
+            headers,
+            original_body,
+            request_id,
+            started,
+            &member,
+            candidate,
+            public_model,
+        )?;
+        let transport = attempt_channel.transport();
+        let recovery = transport.recovery();
         let fingerprint = member.authorization_fingerprint();
         let account_id = state
             .account_picker
             .partition_account_id(&member)
             .map(str::to_owned);
         let account_id = account_id.as_deref();
-        let mut identity = identity_for_member(&original_identity, cache_seed, account_id);
-        let mut body = original_body.clone();
+        let cache_seed = prepared.cache_seed.clone();
+        let stream = prepared.stream;
+        let mut identity =
+            identity_for_member(&prepared.grok_identity, cache_seed.as_deref(), account_id);
+        let mut body = prepared.body;
         if recovery.strips_grok_reasoning() {
-            apply_grok_replay(state, &mut body, cache_seed, account_id);
+            let model = grok_replay_model(&body, Some(public_model));
+            state.grok_replay.apply(
+                &mut body,
+                &model,
+                replay_session(cache_seed.as_deref(), account_id).as_deref(),
+            );
         }
 
         tracing::info!(
@@ -83,7 +143,7 @@ pub(super) async fn send_upstream_v2(
             request_id = %request_id,
             route_id = state.route_index.as_ref().map(|index| index.route_id.as_str()).unwrap_or(""),
             member_id = %member.source_id,
-            ?channel,
+            ?attempt_channel,
             model = %public_model,
             attempt = attempts,
             retry_reason = failover_from.as_deref().unwrap_or(""),
@@ -92,8 +152,8 @@ pub(super) async fn send_upstream_v2(
 
         loop {
             let token = member.auth.token();
-            let builder = channel.apply_auth(
-                state.client.post(url.clone()).json(&body),
+            let builder = transport.apply_auth(
+                state.client.post(attempt_url.clone()).json(&body),
                 &token,
                 identity.as_ref(),
             );
@@ -114,7 +174,13 @@ pub(super) async fn send_upstream_v2(
                     failover_from.is_some(),
                     failover_from.as_deref(),
                 );
-                return Ok(UpstreamSendOutcome { response, member });
+                return Ok(UpstreamSendOutcome {
+                    response,
+                    member,
+                    channel: attempt_channel,
+                    cache_seed,
+                    stream,
+                });
             }
 
             let status = response.status();
@@ -134,7 +200,7 @@ pub(super) async fn send_upstream_v2(
             let class = classify_http(status, Some(err_text.as_ref()), grok_recoverable);
             match class.decision(false) {
                 FailoverDecision::RetrySameMember => {
-                    let replay_seed = replay_session(cache_seed, account_id);
+                    let replay_seed = replay_session(cache_seed.as_deref(), account_id);
                     let model = grok_replay_model(&body, state.upstream.model.as_deref());
                     state.grok_replay.clear(&model, replay_seed.as_deref());
                     strip_encrypted_reasoning(&mut body);
@@ -184,11 +250,14 @@ pub(super) async fn send_upstream_v2(
                             continue;
                         }
                     }
+                    last_fail = Some((class, status, retry_after, detail));
                     state.isolate_authorization(&member);
                     exclude_member(&mut excluded, &member);
                     break;
                 }
                 FailoverDecision::ExcludeMemberModel => {
+                    last_fail = Some((class, status, retry_after, detail));
+                    state.deny_member_model(&member.source_id, public_model);
                     exclude_member(&mut excluded, &member);
                     break;
                 }
@@ -201,17 +270,47 @@ pub(super) async fn send_upstream_v2(
                     state
                         .account_picker
                         .set_cooldown(&member.source_id, model, duration);
+                    last_fail = Some((class, status, retry_after, detail));
                     exclude_member(&mut excluded, &member);
                     break;
                 }
                 FailoverDecision::FailoverIfUncommitted => {
+                    last_fail = Some((class, status, retry_after, detail));
                     exclude_member(&mut excluded, &member);
                     break;
                 }
             }
         }
 
-        let Some(next) = state.pick_v2(candidates, public_model, &excluded) else {
+        if continuation_locked {
+            if let Some((class, status, retry_after, detail)) = last_fail {
+                return Err(map_request_or_upstream(
+                    state,
+                    request_id,
+                    started,
+                    class,
+                    status,
+                    retry_after,
+                    detail.as_deref(),
+                    &member,
+                    failover_from.as_deref(),
+                ));
+            }
+            return Err(exhausted(
+                state,
+                request_id,
+                started,
+                public_model,
+                failover_from.as_deref(),
+            ));
+        }
+        let Some(next) = state.pick_v2_in_lane(
+            candidates,
+            public_model,
+            &excluded,
+            Some(member.source_id.as_str()),
+            affinity_key,
+        ) else {
             return Err(exhausted(
                 state,
                 request_id,
@@ -234,6 +333,132 @@ pub(super) async fn send_upstream_v2(
         }
         member = next;
         grok_strip_attempt = 0;
+    }
+}
+
+fn candidate_for_member<'a>(
+    candidates: &'a [DispatchCandidate],
+    member: &PickedMember,
+) -> Option<&'a DispatchCandidate> {
+    candidates.iter().find(|candidate| {
+        candidate.member_id == member.source_id
+            || candidate.member_id == member.ticket_id
+            || candidate.member_id == member.label
+            || member
+                .ticket_id
+                .ends_with(&format!(":{}", candidate.member_id))
+            || member
+                .source_id
+                .ends_with(&format!(":{}", candidate.member_id))
+    })
+}
+
+fn prepare_candidate_attempt(
+    state: &EdgeState,
+    surface: DownstreamSurface,
+    headers: &HeaderMap,
+    original_body: &Value,
+    request_id: &str,
+    started: Instant,
+    member: &PickedMember,
+    candidate: Option<&DispatchCandidate>,
+    public_model: &str,
+) -> Result<(UpstreamChannel, reqwest::Url, UpstreamPrepare), Response> {
+    let lead = UpstreamChannel::from_protocol(state.upstream.protocol);
+    let channel = candidate
+        .and_then(|candidate| channel_from_transport_key(&candidate.transport_key))
+        .unwrap_or(lead);
+    let mut attempt_state = state.clone();
+    attempt_state.upstream.model = candidate_upstream_model(candidate, public_model);
+    let permit = Arc::new(Semaphore::new(1))
+        .try_acquire_owned()
+        .expect("fresh semaphore has a permit");
+    let admitted = AdmittedRequest {
+        state: attempt_state,
+        request_id: request_id.to_owned(),
+        started,
+        permit,
+        headers: headers.clone(),
+        body: original_body.clone(),
+        member: Some(member.clone()),
+        affinity_key: None,
+    };
+    let prepared = channel.transport().prepare(surface, &admitted)?;
+    let url = attempt_url(state, prepared.path, candidate)?;
+    Ok((channel, url, prepared))
+}
+
+fn candidate_upstream_model(
+    candidate: Option<&DispatchCandidate>,
+    public_model: &str,
+) -> Option<String> {
+    let from_candidate = candidate
+        .map(|candidate| candidate.upstream_model.trim())
+        .filter(|model| !model.is_empty())
+        .map(str::to_owned);
+    if from_candidate.is_some() {
+        return from_candidate;
+    }
+    let public = public_model.trim();
+    if public.is_empty() {
+        None
+    } else {
+        Some(public.to_owned())
+    }
+}
+
+fn attempt_url(
+    state: &EdgeState,
+    path: &str,
+    candidate: Option<&DispatchCandidate>,
+) -> Result<reqwest::Url, Response> {
+    if let Some(endpoint) = candidate
+        .map(|candidate| candidate.upstream_endpoint.trim())
+        .filter(|endpoint| !endpoint.is_empty())
+    {
+        return join_candidate_endpoint(state, endpoint, path);
+    }
+    join_upstream(state, path)
+}
+
+/// Same trailing-slash rule as `validate_start_spec`: `Url::join` treats a
+/// last segment without `/` as a file, so `https://api.example/v1` + `responses`
+/// would drop `/v1`.
+fn join_candidate_endpoint(
+    state: &EdgeState,
+    endpoint: &str,
+    path: &str,
+) -> Result<reqwest::Url, Response> {
+    let Ok(mut base) = reqwest::Url::parse(endpoint) else {
+        return candidate_url_error(state);
+    };
+    if !base.path().ends_with('/') {
+        let with_slash = format!("{}/", base.path());
+        base.set_path(&with_slash);
+    }
+    match base.join(path) {
+        Ok(url) => Ok(url),
+        Err(_) => candidate_url_error(state),
+    }
+}
+
+fn candidate_url_error(state: &EdgeState) -> Result<reqwest::Url, Response> {
+    state.record_upstream_failure();
+    Err(error_response(
+        StatusCode::BAD_GATEWAY,
+        "upstream_error",
+        "The upstream model provider is unavailable.",
+        None,
+    ))
+}
+
+fn channel_from_transport_key(key: &str) -> Option<UpstreamChannel> {
+    match key.trim() {
+        "openai:generic" => Some(UpstreamChannel::OpenAiChat),
+        "anthropic:claude" => Some(UpstreamChannel::Anthropic),
+        "codex:codex" => Some(UpstreamChannel::CodexResponses),
+        "grok:grok" => Some(UpstreamChannel::Grok),
+        _ => None,
     }
 }
 

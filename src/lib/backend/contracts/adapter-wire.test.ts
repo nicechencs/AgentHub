@@ -4,6 +4,8 @@ import {
   mapAdapterApplyResult,
   mapAdapterBridgeStatusDto,
   mapAdapterRouteAnalysis,
+  mapDefaultRoutePoolList,
+  mapInboundRequest,
 } from './adapter-wire';
 
 describe('Adapter Rust wire mappers', () => {
@@ -110,7 +112,74 @@ describe('Adapter Rust wire mappers', () => {
       endpoint: 'http://127.0.0.1:43123/v1',
       startedAt: '2026-08-12T00:00:00.123Z',
       upstreamStatus: 'unknown',
+      recentInbound: [],
     });
+  });
+
+  it('inbound log struct never carries secrets, query, or extra wire fields', () => {
+    const row = mapInboundRequest({
+      atUnixMs: 1_786_492_800_000,
+      method: 'POST',
+      path: '/v1/responses?api_key=sk-secret&token=abc',
+      status: 200,
+      ok: true,
+      authorization: 'Bearer sk-secret',
+      body: '{"apiKey":"sk-secret","token":"ahb_secret"}',
+      token: 'sk-secret',
+      apiKey: 'sk-secret',
+    });
+    expect(row).toEqual({
+      at: '2026-08-12T00:00:00.000Z',
+      method: 'POST',
+      path: '/v1/responses',
+      status: 200,
+      ok: true,
+    });
+    const keys = Object.keys(row ?? {}).sort();
+    expect(keys).toEqual(['at', 'method', 'ok', 'path', 'status']);
+    const json = JSON.stringify(row);
+    expect(json).not.toMatch(/sk-secret|ahb_|Bearer|authorization|apiKey|token/i);
+    expect(json).not.toContain('?');
+    expect(
+      mapAdapterBridgeStatusDto({
+        profileId: 'adapter-kimi-codex-1',
+        port: 43123,
+        running: true,
+        state: 'running',
+        upstreamStatus: 'connected',
+        recentInbound: [
+          {
+            atUnixMs: 1_786_492_800_002,
+            method: 'GET',
+            path: '/models',
+            status: 200,
+            ok: true,
+          },
+          {
+            atUnixMs: 1_786_492_800_000,
+            method: 'POST',
+            path: '/v1/responses',
+            status: 401,
+            ok: false,
+          },
+        ],
+      }).recentInbound,
+    ).toEqual([
+      {
+        at: '2026-08-12T00:00:00.002Z',
+        method: 'GET',
+        path: '/models',
+        status: 200,
+        ok: true,
+      },
+      {
+        at: '2026-08-12T00:00:00.000Z',
+        method: 'POST',
+        path: '/v1/responses',
+        status: 401,
+        ok: false,
+      },
+    ]);
   });
 
   it('fails closed for a bridge state unknown to the frontend', () => {
@@ -365,5 +434,25 @@ describe('Adapter Rust wire mappers', () => {
       changes: [],
     });
     expect(unknown.reusePath).toBe('none');
+  });
+
+  it('maps a default pool list and never keeps a hub token field', () => {
+    const listed = mapDefaultRoutePoolList({
+      enabled: true,
+      pools: [{
+        id: 'pool-1',
+        targetAgentId: 'codex',
+        surface: 'responses',
+        dialect: 'codex',
+        v2Enrolled: true,
+        gatewayPort: 43121,
+        members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
+        listedModels: ['kimi-k2.5'],
+      }],
+    });
+    expect(listed.enabled).toBe(true);
+    expect(listed.pools[0]?.gatewayPort).toBe(43121);
+    expect(listed.pools[0]?.members[0]?.sourceId).toBe('kimi-1');
+    expect(JSON.stringify(listed)).not.toContain('hubToken');
   });
 });

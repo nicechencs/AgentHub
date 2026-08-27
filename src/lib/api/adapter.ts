@@ -1,5 +1,5 @@
 /** Adapter route preview and the narrow, supported apply façade. */
-import { getBackend, notifyConnectionPoolChanged } from '@/app/runtime';
+import { getBackend, refreshRuntimeReadModels } from '@/app/runtime';
 import type {
   AdapterApplyPlan,
   AdapterApplyRequest,
@@ -9,6 +9,8 @@ import type {
   AdapterProfileFilter,
   AdapterRouteAnalysis,
   AdapterRouteRequest,
+  DefaultRoutePoolList,
+  DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
 
 export type {
@@ -46,9 +48,21 @@ export async function listAdapterProfiles(filter?: AdapterProfileFilter): Promis
   return getBackend().adapter.listProfiles(filter);
 }
 
+/** Default-pool overview for Routes. Flag off returns `{ enabled: false, pools: [] }`. */
+export async function listDefaultRoutePools(): Promise<DefaultRoutePoolList> {
+  return getBackend().adapter.listDefaultRoutePools();
+}
+
+/** Convert a direct login into the target Agent default local route. */
+export async function enrollNativeToGateway(profileId: string): Promise<DefaultRoutePoolOverview> {
+  const result = await getBackend().adapter.enrollNativeToGateway(profileId);
+  await refreshConnectionPoolAfterAdapterMutation();
+  return result;
+}
+
 async function refreshConnectionPoolAfterAdapterMutation(): Promise<void> {
   try {
-    await notifyConnectionPoolChanged(getBackend());
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool'] });
   } catch {
     // The mutation itself succeeded. The pool store keeps previous rows and
     // exposes the refresh error instead of pretending the list is current.
