@@ -101,6 +101,18 @@ fn insert_extra_string(extra: &mut Value, key: &str, value: String) {
     *extra = json!({ key: value });
 }
 
+fn json_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value.get(key).and_then(Value::as_str)
+}
+
+fn json_bool(value: &Value, key: &str) -> Option<bool> {
+    value.get(key).and_then(Value::as_bool)
+}
+
+fn json_i64(value: &Value, key: &str) -> Option<i64> {
+    value.get(key).and_then(Value::as_i64)
+}
+
 impl Account {
     /// Deep-copy with likely secret keys redacted.
     pub fn redacted(&self) -> Self {
@@ -146,6 +158,79 @@ impl Account {
             extra: self.extra.clone(),
         }
     }
+
+    /// `extra.source` — Hub PKCE vs CLI-owned grant provenance. Unknown keys stay on `extra`.
+    pub fn source(&self) -> Option<&str> {
+        json_str(&self.extra, "source")
+    }
+
+    pub fn extra_provider(&self) -> Option<&str> {
+        json_str(&self.extra, "provider")
+    }
+
+    pub fn extra_email(&self) -> Option<&str> {
+        json_str(&self.extra, "email")
+    }
+
+    pub fn identity_label(&self) -> Option<&str> {
+        json_str(&self.extra, "identityLabel")
+    }
+
+    pub fn subscription(&self) -> Option<&str> {
+        json_str(&self.extra, "subscription")
+    }
+
+    pub fn extra_health(&self) -> Option<&str> {
+        json_str(&self.extra, "health")
+    }
+
+    pub fn extra_auth_health(&self) -> Option<&str> {
+        json_str(&self.extra, "authHealth")
+    }
+
+    pub fn extra_auth_source(&self) -> Option<&str> {
+        json_str(&self.extra, "authSource")
+    }
+
+    pub fn extra_live_revision(&self) -> Option<&str> {
+        json_str(&self.extra, "liveRevision")
+    }
+
+    pub fn token_expired(&self) -> Option<bool> {
+        json_bool(&self.extra, "tokenExpired")
+    }
+
+    pub fn extra_expires_at(&self) -> Option<&str> {
+        json_str(&self.extra, "expiresAt")
+    }
+
+    pub fn quota_5h_pct(&self) -> Option<i64> {
+        json_i64(&self.extra, "quota5hPct")
+    }
+
+    pub fn quota_7d_pct(&self) -> Option<i64> {
+        json_i64(&self.extra, "quota7dPct")
+    }
+
+    pub fn quota_reset_in(&self) -> Option<&str> {
+        json_str(&self.extra, "quotaResetIn")
+    }
+
+    pub fn credential_format(&self) -> Option<&str> {
+        json_str(&self.credentials, "format")
+    }
+
+    pub fn credential_provider(&self) -> Option<&str> {
+        json_str(&self.credentials, "provider")
+    }
+
+    pub fn credential_email(&self) -> Option<&str> {
+        json_str(&self.credentials, "email")
+    }
+
+    pub fn credential_env_key(&self) -> Option<&str> {
+        json_str(&self.credentials, "env_key")
+    }
 }
 
 impl AccountSwitchResult {
@@ -159,45 +244,4 @@ impl AccountSwitchResult {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn account_kind_parse_and_serde() {
-        assert_eq!(AccountKind::parse("oauth"), Some(AccountKind::Oauth));
-        assert_eq!(AccountKind::parse("APIKEY"), Some(AccountKind::ApiKey));
-        assert_eq!(AccountKind::parse("api_key"), Some(AccountKind::ApiKey));
-        assert_eq!(AccountKind::parse("nope"), None);
-        assert_eq!(
-            serde_json::to_string(&AccountKind::ApiKey).unwrap(),
-            "\"apikey\""
-        );
-        assert_eq!(
-            serde_json::from_str::<AccountKind>("\"oauth\"").unwrap(),
-            AccountKind::Oauth
-        );
-    }
-
-    #[test]
-    fn account_redacted_masks_credentials() {
-        let a = Account {
-            id: "a1".into(),
-            agent_id: AgentId::Grok,
-            kind: AccountKind::ApiKey,
-            label: "xai-••••e41d".into(),
-            credentials: json!({"format": "api_key", "api_key": "xai-secret-value"}),
-            extra: json!({"token": "t", "note": "ok"}),
-            status: "active".into(),
-            is_current: true,
-            created_at: "t0".into(),
-            updated_at: "t1".into(),
-        };
-        let r = a.redacted();
-        assert_eq!(r.credentials["api_key"], "***");
-        assert_eq!(r.extra["token"], "***");
-        assert_eq!(r.extra["note"], "ok");
-        assert_eq!(r.extra["secretTail"], "**alue");
-        assert_eq!(a.credentials["api_key"], "xai-secret-value");
-    }
-}
+mod tests;
