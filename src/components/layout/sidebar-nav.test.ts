@@ -1,14 +1,13 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { filterManageNavItems, filterWorkspaceNavItems } from './sidebar-nav';
-
-const dir = path.dirname(fileURLToPath(import.meta.url));
-
-function sidebarSource(): string {
-  return readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
-}
+import { BRIDGES_PATH } from '@/lib/bridges-path';
+import {
+  filterManageNavItems,
+  filterWorkspaceNavItems,
+  manageNavItems,
+  NAV_MANAGE,
+  NAV_WORKSPACE,
+  workspaceNavItems,
+} from './sidebar-nav';
 
 const MANAGE = [
   { to: '/', navKey: 'nav.dashboard' },
@@ -68,22 +67,64 @@ describe('filterWorkspaceNavItems', () => {
   });
 });
 
-describe('workspace nav order', () => {
+describe('nav model order', () => {
   it('places Plugins under Projects and keeps the MCP label', () => {
-    const src = sidebarSource();
-    const chat = src.indexOf("{ to: '/chat'");
-    const agents = src.indexOf("{ to: '/agents'");
-    const skills = src.indexOf("{ to: '/skills'");
-    const mcp = src.indexOf("{ to: '/mcp', navKey: 'nav.mcp'");
-    const projects = src.indexOf("{ to: '/projects'");
-    const plugins = src.indexOf("{ to: '/plugins'");
-    expect(chat).toBeGreaterThan(0);
-    expect(agents).toBeGreaterThan(chat);
-    expect(skills).toBeGreaterThan(agents);
-    expect(mcp).toBeGreaterThan(skills);
-    expect(projects).toBeGreaterThan(mcp);
-    expect(plugins).toBeGreaterThan(projects);
-    expect(src).toContain("navKey: 'nav.mcp'");
-    expect(src).toContain("navKey: 'nav.plugins'");
+    expect(NAV_WORKSPACE.map((item) => item.to)).toEqual([
+      '/chat',
+      '/agents',
+      '/skills',
+      '/mcp',
+      '/projects',
+      '/plugins',
+    ]);
+    expect(NAV_WORKSPACE.map((item) => item.navKey)).toEqual([
+      'nav.chat',
+      'nav.agents',
+      'nav.skills',
+      'nav.mcp',
+      'nav.projects',
+      'nav.plugins',
+    ]);
+  });
+
+  it('keeps manage order: dashboard, connections, routes, settings', () => {
+    expect(NAV_MANAGE.map((item) => item.to)).toEqual([
+      '/',
+      '/connections',
+      BRIDGES_PATH,
+      '/settings',
+    ]);
+    expect(NAV_MANAGE.map((item) => item.navKey)).toEqual([
+      'nav.dashboard',
+      'nav.connections',
+      'nav.routes',
+      'nav.settings',
+    ]);
+  });
+});
+
+describe('workspaceNavItems / manageNavItems', () => {
+  it('wraps workspace filter without changing paths', () => {
+    expect(workspaceNavItems(true).map((item) => item.to)).toEqual(
+      filterWorkspaceNavItems(NAV_WORKSPACE, true).map((item) => item.to),
+    );
+    expect(workspaceNavItems(false).map((item) => item.to)).toEqual([
+      '/chat',
+      '/agents',
+      '/skills',
+      '/mcp',
+      '/projects',
+    ]);
+  });
+
+  it('wraps manage filter and still hides routes only in the nav model', () => {
+    expect(manageNavItems(true).map((item) => item.to)).toEqual(
+      filterManageNavItems(NAV_MANAGE, true).map((item) => item.to),
+    );
+    expect(manageNavItems(false).map((item) => item.to)).toEqual([
+      '/',
+      '/connections',
+      '/settings',
+    ]);
   });
 });
