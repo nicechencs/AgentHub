@@ -1,5 +1,12 @@
 //! Usage collection + query service.
 
+mod cost;
+
+#[cfg(test)]
+mod tests;
+
+pub(super) use cost::{cost_for_event, event_missing_pricing};
+
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
@@ -12,17 +19,15 @@ use crate::models::{
     AgentId, CollectResult, DetectResult, DetectStatus, ParserHealth, UsageOverview, UsageQuery,
     UsageRecord, UsageTrendPoint,
 };
-use crate::platform::usage::{
-    builtin_usage_registry, collect_with_source, collect_with_source_for_agent_id, TokenAccounting,
-    UsageSourceRegistry,
-};
 use crate::platform::AgentKey;
+use crate::platform::usage::{
+    TokenAccounting, UsageSourceRegistry, builtin_usage_registry, collect_with_source,
+    collect_with_source_for_agent_id,
+};
 use crate::storage::{Database, UsageRepo};
-use crate::usage::grok::{grok_model_has_pricing, pricing_candidates};
 use crate::usage::session_jsonl::CollectStats;
 use crate::usage::{
-    codex_billable_tokens, estimate_cost_usd_for_agent_at, has_embedded_pricing,
-    has_embedded_pricing_for, CostTokens,
+    CostTokens, codex_billable_tokens, estimate_cost_usd_for_agent_at, has_embedded_pricing_for,
 };
 use crate::utils::redact::redact_text;
 
@@ -549,52 +554,3 @@ pub(crate) fn visible_installed_agent_ids(
         .map(|row| row.agent)
         .collect()
 }
-
-fn event_missing_pricing(ev: &crate::models::ParsedUsageEvent) -> bool {
-    if ev.agent_id == AgentId::Grok {
-        !grok_model_has_pricing(&ev.model)
-    } else {
-        !has_embedded_pricing_for(ev.agent_id, &ev.model, Some(&ev.ts))
-    }
-}
-
-fn cost_for_event(ev: &crate::models::ParsedUsageEvent) -> f64 {
-    if ev.agent_id == AgentId::Grok && ev.cost_usd.is_none() {
-        if let Some(model) = pricing_candidates(&ev.model)
-            .into_iter()
-            .find(|c| has_embedded_pricing(c))
-        {
-            return estimate_cost_usd_for_agent_at(
-                ev.agent_id,
-                &model,
-                CostTokens {
-                    input: ev.input_tokens,
-                    output: ev.output_tokens,
-                    cache_create: ev.cache_creation_tokens,
-                    cache_create_1h: ev.cache_creation_1h_tokens,
-                    cache_read: ev.cache_read_tokens,
-                    fast: ev.fast,
-                },
-                None,
-                Some(&ev.ts),
-            );
-        }
-    }
-    estimate_cost_usd_for_agent_at(
-        ev.agent_id,
-        &ev.model,
-        CostTokens {
-            input: ev.input_tokens,
-            output: ev.output_tokens,
-            cache_create: ev.cache_creation_tokens,
-            cache_create_1h: ev.cache_creation_1h_tokens,
-            cache_read: ev.cache_read_tokens,
-            fast: ev.fast,
-        },
-        ev.cost_usd,
-        Some(&ev.ts),
-    )
-}
-
-#[cfg(test)]
-mod tests;
