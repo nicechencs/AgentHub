@@ -205,10 +205,32 @@ function snapshotAfterCommittedWrite(
   return { ...base, ...patch };
 }
 
+/** GUI log helper: op + agent + last4 only. Never pass a raw key. */
+export async function logGuiEvent(
+  op: string,
+  detail?: { agent?: string; last4?: string },
+): Promise<void> {
+  const trimmed = op.trim();
+  if (!trimmed) return;
+  try {
+    await invoke('log_gui_event', {
+      op: trimmed,
+      agent: detail?.agent ?? null,
+      last4: detail?.last4 ?? null,
+    });
+  } catch (e) {
+    log.debug('logGuiEvent failed', e);
+  }
+}
+
 export function createTauriSettingsPort(): SettingsPort {
   let lastSuccessfulSnapshot: AppSettings | null = null;
   const port: SettingsPort = {
     logLevelOptions: LOG_LEVEL_OPTIONS,
+
+    async logGuiEvent(op, detail) {
+      await logGuiEvent(op, detail);
+    },
 
     async getSettings() {
       try {

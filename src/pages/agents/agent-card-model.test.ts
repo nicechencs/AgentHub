@@ -12,6 +12,7 @@ import {
   canInstallAlongsideSpecial,
   canUninstallProgramInApp,
   installLifecycle,
+  installRetryButtonVariant,
   isInAppUpgradeChannel,
   listAgentInstalls,
   isNodeTooOldUpdateNote,
@@ -88,12 +89,16 @@ describe('agent-card install log title', () => {
     expect(agentTaskLogTitleKey('install', 'failed')).toBe('agents.lifecycle.installFailed');
     expect(agentTaskLogTitleKey('upgrade', 'failed')).toBe('agents.lifecycle.upgradeFailed');
     expect(agentTaskLogTitleKey('oneclick', 'failed')).toBe('agents.lifecycle.oneclickFailed');
+    expect(agentTaskLogTitleKey('install', 'guided')).toBe('agents.lifecycle.setupGuide');
+    expect(agentTaskLogTitleKey('upgrade', 'guided')).toBe('agents.lifecycle.setupGuide');
     expect(zh.agents.lifecycle.installComplete).toBe('安装完成');
     expect(zh.agents.lifecycle.upgradeDone).toBe('升级完成');
     expect(zh.agents.lifecycle.oneclickDone).toBe('已完成');
     expect(zh.agents.lifecycle.installFailed).toBe('安装失败');
     expect(zh.agents.lifecycle.upgradeFailed).toBe('升级失败');
     expect(zh.agents.lifecycle.oneclickFailed).toBe('未完成');
+    expect(zh.agents.lifecycle.setupGuide).toBe('已打开官网安装页');
+    expect(zh.agents.lifecycle.setupGuide).not.toContain('失败');
     expect(zh.agents.card.needsNode22).toBe('需要 Node 22');
   });
 
@@ -304,13 +309,21 @@ describe('agent-card install confirm', () => {
     expect(dialogs).toContain('uninstallConfigKeepsApp');
   });
 
-  it('keeps retry as a secondary card action after a failed task', () => {
+  it('makes retry the primary button after a real failure, not after setup-guide', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
+    expect(installRetryButtonVariant('failed')).toBe('default');
+    expect(installRetryButtonVariant('guided')).toBe('secondary');
+    expect(installRetryButtonVariant('done')).toBe('secondary');
+    expect(installRetryButtonVariant(undefined)).toBe('secondary');
     expect(card).toContain('installFailed');
-    expect(card).not.toContain("variant={installFailed ? 'default' : 'secondary'}");
-    expect(card).toContain('variant="secondary"');
+    expect(card).toContain('installRetryButtonVariant(task?.status)');
+    expect(card).toContain('variant="default"');
     expect(card).toContain('agents.card.retry');
     expect(card).toContain('retryAction');
+    expect(card).toContain('{task.diagnosis ? (');
+    expect(card.lastIndexOf('{task.diagnosis ? (')).toBeLessThan(
+      card.lastIndexOf('<InlineTerminal'),
+    );
   });
 });
 

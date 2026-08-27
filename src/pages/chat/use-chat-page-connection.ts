@@ -5,6 +5,10 @@ import { useToast } from '@/components/ui/toast';
 import { switchAccount } from '@/lib/api/account';
 import { listProviders, switchProvider } from '@/lib/api/provider';
 import { bindTicket, isActiveBindingForAgent } from '@/lib/api/tickets';
+import {
+  describeProviderSwitchError,
+  SWITCH_WROTE_LIVE,
+} from '@/pages/connections/use-connection-page-actions';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentId, AgentStatus, Conversation, Provider } from '@/lib/types';
 import { extractModel } from './chat-format';
@@ -135,6 +139,9 @@ export function useChatPageConnection(input: {
     if (!option || option.isCurrent) return;
     setSwitchingProvider(true);
     try {
+      const wroteLocal =
+        option.action.type === 'switch-account' ||
+        option.action.type === 'switch-provider';
       if (option.action.type === 'switch-account') {
         await switchAccount(primaryAgent, option.action.accountId);
       } else if (option.action.type === 'switch-provider') {
@@ -150,9 +157,16 @@ export function useChatPageConnection(input: {
         loadProviders(primaryAgent),
         refreshAgents({ force: true }).catch(() => []),
       ]);
-      toast({ title: t('chat.connection.switched'), variant: 'success' });
+      toast({
+        title: wroteLocal ? SWITCH_WROTE_LIVE : t('chat.connection.switched'),
+        variant: 'success',
+      });
     } catch (e) {
-      toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });
+      toast({
+        title: t('connections.list.switchFail'),
+        description: describeProviderSwitchError(primaryAgent, e),
+        variant: 'danger',
+      });
     } finally {
       setSwitchingProvider(false);
     }

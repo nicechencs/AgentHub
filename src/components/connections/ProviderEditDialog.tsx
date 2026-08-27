@@ -53,6 +53,7 @@ import {
   type AgentConfigSchemaDto,
 } from '@/lib/api/config';
 import { openAgentConfigDir } from '@/lib/api/install';
+import { logGuiEvent } from '@/lib/api/settings';
 import {
   listRemoteOpenAiModels,
   listRemoteOpenAiModelsForProvider,
@@ -71,14 +72,18 @@ import {
   initFormFromConfig,
   isLiveFilePath,
   liveConfigPaths,
+  maskApiKeyLast4,
+  maskConfigSecrets,
   REDACTED_MARKER,
   remoteModelsStatusView,
+  resolveFormApiKeyFromEditor,
   resolveUpstreamBaseUrl,
   shouldFetchRemoteModels,
   smartDetectUrlAndKey,
   validateNativeConfigText,
   nativeConfigIssueMessage,
   withDefaultModel,
+  writableSecret,
   type NativeConfigIssue,
   type ProviderFormVars,
 } from '@/lib/provider-detect';
@@ -146,9 +151,9 @@ function translateNativeConfigIssue(issue: NativeConfigIssue, t: TranslateFn): s
     case 'json_must_be_object':
       return t('connections.providerDialog.configMustBeObject');
     case 'json_parse':
-      return t('connections.providerDialog.configParseFailed', { detail: issue.detail ?? '' });
+      return t('connections.providerDialog.configParseFailedHint');
     case 'toml_parse':
-      return t('connections.providerDialog.configTomlParseFailed', { detail: issue.detail ?? '' });
+      return t('connections.providerDialog.configTomlParseFailedHint');
     case 'expect_toml':
       return t('connections.providerDialog.configExpectToml');
     case 'claude_env_object':
@@ -320,20 +325,20 @@ export function ProviderEditDialog({
       const form = officialFormState(agentId, keepKey ?? '');
       if (!form) {
         const scaffold = defaultConfigScaffold(agentId);
-        setConfigText(scaffold.text);
+        setConfigText(maskConfigSecrets(agentId, scaffold.text, scaffold.format));
         setConfigFormat(scaffold.format);
         setConfigError(null);
         const extracted = extractFormVars(agentId, scaffold.text, scaffold.format);
         setVars({
           ...extracted,
-          apiKey: keepKey ?? extracted.apiKey,
+          apiKey: writableSecret(keepKey ?? extracted.apiKey),
         });
         return;
       }
       setConfigFormat(form.configFormat);
-      setConfigText(form.configText);
+      setConfigText(maskConfigSecrets(agentId, form.configText, form.configFormat));
       setConfigError(null);
-      setVars(form.vars);
+      setVars({ ...form.vars, apiKey: writableSecret(form.vars.apiKey) });
     },
     [agentId],
   );
@@ -345,7 +350,6 @@ export function ProviderEditDialog({
     setCustomSnapshot(null);
     if (isEdit && provider) {
       setName(provider.name ?? '');
-      setConfigText(provider.configText);
       setConfigFormat(provider.configFormat);
       setConfigError(getConfigTextError(agentId, provider.configText, provider.configFormat, t));
       const nextVars = initFormFromConfig(
@@ -354,17 +358,24 @@ export function ProviderEditDialog({
         provider.configFormat,
         provider.authApiKey,
       );
+      nextVars.apiKey = writableSecret(nextVars.apiKey);
       setVars(nextVars);
-      const normalized = applyFormVars(
+      const normalized = maskConfigSecrets(
         agentId,
-        provider.configText,
+        applyFormVars(
+          agentId,
+          provider.configText,
+          provider.configFormat,
+          nextVars,
+        ),
         provider.configFormat,
-        nextVars,
       );
       const normalizedError = getConfigTextError(agentId, normalized, provider.configFormat, t);
       if (!normalizedError) {
         setConfigText(normalized);
         setConfigError(null);
+      } else {
+        setConfigText(maskConfigSecrets(agentId, provider.configText, provider.configFormat));
       }
       const resolvedOnOpen = resolveUpstreamBaseUrl({
         formBaseUrl: nextVars.baseUrl,
@@ -397,13 +408,19 @@ export function ProviderEditDialog({
     });
     setCustomSnapshot(next.snapshot);
     setUseOfficial(checked);
-    setVars(next.vars);
-    setConfigText(next.configText);
+    const nextVars = { ...next.vars, apiKey: writableSecret(next.vars.apiKey) };
+    setVars(nextVars);
+    const nextText = maskConfigSecrets(agentId, next.configText, next.configFormat);
+    setConfigText(nextText);
     setConfigFormat(next.configFormat);
-    setConfigError(getConfigTextError(agentId, next.configText, next.configFormat, t));
+    setConfigError(getConfigTextError(agentId, nextText, next.configFormat, t));
     if (checked && !name.trim() && official) {
       setName(official.label);
     }
+    void logGuiEvent('use_official', {
+      agent: agentId,
+      last4: maskApiKeyLast4(nextVars.apiKey) || undefined,
+    });
   };
 
   const tomlOpaque =
@@ -416,27 +433,48 @@ export function ProviderEditDialog({
         configFormat,
         vars,
       });
+      result.vars.apiKey = writableSecret(result.vars.apiKey);
+      const nextText = maskConfigSecrets(agentId, result.configText, result.configFormat);
       setDetectHints(result.detect.hints);
       setVars(result.vars);
-      setConfigText(result.configText);
+      setConfigText(nextText);
       setConfigFormat(result.configFormat);
-      setConfigError(getConfigTextError(agentId, result.configText, result.configFormat, t));
+      setConfigError(getConfigTextError(agentId, nextText, result.configFormat, t));
       if (opts?.fillName !== false && result.suggestedName) {
         setName((n) => n.trim() || result.suggestedName || '');
       }
-      return result;
+      if (useOfficial) {
+        setUseOfficial(false);
+        setCustomSnapshot({
+          vars: result.vars,
+          configText: nextText,
+          configFormat: result.configFormat,
+        });
+      }
+      if (result.detect.baseUrl || result.detect.apiKey || result.detect.rawConfigText) {
+        void logGuiEvent('recognize', {
+          agent: agentId,
+          last4: maskApiKeyLast4(result.vars.apiKey) || undefined,
+        });
+      }
+      return { ...result, configText: nextText };
     },
-    [agentId, configText, configFormat, vars, t],
+    [agentId, configText, configFormat, vars, t, useOfficial],
   );
 
   const patchVars = (patch: Partial<ProviderFormVars>) => {
     setVars((prev) => {
       const next = { ...prev, ...patch };
+      next.apiKey = writableSecret(next.apiKey);
       const base =
         configText.trim() === REDACTED_MARKER || !configText.trim()
           ? defaultConfigScaffold(agentId).text
           : configText;
-      const nextConfigText = applyFormVars(agentId, base, configFormat, next);
+      const nextConfigText = maskConfigSecrets(
+        agentId,
+        applyFormVars(agentId, base, configFormat, next),
+        configFormat,
+      );
       setConfigText(nextConfigText);
       setConfigError(getConfigTextError(agentId, nextConfigText, configFormat, t));
       return next;
@@ -486,12 +524,16 @@ export function ProviderEditDialog({
     setConfigError(getConfigTextError(agentId, text, configFormat, t));
     const extracted = extractFormVars(agentId, text, configFormat);
     const hit = smartDetectUrlAndKey(text);
-    setVars({
+    setVars((prev) => ({
       ...extracted,
       baseUrl: extracted.baseUrl || hit.baseUrl || '',
-      apiKey: extracted.apiKey || hit.apiKey || '',
+      apiKey: resolveFormApiKeyFromEditor(
+        extracted.apiKey,
+        hit.apiKey ?? '',
+        prev.apiKey,
+      ),
       model: extracted.model || hit.model || '',
-    });
+    }));
   };
 
   const piSlug = vars.providerSlug.trim() || 'custom';
@@ -775,8 +817,9 @@ export function ProviderEditDialog({
               modelHaiku: off.modelHaiku ?? vars.modelHaiku,
               modelFable: off.modelFable ?? vars.modelFable,
               modelSubagent: off.modelSubagent ?? vars.modelSubagent,
+              apiKey: writableSecret(vars.apiKey),
             }
-          : vars,
+          : { ...vars, apiKey: writableSecret(vars.apiKey) },
         useOfficial,
       );
       const finalFormat = useOfficial && off ? off.format : configFormat;
@@ -919,16 +962,30 @@ export function ProviderEditDialog({
                 </span>
               </label>
             </Hint>
-          ) : null}
+          ) : (
+            <Hint
+              label={
+                agentId === 'cursor'
+                  ? t('connections.providerDialog.cursorNoOfficialHint')
+                  : t('connections.providerDialog.noOfficialTemplateHint')
+              }
+            >
+              <label className="flex cursor-not-allowed items-start gap-2.5 rounded-card border border-border bg-panel px-3 py-2.5 opacity-70">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-accent"
+                  checked={false}
+                  disabled
+                />
+                <span className="min-w-0 flex-1 text-sm font-medium text-primary">
+                  {t('connections.providerDialog.useOfficial')}
+                </span>
+              </label>
+            </Hint>
+          )}
 
-          {/* 布局固定：勾选官方只切换只读/禁用，不卸载区块，避免高度跳动 */}
-          <div
-            className={cn(
-              'flex flex-col gap-1.5 rounded-card border border-border bg-canvas p-3 transition-opacity',
-              useOfficial && 'pointer-events-none opacity-45',
-            )}
-            aria-disabled={useOfficial || undefined}
-          >
+          {/* 智能识别始终可粘贴；勾选官方不灰掉这块。粘贴成功会改成自定义。 */}
+          <div className="flex flex-col gap-1.5 rounded-card border border-border bg-canvas p-3">
             <Hint label={t('connections.providerDialog.smartDetectHint')}>
               <span className="flex items-center gap-1 text-xs font-medium text-secondary">
                 <Sparkles className="h-3.5 w-3.5" />
@@ -938,11 +995,9 @@ export function ProviderEditDialog({
             <textarea
               value={pasteBuf}
               onChange={(e) => {
-                if (useOfficial) return;
                 setPasteBuf(e.target.value);
               }}
               onPaste={(e) => {
-                if (useOfficial) return;
                 const text = e.clipboardData.getData('text');
                 if (text && text.length > 12) {
                   window.setTimeout(() => {
@@ -952,9 +1007,8 @@ export function ProviderEditDialog({
                 }
               }}
               rows={3}
-              disabled={useOfficial}
               placeholder={t('connections.providerDialog.pastePlaceholder')}
-              className="w-full resize-none rounded-btn border border-border bg-panel px-2.5 py-2 font-mono text-xs text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60 disabled:cursor-not-allowed"
+              className="w-full resize-none rounded-btn border border-border bg-panel px-2.5 py-2 font-mono text-xs text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60"
               spellCheck={false}
             />
             <div className="flex min-h-[1.75rem] flex-wrap items-center gap-2">
@@ -962,7 +1016,7 @@ export function ProviderEditDialog({
                 type="button"
                 size="sm"
                 variant="secondary"
-                disabled={useOfficial || !pasteBuf.trim()}
+                disabled={!pasteBuf.trim()}
                 onClick={onSmartPaste}
               >
                 {t('connections.providerDialog.detectFill')}

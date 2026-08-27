@@ -53,6 +53,12 @@ updated: 2026-08-27
 - DeepSeek Harness 的 StructuredStream 仍是规划项；已落地部分以源码和集成文档为准。
 - 插件包的启用/安装/更新仍是提案，不从 MCP inventory 推导。见 [插件管理](proposals/plugin-management.md)。MCP 写入同样未做，且是另一条线。
 - Codex 安装、外部渠道 Chat 调用与连接/路由模块化审查见 [Codex 安装与模块化审查](status/codex-install-modularity-review.md)（2026-08-27）。
+- npm 渠道安装写到检测会扫的用户前缀（`~/.npm-global`，Windows 为 `%APPDATA%\npm`）。`~/.agenthub` 以及其中的 `npm` 只是遗留，不是安装目标，也不是启动路径。
+- WorkBuddy 本机安装只打开官网安装页，界面给中文指引，不当成「安装失败」。真失败时「重试」是主按钮；失败面板先显示诊断，不把 npm 下载进度当正文。
+- Kimi 切换写出带模型表的完整 `~/.kimi-code/config.toml`，使 `kimi-k2` 能用；旧登录再切换也会补上模型表。对话失败用中文。
+- Cursor 没有稳定的本机登录文件可写。切换失败给出中文说明，不静默。保存第二张登录不会因同一把钥匙悄悄把第一张送进回收站。
+- 「使用官方服务」默认勾选不禁用智能识别。高级编辑器不回显明文钥匙。同一工具切换成功 toast 说明已写入本机配置；接到本机路由则仍说已切换。备份标题是「切换前自动 / 手动 + 时间」。
+- GUI 日志：智能识别 `gui`/`recognize`，勾选官方 `gui`/`use_official`，删进回收站 `core.provider`/`recycle`，切换写本机路径 `core.provider`/`switch_write`。只记 last4。见 [日志参考](reference/logging.md)。
 - 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。
 
 ## 真源优先级

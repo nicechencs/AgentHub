@@ -89,6 +89,18 @@ describe('defaultConfigScaffold', () => {
     expect(defaultConfigScaffold('claude').format).toBe('json');
     expect(defaultConfigScaffold('codex').format).toBe('toml');
     expect(defaultConfigScaffold('codex').text).toContain('model_providers');
+    expect(defaultConfigScaffold('kimi').text).toContain('[models."kimi-k2"]');
+    expect(defaultConfigScaffold('kimi').text).toContain('max_context_size = 131072');
+    expect(defaultConfigScaffold('kimi').text).toContain('type = "openai"');
+  });
+
+  it('does not use Claude env JSON for Cursor', () => {
+    const scaffold = defaultConfigScaffold('cursor');
+    expect(scaffold.format).toBe('json');
+    const parsed = JSON.parse(scaffold.text) as { env?: unknown; note?: string };
+    expect(parsed.env).toBeUndefined();
+    expect(parsed.note).toBe('cursor-pool-only');
+    expect(scaffold.text).not.toContain('ANTHROPIC');
   });
 
   it('uses native model configuration shapes for Pi and WorkBuddy', () => {

@@ -291,9 +291,9 @@ export function nativeConfigIssueMessage(issue: NativeConfigIssue): string {
     case 'json_must_be_object':
       return '配置 JSON 必须是对象';
     case 'json_parse':
-      return `配置 JSON 解析失败：${issue.detail ?? ''}`;
+      return '配置 JSON 解析失败';
     case 'toml_parse':
-      return `配置 TOML 没法解析：${issue.detail ?? ''}`;
+      return '配置 TOML 没法解析';
     case 'expect_toml':
       return '这个工具的配置是 TOML，不能用 JSON 对象';
     case 'claude_env_object':

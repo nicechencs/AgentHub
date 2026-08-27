@@ -1,5 +1,6 @@
 //! Live config import, capture/restore, and current-row live apply.
 
+use std::path::Path;
 use std::time::Instant;
 
 use uuid::Uuid;
@@ -20,9 +21,50 @@ use crate::utils::loopback::is_loopback_base_url;
 use super::compensate::{compensated_current_apply_error, compensated_current_apply_error_with_db};
 use super::pool::ProviderCommittedMutation;
 use super::{
-    ensure_config_agent, is_placeholder_import_name, live_config_is_empty, log_provider_op, now_ts,
-    validate_name, ProviderLiveSagaGuard, ProviderService,
+    ensure_config_agent, is_placeholder_import_name, live_config_is_empty, log_provider_op,
+    log_switch_write, now_ts, validate_name, ProviderLiveSagaGuard, ProviderService,
 };
+
+/// Fail-closed copy when an agent cannot write the saved login to live files.
+pub(super) fn live_write_unsupported(agent: AgentId) -> AppError {
+    match agent {
+        AgentId::Cursor => AppError::Unsupported(
+            "Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。"
+                .into(),
+        ),
+        other => AppError::Unsupported(format!(
+            "{} 暂时不能把这份登录写到本机配置。",
+            other.as_str()
+        )),
+    }
+}
+
+pub(super) fn require_live_config_write(
+    adapter: &dyn crate::adapters::AgentAdapter,
+    agent: AgentId,
+) -> Result<()> {
+    if adapter.capability(Capability::ConfigWrite).is_usable() {
+        Ok(())
+    } else {
+        Err(live_write_unsupported(agent))
+    }
+}
+
+pub(super) fn log_live_switch_paths(agent: AgentId, adapter: &dyn crate::adapters::AgentAdapter) {
+    for path in adapter.live_backup_paths() {
+        log_switch_write(agent, &display_home_path(&path));
+    }
+}
+
+fn display_home_path(path: &Path) -> String {
+    match crate::utils::paths::home_dir() {
+        Ok(home) => path
+            .strip_prefix(&home)
+            .map(|rest| format!("~/{}", rest.display()))
+            .unwrap_or_else(|_| path.display().to_string()),
+        Err(_) => path.display().to_string(),
+    }
+}
 
 /// An in-memory copy of one agent's complete live configuration, held only
 /// while a cross-boundary saga may need to compensate a successful switch.
@@ -449,6 +491,7 @@ impl ProviderService {
                 db_rollback,
             ));
         }
+        log_live_switch_paths(stored.agent_id, adapter.as_ref());
         Ok(())
     }
 
@@ -494,6 +537,7 @@ impl ProviderService {
             let live_rollback = adapter.write_config(&live_before).err();
             return Err(compensated_current_apply_error(error, live_rollback));
         }
+        log_live_switch_paths(stored.agent_id, adapter.as_ref());
         Ok(())
     }
 

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyFormVars,
+  EMPTY_FORM_VARS,
   extractFormVars,
   formFieldVisibility,
   looksRedactedOrPlaceholder,
+  maskConfigSecrets,
   REDACTED_MARKER,
+  resolveFormApiKeyFromEditor,
 } from '../index';
 
 describe('provider-detect fields', () => {
@@ -536,6 +539,98 @@ describe('provider-detect fields', () => {
       auth: { openai: { type: string; key: string } };
     };
     expect(parsed.auth.openai).toEqual({ type: 'api_key', key: 'sk-keep' });
+  });
+
+  it('does not treat *** as a new Claude secret', () => {
+    const src = JSON.stringify({
+      env: { ANTHROPIC_AUTH_TOKEN: 'sk-live-secret' },
+    });
+    const out = applyFormVars('claude', src, 'json', {
+      ...extractFormVars('claude', src, 'json'),
+      apiKey: REDACTED_MARKER,
+    });
+    expect(JSON.parse(out).env.ANTHROPIC_AUTH_TOKEN).toBe(REDACTED_MARKER);
+    expect(extractFormVars('claude', out, 'json').apiKey).toBe('');
+  });
+
+  it('keeps the previous form key when the editor shows ***', () => {
+    expect(resolveFormApiKeyFromEditor('', '', 'sk-keep')).toBe('sk-keep');
+    expect(resolveFormApiKeyFromEditor(REDACTED_MARKER, '', 'sk-keep')).toBe('sk-keep');
+    expect(
+      resolveFormApiKeyFromEditor('sk-new-abcdefghijklmnop', '', 'sk-keep'),
+    ).toBe('sk-new-abcdefghijklmnop');
+  });
+
+  it('masks secrets in JSON and TOML without touching env_key', () => {
+    const json = maskConfigSecrets(
+      'claude',
+      JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'sk-live-secret-value' } }, null, 2),
+      'json',
+    );
+    expect(json).toContain(REDACTED_MARKER);
+    expect(json).not.toContain('sk-live-secret-value');
+
+    const toml = maskConfigSecrets(
+      'grok',
+      [
+        '[model."grok"]',
+        'api_key = "sk-live-secret-value"',
+        'env_key = "XAI_API_KEY"',
+        '',
+      ].join('\n'),
+      'toml',
+    );
+    expect(toml).toContain(`api_key = "${REDACTED_MARKER}"`);
+    expect(toml).toContain('env_key = "XAI_API_KEY"');
+    expect(toml).not.toContain('sk-live-secret-value');
+  });
+
+  it('keeps grok env_key and does not materialize api_key', () => {
+    const toml = [
+      '[models]',
+      'default = "grok"',
+      '',
+      '[model."grok"]',
+      'model = "grok-4.5"',
+      'base_url = "https://relay.example.com/v1"',
+      'env_key = "XAI_API_KEY"',
+      '',
+    ].join('\n');
+    const next = applyFormVars('grok', toml, 'toml', {
+      ...extractFormVars('grok', toml, 'toml'),
+      apiKey: 'sk-should-not-land-in-toml',
+    });
+    expect(next).toContain('env_key = "XAI_API_KEY"');
+    expect(next).not.toContain('sk-should-not-land-in-toml');
+    expect(next).not.toMatch(/api_key\s*=/);
+  });
+
+  it('does not project Cursor config into Claude env', () => {
+    const src = JSON.stringify({ note: 'cursor-pool-only' });
+    const vars = extractFormVars('cursor', src, 'json');
+    expect(vars.apiKey).toBe('');
+    const out = applyFormVars('cursor', src, 'json', {
+      ...vars,
+      apiKey: 'sk-cursor-test-abcdefgh',
+      baseUrl: 'https://relay.example.com',
+    });
+    expect(out).not.toContain('ANTHROPIC');
+    expect(out).not.toMatch(/"env"\s*:/);
+    expect(JSON.parse(out).apiKey).toBe('sk-cursor-test-abcdefgh');
+    expect(JSON.parse(out).note).toBe('cursor-pool-only');
+  });
+
+  it('builds a Kimi models table when starting from opaque TOML', () => {
+    const out = applyFormVars('kimi', REDACTED_MARKER, 'toml', {
+      ...EMPTY_FORM_VARS,
+      model: 'kimi-k2',
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-test-kimi-abcdefghijklmnop',
+    });
+    expect(out).toContain('type = "openai"');
+    expect(out).toContain('[models."kimi-k2"]');
+    expect(out).toContain('provider = "custom"');
+    expect(out).toContain('max_context_size = 131072');
   });
 
   it('extracts Pi official-slot key from auth.json-only envelope', () => {

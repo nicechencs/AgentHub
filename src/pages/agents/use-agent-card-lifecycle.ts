@@ -23,7 +23,77 @@ export type AgentCardTask = {
   command: string;
   lines: string[];
   status: TerminalStatus;
+  /** Short human diagnosis shown above raw installer output. */
+  diagnosis?: string;
 };
+
+export function isSetupGuideOutcome(outcome: {
+  ok: boolean;
+  code?: string | null;
+}): boolean {
+  return !outcome.ok && outcome.code === 'setup_guide';
+}
+
+export function resolveInstallTaskStatus(outcome: {
+  ok: boolean;
+  code?: string | null;
+}): TerminalStatus {
+  if (outcome.ok) return 'done';
+  if (isSetupGuideOutcome(outcome)) return 'guided';
+  return 'failed';
+}
+
+function isInstallerProgressNoise(line: string): boolean {
+  const lower = line.trim().toLowerCase();
+  if (!lower) return false;
+  return (
+    lower.includes('http fetch') ||
+    lower.includes('npm http') ||
+    lower.includes('npm notice') ||
+    (lower.startsWith('get ') && lower.includes('http')) ||
+    (lower.startsWith('put ') && lower.includes('http')) ||
+    lower.includes('content-length') ||
+    (lower.includes('timing') && lower.includes('http')) ||
+    lower.includes('cache hit') ||
+    lower.includes('cache miss')
+  );
+}
+
+/** Collapse npm HTTP progress so the fail panel is diagnosis-first. */
+export function summarizeInstallDisplayLines(lines: string[]): string[] {
+  const out: string[] = [];
+  let skipped = 0;
+  const flush = () => {
+    if (skipped === 0) return;
+    out.push(`（已省略 ${skipped} 行下载进度）`);
+    skipped = 0;
+  };
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (isInstallerProgressNoise(line)) {
+      skipped += 1;
+      continue;
+    }
+    flush();
+    out.push(line);
+  }
+  flush();
+  if (out.length <= 40) return out;
+  return [
+    ...out.slice(0, 12),
+    `（已省略 ${out.length - 24} 行安装输出）`,
+    ...out.slice(-12),
+  ];
+}
+
+export function splitInstallOutcomeDisplay(outcome: {
+  message: string;
+  logs: string[];
+}): { diagnosis: string; lines: string[] } {
+  const diagnosis = outcome.message.trim();
+  const raw = outcome.logs.length ? outcome.logs : diagnosis ? [diagnosis] : [];
+  return { diagnosis, lines: summarizeInstallDisplayLines(raw) };
+}
 
 const DONE_HOLD_MS = 500;
 
@@ -217,27 +287,45 @@ export function useAgentCardLifecycle(input: {
       if (cancelToken.cancelled) return;
       const outcome = await run();
       if (cancelToken.cancelled) return;
+      const status = resolveInstallTaskStatus(outcome);
+      const { diagnosis, lines } = splitInstallOutcomeDisplay(outcome);
       setTask({
         action,
         command,
-        lines: outcome.logs.length ? outcome.logs : [outcome.message],
-        status: outcome.ok ? 'done' : 'failed',
+        lines,
+        status,
+        diagnosis,
       });
       if (outcome.ok) {
         onOk();
         await new Promise((r) => setTimeout(r, DONE_HOLD_MS));
+      } else if (isSetupGuideOutcome(outcome)) {
+        toast({
+          title: t('agents.lifecycle.setupGuide'),
+          description: outcome.message,
+        });
       } else {
         toast({ title: t('agents.lifecycle.notOk'), description: outcome.message, variant: 'danger' });
       }
     } catch (e) {
       if (cancelToken.cancelled) return;
       if (e instanceof InstallFailedError) {
+        const status = resolveInstallTaskStatus(e.outcome);
+        const { diagnosis, lines } = splitInstallOutcomeDisplay(e.outcome);
         setTask({
           action,
           command,
-          lines: e.logs.length ? e.logs : [e.message],
-          status: 'failed',
+          lines: lines.length ? lines : e.logs.length ? e.logs : [e.message],
+          status,
+          diagnosis: diagnosis || e.message,
         });
+        if (isSetupGuideOutcome(e.outcome)) {
+          toast({
+            title: t('agents.lifecycle.setupGuide'),
+            description: e.message,
+          });
+          return;
+        }
         toast({ title: t('agents.lifecycle.failed'), description: e.message, variant: 'danger' });
         return;
       }

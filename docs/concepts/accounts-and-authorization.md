@@ -23,7 +23,8 @@ updated: 2026-08-27
 
 - 同一 Agent + 同一稳定 OAuth identity 只保留一行；重新登录覆盖 credentials/label/updatedAt。
 - 跨 Agent 的同一 identity 各自保留一行，不能跨 `agent_id` 合并。
-- API Key 按密钥指纹分行；不同 Key 不因展示名相同而合并。
+- API Key 按密钥指纹分行；不同 Key 不因展示名相同而合并。同一把钥匙、同一地址保存成两张登录时，也不会悄悄把其中一张送进回收站。
+- Cursor 没有稳定的本机登录文件：登录可以留在登录列表，但不能写回 Cursor 本机配置；切换失败给出中文说明。Kimi 切换会写出带模型表的完整 `config.toml`。
 - identity 不明确时 fail closed，不根据 label、token preview 或猜测合并。
 - Pi 还要按官方 live slot 区分；同一人位于不同 provider 槽仍是不同账号行。
 - 每个 Agent 的 live 生效位最多一条；切换不会删除池内其他授权。

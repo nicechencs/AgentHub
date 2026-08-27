@@ -13,6 +13,36 @@ import {
 import { deleteConnectionToastDescription } from './connection-model';
 import { activeBindingForAgent } from './ticket-wallet-model';
 
+/** Success toast: switch wrote the login into this Agent's local files. */
+export const SWITCH_WROTE_LIVE = '已写入本机配置';
+
+const CURSOR_LIVE_WRITE_UNSUPPORTED =
+  'Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。';
+
+export function switchErrorText(error: unknown): string {
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message.trim();
+  }
+  return '';
+}
+
+function isUnsupportedProviderSwitch(text: string): boolean {
+  return /provider\.switch\.rollback|\bunsupported\b|\[unsupported\]/i.test(text)
+    || text.includes('暂时不能把这份登录写到本机配置')
+    || text.includes('live config writes are not supported for cursor');
+}
+
+export function describeProviderSwitchError(agentId: string, error: unknown): string {
+  const text = switchErrorText(error).replace(/\s+\[[^\]]+\]\s*$/, '').trim();
+  if (agentId === 'cursor' && isUnsupportedProviderSwitch(text || String(error))) {
+    return `未能写入本机配置。${CURSOR_LIVE_WRITE_UNSUPPORTED}`;
+  }
+  return text || '未能写入本机配置';
+}
+
 /**
  * Connections 页切换当前登录与删除确认。
  * 世代丢弃、same-agent switch / other-agent bind、回收站删除语义未改。
@@ -42,7 +72,9 @@ export function useConnectionPageActions(input: {
     const generation = ++switchGen.current;
     setSwitchingTicketId(ticket.id);
     try {
-      if (ticket.agentId === targetAgent) {
+      const wroteLocal =
+        ticket.agentId === targetAgent;
+      if (wroteLocal) {
         if (ticket.sourceKind === 'account') {
           await switchAccount(ticket.agentId, ticket.sourceId);
         } else {
@@ -56,14 +88,17 @@ export function useConnectionPageActions(input: {
         }
       }
       if (switchGen.current !== generation) return;
-      toast({ title: t('connections.list.switchOk'), variant: 'success' });
+      toast({
+        title: wroteLocal ? SWITCH_WROTE_LIVE : t('connections.list.switchOk'),
+        variant: 'success',
+      });
       await poolReload().catch(() => {});
       await loadWallet();
     } catch (e) {
       if (switchGen.current !== generation) return;
       toast({
         title: t('connections.list.switchFail'),
-        description: e instanceof Error ? e.message : String(e),
+        description: describeProviderSwitchError(targetAgent, e),
         variant: 'danger',
       });
     } finally {

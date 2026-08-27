@@ -1,6 +1,7 @@
 use rusqlite::{Transaction, TransactionBehavior};
 
 use crate::error::{AppError, Result};
+use crate::logging::targets;
 use crate::models::{Account, AgentId, ConnectionTrashItem, ConnectionTrashKind, Provider};
 use crate::storage::{
     account_create_conn, account_delete_for_agent_conn, account_get_by_id_conn,
@@ -38,6 +39,7 @@ impl ConnectionService {
             account_delete_for_agent_conn(&tx, id, agent)?;
             self.clear_connection_refs_if_match_conn(&tx, agent, Some(id), None, &now)?;
             tx.commit()?;
+            log_recycle(agent, &account.id, &account.label);
             Ok(())
         })
     }
@@ -82,6 +84,7 @@ impl ConnectionService {
             account_delete_for_agent_conn(&tx, id, agent)?;
             self.clear_connection_refs_if_match_conn(&tx, agent, Some(id), None, &now)?;
             tx.commit()?;
+            log_recycle(agent, &account.id, &account.label);
             Ok(())
         })
     }
@@ -113,6 +116,7 @@ impl ConnectionService {
             provider_delete_for_agent_conn(&tx, id, agent)?;
             self.clear_connection_refs_if_match_conn(&tx, agent, None, Some(id), &now)?;
             tx.commit()?;
+            log_recycle(agent, &provider.id, &provider.name);
             Ok(())
         })
     }
@@ -169,4 +173,15 @@ impl ConnectionService {
     pub fn delete_trash(&self, id: &str) -> Result<()> {
         self.trash.delete(id)
     }
+}
+
+fn log_recycle(agent: AgentId, id: &str, name: &str) {
+    tracing::info!(
+        module = targets::PROVIDER,
+        op = "recycle",
+        agent = agent.as_str(),
+        id,
+        name,
+        "moved login to recovery bin"
+    );
 }

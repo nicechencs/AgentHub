@@ -45,7 +45,8 @@ pub(crate) use config_write::{
     write_verified_json_object,
 };
 pub(crate) use detect_binary::{
-    detect_binary, detect_binary_with_env, extract_version_token, looks_like_version_line,
+    detect_binary, detect_binary_with_env, extract_version_token,
+    is_under_agenthub_user_npm_prefix, looks_like_version_line, user_writable_npm_prefix,
     NOT_FOUND_FIREFIGHTING_NOTE,
 };
 pub use registry::{

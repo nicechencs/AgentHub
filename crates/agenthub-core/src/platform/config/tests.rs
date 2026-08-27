@@ -515,8 +515,12 @@ fn claude_apply_writes_and_clears_context_window_env() {
     desired.insert("contextWindow".into(), json!("auto"));
     svc.apply_at(AgentId::Claude, &desired, Some(home)).unwrap();
     let cleared: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert!(cleared["env"].get("CLAUDE_CODE_MAX_CONTEXT_TOKENS").is_none());
-    assert!(cleared["env"].get("CLAUDE_CODE_AUTO_COMPACT_WINDOW").is_none());
+    assert!(cleared["env"]
+        .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+        .is_none());
+    assert!(cleared["env"]
+        .get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+        .is_none());
     assert_eq!(cleared["env"]["ANTHROPIC_MODEL"], "stealth/ox-alpha");
 
     desired.insert("model".into(), json!("any/id[1m]"));
@@ -680,6 +684,9 @@ api_key = "sk-kimi-old"
         "secret must be preserved; {text}"
     );
     assert!(!text.contains(SECRET_REDACTED), "{text}");
+    assert_kimi_model_table(&text, "kimi-k2.5", "moonshot");
+    assert!(text.contains("type = \"openai\""), "{text}");
+    assert!(text.contains("default_provider = \"moonshot\""), "{text}");
 
     // Materialize pool settings from base content + new secret value.
     let base = json!({ "format": "toml", "content": text });
@@ -694,6 +701,54 @@ api_key = "sk-kimi-old"
     let content = raw["content"].as_str().unwrap_or("");
     assert!(content.contains("sk-kimi-new"), "{content}");
     assert!(content.contains("kimi-k2.5"), "{content}");
+    assert_kimi_model_table(content, "kimi-k2.5", "moonshot");
+}
+
+#[test]
+fn kimi_apply_writes_models_table_for_default_model() {
+    let dir = tempdir().unwrap();
+    let home = dir.path();
+    std::fs::write(
+        home.join("config.toml"),
+        r#"default_model = "kimi-k2"
+[providers.moonshot]
+base_url = "https://mytokens.cc/v1"
+api_key = "sk-relay"
+"#,
+    )
+    .unwrap();
+
+    let svc = test_configuration_service();
+    let mut desired = BTreeMap::new();
+    desired.insert("model".into(), json!("kimi-k2"));
+    desired.insert("baseUrl".into(), json!("https://mytokens.cc/v1"));
+    desired.insert("apiKey".into(), json!(SECRET_REDACTED));
+    desired.insert("providerSlug".into(), json!("moonshot"));
+    svc.apply_at(AgentId::Kimi, &desired, Some(home)).unwrap();
+
+    let text = std::fs::read_to_string(home.join("config.toml")).unwrap();
+    assert_kimi_model_table(&text, "kimi-k2", "moonshot");
+    assert!(text.contains("type = \"openai\""), "{text}");
+    assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+    assert!(
+        text.contains("sk-relay"),
+        "secret must be preserved; {text}"
+    );
+}
+
+fn assert_kimi_model_table(text: &str, alias: &str, provider: &str) {
+    let quoted = format!("[models.\"{alias}\"]");
+    let bare = format!("[models.{alias}]");
+    assert!(
+        text.contains(&quoted) || text.contains(&bare),
+        "missing models.{alias} table; {text}"
+    );
+    assert!(
+        text.contains(&format!("provider = \"{provider}\"")),
+        "{text}"
+    );
+    assert!(text.contains(&format!("model = \"{alias}\"")), "{text}");
+    assert!(text.contains("max_context_size = 131072"), "{text}");
 }
 
 #[test]
