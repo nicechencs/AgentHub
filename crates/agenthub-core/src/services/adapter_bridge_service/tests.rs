@@ -3,11 +3,11 @@ use super::*;
 use crate::models::{
     Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
     AdapterSourceKind, AdapterSourceProduct, AdapterTargetProtocol, AdapterUpstreamTransport,
-    Provider, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
-    LOCAL_BRIDGE_EDGES,
+    Provider, RouteSchedulePolicy, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
+    FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
 };
 use crate::services::{ProviderService, RoutePoolService};
-use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
+use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo, RoutePoolRepo};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::Router;
@@ -839,6 +839,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -873,6 +874,7 @@ async fn codex_responses_health_probe_does_not_request_models() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -905,6 +907,7 @@ async fn xai_responses_health_probe_does_not_request_models() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let host = crate::bridge::BridgeRuntimeHost::new();
     let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
@@ -937,6 +940,7 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.is_empty());
@@ -969,6 +973,7 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
@@ -996,6 +1001,7 @@ fn start_spec_empty_when_mapping_and_default_are_missing() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     assert!(material.start_spec(Some(0)).listed_models.is_empty());
 }
@@ -1020,6 +1026,7 @@ fn start_spec_lists_configured_default_when_mapping_is_missing() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     assert_eq!(
         material.start_spec(Some(0)).listed_models,
@@ -1047,6 +1054,7 @@ fn start_spec_lists_openai_to_codex_without_kimi_ids() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert_eq!(listed, vec![OPENAI_DEFAULT_MODEL.to_string()]);
@@ -1882,6 +1890,7 @@ fn start_spec_lists_stealth_ox_alpha_for_custom_openai() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(
@@ -1910,6 +1919,7 @@ fn start_spec_keeps_every_user_listed_model() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "openai/gpt-4o"));
@@ -1939,6 +1949,7 @@ fn start_spec_strips_claude_1m_marker_from_listed_models() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
@@ -1965,6 +1976,7 @@ fn start_spec_official_openai_does_not_list_stealth() {
         index_enabled: false,
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.iter().any(|model| model == "stealth/ox-alpha"));
@@ -2205,6 +2217,42 @@ fn production_start_spec_attaches_index_when_flags_on_and_pool_enrolled() {
     let index = spec.route_index.expect("enrolled v2 start attaches index");
     assert!(!index.list_models("responses").is_empty());
     assert!(index.resolve("responses", "unknown-model").is_err());
+    assert_eq!(
+        spec.schedule_policy,
+        RouteSchedulePolicy::PriorityFailover,
+        "default pool policy remains priority_failover"
+    );
+}
+
+#[test]
+fn production_start_spec_attaches_pool_schedule_policy() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    db.set_setting(FEATURE_ROUTE_INDEX_V2, "true").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-membership", "upstream-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    RoutePoolService::new(db.clone())
+        .enroll_v2(&prepared.profile().id, 43155)
+        .unwrap();
+    let mut pool = RoutePoolService::new(db.clone())
+        .get(&prepared.profile().id)
+        .unwrap()
+        .expect("legacy pool");
+    pool.schedule_policy = RouteSchedulePolicy::RoundRobin;
+    RoutePoolRepo::new(db.clone())
+        .update_pool(&pool)
+        .expect("persist round_robin");
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    assert_eq!(
+        prepared
+            .runtime_material()
+            .start_spec(Some(0))
+            .schedule_policy,
+        RouteSchedulePolicy::RoundRobin
+    );
 }
 
 #[test]

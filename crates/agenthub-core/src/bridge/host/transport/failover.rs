@@ -44,6 +44,7 @@ pub(super) async fn send_upstream_v2(
     candidates: &[DispatchCandidate],
     public_model: &str,
     continuation_locked: bool,
+    affinity_key: Option<&str>,
 ) -> Result<UpstreamSendOutcome, Response> {
     let original_body = body;
     let original_identity = identity;
@@ -256,6 +257,7 @@ pub(super) async fn send_upstream_v2(
             public_model,
             &excluded,
             Some(member.source_id.as_str()),
+            affinity_key,
         ) else {
             return Err(exhausted(
                 state,
