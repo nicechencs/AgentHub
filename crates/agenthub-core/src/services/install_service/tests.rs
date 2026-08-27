@@ -584,7 +584,85 @@ fn workbuddy_setup_channel_never_reports_success() {
     )
     .unwrap();
     assert!(!result.success());
-    assert!(logs.iter().any(|line| line.contains("Setup")));
+    assert!(
+        logs.iter().any(|line| line.contains("官网安装页")),
+        "expected Chinese setup-guide copy, got {logs:?}"
+    );
+    assert!(
+        logs.iter()
+            .all(|line| !line.to_ascii_lowercase().contains("failed")),
+        "opening the official page is not an installer failure: {logs:?}"
+    );
+    assert_eq!(calls.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn workbuddy_native_install_is_setup_guide_not_failure() {
+    let registry = register_all();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let out = install_agent(&registry, AgentId::WorkBuddy, "native", false, &ex).unwrap();
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    if out.ok {
+        // Already installed on this machine: still must not have installed
+        // into leftover AgentHub data-dir npm.
+        assert_ne!(out.code.as_deref(), Some("setup_guide"));
+        return;
+    }
+    assert_eq!(out.code.as_deref(), Some("setup_guide"));
+    assert!(
+        !out.message.contains("失败"),
+        "UI must not treat opening the official page as install failed: {}",
+        out.message
+    );
+    assert!(
+        out.message.contains("官网安装页"),
+        "expected Chinese setup-guide message, got {}",
+        out.message
+    );
+    assert_eq!(
+        out.logs.first().map(String::as_str),
+        Some(setup_guide_diagnosis())
+    );
+    let joined = out.logs.join("\n");
+    assert!(joined.contains("诊断："));
+    assert!(!joined.contains("安装命令未成功退出"));
+}
+
+#[test]
+fn setup_guide_contribution_is_not_command_failure() {
+    struct GuideContrib;
+    impl InstallContribution for GuideContrib {
+        fn agent_key(&self) -> AgentKey {
+            AgentKey::parse("guide-only").unwrap()
+        }
+        fn native_setup_url(&self) -> Option<&'static str> {
+            Some("https://www.codebuddy.cn/work/")
+        }
+    }
+
+    let key = AgentKey::parse("guide-only").unwrap();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 0,
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    let out = install_from_contribution(&key, &GuideContrib, "native", false, &ex).unwrap();
+    assert!(!out.ok);
+    assert_eq!(out.code.as_deref(), Some("setup_guide"));
+    assert!(!out.message.contains("失败"));
+    assert!(out.message.contains("官网安装页"));
+    assert_eq!(
+        out.logs.first().map(String::as_str),
+        Some(setup_guide_diagnosis())
+    );
     assert_eq!(calls.lock().unwrap().len(), 1);
 }
 
@@ -1062,11 +1140,19 @@ fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
     }
     let out = install_agent(&registry, AgentId::Codex, "npm", false, &ex).unwrap();
     assert!(!out.ok);
+    assert_ne!(out.code.as_deref(), Some("setup_guide"));
     assert!(out.message.contains("失败"), "msg={}", out.message);
     assert!(
         out.message.contains("EACCES") || out.message.contains("权限"),
         "msg={}",
         out.message
+    );
+    assert!(
+        out.logs
+            .first()
+            .is_some_and(|line| line.starts_with("诊断：") && line.contains("写入权限")),
+        "diagnosis must sit above raw installer output, got {:?}",
+        out.logs
     );
     let joined = out.logs.join("\n");
     assert!(!joined.contains("可能已成功"), "logs={joined}");
@@ -1076,6 +1162,78 @@ fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
         out.message
     );
     assert!(!out.message.contains("请检查 PATH"), "msg={}", out.message);
+}
+
+#[test]
+fn installer_fail_panel_collapses_npm_http_progress() {
+    let noisy: Vec<String> = (0..80)
+        .map(|i| format!("npm http fetch GET 200 https://registry.npmjs.org/@openai/codex/-/{i}.tgz"))
+        .collect();
+    let mut body = vec!["$ npm install -g @openai/codex".into()];
+    body.extend(noisy);
+    body.push("npm ERR! code EACCES".into());
+    body.push("npm ERR! syscall mkdir".into());
+    let summarized = summarize_installer_output_lines(body);
+    assert_eq!(summarized[0], "$ npm install -g @openai/codex");
+    assert!(
+        summarized.iter().any(|line| line.contains("已省略") && line.contains("下载进度")),
+        "expected collapsed download progress, got {summarized:?}"
+    );
+    assert!(summarized.iter().any(|line| line.contains("EACCES")));
+    assert!(
+        summarized
+            .iter()
+            .filter(|line| line.contains("http fetch") || line.contains("registry.npmjs.org"))
+            .count()
+            < 5,
+        "raw npm HTTP must not be the fail-panel body: {summarized:?}"
+    );
+    assert!(summarized.len() < 20, "too many lines: {}", summarized.len());
+}
+
+#[test]
+fn npm_nonzero_permission_failure_keeps_diagnosis_and_collapses_http() {
+    let registry = register_all();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let mut stderr = String::new();
+    for i in 0..60 {
+        stderr.push_str(&format!(
+            "npm http fetch GET 200 https://registry.npmjs.org/pkg-{i}\n"
+        ));
+    }
+    stderr.push_str("npm ERR! code EACCES\nnpm ERR! syscall mkdir\n");
+    let ex = MockExecutor {
+        calls: Arc::clone(&calls),
+        exit_code: 243,
+        stdout: String::new(),
+        stderr,
+    };
+    if !runtime::is_ready(&[RuntimeId::NodeJs, RuntimeId::Npm]) {
+        return;
+    }
+    let out = install_agent(&registry, AgentId::Codex, "npm", false, &ex).unwrap();
+    assert!(!out.ok);
+    assert!(
+        out.logs
+            .first()
+            .is_some_and(|line| line.starts_with("诊断：") && line.contains("写入权限")),
+        "diagnosis first, got {:?}",
+        out.logs
+    );
+    assert!(
+        out.logs.iter().any(|line| line.contains("已省略") && line.contains("下载进度")),
+        "fail panel must collapse npm HTTP, got {:?}",
+        out.logs
+    );
+    assert!(
+        out.logs
+            .iter()
+            .filter(|line| line.contains("http fetch"))
+            .count()
+            < 3,
+        "raw HTTP dumped: {:?}",
+        out.logs
+    );
     let commands = calls.lock().unwrap();
     let user_prefix = detect_scanned_user_npm_prefix()
         .expect("user-writable npm prefix")

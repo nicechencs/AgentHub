@@ -1803,6 +1803,7 @@ export const en = {
       installFailed: "Install failed",
       upgradeFailed: "Upgrade failed",
       oneclickFailed: "Did not finish",
+      setupGuide: "Opened the official setup page",
       cannotOneClick: "Can't one-click install",
       needManual: "Needs a manual step: {list}",
       oneClickDone: "{name} one-click install finished",

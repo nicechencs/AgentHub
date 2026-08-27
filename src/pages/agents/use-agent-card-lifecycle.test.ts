@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createInstallProgressSubscription,
   installOutputChunksToLines,
+  isSetupGuideOutcome,
   recordInstallOutputChunk,
+  resolveInstallTaskStatus,
+  splitInstallOutcomeDisplay,
 } from './use-agent-card-lifecycle';
 
 function deferred<T>() {
@@ -67,6 +70,73 @@ describe('install output raw chunks', () => {
     const chunks: string[] = [];
     recordInstallOutputChunk(chunks, 'keep  ');
     expect(installOutputChunksToLines(chunks)).toEqual(['keep  ']);
+  });
+});
+
+describe('setup-guide install outcome', () => {
+  it('does not treat opening the official setup page as a failed install', () => {
+    const guided = {
+      ok: false,
+      code: 'setup_guide',
+      message: 'workbuddy 已打开官网安装页，请完成安装后重启 AgentHub',
+      logs: [
+        '诊断：该 Agent 没有脚本安装，已打开官网安装页。请完成安装后，完全退出并重启 AgentHub。',
+        '$ xdg-open https://www.codebuddy.cn/work/',
+      ],
+    };
+    expect(isSetupGuideOutcome(guided)).toBe(true);
+    expect(resolveInstallTaskStatus(guided)).toBe('guided');
+    expect(guided.message).toContain('官网安装页');
+    expect(guided.message).not.toContain('失败');
+
+    const display = splitInstallOutcomeDisplay(guided);
+    expect(display.diagnosis).toBe(guided.message);
+    expect(display.lines[0]?.startsWith('诊断：')).toBe(true);
+    expect(display.lines[0]).not.toEqual(display.diagnosis);
+  });
+
+  it('keeps real command failures as failed with diagnosis above raw output', () => {
+    const failed = {
+      ok: false,
+      code: null,
+      message: 'codex 安装失败：没有写入权限（EACCES，退出码 243）',
+      logs: [
+        '诊断：没有写入权限，不是 PATH 问题。',
+        '$ npm install -g @openai/codex',
+        'npm ERR! code EACCES',
+      ],
+    };
+    expect(isSetupGuideOutcome(failed)).toBe(false);
+    expect(resolveInstallTaskStatus(failed)).toBe('failed');
+    const display = splitInstallOutcomeDisplay(failed);
+    expect(display.diagnosis).toBe(failed.message);
+    expect(display.lines[0]).toBe('诊断：没有写入权限，不是 PATH 问题。');
+    expect(display.lines[1]?.startsWith('$ ')).toBe(true);
+  });
+
+  it('does not dump npm HTTP progress as the fail-panel body', () => {
+    const logs = [
+      '诊断：安装命令未成功退出（退出码 1）。',
+      '$ npm install -g @openai/codex',
+      ...Array.from({ length: 50 }, (_, i) => `npm http fetch GET 200 https://registry.npmjs.org/p-${i}`),
+      'npm ERR! code EACCES',
+    ];
+    const display = splitInstallOutcomeDisplay({
+      message: 'codex 安装失败（退出码 1）',
+      logs,
+    });
+    expect(display.diagnosis).toBe('codex 安装失败（退出码 1）');
+    expect(display.lines[0]?.startsWith('诊断：')).toBe(true);
+    expect(display.lines.some((line) => line.includes('已省略') && line.includes('下载进度'))).toBe(
+      true,
+    );
+    expect(display.lines.filter((line) => line.includes('http fetch')).length).toBeLessThan(3);
+    expect(display.lines.some((line) => line.includes('EACCES'))).toBe(true);
+  });
+
+  it('marks ok outcomes done even if a leftover code is present', () => {
+    expect(resolveInstallTaskStatus({ ok: true, code: 'setup_guide' })).toBe('done');
+    expect(isSetupGuideOutcome({ ok: true, code: 'setup_guide' })).toBe(false);
   });
 });
 
