@@ -936,6 +936,39 @@ async fn xai_responses_health_probe_does_not_request_models() {
     host.shutdown().await.unwrap();
 }
 
+#[tokio::test]
+async fn deepseek_health_probe_skips_upstream_models() {
+    let mut material = AdapterBridgeRuntimeMaterial {
+        profile_id: "deepseek-health-profile".into(),
+        source_connection_id: "deepseek-create".into(),
+        preferred_port: None,
+        upstream_base_url: "https://api.deepseek.com/anthropic".into(),
+        upstream_model: "deepseek-chat".into(),
+        configured_listed_models: Vec::new(),
+        context_window_tokens: None,
+        protocol: BridgeUpstreamProtocol::AnthropicMessages,
+        local_surface: BridgeLocalSurface::Messages,
+        source: AdapterSourceProduct::OpenaiApi,
+        target_agent: AgentId::Claude,
+        upstream_auth: ResolvedAuth::bearer("deepseek-upstream-secret"),
+        local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
+    };
+    let host = crate::bridge::BridgeRuntimeHost::new();
+    let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
+
+    material
+        .verify_bound_health(runtime.port)
+        .await
+        .expect("local health is sufficient for DeepSeek Anthropic relay");
+
+    host.shutdown().await.unwrap();
+}
+
 #[test]
 fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
     let material = AdapterBridgeRuntimeMaterial {

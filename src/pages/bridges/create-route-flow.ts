@@ -76,7 +76,7 @@ export const CREATE_ROUTE_VENDORS: readonly CreateRouteVendor[] = [
   {
     id: 'deepseek',
     url: 'https://api.deepseek.com',
-    enabled: ['claude', 'codex', 'grok'],
+    enabled: ['claude', 'codex'],
     models: [],
     endpointUrls: {
       claude: 'https://api.deepseek.com/anthropic',

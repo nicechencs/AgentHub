@@ -16,6 +16,7 @@ import type {
 } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { cn } from '@/lib/utils';
+import { fmtAbsoluteI18n } from '@/pages/backups/backup-format';
 import { AdapterErrorLines } from './adapter-components';
 import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { readCreateRouteCapabilities } from './create-route-flow';
@@ -195,7 +196,7 @@ function RouteDetailBody({
   busy?: boolean;
 }) {
   const { toast } = useToast();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const isBridge = profile.route === 'local_bridge';
   const endpointParts = isBridge ? adapterBridgeHostPort(profile, bridgeStatus) : null;
   const graph = buildRouteGraph({
@@ -342,8 +343,8 @@ function RouteDetailBody({
             <DetailRow label={t('routes.profileId')} value={profile.id} mono />
             <DetailRow label={t('routes.rule')} value={`${profile.ruleId} · v${profile.ruleVersion}`} mono />
             {profile.lastErrorCode ? <DetailRow label={t('routes.lastError')} value={profile.lastErrorCode} mono /> : null}
-            <DetailRow label={t('routes.createdAt')} value={profile.createdAt} mono />
-            <DetailRow label={t('routes.updatedAt')} value={profile.updatedAt} mono />
+            <DetailRow label={t('routes.createdAt')} value={fmtAbsoluteI18n(profile.createdAt, lang)} mono />
+            <DetailRow label={t('routes.updatedAt')} value={fmtAbsoluteI18n(profile.updatedAt, lang)} mono />
             {source.upstreamUrls.map((url) => (
               <DetailRow key={url} label={t('routes.panel.upstreamUrl')} value={url} mono />
             ))}

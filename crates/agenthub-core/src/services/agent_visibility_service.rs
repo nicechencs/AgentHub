@@ -15,6 +15,12 @@ use crate::utils::atomic::atomic_write;
 
 const VISIBILITY_FILE: &str = "agent_visibility.json";
 
+/// Dev store-stamp generation. Bump when default hidden agents change.
+const CURRENT_STORE_STAMP_VERSION: u32 = 1;
+
+/// Agents hidden once per store-stamp generation on dev (UI-only soft hide).
+const STORE_STAMP_HIDDEN: [AgentId; 1] = [AgentId::Cursor];
+
 #[derive(Clone)]
 pub struct AgentVisibilityService {
     inner: Arc<Inner>,
@@ -73,6 +79,26 @@ impl AgentVisibilityService {
             } else if let Some(i) = idx {
                 doc.hidden_agent_ids.remove(i);
             }
+            save_visibility(&self.path(), &doc)
+        })
+    }
+
+    /// Apply dev store-stamp defaults once (e.g. hide Cursor while compatibility
+    /// fixes are in progress). Re-running after `store_stamp_version` catches up
+    /// is a no-op; explicit unhide via [`Self::set_agent_hidden`] persists.
+    pub fn ensure_store_stamp(&self) -> Result<()> {
+        self.with_lock(|| {
+            let mut doc = load_visibility(&self.path())?;
+            if doc.store_stamp_version >= CURRENT_STORE_STAMP_VERSION {
+                return Ok(());
+            }
+            for agent_id in STORE_STAMP_HIDDEN {
+                let key = agent_id.as_str().to_string();
+                if !doc.hidden_agent_ids.iter().any(|item| item == &key) {
+                    doc.hidden_agent_ids.push(key);
+                }
+            }
+            doc.store_stamp_version = CURRENT_STORE_STAMP_VERSION;
             save_visibility(&self.path(), &doc)
         })
     }
