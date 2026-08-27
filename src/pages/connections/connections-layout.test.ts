@@ -66,6 +66,11 @@ describe('connections layout wiring', () => {
     expect(page).toContain("{ kind: 'detail'; ticketId: string }");
     expect(page).toContain('onShowDetail');
     expect(page).toContain('<TicketDetailPanel');
+    expect(list).toContain('onOpen=');
+    expect(list).not.toContain("t('connections.list.details')");
+    expect(list).toContain('ListRowBody');
+    expect(list).toContain('LIST_ROW_PAD');
+    expect(list).toContain('AgentLogo');
     expect(list).not.toContain('DetailsToggle');
     expect(list).toContain('asPanel');
     expect(list).toContain('{refreshButton}');

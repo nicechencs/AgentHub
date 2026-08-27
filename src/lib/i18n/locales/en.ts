@@ -1709,6 +1709,7 @@ export const en = {
       openOfficialDownload: "Open official download",
       unsupportedUpdate: "This agent does not support automatic update checks",
       notInstalled: "Not installed",
+      seeDetails: "Multiple versions — open for details",
       envNotReady: "Runtime not ready",
       oneClickInstall: "One-click install",
       envReady: "Runtime ready",
@@ -1766,6 +1767,12 @@ export const en = {
       oneclickProgress: "Runtime → Agent",
       installing: "Installing",
       upgrading: "Upgrading",
+    },
+    detail: {
+      installLocations: "Install locations",
+      openFolder: "Folder",
+      configDir: "Config folder",
+      uninstall: "Uninstall",
     },
     dialog: {
       uninstallTitle: "Uninstall {name}?",
