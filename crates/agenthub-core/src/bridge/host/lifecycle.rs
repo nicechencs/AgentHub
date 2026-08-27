@@ -650,6 +650,7 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.multi_account == right.multi_account
         && member_fingerprint(left) == member_fingerprint(right)
         && left.route_index == right.route_index
+        && left.schedule_policy == right.schedule_policy
 }
 
 fn member_fingerprint(spec: &BridgeStartSpec) -> Vec<(String, String, String)> {

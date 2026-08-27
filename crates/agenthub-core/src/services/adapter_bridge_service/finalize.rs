@@ -268,6 +268,7 @@ impl AdapterBridgeService {
                 index_enabled: false,
                 codex_ingress_grok_upstream: false,
                 grok_ingress_codex_upstream: false,
+                schedule_policy: Default::default(),
             },
             &profile,
         );
