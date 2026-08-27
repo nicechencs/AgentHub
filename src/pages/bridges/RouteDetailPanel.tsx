@@ -293,7 +293,11 @@ function RouteDetailBody({
         <InboundRequestsSection rows={bridgeStatus?.recentInbound ?? []} />
 
         {routePoolMembersSectionVisible(routePoolV2, defaultPool) && defaultPool ? (
-          <RoutePoolOverviewSection pool={defaultPool} entries={entries} />
+          <RoutePoolOverviewSection
+            pool={defaultPool}
+            entries={entries}
+            localToken={bridgeStatus?.localToken}
+          />
         ) : null}
 
         {nativeEnrollCtaVisible({
@@ -372,9 +376,11 @@ function RouteDetailBody({
 function RoutePoolOverviewSection({
   pool,
   entries,
+  localToken,
 }: {
   pool: DefaultRoutePoolOverview;
   entries: ConnectionEntry[];
+  localToken?: string | null;
 }) {
   const { t } = useI18n();
   const entry = defaultPoolEntryUrl(pool.gatewayPort);
@@ -438,7 +444,21 @@ function RoutePoolOverviewSection({
             </ul>
           )}
         </div>
-        <p className="text-meta text-muted">{t('routes.pool.tokenSaved')}</p>
+        {localToken ? (
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <dt className="w-12 shrink-0 text-muted">{t('routes.write.fieldLocalToken')}</dt>
+            <dd className="min-w-0">
+              <CopyableEndpoint
+                text={localToken}
+                url={localToken}
+                ariaLabel={t('routes.write.fieldLocalToken')}
+                className="text-sm font-medium"
+              />
+            </dd>
+          </div>
+        ) : (
+          <p className="text-meta text-muted">{t('routes.pool.tokenSaved')}</p>
+        )}
       </div>
     </section>
   );

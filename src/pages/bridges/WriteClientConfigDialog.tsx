@@ -23,6 +23,8 @@ import {
   type ClientWriteSpec,
   type ClientWriteStatus,
 } from './client-config-model';
+import { switchProvider } from '@/lib/api/provider';
+import { logGuiEvent } from '@/lib/api/settings';
 import { applyLocalRouteToAgents, type CreateRouteTarget } from './create-route-flow';
 import { routeEndpointCopyKey } from './route-endpoint-copy';
 import type { RouteGraphRow } from './route-graph-model';
@@ -44,6 +46,8 @@ export function WriteClientConfigDialog({
   hiddenTargetIds,
   listedModels,
   contextWindowTokens,
+  localToken,
+  siblingProfiles,
   onWritten,
   asPanel = false,
   width,
@@ -58,6 +62,8 @@ export function WriteClientConfigDialog({
   hiddenTargetIds?: ReadonlySet<string>;
   listedModels?: readonly string[];
   contextWindowTokens?: number | null;
+  localToken?: string | null;
+  siblingProfiles?: readonly AdapterProfile[];
   /** Reload the page's route list after a successful write. */
   onWritten: () => void;
   asPanel?: boolean;
@@ -78,6 +84,7 @@ export function WriteClientConfigDialog({
     hiddenTargetIds,
     listedModels,
     contextWindowTokens,
+    localToken,
     t,
   });
   const specsRef = useRef<ClientWriteSpec[]>(specs);
@@ -114,11 +121,21 @@ export function WriteClientConfigDialog({
     setError(null);
     setMissingSelection(false);
     try {
+      const agents = orderedClientWriteTargets(selected);
       await applyLocalRouteToAgents({
         sourceKind: profile.sourceKind,
         sourceId: profile.sourceId,
-        agents: orderedClientWriteTargets(selected),
+        agents,
       });
+      const siblings = siblingProfiles ?? [profile];
+      for (const agent of agents) {
+        const row = siblings.find((item) => item.targetAgentId === agent)
+          ?? (profile.targetAgentId === agent ? profile : null);
+        const generated = row?.generatedProviderId?.trim();
+        if (!generated) continue;
+        await switchProvider(agent, generated);
+        void logGuiEvent('switch_write', { agent });
+      }
       toast({ title: t('routes.write.success'), variant: 'success' });
       onOpenChange(false);
       onWritten();

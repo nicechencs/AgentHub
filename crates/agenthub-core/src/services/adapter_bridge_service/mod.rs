@@ -639,8 +639,8 @@ impl AdapterBridgeRuntimeMaterial {
     }
 
     pub fn freeze_gateway_port(&self) -> bool {
-        self.preferred_port.is_some_and(|port| port != 0)
-            && (self.route_index.is_some() || self.index_enabled)
+        // Occupied preferred ports must rebind to a free loopback port.
+        false
     }
 
     /// Seed last-successful snapshots so a partial rebuild can keep them.

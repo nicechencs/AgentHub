@@ -73,11 +73,37 @@ export function profileStatusBadge(
   };
 }
 
+const INTERNAL_ID_RE =
+  /\b(?:adapter-[a-z0-9-]+|retryable:adapter\.[a-z0-9._-]+|adapter\.[a-z0-9._-]+|[a-z0-9-]+-to-[a-z0-9-]+-v\d+)\b/gi;
+
+function localizeAdapterCopy(raw: string): string {
+  const trimmed = raw.trim();
+  if (/generated bridge provider has an invalid projection/i.test(trimmed)) {
+    return '这条本机路由的配置不完整，无法启动。请点重试，或删除后重建。';
+  }
+  if (/failed to bind loopback bridge listener|address already in use/i.test(trimmed)) {
+    return '本机端口已被占用。将自动换一个空闲端口，请点重试。';
+  }
+  if (/adapter profile is not a supported local bridge/i.test(trimmed)) {
+    return '这条本机路由已失效，无法启动。请删除后重建。';
+  }
+  if (/unknown custom relay provider/i.test(trimmed)) {
+    return '这份自定义上游还缺有效的服务地址，没法开本机转发。请补上地址后重试。';
+  }
+  return trimmed.replace(INTERNAL_ID_RE, '').replace(/\s{2,}/g, ' ').trim();
+}
+
 export function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof AdapterCommandError && error.message.trim()) return error.message;
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === 'string' && error.trim()) return error;
-  return fallback;
+  const raw = error instanceof AdapterCommandError && error.message.trim()
+    ? error.message
+    : error instanceof Error && error.message.trim()
+      ? error.message
+      : typeof error === 'string' && error.trim()
+        ? error
+        : '';
+  if (!raw) return fallback;
+  const localized = localizeAdapterCopy(raw);
+  return localized || fallback;
 }
 
 export function isAdapterErrorRetryable(error: unknown): boolean {
@@ -92,15 +118,18 @@ export function isAdapterErrorRetryable(error: unknown): boolean {
 }
 
 export function adapterErrorDetails(error: unknown): string | null {
+  let details: string | null = null;
   if (error instanceof AdapterCommandError) {
-    const details = error.details?.trim();
-    return details || null;
+    details = error.details?.trim() || null;
+  } else if (error && typeof error === 'object' && 'details' in error && typeof error.details === 'string') {
+    details = error.details.trim() || null;
   }
-  if (error && typeof error === 'object' && 'details' in error && typeof error.details === 'string') {
-    const details = error.details.trim();
-    return details || null;
+  if (!details) return null;
+  const cleaned = localizeAdapterCopy(details);
+  if (!cleaned || /adapter-|retryable:|wire_api|projection|loopback|PKCE/i.test(cleaned)) {
+    return null;
   }
-  return null;
+  return cleaned;
 }
 
 export function adapterErrorRetryHint(error: unknown, t?: TranslateFn): string | null {

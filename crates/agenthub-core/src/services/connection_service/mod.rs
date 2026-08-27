@@ -152,7 +152,7 @@ impl ConnectionService {
 mod account;
 mod active;
 mod provider;
-mod trash;
+pub(crate) mod trash;
 
 #[cfg(test)]
 mod tests;

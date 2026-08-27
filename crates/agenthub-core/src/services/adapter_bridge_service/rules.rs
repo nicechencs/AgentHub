@@ -9,7 +9,7 @@ pub(super) fn projected_provider_input(
 ) -> Result<ProviderInput> {
     validate_bound_port(port)?;
     let rule = rule_for_id(&profile.rule_id).ok_or_else(|| {
-        AppError::InvalidArg("adapter profile is not a supported local bridge".into())
+        AppError::InvalidArg("这条本机路由已失效，无法启动。请删除后重建。".into())
     })?;
     let provider_id = profile.generated_provider_id.as_deref().ok_or_else(|| {
         AppError::message(
@@ -481,7 +481,7 @@ pub(super) fn generate_local_bearer() -> Result<String> {
 pub(super) fn invalid_projection() -> AppError {
     AppError::message(
         "adapter.provider_conflict",
-        "generated bridge provider has an invalid projection",
+        "这条本机路由的配置不完整，无法启动。请点重试，或删除后重建。",
     )
 }
 

@@ -87,6 +87,7 @@ export interface AdapterBridgeStatusDtoWire {
   sourceConnectionId?: string;
   startedAtUnixMs?: number;
   recentInbound?: AdapterBridgeInboundRequestWire[];
+  localToken?: string | null;
 }
 
 export interface AdapterActionWire {
@@ -457,6 +458,9 @@ export function mapAdapterBridgeStatusDto(
     startedAt: mapStartedAt(wire.startedAtUnixMs),
     upstreamStatus: mapUpstreamStatus(wire.upstreamStatus),
     recentInbound: mapInboundRequests(wire.recentInbound),
+    localToken: typeof wire.localToken === 'string' && wire.localToken.trim()
+      ? wire.localToken.trim()
+      : null,
   };
 }
 
