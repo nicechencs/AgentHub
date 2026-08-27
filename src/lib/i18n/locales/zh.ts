@@ -565,19 +565,18 @@ export const zh = {
     page: {
       title: "路由",
       description: "本机转发 · 仅 127.0.0.1 · 含端口",
-      descriptionTip: "登录信息在连接页，不展示不复制。多数连接不需要本机转发。需保持托盘运行。日志不记请求正文。",
+      descriptionTip: "登录信息在连接页，不展示不复制。客户端填本机地址：/v1/messages Claude 对话、/v1/responses Codex / Grok 对话、/v1/chat/completions Kimi 等补全、GET /models 模型名单。需保持托盘运行。",
     },
     empty: {
       title: "没有本机路由",
-      description:
-        "多数连接不需要本机转发。只有两边说的话对不上时，才会在这台电脑上开一层转换。若刚接到需要转发的登录，到总览看对应工具上的路由状态。",
+      description: "点「新建路由」，填供应商登录并勾选客户端。多数连接不需要这一步。",
     },
     walletWithoutRuntime: {
       title: "登录列表里有本机路由，但找不到正在运行的转发",
-      description: "可重试读取。不是「没有本机路由」。",
+      description: "点重试。不是「没有本机路由」。",
     },
-    mutationFailure: "本机路由操作失败",
-    loadError: "无法读取本机路由",
+    mutationFailure: "本机路由操作失败，可点重试。",
+    loadError: "无法读取本机路由。点重试，或确认托盘还在运行。",
     profileStatus: {
       active: "已生效",
       applying: "应用中",
@@ -683,7 +682,7 @@ export const zh = {
     create: {
       action: "新建路由",
       title: "新建路由",
-      description: "选上游、填登录，勾选客户端。",
+      description: "选供应商、填登录，勾选要接的客户端。本机地址见各客户端说明。",
       name: "名称",
       url: "地址",
       key: "密钥",
@@ -700,7 +699,7 @@ export const zh = {
       targets: "接到",
       targetsHint: "勾选表示这条路由支持接到该客户端。不会为此再拆出多条本机路由。",
       upstreamEndpoints: "上游端点",
-      upstreamEndpointsHint: "勾选这条路由要接到的客户端。Codex 和 Grok 可以一起勾选。",
+      upstreamEndpointsHint: "勾选要接到的客户端。Codex 和 Grok 可以一起勾选。勾选后写入客户端时会填对应本机地址。",
       upstreamUrlFor: "{target} 上游地址",
       vendorLabel: "上游",
       vendor: { openrouter: "OpenRouter", openai: "OpenAI", glm: "智谱", kimi: "Kimi", deepseek: "DeepSeek", grok: "Grok", claude: "Claude", custom: "自定义" },
@@ -857,6 +856,21 @@ export const zh = {
       },
       copyPortPending: "端口分配后可复制",
       upstreamUrl: "上游地址",
+    },
+    endpoint: {
+      messages: "Claude 对话",
+      responses: "Codex / Grok 对话",
+      chatCompletions: "Kimi 等补全",
+      models: "模型名单",
+      legendTitle: "本机地址",
+      hint: "客户端填这些本机地址。",
+      modelsLine: "GET /models · 模型名单",
+    },
+    inbound: {
+      title: "最近请求",
+      empty: "还没有工具连上",
+      ok: "成功",
+      fail: "失败",
     },
     pool: {
       entry: "本机入口",

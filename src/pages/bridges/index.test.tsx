@@ -273,6 +273,9 @@ describe('Bridges page', () => {
     expect(markup).toContain('Claude');
     expect(markup).toContain('Codex');
     expect(markup).toContain('Grok');
+    expect(markup).toContain('/v1/messages');
+    expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('GET /models');
     expect(markup).toContain('写入客户端');
     expect(markup).not.toContain('一键配置');
     expect(markup).not.toContain('将勾选项写入客户端配置');
@@ -320,6 +323,13 @@ describe('Bridges page', () => {
     expect(markup).toContain('Grok');
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('/v1/chat/completions');
+    expect(markup).toContain('Claude 对话');
+    expect(markup).toContain('Codex / Grok 对话');
+    expect(markup).toContain('Kimi 等补全');
+    expect(markup).toContain('GET /models');
+    expect(markup).toContain('模型名单');
+    expect(markup).toContain('还没有工具连上');
     expect(markup).toContain('复制本机端点 http://127.0.0.1:43121/v1/messages');
     expect(markup).toContain('仅放行：stealth/ox-alpha（其余模型将被拒绝）');
     expect(markup).not.toContain('转换');
@@ -451,6 +461,54 @@ describe('Bridges page', () => {
       onEnrollNative: vi.fn(),
     });
     expect(shown).toContain('交给本机网关');
+  });
+
+  it('shows recent inbound requests newest first, and empty copy when none', () => {
+    const profile = localBridgeProfile();
+    const empty = renderDetail({
+      profile,
+      bridgeStatus: runningStatus(profile.id),
+      entries: [openRouterEntry()],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+    });
+    expect(empty).toContain('最近请求');
+    expect(empty).toContain('还没有工具连上');
+    expect(empty).not.toContain('票');
+    expect(empty).not.toContain('钱包');
+    expect(empty).not.toContain('投影');
+    expect(empty).not.toContain('PKCE');
+    expect(empty).not.toContain('loopback');
+
+    const listed = renderDetail({
+      profile,
+      bridgeStatus: {
+        ...runningStatus(profile.id),
+        recentInbound: [
+          { at: '2026-08-12T00:00:02.000Z', method: 'POST', path: '/v1/responses', status: 200, ok: true },
+          { at: '2026-08-12T00:00:01.000Z', method: 'GET', path: '/models', status: 401, ok: false },
+        ],
+      },
+      entries: [openRouterEntry()],
+      busy: false,
+      error: null,
+      onRequestRemove: vi.fn(),
+    });
+    expect(listed).toContain('最近请求');
+    expect(listed).not.toContain('还没有工具连上');
+    expect(listed).toContain('POST');
+    expect(listed).toContain('/v1/responses');
+    expect(listed).toContain('200');
+    expect(listed).toContain('成功');
+    expect(listed).toContain('/models');
+    expect(listed).toContain('401');
+    expect(listed).toContain('失败');
+    const inbound = listed.slice(listed.indexOf('data-route-inbound'));
+    expect(inbound.indexOf('/v1/responses')).toBeLessThan(inbound.indexOf('/models'));
+    expect(listed).not.toContain('Authorization');
+    expect(listed).not.toContain('sk-');
+    expect(listed).not.toContain('ahb_');
   });
 
   it('opens detail as the same inspect chrome as edit', () => {

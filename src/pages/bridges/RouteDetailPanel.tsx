@@ -9,6 +9,7 @@ import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { openLogsDir } from '@/lib/api/settings';
 import type {
+  AdapterBridgeInboundRequest,
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
   DefaultRoutePoolOverview,
@@ -42,6 +43,11 @@ import {
   routePoolMembersSectionVisible,
   routePoolSurfaceLabel,
 } from './route-pool-view-model';
+import {
+  formatInboundAt,
+  ROUTE_LOCAL_ADDRESS_LEGEND,
+  routeEndpointCopyKey,
+} from './route-endpoint-copy';
 
 /**
  * Route detail: login, local address, who is connected. No protocol graph.
@@ -255,6 +261,18 @@ function RouteDetailBody({
               </div>
             </dl>
 
+            <div className="space-y-1">
+              <h4 className="text-sm font-medium">{t('routes.endpoint.legendTitle')}</h4>
+              <ul className="space-y-0.5 text-meta text-muted">
+                {ROUTE_LOCAL_ADDRESS_LEGEND.map((row) => (
+                  <li key={row.path} className="font-mono">
+                    {row.method} {row.path} · {t(row.copyKey)}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-meta text-muted">{t('routes.endpoint.hint')}</p>
+            </div>
+
             <div className="space-y-1.5">
               <h4 className="text-sm font-medium">{t('routes.graph.clientsTitle')}</h4>
               {graph.rows.length === 0 ? (
@@ -270,6 +288,8 @@ function RouteDetailBody({
           </div>
           <p className="text-meta text-muted">{routeModelsSummary(capabilities.models, t)}</p>
         </section>
+
+        <InboundRequestsSection rows={bridgeStatus?.recentInbound ?? []} />
 
         {routePoolMembersSectionVisible(routePoolV2, defaultPool) && defaultPool ? (
           <RoutePoolOverviewSection pool={defaultPool} entries={entries} />
@@ -451,8 +471,38 @@ function ClientRow({ row }: { row: RouteGraphRow }) {
           url={url}
           ariaLabel={t('routes.graph.copyLocal', { endpoint: url || row.localPath })}
         />
+        <span className="ml-1 text-meta text-muted">{t(routeEndpointCopyKey(row.localEndpointId))}</span>
       </span>
     </li>
+  );
+}
+
+function InboundRequestsSection({ rows }: { rows: readonly AdapterBridgeInboundRequest[] }) {
+  const { t } = useI18n();
+  return (
+    <section className="space-y-2" data-route-inbound>
+      <h3 className="text-body font-medium">{t('routes.inbound.title')}</h3>
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted">{t('routes.inbound.empty')}</p>
+      ) : (
+        <ul className="space-y-1 rounded-card border border-border bg-subtle p-3">
+          {rows.map((row, index) => (
+            <li
+              key={`${row.at}:${row.method}:${row.path}:${row.status}:${index}`}
+              className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-meta"
+            >
+              <span className="text-muted">{formatInboundAt(row.at)}</span>
+              <span>{row.method}</span>
+              <span className="min-w-0 truncate">{row.path}</span>
+              <span>{row.status}</span>
+              <span className={row.ok ? 'text-success' : 'text-danger'}>
+                {row.ok ? t('routes.inbound.ok') : t('routes.inbound.fail')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
