@@ -1,19 +1,6 @@
 import * as React from 'react';
 import { NavLink } from 'react-router-dom';
-import {
-  Gauge,
-  MessagesSquare,
-  Bot,
-  Key,
-  Blocks,
-  Cable,
-  Plug,
-  FolderKanban,
-  Puzzle,
-  Settings2,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { AppLogo } from '@/components/shared/AppLogo';
 import { StatusPin } from '@/components/shared/StatusPin';
@@ -25,35 +12,18 @@ import {
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
-import { filterManageNavItems, filterWorkspaceNavItems } from '@/components/layout/sidebar-nav';
+import {
+  manageNavItems,
+  type SidebarNavItem,
+  workspaceNavItems,
+} from '@/components/layout/sidebar-nav';
 import { installedCatalogAgents } from '@/components/layout/sidebar-agents';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { applyStoredAgentOrder } from '@/lib/agent-visibility';
-import { BRIDGES_PATH } from '@/lib/bridges-path';
 import { StorageKey } from '@/lib/ui-preferences';
-
-/** 工作区 */
-const NAV_WORKSPACE = [
-  { to: '/chat', navKey: 'nav.chat', icon: MessagesSquare },
-  { to: '/agents', navKey: 'nav.agents', icon: Bot },
-  { to: '/skills', navKey: 'nav.skills', icon: Blocks },
-  { to: '/mcp', navKey: 'nav.mcp', icon: Plug },
-  { to: '/projects', navKey: 'nav.projects', icon: FolderKanban },
-  { to: '/plugins', navKey: 'nav.plugins', icon: Puzzle },
-] as const;
-
-/** 管理 */
-const NAV_MANAGE = [
-  { to: '/', navKey: 'nav.dashboard', icon: Gauge },
-  { to: '/connections', navKey: 'nav.connections', icon: Key },
-  { to: BRIDGES_PATH, navKey: 'nav.routes', icon: Cable },
-  { to: '/settings', navKey: 'nav.settings', icon: Settings2 },
-] as const;
-
-type NavItem = (typeof NAV_WORKSPACE)[number] | (typeof NAV_MANAGE)[number];
 
 const ICON_CLASS = 'h-4 w-4 shrink-0';
 
@@ -63,7 +33,7 @@ function SidebarNavLink({
   itemClass,
   notice,
 }: {
-  item: NavItem;
+  item: SidebarNavItem;
   collapsed: boolean;
   itemClass: (isActive: boolean) => string;
   /** Optional silent tip (e.g. app update available on Settings). */
@@ -187,11 +157,11 @@ export function Sidebar() {
     agentCatalogOrder,
   );
   const visibleWorkspaceNav = React.useMemo(
-    () => filterWorkspaceNavItems(NAV_WORKSPACE, pluginsNavVisible),
+    () => workspaceNavItems(pluginsNavVisible),
     [pluginsNavVisible],
   );
   const visibleManageNav = React.useMemo(
-    () => filterManageNavItems(NAV_MANAGE, routesNavVisible),
+    () => manageNavItems(routesNavVisible),
     [routesNavVisible],
   );
 
