@@ -17,7 +17,9 @@ use super::stream::{
     passthrough_sse_response, stream_response,
 };
 use super::surface::DownstreamSurface;
-use super::transport::{send_upstream, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome};
+use super::transport::{
+    send_upstream, send_upstream_v2, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome,
+};
 use super::upstream::{join_upstream, pool_exhausted_response};
 use super::UPSTREAM_NON_STREAM_TIMEOUT;
 use crate::bridge::account::PickedMember;
@@ -223,6 +225,16 @@ pub(super) async fn handle_conversation(
     };
     let continuation_locked = pair_active && required_member.is_some();
     admitted.member = Some(member);
+    if admitted.state.route_index.is_some() {
+        return forward_upstream_v2(
+            surface,
+            admitted,
+            resolver_candidates,
+            model,
+            continuation_locked,
+        )
+        .await;
+    }
     let prepared = match channel.prepare(surface, &admitted) {
         Ok(prepared) => prepared,
         Err(response) => return response,
@@ -235,16 +247,7 @@ pub(super) async fn handle_conversation(
         to = prepared.path,
         "downstream surface converted to upstream path"
     );
-    forward_upstream(
-        surface,
-        admitted,
-        channel,
-        prepared,
-        resolver_candidates,
-        model,
-        continuation_locked,
-    )
-    .await
+    forward_upstream(surface, admitted, channel, prepared, continuation_locked).await
 }
 
 fn pick_bound_member(
@@ -341,13 +344,59 @@ fn no_eligible_member(
     )
 }
 
+async fn forward_upstream_v2(
+    surface: DownstreamSurface,
+    admitted: AdmittedRequest,
+    candidates: Option<Vec<DispatchCandidate>>,
+    public_model: String,
+    continuation_locked: bool,
+) -> Response {
+    let AdmittedRequest {
+        state,
+        request_id,
+        started,
+        permit,
+        headers,
+        body,
+        member,
+        affinity_key,
+    } = admitted;
+    let member = member.expect("handle_conversation always picks before forward");
+    let UpstreamSendOutcome {
+        response,
+        member,
+        channel,
+        cache_seed,
+        stream,
+    } = match send_upstream_v2(
+        &state,
+        surface,
+        &request_id,
+        started,
+        &headers,
+        &body,
+        member,
+        candidates.as_deref().unwrap_or(&[]),
+        &public_model,
+        continuation_locked,
+        affinity_key.as_deref(),
+    )
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(response) => return response,
+    };
+    finish_upstream(
+        surface, channel, state, response, request_id, started, permit, cache_seed, member, stream,
+    )
+    .await
+}
+
 async fn forward_upstream(
     surface: DownstreamSurface,
     admitted: AdmittedRequest,
     channel: UpstreamChannel,
     prepared: UpstreamPrepare,
-    candidates: Option<Vec<DispatchCandidate>>,
-    public_model: String,
     continuation_locked: bool,
 ) -> Response {
     let AdmittedRequest {
@@ -358,7 +407,7 @@ async fn forward_upstream(
         headers: _,
         body: _,
         member,
-        affinity_key,
+        affinity_key: _,
     } = admitted;
     let member = member.expect("handle_conversation always picks before forward");
     let UpstreamPrepare {
@@ -372,10 +421,11 @@ async fn forward_upstream(
         Ok(url) => url,
         Err(response) => return response,
     };
-    let UpstreamSendOutcome { response, member } = match send_upstream(
+    let UpstreamSendOutcome {
+        response, member, ..
+    } = match send_upstream(
         &state,
         url,
-        path,
         channel,
         &request_id,
         started,
@@ -383,16 +433,40 @@ async fn forward_upstream(
         body,
         cache_seed.as_deref(),
         member,
-        candidates.as_deref(),
-        &public_model,
         continuation_locked,
-        affinity_key.as_deref(),
     )
     .await
     {
         Ok(outcome) => outcome,
         Err(response) => return response,
     };
+    finish_upstream(
+        surface,
+        channel,
+        state,
+        response,
+        request_id,
+        started,
+        permit,
+        cache_seed,
+        member,
+        stream_requested,
+    )
+    .await
+}
+
+async fn finish_upstream(
+    surface: DownstreamSurface,
+    channel: UpstreamChannel,
+    state: EdgeState,
+    response: reqwest::Response,
+    request_id: String,
+    started: Instant,
+    permit: OwnedSemaphorePermit,
+    cache_seed: Option<String>,
+    member: PickedMember,
+    stream_requested: bool,
+) -> Response {
     if stream_requested {
         return forward_stream(
             surface, channel, state, response, request_id, started, permit, cache_seed, member,

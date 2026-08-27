@@ -22,7 +22,6 @@ use crate::bridge::grok_cli::{
     GrokCliRequestIdentity,
 };
 use crate::bridge::request_fsm::{RequestDecision, RequestFsm, SwitchClass};
-use crate::bridge::route_index::DispatchCandidate;
 use crate::bridge::runtime::BridgeUpstreamProtocol;
 
 use super::admission::AdmittedRequest;
@@ -243,12 +242,16 @@ impl UpstreamTransport for UpstreamChannel {
 pub(super) struct UpstreamSendOutcome {
     pub response: reqwest::Response,
     pub member: PickedMember,
+    pub channel: UpstreamChannel,
+    pub cache_seed: Option<String>,
+    pub stream: bool,
 }
+
+pub(super) use failover::send_upstream_v2;
 
 pub(super) async fn send_upstream(
     state: &EdgeState,
     url: reqwest::Url,
-    path: &str,
     channel: UpstreamChannel,
     request_id: &str,
     started: Instant,
@@ -256,30 +259,8 @@ pub(super) async fn send_upstream(
     body: Value,
     cache_seed: Option<&str>,
     member: PickedMember,
-    candidates: Option<&[DispatchCandidate]>,
-    public_model: &str,
     continuation_locked: bool,
-    affinity_key: Option<&str>,
 ) -> Result<UpstreamSendOutcome, Response> {
-    if state.route_index.is_some() {
-        return failover::send_upstream_v2(
-            state,
-            url,
-            path,
-            channel,
-            request_id,
-            started,
-            identity,
-            body,
-            cache_seed,
-            member,
-            candidates.unwrap_or(&[]),
-            public_model,
-            continuation_locked,
-            affinity_key,
-        )
-        .await;
-    }
     let recovery = channel.recovery();
     let original_body = body;
     let original_identity = identity;
@@ -324,7 +305,13 @@ pub(super) async fn send_upstream(
                     failover_from.is_some(),
                     failover_from.as_deref(),
                 );
-                return Ok(UpstreamSendOutcome { response, member });
+                return Ok(UpstreamSendOutcome {
+                    response,
+                    member,
+                    channel,
+                    cache_seed: None,
+                    stream: false,
+                });
             }
             let status = response.status();
             let retry_after = response.headers().get(header::RETRY_AFTER).cloned();

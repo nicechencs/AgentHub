@@ -4400,7 +4400,8 @@ async fn v2_models_catalog_comes_from_the_same_index() {
     upstream_task.abort();
 }
 
-fn production_index(members: &[(&str, &str)]) -> EffectiveRouteIndex {
+fn production_index(upstream_port: u16, members: &[(&str, &str)]) -> EffectiveRouteIndex {
+    let endpoint = format!("http://127.0.0.1:{upstream_port}");
     let listings: Vec<MemberListing> = members
         .iter()
         .map(|(member_id, model)| MemberListing {
@@ -4408,7 +4409,7 @@ fn production_index(members: &[(&str, &str)]) -> EffectiveRouteIndex {
             listed_models: vec![(*model).into()],
             upstream_provider: "openai".into(),
             upstream_dialect: "generic".into(),
-            upstream_endpoint: "http://127.0.0.1/v1".into(),
+            upstream_endpoint: endpoint.clone(),
             transport_key: "openai:generic".into(),
             snapshot_ok: true,
         })
@@ -4419,7 +4420,7 @@ fn production_index(members: &[(&str, &str)]) -> EffectiveRouteIndex {
 #[tokio::test]
 async fn production_built_index_unions_models_and_never_crosses_members() {
     let (upstream_port, captured, task) = capturing_chat_upstream().await;
-    let index = production_index(&[("acc-b", "m2"), ("acc-a", "m1")]);
+    let index = production_index(upstream_port, &[("acc-b", "m2"), ("acc-a", "m1")]);
     assert_eq!(index.list_models("responses"), vec!["m1", "m2"]);
     let host = BridgeRuntimeHost::new();
     let mut spec = spec_with_token("pool-v2", 0, upstream_port, TOKEN_A)
@@ -4496,8 +4497,8 @@ async fn production_built_index_unions_models_and_never_crosses_members() {
 #[tokio::test]
 async fn live_start_does_not_reuse_index_when_members_remap_same_models() {
     let host = BridgeRuntimeHost::new();
-    let first = production_index(&[("acc-a", "m1"), ("acc-b", "m2")]);
-    let remapped = production_index(&[("acc-a", "m2"), ("acc-b", "m1")]);
+    let first = production_index(9, &[("acc-a", "m1"), ("acc-b", "m2")]);
+    let remapped = production_index(9, &[("acc-a", "m2"), ("acc-b", "m1")]);
     assert_eq!(first.generation, remapped.generation);
     assert_eq!(
         first.list_models("responses"),
@@ -4516,7 +4517,7 @@ async fn live_start_does_not_reuse_index_when_members_remap_same_models() {
     let reused = spec_with_token("pool-remap", 0, 9, TOKEN_A)
         .with_members(members.clone())
         .with_listed_models(listed.clone())
-        .with_route_index(production_index(&[("acc-a", "m1"), ("acc-b", "m2")]));
+        .with_route_index(production_index(9, &[("acc-a", "m1"), ("acc-b", "m2")]));
     let status = host.start(reused).await.expect("identical index is reused");
     assert!(status.running);
     let next = spec_with_token("pool-remap", 0, 9, TOKEN_A)
@@ -4590,22 +4591,23 @@ async fn callback_chat_upstream(
     (port, captured, task)
 }
 
-fn p5_listing(member_id: &str, models: &[&str]) -> MemberListing {
+fn p5_listing(member_id: &str, models: &[&str], endpoint: &str) -> MemberListing {
     MemberListing {
         member_id: member_id.into(),
         listed_models: models.iter().map(|model| (*model).to_string()).collect(),
         upstream_provider: "openai".into(),
         upstream_dialect: "generic".into(),
-        upstream_endpoint: "http://127.0.0.1/v1".into(),
+        upstream_endpoint: endpoint.into(),
         transport_key: "openai:generic".into(),
         snapshot_ok: true,
     }
 }
 
-fn p5_index(members: &[(&str, &[&str])]) -> EffectiveRouteIndex {
+fn p5_index(upstream_port: u16, members: &[(&str, &[&str])]) -> EffectiveRouteIndex {
+    let endpoint = format!("http://127.0.0.1:{upstream_port}");
     let listings: Vec<MemberListing> = members
         .iter()
-        .map(|(id, models)| p5_listing(id, models))
+        .map(|(id, models)| p5_listing(id, models, &endpoint))
         .collect();
     index_from_member_listings("pool-v2-p5", 1, "responses", &listings, None)
 }
@@ -4653,7 +4655,10 @@ async fn v2_401_after_failed_reload_failovers_to_second_member() {
     });
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
-    let index = p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]);
+    let index = p5_index(
+        upstream_port,
+        &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+    );
     let status = host
         .start(p5_pool_spec(
             "p5-401-failover",
@@ -4703,7 +4708,10 @@ async fn v2_stop_and_start_with_new_token_clears_host_isolation() {
     });
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
-    let index = p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]);
+    let index = p5_index(
+        upstream_port,
+        &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+    );
     let status = host
         .start(p5_pool_spec(
             "p5-401-restart-clears",
@@ -4767,7 +4775,7 @@ async fn v2_concurrent_401_reload_is_singleflight() {
     });
     let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
-    let index = p5_index(&[("acc-a", &["m1"][..])]);
+    let index = p5_index(upstream_port, &[("acc-a", &["m1"][..])]);
     let status = host
         .start(p5_pool_spec(
             "p5-401-singleflight",
@@ -4815,7 +4823,10 @@ async fn v2_400_does_not_switch_members() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -4858,7 +4869,10 @@ async fn v2_policy_403_does_not_switch_members() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -4904,7 +4918,10 @@ async fn v2_entitlement_excludes_member_for_model_not_account() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1", "m2"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1", "m2"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -4954,7 +4971,10 @@ async fn v2_entitlement_403_matches_404_scope() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5000,7 +5020,10 @@ async fn v2_429_cools_member_and_keeps_models_catalog() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5058,7 +5081,10 @@ async fn v2_5xx_failovers_before_downstream_commit() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5097,7 +5123,10 @@ async fn v2_does_not_replay_after_first_sse_byte() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5128,7 +5157,10 @@ async fn v2_pool_exhausted_when_both_members_fail() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5160,7 +5192,10 @@ async fn v2_pool_exhausted_includes_retry_after_from_cooldown() {
                 pool_member("acc-a", "token-a"),
                 pool_member("acc-b", "token-b"),
             ],
-            p5_index(&[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])]),
+            p5_index(
+                upstream_port,
+                &[("acc-a", &["m1"][..]), ("acc-b", &["m1"][..])],
+            ),
         ))
         .await
         .expect("start");
@@ -5657,12 +5692,142 @@ fn p7_pool_spec(
     mixed: bool,
     rules: Vec<ModelRouteRule>,
 ) -> BridgeStartSpec {
-    let endpoint = format!("http://127.0.0.1:{upstream_port}");
+    let endpoint = format!("http://127.0.0.1:{upstream_port}/v1/");
     let index = p7_index(mixed, rules, &endpoint);
     spec_with_token(profile_id, 0, upstream_port, TOKEN_A)
         .with_members(p7_members())
         .with_listed_models(index.list_models("responses"))
         .with_route_index(index)
+}
+
+#[derive(Clone)]
+struct CapturedResponsesAttempt {
+    path: String,
+    bearer: String,
+    headers: axum::http::HeaderMap,
+    body: Value,
+}
+
+type ResponsesCallback = Arc<dyn Fn(&CapturedResponsesAttempt) -> Response + Send + Sync>;
+
+fn responses_ok() -> Response {
+    Json(grok_completed_response("hello")).into_response()
+}
+
+fn response_bearers(captured: &Mutex<Vec<CapturedResponsesAttempt>>) -> Vec<String> {
+    captured
+        .lock()
+        .expect("lock")
+        .iter()
+        .map(|attempt| attempt.bearer.clone())
+        .collect()
+}
+
+fn grok_identity_headers_present(headers: &axum::http::HeaderMap) -> bool {
+    headers.get("x-grok-client-version").is_some()
+        && headers
+            .get("x-xai-token-auth")
+            .and_then(|value| value.to_str().ok())
+            == Some("xai-grok-cli")
+}
+
+async fn callback_responses_upstream(
+    callback: ResponsesCallback,
+) -> (
+    u16,
+    Arc<Mutex<Vec<CapturedResponsesAttempt>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    async fn responses(
+        uri: axum::http::Uri,
+        State((callback, captured)): State<(
+            ResponsesCallback,
+            Arc<Mutex<Vec<CapturedResponsesAttempt>>>,
+        )>,
+        headers: axum::http::HeaderMap,
+        Json(body): Json<Value>,
+    ) -> Response {
+        let bearer = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        let attempt = CapturedResponsesAttempt {
+            path: uri.path().to_owned(),
+            bearer,
+            headers,
+            body,
+        };
+        captured.lock().expect("lock").push(attempt.clone());
+        callback(&attempt)
+    }
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind scripted responses");
+    let port = listener.local_addr().expect("addr").port();
+    let state = (callback, captured.clone());
+    let task = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/v1/responses", post(responses))
+                .route("/responses", post(responses))
+                .route("/chat/completions", post(responses))
+                .with_state(state),
+        )
+        .await
+        .expect("serve scripted responses");
+    });
+    (port, captured, task)
+}
+
+fn p10_codex_lead_spec(
+    profile_id: &str,
+    grok_port: u16,
+    codex_port: u16,
+    mixed: bool,
+    rules: Vec<ModelRouteRule>,
+) -> BridgeStartSpec {
+    let grok_ep = format!("http://127.0.0.1:{grok_port}/v1/");
+    let codex_ep = format!("http://127.0.0.1:{codex_port}/v1/");
+    let index = index_from_member_listings(
+        "pool-v2-p10",
+        1,
+        "responses",
+        &[
+            p7_listing("grok-member", "grok", &["m1"], &grok_ep),
+            p7_listing("codex-member", "codex", &["m1"], &codex_ep),
+        ],
+        None,
+    )
+    .with_mixed_provider_rules(mixed, rules);
+    let mut spec = spec_with_token(profile_id, 0, codex_port, TOKEN_A);
+    spec.upstream.base_url = format!("http://127.0.0.1:{codex_port}/v1/");
+    spec.upstream.model = Some("gpt-5.4".to_owned());
+    spec.upstream.protocol = BridgeUpstreamProtocol::CodexResponsesOauth;
+    spec.upstream.local_surface = BridgeLocalSurface::Responses;
+    spec.upstream.auth = ResolvedAuth::bearer("lead-unused");
+    spec.with_members(p7_members())
+        .with_listed_models(index.list_models("responses"))
+        .with_route_index(index)
+}
+
+async fn post_store_true(port: u16, model: &str) -> reqwest::Response {
+    client()
+        .await
+        .post(format!("http://127.0.0.1:{port}/v1/responses"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN_A}"))
+        .json(&json!({
+            "model": model,
+            "store": true,
+            "prompt_cache_key": "cache-1",
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("p10 request")
 }
 
 async fn listed_model_ids(port: u16) -> Vec<String> {
@@ -5741,14 +5906,14 @@ async fn p7_unknown_model_does_not_call_upstream() {
 
 #[tokio::test]
 async fn p7_equivalent_lanes_failover_on_5xx_not_400() {
-    let callback: ChatCallback = Arc::new(|bearer, _body| {
-        if bearer == "Bearer token-grok" {
+    let callback: ResponsesCallback = Arc::new(|attempt| {
+        if attempt.bearer == "Bearer token-grok" {
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         } else {
-            chat_ok()
+            responses_ok()
         }
     });
-    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let (upstream_port, captured, task) = callback_responses_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
     let status = host
         .start(p7_pool_spec(
@@ -5766,7 +5931,7 @@ async fn p7_equivalent_lanes_failover_on_5xx_not_400() {
     let response = post_p5_model(status.port, "m1", false).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
-        captured_tokens(&captured),
+        response_bearers(&captured),
         vec![
             "Bearer token-grok".to_owned(),
             "Bearer token-codex".to_owned()
@@ -5776,18 +5941,18 @@ async fn p7_equivalent_lanes_failover_on_5xx_not_400() {
     host.shutdown().await.expect("shutdown");
     task.abort();
 
-    let callback_400: ChatCallback = Arc::new(|bearer, _body| {
-        if bearer == "Bearer token-grok" {
+    let callback_400: ResponsesCallback = Arc::new(|attempt| {
+        if attempt.bearer == "Bearer token-grok" {
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({"error": {"message": "bad schema"}})),
             )
                 .into_response()
         } else {
-            chat_ok()
+            responses_ok()
         }
     });
-    let (upstream_port, captured, task) = callback_chat_upstream(callback_400).await;
+    let (upstream_port, captured, task) = callback_responses_upstream(callback_400).await;
     let host = BridgeRuntimeHost::new();
     let status = host
         .start(p7_pool_spec(
@@ -5804,7 +5969,7 @@ async fn p7_equivalent_lanes_failover_on_5xx_not_400() {
     let response = post_p5_model(status.port, "m1", false).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
-        captured_tokens(&captured),
+        response_bearers(&captured),
         vec!["Bearer token-grok".to_owned()],
         "400 must not hop to the other provider"
     );
@@ -5814,14 +5979,14 @@ async fn p7_equivalent_lanes_failover_on_5xx_not_400() {
 
 #[tokio::test]
 async fn p7_non_equivalent_lanes_do_not_failover_on_5xx() {
-    let callback: ChatCallback = Arc::new(|bearer, _body| {
-        if bearer == "Bearer token-grok" {
+    let callback: ResponsesCallback = Arc::new(|attempt| {
+        if attempt.bearer == "Bearer token-grok" {
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         } else {
-            chat_ok()
+            responses_ok()
         }
     });
-    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let (upstream_port, captured, task) = callback_responses_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
     let status = host
         .start(p7_pool_spec(
@@ -5838,7 +6003,7 @@ async fn p7_non_equivalent_lanes_do_not_failover_on_5xx() {
     let response = post_p5_model(status.port, "m1", false).await;
     assert_ne!(response.status(), StatusCode::OK);
     assert_eq!(
-        captured_tokens(&captured),
+        response_bearers(&captured),
         vec!["Bearer token-grok".to_owned()],
         "without equivalence, 5xx on lane A must not call lane B"
     );
@@ -5848,8 +6013,8 @@ async fn p7_non_equivalent_lanes_do_not_failover_on_5xx() {
 
 #[tokio::test]
 async fn p7_declared_grok_lane_does_not_pick_codex_member() {
-    let callback: ChatCallback = Arc::new(|_bearer, _body| chat_ok());
-    let (upstream_port, captured, task) = callback_chat_upstream(callback).await;
+    let callback: ResponsesCallback = Arc::new(|_attempt| responses_ok());
+    let (upstream_port, captured, task) = callback_responses_upstream(callback).await;
     let host = BridgeRuntimeHost::new();
     let status = host
         .start(p7_pool_spec(
@@ -5863,7 +6028,7 @@ async fn p7_declared_grok_lane_does_not_pick_codex_member() {
     let response = post_p5_model(status.port, "m1", false).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
-        captured_tokens(&captured),
+        response_bearers(&captured),
         vec!["Bearer token-grok".to_owned()]
     );
     host.shutdown().await.expect("shutdown");
@@ -5872,13 +6037,13 @@ async fn p7_declared_grok_lane_does_not_pick_codex_member() {
 
 #[tokio::test]
 async fn p7_equivalent_failover_uses_the_other_lane_endpoint() {
-    let grok_cb: ChatCallback =
-        Arc::new(|_bearer, _body| StatusCode::INTERNAL_SERVER_ERROR.into_response());
-    let codex_cb: ChatCallback = Arc::new(|_bearer, _body| chat_ok());
-    let (grok_port, grok_captured, grok_task) = callback_chat_upstream(grok_cb).await;
-    let (codex_port, codex_captured, codex_task) = callback_chat_upstream(codex_cb).await;
-    let grok_ep = format!("http://127.0.0.1:{grok_port}");
-    let codex_ep = format!("http://127.0.0.1:{codex_port}");
+    let grok_cb: ResponsesCallback =
+        Arc::new(|_attempt| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    let codex_cb: ResponsesCallback = Arc::new(|_attempt| responses_ok());
+    let (grok_port, grok_captured, grok_task) = callback_responses_upstream(grok_cb).await;
+    let (codex_port, codex_captured, codex_task) = callback_responses_upstream(codex_cb).await;
+    let grok_ep = format!("http://127.0.0.1:{grok_port}/v1/");
+    let codex_ep = format!("http://127.0.0.1:{codex_port}/v1/");
     let index = index_from_member_listings(
         "pool-v2-p7",
         1,
@@ -5908,12 +6073,199 @@ async fn p7_equivalent_failover_uses_the_other_lane_endpoint() {
         .expect("start");
     let response = post_p5_model(status.port, "m1", false).await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(captured_tokens(&grok_captured).len(), 1);
+    assert_eq!(response_bearers(&grok_captured).len(), 1);
     assert_eq!(
-        captured_tokens(&codex_captured),
+        response_bearers(&codex_captured),
         vec!["Bearer token-codex".to_owned()]
     );
     host.shutdown().await.expect("shutdown");
     grok_task.abort();
     codex_task.abort();
+}
+
+#[tokio::test]
+async fn v2_grok_candidate_on_codex_lead_reprepares_grok_transport() {
+    let grok_cb: ResponsesCallback = Arc::new(|_attempt| responses_ok());
+    let codex_cb: ResponsesCallback =
+        Arc::new(|_attempt| panic!("Codex origin must not receive the first grok-lane pick"));
+    let (grok_port, grok_captured, grok_task) = callback_responses_upstream(grok_cb).await;
+    let (codex_port, codex_captured, codex_task) = callback_responses_upstream(codex_cb).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p10_codex_lead_spec(
+            "p10-grok-first",
+            grok_port,
+            codex_port,
+            true,
+            vec![p7_rule("r-grok", "grok", "grok-4.5", 0, None)],
+        ))
+        .await
+        .expect("start");
+    let response = post_store_true(status.port, "m1").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let grok = grok_captured.lock().expect("lock").clone();
+    assert!(codex_captured.lock().expect("lock").is_empty());
+    assert_eq!(grok.len(), 1);
+    assert_eq!(grok[0].path, "/v1/responses");
+    assert_eq!(grok[0].bearer, "Bearer token-grok");
+    assert!(
+        grok_identity_headers_present(&grok[0].headers),
+        "grok-lane prepare must inject Grok identity headers"
+    );
+    assert_ne!(
+        grok[0].body.get("store"),
+        Some(&json!(false)),
+        "must not reuse Codex store:false leftovers: {}",
+        grok[0].body
+    );
+    assert_eq!(grok[0].body["model"], "grok-4.5");
+    assert_eq!(grok[0].body["prompt_cache_key"], "cache-1");
+    host.shutdown().await.expect("shutdown");
+    grok_task.abort();
+    codex_task.abort();
+}
+
+#[tokio::test]
+async fn v2_equivalent_5xx_reprepares_other_origin_transport() {
+    let grok_cb: ResponsesCallback =
+        Arc::new(|_attempt| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    let codex_cb: ResponsesCallback = Arc::new(|_attempt| responses_ok());
+    let (grok_port, grok_captured, grok_task) = callback_responses_upstream(grok_cb).await;
+    let (codex_port, codex_captured, codex_task) = callback_responses_upstream(codex_cb).await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(p10_codex_lead_spec(
+            "p10-equiv-reprepare",
+            grok_port,
+            codex_port,
+            true,
+            vec![
+                p7_rule("r-grok", "grok", "grok-4.5", 0, Some("shared")),
+                p7_rule("r-codex", "codex", "gpt-5.4", 10, Some("shared")),
+            ],
+        ))
+        .await
+        .expect("start");
+    let response = post_store_true(status.port, "m1").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let grok = grok_captured.lock().expect("lock").clone();
+    let codex = codex_captured.lock().expect("lock").clone();
+    assert_eq!(grok.len(), 1, "first attempt stays on the grok origin");
+    assert_eq!(grok[0].path, "/v1/responses");
+    assert_eq!(grok[0].bearer, "Bearer token-grok");
+    assert!(grok_identity_headers_present(&grok[0].headers));
+    assert_eq!(grok[0].body["model"], "grok-4.5");
+    assert_eq!(codex.len(), 1);
+    assert_eq!(codex[0].path, "/v1/responses");
+    assert_eq!(codex[0].bearer, "Bearer token-codex");
+    assert!(
+        !grok_identity_headers_present(&codex[0].headers),
+        "codex-lane prepare must not keep Grok identity headers"
+    );
+    assert_eq!(codex[0].body["store"], false);
+    assert_eq!(codex[0].body["model"], "gpt-5.4");
+    assert!(
+        codex[0].body.get("prompt_cache_key").is_none(),
+        "codex allowlist must drop grok cache key: {}",
+        codex[0].body
+    );
+    host.shutdown().await.expect("shutdown");
+    grok_task.abort();
+    codex_task.abort();
+}
+
+#[tokio::test]
+async fn v2_same_provider_failover_reprepares_other_endpoint() {
+    let a_cb: ChatCallback =
+        Arc::new(|_bearer, _body| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    let b_cb: ChatCallback = Arc::new(|_bearer, _body| chat_ok());
+    let (a_port, a_captured, a_task) = callback_chat_upstream(a_cb).await;
+    let (b_port, b_captured, b_task) = callback_chat_upstream(b_cb).await;
+    let a_ep = format!("http://127.0.0.1:{a_port}");
+    let b_ep = format!("http://127.0.0.1:{b_port}");
+    let index = index_from_member_listings(
+        "pool-v2-p5",
+        1,
+        "responses",
+        &[
+            p5_listing("acc-a", &["m1"], &a_ep),
+            p5_listing("acc-b", &["m1"], &b_ep),
+        ],
+        None,
+    );
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            spec_with_token("p10-same-provider-url", 0, a_port, TOKEN_A)
+                .with_members(vec![
+                    pool_member("acc-a", "token-a"),
+                    pool_member("acc-b", "token-b"),
+                ])
+                .with_listed_models(index.list_models("responses"))
+                .with_route_index(index),
+        )
+        .await
+        .expect("start");
+    let response = post_p5_model(status.port, "m1", false).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        captured_tokens(&a_captured),
+        vec!["Bearer token-a".to_owned()]
+    );
+    assert_eq!(
+        captured_tokens(&b_captured),
+        vec!["Bearer token-b".to_owned()],
+        "same-provider members with different endpoints must re-prepare onto B"
+    );
+    host.shutdown().await.expect("shutdown");
+    a_task.abort();
+    b_task.abort();
+}
+
+#[tokio::test]
+async fn v2_unbound_previous_response_id_does_not_call_upstream() {
+    let (upstream_port, hits, upstream_task) = counting_responses_upstream().await;
+    let endpoint = format!("http://127.0.0.1:{upstream_port}/v1/");
+    let index = index_from_member_listings(
+        "pair-unbound-v2",
+        1,
+        "responses",
+        &[
+            p7_listing("acc-a", "grok", &["grok-4.5"], &endpoint),
+            p7_listing("acc-b", "grok", &["grok-4.5"], &endpoint),
+        ],
+        None,
+    );
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(
+            grok_codex_pair_spec("pair-unbound-v2", 0, upstream_port)
+                .with_members(vec![
+                    pool_member("acc-a", "token-a"),
+                    pool_member("acc-b", "token-b"),
+                ])
+                .with_multi_account(true)
+                .with_listed_models(index.list_models("responses"))
+                .with_route_index(index),
+        )
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "grok-4.5",
+            "previous_response_id": "resp_unknown",
+            "input": "hello"
+        }))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = response.json().await.expect("json");
+    assert_eq!(body["error"]["code"], "continuation_unavailable");
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+    host.stop("pair-unbound-v2").await.expect("stop");
+    upstream_task.abort();
 }
