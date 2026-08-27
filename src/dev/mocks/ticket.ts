@@ -74,7 +74,8 @@ function persistedSurface(blob: unknown): TicketSurface | undefined {
 }
 
 function ticketSurfaceFromProduct(product: ClassifyProductId): TicketSurface {
-  return product === 'other' ? 'unknown' : product;
+  if (product === 'other') return 'unknown';
+  return TICKET_SURFACES.find((surface) => surface === product) ?? 'unknown';
 }
 
 async function surfaceFromPlan(
