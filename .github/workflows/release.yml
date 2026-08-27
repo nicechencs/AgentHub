@@ -952,7 +952,7 @@ jobs:
               --notes-file release-notes/release-notes.md
             persist_release_identity
           elif [ "$PRERELEASE" = true ]; then
-            create_out="$(gh release create "$TAG" release-assets/* \
+            create_out="$(gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "AgentHub $TAG" \
               --notes-file release-notes/release-notes.md \
@@ -961,8 +961,12 @@ jobs:
               --verify-tag)"
             printf '%s\n' "$create_out"
             persist_release_identity "$create_out"
+            target="$(release_cli_target)"
+            gh release upload "$target" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
           else
-            create_out="$(gh release create "$TAG" release-assets/* \
+            create_out="$(gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "AgentHub $TAG" \
               --notes-file release-notes/release-notes.md \
@@ -970,6 +974,10 @@ jobs:
               --verify-tag)"
             printf '%s\n' "$create_out"
             persist_release_identity "$create_out"
+            target="$(release_cli_target)"
+            gh release upload "$target" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
           fi
 
       - name: Verify release assets before publishing
