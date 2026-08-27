@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::models::{AgentId, Capability};
+use crate::platform::config::builtin_config_registry;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -15,9 +16,12 @@ fn contract_path() -> PathBuf {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CatalogMirror {
     agents: Vec<String>,
     capabilities: Vec<String>,
+    capability_labels: BTreeMap<String, String>,
+    schema_fields: BTreeMap<String, Vec<String>>,
     channels: CatalogChannels,
 }
 
@@ -72,4 +76,39 @@ fn shared_catalog_fixture_matches_install_channel_ids() {
             agent.as_str()
         );
     }
+}
+
+#[test]
+fn shared_catalog_fixture_covers_capability_labels() {
+    let contract = load_contract();
+    let expected: BTreeMap<String, String> = Capability::ALL
+        .into_iter()
+        .map(|cap| (cap.as_str().to_string(), cap.label().to_string()))
+        .collect();
+    assert_eq!(
+        contract.capability_labels, expected,
+        "capabilityLabels drifted from Capability::label()"
+    );
+}
+
+#[test]
+fn shared_catalog_fixture_covers_config_schema_field_names() {
+    let contract = load_contract();
+    let registry = builtin_config_registry();
+    let mut production = BTreeMap::new();
+    for key in registry.supported_agent_keys() {
+        let fields: Vec<String> = registry
+            .get(&key)
+            .unwrap_or_else(|| panic!("missing config projector {}", key.as_str()))
+            .schema()
+            .fields
+            .into_iter()
+            .map(|field| field.key)
+            .collect();
+        production.insert(key.as_str().to_string(), fields);
+    }
+    assert_eq!(
+        production, contract.schema_fields,
+        "schemaFields drifted from production config projectors"
+    );
 }
