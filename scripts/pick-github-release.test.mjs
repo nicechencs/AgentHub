@@ -76,7 +76,7 @@ test('picks an untagged draft by title AgentHub v0.3.0 when tag_name is empty', 
   assert.equal(picked.id, 258901111);
   assert.equal(picked.name, TITLE);
   assert.equal(picked.draft, true);
-  assert.equal(picked.gh_target, UNTAGGED_URL);
+  assert.equal(picked.gh_target, TAG);
   assert.match(picked.html_url, /untagged-[0-9a-f]+/);
 });
 
@@ -92,6 +92,7 @@ test('picks a draft by tag_name even when html_url is still untagged-*', () => {
     ],
   });
   assert.equal(picked.tag_name, 'v0.3.0');
+  assert.equal(picked.gh_target, TAG);
   assert.match(picked.html_url, /untagged-/);
 });
 
@@ -125,8 +126,18 @@ test('create output URL is enough when the draft list has not been fetched yet',
   });
   assert.equal(picked.id, null);
   assert.equal(picked.html_url, UNTAGGED_URL);
-  assert.equal(picked.gh_target, UNTAGGED_URL);
+  assert.equal(picked.gh_target, TAG);
   assert.equal(picked.name, TITLE);
+});
+
+test('gh_target is the git tag so gh CLI can resolve untagged drafts', () => {
+  const picked = pickGitHubRelease({
+    tag: TAG,
+    releases: [untaggedDraft({ tag_name: TAG })],
+  });
+  assert.equal(picked.gh_target, TAG);
+  assert.match(picked.html_url, /untagged-/);
+  assert.equal(picked.tag_name, TAG);
 });
 
 test('does not treat another version untagged draft as this tag', () => {

@@ -20,6 +20,7 @@
 - 统一发版流程：在 `dev` 升版并写 `CHANGELOG.md`，合入 `release` 后在 `dev` 打 tag
 - `release` 分支守卫：只接受来自 `dev` 的合并
 - 发版必须填写 `CHANGELOG.md`；GitHub Release 正文取自该文件
+- 修复发版草稿尚未绑到版本号时，安装包无法上传到 GitHub Release
 
 ### 功能与修复
 - Agents 列表分栏打开详情；dev 线默认软隐藏 Cursor Agent
