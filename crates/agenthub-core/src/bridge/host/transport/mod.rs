@@ -82,8 +82,9 @@ impl RecoveryPolicy {
     }
 }
 
-/// Sync per-channel policy. Async send lives on [`UpstreamChannel`] instead.
-pub(super) trait UpstreamTransport {
+/// Sync per-channel policy owned by the four `*Transport` types.
+/// [`UpstreamChannel`] is protocol identity; resolve once with [`UpstreamChannel::transport`].
+pub(super) trait UpstreamTransport: Send + Sync {
     fn path(&self) -> &'static str;
 
     fn apply_auth(
@@ -104,6 +105,8 @@ pub(super) trait UpstreamTransport {
     fn recovery(&self) -> RecoveryPolicy;
 }
 
+/// Protocol identity 1:1 with [`BridgeUpstreamProtocol`].
+/// Transport implementation is [`Self::transport`], not a trait impl on this enum.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum UpstreamChannel {
     OpenAiChat,
@@ -122,7 +125,7 @@ impl UpstreamChannel {
         }
     }
 
-    // Accessors kept for symmetry with the trait-based helpers; unused today.
+    /// Inverse of [`Self::from_protocol`]. Tests lock the 1:1 table.
     #[allow(dead_code)]
     pub(super) fn protocol(self) -> BridgeUpstreamProtocol {
         match self {
@@ -133,34 +136,15 @@ impl UpstreamChannel {
         }
     }
 
-    pub(super) fn apply_auth(
-        self,
-        builder: reqwest::RequestBuilder,
-        token: &str,
-        grok_identity: Option<&GrokCliRequestIdentity>,
-    ) -> reqwest::RequestBuilder {
-        UpstreamTransport::apply_auth(&self, builder, token, grok_identity)
-    }
-
-    pub(super) fn prepare(
-        self,
-        surface: DownstreamSurface,
-        admitted: &AdmittedRequest,
-    ) -> Result<UpstreamPrepare, Response> {
-        UpstreamTransport::prepare(&self, surface, admitted)
-    }
-
-    pub(super) fn decode_kind(self) -> UpstreamDecode {
-        UpstreamTransport::decode_kind(&self)
-    }
-
-    pub(super) fn recovery(self) -> RecoveryPolicy {
-        UpstreamTransport::recovery(&self)
-    }
-
-    #[allow(dead_code)]
-    pub(super) fn path(self) -> &'static str {
-        UpstreamTransport::path(&self)
+    /// Resolve the transport implementation once. Callers must not match on
+    /// this enum for path / auth / prepare / decode / recovery.
+    pub(super) fn transport(self) -> &'static dyn UpstreamTransport {
+        match self {
+            Self::OpenAiChat => &OpenAiChatTransport,
+            Self::Anthropic => &AnthropicTransport,
+            Self::CodexResponses => &CodexTransport,
+            Self::Grok => &GrokTransport,
+        }
     }
 
     /// Whether the upstream wire protocol is identical to the requested
@@ -180,62 +164,6 @@ impl UpstreamChannel {
                     DownstreamSurface::Responses
                 )
         )
-    }
-}
-
-impl UpstreamTransport for UpstreamChannel {
-    fn path(&self) -> &'static str {
-        match self {
-            Self::OpenAiChat => OpenAiChatTransport.path(),
-            Self::Anthropic => AnthropicTransport.path(),
-            Self::CodexResponses => CodexTransport.path(),
-            Self::Grok => GrokTransport.path(),
-        }
-    }
-
-    fn apply_auth(
-        &self,
-        builder: reqwest::RequestBuilder,
-        token: &str,
-        grok_identity: Option<&GrokCliRequestIdentity>,
-    ) -> reqwest::RequestBuilder {
-        match self {
-            Self::OpenAiChat => OpenAiChatTransport.apply_auth(builder, token, grok_identity),
-            Self::Anthropic => AnthropicTransport.apply_auth(builder, token, grok_identity),
-            Self::CodexResponses => CodexTransport.apply_auth(builder, token, grok_identity),
-            Self::Grok => GrokTransport.apply_auth(builder, token, grok_identity),
-        }
-    }
-
-    fn prepare(
-        &self,
-        surface: DownstreamSurface,
-        admitted: &AdmittedRequest,
-    ) -> Result<UpstreamPrepare, Response> {
-        match self {
-            Self::OpenAiChat => OpenAiChatTransport.prepare(surface, admitted),
-            Self::Anthropic => AnthropicTransport.prepare(surface, admitted),
-            Self::CodexResponses => CodexTransport.prepare(surface, admitted),
-            Self::Grok => GrokTransport.prepare(surface, admitted),
-        }
-    }
-
-    fn decode_kind(&self) -> UpstreamDecode {
-        match self {
-            Self::OpenAiChat => OpenAiChatTransport.decode_kind(),
-            Self::Anthropic => AnthropicTransport.decode_kind(),
-            Self::CodexResponses => CodexTransport.decode_kind(),
-            Self::Grok => GrokTransport.decode_kind(),
-        }
-    }
-
-    fn recovery(&self) -> RecoveryPolicy {
-        match self {
-            Self::OpenAiChat => OpenAiChatTransport.recovery(),
-            Self::Anthropic => AnthropicTransport.recovery(),
-            Self::CodexResponses => CodexTransport.recovery(),
-            Self::Grok => GrokTransport.recovery(),
-        }
     }
 }
 
@@ -261,7 +189,8 @@ pub(super) async fn send_upstream(
     member: PickedMember,
     continuation_locked: bool,
 ) -> Result<UpstreamSendOutcome, Response> {
-    let recovery = channel.recovery();
+    let transport = channel.transport();
+    let recovery = transport.recovery();
     let original_body = body;
     let original_identity = identity;
     let mut member = member;
@@ -291,7 +220,7 @@ pub(super) async fn send_upstream(
 
         loop {
             let token = member.auth.token();
-            let builder = channel.apply_auth(
+            let builder = transport.apply_auth(
                 state.client.post(url.clone()).json(&body),
                 &token,
                 identity.as_ref(),
