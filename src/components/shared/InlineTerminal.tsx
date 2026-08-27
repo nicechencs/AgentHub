@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { CheckCircle2, Info, Loader2, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type TerminalStatus = 'running' | 'done' | 'failed';
+export type TerminalStatus = 'running' | 'done' | 'failed' | 'guided';
 
 function formatElapsed(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
@@ -59,6 +59,11 @@ export function InlineTerminal({
       {status === 'failed' && (
         <div className="mt-1 flex items-center gap-1 text-danger">
           <XCircle className="h-3.5 w-3.5" /> 失败,请尝试手动执行上方命令
+        </div>
+      )}
+      {status === 'guided' && (
+        <div className="mt-1 flex items-center gap-1 text-accent">
+          <Info className="h-3.5 w-3.5" /> 请到官网完成安装后重启 AgentHub
         </div>
       )}
       <div ref={endRef} />

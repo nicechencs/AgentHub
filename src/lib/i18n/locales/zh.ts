@@ -1794,6 +1794,7 @@ export const zh = {
       installFailed: "安装失败",
       upgradeFailed: "升级失败",
       oneclickFailed: "未完成",
+      setupGuide: "已打开官网安装页",
       cannotOneClick: "无法一键安装",
       needManual: "需手动处理: {list}",
       oneClickDone: "{name} 一键安装完成",
