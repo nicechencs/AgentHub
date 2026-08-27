@@ -911,9 +911,10 @@ jobs:
             fi
             RELEASE_ID="$(printf '%s' "$picked" | jq -r '.id // empty')"
             RELEASE_HTML_URL="$(printf '%s' "$picked" | jq -r '.html_url // empty')"
-            RELEASE_GH_TARGET="$(printf '%s' "$picked" | jq -r '.gh_target // empty')"
-            if [ -z "$RELEASE_ID" ] && [ -n "$RELEASE_HTML_URL" ]; then
-              RELEASE_ID="$(gh release view "$RELEASE_HTML_URL" --json databaseId --jq .databaseId)"
+            # gh cannot resolve /releases/tag/untagged-*; the git tag can.
+            RELEASE_GH_TARGET="$TAG"
+            if [ -z "$RELEASE_ID" ]; then
+              RELEASE_ID="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json databaseId --jq .databaseId)"
             fi
             if [ -z "$RELEASE_ID" ]; then
               echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
@@ -927,20 +928,9 @@ jobs:
           }
 
           release_cli_target() {
-            if [ -n "${RELEASE_GH_TARGET:-}" ]; then
-              printf '%s\n' "$RELEASE_GH_TARGET"
-            elif [ -n "${RELEASE_HTML_URL:-}" ]; then
-              printf '%s\n' "$RELEASE_HTML_URL"
-            elif [ -n "${RELEASE_ID:-}" ]; then
-              gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq .html_url
-            else
-              echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
-              exit 1
-            fi
-          }
-
-          upload_target_from_create_out() {
-            printf '%s\n' "$1" | awk 'NF { line = $0 } END { if (line) print line }'
+            # Prefer the git tag. gh release view/upload/edit return
+            # "release not found" for untagged-* HTML URLs.
+            printf '%s\n' "$TAG"
           }
 
           upload_release_assets() {
@@ -964,13 +954,7 @@ jobs:
             fi
             create_out="$(gh release create "$TAG" "${create_args[@]}")"
             printf '%s\n' "$create_out"
-            local upload_target
-            upload_target="$(upload_target_from_create_out "$create_out")"
-            if [ -z "$upload_target" ]; then
-              echo "Unable to read GitHub Release create output for $TAG" >&2
-              exit 1
-            fi
-            upload_release_assets "$upload_target"
+            upload_release_assets "$TAG"
             persist_release_identity "$create_out"
           }
 
@@ -1071,10 +1055,7 @@ jobs:
             echo "Remote tag $TAG points to $remote_tag_sha, expected $GITHUB_SHA; refusing to publish." >&2
             exit 1
           fi
-          target="${RELEASE_GH_TARGET:-${RELEASE_HTML_URL:-}}"
-          if [ -z "$target" ] && [ -n "${RELEASE_ID:-}" ]; then
-            target="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq .html_url)"
-          fi
+          target="${RELEASE_GH_TARGET:-$TAG}"
           if [ -z "$target" ]; then
             echo "Unable to read GitHub Release $TAG after uploading assets; refusing to publish." >&2
             exit 1

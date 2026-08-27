@@ -6,6 +6,7 @@
  * whose html_url is `/releases/tag/untagged-*` even when the intended tag
  * already exists on origin. Match create output (id / html_url) or a listed
  * release by tag_name, title `AgentHub vX.Y.Z`, or that untagged html_url.
+ * `gh_target` is the git tag so `gh release *` can resolve the draft.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -93,9 +94,19 @@ function releaseMatches(release, { tag, title }) {
   return false;
 }
 
+function cliTarget(release, tag) {
+  // `gh release view/upload/edit` resolve a git tag or `/releases/tag/vX.Y.Z`.
+  // They return "release not found" for `/releases/tag/untagged-*` even when
+  // the draft already has tag_name set to the intended v* tag.
+  if (tag) return tag;
+  if (release.tag_name) return release.tag_name;
+  const htmlUrl = release.html_url || '';
+  if (htmlUrl && !isUntaggedHtmlUrl(htmlUrl)) return htmlUrl;
+  return htmlUrl;
+}
+
 function finalize(release, tag) {
   const htmlUrl = release.html_url || '';
-  const ghTarget = htmlUrl || (release.id != null ? String(release.id) : release.tag_name || tag || '');
   return {
     id: release.id,
     tag_name: release.tag_name || '',
@@ -104,7 +115,7 @@ function finalize(release, tag) {
     draft: release.draft === true,
     prerelease: release.prerelease === true,
     published_at: release.published_at || '',
-    gh_target: ghTarget,
+    gh_target: cliTarget(release, tag),
     assets: release.assets || [],
   };
 }
