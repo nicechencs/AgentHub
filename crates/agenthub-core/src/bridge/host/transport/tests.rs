@@ -102,6 +102,7 @@ fn prepare_responses(protocol: BridgeUpstreamProtocol) -> super::UpstreamPrepare
     let body = json!({ "model": "m", "input": "hi" });
     let admitted = admitted(protocol, BridgeLocalSurface::Responses, body);
     UpstreamChannel::from_protocol(protocol)
+        .transport()
         .prepare(DownstreamSurface::Responses, &admitted)
         .expect("prepare responses")
 }
@@ -124,10 +125,16 @@ fn prepare_selects_upstream_path_by_channel() {
         prepare_responses(BridgeUpstreamProtocol::XaiResponsesOauth).path,
         "responses"
     );
-    assert_eq!(UpstreamChannel::OpenAiChat.path(), "chat/completions");
-    assert_eq!(UpstreamChannel::Anthropic.path(), "messages");
-    assert_eq!(UpstreamChannel::CodexResponses.path(), "responses");
-    assert_eq!(UpstreamChannel::Grok.path(), "responses");
+    assert_eq!(
+        UpstreamChannel::OpenAiChat.transport().path(),
+        "chat/completions"
+    );
+    assert_eq!(UpstreamChannel::Anthropic.transport().path(), "messages");
+    assert_eq!(
+        UpstreamChannel::CodexResponses.transport().path(),
+        "responses"
+    );
+    assert_eq!(UpstreamChannel::Grok.transport().path(), "responses");
 }
 
 #[test]
@@ -269,6 +276,7 @@ fn flag_on_codex_to_grok_prepare_strips_store_and_system_items() {
         }),
     );
     let prepared = UpstreamChannel::Grok
+        .transport()
         .prepare(DownstreamSurface::Responses, &admitted)
         .expect("prepare");
     assert!(prepared.body.get("store").is_none(), "{}", prepared.body);
@@ -293,6 +301,7 @@ fn flag_on_grok_to_codex_prepare_uses_official_allowlist_without_grok_identity()
         }),
     );
     let prepared = UpstreamChannel::CodexResponses
+        .transport()
         .prepare(DownstreamSurface::Responses, &admitted)
         .expect("prepare");
     assert_eq!(prepared.body["store"], false);
@@ -310,6 +319,7 @@ fn openai_chat_prepare_does_not_invent_grok_identity() {
 #[test]
 fn apply_auth_injects_openai_bearer() {
     let request = UpstreamChannel::OpenAiChat
+        .transport()
         .apply_auth(
             reqwest::Client::new().post("http://127.0.0.1/v1/x"),
             "openai-auth-token-a2",
@@ -330,6 +340,7 @@ fn apply_auth_injects_openai_bearer() {
 #[test]
 fn apply_auth_injects_anthropic_headers_without_bearer() {
     let request = UpstreamChannel::Anthropic
+        .transport()
         .apply_auth(
             reqwest::Client::new().post("http://127.0.0.1/v1/x"),
             "anthropic-auth-token-a2",
@@ -356,6 +367,7 @@ fn apply_auth_injects_anthropic_headers_without_bearer() {
 #[test]
 fn apply_auth_injects_grok_bearer_and_identity_headers() {
     let request = UpstreamChannel::Grok
+        .transport()
         .apply_auth(
             reqwest::Client::new().post("http://127.0.0.1/v1/x"),
             "grok-auth-token-a2",
@@ -376,15 +388,21 @@ fn apply_auth_injects_grok_bearer_and_identity_headers() {
 #[test]
 fn recovery_policy_matches_channel() {
     assert_eq!(
-        UpstreamChannel::Grok.recovery(),
+        UpstreamChannel::Grok.transport().recovery(),
         RecoveryPolicy::Oauth401ReloadAndGrokReasoning
     );
     assert_eq!(
-        UpstreamChannel::CodexResponses.recovery(),
+        UpstreamChannel::CodexResponses.transport().recovery(),
         RecoveryPolicy::Oauth401Reload
     );
-    assert_eq!(UpstreamChannel::OpenAiChat.recovery(), RecoveryPolicy::None);
-    assert_eq!(UpstreamChannel::Anthropic.recovery(), RecoveryPolicy::None);
+    assert_eq!(
+        UpstreamChannel::OpenAiChat.transport().recovery(),
+        RecoveryPolicy::None
+    );
+    assert_eq!(
+        UpstreamChannel::Anthropic.transport().recovery(),
+        RecoveryPolicy::None
+    );
     assert_eq!(
         UpstreamChannel::from_protocol(BridgeUpstreamProtocol::XaiResponsesOauth),
         UpstreamChannel::Grok
@@ -443,6 +461,7 @@ fn official_codex_messages_prepare_folds_system_and_forces_store_false() {
         body,
     );
     let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::CodexResponsesOauth)
+        .transport()
         .prepare(DownstreamSurface::Messages, &admitted)
         .expect("prepare messages");
     assert_eq!(prepared.body["store"], false);
@@ -481,6 +500,7 @@ fn official_codex_chat_prepare_folds_developer_and_forces_store_false() {
         body,
     );
     let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::CodexResponsesOauth)
+        .transport()
         .prepare(DownstreamSurface::ChatCompletions, &admitted)
         .expect("prepare chat");
     assert_eq!(prepared.body["store"], false);
@@ -525,6 +545,7 @@ fn official_codex_responses_passthrough_strips_system_items() {
         body,
     );
     let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::CodexResponsesOauth)
+        .transport()
         .prepare(DownstreamSurface::Responses, &admitted)
         .expect("prepare responses");
     assert_eq!(prepared.body["store"], false);
@@ -556,6 +577,7 @@ fn anthropic_prepare_passthroughs_messages_surface() {
         body.clone(),
     );
     let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::AnthropicMessages)
+        .transport()
         .prepare(DownstreamSurface::Messages, &admitted)
         .expect("messages prepare");
     assert_eq!(prepared.path, "messages");
@@ -577,6 +599,7 @@ fn openai_chat_prepare_passthroughs_chat_surface() {
         body.clone(),
     );
     let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::OpenAiChatCompletions)
+        .transport()
         .prepare(DownstreamSurface::ChatCompletions, &admitted)
         .expect("chat prepare");
     assert_eq!(prepared.path, "chat/completions");
@@ -598,6 +621,7 @@ fn anthropic_prepare_converts_chat_surface() {
         }),
     );
     let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::AnthropicMessages)
+        .transport()
         .prepare(DownstreamSurface::ChatCompletions, &admitted)
         .expect("chat to messages prepare");
     assert_eq!(prepared.path, "messages");
@@ -618,6 +642,7 @@ fn grok_prepare_converts_chat_surface_to_responses() {
         }),
     );
     let prepared = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::XaiResponsesOauth)
+        .transport()
         .prepare(DownstreamSurface::ChatCompletions, &admitted)
         .expect("chat to grok responses prepare");
     assert_eq!(prepared.path, "responses");

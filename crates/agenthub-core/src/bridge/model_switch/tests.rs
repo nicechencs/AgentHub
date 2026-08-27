@@ -1,4 +1,5 @@
 use super::*;
+use crate::models::{map_edge_model, AdapterModelMapResult, AdapterSourceProduct, AgentId};
 
 fn lead_codex_official(profile_id: &str) -> ModelSwitchCandidate {
     ModelSwitchCandidate {
@@ -21,6 +22,24 @@ fn openrouter_claude(profile_id: &str, running: bool) -> ModelSwitchCandidate {
         same_surface: true,
         running,
         listed_models: vec!["gpt-4o".into()],
+    }
+}
+
+fn cand(
+    id: &str,
+    source: AdapterSourceProduct,
+    target: AgentId,
+    custom: bool,
+    running: bool,
+) -> ModelSwitchCandidate {
+    ModelSwitchCandidate {
+        profile_id: id.into(),
+        source,
+        target,
+        custom_openai_compat: custom,
+        same_surface: true,
+        running,
+        listed_models: Vec::new(),
     }
 }
 
@@ -204,6 +223,41 @@ fn custom_listed_models_accept_case_insensitive() {
     );
     assert_eq!(
         decide_model_switch(&lead, "not-listed", &[]),
+        ModelSwitchDecision::Unavailable
+    );
+}
+
+#[test]
+fn model_switch_picks_running_openrouter_when_lead_misses() {
+    let lead = cand(
+        "official-claude",
+        AdapterSourceProduct::XaiGrokSubscription,
+        AgentId::Claude,
+        false,
+        true,
+    );
+    let alt = cand(
+        "openrouter-claude",
+        AdapterSourceProduct::OpenaiApi,
+        AgentId::Claude,
+        true,
+        true,
+    );
+    assert_eq!(
+        decide_model_switch(&lead, "stealth/ox-alpha", &[alt.clone()]),
+        ModelSwitchDecision::SwitchTo {
+            profile_id: "openrouter-claude".into()
+        }
+    );
+    let stopped = cand(
+        "openrouter-claude",
+        AdapterSourceProduct::OpenaiApi,
+        AgentId::Claude,
+        true,
+        false,
+    );
+    assert_eq!(
+        decide_model_switch(&lead, "stealth/ox-alpha", &[stopped]),
         ModelSwitchDecision::Unavailable
     );
 }
