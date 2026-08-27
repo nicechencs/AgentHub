@@ -3,6 +3,7 @@
  * is_current + profiles → bindings. Generated providers are excluded.
  * Keep lockstep with crates/agenthub-core TicketReadService derive rules.
  * Generated projections and leftover 本机路由 providers are not tickets.
+ * Unpersisted surfaces come from planAdapter sourceProduct, not a second classify.
  */
 import {
   adapterCommandError,
@@ -25,16 +26,15 @@ import {
 import { authDisplayForAccount } from '@/lib/backend/contracts/auth-state';
 import { ticketSurfaceSpeaks } from '@/lib/backend/contracts/ticket-speaks';
 import type { Account, AgentId, Provider } from '@/lib/types';
+import type { ClassifyProductId } from '@/lib/backend/contracts/source-classify-contract';
 import { delay } from './delay';
 import { getMockAccountById } from './account';
 import { getMockProviderById } from './provider';
+import { sourceProductOfPlan } from './adapter/source-product';
 import {
-  classifyAccountSource,
-  classifyProviderSource,
   jsonString,
   type ClassifiableAccount,
   type ClassifiableProvider,
-  type MockSourceId,
 } from './source-classify';
 
 export interface MockTicketSourceResolver {
@@ -73,30 +73,18 @@ function persistedSurface(blob: unknown): TicketSurface | undefined {
   return TICKET_SURFACES.find((surface) => surface === raw);
 }
 
-function classifyProviderSurface(provider: Provider): TicketSurface {
-  const id = classifyProviderSource(provider);
-  return id ? ticketSurfaceFromMockSource(id) : 'unknown';
+function ticketSurfaceFromProduct(product: ClassifyProductId): TicketSurface {
+  return product === 'other' ? 'unknown' : product;
 }
 
-function classifyAccountSurface(account: Account): TicketSurface {
-  const id = classifyAccountSource(account as ClassifiableAccount, {
-    includeAnthropicEndpoint: true,
-  });
-  return id ? ticketSurfaceFromMockSource(id) : 'unknown';
-}
-
-function ticketSurfaceFromMockSource(id: MockSourceId): TicketSurface {
-  if (id === 'kimi-code-membership') return 'kimi-code-membership';
-  if (id === 'anthropic') return 'anthropic-api';
-  if (id === 'openai') return 'openai-api';
-  if (id === 'xai') return 'xai-api';
-  if (id === 'glm-coding-plan') return 'glm-coding-plan';
-  if (id === 'deepseek-api') return 'deepseek-api';
-  if (id === 'claude-oauth') return 'claude-subscription';
-  if (id === 'grok-oauth') return 'grok-xai-subscription';
-  // Codex OAuth with or without auth_json share the ChatGPT subscription surface.
-  if (id === 'codex-auth-json' || id === 'codex-oauth') return 'codex-chatgpt-subscription';
-  return 'unknown';
+async function surfaceFromPlan(
+  resolver: MockTicketSourceResolver,
+  sourceKind: 'account' | 'provider',
+  sourceId: string,
+  targetAgentId: AgentId,
+): Promise<TicketSurface> {
+  const plan = await resolver.planAdapter({ sourceKind, sourceId, targetAgentId });
+  return ticketSurfaceFromProduct(sourceProductOfPlan(plan));
 }
 
 function credentialClassOfAccount(account: Account): TicketCredentialClass {
@@ -191,9 +179,13 @@ function parseTicketId(ticketIdValue: string): { sourceKind: 'account' | 'provid
   return { sourceKind, sourceId };
 }
 
-function accountToTicket(account: Account): TicketView {
+async function accountToTicket(
+  account: Account,
+  resolver: MockTicketSourceResolver,
+): Promise<TicketView> {
   const row = account as ClassifiableAccount;
-  const surface = persistedSurface(row.extra) ?? classifyAccountSurface(account);
+  const surface = persistedSurface(row.extra)
+    ?? await surfaceFromPlan(resolver, 'account', account.id, account.agentId);
   return {
     id: ticketId('account', account.id),
     sourceKind: 'account',
@@ -207,9 +199,13 @@ function accountToTicket(account: Account): TicketView {
   };
 }
 
-function providerToTicket(provider: Provider): TicketView {
+async function providerToTicket(
+  provider: Provider,
+  resolver: MockTicketSourceResolver,
+): Promise<TicketView> {
   const row = provider as ClassifiableProvider;
-  const surface = persistedSurface(row.meta) ?? classifyProviderSurface(provider);
+  const surface = persistedSurface(row.meta)
+    ?? await surfaceFromPlan(resolver, 'provider', provider.id, provider.agentId);
   return {
     id: ticketId('provider', provider.id),
     sourceKind: 'provider',
@@ -266,7 +262,7 @@ function bindingFromProfile(
   };
 }
 
-function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
+async function buildWallet(resolver: MockTicketSourceResolver): Promise<TicketWallet> {
   const profiles = resolver.listProfiles();
   const generatedIds = generatedProviderIds(profiles);
   const accounts = resolver.listAccounts();
@@ -274,8 +270,14 @@ function buildWallet(resolver: MockTicketSourceResolver): TicketWallet {
   const ticketProviders = allProviders.filter((p) => !providerIsNotATicket(p, generatedIds));
 
   const tickets: TicketView[] = [
-    ...accounts.filter((account) => !accountIsProjection(account)).map(accountToTicket),
-    ...ticketProviders.map(providerToTicket),
+    ...await Promise.all(
+      accounts
+        .filter((account) => !accountIsProjection(account))
+        .map((account) => accountToTicket(account, resolver)),
+    ),
+    ...await Promise.all(
+      ticketProviders.map((provider) => providerToTicket(provider, resolver)),
+    ),
   ];
   tickets.sort((a, b) => a.id.localeCompare(b.id));
 
@@ -403,7 +405,7 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
   return {
     async listWallet() {
       await delay(15);
-      return buildWallet(resolver);
+      return await buildWallet(resolver);
     },
     async plan(ticketIdValue, targetAgentId) {
       await delay(15);
@@ -433,7 +435,7 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
         });
       }
       await resolver.applyAdapter({ sourceKind, sourceId, targetAgentId });
-      const wallet = buildWallet(resolver);
+      const wallet = await buildWallet(resolver);
       const binding = wallet.bindings.find(
         (row) => row.ticketId === ticketIdValue && row.agentId === targetAgentId && row.active,
       );
@@ -455,7 +457,7 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
           && row.sourceId === sourceId
           && row.targetAgentId === agentId,
       );
-      const walletBinding = buildWallet(resolver).bindings.find(
+      const walletBinding = (await buildWallet(resolver)).bindings.find(
         (row) => row.ticketId === ticketIdValue && row.agentId === agentId,
       );
       const profileId = profile?.id ?? walletBinding?.profileId;
@@ -478,7 +480,9 @@ export function createMockTicketPort(resolver: MockTicketSourceResolver): Ticket
   };
 }
 
-/** Pure helper for tests: build wallet without delay. */
-export function buildMockTicketWallet(resolver: MockTicketSourceResolver): TicketWallet {
+/** Helper for tests: build wallet without the ticket-port delay. */
+export function buildMockTicketWallet(
+  resolver: MockTicketSourceResolver,
+): Promise<TicketWallet> {
   return buildWallet(resolver);
 }
