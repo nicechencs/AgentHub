@@ -130,7 +130,6 @@ impl UsageRepo {
     }
 
     pub fn query(&self, q: &UsageQuery) -> Result<Vec<UsageRecord>> {
-        let days = q.days.max(1) as i64;
         let limit = q.limit.unwrap_or(100_000);
         self.db.with_conn(|conn| {
             let mut sql = String::from(
@@ -139,14 +138,10 @@ impl UsageRepo {
                        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
                        cost_usd, session_id, ts, raw_hash, fast
                 FROM usage_records
-                WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#,
             );
-            let day_arg = format!("-{days} days");
-            let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(day_arg)];
-            push_since_filter(&mut sql, &mut args, q.since.as_deref());
-            push_agent_model_filters(&mut sql, &mut args, q.agent_id, q.model.as_deref());
-            push_exclude_agents(&mut sql, &mut args, &q.exclude_agent_ids);
+            let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            append_usage_filter(&mut sql, &mut args, q, true);
             sql.push_str(" ORDER BY ts DESC LIMIT ?");
             args.push(Box::new(limit as i64));
 
@@ -276,7 +271,8 @@ impl UsageRepo {
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
     ) -> Result<Vec<UsageTrendPoint>> {
-        let days = days.max(1) as i64;
+        let q = usage_query_from_parts(days, agent, model, since, exclude_agent_ids);
+        let days = q.days.max(1) as i64;
         let grain = TrendGrain::from_days(days);
         self.db.with_conn(|conn| {
             let mut sql = String::from(
@@ -284,14 +280,10 @@ impl UsageRepo {
                     SELECT ts, agent_id,
                            SUM(input_tokens + cache_read_tokens + cache_write_tokens + output_tokens) AS tokens
                     FROM usage_records
-                    WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#,
             );
-            let day_arg = format!("-{days} days");
-            let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(day_arg)];
-            push_since_filter(&mut sql, &mut args, since);
-            push_agent_model_filters(&mut sql, &mut args, agent, model);
-            push_exclude_agents(&mut sql, &mut args, exclude_agent_ids);
+            let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            append_usage_filter(&mut sql, &mut args, &q, true);
             // Local hour/day buckets need real timestamp parsing, which is
             // done below in Rust; SQL only pre-aggregates per raw ts value.
             sql.push_str(" GROUP BY ts, agent_id");
@@ -317,7 +309,7 @@ impl UsageRepo {
                 }
             }
             if !map.is_empty() {
-                fill_trend_window(&mut map, days, since, grain);
+                fill_trend_window(&mut map, days, q.since.as_deref(), grain);
             }
             Ok(map.into_values().collect())
         })
@@ -335,10 +327,8 @@ impl UsageRepo {
         since: Option<&str>,
         exclude_agent_ids: &[AgentId],
     ) -> Result<UsageOverview> {
-        let days = days.max(1) as i64;
+        let q = usage_query_from_parts(days, agent, model, since, exclude_agent_ids);
         self.db.with_conn(|conn| {
-            let day_arg = format!("-{days} days");
-
             let mut metrics_sql = String::from(
                 r#"
                     SELECT
@@ -348,14 +338,10 @@ impl UsageRepo {
                         COALESCE(SUM(cache_write_tokens), 0),
                         COALESCE(SUM(COALESCE(cost_usd, 0)), 0)
                     FROM usage_records
-                    WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#,
             );
-            let mut metrics_args: Vec<Box<dyn rusqlite::types::ToSql>> =
-                vec![Box::new(day_arg.clone())];
-            push_since_filter(&mut metrics_sql, &mut metrics_args, since);
-            push_agent_model_filters(&mut metrics_sql, &mut metrics_args, agent, model);
-            push_exclude_agents(&mut metrics_sql, &mut metrics_args, exclude_agent_ids);
+            let mut metrics_args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            append_usage_filter(&mut metrics_sql, &mut metrics_args, &q, true);
 
             let metrics = {
                 let mut stmt = conn.prepare(&metrics_sql)?;
@@ -372,7 +358,11 @@ impl UsageRepo {
                 })?
             };
 
-            let group_col = if agent.is_none() { "agent_id" } else { "model" };
+            let group_col = if q.agent_id.is_none() {
+                "agent_id"
+            } else {
+                "model"
+            };
             let mut dist_sql = format!(
                 r#"
                     SELECT {group_col} AS key,
@@ -383,14 +373,10 @@ impl UsageRepo {
                            COALESCE(SUM(cache_read_tokens), 0),
                            COALESCE(SUM(cache_write_tokens), 0)
                     FROM usage_records
-                    WHERE unixepoch(ts) >= unixepoch('now', ?1)
                 "#
             );
-            let mut dist_args: Vec<Box<dyn rusqlite::types::ToSql>> =
-                vec![Box::new(day_arg.clone())];
-            push_since_filter(&mut dist_sql, &mut dist_args, since);
-            push_agent_model_filters(&mut dist_sql, &mut dist_args, agent, model);
-            push_exclude_agents(&mut dist_sql, &mut dist_args, exclude_agent_ids);
+            let mut dist_args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            append_usage_filter(&mut dist_sql, &mut dist_args, &q, true);
             dist_sql.push_str(" GROUP BY key ORDER BY tokens DESC");
 
             let distribution = {
@@ -420,18 +406,13 @@ impl UsageRepo {
             let mut models_sql = String::from(
                 r#"
                     SELECT DISTINCT model FROM usage_records
-                    WHERE unixepoch(ts) >= unixepoch('now', ?1)
-                      AND model IS NOT NULL AND model != ''
                 "#,
             );
-            let mut models_args: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(day_arg)];
-            push_since_filter(&mut models_sql, &mut models_args, since);
-            if let Some(a) = agent {
-                models_sql.push_str(" AND agent_id = ?");
-                models_args.push(Box::new(a.as_str().to_string()));
-            }
-            push_exclude_agents(&mut models_sql, &mut models_args, exclude_agent_ids);
-            models_sql.push_str(" ORDER BY model");
+            let mut models_args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            // Same window / agent / exclude as metrics; skip model so the
+            // dropdown stays populated while a model is selected.
+            append_usage_filter(&mut models_sql, &mut models_args, &q, false);
+            models_sql.push_str(" AND model IS NOT NULL AND model != '' ORDER BY model");
 
             let models = {
                 let mut stmt = conn.prepare(&models_sql)?;
@@ -748,31 +729,57 @@ fn fill_trend_window(
     }
 }
 
-/// Appends a `since` lower bound compared as instants (`unixepoch`).
-///
-/// `since` is RFC3339 from the dashboard (local midnight). Stored `ts` may be
-/// `Z`, `+00:00`, or log-native; lexical `T` vs space is not used.
-fn push_since_filter(
-    sql: &mut String,
-    args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+fn usage_query_from_parts(
+    days: u32,
+    agent_id: Option<AgentId>,
+    model: Option<&str>,
     since: Option<&str>,
-) {
-    if let Some(since) = since.filter(|s| !s.is_empty()) {
-        sql.push_str(" AND unixepoch(ts) >= unixepoch(?)");
-        args.push(Box::new(since.to_string()));
+    exclude_agent_ids: &[AgentId],
+) -> UsageQuery {
+    UsageQuery {
+        days,
+        agent_id,
+        model: model.map(str::to_string),
+        since: since.map(str::to_string),
+        exclude_agent_ids: exclude_agent_ids.to_vec(),
+        ..Default::default()
     }
 }
 
-fn push_exclude_agents(
+/// Shared WHERE for query / trend / overview: days, since, agent, model, exclude.
+///
+/// `days` is `max(1)` rolling `unixepoch('now', '-N days')`. `since` is AND-ed
+/// as instants (`unixepoch`); `Z` and `+00:00` match. Empty / `"all"` model is
+/// ignored. `include_model` is false for overview `models` so the dropdown
+/// stays populated while a model is selected. Exclude is `NOT IN` before LIMIT.
+fn append_usage_filter(
     sql: &mut String,
     args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
-    exclude: &[AgentId],
+    q: &UsageQuery,
+    include_model: bool,
 ) {
-    if exclude.is_empty() {
+    let days = q.days.max(1) as i64;
+    sql.push_str(" WHERE unixepoch(ts) >= unixepoch('now', ?1)");
+    args.push(Box::new(format!("-{days} days")));
+    if let Some(since) = q.since.as_deref().filter(|s| !s.is_empty()) {
+        sql.push_str(" AND unixepoch(ts) >= unixepoch(?)");
+        args.push(Box::new(since.to_string()));
+    }
+    if let Some(agent) = q.agent_id {
+        sql.push_str(" AND agent_id = ?");
+        args.push(Box::new(agent.as_str().to_string()));
+    }
+    if include_model {
+        if let Some(model) = q.model.as_deref().filter(|m| !m.is_empty() && *m != "all") {
+            sql.push_str(" AND model = ?");
+            args.push(Box::new(model.to_string()));
+        }
+    }
+    if q.exclude_agent_ids.is_empty() {
         return;
     }
     sql.push_str(" AND agent_id NOT IN (");
-    for (i, id) in exclude.iter().enumerate() {
+    for (i, id) in q.exclude_agent_ids.iter().enumerate() {
         if i > 0 {
             sql.push(',');
         }
@@ -780,22 +787,6 @@ fn push_exclude_agents(
         args.push(Box::new(id.as_str().to_string()));
     }
     sql.push(')');
-}
-
-fn push_agent_model_filters(
-    sql: &mut String,
-    args: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
-    agent: Option<AgentId>,
-    model: Option<&str>,
-) {
-    if let Some(agent) = agent {
-        sql.push_str(" AND agent_id = ?");
-        args.push(Box::new(agent.as_str().to_string()));
-    }
-    if let Some(model) = model.filter(|m| !m.is_empty() && *m != "all") {
-        sql.push_str(" AND model = ?");
-        args.push(Box::new(model.to_string()));
-    }
 }
 
 fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UsageRecord> {
