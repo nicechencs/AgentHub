@@ -21,4 +21,5 @@ export interface ChatPort {
     onEvent: (ev: ChatEvent) => void,
   ): Promise<void>;
   chatCancel(conversationId: string): Promise<void>;
+  setChatModel(agentId: AgentId, model: string): Promise<void>;
 }

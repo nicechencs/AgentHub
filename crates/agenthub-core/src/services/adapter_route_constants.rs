@@ -823,13 +823,16 @@ pub(crate) fn openai_compat_context_window_tokens(blob: &Value) -> Option<u32> {
 }
 
 pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
+    let usable = |value: &str| -> Option<String> {
+        let model = crate::models::strip_claude_context_marker(value);
+        if model.is_empty() || crate::models::is_openrouter_backup_model(model) {
+            None
+        } else {
+            Some(model.to_owned())
+        }
+    };
     if let Some(listed) = blob.get("listedModels").and_then(Value::as_array) {
-        let first = listed.iter().find_map(|item| {
-            item.as_str()
-                .map(crate::models::strip_claude_context_marker)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-        });
+        let first = listed.iter().find_map(|item| item.as_str().and_then(usable));
         if first.is_some() {
             return first;
         }
@@ -841,13 +844,9 @@ pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
     {
         if let Some(content) = blob.get("content").and_then(Value::as_str) {
             if let Ok(doc) = content.parse::<toml_edit::DocumentMut>() {
-                if let Some(model) = doc
-                    .get("model")
-                    .and_then(|item| item.as_str())
-                    .map(crate::models::strip_claude_context_marker)
-                    .filter(|value| !value.is_empty())
+                if let Some(model) = doc.get("model").and_then(|item| item.as_str()).and_then(usable)
                 {
-                    return Some(model.to_owned());
+                    return Some(model);
                 }
             }
         }
@@ -855,13 +854,7 @@ pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
 
     ["model", "default_model", "defaultModel"]
         .iter()
-        .find_map(|key| {
-            blob.get(*key)
-                .and_then(Value::as_str)
-                .map(crate::models::strip_claude_context_marker)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-        })
+        .find_map(|key| blob.get(*key).and_then(Value::as_str).and_then(usable))
 }
 
 /// True when settings/TOML contain a remote (non-loopback) OpenAI-compat URL.

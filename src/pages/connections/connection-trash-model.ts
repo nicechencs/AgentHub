@@ -73,6 +73,7 @@ function sourceIdentity(item: ConnectionTrashItem): string | undefined {
     && !isInternalDisplayToken(accountLabel)
     && !looksLikeUuid(accountLabel)
     && !accountLabel.includes('***')
+    && !isMaskOnlyLabel(accountLabel)
     && !/token|secret|configText|credentialSummary/i.test(accountLabel)
   ) {
     return accountLabel;
@@ -80,17 +81,50 @@ function sourceIdentity(item: ConnectionTrashItem): string | undefined {
   return undefined;
 }
 
+function isMaskOnlyLabel(value: string): boolean {
+  const text = value.trim();
+  if (!text) return true;
+  if (/^[•*….\s]+(?:（API Key）|\(API Key\))?$/i.test(text)) return true;
+  if (/^(API Key)$/i.test(text)) return true;
+  return false;
+}
+
 function localRouteTitle(t?: TranslateFn): string {
   return t ? t('kind.route.localRoute') : '本机路由';
 }
 
-/** Recycle-bin title: generated/bridge rows become 本机路由 · email, never raw ids. */
+/** Recycle-bin title: generated/bridge/mask-only rows become 本机路由 · identity. */
 export function humanizeTrashLabel(item: ConnectionTrashItem, t?: TranslateFn): string {
-  if (!isGeneratedTrashItem(item)) return item.label;
+  if (!isGeneratedTrashItem(item) && !isMaskOnlyLabel(item.label)) return item.label;
   const title = localRouteTitle(t);
   const identity = sourceIdentity(item);
-  if (!identity) return title;
-  return `${title} · ${identity}`;
+  const last4 = trashItemSecretTail(item);
+  if (identity) return `${title} · ${identity}`;
+  if (last4) return `${title} · 末尾 ${last4}`;
+  const endpoint = trashItemEndpoint(item);
+  if (endpoint) {
+    try {
+      return `${title} · ${new URL(endpoint).host}`;
+    } catch {
+      return `${title} · ${endpoint}`;
+    }
+  }
+  return title;
+}
+
+export function trashItemSecretTail(item: ConnectionTrashItem): string | undefined {
+  const tail = item.account?.secretTail?.trim() || item.provider?.secretTail?.trim();
+  if (!tail) return undefined;
+  const last4 = tail.replace(/^\*+/, '').slice(-4);
+  return last4 || undefined;
+}
+
+export function trashItemEndpoint(item: ConnectionTrashItem): string | undefined {
+  if (item.provider) {
+    const endpoint = extractProviderEndpoint(item.provider.configText, item.provider.configFormat);
+    if (endpoint && !isLoopbackText(endpoint)) return endpoint;
+  }
+  return undefined;
 }
 
 function parseDeletedAt(value: string): number {
@@ -118,10 +152,20 @@ function liveAccountKeys(item: ConnectionTrashItem): string[] {
   return [...keys];
 }
 
+function normalizeTrashHost(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.trim().replace(/\/+$/, '').replace(/\/v1$/i, '').toLowerCase() || undefined;
+}
+
 function groupingKeys(item: ConnectionTrashItem): string[] {
   const keys: string[] = [];
   if (item.sourceId) keys.push(`source:${item.sourceId}`);
   keys.push(`triple:${item.agentId}:${item.kind}:${item.sourceId}`);
+  const last4 = trashItemSecretTail(item);
+  const host = normalizeTrashHost(trashItemEndpoint(item)) ?? item.label.trim().toLowerCase();
+  if (last4 && host) {
+    keys.push(`ident:${item.agentId}:${item.kind}:${last4}:${host}`);
+  }
   if (!isGeneratedTrashItem(item)) return keys;
   // Same grok-live-* id may collapse a generated bridge across agents.
   // Do not also union by bare email — the connections trash list is global.

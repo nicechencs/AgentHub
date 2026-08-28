@@ -22,8 +22,10 @@ import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurfa
 import { readCreateRouteCapabilities } from './create-route-flow';
 import {
   adapterBridgeHostPort,
+  adapterBridgeIsListening,
   adapterCredentialKindLabel,
 } from './adapter-model';
+import { localTokenPreviewValue } from './client-config-model';
 import {
   routeCopyPortPendingLabel,
   routeDetailTargetLabel,
@@ -256,10 +258,32 @@ function RouteDetailBody({
                       className="text-sm font-medium"
                     />
                   ) : (
-                    <span className="text-muted">{routeCopyPortPendingLabel(t)}</span>
+                    <span className="text-muted">
+                      {isBridge && !adapterBridgeIsListening(bridgeStatus)
+                        ? t('routes.bridgeState.stopped')
+                        : routeCopyPortPendingLabel(t)}
+                    </span>
                   )}
                 </dd>
               </div>
+              {isBridge ? (
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <dt className="w-12 shrink-0 text-muted">{t('routes.write.fieldLocalToken')}</dt>
+                  <dd className="min-w-0">
+                    {bridgeStatus?.localToken ? (
+                      <CopyableEndpoint
+                        text={localTokenPreviewValue(bridgeStatus.localToken, t)}
+                        url={bridgeStatus.localToken}
+                        ariaLabel={t('routes.write.fieldLocalToken')}
+                        className="text-sm font-medium"
+                        sensitive
+                      />
+                    ) : (
+                      <span className="text-muted">{t('routes.write.localToken')}</span>
+                    )}
+                  </dd>
+                </div>
+              ) : null}
             </dl>
 
             <div className="space-y-1">
@@ -449,10 +473,11 @@ function RoutePoolOverviewSection({
             <dt className="w-12 shrink-0 text-muted">{t('routes.write.fieldLocalToken')}</dt>
             <dd className="min-w-0">
               <CopyableEndpoint
-                text={localToken}
+                text={localTokenPreviewValue(localToken, t)}
                 url={localToken}
                 ariaLabel={t('routes.write.fieldLocalToken')}
                 className="text-sm font-medium"
+                sensitive
               />
             </dd>
           </div>
@@ -532,17 +557,22 @@ function CopyableEndpoint({
   url,
   ariaLabel,
   className,
+  sensitive = false,
 }: {
   text: string;
   url: string;
   ariaLabel: string;
   className?: string;
+  sensitive?: boolean;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
   const canCopy = Boolean(url.trim());
+  const hint = canCopy
+    ? (sensitive ? text : url)
+    : routeCopyPortPendingLabel(t);
   return (
-    <Hint label={canCopy ? url : routeCopyPortPendingLabel(t)}>
+    <Hint label={hint}>
       <button
         type="button"
         className="inline-flex max-w-full items-center gap-1 rounded-btn px-1 py-0.5 text-left hover:bg-hover disabled:cursor-not-allowed disabled:opacity-60"
@@ -553,7 +583,10 @@ function CopyableEndpoint({
           void (async () => {
             try {
               await navigator.clipboard.writeText(url);
-              toast({ title: t('routes.endpointCopied'), description: url });
+              toast({
+                title: t('routes.endpointCopied'),
+                description: sensitive ? text : url,
+              });
             } catch {
               toast({ title: t('routes.copyFailed'), variant: 'danger' });
             }

@@ -38,6 +38,7 @@ export function resolveTicketBindAction(
   hints: readonly TicketRoutePlanHint[],
   purpose: TicketBindPurpose,
   t?: TranslateFn,
+  credentialClass?: string,
 ): TicketBindAction {
   const noTarget = purpose === 'route'
     ? (t ? t('connections.list.routeNoTarget') : ROUTE_NO_TARGET_FALLBACK)
@@ -78,7 +79,17 @@ export function resolveTicketBindAction(
 
   if (pending || !sawConclusive) return { disabled: false };
   if (matchingBlockedReason) return { disabled: true, reason: matchingBlockedReason };
-  if (oauthReason) return { disabled: true, reason: oauthReason };
+  if (oauthReason && credentialClass !== 'api_key') {
+    return { disabled: true, reason: oauthReason };
+  }
+  if (credentialClass === 'api_key') {
+    return {
+      disabled: true,
+      reason: purpose === 'route'
+        ? (t ? t('connections.list.routeDisabledApiKey') : '这份 API Key 登录目前不能走本机转发。')
+        : generic,
+    };
+  }
   return { disabled: true, reason: generic };
 }
 

@@ -56,6 +56,28 @@ function assertNoInternalLeak(label: string): void {
 }
 
 describe('humanizeTrashLabel', () => {
+  it('names a mask-only recycled Grok API Key by last4 or host, not ••••', () => {
+    const item = trash({
+      id: 't-ghost',
+      agentId: 'grok',
+      sourceId: 'grok-live-ghost-1',
+      label: '•••• (API Key)',
+      provider: prov({
+        id: 'grok-live-ghost-1',
+        agentId: 'grok',
+        name: '•••• (API Key)',
+        secretTail: '**8660',
+        configText: '[model."grok"]\nbase_url = "https://mytokens.cc/v1"\napi_key = "***"\n',
+        configFormat: 'toml',
+      }),
+    });
+    const label = humanizeTrashLabel(item);
+    expect(label).toContain('本机路由');
+    expect(label).toContain('8660');
+    expect(label).not.toMatch(/•{2,}/);
+    assertNoInternalLeak(label);
+  });
+
   it('renders Grok Subscription Bridge + grok-live-* as 本机路由', () => {
     const item = trash({
       id: 't-bridge',
@@ -187,6 +209,50 @@ describe('dedupTrashItems', () => {
     const kept = dedupTrashItems([newer, older]);
     expect(kept).toHaveLength(1);
     expect(kept[0].id).toBe('triple-new');
+  });
+
+  it('collapses same-login rows that only differ by sourceId', () => {
+    const config = JSON.stringify({
+      env: { ANTHROPIC_BASE_URL: 'https://mytokens.cc', ANTHROPIC_AUTH_TOKEN: 'sk-fixture' },
+    });
+    const first = trash({
+      id: 't-272f-old',
+      sourceId: 'p-1787808247176',
+      label: 'mytokens.cc',
+      deletedAt: '2026-08-27T05:32:26.000Z',
+      provider: prov({
+        id: 'p-1787808247176',
+        name: 'mytokens.cc',
+        secretTail: '**272f',
+        configText: config,
+      }),
+    });
+    const second = trash({
+      id: 't-272f-new',
+      sourceId: 'p-1787843009543',
+      label: 'mytokens.cc',
+      deletedAt: '2026-08-27T15:03:29.000Z',
+      provider: prov({
+        id: 'p-1787843009543',
+        name: 'mytokens.cc',
+        secretTail: '**272f',
+        configText: config,
+      }),
+    });
+    const other = trash({
+      id: 't-8660',
+      sourceId: 'p-8660',
+      label: 'mytokens.cc',
+      deletedAt: '2026-08-27T06:02:34.000Z',
+      provider: prov({
+        id: 'p-8660',
+        name: 'mytokens.cc',
+        secretTail: '**8660',
+        configText: config,
+      }),
+    });
+    const kept = dedupTrashItems([first, second, other]);
+    expect(kept.map((row) => row.id).sort()).toEqual(['t-272f-new', 't-8660']);
   });
 
   it('collapses account grok-live-xxx with a generated provider that contains it', () => {

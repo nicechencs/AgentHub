@@ -17,7 +17,7 @@ pub(crate) mod cursor;
 pub(crate) mod dsh;
 mod grok;
 mod kimi;
-mod pi;
+pub(crate) mod pi;
 pub mod pi_auth;
 pub(crate) mod workbuddy;
 

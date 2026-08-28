@@ -159,6 +159,19 @@ fn codex_oauth_to_claude_opens_only_the_responses_cell() {
         "codex-subscription-to-claude-responses-v1"
     );
     assert_eq!(responses.gates, AdapterCapabilityGates::all_open());
+
+    let oauth_other = decide_adapter_capability(
+        AdapterSourceProduct::CodexChatGptSubscription,
+        AdapterCredentialClass::OauthOther,
+        AgentId::Claude,
+    )
+    .public_surface();
+    assert_eq!(oauth_other.route, AdapterRoute::LocalBridge);
+    assert!(oauth_other.can_apply);
+    assert_eq!(
+        oauth_other.rule_id,
+        Some("codex-subscription-to-claude-responses-v1")
+    );
 }
 
 #[test]

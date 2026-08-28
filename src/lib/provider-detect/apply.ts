@@ -180,12 +180,22 @@ export function applySmartPaste(
   ) {
     const grokFields = extractGrokDetectFields(paste);
     const grokBody = stripGrokPasteNoise(
-      (grokFields?.rawConfigText ?? detect.rawConfigText ?? paste).trim(),
+      (grokFields?.rawConfigText ?? detect.rawConfigText ?? '').trim(),
     );
-    configBase = grokBody.endsWith('\n') ? grokBody : `${grokBody}\n`;
+    configBase = grokBody
+      ? grokBody.endsWith('\n')
+        ? grokBody
+        : `${grokBody}\n`
+      : base.text;
     outFormat = 'toml';
     if (grokFields?.baseUrl?.trim()) {
       vars.baseUrl = grokFields.baseUrl.trim();
+    }
+    if (grokFields?.apiKey?.trim() && grokFields.apiKey !== '***') {
+      vars.apiKey = grokFields.apiKey.trim();
+    }
+    if (grokFields?.model?.trim()) {
+      vars.model = grokFields.model.trim();
     }
   } else if (agentId === 'kimi' && isKimiTomlPaste(paste)) {
     const trimmed = paste.trim();

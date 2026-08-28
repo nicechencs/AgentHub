@@ -3,6 +3,7 @@ import { applyFormVars, EMPTY_FORM_VARS, REDACTED_MARKER } from '../index';
 import {
   defaultModelForAgent,
   FALLBACK_CUSTOM_MODEL,
+  filterRemoteModelsForAgent,
   maskApiKeyLast4,
   openaiModelsUrl,
   parseOpenAiModelList,
@@ -29,6 +30,22 @@ describe('openaiModelsUrl', () => {
 
   it('treats /V1 as /v1 (case-insensitive)', () => {
     expect(openaiModelsUrl('https://mytokens.cc/V1/')).toBe('https://mytokens.cc/V1/models');
+  });
+
+  it('uses DeepSeek official /models and strips /anthropic', () => {
+    expect(openaiModelsUrl('https://api.deepseek.com')).toBe('https://api.deepseek.com/models');
+    expect(openaiModelsUrl('https://api.deepseek.com/anthropic')).toBe(
+      'https://api.deepseek.com/models',
+    );
+  });
+});
+
+describe('filterRemoteModelsForAgent', () => {
+  it('drops grok models from Claude and Kimi lists', () => {
+    const ids = ['grok-4.5', 'kimi-k2', 'claude-sonnet-4'];
+    expect(filterRemoteModelsForAgent('kimi', ids)).toEqual(['kimi-k2']);
+    expect(filterRemoteModelsForAgent('claude', ids)).toEqual(['claude-sonnet-4']);
+    expect(filterRemoteModelsForAgent('grok', ids)).toEqual(['grok-4.5']);
   });
 });
 

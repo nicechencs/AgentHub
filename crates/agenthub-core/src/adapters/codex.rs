@@ -724,6 +724,57 @@ wire_api = "responses"
         assert!(!stored.contains("agenthub_grok_bridge"));
         assert!(!stored.contains("preferred_auth_method"));
         assert!(!stored.contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn apply_account_clears_openrouter_env_key_so_official_login_does_not_need_that_variable() {
+        let _guard = crate::integrations::agents::codex::leftover::lock_codex_home();
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let codex = home.join(".codex");
+        std::fs::create_dir_all(&codex).unwrap();
+        std::fs::write(
+            codex.join("config.toml"),
+            r#"model_provider = "openrouter"
+model = "stealth/ox-alpha"
+preferred_auth_method = "apikey"
+
+[model_providers.openrouter]
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+wire_api = "responses"
+"#,
+        )
+        .unwrap();
+        let prev = std::env::var_os("CODEX_HOME");
+        std::env::set_var("CODEX_HOME", &codex);
+        let account = LiveAccount {
+            agent: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "auth_mode": "chatgpt",
+                    "tokens": {
+                        "access_token": "at-official",
+                        "refresh_token": "rt-official"
+                    }
+                }
+            }),
+            label_hint: Some("41375197@qq.com".into()),
+            extra: json!({}),
+        };
+        let result = CodexAdapter.apply_account(&account);
+        match prev {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+        result.unwrap();
+        let stored = std::fs::read_to_string(codex.join("config.toml")).unwrap();
+        assert!(!stored.contains("model_provider ="), "{stored}");
+        assert!(!stored.contains("stealth/ox-alpha"), "{stored}");
+        assert!(!stored.contains("preferred_auth_method"), "{stored}");
+        assert!(stored.contains("[model_providers.openrouter]"), "{stored}");
         let auth: Value =
             serde_json::from_str(&std::fs::read_to_string(codex.join("auth.json")).unwrap())
                 .unwrap();

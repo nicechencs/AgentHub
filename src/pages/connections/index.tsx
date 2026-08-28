@@ -52,7 +52,6 @@ import {
   activeBindingForAgent,
   buildTicketAddMenu,
   extrasFromPoolSource,
-  filterTicketsByAgentUsage,
   filterWalletByExcludedAgents,
   findTicketPoolSource,
   scheduleAfterMenuClose,
@@ -263,7 +262,7 @@ export default function ConnectionsPage() {
       return counts;
     }
     for (const id of tabAgentIds) {
-      counts[id] = filterTicketsByAgentUsage(visibleWallet, tickets, id).length;
+      counts[id] = tickets.filter((ticket) => ticket.agentId === id).length;
     }
     return counts;
   }, [tabAgentIds, visibleWallet]);

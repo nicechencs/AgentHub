@@ -73,7 +73,12 @@ pub fn normalize_provider_base_url(settings: &Value) -> Option<String> {
 
 pub fn normalize_base_url(raw: &str) -> String {
     let trimmed = raw.trim().trim_end_matches('/');
-    trimmed.to_string()
+    let without_v1 = trimmed
+        .strip_suffix("/v1")
+        .or_else(|| trimmed.strip_suffix("/V1"))
+        .unwrap_or(trimmed)
+        .trim_end_matches('/');
+    without_v1.to_string()
 }
 
 pub fn looks_like_uuid_provider_id(id: &str) -> bool {

@@ -62,5 +62,9 @@ export function createTauriChatPort(): ChatPort {
     async chatCancel(conversationId) {
       await invoke('chat_cancel', { conversationId });
     },
+
+    async setChatModel(agentId, model) {
+      await invoke('set_chat_model', { agentId, model });
+    },
   };
 }

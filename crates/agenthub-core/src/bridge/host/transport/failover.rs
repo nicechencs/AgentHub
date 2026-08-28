@@ -65,12 +65,14 @@ pub async fn send_upstream_v2(
     loop {
         attempts += 1;
         if attempts > max_attempts {
-            return Err(exhausted(
+            return Err(exhausted_or_last_fail(
                 state,
                 request_id,
                 started,
                 public_model,
                 failover_from.as_deref(),
+                &member,
+                last_fail.as_ref(),
             ));
         }
         let candidate = candidate_for_member(candidates, &member);
@@ -311,12 +313,14 @@ pub async fn send_upstream_v2(
             Some(member.source_id.as_str()),
             affinity_key,
         ) else {
-            return Err(exhausted(
+            return Err(exhausted_or_last_fail(
                 state,
                 request_id,
                 started,
                 public_model,
                 failover_from.as_deref(),
+                &member,
+                last_fail.as_ref(),
             ));
         };
         tracing::info!(
@@ -469,6 +473,41 @@ fn exclude_member(excluded: &mut Vec<String>, member: &PickedMember) {
     if !member.ticket_id.is_empty() && !excluded.iter().any(|id| id == &member.ticket_id) {
         excluded.push(member.ticket_id.clone());
     }
+}
+
+fn exhausted_or_last_fail(
+    state: &EdgeState,
+    request_id: &str,
+    started: Instant,
+    public_model: &str,
+    failover_from: Option<&str>,
+    member: &PickedMember,
+    last_fail: Option<&(
+        UpstreamErrorClass,
+        StatusCode,
+        Option<HeaderValue>,
+        Option<String>,
+    )>,
+) -> Response {
+    if let Some((class, status, retry_after, detail)) = last_fail {
+        if matches!(
+            class,
+            UpstreamErrorClass::Entitlement | UpstreamErrorClass::Request
+        ) {
+            return map_request_or_upstream(
+                state,
+                request_id,
+                started,
+                *class,
+                *status,
+                retry_after.clone(),
+                detail.as_deref(),
+                member,
+                failover_from,
+            );
+        }
+    }
+    exhausted(state, request_id, started, public_model, failover_from)
 }
 
 fn exhausted(

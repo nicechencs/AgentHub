@@ -87,7 +87,7 @@ describe('create-route-flow', () => {
     expect(draft.configText).not.toContain('ahb_');
     expect(draft.configText).not.toMatch(/sk-or-/);
     const parsed = JSON.parse(draft.configText);
-    expect(parsed.model).toBe('stealth/ox-alpha');
+    expect(parsed.model ?? '').toBe('');
     expect(parsed.baseURL).toBe('https://openrouter.ai/api/v1');
     expect('baseUrl' in parsed).toBe(false);
     expect(parsed.apiKey).toBe('test-key');
@@ -96,9 +96,9 @@ describe('create-route-flow', () => {
     expect(readCreateRouteCapabilities(draft.configText).contextWindow).toBe('auto');
   });
 
-  it('defaults OpenRouter to all three endpoints and stealth/ox-alpha', () => {
+  it('defaults OpenRouter to all three endpoints without pinning a retired stealth model', () => {
     expect(defaultCreateRouteEndpoints('openrouter')).toEqual(['claude', 'codex', 'grok']);
-    expect(vendorById('openrouter').models).toEqual([DEFAULT_CREATE_ROUTE_MODEL]);
+    expect(vendorById('openrouter').models).toEqual([]);
     expect(vendorById('openrouter').defaultContextWindow).toBe('1048576');
     expect(vendorById('openai').defaultContextWindow).toBeUndefined();
     expect(CREATE_ROUTE_VENDORS.map((vendor) => vendor.id)).toEqual([
