@@ -6,6 +6,7 @@ import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contra
 import {
   activeBindingForAgent,
   buildTicketAddMenu,
+  ticketAddActionsForAgent,
   focusedTicketAddAgent,
   dispatchTicketAddAction,
   armMenuDialogOpen,
@@ -943,7 +944,7 @@ describe('ticket detail fields', () => {
 
 describe('buildTicketAddMenu', () => {
   it('nests import and API Key under each Agent', () => {
-    const menu = buildTicketAddMenu(['claude', 'kimi']);
+    const menu = buildTicketAddMenu(['claude', 'kimi'], ['claude']);
     expect(menu.map((item) => item.id)).toEqual(['claude', 'kimi']);
     expect(menu[0]?.name).toBe(agentDisplayName('claude'));
     expect(menu.map((item) => item.actions.map((a) => a.kind))).toEqual([
@@ -955,6 +956,18 @@ describe('buildTicketAddMenu', () => {
       '官方登录',
       '添加 API Key',
     ]);
+  });
+
+  it('hides official login until the account port says the Agent supports it', () => {
+    expect(
+      buildTicketAddMenu(['claude', 'kimi']).map((item) => item.actions.map((a) => a.kind)),
+    ).toEqual([
+      ['import-login', 'api-key'],
+      ['import-login', 'api-key'],
+    ]);
+    expect(
+      ticketAddActionsForAgent(true).map((item) => item.kind),
+    ).toEqual(['import-login', 'oauth', 'api-key']);
   });
 
   it('is empty when no Agent is installed', () => {
