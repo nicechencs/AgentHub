@@ -1735,6 +1735,7 @@ export const en = {
       fromProjectsDesc: "The prompt is filled in. Confirm the working directory, then send.",
       cancelRequested: "Cancel requested",
       cancelRequestedDesc: "Stopping the current generation. The process panel will show cancelled.",
+      multiAgentMigrationFailed: "Some older chats could not be auto-migrated to a single agent. Try again later.",
     },
     title: {
       newConversation: "New chat",

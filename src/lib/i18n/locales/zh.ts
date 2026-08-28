@@ -1726,6 +1726,7 @@ export const zh = {
       fromProjectsDesc: "提示词已填入；确认工作目录后发送。",
       cancelRequested: "已请求取消",
       cancelRequestedDesc: "正在停止当前生成，过程面板将显示已取消。",
+      multiAgentMigrationFailed: "部分历史会话未能自动整理为单 Agent，可稍后重试",
     },
     title: {
       newConversation: "新对话",

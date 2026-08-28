@@ -147,22 +147,6 @@ export function useChatPage() {
   };
   const sending = send.sending;
 
-  useEffect(() => {
-    if (!active || sending) return;
-    if (active.agentIds.length <= 1) return;
-    const next = selectConversationAgent({
-      currentIds: [],
-      nextId: active.agentIds[0],
-      allowDangerous: active.allowDangerous,
-    });
-    if (!next) return;
-    void updateConversation(active.id, next)
-      .then((updated) => {
-        setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      })
-      .catch(() => {});
-  }, [active, sending]);
-
   const pickerRows = useMemo(
     () =>
       chatAgentPickerRows({
