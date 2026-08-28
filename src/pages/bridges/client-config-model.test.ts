@@ -9,6 +9,7 @@ import {
   clientWriteWireNote,
   defaultClientWriteSelection,
   orderedClientWriteTargets,
+  switchWriteLast4,
   type ClientWriteField,
   type ClientWriteSpec,
 } from './client-config-model';
@@ -128,6 +129,15 @@ describe('clientWriteTargetSpec', () => {
     expect(token.startsWith('sk-')).toBe(false);
     expect(token).not.toMatch(/^ahb_/);
     expect(fieldKeys(spec.fields).join(' ')).not.toContain('ANTHROPIC');
+  });
+
+  it('logs switch_write last4 without the full key', () => {
+    const full = 'ahb_krTbFixtureLocalTokenValue_dosM';
+    expect(switchWriteLast4(full)).toBe('dosM');
+    expect(switchWriteLast4(full)).not.toBe(full);
+    expect(switchWriteLast4('short')).toBeUndefined();
+    expect(switchWriteLast4('')).toBeUndefined();
+    expect(switchWriteLast4(null)).toBeUndefined();
   });
 
   it('previews a local token as last4, never the full value', () => {
