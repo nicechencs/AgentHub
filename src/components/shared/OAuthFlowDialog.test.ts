@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -92,5 +95,20 @@ describe('validateManualCallbackUrl', () => {
         state,
       ).ok,
     ).toBe(false);
+  });
+});
+
+describe('official login wait page copy', () => {
+  it('does not print raw session state or auth.json paths', () => {
+    const src = readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../connect/OAuthFlowDialog.tsx'),
+      'utf8',
+    );
+    expect(src).not.toContain('state: {');
+    expect(src).not.toContain('auth.json');
+    expect(src).not.toContain('~/.pi');
+    expect(src).not.toContain('opt.authJsonKey');
+    expect(src).toContain("officialLoginFooter(step");
+    expect(src).toContain("t('chrome.error.retry')");
   });
 });

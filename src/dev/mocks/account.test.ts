@@ -32,6 +32,8 @@ describe('mock OAuth sessions', () => {
   it('finishDeviceOAuth uses the started device session instead of hardcoding pi/xai', async () => {
     const accounts = createMockAccountPort();
     const start = await accounts.startDeviceOAuth('grok', 'xai');
+    const first = await accounts.pollDeviceOAuth(start.state);
+    expect(first.status).toBe('pending');
     const poll = await accounts.pollDeviceOAuth(start.state);
     expect(poll.status).toBe('complete');
 

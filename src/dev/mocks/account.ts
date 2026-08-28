@@ -20,6 +20,7 @@ type MockOAuthSession = {
   agentId: AgentId;
   providerKey: string | null;
   flow: 'pkce' | 'device';
+  devicePolls?: number;
 };
 
 const oauthSessions = new Map<string, MockOAuthSession>();
@@ -228,7 +229,7 @@ export function createMockAccountPort(): AccountPort {
             id: 'anthropic',
             agentId: 'pi',
             label: 'Claude Pro/Max',
-            description: '写入 Pi auth.json → anthropic',
+            description: '浏览器登录，写入 Pi 的登录列表',
             flow: 'pkce' as const,
             authJsonKey: 'anthropic',
           },
@@ -236,7 +237,7 @@ export function createMockAccountPort(): AccountPort {
             id: 'openai-codex',
             agentId: 'pi',
             label: 'ChatGPT Plus/Pro (Codex)',
-            description: '写入 Pi auth.json → openai-codex',
+            description: '浏览器登录，写入 Pi 的登录列表',
             flow: 'pkce' as const,
             authJsonKey: 'openai-codex',
           },
@@ -244,7 +245,7 @@ export function createMockAccountPort(): AccountPort {
             id: 'xai',
             agentId: 'pi',
             label: 'xAI (Grok 订阅)',
-            description: '设备码登录 → Pi auth.json → xai',
+            description: '设备码登录，写入 Pi 的登录列表',
             flow: 'deviceCode' as const,
             authJsonKey: 'xai',
           },
@@ -256,7 +257,7 @@ export function createMockAccountPort(): AccountPort {
             id: agentId,
             agentId,
             label: agentId,
-            description: 'OAuth',
+            description: '浏览器登录',
             flow: 'pkce' as const,
           },
         ];
@@ -278,12 +279,14 @@ export function createMockAccountPort(): AccountPort {
         redirectUri: 'http://127.0.0.1:34567/callback',
         agentId,
         providerKey: providerKey ?? null,
-        browserOpened: false,
+        // Mock cannot open a system browser; keep the wait page in view.
+        browserOpened: true,
+        expiresInSecs: 900,
       };
     },
 
     async waitOAuth(state) {
-      await delay(100);
+      await delay(400);
       const session = requireOAuthSession(state);
       return {
         state,
@@ -317,14 +320,18 @@ export function createMockAccountPort(): AccountPort {
         userCode: 'ABCD-EFGH',
         verificationUri: 'https://auth.x.ai/device',
         verificationUriComplete: 'https://auth.x.ai/device?user_code=ABCD-EFGH',
-        intervalSecs: 1,
+        intervalSecs: 6,
         expiresInSecs: 120,
       };
     },
 
     async pollDeviceOAuth(state) {
       await delay(80);
-      requireOAuthSession(state);
+      const session = requireOAuthSession(state);
+      session.devicePolls = (session.devicePolls ?? 0) + 1;
+      if (session.flow === 'device' && session.devicePolls < 2) {
+        return { state, status: 'pending' as const, error: null };
+      }
       return { state, status: 'complete' as const, error: null };
     },
 
