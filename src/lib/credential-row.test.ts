@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Account, Provider } from '@/lib/types';
 import type { TicketView } from '@/lib/backend/contracts/ticket';
-import { toCredentialRow } from './credential-row';
+import { providerEndpointMode, toCredentialRow } from './credential-row';
 
 function acc(partial: Partial<Account> & Pick<Account, 'id' | 'kind' | 'label'>): Account {
   return {
@@ -111,5 +111,51 @@ describe('toCredentialRow', () => {
       isCurrent: true,
     });
     expect(row.subtitle).toContain('官方登录');
+  });
+});
+
+describe('providerEndpointMode', () => {
+  it('treats official=false as custom even when preset looks official', () => {
+    const provider = prov({
+      id: 'p-custom',
+      name: 'Relay',
+      preset: 'anthropic',
+      official: false,
+      configText: JSON.stringify({
+        env: { ANTHROPIC_BASE_URL: 'https://relay.example.com' },
+      }),
+    });
+    expect(providerEndpointMode(provider, 'https://relay.example.com')).toBe('custom');
+  });
+
+  it('treats official=true as official', () => {
+    const provider = prov({
+      id: 'p-official',
+      name: 'Official',
+      preset: 'anthropic',
+      official: true,
+      configText: '{}',
+    });
+    expect(providerEndpointMode(provider, '')).toBe('official');
+  });
+
+  it('falls back to URL when official is unset', () => {
+    const custom = prov({
+      id: 'p-url',
+      name: 'Relay',
+      preset: 'custom',
+      configText: JSON.stringify({
+        env: { ANTHROPIC_BASE_URL: 'https://relay.example.com' },
+      }),
+    });
+    expect(providerEndpointMode(custom, 'https://relay.example.com')).toBe('custom');
+
+    const emptyOfficial = prov({
+      id: 'p-empty',
+      name: 'Claude',
+      preset: 'anthropic',
+      configText: '{}',
+    });
+    expect(providerEndpointMode(emptyOfficial, '')).toBe('official');
   });
 });
