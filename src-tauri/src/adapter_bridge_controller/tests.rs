@@ -1510,21 +1510,6 @@ fn oauth_local_bridge_bind_reuses_login_row_and_does_not_occupy_live() {
 }
 
 #[test]
-fn unbind_restart_failure_does_not_look_like_success() {
-    let unbind_only = surface_unbind_and_restart("unbind_ticket failed".into(), Ok(()));
-    assert!(unbind_only.contains("unbind_ticket"), "{unbind_only}");
-    assert!(!unbind_only.is_empty());
-
-    let both = surface_unbind_and_restart(
-        "unbind_ticket failed".into(),
-        Err("adapter.bridge_start: port in use".into()),
-    );
-    assert!(both.contains("unbind_ticket"), "{both}");
-    assert!(both.contains("adapter.bridge_start"), "{both}");
-    assert_ne!(both, "ok");
-}
-
-#[test]
 fn rollback_skips_live_switch_when_bind_did_not_occupy() {
     let (_dir, hub, source_adapter, target_adapter) =
         isolated_route_hub(AgentId::Grok, AgentId::Claude);

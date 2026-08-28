@@ -14,7 +14,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use agenthub_core::adapter_control::AdapterBridgeStatus;
+use agenthub_core::adapter_control::{surface_unbind_and_restart, AdapterBridgeStatus};
 use agenthub_core::bridge::{
     BridgeHostError, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
     BridgeUpstreamStatus, MemberHealth, UpstreamAuthReload,
@@ -688,18 +688,6 @@ async fn mark_retryable(hub: Arc<AgentHub>, profile_id: &str, code: &str) {
     .is_err()
     {
         tracing::warn!(target: "gui", op = "adapter_bridge_retryable", profile_id = %profile_id, code = %code, "adapter bridge transient failure could not be persisted");
-    }
-}
-
-/// Unbind already failed. A failed restart must not disappear into `let _ =`.
-/// Never returns Ok — the caller always surfaces a failure.
-pub(crate) fn surface_unbind_and_restart(
-    unbind_error: String,
-    restart: Result<(), String>,
-) -> String {
-    match restart {
-        Ok(()) => unbind_error,
-        Err(restart_error) => format!("{unbind_error}; {restart_error}"),
     }
 }
 
