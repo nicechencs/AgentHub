@@ -96,6 +96,14 @@ export interface TicketDetailExtras {
   importedFrom?: string | null;
 }
 
+/** Opened OAuth details with no 5h/7d percent yet — fetch quota once. */
+export function officialDetailQuotaNeedsProbe(
+  extras?: Pick<TicketDetailExtras, 'oauthAction' | 'quota5hPct' | 'quota7dPct'> | null,
+): boolean {
+  if (!extras?.oauthAction) return false;
+  return !hasOfficialQuotaWindow(extras.quota7dPct) && !hasOfficialQuotaWindow(extras.quota5hPct);
+}
+
 export interface TicketDetailField {
   label: string;
   value: string;

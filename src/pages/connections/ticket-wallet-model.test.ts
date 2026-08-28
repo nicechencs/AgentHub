@@ -25,6 +25,7 @@ import {
   extrasFromPoolSource,
   filterTickets,
   hasOfficialQuotaWindow,
+  officialDetailQuotaNeedsProbe,
   findTicketPoolSource,
   formatTicketBindingDetailLines,
   formatTicketUsageParts,
@@ -176,6 +177,18 @@ describe('hasOfficialQuotaWindow', () => {
     expect(hasOfficialQuotaWindow(Number.NaN)).toBe(false);
     expect(hasOfficialQuotaWindow(0)).toBe(true);
     expect(hasOfficialQuotaWindow(40)).toBe(true);
+  });
+});
+
+describe('officialDetailQuotaNeedsProbe', () => {
+  it('probes OAuth details only when no 5h/7d percent is present', () => {
+    expect(officialDetailQuotaNeedsProbe(null)).toBe(false);
+    expect(officialDetailQuotaNeedsProbe({ oauthAction: { kind: 'refresh-quota', label: '刷新' } })).toBe(true);
+    expect(officialDetailQuotaNeedsProbe({
+      oauthAction: { kind: 'refresh-quota', label: '刷新' },
+      quota7dPct: 12,
+    })).toBe(false);
+    expect(officialDetailQuotaNeedsProbe({ quota7dPct: undefined })).toBe(false);
   });
 });
 

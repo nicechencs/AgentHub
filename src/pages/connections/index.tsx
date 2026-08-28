@@ -54,6 +54,7 @@ import {
   extrasFromPoolSource,
   filterWalletByExcludedAgents,
   findTicketPoolSource,
+  officialDetailQuotaNeedsProbe,
   scheduleAfterMenuClose,
   shouldIgnoreMenuDialogDismiss,
   ticketAddDialogState,
@@ -597,6 +598,20 @@ export default function ConnectionsPage() {
   const detailTicket = inspectTarget?.kind === 'detail'
     ? visibleWallet?.tickets.find((ticket) => ticket.id === inspectTarget.ticketId) ?? null
     : null;
+  const probedQuotaTicketIds = useRef(new Set<string>());
+  useEffect(() => {
+    if (!detailTicket) return;
+    const extras = extrasForTicket(detailTicket);
+    if (!officialDetailQuotaNeedsProbe(extras)) return;
+    if (probedQuotaTicketIds.current.has(detailTicket.id)) return;
+    const source = findTicketPoolSource(detailTicket, pool.accounts, pool.providers);
+    const account = source.account;
+    if (!account || account.kind !== 'oauth') return;
+    probedQuotaTicketIds.current.add(detailTicket.id);
+    void refreshQuota(account.agentId, account.id)
+      .then(() => Promise.all([poolReload().catch(() => {}), loadWallet()]))
+      .catch(() => undefined);
+  }, [detailTicket, extrasForTicket, loadWallet, pool.accounts, pool.providers, poolReload]);
   const detailBindings = detailTicket && visibleWallet
     ? visibleWallet.bindings.filter((binding) => binding.ticketId === detailTicket.id)
     : [];
