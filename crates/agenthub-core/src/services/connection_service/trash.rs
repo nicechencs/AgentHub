@@ -2,14 +2,16 @@ use rusqlite::{Transaction, TransactionBehavior};
 
 use crate::error::{AppError, Result};
 use crate::logging::targets;
-use crate::models::{Account, AccountKind, AgentId, ConnectionTrashItem, ConnectionTrashKind, Provider};
-use crate::utils::redact::api_key_tail;
-use serde_json::json;
+use crate::models::{
+    Account, AccountKind, AgentId, ConnectionTrashItem, ConnectionTrashKind, Provider,
+};
 use crate::storage::{
     account_create_conn, account_delete_for_agent_conn, account_get_by_id_conn,
     provider_create_conn, provider_delete_for_agent_conn, provider_get_by_id_conn,
     ConnectionTrashRepo,
 };
+use crate::utils::redact::api_key_tail;
+use serde_json::json;
 
 use super::ConnectionService;
 
@@ -127,8 +129,30 @@ impl ConnectionService {
 
     /// List recoverable connection rows.  Secret material is retained in the
     /// database for restore and redacted by the Tauri boundary before return.
+    ///
+    /// Rows deleted before identity extra was persisted still carry last4 in
+    /// `identityLabel` / the snapshot secret. Recover that into `extra.secretTail`
+    /// so the recycle list can name them without inventing a key.
     pub fn list_trash(&self, agent: Option<AgentId>) -> Result<Vec<ConnectionTrashItem>> {
-        self.trash.list(agent, &Self::now())
+        let mut items = self.trash.list(agent, &Self::now())?;
+        for item in &mut items {
+            let Some(account) = item.account.as_mut() else {
+                continue;
+            };
+            if !recover_account_trash_identity(account) {
+                continue;
+            }
+            if let Err(err) = self.trash.update_payload(&item.id, account) {
+                tracing::warn!(
+                    module = targets::PROVIDER,
+                    op = "recycle_identity_heal",
+                    id = item.id.as_str(),
+                    error = %err,
+                    "failed to persist recovered recycle identity"
+                );
+            }
+        }
+        Ok(items)
     }
 
     /// Restore a row to the AgentHub pool without applying it to the agent.
@@ -179,37 +203,104 @@ impl ConnectionService {
     }
 }
 
-fn enrich_account_trash_identity(account: &mut Account) {
-    if account.kind != AccountKind::ApiKey {
-        return;
+fn extra_string_missing(extra: &serde_json::Value, key: &str) -> bool {
+    extra
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty()
+}
+
+fn stored_http_url(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for key in ["endpoint", "baseUrl", "base_url"] {
+                if let Some(url) = map
+                    .get(key)
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|url| url.starts_with("http://") || url.starts_with("https://"))
+                    .filter(|url| {
+                        !url.contains("127.0.0.1")
+                            && !url.contains("localhost")
+                            && !url.contains("::1")
+                    })
+                {
+                    return Some(url.to_string());
+                }
+            }
+            map.values().find_map(stored_http_url)
+        }
+        serde_json::Value::Array(items) => items.iter().find_map(stored_http_url),
+        _ => None,
     }
-    let extra = if account.extra.is_object() {
+}
+
+/// Fill `extra.secretTail` / `extra.endpoint` from identity already on the row.
+/// Returns whether extra changed. Does not invent a key or copy another login.
+fn recover_account_trash_identity(account: &mut Account) -> bool {
+    if account.kind != AccountKind::ApiKey {
+        return false;
+    }
+    let mut extra = if account.extra.is_object() {
         account.extra.clone()
     } else {
         json!({})
     };
-    let mut extra = extra;
-    if extra.get("secretTail").and_then(|v| v.as_str()).map(str::trim).unwrap_or("").is_empty() {
-        if let Some(tail) = api_key_tail(&account.credentials) {
+    let mut dirty = false;
+    if extra_string_missing(&extra, "secretTail") {
+        let tail = api_key_tail(&account.credentials)
+            .or_else(|| {
+                account
+                    .identity_label()
+                    .and_then(crate::utils::redact::secret_tail_from_masked_preview)
+            })
+            .or_else(|| crate::utils::redact::secret_tail_from_masked_preview(&account.label));
+        if let Some(tail) = tail {
             if let Some(obj) = extra.as_object_mut() {
                 obj.insert("secretTail".into(), json!(tail));
+                dirty = true;
             }
         }
     }
-    let endpoint_missing = extra
-        .get("endpoint")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .unwrap_or("")
-        .is_empty();
+    if extra_string_missing(&extra, "endpoint") {
+        if let Some(url) = stored_http_url(&extra).or_else(|| stored_http_url(&account.credentials))
+        {
+            if let Some(obj) = extra.as_object_mut() {
+                obj.insert("endpoint".into(), json!(url));
+                dirty = true;
+            }
+        }
+    }
+    if dirty {
+        account.extra = extra;
+    }
+    dirty
+}
+
+fn enrich_account_trash_identity(account: &mut Account) {
+    recover_account_trash_identity(account);
+    if account.kind != AccountKind::ApiKey {
+        return;
+    }
+    let endpoint_missing = extra_string_missing(&account.extra, "endpoint");
     if endpoint_missing && account.is_current && account.agent_id == AgentId::Grok {
         if let Some(url) = crate::adapters::read_grok_live_base_url() {
+            if url.contains("127.0.0.1") || url.contains("localhost") || url.contains("::1") {
+                return;
+            }
+            let mut extra = if account.extra.is_object() {
+                account.extra.clone()
+            } else {
+                json!({})
+            };
             if let Some(obj) = extra.as_object_mut() {
                 obj.insert("endpoint".into(), json!(url));
             }
+            account.extra = extra;
         }
     }
-    account.extra = extra;
 }
 
 pub(crate) fn log_recycle(agent: AgentId, id: &str, name: &str) {

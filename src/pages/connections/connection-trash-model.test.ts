@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 import type { ConnectionTrashItem } from '@/lib/backend/contracts';
 import type { Account, Provider } from '@/lib/types';
-import { dedupTrashItems, humanizeTrashLabel } from './connection-trash-model';
+import { dedupTrashItems, humanizeTrashLabel, trashItemSecretTail } from './connection-trash-model';
 
 const SECRET = 'sk-ant-secret-do-not-leak';
 const LOOPBACK_CONFIG = JSON.stringify({
@@ -56,6 +56,47 @@ function assertNoInternalLeak(label: string): void {
 }
 
 describe('humanizeTrashLabel', () => {
+  it('names an old unnamed Grok trash row from stored identityLabel, not extra.secretTail', () => {
+    const item = trash({
+      id: 't-grok-old',
+      agentId: 'grok',
+      kind: 'account',
+      sourceId: 'grok-acc-old',
+      label: 'API Key',
+      account: acc({
+        id: 'grok-acc-old',
+        kind: 'apikey',
+        label: 'API Key',
+        identityLabel: 'xai-••••8660 (API Key)',
+      }),
+    });
+    const label = humanizeTrashLabel(item);
+    expect(trashItemSecretTail(item)).toBe('8660');
+    expect(label).toContain('8660');
+    expect(label).not.toBe('API Key');
+    expect(label).not.toBe('本机路由');
+    expect(label).not.toMatch(/•{2,}/);
+    assertNoInternalLeak(label);
+  });
+
+  it('keeps a kind-name Grok row as API Key when no last4 or host is stored', () => {
+    const item = trash({
+      id: 't-grok-kind',
+      agentId: 'grok',
+      kind: 'account',
+      sourceId: 'grok-acc-kind',
+      label: 'API Key',
+      account: acc({
+        id: 'grok-acc-kind',
+        kind: 'apikey',
+        label: 'API Key',
+        identityLabel: 'API Key',
+      }),
+    });
+    expect(trashItemSecretTail(item)).toBeUndefined();
+    expect(humanizeTrashLabel(item)).toBe('API Key');
+  });
+
   it('names an unnamed Grok account row from extra last4/host, not API Key', () => {
     const item = trash({
       id: 't-grok-acc',
