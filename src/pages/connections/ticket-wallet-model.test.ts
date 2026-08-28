@@ -11,6 +11,7 @@ import {
   armMenuDialogOpen,
   handleMenuDialogSelect,
   handleTicketAddMenuSelect,
+  ticketAddMenuClosesOnKey,
   MENU_DIALOG_DISMISS_CLEAR_MS,
   shouldIgnoreMenuDialogDismiss,
   ticketAddDialogState,
@@ -1068,6 +1069,14 @@ describe('handleTicketAddMenuSelect', () => {
       apiKeyDialogOpen: true,
       loginImportOpen: false,
     });
+  });
+});
+
+describe('ticketAddMenuClosesOnKey', () => {
+  it('closes the expanded 添加登录 menu on Escape', () => {
+    expect(ticketAddMenuClosesOnKey('Escape')).toBe(true);
+    expect(ticketAddMenuClosesOnKey('Esc')).toBe(true);
+    expect(ticketAddMenuClosesOnKey('Enter')).toBe(false);
   });
 });
 

@@ -98,6 +98,16 @@ const TOML_API_KEY_LINE_RE = /^(\s*api_key\s*=\s*)(["']).*?\2/gim;
  * Mask secret values in the advanced editor (`***`). Never invent a live key.
  * `env_key` names are left intact.
  */
+const SECRET_ASSIGNMENT_RE =
+  /^(\s*(?:export\s+|set\s+|\$env:)?[A-Za-z_][A-Za-z0-9_]*(?:_API_KEY|_AUTH_TOKEN|_ACCESS_TOKEN|_TOKEN|_SECRET|API_KEY)\s*=\s*)(.+)$/gim;
+
+/** Mask KEY=value secret assignments in free-form paste (env blocks, shell). */
+export function maskPasteSecrets(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed === REDACTED_MARKER) return text;
+  return text.replace(SECRET_ASSIGNMENT_RE, `$1${REDACTED_MARKER}`);
+}
+
 export function maskConfigSecrets(
   _agentId: AgentId,
   configText: string,
@@ -121,7 +131,7 @@ export function maskConfigSecrets(
   if (parsed.ok) {
     return JSON.stringify(redactJsonSecrets(parsed.value), null, 2);
   }
-  return configText.replace(JSON_SECRET_TEXT_RE, `$1"${REDACTED_MARKER}"`);
+  return maskPasteSecrets(configText.replace(JSON_SECRET_TEXT_RE, `$1"${REDACTED_MARKER}"`));
 }
 
 function objectValue(value: unknown): Record<string, unknown> | undefined {

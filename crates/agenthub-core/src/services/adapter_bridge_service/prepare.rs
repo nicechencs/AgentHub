@@ -162,14 +162,16 @@ impl AdapterBridgeService {
         )?;
         match self.providers.get_by_id(provider_id)? {
             Some(provider) => {
-                validate_generated_provider(&provider, &profile, profile.local_port)?;
-                if local_bearer_from_provider(&provider)? != prepared.material.local_bearer {
+                if !provider_owned_by(&provider, &profile) {
                     return Err(AppError::message(
                         "adapter.provider_conflict",
-                        "generated bridge provider bearer changed while bridge was starting",
+                        "generated provider does not belong to adapter bridge profile",
                     ));
                 }
-                if profile.status == AdapterProfileStatus::Active
+                let current_ok = validate_generated_provider(&provider, &profile, Some(port)).is_ok()
+                    && local_bearer_from_provider(&provider).ok().as_deref()
+                        == Some(prepared.material.local_bearer.as_str())
+                    && profile.status == AdapterProfileStatus::Active
                     && profile.local_port == Some(port)
                     && provider_matches_current_projection(
                         &provider,
@@ -177,8 +179,8 @@ impl AdapterBridgeService {
                         Some(port),
                         &prepared.material.upstream_model,
                         prepared.material.context_window_tokens,
-                    )
-                {
+                    );
+                if current_ok {
                     Ok(AdapterBridgeProviderProjection::None)
                 } else {
                     Ok(AdapterBridgeProviderProjection::Update(input))

@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from './adapter-components';
 import {
   adapterBridgeHostPort,
+  adapterBridgeIsListening,
   adapterFailurePresentation,
 } from './adapter-model';
 import { routeDetailTargetLabel } from './adapter-route-detail-model';
@@ -223,7 +224,10 @@ function AdapterProfileRow({
   const transitioning = bridgeStatus?.state === 'starting' || bridgeStatus?.state === 'stopping';
   const recovery = adapterProfileRecoveryGuide(profile, t);
   const failure = error ? adapterFailurePresentation(error, t('routes.mutationFailure'), t) : null;
-  const localLabel = graph.local.origin || t('routes.pendingPort');
+  const listening = adapterBridgeIsListening(bridgeStatus);
+  const localLabel = listening
+    ? (graph.local.origin || t('routes.pendingPort'))
+    : t('routes.bridgeState.stopped');
 
   return (
     <ListRow className="p-3" active={active}>
