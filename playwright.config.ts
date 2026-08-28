@@ -1,12 +1,18 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Browser smoke against `pnpm dev:mock` only.
- * Uses a dedicated port so a local `pnpm dev` / Tauri Vite on 5173 is not reused.
+ * Uses a dedicated e2ePort so a local `pnpm dev` / Tauri Vite is not reused.
  * Does not cover Tauri, real accounts, or production adapter selection.
  */
-const PORT = 5174;
-const HOST = '127.0.0.1';
+const runtime = JSON.parse(
+  readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'scripts/dev-runtime.json'), 'utf8'),
+) as { host: string; e2ePort: number };
+const PORT = runtime.e2ePort;
+const HOST = runtime.host;
 const baseURL = `http://${HOST}:${PORT}`;
 
 export default defineConfig({

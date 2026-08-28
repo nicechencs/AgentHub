@@ -39,6 +39,7 @@ impl AgentConfigProjector for DemoConfigProjector {
                 validation: None,
                 help: None,
                 capability: Some(Capability::ConfigWrite.as_str().into()),
+                secret_storage: None,
             }],
         }
     }

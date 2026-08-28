@@ -17,6 +17,12 @@ export interface InstallPort {
   upgradeAgentCmd(agentId: AgentId): Promise<InstallOutcome>;
   uninstallAgentCmd(agentId: AgentId, purgeConfig: boolean): Promise<InstallOutcome>;
   openAgentConfigDir(agentId: AgentId): Promise<string>;
+  getAgentLivePaths(agentId: AgentId): Promise<{
+    config: string;
+    auth?: string | null;
+    extra?: string[];
+    openDir: string;
+  }>;
   /** Subscribe to live install/upgrade/uninstall log lines. Returns an unsubscribe function. */
   onProgress(
     handler: (payload: InstallProgressPayload) => void,

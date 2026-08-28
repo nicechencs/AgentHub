@@ -12,7 +12,8 @@ $extra = @(
 ) | Where-Object { $_ -and (Test-Path $_) }
 $env:Path = (@($extra + $machinePath + $userPath + $env:Path) | Where-Object { $_ }) -join ';'
 
-$DevPort = 5173
+$runtime = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'scripts\dev-runtime.json') -Raw | ConvertFrom-Json
+$DevPort = [int]$runtime.port
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  AgentHub Desktop Launcher" -ForegroundColor Cyan
