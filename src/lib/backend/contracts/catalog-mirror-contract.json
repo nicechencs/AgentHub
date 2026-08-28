@@ -1,5 +1,15 @@
 {
-  "agents": ["claude", "codex", "kimi", "grok", "pi", "workbuddy", "cursor", "dsh"],
+  "agents": [
+    "claude",
+    "codex",
+    "kimi",
+    "grok",
+    "pi",
+    "workbuddy",
+    "cursor",
+    "dsh",
+    "zcode"
+  ],
   "capabilities": [
     "configWrite",
     "accountSwitch",
@@ -161,6 +171,22 @@
         "mcp": "待验证接入",
         "modelSelect": "待验证接入",
         "sessionResume": "待验证接入"
+      },
+      "zcode": {
+        "configWrite": "只合并 v2/config.json 的 provider API Key 槽；整棵配置树 fail-closed",
+        "accountSwitch": "仅 API Key 引用切换，无账号 OAuth 写入",
+        "apiKeyAccount": null,
+        "skills": null,
+        "liveBackup": null,
+        "structuredStream": "无已验证的结构化事件流",
+        "dangerousMode": "无已验证的非交互跳过确认 flag",
+        "projectHistory": "任务/会话库布局未验证，暂不扫描",
+        "projectDelete": "任务/会话库布局未验证，暂不扫描",
+        "providerPresets": "暂无内置 ZCode provider 预设",
+        "usage": "桌面用量契约未验证",
+        "mcp": "待验证接入",
+        "modelSelect": "待验证接入",
+        "sessionResume": "待验证接入"
       }
     },
     "mock": {
@@ -291,6 +317,22 @@
         "mcp": "待验证接入",
         "modelSelect": "待验证接入",
         "sessionResume": "待验证接入"
+      },
+      "zcode": {
+        "configWrite": "只合并 v2/config.json 的 provider API Key 槽；整棵配置树 fail-closed",
+        "accountSwitch": "仅 API Key 引用切换，无账号 OAuth 写入",
+        "apiKeyAccount": null,
+        "skills": null,
+        "liveBackup": null,
+        "structuredStream": "无已验证的结构化事件流",
+        "dangerousMode": "无已验证的非交互跳过确认 flag",
+        "projectHistory": "任务/会话库布局未验证，暂不扫描",
+        "projectDelete": "任务/会话库布局未验证，暂不扫描",
+        "providerPresets": "暂无内置 ZCode provider 预设",
+        "usage": "桌面用量契约未验证",
+        "mcp": "待验证接入",
+        "modelSelect": "待验证接入",
+        "sessionResume": "待验证接入"
       }
     },
     "knownMismatches": []
@@ -308,9 +350,25 @@
       "modelSubagent",
       "contextWindow"
     ],
-    "codex": ["baseUrl", "apiKey", "model", "reasoningEffort", "wireApi", "providerSlug"],
-    "kimi": ["model", "baseUrl", "apiKey", "providerSlug"],
-    "grok": ["model", "baseUrl", "apiKey"],
+    "codex": [
+      "baseUrl",
+      "apiKey",
+      "model",
+      "reasoningEffort",
+      "wireApi",
+      "providerSlug"
+    ],
+    "kimi": [
+      "model",
+      "baseUrl",
+      "apiKey",
+      "providerSlug"
+    ],
+    "grok": [
+      "model",
+      "baseUrl",
+      "apiKey"
+    ],
     "dsh": [
       "provider",
       "model",
@@ -324,24 +382,67 @@
   },
   "channels": {
     "unix": {
-      "claude": ["native", "npm"],
-      "codex": ["npm"],
-      "kimi": ["native", "npm"],
-      "grok": ["native"],
-      "pi": ["npm"],
-      "workbuddy": ["native"],
-      "cursor": ["native"],
-      "dsh": ["npm"]
+      "claude": [
+        "native",
+        "npm"
+      ],
+      "codex": [
+        "npm"
+      ],
+      "kimi": [
+        "native",
+        "npm"
+      ],
+      "grok": [
+        "native"
+      ],
+      "pi": [
+        "npm"
+      ],
+      "workbuddy": [
+        "native"
+      ],
+      "cursor": [
+        "native"
+      ],
+      "dsh": [
+        "npm"
+      ],
+      "zcode": [
+        "native"
+      ]
     },
     "windows": {
-      "claude": ["native", "npm"],
-      "codex": ["npm", "native"],
-      "kimi": ["native", "npm"],
-      "grok": ["native"],
-      "pi": ["npm"],
-      "workbuddy": ["native"],
-      "cursor": ["native"],
-      "dsh": ["npm"]
+      "claude": [
+        "native",
+        "npm"
+      ],
+      "codex": [
+        "npm",
+        "native"
+      ],
+      "kimi": [
+        "native",
+        "npm"
+      ],
+      "grok": [
+        "native"
+      ],
+      "pi": [
+        "npm"
+      ],
+      "workbuddy": [
+        "native"
+      ],
+      "cursor": [
+        "native"
+      ],
+      "dsh": [
+        "npm"
+      ],
+      "zcode": [
+        "native"
+      ]
     }
   }
 }
