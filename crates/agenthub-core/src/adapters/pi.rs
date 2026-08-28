@@ -295,6 +295,8 @@ impl AgentAdapter for PiAdapter {
             paths.push(dir.join("settings.json"));
             paths.push(dir.join("models.json"));
             paths.push(dir.join("auth.json"));
+            paths.push(dir.join("mcp.json"));
+            paths.push(dir.join(".mcp.json"));
         }
         paths
     }
@@ -602,7 +604,9 @@ pub(crate) fn pi_oauth_live_slot_mismatch(current: &crate::models::Account) -> b
 pub(crate) fn pin_pi_live_slot(slot: &str) -> Result<()> {
     let slot = slot.trim();
     if slot.is_empty() {
-        return Err(AppError::InvalidArg("Pi provider slot must not be empty".into()));
+        return Err(AppError::InvalidArg(
+            "Pi provider slot must not be empty".into(),
+        ));
     }
     let dir = pi_config_dir()?;
     let mut settings = read_json_object_or_empty(&dir.join("settings.json"))?;
@@ -611,8 +615,7 @@ pub(crate) fn pin_pi_live_slot(slot: &str) -> Result<()> {
     settings["defaultProvider"] = serde_json::json!(slot);
     let drop_model = model.as_deref().is_some_and(|id| {
         crate::models::is_openrouter_backup_model(id)
-            || (prev.as_deref() != Some(slot)
-                && (id.contains('/') || id.starts_with("stealth/")))
+            || (prev.as_deref() != Some(slot) && (id.contains('/') || id.starts_with("stealth/")))
     });
     if drop_model {
         if let Some(obj) = settings.as_object_mut() {
@@ -629,9 +632,7 @@ pub(crate) fn set_pi_default_model(model: &str) -> Result<()> {
         return Err(AppError::InvalidArg("model must not be empty".into()));
     }
     if crate::models::is_openrouter_backup_model(model) {
-        return Err(AppError::InvalidArg(
-            "这个模型已经下架，请另选一个".into(),
-        ));
+        return Err(AppError::InvalidArg("这个模型已经下架，请另选一个".into()));
     }
     let dir = pi_config_dir()?;
     let mut settings = read_json_object_or_empty(&dir.join("settings.json"))?;
@@ -678,7 +679,14 @@ fn collect_pi_slot_model_ids(models: &serde_json::Value, slot: &str) -> Vec<Stri
 
 fn pi_auth_bearer_for_slot(auth: &serde_json::Value, slot: &str) -> Option<String> {
     let entry = auth.get(slot)?;
-    for key in ["access", "access_token", "accessToken", "key", "api_key", "apiKey"] {
+    for key in [
+        "access",
+        "access_token",
+        "accessToken",
+        "key",
+        "api_key",
+        "apiKey",
+    ] {
         if let Some(value) = nonempty_json_str(entry, key) {
             return Some(value);
         }
@@ -720,7 +728,9 @@ pub(crate) fn parse_pi_list_models_output(stdout: &str, slot: &str) -> Vec<Strin
             continue;
         };
         let id = id.trim();
-        if id.is_empty() || crate::models::is_openrouter_backup_model(id) || !seen.insert(id.to_string())
+        if id.is_empty()
+            || crate::models::is_openrouter_backup_model(id)
+            || !seen.insert(id.to_string())
         {
             continue;
         }
@@ -763,7 +773,9 @@ fn filter_pi_catalog_ids(ids: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     for id in ids {
         let id = id.trim().to_string();
-        if id.is_empty() || crate::models::is_openrouter_backup_model(&id) || !seen.insert(id.clone())
+        if id.is_empty()
+            || crate::models::is_openrouter_backup_model(&id)
+            || !seen.insert(id.clone())
         {
             continue;
         }
@@ -824,14 +836,11 @@ fn run_pi_list_models(slot: &str) -> Vec<String> {
     let Ok(extra) = require_pi_node22_env(node22.as_ref()) else {
         return Vec::new();
     };
-    let output = match crate::utils::process::run_capture_with_env(
-        &bin,
-        &["--list-models", slot],
-        &extra,
-    ) {
-        Ok(output) => output,
-        Err(_) => return Vec::new(),
-    };
+    let output =
+        match crate::utils::process::run_capture_with_env(&bin, &["--list-models", slot], &extra) {
+            Ok(output) => output,
+            Err(_) => return Vec::new(),
+        };
     if !output.status.success() {
         return Vec::new();
     }
@@ -849,8 +858,10 @@ pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
     let Ok(dir) = pi_config_dir() else {
         return empty;
     };
-    let settings = read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
-    let models_doc = read_json_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
+    let settings =
+        read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
+    let models_doc =
+        read_json_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
     let auth = read_auth_json().unwrap_or(serde_json::json!({}));
     let slot = nonempty_json_str(&settings, "defaultProvider").unwrap_or_default();
     let leftover = nonempty_json_str(&settings, "defaultModel")
@@ -1246,7 +1257,11 @@ mod tests {
                 Some(&fake_node22()),
             )
             .unwrap();
-            assert!(!spec.args.iter().any(|a| a == "--thinking"), "{:?}", spec.args);
+            assert!(
+                !spec.args.iter().any(|a| a == "--thinking"),
+                "{:?}",
+                spec.args
+            );
             let settings: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
                     .unwrap();
@@ -1316,7 +1331,11 @@ mod tests {
                 .unwrap(),
             )
             .unwrap();
-            std::fs::write(dir.join("auth.json"), b"{\"openai\":{\"type\":\"oauth\"}}\n").unwrap();
+            std::fs::write(
+                dir.join("auth.json"),
+                b"{\"openai\":{\"type\":\"oauth\"}}\n",
+            )
+            .unwrap();
             set_pi_default_model("openrouter/auto").unwrap();
             let settings: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
@@ -1372,7 +1391,10 @@ mod tests {
             std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
             let live = pi_live_chat_model();
             assert_eq!(live.model.as_deref(), Some("grok-4"));
-            assert_eq!(live.models, vec!["grok-4".to_string(), "grok-code-fast-1".to_string()]);
+            assert_eq!(
+                live.models,
+                vec!["grok-4".to_string(), "grok-code-fast-1".to_string()]
+            );
             assert!(!live.models.iter().any(|id| id.contains("openrouter")));
             assert!(!live.models.iter().any(|id| id.contains("stealth")));
         });
@@ -1611,6 +1633,7 @@ openrouter openrouter/auto 200K   16K     no       no
         assert!(joined.iter().any(|n| n == "settings.json"));
         assert!(joined.iter().any(|n| n == "auth.json"));
         assert!(joined.iter().any(|n| n == "models.json"));
+        assert!(joined.iter().any(|n| n == "mcp.json"));
     }
 
     #[test]

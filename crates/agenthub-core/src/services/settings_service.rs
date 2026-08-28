@@ -14,6 +14,7 @@ pub const SETTINGS_WHITELIST: &[&str] = &[
     "skill_market_source",
     "close_to_tray",
     "usage_collect_interval_min",
+    "keep_live_file_copies",
 ];
 
 /// Read-only keys: `config get` may return them; `config set` always rejects.
@@ -87,7 +88,7 @@ impl SettingsService {
                     .map_err(AppError::InvalidArg)?
                     .as_str()
                     .to_string(),
-                "close_to_tray" => normalize_bool_setting(value)?,
+                "close_to_tray" | "keep_live_file_copies" => normalize_bool_setting(value)?,
                 "usage_collect_interval_min" => {
                     parse_usage_collect_interval_min(value)?.to_string()
                 }

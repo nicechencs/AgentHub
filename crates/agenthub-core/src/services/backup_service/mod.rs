@@ -101,6 +101,10 @@ impl BackupService {
         self.authority.acquire(agent)
     }
 
+    pub(crate) fn keep_live_file_copies(&self) -> bool {
+        self.repo.keep_live_file_copies()
+    }
+
     #[cfg(test)]
     pub(crate) fn repo(&self) -> &BackupRepo {
         &self.repo

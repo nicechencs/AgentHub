@@ -5,10 +5,13 @@ use crate::logging::targets;
 use crate::models::{
     Account, AccountKind, AgentId, ConnectionTrashItem, ConnectionTrashKind, Provider,
 };
+use crate::services::account_split::{
+    accounts_share_authorization, is_mixed_live_bundle, new_split_account_id, split_mixed_account,
+};
 use crate::storage::{
     account_create_conn, account_delete_for_agent_conn, account_get_by_id_conn,
-    provider_create_conn, provider_delete_for_agent_conn, provider_get_by_id_conn,
-    ConnectionTrashRepo,
+    account_list_for_agent_conn, provider_create_conn, provider_delete_for_agent_conn,
+    provider_get_by_id_conn, ConnectionTrashRepo,
 };
 use crate::utils::redact::api_key_tail;
 use serde_json::json;
@@ -141,7 +144,8 @@ impl ConnectionService {
             let persist = if let Some(account) = item.account.as_mut() {
                 recover_account_trash_identity(account).then_some(serde_json::to_value(&*account))
             } else if let Some(provider) = item.provider.as_mut() {
-                recover_provider_trash_identity(provider).then_some(serde_json::to_value(&*provider))
+                recover_provider_trash_identity(provider)
+                    .then_some(serde_json::to_value(&*provider))
             } else {
                 None
             };
@@ -181,19 +185,11 @@ impl ConnectionService {
             let row = ConnectionTrashRepo::load_payload_conn(&tx, id)?;
             match row.kind {
                 ConnectionTrashKind::Account => {
-                    let mut account: Account = serde_json::from_value(row.payload)?;
+                    let account: Account = serde_json::from_value(row.payload)?;
                     if account.id != row.source_id || account.agent_id != row.agent_id {
                         return Err(AppError::InvalidArg("回收记录与账号内容不一致".into()));
                     }
-                    if account_get_by_id_conn(&tx, &account.id)?.is_some() {
-                        return Err(AppError::InvalidArg(format!(
-                            "account already exists: {}",
-                            account.id
-                        )));
-                    }
-                    // Restoring never silently applies a live credential.
-                    account.is_current = false;
-                    account_create_conn(&tx, &account)?;
+                    restore_account_payload(&tx, account)?;
                 }
                 ConnectionTrashKind::Provider => {
                     let mut provider: Provider = serde_json::from_value(row.payload)?;
@@ -220,6 +216,46 @@ impl ConnectionService {
     pub fn delete_trash(&self, id: &str) -> Result<()> {
         self.trash.delete(id)
     }
+}
+
+/// Restore a login row without applying it to the agent.
+/// Mixed official-login + API Key snapshots expand into one row per family.
+fn restore_account_payload(conn: &rusqlite::Connection, account: Account) -> Result<()> {
+    if account_get_by_id_conn(conn, &account.id)?.is_some() {
+        return Err(AppError::InvalidArg(format!(
+            "account already exists: {}",
+            account.id
+        )));
+    }
+    let original_id = account.id.clone();
+    let agent = account.agent_id;
+    if !is_mixed_live_bundle(&account.credentials) {
+        let mut account = account;
+        account.is_current = false;
+        account_create_conn(conn, &account)?;
+        return Ok(());
+    }
+
+    let split = split_mixed_account(&account);
+    let existing = account_list_for_agent_conn(conn, agent)?;
+    let mut original_id_used = false;
+    for mut row in split {
+        row.is_current = false;
+        if existing
+            .iter()
+            .any(|other| accounts_share_authorization(&row, other))
+        {
+            continue;
+        }
+        if original_id_used || account_get_by_id_conn(conn, &row.id)?.is_some() {
+            row.id = new_split_account_id(row.agent_id);
+        }
+        if row.id == original_id {
+            original_id_used = true;
+        }
+        account_create_conn(conn, &row)?;
+    }
+    Ok(())
 }
 
 fn extra_string_missing(extra: &serde_json::Value, key: &str) -> bool {

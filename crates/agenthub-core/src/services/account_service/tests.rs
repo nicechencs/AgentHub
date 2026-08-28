@@ -237,7 +237,11 @@ fn list_recycles_api_key_row_persisted_without_a_usable_secret() {
     use crate::storage::AccountRepo;
     let (_root, svc, _) = live_svc(AgentId::Grok);
     let usable = svc
-        .add_api_key(AgentId::Grok, Some("sk--••••8660 (API Key)"), "xai-secret-key-8660")
+        .add_api_key(
+            AgentId::Grok,
+            Some("sk--••••8660 (API Key)"),
+            "xai-secret-key-8660",
+        )
         .unwrap();
     AccountRepo::new(svc.db.clone())
         .create(&crate::models::Account {
@@ -2345,11 +2349,93 @@ fn grok_bundle_live_does_not_identity_merge_oauth_people() {
         .iter()
         .find(|row| row.kind == AccountKind::Oauth)
         .expect("OAuth person must stay a separate row");
-    assert!(oauth.credentials.to_string().contains("rt-oauth"));
+    assert_eq!(oauth.kind, AccountKind::Oauth);
     assert!(
-        !oauth.credentials.to_string().contains("rt-file"),
-        "API key grok_bundle must not copy OAuth file tokens onto the OAuth row"
+        !oauth.credentials.to_string().contains("xai-file-key"),
+        "API Key from a mixed live snapshot must not be copied onto the OAuth person"
     );
+}
+
+#[test]
+fn list_pool_splits_leftover_mixed_grok_row() {
+    let (_root, svc, _) = live_svc(AgentId::Grok);
+    svc.repo()
+        .create(&Account {
+            id: "grok-mixed-pool".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "API Key".into(),
+            credentials: json!({
+                "format": "grok_bundle",
+                "api_key": "xai-file-key-12345678",
+                "content": "[model.\"grok\"]\napi_key = \"xai-file-key-12345678\"\n",
+                "auth": {
+                    "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+                        "email": "a@example.com",
+                        "refresh_token": "rt-pool-split",
+                        "access_token": "at-pool-split"
+                    }
+                }
+            }),
+            extra: json!({ "source": "config.toml+auth.json" }),
+            status: "active".into(),
+            is_current: true,
+            created_at: "2026-01-01 00:00:00.000000".into(),
+            updated_at: "2026-01-01 00:00:00.000000".into(),
+        })
+        .unwrap();
+
+    let rows = svc.list_pool(Some(AgentId::Grok)).unwrap();
+    assert_eq!(rows.len(), 2);
+    let oauth = rows
+        .iter()
+        .find(|row| row.kind == AccountKind::Oauth)
+        .expect("oauth");
+    let key = rows
+        .iter()
+        .find(|row| row.kind == AccountKind::ApiKey)
+        .expect("api key");
+    assert_eq!(oauth.id, "grok-mixed-pool");
+    assert!(oauth.is_current);
+    assert_eq!(oauth.credentials["format"], "auth_json");
+    assert!(!oauth
+        .credentials
+        .to_string()
+        .contains("xai-file-key-12345678"));
+    assert!(!key.is_current);
+    assert_eq!(key.credentials["api_key"], "xai-file-key-12345678");
+
+    let again = svc.list_pool(Some(AgentId::Grok)).unwrap();
+    assert_eq!(again.len(), 2);
+}
+
+#[test]
+fn list_pool_rewrites_grok_bundle_that_only_has_api_key() {
+    let (_root, svc, _) = live_svc(AgentId::Grok);
+    svc.repo()
+        .create(&Account {
+            id: "grok-mixed-key-only".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "API Key".into(),
+            credentials: json!({
+                "format": "grok_bundle",
+                "api_key": "xai-file-key-12345678",
+                "content": "[model.\"grok\"]\napi_key = \"xai-file-key-12345678\"\n"
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "2026-01-01 00:00:00.000000".into(),
+            updated_at: "2026-01-01 00:00:00.000000".into(),
+        })
+        .unwrap();
+
+    let rows = svc.list_pool(Some(AgentId::Grok)).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, "grok-mixed-key-only");
+    assert_eq!(rows[0].credentials["format"], "api_key");
+    assert_eq!(rows[0].credentials["api_key"], "xai-file-key-12345678");
 }
 
 #[test]

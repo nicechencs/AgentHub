@@ -382,6 +382,8 @@ export interface AppSettings {
   skillMarketSource: SkillMarketSource;
   /** Foreground usage collect interval (minutes). 0 = manual only. Persisted in SQLite. */
   usageCollectIntervalMin: number;
+  /** Switch/import keep byte copies of live config files. Default on. */
+  keepLiveFileCopies: boolean;
   appVersion: string;
 }
 

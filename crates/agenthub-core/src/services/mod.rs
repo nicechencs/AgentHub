@@ -1,6 +1,7 @@
 pub mod account_identity_heal;
 pub mod account_quota;
 pub mod account_service;
+pub mod account_split;
 pub mod adapter_apply_service;
 pub mod adapter_bridge_service;
 pub mod adapter_projection;
@@ -39,9 +40,9 @@ pub mod usage_service;
 pub use account_service::{oauth_bridge_reload_callback, AccountService};
 pub use adapter_apply_service::AdapterApplyService;
 pub use adapter_bridge_service::{
-    AdapterBridgePrepareRequest, AdapterBridgePrepared, AdapterBridgeProviderProjection,
-    AdapterBridgeRestoreMaterial, AdapterBridgeRuntimeMaterial, AdapterBridgeService,
-    BridgeProviderSnapshot, should_make_bridge_current,
+    should_make_bridge_current, AdapterBridgePrepareRequest, AdapterBridgePrepared,
+    AdapterBridgeProviderProjection, AdapterBridgeRestoreMaterial, AdapterBridgeRuntimeMaterial,
+    AdapterBridgeService, BridgeProviderSnapshot,
 };
 pub use adapter_projection::{
     classify_account_live, classify_provider_config, leftover_live_flag, LiveOrigin,

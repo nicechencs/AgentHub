@@ -115,6 +115,9 @@ impl AccountService {
         let Some(backup) = self.backup.as_ref() else {
             return;
         };
+        if !backup.keep_live_file_copies() {
+            return;
+        }
         if let Err(error) = backup.snapshot(agent, BackupKind::AutoSwitch, Some(note)) {
             if error.code() != "not_found" {
                 tracing::warn!(

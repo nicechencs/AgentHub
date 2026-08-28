@@ -162,6 +162,10 @@ export const zh = {
       pageTitle: '安全备份',
       pageDescription: '本机配置快照',
       pageDescriptionTip: '切换、导入或更新后自动保留当前配置；可手动备份、恢复或删除。不含会话日志或整库换机包。',
+      keepCopiesLabel: '切换和同步时保留本机配置副本',
+      keepCopiesDescription: '默认开启',
+      keepCopiesTip:
+        '切换登录、导入当前配置时，把各家本机配置文件原样拷到备份目录。关掉后不再堆积历史副本；切换当次仍会留一份以便失败回滚。手动备份不受影响。',
       kindAutoSwitch: '切换前自动',
       kindManual: '手动',
       titleManual: '手动备份',

@@ -22,7 +22,10 @@ import { useToast } from '@/components/ui/toast';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { AGENTS, AGENT_MAP, type AgentMeta, agentDisplayName } from '@/config/agents';
 import { createBackup, deleteBackup, listBackups, restoreBackup } from '@/lib/api/backup';
+import { getSettings, updateSettings } from '@/lib/api/settings';
 import type { TranslateFn } from '@/lib/i18n';
+import { Switch } from '@/components/ui/switch';
+import { SettingsRow } from '@/pages/settings/settings-shared';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
 import { cn, fmtBytes } from '@/lib/utils';
@@ -78,6 +81,7 @@ export function BackupsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [keepCopies, setKeepCopies] = useState(true);
   const [creating, setCreating] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<BackupMeta | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BackupMeta | null>(null);
@@ -97,6 +101,12 @@ export function BackupsPanel() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    void getSettings()
+      .then((s) => setKeepCopies(s.keepLiveFileCopies !== false))
+      .catch(() => undefined);
+  }, []);
 
   const counts = useMemo(() => {
     const map = Object.fromEntries(AGENTS.map((a) => [a.id, 0])) as Record<AgentId, number>;
@@ -202,6 +212,23 @@ export function BackupsPanel() {
 
   return (
     <div>
+      <div className="mb-5">
+        <SettingsRow
+          label={t('settings.backups.keepCopiesLabel')}
+          description={t('settings.backups.keepCopiesDescription')}
+          descriptionTip={t('settings.backups.keepCopiesTip')}
+        >
+          <Switch
+            checked={keepCopies}
+            onCheckedChange={(v) => {
+              setKeepCopies(v);
+              void updateSettings({ keepLiveFileCopies: v }).catch(() => {
+                setKeepCopies(!v);
+              });
+            }}
+          />
+        </SettingsRow>
+      </div>
       <div className="mb-5 flex flex-wrap items-center gap-3">
         {pageLoading ? (
           <Skeleton className="h-9 w-64 rounded-card" />
