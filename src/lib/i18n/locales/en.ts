@@ -1509,6 +1509,8 @@ export const en = {
       authFailed: "Login failed",
       deviceFailed: "Device-code login failed",
       deviceTimeout: "Device-code login timed out",
+      waitTimeout: "Login timed out",
+      superseded: "This login was cancelled because another login started.",
       submittedCallback: "Submitted. If it is still waiting, confirm you pasted the last address the browser opened on this computer.",
       copiedLink: "Login link copied",
       copiedCode: "Device code copied",

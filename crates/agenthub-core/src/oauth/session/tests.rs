@@ -133,6 +133,8 @@ fn cancel_waiting_on_port_fails_only_matching_sessions() {
 
     assert_eq!(store.cancel_waiting_on_port(1455).unwrap(), 1);
     assert_eq!(store.get_info("keep").unwrap().status, OAuthStatus::Waiting);
-    assert_eq!(store.get_info("drop").unwrap().status, OAuthStatus::Failed);
+    let dropped = store.get_info("drop").unwrap();
+    assert_eq!(dropped.status, OAuthStatus::Failed);
+    assert_eq!(dropped.error.as_deref(), Some(OAUTH_SUPERSEDED));
     assert!(!store.is_waiting("drop"));
 }

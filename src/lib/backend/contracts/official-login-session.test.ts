@@ -13,6 +13,8 @@ import {
   officialLoginAdapter,
   officialLoginCopyId,
   officialLoginCopyLeaksInternals,
+  officialLoginErrorDisplay,
+  officialLoginErrorKey,
   officialLoginFooter,
   officialLoginRetryStep,
   officialLoginShouldFinish,
@@ -101,7 +103,21 @@ describe('official login status mapping', () => {
       agentId: 'claude',
       optionId: 'claude',
       flow: 'pkce',
+      expiresInSecs: 900,
     });
+
+    const pkceWithExpiry = sessionFromPkceStart(
+      {
+        state: 'pkce-exp',
+        authorizeUrl: 'https://example.test/auth',
+        redirectUri: 'http://127.0.0.1:1455/callback',
+        agentId: 'codex',
+        browserOpened: true,
+        expiresInSecs: 900,
+      },
+      'codex',
+    );
+    expect(pkceWithExpiry.expiresInSecs).toBe(900);
 
     const device = sessionFromDeviceStart({
       state: 'device-state',
@@ -118,6 +134,22 @@ describe('official login status mapping', () => {
       optionId: 'xai',
       flow: 'deviceCode',
       userCode: 'ABCD-EFGH',
+    });
+  });
+
+  it('maps superseded and timeout onto wait-page copy without leaking internals', () => {
+    expect(officialLoginErrorKey('failed', 'oauth.superseded', 'pkce')).toBe(
+      'connect.oauth.superseded',
+    );
+    expect(officialLoginErrorKey('expired', null, 'pkce')).toBe('connect.oauth.waitTimeout');
+    expect(officialLoginErrorKey('expired', null, 'deviceCode')).toBe(
+      'connect.oauth.deviceTimeout',
+    );
+    expect(officialLoginErrorDisplay('failed', 'OAuth authorization failed', 'pkce')).toEqual({
+      key: 'connect.oauth.authFailed',
+    });
+    expect(officialLoginErrorDisplay('failed', 'oauth.superseded', 'pkce')).toEqual({
+      key: 'connect.oauth.superseded',
     });
   });
 

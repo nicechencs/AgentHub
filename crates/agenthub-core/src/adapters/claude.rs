@@ -7,7 +7,7 @@ use crate::models::{
 };
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
-use crate::utils::expiry::is_expired;
+use crate::utils::expiry::{is_expired, parse_expiry_epoch_secs};
 use crate::utils::paths::{agent_home, home_dir};
 use crate::utils::redact::mask_secret_preview;
 
@@ -122,30 +122,30 @@ impl AgentAdapter for ClaudeAdapter {
             ));
         }
         let home = agent_home(AgentId::Claude)?;
-        let format = account
-            .credentials
+        // Official login historically stored a flat TokenBundle (`type=oauth`).
+        // Normalize before apply so switch writes `.credentials.json` immediately.
+        let credentials = normalize_oauth_credentials(&account.credentials)?;
+        let format = credentials
             .get("format")
             .and_then(|v| v.as_str())
             .unwrap_or("");
         match format {
             "api_key" => {
-                let key = account
-                    .credentials
+                let key = credentials
                     .get("api_key")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::InvalidArg("Claude api_key is required".into()))?;
-                let env_key = account
-                    .credentials
+                let env_key = credentials
                     .get("env_key")
                     .and_then(|v| v.as_str())
                     .unwrap_or("ANTHROPIC_AUTH_TOKEN");
-                let base_url = account.credentials.get("base_url").and_then(|v| v.as_str());
+                let base_url = credentials.get("base_url").and_then(|v| v.as_str());
                 write_claude_settings_token(&home.join("settings.json"), env_key, key, base_url)?;
                 Ok(())
             }
             "credentials_json" => {
                 ensure_claude_oauth_file_apply_supported()?;
-                let body = account.credentials.get("body").cloned().ok_or_else(|| {
+                let body = credentials.get("body").cloned().ok_or_else(|| {
                     AppError::InvalidArg("Claude credentials body is required".into())
                 })?;
                 if !body.is_object() {
@@ -667,6 +667,123 @@ fn read_claude_oauth_from_path(path: &Path) -> Result<Option<ClaudeOauthBundle>>
     ))
 }
 
+/// Convert a PKCE TokenBundle (`type=oauth`, access_token/refresh_token/expires_at)
+/// into the `credentials_json` + `claudeAiOauth` shape that [`ClaudeAdapter::apply_account`]
+/// writes to the official credentials file.
+///
+/// Already-normalized `credentials_json` / `api_key` payloads pass through.
+pub(crate) fn normalize_oauth_credentials(
+    credentials: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    let format = credentials
+        .get("format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if format == "api_key" {
+        return Ok(credentials.clone());
+    }
+    if format == "credentials_json" && claude_oauth_body(credentials).is_some() {
+        return Ok(credentials.clone());
+    }
+
+    let access = first_nonempty_str(
+        credentials,
+        &[
+            "/access_token",
+            "/accessToken",
+            "/claudeAiOauth/accessToken",
+            "/claudeAiOauth/access_token",
+            "/body/claudeAiOauth/accessToken",
+            "/body/claudeAiOauth/access_token",
+            "/body/access_token",
+            "/raw/access_token",
+        ],
+    )
+    .ok_or_else(|| {
+        AppError::InvalidArg(
+            "Claude OAuth credentials missing access_token; re-run official login".into(),
+        )
+    })?;
+    let refresh = first_nonempty_str(
+        credentials,
+        &[
+            "/refresh_token",
+            "/refreshToken",
+            "/claudeAiOauth/refreshToken",
+            "/claudeAiOauth/refresh_token",
+            "/body/claudeAiOauth/refreshToken",
+            "/body/claudeAiOauth/refresh_token",
+            "/body/refresh_token",
+            "/raw/refresh_token",
+        ],
+    );
+    let expires_at = credentials
+        .pointer("/claudeAiOauth/expiresAt")
+        .or_else(|| credentials.pointer("/claudeAiOauth/expires_at"))
+        .or_else(|| credentials.pointer("/body/claudeAiOauth/expiresAt"))
+        .or_else(|| credentials.pointer("/body/claudeAiOauth/expires_at"))
+        .or_else(|| credentials.get("expires_at"))
+        .or_else(|| credentials.get("expiresAt"))
+        .cloned()
+        .and_then(claude_expires_at_millis);
+
+    let mut oauth = serde_json::Map::new();
+    oauth.insert("accessToken".into(), serde_json::json!(access));
+    if let Some(rt) = refresh {
+        oauth.insert("refreshToken".into(), serde_json::json!(rt));
+    }
+    if let Some(exp) = expires_at {
+        oauth.insert("expiresAt".into(), exp);
+    }
+
+    let mut cred = serde_json::Map::new();
+    cred.insert("format".into(), serde_json::json!("credentials_json"));
+    cred.insert("body".into(), serde_json::json!({ "claudeAiOauth": oauth }));
+    // Keep identity fields the login actually returned. Do not invent last4.
+    for key in ["email", "subscription", "expires_at", "provider"] {
+        if let Some(v) = credentials.get(key).cloned() {
+            if !v.is_null() {
+                cred.entry(key.to_string()).or_insert(v);
+            }
+        }
+    }
+    Ok(serde_json::Value::Object(cred))
+}
+
+fn claude_oauth_body(credentials: &serde_json::Value) -> Option<&serde_json::Value> {
+    let body = credentials.get("body")?;
+    let entry = body
+        .get("claudeAiOauth")
+        .or_else(|| body.get("claude.ai_oauth"))?;
+    let token = entry
+        .get("accessToken")
+        .or_else(|| entry.get("access_token"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?;
+    let _ = token;
+    Some(body)
+}
+
+fn claude_expires_at_millis(value: serde_json::Value) -> Option<serde_json::Value> {
+    let secs = parse_expiry_epoch_secs(&value)?;
+    Some(serde_json::json!(secs.saturating_mul(1000)))
+}
+
+fn first_nonempty_str(value: &serde_json::Value, pointers: &[&str]) -> Option<String> {
+    for pointer in pointers {
+        if let Some(s) = value
+            .pointer(pointer)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Some(s.to_string());
+        }
+    }
+    None
+}
+
 fn parse_claude_oauth_json(content: &str, source: ClaudeOauthSource) -> Option<ClaudeOauthBundle> {
     let body: serde_json::Value = serde_json::from_str(content).ok()?;
     let entry = body
@@ -820,4 +937,132 @@ mod tests {
             .expect("read token")
             .is_none());
     }
+
+    #[test]
+    fn normalize_oauth_credentials_from_pkce_bundle() {
+        let bundle = json!({
+            "type": "oauth",
+            "provider": "claude",
+            "access_token": "at-claude",
+            "refresh_token": "rt-claude",
+            "expires_at": "2026-08-20T00:00:00+00:00",
+            "email": "ada@example.com",
+        });
+        let normalized = normalize_oauth_credentials(&bundle).unwrap();
+        assert_eq!(
+            normalized.get("format").and_then(|v| v.as_str()),
+            Some("credentials_json")
+        );
+        assert_eq!(
+            normalized
+                .pointer("/body/claudeAiOauth/accessToken")
+                .and_then(|v| v.as_str()),
+            Some("at-claude")
+        );
+        assert_eq!(
+            normalized
+                .pointer("/body/claudeAiOauth/refreshToken")
+                .and_then(|v| v.as_str()),
+            Some("rt-claude")
+        );
+        assert_eq!(
+            normalized
+                .pointer("/body/claudeAiOauth/expiresAt")
+                .and_then(|v| v.as_i64()),
+            Some(1_787_184_000_000)
+        );
+        assert_eq!(
+            normalized.get("email").and_then(|v| v.as_str()),
+            Some("ada@example.com")
+        );
+        assert!(normalized.get("secretTail").is_none());
+        assert!(normalized.get("last4").is_none());
+    }
+
+    #[test]
+    fn normalize_oauth_credentials_keeps_valid_credentials_json() {
+        let already = json!({
+            "format": "credentials_json",
+            "body": {
+                "claudeAiOauth": {
+                    "accessToken": "at-keep",
+                    "refreshToken": "rt-keep",
+                    "expiresAt": 1_755_648_000_000_i64
+                }
+            }
+        });
+        let normalized = normalize_oauth_credentials(&already).unwrap();
+        assert_eq!(normalized, already);
+    }
+
+    #[test]
+    fn normalize_oauth_credentials_requires_access_token() {
+        let err = normalize_oauth_credentials(&json!({
+            "type": "oauth",
+            "provider": "claude",
+            "refresh_token": "rt-only"
+        }))
+        .unwrap_err();
+        assert_eq!(err.code(), "invalid_arg");
+        assert!(err.to_string().contains("access_token"));
+    }
+
+    #[test]
+    fn apply_account_writes_official_credentials_and_clears_leftover_api_env() {
+        let _lock = CLAUDE_HOME_LOCK.lock().expect("claude home lock");
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("claude");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join("settings.json"),
+            r#"{
+  "model": "sonnet",
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "sk-leftover",
+    "ANTHROPIC_API_KEY": "sk-relay",
+    "ANTHROPIC_BASE_URL": "https://relay.example.com",
+    "OTHER": "keep"
+  }
+}
+"#,
+        )
+        .unwrap();
+        let prev = std::env::var_os("CLAUDE_CONFIG_DIR");
+        std::env::set_var("CLAUDE_CONFIG_DIR", &home);
+        let account = LiveAccount {
+            agent: AgentId::Claude,
+            kind: AccountKind::Oauth,
+            credentials: json!({
+                "type": "oauth",
+                "access_token": "at-official",
+                "refresh_token": "rt-official",
+                "expires_at": "2099-01-01T00:00:00Z"
+            }),
+            label_hint: Some("Claude oauth".into()),
+            extra: json!({}),
+        };
+        let result = ClaudeAdapter.apply_account(&account);
+        match prev {
+            Some(value) => std::env::set_var("CLAUDE_CONFIG_DIR", value),
+            None => std::env::remove_var("CLAUDE_CONFIG_DIR"),
+        }
+        result.unwrap();
+
+        let written = std::fs::read_to_string(home.join(".credentials.json")).unwrap();
+        let body: serde_json::Value = serde_json::from_str(&written).unwrap();
+        assert_eq!(body["claudeAiOauth"]["accessToken"], "at-official");
+        assert_eq!(body["claudeAiOauth"]["refreshToken"], "rt-official");
+        assert!(body["claudeAiOauth"].get("expiresAt").is_some());
+
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(home.join("settings.json")).unwrap())
+                .unwrap();
+        assert_eq!(settings["model"], "sonnet");
+        assert_eq!(settings["env"]["OTHER"], "keep");
+        assert!(settings["env"].get("ANTHROPIC_AUTH_TOKEN").is_none());
+        assert!(settings["env"].get("ANTHROPIC_API_KEY").is_none());
+        assert!(settings["env"].get("ANTHROPIC_BASE_URL").is_none());
+    }
+
+    static CLAUDE_HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 }

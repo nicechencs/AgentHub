@@ -16,6 +16,7 @@ import {
   officialLoginAdapter,
   mapDevicePollStatus,
   mapPkceWaitStatus,
+  officialLoginShouldKeepPolling,
   sessionFromDeviceStart,
   sessionFromPkceStart,
   type OfficialLoginPoll,
@@ -50,6 +51,38 @@ export async function pollOfficialLogin(
   }
   const wait = await waitOAuth(session.sessionId, timeoutSecs);
   return { phase: mapPkceWaitStatus(wait.status), error: wait.error ?? null };
+}
+
+/**
+ * Keep polling until ready / failed / the real session window ends.
+ * A single waitOAuth chunk timing out must not cancel a still-valid listener.
+ */
+export async function waitOfficialLogin(
+  session: OfficialLoginSession,
+  isCurrent: () => boolean = () => true,
+): Promise<OfficialLoginPoll> {
+  const deadlineMs = Date.now() + Math.max(1, session.expiresInSecs || 900) * 1000;
+
+  if (session.flow === 'deviceCode') {
+    const intervalMs = Math.max(2, session.intervalSecs || 5) * 1000;
+    while (isCurrent() && Date.now() < deadlineMs) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      if (!isCurrent()) return { phase: 'cancelled' };
+      const poll = await pollOfficialLogin(session);
+      if (!isCurrent()) return { phase: 'cancelled' };
+      if (!officialLoginShouldKeepPolling(poll.phase)) return poll;
+    }
+    return { phase: 'expired' };
+  }
+
+  while (isCurrent() && Date.now() < deadlineMs) {
+    const remainingSecs = Math.max(1, Math.ceil((deadlineMs - Date.now()) / 1000));
+    const chunk = Math.min(OAUTH_WAIT_TIMEOUT_SECS, remainingSecs);
+    const poll = await pollOfficialLogin(session, chunk);
+    if (!isCurrent()) return { phase: 'cancelled' };
+    if (!officialLoginShouldKeepPolling(poll.phase)) return poll;
+  }
+  return { phase: 'expired' };
 }
 
 export async function finishOfficialLogin(session: OfficialLoginSession): Promise<Account> {

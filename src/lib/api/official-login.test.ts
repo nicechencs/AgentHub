@@ -23,6 +23,7 @@ import {
   finishOfficialLogin,
   pollOfficialLogin,
   startOfficialLogin,
+  waitOfficialLogin,
 } from './official-login';
 
 describe('official login session façade', () => {
@@ -44,6 +45,7 @@ describe('official login session façade', () => {
       agentId: 'claude',
       providerKey: null,
       browserOpened: true,
+      expiresInSecs: 900,
     });
     waitOAuth.mockResolvedValue({
       state: 'pkce-1',
@@ -58,6 +60,7 @@ describe('official login session façade', () => {
     expect(startDeviceOAuth).not.toHaveBeenCalled();
     expect(session.flow).toBe('pkce');
     expect(session.sessionId).toBe('pkce-1');
+    expect(session.expiresInSecs).toBe(900);
 
     const poll = await pollOfficialLogin(session);
     expect(waitOAuth).toHaveBeenCalledWith('pkce-1', 120);
@@ -93,6 +96,51 @@ describe('official login session façade', () => {
 
     await finishOfficialLogin(session);
     expect(finishDeviceOAuth).toHaveBeenCalledWith('dev-1');
+  });
+
+  it('keeps waiting after a poll-chunk timeout and fails when another login starts', async () => {
+    waitOAuth
+      .mockResolvedValueOnce({
+        state: 'pkce-1',
+        agentId: 'claude',
+        status: 'waiting',
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        state: 'pkce-1',
+        agentId: 'claude',
+        status: 'callbackReceived',
+        error: null,
+      });
+
+    const ready = await waitOfficialLogin({
+      sessionId: 'pkce-1',
+      agentId: 'claude',
+      optionId: 'claude',
+      flow: 'pkce',
+      intervalSecs: 0,
+      expiresInSecs: 900,
+    });
+    expect(waitOAuth).toHaveBeenCalledTimes(2);
+    expect(ready.phase).toBe('ready');
+
+    waitOAuth.mockReset();
+    waitOAuth.mockResolvedValue({
+      state: 'pkce-2',
+      agentId: 'codex',
+      status: 'failed',
+      error: 'oauth.superseded',
+    });
+    const cancelled = await waitOfficialLogin({
+      sessionId: 'pkce-2',
+      agentId: 'codex',
+      optionId: 'codex',
+      flow: 'pkce',
+      intervalSecs: 0,
+      expiresInSecs: 900,
+    });
+    expect(cancelled).toEqual({ phase: 'failed', error: 'oauth.superseded' });
+    expect(waitOAuth).toHaveBeenCalledTimes(1);
   });
 
   it('cancels by session id for either adapter', async () => {
