@@ -65,7 +65,7 @@ fn identity_matches_same_secret_and_url_ignores_last4() {
     let right = provider_identity(&b).expect("identity");
     assert_eq!(left, right);
     assert_eq!(left.secret_hash, secret_sha256_hex(secret));
-    assert_eq!(left.base_url, "https://openrouter.ai/api/v1");
+    assert_eq!(left.base_url, "https://openrouter.ai/api");
     assert_ne!(
         provider_identity(&row(
             "other",

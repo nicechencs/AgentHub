@@ -2114,7 +2114,7 @@ fn start_spec_official_openai_does_not_list_stealth() {
 }
 
 #[test]
-fn prepare_glm_claude_uses_anthropic_endpoint() {
+fn prepare_glm_claude_is_native_not_local_bridge() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
         .create(&Provider {
@@ -2137,36 +2137,15 @@ fn prepare_glm_claude_uses_anthropic_endpoint() {
             updated_at: "now".into(),
         })
         .unwrap();
-    let service = AdapterBridgeService::new(db.clone());
-    let prepared = service
+    let error = AdapterBridgeService::new(db.clone())
         .prepare(&AdapterBridgePrepareRequest {
             source_kind: AdapterSourceKind::Provider,
             source_id: "glm-create".into(),
             target_agent_id: AgentId::Claude,
             auto_start: true,
         })
-        .unwrap();
-    let start = prepared.runtime_material().start_spec(None);
-    assert_eq!(
-        start.upstream.base_url,
-        "https://open.bigmodel.cn/api/anthropic"
-    );
-    assert_eq!(
-        start.upstream.protocol,
-        BridgeUpstreamProtocol::AnthropicMessages
-    );
-    assert!(start.listed_models.iter().any(|model| model == "glm-4.6"));
-    let input = match prepared.provider_projection(43150).unwrap() {
-        AdapterBridgeProviderProjection::Create(input) => input,
-        other => panic!("expected create projection, got {other:?}"),
-    };
-    assert_eq!(input.settings_config["model"], "glm-4.6");
-    assert_eq!(input.settings_config["env"]["ANTHROPIC_MODEL"], "glm-4.6");
-    assert!(
-        input.settings_config["env"]
-            .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
-            .is_none()
-    );
+        .unwrap_err();
+    assert_eq!(error.code(), "unsupported");
 }
 
 #[test]

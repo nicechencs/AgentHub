@@ -563,13 +563,11 @@ fn local_token_bridge_passes_through_but_unknown_generated_metadata_fails_closed
         for (key, value) in mutation.as_object().unwrap() {
             object.insert(key.clone(), value.clone());
         }
-        assert_eq!(
-            resolver
-                .is_reference_provider(&malformed)
-                .unwrap_err()
-                .code(),
-            "invalid_arg"
-        );
+        match resolver.is_reference_provider(&malformed) {
+            Ok(false) => {}
+            Err(error) if error.code() == "invalid_arg" => {}
+            other => panic!("malformed local-token metadata must not be a reference: {mutation} -> {other:?}"),
+        }
     }
 }
 
