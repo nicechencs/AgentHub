@@ -758,7 +758,24 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-fn official_pi_slot_models(slot: &str) -> Vec<String> {
+fn filter_pi_catalog_ids(ids: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for id in ids {
+        let id = id.trim().to_string();
+        if id.is_empty() || crate::models::is_openrouter_backup_model(&id) || !seen.insert(id.clone())
+        {
+            continue;
+        }
+        out.push(id);
+    }
+    out
+}
+
+/// Official catalog for this slot: GET {base}/v1/models (same helper every
+/// other login uses). Tests inject that list; production uses the stored bearer.
+/// Do not skip this for Pi just because models.json already has leftover rows.
+fn remote_pi_slot_models(slot: &str, auth: &serde_json::Value) -> Vec<String> {
     let slot = slot.trim();
     if slot.is_empty() {
         return Vec::new();
@@ -766,15 +783,38 @@ fn official_pi_slot_models(slot: &str) -> Vec<String> {
     #[cfg(test)]
     {
         if let Some(models) = TEST_PI_OFFICIAL_CATALOG.with(|cell| cell.borrow().clone()) {
-            return models
-                .into_iter()
-                .filter(|id| !crate::models::is_openrouter_backup_model(id))
-                .collect();
+            return filter_pi_catalog_ids(models);
         }
     }
-    run_pi_list_models(slot)
+    let Some(base) = official_openai_base_for_pi_slot(slot) else {
+        return Vec::new();
+    };
+    let Some(key) = pi_auth_bearer_for_slot(auth, slot) else {
+        return Vec::new();
+    };
+    match crate::utils::remote_openai_models::list_remote_openai_models(base, &key) {
+        Ok(remote) => filter_pi_catalog_ids(remote),
+        Err(_) => Vec::new(),
+    }
 }
 
+fn official_pi_slot_models(slot: &str) -> Vec<String> {
+    let slot = slot.trim();
+    if slot.is_empty() {
+        return Vec::new();
+    }
+    #[cfg(test)]
+    {
+        let _ = slot;
+        return Vec::new();
+    }
+    #[cfg(not(test))]
+    {
+        run_pi_list_models(slot)
+    }
+}
+
+#[cfg_attr(test, allow(dead_code))]
 fn run_pi_list_models(slot: &str) -> Vec<String> {
     let detect = detect_installation();
     let Some(bin) = detect.binary_path else {
@@ -800,8 +840,8 @@ fn run_pi_list_models(slot: &str) -> Vec<String> {
 }
 
 /// Live default model + picker ids for this Pi slot.
-/// Official catalog comes from `pi --list-models`; leftover defaults absent
-/// from that catalog are replaced, not kept as the only Chat model.
+/// Official xAI catalog comes from GET https://api.x.ai/v1/models (already in
+/// the codebase). Leftover defaults absent from that catalog are replaced.
 pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
     let empty = crate::models::LiveChatModel {
         model: None,
@@ -820,30 +860,13 @@ pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
     let mut models = if slot.is_empty() {
         Vec::new()
     } else {
-        official_pi_slot_models(&slot)
+        remote_pi_slot_models(&slot, &auth)
     };
     if models.is_empty() && !slot.is_empty() {
         models = collect_pi_slot_model_ids(&models_doc, &slot);
     }
-    if models.is_empty() {
-        if let (true, Some(base), Some(key)) = (
-            !slot.is_empty(),
-            official_openai_base_for_pi_slot(&slot),
-            pi_auth_bearer_for_slot(&auth, &slot),
-        ) {
-            if let Ok(remote) = crate::utils::remote_openai_models::list_remote_openai_models(base, &key)
-            {
-                for id in remote {
-                    let id = id.trim().to_string();
-                    if id.is_empty() || crate::models::is_openrouter_backup_model(&id) {
-                        continue;
-                    }
-                    if !models.iter().any(|existing| existing == &id) {
-                        models.push(id);
-                    }
-                }
-            }
-        }
+    if models.is_empty() && !slot.is_empty() {
+        models = official_pi_slot_models(&slot);
     }
 
     let current = prefer_pi_catalog_model(&models, leftover.as_deref());
@@ -1435,6 +1458,56 @@ openrouter openrouter/auto 200K   16K     no       no
                     )
                     .unwrap();
                     assert_eq!(settings["defaultModel"], "grok-4.6");
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn pi_live_chat_model_does_not_skip_remote_when_models_json_has_leftover() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-code-fast-1"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("models.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "providers": {
+                        "xai": {
+                            "models": [{ "id": "grok-code-fast-1" }]
+                        }
+                    }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            with_pi_official_catalog(
+                vec![
+                    "grok-4.3".into(),
+                    "grok-4.5".into(),
+                    "grok-4.6".into(),
+                    "grok-build-0.1".into(),
+                ],
+                || {
+                    let live = pi_live_chat_model();
+                    assert_eq!(
+                        live.models,
+                        vec![
+                            "grok-4.3".to_string(),
+                            "grok-4.5".to_string(),
+                            "grok-4.6".to_string(),
+                            "grok-build-0.1".to_string()
+                        ]
+                    );
+                    assert_eq!(live.model.as_deref(), Some("grok-4.6"));
+                    assert!(!live.models.iter().any(|id| id.contains("grok-code-fast")));
                 },
             );
         });
