@@ -654,7 +654,7 @@ export const zh = {
     detailDescription: "上游、本机入口和已接客户端。",
     supports: "支持",
     collapse: "收起",
-    endpointCopied: "端点已复制",
+    endpointCopied: "地址已复制",
     copyFailed: "复制失败",
     copyEndpointAria: "复制本地端点 {endpoint}",
     status: "状态",

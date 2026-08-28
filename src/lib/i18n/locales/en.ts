@@ -663,7 +663,7 @@ export const en = {
     detailDescription: "Upstream, local entry, and connected clients.",
     supports: "Supports",
     collapse: "Collapse",
-    endpointCopied: "Endpoint copied",
+    endpointCopied: "Address copied",
     copyFailed: "Copy failed",
     copyEndpointAria: "Copy local endpoint {endpoint}",
     status: "Status",
