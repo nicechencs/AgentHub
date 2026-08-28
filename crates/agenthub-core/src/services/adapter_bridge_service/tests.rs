@@ -523,6 +523,58 @@ fn revalidate_projection_rejects_provider_that_became_user_owned_after_prepare()
 }
 
 #[test]
+fn prepare_rebuilds_leftover_incomplete_generated_provider() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account(
+            "codex-subscription",
+            "codex-upstream-access-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let first = service
+        .prepare(&codex_claude_request("codex-subscription"))
+        .unwrap();
+    let provider_id = first
+        .profile()
+        .generated_provider_id
+        .as_deref()
+        .expect("generated id")
+        .to_owned();
+    let profile_id = first.profile().id.clone();
+    let incomplete = Provider {
+        id: provider_id.clone(),
+        agent_id: AgentId::Claude,
+        name: "Codex Subscription Bridge".into(),
+        settings_config: json!({ "env": {} }),
+        meta: first.provider_projection(40661).ok().and_then(|p| match p {
+            AdapterBridgeProviderProjection::Create(input) => Some(input.meta),
+            _ => None,
+        })
+        .unwrap_or_else(|| json!({ "generatedBy": "adapter" })),
+        is_current: false,
+        created_at: "now".into(),
+        updated_at: "now".into(),
+    };
+    ProviderRepo::new(db.clone()).create(&incomplete).unwrap();
+    let mut profile = AdapterProfileRepo::new(db.clone())
+        .get(&profile_id)
+        .unwrap()
+        .unwrap();
+    profile.status = AdapterProfileStatus::Active;
+    profile.local_port = Some(40661);
+    profile.last_error_code = Some("retryable:adapter.bridge_restore_source".into());
+    AdapterProfileRepo::new(db.clone()).update(&profile).unwrap();
+
+    let prepared = service
+        .prepare(&codex_claude_request("codex-subscription"))
+        .expect("leftover incomplete projection must rebuild, not fail closed");
+    assert!(prepared.runtime_material().local_bearer.starts_with("ahb_"));
+    assert!(prepared.profile().local_port.is_none());
+    assert_ne!(prepared.runtime_material().local_bearer, "***");
+}
+
+#[test]
 fn revalidate_projection_rebuilds_incomplete_generated_provider() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())

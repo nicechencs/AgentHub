@@ -686,7 +686,7 @@ describe('provider-detect fields', () => {
     expect(out).not.toContain('default_provider = "moonshot"');
   });
 
-  it('does not keep a grok model on a Kimi login', () => {
+  it('keeps the account model on a Kimi login instead of rewriting it', () => {
     const src = [
       'default_model = "grok-4.5"',
       'default_provider = "moonshot"',
@@ -697,10 +697,10 @@ describe('provider-detect fields', () => {
       '',
     ].join('\n');
     const vars = extractFormVars('kimi', src, 'toml');
-    expect(vars.model).toBe('kimi-k2');
+    expect(vars.model).toBe('grok-4.5');
     const out = applyFormVars('kimi', src, 'toml', vars);
-    expect(out).toContain('default_model = "kimi-k2"');
-    expect(out).not.toContain('grok-4.5');
+    expect(out).toContain('default_model = "grok-4.5"');
+    expect(out).not.toContain('kimi-k2');
   });
 
   it('backfills DeepSeek provider and strips /anthropic from the service URL', () => {
