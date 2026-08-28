@@ -191,6 +191,12 @@ pub fn agent_live_paths(agent: AgentId) -> Result<AgentLivePaths> {
             extra: Vec::new(),
             open_dir,
         },
+        AgentId::Zcode => AgentLivePaths {
+            config: join(&home, "v2/config.json")?,
+            auth: Some(join(&home, "v2/config.json")?),
+            extra: vec![join(&home, "cli/config.json")?],
+            open_dir,
+        },
     })
 }
 

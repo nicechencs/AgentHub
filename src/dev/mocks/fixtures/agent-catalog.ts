@@ -19,6 +19,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   workbuddy: 'WorkBuddy',
   cursor: 'Cursor Agent',
   dsh: 'DeepSeek Harness',
+  zcode: 'ZCode',
 };
 
 function capsToDto(
@@ -50,7 +51,7 @@ const PROJECTOR_SCHEMA_VERSION: Record<string, number> = {
 };
 
 /** Agents without projector: explicit null (legacy applyFormVars path). */
-const NO_PROJECTOR = new Set(['cursor', 'pi', 'workbuddy']);
+const NO_PROJECTOR = new Set(['cursor', 'pi', 'workbuddy', 'zcode']);
 
 function configSchemaVersionFor(agentId: string): number | null {
   if (agentId in PROJECTOR_SCHEMA_VERSION) {
@@ -77,7 +78,7 @@ function buildBuiltinCatalog(): AgentCatalogEntryDto[] {
   }));
 }
 
-/** Default mock catalog (eight built-ins). */
+/** Default mock catalog (built-ins). */
 export const MOCK_AGENT_CATALOG: AgentCatalogEntryDto[] = buildBuiltinCatalog();
 
 /** Extra demo agent used in tests — fallback letter/color only. */

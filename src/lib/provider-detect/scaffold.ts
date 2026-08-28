@@ -145,6 +145,22 @@ export function defaultConfigScaffold(agentId: string): {
           2,
         ),
       };
+    case 'zcode':
+      return {
+        format: 'json',
+        preset: 'custom',
+        text: JSON.stringify(
+          {
+            apiKey: '',
+            baseURL: 'https://open.bigmodel.cn/api/anthropic',
+            kind: 'anthropic',
+            name: 'AgentHub',
+            providerId: 'agenthub-managed',
+          },
+          null,
+          2,
+        ),
+      };
     default:
       return {
         format: 'json',
@@ -234,6 +250,14 @@ export function liveConfigPaths(agentId: string): {
         auth: '~/.dsh/.credentials.yaml',
         openDir: '~/.dsh',
         hint: '服务设置写在 cordis.patch.yml，密钥写在 .credentials.yaml。切换后才会写到本机。官方 DeepSeek 用 https://api.deepseek.com，不要加 /anthropic。',
+      };
+    case 'zcode':
+      return {
+        config: '~/.zcode/v2/config.json',
+        auth: '~/.zcode/v2/config.json',
+        extra: ['~/.zcode/cli/config.json'],
+        openDir: '~/.zcode（或 ZCODE_HOME）',
+        hint: '自定义 API Key 写在 v2/config.json 的 provider 里。账号登录请在 ZCode 应用内完成。',
       };
     default:
       return {

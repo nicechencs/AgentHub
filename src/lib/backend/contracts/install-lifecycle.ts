@@ -15,7 +15,7 @@ export function installLifecycle(
   if (kind === 'npm') {
     return { source: 'npm', updateVia: 'in_app', uninstallVia: 'in_app' };
   }
-  if (kind === 'native' && agentId === 'workbuddy') {
+  if (kind === 'native' && (agentId === 'workbuddy' || agentId === 'zcode')) {
     return { source: 'native', updateVia: 'official', uninstallVia: 'in_app' };
   }
   if (kind === 'native') {

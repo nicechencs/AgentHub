@@ -23,6 +23,7 @@ export const KNOWN_AGENT_IDS = [
   'workbuddy',
   'cursor',
   'dsh',
+  'zcode',
 ] as const;
 
 export type KnownAgentId = (typeof KNOWN_AGENT_IDS)[number];
