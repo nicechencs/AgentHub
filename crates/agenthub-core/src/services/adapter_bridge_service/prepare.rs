@@ -64,10 +64,11 @@ impl AdapterBridgeService {
             protocol,
             context_window_tokens,
         ) = openai_source_upstream(self, &rule, request.source_kind, source_id);
-        let leftover_incomplete = existing_provider.as_ref().is_some_and(|provider| {
-            validate_generated_provider(provider, &profile, profile.local_port).is_err()
-                || local_bearer_from_provider(provider).is_err()
-        });
+        // Incomplete leftover (empty env / masked or missing local token) is rebuilt.
+        // Ownership, version, kind, and port/content drift still fail closed.
+        let leftover_incomplete = existing_provider
+            .as_ref()
+            .is_some_and(|provider| local_bearer_from_provider(provider).is_err());
         if leftover_incomplete {
             tracing::warn!(
                 target: "core.adapter",
@@ -75,6 +76,8 @@ impl AdapterBridgeService {
                 profile_id = %profile.id,
                 "本机路由配置不完整，正在重建"
             );
+        } else if let Some(provider) = existing_provider.as_ref() {
+            validate_generated_provider(provider, &profile, profile.local_port)?;
         }
         let (generated_provider_exists, generated_provider_is_current) =
             if leftover_incomplete {
