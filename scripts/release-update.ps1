@@ -48,6 +48,8 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location -Path (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Root = (Get-Location).Path
+# Keep in lockstep with WORKSPACE_LOCK_PACKAGES in scripts/release-metadata.mjs
+$WorkspaceLockPackages = @('agenthub-cli', 'agenthub-core', 'agenthub-gui')
 
 function Write-Step([string]$msg) {
     Write-Host ""
@@ -135,8 +137,7 @@ function Get-CargoLockWorkspaceText([string]$ver) {
     }
     $lockText = Get-Utf8NoBomText $lockPath
     $updated = $lockText
-    $workspacePackages = @('agenthub-cli', 'agenthub-core', 'agenthub-gui')
-    foreach ($name in $workspacePackages) {
+    foreach ($name in $WorkspaceLockPackages) {
         $namePattern = [regex]::Escape($name)
         $pattern = '(?ms)(\[\[package\]\]\s*name\s*=\s*"' + $namePattern + '"\s*version\s*=\s*")[^"]+(")'
         $matches = [regex]::Matches($updated, $pattern)
@@ -187,7 +188,7 @@ function Assert-ReleaseContentPlan($plan, [string]$ver) {
         throw "Generated tauri.conf.json version '$tauriVersion' does not equal '$ver'"
     }
 
-    foreach ($name in @('agenthub-cli', 'agenthub-core', 'agenthub-gui')) {
+    foreach ($name in $WorkspaceLockPackages) {
         $pattern = '(?ms)\[\[package\]\]\s*name\s*=\s*"' + [regex]::Escape($name) + '"\s*version\s*=\s*"([^"]+)"'
         $matches = [regex]::Matches($lock.Updated, $pattern)
         if ($matches.Count -ne 1 -or $matches[0].Groups[1].Value -ne $ver) {
