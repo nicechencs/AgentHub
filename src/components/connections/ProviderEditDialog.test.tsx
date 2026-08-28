@@ -541,6 +541,49 @@ describe('secret unchanged semantics', () => {
     expect(matArgs[1].apiKey).toBe('');
   });
 
+  it('materialize echoing *** does not overwrite the empty keep-secret signal', async () => {
+    const deps = mockDeps({
+      materializeAgentConfig: vi.fn(async () => ({
+        format: 'toml',
+        content: 'model = "gpt"\n',
+        auth: { OPENAI_API_KEY: REDACTED_MARKER },
+      })),
+    });
+    const existing: Provider = {
+      id: 'p1',
+      agentId: 'codex',
+      name: 'Codex',
+      preset: 'custom',
+      configText: 'model = "gpt"\n',
+      configFormat: 'toml',
+      authApiKey: REDACTED_MARKER,
+      isCurrent: false,
+    };
+    const vars: ProviderFormVars = {
+      ...EMPTY_FORM_VARS,
+      model: 'gpt',
+      apiKey: '',
+    };
+    const result = await runProviderSaveFlow(
+      baseInput({
+        agentId: 'codex',
+        schemaStatus: 'ready',
+        isEdit: true,
+        existing,
+        vars,
+        saveVars: vars,
+        finalFormat: 'toml',
+        baseText: 'model = "gpt"\n',
+        configFormat: 'toml',
+      }),
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.provider.authApiKey).toBe('');
+    }
+  });
+
   it('REDACTED_MARKER is not treated as a new secret in materialize input path', async () => {
     const deps = mockDeps({
       materializeAgentConfig: vi.fn(async (_id, values) => {
