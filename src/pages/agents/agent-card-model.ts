@@ -2,6 +2,9 @@ import type { TerminalStatus } from '@/components/shared/InlineTerminal';
 import type { InstallChannelMeta } from '@/config/agents';
 import type { MessageKey } from '@/lib/i18n';
 import type { AgentStatus } from '@/lib/types';
+import { installLifecycle } from '@/lib/backend/contracts/install-lifecycle';
+
+export { installLifecycle };
 
 export type AgentCardTaskAction = 'install' | 'upgrade' | 'oneclick';
 export type AgentCardTaskStatus = TerminalStatus;
@@ -153,32 +156,6 @@ export function isInstallSource(value?: string | null): value is InstallSource {
   );
 }
 
-/** Same object for every agent copy so UI does not mix npm / IDE / Store. */
-export function installLifecycle(
-  kind: string,
-  agentId?: string,
-): Pick<AgentInstall, 'source' | 'updateVia' | 'uninstallVia'> {
-  if (kind === 'npm') {
-    return { source: 'npm', updateVia: 'in_app', uninstallVia: 'in_app' };
-  }
-  if (kind === 'native' && agentId === 'workbuddy') {
-    return { source: 'native', updateVia: 'official', uninstallVia: 'in_app' };
-  }
-  if (kind === 'native') {
-    return { source: 'native', updateVia: 'in_app', uninstallVia: 'in_app' };
-  }
-  if (kind === 'ide') {
-    return { source: 'ide', updateVia: 'ide', uninstallVia: 'ide' };
-  }
-  if (kind === 'desktop') {
-    return { source: 'desktop', updateVia: 'desktop', uninstallVia: 'desktop' };
-  }
-  if (kind === 'leftover-agenthub') {
-    return { source: 'leftover-agenthub', updateVia: 'none', uninstallVia: 'leftover' };
-  }
-  return { source: 'native', updateVia: 'none', uninstallVia: 'none' };
-}
-
 function sameInstallPath(a: string, b: string): boolean {
   return a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase();
 }
@@ -238,13 +215,25 @@ function toAgentInstall(
 
 /** Spawn copy + extras, each with source / location / update / uninstall. */
 export function listAgentInstalls(
-  agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
+  agent: Pick<
+    AgentStatus,
+    'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies' | 'updateVia' | 'uninstallVia'
+  >,
 ): AgentInstall[] {
   const out: AgentInstall[] = [];
   const spawnPath = agent.binPath?.trim();
   if (agent.installed && spawnPath) {
     const kind = isInstallSource(agent.channel) ? agent.channel : 'native';
-    out.push(toAgentInstall(agent.agentId, kind, spawnPath, agent.version, true));
+    const spawnCopy = (agent.extraCopies ?? []).find(
+      (copy) => copy.path?.trim() && sameInstallPath(spawnPath, copy.path.trim()),
+    );
+    out.push(
+      toAgentInstall(agent.agentId, kind, spawnPath, agent.version, true, spawnCopy ?? {
+        source: kind,
+        updateVia: agent.updateVia,
+        uninstallVia: agent.uninstallVia,
+      }),
+    );
   }
   for (const copy of agent.extraCopies ?? []) {
     const location = copy.path?.trim();

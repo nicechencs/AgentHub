@@ -35,6 +35,29 @@ pub(crate) fn field(
         validation: None,
         help: help.map(|s| s.to_string()),
         capability: None,
+        secret_storage: None,
+    }
+}
+
+pub(crate) fn field_secret_storage(
+    key: &str,
+    label: &str,
+    value_type: ConfigValueType,
+    required: bool,
+    help: Option<&str>,
+    secret_storage: &str,
+) -> ConfigFieldSchema {
+    ConfigFieldSchema {
+        key: key.to_string(),
+        label: label.to_string(),
+        value_type,
+        required,
+        secret: true,
+        default: None,
+        validation: None,
+        help: help.map(|s| s.to_string()),
+        capability: None,
+        secret_storage: Some(secret_storage.to_string()),
     }
 }
 

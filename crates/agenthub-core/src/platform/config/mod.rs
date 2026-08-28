@@ -15,7 +15,8 @@ pub use projector::AgentConfigProjector;
 pub use registry::{builtin_config_registry, ConfigProjectorRegistry};
 pub use schema::{
     AgentConfigSchema, ConfigFieldSchema, ConfigValidationIssue, ConfigValidationResult,
-    ConfigValueType, FieldValidation, NativeConfigFormat, SECRET_REDACTED,
+    ConfigValueType, FieldValidation, NativeConfigFormat, AUTH_OPENAI_API_KEY_STORAGE,
+    SECRET_REDACTED,
 };
 pub use service::ConfigurationService;
 
