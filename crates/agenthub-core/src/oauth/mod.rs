@@ -121,13 +121,7 @@ pub fn start_oauth(
     } else {
         provider.redirect_path
     };
-    // Pi Anthropic registers `localhost` (not 127.0.0.1) as redirect host.
-    let host = if agent == AgentId::Pi {
-        "localhost"
-    } else {
-        "127.0.0.1"
-    };
-    let redirect_uri = format!("http://{host}:{port}{path}");
+    let redirect_uri = provider.loopback_redirect_uri(port);
 
     let authorize_url = provider.build_authorize_url(&redirect_uri, &state, pkce.challenge());
 
