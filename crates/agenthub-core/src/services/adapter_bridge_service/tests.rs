@@ -523,6 +523,68 @@ fn revalidate_projection_rejects_provider_that_became_user_owned_after_prepare()
 }
 
 #[test]
+fn revalidate_projection_rebuilds_incomplete_generated_provider() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account(
+            "codex-subscription",
+            "codex-upstream-access-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&codex_claude_request("codex-subscription"))
+        .unwrap();
+    let provider_id = prepared
+        .profile()
+        .generated_provider_id
+        .as_deref()
+        .expect("generated id")
+        .to_owned();
+    let incomplete = match prepared.provider_projection(43121).unwrap() {
+        AdapterBridgeProviderProjection::Create(input) => Provider {
+            id: input.id,
+            agent_id: input.agent_id,
+            name: input.name,
+            settings_config: json!({}),
+            meta: input.meta,
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        },
+        other => panic!("expected create projection, got {other:?}"),
+    };
+    assert_eq!(incomplete.id, provider_id);
+    ProviderRepo::new(db.clone()).create(&incomplete).unwrap();
+
+    let projection = service
+        .revalidate_provider_projection(&prepared, 43121)
+        .unwrap();
+    let input = match projection {
+        AdapterBridgeProviderProjection::Update(input) => input,
+        other => panic!("incomplete generated login must be rewritten, got {other:?}"),
+    };
+    assert_eq!(
+        input.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        "http://127.0.0.1:43121"
+    );
+    let token = input.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"]
+        .as_str()
+        .unwrap_or("");
+    assert!(token.starts_with("ahb_"), "rebuild must persist the local token");
+    assert!(!token.is_empty());
+    assert_eq!(
+        ProviderRepo::new(db)
+            .get_by_id(&provider_id)
+            .unwrap()
+            .unwrap()
+            .settings_config,
+        json!({}),
+        "revalidate must not write until persist"
+    );
+}
+
+#[test]
 fn auto_start_and_attention_are_profile_only_state_transitions() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())

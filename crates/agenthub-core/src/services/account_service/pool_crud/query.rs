@@ -5,15 +5,26 @@ use chrono::Utc;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{Account, AccountKind, AgentId};
+use crate::services::adapter_route_constants::CONNECTION_SECRET_MARKER;
+use crate::utils::redact::api_key_secret;
 
 use super::super::surface::*;
 use super::super::AccountService;
+
+fn account_has_usable_api_key(account: &Account) -> bool {
+    let Some(secret) = api_key_secret(&account.credentials) else {
+        return false;
+    };
+    let trimmed = secret.trim();
+    !trimmed.is_empty() && trimmed != "***" && trimmed != CONNECTION_SECRET_MARKER
+}
 
 impl AccountService {
     /// SQLite pool plus local identity/expiry heals. No live-file sync and no
     /// upstream quota HTTP — GUI list paths stay off the network.
     pub fn list_pool(&self, agent: Option<AgentId>) -> Result<Vec<Account>> {
         self.connections.reconcile_known_agents(agent);
+        self.heal_unusable_api_key_accounts(agent);
         let mut items = self.repo.list(agent)?;
         // Persist identity extracted from stored tokens so GUI sees email/sub
         // after redaction (JWT lives only in credentials until healed).
@@ -51,6 +62,28 @@ impl AccountService {
         }
         sort_accounts(&mut items);
         Ok(items)
+    }
+
+    /// Recycle API Key rows that were persisted without a usable secret
+    /// (`***` / marker / empty). Those leftover live imports show up as
+    /// nameless cards and cannot be switched or forwarded.
+    fn heal_unusable_api_key_accounts(&self, agent: Option<AgentId>) {
+        let Ok(rows) = self.repo.list(agent) else {
+            return;
+        };
+        for row in rows {
+            if row.kind != AccountKind::ApiKey || account_has_usable_api_key(&row) {
+                continue;
+            }
+            tracing::info!(
+                module = targets::ACCOUNT,
+                op = "recycle",
+                agent = row.agent_id.as_str(),
+                id = row.id.as_str(),
+                "recycled login with no usable key"
+            );
+            let _ = self.connections.delete_account(&row.id, row.agent_id);
+        }
     }
 
     /// File-backed agents can rotate credentials while they are running.
