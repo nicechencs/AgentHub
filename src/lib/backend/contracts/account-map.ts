@@ -112,6 +112,12 @@ export function mapCoreAccount(a: CoreAccount): Account {
     pickString(a.liveRevision) ??
     pickString(extra.liveRevision);
 
+  const recoveredSecretTail =
+    pickString(extra.secretTail) ??
+    (a.kind === 'apikey'
+      ? secretTailFromMaskedPreview(rawIdentity) ?? secretTailFromMaskedPreview(a.label)
+      : undefined);
+
   const tokenExpired =
     extra.tokenExpired === true ||
     (tokenRemainingSec !== undefined && tokenRemainingSec <= 0);
@@ -172,7 +178,7 @@ export function mapCoreAccount(a: CoreAccount): Account {
     envKey,
     credentialSummary,
     refreshTokenPreview: a.kind === 'oauth' ? pickString(extra.refreshTokenPreview) : undefined,
-    secretTail: pickString(extra.secretTail),
+    secretTail: recoveredSecretTail,
     secretHash: pickString(extra.secretHash),
     endpoint: pickString(extra.endpoint) ?? pickString(extra.baseUrl) ?? pickString(extra.base_url),
   };
@@ -180,6 +186,22 @@ export function mapCoreAccount(a: CoreAccount): Account {
 
 function pickString(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+/** `**XXXX` from an already-stored mask. Does not invent a tail. */
+export function secretTailFromMaskedPreview(value: string | undefined | null): string | undefined {
+  if (!value) return undefined;
+  const stripped = value
+    .trim()
+    .replace(/\s*（API Key）\s*$/i, '')
+    .replace(/\s*\(API Key\)\s*$/i, '')
+    .trim();
+  if (!stripped) return undefined;
+  const stars = stripped.match(/^\*{2}([A-Za-z0-9]{4})$/);
+  if (stars?.[1]) return `**${stars[1]}`;
+  const dotted = stripped.match(/[•*]{2,}([A-Za-z0-9]{4})$/);
+  if (dotted?.[1]) return `**${dotted[1]}`;
+  return undefined;
 }
 
 function hasNonEmptyField(value: unknown, names: string[]): boolean {

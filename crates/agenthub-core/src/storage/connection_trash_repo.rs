@@ -70,6 +70,11 @@ impl ConnectionTrashRepo {
     pub(crate) fn delete_conn(conn: &Connection, id: &str) -> Result<()> {
         delete_conn(conn, id)
     }
+
+    pub(crate) fn update_payload<T: serde::Serialize>(&self, id: &str, payload: &T) -> Result<()> {
+        self.db
+            .with_conn(|conn| update_payload_conn(conn, id, payload))
+    }
 }
 
 fn purge_expired_conn(conn: &Connection, now: &str) -> Result<()> {
@@ -162,6 +167,22 @@ fn load_trash_payload_conn(conn: &Connection, id: &str) -> Result<TrashPayloadRo
 
 fn delete_conn(conn: &Connection, id: &str) -> Result<()> {
     let n = conn.execute("DELETE FROM connection_trash WHERE id = ?1", params![id])?;
+    if n == 0 {
+        return Err(AppError::NotFound(format!("trash item not found: {id}")));
+    }
+    Ok(())
+}
+
+fn update_payload_conn<T: serde::Serialize>(
+    conn: &Connection,
+    id: &str,
+    payload: &T,
+) -> Result<()> {
+    let payload = serde_json::to_string(payload)?;
+    let n = conn.execute(
+        "UPDATE connection_trash SET payload = ?1 WHERE id = ?2",
+        params![payload, id],
+    )?;
     if n == 0 {
         return Err(AppError::NotFound(format!("trash item not found: {id}")));
     }
