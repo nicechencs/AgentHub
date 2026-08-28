@@ -144,19 +144,19 @@ pub fn list_oauth_options(agent: AgentId) -> Vec<OAuthLoginOption> {
             agent,
             "claude",
             "Claude Pro/Max",
-            "Anthropic 订阅 OAuth",
+            "用浏览器登录 Claude 订阅",
         )],
         AgentId::Codex => vec![single_pkce(
             agent,
             "codex",
             "ChatGPT Plus/Pro",
-            "OpenAI Codex OAuth",
+            "用浏览器登录 ChatGPT 订阅",
         )],
         AgentId::Grok => vec![single_pkce(
             agent,
             "xai",
             "Grok / xAI",
-            "xAI OAuth (Grok CLI)",
+            "用浏览器登录 Grok 订阅",
         )],
         AgentId::Pi => pi_options(),
         _ => vec![],
@@ -280,7 +280,7 @@ fn pi_options() -> Vec<OAuthLoginOption> {
             id: "anthropic".into(),
             agent_id: AgentId::Pi,
             label: "Claude Pro/Max".into(),
-            description: "写入 Pi auth.json → anthropic".into(),
+            description: "浏览器登录，写入 Pi 的登录列表".into(),
             flow: OAuthFlowKind::Pkce,
             auth_json_key: Some("anthropic".into()),
         },
@@ -288,7 +288,7 @@ fn pi_options() -> Vec<OAuthLoginOption> {
             id: "openai-codex".into(),
             agent_id: AgentId::Pi,
             label: "ChatGPT Plus/Pro (Codex)".into(),
-            description: "写入 Pi auth.json → openai-codex".into(),
+            description: "浏览器登录，写入 Pi 的登录列表".into(),
             flow: OAuthFlowKind::Pkce,
             auth_json_key: Some("openai-codex".into()),
         },
@@ -296,7 +296,7 @@ fn pi_options() -> Vec<OAuthLoginOption> {
             id: "xai".into(),
             agent_id: AgentId::Pi,
             label: "xAI (Grok 订阅)".into(),
-            description: "设备码登录 → Pi auth.json → xai".into(),
+            description: "设备码登录，写入 Pi 的登录列表".into(),
             flow: OAuthFlowKind::DeviceCode,
             auth_json_key: Some("xai".into()),
         },
@@ -310,12 +310,21 @@ mod tests {
     #[test]
     fn pi_has_multi_provider_options() {
         let opts = list_oauth_options(AgentId::Pi);
-        assert!(opts.len() >= 3);
+        assert_eq!(opts.len(), 3);
         assert!(opts.iter().any(|o| o.id == "anthropic"));
         assert!(opts.iter().any(|o| o.id == "openai-codex"));
         assert!(opts
             .iter()
             .any(|o| o.id == "xai" && o.flow == OAuthFlowKind::DeviceCode));
+        assert!(opts
+            .iter()
+            .all(|o| !o.description.contains("auth.json") && !o.label.contains("auth.json")));
+        for dead in ["github-copilot", "openrouter", "kimi-coding", "radius"] {
+            assert!(
+                !opts.iter().any(|o| o.id == dead),
+                "unimplemented Pi key {dead} must not be a clickable login option"
+            );
+        }
         assert!(oauth_supported(AgentId::Pi));
     }
 
@@ -364,7 +373,16 @@ mod tests {
     #[test]
     fn single_agent_options() {
         assert_eq!(list_oauth_options(AgentId::Claude).len(), 1);
+        assert_eq!(list_oauth_options(AgentId::Codex).len(), 1);
+        assert_eq!(list_oauth_options(AgentId::Grok).len(), 1);
+        assert!(list_oauth_options(AgentId::Claude)
+            .iter()
+            .all(|o| !o.description.contains("auth.json") && !o.description.contains("OAuth")));
         assert_eq!(list_oauth_options(AgentId::Kimi).len(), 0);
+        assert_eq!(list_oauth_options(AgentId::Cursor).len(), 0);
+        assert_eq!(list_oauth_options(AgentId::Dsh).len(), 0);
         assert!(!oauth_supported(AgentId::Kimi));
+        assert!(!oauth_supported(AgentId::Cursor));
+        assert!(!oauth_supported(AgentId::Dsh));
     }
 }
