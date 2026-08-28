@@ -105,6 +105,32 @@ wire_api = "responses"
 }
 
 #[test]
+fn competing_api_key_pointer_is_any_active_model_provider() {
+    let leftover = r#"model_provider = "openrouter"
+
+[model_providers.openrouter]
+env_key = "OPENROUTER_API_KEY"
+"#;
+    assert!(toml_has_competing_api_key_pointer(leftover));
+    assert!(!toml_has_competing_api_key_pointer(
+        "model = \"gpt-5.1-codex\"\n"
+    ));
+    let _lock = super::lock_codex_home();
+    let dir = tempfile::tempdir().unwrap();
+    let codex = dir.path().join(".codex");
+    std::fs::create_dir_all(&codex).unwrap();
+    std::fs::write(codex.join("config.toml"), leftover).unwrap();
+    let prev = std::env::var_os("CODEX_HOME");
+    std::env::set_var("CODEX_HOME", &codex);
+    let competing = live_oauth_has_competing_api_key_pointer();
+    match prev {
+        Some(value) => std::env::set_var("CODEX_HOME", value),
+        None => std::env::remove_var("CODEX_HOME"),
+    }
+    assert!(competing);
+}
+
+#[test]
 fn official_oauth_keeps_custom_provider_without_env_key() {
     let custom = r#"model_provider = "custom"
 model = "gpt-5.1-codex"

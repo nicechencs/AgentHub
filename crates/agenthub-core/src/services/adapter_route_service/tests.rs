@@ -1070,6 +1070,37 @@ fn plan_kimi_ticket_to_grok_is_writable_native_endpoint() {
 }
 
 #[test]
+fn kimi_custom_mytokens_is_openai_compat_local_bridge() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "qa-kimi".into(),
+            agent_id: AgentId::Kimi,
+            name: "QA Kimi manual".into(),
+            settings_config: serde_json::json!({
+                "format": "toml",
+                "content": "default_model = \"kimi-k2\"\ndefault_provider = \"moonshot\"\n\n[providers.moonshot]\nbase_url = \"https://mytokens.cc/v1\"\napi_key = \"sk-test-8660\"\n"
+            }),
+            meta: serde_json::json!({ "preset": "custom" }),
+            is_current: true,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = AdapterRouteService::new(db);
+    let plan = service
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "qa-kimi",
+            AgentId::Claude,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+    assert!(plan.can_apply, "{}", plan.analysis.reason);
+    assert_eq!(plan.analysis.rule_id.as_deref(), Some("openai-api-to-claude-v1"));
+}
+
+#[test]
 fn unsupported_and_missing_sources_have_no_changes() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())

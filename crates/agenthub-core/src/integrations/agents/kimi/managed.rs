@@ -13,6 +13,7 @@ pub const PROVIDER_TOML_KEYS: &[&str] =
 pub const PROJECTOR_TOML_KEYS: &[&str] =
     &["default_model", "default_provider", "providers", "models"];
 
+#[allow(dead_code)]
 pub const DEFAULT_MODEL_ALIAS: &str = "kimi-k2";
 pub const DEFAULT_MAX_CONTEXT_SIZE: i64 = 131_072;
 
@@ -121,20 +122,12 @@ pub(crate) fn complete_kimi_live_toml(doc: &mut DocumentMut) -> Result<()> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    // Grok model ids leaked into Kimi TOML (shared mytokens paste / form).
-    // Keep a Kimi alias; do not send grok-* upstream as default_model.
-    let alias = match stored.as_deref() {
-        Some(model) if looks_like_grok_model_id(model) => DEFAULT_MODEL_ALIAS.to_string(),
-        Some(model) => model.to_string(),
-        None => DEFAULT_MODEL_ALIAS.to_string(),
+    // Keep the account's model. Rewriting grok-* to kimi-k2 made custom
+    // relays 404: the key's group never had that alias.
+    let Some(alias) = stored else {
+        return Ok(());
     };
-    if stored.as_deref() != Some(alias.as_str()) {
-        doc["default_model"] = toml_edit::value(alias.as_str());
-    }
     ensure_kimi_model_alias(doc, slug.as_str(), &alias)
 }
 
-pub(crate) fn looks_like_grok_model_id(model: &str) -> bool {
-    let lower = model.trim().to_ascii_lowercase();
-    lower.starts_with("grok-") || lower.starts_with("grok_")
-}
+

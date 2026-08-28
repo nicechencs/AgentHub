@@ -89,6 +89,28 @@ fn non_openai_tags_cannot_be_promoted_by_openai_or_relay_urls() {
 }
 
 #[test]
+fn kimi_providers_toml_custom_remote_classifies_as_openai_api() {
+    let blob = json!({
+        "format": "toml",
+        "content": "default_model = \"kimi-k2\"\ndefault_provider = \"moonshot\"\n\n[providers.moonshot]\nbase_url = \"https://mytokens.cc/v1\"\napi_key = \"sk-test\"\n"
+    });
+    assert!(
+        settings_contain_custom_openai_compat_remote(&blob),
+        "Kimi [providers.*] base_url must count as a custom OpenAI-compat remote"
+    );
+    assert!(!is_unknown_custom_relay_provider(&crate::models::Provider {
+        id: "qa-kimi".into(),
+        agent_id: crate::models::AgentId::Kimi,
+        name: "QA Kimi manual".into(),
+        settings_config: blob.clone(),
+        meta: serde_json::json!({ "preset": "custom" }),
+        is_current: true,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }));
+}
+
+#[test]
 fn mytokens_toml_custom_remote_classifies_as_openai_api() {
     let blob = json!({
         "format": "toml",

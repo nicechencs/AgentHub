@@ -1,5 +1,6 @@
 use super::*;
 use crate::adapters::{AdapterRegistry, AgentAdapter};
+use std::collections::HashMap;
 use crate::utils::process::{ProcessRunner, RecordingProcessRunner, StreamingProcessRunner};
 use std::sync::mpsc;
 use std::thread;
@@ -721,6 +722,44 @@ fn build_prompt_skips_non_ok_agent_replies() {
     assert!(!p.contains("failed-reply"));
     assert!(p.contains("ok-reply"));
     assert!(p.contains("q3"));
+}
+
+#[test]
+fn finalize_marks_zero_exit_upstream_404_as_failed() {
+    let mut map = HashMap::new();
+    map.insert(
+        AgentId::Pi,
+        ChatMessage {
+            id: "m1".into(),
+            conversation_id: "c1".into(),
+            turn: 1,
+            role: ChatRole::Agent,
+            agent_id: Some(AgentId::Pi),
+            content: "404: {\"message\":\"Thank you for participating in the Stealth Ox Alpha testing period. This model was ZAI's GLM-5.3 Flash.\",\"code\":404}".into(),
+            status: ChatMessageStatus::Running,
+            duration_ms: 0,
+            exit_code: None,
+            error: None,
+            created_at: "t0".into(),
+        },
+    );
+    let result = AgentRunResult {
+        agent: AgentId::Pi,
+        status: RunStatus::Ok,
+        exit_code: Some(0),
+        duration_ms: 1100,
+        stdout: String::new(),
+        stderr: String::new(),
+        command: "pi -p".into(),
+        error: None,
+        truncated: false,
+        native_session_id: None,
+    };
+    let msg = finalize_agent_message(&mut map, &result).unwrap();
+    assert_eq!(msg.status, ChatMessageStatus::Failed);
+    let err = msg.error.unwrap();
+    assert!(err.contains("下架") || err.contains("用不了"), "{err}");
+    assert!(!err.contains("Stealth Ox"), "{err}");
 }
 
 #[test]

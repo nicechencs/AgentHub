@@ -60,11 +60,20 @@ pub fn mask_secret_preview(secret: &str) -> String {
     format!("{head}-••••{tail}")
 }
 
+/// True when a stored secret is a redaction marker, not a usable key.
+pub fn is_unusable_secret(value: &str) -> bool {
+    let t = value.trim();
+    t.is_empty()
+        || t == "***"
+        || t == "$AGENTHUB_CONNECTION_SECRET$"
+        || t.chars().all(|c| matches!(c, '•' | '*' | '.' | '…' | ' '))
+}
+
 /// Last four characters of a secret, prefixed with `**`. None when too short
 /// to show a tail without leaking most of the value.
 pub fn mask_secret_tail(secret: &str) -> Option<String> {
     let t = secret.trim();
-    if t.is_empty() || t == "***" {
+    if is_unusable_secret(t) {
         return None;
     }
     let chars: Vec<char> = t.chars().collect();
@@ -677,6 +686,14 @@ mod tests {
         assert!(!content.contains("xai-not-real"), "{content}");
         assert!(!content.to_ascii_lowercase().contains("export xai_api_key"), "{content}");
         assert!(content.contains("[models]"), "{content}");
+    }
+
+    #[test]
+    fn unusable_secret_markers_are_not_live_keys() {
+        assert!(is_unusable_secret("***"));
+        assert!(is_unusable_secret("$AGENTHUB_CONNECTION_SECRET$"));
+        assert!(is_unusable_secret("••••"));
+        assert!(!is_unusable_secret("sk-abcdefghijklmnop8660"));
     }
 
     #[test]
