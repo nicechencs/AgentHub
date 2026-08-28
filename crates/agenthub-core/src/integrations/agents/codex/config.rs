@@ -49,13 +49,13 @@ impl CodexConfigProjector {
                     false,
                     Some("model_providers.<slug>.base_url"),
                 ),
-                field(
+                crate::platform::config::sources::util::field_secret_storage(
                     "apiKey",
                     "OpenAI API Key",
                     ConfigValueType::Secret,
-                    true,
                     false,
                     Some("auth.json OPENAI_API_KEY (not stored in config.toml)"),
+                    crate::platform::config::AUTH_OPENAI_API_KEY_STORAGE,
                 ),
                 field(
                     "model",

@@ -103,6 +103,9 @@ export interface AgentStatus {
   latestVersion?: string;
   /** Spawn channel: `npm` / `native`, or observed `ide` / `desktop`. */
   channel?: string;
+  /** Spawn copy update path from detect (`in_app` / `official` / …). */
+  updateVia?: string | null;
+  uninstallVia?: string | null;
   binPath?: string;
   /** Other on-disk copies besides binPath (other channels, IDE, leftover npm). */
   extraCopies?: Array<{

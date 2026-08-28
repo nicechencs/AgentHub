@@ -4,6 +4,8 @@
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::error::{AppError, Result};
 use crate::models::AgentId;
 
@@ -111,6 +113,89 @@ pub fn agent_config_dir_is_default(agent: AgentId) -> Result<bool> {
 /// from [`agent_home`] (Pi → `~/.pi/agent`, WorkBuddy env overrides).
 pub fn agent_config_dir(agent: AgentId) -> Result<PathBuf> {
     crate::platform::paths::resolve_agent_config_dir(agent)
+}
+
+/// Resolved config / login file paths for UI display (honors env overrides).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentLivePaths {
+    pub config: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra: Vec<String>,
+    pub open_dir: String,
+}
+
+/// Join `agent_config_dir` / `agent_home` with native filenames and display with `~`.
+pub fn agent_live_paths(agent: AgentId) -> Result<AgentLivePaths> {
+    let home = agent_home(agent)?;
+    let config_dir = agent_config_dir(agent)?;
+    let open_dir = display_user_path(&config_dir)?;
+    let join = |dir: &Path, name: &str| -> Result<String> { display_user_path(&dir.join(name)) };
+    Ok(match agent {
+        AgentId::Claude => AgentLivePaths {
+            config: join(&config_dir, "settings.json")?,
+            auth: None,
+            extra: vec![display_user_path(&home_dir()?.join(".claude.json"))?],
+            open_dir,
+        },
+        AgentId::Codex => AgentLivePaths {
+            config: join(&config_dir, "config.toml")?,
+            auth: Some(join(&config_dir, "auth.json")?),
+            extra: Vec::new(),
+            open_dir,
+        },
+        AgentId::Kimi => AgentLivePaths {
+            config: join(&home, "config.toml")?,
+            auth: None,
+            extra: Vec::new(),
+            open_dir,
+        },
+        AgentId::Grok => AgentLivePaths {
+            config: join(&config_dir, "config.toml")?,
+            auth: Some(join(&config_dir, "auth.json")?),
+            extra: Vec::new(),
+            open_dir,
+        },
+        AgentId::Pi => AgentLivePaths {
+            config: join(&config_dir, "settings.json")?,
+            auth: Some(join(&config_dir, "auth.json")?),
+            extra: vec![join(&config_dir, "models.json")?],
+            open_dir,
+        },
+        AgentId::WorkBuddy => AgentLivePaths {
+            config: join(&config_dir, "settings.json")?,
+            auth: None,
+            extra: vec![
+                join(&config_dir, "models.json")?,
+                join(&config_dir, ".mcp.json")?,
+            ],
+            open_dir,
+        },
+        AgentId::Cursor => AgentLivePaths {
+            config: "无稳定 provider 配置文件".into(),
+            auth: None,
+            extra: Vec::new(),
+            open_dir,
+        },
+        AgentId::Dsh => AgentLivePaths {
+            config: join(&home, "cordis.patch.yml")?,
+            auth: Some(join(&home, ".credentials.yaml")?),
+            extra: Vec::new(),
+            open_dir,
+        },
+    })
+}
+
+fn display_user_path(path: &Path) -> Result<String> {
+    let home = home_dir()?;
+    let rendered = if let Ok(rest) = path.strip_prefix(&home) {
+        format!("~/{}", rest.display())
+    } else {
+        path.display().to_string()
+    };
+    Ok(rendered.replace('\\', "/"))
 }
 
 /// Compatibility boundary for callers that do not own the resolved data dir.

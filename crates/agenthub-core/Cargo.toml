@@ -35,6 +35,7 @@ reqwest = { workspace = true }
 tower = { workspace = true }
 futures-util = { workspace = true }
 async-stream = { workspace = true }
+zip = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

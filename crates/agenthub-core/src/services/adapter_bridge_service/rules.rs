@@ -1,5 +1,42 @@
 use super::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BridgeProjection {
+    ClaudeEnv,
+    GrokToml,
+    KimiToml,
+    DshJson,
+    CodexToml,
+}
+
+fn projection_of(agent: AgentId) -> BridgeProjection {
+    match agent {
+        AgentId::Claude => BridgeProjection::ClaudeEnv,
+        AgentId::Grok => BridgeProjection::GrokToml,
+        AgentId::Kimi => BridgeProjection::KimiToml,
+        AgentId::Dsh => BridgeProjection::DshJson,
+        _ => BridgeProjection::CodexToml,
+    }
+}
+
+pub(super) fn endpoint_target(agent: AgentId) -> &'static str {
+    match agent {
+        AgentId::Claude => "claude",
+        AgentId::Codex => "codex",
+        AgentId::Grok => "grok",
+        _ => "",
+    }
+}
+
+fn preset_of(agent: AgentId) -> &'static str {
+    match projection_of(agent) {
+        BridgeProjection::ClaudeEnv => "anthropic",
+        BridgeProjection::GrokToml | BridgeProjection::KimiToml => "openai-chat",
+        BridgeProjection::DshJson => "deepseek",
+        BridgeProjection::CodexToml => "openai-compatible",
+    }
+}
+
 pub(super) fn projected_provider_input(
     profile: &AdapterProfile,
     local_bearer: &str,
@@ -24,7 +61,7 @@ pub(super) fn projected_provider_input(
             "bridge local bearer is unavailable",
         ));
     }
-    if rule.target_agent == AgentId::Claude {
+    if projection_of(rule.target_agent) == BridgeProjection::ClaudeEnv {
         let mut env = serde_json::Map::new();
         env.insert(
             "ANTHROPIC_BASE_URL".into(),
@@ -53,7 +90,7 @@ pub(super) fn projected_provider_input(
             is_current: false,
         });
     }
-    if rule.target_agent == AgentId::Grok {
+    if projection_of(rule.target_agent) == BridgeProjection::GrokToml {
         return Ok(ProviderInput {
             id: provider_id.into(),
             agent_id: AgentId::Grok,
@@ -71,7 +108,7 @@ pub(super) fn projected_provider_input(
             is_current: false,
         });
     }
-    if rule.target_agent == AgentId::Kimi {
+    if projection_of(rule.target_agent) == BridgeProjection::KimiToml {
         return Ok(ProviderInput {
             id: provider_id.into(),
             agent_id: AgentId::Kimi,
@@ -89,7 +126,7 @@ pub(super) fn projected_provider_input(
             is_current: false,
         });
     }
-    if rule.target_agent == AgentId::Dsh {
+    if projection_of(rule.target_agent) == BridgeProjection::DshJson {
         return Ok(ProviderInput {
             id: provider_id.into(),
             agent_id: AgentId::Dsh,
@@ -127,12 +164,7 @@ pub(super) fn projected_provider_input(
 
 pub(super) fn generated_provider_meta(profile: &AdapterProfile, rule: &CodexBridgeRule) -> Value {
     json!({
-        "preset": match rule.target_agent {
-            AgentId::Claude => "anthropic",
-            AgentId::Grok | AgentId::Kimi => "openai-chat",
-            AgentId::Dsh => "deepseek",
-            _ => "openai-compatible",
-        },
+        "preset": preset_of(rule.target_agent),
         "generatedBy": GENERATED_BY,
         "adapterRuleId": rule.rule_id,
         "adapterRuleVersion": 1,
@@ -201,7 +233,7 @@ pub(super) fn validate_generated_provider(
     }
     let rule = rule_for_id(&profile.rule_id).ok_or_else(invalid_projection)?;
     let local_bearer = local_bearer_from_provider(provider)?;
-    if rule.target_agent == AgentId::Claude {
+    if projection_of(rule.target_agent) == BridgeProjection::ClaudeEnv {
         let env = provider
             .settings_config
             .get("env")
@@ -230,7 +262,7 @@ pub(super) fn validate_generated_provider(
         return Ok(());
     }
 
-    if rule.target_agent == AgentId::Dsh {
+    if projection_of(rule.target_agent) == BridgeProjection::DshJson {
         let base_url = provider
             .settings_config
             .get("baseURL")
@@ -250,7 +282,10 @@ pub(super) fn validate_generated_provider(
         return Ok(());
     }
 
-    if matches!(rule.target_agent, AgentId::Grok | AgentId::Kimi) {
+    if matches!(
+        projection_of(rule.target_agent),
+        BridgeProjection::GrokToml | BridgeProjection::KimiToml
+    ) {
         let content = provider
             .settings_config
             .get("content")
@@ -260,7 +295,7 @@ pub(super) fn validate_generated_provider(
             return Err(invalid_projection());
         }
         if let Some(port) = expected_port {
-            let matches_current = if rule.target_agent == AgentId::Grok {
+            let matches_current = if projection_of(rule.target_agent) == BridgeProjection::GrokToml {
                 content == grok_bridge_toml(&rule, port, &local_bearer)
                     || content == legacy_grok_bridge_toml(&rule, port, &local_bearer)
             } else {
@@ -317,7 +352,7 @@ pub(super) fn validate_generated_provider(
 }
 
 pub(super) fn local_bearer_from_provider(provider: &Provider) -> Result<String> {
-    if provider.agent_id == AgentId::Claude {
+    if projection_of(provider.agent_id) == BridgeProjection::ClaudeEnv {
         return provider
             .settings_config
             .get("env")
@@ -329,7 +364,7 @@ pub(super) fn local_bearer_from_provider(provider: &Provider) -> Result<String> 
             .map(str::to_owned)
             .ok_or_else(invalid_projection);
     }
-    if provider.agent_id == AgentId::Dsh {
+    if projection_of(provider.agent_id) == BridgeProjection::DshJson {
         return provider
             .settings_config
             .get("api_key")
@@ -367,12 +402,7 @@ pub(super) fn provider_owned_by(provider: &Provider, profile: &AdapterProfile) -
     provider.id == stable_id(rule.provider_prefix, &profile.source_id)
         && provider.agent_id == rule.target_agent
         && provider.meta.get("preset").and_then(Value::as_str)
-            == Some(match rule.target_agent {
-                AgentId::Claude => "anthropic",
-                AgentId::Grok | AgentId::Kimi => "openai-chat",
-                AgentId::Dsh => "deepseek",
-                _ => "openai-compatible",
-            })
+            == Some(preset_of(rule.target_agent))
         && provider.meta.get("generatedBy").and_then(Value::as_str) == Some(GENERATED_BY)
         && provider.meta.get("adapterRuleId").and_then(Value::as_str) == Some(rule.rule_id)
         && provider

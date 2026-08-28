@@ -9,6 +9,9 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const packageVersion = JSON.parse(
   readFileSync(path.resolve(rootDir, 'package.json'), 'utf8'),
 ).version as string;
+const devRuntime = JSON.parse(
+  readFileSync(path.resolve(rootDir, 'scripts/dev-runtime.json'), 'utf8'),
+) as { host: string; port: number };
 const tauriBackend = path.resolve(rootDir, 'src/lib/backend/tauri/create-backend.ts');
 const mockBackend = path.resolve(rootDir, 'src/dev/mocks/create-backend.ts');
 const productionOAuthDialog = path.resolve(
@@ -119,8 +122,8 @@ export default defineConfig(({ mode, command }) => {
       },
     },
     server: {
-      host: '127.0.0.1',
-      port: 5173,
+      host: devRuntime.host,
+      port: devRuntime.port,
       strictPort: true,
       // Windows: cargo locks target/*.exe during compile; Vite watching them throws EBUSY.
       watch: {

@@ -52,7 +52,7 @@ import {
   validateAgentConfig,
   type AgentConfigSchemaDto,
 } from '@/lib/api/config';
-import { openAgentConfigDir } from '@/lib/api/install';
+import { getAgentLivePaths, openAgentConfigDir } from '@/lib/api/install';
 import { logGuiEvent } from '@/lib/api/settings';
 import {
   listRemoteOpenAiModels,
@@ -205,7 +205,7 @@ export function ProviderEditDialog({
   const catalog = useAgentCatalog();
   const isEdit = mode === 'edit';
   const agentName = agentDisplayName(agentId);
-  const livePaths = liveConfigPaths(agentId);
+  const [livePaths, setLivePaths] = React.useState(() => liveConfigPaths(agentId));
 
   const [name, setName] = React.useState('');
   const [configText, setConfigText] = React.useState('');
@@ -243,6 +243,29 @@ export function ProviderEditDialog({
     () => catalog.entries.find((e) => e.key === agentId),
     [catalog.entries, agentId],
   );
+
+  React.useEffect(() => {
+    const fallback = liveConfigPaths(agentId);
+    setLivePaths(fallback);
+    let cancelled = false;
+    void getAgentLivePaths(agentId)
+      .then((paths) => {
+        if (cancelled) return;
+        setLivePaths({
+          ...fallback,
+          config: paths.config || fallback.config,
+          auth: paths.auth || fallback.auth,
+          extra: paths.extra?.length ? paths.extra : fallback.extra,
+          openDir: paths.openDir || fallback.openDir,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setLivePaths(fallback);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId]);
 
   React.useEffect(() => {
     if (!open) return;
