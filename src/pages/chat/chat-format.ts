@@ -113,6 +113,19 @@ export function extractPiSlotModels(configText: string): string[] {
   }
 }
 
+export function extractPiDefaultProvider(configText: string): string {
+  try {
+    const root = objectValue(JSON.parse(configText));
+    const settings = objectValue(root?.settings);
+    if (typeof settings?.defaultProvider === 'string') {
+      return settings.defaultProvider.trim();
+    }
+  } catch {
+    /* fall through */
+  }
+  return '';
+}
+
 export function extractPiDefaultModel(configText: string): string | null {
   try {
     const root = objectValue(JSON.parse(configText));
@@ -125,6 +138,41 @@ export function extractPiDefaultModel(configText: string): string | null {
     /* fall through */
   }
   return extractModel(configText);
+}
+
+/** Official xAI OpenAI-compatible catalog. Same URL `list_remote_openai_models` uses. */
+export const OFFICIAL_XAI_MODELS_BASE = 'https://api.x.ai/v1';
+
+export function officialPiModelsBaseUrl(slot: string): string {
+  return slot.trim() === 'xai' ? OFFICIAL_XAI_MODELS_BASE : '';
+}
+
+/**
+ * Chat 换模型 remote fetch gate. Pi is not skipped — official xAI uses
+ * GET {base}/v1/models like every other login.
+ */
+export function shouldFetchChatRemoteModels(
+  providerId: string | undefined | null,
+  baseUrl: string | undefined | null,
+): boolean {
+  return Boolean(providerId?.trim() && baseUrl?.trim());
+}
+
+/**
+ * Prefer the remote official catalog. Do not fall back to leftover defaultModel
+ * when that catalog already loaded.
+ */
+export function piChatModelOptions(input: {
+  remoteModels: readonly string[];
+  liveModels: readonly string[];
+  envelopeModels: readonly string[];
+  currentModel?: string | null;
+}): string[] {
+  const remote = chatModelOptions(input.remoteModels);
+  if (remote.length > 0) return remote;
+  const live = chatModelOptions(input.liveModels);
+  if (live.length > 0) return live;
+  return chatModelOptions(input.envelopeModels, input.currentModel);
 }
 
 const RETIRED_OPENROUTER_BACKUP = /^stealth\/ox(?:-alpha)?$/i;

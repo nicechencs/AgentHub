@@ -23,8 +23,12 @@ import {
   chatModelOptions,
   extractModel,
   extractPiDefaultModel,
+  extractPiDefaultProvider,
   extractPiSlotModels,
   isRetiredChatModel,
+  officialPiModelsBaseUrl,
+  piChatModelOptions,
+  shouldFetchChatRemoteModels,
 } from './chat-format';
 import {
   chatConnectionOptions,
@@ -125,21 +129,28 @@ export function useChatPageConnection(input: {
   }, [primaryAgent, currentProvider, loadLiveChatModel]);
 
   useEffect(() => {
-    if (primaryAgent === 'pi' || !currentProvider?.id) {
+    if (!currentProvider?.id) {
       setRemoteModels([]);
       return;
     }
     let cancelled = false;
     const vars = extractFormVars(currentProvider.agentId, currentProvider.configText, currentProvider.configFormat);
-    const baseUrl = vars.baseUrl?.trim();
-    if (!baseUrl) {
+    const baseUrl =
+      vars.baseUrl?.trim()
+      || (primaryAgent === 'pi'
+        ? officialPiModelsBaseUrl(extractPiDefaultProvider(currentProvider.configText))
+        : '');
+    if (!shouldFetchChatRemoteModels(currentProvider.id, baseUrl)) {
       setRemoteModels([]);
       return;
     }
     void listRemoteOpenAiModelsForProvider(currentProvider.id, baseUrl)
       .then((ids) => {
         if (cancelled) return;
-        setRemoteModels(filterRemoteModelsForAgent(currentProvider.agentId, ids));
+        const agentFilter = primaryAgent === 'pi' && /api\.x\.ai/i.test(baseUrl)
+          ? 'grok'
+          : currentProvider.agentId;
+        setRemoteModels(filterRemoteModelsForAgent(agentFilter, ids));
       })
       .catch(() => {
         if (!cancelled) setRemoteModels([]);
@@ -164,10 +175,12 @@ export function useChatPageConnection(input: {
 
   const modelOptions = useMemo(() => {
     if (primaryAgent === 'pi') {
-      const fromLive = chatModelOptions(liveChatModels, currentModel);
-      if (fromLive.length > 0) return fromLive;
-      const fromEnvelope = currentProvider ? extractPiSlotModels(currentProvider.configText) : [];
-      return chatModelOptions(fromEnvelope, currentModel);
+      return piChatModelOptions({
+        remoteModels,
+        liveModels: liveChatModels,
+        envelopeModels: currentProvider ? extractPiSlotModels(currentProvider.configText) : [],
+        currentModel,
+      });
     }
     return chatModelOptions(remoteModels, currentModel);
   }, [currentModel, currentProvider, liveChatModels, primaryAgent, remoteModels]);
