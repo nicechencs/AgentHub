@@ -155,6 +155,11 @@ describe('extra copy labels', () => {
       updateVia: 'official',
       uninstallVia: 'in_app',
     });
+    expect(installLifecycle('native', 'zcode')).toEqual({
+      source: 'native',
+      updateVia: 'official',
+      uninstallVia: 'in_app',
+    });
     expect(installLifecycle('ide', 'claude')).toEqual({
       source: 'ide',
       updateVia: 'ide',

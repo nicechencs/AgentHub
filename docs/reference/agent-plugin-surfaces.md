@@ -48,6 +48,7 @@ updated: 2026-08-26
 | WorkBuddy | `<config>/.mcp.json` | 未验证稳定 CLI | 未验证 | `<config>/skills` | Planned | Full |
 | Kimi | 无已验证契约；inventory 只探 `mcp.json` | 未验证 | 未验证 | 无（Skills Unsupported） | Planned | Unsupported |
 | DSH | 无已验证 MCP 契约；inventory 只探 JSON | 未验证 | Cordis 插件树，**不是** Claude 式 plugin 包，也不是 MCP | `~/.dsh/skills` | Planned | Full |
+| ZCode | inventory 只探 home 下 JSON；桌面契约未验证 | 未验证 | 未验证 | `~/.zcode/skills` | Planned | Full |
 
 ## Claude Code
 
