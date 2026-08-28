@@ -56,6 +56,28 @@ function assertNoInternalLeak(label: string): void {
 }
 
 describe('humanizeTrashLabel', () => {
+  it('names a mask-only recycled Grok API Key by last4 or host, not ••••', () => {
+    const item = trash({
+      id: 't-ghost',
+      agentId: 'grok',
+      sourceId: 'grok-live-ghost-1',
+      label: '•••• (API Key)',
+      provider: prov({
+        id: 'grok-live-ghost-1',
+        agentId: 'grok',
+        name: '•••• (API Key)',
+        secretTail: '**8660',
+        configText: '[model."grok"]\nbase_url = "https://mytokens.cc/v1"\napi_key = "***"\n',
+        configFormat: 'toml',
+      }),
+    });
+    const label = humanizeTrashLabel(item);
+    expect(label).toContain('本机路由');
+    expect(label).toContain('8660');
+    expect(label).not.toMatch(/•{2,}/);
+    assertNoInternalLeak(label);
+  });
+
   it('renders Grok Subscription Bridge + grok-live-* as 本机路由', () => {
     const item = trash({
       id: 't-bridge',

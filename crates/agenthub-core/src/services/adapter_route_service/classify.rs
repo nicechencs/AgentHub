@@ -85,7 +85,8 @@ impl AdapterRouteService {
             AdapterSourceProduct::KimiCodeMembership
         } else if provider.agent_id == AgentId::Claude
             && (explicit_tag == Some("anthropic")
-                || settings_contain_anthropic_api_endpoint(&provider.settings_config))
+                || settings_contain_anthropic_api_endpoint(&provider.settings_config)
+                || claude_settings_look_like_api_key(&provider.settings_config))
         {
             AdapterSourceProduct::AnthropicApi
         } else if is_openai_api_marker(explicit_tag, &provider.settings_config) {
@@ -96,6 +97,12 @@ impl AdapterRouteService {
             AdapterSourceProduct::GlmCodingPlan
         } else if is_deepseek_api_marker(explicit_tag, &provider.settings_config) {
             AdapterSourceProduct::DeepseekApi
+        } else if provider.agent_id == AgentId::Kimi
+            && crate::services::adapter_route_constants::settings_contain_custom_openai_compat_remote(
+                &provider.settings_config,
+            )
+        {
+            AdapterSourceProduct::OpenaiApi
         } else {
             AdapterSourceProduct::Other
         }
@@ -166,7 +173,8 @@ impl AdapterRouteService {
                     })
                 } else if provider.agent_id == AgentId::Claude
                     && (explicit_tag == Some("anthropic")
-                        || settings_contain_anthropic_api_endpoint(&provider.settings_config))
+                        || settings_contain_anthropic_api_endpoint(&provider.settings_config)
+                        || claude_settings_look_like_api_key(&provider.settings_config))
                 {
                     Ok(SourceIdentity {
                         product: AdapterSourceProduct::AnthropicApi,
@@ -203,12 +211,29 @@ impl AdapterRouteService {
                         reason_hint: None,
                     })
                 } else if provider.agent_id == AgentId::Kimi {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::Other,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::Other,
-                        reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
-                    })
+                    // Custom / moonshot OpenAI-compat remotes are not membership,
+                    // but they still speak chat completions and can use the
+                    // OpenAI local-bridge edges. Only a Kimi row with no usable
+                    // remote URL stays closed as Other.
+                    if is_openai_api_marker(None, &provider.settings_config)
+                        || crate::services::adapter_route_constants::settings_contain_custom_openai_compat_remote(
+                            &provider.settings_config,
+                        )
+                    {
+                        Ok(SourceIdentity {
+                            product: AdapterSourceProduct::OpenaiApi,
+                            credential: AdapterCredentialClass::ApiKey,
+                            label: RouteSourceLabel::OpenaiApiKey,
+                            reason_hint: None,
+                        })
+                    } else {
+                        Ok(SourceIdentity {
+                            product: AdapterSourceProduct::Other,
+                            credential: AdapterCredentialClass::ApiKey,
+                            label: RouteSourceLabel::Other,
+                            reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
+                        })
+                    }
                 } else {
                     Ok(SourceIdentity {
                         product: AdapterSourceProduct::Other,
@@ -294,12 +319,29 @@ impl AdapterRouteService {
                         reason_hint: None,
                     })
                 } else if account.kind == AccountKind::ApiKey && account.agent_id == AgentId::Kimi {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::Other,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::Other,
-                        reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
-                    })
+                    if is_openai_api_marker(explicit_provider, &account.credentials)
+                        || is_openai_api_marker(explicit_provider, &account.extra)
+                        || crate::services::adapter_route_constants::settings_contain_custom_openai_compat_remote(
+                            &account.credentials,
+                        )
+                        || crate::services::adapter_route_constants::settings_contain_custom_openai_compat_remote(
+                            &account.extra,
+                        )
+                    {
+                        Ok(SourceIdentity {
+                            product: AdapterSourceProduct::OpenaiApi,
+                            credential: AdapterCredentialClass::ApiKey,
+                            label: RouteSourceLabel::OpenaiApiKey,
+                            reason_hint: None,
+                        })
+                    } else {
+                        Ok(SourceIdentity {
+                            product: AdapterSourceProduct::Other,
+                            credential: AdapterCredentialClass::ApiKey,
+                            label: RouteSourceLabel::Other,
+                            reason_hint: Some(KIMI_NON_MEMBERSHIP_REASON),
+                        })
+                    }
                 } else if account.agent_id == AgentId::Codex
                     && account.kind == AccountKind::Oauth
                     && is_codex_auth_json(credential_format, &account.credentials)
@@ -351,6 +393,26 @@ impl AdapterRouteService {
             }
         }
     }
+}
+
+/// Claude Code API Key logins speak Anthropic Messages even on a custom
+/// relay. Official `api.anthropic.com` is sufficient but not required.
+fn claude_settings_look_like_api_key(settings: &serde_json::Value) -> bool {
+    settings
+        .pointer("/env/ANTHROPIC_BASE_URL")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .is_some_and(|url| url.starts_with("http://") || url.starts_with("https://"))
+        || settings
+            .pointer("/env/ANTHROPIC_AUTH_TOKEN")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .is_some_and(|token| !token.is_empty() && token != "***")
+        || settings
+            .pointer("/env/ANTHROPIC_API_KEY")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .is_some_and(|token| !token.is_empty() && token != "***")
 }
 
 /// Prefer a known non-OpenAI product tag when legacy rows carry both

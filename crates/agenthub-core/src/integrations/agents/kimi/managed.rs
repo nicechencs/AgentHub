@@ -115,21 +115,26 @@ pub(crate) fn complete_kimi_live_toml(doc: &mut DocumentMut) -> Result<()> {
         doc["default_provider"] = toml_edit::value(slug.as_str());
     }
     ensure_kimi_provider_entry(doc, slug.as_str())?;
-    let alias = doc
+    let stored = doc
         .get("default_model")
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| DEFAULT_MODEL_ALIAS.to_string());
-    if doc
-        .get("default_model")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .is_none()
-    {
+        .map(str::to_string);
+    // Grok model ids leaked into Kimi TOML (shared mytokens paste / form).
+    // Keep a Kimi alias; do not send grok-* upstream as default_model.
+    let alias = match stored.as_deref() {
+        Some(model) if looks_like_grok_model_id(model) => DEFAULT_MODEL_ALIAS.to_string(),
+        Some(model) => model.to_string(),
+        None => DEFAULT_MODEL_ALIAS.to_string(),
+    };
+    if stored.as_deref() != Some(alias.as_str()) {
         doc["default_model"] = toml_edit::value(alias.as_str());
     }
     ensure_kimi_model_alias(doc, slug.as_str(), &alias)
+}
+
+pub(crate) fn looks_like_grok_model_id(model: &str) -> bool {
+    let lower = model.trim().to_ascii_lowercase();
+    lower.starts_with("grok-") || lower.starts_with("grok_")
 }

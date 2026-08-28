@@ -105,6 +105,22 @@ pub fn chat_cancel(state: State<'_, AppState>, conversation_id: String) -> Resul
     chat_cancel_inner(state.hub()?, &conversation_id)
 }
 
+/// Invoke: `set_chat_model` — write the live default model for Chat.
+#[tauri::command]
+pub async fn set_chat_model(
+    state: State<'_, AppState>,
+    agent_id: String,
+    model: String,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.set_live_chat_model(agent, &model)
+            .map_err(|e| map_err_string("set_chat_model", e))
+    })
+    .await
+}
+
 fn list_conversations_inner(hub: &AgentHub) -> Result<Vec<Conversation>, String> {
     hub.chat()
         .list_conversations()
