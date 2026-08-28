@@ -66,5 +66,16 @@ export function createTauriChatPort(): ChatPort {
     async setChatModel(agentId, model) {
       await invoke('set_chat_model', { agentId, model });
     },
+    async getChatModel(agentId) {
+      const row = await invoke<{ model?: string | null; models?: string[] }>('get_chat_model', {
+        agentId,
+      });
+      return {
+        model: typeof row.model === 'string' && row.model.trim() ? row.model.trim() : null,
+        models: Array.isArray(row.models)
+          ? row.models.filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))
+          : [],
+      };
+    },
   };
 }

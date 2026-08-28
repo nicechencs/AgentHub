@@ -106,6 +106,16 @@ function trashHost(item: ConnectionTrashItem): string | undefined {
   }
 }
 
+function last4FromMaskLabel(value: string | undefined | null): string | undefined {
+  if (!value) return undefined;
+  const text = value.trim();
+  if (!text) return undefined;
+  const dotted = text.match(/[•*]{2,}([A-Za-z0-9]{4})(?:\s*(?:（API Key）|\(API Key\)))?$/i);
+  if (dotted?.[1]) return dotted[1];
+  const stars = text.match(/^\*{2}([A-Za-z0-9]{4})$/);
+  return stars?.[1];
+}
+
 function maskOnlyIdentity(item: ConnectionTrashItem): string | undefined {
   const last4 = trashItemSecretTail(item);
   const host = trashHost(item);
@@ -135,15 +145,25 @@ export function humanizeTrashLabel(item: ConnectionTrashItem, t?: TranslateFn): 
 
 export function trashItemSecretTail(item: ConnectionTrashItem): string | undefined {
   const tail = item.account?.secretTail?.trim() || item.provider?.secretTail?.trim();
-  if (!tail) return undefined;
-  const last4 = tail.replace(/^\*+/, '').slice(-4);
-  return last4 || undefined;
+  if (tail) {
+    const last4 = tail.replace(/^\*+/, '').slice(-4);
+    if (last4) return last4;
+  }
+  return (
+    last4FromMaskLabel(item.account?.label) ||
+    last4FromMaskLabel(item.provider?.name) ||
+    last4FromMaskLabel(item.label)
+  );
 }
 
 export function trashItemEndpoint(item: ConnectionTrashItem): string | undefined {
   if (item.provider) {
     const endpoint = extractProviderEndpoint(item.provider.configText, item.provider.configFormat);
     if (endpoint && !isLoopbackText(endpoint)) return endpoint;
+  }
+  const fromAccount = item.account?.endpoint?.trim();
+  if (fromAccount && /^https?:\/\//i.test(fromAccount) && !isLoopbackText(fromAccount)) {
+    return fromAccount;
   }
   return undefined;
 }

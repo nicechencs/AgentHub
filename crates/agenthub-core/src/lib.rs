@@ -207,6 +207,16 @@ impl AgentHub {
         }
     }
 
+    /// Read the live Chat model chip + picker for this agent.
+    pub fn live_chat_model(&self, agent: AgentId) -> Result<models::LiveChatModel> {
+        match agent {
+            AgentId::Pi => Ok(crate::adapters::pi::pi_live_chat_model()),
+            _ => Err(error::AppError::Unsupported(
+                "换模型请用当前登录的配置".into(),
+            )),
+        }
+    }
+
     pub fn projects(&self) -> &ProjectService {
         &self.projects
     }

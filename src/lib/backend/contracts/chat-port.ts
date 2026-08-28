@@ -22,4 +22,5 @@ export interface ChatPort {
   ): Promise<void>;
   chatCancel(conversationId: string): Promise<void>;
   setChatModel(agentId: AgentId, model: string): Promise<void>;
+  getChatModel(agentId: AgentId): Promise<{ model: string | null; models: string[] }>;
 }

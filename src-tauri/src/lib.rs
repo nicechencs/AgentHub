@@ -215,6 +215,7 @@ pub fn run() {
             commands::chat::chat_send,
             commands::chat::chat_cancel,
             commands::chat::set_chat_model,
+            commands::chat::get_chat_model,
             // Agent projects / sessions
             commands::project::list_agent_projects,
             commands::project::list_agent_project_sessions,

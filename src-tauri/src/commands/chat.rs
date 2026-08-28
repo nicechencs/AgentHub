@@ -1,6 +1,6 @@
 //! Chat Tauri commands — thin wrappers over agenthub-core ChatService.
 
-use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, Conversation};
+use agenthub_core::models::{AgentId, ChatEvent, ChatMessage, Conversation, LiveChatModel};
 use agenthub_core::AgentHub;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -117,6 +117,21 @@ pub async fn set_chat_model(
     with_hub_blocking(hub, move |hub| {
         hub.set_live_chat_model(agent, &model)
             .map_err(|e| map_err_string("set_chat_model", e))
+    })
+    .await
+}
+
+/// Invoke: `get_chat_model` — read the live default model and picker ids.
+#[tauri::command]
+pub async fn get_chat_model(
+    state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<LiveChatModel, String> {
+    let hub = state.hub_arc()?;
+    let agent = parse_agent(&agent_id)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.live_chat_model(agent)
+            .map_err(|e| map_err_string("get_chat_model", e))
     })
     .await
 }

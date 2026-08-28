@@ -174,6 +174,7 @@ export function mapCoreAccount(a: CoreAccount): Account {
     refreshTokenPreview: a.kind === 'oauth' ? pickString(extra.refreshTokenPreview) : undefined,
     secretTail: pickString(extra.secretTail),
     secretHash: pickString(extra.secretHash),
+    endpoint: pickString(extra.endpoint) ?? pickString(extra.baseUrl) ?? pickString(extra.base_url),
   };
 }
 
