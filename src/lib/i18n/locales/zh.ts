@@ -1190,6 +1190,8 @@ export const zh = {
       protocol: "接口",
       officialEndpoint: "官方端点",
       customEndpoint: "自定义端点",
+      notCurrent: "未生效",
+      currentlyActive: "当前生效",
       subscription: "套餐",
       lastUsedAt: "最近使用",
       createdAt: "添加时间",

@@ -1199,6 +1199,8 @@ export const en = {
       protocol: "Interface",
       officialEndpoint: "Official endpoint",
       customEndpoint: "Custom endpoint",
+      notCurrent: "Not current",
+      currentlyActive: "Current",
       subscription: "Plan",
       lastUsedAt: "Last used",
       createdAt: "Added",

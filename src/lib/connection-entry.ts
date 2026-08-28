@@ -20,6 +20,7 @@ import {
   providerEndpointExtras,
   toCredentialRow,
 } from '@/lib/credential-row';
+import type { TranslateFn } from '@/lib/i18n';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 
 export type ConnectionEntry = {
@@ -77,10 +78,11 @@ function attachUsage(entry: ConnectionEntry, usageMap?: ConnectionUsageMap): Con
 export function accountToEntry(
   a: Account | AccountAuthView,
   usageMap?: ConnectionUsageMap,
+  t?: TranslateFn,
 ): ConnectionEntry {
   const view = 'savedAuth' in a && 'account' in a ? a : wrapBareAccount(a);
   const account = view.account;
-  const row = toCredentialRow({ source: 'account', account });
+  const row = toCredentialRow({ source: 'account', account }, t);
   const saved = savedAuthOf(view);
   const live = liveAuthOf(view);
   const authHealth = live !== 'unset' ? live : saved !== 'unset' ? saved : row.auth.health;
@@ -110,8 +112,12 @@ export function accountToEntry(
   );
 }
 
-export function providerToEntry(p: Provider, usageMap?: ConnectionUsageMap): ConnectionEntry {
-  const row = toCredentialRow({ source: 'provider', provider: p });
+export function providerToEntry(
+  p: Provider,
+  usageMap?: ConnectionUsageMap,
+  t?: TranslateFn,
+): ConnectionEntry {
+  const row = toCredentialRow({ source: 'provider', provider: p }, t);
   const { endpointHost, endpointMode } = providerEndpointExtras(p);
   return attachUsage(
     {
@@ -140,10 +146,11 @@ export function mergeConnectionEntries(
   accounts: Array<Account | AccountAuthView>,
   providers: Provider[],
   usageMap?: ConnectionUsageMap,
+  t?: TranslateFn,
 ): ConnectionEntry[] {
   const rows: ConnectionEntry[] = [
-    ...accounts.map((a) => accountToEntry(a, usageMap)),
-    ...providers.map((p) => providerToEntry(p, usageMap)),
+    ...accounts.map((a) => accountToEntry(a, usageMap, t)),
+    ...providers.map((p) => providerToEntry(p, usageMap, t)),
   ];
   rows.sort((a, b) => {
     if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
