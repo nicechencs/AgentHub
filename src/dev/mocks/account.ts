@@ -20,6 +20,7 @@ type MockOAuthSession = {
   agentId: AgentId;
   providerKey: string | null;
   flow: 'pkce' | 'device';
+  devicePolls?: number;
 };
 
 const oauthSessions = new Map<string, MockOAuthSession>();
@@ -278,12 +279,13 @@ export function createMockAccountPort(): AccountPort {
         redirectUri: 'http://127.0.0.1:34567/callback',
         agentId,
         providerKey: providerKey ?? null,
-        browserOpened: false,
+        // Mock cannot open a system browser; keep the wait page in view.
+        browserOpened: true,
       };
     },
 
     async waitOAuth(state) {
-      await delay(100);
+      await delay(400);
       const session = requireOAuthSession(state);
       return {
         state,
@@ -317,14 +319,18 @@ export function createMockAccountPort(): AccountPort {
         userCode: 'ABCD-EFGH',
         verificationUri: 'https://auth.x.ai/device',
         verificationUriComplete: 'https://auth.x.ai/device?user_code=ABCD-EFGH',
-        intervalSecs: 1,
+        intervalSecs: 6,
         expiresInSecs: 120,
       };
     },
 
     async pollDeviceOAuth(state) {
       await delay(80);
-      requireOAuthSession(state);
+      const session = requireOAuthSession(state);
+      session.devicePolls = (session.devicePolls ?? 0) + 1;
+      if (session.flow === 'device' && session.devicePolls < 2) {
+        return { state, status: 'pending' as const, error: null };
+      }
       return { state, status: 'complete' as const, error: null };
     },
 
