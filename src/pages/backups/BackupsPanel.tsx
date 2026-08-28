@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Database, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
+import { pageRhythm } from '@/components/layout/page-rhythm';
+import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { useSideSplit } from '@/components/layout/use-side-split';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { LIST_ROW_PAD, ListRow, ListRowBody } from '@/components/shared/ListRow';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Tip } from '@/components/ui/tooltip';
 import {
   Dialog,
@@ -28,8 +31,13 @@ import { Switch } from '@/components/ui/switch';
 import { SettingsRow } from '@/pages/settings/settings-shared';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
-import { cn, fmtBytes } from '@/lib/utils';
-import { backupNoteSubtitle, backupRowTitle, fmtAbsoluteI18n, fmtRelativeI18n } from './backup-format';
+import { BackupDetailPanel } from './backup-detail-panel';
+import {
+  backupCardIdentity,
+  backupFileLabels,
+  fmtAbsoluteI18n,
+  fmtRelativeI18n,
+} from './backup-format';
 
 const KIND_VARIANT: Record<BackupKind, 'accent' | 'default' | 'warning'> = {
   'auto-switch': 'accent',
@@ -38,6 +46,8 @@ const KIND_VARIANT: Record<BackupKind, 'accent' | 'default' | 'warning'> = {
   'pre-restore': 'accent',
   'pre-skill-uninstall': 'warning',
 };
+
+const BACKUPS_INSPECT_WIDTH_KEY = 'agenthub.settings.backupsInspectWidth';
 
 function backupKindLabel(kind: BackupKind, t: TranslateFn): string {
   switch (kind) {
@@ -52,16 +62,6 @@ function backupKindLabel(kind: BackupKind, t: TranslateFn): string {
     case 'pre-skill-uninstall':
       return t('settings.backups.kindPreSkillUninstall');
   }
-}
-
-/** 卡片内文件路径最多展示行数 */
-const FILE_PREVIEW = 3;
-
-function shortPath(f: string): string {
-  const norm = f.replace(/\\/g, '/');
-  if (norm.length <= 48) return f;
-  const base = norm.split('/').pop() ?? norm;
-  return `…/${base}`;
 }
 
 export function BackupsPanel() {
@@ -85,6 +85,7 @@ export function BackupsPanel() {
   const [creating, setCreating] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<BackupMeta | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BackupMeta | null>(null);
+  const inspect = useSideSplit<string>({ storageKey: BACKUPS_INSPECT_WIDTH_KEY });
 
   const refresh = useCallback(async () => {
     try {
@@ -145,6 +146,14 @@ export function BackupsPanel() {
       .filter((b) => b.agentId === agentId)
       .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   }, [backups, agentId]);
+  const detail = items.find((b) => b.id === inspect.target) ?? null;
+
+  useEffect(() => {
+    if (inspect.target && !items.some((b) => b.id === inspect.target)) {
+      inspect.close();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- close when the selected backup leaves the list
+  }, [inspect.target, items]);
 
   const agentMeta = agentId ? AGENT_MAP[agentId] : null;
   const isInstalled = agentId ? installedIds.includes(agentId) : false;
@@ -210,26 +219,49 @@ export function BackupsPanel() {
     }
   };
 
+  const inspectPanel = detail && agentId ? (
+    <BackupDetailPanel
+      backup={detail}
+      kindLabel={backupKindLabel(detail.kind, t)}
+      busy={busyId !== null}
+      width={inspect.paneWidth}
+      onClose={() => inspect.close()}
+      onRestore={() => {
+        setDeleteTarget(null);
+        setRestoreTarget(detail);
+      }}
+      onDelete={() => {
+        setRestoreTarget(null);
+        setDeleteTarget(detail);
+      }}
+    />
+  ) : null;
+
   return (
-    <div>
-      <div className="mb-5">
-        <SettingsRow
-          label={t('settings.backups.keepCopiesLabel')}
-          description={t('settings.backups.keepCopiesDescription')}
-          descriptionTip={t('settings.backups.keepCopiesTip')}
-        >
-          <Switch
-            checked={keepCopies}
-            onCheckedChange={(v) => {
-              setKeepCopies(v);
-              void updateSettings({ keepLiveFileCopies: v }).catch(() => {
-                setKeepCopies(!v);
-              });
-            }}
-          />
-        </SettingsRow>
-      </div>
-      <div className="mb-5 flex flex-wrap items-center gap-3">
+    <div className="h-full min-h-0">
+      <WorkbenchSplitPage
+        split={inspect}
+        resizeAria={t('common.resizeSidePanel')}
+        panel={inspectPanel}
+        header={(
+          <SettingsRow
+            label={t('settings.backups.keepCopiesLabel')}
+            description={t('settings.backups.keepCopiesDescription')}
+            descriptionTip={t('settings.backups.keepCopiesTip')}
+          >
+            <Switch
+              checked={keepCopies}
+              onCheckedChange={(v) => {
+                setKeepCopies(v);
+                void updateSettings({ keepLiveFileCopies: v }).catch(() => {
+                  setKeepCopies(!v);
+                });
+              }}
+            />
+          </SettingsRow>
+        )}
+      >
+      <div className={`${pageRhythm.chrome} flex flex-wrap items-center gap-3`}>
         {pageLoading ? (
           <Skeleton className="h-9 w-64 rounded-card" />
         ) : (
@@ -298,97 +330,84 @@ export function BackupsPanel() {
           }
         />
       ) : (
-        <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-2">
           {items.map((bk) => {
             const kind = { label: backupKindLabel(bk.kind, t), variant: KIND_VARIANT[bk.kind] };
-            const note = backupNoteSubtitle(bk.note);
             const busy = busyId === bk.id;
-            const files = bk.files ?? [];
-            const shownFiles = files.slice(0, FILE_PREVIEW);
-            const moreFiles = files.length - shownFiles.length;
+            const identity = backupCardIdentity(bk);
+            const filesLine = backupFileLabels(bk.files);
+            const showFiles = Boolean(filesLine) && filesLine !== identity;
+            const identityMono = /^\*\*/.test(identity);
 
             return (
-              <Card
+              <ListRow
                 key={bk.id}
-                className={cn(
-                  'px-4 py-3.5 transition-colors hover:border-border-strong',
-                  busy && 'pointer-events-none opacity-60',
-                )}
+                active={inspect.target === bk.id}
+                indicatorColor={agentMeta.color}
+                className={`${LIST_ROW_PAD} ${busy ? 'pointer-events-none opacity-60' : ''}`}
+                onOpen={() => inspect.open(bk.id)}
               >
-                <div className="flex items-stretch gap-4">
-                  <AgentDot
-                    agentId={agentId}
-                    color={agentMeta.color}
-                    size="lg"
-                    className="mt-1.5 ring-4 ring-canvas"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <ListRowBody
+                  leading={(
+                    <AgentDot
+                      agentId={agentId}
+                      color={agentMeta.color}
+                      size="sm"
+                      title={null}
+                    />
+                  )}
+                  main={(
+                    <>
                       <Badge variant={kind.variant}>{kind.label}</Badge>
-                      <span className="text-sm font-medium">
-                        {backupRowTitle(bk, t)}
+                      <Tip
+                        className={`truncate text-body font-medium ${identityMono ? 'font-mono' : ''}`}
+                        label={identity}
+                      >
+                        {identity}
+                      </Tip>
+                      {showFiles ? (
+                        <span className="truncate font-mono text-meta text-muted">{filesLine}</span>
+                      ) : null}
+                      <span className="text-meta text-muted tabular-nums">
+                        {fmtRelativeI18n(bk.createdAt, t)}
                       </span>
-                      <span className="text-xs text-muted tabular-nums">
-                        {fmtAbsoluteI18n(bk.createdAt, lang)}
-                      </span>
-                      <span className="text-xs text-muted">·</span>
-                      <span className="text-xs text-muted tabular-nums">
-                        {fmtBytes(bk.sizeBytes)}
-                      </span>
-                    </div>
-
-                    {note && <p className="mt-1.5 text-sm text-secondary">{note}</p>}
-
-                    {files.length > 0 ? (
-                      <ul className="mt-1.5 space-y-0.5">
-                        {shownFiles.map((f) => (
-                          <li key={f}>
-                            <Tip className="block truncate font-mono text-xs text-muted" label={f}>
-                              {shortPath(f)}
-                            </Tip>
-                          </li>
-                        ))}
-                        {moreFiles > 0 && (
-                          <li className="text-xs text-muted">{t('settings.backups.moreFiles', { count: moreFiles })}</li>
-                        )}
-                      </ul>
-                    ) : (
-                      <p className="mt-1.5 text-xs text-muted">{t('settings.backups.noFileList')}</p>
-                    )}
-                  </div>
-
-                  <div className="flex shrink-0 flex-col justify-center gap-1.5 sm:flex-row sm:items-center">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busyId !== null || restoreTarget !== null || deleteTarget !== null}
-                      onClick={() => {
-                        setDeleteTarget(null);
-                        setRestoreTarget(bk);
-                      }}
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                      {t('common.restore')}
-                    </Button>
-                    <Button
-                      variant="dangerOutline"
-                      size="sm"
-                      disabled={busyId !== null || restoreTarget !== null || deleteTarget !== null}
-                      onClick={() => {
-                        setRestoreTarget(null);
-                        setDeleteTarget(bk);
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      {t('common.delete')}
-                    </Button>
-                  </div>
-                </div>
-              </Card>
+                    </>
+                  )}
+                  actions={(
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busyId !== null || restoreTarget !== null || deleteTarget !== null}
+                        onClick={() => {
+                          setDeleteTarget(null);
+                          setRestoreTarget(bk);
+                        }}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        {t('common.restore')}
+                      </Button>
+                      <Button
+                        variant="dangerOutline"
+                        size="sm"
+                        disabled={busyId !== null || restoreTarget !== null || deleteTarget !== null}
+                        onClick={() => {
+                          setRestoreTarget(null);
+                          setDeleteTarget(bk);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {t('common.delete')}
+                      </Button>
+                    </>
+                  )}
+                />
+              </ListRow>
             );
           })}
         </div>
       )}
+      </WorkbenchSplitPage>
 
       <Dialog
         open={restoreTarget !== null}
@@ -457,7 +476,7 @@ function BackupsSkeleton() {
   return (
     <div className="flex flex-col gap-2.5">
       {[0, 1, 2].map((i) => (
-        <Skeleton key={i} className="h-[5.5rem] w-full rounded-card" />
+        <Skeleton key={i} className="h-12 w-full rounded-card" />
       ))}
     </div>
   );

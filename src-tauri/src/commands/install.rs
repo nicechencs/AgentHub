@@ -272,21 +272,31 @@ pub async fn get_agent_live_paths(
 #[tauri::command]
 pub async fn open_path_in_file_manager(path: String) -> Result<String, String> {
     let p = normalize_open_path_input(&path);
-    if !p.exists() {
-        let msg = format!("path does not exist: {path}");
-        tracing::warn!(target: targets::GUI, op = "open_path_in_file_manager", "{msg}");
-        return Err(msg);
+    if p.exists() {
+        return match file_manager_action(&p) {
+            FileManagerAction::RevealFile(file) => {
+                reveal_in_file_manager(&file)?;
+                Ok(file.display().to_string())
+            }
+            FileManagerAction::OpenDir(dir) => {
+                open_in_file_manager(&dir)?;
+                Ok(dir.display().to_string())
+            }
+        };
     }
-    match file_manager_action(&p) {
-        FileManagerAction::RevealFile(file) => {
-            reveal_in_file_manager(&file)?;
-            Ok(file.display().to_string())
-        }
-        FileManagerAction::OpenDir(dir) => {
-            open_in_file_manager(&dir)?;
-            Ok(dir.display().to_string())
+    // Missing file: still try to select it; if the OS cannot, open the parent folder.
+    if let Some(parent) = p.parent().filter(|dir| dir.exists()) {
+        match reveal_in_file_manager(&p) {
+            Ok(()) => return Ok(p.display().to_string()),
+            Err(_) => {
+                open_in_file_manager(parent)?;
+                return Ok(parent.display().to_string());
+            }
         }
     }
+    let msg = format!("path does not exist: {path}");
+    tracing::warn!(target: targets::GUI, op = "open_path_in_file_manager", "{msg}");
+    Err(msg)
 }
 
 

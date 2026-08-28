@@ -1,3 +1,4 @@
+import { extractAccountCredentialFiles } from '@/lib/credential-files';
 import type { Account, AccountKind, AgentId } from '@/lib/types';
 import type { LiveAuthProbe } from './account-port';
 import { normalizeAuthHealth, type AuthHealth } from './auth-state';
@@ -176,6 +177,13 @@ export function mapCoreAccount(a: CoreAccount): Account {
     source,
     envKey,
     credentialSummary,
+    credentialFiles: extractAccountCredentialFiles({
+      agentId: a.agentId,
+      kind: a.kind,
+      credentials,
+      source,
+      format: credentialFormat,
+    }),
     refreshTokenPreview: a.kind === 'oauth' ? pickString(extra.refreshTokenPreview) : undefined,
     secretTail: recoveredSecretTail,
     secretHash: pickString(extra.secretHash),

@@ -173,7 +173,7 @@ export function createTauriAccountPort(): AccountPort {
       if (!supported) {
         throw unsupportedError(
           'OAuth 浏览器授权',
-          '这个工具还不支持官方登录。请改用「导入当前登录」或「添加 API Key」',
+          '这个工具还不支持官方登录。请改用「导入授权」或「添加 API Key」',
         );
       }
       const options = await this.listOAuthOptions(agentId);

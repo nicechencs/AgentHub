@@ -3,6 +3,10 @@
  */
 import { agentDisplayName } from '@/config/agents';
 import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
+import {
+  extractProviderCredentialFiles,
+  type CredentialFileView,
+} from '@/lib/credential-files';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 import type {
   BindingRoute,
@@ -94,6 +98,8 @@ export interface TicketDetailExtras {
   createdAt?: string;
   tokenRemainingSec?: number;
   importedFrom?: string | null;
+  /** Associated login files shown under the detail pane. */
+  credentialFiles?: CredentialFileView[];
 }
 
 /** Opened OAuth details with no 5h/7d percent yet — fetch quota once. */
@@ -377,6 +383,9 @@ export function extrasFromPoolSource(
     if (typeof source.account.tokenRemainingSec === 'number') {
       extras.tokenRemainingSec = source.account.tokenRemainingSec;
     }
+    if (source.account.credentialFiles?.length) {
+      extras.credentialFiles = source.account.credentialFiles;
+    }
   }
 
   if (source.provider) {
@@ -392,6 +401,9 @@ export function extrasFromPoolSource(
     }
     if (source.provider.updatedAt?.trim()) {
       extras.createdAt = source.provider.updatedAt.trim();
+    }
+    if (!extras.credentialFiles?.length) {
+      extras.credentialFiles = extractProviderCredentialFiles(source.provider);
     }
   }
 

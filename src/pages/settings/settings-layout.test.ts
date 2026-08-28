@@ -16,7 +16,7 @@ describe('settings layout wiring', () => {
     expect(page).not.toContain('pageRhythm.formColumn');
     expect(page.match(/className=\{pageRhythm\.readingColumn\}/g)?.length).toBe(3);
     expect(page).not.toMatch(/readingColumn\}>\s*<PageHeader/);
-    expect(page).not.toMatch(/TabsContent value="[^"]+" className=/);
+    expect(page).toContain('TabsContent value="backups" className="h-full min-h-0"');
   });
 
   it('exposes a plugins nav toggle next to the routes toggle', () => {

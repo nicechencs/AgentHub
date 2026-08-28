@@ -75,5 +75,6 @@ describe('PageHeader', () => {
     expect(source('App.tsx')).toContain("pathname === '/connections'");
     expect(source('App.tsx')).toContain("pathname === '/routes'");
     expect(source('App.tsx')).toContain("pathname === '/plugins'");
+    expect(source('App.tsx')).toContain("pathname === '/settings'");
   });
 });
