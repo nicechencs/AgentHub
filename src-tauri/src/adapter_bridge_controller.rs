@@ -807,6 +807,26 @@ fn resolve_v2_pool_members(
             }
         }
     }
+    if !resolved
+        .iter()
+        .any(|member| member.health.is_eligible() && member.auth.has_token())
+    {
+        let source_id = material.source_connection_id().to_owned();
+        resolved.insert(
+            0,
+            BridgeMemberSpec {
+                ticket_id: ticket_id(profile.source_kind, &source_id),
+                source_kind: profile.source_kind.as_str().to_owned(),
+                source_id: source_id.clone(),
+                label: source_id,
+                auth: material.start_spec(None).upstream.auth,
+                reload: lead_reload,
+                health: MemberHealth::Renewable,
+                priority: 0,
+                position: 0,
+            },
+        );
+    }
     Some(resolved)
 }
 

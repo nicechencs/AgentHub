@@ -32,10 +32,19 @@ export function adapterBridgeUpstreamLabel(
   if (status === 'unavailable') return t ? t('routes.upstream.unavailable') : '不可用';
   return t ? t('routes.upstream.unknown') : '未知';
 }
+export function adapterBridgeIsListening(status?: AdapterBridgeRuntimeStatus): boolean {
+  return status?.state === 'running'
+    || status?.state === 'starting'
+    || status?.state === 'degraded';
+}
+
 export function adapterBridgeHostPort(
   profile: AdapterProfile,
   status?: AdapterBridgeRuntimeStatus,
 ): { host: '127.0.0.1'; port: number | null } {
+  if (!adapterBridgeIsListening(status)) {
+    return { host: '127.0.0.1', port: null };
+  }
   const raw = status?.port ?? profile.localPort;
   const port = typeof raw === 'number' && raw > 0 ? raw : null;
   return { host: '127.0.0.1', port };
@@ -89,6 +98,9 @@ function localizeAdapterCopy(raw: string): string {
   }
   if (/unknown custom relay provider/i.test(trimmed)) {
     return '这份自定义上游还缺有效的服务地址，没法开本机转发。请补上地址后重试。';
+  }
+  if (/invalid adapter secret reference/i.test(trimmed)) {
+    return '没法把本机令牌写进客户端配置。请点重试。';
   }
   return trimmed.replace(INTERNAL_ID_RE, '').replace(/\s{2,}/g, ' ').trim();
 }

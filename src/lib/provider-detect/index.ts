@@ -37,6 +37,7 @@ export {
   FORM_FIELD_LABELS,
   looksRedactedOrPlaceholder,
   maskConfigSecrets,
+  maskPasteSecrets,
   parseJsonObjectConfig,
   resolveFormApiKeyFromEditor,
   writableSecret,
@@ -60,6 +61,7 @@ export {
 export {
   FALLBACK_CUSTOM_MODEL,
   defaultModelForAgent,
+  filterRemoteModelsForAgent,
   isLivePastedApiKey,
   looksLikeLast4Mask,
   maskApiKeyLast4,

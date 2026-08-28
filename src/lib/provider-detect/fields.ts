@@ -98,6 +98,16 @@ const TOML_API_KEY_LINE_RE = /^(\s*api_key\s*=\s*)(["']).*?\2/gim;
  * Mask secret values in the advanced editor (`***`). Never invent a live key.
  * `env_key` names are left intact.
  */
+const SECRET_ASSIGNMENT_RE =
+  /^(\s*(?:export\s+|set\s+|\$env:)?[A-Za-z_][A-Za-z0-9_]*(?:_API_KEY|_AUTH_TOKEN|_ACCESS_TOKEN|_TOKEN|_SECRET|API_KEY)\s*=\s*)(.+)$/gim;
+
+/** Mask KEY=value secret assignments in free-form paste (env blocks, shell). */
+export function maskPasteSecrets(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed === REDACTED_MARKER) return text;
+  return text.replace(SECRET_ASSIGNMENT_RE, `$1${REDACTED_MARKER}`);
+}
+
 export function maskConfigSecrets(
   _agentId: AgentId,
   configText: string,
@@ -121,7 +131,7 @@ export function maskConfigSecrets(
   if (parsed.ok) {
     return JSON.stringify(redactJsonSecrets(parsed.value), null, 2);
   }
-  return configText.replace(JSON_SECRET_TEXT_RE, `$1"${REDACTED_MARKER}"`);
+  return maskPasteSecrets(configText.replace(JSON_SECRET_TEXT_RE, `$1"${REDACTED_MARKER}"`));
 }
 
 function objectValue(value: unknown): Record<string, unknown> | undefined {
@@ -204,6 +214,60 @@ function extractPiProviderVars(root: unknown): ProviderFormVars {
     apiKey: providerKey || authHit?.key || '',
     model: typeof model?.id === 'string' ? model.id : '',
   };
+}
+
+function extractDshFormVars(root: Record<string, unknown>): ProviderFormVars {
+  const env =
+    root.env && typeof root.env === 'object' && !Array.isArray(root.env)
+      ? (root.env as Record<string, unknown>)
+      : {};
+  const provider = firstNonEmptyString(root.provider) || 'deepseek-official';
+  const baseUrl = firstNonEmptyString(
+    root.baseUrl,
+    root.baseURL,
+    root.base_url,
+    env.OPENAI_BASE_URL,
+    env.ANTHROPIC_BASE_URL,
+  ).replace(/\/anthropic\/?$/i, '');
+  const apiKey = firstNonEmptyString(
+    root.apiKey,
+    root.api_key,
+    env.OPENAI_API_KEY,
+    env.DEEPSEEK_API_KEY,
+    env.ANTHROPIC_AUTH_TOKEN,
+    env.ANTHROPIC_API_KEY,
+  );
+  return {
+    ...EMPTY_FORM_VARS,
+    providerSlug: provider,
+    baseUrl,
+    apiKey: sanitizeSecretForForm(apiKey),
+    model: firstNonEmptyString(root.model, env.ANTHROPIC_MODEL, env.MODEL),
+  };
+}
+
+function applyDshFormVars(root: Record<string, unknown>, vars: ProviderFormVars): string {
+  const next: Record<string, unknown> = { ...root };
+  delete next.env;
+  const slug = vars.providerSlug.trim() || 'deepseek-official';
+  next.provider = slug;
+  if (vars.model.trim()) next.model = vars.model.trim();
+  else delete next.model;
+  const url = vars.baseUrl.trim().replace(/\/anthropic\/?$/i, '');
+  if (url) {
+    next.baseUrl = url;
+    next.baseURL = url;
+  } else {
+    delete next.baseUrl;
+    delete next.baseURL;
+  }
+  const secret = writableSecret(vars.apiKey);
+  if (secret) next.apiKey = secret;
+  else if (typeof next.apiKey === 'string' || typeof next.api_key === 'string') {
+    next.apiKey = REDACTED_MARKER;
+  }
+  delete next.api_key;
+  return JSON.stringify(next, null, 2);
 }
 
 function extractWorkBuddyModelVars(root: unknown): ProviderFormVars {
@@ -385,6 +449,35 @@ function firstTableSlug(text: string, prefix: 'model_providers' | 'providers'): 
   return m?.[2]?.trim() || 'custom';
 }
 
+function looksLikeGrokModelId(model: string): boolean {
+  return /^grok[-_]/i.test(model.trim());
+}
+
+function kimiModelForWrite(model: string): string {
+  const trimmed = model.trim();
+  if (!trimmed) return '';
+  if (looksLikeGrokModelId(trimmed)) return 'kimi-k2';
+  return trimmed;
+}
+
+function renameKimiProvider(text: string, from: string, to: string): string {
+  if (!from || from === to) return text;
+  const fromHeader = `[providers.${from}]`;
+  const toHeader = `[providers.${to}]`;
+  let next = text.includes(fromHeader)
+    ? text.replace(fromHeader, toHeader)
+    : text;
+  next = next.replace(
+    new RegExp(`^(\\s*default_provider\\s*=\\s*)"${escapeRegExp(from)}"`, 'm'),
+    `$1"${to}"`,
+  );
+  next = next.replace(
+    new RegExp(`^(\\s*provider\\s*=\\s*)"${escapeRegExp(from)}"`, 'gm'),
+    `$1"${to}"`,
+  );
+  return next;
+}
+
 /** 在指定 table 内读写 key（简单行扫描，不引入 TOML 解析器） */
 function tomlTableGet(text: string, table: string, key: string): string {
   const header = `[${table}]`;
@@ -539,10 +632,14 @@ function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
   }
   const hasEnvKey = Boolean(tomlTableGet(text, table, 'env_key'));
   const secret = writableSecret(vars.apiKey);
-  if (hasEnvKey) {
+  if (secret || hasEnvKey) {
     // Prefer env_key; never materialize a live api_key into the document.
-  } else if (secret) {
-    text = tomlTableSet(text, table, 'api_key', secret);
+    if (!hasEnvKey) {
+      text = tomlTableSet(text, table, 'env_key', 'XAI_API_KEY');
+    }
+    if (tomlTableGet(text, table, 'api_key')) {
+      text = tomlTableSet(text, table, 'api_key', REDACTED_MARKER);
+    }
   } else if (tomlTableGet(text, table, 'api_key')) {
     // Empty / redacted means keep the native secret on materialize.
     text = tomlTableSet(text, table, 'api_key', REDACTED_MARKER);
@@ -574,6 +671,7 @@ export function extractFormVars(
       if (agentId === 'pi') return extractPiProviderVars(root);
       if (agentId === 'workbuddy') return extractWorkBuddyModelVars(root);
       if (agentId === 'cursor') return extractCursorFormVars(root);
+      if (agentId === 'dsh') return extractDshFormVars(root);
 
       const env =
         root.env && typeof root.env === 'object' && !Array.isArray(root.env)
@@ -636,13 +734,15 @@ export function extractFormVars(
   }
 
   if (agentId === 'kimi') {
-    const slug = firstTableSlug(configText, 'providers');
+    const slug =
+      tomlGet(configText, 'default_provider') || firstTableSlug(configText, 'providers');
     const table = `providers.${slug}`;
     const rawKey =
       tomlTableGet(configText, table, 'api_key') || tomlGet(configText, 'api_key');
+    const storedModel = tomlGet(configText, 'default_model');
     return {
       ...EMPTY_FORM_VARS,
-      model: tomlGet(configText, 'default_model'),
+      model: kimiModelForWrite(storedModel) || storedModel,
       baseUrl: tomlTableGet(configText, table, 'base_url') || tomlGet(configText, 'base_url'),
       apiKey: sanitizeSecretForForm(rawKey),
       providerSlug: slug || 'custom',
@@ -699,6 +799,7 @@ export function applyFormVars(
     if (agentId === 'pi') return applyPiProviderVars({ ...parsed.value }, vars);
     if (agentId === 'workbuddy') return applyWorkBuddyModelVars({ ...parsed.value }, vars);
     if (agentId === 'cursor') return applyCursorFormVars({ ...parsed.value }, vars);
+    if (agentId === 'dsh') return applyDshFormVars({ ...parsed.value }, vars);
 
     const root: Record<string, unknown> =
       agentId === 'claude'
@@ -840,9 +941,16 @@ export function applyFormVars(
 
   if (agentId === 'kimi') {
     const slug = (vars.providerSlug || 'custom').trim() || 'custom';
+    const oldSlug =
+      tomlGet(text, 'default_provider') || firstTableSlug(text, 'providers') || 'custom';
+    if (oldSlug && oldSlug !== slug) {
+      text = renameKimiProvider(text, oldSlug, slug);
+    }
     const table = `providers.${slug}`;
-    if (vars.model.trim()) text = tomlSet(text, 'default_model', vars.model.trim());
+    const model = kimiModelForWrite(vars.model);
+    if (model) text = tomlSet(text, 'default_model', model);
     else text = tomlUnset(text, 'default_model');
+    text = tomlSet(text, 'default_provider', slug);
     if (vars.baseUrl.trim()) {
       text = tomlTableSet(text, table, 'base_url', vars.baseUrl.trim());
     }
@@ -851,6 +959,11 @@ export function applyFormVars(
       text = tomlTableSet(text, table, 'api_key', secret);
     } else if (tomlTableGet(text, table, 'api_key')) {
       text = tomlTableSet(text, table, 'api_key', REDACTED_MARKER);
+    }
+    if (model) {
+      const modelsTable = `models."${model}"`;
+      text = tomlTableSet(text, modelsTable, 'provider', slug);
+      text = tomlTableSet(text, modelsTable, 'model', model);
     }
     return text;
   }

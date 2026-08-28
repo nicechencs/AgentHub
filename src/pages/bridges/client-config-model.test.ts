@@ -130,6 +130,19 @@ describe('clientWriteTargetSpec', () => {
     expect(fieldKeys(spec.fields).join(' ')).not.toContain('ANTHROPIC');
   });
 
+  it('previews a local token as last4, never the full value', () => {
+    const full = 'ahb_krTbFixtureLocalTokenValue_dosM';
+    const spec = clientWriteTargetSpec('claude', {
+      host: '127.0.0.1',
+      port: PORT,
+      localToken: full,
+    });
+    const token = fieldValue(spec.fields, '本机令牌');
+    expect(token).toBe('末尾 dosM');
+    expect(token).not.toContain(full);
+    expect(token).not.toMatch(/^ahb_/);
+  });
+
   it('previews Claude model and 1M window when the route pins ox-alpha', () => {
     const spec = clientWriteTargetSpec('claude', {
       host: '127.0.0.1',

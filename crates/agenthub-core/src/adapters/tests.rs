@@ -2078,6 +2078,31 @@ api_key = "old"
 }
 
 #[test]
+fn kimi_switch_write_rewrites_leaked_grok_default_model() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    write_toml_config(
+        AgentId::Kimi,
+        &path,
+        &AgentConfig {
+            agent: AgentId::Kimi,
+            raw: json!({
+                "format": "toml",
+                "content": "default_model = \"grok-4.5\"\n\n[providers.moonshot]\nbase_url = \"https://mytokens.cc/v1\"\napi_key = \"sk-pool\"\n",
+            }),
+        },
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("default_model = \"kimi-k2\""), "{text}");
+    assert!(!text.contains("grok-4.5"), "{text}");
+    assert!(
+        text.contains("[models.\"kimi-k2\"]") || text.contains("[models.kimi-k2]"),
+        "{text}"
+    );
+}
+
+#[test]
 fn kimi_write_config_points_base_url_at_loopback() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");

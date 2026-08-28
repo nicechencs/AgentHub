@@ -523,6 +523,68 @@ fn revalidate_projection_rejects_provider_that_became_user_owned_after_prepare()
 }
 
 #[test]
+fn revalidate_projection_rebuilds_incomplete_generated_provider() {
+    let (_dir, db) = test_db();
+    AccountRepo::new(db.clone())
+        .create(&codex_subscription_account(
+            "codex-subscription",
+            "codex-upstream-access-secret",
+        ))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service
+        .prepare(&codex_claude_request("codex-subscription"))
+        .unwrap();
+    let provider_id = prepared
+        .profile()
+        .generated_provider_id
+        .as_deref()
+        .expect("generated id")
+        .to_owned();
+    let incomplete = match prepared.provider_projection(43121).unwrap() {
+        AdapterBridgeProviderProjection::Create(input) => Provider {
+            id: input.id,
+            agent_id: input.agent_id,
+            name: input.name,
+            settings_config: json!({}),
+            meta: input.meta,
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        },
+        other => panic!("expected create projection, got {other:?}"),
+    };
+    assert_eq!(incomplete.id, provider_id);
+    ProviderRepo::new(db.clone()).create(&incomplete).unwrap();
+
+    let projection = service
+        .revalidate_provider_projection(&prepared, 43121)
+        .unwrap();
+    let input = match projection {
+        AdapterBridgeProviderProjection::Update(input) => input,
+        other => panic!("incomplete generated login must be rewritten, got {other:?}"),
+    };
+    assert_eq!(
+        input.settings_config["env"]["ANTHROPIC_BASE_URL"],
+        "http://127.0.0.1:43121"
+    );
+    let token = input.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"]
+        .as_str()
+        .unwrap_or("");
+    assert!(token.starts_with("ahb_"), "rebuild must persist the local token");
+    assert!(!token.is_empty());
+    assert_eq!(
+        ProviderRepo::new(db)
+            .get_by_id(&provider_id)
+            .unwrap()
+            .unwrap()
+            .settings_config,
+        json!({}),
+        "revalidate must not write until persist"
+    );
+}
+
+#[test]
 fn auto_start_and_attention_are_profile_only_state_transitions() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
@@ -1938,7 +2000,7 @@ fn legacy_toml_with_drifted_port_still_conflicts() {
 }
 
 #[test]
-fn start_spec_lists_stealth_ox_alpha_for_custom_openai() {
+fn start_spec_does_not_inject_retired_openrouter_backup() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "openrouter-codex-models".into(),
         source_connection_id: "openrouter".into(),
@@ -1995,7 +2057,7 @@ fn start_spec_keeps_every_user_listed_model() {
             .iter()
             .any(|model| model == "anthropic/claude-sonnet-4")
     );
-    assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
+    assert!(!listed.iter().any(|model| model == "stealth/ox-alpha"));
 }
 
 #[test]
@@ -2021,7 +2083,7 @@ fn start_spec_strips_claude_1m_marker_from_listed_models() {
         schedule_policy: Default::default(),
     };
     let listed = material.start_spec(Some(0)).listed_models;
-    assert!(listed.iter().any(|model| model == "stealth/ox-alpha"));
+    assert!(!listed.iter().any(|model| model == "stealth/ox-alpha"));
     assert!(!listed.iter().any(|model| model.contains('[')));
 }
 
@@ -2108,7 +2170,7 @@ fn prepare_glm_claude_uses_anthropic_endpoint() {
 }
 
 #[test]
-fn prepare_openrouter_claude_pins_ox_alpha_and_1m_window() {
+fn prepare_openrouter_claude_skips_retired_backup_and_keeps_1m_window() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
         .create(&Provider {
@@ -2119,7 +2181,7 @@ fn prepare_openrouter_claude_pins_ox_alpha_and_1m_window() {
                 "apiKey": "sk-or-test",
                 "baseURL": "https://openrouter.ai/api/v1",
                 "vendor": "openrouter",
-                "listedModels": ["stealth/ox-alpha"],
+                "listedModels": ["stealth/ox-alpha", "anthropic/claude-sonnet-4"],
                 "model": "stealth/ox-alpha",
                 "contextWindowTokens": 1_048_576
             }),
@@ -2142,10 +2204,10 @@ fn prepare_openrouter_claude_pins_ox_alpha_and_1m_window() {
         AdapterBridgeProviderProjection::Create(input) => input,
         other => panic!("expected create projection, got {other:?}"),
     };
-    assert_eq!(input.settings_config["model"], "stealth/ox-alpha");
+    assert_eq!(input.settings_config["model"], "anthropic/claude-sonnet-4");
     assert_eq!(
         input.settings_config["env"]["ANTHROPIC_MODEL"],
-        "stealth/ox-alpha"
+        "anthropic/claude-sonnet-4"
     );
     assert_eq!(
         input.settings_config["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"],

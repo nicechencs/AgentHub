@@ -60,3 +60,7 @@ export async function chatSend(
 export async function chatCancel(conversationId: string): Promise<void> {
   return getBackend().chat.chatCancel(conversationId);
 }
+
+export async function setChatModel(agentId: AgentId, model: string): Promise<void> {
+  return getBackend().chat.setChatModel(agentId, model);
+}

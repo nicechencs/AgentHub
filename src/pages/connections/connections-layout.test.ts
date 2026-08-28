@@ -27,7 +27,7 @@ describe('connections layout wiring', () => {
     const list = source('TicketWalletList.tsx');
 
     expect(page).toContain(
-      "counts[id] = filterTicketsByAgentUsage(visibleWallet, tickets, id).length",
+      'counts[id] = tickets.filter((ticket) => ticket.agentId === id).length',
     );
     expect(list).toContain("t('connections.list.count', { n: rows.length })");
 

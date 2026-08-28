@@ -80,6 +80,44 @@ base_url = "https://relay.example.com/v1"
 }
 
 #[test]
+fn official_oauth_clears_openrouter_env_key_provider_without_inventing_a_model() {
+    let leftover = r#"model_provider = "openrouter"
+model = "stealth/ox-alpha"
+review_model = "stealth/ox-alpha"
+model_reasoning_effort = "xhigh"
+preferred_auth_method = "apikey"
+
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+wire_api = "responses"
+"#;
+    let mut doc = leftover.parse::<DocumentMut>().unwrap();
+    assert!(strip_env_key_provider_leftovers_in_doc(&mut doc));
+    let stored = doc.to_string();
+    assert!(!stored.contains("model_provider ="), "{stored}");
+    assert!(!stored.contains("preferred_auth_method"), "{stored}");
+    assert!(!stored.contains("stealth/ox-alpha"), "{stored}");
+    assert!(!stored.contains("model_reasoning_effort"), "{stored}");
+    assert!(stored.contains("[model_providers.openrouter]"), "{stored}");
+    assert!(stored.contains("OPENROUTER_API_KEY"), "{stored}");
+}
+
+#[test]
+fn official_oauth_keeps_custom_provider_without_env_key() {
+    let custom = r#"model_provider = "custom"
+model = "gpt-5.1-codex"
+
+[model_providers.custom]
+base_url = "https://relay.example.com/v1"
+"#;
+    let mut doc = custom.parse::<DocumentMut>().unwrap();
+    assert!(!strip_env_key_provider_leftovers_in_doc(&mut doc));
+    assert_eq!(doc.to_string(), custom);
+}
+
+#[test]
 fn backup_is_bridge_leftover_reads_config_toml() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("config.toml"), LEFTOVER).unwrap();

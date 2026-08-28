@@ -1818,3 +1818,52 @@ fn ticket_connection_wallet_repairs_one_sided_is_current_drift() {
             .is_current
     );
 }
+
+#[test]
+fn list_wallet_merges_duplicate_claude_keys_and_drops_unusable_api_key() {
+    let (_dir, db) = test_db();
+    let secret = "sk-fixture-claude-mytokens-272fxxxx";
+    let mut with_schema = provider("p-schema", AgentId::Claude, "mytokens.cc", "custom", false);
+    with_schema.settings_config = serde_json::json!({
+        "$schema": "https://json.schemastore.org/claude-code-settings.json",
+        "env": {
+            "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+            "ANTHROPIC_AUTH_TOKEN": secret
+        }
+    });
+    let mut plain = provider("p-plain", AgentId::Claude, "mytokens.cc", "custom", false);
+    plain.settings_config = serde_json::json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+            "ANTHROPIC_AUTH_TOKEN": secret
+        }
+    });
+    ProviderRepo::new(db.clone()).create(&with_schema).unwrap();
+    ProviderRepo::new(db.clone()).create(&plain).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "grok-ghost".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "**•••• (API Key)".into(),
+            credentials: serde_json::json!({
+                "format": "grok_bundle",
+                "api_key": "***"
+            }),
+            extra: serde_json::json!({ "source": "live" }),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let wallet = TicketReadService::new(db.clone()).list_wallet().unwrap();
+    let claude: Vec<_> = wallet
+        .tickets
+        .iter()
+        .filter(|t| t.agent_id == AgentId::Claude)
+        .collect();
+    assert_eq!(claude.len(), 1, "same key+url must be one login");
+    assert!(!wallet.tickets.iter().any(|t| t.source_id == "grok-ghost"));
+}

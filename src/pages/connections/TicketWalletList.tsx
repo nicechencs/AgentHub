@@ -39,9 +39,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Hint, Tip } from '@/components/ui/tooltip';
@@ -55,6 +52,7 @@ import {
   buildTicketAddMenu,
   focusedTicketAddAgent,
   handleTicketAddMenuSelect,
+  ticketAddMenuClosesOnKey,
   buildTicketDetailFields,
   buildTicketWalletRows,
   hasOfficialQuotaWindow,
@@ -125,7 +123,7 @@ function DisabledReasonButton({
   variant?: 'outline' | 'secondary' | 'dangerOutline';
 }) {
   return (
-    <Hint label={disabled ? reason : undefined}>
+    <Hint key={disabled ? `${ariaLabel}:${reason ?? 'disabled'}` : `${ariaLabel}:enabled`} label={disabled ? (reason || ariaLabel) : undefined}>
       <Button
         size="sm"
         variant={variant}
@@ -569,7 +567,21 @@ export function TicketAddMenu({
 }) {
   const { t } = useI18n();
   const [open, setOpen] = React.useState(false);
+  const [expandedId, setExpandedId] = React.useState<AgentId | null>(null);
   const focused = focusedTicketAddAgent(agents, focusedAgentId);
+  const expanded = expandedId ? agents.find((agent) => agent.id === expandedId) ?? null : null;
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!ticketAddMenuClosesOnKey(event.key)) return;
+      event.preventDefault();
+      setOpen(false);
+      setExpandedId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open]);
 
   const renderActions = (agent: TicketAddMenuAgent) =>
     agent.actions.map((action) => (
@@ -596,7 +608,14 @@ export function TicketAddMenu({
     ));
 
   return (
-    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+    <DropdownMenu
+      modal={false}
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setExpandedId(null);
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <Button variant={variant}>
           <Plus className="h-3.5 w-3.5" /> {t('connections.list.add')} <ChevronDown className="h-3.5 w-3.5" />
@@ -606,6 +625,11 @@ export function TicketAddMenu({
         align="end"
         className="min-w-[12rem]"
         onCloseAutoFocus={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+          setOpen(false);
+          setExpandedId(null);
+        }}
       >
         {agents.length === 0 ? (
           <>
@@ -622,22 +646,40 @@ export function TicketAddMenu({
             </DropdownMenuLabel>
             {renderActions(focused)}
           </>
+        ) : expanded ? (
+          <>
+            <DropdownMenuItem
+              className="justify-between gap-2"
+              onSelect={(event) => {
+                event.preventDefault();
+                setExpandedId(null);
+              }}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <AgentDot agentId={expanded.id} size="sm" title={null} />
+                <span className="truncate">{expanded.name}</span>
+              </span>
+            </DropdownMenuItem>
+            {renderActions(expanded)}
+          </>
         ) : (
           <>
             <DropdownMenuLabel>{t('connections.list.addAgent')}</DropdownMenuLabel>
             {agents.map((agent) => (
-              <DropdownMenuSub key={agent.id}>
-                <DropdownMenuSubTrigger className="justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <AgentDot agentId={agent.id} size="sm" title={null} />
-                    <span className="truncate">{agent.name}</span>
-                  </span>
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="min-w-[10rem]">
-                  {renderActions(agent)}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+              <DropdownMenuItem
+                key={agent.id}
+                className="justify-between gap-2"
+                onSelect={(event) => {
+                  event.preventDefault();
+                  setExpandedId(agent.id);
+                }}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <AgentDot agentId={agent.id} size="sm" title={null} />
+                  <span className="truncate">{agent.name}</span>
+                </span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
+              </DropdownMenuItem>
             ))}
           </>
         )}

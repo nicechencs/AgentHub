@@ -1872,6 +1872,44 @@ fn upsert_same_secret_url_merges_into_existing_row() {
 }
 
 #[test]
+fn list_merges_claude_rows_that_only_differ_by_json_schema() {
+    let secret = "sk-fixture-claude-mytokens-272fxxxx";
+    let (_dir, svc) = svc();
+    let mut with_schema = input("p-schema", AgentId::Claude, "mytokens.cc", false);
+    with_schema.settings_config = json!({
+        "$schema": "https://json.schemastore.org/claude-code-settings.json",
+        "env": {
+            "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+            "ANTHROPIC_AUTH_TOKEN": secret
+        }
+    });
+    let mut plain = input("p-plain", AgentId::Claude, "mytokens.cc", false);
+    plain.settings_config = json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "https://mytokens.cc",
+            "ANTHROPIC_AUTH_TOKEN": secret
+        }
+    });
+    svc.create(&with_schema).unwrap();
+    svc.create(&plain).unwrap();
+
+    let listed = svc.list(Some(AgentId::Claude)).unwrap();
+    let user_rows: Vec<_> = listed
+        .iter()
+        .filter(|row| row.meta.get("generatedBy").and_then(|v| v.as_str()) != Some("adapter"))
+        .collect();
+    assert_eq!(user_rows.len(), 1, "same key+url must merge even when one row has $schema");
+    let trash = svc.connections.list_trash(Some(AgentId::Claude)).unwrap();
+    assert_eq!(trash.len(), 1);
+    assert_eq!(
+        crate::services::provider_identity::provider_identity(user_rows[0])
+            .expect("identity")
+            .base_url,
+        "https://mytokens.cc"
+    );
+}
+
+#[test]
 fn heal_secret_url_duplicates_keeps_same_last4_different_names() {
     let secret = "sk-cursor-fixture-xxxx8660";
     let url = "https://api.cursor.com/v1";

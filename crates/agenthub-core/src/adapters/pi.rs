@@ -443,7 +443,7 @@ fn pi_cli_provider_args() -> Vec<String> {
             args.push("--provider".into());
             args.push(provider);
         }
-        if let Some(model) = model {
+        if let Some(model) = model.filter(|id| !crate::models::is_openrouter_backup_model(id)) {
             args.push("--model".into());
             args.push(model);
         }
@@ -488,6 +488,26 @@ fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {
 }
 
 const REDACTED_MARKER: &str = "***";
+
+/// Write Pi `settings.json` `defaultModel` without touching models.json / auth.json.
+pub(crate) fn set_pi_default_model(model: &str) -> Result<()> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Err(AppError::InvalidArg("model must not be empty".into()));
+    }
+    if crate::models::is_openrouter_backup_model(model) {
+        return Err(AppError::InvalidArg(
+            "这个模型已经下架，请另选一个".into(),
+        ));
+    }
+    write_pi_config(&crate::models::AgentConfig {
+        agent: AgentId::Pi,
+        raw: serde_json::json!({
+            "settings": { "defaultModel": model },
+            "auth": {},
+        }),
+    })
+}
 
 fn write_pi_config(config: &AgentConfig) -> Result<()> {
     if config.agent != AgentId::Pi {
@@ -784,6 +804,30 @@ mod tests {
         let dir = PiAdapter.skills_dir().expect("skills_dir");
         let expected = pi_config_dir().expect("pi_config_dir").join("skills");
         assert_eq!(dir, expected);
+    }
+
+    #[test]
+    fn set_pi_default_model_writes_settings_and_rejects_retired_backup() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "openrouter",
+                    "defaultModel": "stealth/ox-alpha"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            set_pi_default_model("openrouter/auto").unwrap();
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultModel"], "openrouter/auto");
+            assert_eq!(settings["defaultProvider"], "openrouter");
+            let err = set_pi_default_model("stealth/ox-alpha").unwrap_err();
+            assert!(err.to_string().contains("下架"), "{err}");
+        });
     }
 
     #[test]

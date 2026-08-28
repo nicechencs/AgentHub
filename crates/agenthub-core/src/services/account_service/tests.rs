@@ -233,6 +233,41 @@ fn add_list_delete_api_key() {
 }
 
 #[test]
+fn list_recycles_api_key_row_persisted_without_a_usable_secret() {
+    use crate::storage::AccountRepo;
+    let (_root, svc, _) = live_svc(AgentId::Grok);
+    let usable = svc
+        .add_api_key(AgentId::Grok, Some("sk--••••8660 (API Key)"), "xai-secret-key-8660")
+        .unwrap();
+    AccountRepo::new(svc.db.clone())
+        .create(&crate::models::Account {
+            id: "grok-live-ghost".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "**•••• (API Key)".into(),
+            credentials: json!({
+                "format": "grok_bundle",
+                "api_key": "***",
+                "auth": { "https://auth.x.ai::slot": { "access_token": "not-an-api-key" } }
+            }),
+            extra: json!({ "source": "live", "identityLabel": "**•••• (API Key)" }),
+            status: "active".into(),
+            is_current: false,
+            created_at: "2000-01-01 00:00:00".into(),
+            updated_at: "2000-01-01 00:00:00".into(),
+        })
+        .unwrap();
+
+    let listed = svc.list_pool(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, usable.id);
+    assert!(svc.repo().get_by_id("grok-live-ghost").unwrap().is_none());
+    let trash = svc.connections.list_trash(Some(AgentId::Grok)).unwrap();
+    assert_eq!(trash.len(), 1);
+    assert_eq!(trash[0].source_id, "grok-live-ghost");
+}
+
+#[test]
 fn api_key_add_persists_explicit_product_marker() {
     let (_root, svc, _) = live_svc(AgentId::Kimi);
     let kimi_api = svc

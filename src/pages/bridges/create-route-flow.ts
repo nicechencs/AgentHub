@@ -17,7 +17,8 @@ import { isLeftoverLocalRouteProvider } from '@/lib/leftover-local-route';
 import { detectUpstreamChannelFromUrl } from './adapter-route-detail-model';
 
 export const CREATE_ROUTE_TARGETS = ['claude', 'codex', 'grok'] as const;
-export const DEFAULT_CREATE_ROUTE_MODEL = 'stealth/ox-alpha';
+/** OpenRouter no longer pins a stealth backup; listed models come from the login. */
+export const DEFAULT_CREATE_ROUTE_MODEL = '';
 export const DEFAULT_CREATE_ROUTE_URL = 'https://openrouter.ai/api/v1';
 
 export type CreateRouteTarget = (typeof CREATE_ROUTE_TARGETS)[number];
@@ -47,7 +48,7 @@ export const CREATE_ROUTE_VENDORS: readonly CreateRouteVendor[] = [
     id: 'openrouter',
     url: DEFAULT_CREATE_ROUTE_URL,
     enabled: ['claude', 'codex', 'grok'],
-    models: [DEFAULT_CREATE_ROUTE_MODEL],
+    models: [],
     defaultContextWindow: '1048576',
   },
   {

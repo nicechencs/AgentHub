@@ -811,8 +811,9 @@ jobs:
               exit 1
             fi
             published_tag="$(printf '%s' "$published_release_json" | jq -r '.tag_name // empty')"
-            published_draft="$(printf '%s' "$published_release_json" | jq -r '.draft // empty')"
-            published_prerelease="$(printf '%s' "$published_release_json" | jq -r '.prerelease // empty')"
+            # jq `false // empty` yields empty; stringify booleans instead.
+            published_draft="$(printf '%s' "$published_release_json" | jq -r '.draft | tostring')"
+            published_prerelease="$(printf '%s' "$published_release_json" | jq -r '.prerelease | tostring')"
             if [ "$published_tag" != "$TAG" ] || [ "$published_draft" != "false" ] || [ "$published_prerelease" != "$PRERELEASE" ]; then
               echo "GitHub Release $TAG changed state while assets were prepared; refusing to overwrite it." >&2
               exit 1
@@ -840,8 +841,9 @@ jobs:
             fi
             draft_tag="$(printf '%s' "$draft_release_json" | jq -r '.tag_name // empty')"
             draft_name="$(printf '%s' "$draft_release_json" | jq -r '.name // empty')"
-            draft_state="$(printf '%s' "$draft_release_json" | jq -r '.draft // empty')"
-            draft_prerelease="$(printf '%s' "$draft_release_json" | jq -r '.prerelease // empty')"
+            # jq `false // empty` yields empty; stringify booleans instead.
+            draft_state="$(printf '%s' "$draft_release_json" | jq -r '.draft | tostring')"
+            draft_prerelease="$(printf '%s' "$draft_release_json" | jq -r '.prerelease | tostring')"
             if { [ "$draft_tag" != "$TAG" ] && [ "$draft_name" != "AgentHub $TAG" ]; } \
               || [ "$draft_state" != "true" ] || [ "$draft_prerelease" != "$PRERELEASE" ]; then
               echo "Existing draft GitHub Release $TAG does not match this tag or prerelease state; refusing to resume it." >&2
@@ -1006,8 +1008,9 @@ jobs:
           echo "RELEASE_ID=$RELEASE_ID" >> "$GITHUB_ENV"
           release_tag="$(printf '%s' "$release_json" | jq -r '.tag_name // empty')"
           release_name="$(printf '%s' "$release_json" | jq -r '.name // empty')"
-          release_draft="$(printf '%s' "$release_json" | jq -r '.draft // empty')"
-          release_prerelease="$(printf '%s' "$release_json" | jq -r '.prerelease // empty')"
+          # jq `false // empty` yields empty; stringify booleans instead.
+          release_draft="$(printf '%s' "$release_json" | jq -r '.draft | tostring')"
+          release_prerelease="$(printf '%s' "$release_json" | jq -r '.prerelease | tostring')"
           expected_assets="$(find release-assets -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
           remote_assets="$(printf '%s' "$release_json" | jq -r '.assets[]?.name' | LC_ALL=C sort)"
           if ! diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$remote_assets"); then

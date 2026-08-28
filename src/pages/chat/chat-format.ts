@@ -59,8 +59,27 @@ export function groupByTurn(messages: ChatMessage[]): TurnGroup[] {
 export function extractModel(configText: string): string | null {
   const toml = configText.match(/(?:^|\n)\s*(?:model|default_model)\s*=\s*"([^"]+)"/m);
   if (toml?.[1]) return toml[1];
-  const json = configText.match(/"(?:model|default_model)"\s*:\s*"([^"]+)"/);
+  const json = configText.match(/"(?:model|default_model|defaultModel)"\s*:\s*"([^"]+)"/);
   return json?.[1] ?? null;
+}
+
+const RETIRED_OPENROUTER_BACKUP = /^stealth\/ox(?:-alpha)?$/i;
+
+export function isRetiredChatModel(model: string): boolean {
+  return RETIRED_OPENROUTER_BACKUP.test(model.trim());
+}
+
+/** Chat model options: keep first-seen order, drop empty and retired stealth backups. */
+export function chatModelOptions(ids: readonly string[], current?: string | null): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [...ids, current ?? '']) {
+    const id = raw.trim();
+    if (!id || seen.has(id) || isRetiredChatModel(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
 }
 
 export function relativeTime(iso: string, t: TranslateFn): string {

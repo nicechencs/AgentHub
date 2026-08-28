@@ -27,3 +27,12 @@ export function filterTicketsByAgentUsage(
   );
   return tickets.filter((t) => ticketIds.has(t.id) || t.agentId === agentId);
 }
+
+/** Connections tab chips: each login counts once, under its owner agent. */
+export function filterTicketsByOwner(
+  tickets: readonly TicketView[],
+  agentId: AgentId | null,
+): TicketView[] {
+  if (!agentId) return [...tickets];
+  return tickets.filter((ticket) => ticket.agentId === agentId);
+}

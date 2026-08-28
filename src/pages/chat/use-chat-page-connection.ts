@@ -3,7 +3,13 @@ import { useTicketWallet } from '@/app/runtime';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { switchAccount } from '@/lib/api/account';
-import { listProviders, switchProvider } from '@/lib/api/provider';
+import { setChatModel } from '@/lib/api/chat';
+import {
+  listProviders,
+  listRemoteOpenAiModelsForProvider,
+  switchProvider,
+  upsertProvider,
+} from '@/lib/api/provider';
 import { bindTicket, isActiveBindingForAgent } from '@/lib/api/tickets';
 import {
   describeProviderSwitchError,
@@ -11,7 +17,9 @@ import {
 } from '@/pages/connections/use-connection-page-actions';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentId, AgentStatus, Conversation, Provider } from '@/lib/types';
-import { extractModel } from './chat-format';
+import { applyFormVars, extractFormVars } from '@/lib/provider-detect';
+import { filterRemoteModelsForAgent } from '@/lib/provider-detect/remote-models';
+import { chatModelOptions, extractModel, isRetiredChatModel } from './chat-format';
 import {
   chatConnectionOptions,
   chatConnectionPickerView,
@@ -38,6 +46,8 @@ export function useChatPageConnection(input: {
   const { primaryAgent, active, hiddenIds, agentStatus, refreshAgents } = input;
   const ticketWallet = useTicketWallet();
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [remoteModels, setRemoteModels] = useState<string[]>([]);
+  const [switchingModel, setSwitchingModel] = useState(false);
   const wallet = ticketWallet.wallet;
   const walletReady = ticketWallet.state === 'ready' || ticketWallet.state === 'error';
   const providersGenRef = useRef(0);
@@ -80,6 +90,43 @@ export function useChatPageConnection(input: {
   );
 
   const leftoverCurrent = leftoverProviderIsCurrent(providers);
+
+  useEffect(() => {
+    if (!currentProvider?.id) {
+      setRemoteModels([]);
+      return;
+    }
+    let cancelled = false;
+    const vars = extractFormVars(currentProvider.agentId, currentProvider.configText, currentProvider.configFormat);
+    const baseUrl = vars.baseUrl?.trim();
+    if (!baseUrl) {
+      setRemoteModels([]);
+      return;
+    }
+    void listRemoteOpenAiModelsForProvider(currentProvider.id, baseUrl)
+      .then((ids) => {
+        if (cancelled) return;
+        setRemoteModels(filterRemoteModelsForAgent(currentProvider.agentId, ids));
+      })
+      .catch(() => {
+        if (!cancelled) setRemoteModels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProvider]);
+
+  const currentModel = useMemo(() => {
+    if (leftoverCurrent) return null;
+    const fromProvider = currentProvider ? extractModel(currentProvider.configText) : null;
+    if (fromProvider && !isRetiredChatModel(fromProvider)) return fromProvider;
+    return null;
+  }, [currentProvider, leftoverCurrent]);
+
+  const modelOptions = useMemo(
+    () => chatModelOptions(remoteModels, currentModel),
+    [remoteModels, currentModel],
+  );
 
   const connectionOptions = useMemo(
     () =>
@@ -172,14 +219,59 @@ export function useChatPageConnection(input: {
     }
   }
 
+  async function handleSwitchModel(model: string) {
+    if (!primaryAgent || switchingProvider || switchingModel || hiddenIds.has(primaryAgent)) return;
+    const next = model.trim();
+    if (!next || isRetiredChatModel(next) || next === currentModel) return;
+    setSwitchingModel(true);
+    try {
+      if (primaryAgent === 'pi') {
+        await setChatModel('pi', next);
+      } else if (currentProvider && currentProvider.agentId === primaryAgent) {
+        const vars = extractFormVars(
+          currentProvider.agentId,
+          currentProvider.configText,
+          currentProvider.configFormat,
+        );
+        const configText = applyFormVars(
+          currentProvider.agentId,
+          currentProvider.configText,
+          currentProvider.configFormat,
+          { ...vars, model: next },
+        );
+        const saved = await upsertProvider({ ...currentProvider, configText });
+        await switchProvider(primaryAgent, saved.id);
+      } else {
+        throw new Error(t('chat.composer.modelUnavailable'));
+      }
+      await loadProviders(primaryAgent);
+      toast({
+        title: t('chat.composer.modelSwitched'),
+        variant: 'success',
+      });
+    } catch (e) {
+      toast({
+        title: t('chat.composer.modelSwitchFail'),
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    } finally {
+      setSwitchingModel(false);
+    }
+  }
+
   return {
     providers,
     switchingProvider,
+    switchingModel,
+    modelOptions,
+    currentModel,
     connectionView,
     connectionOptions,
     connectionCaption,
     walletError: ticketWallet.error,
     reloadWallet: ticketWallet.reload,
     handleSwitchConnection,
+    handleSwitchModel,
   };
 }

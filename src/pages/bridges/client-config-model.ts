@@ -8,6 +8,7 @@ import {
 import {
   formatClaudeContextWindow,
 } from '@/lib/claude-client-env';
+import { maskApiKeyLast4 } from '@/lib/provider-detect/remote-models';
 import { CREATE_ROUTE_TARGETS, type CreateRouteTarget } from './create-route-flow';
 import type { RouteGraphRow } from './route-graph-model';
 
@@ -98,13 +99,17 @@ function localAddressField(origin: string, t?: TranslateFn): ClientWriteField {
   };
 }
 
+export function localTokenPreviewValue(token: string | null | undefined, t?: TranslateFn): string {
+  const trimmed = token?.trim() ?? '';
+  const last4 = trimmed ? maskApiKeyLast4(trimmed) : '';
+  if (last4) return `末尾 ${last4}`;
+  return writeText(t, 'routes.write.localToken', WRITE_COPY.localToken);
+}
+
 function localTokenField(token: string | null | undefined, t?: TranslateFn): ClientWriteField {
-  const value = token?.trim()
-    ? token.trim()
-    : writeText(t, 'routes.write.localToken', WRITE_COPY.localToken);
   return {
     key: writeText(t, 'routes.write.fieldLocalToken', WRITE_COPY.fieldLocalToken),
-    value,
+    value: localTokenPreviewValue(token, t),
   };
 }
 

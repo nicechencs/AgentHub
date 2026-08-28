@@ -18,12 +18,13 @@ use crate::models::{
     TicketSurfaceGroup, TicketSurfaceMember, TicketWallet, PROJECTION_NOT_A_TICKET,
 };
 use crate::services::adapter_projection::classify_account_live;
-use crate::services::{AdapterRouteService, ConnectionService};
+use crate::services::{AccountService, AdapterRouteService, ConnectionService, ProviderService};
 use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 
 /// Aggregates Ticket / Binding read models and thin `plan(ticket, agent)` wrapping.
 #[derive(Clone)]
 pub struct TicketReadService {
+    db: Database,
     accounts: AccountRepo,
     providers: ProviderRepo,
     profiles: AdapterProfileRepo,
@@ -34,6 +35,7 @@ pub struct TicketReadService {
 impl TicketReadService {
     pub fn new(db: Database) -> Self {
         Self {
+            db: db.clone(),
             accounts: AccountRepo::new(db.clone()),
             providers: ProviderRepo::new(db.clone()),
             profiles: AdapterProfileRepo::new(db.clone()),
@@ -46,8 +48,8 @@ impl TicketReadService {
     /// leftover 本机路由 providers are not tickets.
     pub fn list_wallet(&self) -> Result<TicketWallet> {
         self.connections.reconcile_known_agents(None);
-        let accounts = self.accounts.list(None)?;
-        let providers = self.providers.list(None)?;
+        let accounts = AccountService::new(self.db.clone()).list_pool(None)?;
+        let providers = ProviderService::new(self.db.clone()).list(None)?;
         let profiles = self.profiles.list_filtered(&Default::default())?;
 
         let generated_provider_ids: HashSet<String> = profiles
