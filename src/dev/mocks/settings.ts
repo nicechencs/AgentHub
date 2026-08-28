@@ -25,6 +25,7 @@ const DEFAULTS: AppSettings = {
   logRetentionDays: 14,
   skillMarketSource: 'auto',
   usageCollectIntervalMin: 30,
+  keepLiveFileCopies: true,
   // Tracks package.json via Vite inject — no hand-maintained semver.
   appVersion: packageAppVersion(),
 };
@@ -64,6 +65,10 @@ function loadState(): AppSettings {
     theme,
     autoStart: typeof stored.autoStart === 'boolean' ? stored.autoStart : DEFAULTS.autoStart,
     closeToTray: typeof stored.closeToTray === 'boolean' ? stored.closeToTray : DEFAULTS.closeToTray,
+    keepLiveFileCopies:
+      typeof stored.keepLiveFileCopies === 'boolean'
+        ? stored.keepLiveFileCopies
+        : DEFAULTS.keepLiveFileCopies,
     dataDir: stored.dataDir ?? DEFAULTS.dataDir,
     logsDir: stored.logsDir ?? DEFAULTS.logsDir,
     logLevel,

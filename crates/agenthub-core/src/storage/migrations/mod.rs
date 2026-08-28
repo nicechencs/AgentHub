@@ -64,6 +64,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00019_model_route_rules",
         include_str!("00019_model_route_rules.sql"),
     ),
+    (
+        "00020_keep_live_file_copies",
+        include_str!("00020_keep_live_file_copies.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

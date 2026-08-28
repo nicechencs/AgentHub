@@ -2360,10 +2360,28 @@ mod tests {
             return;
         }
         let dm = read_pi_default_model(&agent_dir);
-        // This machine: defaultModel = grok-4.5
-        if agent_dir.join("settings.json").is_file() {
-            assert!(dm.is_some(), "expected defaultModel from settings.json");
-        }
+        // Live settings may or may not pin a default model; the reader must
+        // follow the file instead of assuming this machine's content.
+        let pins_model = fs::read_to_string(agent_dir.join("settings.json"))
+            .map(|text| {
+                serde_json::from_str::<serde_json::Value>(&text)
+                    .ok()
+                    .map(|v| {
+                        v.get("defaultModel")
+                            .or_else(|| v.get("default_model"))
+                            .and_then(|x| x.as_str())
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .is_some()
+                    })
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        assert_eq!(
+            dm.is_some(),
+            pins_model,
+            "read_pi_default_model must follow live settings.json"
+        );
         let files = discover_usage_files(AgentId::Pi).expect("discover");
         if files.is_empty() {
             return;

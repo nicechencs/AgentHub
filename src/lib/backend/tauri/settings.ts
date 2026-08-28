@@ -77,6 +77,7 @@ const DEFAULTS: AppSettings = {
   logRetentionDays: 14,
   skillMarketSource: 'auto',
   usageCollectIntervalMin: 30,
+  keepLiveFileCopies: true,
   // Real value comes from Tauri getVersion(); do not hardcode a product semver.
   appVersion: UNKNOWN_APP_VERSION,
 };
@@ -105,6 +106,7 @@ interface CoreAppSettings {
   closeToTray?: boolean;
   /** Foreground usage collect interval (minutes). Omitted on older cores. */
   usageCollectIntervalMin?: number;
+  keepLiveFileCopies?: boolean;
 }
 
 interface CorePathInfo {
@@ -282,6 +284,10 @@ export function createTauriSettingsPort(): SettingsPort {
           skillMarketSource: parseSkillMarketSource(core.skillMarketSource),
           // Core is source of truth for close-to-tray (Rust window handler reads it).
           closeToTray: resolveCloseToTray(core.closeToTray, local.closeToTray),
+          keepLiveFileCopies:
+            typeof core.keepLiveFileCopies === 'boolean'
+              ? core.keepLiveFileCopies
+              : DEFAULTS.keepLiveFileCopies,
           // OS login item is authoritative when the plugin is available.
           autoStart:
             typeof osAutoStart === 'boolean'
@@ -338,6 +344,12 @@ export function createTauriSettingsPort(): SettingsPort {
             await invoke('set_setting', {
               key: 'close_to_tray',
               value: closeToTraySettingValue(patch.closeToTray),
+            });
+          }
+          if (patch.keepLiveFileCopies !== undefined) {
+            await invoke('set_setting', {
+              key: 'keep_live_file_copies',
+              value: closeToTraySettingValue(patch.keepLiveFileCopies),
             });
           }
           if (patch.usageCollectIntervalMin !== undefined) {

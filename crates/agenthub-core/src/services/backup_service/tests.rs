@@ -112,6 +112,77 @@ fn make_svc(agent: AgentId, paths: Vec<PathBuf>) -> (tempfile::TempDir, BackupSe
 }
 
 #[test]
+fn inspect_redacts_secrets_and_extracts_email() {
+    let live = tempdir().unwrap();
+    let auth = live.path().join("auth.json");
+    write_file(
+        &auth,
+        br#"{
+  "email": "a@example.com",
+  "refresh_token": "rt-secret-should-not-leak-1234",
+  "access_token": "at-secret-should-not-leak-5678"
+}"#,
+    );
+    let (_root, svc, _) = make_svc(AgentId::Grok, vec![auth]);
+    let rec = svc
+        .snapshot(AgentId::Grok, BackupKind::Manual, Some("inspect-test"))
+        .unwrap();
+
+    let listed = svc.list_with_identity(Some(AgentId::Grok)).unwrap();
+    let item = listed.iter().find(|row| row.record.id == rec.id).unwrap();
+    assert_eq!(item.identity.as_deref(), Some("a@example.com"));
+
+    let inspect = svc.inspect(&rec.id).unwrap();
+    assert_eq!(inspect.identity.as_deref(), Some("a@example.com"));
+    assert_eq!(inspect.files.len(), 1);
+    let file = &inspect.files[0];
+    assert_eq!(file.name, "auth.json");
+    let content = file.content.as_deref().unwrap();
+    assert!(content.contains("a@example.com"));
+    assert!(!content.contains("rt-secret-should-not-leak"));
+    assert!(content.contains("***"));
+    assert!(inspect.facts.iter().any(|f| f.key == "email" && f.value == "a@example.com"));
+}
+
+#[test]
+fn inspect_falls_back_to_key_tail_for_toml() {
+    let live = tempdir().unwrap();
+    let config = live.path().join("config.toml");
+    write_file(
+        &config,
+        b"api_key = \"xai-file-key-12345678\"\nbase_url = \"https://relay.example.com/v1\"\n",
+    );
+    let (_root, svc, _) = make_svc(AgentId::Grok, vec![config]);
+    let rec = svc
+        .snapshot(AgentId::Grok, BackupKind::Manual, None)
+        .unwrap();
+    let inspect = svc.inspect(&rec.id).unwrap();
+    let content = inspect.files[0].content.as_deref().unwrap();
+    assert!(!content.contains("xai-file-key-12345678"));
+    assert!(content.contains("***"));
+    assert!(inspect.identity.as_deref().is_some());
+    assert!(inspect
+        .facts
+        .iter()
+        .any(|f| f.key == "endpoint" && f.value.contains("relay.example.com")));
+}
+
+#[test]
+fn inspect_binary_has_no_text_content() {
+    let live = tempdir().unwrap();
+    let bin = live.path().join("blob.bin");
+    write_file(&bin, &[0xff, 0x00, 0xfe, 0x01]);
+    let (_root, svc, _) = make_svc(AgentId::Claude, vec![bin]);
+    let rec = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+    let inspect = svc.inspect(&rec.id).unwrap();
+    assert_eq!(inspect.files.len(), 1);
+    assert!(inspect.files[0].content.is_none());
+    assert!(inspect.identity.is_none());
+}
+
+#[test]
 fn snapshot_missing_files_is_not_found_no_row() {
     let live = tempdir().unwrap();
     let missing = live.path().join("settings.json");

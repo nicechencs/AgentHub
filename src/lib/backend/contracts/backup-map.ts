@@ -1,4 +1,4 @@
-import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
+import type { AgentId, BackupInspect, BackupKind, BackupMeta } from '@/lib/types';
 
 export interface CoreBackupRecord {
   id: string;
@@ -9,7 +9,10 @@ export interface CoreBackupRecord {
   size: number;
   note?: string | null;
   createdAt: string;
+  identity?: string | null;
 }
+
+export type CoreBackupInspect = BackupInspect;
 
 export interface CoreRestoreResult {
   restored: CoreBackupRecord;
@@ -27,5 +30,6 @@ export function mapCoreBackup(b: CoreBackupRecord): BackupMeta | null {
     files: [...(b.files ?? [])],
     sizeBytes: b.size ?? 0,
     note: b.note ?? undefined,
+    identity: b.identity?.trim() || undefined,
   };
 }

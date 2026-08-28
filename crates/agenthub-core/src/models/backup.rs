@@ -75,6 +75,60 @@ pub struct BackupRecord {
     pub created_at: String,
 }
 
+/// One non-secret fact extracted from a backup file (UI translates `key`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupFact {
+    pub key: String,
+    pub value: String,
+}
+
+/// Redacted preview of one file inside a snapshot directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupFileView {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// Absolute snapshot path; GUI uses it to reveal the file.
+    pub path: String,
+    pub size: u64,
+    /// Redacted UTF-8 text. `None` when the file is not text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub facts: Vec<BackupFact>,
+}
+
+/// Full backup inspect payload for the details pane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupInspect {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<AgentId>,
+    pub kind: BackupKind,
+    pub created_at: String,
+    pub size: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub facts: Vec<BackupFact>,
+    pub files: Vec<BackupFileView>,
+}
+
+/// List row with a short identity so cards can tell backups apart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupListItem {
+    #[serde(flatten)]
+    pub record: BackupRecord,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,5 +174,27 @@ mod tests {
         assert_eq!(v["size"], 42);
         assert_eq!(v["note"], "before switch");
         assert_eq!(v["createdAt"], "2026-07-01T12:00:00Z");
+    }
+
+    #[test]
+    fn backup_list_item_flattens_identity() {
+        let rec = BackupRecord {
+            id: "bk-1".into(),
+            agent_id: Some(AgentId::Grok),
+            kind: BackupKind::Manual,
+            path: "/tmp/bk-1".into(),
+            files: vec!["auth.json".into()],
+            size: 8,
+            note: None,
+            created_at: "t0".into(),
+        };
+        let item = BackupListItem {
+            record: rec,
+            identity: Some("a@example.com".into()),
+        };
+        let v = serde_json::to_value(&item).unwrap();
+        assert_eq!(v["id"], "bk-1");
+        assert_eq!(v["identity"], "a@example.com");
+        assert!(v.get("record").is_none());
     }
 }

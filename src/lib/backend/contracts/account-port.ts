@@ -11,6 +11,8 @@ export interface OAuthStartInfo {
   /** Pi multi-provider key when applicable. */
   providerKey?: string | null;
   browserOpened: boolean;
+  /** Seconds the wait page should stay open. Matches the browser-login listener. */
+  expiresInSecs?: number;
 }
 
 export interface OAuthWaitInfo {

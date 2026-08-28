@@ -243,6 +243,8 @@ export interface Account {
   envKey?: string;
   /** 脱敏后的凭据摘要字段（不含明文密钥） */
   credentialSummary?: string;
+  /** 这份授权记下的相关文件（文件名 + 脱敏内容） */
+  credentialFiles?: Array<{ name: string; content: string }>;
   /** OAuth 刷新令牌脱敏预览（头尾，不含明文） */
   refreshTokenPreview?: string;
   /** 脱敏密钥结尾，如 `**JF6Q`（OAuth = refresh token，API Key = key） */
@@ -354,6 +356,34 @@ export interface BackupMeta {
   files: string[];
   sizeBytes: number;
   note?: string;
+  /** Email / key tail / host extracted from snapshot files. */
+  identity?: string;
+}
+
+export interface BackupFact {
+  key: string;
+  value: string;
+}
+
+export interface BackupFileView {
+  name: string;
+  source?: string;
+  path: string;
+  size: number;
+  content?: string | null;
+  facts?: BackupFact[];
+}
+
+export interface BackupInspect {
+  id: string;
+  agentId?: AgentId | null;
+  kind: BackupKind;
+  createdAt: string;
+  size: number;
+  note?: string | null;
+  identity?: string | null;
+  facts?: BackupFact[];
+  files: BackupFileView[];
 }
 
 /** 运行日志级别（与 core log_level 一致） */
@@ -382,6 +412,8 @@ export interface AppSettings {
   skillMarketSource: SkillMarketSource;
   /** Foreground usage collect interval (minutes). 0 = manual only. Persisted in SQLite. */
   usageCollectIntervalMin: number;
+  /** Switch/import keep byte copies of live config files. Default on. */
+  keepLiveFileCopies: boolean;
   appVersion: string;
 }
 

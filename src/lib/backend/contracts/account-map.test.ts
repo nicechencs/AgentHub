@@ -111,6 +111,23 @@ describe('mapCoreAccount', () => {
     expect(mapped.subscription).toBe('prolite');
   });
 
+  it('attaches redacted associated files from stored credentials', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'grok-1',
+        credentials: {
+          format: 'auth_json',
+          body: { slot: { email: 'a@example.com', refresh_token: 'rt-secret' } },
+        },
+        extra: { source: 'auth.json' },
+      }),
+    );
+    expect(mapped.credentialFiles).toHaveLength(1);
+    expect(mapped.credentialFiles?.[0]?.name).toBe('auth.json');
+    expect(mapped.credentialFiles?.[0]?.content).toContain('a@example.com');
+    expect(mapped.credentialFiles?.[0]?.content).not.toContain('rt-secret');
+  });
+
   it('maps OAuth refreshTokenPreview from extra and ignores it on API keys', () => {
     const oauth = mapCoreAccount(
       core({
@@ -292,6 +309,8 @@ describe('mapCoreAccount', () => {
     expect(mapped.source).toBe('settings.json');
     expect(mapped.credentialSummary).toContain('format=api_key');
     expect(mapped.credentialSummary).toContain('env=ANTHROPIC_AUTH_TOKEN');
+    expect(mapped.credentialFiles?.[0]?.name).toBe('settings.json');
+    expect(mapped.credentialFiles?.[0]?.content).toContain('ANTHROPIC_AUTH_TOKEN');
     expect(mapped.status).toBe('active');
   });
 

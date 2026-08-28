@@ -72,6 +72,7 @@ import {
   type TicketDetailField,
   type TicketWalletRow,
 } from './ticket-wallet-model';
+import { TicketAuthFiles } from './ticket-auth-files';
 import { useOAuthLoginAgents } from './use-oauth-login-agents';
 
 function CredentialMark({
@@ -183,6 +184,8 @@ export function TicketDetailPanel({
   const protocol = computed?.protocol ?? null;
   const bindingRows = computed?.bindingRows ?? [];
   const diagnostics = computed?.diagnostics ?? [];
+  const timeline = computed?.timeline ?? [];
+  const tokenRemaining = computed?.tokenRemaining ?? null;
   const localRouteLabel = t('kind.route.localRoute');
   const protocolLabelText = t('connections.list.protocol');
   const visibleAdvanced = advancedFields.filter((field) => {
@@ -255,9 +258,13 @@ export function TicketDetailPanel({
       has7d={has7d}
       has5h={has5h}
       overview={overview}
+      timeline={timeline}
+      tokenRemaining={tokenRemaining}
       bindingRows={ticket ? bindingRows : []}
       diagnostics={ticket ? diagnostics : []}
       showClients={Boolean(ticket)}
+      agentId={ticket?.agentId}
+      files={extras?.credentialFiles}
     />
   );
 
@@ -308,23 +315,31 @@ function TicketDetailBody({
   has7d,
   has5h,
   overview,
+  timeline,
+  tokenRemaining,
   bindingRows,
   diagnostics,
   showClients,
+  agentId,
+  files,
 }: {
   extras?: TicketDetailExtras | null;
   hasQuota: boolean;
   has7d: boolean;
   has5h: boolean;
   overview: TicketDetailField[];
+  timeline: TicketDetailField[];
+  tokenRemaining: string | null;
   bindingRows: TicketBindingRowView[];
   diagnostics: TicketDetailField[];
   showClients: boolean;
+  agentId?: AgentId;
+  files?: TicketDetailExtras['credentialFiles'];
 }) {
   const { t } = useI18n();
   return (
     <div className="flex flex-col gap-3 text-xs">
-      {hasQuota ? (
+      {hasQuota || tokenRemaining ? (
         <div>
           <p className="text-meta text-muted">{t('connections.list.usage')}</p>
           <div className="mt-1.5 flex flex-col gap-1.5">
@@ -342,6 +357,12 @@ function TicketDetailBody({
                 resetIn={extras?.quotaResetIn}
               />
             ) : null}
+            {tokenRemaining ? (
+              <DetailRow
+                label={t('connections.list.tokenRemaining')}
+                value={tokenRemaining}
+              />
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -354,6 +375,7 @@ function TicketDetailBody({
               label={field.label}
               value={field.value}
               mono={field.mono}
+              copyable={field.copyable}
             />
           ))}
         </div>
@@ -387,6 +409,22 @@ function TicketDetailBody({
         </section>
       ) : null}
 
+      {timeline.length > 0 ? (
+        <section className="space-y-1.5">
+          <h3 className="text-sm font-medium">{t('connections.list.timelineTitle')}</h3>
+          <div className="grid gap-1.5 text-secondary sm:grid-cols-2">
+            {timeline.map((field) => (
+              <DetailRow
+                key={`${field.label}:${field.value}`}
+                label={field.label}
+                value={field.value}
+                mono={field.mono}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {extras?.refreshTokenPreview ? (
         <DetailRow
           label={t('connections.list.refreshToken')}
@@ -408,10 +446,15 @@ function TicketDetailBody({
                 label={field.label}
                 value={field.value}
                 mono={field.mono}
+                copyable={field.copyable}
               />
             ))}
           </div>
         </details>
+      ) : null}
+
+      {agentId && files && files.length > 0 ? (
+        <TicketAuthFiles agentId={agentId} files={files} />
       ) : null}
     </div>
   );

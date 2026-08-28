@@ -3,6 +3,10 @@
  */
 import { agentDisplayName } from '@/config/agents';
 import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
+import {
+  extractProviderCredentialFiles,
+  type CredentialFileView,
+} from '@/lib/credential-files';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 import type {
   BindingRoute,
@@ -72,6 +76,8 @@ export interface TicketDetailExtras {
   accountProvider?: string;
   endpointMode?: 'official' | 'custom';
   endpointHost?: string;
+  /** Full upstream endpoint URL when known (custom endpoints). */
+  endpointUrl?: string;
   authLabel?: string;
   authStatus?: AuthStatus;
   quota5hPct?: number;
@@ -87,12 +93,28 @@ export interface TicketDetailExtras {
   secretTail?: string;
   /** Pool-row display title (email when identity heal succeeded). */
   accountLabel?: string;
+  subscription?: string;
+  lastUsedAt?: string;
+  createdAt?: string;
+  tokenRemainingSec?: number;
+  importedFrom?: string | null;
+  /** Associated login files shown under the detail pane. */
+  credentialFiles?: CredentialFileView[];
+}
+
+/** Opened OAuth details with no 5h/7d percent yet — fetch quota once. */
+export function officialDetailQuotaNeedsProbe(
+  extras?: Pick<TicketDetailExtras, 'oauthAction' | 'quota5hPct' | 'quota7dPct'> | null,
+): boolean {
+  if (!extras?.oauthAction) return false;
+  return !hasOfficialQuotaWindow(extras.quota7dPct) && !hasOfficialQuotaWindow(extras.quota5hPct);
 }
 
 export interface TicketDetailField {
   label: string;
   value: string;
   mono?: boolean;
+  copyable?: boolean;
 }
 
 export interface TicketDetailSections {
@@ -100,7 +122,10 @@ export interface TicketDetailSections {
   advanced: TicketDetailField[];
   /** Protocol summary for the inspect pane; omitted from `advanced` when already listed. */
   protocol: string | null;
+  /** Login validity (OAuth token remaining), shown near usage. */
+  tokenRemaining: string | null;
   bindingRows: TicketBindingRowView[];
+  timeline: TicketDetailField[];
   diagnostics: TicketDetailField[];
 }
 
@@ -242,6 +267,35 @@ function endpointHostOnly(host: string): string {
   return host;
 }
 
+function formatDetailTimestamp(raw?: string | null): string | null {
+  if (!raw?.trim()) return null;
+  const value = raw.trim();
+  const parsed = new Date(value.includes('T') ? value : value.replace(' ', 'T'));
+  if (Number.isNaN(parsed.getTime())) return value;
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getDate()).padStart(2, '0');
+  const hh = String(parsed.getHours()).padStart(2, '0');
+  const mm = String(parsed.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d} ${hh}:${mm}`;
+}
+
+function formatTokenRemainingLabel(sec: number | undefined, t?: TranslateFn): string | null {
+  if (typeof sec !== 'number' || !Number.isFinite(sec)) return null;
+  if (sec <= 0) return t ? t('connections.list.tokenExpired') : '已过期';
+  const totalMin = Math.floor(sec / 60);
+  if (totalMin < 60) {
+    const n = Math.max(1, totalMin);
+    return t ? t('connections.list.tokenRemainingMinutes', { n }) : `约 ${n} 分钟`;
+  }
+  const hours = Math.floor(totalMin / 60);
+  if (hours < 48) {
+    return t ? t('connections.list.tokenRemainingHours', { n: hours }) : `约 ${hours} 小时`;
+  }
+  const days = Math.floor(hours / 24);
+  return t ? t('connections.list.tokenRemainingDays', { n: days }) : `约 ${days} 天`;
+}
+
 export function ticketBindingStatus(binding: BindingView, t?: TranslateFn): string {
   if (binding.route === 'bridge') {
     if (binding.bridge?.running) {
@@ -317,6 +371,21 @@ export function extrasFromPoolSource(
       extras.secretTail = source.account.secretTail;
     }
     extras.accountLabel = source.account.label;
+    if (source.account.subscription?.trim()) {
+      extras.subscription = source.account.subscription.trim();
+    }
+    if (source.account.lastUsedAt?.trim()) {
+      extras.lastUsedAt = source.account.lastUsedAt.trim();
+    }
+    if (source.account.createdAt?.trim()) {
+      extras.createdAt = source.account.createdAt.trim();
+    }
+    if (typeof source.account.tokenRemainingSec === 'number') {
+      extras.tokenRemainingSec = source.account.tokenRemainingSec;
+    }
+    if (source.account.credentialFiles?.length) {
+      extras.credentialFiles = source.account.credentialFiles;
+    }
   }
 
   if (source.provider) {
@@ -324,11 +393,22 @@ export function extrasFromPoolSource(
     const endpoint = providerEndpointExtras(source.provider);
     extras.endpointMode = endpoint.endpointMode;
     extras.endpointHost = endpoint.endpointHost;
+    extras.endpointUrl = endpoint.endpoint;
     extras.authLabel = row.auth.label;
     extras.authStatus = row.auth.status;
     if (source.provider.secretTail) {
       extras.secretTail = source.provider.secretTail;
     }
+    if (source.provider.updatedAt?.trim()) {
+      extras.createdAt = source.provider.updatedAt.trim();
+    }
+    if (!extras.credentialFiles?.length) {
+      extras.credentialFiles = extractProviderCredentialFiles(source.provider);
+    }
+  }
+
+  if (ticket.importedFrom?.trim()) {
+    extras.importedFrom = ticket.importedFrom.trim();
   }
 
   return extras;
@@ -395,15 +475,25 @@ export function buildTicketDetailFields(
   if (customEndpoint) {
     advanced.push({
       label: t ? t('connections.list.endpoint') : '端点',
-      value: t ? t('connections.list.custom') : '自定义',
+      value: t ? t('connections.list.customEndpoint') : '自定义端点',
     });
-    if (extras.endpointHost) {
+    const address = extras.endpointUrl?.trim()
+      || (extras.endpointHost ? endpointHostOnly(extras.endpointHost) : '');
+    if (address) {
       advanced.push({
-        label: t ? t('connections.list.endpointHost') : '主机',
-        value: endpointHostOnly(extras.endpointHost),
+        label: t ? t('connections.list.endpointAddress') : '地址',
+        value: address,
         mono: true,
+        copyable: true,
       });
     }
+  }
+
+  if (extras?.subscription?.trim()) {
+    advanced.push({
+      label: t ? t('connections.list.subscription') : '套餐',
+      value: extras.subscription.trim(),
+    });
   }
 
   const speaks = Array.isArray(ticket.speaks) ? ticket.speaks : [];
@@ -425,19 +515,44 @@ export function buildTicketDetailFields(
     });
   }
 
+  const timeline: TicketDetailField[] = [];
+  const lastUsed = formatDetailTimestamp(extras?.lastUsedAt);
+  if (lastUsed) {
+    timeline.push({
+      label: t ? t('connections.list.lastUsedAt') : '最近使用',
+      value: lastUsed,
+    });
+  }
+  const created = formatDetailTimestamp(extras?.createdAt);
+  if (created) {
+    timeline.push({
+      label: t ? t('connections.list.createdAt') : '添加时间',
+      value: created,
+    });
+  }
+
   const diagnostics: TicketDetailField[] = [];
+  if (extras?.importedFrom?.trim()) {
+    diagnostics.push({
+      label: t ? t('connections.list.importedFrom') : '导入来源',
+      value: extras.importedFrom.trim(),
+    });
+  }
   if (ticket.id.trim()) {
     diagnostics.push({
       label: t ? t('connections.list.ticketId') : '记录 ID',
       value: ticket.id,
       mono: true,
+      copyable: true,
     });
   }
 
   return {
     advanced,
     protocol: interfaceLabel || null,
+    tokenRemaining: formatTokenRemainingLabel(extras?.tokenRemainingSec, t),
     bindingRows: buildTicketBindingRows(bindings, t),
+    timeline,
     diagnostics,
   };
 }

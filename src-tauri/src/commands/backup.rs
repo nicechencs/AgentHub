@@ -2,7 +2,7 @@
 //! Snapshots copy raw file bytes; no encrypt/decrypt or format conversion.
 
 use agenthub_core::error::AppError;
-use agenthub_core::models::{AgentId, BackupKind, BackupRecord};
+use agenthub_core::models::{AgentId, BackupInspect, BackupKind, BackupListItem, BackupRecord};
 use agenthub_core::services::RestoreResult;
 use agenthub_core::AgentHub;
 use tauri::State;
@@ -15,9 +15,19 @@ use crate::state::AppState;
 pub async fn list_backups(
     state: State<'_, AppState>,
     agent_id: Option<String>,
-) -> Result<Vec<BackupRecord>, String> {
+) -> Result<Vec<BackupListItem>, String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| list_backups_inner(hub, agent_id.as_deref())).await
+}
+
+/// Invoke: `inspect_backup` — redacted file text + distinguishing facts.
+#[tauri::command]
+pub async fn inspect_backup(
+    state: State<'_, AppState>,
+    backup_id: String,
+) -> Result<BackupInspect, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| inspect_backup_inner(hub, &backup_id)).await
 }
 
 /// Invoke: `create_backup` — manual snapshot of agent live files.
@@ -59,11 +69,20 @@ pub async fn delete_backup(state: State<'_, AppState>, backup_id: String) -> Res
     with_hub_blocking(hub, move |hub| delete_backup_inner(hub, &backup_id)).await
 }
 
-fn list_backups_inner(hub: &AgentHub, agent_id: Option<&str>) -> Result<Vec<BackupRecord>, String> {
+fn list_backups_inner(
+    hub: &AgentHub,
+    agent_id: Option<&str>,
+) -> Result<Vec<BackupListItem>, String> {
     let filter = parse_agent_opt(agent_id)?;
     hub.backups()
-        .list(filter)
+        .list_with_identity(filter)
         .map_err(|e| map_err_string("list_backups", e))
+}
+
+fn inspect_backup_inner(hub: &AgentHub, backup_id: &str) -> Result<BackupInspect, String> {
+    hub.backups()
+        .inspect(backup_id)
+        .map_err(|e| map_err_string("inspect_backup", e))
 }
 
 fn create_backup_inner(
@@ -149,12 +168,12 @@ mod tests {
             Ok(record) => {
                 let listed = list_backups_inner(&hub, Some("claude")).unwrap();
                 assert!(
-                    listed.iter().any(|b| b.id == record.id),
+                    listed.iter().any(|b| b.record.id == record.id),
                     "list after create must include new backup"
                 );
                 delete_backup_inner(&hub, &record.id).unwrap();
                 let after = list_backups_inner(&hub, Some("claude")).unwrap();
-                assert!(!after.iter().any(|b| b.id == record.id));
+                assert!(!after.iter().any(|b| b.record.id == record.id));
             }
             Err(err) => {
                 let lower = err.to_lowercase();
@@ -198,5 +217,15 @@ mod tests {
         let (_dir, hub) = hub_tmp();
         let err = list_backups_inner(&hub, Some("xyz")).unwrap_err();
         assert!(err.contains("invalid agent"));
+    }
+
+    #[test]
+    fn inspect_missing_maps_error() {
+        let (_dir, hub) = hub_tmp();
+        let err = inspect_backup_inner(&hub, "missing-id").unwrap_err();
+        assert!(
+            err.to_lowercase().contains("not found") || err.contains("backup"),
+            "unexpected err: {err}"
+        );
     }
 }

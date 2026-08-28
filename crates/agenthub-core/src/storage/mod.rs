@@ -214,6 +214,9 @@ impl Database {
                 }
             }
         }
+        if let Some(v) = self.get_setting("keep_live_file_copies")? {
+            s.keep_live_file_copies = parse_stored_bool(&v);
+        }
         Ok(s)
     }
 }

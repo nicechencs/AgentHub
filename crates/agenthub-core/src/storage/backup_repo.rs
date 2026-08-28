@@ -17,6 +17,13 @@ impl BackupRepo {
         Self { db }
     }
 
+    pub(crate) fn keep_live_file_copies(&self) -> bool {
+        self.db
+            .load_app_settings()
+            .map(|settings| settings.keep_live_file_copies)
+            .unwrap_or(true)
+    }
+
     /// Insert a fully-formed backup index row.
     pub fn insert(&self, record: &BackupRecord) -> Result<()> {
         let files = serde_json::to_string(&record.files)?;

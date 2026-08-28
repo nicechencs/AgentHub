@@ -556,68 +556,26 @@ pub fn parse_grok_billing(
 
     if let Some(w) = weekly {
         let cfg = w.get("config").unwrap_or(w);
-        // creditUsagePercent is 0–100 for the weekly credits window.
-        if let Some(p) = number_as_f64(
-            cfg.get("creditUsagePercent")
-                .or_else(|| cfg.get("credit_usage_percent")),
-        ) {
-            snap.quota7d_pct = Some(p);
-        }
-        // productUsage[].usagePercent fallback (e.g. Api product).
-        if snap.quota7d_pct.is_none() {
-            if let Some(arr) = cfg.get("productUsage").and_then(|v| v.as_array()) {
-                for item in arr {
-                    if let Some(p) = number_as_f64(
-                        item.get("usagePercent")
-                            .or_else(|| item.get("usage_percent")),
-                    ) {
-                        snap.quota7d_pct = Some(p);
-                        break;
-                    }
-                }
-            }
-        }
-        if let Some(period) = cfg
-            .get("currentPeriod")
-            .or_else(|| cfg.get("current_period"))
-        {
-            if let Some(end) = period
-                .get("end")
-                .and_then(|v| v.as_str())
-                .and_then(parse_rfc3339)
-            {
-                // Clamp remaining to 7d even if period is longer (billing windows vary).
-                let rem = (end - now).num_seconds();
-                let rem = clamp_reset_after(rem, 7 * 24 * 3600);
-                snap.reset_7d_at = Some(now + ChronoDuration::seconds(rem));
-            }
+        snap.quota7d_pct = grok_usage_percent(cfg);
+        if let Some(end) = grok_period_end(cfg) {
+            let rem = clamp_reset_after((end - now).num_seconds(), 7 * 24 * 3600);
+            snap.reset_7d_at = Some(now + ChronoDuration::seconds(rem));
         }
     }
 
     if let Some(m) = monthly {
         let cfg = m.get("config").unwrap_or(m);
-        let limit = cent_value(cfg.get("monthlyLimit").or_else(|| cfg.get("monthly_limit")));
-        let used = cent_value(cfg.get("used"));
+        let limit = grok_monthly_limit(cfg);
+        let used = grok_monthly_used(cfg);
         if let (Some(lim), Some(u)) = (limit, used) {
-            if lim > 0.0 {
-                let pct = (u / lim) * 100.0;
-                // Prefer weekly for 7d bar; monthly only if weekly missing.
-                if snap.quota7d_pct.is_none() {
-                    snap.quota7d_pct = Some(pct);
-                }
+            if lim > 0.0 && snap.quota7d_pct.is_none() {
+                snap.quota7d_pct = Some((u / lim) * 100.0);
             }
-            // Infer plan name from the monthly credit limit.
             snap.plan_type = resolve_grok_plan(lim);
         }
         if snap.reset_7d_at.is_none() {
-            if let Some(end) = cfg
-                .get("billingPeriodEnd")
-                .or_else(|| cfg.get("billing_period_end"))
-                .and_then(|v| v.as_str())
-                .and_then(parse_rfc3339)
-            {
+            if let Some(end) = grok_period_end(cfg) {
                 let rem = clamp_reset_after((end - now).num_seconds(), 31 * 24 * 3600);
-                // Still map to 7d bar reset label only when we used monthly %.
                 if snap.quota7d_pct.is_some() {
                     snap.reset_7d_at = Some(now + ChronoDuration::seconds(rem.min(7 * 24 * 3600)));
                 }
@@ -630,7 +588,83 @@ pub fn parse_grok_billing(
         }
     }
 
+    // Unified billing / SuperGrok Heavy often publishes a period and no percent.
+    // Keep the 7d bar visible (0%) instead of treating the snapshot as empty.
+    if snap.quota7d_pct.is_none() {
+        let end = weekly
+            .and_then(|w| grok_period_end(w.get("config").unwrap_or(w)))
+            .or_else(|| monthly.and_then(|m| grok_period_end(m.get("config").unwrap_or(m))));
+        if let Some(end) = end {
+            snap.quota7d_pct = Some(0.0);
+            if snap.reset_7d_at.is_none() {
+                let rem = clamp_reset_after((end - now).num_seconds(), 7 * 24 * 3600);
+                snap.reset_7d_at = Some(now + ChronoDuration::seconds(rem));
+            }
+        }
+    }
+
     snap
+}
+
+fn grok_usage_percent(cfg: &Value) -> Option<f64> {
+    if let Some(p) = number_as_f64(
+        cfg.get("creditUsagePercent")
+            .or_else(|| cfg.get("credit_usage_percent")),
+    ) {
+        return Some(p);
+    }
+    if let Some(arr) = cfg.get("productUsage").and_then(|v| v.as_array()) {
+        for item in arr {
+            if let Some(p) = number_as_f64(
+                item.get("usagePercent")
+                    .or_else(|| item.get("usage_percent")),
+            ) {
+                return Some(p);
+            }
+        }
+    }
+    let cap = cent_value(cfg.get("onDemandCap").or_else(|| cfg.get("on_demand_cap")));
+    let used = cent_value(
+        cfg.get("onDemandUsed")
+            .or_else(|| cfg.get("on_demand_used")),
+    );
+    match (cap, used) {
+        (Some(lim), Some(u)) if lim > 0.0 => Some((u / lim) * 100.0),
+        _ => None,
+    }
+}
+
+fn grok_period_end(cfg: &Value) -> Option<DateTime<Utc>> {
+    cfg.get("currentPeriod")
+        .or_else(|| cfg.get("current_period"))
+        .and_then(|period| {
+            period
+                .get("end")
+                .and_then(|v| v.as_str())
+                .and_then(parse_rfc3339)
+        })
+        .or_else(|| {
+            cfg.get("billingPeriodEnd")
+                .or_else(|| cfg.get("billing_period_end"))
+                .and_then(|v| v.as_str())
+                .and_then(parse_rfc3339)
+        })
+        .or_else(|| {
+            cfg.pointer("/billingCycle/billingPeriodEnd")
+                .and_then(|v| v.as_str())
+                .and_then(parse_rfc3339)
+        })
+}
+
+fn grok_monthly_limit(cfg: &Value) -> Option<f64> {
+    cent_value(cfg.get("monthlyLimit").or_else(|| cfg.get("monthly_limit")))
+}
+
+fn grok_monthly_used(cfg: &Value) -> Option<f64> {
+    cent_value(cfg.get("used"))
+        .or_else(|| cent_value(cfg.pointer("/usage/totalUsed")))
+        .or_else(|| cent_value(cfg.pointer("/usage/includedUsed")))
+        .or_else(|| cent_value(cfg.get("totalUsed")))
 }
 
 fn cent_value(v: Option<&Value>) -> Option<f64> {
@@ -1528,6 +1562,71 @@ mod tests {
         // monthly remaining clamped to 7d for the 7d bar
         let rem = (snap.reset_7d_at.unwrap() - now).num_seconds();
         assert!(rem <= 7 * 24 * 3600 + 120);
+    }
+
+    #[test]
+    fn parse_grok_billing_period_only_keeps_zero_percent_bar() {
+        let now = DateTime::parse_from_rfc3339("2026-08-24T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let weekly = json!({
+            "config": {
+                "currentPeriod": {
+                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                    "start": "2026-08-23T18:42:45Z",
+                    "end": "2026-08-30T18:42:45Z"
+                },
+                "isUnifiedBillingUser": true,
+                "onDemandCap": { "val": 0 },
+                "onDemandUsed": { "val": 0 }
+            }
+        });
+        let snap = parse_grok_billing(Some(&weekly), None, now);
+        assert_eq!(snap.quota7d_pct, Some(0.0));
+        assert!(snap.reset_7d_at.is_some());
+        assert!(!snap.is_empty());
+    }
+
+    #[test]
+    fn parse_grok_billing_monthly_usage_total_used() {
+        let now = Utc::now();
+        let monthly = json!({
+            "config": {
+                "monthlyLimit": { "val": 60000 },
+                "usage": {
+                    "includedUsed": { "val": 12000 },
+                    "totalUsed": { "val": 15000 }
+                },
+                "billingCycle": {
+                    "billingPeriodEnd": (now + ChronoDuration::days(4)).to_rfc3339()
+                }
+            }
+        });
+        let snap = parse_grok_billing(None, Some(&monthly), now);
+        assert_eq!(snap.quota7d_pct, Some(25.0));
+        assert_eq!(snap.plan_type.as_deref(), Some("plan $600"));
+        assert!(snap.reset_7d_at.is_some());
+    }
+
+    #[test]
+    fn parse_grok_billing_prefers_monthly_percent_over_period_zero() {
+        let now = Utc::now();
+        let weekly = json!({
+            "config": {
+                "currentPeriod": {
+                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                    "end": (now + ChronoDuration::days(2)).to_rfc3339()
+                }
+            }
+        });
+        let monthly = json!({
+            "config": {
+                "monthlyLimit": { "val": 15000 },
+                "used": { "val": 3000 }
+            }
+        });
+        let snap = parse_grok_billing(Some(&weekly), Some(&monthly), now);
+        assert_eq!(snap.quota7d_pct, Some(20.0));
     }
 
     #[test]

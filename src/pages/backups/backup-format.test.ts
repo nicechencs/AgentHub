@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 import {
+  backupCardIdentity,
+  backupFileLabel,
+  backupFileLabels,
   backupNoteSubtitle,
   backupRowTitle,
   fmtAbsoluteI18n,
@@ -103,5 +106,42 @@ describe('backupRowTitle', () => {
     expect(
       backupRowTitle({ kind: 'auto-switch', createdAt: isoMinutesAgo(3) }, tZh),
     ).not.toMatch(/after provider|upsert/i);
+  });
+});
+
+describe('backupCardIdentity', () => {
+  it('prefers a user note, then extracted identity, then file names', () => {
+    expect(backupFileLabel('~/.grok/auth.json')).toBe('auth.json');
+    expect(backupFileLabels(['~/.grok/auth.json', '~/.grok/config.toml'])).toBe(
+      'auth.json · config.toml',
+    );
+    expect(
+      backupCardIdentity({
+        note: 'Dashboard 手动备份',
+        identity: 'a@example.com',
+        files: ['auth.json'],
+      }),
+    ).toBe('Dashboard 手动备份');
+    expect(
+      backupCardIdentity({
+        note: 'before provider switch',
+        identity: 'a@example.com',
+        files: ['auth.json'],
+      }),
+    ).toBe('a@example.com');
+    expect(
+      backupCardIdentity({
+        files: ['~/.claude/settings.json', '~/.claude.json'],
+      }),
+    ).toBe('settings.json · .claude.json');
+  });
+
+  it('does not treat internal switch notes as the card title', () => {
+    expect(
+      backupCardIdentity({
+        note: 'before provider switch to claude-grok-adapter-bridge',
+        files: ['auth.json', 'config.toml'],
+      }),
+    ).toBe('auth.json · config.toml');
   });
 });

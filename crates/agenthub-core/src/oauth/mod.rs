@@ -69,6 +69,8 @@ pub struct StartOAuthResult {
     pub provider_key: Option<String>,
     /// True when system browser open was attempted.
     pub browser_opened: bool,
+    /// Seconds the wait page should stay open. Matches the PKCE listener (15 min).
+    pub expires_in_secs: u64,
 }
 
 /// Begin OAuth for an agent. Spawns a callback listener thread.
@@ -119,13 +121,7 @@ pub fn start_oauth(
     } else {
         provider.redirect_path
     };
-    // Pi Anthropic registers `localhost` (not 127.0.0.1) as redirect host.
-    let host = if agent == AgentId::Pi {
-        "localhost"
-    } else {
-        "127.0.0.1"
-    };
-    let redirect_uri = format!("http://{host}:{port}{path}");
+    let redirect_uri = provider.loopback_redirect_uri(port);
 
     let authorize_url = provider.build_authorize_url(&redirect_uri, &state, pkce.challenge());
 
@@ -201,6 +197,7 @@ pub fn start_oauth(
         agent_id: agent,
         provider_key: resolved_key,
         browser_opened,
+        expires_in_secs: crate::catalog::limits::OAUTH_CALLBACK_LISTEN_TIMEOUT.as_secs(),
     })
 }
 
@@ -228,8 +225,10 @@ pub fn wait_oauth(state: &str, timeout_secs: u64) -> Result<OAuthSessionInfo> {
         match info.status {
             OAuthStatus::Waiting => {
                 if std::time::Instant::now() >= deadline {
-                    st.mark_error(state, "OAuth 等待超时")?;
-                    return Err(AppError::message("oauth.timeout", "OAuth 等待回调超时"));
+                    // Keep the session alive. The PKCE listener (15 min) or
+                    // in-memory TTL (30 min) may still be valid; the wait page
+                    // can call wait again instead of treating this as a hard fail.
+                    return Ok(info);
                 }
                 let remaining = deadline.saturating_duration_since(std::time::Instant::now());
                 thread::sleep(remaining.min(Duration::from_millis(200)));
@@ -282,10 +281,14 @@ pub fn complete_oauth(accounts: &AccountService, state: &str) -> Result<Account>
             // Codex live apply only accepts `format=auth_json` with a full auth.json
             // body. Convert the generic PKCE token bundle before pool insert so the
             // account is switchable immediately (not only after import-live).
-            let credentials = if session.agent() == AgentId::Codex {
-                crate::adapters::normalize_codex_oauth_credentials(&tokens.credentials)?
-            } else {
-                tokens.credentials
+            let credentials = match session.agent() {
+                AgentId::Codex => {
+                    crate::adapters::normalize_codex_oauth_credentials(&tokens.credentials)?
+                }
+                AgentId::Claude => {
+                    crate::adapters::normalize_claude_oauth_credentials(&tokens.credentials)?
+                }
+                _ => tokens.credentials,
             };
             let live = LiveAccount {
                 agent: session.agent(),
@@ -397,7 +400,20 @@ pub fn run_oauth_blocking(
     timeout_secs: u64,
 ) -> Result<Account> {
     let start = start_oauth(agent, true, None)?;
-    let _ = wait_oauth(&start.state, timeout_secs)?;
+    let info = wait_oauth(&start.state, timeout_secs)?;
+    match info.status {
+        OAuthStatus::Waiting => {
+            return Err(AppError::message("oauth.timeout", "OAuth 等待回调超时"));
+        }
+        OAuthStatus::Failed => {
+            return Err(AppError::message(
+                "oauth.failed",
+                info.error
+                    .unwrap_or_else(|| "OAuth authorization failed".into()),
+            ));
+        }
+        OAuthStatus::CallbackReceived | OAuthStatus::Succeeded => {}
+    }
     complete_oauth(accounts, &start.state)
 }
 
@@ -447,5 +463,24 @@ mod tests {
             "unimplemented login must not be advertised as device-code: {msg}"
         );
         assert!(msg.contains("not available"), "{msg}");
+    }
+
+    #[test]
+    fn wait_oauth_timeout_keeps_session_waiting() {
+        let state = format!("wait-keep-{}", std::process::id());
+        store()
+            .insert(session::OAuthSession::new(
+                &state,
+                AgentId::Claude,
+                "verifier",
+                "http://127.0.0.1/callback",
+                None,
+            ))
+            .unwrap();
+        let info = wait_oauth(&state, 1).unwrap();
+        assert_eq!(info.status, OAuthStatus::Waiting);
+        assert!(info.error.is_none());
+        assert!(store().is_waiting(&state));
+        let _ = store().mark_error(&state, "cleanup");
     }
 }
