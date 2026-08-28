@@ -189,6 +189,50 @@ describe('dedupTrashItems', () => {
     expect(kept[0].id).toBe('triple-new');
   });
 
+  it('collapses same-login rows that only differ by sourceId', () => {
+    const config = JSON.stringify({
+      env: { ANTHROPIC_BASE_URL: 'https://mytokens.cc', ANTHROPIC_AUTH_TOKEN: 'sk-fixture' },
+    });
+    const first = trash({
+      id: 't-272f-old',
+      sourceId: 'p-1787808247176',
+      label: 'mytokens.cc',
+      deletedAt: '2026-08-27T05:32:26.000Z',
+      provider: prov({
+        id: 'p-1787808247176',
+        name: 'mytokens.cc',
+        secretTail: '**272f',
+        configText: config,
+      }),
+    });
+    const second = trash({
+      id: 't-272f-new',
+      sourceId: 'p-1787843009543',
+      label: 'mytokens.cc',
+      deletedAt: '2026-08-27T15:03:29.000Z',
+      provider: prov({
+        id: 'p-1787843009543',
+        name: 'mytokens.cc',
+        secretTail: '**272f',
+        configText: config,
+      }),
+    });
+    const other = trash({
+      id: 't-8660',
+      sourceId: 'p-8660',
+      label: 'mytokens.cc',
+      deletedAt: '2026-08-27T06:02:34.000Z',
+      provider: prov({
+        id: 'p-8660',
+        name: 'mytokens.cc',
+        secretTail: '**8660',
+        configText: config,
+      }),
+    });
+    const kept = dedupTrashItems([first, second, other]);
+    expect(kept.map((row) => row.id).sort()).toEqual(['t-272f-new', 't-8660']);
+  });
+
   it('collapses account grok-live-xxx with a generated provider that contains it', () => {
     const accountRow = trash({
       id: 'acc-trash',

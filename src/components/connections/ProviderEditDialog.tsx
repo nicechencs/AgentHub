@@ -75,6 +75,7 @@ import {
   liveConfigPaths,
   maskApiKeyLast4,
   maskConfigSecrets,
+  maskPasteSecrets,
   REDACTED_MARKER,
   remoteModelsStatusView,
   resolveFormApiKeyFromEditor,
@@ -460,7 +461,7 @@ export function ProviderEditDialog({
             || undefined,
         });
       }
-      setPasteBuf(maskConfigSecrets(agentId, raw, result.configFormat));
+      setPasteBuf(maskPasteSecrets(maskConfigSecrets(agentId, raw, result.configFormat)));
       return { ...result, configText: nextText };
     },
     [agentId, configText, configFormat, vars, t, useOfficial],

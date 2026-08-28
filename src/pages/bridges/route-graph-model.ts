@@ -90,6 +90,22 @@ export function routeGraphLinkStyle(hop: RouteHopKind): RouteGraphLinkStyle {
 }
 
 /** Join upstream base + path, dropping one duplicated leading segment (`.../v1` + `/v1/...`). */
+/** Local-bridge profile for this source + client. Never pick another login's generated row. */
+export function localBridgeSiblingForTarget<
+  T extends Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'targetAgentId' | 'route'>,
+>(
+  profiles: readonly T[],
+  source: Pick<AdapterProfile, 'sourceKind' | 'sourceId'>,
+  targetAgentId: string,
+): T | undefined {
+  return profiles.find((profile) => (
+    profile.route === 'local_bridge'
+    && profile.sourceKind === source.sourceKind
+    && profile.sourceId === source.sourceId
+    && profile.targetAgentId === targetAgentId
+  ));
+}
+
 export function joinUpstreamUrl(baseUrl: string, path: string): string {
   const trimmedBase = baseUrl.trim();
   const trimmedPath = path.trim();
@@ -153,9 +169,7 @@ export function buildRouteGraph(input: {
   const port = typeof input.port === 'number' && input.port > 0 ? input.port : null;
 
   const rows = graphTargetsToEmit(hasDeclaredEndpoints, surfaces).map((agent): RouteGraphRow => {
-    const sibling = input.siblingProfiles.find(
-      (profile) => profile.route === 'local_bridge' && profile.targetAgentId === agent,
-    );
+    const sibling = localBridgeSiblingForTarget(input.siblingProfiles, input.profile, agent);
     const surface = sibling
       ? surfaceForCreateRouteTarget(agent)
       : (surfaces.find((row) => row.target === agent) ?? surfaceForCreateRouteTarget(agent));

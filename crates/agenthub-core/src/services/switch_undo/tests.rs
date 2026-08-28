@@ -37,3 +37,25 @@ fn extract_probe_url_prefers_common_keys() {
     );
     assert!(extract_probe_url(&json!({"api_key": "sk"})).is_none());
 }
+
+#[test]
+fn extract_probe_url_ignores_json_schema_and_uses_env_base() {
+    let settings = json!({
+        "$schema": "https://json.schemastore.org/claude-code-settings.json",
+        "env": {
+            "ANTHROPIC_AUTH_TOKEN": "sk-secret",
+            "ANTHROPIC_BASE_URL": "https://mytokens.cc"
+        }
+    });
+    assert_eq!(
+        extract_probe_url(&settings).as_deref(),
+        Some("https://mytokens.cc")
+    );
+    assert_eq!(
+        extract_probe_url(&json!({
+            "env": { "ANTHROPIC_BASE_URL": "https://mytokens.cc" }
+        }))
+        .as_deref(),
+        Some("https://mytokens.cc")
+    );
+}

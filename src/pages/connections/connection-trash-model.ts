@@ -132,10 +132,20 @@ function liveAccountKeys(item: ConnectionTrashItem): string[] {
   return [...keys];
 }
 
+function normalizeTrashHost(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.trim().replace(/\/+$/, '').replace(/\/v1$/i, '').toLowerCase() || undefined;
+}
+
 function groupingKeys(item: ConnectionTrashItem): string[] {
   const keys: string[] = [];
   if (item.sourceId) keys.push(`source:${item.sourceId}`);
   keys.push(`triple:${item.agentId}:${item.kind}:${item.sourceId}`);
+  const last4 = trashItemSecretTail(item);
+  const host = normalizeTrashHost(trashItemEndpoint(item)) ?? item.label.trim().toLowerCase();
+  if (last4 && host) {
+    keys.push(`ident:${item.agentId}:${item.kind}:${last4}:${host}`);
+  }
   if (!isGeneratedTrashItem(item)) return keys;
   // Same grok-live-* id may collapse a generated bridge across agents.
   // Do not also union by bare email — the connections trash list is global.
