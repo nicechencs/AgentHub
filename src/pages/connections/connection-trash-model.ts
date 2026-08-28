@@ -1,4 +1,5 @@
 import type { ConnectionTrashItem } from '@/lib/backend/contracts';
+import { secretTailFromMaskedPreview } from '@/lib/backend/contracts/account-map';
 import { extractProviderEndpoint } from '@/lib/backend/contracts/agent-connection';
 import type { TranslateFn } from '@/lib/i18n';
 import type { Provider } from '@/lib/types';
@@ -64,22 +65,30 @@ function isGeneratedTrashItem(item: ConnectionTrashItem): boolean {
 }
 
 function sourceIdentity(item: ConnectionTrashItem): string | undefined {
-  const emailCandidates = [item.account?.email, item.account?.label, item.label];
+  const emailCandidates = [
+    item.account?.email,
+    item.account?.identityLabel,
+    item.account?.label,
+    item.label,
+  ];
   for (const candidate of emailCandidates) {
     const value = candidate?.trim();
     if (value && looksLikeEmail(value) && !isInternalDisplayToken(value)) return value;
   }
 
-  const accountLabel = item.account?.label?.trim();
-  if (
-    accountLabel
-    && !isInternalDisplayToken(accountLabel)
-    && !looksLikeUuid(accountLabel)
-    && !accountLabel.includes('***')
-    && !isMaskOnlyLabel(accountLabel)
-    && !/token|secret|configText|credentialSummary/i.test(accountLabel)
-  ) {
-    return accountLabel;
+  for (const candidate of [item.account?.identityLabel, item.account?.label]) {
+    const accountLabel = candidate?.trim();
+    if (
+      accountLabel
+      && !isInternalDisplayToken(accountLabel)
+      && !looksLikeUuid(accountLabel)
+      && !accountLabel.includes('***')
+      && !isMaskOnlyLabel(accountLabel)
+      && !last4FromMaskLabel(accountLabel)
+      && !/token|secret|configText|credentialSummary/i.test(accountLabel)
+    ) {
+      return accountLabel;
+    }
   }
   return undefined;
 }
@@ -107,13 +116,8 @@ function trashHost(item: ConnectionTrashItem): string | undefined {
 }
 
 function last4FromMaskLabel(value: string | undefined | null): string | undefined {
-  if (!value) return undefined;
-  const text = value.trim();
-  if (!text) return undefined;
-  const dotted = text.match(/[•*]{2,}([A-Za-z0-9]{4})(?:\s*(?:（API Key）|\(API Key\)))?$/i);
-  if (dotted?.[1]) return dotted[1];
-  const stars = text.match(/^\*{2}([A-Za-z0-9]{4})$/);
-  return stars?.[1];
+  const tail = secretTailFromMaskedPreview(value);
+  return tail ? tail.replace(/^\*+/, '').slice(-4) : undefined;
 }
 
 function maskOnlyIdentity(item: ConnectionTrashItem): string | undefined {
@@ -150,6 +154,7 @@ export function trashItemSecretTail(item: ConnectionTrashItem): string | undefin
     if (last4) return last4;
   }
   return (
+    last4FromMaskLabel(item.account?.identityLabel) ||
     last4FromMaskLabel(item.account?.label) ||
     last4FromMaskLabel(item.provider?.name) ||
     last4FromMaskLabel(item.label)

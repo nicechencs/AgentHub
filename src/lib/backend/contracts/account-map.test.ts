@@ -146,6 +146,36 @@ describe('mapCoreAccount', () => {
     expect(withEndpoint.endpoint).toBe('https://mytokens.cc/v1');
   });
 
+  it('recovers secretTail from extra.identityLabel when extra.secretTail is missing', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'grok-old-trash',
+        agentId: 'grok',
+        kind: 'apikey',
+        label: 'API Key',
+        credentials: { format: 'api_key', api_key: '***' },
+        extra: { identityLabel: 'xai-••••8660 (API Key)' },
+      }),
+    );
+    expect(mapped.secretTail).toBe('**8660');
+    expect(mapped.identityLabel).toBe('xai-••••8660 (API Key)');
+    expect(mapped.label).toBe('API Key');
+  });
+
+  it('does not invent secretTail from a kind-name identity', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'grok-kind-only',
+        agentId: 'grok',
+        kind: 'apikey',
+        label: 'API Key',
+        credentials: { format: 'api_key', api_key: '***' },
+        extra: { identityLabel: 'API Key' },
+      }),
+    );
+    expect(mapped.secretTail).toBeUndefined();
+  });
+
   it('maps API key secretHash from extra', () => {
     const key = mapCoreAccount(
       core({

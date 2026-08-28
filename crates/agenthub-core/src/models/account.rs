@@ -129,6 +129,20 @@ impl Account {
         if self.kind == AccountKind::ApiKey {
             if let Some(tail) = api_key_tail(&self.credentials) {
                 insert_extra_string(&mut extra, "secretTail", tail);
+            } else if extra
+                .get("secretTail")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or("")
+                .is_empty()
+            {
+                let from_preview = self
+                    .identity_label()
+                    .and_then(crate::utils::redact::secret_tail_from_masked_preview)
+                    .or_else(|| crate::utils::redact::secret_tail_from_masked_preview(&self.label));
+                if let Some(tail) = from_preview {
+                    insert_extra_string(&mut extra, "secretTail", tail);
+                }
             }
             if let Some(hash) = crate::utils::redact::api_key_secret_hash(&self.credentials) {
                 insert_extra_string(&mut extra, "secretHash", hash);

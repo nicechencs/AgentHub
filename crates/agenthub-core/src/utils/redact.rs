@@ -84,6 +84,46 @@ pub fn mask_secret_tail(secret: &str) -> Option<String> {
     Some(format!("**{tail}"))
 }
 
+fn strip_api_key_kind_suffix(text: &str) -> &str {
+    let trimmed = text.trim();
+    for suffix in [" (API Key)", "（API Key）"] {
+        if let Some(rest) = trimmed.strip_suffix(suffix) {
+            return rest.trim();
+        }
+    }
+    trimmed
+}
+
+/// Recover `**XXXX` from an already-stored mask / kind label. Never invents a tail.
+///
+/// Accepts `xai-••••8660 (API Key)`, `••••8660`, or `**8660`. Rejects kind names
+/// (`API Key`) and masks that dropped the last four (`**•••• (API Key)`).
+pub fn secret_tail_from_masked_preview(text: &str) -> Option<String> {
+    let stripped = strip_api_key_kind_suffix(text);
+    if stripped.is_empty() {
+        return None;
+    }
+    if let Some(rest) = stripped.strip_prefix("**") {
+        if rest.len() == 4 && rest.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Some(format!("**{rest}"));
+        }
+    }
+    let chars: Vec<char> = stripped.chars().collect();
+    if chars.len() < 6 {
+        return None;
+    }
+    let last4: String = chars[chars.len() - 4..].iter().collect();
+    if !last4.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let mask_run = chars[..chars.len() - 4]
+        .iter()
+        .rev()
+        .take_while(|c| matches!(c, '•' | '*' | '…' | '.'))
+        .count();
+    (mask_run >= 2).then_some(format!("**{last4}"))
+}
+
 fn is_refresh_token_key(key: &str) -> bool {
     matches!(
         key.to_ascii_lowercase().as_str(),
@@ -684,7 +724,10 @@ mod tests {
         let output = redact_json(&input);
         let content = output["content"].as_str().expect("content");
         assert!(!content.contains("xai-not-real"), "{content}");
-        assert!(!content.to_ascii_lowercase().contains("export xai_api_key"), "{content}");
+        assert!(
+            !content.to_ascii_lowercase().contains("export xai_api_key"),
+            "{content}"
+        );
         assert!(content.contains("[models]"), "{content}");
     }
 
@@ -740,6 +783,26 @@ mod tests {
         assert_eq!(mask_secret_tail("short"), None);
         assert_eq!(mask_secret_tail("***"), None);
         assert_eq!(mask_secret_tail(""), None);
+    }
+
+    #[test]
+    fn secret_tail_from_masked_preview_reads_stored_identity_only() {
+        assert_eq!(
+            secret_tail_from_masked_preview("xai-••••8660 (API Key)").as_deref(),
+            Some("**8660")
+        );
+        assert_eq!(
+            secret_tail_from_masked_preview("sk--••••272f (API Key)").as_deref(),
+            Some("**272f")
+        );
+        assert_eq!(
+            secret_tail_from_masked_preview("**8660").as_deref(),
+            Some("**8660")
+        );
+        assert_eq!(secret_tail_from_masked_preview("API Key"), None);
+        assert_eq!(secret_tail_from_masked_preview("•••• (API Key)"), None);
+        assert_eq!(secret_tail_from_masked_preview("**•••• (API Key)"), None);
+        assert_eq!(secret_tail_from_masked_preview("mytokens.cc"), None);
     }
 
     #[test]

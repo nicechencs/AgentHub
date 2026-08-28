@@ -1,8 +1,10 @@
 //! ConnectionService tests (separate from production module).
 
-use crate::models::{Account, AccountKind, AgentId, Provider, ProviderInput};
+use crate::models::{Account, AccountKind, AgentId, ConnectionTrashKind, Provider, ProviderInput};
 use crate::services::{AccountService, ConnectionService, ProviderService};
-use crate::storage::{AccountRepo, ActiveBindingRepo, ActiveBindingRow, Database, ProviderRepo};
+use crate::storage::{
+    AccountRepo, ActiveBindingRepo, ActiveBindingRow, ConnectionTrashRepo, Database, ProviderRepo,
+};
 use serde_json::json;
 
 fn seed_extension_fields(
@@ -993,6 +995,101 @@ fn delete_account_moves_to_trash_and_restore_does_not_reactivate() {
     let restored = accounts.get_by_id(&created.id).unwrap().unwrap();
     assert!(!restored.is_current);
     assert!(conn.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
+}
+
+#[test]
+fn list_trash_recovers_last4_from_old_unnamed_grok_payload() {
+    let (_d, db) = tmp();
+    let conn = ConnectionService::new(db.clone());
+    let old = Account {
+        id: "grok-acc-old".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: "API Key".into(),
+        credentials: json!({ "format": "api_key", "api_key": "***" }),
+        extra: json!({ "identityLabel": "xai-••••8660 (API Key)" }),
+        status: "active".into(),
+        is_current: true,
+        created_at: "2026-08-28 02:19:53.000000".into(),
+        updated_at: "2026-08-28 02:19:53.000000".into(),
+    };
+    db.with_conn(|c| {
+        ConnectionTrashRepo::insert_conn(
+            c,
+            &old.id,
+            AgentId::Grok,
+            ConnectionTrashKind::Account,
+            "API Key",
+            true,
+            &old,
+            "2026-08-28 02:19:53.000000",
+        )
+    })
+    .unwrap();
+
+    let listed = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    assert_eq!(listed.len(), 1);
+    let account = listed[0].account.as_ref().expect("account");
+    assert_eq!(account.extra["secretTail"], "**8660");
+    assert_eq!(account.redacted().extra["secretTail"], "**8660");
+
+    let persisted = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        persisted[0].account.as_ref().unwrap().extra["secretTail"],
+        "**8660"
+    );
+}
+
+#[test]
+fn list_trash_recovers_last4_from_unredacted_old_credentials() {
+    let (_d, db) = tmp();
+    let conn = ConnectionService::new(db.clone());
+    let old = Account {
+        id: "grok-acc-key".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: "API Key".into(),
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "xai-secret-key-value-8660"
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "2026-08-28 01:20:16.000000".into(),
+        updated_at: "2026-08-28 01:20:16.000000".into(),
+    };
+    db.with_conn(|c| {
+        ConnectionTrashRepo::insert_conn(
+            c,
+            &old.id,
+            AgentId::Grok,
+            ConnectionTrashKind::Account,
+            "API Key",
+            false,
+            &old,
+            "2026-08-28 01:20:16.000000",
+        )
+    })
+    .unwrap();
+
+    let listed = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        listed[0].account.as_ref().unwrap().extra["secretTail"],
+        "**8660"
+    );
+    let redacted = listed[0].redacted();
+    assert_eq!(
+        redacted.account.as_ref().unwrap().credentials["api_key"],
+        "***"
+    );
+    assert_eq!(
+        redacted.account.as_ref().unwrap().extra["secretTail"],
+        "**8660"
+    );
+    assert!(!serde_json::to_string(&redacted)
+        .unwrap()
+        .contains("xai-secret-key-value-8660"));
 }
 
 #[test]
