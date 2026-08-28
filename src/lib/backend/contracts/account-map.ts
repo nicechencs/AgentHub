@@ -114,9 +114,8 @@ export function mapCoreAccount(a: CoreAccount): Account {
 
   const recoveredSecretTail =
     pickString(extra.secretTail) ??
-    (a.kind === 'apikey'
-      ? secretTailFromMaskedPreview(rawIdentity) ?? secretTailFromMaskedPreview(a.label)
-      : undefined);
+    secretTailFromMaskedPreview(rawIdentity) ??
+    secretTailFromMaskedPreview(a.label);
 
   const tokenExpired =
     extra.tokenExpired === true ||
@@ -199,7 +198,7 @@ export function secretTailFromMaskedPreview(value: string | undefined | null): s
   if (!stripped) return undefined;
   const stars = stripped.match(/^\*{2}([A-Za-z0-9]{4})$/);
   if (stars?.[1]) return `**${stars[1]}`;
-  const dotted = stripped.match(/[•*]{2,}([A-Za-z0-9]{4})$/);
+  const dotted = stripped.match(/[•*….]{2,}([A-Za-z0-9]{4})$/);
   if (dotted?.[1]) return `**${dotted[1]}`;
   return undefined;
 }
