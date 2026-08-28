@@ -3,8 +3,14 @@
  * Keep wire-compatible with backend defaults (oauth_wait timeout_secs).
  */
 
-/** Default PKCE wait window (seconds) for waitOAuth / completeOAuth. */
+/** One waitOAuth / oauth_wait poll chunk (seconds). Does not end the session. */
 export const OAUTH_WAIT_TIMEOUT_SECS = 120;
+
+/** PKCE listener lifetime. Wait-page countdown must match this, not the poll chunk. */
+export const OAUTH_PKCE_LISTEN_TIMEOUT_SECS = 900;
+
+/** Another official login took the shared loopback port. */
+export const OFFICIAL_LOGIN_SUPERSEDED = 'oauth.superseded';
 
 /**
  * Pi OAuth provider keys/aliases for which AgentHub implements credential refresh.

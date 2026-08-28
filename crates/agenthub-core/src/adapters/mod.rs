@@ -31,8 +31,9 @@ pub(crate) use kimi::detect_installation as detect_kimi_installation;
 pub(crate) use pi::detect_installation as detect_pi_installation;
 pub(crate) use workbuddy::detect_installation as detect_workbuddy_installation;
 
-// Codex OAuth PKCE historically stored flat token bundles; adapters + oauth finish
-// both need the same conversion into live `auth_json` shape.
+// Codex / Claude OAuth PKCE historically stored flat token bundles; adapters +
+// oauth finish both need the same conversion into the live apply shape.
+pub(crate) use claude::normalize_oauth_credentials as normalize_claude_oauth_credentials;
 pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_credentials;
 pub(crate) use grok::{
     expand_grok_auth_to_live_accounts, grok_live_has_leftover_api_key_field,

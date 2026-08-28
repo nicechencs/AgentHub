@@ -1500,6 +1500,8 @@ export const zh = {
       authFailed: "登录失败",
       deviceFailed: "设备码登录失败",
       deviceTimeout: "设备码登录超时",
+      waitTimeout: "登录超时",
+      superseded: "这次登录已取消，因为开始了另一次登录。",
       submittedCallback: "已提交。若仍在等待，请确认粘贴的是浏览器最后打开的本机地址",
       copiedLink: "登录链接已复制",
       copiedCode: "设备码已复制",

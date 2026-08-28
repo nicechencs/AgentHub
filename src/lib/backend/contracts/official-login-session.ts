@@ -11,7 +11,7 @@ import type {
   OAuthStartInfo,
   OAuthWaitInfo,
 } from './account-port';
-import { OAUTH_WAIT_TIMEOUT_SECS } from './oauth-constants';
+import { OFFICIAL_LOGIN_SUPERSEDED, OAUTH_PKCE_LISTEN_TIMEOUT_SECS } from './oauth-constants';
 
 export type OfficialLoginFlow = 'pkce' | 'deviceCode';
 
@@ -199,6 +199,48 @@ export function officialLoginShouldKeepPolling(phase: OfficialLoginPhase): boole
   return phase === 'waiting';
 }
 
+const GENERIC_BACKEND_LOGIN_ERRORS = new Set([
+  'OAuth authorization failed',
+  'OAuth completion failed',
+  'OAuth 等待超时',
+  'OAuth 等待回调超时',
+  OFFICIAL_LOGIN_SUPERSEDED,
+]);
+
+/** Map backend wait/fail codes onto wait-page copy. Never show raw session state. */
+export function officialLoginErrorKey(
+  phase: OfficialLoginPhase,
+  error: string | null | undefined,
+  flow: OfficialLoginFlow,
+): MessageKey {
+  const raw = error?.trim() ?? '';
+  if (raw === OFFICIAL_LOGIN_SUPERSEDED) return 'connect.oauth.superseded';
+  if (phase === 'expired') {
+    return flow === 'deviceCode' ? 'connect.oauth.deviceTimeout' : 'connect.oauth.waitTimeout';
+  }
+  if (flow === 'deviceCode') return 'connect.oauth.deviceFailed';
+  return 'connect.oauth.authFailed';
+}
+
+/** User-visible error: known codes become i18n; leftover internals are dropped. */
+export function officialLoginErrorDisplay(
+  phase: OfficialLoginPhase,
+  error: string | null | undefined,
+  flow: OfficialLoginFlow,
+): { key: MessageKey; text?: string } {
+  const key = officialLoginErrorKey(phase, error, flow);
+  const raw = error?.trim() ?? '';
+  if (
+    raw &&
+    !GENERIC_BACKEND_LOGIN_ERRORS.has(raw) &&
+    !officialLoginCopyLeaksInternals(raw) &&
+    !/^oauth\./i.test(raw)
+  ) {
+    return { key, text: raw };
+  }
+  return { key };
+}
+
 export function sessionFromPkceStart(
   start: OAuthStartInfo,
   optionId: string,
@@ -212,7 +254,7 @@ export function sessionFromPkceStart(
     redirectUri: start.redirectUri,
     browserOpened: start.browserOpened,
     intervalSecs: 0,
-    expiresInSecs: OAUTH_WAIT_TIMEOUT_SECS,
+    expiresInSecs: start.expiresInSecs || OAUTH_PKCE_LISTEN_TIMEOUT_SECS,
   };
 }
 

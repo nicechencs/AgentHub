@@ -281,6 +281,7 @@ export function createMockAccountPort(): AccountPort {
         providerKey: providerKey ?? null,
         // Mock cannot open a system browser; keep the wait page in view.
         browserOpened: true,
+        expiresInSecs: 900,
       };
     },
 

@@ -21,29 +21,28 @@ import {
 import {
   cancelOfficialLogin,
   finishOfficialLogin,
-  pollOfficialLogin,
   startOfficialLogin,
+  waitOfficialLogin,
 } from '@/lib/api/official-login';
 import {
   officialLoginCopyId,
+  officialLoginErrorDisplay,
   officialLoginFooter,
   officialLoginOptionDescriptionKey,
   officialLoginOptionLabelKey,
   officialLoginRetryStep,
   officialLoginShouldFinish,
-  officialLoginShouldKeepPolling,
   officialLoginSuccessView,
   presentOfficialLoginOptions,
   validateManualCallbackUrl,
   type OfficialLoginDialogStep,
-  type OfficialLoginPoll,
   type OfficialLoginSession,
 } from '@/lib/backend/contracts/official-login-session';
-import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
+import { OAUTH_PKCE_LISTEN_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
 import { AGENT_MAP } from '@/config/agents';
 import { openExternalLink } from '@/lib/open-external';
 import type { Account, AgentId } from '@/lib/types';
-import type { MessageKey, TranslateFn } from '@/lib/i18n';
+import type { TranslateFn } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 /** Identity for one mounted official-login attempt. */
@@ -81,25 +80,6 @@ function optionCopy(opt: OAuthLoginOption, t: TranslateFn): { label: string; des
   };
 }
 
-async function waitForOfficialLogin(
-  session: OfficialLoginSession,
-  isCurrent: () => boolean,
-): Promise<OfficialLoginPoll> {
-  if (session.flow === 'pkce') {
-    return pollOfficialLogin(session, OAUTH_WAIT_TIMEOUT_SECS);
-  }
-  const intervalMs = Math.max(2, session.intervalSecs || 5) * 1000;
-  const deadline = Date.now() + (session.expiresInSecs || 900) * 1000;
-  while (isCurrent() && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    if (!isCurrent()) return { phase: 'cancelled' };
-    const poll = await pollOfficialLogin(session);
-    if (!isCurrent()) return { phase: 'cancelled' };
-    if (!officialLoginShouldKeepPolling(poll.phase)) return poll;
-  }
-  return { phase: 'expired' };
-}
-
 /**
  * Official-login wait page.
  * One session (start / poll / finish / cancel); PKCE vs device-code stay adapters.
@@ -118,7 +98,7 @@ export function OAuthFlowDialog({
   const { t } = useI18n();
   const { toast } = useToast();
   const [step, setStep] = React.useState<OfficialLoginDialogStep>('check');
-  const [countdown, setCountdown] = React.useState(OAUTH_WAIT_TIMEOUT_SECS);
+  const [countdown, setCountdown] = React.useState(OAUTH_PKCE_LISTEN_TIMEOUT_SECS);
   const [account, setAccount] = React.useState<Account | null>(null);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [session, setSession] = React.useState<OfficialLoginSession | null>(null);
@@ -163,7 +143,7 @@ export function OAuthFlowDialog({
     const isCurrent = () => isOAuthFlowTokenCurrent(flowTokenRef.current, token);
 
     setStep('check');
-    setCountdown(OAUTH_WAIT_TIMEOUT_SECS);
+    setCountdown(OAUTH_PKCE_LISTEN_TIMEOUT_SECS);
     setAccount(null);
     setErrorMsg(null);
     adoptSession(null);
@@ -224,7 +204,7 @@ export function OAuthFlowDialog({
     setErrorMsg(null);
     setStep('waiting');
     setManualUrl('');
-    setCountdown(selected.flow === 'deviceCode' ? 900 : OAUTH_WAIT_TIMEOUT_SECS);
+    setCountdown(selected.flow === 'deviceCode' ? 900 : OAUTH_PKCE_LISTEN_TIMEOUT_SECS);
     try {
       const started = await startOfficialLogin(agentId, selected, true);
       if (!isCurrent()) {
@@ -232,7 +212,7 @@ export function OAuthFlowDialog({
         return;
       }
       adoptSession(started);
-      setCountdown(started.expiresInSecs || OAUTH_WAIT_TIMEOUT_SECS);
+      setCountdown(started.expiresInSecs || OAUTH_PKCE_LISTEN_TIMEOUT_SECS);
       if (started.flow === 'deviceCode') {
         const url = started.verificationUriComplete || started.verificationUri;
         if (url) void openExternalLink(url).catch(() => {});
@@ -240,16 +220,11 @@ export function OAuthFlowDialog({
         toast({ title: t('connect.oauth.openAuthPage') });
         void openExternalLink(started.authorizeUrl).catch(() => {});
       }
-      const poll = await waitForOfficialLogin(started, isCurrent);
+      const poll = await waitOfficialLogin(started, isCurrent);
       if (!isCurrent()) return;
       if (!officialLoginShouldFinish(poll.phase)) {
-        const fallback: MessageKey =
-          poll.phase === 'expired'
-            ? 'connect.oauth.deviceTimeout'
-            : started.flow === 'deviceCode'
-              ? 'connect.oauth.deviceFailed'
-              : 'connect.oauth.authFailed';
-        setErrorMsg(poll.error ?? t(fallback));
+        const display = officialLoginErrorDisplay(poll.phase, poll.error, started.flow);
+        setErrorMsg(display.text ?? t(display.key));
         setStep('error');
         return;
       }
@@ -259,7 +234,12 @@ export function OAuthFlowDialog({
       setStep('done');
     } catch (e) {
       if (!isCurrent()) return;
-      setErrorMsg(e instanceof Error ? e.message : String(e));
+      const display = officialLoginErrorDisplay(
+        'failed',
+        e instanceof Error ? e.message : String(e),
+        selected.flow,
+      );
+      setErrorMsg(display.text ?? t(display.key));
       setStep('error');
     }
   };
