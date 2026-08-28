@@ -62,14 +62,16 @@ pub(crate) fn create_projection_link(
 #[cfg(windows)]
 pub(crate) fn create_windows_junction_runtime(link: &Path, target: &Path) -> std::io::Result<()> {
     use std::process::Command;
+    use crate::utils::process::apply_no_window;
     if let Some(parent) = link.parent() {
         fs::create_dir_all(parent)?;
     }
     let target_s = target.to_string_lossy().to_string();
     let link_arg = link.to_string_lossy().to_string();
-    let status = Command::new("cmd")
-        .args(["/C", "mklink", "/J", &link_arg, &target_s])
-        .status()?;
+    let mut cmd = Command::new("cmd");
+    cmd.args(["/C", "mklink", "/J", &link_arg, &target_s]);
+    apply_no_window(&mut cmd);
+    let status = cmd.status()?;
     if status.success() {
         Ok(())
     } else {

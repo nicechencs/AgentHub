@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::utils::process::apply_no_window;
 
 use crate::error::{AppError, Result};
 use crate::platform::skills::fs_safe::{
@@ -56,9 +57,10 @@ pub(crate) fn prepare_git_skill_staging(
     let staging = unique_staging(skills_root, skill_id)?;
     let (url, branch) = parse_git_locator(locator);
 
-    let clone_status = if let Some(branch) = branch.as_deref() {
-        Command::new("git")
-            .args([
+    let clone_status = {
+        let mut cmd = if let Some(branch) = branch.as_deref() {
+            let mut cmd = Command::new("git");
+            cmd.args([
                 "clone",
                 "--depth",
                 "1",
@@ -66,12 +68,15 @@ pub(crate) fn prepare_git_skill_staging(
                 branch,
                 &url,
                 &staging.to_string_lossy(),
-            ])
-            .status()
-    } else {
-        Command::new("git")
-            .args(["clone", "--depth", "1", &url, &staging.to_string_lossy()])
-            .status()
+            ]);
+            cmd
+        } else {
+            let mut cmd = Command::new("git");
+            cmd.args(["clone", "--depth", "1", &url, &staging.to_string_lossy()]);
+            cmd
+        };
+        apply_no_window(&mut cmd);
+        cmd.status()
     }
     .map_err(|e| {
         let _ = std::fs::remove_dir_all(&staging);
