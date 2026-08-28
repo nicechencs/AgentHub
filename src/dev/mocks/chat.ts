@@ -263,5 +263,9 @@ export function createMockChatPort(): ChatPort {
     async chatCancel(conversationId) {
       mockCancel.add(conversationId);
     },
+
+    async setChatModel(_agentId, _model) {
+      await delay(40);
+    },
   };
 }

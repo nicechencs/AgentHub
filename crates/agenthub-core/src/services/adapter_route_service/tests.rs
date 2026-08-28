@@ -1126,21 +1126,19 @@ fn unsupported_and_missing_sources_have_no_changes() {
             AgentId::Claude,
         ))
         .unwrap();
-    assert_eq!(codex_to_claude.analysis.route, AdapterRoute::Unsupported);
+    assert_eq!(codex_to_claude.analysis.route, AdapterRoute::LocalBridge);
     assert_eq!(
         codex_to_claude.analysis.support,
-        AdapterSupport::Unsupported
+        AdapterSupport::Experimental
     );
-    assert!(!codex_to_claude.can_apply);
-    assert!(codex_to_claude.analysis.reason.contains("现在还接不到"));
-    assert!(codex_to_claude.analysis.reason.contains("不会改配置"));
+    assert!(
+        !codex_to_claude.can_apply,
+        "refresh-only Codex oauth cannot write until access_token is present"
+    );
     assert_eq!(
-        codex_to_claude.analysis.gate_kind,
-        crate::models::AdapterGateKind::SubscriptionCandidate
+        codex_to_claude.analysis.rule_id.as_deref(),
+        Some("codex-subscription-to-claude-responses-v1")
     );
-    assert!(codex_to_claude.changes.is_empty());
-    assert!(codex_to_claude.analysis.actions.is_empty());
-    assert_eq!(codex_to_claude.service_impact, AdapterServiceImpact::None);
 
     let missing = service.analyze(&request(
         AdapterSourceKind::Provider,
@@ -1230,7 +1228,7 @@ fn codex_auth_json_account_to_claude_is_writable_local_bridge() {
 }
 
 #[test]
-fn official_codex_oauth_without_auth_json_to_claude_stays_closed() {
+fn official_codex_oauth_without_access_token_to_claude_is_unwritable() {
     let (_dir, db) = test_db();
     AccountRepo::new(db.clone())
         .create(&Account {
@@ -1253,15 +1251,13 @@ fn official_codex_oauth_without_auth_json_to_claude_stays_closed() {
             AgentId::Claude,
         ))
         .unwrap();
-    assert_eq!(plan.analysis.route, AdapterRoute::Unsupported);
-    assert_eq!(plan.analysis.support, AdapterSupport::Unsupported);
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+    assert_eq!(plan.analysis.support, AdapterSupport::Experimental);
     assert_eq!(
-        plan.analysis.gate_kind,
-        crate::models::AdapterGateKind::SubscriptionCandidate
+        plan.analysis.rule_id.as_deref(),
+        Some("codex-subscription-to-claude-responses-v1")
     );
-    assert!(plan.analysis.rule_id.is_none());
     assert!(!plan.can_apply);
-    assert!(plan.changes.is_empty());
 }
 
 #[test]

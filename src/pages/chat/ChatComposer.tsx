@@ -68,6 +68,10 @@ export function ChatComposer({
   onCancel,
   onSelectAgent,
   onSwitchConnection,
+  modelOptions,
+  currentModel,
+  switchingModel,
+  onSwitchModel,
   onOpenSettings,
   onPickWorkingDirectory,
   onFocusConversation,
@@ -95,6 +99,10 @@ export function ChatComposer({
   onCancel: () => void;
   onSelectAgent: (id: AgentId) => void;
   onSwitchConnection: (ticketId: string) => void;
+  modelOptions: string[];
+  currentModel: string | null;
+  switchingModel: boolean;
+  onSwitchModel: (model: string) => void;
   onOpenSettings: () => void;
   onPickWorkingDirectory: () => void;
   onFocusConversation: (id: string) => void;
@@ -370,6 +378,42 @@ export function ChatComposer({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {modelOptions.length > 0 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  disabled={sending || sendingElsewhere || switchingProvider || switchingModel}
+                  className="inline-flex h-7 max-w-40 items-center gap-1 rounded-btn border border-border bg-subtle px-2 text-meta text-secondary hover:bg-hover disabled:opacity-50"
+                  aria-label={t('chat.composer.switchModel')}
+                >
+                  <span className="min-w-0 truncate">
+                    {currentModel || t('chat.composer.switchModel')}
+                  </span>
+                  <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64">
+                <DropdownMenuLabel>{t('chat.composer.switchModel')}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={currentModel ?? ''}
+                  onValueChange={(id) => onSwitchModel(id)}
+                >
+                  {modelOptions.map((model) => (
+                    <DropdownMenuRadioItem
+                      key={model}
+                      value={model}
+                      disabled={sending || sendingElsewhere || switchingModel}
+                    >
+                      <span className="truncate">{model}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
 
           <Tip
             className={cn(

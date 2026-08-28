@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 use crate::integrations::agents::kimi::managed::{
-    ensure_kimi_model_alias, ensure_kimi_provider_entry, DEFAULT_MODEL_ALIAS,
+    ensure_kimi_model_alias, ensure_kimi_provider_entry, looks_like_grok_model_id,
+    DEFAULT_MODEL_ALIAS,
 };
 use crate::logging::targets;
 use crate::models::{
@@ -437,20 +438,18 @@ pub(crate) fn write_kimi_api_key(path: &Path, key: &str) -> Result<()> {
         doc["default_provider"] = toml_edit::value(provider_name.as_str());
     }
     ensure_kimi_provider_entry(&mut doc, provider_name.as_str())?;
-    let model_alias = doc
+    let stored = doc
         .get("default_model")
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| DEFAULT_MODEL_ALIAS.to_string());
-    if doc
-        .get("default_model")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .is_none()
-    {
+        .map(str::to_string);
+    let model_alias = match stored.as_deref() {
+        Some(model) if looks_like_grok_model_id(model) => DEFAULT_MODEL_ALIAS.to_string(),
+        Some(model) => model.to_string(),
+        None => DEFAULT_MODEL_ALIAS.to_string(),
+    };
+    if stored.as_deref() != Some(model_alias.as_str()) {
         doc["default_model"] = toml_edit::value(model_alias.as_str());
     }
     ensure_kimi_model_alias(&mut doc, provider_name.as_str(), &model_alias)?;

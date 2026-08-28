@@ -60,13 +60,20 @@ pub(super) fn is_codex_auth_json(format: Option<&str>, credentials: &Value) -> b
         return true;
     }
     // Codex on-disk auth.json often nests tokens without a separate format tag.
-    // Require the nested `tokens` object — do not treat bare access_token / API key as auth_json.
-    credentials
-        .get("tokens")
-        .and_then(Value::as_object)
-        .is_some_and(|tokens| {
+    // Pool rows store the same blob under `body`. Require the nested `tokens`
+    // object — do not treat a bare API key as auth_json.
+    for tokens in [
+        credentials.get("tokens"),
+        credentials.pointer("/body/tokens"),
+        credentials.pointer("/credentials/tokens"),
+    ] {
+        if tokens.and_then(Value::as_object).is_some_and(|tokens| {
             tokens.contains_key("access_token") || tokens.contains_key("refresh_token")
-        })
+        }) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Private write gate for `plan()`. Not a public third source of truth.

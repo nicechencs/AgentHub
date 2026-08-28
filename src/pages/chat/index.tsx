@@ -143,6 +143,10 @@ export default function ChatPage() {
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}
                   onSwitchConnection={(id) => void page.handleSwitchConnection(id)}
+                  modelOptions={page.modelOptions}
+                  currentModel={page.currentModel}
+                  switchingModel={page.switchingModel}
+                  onSwitchModel={(id) => void page.handleSwitchModel(id)}
                   onOpenSettings={() => page.setSettingsOpen(true)}
                   onPickWorkingDirectory={() => void page.pickWorkingDirectory()}
                   onFocusConversation={page.focusConversation}

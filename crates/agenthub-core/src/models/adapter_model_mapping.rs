@@ -17,7 +17,8 @@
 
 use super::{AdapterSourceProduct, AdapterTargetProtocol, AgentId};
 
-/// OpenRouter backup Chat Completions model. Do not invent other OpenRouter ids.
+/// Retired OpenRouter stealth backup. Do not inject it into `/models` or pin
+/// it as a default — the upstream 404s (`GLM-5.3 Flash` testing period ended).
 pub const OPENROUTER_BACKUP_MODEL: &str = "stealth/ox-alpha";
 
 pub fn is_openrouter_backup_model(model: &str) -> bool {
@@ -409,13 +410,9 @@ pub fn list_local_bridge_models(
     listed
 }
 
-/// Append stealth/ox-alpha only when this edge is the OpenRouter / custom
-/// backup that should list it. Callers must not pass `include` for official
-/// Grok / GPT start_specs.
-pub fn with_openrouter_backup_model(mut listed: Vec<String>, include: bool) -> Vec<String> {
-    if include {
-        push_listed_model(&mut listed, OPENROUTER_BACKUP_MODEL, false);
-    }
+/// Drop the retired OpenRouter stealth backup. Do not invent a replacement id.
+pub fn with_openrouter_backup_model(mut listed: Vec<String>, _include: bool) -> Vec<String> {
+    listed.retain(|model| !is_openrouter_backup_model(model));
     listed
 }
 

@@ -73,6 +73,7 @@ function sourceIdentity(item: ConnectionTrashItem): string | undefined {
     && !isInternalDisplayToken(accountLabel)
     && !looksLikeUuid(accountLabel)
     && !accountLabel.includes('***')
+    && !isMaskOnlyLabel(accountLabel)
     && !/token|secret|configText|credentialSummary/i.test(accountLabel)
   ) {
     return accountLabel;
@@ -80,17 +81,35 @@ function sourceIdentity(item: ConnectionTrashItem): string | undefined {
   return undefined;
 }
 
+function isMaskOnlyLabel(value: string): boolean {
+  const text = value.trim();
+  if (!text) return true;
+  if (/^[•*….\s]+(?:（API Key）|\(API Key\))?$/i.test(text)) return true;
+  if (/^(API Key)$/i.test(text)) return true;
+  return false;
+}
+
 function localRouteTitle(t?: TranslateFn): string {
   return t ? t('kind.route.localRoute') : '本机路由';
 }
 
-/** Recycle-bin title: generated/bridge rows become 本机路由 · email, never raw ids. */
+/** Recycle-bin title: generated/bridge/mask-only rows become 本机路由 · identity. */
 export function humanizeTrashLabel(item: ConnectionTrashItem, t?: TranslateFn): string {
-  if (!isGeneratedTrashItem(item)) return item.label;
+  if (!isGeneratedTrashItem(item) && !isMaskOnlyLabel(item.label)) return item.label;
   const title = localRouteTitle(t);
   const identity = sourceIdentity(item);
-  if (!identity) return title;
-  return `${title} · ${identity}`;
+  const last4 = trashItemSecretTail(item);
+  if (identity) return `${title} · ${identity}`;
+  if (last4) return `${title} · 末尾 ${last4}`;
+  const endpoint = trashItemEndpoint(item);
+  if (endpoint) {
+    try {
+      return `${title} · ${new URL(endpoint).host}`;
+    } catch {
+      return `${title} · ${endpoint}`;
+    }
+  }
+  return title;
 }
 
 export function trashItemSecretTail(item: ConnectionTrashItem): string | undefined {
@@ -102,7 +121,8 @@ export function trashItemSecretTail(item: ConnectionTrashItem): string | undefin
 
 export function trashItemEndpoint(item: ConnectionTrashItem): string | undefined {
   if (item.provider) {
-    return extractProviderEndpoint(item.provider.configText, item.provider.configFormat);
+    const endpoint = extractProviderEndpoint(item.provider.configText, item.provider.configFormat);
+    if (endpoint && !isLoopbackText(endpoint)) return endpoint;
   }
   return undefined;
 }

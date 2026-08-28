@@ -856,6 +856,7 @@ pub const ADAPTER_CAPABILITY_MATRIX: &[AdapterCapabilityCell] = &[
     // Codex OAuth Account → Claude Code Responses is the experimental bridge
     // write surface. Only this OauthAuthJson cell is open.
     CODEX_CLAUDE_RESPONSES_EDGE.to_cell(),
+    CODEX_CLAUDE_OAUTH_OTHER_EDGE.to_cell(),
     AdapterCapabilityCell {
         key: AdapterCapabilityKey {
             source: AdapterSourceProduct::CodexChatGptSubscription,
