@@ -528,13 +528,9 @@ export default function ConnectionsPage() {
   const handleShowDetail = useCallback(
     (ticket: TicketView) => {
       setLoginImportOpen(false);
-      if (inspect.target?.kind === 'detail' && inspect.target.ticketId === ticket.id) {
-        inspect.close();
-        return;
-      }
       inspect.open({ kind: 'detail', ticketId: ticket.id });
     },
-    [inspect.close, inspect.open, inspect.target],
+    [inspect.open],
   );
 
   const importCoexistenceNotice = liveAuthCoexistenceNotice(importLiveProbe, addAgentId, t);

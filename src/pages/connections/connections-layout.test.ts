@@ -106,6 +106,17 @@ describe('connections layout wiring', () => {
     expect(shareRoute).not.toContain('inspect.close()');
   });
 
+  it('opens ticket detail without toggling closed on a second click of the same card', () => {
+    const page = source('index.tsx');
+    const start = page.indexOf('const handleShowDetail');
+    const end = page.indexOf('const importCoexistenceNotice', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const block = page.slice(start, end);
+    expect(block).toContain("inspect.open({ kind: 'detail', ticketId: ticket.id })");
+    expect(block).not.toContain('inspect.close()');
+  });
+
   it('keeps live config chrome to the path and folder button; hint is hover-only', () => {
     const provider = source('../../components/connections/ProviderEditDialog.tsx');
     expect(provider).toContain('Tip label={livePaths.hint}');
