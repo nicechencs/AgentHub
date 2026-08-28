@@ -1133,6 +1133,91 @@ fn list_trash_recovers_last4_from_other_stored_mask_field() {
 }
 
 #[test]
+fn delete_current_grok_api_key_persists_stored_last4_and_host() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let created = accounts
+        .create(&Account {
+            id: "grok-live-keep".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "API Key".into(),
+            credentials: json!({ "format": "api_key", "api_key": "***" }),
+            extra: json!({
+                "secretTail": "**8660",
+                "endpoint": "https://api.x.ai/v1"
+            }),
+            status: "active".into(),
+            is_current: true,
+            created_at: "2026-08-28 02:19:53.000000".into(),
+            updated_at: "2026-08-28 02:19:53.000000".into(),
+        })
+        .unwrap();
+
+    conn.delete_account(&created.id, AgentId::Grok).unwrap();
+    let trash = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    assert_eq!(trash.len(), 1);
+    let account = trash[0].account.as_ref().expect("account");
+    assert_eq!(account.extra["secretTail"], "**8660");
+    assert_eq!(account.extra["endpoint"], "https://api.x.ai/v1");
+    assert_eq!(account.label, "API Key");
+}
+
+#[test]
+fn delete_current_grok_api_key_persists_live_last4_and_host() {
+    static GROK_HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let live = tempfile::tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", live.path());
+    std::fs::write(
+        live.path().join("config.toml"),
+        r#"[models]
+default = "grok"
+
+[model."grok"]
+model = "grok-4.6"
+base_url = "https://api.x.ai/v1"
+api_key = "xai-secret-key-value-8660"
+api_backend = "responses"
+"#,
+    )
+    .unwrap();
+
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let created = accounts
+        .create(&Account {
+            id: "grok-live-from-file".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "API Key".into(),
+            credentials: json!({ "format": "api_key", "api_key": "***" }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: true,
+            created_at: "2026-08-28 02:19:53.000000".into(),
+            updated_at: "2026-08-28 02:19:53.000000".into(),
+        })
+        .unwrap();
+
+    conn.delete_account(&created.id, AgentId::Grok).unwrap();
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    let trash = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    assert_eq!(trash.len(), 1);
+    let account = trash[0].account.as_ref().expect("account");
+    assert_eq!(account.extra["secretTail"], "**8660");
+    assert_eq!(account.extra["endpoint"], "https://api.x.ai/v1");
+}
+
+#[test]
 fn list_trash_does_not_invent_last4_when_payload_has_no_identity() {
     let (_d, db) = tmp();
     let conn = ConnectionService::new(db.clone());

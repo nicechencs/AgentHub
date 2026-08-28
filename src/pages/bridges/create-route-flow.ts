@@ -566,6 +566,17 @@ export function listLocalRouteSurfacesFromConfig(
   return [{ target, endpointId, path: routeEndpointPath(endpointId) }];
 }
 
+/**
+ * A failed 确认应用 / unbind / stop must not look like success.
+ * Compensation failure wins so the swallowed rollback is visible.
+ */
+export function surfaceAfterCompensation(
+  original: unknown,
+  compensationFailures: readonly unknown[],
+): unknown {
+  return compensationFailures[0] ?? original;
+}
+
 export async function applyLocalRouteToAgents(
   input: {
     sourceKind: 'account' | 'provider';
@@ -588,14 +599,15 @@ export async function applyLocalRouteToAgents(
     }
     return applied;
   } catch (error) {
+    const compensationFailures: unknown[] = [];
     for (const agent of [...applied].reverse()) {
       try {
         await deps.unbindTicket(ticketId, agent);
-      } catch {
-        /* compensate best-effort; original error is the one to surface */
+      } catch (cause) {
+        compensationFailures.push(cause);
       }
     }
-    throw error;
+    throw surfaceAfterCompensation(error, compensationFailures);
   }
 }
 

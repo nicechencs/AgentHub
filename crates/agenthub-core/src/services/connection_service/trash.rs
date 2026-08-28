@@ -109,6 +109,8 @@ impl ConnectionService {
                     agent.as_str()
                 )));
             }
+            let mut provider = provider;
+            enrich_provider_trash_identity(&mut provider);
             ConnectionTrashRepo::insert_conn(
                 &tx,
                 &provider.id,
@@ -348,27 +350,63 @@ fn first_masked_tail(value: &serde_json::Value) -> Option<String> {
     }
 }
 
+fn persist_live_grok_identity_extra(extra: &mut serde_json::Value) -> bool {
+    if !extra.is_object() {
+        *extra = json!({});
+    }
+    let mut dirty = false;
+    if extra_string_missing(extra, "secretTail") {
+        if let Some(tail) = crate::adapters::read_grok_live_api_key_tail() {
+            if let Some(obj) = extra.as_object_mut() {
+                obj.insert("secretTail".into(), json!(tail));
+                dirty = true;
+            }
+        }
+    }
+    if extra_string_missing(extra, "endpoint") {
+        if let Some(url) = crate::adapters::read_grok_live_base_url() {
+            if url.contains("127.0.0.1") || url.contains("localhost") || url.contains("::1") {
+                return dirty;
+            }
+            if let Some(obj) = extra.as_object_mut() {
+                obj.insert("endpoint".into(), json!(url));
+                dirty = true;
+            }
+        }
+    }
+    dirty
+}
+
 fn enrich_account_trash_identity(account: &mut Account) {
     recover_account_trash_identity(account);
     if account.kind != AccountKind::ApiKey {
         return;
     }
-    let endpoint_missing = extra_string_missing(&account.extra, "endpoint");
-    if endpoint_missing && account.is_current && account.agent_id == AgentId::Grok {
-        if let Some(url) = crate::adapters::read_grok_live_base_url() {
-            if url.contains("127.0.0.1") || url.contains("localhost") || url.contains("::1") {
-                return;
-            }
-            let mut extra = if account.extra.is_object() {
-                account.extra.clone()
-            } else {
-                json!({})
-            };
-            if let Some(obj) = extra.as_object_mut() {
-                obj.insert("endpoint".into(), json!(url));
-            }
-            account.extra = extra;
-        }
+    if !(account.is_current && account.agent_id == AgentId::Grok) {
+        return;
+    }
+    let mut extra = if account.extra.is_object() {
+        account.extra.clone()
+    } else {
+        json!({})
+    };
+    if persist_live_grok_identity_extra(&mut extra) {
+        account.extra = extra;
+    }
+}
+
+fn enrich_provider_trash_identity(provider: &mut Provider) {
+    recover_provider_trash_identity(provider);
+    if !(provider.is_current && provider.agent_id == AgentId::Grok) {
+        return;
+    }
+    let mut meta = if provider.meta.is_object() {
+        provider.meta.clone()
+    } else {
+        json!({})
+    };
+    if persist_live_grok_identity_extra(&mut meta) {
+        provider.meta = meta;
     }
 }
 

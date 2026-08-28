@@ -14,7 +14,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use agenthub_core::adapter_control::AdapterBridgeStatus;
+use agenthub_core::adapter_control::{surface_unbind_and_restart, AdapterBridgeStatus};
 use agenthub_core::bridge::{
     BridgeHostError, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
     BridgeUpstreamStatus, MemberHealth, UpstreamAuthReload,
@@ -260,7 +260,7 @@ pub(crate) async fn unbind_local_bridge(
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
     let profile = load_bridge_profile(hub.clone(), profile_id.clone()).await?;
     let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
-    let _ = stop_bridge_runtime(&host, &profile).await?;
+    stop_bridge_runtime(&host, &profile).await?;
     let unbind_hub = hub.clone();
     let result = with_hub_blocking(unbind_hub, move |hub| {
         hub.ticket_bind()
@@ -275,8 +275,10 @@ pub(crate) async fn unbind_local_bridge(
             target_agent_id: profile.target_agent_id,
             auto_start: profile.auto_start,
         };
-        let _ = apply_local_bridge_locked(hub, host, coordinator, restart).await;
-        return Err(error);
+        let restart = apply_local_bridge_locked(hub, host, coordinator, restart)
+            .await
+            .map(|_| ());
+        return Err(surface_unbind_and_restart(error, restart));
     }
     Ok(())
 }
@@ -369,7 +371,7 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
     // Stop outside the Core live-saga critical section so listener drain does
     // not hold the cross-process provider lock. Current bindings are allowed:
     // unbind restores previous live before deleting the projection.
-    let _ = stop_bridge_runtime(&host, &profile).await?;
+    stop_bridge_runtime(&host, &profile).await?;
     let ticket_id = agenthub_core::models::ticket_id(profile.source_kind, &profile.source_id);
     let agent_id = profile.target_agent_id;
     let result = with_hub_blocking(hub.clone(), move |hub| {
@@ -388,8 +390,10 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
             target_agent_id: profile.target_agent_id,
             auto_start: profile.auto_start,
         };
-        let _ = apply_local_bridge_locked(hub, host, coordinator, restart).await;
-        return Err(error);
+        let restart = apply_local_bridge_locked(hub, host, coordinator, restart)
+            .await
+            .map(|_| ());
+        return Err(surface_unbind_and_restart(error, restart));
     }
     Ok(())
 }

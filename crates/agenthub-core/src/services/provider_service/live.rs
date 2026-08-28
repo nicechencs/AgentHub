@@ -50,9 +50,13 @@ pub(super) fn require_live_config_write(
     }
 }
 
-pub(super) fn log_live_switch_paths(agent: AgentId, adapter: &dyn crate::adapters::AgentAdapter) {
+pub(super) fn log_live_switch_paths(
+    agent: AgentId,
+    adapter: &dyn crate::adapters::AgentAdapter,
+    last4: &str,
+) {
     for path in adapter.live_backup_paths() {
-        log_switch_write(agent, &display_home_path(&path));
+        log_switch_write(agent, &display_home_path(&path), last4);
     }
 }
 
@@ -494,7 +498,11 @@ impl ProviderService {
                 db_rollback,
             ));
         }
-        log_live_switch_paths(stored.agent_id, adapter.as_ref());
+        log_live_switch_paths(
+            stored.agent_id,
+            adapter.as_ref(),
+            &super::switch_write_last4(stored),
+        );
         Ok(())
     }
 
@@ -546,7 +554,11 @@ impl ProviderService {
             let live_rollback = adapter.write_config(&live_before).err();
             return Err(compensated_current_apply_error(error, live_rollback));
         }
-        log_live_switch_paths(stored.agent_id, adapter.as_ref());
+        log_live_switch_paths(
+            stored.agent_id,
+            adapter.as_ref(),
+            &super::switch_write_last4(stored),
+        );
         Ok(())
     }
 
