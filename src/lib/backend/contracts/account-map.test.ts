@@ -162,6 +162,19 @@ describe('mapCoreAccount', () => {
     expect(mapped.label).toBe('API Key');
   });
 
+  it('recovers secretTail from a dotted mask even when kind is omitted from extra', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'grok-dots',
+        agentId: 'grok',
+        kind: 'apikey',
+        label: 'API Key',
+        extra: { identityLabel: 'xai-....272f (API Key)' },
+      }),
+    );
+    expect(mapped.secretTail).toBe('**272f');
+  });
+
   it('does not invent secretTail from a kind-name identity', () => {
     const mapped = mapCoreAccount(
       core({

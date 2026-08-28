@@ -1249,6 +1249,13 @@ fn write_verified_json_object_rejects_non_object() {
 fn require_api_key_and_live_account_helpers() {
     assert_eq!(require_api_key("  sk-abc  ").unwrap(), "sk-abc");
     assert_eq!(require_api_key("").unwrap_err().code(), "invalid_arg");
+    assert_eq!(require_api_key("***").unwrap_err().code(), "invalid_arg");
+    assert_eq!(
+        require_api_key("$AGENTHUB_CONNECTION_SECRET$")
+            .unwrap_err()
+            .code(),
+        "invalid_arg"
+    );
     let live = api_key_live_account(
         AgentId::Claude,
         "sk-abcdefghijklmnop",

@@ -136,13 +136,30 @@ impl ConnectionService {
     pub fn list_trash(&self, agent: Option<AgentId>) -> Result<Vec<ConnectionTrashItem>> {
         let mut items = self.trash.list(agent, &Self::now())?;
         for item in &mut items {
-            let Some(account) = item.account.as_mut() else {
+            let persist = if let Some(account) = item.account.as_mut() {
+                recover_account_trash_identity(account).then_some(serde_json::to_value(&*account))
+            } else if let Some(provider) = item.provider.as_mut() {
+                recover_provider_trash_identity(provider).then_some(serde_json::to_value(&*provider))
+            } else {
+                None
+            };
+            let Some(encoded) = persist else {
                 continue;
             };
-            if !recover_account_trash_identity(account) {
-                continue;
-            }
-            if let Err(err) = self.trash.update_payload(&item.id, account) {
+            let encoded = match encoded {
+                Ok(value) => value,
+                Err(err) => {
+                    tracing::warn!(
+                        module = targets::PROVIDER,
+                        op = "recycle_identity_heal",
+                        id = item.id.as_str(),
+                        error = %err,
+                        "failed to encode recovered recycle identity"
+                    );
+                    continue;
+                }
+            };
+            if let Err(err) = self.trash.update_payload(&item.id, &encoded) {
                 tracing::warn!(
                     module = targets::PROVIDER,
                     op = "recycle_identity_heal",
@@ -251,11 +268,8 @@ fn recover_account_trash_identity(account: &mut Account) -> bool {
     let mut dirty = false;
     if extra_string_missing(&extra, "secretTail") {
         let tail = api_key_tail(&account.credentials)
-            .or_else(|| {
-                account
-                    .identity_label()
-                    .and_then(crate::utils::redact::secret_tail_from_masked_preview)
-            })
+            .or_else(|| first_masked_tail(&extra))
+            .or_else(|| first_masked_tail(&account.credentials))
             .or_else(|| crate::utils::redact::secret_tail_from_masked_preview(&account.label));
         if let Some(tail) = tail {
             if let Some(obj) = extra.as_object_mut() {
@@ -277,6 +291,61 @@ fn recover_account_trash_identity(account: &mut Account) -> bool {
         account.extra = extra;
     }
     dirty
+}
+
+/// Same non-inventing recovery for supplier (provider) recycle rows.
+fn recover_provider_trash_identity(provider: &mut Provider) -> bool {
+    let mut meta = if provider.meta.is_object() {
+        provider.meta.clone()
+    } else {
+        json!({})
+    };
+    let mut dirty = false;
+    if extra_string_missing(&meta, "secretTail") {
+        let tail = api_key_tail(&provider.settings_config)
+            .or_else(|| first_masked_tail(&meta))
+            .or_else(|| first_masked_tail(&provider.settings_config))
+            .or_else(|| crate::utils::redact::secret_tail_from_masked_preview(&provider.name));
+        if let Some(tail) = tail {
+            if let Some(obj) = meta.as_object_mut() {
+                obj.insert("secretTail".into(), json!(tail));
+                dirty = true;
+            }
+        }
+    }
+    if extra_string_missing(&meta, "endpoint") {
+        if let Some(url) =
+            stored_http_url(&meta).or_else(|| stored_http_url(&provider.settings_config))
+        {
+            if let Some(obj) = meta.as_object_mut() {
+                obj.insert("endpoint".into(), json!(url));
+                dirty = true;
+            }
+        }
+    }
+    if dirty {
+        provider.meta = meta;
+    }
+    dirty
+}
+
+/// First `**XXXX` already stored as a mask. Never treats a raw secret as a tail.
+fn first_masked_tail(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => {
+            crate::utils::redact::secret_tail_from_masked_preview(text)
+        }
+        serde_json::Value::Object(map) => {
+            for key in ["secretTail", "identityLabel", "label", "name", "preview"] {
+                if let Some(tail) = map.get(key).and_then(first_masked_tail) {
+                    return Some(tail);
+                }
+            }
+            map.values().find_map(first_masked_tail)
+        }
+        serde_json::Value::Array(items) => items.iter().find_map(first_masked_tail),
+        _ => None,
+    }
 }
 
 fn enrich_account_trash_identity(account: &mut Account) {
