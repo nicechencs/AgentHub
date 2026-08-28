@@ -7,6 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::utils::process::apply_no_window;
 
 use serde_json::Value;
 
@@ -114,19 +115,21 @@ impl SkillhubMarket {
         let ua = skill_market_user_agent();
         let connect = SKILLS_SH_CURL_CONNECT_SECS.to_string();
         let max_time = SKILLS_SH_CURL_MAX_SECS.to_string();
-        let output = Command::new(bin)
-            .args([
-                "-fsSL",
-                "--connect-timeout",
-                &connect,
-                "--max-time",
-                &max_time,
-                "-A",
-                &ua,
-                "-H",
-                "Accept: application/json",
-                url,
-            ])
+        let mut cmd = Command::new(bin);
+        cmd.args([
+            "-fsSL",
+            "--connect-timeout",
+            &connect,
+            "--max-time",
+            &max_time,
+            "-A",
+            &ua,
+            "-H",
+            "Accept: application/json",
+            url,
+        ]);
+        apply_no_window(&mut cmd);
+        let output = cmd
             .output()
             .map_err(|e| format!("spawn curl failed: {e}"))?;
         if !output.status.success() {
@@ -151,8 +154,10 @@ impl SkillhubMarket {
             timeout = SKILLS_SH_POWERSHELL_TIMEOUT_SECS,
             ua = ua.replace('\'', "''"),
         );
-        let output = Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        let mut cmd = Command::new("powershell.exe");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        apply_no_window(&mut cmd);
+        let output = cmd
             .output()
             .map_err(|e| format!("spawn powershell failed: {e}"))?;
         if !output.status.success() {
@@ -400,8 +405,8 @@ fn download_file(url: &str, dest: &Path) -> Result<()> {
     let ua = skill_market_user_agent();
     let connect = SKILLS_SH_CURL_CONNECT_SECS.to_string();
     let max_time = (SKILLS_SH_CURL_MAX_SECS * 3).to_string();
-    let output = Command::new(bin)
-        .args([
+    let mut cmd = Command::new(bin);
+    cmd.args([
             "-fsSL",
             "-L",
             "--connect-timeout",
@@ -413,7 +418,9 @@ fn download_file(url: &str, dest: &Path) -> Result<()> {
             "-o",
         ])
         .arg(dest)
-        .arg(url)
+        .arg(url);
+    apply_no_window(&mut cmd);
+    let output = cmd
         .output()
         .map_err(|e| {
             AppError::message(

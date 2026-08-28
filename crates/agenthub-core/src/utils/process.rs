@@ -122,7 +122,10 @@ pub fn stdout_first_line(output: &Output) -> Option<String> {
         .filter(|l| !l.is_empty())
 }
 
-fn apply_no_window(cmd: &mut Command) {
+/// Hide the console window when spawning on Windows (avoids cmd flash).
+/// All production `Command` spawns that do not go through [`run_capture`] /
+/// [`configure_process_group`] must call this before `.spawn()` / `.output()` / `.status()`.
+pub fn apply_no_window(cmd: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

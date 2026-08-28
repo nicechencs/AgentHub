@@ -35,9 +35,9 @@ import { useAgentCatalog } from '@/app/runtime';
 import { agentDisplayName } from '@/config/agents';
 import {
   agentHasOfficialApiTemplate,
-  looksLikeOfficialEndpoint,
   officialApiDefaults,
 } from '@/config/official-api';
+import { providerEndpointMode } from '@/lib/credential-row';
 import {
   isPiAuthJsonSlot,
   isPiPlaceholderBaseUrl,
@@ -408,9 +408,7 @@ export function ProviderEditDialog({
         agentId,
       });
       const inferredOfficial =
-        provider.official === true ||
-        (provider.official !== false &&
-          looksLikeOfficialEndpoint(agentId, nextVars.baseUrl || resolvedOnOpen));
+        providerEndpointMode(provider, nextVars.baseUrl || resolvedOnOpen) === 'official';
       setUseOfficial(inferredOfficial);
       setShowAdvanced(true);
       return;

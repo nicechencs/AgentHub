@@ -7,8 +7,7 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::{Map as JsonMap, Value as JsonValue};
@@ -304,68 +303,28 @@ fn fail_status(agent: AgentId, code: &str, error: &str) -> PluginAgentStatus {
 }
 
 fn run_cli(program: &Path, args: &[&str], timeout: Duration) -> CliRun {
-    let mut cmd = Command::new(program);
-    cmd.args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            return CliRun {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: None,
-                timed_out: false,
-                spawn_error: Some(e.to_string()),
-            };
-        }
-    };
-    let started = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                if let Some(mut out) = child.stdout.take() {
-                    let _ = io::Read::read_to_string(&mut out, &mut stdout);
-                }
-                if let Some(mut err) = child.stderr.take() {
-                    let _ = io::Read::read_to_string(&mut err, &mut stderr);
-                }
-                return CliRun {
-                    stdout,
-                    stderr,
-                    exit_code: status.code(),
-                    timed_out: false,
-                    spawn_error: None,
-                };
-            }
-            Ok(None) => {
-                if started.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return CliRun {
-                        stdout: String::new(),
-                        stderr: String::new(),
-                        exit_code: None,
-                        timed_out: true,
-                        spawn_error: None,
-                    };
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            Err(e) => {
-                let _ = child.kill();
-                return CliRun {
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    exit_code: None,
-                    timed_out: false,
-                    spawn_error: Some(e.to_string()),
-                };
-            }
-        }
+    match crate::utils::process::run_capture_timeout(program, args, timeout) {
+        Ok(output) => CliRun {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            exit_code: output.status.code(),
+            timed_out: false,
+            spawn_error: None,
+        },
+        Err(e) if e.kind() == io::ErrorKind::TimedOut => CliRun {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+            timed_out: true,
+            spawn_error: None,
+        },
+        Err(e) => CliRun {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+            timed_out: false,
+            spawn_error: Some(e.to_string()),
+        },
     }
 }
 

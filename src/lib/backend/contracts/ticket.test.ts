@@ -539,7 +539,7 @@ describe('ticket / binding display labels', () => {
     expect(ticketCredentialClassLabel('api_key')).toBe('API Key');
     expect(ticketCredentialClassLabel('unknown')).toBe('未识别');
     expect(ticketSurfaceLabel('kimi-code-membership')).toBe('会员');
-    expect(ticketSurfaceLabel('anthropic-api')).toBe('官方');
+    expect(ticketSurfaceLabel('anthropic-api')).toBe('API');
     expect(ticketSurfaceLabel('openai-api')).toBe('OpenAI');
     expect(ticketSurfaceLabel('xai-api')).toBe('xAI');
     expect(ticketSurfaceLabel('glm-coding-plan')).toBe('GLM');
