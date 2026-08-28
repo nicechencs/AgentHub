@@ -11,6 +11,10 @@ use crate::models::AgentId;
 
 use crate::catalog::limits::OAUTH_SESSION_TTL as TTL;
 
+/// Another official login took the same loopback port. Wait pages must fail
+/// immediately instead of sitting on a cancelled listener.
+pub const OAUTH_SUPERSEDED: &str = "oauth.superseded";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OAuthStatus {
@@ -263,7 +267,7 @@ impl SessionStore {
                 continue;
             }
             session.status = OAuthStatus::Failed;
-            session.error = Some("OAuth authorization failed".into());
+            session.error = Some(OAUTH_SUPERSEDED.into());
             session.scrub_secrets();
             n += 1;
         }
