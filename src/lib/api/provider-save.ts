@@ -187,7 +187,9 @@ function materializeToConfigText(
       ok: true,
       finalText: obj.content,
       authApiKey:
-        usesAuthEnvelope(agentId, schema) && obj.auth?.OPENAI_API_KEY
+        usesAuthEnvelope(agentId, schema) &&
+        obj.auth?.OPENAI_API_KEY &&
+        obj.auth.OPENAI_API_KEY !== REDACTED_MARKER
           ? obj.auth.OPENAI_API_KEY
           : undefined,
     };
@@ -389,7 +391,10 @@ export async function runProviderSaveFlow(
       };
     }
     finalText = materialized.finalText;
-    if (materialized.authApiKey !== undefined) {
+    if (
+      materialized.authApiKey !== undefined &&
+      materialized.authApiKey !== REDACTED_MARKER
+    ) {
       authApiKey = materialized.authApiKey;
     }
   } else {

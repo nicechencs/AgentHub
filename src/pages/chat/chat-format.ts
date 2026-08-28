@@ -174,6 +174,23 @@ export function localizeChatFailure(text: string): string {
   ) {
     return '这个模型已经下架或当前登录用不了。请换一个模型后重试。';
   }
+  if (
+    hay.includes('openai api error')
+    || hay.includes('does not support parameter')
+    || hay.includes('reasoningeffort')
+    || hay.includes('reasoning_effort')
+    || ((hay.includes('(400)') || hay.includes(' 400:') || hay.includes('http 400'))
+      && (hay.includes('api error') || hay.includes('parameter') || hay.includes('model ') || hay.includes('unsupported')))
+  ) {
+    if (
+      hay.includes('reasoningeffort')
+      || hay.includes('reasoning_effort')
+      || hay.includes('does not support parameter')
+    ) {
+      return '这个模型不支持当前思考设置。请点重试。';
+    }
+    return '这次发送没成功。请点重试。';
+  }
   return text;
 }
 

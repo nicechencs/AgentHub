@@ -1093,6 +1093,120 @@ fn list_trash_recovers_last4_from_unredacted_old_credentials() {
 }
 
 #[test]
+fn list_trash_recovers_last4_from_other_stored_mask_field() {
+    let (_d, db) = tmp();
+    let conn = ConnectionService::new(db.clone());
+    let old = Account {
+        id: "grok-acc-preview".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: "API Key".into(),
+        credentials: json!({ "format": "api_key", "api_key": "***" }),
+        extra: json!({
+            "identityLabel": "API Key",
+            "preview": "xai-••••272f (API Key)"
+        }),
+        status: "active".into(),
+        is_current: false,
+        created_at: "2026-08-28 01:20:16.000000".into(),
+        updated_at: "2026-08-28 01:20:16.000000".into(),
+    };
+    db.with_conn(|c| {
+        ConnectionTrashRepo::insert_conn(
+            c,
+            &old.id,
+            AgentId::Grok,
+            ConnectionTrashKind::Account,
+            "API Key",
+            false,
+            &old,
+            "2026-08-28 01:20:16.000000",
+        )
+    })
+    .unwrap();
+
+    let listed = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        listed[0].account.as_ref().unwrap().extra["secretTail"],
+        "**272f"
+    );
+}
+
+#[test]
+fn list_trash_does_not_invent_last4_when_payload_has_no_identity() {
+    let (_d, db) = tmp();
+    let conn = ConnectionService::new(db.clone());
+    let old = Account {
+        id: "grok-acc-ghost".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: "API Key".into(),
+        credentials: json!({ "format": "grok_bundle", "api_key": "***" }),
+        extra: json!({ "source": "live", "identityLabel": "API Key" }),
+        status: "active".into(),
+        is_current: false,
+        created_at: "2026-08-28 01:20:16.000000".into(),
+        updated_at: "2026-08-28 01:20:16.000000".into(),
+    };
+    db.with_conn(|c| {
+        ConnectionTrashRepo::insert_conn(
+            c,
+            &old.id,
+            AgentId::Grok,
+            ConnectionTrashKind::Account,
+            "API Key",
+            false,
+            &old,
+            "2026-08-28 01:20:16.000000",
+        )
+    })
+    .unwrap();
+
+    let listed = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    let extra = &listed[0].account.as_ref().unwrap().extra;
+    assert!(extra.get("secretTail").is_none(), "{extra}");
+    assert_eq!(listed[0].redacted().account.as_ref().unwrap().extra.get("secretTail"), None);
+}
+
+#[test]
+fn list_trash_recovers_provider_last4_from_stored_name() {
+    let (_d, db) = tmp();
+    let conn = ConnectionService::new(db.clone());
+    let old = Provider {
+        id: "grok-prov-old".into(),
+        agent_id: AgentId::Grok,
+        name: "xai-••••6aa9 (API Key)".into(),
+        settings_config: json!({
+            "format": "toml",
+            "content": "[model.\"grok\"]\napi_key = \"***\"\n"
+        }),
+        meta: json!({}),
+        is_current: false,
+        created_at: "2026-08-28 02:19:53.000000".into(),
+        updated_at: "2026-08-28 02:19:53.000000".into(),
+    };
+    db.with_conn(|c| {
+        ConnectionTrashRepo::insert_conn(
+            c,
+            &old.id,
+            AgentId::Grok,
+            ConnectionTrashKind::Provider,
+            "API Key",
+            false,
+            &old,
+            "2026-08-28 02:19:53.000000",
+        )
+    })
+    .unwrap();
+
+    let listed = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    assert_eq!(
+        listed[0].provider.as_ref().unwrap().meta["secretTail"],
+        "**6aa9"
+    );
+}
+
+#[test]
 fn provider_trash_can_be_permanently_deleted() {
     let (_d, db) = tmp();
     let providers = ProviderRepo::new(db.clone());
