@@ -71,6 +71,10 @@ export function defaultLivePathForFile(agentId: string, fileName: string): strin
       '.credentials.yaml': '~/.dsh/.credentials.yaml',
       'cordis.patch.yml': '~/.dsh/cordis.patch.yml',
     },
+    zcode: {
+      'config.json': '~/.zcode/v2/config.json',
+      'cli/config.json': '~/.zcode/cli/config.json',
+    },
     cursor: {
       'auth.json': '~/.cursor/auth.json',
     },

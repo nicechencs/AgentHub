@@ -48,6 +48,7 @@ export const AGENT_DISPLAY: Readonly<
   workbuddy: { letter: 'W', colorKey: 'workbuddy' },
   cursor: { letter: 'R', colorKey: 'cursor' },
   dsh: { letter: 'D', colorKey: 'dsh' },
+  zcode: { letter: 'Z', colorKey: 'zcode' },
 });
 
 const FALLBACK_COLOR = 'var(--text-muted)';

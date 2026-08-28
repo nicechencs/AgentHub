@@ -179,6 +179,7 @@ pub fn list_plugin_inventory_with(ctx: &PluginScanContext<'_>) -> PluginInventor
             }),
             AgentId::Cursor => agents.push(closed_status(agent, "unsupported-cursor")),
             AgentId::Dsh => agents.push(closed_status(agent, "unsupported-dsh")),
+            AgentId::Zcode => agents.push(closed_status(agent, "unsupported-zcode")),
             AgentId::Kimi | AgentId::WorkBuddy => {
                 agents.push(closed_status(agent, "unsupported-no-cli"));
             }

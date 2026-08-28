@@ -39,6 +39,8 @@ pub enum AgentAccept {
     WorkBuddyModelsJson,
     /// DSH home-level official LLM plugin slot (`write_config` in dsh.rs, Partial).
     DshLlmPluginSlot,
+    /// ZCode `~/.zcode/v2/config.json` provider API Key slot.
+    ZcodeV2ProviderSlot,
 }
 
 impl AgentAccept {
@@ -66,6 +68,11 @@ impl AgentAccept {
             Self::WorkBuddyModelsJson => &[],
             // dsh.rs writes the official DeepSeek Chat Completions plugin row.
             Self::DshLlmPluginSlot => &[TicketProtocol::OpenaiChat],
+            // zcode.rs writes provider.*.options.apiKey; edges still need matrix cells.
+            Self::ZcodeV2ProviderSlot => &[
+                TicketProtocol::AnthropicMessages,
+                TicketProtocol::OpenaiChat,
+            ],
         }
     }
 }
@@ -121,6 +128,11 @@ pub const fn agent_bind_capability(id: AgentId) -> AgentBindCapability {
         // official LLM plugin row. Writer exists; edges still come from the matrix.
         AgentId::Dsh => AgentBindCapability {
             accepts: &[AgentAccept::DshLlmPluginSlot],
+            writer: true,
+        },
+        // adapters/zcode.rs: ConfigWrite = Partial, v2 provider API Key upsert.
+        AgentId::Zcode => AgentBindCapability {
+            accepts: &[AgentAccept::ZcodeV2ProviderSlot],
             writer: true,
         },
     }

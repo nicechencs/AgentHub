@@ -161,6 +161,7 @@ fn discover_usage_files(agent: AgentId) -> Result<Vec<PathBuf>> {
         AgentId::Grok => discover_grok_files(),
         AgentId::Cursor => Ok(Vec::new()),
         AgentId::Dsh => discover_dsh_files(),
+        AgentId::Zcode => Ok(Vec::new()),
     }
 }
 

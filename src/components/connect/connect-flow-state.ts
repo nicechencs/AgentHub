@@ -574,6 +574,7 @@ function localTargetLabels(targetAgentId: string): { display: string; short: str
   if (targetAgentId === 'grok') return { display: 'Grok', short: 'Grok' };
   if (targetAgentId === 'kimi') return { display: 'Kimi', short: 'Kimi' };
   if (targetAgentId === 'dsh') return { display: 'DeepSeek Harness', short: 'DSH' };
+  if (targetAgentId === 'zcode') return { display: 'ZCode', short: 'ZCode' };
   return { display: targetAgentId, short: targetAgentId };
 }
 

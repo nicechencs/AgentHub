@@ -10,7 +10,12 @@ pub(crate) fn managed_toml_provider_keys(agent: AgentId) -> Result<&'static [&'s
         AgentId::Codex => Ok(codex::managed::PROVIDER_TOML_KEYS),
         AgentId::Kimi => Ok(kimi::managed::PROVIDER_TOML_KEYS),
         AgentId::Grok => Ok(grok::managed::PROVIDER_TOML_KEYS),
-        AgentId::Claude | AgentId::Pi | AgentId::WorkBuddy | AgentId::Cursor | AgentId::Dsh => {
+        AgentId::Claude
+        | AgentId::Pi
+        | AgentId::WorkBuddy
+        | AgentId::Cursor
+        | AgentId::Dsh
+        | AgentId::Zcode => {
             Err(AppError::InvalidArg(format!(
                 "{} provider config is JSON, not TOML",
                 agent.display_name()
