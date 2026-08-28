@@ -181,9 +181,10 @@ export function liveConfigPaths(agentId: string): {
     case 'claude':
       return {
         config: '~/.claude/settings.json',
-        extra: ['~/.claude.json（MCP / 全局）'],
-        openDir: '~/.claude（或 CLAUDE_CONFIG_DIR）',
-        hint: '保存后会写进这个文件。用 Claude 官方账号登录的，由 Claude 自己保管。',
+        auth: '~/.claude/.credentials.json',
+        extra: ['~/.claude.json'],
+        openDir: '~/.claude',
+        hint: '保存后会写进 settings.json。用 Claude 官方账号登录的，写在 .credentials.json。目录也可能由 CLAUDE_CONFIG_DIR 覆盖。',
       };
     case 'codex':
       return {
@@ -194,9 +195,10 @@ export function liveConfigPaths(agentId: string): {
       };
     case 'kimi':
       return {
-        config: '~/.kimi-code/config.toml（旧 ~/.kimi）',
-        openDir: '~/.kimi-code 或 ~/.kimi',
-        hint: 'API Key 写在这个配置文件里。用官方登录的，凭据在旁边的 credentials 目录。',
+        config: '~/.kimi-code/config.toml',
+        auth: '~/.kimi-code/credentials/kimi-code.json',
+        openDir: '~/.kimi-code',
+        hint: 'API Key 写在 config.toml。用官方登录的，凭据在 credentials/kimi-code.json。旧目录是 ~/.kimi。',
       };
     case 'grok':
       return {

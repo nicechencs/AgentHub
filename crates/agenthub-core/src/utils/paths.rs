@@ -51,12 +51,18 @@ pub fn normalize_data_dir(path: &Path) -> Result<PathBuf> {
 }
 
 /// Expand leading `~` via `dirs::home_dir()` (not the HOME env var).
-fn expand_user_path(raw: &str) -> Result<PathBuf> {
+pub fn expand_user_path(raw: &str) -> Result<PathBuf> {
     if raw == "~" {
         return home_dir();
     }
     if let Some(rest) = raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\")) {
-        return Ok(home_dir()?.join(rest));
+        let mut path = home_dir()?;
+        for part in rest.split(['/', '\\']) {
+            if !part.is_empty() && part != "." {
+                path.push(part);
+            }
+        }
+        return Ok(path);
     }
     Ok(PathBuf::from(raw))
 }
@@ -136,7 +142,7 @@ pub fn agent_live_paths(agent: AgentId) -> Result<AgentLivePaths> {
     Ok(match agent {
         AgentId::Claude => AgentLivePaths {
             config: join(&config_dir, "settings.json")?,
-            auth: None,
+            auth: Some(join(&config_dir, ".credentials.json")?),
             extra: vec![display_user_path(&home_dir()?.join(".claude.json"))?],
             open_dir,
         },
@@ -148,7 +154,7 @@ pub fn agent_live_paths(agent: AgentId) -> Result<AgentLivePaths> {
         },
         AgentId::Kimi => AgentLivePaths {
             config: join(&home, "config.toml")?,
-            auth: None,
+            auth: Some(display_user_path(&home.join("credentials").join("kimi-code.json"))?),
             extra: Vec::new(),
             open_dir,
         },

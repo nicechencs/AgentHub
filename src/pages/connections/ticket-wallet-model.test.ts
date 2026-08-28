@@ -882,6 +882,9 @@ describe('ticket detail fields', () => {
         email: 'me@example.com',
         subscription: 'Pro',
         quota5hPct: 40,
+        credentialFiles: [
+          { name: '.credentials.json', content: '{\n  "claudeAiOauth": { "accessToken": "***" }\n}\n' },
+        ],
       }),
     ], []);
     const extras = extrasFromPoolSource(oauth, source);
@@ -894,6 +897,9 @@ describe('ticket detail fields', () => {
     expect(extras.canEditConfig).toBe(false);
     expect(extras.oauthAction).toEqual({ kind: 'refresh-quota', label: '刷新' });
     expect(extras.refreshTokenPreview).toBeUndefined();
+    expect(extras.credentialFiles).toEqual([
+      { name: '.credentials.json', content: '{\n  "claudeAiOauth": { "accessToken": "***" }\n}\n' },
+    ]);
     expect(ticketDetailEditLabel(extras)).toBeNull();
 
     const previewExtras = extrasFromPoolSource(oauth, {
@@ -999,7 +1005,7 @@ describe('buildTicketAddMenu', () => {
       ['import-login', 'api-key'],
     ]);
     expect(menu[0]?.actions.map((a) => a.label)).toEqual([
-      '导入当前登录',
+      '导入授权',
       '官方登录',
       '添加 API Key',
     ]);
@@ -1106,7 +1112,7 @@ describe('handleTicketAddMenuSelect', () => {
     expect(onMenuClose).toHaveBeenCalledOnce();
   });
 
-  it('opens the import dialog for 导入当前登录 instead of failing silently', () => {
+  it('opens the import dialog for 导入授权 instead of failing silently', () => {
     const event = { preventDefault: vi.fn() };
     const onImportLogin = vi.fn();
     handleTicketAddMenuSelect(event, 'import-login', 'claude', { onImportLogin });
@@ -1133,7 +1139,7 @@ describe('handleTicketAddMenuSelect', () => {
 });
 
 describe('ticketAddMenuClosesOnKey', () => {
-  it('closes the expanded 添加登录 menu on Escape', () => {
+  it('closes the expanded 添加授权 menu on Escape', () => {
     expect(ticketAddMenuClosesOnKey('Escape')).toBe(true);
     expect(ticketAddMenuClosesOnKey('Esc')).toBe(true);
     expect(ticketAddMenuClosesOnKey('Enter')).toBe(false);

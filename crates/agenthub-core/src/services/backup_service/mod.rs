@@ -17,6 +17,7 @@
 //! [`crate::services::BackupService`].
 
 mod catalog;
+mod inspect;
 mod path_safety;
 mod restore;
 mod snapshot;

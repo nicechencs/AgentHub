@@ -38,6 +38,13 @@ fn resolve_data_dir_ignores_empty_agenthub_home() {
 }
 
 #[test]
+fn expand_user_path_joins_nested_display_path() {
+    let home = home_dir().expect("home");
+    let got = expand_user_path("~/.grok/auth.json").expect("expand");
+    assert_eq!(got, home.join(".grok").join("auth.json"));
+}
+
+#[test]
 fn resolve_data_dir_expands_tilde_in_agenthub_home() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let prev = std::env::var_os("AGENTHUB_HOME");

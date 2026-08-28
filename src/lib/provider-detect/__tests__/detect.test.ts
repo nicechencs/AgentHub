@@ -127,8 +127,8 @@ describe('liveConfigPaths', () => {
   it('keeps Claude chrome to settings.json without detect jargon', () => {
     const paths = liveConfigPaths('claude');
     expect(paths.config).toBe('~/.claude/settings.json');
-    expect(paths.auth).toBeUndefined();
-    expect(paths.hint).toMatch(/写进这个文件|Claude/);
+    expect(paths.auth).toBe('~/.claude/.credentials.json');
+    expect(paths.hint).toMatch(/settings\.json|Claude/);
     expect(`${paths.auth ?? ''} ${paths.hint}`).not.toMatch(
       /detect|文件型凭据|环境变量|未必在单一文件|Endpoint|schema/i,
     );

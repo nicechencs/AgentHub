@@ -72,6 +72,7 @@ import {
   type TicketDetailField,
   type TicketWalletRow,
 } from './ticket-wallet-model';
+import { TicketAuthFiles } from './ticket-auth-files';
 import { useOAuthLoginAgents } from './use-oauth-login-agents';
 
 function CredentialMark({
@@ -262,6 +263,8 @@ export function TicketDetailPanel({
       bindingRows={ticket ? bindingRows : []}
       diagnostics={ticket ? diagnostics : []}
       showClients={Boolean(ticket)}
+      agentId={ticket?.agentId}
+      files={extras?.credentialFiles}
     />
   );
 
@@ -317,6 +320,8 @@ function TicketDetailBody({
   bindingRows,
   diagnostics,
   showClients,
+  agentId,
+  files,
 }: {
   extras?: TicketDetailExtras | null;
   hasQuota: boolean;
@@ -328,6 +333,8 @@ function TicketDetailBody({
   bindingRows: TicketBindingRowView[];
   diagnostics: TicketDetailField[];
   showClients: boolean;
+  agentId?: AgentId;
+  files?: TicketDetailExtras['credentialFiles'];
 }) {
   const { t } = useI18n();
   return (
@@ -444,6 +451,10 @@ function TicketDetailBody({
             ))}
           </div>
         </details>
+      ) : null}
+
+      {agentId && files && files.length > 0 ? (
+        <TicketAuthFiles agentId={agentId} files={files} />
       ) : null}
     </div>
   );

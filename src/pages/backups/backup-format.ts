@@ -56,3 +56,26 @@ export function backupRowTitle(
 ): string {
   return `${backupTitleKind(bk.kind, t)} · ${fmtRelativeI18n(bk.createdAt, t)}`;
 }
+
+export function backupFileLabel(path: string): string {
+  const norm = path.replace(/\\/g, '/').trim();
+  if (!norm) return path;
+  const base = norm.split('/').filter(Boolean).pop();
+  return base || path;
+}
+
+export function backupFileLabels(files: readonly string[] | undefined): string {
+  const names = [...new Set((files ?? []).map(backupFileLabel).filter(Boolean))];
+  return names.join(' · ');
+}
+
+/** Card title: user note, extracted identity, or file names. */
+export function backupCardIdentity(
+  bk: Pick<BackupMeta, 'identity' | 'note' | 'files'>,
+): string {
+  const note = backupNoteSubtitle(bk.note);
+  if (note) return note;
+  const identity = bk.identity?.trim();
+  if (identity) return identity;
+  return backupFileLabels(bk.files);
+}

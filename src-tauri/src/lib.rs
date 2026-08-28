@@ -173,6 +173,7 @@ pub fn run() {
             commands::skill::install_market_skill,
             // Backup
             commands::backup::list_backups,
+            commands::backup::inspect_backup,
             commands::backup::create_backup,
             commands::backup::restore_backup,
             commands::backup::delete_backup,

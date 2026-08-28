@@ -1,5 +1,7 @@
 use super::*;
-use crate::file_manager::{explorer_select_arg, file_manager_action, FileManagerAction};
+use crate::file_manager::{
+    explorer_select_arg, file_manager_action, normalize_open_path_input, FileManagerAction,
+};
 
 #[test]
 fn file_manager_action_reveals_files_and_opens_dirs() {
@@ -21,6 +23,13 @@ fn file_manager_action_reveals_files_and_opens_dirs() {
 fn explorer_select_arg_points_at_the_file() {
     let arg = explorer_select_arg(std::path::Path::new(r"C:\Users\demo\.claude.json"));
     assert_eq!(arg, r"/select,C:\Users\demo\.claude.json");
+}
+
+#[test]
+fn normalize_open_path_expands_tilde_and_nested_file() {
+    let home = agenthub_core::utils::paths::home_dir().expect("home");
+    let got = normalize_open_path_input("~/.grok/auth.json");
+    assert_eq!(got, home.join(".grok").join("auth.json"));
 }
 
 #[test]
