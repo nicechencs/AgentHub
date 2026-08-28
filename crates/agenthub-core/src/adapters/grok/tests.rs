@@ -51,6 +51,45 @@ api_backend = "responses"
 }
 
 #[test]
+fn redacted_api_key_does_not_hide_oauth_live_account() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("config.toml"),
+        r#"[models]
+default = "grok"
+
+[model."grok"]
+model = "grok-4.3"
+base_url = "https://mytokens.cc/v1"
+api_key = "***"
+api_backend = "responses"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("auth.json"),
+        r#"{"https://auth.x.ai::client":{"email":"user@x.ai","user_id":"uid-1","key":"at-live","refresh_token":"rt-live"}}"#,
+    )
+    .unwrap();
+    let live = GrokAdapter.read_account();
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    let live = live.unwrap();
+    assert_eq!(live.kind, AccountKind::Oauth);
+    assert_ne!(
+        live.credentials.get("api_key").and_then(|v| v.as_str()),
+        Some("***")
+    );
+}
+
+#[test]
 fn grok_api_key_and_oauth_sets_also_present() {
     let dir = tempdir().unwrap();
     let config = dir.path().join("config.toml");

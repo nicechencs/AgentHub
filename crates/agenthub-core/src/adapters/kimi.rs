@@ -2,8 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 use crate::integrations::agents::kimi::managed::{
-    ensure_kimi_model_alias, ensure_kimi_provider_entry, looks_like_grok_model_id,
-    DEFAULT_MODEL_ALIAS,
+    ensure_kimi_model_alias, ensure_kimi_provider_entry,
 };
 use crate::logging::targets;
 use crate::models::{
@@ -388,19 +387,53 @@ fn read_kimi_api_key(path: &Path) -> Result<Option<String>> {
             .and_then(|item| item.get("api_key"))
             .and_then(|v| v.as_str())
         {
-            return Ok(Some(key.to_string()));
+            let trimmed = key.trim();
+            if !trimmed.is_empty() && !crate::utils::redact::is_unusable_secret(trimmed) {
+                return Ok(Some(trimmed.to_string()));
+            }
         }
     }
     if let Some(providers) = doc.get("providers").and_then(|p| p.as_table()) {
         for (_name, item) in providers.iter() {
             if let Some(key) = item.get("api_key").and_then(|v| v.as_str()) {
-                if !key.is_empty() {
-                    return Ok(Some(key.to_string()));
+                let trimmed = key.trim();
+                if !trimmed.is_empty() && !crate::utils::redact::is_unusable_secret(trimmed) {
+                    return Ok(Some(trimmed.to_string()));
                 }
             }
         }
     }
     Ok(None)
+}
+
+/// Official Kimi OAuth must not share the live file with a leftover API key.
+pub(crate) fn kimi_live_has_leftover_api_key_when_oauth(current: &crate::models::Account) -> bool {
+    if current.kind != crate::models::AccountKind::Oauth {
+        return false;
+    }
+    let Ok(home) = agent_home(AgentId::Kimi) else {
+        return false;
+    };
+    kimi_config_has_api_key_field(&home.join("config.toml"))
+}
+
+fn kimi_config_has_api_key_field(path: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(doc) = text.parse::<toml_edit::DocumentMut>() else {
+        return false;
+    };
+    let Some(providers) = doc.get("providers").and_then(|p| p.as_table()) else {
+        return false;
+    };
+    let found = providers.iter().any(|(_name, item)| {
+        item.get("api_key")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .is_some_and(|key| !key.is_empty())
+    });
+    found
 }
 
 pub(crate) fn write_kimi_api_key(path: &Path, key: &str) -> Result<()> {
@@ -444,15 +477,9 @@ pub(crate) fn write_kimi_api_key(path: &Path, key: &str) -> Result<()> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    let model_alias = match stored.as_deref() {
-        Some(model) if looks_like_grok_model_id(model) => DEFAULT_MODEL_ALIAS.to_string(),
-        Some(model) => model.to_string(),
-        None => DEFAULT_MODEL_ALIAS.to_string(),
-    };
-    if stored.as_deref() != Some(model_alias.as_str()) {
-        doc["default_model"] = toml_edit::value(model_alias.as_str());
+    if let Some(model_alias) = stored {
+        ensure_kimi_model_alias(&mut doc, provider_name.as_str(), &model_alias)?;
     }
-    ensure_kimi_model_alias(&mut doc, provider_name.as_str(), &model_alias)?;
     {
         let providers = doc["providers"].as_table_mut().ok_or_else(|| {
             AppError::InvalidArg("Kimi config.toml providers must be a table".into())

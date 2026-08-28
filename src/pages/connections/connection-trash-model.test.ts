@@ -72,8 +72,9 @@ describe('humanizeTrashLabel', () => {
       }),
     });
     const label = humanizeTrashLabel(item);
-    expect(label).toContain('本机路由');
     expect(label).toContain('8660');
+    expect(label).toContain('mytokens.cc');
+    expect(label).not.toBe('本机路由');
     expect(label).not.toMatch(/•{2,}/);
     assertNoInternalLeak(label);
   });

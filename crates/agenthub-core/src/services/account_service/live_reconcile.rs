@@ -99,6 +99,14 @@ impl AccountService {
                     );
                 }
             }
+            if let Err(error) = self.ensure_exclusive_live_source(adapter.as_ref(), id) {
+                tracing::warn!(
+                    module = targets::ACCOUNT,
+                    agent = id.as_str(),
+                    error_code = error.code(),
+                    "failed to make the current login the only live source"
+                );
+            }
         }
     }
 
@@ -498,6 +506,35 @@ impl AccountService {
         leftover_live_flag(agent) || self.live_is_adapter_projection(agent).unwrap_or(false)
     }
 
+    /// Current oauth/API Key cannot both be live in the tool. List/boot only
+    /// imported files into the pool; this writes the current login back when a
+    /// leftover pointer would still win.
+    fn ensure_exclusive_live_source(
+        &self,
+        adapter: &dyn AgentAdapter,
+        agent: AgentId,
+    ) -> Result<()> {
+        if !adapter.capability(Capability::AccountSwitch).is_usable() {
+            return Ok(());
+        }
+        let Some(current) = self.repo.get_current(agent)? else {
+            return Ok(());
+        };
+        if current.kind != AccountKind::Oauth {
+            return Ok(());
+        }
+        if !exclusive_live_needs_apply(adapter, agent, &current) {
+            return Ok(());
+        }
+        tracing::info!(
+            module = targets::ACCOUNT,
+            op = "exclusive_live",
+            agent = agent.as_str(),
+            "current login is not the only live source; writing it back"
+        );
+        adapter.apply_account(&current.to_live())
+    }
+
     /// Read-only live authentication status, including adapter-projection presence.
     pub fn probe_live_auth(&self, agent: AgentId) -> Result<AuthState> {
         let adapter = self.registry.get(agent).ok_or_else(|| {
@@ -766,6 +803,42 @@ fn leftover_shaped_codex_live(agent: AgentId) -> bool {
     leftover_live_flag(agent)
         || (agent == AgentId::Codex
             && crate::integrations::agents::codex::leftover::live_config_is_bridge_leftover())
+}
+
+fn exclusive_live_needs_apply(
+    adapter: &dyn AgentAdapter,
+    agent: AgentId,
+    current: &Account,
+) -> bool {
+    match agent {
+        AgentId::Codex => adapter.live_backup_paths().iter().any(|path| {
+            path.file_name().is_some_and(|name| name == "config.toml")
+                && std::fs::read_to_string(path).ok().is_some_and(|text| {
+                    crate::integrations::agents::codex::leftover::toml_has_competing_api_key_pointer(
+                        &text,
+                    ) || crate::integrations::agents::codex::leftover::toml_is_bridge_leftover(&text)
+                })
+        }),
+        AgentId::Pi => {
+            adapter
+                .live_backup_paths()
+                .iter()
+                .any(|path| path.file_name().is_some_and(|name| name == "settings.json"))
+                && crate::adapters::pi::pi_oauth_live_slot_mismatch(current)
+        }
+        AgentId::Grok => adapter.live_backup_paths().iter().any(|path| {
+            path.file_name().is_some_and(|name| name == "config.toml")
+                && crate::adapters::grok_live_has_leftover_api_key_field()
+        }),
+        AgentId::Kimi => {
+            adapter
+                .live_backup_paths()
+                .iter()
+                .any(|path| path.file_name().is_some_and(|name| name == "config.toml"))
+                && crate::adapters::kimi_live_has_leftover_api_key_when_oauth(current)
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn compensated_current_account_apply_error_with_db(
