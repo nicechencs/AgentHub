@@ -205,6 +205,9 @@ impl AccountService {
                 error_code = error.code(),
                 "hub oauth refresh could not sync the CLI login file"
             );
+            return self
+                .mark_oauth_file_sync_needs_attention(&persisted)
+                .or(Ok(persisted));
         }
         Ok(persisted)
     }

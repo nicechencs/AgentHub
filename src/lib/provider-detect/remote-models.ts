@@ -192,18 +192,28 @@ export function resolveUpstreamBaseUrl(args: {
   return scanAdvancedConfigForBaseUrl(args.configText);
 }
 
+export function normalizeFetchBaseUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  return trimmed.replace(/\/v1$/i, '').replace(/\/+$/, '');
+}
+
 export function shouldFetchRemoteModels(args: {
   useOfficial: boolean;
   baseUrl: string;
   apiKey: string;
   /** Edit mode: saved provider id is present (secret stays on the hub). */
   hasStoredSecret?: boolean;
+  /** Saved upstream address; stored secret may only fetch this URL. */
+  savedBaseUrl?: string;
 }): boolean {
   if (args.useOfficial) return false;
   const baseUrl = args.baseUrl.trim();
   if (!baseUrl || !isHttpUrl(baseUrl)) return false;
   if (isLivePastedApiKey(args.apiKey)) return true;
-  return Boolean(args.hasStoredSecret);
+  if (!args.hasStoredSecret) return false;
+  const saved = (args.savedBaseUrl ?? '').trim();
+  if (!saved) return false;
+  return normalizeFetchBaseUrl(baseUrl) === normalizeFetchBaseUrl(saved);
 }
 
 export type RemoteModelsStatusKind = 'idle' | 'loading' | 'failed' | 'empty' | 'ready';

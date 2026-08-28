@@ -84,6 +84,7 @@ describe('status when URL comes from advanced config', () => {
       baseUrl: resolved,
       apiKey: REDACTED_MARKER,
       hasStoredSecret: true,
+      savedBaseUrl: resolved,
     });
     expect(shouldFetch).toBe(true);
 

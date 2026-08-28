@@ -141,7 +141,7 @@ test('release version replacement commits all four files without a UTF-8 BOM', {
     assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version, '9.9.9');
     assert.match(fs.readFileSync(path.join(root, 'Cargo.toml'), 'utf8'), /version = "9\.9\.9"/);
     assert.match(fs.readFileSync(path.join(root, 'Cargo.lock'), 'utf8'), /name = "agenthub-gui"\nversion = "9\.9\.9"/);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'tauri.conf.json'), 'utf8')).version, '9.9.9');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'tauri.conf.json'), 'utf8')).version, '../package.json');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(origin, { recursive: true, force: true });

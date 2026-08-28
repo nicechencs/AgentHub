@@ -1,8 +1,8 @@
 //! Snapshot materializer: copy/hardlink live files, write manifest, index the row.
 //!
-//! `snapshot()` is `snapshot_inner` only — it must not acquire the live-write
-//! lock. `snapshot_with_guard` validates an enclosing guard then calls the same
-//! inner path.
+//! `snapshot()` takes the live-write lock for the whole copy+index so a
+//! concurrent login switch cannot mix files. `snapshot_with_guard` is for an
+//! enclosing saga that already holds that lock.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -74,6 +74,7 @@ impl BackupService {
         kind: BackupKind,
         note: Option<&str>,
     ) -> Result<BackupRecord> {
+        let _guard = self.authority.acquire(agent)?;
         self.snapshot_inner(agent, kind, note)
     }
 

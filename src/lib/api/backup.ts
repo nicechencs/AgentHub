@@ -22,7 +22,3 @@ export async function restoreBackup(backupId: string): Promise<void> {
 export async function deleteBackup(backupId: string): Promise<void> {
   return getBackend().backup.deleteBackup(backupId);
 }
-
-export async function exportBackup(backupId: string): Promise<void> {
-  return getBackend().backup.exportBackup(backupId);
-}

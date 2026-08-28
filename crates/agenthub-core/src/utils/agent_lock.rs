@@ -1,8 +1,10 @@
 //! Per-agent exclusive live-write lock shared by provider and account switches.
 //!
-//! AgentHub is a single-process app. Mutual exclusion is process-local; the
-//! lock file is owner metadata for diagnostics and is never a cross-process
-//! protocol. Crash leftovers and malformed metadata are reclaimed on acquire.
+//! Mutual exclusion is an OS exclusive lock on the lock leaf, held on the open
+//! file handle until [`AgentWriteLock`] drops. CLI and desktop processes that
+//! share a data directory therefore cannot write the same Agent live files at
+//! once. The lock-file body is owner metadata for diagnostics; crash leftovers
+//! are reclaimable because the OS releases the handle lock.
 
 use std::collections::HashSet;
 use std::fs::OpenOptions;
@@ -87,6 +89,21 @@ pub fn inspect_locks(lock_dir: &Path) -> Vec<LockInspection> {
 
 fn inspect_one(path: &Path, agent: &str) -> LockInspection {
     let display = path.display().to_string();
+    if lock_path_is_held(path) || os_lock_is_busy(path) {
+        let owner = std::fs::read_to_string(path)
+            .ok()
+            .as_deref()
+            .and_then(LockOwner::parse);
+        return LockInspection {
+            agent: agent.to_string(),
+            path: display,
+            status: "held".into(),
+            pid: owner.as_ref().map(|owner| owner.pid),
+            created_unix_ms: owner.as_ref().map(|owner| owner.created_unix_ms),
+            note: None,
+        };
+    }
+
     let raw = match std::fs::read_to_string(path) {
         Ok(raw) => raw,
         Err(error) => {
@@ -100,18 +117,6 @@ fn inspect_one(path: &Path, agent: &str) -> LockInspection {
             };
         }
     };
-
-    if lock_path_is_held(path) {
-        let owner = LockOwner::parse(&raw);
-        return LockInspection {
-            agent: agent.to_string(),
-            path: display,
-            status: "held".into(),
-            pid: owner.as_ref().map(|owner| owner.pid),
-            created_unix_ms: owner.as_ref().map(|owner| owner.created_unix_ms),
-            note: None,
-        };
-    }
 
     match LockOwner::parse(&raw) {
         Some(owner) => LockInspection {
@@ -256,15 +261,16 @@ impl AgentWriteLock {
                 file: Some(file),
                 token: owner.token,
             })),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                release_lock_path(path);
+                Ok(None)
+            }
             Err(error) => {
                 release_lock_path(path);
                 // Deliberately do NOT remove the lock leaf here. The path may
                 // be a foreign symlink or another non-regular file that
                 // open_lock_leaf refused to open; deleting it would touch a
                 // target we do not own, breaking the fail-closed promise.
-                // An empty leftover leaf is harmless: the lock is a
-                // process-local protocol, crash leftovers are reclaimed on
-                // acquire, and the next create(true) open reuses the file.
                 Err(error)
             }
         }
@@ -285,9 +291,105 @@ impl Drop for AgentWriteLock {
 
 fn write_owner_file(path: &Path, metadata: &str) -> io::Result<std::fs::File> {
     let mut file = open_lock_leaf(path)?;
+    if !try_lock_exclusive(&file)? {
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "live-write lock is held by another process",
+        ));
+    }
+    file.set_len(0)?;
     file.write_all(metadata.as_bytes())?;
     let _ = file.sync_all();
     Ok(file)
+}
+
+/// Non-blocking exclusive lock on an already-opened lock leaf.
+pub(crate) fn try_lock_exclusive(file: &std::fs::File) -> io::Result<bool> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+
+        let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if rc == 0 {
+            return Ok(true);
+        }
+        let err = io::Error::last_os_error();
+        match err.raw_os_error() {
+            Some(code) if code == libc::EWOULDBLOCK || code == libc::EAGAIN => Ok(false),
+            _ => Err(err),
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+
+        const LOCKFILE_FAIL_IMMEDIATELY: u32 = 0x0000_0001;
+        const LOCKFILE_EXCLUSIVE_LOCK: u32 = 0x0000_0002;
+        const ERROR_LOCK_VIOLATION: u32 = 33;
+
+        #[repr(C)]
+        struct Overlapped {
+            internal: usize,
+            internal_high: usize,
+            offset: u32,
+            offset_high: u32,
+            event: *mut core::ffi::c_void,
+        }
+
+        unsafe extern "system" {
+            fn LockFileEx(
+                file: *mut core::ffi::c_void,
+                flags: u32,
+                reserved: u32,
+                bytes_low: u32,
+                bytes_high: u32,
+                overlapped: *mut Overlapped,
+            ) -> i32;
+            fn GetLastError() -> u32;
+        }
+
+        let mut overlapped = Overlapped {
+            internal: 0,
+            internal_high: 0,
+            // Lock one byte past typical metadata so Windows exclusive
+            // locking does not block reading or rewriting the owner body.
+            offset: u32::MAX - 1,
+            offset_high: 0,
+            event: core::ptr::null_mut(),
+        };
+        let ok = unsafe {
+            LockFileEx(
+                file.as_raw_handle() as *mut core::ffi::c_void,
+                LOCKFILE_FAIL_IMMEDIATELY | LOCKFILE_EXCLUSIVE_LOCK,
+                0,
+                1,
+                0,
+                &mut overlapped,
+            )
+        };
+        if ok != 0 {
+            return Ok(true);
+        }
+        let code = unsafe { GetLastError() };
+        if code == ERROR_LOCK_VIOLATION {
+            Ok(false)
+        } else {
+            Err(io::Error::from_raw_os_error(code as i32))
+        }
+    }
+}
+
+fn os_lock_is_busy(path: &Path) -> bool {
+    let mut options = OpenOptions::new();
+    options.write(true).create(false);
+    let Ok(file) = options.open(path) else {
+        return false;
+    };
+    match try_lock_exclusive(&file) {
+        Ok(acquired) => !acquired,
+        Err(_) => false,
+    }
 }
 
 /// Open a lock leaf without following a pre-existing link, then validate the
@@ -299,7 +401,7 @@ fn write_owner_file(path: &Path, metadata: &str) -> io::Result<std::fs::File> {
 /// instead of truncating an unrelated target file.
 pub(crate) fn open_lock_leaf(path: &Path) -> io::Result<std::fs::File> {
     let mut options = OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create(true).truncate(false);
 
     #[cfg(unix)]
     {

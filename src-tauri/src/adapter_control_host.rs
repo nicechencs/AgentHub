@@ -20,7 +20,7 @@ use agenthub_core::AgentHub;
 
 use crate::adapter_bridge_controller::{
     apply_local_bridge, local_bridge_status, remove_adapter_with_bridge_cleanup,
-    set_local_bridge_auto_start, start_local_bridge, stop_local_bridge,
+    set_local_bridge_auto_start, start_local_bridge, stop_local_bridge, unbind_local_bridge,
 };
 use crate::commands::{map_err_string, with_hub_blocking};
 use crate::exit_coordinator::LifecycleShutdownBarrier;
@@ -102,25 +102,26 @@ impl AdapterControl for DesktopAdapterControl {
             })
             .await?
         };
+        let request = TicketUnbindRequest {
+            ticket_id: action.request.ticket_id,
+            agent_id: action.request.agent_id,
+        };
         if let Some(profile_id) = action.stop_bridge_profile_id {
-            stop_local_bridge(
+            return unbind_local_bridge(
                 Arc::clone(&self.hub),
                 Arc::clone(&self.host),
                 Arc::clone(&self.coordinator),
                 Arc::clone(&self.lifecycle_barrier),
                 profile_id,
+                request,
             )
-            .await?;
+            .await;
         }
         let _target_guard = match action.lock_target {
             Some(target) => Some(self.coordinator.lock_target(target).await),
             None => None,
         };
         let hub = Arc::clone(&self.hub);
-        let request = TicketUnbindRequest {
-            ticket_id: action.request.ticket_id,
-            agent_id: action.request.agent_id,
-        };
         with_hub_blocking(hub, move |hub| {
             hub.ticket_bind()
                 .unbind(&request)

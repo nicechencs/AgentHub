@@ -725,8 +725,9 @@ impl AccountService {
             return Ok(());
         }
 
-        let _lock = self.acquire_live_lock(stored.agent_id)?;
-        if let Err(error) = backup.snapshot(
+        let live_guard = backup.acquire_live_write(stored.agent_id)?;
+        if let Err(error) = backup.snapshot_with_guard(
+            &live_guard,
             stored.agent_id,
             BackupKind::AutoSwitch,
             Some(&format!("before applying current account {}", stored.id)),
@@ -740,7 +741,12 @@ impl AccountService {
             // apply that format to live files. Keep the pool update; do not
             // fail the save or attempt a live rollback of an unapplied write.
             if error.code() == "unsupported" {
-                self.snapshot_after_pool_change(stored.agent_id, note);
+                let _ = backup.snapshot_with_guard(
+                    &live_guard,
+                    stored.agent_id,
+                    BackupKind::AutoSwitch,
+                    Some(note),
+                );
                 return Ok(());
             }
             let live_rollback = match &live_before {

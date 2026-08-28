@@ -5,5 +5,4 @@ export interface BackupPort {
   createBackup(agentId: AgentId, note?: string): Promise<BackupMeta>;
   restoreBackup(backupId: string): Promise<void>;
   deleteBackup(backupId: string): Promise<void>;
-  exportBackup(backupId: string): Promise<void>;
 }

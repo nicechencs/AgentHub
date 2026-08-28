@@ -95,6 +95,18 @@ fn concurrent_acquire_has_at_most_one_holder() {
 }
 
 #[test]
+fn os_exclusive_lock_rejects_a_second_handle() {
+    let dir = tempdir().unwrap();
+    let _held = AgentWriteLock::acquire(dir.path(), AgentId::Claude).unwrap();
+    let path = dir.path().join("provider-claude.lock");
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap();
+    assert_eq!(try_lock_exclusive(&file).unwrap(), false);
+}
+
+#[test]
 fn panic_while_holding_releases_lock() {
     let dir = tempdir().unwrap();
     let path = dir.path().to_path_buf();

@@ -418,6 +418,7 @@ impl ProviderService {
     /// is a no-op so CRUD tests and half-surface agents do not touch real files.
     pub(super) fn prepare_current_provider_live(
         &self,
+        live_guard: &crate::services::LiveWriteGuard,
         agent: AgentId,
         will_be_current: bool,
         note: &str,
@@ -442,7 +443,9 @@ impl ProviderService {
         }
         let live_before = adapter.read_config()?;
         ensure_config_agent(&live_before, agent)?;
-        if let Err(error) = backup.snapshot(agent, BackupKind::AutoSwitch, Some(note)) {
+        if let Err(error) =
+            backup.snapshot_with_guard(live_guard, agent, BackupKind::AutoSwitch, Some(note))
+        {
             if error.code() != "not_found" {
                 return Err(error);
             }
@@ -495,9 +498,14 @@ impl ProviderService {
         Ok(())
     }
 
-    pub(super) fn sync_current_provider_live(&self, stored: &Provider, note: &str) -> Result<()> {
+    pub(super) fn sync_current_provider_live(
+        &self,
+        live_guard: &crate::services::LiveWriteGuard,
+        stored: &Provider,
+        note: &str,
+    ) -> Result<()> {
         if !stored.is_current {
-            self.snapshot_after_pool_change(stored.agent_id, note);
+            self.snapshot_after_pool_change_locked(live_guard, stored.agent_id, note);
             return Ok(());
         }
         let Some(backup) = self.backup.as_ref() else {
@@ -508,7 +516,7 @@ impl ProviderService {
             Err(_) => return Ok(()),
         };
         if !adapter.capability(Capability::ConfigWrite).is_usable() {
-            self.snapshot_after_pool_change(stored.agent_id, note);
+            self.snapshot_after_pool_change_locked(live_guard, stored.agent_id, note);
             return Ok(());
         }
 
@@ -520,11 +528,12 @@ impl ProviderService {
             raw: materialized.settings_config,
         };
         if live_before.raw == target_config.raw {
-            self.snapshot_after_pool_change(stored.agent_id, note);
+            self.snapshot_after_pool_change_locked(live_guard, stored.agent_id, note);
             return Ok(());
         }
 
-        if let Err(error) = backup.snapshot(
+        if let Err(error) = backup.snapshot_with_guard(
+            live_guard,
             stored.agent_id,
             BackupKind::AutoSwitch,
             Some(&format!("before applying current provider {}", stored.id)),
@@ -543,6 +552,29 @@ impl ProviderService {
 
     /// Pool-only changes keep an audit snapshot of the untouched live file.
     /// A missing live file is a normal no-op.
+    pub(super) fn snapshot_after_pool_change_locked(
+        &self,
+        live_guard: &crate::services::LiveWriteGuard,
+        agent: AgentId,
+        note: &str,
+    ) {
+        let Some(backup) = self.backup.as_ref() else {
+            return;
+        };
+        if let Err(error) =
+            backup.snapshot_with_guard(live_guard, agent, BackupKind::AutoSwitch, Some(note))
+        {
+            if error.code() != "not_found" {
+                tracing::warn!(
+                    target: targets::BACKUP,
+                    agent = agent.as_str(),
+                    error = %error,
+                    "automatic post-change live snapshot failed"
+                );
+            }
+        }
+    }
+
     pub(super) fn snapshot_after_pool_change(&self, agent: AgentId, note: &str) {
         let Some(backup) = self.backup.as_ref() else {
             return;

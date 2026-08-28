@@ -405,6 +405,16 @@ export default function ConnectionsPage() {
       await loadWallet();
     } catch (e) {
       if (refreshGen.current !== generation) return;
+      if (e instanceof Error && e.name === 'OauthFileSyncPending') {
+        toast({
+          title: t('connections.list.refreshPartial'),
+          description: e.message,
+          variant: 'danger',
+        });
+        await poolReload().catch(() => {});
+        await loadWallet();
+        return;
+      }
       toast({
         title: action.kind === 'sync-current-login'
           ? t('connections.import.toastFail')

@@ -37,7 +37,7 @@ impl ProviderService {
         let started = Instant::now();
         let result = (|| {
             self.validate_live_saga_guard(guard, agent)?;
-            self.switch_locked_inner(id_or_name, agent)
+            self.switch_locked_inner(guard.as_live_write_guard(), id_or_name, agent)
         })();
         log_provider_op("switch", agent, started, &result);
         result
@@ -45,6 +45,7 @@ impl ProviderService {
 
     pub(super) fn switch_locked_inner(
         &self,
+        live_guard: &crate::services::LiveWriteGuard,
         id_or_name: &str,
         agent: AgentId,
     ) -> Result<ProviderSwitchResult> {
@@ -121,7 +122,8 @@ impl ProviderService {
             .filter(|row| row.id == target.id)
             .map_or(target.updated_at.as_str(), |row| row.updated_at.as_str());
 
-        let snapshot = match backup.snapshot(
+        let snapshot = match backup.snapshot_with_guard(
+            live_guard,
             agent,
             BackupKind::AutoSwitch,
             Some(&format!("before provider switch to {}", target.id)),

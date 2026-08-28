@@ -586,7 +586,7 @@ impl AccountService {
         .map_err(|error| error.into_error())
     }
 
-    fn mark_oauth_file_sync_needs_attention(&self, account: &Account) -> Result<Account> {
+    pub(super) fn mark_oauth_file_sync_needs_attention(&self, account: &Account) -> Result<Account> {
         let mut extra = account.extra.clone();
         if !extra.is_object() {
             extra = json!({});

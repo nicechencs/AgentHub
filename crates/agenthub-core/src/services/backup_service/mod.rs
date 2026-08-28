@@ -30,14 +30,16 @@ use std::time::Instant;
 use serde::Serialize;
 
 use crate::adapters::AdapterRegistry;
-use crate::services::LiveWriteAuthority;
+use crate::error::Result;
+use crate::models::AgentId;
+use crate::services::{LiveWriteAuthority, LiveWriteGuard};
 use crate::storage::{BackupRepo, Database};
 
 // Re-export helpers so `tests` (`use super::*`) keep seeing them.
 #[allow(unused_imports)]
-use crate::error::{AppError, Result};
+use crate::error::AppError;
 #[allow(unused_imports)]
-use crate::models::{AgentId, BackupKind, BackupRecord};
+use crate::models::{BackupKind, BackupRecord};
 #[allow(unused_imports)]
 use std::collections::{HashMap, HashSet};
 
@@ -91,6 +93,12 @@ impl BackupService {
 
     pub fn backups_root(&self) -> &Path {
         &self.backups_root
+    }
+
+    /// Take the shared live-write lock for one Agent. Nested live sagas must
+    /// reuse this guard via [`Self::snapshot_with_guard`].
+    pub fn acquire_live_write(&self, agent: AgentId) -> Result<LiveWriteGuard> {
+        self.authority.acquire(agent)
     }
 
     #[cfg(test)]

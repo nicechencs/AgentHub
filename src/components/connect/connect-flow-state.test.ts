@@ -1336,10 +1336,12 @@ describe('visibleTargetsForPurpose', () => {
     ]);
     expect(visibleTargetsForPurpose(['pi', 'claude', 'grok', 'kimi'], source, map, 'share')).toEqual([
       'pi',
+      'kimi',
     ]);
     expect(visibleTargetsForPurpose(['pi', 'claude', 'grok', 'kimi'], source, map, 'route')).toEqual([
       'claude',
       'grok',
+      'kimi',
     ]);
   });
 });

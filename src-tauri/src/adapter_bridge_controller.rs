@@ -245,6 +245,42 @@ pub(crate) async fn start_local_bridge(
     Ok(status_dto(&host, &applied.profile.id, AdapterBridgeStatusDto::from_runtime(status)))
 }
 
+/// Stop the listener, restore previous live, and delete the projection while
+/// holding profile + target locks. If restore/delete fails, restart the
+/// listener so the Agent is not left pointing at a dead port.
+pub(crate) async fn unbind_local_bridge(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    profile_id: String,
+    request: agenthub_core::models::TicketUnbindRequest,
+) -> Result<(), String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _profile_guard = coordinator.lock_profile(&profile_id).await;
+    let profile = load_bridge_profile(hub.clone(), profile_id.clone()).await?;
+    let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
+    let _ = stop_bridge_runtime(&host, &profile).await?;
+    let unbind_hub = hub.clone();
+    let result = with_hub_blocking(unbind_hub, move |hub| {
+        hub.ticket_bind()
+            .unbind(&request)
+            .map_err(|error| map_err_string("unbind_ticket", error))
+    })
+    .await;
+    if let Err(error) = result {
+        let restart = AdapterBridgePrepareRequest {
+            source_kind: profile.source_kind,
+            source_id: profile.source_id.clone(),
+            target_agent_id: profile.target_agent_id,
+            auto_start: profile.auto_start,
+        };
+        let _ = apply_local_bridge_locked(hub, host, coordinator, restart).await;
+        return Err(error);
+    }
+    Ok(())
+}
+
 /// Stop a bridge without altering its generated provider or auto-start choice.
 /// A later manual start or application restart can bring the same active
 /// profile back with the persisted loopback port.
@@ -336,7 +372,7 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
     let _ = stop_bridge_runtime(&host, &profile).await?;
     let ticket_id = agenthub_core::models::ticket_id(profile.source_kind, &profile.source_id);
     let agent_id = profile.target_agent_id;
-    with_hub_blocking(hub, move |hub| {
+    let result = with_hub_blocking(hub.clone(), move |hub| {
         hub.ticket_bind()
             .unbind(&agenthub_core::models::TicketUnbindRequest {
                 ticket_id,
@@ -344,7 +380,18 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
             })
             .map_err(|error| map_err_string("unbind_ticket", error))
     })
-    .await
+    .await;
+    if let Err(error) = result {
+        let restart = AdapterBridgePrepareRequest {
+            source_kind: profile.source_kind,
+            source_id: profile.source_id.clone(),
+            target_agent_id: profile.target_agent_id,
+            auto_start: profile.auto_start,
+        };
+        let _ = apply_local_bridge_locked(hub, host, coordinator, restart).await;
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Schedule automatic bridge recovery after the GUI has finished setting up.

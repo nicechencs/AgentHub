@@ -1,7 +1,8 @@
 //! Per-skill / root exclusive locks under `<source_root>/.locks/`.
 //!
-//! Mutual exclusion is process-local, matching [`crate::utils::agent_lock`].
-//! Leftover or malformed lock files do not block a later acquire.
+//! Mutual exclusion is the same OS exclusive lock used by
+//! [`crate::utils::agent_lock`]. Leftover or malformed lock files do not block
+//! a later acquire.
 
 use std::fs;
 use std::io::{self, Write};
@@ -9,7 +10,9 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{AppError, Result};
-use crate::utils::agent_lock::{open_lock_leaf, release_lock_path, try_claim_lock_path};
+use crate::utils::agent_lock::{
+    open_lock_leaf, release_lock_path, try_claim_lock_path, try_lock_exclusive,
+};
 
 /// Per-skill exclusive lock under `<source_root>/.locks/skill-<id>.lock`.
 pub(crate) fn acquire_skill_lock(source_root: &Path, skill_id: &str) -> Result<SkillScopedLock> {
@@ -104,6 +107,10 @@ impl SkillScopedLock {
                 file: Some(file),
                 token: owner.token,
             }),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                release_lock_path(&path);
+                Err(lock_held_error(key))
+            }
             Err(error) => {
                 release_lock_path(&path);
                 let _ = fs::remove_file(&path);
@@ -127,6 +134,13 @@ impl Drop for SkillScopedLock {
 
 fn write_owner_file(path: &Path, metadata: &str) -> io::Result<std::fs::File> {
     let mut file = open_lock_leaf(path)?;
+    if !try_lock_exclusive(&file)? {
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "skill lock is held by another process",
+        ));
+    }
+    file.set_len(0)?;
     file.write_all(metadata.as_bytes())?;
     let _ = file.sync_all();
     Ok(file)

@@ -76,7 +76,11 @@ async function refreshConnectionPoolAfterAdapterMutation(): Promise<void> {
  */
 export async function applyAdapter(request: AdapterApplyRequest): Promise<AdapterApplyResult> {
   const result = await getBackend().adapter.apply(request);
-  await refreshConnectionPoolAfterAdapterMutation();
+  try {
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+  } catch {
+    // Same as bindTicket: write succeeded; read models keep the previous snapshot.
+  }
   return result;
 }
 

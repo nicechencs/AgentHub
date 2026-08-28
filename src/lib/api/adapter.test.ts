@@ -35,6 +35,13 @@ function expectPoolRefreshOnly(): void {
   });
 }
 
+function expectBindRefresh(): void {
+  expect(refreshRuntimeReadModels).toHaveBeenCalledOnce();
+  expect(refreshRuntimeReadModels).toHaveBeenCalledWith(expect.anything(), {
+    models: ['connectionPool', 'ticketWallet'],
+  });
+}
+
 describe('adapter façade pool refresh', () => {
   beforeEach(() => {
     applyPort.mockReset();
@@ -60,7 +67,7 @@ describe('adapter façade pool refresh', () => {
 
     await Promise.resolve();
     expect(settled).toBe(false);
-    expectPoolRefreshOnly();
+    expectBindRefresh();
 
     pool.resolve();
     await expect(apply).resolves.toEqual({ profile: { id: 'profile-1' } });

@@ -5,7 +5,7 @@ import {
   DEFAULT_BACKEND_FEATURES,
   resolveBackendFeatures,
 } from '@/lib/backend/contracts';
-import { getBackend, resetBackend, setBackend } from '@/app/runtime';
+import { resetBackend, setBackend } from '@/app/runtime';
 import { getBackendFeatures } from './backend-features';
 
 describe('resolveBackendFeatures', () => {
@@ -33,9 +33,7 @@ describe('getBackendFeatures', () => {
       providerUndoSwitch: true,
       providerTestLatency: true,
       accountUndoSwitch: true,
-      backupExport: false,
     });
-    expect(getBackend().features.backupExport).toBe(false);
   });
 
   it('reports mock undo and latency as available', () => {
@@ -44,7 +42,6 @@ describe('getBackendFeatures', () => {
       providerUndoSwitch: true,
       providerTestLatency: true,
       accountUndoSwitch: true,
-      backupExport: false,
     });
   });
 });

@@ -581,6 +581,15 @@ export function ProviderEditDialog({
   });
 
   const hasStoredSecret = Boolean(provider?.id);
+  const savedBaseUrl = React.useMemo(() => {
+    if (!isEdit || !provider) return '';
+    return resolveUpstreamBaseUrl({
+      formBaseUrl: extractFormVars(agentId, provider.configText, provider.configFormat).baseUrl,
+      configText: provider.configText,
+      configFormat: provider.configFormat,
+      agentId,
+    });
+  }, [isEdit, provider, agentId]);
   const resolvedBaseUrl = resolveUpstreamBaseUrl({
     formBaseUrl: vars.baseUrl,
     configText,
@@ -592,6 +601,7 @@ export function ProviderEditDialog({
     baseUrl: resolvedBaseUrl,
     apiKey: vars.apiKey,
     hasStoredSecret,
+    savedBaseUrl,
   });
   const remoteModelsInput = `${resolvedBaseUrl}\u0000${vars.apiKey}`;
 
