@@ -557,7 +557,7 @@ fn import_live_preserves_full_secrets_without_stealing_current() {
     assert!(!imported.is_current);
     assert_eq!(imported.settings_config, live.raw);
     assert_eq!(imported.meta["source"], "live");
-    assert_eq!(imported.meta["surface"], "unknown");
+    assert_eq!(imported.meta["surface"], "anthropic-api");
     assert_eq!(
         imported.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
         "live-secret"

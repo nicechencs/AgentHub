@@ -83,6 +83,12 @@ impl AdapterRouteService {
             &provider.settings_config,
         ) {
             AdapterSourceProduct::KimiCodeMembership
+        } else if is_glm_coding_plan_marker(explicit_tag, &provider.settings_config) {
+            // GLM Coding Plan writes ANTHROPIC_AUTH_TOKEN; check it before the
+            // Claude API-key heuristic so the preset is not stolen as Anthropic.
+            AdapterSourceProduct::GlmCodingPlan
+        } else if is_deepseek_api_marker(explicit_tag, &provider.settings_config) {
+            AdapterSourceProduct::DeepseekApi
         } else if provider.agent_id == AgentId::Claude
             && (explicit_tag == Some("anthropic")
                 || settings_contain_anthropic_api_endpoint(&provider.settings_config)
@@ -93,10 +99,6 @@ impl AdapterRouteService {
             AdapterSourceProduct::OpenaiApi
         } else if is_xai_api_marker(explicit_tag, &provider.settings_config) {
             AdapterSourceProduct::XaiApi
-        } else if is_glm_coding_plan_marker(explicit_tag, &provider.settings_config) {
-            AdapterSourceProduct::GlmCodingPlan
-        } else if is_deepseek_api_marker(explicit_tag, &provider.settings_config) {
-            AdapterSourceProduct::DeepseekApi
         } else if provider.agent_id == AgentId::Kimi
             && crate::services::adapter_route_constants::settings_contain_custom_openai_compat_remote(
                 &provider.settings_config,
@@ -171,6 +173,20 @@ impl AdapterRouteService {
                         label: RouteSourceLabel::KimiMembership,
                         reason_hint: None,
                     })
+                } else if is_glm_coding_plan_marker(explicit_tag, &provider.settings_config) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::GlmCodingPlan,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::GlmCodingPlan,
+                        reason_hint: None,
+                    })
+                } else if is_deepseek_api_marker(explicit_tag, &provider.settings_config) {
+                    Ok(SourceIdentity {
+                        product: AdapterSourceProduct::DeepseekApi,
+                        credential: AdapterCredentialClass::ApiKey,
+                        label: RouteSourceLabel::DeepseekApi,
+                        reason_hint: None,
+                    })
                 } else if provider.agent_id == AgentId::Claude
                     && (explicit_tag == Some("anthropic")
                         || settings_contain_anthropic_api_endpoint(&provider.settings_config)
@@ -194,20 +210,6 @@ impl AdapterRouteService {
                         product: AdapterSourceProduct::XaiApi,
                         credential: AdapterCredentialClass::ApiKey,
                         label: RouteSourceLabel::XaiApiKey,
-                        reason_hint: None,
-                    })
-                } else if is_glm_coding_plan_marker(explicit_tag, &provider.settings_config) {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::GlmCodingPlan,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::GlmCodingPlan,
-                        reason_hint: None,
-                    })
-                } else if is_deepseek_api_marker(explicit_tag, &provider.settings_config) {
-                    Ok(SourceIdentity {
-                        product: AdapterSourceProduct::DeepseekApi,
-                        credential: AdapterCredentialClass::ApiKey,
-                        label: RouteSourceLabel::DeepseekApi,
                         reason_hint: None,
                     })
                 } else if provider.agent_id == AgentId::Kimi {
