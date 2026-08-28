@@ -605,17 +605,25 @@ fn first_http_url(value: &Value, pointers: &[&str]) -> Option<String> {
 
 fn first_toml_http_url(content: &str) -> Option<String> {
     let doc = content.parse::<toml_edit::DocumentMut>().ok()?;
-    let slug = toml_active_provider_slug(&doc)?;
-    let provider_url = doc
-        .get("model_providers")
-        .and_then(|item| item.as_table())
-        .and_then(|providers| providers.get(&slug))
-        .and_then(|provider| provider.get("base_url"))
-        .and_then(|item| item.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-    provider_url
+    toml_table_base_url(&doc, "model_providers", toml_active_provider_slug(&doc).as_deref())
+        .or_else(|| {
+            toml_table_base_url(
+                &doc,
+                "providers",
+                toml_named_table_slug(&doc, "default_provider", "providers").as_deref(),
+            )
+        })
+        .or_else(|| {
+            let alias = doc
+                .get("models")
+                .and_then(|item| item.as_table())
+                .and_then(|models| models.get("default"))
+                .and_then(|item| item.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            toml_table_base_url(&doc, "model", alias.as_deref())
+        })
         .or_else(|| {
             doc.get("base_url")
                 .and_then(|item| item.as_str())
@@ -624,6 +632,45 @@ fn first_toml_http_url(content: &str) -> Option<String> {
                 .map(str::to_owned)
         })
         .filter(|value| normalized_http_host(value).is_some())
+}
+
+fn toml_table_base_url(
+    doc: &toml_edit::DocumentMut,
+    table: &str,
+    slug: Option<&str>,
+) -> Option<String> {
+    let slug = slug?;
+    doc.get(table)
+        .and_then(|item| item.as_table())
+        .and_then(|providers| providers.get(slug))
+        .and_then(|provider| provider.get("base_url"))
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn toml_named_table_slug(
+    doc: &toml_edit::DocumentMut,
+    named_key: &str,
+    table: &str,
+) -> Option<String> {
+    if let Some(named) = doc
+        .get(named_key)
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(named.to_owned());
+    }
+    let providers = doc.get(table)?.as_table()?;
+    let mut entries = providers.iter();
+    let (slug, _) = entries.next()?;
+    if entries.next().is_none() {
+        Some(slug.to_string())
+    } else {
+        None
+    }
 }
 
 fn toml_active_provider_slug(doc: &toml_edit::DocumentMut) -> Option<String> {

@@ -41,10 +41,10 @@ fn cost_for_event_prefers_recorded_ticks() {
 
 #[test]
 fn cost_for_event_prices_grok_build_via_stripped_candidate() {
-    let ev = grok_event("grok-4.5-build", 1_000_000, 0, 0, 0, None);
+    let ev = grok_event("grok-4.5-build", 100_000, 0, 0, 0, None);
     let cost = cost_for_event(&ev);
-    // grok-4.5 input is $2 / 1M
-    assert!((cost - 2.0).abs() < 0.01, "got {cost}");
+    // grok-4.5 input is $2 / 1M; 100k stays below the 200k long-context tier.
+    assert!((cost - 0.2).abs() < 0.01, "got {cost}");
 }
 
 #[test]

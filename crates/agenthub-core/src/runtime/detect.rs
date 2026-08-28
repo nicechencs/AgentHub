@@ -129,7 +129,36 @@ pub fn detect_one(id: RuntimeId) -> EnvStatus {
     status
 }
 
+#[cfg(test)]
+thread_local! {
+    static ENSURE_OK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`ensure`] succeeding without probing the host.
+///
+/// Contribution-driven install tests should not depend on PATH/`which` while
+/// other tests mutate the process environment in parallel.
+#[cfg(test)]
+pub fn with_ensure_ok<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            ENSURE_OK.with(|flag| flag.set(false));
+        }
+    }
+    ENSURE_OK.with(|flag| flag.set(true));
+    let _reset = Reset;
+    f()
+}
+
 pub fn ensure(requires: &[RuntimeId]) -> Result<(), crate::models::EnvNotReady> {
+    #[cfg(test)]
+    if ENSURE_OK.with(|flag| flag.get()) {
+        return Ok(());
+    }
     let all = detect_all();
     let map: HashMap<RuntimeId, &EnvStatus> = all.iter().map(|s| (s.id, s)).collect();
     let mut missing = Vec::new();

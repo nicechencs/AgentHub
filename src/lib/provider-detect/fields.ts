@@ -449,15 +449,8 @@ function firstTableSlug(text: string, prefix: 'model_providers' | 'providers'): 
   return m?.[2]?.trim() || 'custom';
 }
 
-function looksLikeGrokModelId(model: string): boolean {
-  return /^grok[-_]/i.test(model.trim());
-}
-
 function kimiModelForWrite(model: string): string {
-  const trimmed = model.trim();
-  if (!trimmed) return '';
-  if (looksLikeGrokModelId(trimmed)) return 'kimi-k2';
-  return trimmed;
+  return model.trim();
 }
 
 function renameKimiProvider(text: string, from: string, to: string): string {

@@ -652,12 +652,50 @@ fn finalize_agent_message(
     msg.exit_code = result.exit_code;
     msg.duration_ms = result.duration_ms;
     msg.error = result.error.clone();
+    if let Some(failure) = upstream_failure_message(&msg.content, &result.stderr, &result.stdout) {
+        msg.status = ChatMessageStatus::Failed;
+        msg.error = Some(failure.clone());
+        if looks_like_raw_upstream_error(&msg.content) {
+            msg.content = failure;
+        }
+    }
     if msg.status == ChatMessageStatus::Skipped && msg.content.is_empty() {
         if let Some(err) = &result.error {
             msg.content = err.clone();
         }
     }
     Some(msg)
+}
+
+fn looks_like_raw_upstream_error(text: &str) -> bool {
+    let hay = text.to_ascii_lowercase();
+    hay.contains("missing environment variable")
+        || hay.contains("is not supported by any configured account")
+        || hay.contains("stealth/ox")
+        || (hay.contains("\"code\":404") || hay.contains("\"code\": 404"))
+}
+
+fn upstream_failure_message(content: &str, stderr: &str, stdout: &str) -> Option<String> {
+    let hay = format!("{content}\n{stderr}\n{stdout}").to_ascii_lowercase();
+    if hay.contains("missing environment variable") {
+        return Some("这份登录还在用另一份 API Key 配置，没法发。请点重试。".into());
+    }
+    if hay.contains("is not supported by any configured account")
+        || hay.contains("model_unavailable")
+    {
+        return Some("这个模型当前登录用不了。请换一个模型后重试。".into());
+    }
+    if hay.contains("stealth/ox")
+        || hay.contains("stealth ox")
+        || ((hay.contains("\"code\":404") || hay.contains("\"code\": 404") || hay.contains(" 404:"))
+            && (hay.contains("model")
+                || hay.contains("retired")
+                || hay.contains("glm-5.3")
+                || hay.contains("stealth")))
+    {
+        return Some("这个模型已经下架或当前登录用不了。请换一个模型后重试。".into());
+    }
+    None
 }
 
 fn map_run_status(status: RunStatus) -> ChatMessageStatus {

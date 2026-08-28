@@ -5,6 +5,7 @@ import {
   extractModel,
   formatDurationMs,
   isRetiredChatModel,
+  localizeChatFailure,
   thinkingChromeLabel,
 } from './chat-format';
 
@@ -32,5 +33,17 @@ describe('chat model options', () => {
     expect(chatModelOptions(['stealth/ox-alpha', 'openrouter/auto'], 'stealth/ox-alpha')).toEqual([
       'openrouter/auto',
     ]);
+    expect(chatModelOptions(['grok-4.5', 'gpt-4o'], 'kimi-k2')).toEqual(['grok-4.5', 'gpt-4o']);
+  });
+
+  it('localizes leftover API Key and retired-model failures without dumping English', () => {
+    expect(localizeChatFailure('Missing environment variable: `OPENROUTER_API_KEY`.')).toContain('重试');
+    expect(localizeChatFailure('Missing environment variable: `OPENROUTER_API_KEY`.')).not.toContain('OPENROUTER');
+    expect(
+      localizeChatFailure('error: Model "kimi-k2" is not supported by any configured account in this group'),
+    ).toContain('换一个模型');
+    expect(
+      localizeChatFailure('404: {"message":"Stealth Ox Alpha testing period","code":404}'),
+    ).toContain('下架');
   });
 });

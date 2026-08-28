@@ -208,7 +208,11 @@ impl AgentAdapter for PiAdapter {
                 // Merge provider keys so switching one OAuth account does not
                 // wipe other providers already stored in auth.json.
                 let merged = merge_auth_json(&body)?;
-                write_verified_auth_json(&pi_config_dir()?.join("auth.json"), &merged)
+                write_verified_auth_json(&pi_config_dir()?.join("auth.json"), &merged)?;
+                if let Some(slot) = pi_slot_from_account(account) {
+                    pin_pi_live_slot(&slot)?;
+                }
+                Ok(())
             }
             "api_key" => {
                 let key = account
@@ -223,7 +227,11 @@ impl AgentAdapter for PiAdapter {
                     .and_then(|v| v.as_str())
                     .or_else(|| account.extra.get("provider").and_then(|v| v.as_str()))
                     .unwrap_or("");
-                apply_pi_api_key_to_dir(&pi_config_dir()?, provider, key)
+                apply_pi_api_key_to_dir(&pi_config_dir()?, provider, key)?;
+                if !provider.trim().is_empty() {
+                    pin_pi_live_slot(provider.trim())?;
+                }
+                Ok(())
             }
             other => Err(AppError::InvalidArg(format!(
                 "unsupported Pi account credential format: {other}"
@@ -488,6 +496,74 @@ fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {
 }
 
 const REDACTED_MARKER: &str = "***";
+
+fn pi_slot_from_account(account: &LiveAccount) -> Option<String> {
+    account
+        .credentials
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .or_else(|| account.extra.get("provider").and_then(|v| v.as_str()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            let body = account.credentials.get("body")?.as_object()?;
+            if body.len() != 1 {
+                return None;
+            }
+            body.keys().next().map(|k| k.trim().to_string())
+        })
+}
+
+/// True when settings.json still points Pi at a leftover slot/model.
+pub(crate) fn pi_oauth_live_slot_mismatch(current: &crate::models::Account) -> bool {
+    let Some(slot) = current
+        .credentials
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .or_else(|| current.extra.get("provider").and_then(|v| v.as_str()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return false;
+    };
+    let Ok(dir) = pi_config_dir() else {
+        return false;
+    };
+    let settings =
+        read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
+    let default_provider = nonempty_json_str(&settings, "defaultProvider");
+    let default_model = nonempty_json_str(&settings, "defaultModel");
+    default_provider.as_deref() != Some(slot)
+        || default_model
+            .as_deref()
+            .is_some_and(crate::models::is_openrouter_backup_model)
+}
+
+/// Make this auth.json slot the only live Pi default. Drop leftover
+/// OpenRouter stealth models; do not invent a replacement model id.
+pub(crate) fn pin_pi_live_slot(slot: &str) -> Result<()> {
+    let slot = slot.trim();
+    if slot.is_empty() {
+        return Err(AppError::InvalidArg("Pi provider slot must not be empty".into()));
+    }
+    let dir = pi_config_dir()?;
+    let mut settings = read_json_object_or_empty(&dir.join("settings.json"))?;
+    let prev = nonempty_json_str(&settings, "defaultProvider");
+    let model = nonempty_json_str(&settings, "defaultModel");
+    settings["defaultProvider"] = serde_json::json!(slot);
+    let drop_model = model.as_deref().is_some_and(|id| {
+        crate::models::is_openrouter_backup_model(id)
+            || (prev.as_deref() != Some(slot)
+                && (id.contains('/') || id.starts_with("stealth/")))
+    });
+    if drop_model {
+        if let Some(obj) = settings.as_object_mut() {
+            obj.remove("defaultModel");
+        }
+    }
+    write_json_value(&dir.join("settings.json"), &settings)
+}
 
 /// Write Pi `settings.json` `defaultModel` without touching models.json / auth.json.
 pub(crate) fn set_pi_default_model(model: &str) -> Result<()> {
@@ -827,6 +903,56 @@ mod tests {
             assert_eq!(settings["defaultProvider"], "openrouter");
             let err = set_pi_default_model("stealth/ox-alpha").unwrap_err();
             assert!(err.to_string().contains("下架"), "{err}");
+        });
+    }
+
+    #[test]
+    fn apply_oauth_pins_slot_and_drops_leftover_stealth_model() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "openrouter",
+                    "defaultModel": "stealth/ox-alpha"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            PiAdapter
+                .apply_account(&LiveAccount {
+                    agent: AgentId::Pi,
+                    kind: crate::models::AccountKind::Oauth,
+                    credentials: json!({
+                        "format": "auth_json",
+                        "provider": "xai",
+                        "body": {
+                            "xai": { "type": "oauth", "access": "at-xai", "refresh": "rt-xai" }
+                        }
+                    }),
+                    label_hint: Some("pi:xai".into()),
+                    extra: json!({ "provider": "xai" }),
+                })
+                .unwrap();
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultProvider"], "xai");
+            assert!(settings.get("defaultModel").is_none(), "{settings}");
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
+            let idx = spec
+                .args
+                .iter()
+                .position(|a| a == "--provider")
+                .expect("--provider");
+            assert_eq!(spec.args[idx + 1], "xai");
+            assert!(!spec.args.iter().any(|a| a == "--model"));
         });
     }
 

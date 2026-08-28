@@ -2078,7 +2078,7 @@ api_key = "old"
 }
 
 #[test]
-fn kimi_switch_write_rewrites_leaked_grok_default_model() {
+fn kimi_switch_write_keeps_account_model_instead_of_rewriting() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     write_toml_config(
@@ -2094,10 +2094,10 @@ fn kimi_switch_write_rewrites_leaked_grok_default_model() {
     )
     .unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
-    assert!(text.contains("default_model = \"kimi-k2\""), "{text}");
-    assert!(!text.contains("grok-4.5"), "{text}");
+    assert!(text.contains("default_model = \"grok-4.5\""), "{text}");
+    assert!(!text.contains("kimi-k2"), "{text}");
     assert!(
-        text.contains("[models.\"kimi-k2\"]") || text.contains("[models.kimi-k2]"),
+        text.contains("[models.\"grok-4.5\"]") || text.contains("[models.grok-4.5]"),
         "{text}"
     );
 }
