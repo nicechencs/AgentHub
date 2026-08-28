@@ -763,6 +763,84 @@ fn finalize_marks_zero_exit_upstream_404_as_failed() {
 }
 
 #[test]
+fn finalize_marks_zero_exit_oauth_refresh_as_failed() {
+    let mut map = HashMap::new();
+    map.insert(
+        AgentId::Pi,
+        ChatMessage {
+            id: "m-oauth".into(),
+            conversation_id: "c1".into(),
+            turn: 1,
+            role: ChatRole::Agent,
+            agent_id: Some(AgentId::Pi),
+            content: "OAuth refresh failed for xai: xAI OAuth token refresh failed (HTTP 400): invalid_grant: Invalid or unknown refresh token".into(),
+            status: ChatMessageStatus::Running,
+            duration_ms: 0,
+            exit_code: None,
+            error: None,
+            created_at: "t0".into(),
+        },
+    );
+    let result = AgentRunResult {
+        agent: AgentId::Pi,
+        status: RunStatus::Ok,
+        exit_code: Some(0),
+        duration_ms: 2000,
+        stdout: String::new(),
+        stderr: String::new(),
+        command: "pi -p".into(),
+        error: None,
+        truncated: false,
+        native_session_id: None,
+    };
+    let msg = finalize_agent_message(&mut map, &result).unwrap();
+    assert_eq!(msg.status, ChatMessageStatus::Failed);
+    let err = msg.error.unwrap();
+    assert!(err.contains("重新登录") || err.contains("失效"), "{err}");
+    assert!(!err.contains("invalid_grant"), "{err}");
+}
+
+#[test]
+fn finalize_marks_zero_exit_openai_reasoning_error_as_failed() {
+    let mut map = HashMap::new();
+    map.insert(
+        AgentId::Pi,
+        ChatMessage {
+            id: "m-400".into(),
+            conversation_id: "c1".into(),
+            turn: 1,
+            role: ChatRole::Agent,
+            agent_id: Some(AgentId::Pi),
+            content: "OpenAI API error (400): 400 \"Model grok-code-fast-1 does not support parameter reasoningEffort.\"".into(),
+            status: ChatMessageStatus::Running,
+            duration_ms: 0,
+            exit_code: None,
+            error: None,
+            created_at: "t0".into(),
+        },
+    );
+    let result = AgentRunResult {
+        agent: AgentId::Pi,
+        status: RunStatus::Ok,
+        exit_code: Some(0),
+        duration_ms: 1400,
+        stdout: String::new(),
+        stderr: String::new(),
+        command: "pi -p".into(),
+        error: None,
+        truncated: false,
+        native_session_id: None,
+    };
+    let msg = finalize_agent_message(&mut map, &result).unwrap();
+    assert_eq!(msg.status, ChatMessageStatus::Failed);
+    let err = msg.error.unwrap();
+    assert!(err.contains("重试"), "{err}");
+    assert!(!err.contains("reasoningEffort"), "{err}");
+    assert!(!err.contains("OpenAI API error"), "{err}");
+    assert_eq!(msg.content, err);
+}
+
+#[test]
 fn map_run_status_covers_all_variants() {
     assert_eq!(map_run_status(RunStatus::Ok), ChatMessageStatus::Ok);
     assert_eq!(map_run_status(RunStatus::DryRun), ChatMessageStatus::Ok);

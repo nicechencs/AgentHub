@@ -61,6 +61,7 @@ import {
   type TicketAddKind,
 } from './ticket-wallet-model';
 import { useTicketBindActions } from './use-ticket-route-actions';
+import { useOAuthLoginAgents } from './use-oauth-login-agents';
 import { useConnectionImportProbe } from './use-connection-import-probe';
 import { useConnectionPageActions } from './use-connection-page-actions';
 import { useConnectionShareRoute } from './use-connection-share-route';
@@ -143,6 +144,7 @@ export default function ConnectionsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const allowedAgents = installedIds.length > 0 || !loading ? installedIds : visibleIds;
+  const oauthLoginAgents = useOAuthLoginAgents(allowedAgents);
   const omittedSet = useMemo(() => new Set(omittedIds), [omittedIds]);
   const highlightAgentId = parseAgentParam(searchParams.get('agent'), allowedAgents);
   const resumeAgentId = parseResumeAgentId(searchParams.get('resume'), allowedAgents);
@@ -403,6 +405,16 @@ export default function ConnectionsPage() {
       await loadWallet();
     } catch (e) {
       if (refreshGen.current !== generation) return;
+      if (e instanceof Error && e.name === 'OauthFileSyncPending') {
+        toast({
+          title: t('connections.list.refreshPartial'),
+          description: e.message,
+          variant: 'danger',
+        });
+        await poolReload().catch(() => {});
+        await loadWallet();
+        return;
+      }
       toast({
         title: action.kind === 'sync-current-login'
           ? t('connections.import.toastFail')
@@ -762,7 +774,7 @@ export default function ConnectionsPage() {
           descriptionTip={t('connections.page.descriptionTip')}
           actions={
             <TicketAddMenu
-              agents={buildTicketAddMenu(allowedAgents)}
+              agents={buildTicketAddMenu(allowedAgents, oauthLoginAgents)}
               focusedAgentId={filterAgent === 'all' ? null : filterAgent}
               onImportLogin={(id) => openTicketAdd('import-login', id)}
               onOauth={(id) => openTicketAdd('oauth', id)}
@@ -861,6 +873,7 @@ export default function ConnectionsPage() {
             activeTicketId={inspectActiveTicketId(inspectTarget)}
             onClearAgentFilter={() => setFilterAgent('all')}
             installedAgentIds={allowedAgents}
+            oauthLoginAgents={oauthLoginAgents}
             onAddKey={(id) => openTicketAdd('api-key', id)}
             onImportLogin={(id) => openTicketAdd('import-login', id)}
             onOauth={(id) => openTicketAdd('oauth', id)}

@@ -556,8 +556,15 @@ impl ChatService {
             }
         }
 
+        let mut finalized_failed = false;
         for result in &results {
             if let Some(msg) = finalize_agent_message(&mut remaining, result) {
+                if matches!(
+                    msg.status,
+                    ChatMessageStatus::Failed | ChatMessageStatus::Timeout
+                ) {
+                    finalized_failed = true;
+                }
                 // Best-effort persist; if conversation was deleted mid-send, skip.
                 match self.repo.update_message(&msg) {
                     Ok(()) | Err(AppError::NotFound(_)) => {
@@ -597,12 +604,13 @@ impl ChatService {
             )?;
         }
 
+        let ok = report_ok && !finalized_failed;
         on_event(ChatEvent::Finished {
             turn,
-            ok: report_ok,
+            ok,
             cancelled: results.iter().any(|r| r.status == RunStatus::Cancelled),
         });
-        Ok(report_ok)
+        Ok(ok)
     }
 }
 
@@ -671,8 +679,32 @@ fn looks_like_raw_upstream_error(text: &str) -> bool {
     let hay = text.to_ascii_lowercase();
     hay.contains("missing environment variable")
         || hay.contains("is not supported by any configured account")
+        || hay.contains("oauth refresh failed")
+        || hay.contains("invalid_grant")
+        || hay.contains("invalid or unknown refresh token")
+        || hay.contains("token refresh failed")
         || hay.contains("stealth/ox")
         || (hay.contains("\"code\":404") || hay.contains("\"code\": 404"))
+        || looks_like_upstream_api_error(&hay)
+}
+
+fn looks_like_auth_refresh_failure(hay: &str) -> bool {
+    hay.contains("oauth refresh failed")
+        || hay.contains("invalid_grant")
+        || hay.contains("invalid or unknown refresh token")
+        || hay.contains("token refresh failed")
+}
+
+fn looks_like_upstream_api_error(hay: &str) -> bool {
+    hay.contains("openai api error")
+        || hay.contains("does not support parameter")
+        || hay.contains("reasoningeffort")
+        || hay.contains("reasoning_effort")
+        || ((hay.contains("(400)") || hay.contains(" 400:") || hay.contains("http 400"))
+            && (hay.contains("api error")
+                || hay.contains("parameter")
+                || hay.contains("model ")
+                || hay.contains("unsupported")))
 }
 
 fn upstream_failure_message(content: &str, stderr: &str, stdout: &str) -> Option<String> {
@@ -685,6 +717,9 @@ fn upstream_failure_message(content: &str, stderr: &str, stdout: &str) -> Option
     {
         return Some("这个模型当前登录用不了。请换一个模型后重试。".into());
     }
+    if looks_like_auth_refresh_failure(&hay) {
+        return Some("这份登录已失效，请重新登录后重试。".into());
+    }
     if hay.contains("stealth/ox")
         || hay.contains("stealth ox")
         || ((hay.contains("\"code\":404") || hay.contains("\"code\": 404") || hay.contains(" 404:"))
@@ -694,6 +729,15 @@ fn upstream_failure_message(content: &str, stderr: &str, stdout: &str) -> Option
                 || hay.contains("stealth")))
     {
         return Some("这个模型已经下架或当前登录用不了。请换一个模型后重试。".into());
+    }
+    if looks_like_upstream_api_error(&hay) {
+        if hay.contains("reasoningeffort")
+            || hay.contains("reasoning_effort")
+            || hay.contains("does not support parameter")
+        {
+            return Some("这个模型不支持当前思考设置。请点重试。".into());
+        }
+        return Some("这次发送没成功。请点重试。".into());
     }
     None
 }

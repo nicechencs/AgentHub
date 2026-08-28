@@ -593,7 +593,11 @@ fn workbuddy_setup_channel_never_reports_success() {
             .all(|line| !line.to_ascii_lowercase().contains("failed")),
         "opening the official page is not an installer failure: {logs:?}"
     );
-    assert_eq!(calls.lock().unwrap().len(), 1);
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "setup guide opens the official page without the install executor: {:?}",
+        calls.lock().unwrap()
+    );
 }
 
 #[test]
@@ -607,13 +611,17 @@ fn workbuddy_native_install_is_setup_guide_not_failure() {
         stderr: String::new(),
     };
     let out = install_agent(&registry, AgentId::WorkBuddy, "native", false, &ex).unwrap();
-    assert_eq!(calls.lock().unwrap().len(), 1);
     if out.ok {
         // Already installed on this machine: still must not have installed
         // into leftover AgentHub data-dir npm.
         assert_ne!(out.code.as_deref(), Some("setup_guide"));
         return;
     }
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "setup guide opens the official page without the install executor: {:?}",
+        calls.lock().unwrap()
+    );
     assert_eq!(out.code.as_deref(), Some("setup_guide"));
     assert!(
         !out.message.contains("失败"),
@@ -663,7 +671,11 @@ fn setup_guide_contribution_is_not_command_failure() {
         out.logs.first().map(String::as_str),
         Some(setup_guide_diagnosis())
     );
-    assert_eq!(calls.lock().unwrap().len(), 1);
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "setup guide opens the official page without the install executor: {:?}",
+        calls.lock().unwrap()
+    );
 }
 
 #[test]

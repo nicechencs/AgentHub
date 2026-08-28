@@ -39,6 +39,44 @@ fn account_redacted_masks_credentials() {
     assert_eq!(a.credentials["api_key"], "xai-secret-value");
 }
 
+#[test]
+fn account_redacted_recovers_secret_tail_from_stored_identity_label() {
+    let a = Account {
+        id: "grok-old".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: "API Key".into(),
+        credentials: json!({"format": "api_key", "api_key": "***"}),
+        extra: json!({ "identityLabel": "xai-••••8660 (API Key)" }),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t1".into(),
+    };
+    let r = a.redacted();
+    assert_eq!(r.credentials["api_key"], "***");
+    assert_eq!(r.extra["secretTail"], "**8660");
+    assert_eq!(r.extra["identityLabel"], "xai-••••8660 (API Key)");
+}
+
+#[test]
+fn account_redacted_does_not_invent_tail_from_kind_name() {
+    let a = Account {
+        id: "grok-empty".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: "API Key".into(),
+        credentials: json!({"format": "api_key", "api_key": "***"}),
+        extra: json!({ "identityLabel": "API Key" }),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t1".into(),
+    };
+    let r = a.redacted();
+    assert!(r.extra.get("secretTail").is_none());
+}
+
 fn sample_account() -> Account {
     Account {
         id: "a1".into(),

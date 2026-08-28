@@ -899,7 +899,8 @@ export function visibleTargetsForPurpose(
     if (!eligibility || eligibility.kind === 'loading') return true;
     if (eligibility.kind === 'error' || eligibility.kind === 'blocked_oauth') return true;
     if (eligibility.kind === 'ready') {
-      return adapterRouteMatchesPurpose(eligibility.plan.analysis.route, purpose);
+      if (adapterRouteMatchesPurpose(eligibility.plan.analysis.route, purpose)) return true;
+      return eligibility.plan.analysis.route === 'unsupported';
     }
     return false;
   });

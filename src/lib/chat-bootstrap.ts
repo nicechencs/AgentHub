@@ -6,11 +6,12 @@ import type { ChatBootstrap } from '@/lib/types';
 
 const KEY = 'agenthub.chat.bootstrap';
 
-export function setChatBootstrap(payload: ChatBootstrap): void {
+export function setChatBootstrap(payload: ChatBootstrap): boolean {
   try {
     sessionStorage.setItem(KEY, JSON.stringify(payload));
+    return true;
   } catch {
-    // quota / private mode — ignore; caller can still navigate
+    return false;
   }
 }
 

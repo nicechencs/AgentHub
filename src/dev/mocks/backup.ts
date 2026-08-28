@@ -1,6 +1,5 @@
 import type { BackupPort } from '@/lib/backend/contracts';
 import { delay, randomLatency } from '@/dev/mocks/delay';
-import { unsupportedError } from '@/lib/backend/contracts/errors';
 import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
 
 const now = Date.now();
@@ -79,10 +78,6 @@ export function createMockBackupPort(): BackupPort {
       await delay(300);
       const idx = mockState.findIndex((b) => b.id === backupId);
       if (idx >= 0) mockState.splice(idx, 1);
-    },
-
-    async exportBackup() {
-      throw unsupportedError('导出备份');
     },
   };
 }

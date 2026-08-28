@@ -4,6 +4,7 @@ import {
   defaultModelForAgent,
   FALLBACK_CUSTOM_MODEL,
   filterRemoteModelsForAgent,
+  looksLikeGrokModel,
   maskApiKeyLast4,
   openaiModelsUrl,
   parseOpenAiModelList,
@@ -46,6 +47,23 @@ describe('filterRemoteModelsForAgent', () => {
     expect(filterRemoteModelsForAgent('kimi', ids)).toEqual(['kimi-k2']);
     expect(filterRemoteModelsForAgent('claude', ids)).toEqual(['claude-sonnet-4']);
     expect(filterRemoteModelsForAgent('grok', ids)).toEqual(['grok-4.5']);
+  });
+
+  it('treats relay xai/grok-* ids as grok and does not dump them onto Kimi', () => {
+    const ids = [
+      'xai/grok-4.6',
+      'xai/grok-code-fast-1',
+      'xai/grok-latest',
+    ];
+    expect(ids.every((id) => looksLikeGrokModel(id))).toBe(true);
+    expect(filterRemoteModelsForAgent('kimi', ids)).toEqual([]);
+    expect(filterRemoteModelsForAgent('claude', ids)).toEqual([]);
+    expect(filterRemoteModelsForAgent('grok', ids)).toEqual(ids);
+  });
+
+  it('keeps moonshot/kimi names when a relay mixes them with xai/grok', () => {
+    const ids = ['xai/grok-4.6', 'moonshot-v1-128k', 'kimi-latest'];
+    expect(filterRemoteModelsForAgent('kimi', ids)).toEqual(['moonshot-v1-128k', 'kimi-latest']);
   });
 });
 
@@ -90,7 +108,7 @@ describe('default / resolve / withDefaultModel', () => {
     expect(defaultModelForAgent('claude')).toBe('sonnet');
     expect(defaultModelForAgent('codex')).toBe('gpt-5.1-codex');
     expect(defaultModelForAgent('kimi')).toBe('kimi-k2');
-    expect(defaultModelForAgent('grok')).toBe('grok-code-fast-1');
+    expect(defaultModelForAgent('grok')).toBe('grok-4.5');
     expect(defaultModelForAgent('pi')).toBe(FALLBACK_CUSTOM_MODEL);
     expect(defaultModelForAgent('workbuddy')).toBe(FALLBACK_CUSTOM_MODEL);
     expect(defaultModelForAgent('cursor')).toBe(FALLBACK_CUSTOM_MODEL);
@@ -298,6 +316,7 @@ describe('shouldFetchRemoteModels', () => {
         baseUrl,
         apiKey: REDACTED_MARKER,
         hasStoredSecret: true,
+        savedBaseUrl: baseUrl,
       }),
     ).toBe(true);
     expect(
@@ -354,6 +373,7 @@ describe('shouldFetchRemoteModels', () => {
         baseUrl: 'https://mytokens.cc',
         apiKey: REDACTED_MARKER,
         hasStoredSecret: true,
+        savedBaseUrl: 'https://mytokens.cc',
       }),
     ).toBe(true);
     expect(
@@ -362,6 +382,7 @@ describe('shouldFetchRemoteModels', () => {
         baseUrl: 'https://openrouter.ai/api/v1',
         apiKey: '',
         hasStoredSecret: true,
+        savedBaseUrl: 'https://openrouter.ai/api/v1',
       }),
     ).toBe(true);
     expect(
@@ -370,8 +391,18 @@ describe('shouldFetchRemoteModels', () => {
         baseUrl: 'https://mytokens.cc',
         apiKey: '**abcd',
         hasStoredSecret: true,
+        savedBaseUrl: 'https://mytokens.cc',
       }),
     ).toBe(true);
+    expect(
+      shouldFetchRemoteModels({
+        useOfficial: false,
+        baseUrl: 'https://evil.example/v1',
+        apiKey: REDACTED_MARKER,
+        hasStoredSecret: true,
+        savedBaseUrl: 'https://mytokens.cc',
+      }),
+    ).toBe(false);
   });
 
   it('stays false for official, non-http URL, and add-mode empty key', () => {

@@ -73,17 +73,24 @@ pub(crate) fn build_pi_run_spec(
     } else {
         "text"
     };
-    let mut args = vec![
-        "-p".into(),
-        prompt.to_string(),
-        "--mode".into(),
-        mode.into(),
-        "--no-session".into(),
-    ];
-    // Documented `--provider` / `--model`. Prefer settings.json; if that
-    // file has neither default, fall back to a single auth.json slot so
-    // Chat works after an auth-only bind (no re-bind required).
-    args.extend(pi_cli_provider_args());
+    // `--provider` / `--model` / `--thinking` must come *before* `-p`.
+    // Some Pi builds treat tokens after `-p` as the prompt, so a trailing
+    // `--thinking off` never reaches the CLI and leftover
+    // `defaultThinkingLevel` is still mapped to `reasoningEffort`.
+    let mut args = pi_cli_provider_args();
+    if pi_send_model_id(&args)
+        .as_deref()
+        .is_some_and(pi_model_rejects_thinking)
+    {
+        pin_pi_thinking_off_for_send();
+        args.push("--thinking".into());
+        args.push("off".into());
+    }
+    args.push("-p".into());
+    args.push(prompt.to_string());
+    args.push("--mode".into());
+    args.push(mode.into());
+    args.push("--no-session".into());
     if opts.allow_dangerous {
         // Closest documented non-interactive trust flag for project files.
         args.push("--approve".into());
@@ -472,6 +479,56 @@ fn pi_cli_provider_args() -> Vec<String> {
     Vec::new()
 }
 
+/// xAI `grok-code-fast-*` rejects `reasoningEffort`. Pi maps thinking → that
+/// parameter, so Chat must pass `--thinking off` for the *same* model id it
+/// puts on `--model`, not a second picker/remote read.
+fn pi_model_rejects_thinking(model: &str) -> bool {
+    let id = model
+        .trim()
+        .rsplit('/')
+        .next()
+        .unwrap_or(model)
+        .split(':')
+        .next()
+        .unwrap_or(model)
+        .to_ascii_lowercase();
+    id == "grok-code-fast-1" || id.starts_with("grok-code-fast")
+}
+
+fn pi_send_model_id(cli_args: &[String]) -> Option<String> {
+    cli_args
+        .windows(2)
+        .find(|pair| pair[0] == "--model")
+        .map(|pair| pair[1].clone())
+        .or_else(pi_settings_default_model)
+}
+
+fn pi_settings_default_model() -> Option<String> {
+    let Ok(dir) = pi_config_dir() else {
+        return None;
+    };
+    let settings =
+        read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
+    nonempty_json_str(&settings, "defaultModel")
+        .filter(|id| !crate::models::is_openrouter_backup_model(id))
+}
+
+/// Neutralize leftover `defaultThinkingLevel` so Pi cannot map `low` →
+/// `reasoningEffort` if it ignores `--thinking` for this send.
+fn pin_pi_thinking_off_for_send() {
+    let Ok(dir) = pi_config_dir() else {
+        return;
+    };
+    let Ok(mut settings) = read_json_object_or_empty(&dir.join("settings.json")) else {
+        return;
+    };
+    if nonempty_json_str(&settings, "defaultThinkingLevel").as_deref() == Some("off") {
+        return;
+    }
+    settings["defaultThinkingLevel"] = serde_json::json!("off");
+    let _ = write_json_value(&dir.join("settings.json"), &settings);
+}
+
 fn nonempty_json_str(v: &serde_json::Value, key: &str) -> Option<String> {
     v.get(key)
         .and_then(|x| x.as_str())
@@ -576,13 +633,253 @@ pub(crate) fn set_pi_default_model(model: &str) -> Result<()> {
             "这个模型已经下架，请另选一个".into(),
         ));
     }
-    write_pi_config(&crate::models::AgentConfig {
-        agent: AgentId::Pi,
-        raw: serde_json::json!({
-            "settings": { "defaultModel": model },
-            "auth": {},
-        }),
-    })
+    let dir = pi_config_dir()?;
+    let mut settings = read_json_object_or_empty(&dir.join("settings.json"))?;
+    settings["defaultModel"] = serde_json::json!(model);
+    if pi_model_rejects_thinking(model) {
+        settings["defaultThinkingLevel"] = serde_json::json!("off");
+    }
+    write_json_value(&dir.join("settings.json"), &settings)
+}
+
+fn collect_pi_slot_model_ids(models: &serde_json::Value, slot: &str) -> Vec<String> {
+    let providers = models
+        .get("providers")
+        .or(Some(models))
+        .and_then(|value| value.as_object());
+    let Some(providers) = providers else {
+        return Vec::new();
+    };
+    let Some(entry) = providers.get(slot) else {
+        return Vec::new();
+    };
+    let Some(items) = entry.get("models").and_then(|value| value.as_array()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for item in items {
+        let id = item
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| nonempty_json_str(item, "id"));
+        let Some(id) = id else {
+            continue;
+        };
+        if crate::models::is_openrouter_backup_model(&id) || !seen.insert(id.clone()) {
+            continue;
+        }
+        out.push(id);
+    }
+    out
+}
+
+fn pi_auth_bearer_for_slot(auth: &serde_json::Value, slot: &str) -> Option<String> {
+    let entry = auth.get(slot)?;
+    for key in ["access", "access_token", "accessToken", "key", "api_key", "apiKey"] {
+        if let Some(value) = nonempty_json_str(entry, key) {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn official_openai_base_for_pi_slot(slot: &str) -> Option<&'static str> {
+    match slot {
+        "xai" => Some("https://api.x.ai/v1"),
+        _ => None,
+    }
+}
+
+/// Parse `pi --list-models` table stdout for one provider slot.
+pub(crate) fn parse_pi_list_models_output(stdout: &str, slot: &str) -> Vec<String> {
+    let slot = slot.trim();
+    if slot.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut cols = line.split_whitespace();
+        let Some(provider) = cols.next() else {
+            continue;
+        };
+        if provider.eq_ignore_ascii_case("provider") {
+            continue;
+        }
+        if !provider.eq_ignore_ascii_case(slot) {
+            continue;
+        }
+        let Some(id) = cols.next() else {
+            continue;
+        };
+        let id = id.trim();
+        if id.is_empty() || crate::models::is_openrouter_backup_model(id) || !seen.insert(id.to_string())
+        {
+            continue;
+        }
+        out.push(id.to_string());
+    }
+    out
+}
+
+fn prefer_pi_catalog_model(catalog: &[String], current: Option<&str>) -> Option<String> {
+    if let Some(cur) = current {
+        if catalog.iter().any(|id| id == cur) {
+            return Some(cur.to_string());
+        }
+    }
+    for pref in ["grok-4.6", "grok-4.5", "grok-4.3", "grok-build-0.1"] {
+        if catalog.iter().any(|id| id == pref) {
+            return Some((*pref).to_string());
+        }
+    }
+    catalog.first().cloned()
+}
+
+fn write_pi_default_model_if_changed(dir: &Path, next: &str) -> Result<()> {
+    let mut settings = read_json_object_or_empty(&dir.join("settings.json"))?;
+    if nonempty_json_str(&settings, "defaultModel").as_deref() == Some(next) {
+        return Ok(());
+    }
+    settings["defaultModel"] = serde_json::json!(next);
+    write_json_value(&dir.join("settings.json"), &settings)
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PI_OFFICIAL_CATALOG: std::cell::RefCell<Option<Vec<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn filter_pi_catalog_ids(ids: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for id in ids {
+        let id = id.trim().to_string();
+        if id.is_empty() || crate::models::is_openrouter_backup_model(&id) || !seen.insert(id.clone())
+        {
+            continue;
+        }
+        out.push(id);
+    }
+    out
+}
+
+/// Official catalog for this slot: GET {base}/v1/models (same helper every
+/// other login uses). Tests inject that list; production uses the stored bearer.
+/// Do not skip this for Pi just because models.json already has leftover rows.
+fn remote_pi_slot_models(slot: &str, auth: &serde_json::Value) -> Vec<String> {
+    let slot = slot.trim();
+    if slot.is_empty() {
+        return Vec::new();
+    }
+    #[cfg(test)]
+    {
+        if let Some(models) = TEST_PI_OFFICIAL_CATALOG.with(|cell| cell.borrow().clone()) {
+            return filter_pi_catalog_ids(models);
+        }
+    }
+    let Some(base) = official_openai_base_for_pi_slot(slot) else {
+        return Vec::new();
+    };
+    let Some(key) = pi_auth_bearer_for_slot(auth, slot) else {
+        return Vec::new();
+    };
+    match crate::utils::remote_openai_models::list_remote_openai_models(base, &key) {
+        Ok(remote) => filter_pi_catalog_ids(remote),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn official_pi_slot_models(slot: &str) -> Vec<String> {
+    let slot = slot.trim();
+    if slot.is_empty() {
+        return Vec::new();
+    }
+    #[cfg(test)]
+    {
+        let _ = slot;
+        return Vec::new();
+    }
+    #[cfg(not(test))]
+    {
+        run_pi_list_models(slot)
+    }
+}
+
+#[cfg_attr(test, allow(dead_code))]
+fn run_pi_list_models(slot: &str) -> Vec<String> {
+    let detect = detect_installation();
+    let Some(bin) = detect.binary_path else {
+        return Vec::new();
+    };
+    let node22 = runtime::resolve_pi_node();
+    let Ok(extra) = require_pi_node22_env(node22.as_ref()) else {
+        return Vec::new();
+    };
+    let mut cmd = std::process::Command::new(&bin);
+    cmd.args(["--list-models", slot]);
+    for (key, value) in extra {
+        cmd.env(key, value);
+    }
+    let output = match cmd.output() {
+        Ok(output) => output,
+        Err(_) => return Vec::new(),
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    parse_pi_list_models_output(&String::from_utf8_lossy(&output.stdout), slot)
+}
+
+/// Live default model + picker ids for this Pi slot.
+/// Official xAI catalog comes from GET https://api.x.ai/v1/models (already in
+/// the codebase). Leftover defaults absent from that catalog are replaced.
+pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
+    let empty = crate::models::LiveChatModel {
+        model: None,
+        models: Vec::new(),
+    };
+    let Ok(dir) = pi_config_dir() else {
+        return empty;
+    };
+    let settings = read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
+    let models_doc = read_json_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
+    let auth = read_auth_json().unwrap_or(serde_json::json!({}));
+    let slot = nonempty_json_str(&settings, "defaultProvider").unwrap_or_default();
+    let leftover = nonempty_json_str(&settings, "defaultModel")
+        .filter(|id| !crate::models::is_openrouter_backup_model(id));
+
+    let mut models = if slot.is_empty() {
+        Vec::new()
+    } else {
+        remote_pi_slot_models(&slot, &auth)
+    };
+    if models.is_empty() && !slot.is_empty() {
+        models = collect_pi_slot_model_ids(&models_doc, &slot);
+    }
+    if models.is_empty() && !slot.is_empty() {
+        models = official_pi_slot_models(&slot);
+    }
+
+    let current = prefer_pi_catalog_model(&models, leftover.as_deref());
+    if let Some(next) = current.as_deref() {
+        if leftover.as_deref() != Some(next) {
+            let _ = write_pi_default_model_if_changed(&dir, next);
+        }
+    }
+
+    crate::models::LiveChatModel {
+        model: current,
+        models,
+    }
 }
 
 fn write_pi_config(config: &AgentConfig) -> Result<()> {
@@ -750,6 +1047,17 @@ mod tests {
 
     static PI_CONFIG_ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    fn with_pi_official_catalog<T>(models: Vec<String>, f: impl FnOnce() -> T) -> T {
+        super::TEST_PI_OFFICIAL_CATALOG.with(|cell| {
+            *cell.borrow_mut() = Some(models);
+        });
+        let result = f();
+        super::TEST_PI_OFFICIAL_CATALOG.with(|cell| {
+            *cell.borrow_mut() = None;
+        });
+        result
+    }
+
     fn with_pi_config_dir<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
         let _guard = PI_CONFIG_ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
@@ -833,6 +1141,121 @@ mod tests {
     }
 
     #[test]
+    fn build_run_spec_disables_thinking_for_grok_code_fast() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-code-fast-1",
+                    "defaultThinkingLevel": "low"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
+            let think = spec
+                .args
+                .iter()
+                .position(|a| a == "--thinking")
+                .expect("--thinking");
+            let dash_p = spec.args.iter().position(|a| a == "-p").expect("-p");
+            assert_eq!(spec.args[think + 1], "off");
+            assert!(
+                think < dash_p,
+                "--thinking must precede -p so Pi does not swallow it as the prompt: {:?}",
+                spec.args
+            );
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultThinkingLevel"], "off");
+        });
+    }
+
+    #[test]
+    fn build_run_spec_disables_thinking_when_catalog_also_has_grok_4() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-code-fast-1",
+                    "defaultThinkingLevel": "low"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("models.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "providers": {
+                        "xai": {
+                            "models": [
+                                { "id": "grok-4" },
+                                { "id": "grok-code-fast-1" }
+                            ]
+                        }
+                    }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
+            let think = spec
+                .args
+                .iter()
+                .position(|a| a == "--thinking")
+                .expect("--thinking must follow the send model, not the full catalog");
+            assert_eq!(spec.args[think + 1], "off");
+            assert!(think < spec.args.iter().position(|a| a == "-p").unwrap());
+        });
+    }
+
+    #[test]
+    fn build_run_spec_keeps_thinking_for_other_models() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-4",
+                    "defaultThinkingLevel": "low"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
+            assert!(!spec.args.iter().any(|a| a == "--thinking"), "{:?}", spec.args);
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultThinkingLevel"], "low");
+        });
+    }
+
+    #[test]
     fn build_run_spec_uses_settings_default_provider() {
         with_pi_config_dir(|dir| {
             std::fs::write(
@@ -894,15 +1317,237 @@ mod tests {
                 .unwrap(),
             )
             .unwrap();
-            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            std::fs::write(dir.join("auth.json"), b"{\"openai\":{\"type\":\"oauth\"}}\n").unwrap();
             set_pi_default_model("openrouter/auto").unwrap();
             let settings: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
                     .unwrap();
             assert_eq!(settings["defaultModel"], "openrouter/auto");
             assert_eq!(settings["defaultProvider"], "openrouter");
+            let auth = std::fs::read_to_string(dir.join("auth.json")).unwrap();
+            assert!(auth.contains("openai"), "{auth}");
             let err = set_pi_default_model("stealth/ox-alpha").unwrap_err();
             assert!(err.to_string().contains("下架"), "{err}");
+
+            set_pi_default_model("grok-code-fast-1").unwrap();
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultModel"], "grok-code-fast-1");
+            assert_eq!(settings["defaultThinkingLevel"], "off");
+        });
+    }
+
+    #[test]
+    fn pi_live_chat_model_reads_current_slot_and_skips_leftover_url_catalog() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-4"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("models.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "providers": {
+                        "openrouter": {
+                            "baseUrl": "https://openrouter.ai/api/v1",
+                            "models": [{ "id": "openrouter/auto" }]
+                        },
+                        "xai": {
+                            "models": [
+                                { "id": "grok-4" },
+                                { "id": "grok-code-fast-1" },
+                                { "id": "stealth/ox-alpha" }
+                            ]
+                        }
+                    }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let live = pi_live_chat_model();
+            assert_eq!(live.model.as_deref(), Some("grok-4"));
+            assert_eq!(live.models, vec!["grok-4".to_string(), "grok-code-fast-1".to_string()]);
+            assert!(!live.models.iter().any(|id| id.contains("openrouter")));
+            assert!(!live.models.iter().any(|id| id.contains("stealth")));
+        });
+    }
+
+    #[test]
+    fn pi_live_chat_model_has_no_hardcoded_grok_fallback() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({ "defaultProvider": "xai" })).unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("models.json"), b"{}\n").unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let live = pi_live_chat_model();
+            assert_eq!(live.model, None);
+            assert!(live.models.is_empty(), "{live:?}");
+        });
+    }
+
+    #[test]
+    fn parse_pi_list_models_keeps_only_the_login_slot() {
+        let stdout = "\
+provider model            context max-out thinking images
+xai      grok-4.3         2M      64K     yes      yes
+xai      grok-4.5         256K    64K     yes      yes
+xai      grok-4.6         256K    64K     yes      yes
+xai      grok-build-0.1   128K    16K     no       no
+openrouter openrouter/auto 200K   16K     no       no
+";
+        assert_eq!(
+            parse_pi_list_models_output(stdout, "xai"),
+            vec![
+                "grok-4.3".to_string(),
+                "grok-4.5".to_string(),
+                "grok-4.6".to_string(),
+                "grok-build-0.1".to_string()
+            ]
+        );
+        assert!(parse_pi_list_models_output(stdout, "xai")
+            .iter()
+            .all(|id| !id.contains("openrouter")));
+    }
+
+    #[test]
+    fn pi_live_chat_model_uses_official_catalog_and_replaces_leftover_default() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-code-fast-1"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("models.json"), b"{}\n").unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            with_pi_official_catalog(
+                vec![
+                    "grok-4.3".into(),
+                    "grok-4.5".into(),
+                    "grok-4.6".into(),
+                    "grok-build-0.1".into(),
+                ],
+                || {
+                    let live = pi_live_chat_model();
+                    assert_eq!(
+                        live.models,
+                        vec![
+                            "grok-4.3".to_string(),
+                            "grok-4.5".to_string(),
+                            "grok-4.6".to_string(),
+                            "grok-build-0.1".to_string()
+                        ]
+                    );
+                    assert_eq!(live.model.as_deref(), Some("grok-4.6"));
+                    assert!(!live.models.iter().any(|id| id.contains("grok-code-fast")));
+                    let settings: serde_json::Value = serde_json::from_str(
+                        &std::fs::read_to_string(dir.join("settings.json")).unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(settings["defaultModel"], "grok-4.6");
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn pi_live_chat_model_does_not_skip_remote_when_models_json_has_leftover() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-code-fast-1"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("models.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "providers": {
+                        "xai": {
+                            "models": [{ "id": "grok-code-fast-1" }]
+                        }
+                    }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            with_pi_official_catalog(
+                vec![
+                    "grok-4.3".into(),
+                    "grok-4.5".into(),
+                    "grok-4.6".into(),
+                    "grok-build-0.1".into(),
+                ],
+                || {
+                    let live = pi_live_chat_model();
+                    assert_eq!(
+                        live.models,
+                        vec![
+                            "grok-4.3".to_string(),
+                            "grok-4.5".to_string(),
+                            "grok-4.6".to_string(),
+                            "grok-build-0.1".to_string()
+                        ]
+                    );
+                    assert_eq!(live.model.as_deref(), Some("grok-4.6"));
+                    assert!(!live.models.iter().any(|id| id.contains("grok-code-fast")));
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn pi_live_chat_model_keeps_catalog_current_without_rewriting() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-4.6"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("models.json"), b"{}\n").unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            with_pi_official_catalog(
+                vec![
+                    "grok-4.3".into(),
+                    "grok-4.5".into(),
+                    "grok-4.6".into(),
+                    "grok-build-0.1".into(),
+                ],
+                || {
+                    let live = pi_live_chat_model();
+                    assert_eq!(live.model.as_deref(), Some("grok-4.6"));
+                    assert_eq!(
+                        live.models,
+                        vec![
+                            "grok-4.3".to_string(),
+                            "grok-4.5".to_string(),
+                            "grok-4.6".to_string(),
+                            "grok-build-0.1".to_string()
+                        ]
+                    );
+                },
+            );
         });
     }
 

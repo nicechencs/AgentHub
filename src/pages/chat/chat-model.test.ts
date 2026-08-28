@@ -262,6 +262,17 @@ describe('sendBlockers', () => {
     ).toEqual([]);
   });
 
+  it('blocks send when Agent status has not loaded', () => {
+    expect(
+      sendBlockers({
+        conversation: base,
+        hiddenIds: new Set(),
+        sendingConversationId: null,
+        agentsReady: false,
+      }),
+    ).toEqual([{ kind: 'statusUnknown' }]);
+  });
+
   it('ignores sendingElsewhere when the active conversation is the sender', () => {
     expect(
       sendBlockers({

@@ -219,6 +219,34 @@ impl AccountService {
         }
     }
 
+    /// Keep last4 / host / hash already stamped on the pool row when a live
+    /// snapshot arrives without them (redacted `***`, leftover import). Never
+    /// invents a key or copies another login's identity.
+    pub(super) fn copy_persisted_identity(from: &Value, into: &mut Value) {
+        for key in ["secretTail", "secretHash", "endpoint", "baseUrl", "base_url"] {
+            copy_missing_extra_string(from, into, key);
+        }
+        let old_label = from
+            .get("identityLabel")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or("");
+        let new_label = into
+            .get("identityLabel")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or("");
+        let old_has_identity = crate::utils::redact::secret_tail_from_masked_preview(old_label)
+            .is_some()
+            || (old_label.contains('@') && !old_label.contains(' '));
+        let new_is_weak = new_label.is_empty() || new_label.eq_ignore_ascii_case("API Key");
+        if old_has_identity && new_is_weak {
+            if let Some(obj) = into.as_object_mut() {
+                obj.insert("identityLabel".into(), json!(old_label));
+            }
+        }
+    }
+
     /// Repair a legacy row's surface using a narrow optimistic update. Only
     /// `extra.surface` and `updated_at` are written; credentials, label,
     /// current state and active binding are never copied from a stale caller.
@@ -252,5 +280,27 @@ impl AccountService {
         self.repo
             .get_by_id(&account.id)?
             .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))
+    }
+}
+
+fn copy_missing_extra_string(from: &Value, into: &mut Value, key: &str) {
+    let incoming = into
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    if !incoming.is_empty() {
+        return;
+    }
+    let Some(value) = from
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+    if let Some(obj) = into.as_object_mut() {
+        obj.insert(key.into(), json!(value));
     }
 }

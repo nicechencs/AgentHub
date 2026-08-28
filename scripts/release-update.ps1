@@ -48,6 +48,8 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location -Path (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Root = (Get-Location).Path
+# Keep in lockstep with WORKSPACE_LOCK_PACKAGES in scripts/release-metadata.mjs
+$WorkspaceLockPackages = @('agenthub-cli', 'agenthub-core', 'agenthub-gui')
 
 function Write-Step([string]$msg) {
     Write-Host ""
@@ -135,8 +137,7 @@ function Get-CargoLockWorkspaceText([string]$ver) {
     }
     $lockText = Get-Utf8NoBomText $lockPath
     $updated = $lockText
-    $workspacePackages = @('agenthub-cli', 'agenthub-core', 'agenthub-gui')
-    foreach ($name in $workspacePackages) {
+    foreach ($name in $WorkspaceLockPackages) {
         $namePattern = [regex]::Escape($name)
         $pattern = '(?ms)(\[\[package\]\]\s*name\s*=\s*"' + $namePattern + '"\s*version\s*=\s*")[^"]+(")'
         $matches = [regex]::Matches($updated, $pattern)
@@ -183,11 +184,11 @@ function Assert-ReleaseContentPlan($plan, [string]$ver) {
     } catch {
         $tauriVersion = ''
     }
-    if ($tauriVersion -ne $ver) {
-        throw "Generated tauri.conf.json version '$tauriVersion' does not equal '$ver'"
+    if ($tauriVersion -ne '../package.json') {
+        throw "Generated tauri.conf.json version '$tauriVersion' must stay '../package.json'"
     }
 
-    foreach ($name in @('agenthub-cli', 'agenthub-core', 'agenthub-gui')) {
+    foreach ($name in $WorkspaceLockPackages) {
         $pattern = '(?ms)\[\[package\]\]\s*name\s*=\s*"' + [regex]::Escape($name) + '"\s*version\s*=\s*"([^"]+)"'
         $matches = [regex]::Matches($lock.Updated, $pattern)
         if ($matches.Count -ne 1 -or $matches[0].Groups[1].Value -ne $ver) {
@@ -423,11 +424,13 @@ function Set-ProjectVersion([string]$ver) {
     }
     if ($cargoNew -eq $cargoText) { Fail "Failed to patch Cargo.toml version" }
 
-    # tauri.conf.json
+    # tauri.conf.json stays a path to package.json (single version source).
     $tauriPath = Join-Path $Root "src-tauri\tauri.conf.json"
     $tauriText = Get-Utf8NoBomText $tauriPath
-    $tauriNew = [regex]::Replace($tauriText, '("version"\s*:\s*")[^"]+(")', "`${1}$ver`${2}", 1)
-    if ($tauriNew -eq $tauriText) { Fail "Failed to patch tauri.conf.json version" }
+    $tauriNew = [regex]::Replace($tauriText, '("version"\s*:\s*")[^"]+(")', '${1}../package.json${2}', 1)
+    if ($tauriNew -notmatch '"version"\s*:\s*"\.\./package\.json"') {
+        Fail "Failed to keep tauri.conf.json version as ../package.json"
+    }
 
     # Cargo.lock contains package records for all three local workspace
     # crates. Refresh only those version fields; dependency resolution and
@@ -670,9 +673,9 @@ if ($VersionOnly) {
     Write-Host "  git commit -m `"chore(release): bump version to $Version`""
     Write-Host "  git push origin dev"
     Write-Host "  pnpm release:preflight"
+    Write-Host "  # Merge this commit into release (PR or merge commit, not squash)."
     Write-Host "  git tag -a $tag -m `"AgentHub $tag`""
     Write-Host "  git push origin $tag"
-    Write-Host "  # After GitHub Release succeeds, merge dev into release."
     Write-Host ""
     exit 0
 }
@@ -734,5 +737,4 @@ Write-Host "OutDir  : $OutDir"
 Write-Host "Feed URL: https://github.com/$Repo/releases/latest/download/latest.json"
 Write-Host ""
 Write-Host "Publishing is CI-only: merge dev into release, tag on dev, push the v* tag after release:preflight passes, and let .github/workflows/release.yml publish the release." -ForegroundColor Yellow
-Write-Host "After GitHub Release succeeds, merge dev into release." -ForegroundColor Yellow
 Write-Host ""

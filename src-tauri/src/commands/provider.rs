@@ -10,6 +10,7 @@ use agenthub_core::models::{
     Provider, ProviderInput, ProviderPreset, ProviderSwitchResult, SwitchConfirmPreview,
 };
 use agenthub_core::presets;
+use agenthub_core::services::provider_identity::{normalize_base_url, normalize_provider_base_url};
 use agenthub_core::utils::redact::{api_key_secret, is_secret_key, mask_secret_tail};
 use agenthub_core::AgentHub;
 use serde::Serialize;
@@ -159,9 +160,16 @@ pub async fn undo_switch_provider(
 
 /// Invoke: `list_remote_openai_models` — GET {base}/v1/models (unsaved paste OK).
 #[tauri::command]
-pub fn list_remote_openai_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
-    agenthub_core::utils::remote_openai_models::list_remote_openai_models(&base_url, &api_key)
-        .map_err(|e| map_err_string("list_remote_openai_models", e))
+pub async fn list_remote_openai_models(
+    base_url: String,
+    api_key: String,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        agenthub_core::utils::remote_openai_models::list_remote_openai_models(&base_url, &api_key)
+            .map_err(|e| map_err_string("list_remote_openai_models", e))
+    })
+    .await
+    .map_err(|e| format!("command join error: {e}"))?
 }
 
 /// Invoke: `list_remote_openai_models_for_provider` — GET {base}/v1/models
@@ -371,6 +379,22 @@ fn list_remote_openai_models_for_provider_inner(
     base_url: &str,
 ) -> Result<Vec<String>, String> {
     let key = stored_api_key_for_remote_models(hub, provider_id)?;
+    let provider = hub
+        .providers()
+        .get(provider_id.trim(), None)
+        .map_err(|e| map_err_string("list_remote_openai_models_for_provider", e))?;
+    let Some(stored_url) = normalize_provider_base_url(&provider.settings_config) else {
+        return Err(map_err_string(
+            "list_remote_openai_models_for_provider",
+            AppError::InvalidArg("saved address is missing".into()),
+        ));
+    };
+    if normalize_base_url(base_url) != stored_url {
+        return Err(map_err_string(
+            "list_remote_openai_models_for_provider",
+            AppError::InvalidArg("改地址后请重新填写 API Key，已保存的 Key 只能请求已保存的地址".into()),
+        ));
+    }
     let last4 = mask_secret_tail(&key).unwrap_or_default();
     logging::log_info(
         targets::PROVIDER,

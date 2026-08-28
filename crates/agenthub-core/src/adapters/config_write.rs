@@ -43,10 +43,12 @@ pub(crate) fn write_verified_json_object(path: &Path, body: &serde_json::Value) 
     Ok(())
 }
 
-/// Trim and reject empty API keys (shared by `build_api_key_account` impls).
+/// Trim and reject empty or already-redacted API keys (shared by
+/// `build_api_key_account` impls). A `***` marker is not a real key and must
+/// not be persisted as one — that produces nameless recycle-bin rows.
 pub(crate) fn require_api_key(api_key: &str) -> Result<&str> {
     let key = api_key.trim();
-    if key.is_empty() {
+    if key.is_empty() || crate::utils::redact::is_unusable_secret(key) {
         return Err(AppError::InvalidArg("API key must not be empty".into()));
     }
     Ok(key)

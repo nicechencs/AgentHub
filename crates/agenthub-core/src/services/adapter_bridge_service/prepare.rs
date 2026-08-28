@@ -380,12 +380,7 @@ pub(super) fn openai_source_upstream(
     let Ok(Some(provider)) = service.providers.get_by_id(source_id) else {
         return (url, model, listed, protocol, context_window_tokens);
     };
-    let target = match rule.target_agent {
-        crate::models::AgentId::Claude => "claude",
-        crate::models::AgentId::Codex => "codex",
-        crate::models::AgentId::Grok => "grok",
-        _ => "",
-    };
+    let target = endpoint_target(rule.target_agent);
     // For Codex TOML, `openai_compat_base_url` resolves the runtime
     // `model_provider` slug before reading a provider table. Do not let a
     // document-order provider or a textual host match change the upstream.

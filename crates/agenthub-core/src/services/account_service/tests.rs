@@ -3646,6 +3646,42 @@ fn live_reconcile_new_row_and_rotation_keep_account_surface() {
 }
 
 #[test]
+fn update_live_row_keeps_stored_last4_when_live_key_is_gone() {
+    let (_root, svc, adapter) = live_svc(AgentId::Grok);
+    let row = Account {
+        id: "grok-acc-keep-tail".into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: "API Key".into(),
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "xai-secret-key-value-8660"
+        }),
+        extra: json!({
+            "identityLabel": "xai-••••8660 (API Key)",
+            "secretTail": "**8660",
+            "endpoint": "https://mytokens.cc/v1"
+        }),
+        status: "active".into(),
+        is_current: false,
+        created_at: "2026-08-28 01:20:16.000000".into(),
+        updated_at: "2026-08-28 01:20:16.000000".into(),
+    };
+    let live = LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: json!({ "format": "api_key", "api_key": "***" }),
+        label_hint: Some("API Key".into()),
+        extra: json!({ "source": "live" }),
+    };
+    let (updated, changed) = svc.update_live_row(adapter.as_ref(), row, live);
+    assert!(changed);
+    assert_eq!(updated.extra["secretTail"], "**8660");
+    assert_eq!(updated.extra["identityLabel"], "xai-••••8660 (API Key)");
+    assert_eq!(updated.extra["endpoint"], "https://mytokens.cc/v1");
+}
+
+#[test]
 fn live_reconcile_matching_legacy_row_heals_missing_surface() {
     let (_root, svc, adapter) = live_svc(AgentId::Claude);
     let credentials = json!({

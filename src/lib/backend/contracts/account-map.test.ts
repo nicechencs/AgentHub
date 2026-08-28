@@ -133,6 +133,60 @@ describe('mapCoreAccount', () => {
     expect(key.refreshTokenPreview).toBeUndefined();
     expect(key.secretTail).toBe('**here');
     expect(key.secretHash).toBeUndefined();
+
+    const withEndpoint = mapCoreAccount(
+      core({
+        id: 'grok-key',
+        agentId: 'grok',
+        kind: 'apikey',
+        extra: { secretTail: '**8660', endpoint: 'https://mytokens.cc/v1' },
+      }),
+    );
+    expect(withEndpoint.secretTail).toBe('**8660');
+    expect(withEndpoint.endpoint).toBe('https://mytokens.cc/v1');
+  });
+
+  it('recovers secretTail from extra.identityLabel when extra.secretTail is missing', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'grok-old-trash',
+        agentId: 'grok',
+        kind: 'apikey',
+        label: 'API Key',
+        credentials: { format: 'api_key', api_key: '***' },
+        extra: { identityLabel: 'xai-••••8660 (API Key)' },
+      }),
+    );
+    expect(mapped.secretTail).toBe('**8660');
+    expect(mapped.identityLabel).toBe('xai-••••8660 (API Key)');
+    expect(mapped.label).toBe('API Key');
+  });
+
+  it('recovers secretTail from a dotted mask even when kind is omitted from extra', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'grok-dots',
+        agentId: 'grok',
+        kind: 'apikey',
+        label: 'API Key',
+        extra: { identityLabel: 'xai-....272f (API Key)' },
+      }),
+    );
+    expect(mapped.secretTail).toBe('**272f');
+  });
+
+  it('does not invent secretTail from a kind-name identity', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'grok-kind-only',
+        agentId: 'grok',
+        kind: 'apikey',
+        label: 'API Key',
+        credentials: { format: 'api_key', api_key: '***' },
+        extra: { identityLabel: 'API Key' },
+      }),
+    );
+    expect(mapped.secretTail).toBeUndefined();
   });
 
   it('maps API key secretHash from extra', () => {

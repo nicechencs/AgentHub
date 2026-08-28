@@ -2185,3 +2185,45 @@ fn persisted_provider_surface_requires_official_openai_evidence() {
         TicketSurface::Unknown
     );
 }
+
+#[test]
+fn switch_write_last4_never_returns_the_full_key() {
+    let full = "xai-secret-key-value-8660";
+    let from_meta = super::switch_write_last4(&crate::models::Provider {
+        id: "p-meta".into(),
+        agent_id: AgentId::Grok,
+        name: "API Key".into(),
+        settings_config: json!({ "api_key": full }),
+        meta: json!({ "secretTail": "**8660" }),
+        is_current: true,
+        created_at: "t".into(),
+        updated_at: "t".into(),
+    });
+    assert_eq!(from_meta, "**8660");
+    assert!(!from_meta.contains(full));
+
+    let from_secret = super::switch_write_last4(&crate::models::Provider {
+        id: "p-secret".into(),
+        agent_id: AgentId::Grok,
+        name: "API Key".into(),
+        settings_config: json!({ "api_key": full }),
+        meta: json!({}),
+        is_current: true,
+        created_at: "t".into(),
+        updated_at: "t".into(),
+    });
+    assert_eq!(from_secret, "**8660");
+    assert!(!from_secret.contains(full));
+
+    let empty = super::switch_write_last4(&crate::models::Provider {
+        id: "p-empty".into(),
+        agent_id: AgentId::Grok,
+        name: "API Key".into(),
+        settings_config: json!({}),
+        meta: json!({}),
+        is_current: false,
+        created_at: "t".into(),
+        updated_at: "t".into(),
+    });
+    assert_eq!(empty, "");
+}

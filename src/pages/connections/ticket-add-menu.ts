@@ -1,7 +1,6 @@
 /**
  * Ticket add menu and dialog-open helpers (Connections page).
  */
-import { agentSupportsOAuthLogin } from '@/lib/backend/contracts/oauth-constants';
 import { agentDisplayName } from '@/config/agents';
 import type { AgentId } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
@@ -26,8 +25,10 @@ export const TICKET_ADD_ACTIONS: Array<{ kind: TicketAddKind; label: string }> =
   { kind: 'api-key', label: '添加 API Key' },
 ];
 
-export function ticketAddActionsForAgent(agentId: AgentId): Array<{ kind: TicketAddKind; label: string }> {
-  if (agentSupportsOAuthLogin(agentId)) return TICKET_ADD_ACTIONS;
+export function ticketAddActionsForAgent(
+  oauthLogin = false,
+): Array<{ kind: TicketAddKind; label: string }> {
+  if (oauthLogin) return TICKET_ADD_ACTIONS;
   return TICKET_ADD_ACTIONS.filter((item) => item.kind !== 'oauth');
 }
 
@@ -46,14 +47,23 @@ export interface TicketAddMenuAgent {
   actions: Array<{ kind: TicketAddKind; label: string }>;
 }
 
+function oauthLoginSet(
+  oauthLoginAgents?: ReadonlySet<string> | readonly string[] | null,
+): ReadonlySet<string> {
+  if (!oauthLoginAgents) return new Set();
+  return oauthLoginAgents instanceof Set ? oauthLoginAgents : new Set(oauthLoginAgents);
+}
+
 export function buildTicketAddMenu(
   agentIds?: readonly AgentId[] | null,
+  oauthLoginAgents?: ReadonlySet<string> | readonly string[] | null,
 ): TicketAddMenuAgent[] {
   if (!agentIds || agentIds.length === 0) return [];
+  const oauth = oauthLoginSet(oauthLoginAgents);
   return agentIds.map((id) => ({
     id,
     name: agentDisplayName(id),
-    actions: ticketAddActionsForAgent(id),
+    actions: ticketAddActionsForAgent(oauth.has(id)),
   }));
 }
 

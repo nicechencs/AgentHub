@@ -181,7 +181,7 @@ impl ProviderService {
         input: &ProviderInput,
     ) -> Result<Provider> {
         self.validate_live_saga_guard(guard, input.agent_id)?;
-        self.update_and_snapshot(input)
+        self.update_and_snapshot(guard, input)
     }
 
     /// Persist a provider row and its active binding without writing live config.
@@ -197,8 +197,14 @@ impl ProviderService {
         self.update_inner(input)
     }
 
-    fn update_and_snapshot(&self, input: &ProviderInput) -> Result<Provider> {
+    fn update_and_snapshot(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        input: &ProviderInput,
+    ) -> Result<Provider> {
+        let live_guard = guard.as_live_write_guard();
         let live_saga = self.prepare_current_provider_live(
+            live_guard,
             input.agent_id,
             input.is_current,
             &format!("before applying current provider {}", input.id),
@@ -209,7 +215,11 @@ impl ProviderService {
         if let Some((adapter, live_before)) = live_saga {
             self.apply_current_provider_live_committed(&committed, adapter, live_before)?;
         } else {
-            self.sync_current_provider_live(&committed.stored, "after provider update")?;
+            self.sync_current_provider_live(
+                live_guard,
+                &committed.stored,
+                "after provider update",
+            )?;
         }
         Ok(committed.stored)
     }
@@ -237,11 +247,17 @@ impl ProviderService {
         input: &ProviderInput,
     ) -> Result<Provider> {
         self.validate_live_saga_guard(guard, input.agent_id)?;
-        self.upsert_and_snapshot(input)
+        self.upsert_and_snapshot(guard, input)
     }
 
-    fn upsert_and_snapshot(&self, input: &ProviderInput) -> Result<Provider> {
+    fn upsert_and_snapshot(
+        &self,
+        guard: &ProviderLiveSagaGuard<'_>,
+        input: &ProviderInput,
+    ) -> Result<Provider> {
+        let live_guard = guard.as_live_write_guard();
         let live_saga = self.prepare_current_provider_live(
+            live_guard,
             input.agent_id,
             input.is_current,
             &format!("before applying current provider {}", input.id),
@@ -250,7 +266,11 @@ impl ProviderService {
         if let Some((adapter, live_before)) = live_saga {
             self.apply_current_provider_live_committed(&committed, adapter, live_before)?;
         } else {
-            self.sync_current_provider_live(&committed.stored, "after provider upsert")?;
+            self.sync_current_provider_live(
+                live_guard,
+                &committed.stored,
+                "after provider upsert",
+            )?;
         }
         self.resolve_after_identity_heal(committed.stored)
     }

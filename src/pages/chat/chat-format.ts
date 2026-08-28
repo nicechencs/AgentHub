@@ -63,6 +63,118 @@ export function extractModel(configText: string): string | null {
   return json?.[1] ?? null;
 }
 
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function modelIdFromEntry(entry: unknown): string | null {
+  if (typeof entry === 'string') {
+    const id = entry.trim();
+    return id || null;
+  }
+  const obj = objectValue(entry);
+  if (typeof obj?.id === 'string') {
+    const id = obj.id.trim();
+    return id || null;
+  }
+  return null;
+}
+
+/**
+ * Models for the current Pi slot from a live envelope.
+ * Uses `settings.defaultProvider` — never the first provider that happens to have a URL.
+ */
+export function extractPiSlotModels(configText: string): string[] {
+  try {
+    const root = objectValue(JSON.parse(configText));
+    if (!root) return [];
+    const modelsObject = objectValue(root.models);
+    const providers = objectValue(modelsObject?.providers) ?? objectValue(root.providers);
+    if (!providers) return [];
+    const settings = objectValue(root.settings);
+    const slot =
+      typeof settings?.defaultProvider === 'string' ? settings.defaultProvider.trim() : '';
+    const chosen = (slot && objectValue(providers[slot]) ? slot : '') || Object.keys(providers)[0];
+    if (!chosen) return [];
+    const provider = objectValue(providers[chosen]);
+    const models = Array.isArray(provider?.models) ? provider.models : [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of models) {
+      const id = modelIdFromEntry(entry);
+      if (!id || seen.has(id) || isRetiredChatModel(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export function extractPiDefaultProvider(configText: string): string {
+  try {
+    const root = objectValue(JSON.parse(configText));
+    const settings = objectValue(root?.settings);
+    if (typeof settings?.defaultProvider === 'string') {
+      return settings.defaultProvider.trim();
+    }
+  } catch {
+    /* fall through */
+  }
+  return '';
+}
+
+export function extractPiDefaultModel(configText: string): string | null {
+  try {
+    const root = objectValue(JSON.parse(configText));
+    const settings = objectValue(root?.settings);
+    if (typeof settings?.defaultModel === 'string') {
+      const id = settings.defaultModel.trim();
+      return id || null;
+    }
+  } catch {
+    /* fall through */
+  }
+  return extractModel(configText);
+}
+
+/** Official xAI OpenAI-compatible catalog. Same URL `list_remote_openai_models` uses. */
+export const OFFICIAL_XAI_MODELS_BASE = 'https://api.x.ai/v1';
+
+export function officialPiModelsBaseUrl(slot: string): string {
+  return slot.trim() === 'xai' ? OFFICIAL_XAI_MODELS_BASE : '';
+}
+
+/**
+ * Chat 换模型 remote fetch gate. Pi is not skipped — official xAI uses
+ * GET {base}/v1/models like every other login.
+ */
+export function shouldFetchChatRemoteModels(
+  providerId: string | undefined | null,
+  baseUrl: string | undefined | null,
+): boolean {
+  return Boolean(providerId?.trim() && baseUrl?.trim());
+}
+
+/**
+ * Prefer the remote official catalog. Do not fall back to leftover defaultModel
+ * when that catalog already loaded.
+ */
+export function piChatModelOptions(input: {
+  remoteModels: readonly string[];
+  liveModels: readonly string[];
+  envelopeModels: readonly string[];
+  currentModel?: string | null;
+}): string[] {
+  const remote = chatModelOptions(input.remoteModels);
+  if (remote.length > 0) return remote;
+  const live = chatModelOptions(input.liveModels);
+  if (live.length > 0) return live;
+  return chatModelOptions(input.envelopeModels, input.currentModel);
+}
+
 const RETIRED_OPENROUTER_BACKUP = /^stealth\/ox(?:-alpha)?$/i;
 
 export function isRetiredChatModel(model: string): boolean {
@@ -95,12 +207,37 @@ export function localizeChatFailure(text: string): string {
     return '这个模型当前登录用不了。请换一个模型后重试。';
   }
   if (
+    hay.includes('oauth refresh failed')
+    || hay.includes('invalid_grant')
+    || hay.includes('invalid or unknown refresh token')
+    || hay.includes('token refresh failed')
+  ) {
+    return '这份登录已失效，请重新登录后重试。';
+  }
+  if (
     hay.includes('stealth/ox')
     || hay.includes('stealth ox')
     || ((hay.includes('"code":404') || hay.includes('"code": 404') || hay.includes(' 404:'))
       && (hay.includes('model') || hay.includes('retired') || hay.includes('glm-5.3') || hay.includes('stealth')))
   ) {
     return '这个模型已经下架或当前登录用不了。请换一个模型后重试。';
+  }
+  if (
+    hay.includes('openai api error')
+    || hay.includes('does not support parameter')
+    || hay.includes('reasoningeffort')
+    || hay.includes('reasoning_effort')
+    || ((hay.includes('(400)') || hay.includes(' 400:') || hay.includes('http 400'))
+      && (hay.includes('api error') || hay.includes('parameter') || hay.includes('model ') || hay.includes('unsupported')))
+  ) {
+    if (
+      hay.includes('reasoningeffort')
+      || hay.includes('reasoning_effort')
+      || hay.includes('does not support parameter')
+    ) {
+      return '这个模型不支持当前思考设置。请点重试。';
+    }
+    return '这次发送没成功。请点重试。';
   }
   return text;
 }

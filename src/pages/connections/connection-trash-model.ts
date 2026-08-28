@@ -1,4 +1,5 @@
 import type { ConnectionTrashItem } from '@/lib/backend/contracts';
+import { secretTailFromMaskedPreview } from '@/lib/backend/contracts/account-map';
 import { extractProviderEndpoint } from '@/lib/backend/contracts/agent-connection';
 import type { TranslateFn } from '@/lib/i18n';
 import type { Provider } from '@/lib/types';
@@ -64,22 +65,30 @@ function isGeneratedTrashItem(item: ConnectionTrashItem): boolean {
 }
 
 function sourceIdentity(item: ConnectionTrashItem): string | undefined {
-  const emailCandidates = [item.account?.email, item.account?.label, item.label];
+  const emailCandidates = [
+    item.account?.email,
+    item.account?.identityLabel,
+    item.account?.label,
+    item.label,
+  ];
   for (const candidate of emailCandidates) {
     const value = candidate?.trim();
     if (value && looksLikeEmail(value) && !isInternalDisplayToken(value)) return value;
   }
 
-  const accountLabel = item.account?.label?.trim();
-  if (
-    accountLabel
-    && !isInternalDisplayToken(accountLabel)
-    && !looksLikeUuid(accountLabel)
-    && !accountLabel.includes('***')
-    && !isMaskOnlyLabel(accountLabel)
-    && !/token|secret|configText|credentialSummary/i.test(accountLabel)
-  ) {
-    return accountLabel;
+  for (const candidate of [item.account?.identityLabel, item.account?.label]) {
+    const accountLabel = candidate?.trim();
+    if (
+      accountLabel
+      && !isInternalDisplayToken(accountLabel)
+      && !looksLikeUuid(accountLabel)
+      && !accountLabel.includes('***')
+      && !isMaskOnlyLabel(accountLabel)
+      && !last4FromMaskLabel(accountLabel)
+      && !/token|secret|configText|credentialSummary/i.test(accountLabel)
+    ) {
+      return accountLabel;
+    }
   }
   return undefined;
 }
@@ -104,6 +113,11 @@ function trashHost(item: ConnectionTrashItem): string | undefined {
   } catch {
     return endpoint;
   }
+}
+
+function last4FromMaskLabel(value: string | undefined | null): string | undefined {
+  const tail = secretTailFromMaskedPreview(value);
+  return tail ? tail.replace(/^\*+/, '').slice(-4) : undefined;
 }
 
 function maskOnlyIdentity(item: ConnectionTrashItem): string | undefined {
@@ -135,15 +149,26 @@ export function humanizeTrashLabel(item: ConnectionTrashItem, t?: TranslateFn): 
 
 export function trashItemSecretTail(item: ConnectionTrashItem): string | undefined {
   const tail = item.account?.secretTail?.trim() || item.provider?.secretTail?.trim();
-  if (!tail) return undefined;
-  const last4 = tail.replace(/^\*+/, '').slice(-4);
-  return last4 || undefined;
+  if (tail) {
+    const last4 = tail.replace(/^\*+/, '').slice(-4);
+    if (last4) return last4;
+  }
+  return (
+    last4FromMaskLabel(item.account?.identityLabel) ||
+    last4FromMaskLabel(item.account?.label) ||
+    last4FromMaskLabel(item.provider?.name) ||
+    last4FromMaskLabel(item.label)
+  );
 }
 
 export function trashItemEndpoint(item: ConnectionTrashItem): string | undefined {
   if (item.provider) {
     const endpoint = extractProviderEndpoint(item.provider.configText, item.provider.configFormat);
     if (endpoint && !isLoopbackText(endpoint)) return endpoint;
+  }
+  const fromAccount = item.account?.endpoint?.trim();
+  if (fromAccount && /^https?:\/\//i.test(fromAccount) && !isLoopbackText(fromAccount)) {
+    return fromAccount;
   }
   return undefined;
 }

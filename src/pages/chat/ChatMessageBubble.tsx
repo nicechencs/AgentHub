@@ -118,7 +118,7 @@ function AgentBubble({
         {hasProcessDetails(process) && process ? (
           <ChatProcessPanel
             view={process}
-            messageStatus={message.status}
+            messageStatus={looksFailed && message.status === 'ok' ? 'failed' : message.status}
             durationMs={message.durationMs}
             exitCode={message.exitCode}
           />

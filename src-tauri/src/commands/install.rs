@@ -10,6 +10,10 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::{map_err_string, parse_agent, with_hub_blocking};
+use crate::file_manager::{
+    file_manager_action, normalize_open_path_input, open_in_file_manager, reveal_in_file_manager,
+    FileManagerAction,
+};
 use crate::state::AppState;
 
 /// Event name for live install/upgrade log lines (frontend InlineTerminal).
@@ -246,6 +250,21 @@ pub async fn open_agent_config_dir(
     .await
 }
 
+/// Invoke: `get_agent_live_paths` — resolved config/login file paths for display.
+#[tauri::command]
+pub async fn get_agent_live_paths(
+    state: State<'_, AppState>,
+    agent_id: String,
+) -> Result<agenthub_core::utils::paths::AgentLivePaths, String> {
+    let hub = state.hub_arc()?;
+    let id = parse_agent(&agent_id)?;
+    with_hub_blocking(hub, move |_hub| {
+        agenthub_core::utils::paths::agent_live_paths(id)
+            .map_err(|e| map_err_string("get_agent_live_paths", e))
+    })
+    .await
+}
+
 /// Invoke: `open_path_in_file_manager` — open a directory, or reveal a file.
 ///
 /// Accepts path-format drift from project discovery (`D:/work`, `cwd/D:/work`).
@@ -270,127 +289,7 @@ pub async fn open_path_in_file_manager(path: String) -> Result<String, String> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum FileManagerAction {
-    OpenDir(std::path::PathBuf),
-    RevealFile(std::path::PathBuf),
-}
 
-fn file_manager_action(path: &std::path::Path) -> FileManagerAction {
-    if path.is_file() {
-        FileManagerAction::RevealFile(path.to_path_buf())
-    } else {
-        FileManagerAction::OpenDir(path.to_path_buf())
-    }
-}
-
-#[cfg(any(test, windows))]
-fn explorer_select_arg(path: &std::path::Path) -> String {
-    let p = path.to_string_lossy().replace('/', "\\");
-    format!("/select,{p}")
-}
-
-/// Strip storage-key prefixes and normalize separators for the current OS.
-fn normalize_open_path_input(raw: &str) -> std::path::PathBuf {
-    let mut s = raw.trim().to_string();
-    if let Some(rest) = s.strip_prefix("cwd/") {
-        s = rest.to_string();
-    }
-    #[cfg(windows)]
-    {
-        // Explorer is more reliable with backslashes; Path::exists accepts both.
-        s = s.replace('/', "\\");
-    }
-    std::path::PathBuf::from(s)
-}
-
-fn reveal_in_file_manager(path: &std::path::Path) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        std::process::Command::new("explorer")
-            .arg(explorer_select_arg(path))
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("open explorer failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "reveal_in_file_manager", "{msg}");
-                msg
-            })?;
-        Ok(())
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg("-R")
-            .arg(path)
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("open -R failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "reveal_in_file_manager", "{msg}");
-                msg
-            })?;
-        Ok(())
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        // No portable "select this file" flag across Linux file managers.
-        let parent = path.parent().unwrap_or(path);
-        open_in_file_manager(parent)
-    }
-    #[cfg(not(any(windows, unix)))]
-    {
-        let _ = path;
-        let msg = "reveal in file manager unsupported on this platform".to_string();
-        tracing::warn!(target: targets::GUI, op = "reveal_in_file_manager", "{msg}");
-        Err(msg)
-    }
-}
-
-fn open_in_file_manager(path: &std::path::Path) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let arg = path.to_string_lossy().replace('/', "\\");
-        std::process::Command::new("explorer")
-            .arg(arg)
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("open explorer failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "open_in_file_manager", "{msg}");
-                msg
-            })?;
-        Ok(())
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(path)
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("open failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "open_in_file_manager", "{msg}");
-                msg
-            })?;
-        Ok(())
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(path)
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("xdg-open failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "open_in_file_manager", "{msg}");
-                msg
-            })?;
-        Ok(())
-    }
-    #[cfg(not(any(windows, unix)))]
-    {
-        let _ = path;
-        let msg = "open file manager unsupported on this platform".to_string();
-        tracing::warn!(target: targets::GUI, op = "open_in_file_manager", "{msg}");
-        Err(msg)
-    }
-}
 
 #[cfg(test)]
 mod tests;

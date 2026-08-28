@@ -214,10 +214,15 @@ export function createTauriAccountPort(): AccountPort {
 
     async refreshToken(agentId, accountId) {
       try {
-        await invoke<CoreAccount>('refresh_account_token', {
+        const raw = await invoke<CoreAccount>('refresh_account_token', {
           agentId,
           idOrLabel: accountId,
         });
+        if (raw?.extra?.oauthFileSync === 'needs_attention') {
+          const error = new Error('登录已刷新，但还没写进客户端文件，请再同步一次');
+          error.name = 'OauthFileSyncPending';
+          throw error;
+        }
       } catch (e) {
         log.error('refresh_account_token failed', e);
         throw e;

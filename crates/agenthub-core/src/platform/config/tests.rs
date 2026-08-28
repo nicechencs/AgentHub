@@ -68,6 +68,7 @@ impl AgentConfigProjector for FutureConfigProjector {
                 validation: None,
                 help: None,
                 capability: None,
+                secret_storage: None,
             }],
         }
     }

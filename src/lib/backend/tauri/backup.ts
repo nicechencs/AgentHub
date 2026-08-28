@@ -4,7 +4,6 @@ import {
   type CoreBackupRecord,
   type CoreRestoreResult,
 } from '@/lib/backend/contracts/backup-map';
-import { unsupportedError } from '@/lib/backend/contracts/errors';
 import { invoke } from './invoke';
 
 export function createTauriBackupPort(): BackupPort {
@@ -32,11 +31,6 @@ export function createTauriBackupPort(): BackupPort {
 
     async deleteBackup(backupId) {
       await invoke('delete_backup', { backupId });
-    },
-
-    async exportBackup(_backupId) {
-      // Gated by BackendFeatures.backupExport; package export is not implemented.
-      throw unsupportedError('导出备份', '换机导出包尚未接入');
     },
   };
 }

@@ -58,20 +58,8 @@ pub async fn upsert_project_meta(
 ) -> Result<(), String> {
     let hub = state.hub_arc()?;
     with_hub_blocking(hub, move |hub| {
-        let doc = hub
-            .projects()
-            .get_metadata()
-            .map_err(|e| map_err_string("upsert_project_meta", e))?;
-        let mut meta = doc.projects.get(&project_id).cloned().unwrap_or_default();
-        if let Some(h) = hidden {
-            meta.hidden = h;
-        }
-        if let Some(a) = alias {
-            let t = a.trim().to_string();
-            meta.alias = if t.is_empty() { None } else { Some(t) };
-        }
         hub.projects()
-            .upsert_project_meta(&project_id, meta)
+            .patch_project_meta(&project_id, hidden, alias)
             .map_err(|e| map_err_string("upsert_project_meta", e))
     })
     .await
