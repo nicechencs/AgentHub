@@ -824,12 +824,11 @@ fn run_pi_list_models(slot: &str) -> Vec<String> {
     let Ok(extra) = require_pi_node22_env(node22.as_ref()) else {
         return Vec::new();
     };
-    let mut cmd = std::process::Command::new(&bin);
-    cmd.args(["--list-models", slot]);
-    for (key, value) in extra {
-        cmd.env(key, value);
-    }
-    let output = match cmd.output() {
+    let output = match crate::utils::process::run_capture_with_env(
+        &bin,
+        &["--list-models", slot],
+        &extra,
+    ) {
         Ok(output) => output,
         Err(_) => return Vec::new(),
     };

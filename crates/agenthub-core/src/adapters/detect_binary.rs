@@ -1,9 +1,14 @@
 //! Shared binary detection for production adapters.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use crate::models::{AgentId, DetectResult, DetectStatus, DetectedBinaryCopy};
 use crate::utils::redact::redact_text;
+
+/// Cache TTL for `npm prefix -g` (same machine result; avoids N console flashes per detect_all).
+const NPM_PREFIX_CACHE_TTL: Duration = Duration::from_secs(600);
 
 /// Shared detect helper used by adapters.
 ///
@@ -769,16 +774,38 @@ fn find_npm_cli(home: &Path) -> Option<PathBuf> {
 }
 
 fn npm_global_bin_dirs_from_cli(home: &Path) -> Vec<PathBuf> {
+    static CACHE: OnceLock<Mutex<Option<(Instant, Vec<PathBuf>)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some((at, dirs)) = guard.as_ref() {
+            if at.elapsed() < NPM_PREFIX_CACHE_TTL {
+                return dirs.clone();
+            }
+        }
+    }
+    let dirs = npm_global_bin_dirs_from_cli_uncached(home);
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some((Instant::now(), dirs.clone()));
+    }
+    dirs
+}
+
+fn npm_global_bin_dirs_from_cli_uncached(home: &Path) -> Vec<PathBuf> {
+    use crate::utils::process::run_capture_with_env;
     let Some(npm) = find_npm_cli(home) else {
         return Vec::new();
     };
-    let mut cmd = std::process::Command::new(&npm);
-    cmd.args(["prefix", "-g"]);
-    if let Some(dir) = npm.parent() {
-        // npm.cmd / `#!/usr/bin/env node` need sibling `node` even when GUI PATH is empty.
-        cmd.env("PATH", path_with_dir_prepended(dir));
-    }
-    let output = match cmd.output() {
+    // npm.cmd / `#!/usr/bin/env node` need sibling `node` even when GUI PATH is empty.
+    let extra_env: Vec<(String, String)> = npm
+        .parent()
+        .map(|dir| {
+            vec![(
+                "PATH".to_string(),
+                path_with_dir_prepended(dir).to_string_lossy().into_owned(),
+            )]
+        })
+        .unwrap_or_default();
+    let output = match run_capture_with_env(&npm, &["prefix", "-g"], &extra_env) {
         Ok(output) if output.status.success() => output,
         _ => return Vec::new(),
     };

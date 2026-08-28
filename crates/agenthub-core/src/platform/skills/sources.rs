@@ -6,6 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::utils::process::apply_no_window;
 use crate::error::{AppError, Result};
 
 /// Owns install-source materialization (path / zip / git → package dir).
@@ -110,11 +111,10 @@ pub(crate) fn materialize_install_package(
         let tmp = tempfile::tempdir()
             .map_err(|e| AppError::message("skill.install", format!("tempdir failed: {e}")))?;
         let dest = tmp.path().join("repo");
-        let status = std::process::Command::new("git")
-            .args(["clone", "--depth", "1", source])
-            .arg(&dest)
-            .status()
-            .map_err(|e| {
+        let mut cmd = std::process::Command::new("git");
+        cmd.args(["clone", "--depth", "1", source]).arg(&dest);
+        apply_no_window(&mut cmd);
+        let status = cmd.status().map_err(|e| {
                 AppError::message(
                     "skill.install",
                     format!(
