@@ -556,8 +556,15 @@ impl ChatService {
             }
         }
 
+        let mut finalized_failed = false;
         for result in &results {
             if let Some(msg) = finalize_agent_message(&mut remaining, result) {
+                if matches!(
+                    msg.status,
+                    ChatMessageStatus::Failed | ChatMessageStatus::Timeout
+                ) {
+                    finalized_failed = true;
+                }
                 // Best-effort persist; if conversation was deleted mid-send, skip.
                 match self.repo.update_message(&msg) {
                     Ok(()) | Err(AppError::NotFound(_)) => {
@@ -597,12 +604,13 @@ impl ChatService {
             )?;
         }
 
+        let ok = report_ok && !finalized_failed;
         on_event(ChatEvent::Finished {
             turn,
-            ok: report_ok,
+            ok,
             cancelled: results.iter().any(|r| r.status == RunStatus::Cancelled),
         });
-        Ok(report_ok)
+        Ok(ok)
     }
 }
 
@@ -671,8 +679,19 @@ fn looks_like_raw_upstream_error(text: &str) -> bool {
     let hay = text.to_ascii_lowercase();
     hay.contains("missing environment variable")
         || hay.contains("is not supported by any configured account")
+        || hay.contains("oauth refresh failed")
+        || hay.contains("invalid_grant")
+        || hay.contains("invalid or unknown refresh token")
+        || hay.contains("token refresh failed")
         || hay.contains("stealth/ox")
         || (hay.contains("\"code\":404") || hay.contains("\"code\": 404"))
+}
+
+fn looks_like_auth_refresh_failure(hay: &str) -> bool {
+    hay.contains("oauth refresh failed")
+        || hay.contains("invalid_grant")
+        || hay.contains("invalid or unknown refresh token")
+        || hay.contains("token refresh failed")
 }
 
 fn upstream_failure_message(content: &str, stderr: &str, stdout: &str) -> Option<String> {
@@ -684,6 +703,9 @@ fn upstream_failure_message(content: &str, stderr: &str, stdout: &str) -> Option
         || hay.contains("model_unavailable")
     {
         return Some("这个模型当前登录用不了。请换一个模型后重试。".into());
+    }
+    if looks_like_auth_refresh_failure(&hay) {
+        return Some("这份登录已失效，请重新登录后重试。".into());
     }
     if hay.contains("stealth/ox")
         || hay.contains("stealth ox")

@@ -3,7 +3,7 @@ import { useTicketWallet } from '@/app/runtime';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 import { switchAccount } from '@/lib/api/account';
-import { setChatModel } from '@/lib/api/chat';
+import { getChatModel, setChatModel } from '@/lib/api/chat';
 import {
   listProviders,
   listRemoteOpenAiModelsForProvider,
@@ -17,10 +17,15 @@ import {
 } from '@/pages/connections/use-connection-page-actions';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentId, AgentStatus, Conversation, Provider } from '@/lib/types';
-import { officialApiDefaults } from '@/config/official-api';
 import { applyFormVars, extractFormVars } from '@/lib/provider-detect';
 import { filterRemoteModelsForAgent } from '@/lib/provider-detect/remote-models';
-import { chatModelOptions, extractModel, isRetiredChatModel } from './chat-format';
+import {
+  chatModelOptions,
+  extractModel,
+  extractPiDefaultModel,
+  extractPiSlotModels,
+  isRetiredChatModel,
+} from './chat-format';
 import {
   chatConnectionOptions,
   chatConnectionPickerView,
@@ -48,6 +53,8 @@ export function useChatPageConnection(input: {
   const ticketWallet = useTicketWallet();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [remoteModels, setRemoteModels] = useState<string[]>([]);
+  const [liveChatModel, setLiveChatModel] = useState<string | null>(null);
+  const [liveChatModels, setLiveChatModels] = useState<string[]>([]);
   const [switchingModel, setSwitchingModel] = useState(false);
   const wallet = ticketWallet.wallet;
   const walletReady = ticketWallet.state === 'ready' || ticketWallet.state === 'error';
@@ -92,8 +99,33 @@ export function useChatPageConnection(input: {
 
   const leftoverCurrent = leftoverProviderIsCurrent(providers);
 
+  const loadLiveChatModel = useCallback(async (agentId: AgentId) => {
+    if (agentId !== 'pi') {
+      setLiveChatModel(null);
+      setLiveChatModels([]);
+      return;
+    }
+    try {
+      const live = await getChatModel(agentId);
+      setLiveChatModel(live.model && !isRetiredChatModel(live.model) ? live.model : null);
+      setLiveChatModels(live.models.filter((id) => !isRetiredChatModel(id)));
+    } catch {
+      setLiveChatModel(null);
+      setLiveChatModels([]);
+    }
+  }, []);
+
   useEffect(() => {
-    if (!currentProvider?.id) {
+    if (primaryAgent !== 'pi') {
+      setLiveChatModel(null);
+      setLiveChatModels([]);
+      return;
+    }
+    void loadLiveChatModel('pi');
+  }, [primaryAgent, currentProvider, loadLiveChatModel]);
+
+  useEffect(() => {
+    if (primaryAgent === 'pi' || !currentProvider?.id) {
       setRemoteModels([]);
       return;
     }
@@ -115,24 +147,30 @@ export function useChatPageConnection(input: {
     return () => {
       cancelled = true;
     };
-  }, [currentProvider]);
+  }, [currentProvider, primaryAgent]);
 
   const currentModel = useMemo(() => {
     if (leftoverCurrent) return null;
+    if (primaryAgent === 'pi') {
+      if (liveChatModel && !isRetiredChatModel(liveChatModel)) return liveChatModel;
+      const fromEnvelope = currentProvider ? extractPiDefaultModel(currentProvider.configText) : null;
+      if (fromEnvelope && !isRetiredChatModel(fromEnvelope)) return fromEnvelope;
+      return null;
+    }
     const fromProvider = currentProvider ? extractModel(currentProvider.configText) : null;
     if (fromProvider && !isRetiredChatModel(fromProvider)) return fromProvider;
     return null;
-  }, [currentProvider, leftoverCurrent]);
+  }, [currentProvider, leftoverCurrent, liveChatModel, primaryAgent]);
 
   const modelOptions = useMemo(() => {
-    const fromRemote = chatModelOptions(remoteModels, currentModel);
-    if (fromRemote.length > 0) return fromRemote;
     if (primaryAgent === 'pi') {
-      const grok = officialApiDefaults('grok')?.model;
-      return chatModelOptions(grok ? [grok] : [], currentModel);
+      const fromLive = chatModelOptions(liveChatModels, currentModel);
+      if (fromLive.length > 0) return fromLive;
+      const fromEnvelope = currentProvider ? extractPiSlotModels(currentProvider.configText) : [];
+      return chatModelOptions(fromEnvelope, currentModel);
     }
-    return fromRemote;
-  }, [remoteModels, currentModel, primaryAgent]);
+    return chatModelOptions(remoteModels, currentModel);
+  }, [currentModel, currentProvider, liveChatModels, primaryAgent, remoteModels]);
 
   const connectionOptions = useMemo(
     () =>
@@ -208,6 +246,7 @@ export function useChatPageConnection(input: {
       await Promise.all([
         ticketWallet.reload(),
         loadProviders(primaryAgent),
+        loadLiveChatModel(primaryAgent),
         refreshAgents({ force: true }).catch(() => []),
       ]);
       toast({
@@ -233,6 +272,7 @@ export function useChatPageConnection(input: {
     try {
       if (primaryAgent === 'pi') {
         await setChatModel('pi', next);
+        setLiveChatModel(next);
       } else if (currentProvider && currentProvider.agentId === primaryAgent) {
         const vars = extractFormVars(
           currentProvider.agentId,
@@ -250,7 +290,7 @@ export function useChatPageConnection(input: {
       } else {
         throw new Error(t('chat.composer.modelUnavailable'));
       }
-      await loadProviders(primaryAgent);
+      await Promise.all([loadProviders(primaryAgent), loadLiveChatModel(primaryAgent)]);
       toast({
         title: t('chat.composer.modelSwitched'),
         variant: 'success',

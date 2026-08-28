@@ -585,6 +585,108 @@ pub(crate) fn set_pi_default_model(model: &str) -> Result<()> {
     })
 }
 
+fn collect_pi_slot_model_ids(models: &serde_json::Value, slot: &str) -> Vec<String> {
+    let providers = models
+        .get("providers")
+        .or(Some(models))
+        .and_then(|value| value.as_object());
+    let Some(providers) = providers else {
+        return Vec::new();
+    };
+    let Some(entry) = providers.get(slot) else {
+        return Vec::new();
+    };
+    let Some(items) = entry.get("models").and_then(|value| value.as_array()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for item in items {
+        let id = item
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| nonempty_json_str(item, "id"));
+        let Some(id) = id else {
+            continue;
+        };
+        if crate::models::is_openrouter_backup_model(&id) || !seen.insert(id.clone()) {
+            continue;
+        }
+        out.push(id);
+    }
+    out
+}
+
+fn pi_auth_bearer_for_slot(auth: &serde_json::Value, slot: &str) -> Option<String> {
+    let entry = auth.get(slot)?;
+    for key in ["access", "access_token", "accessToken", "key", "api_key", "apiKey"] {
+        if let Some(value) = nonempty_json_str(entry, key) {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn official_openai_base_for_pi_slot(slot: &str) -> Option<&'static str> {
+    match slot {
+        "xai" => Some("https://api.x.ai/v1"),
+        _ => None,
+    }
+}
+
+/// Live default model + picker ids for this Pi slot. Never invents leftover Grok defaults.
+pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
+    let empty = crate::models::LiveChatModel {
+        model: None,
+        models: Vec::new(),
+    };
+    let Ok(dir) = pi_config_dir() else {
+        return empty;
+    };
+    let settings = read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
+    let models_doc = read_json_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
+    let auth = read_auth_json().unwrap_or(serde_json::json!({}));
+    let slot = nonempty_json_str(&settings, "defaultProvider").unwrap_or_default();
+    let current = nonempty_json_str(&settings, "defaultModel")
+        .filter(|id| !crate::models::is_openrouter_backup_model(id));
+    let mut models = if slot.is_empty() {
+        Vec::new()
+    } else {
+        collect_pi_slot_model_ids(&models_doc, &slot)
+    };
+    if models.is_empty() {
+        if let (true, Some(base), Some(key)) = (
+            !slot.is_empty(),
+            official_openai_base_for_pi_slot(&slot),
+            pi_auth_bearer_for_slot(&auth, &slot),
+        ) {
+            if let Ok(remote) = crate::utils::remote_openai_models::list_remote_openai_models(base, &key)
+            {
+                for id in remote {
+                    let id = id.trim().to_string();
+                    if id.is_empty() || crate::models::is_openrouter_backup_model(&id) {
+                        continue;
+                    }
+                    if !models.iter().any(|existing| existing == &id) {
+                        models.push(id);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(current) = current.as_ref() {
+        if !models.iter().any(|id| id == current) {
+            models.insert(0, current.clone());
+        }
+    }
+    crate::models::LiveChatModel {
+        model: current,
+        models,
+    }
+}
+
 fn write_pi_config(config: &AgentConfig) -> Result<()> {
     if config.agent != AgentId::Pi {
         return Err(AppError::InvalidArg(format!(
@@ -903,6 +1005,63 @@ mod tests {
             assert_eq!(settings["defaultProvider"], "openrouter");
             let err = set_pi_default_model("stealth/ox-alpha").unwrap_err();
             assert!(err.to_string().contains("下架"), "{err}");
+        });
+    }
+
+    #[test]
+    fn pi_live_chat_model_reads_current_slot_and_skips_leftover_url_catalog() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-4"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("models.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "providers": {
+                        "openrouter": {
+                            "baseUrl": "https://openrouter.ai/api/v1",
+                            "models": [{ "id": "openrouter/auto" }]
+                        },
+                        "xai": {
+                            "models": [
+                                { "id": "grok-4" },
+                                { "id": "grok-code-fast-1" },
+                                { "id": "stealth/ox-alpha" }
+                            ]
+                        }
+                    }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let live = pi_live_chat_model();
+            assert_eq!(live.model.as_deref(), Some("grok-4"));
+            assert_eq!(live.models, vec!["grok-4".to_string(), "grok-code-fast-1".to_string()]);
+            assert!(!live.models.iter().any(|id| id.contains("openrouter")));
+            assert!(!live.models.iter().any(|id| id.contains("stealth")));
+        });
+    }
+
+    #[test]
+    fn pi_live_chat_model_has_no_hardcoded_grok_fallback() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({ "defaultProvider": "xai" })).unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("models.json"), b"{}\n").unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let live = pi_live_chat_model();
+            assert_eq!(live.model, None);
+            assert!(live.models.is_empty(), "{live:?}");
         });
     }
 
