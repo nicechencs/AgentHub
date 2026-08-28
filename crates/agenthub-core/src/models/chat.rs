@@ -234,6 +234,14 @@ pub enum RunEvent {
     Finished { agent: AgentId },
 }
 
+/// Live Chat model chip + picker for an agent (Pi reads settings.json).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveChatModel {
+    pub model: Option<String>,
+    pub models: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

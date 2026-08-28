@@ -3,6 +3,7 @@ import { createTranslator } from '@/lib/i18n';
 import {
   chatModelOptions,
   extractModel,
+  extractPiSlotModels,
   formatDurationMs,
   isRetiredChatModel,
   localizeChatFailure,
@@ -45,5 +46,28 @@ describe('chat model options', () => {
     expect(
       localizeChatFailure('404: {"message":"Stealth Ox Alpha testing period","code":404}'),
     ).toContain('下架');
+    expect(
+      localizeChatFailure(
+        'OAuth refresh failed for xai: xAI OAuth token refresh failed (HTTP 400): invalid_grant: Invalid or unknown refresh token',
+      ),
+    ).toBe('这份登录已失效，请重新登录后重试。');
+  });
+
+  it('reads Pi slot models from the current defaultProvider, not a leftover URL slot', () => {
+    const text = JSON.stringify({
+      settings: { defaultProvider: 'xai' },
+      models: {
+        providers: {
+          openrouter: {
+            baseUrl: 'https://openrouter.ai/api/v1',
+            models: [{ id: 'openrouter/auto' }],
+          },
+          xai: {
+            models: [{ id: 'grok-4' }, { id: 'grok-code-fast-1' }, { id: 'stealth/ox-alpha' }],
+          },
+        },
+      },
+    });
+    expect(extractPiSlotModels(text)).toEqual(['grok-4', 'grok-code-fast-1']);
   });
 });

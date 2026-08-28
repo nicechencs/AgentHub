@@ -28,11 +28,17 @@ export function openaiModelsUrl(baseUrl: string): string {
   return `${stripped}/v1/models`;
 }
 
+/** Grok / xAI ids, including relay prefixes such as `xai/grok-4.6`. */
+export function looksLikeGrokModel(id: string): boolean {
+  const text = id.trim();
+  if (!text) return false;
+  return /(^|\/)grok[-_.]/i.test(text) || /^xai\/grok/i.test(text);
+}
+
 /** Drop models that belong to another product so Claude/Kimi do not list grok-*. */
 export function filterRemoteModelsForAgent(agentId: AgentId, ids: readonly string[]): string[] {
   const list = ids.map((id) => id.trim()).filter(Boolean);
   if (list.length === 0) return [];
-  const grok = (id: string) => /^grok[-_]/i.test(id);
   const kimi = (id: string) => /kimi|moonshot/i.test(id);
   const claude = (id: string) => /claude|anthropic|sonnet|opus|haiku|fable/i.test(id);
   const deepseek = (id: string) => /deepseek/i.test(id);
@@ -40,11 +46,12 @@ export function filterRemoteModelsForAgent(agentId: AgentId, ids: readonly strin
   if (agentId === 'kimi') kept = list.filter(kimi);
   else if (agentId === 'claude') kept = list.filter(claude);
   else if (agentId === 'dsh') kept = list.filter(deepseek);
-  else if (agentId === 'grok') kept = list.filter(grok);
+  else if (agentId === 'grok') kept = list.filter(looksLikeGrokModel);
   if (kept.length > 0) return kept;
-  if (agentId === 'kimi' || agentId === 'claude') {
-    const withoutGrok = list.filter((id) => !grok(id));
-    if (withoutGrok.length > 0) return withoutGrok;
+  // An empty agent-family match is honest. Dumping the raw catalog showed
+  // leftover `xai/grok-*` rows on Kimi / Claude relays.
+  if (agentId === 'kimi' || agentId === 'claude' || agentId === 'dsh' || agentId === 'grok') {
+    return [];
   }
   return [...list];
 }
