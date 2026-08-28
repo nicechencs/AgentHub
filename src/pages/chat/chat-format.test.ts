@@ -51,6 +51,11 @@ describe('chat model options', () => {
         'OAuth refresh failed for xai: xAI OAuth token refresh failed (HTTP 400): invalid_grant: Invalid or unknown refresh token',
       ),
     ).toBe('这份登录已失效，请重新登录后重试。');
+    expect(
+      localizeChatFailure(
+        'OpenAI API error (400): 400 "Model grok-code-fast-1 does not support parameter reasoningEffort."',
+      ),
+    ).toBe('这个模型不支持当前思考设置。请点重试。');
   });
 
   it('reads Pi slot models from the current defaultProvider, not a leftover URL slot', () => {
