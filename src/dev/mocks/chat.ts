@@ -267,5 +267,9 @@ export function createMockChatPort(): ChatPort {
     async setChatModel(_agentId, _model) {
       await delay(40);
     },
+    async getChatModel(_agentId) {
+      await delay(20);
+      return { model: null, models: [] };
+    },
   };
 }

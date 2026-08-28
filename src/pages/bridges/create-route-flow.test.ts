@@ -24,6 +24,7 @@ import {
   readCreateRouteCapabilities,
   listLocalRouteSurfacesFromConfig,
   applyLocalRouteToAgents,
+  surfaceAfterCompensation,
   submitCreateRoute,
   submitImportRoute,
   endpointUrlFor,
@@ -229,9 +230,10 @@ describe('create-route-flow', () => {
     const bindTicket = vi.fn(async (_ticket: string, agent: string) =>
       bindResult(agent as BindTicketResult['binding']['agentId']),
     );
+    const unbindTicket = vi.fn(async () => {});
     const applied = await applyLocalRouteToAgents(
       { sourceKind: 'provider', sourceId: 'or-1', agents: ['claude', 'codex', 'grok'] },
-      { planTicket, bindTicket },
+      { planTicket, bindTicket, unbindTicket },
     );
     expect(applied).toEqual(['claude', 'codex', 'grok']);
     expect(planTicket).toHaveBeenCalledTimes(3);
@@ -248,13 +250,90 @@ describe('create-route-flow', () => {
       bindResult(agent as BindTicketResult['binding']['agentId']),
     );
 
-    const bound = await submitCreateRoute(input(), { upsertProvider, planTicket, bindTicket });
+    const bound = await submitCreateRoute(input(), {
+      upsertProvider,
+      planTicket,
+      bindTicket,
+      unbindTicket: vi.fn(async () => {}),
+      deleteProvider: vi.fn(async () => {}),
+    });
 
     expect(upsertProvider).toHaveBeenCalledOnce();
     expect(planTicket).toHaveBeenCalledTimes(3);
     expect(bindTicket).toHaveBeenCalledTimes(3);
     expect(bound).toEqual(['claude', 'codex', 'grok']);
     expect(bindTicket.mock.calls.map((call) => call[1])).toEqual(['claude', 'codex', 'grok']);
+  });
+
+  it('unbinds earlier clients and deletes the new provider when a later bind fails', async () => {
+    const upsertProvider = vi.fn(async (provider: Provider) => provider);
+    const planTicket = vi.fn(async () => plan('claude'));
+    const bindTicket = vi.fn(async (_ticket: string, agent: string) => {
+      if (agent === 'codex') throw new Error('port in use');
+      return bindResult(agent as BindTicketResult['binding']['agentId']);
+    });
+    const unbindTicket = vi.fn(async (_ticket: string, _agent: string) => {});
+    const deleteProvider = vi.fn(async () => {});
+
+    await expect(
+      submitCreateRoute(input(), {
+        upsertProvider,
+        planTicket,
+        bindTicket,
+        unbindTicket,
+        deleteProvider,
+      }),
+    ).rejects.toThrow('port in use');
+
+    expect(bindTicket.mock.calls.map((call) => call[1])).toEqual(['claude', 'codex']);
+    expect(unbindTicket).toHaveBeenCalledTimes(1);
+    expect(unbindTicket.mock.calls[0]?.[1]).toBe('claude');
+    expect(deleteProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it('never turns a failed unbind or stop into success', () => {
+    const unbind = new Error('unbind failed');
+    const original = new Error('port in use');
+    expect(surfaceAfterCompensation(original, [unbind])).toBe(unbind);
+    expect(surfaceAfterCompensation(original, [])).toBe(original);
+  });
+
+  it('surfaces a failed unbind instead of treating 确认应用 rollback as success', async () => {
+    const bindTicket = vi.fn(async (_ticket: string, agent: string) => {
+      if (agent === 'codex') throw new Error('port in use');
+      return bindResult(agent as BindTicketResult['binding']['agentId']);
+    });
+    const unbindTicket = vi.fn(async () => {
+      throw new Error('unbind failed');
+    });
+
+    await expect(
+      applyLocalRouteToAgents(
+        { sourceKind: 'provider', sourceId: 'or-1', agents: ['claude', 'codex'] },
+        {
+          planTicket: vi.fn(async () => plan('claude')),
+          bindTicket,
+          unbindTicket,
+        },
+      ),
+    ).rejects.toThrow('unbind failed');
+    expect(unbindTicket).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the original 确认应用 error when unbind rollback succeeds', async () => {
+    await expect(
+      applyLocalRouteToAgents(
+        { sourceKind: 'provider', sourceId: 'or-1', agents: ['claude', 'codex'] },
+        {
+          planTicket: vi.fn(async () => plan('claude')),
+          bindTicket: vi.fn(async (_ticket: string, agent: string) => {
+            if (agent === 'codex') throw new Error('port in use');
+            return bindResult(agent as BindTicketResult['binding']['agentId']);
+          }),
+          unbindTicket: vi.fn(async () => {}),
+        },
+      ),
+    ).rejects.toThrow('port in use');
   });
 
   it('imports an existing login with one bind', async () => {

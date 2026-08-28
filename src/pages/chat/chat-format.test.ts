@@ -3,9 +3,14 @@ import { createTranslator } from '@/lib/i18n';
 import {
   chatModelOptions,
   extractModel,
+  extractPiDefaultProvider,
+  extractPiSlotModels,
   formatDurationMs,
   isRetiredChatModel,
   localizeChatFailure,
+  officialPiModelsBaseUrl,
+  piChatModelOptions,
+  shouldFetchChatRemoteModels,
   thinkingChromeLabel,
 } from './chat-format';
 
@@ -45,5 +50,61 @@ describe('chat model options', () => {
     expect(
       localizeChatFailure('404: {"message":"Stealth Ox Alpha testing period","code":404}'),
     ).toContain('下架');
+    expect(
+      localizeChatFailure(
+        'OAuth refresh failed for xai: xAI OAuth token refresh failed (HTTP 400): invalid_grant: Invalid or unknown refresh token',
+      ),
+    ).toBe('这份登录已失效，请重新登录后重试。');
+    expect(
+      localizeChatFailure(
+        'OpenAI API error (400): 400 "Model grok-code-fast-1 does not support parameter reasoningEffort."',
+      ),
+    ).toBe('这个模型不支持当前思考设置。请点重试。');
+  });
+
+  it('reads Pi slot models from the current defaultProvider, not a leftover URL slot', () => {
+    const text = JSON.stringify({
+      settings: { defaultProvider: 'xai' },
+      models: {
+        providers: {
+          openrouter: {
+            baseUrl: 'https://openrouter.ai/api/v1',
+            models: [{ id: 'openrouter/auto' }],
+          },
+          xai: {
+            models: [{ id: 'grok-4' }, { id: 'grok-code-fast-1' }, { id: 'stealth/ox-alpha' }],
+          },
+        },
+      },
+    });
+    expect(extractPiSlotModels(text)).toEqual(['grok-4', 'grok-code-fast-1']);
+  });
+
+  it('does not skip the remote catalog fetch for a Pi official xAI login', () => {
+    expect(extractPiDefaultProvider('{"settings":{"defaultProvider":"xai"}}')).toBe('xai');
+    expect(officialPiModelsBaseUrl('xai')).toBe('https://api.x.ai/v1');
+    expect(officialPiModelsBaseUrl('openrouter')).toBe('');
+    expect(shouldFetchChatRemoteModels('prov-pi', 'https://api.x.ai/v1')).toBe(true);
+    expect(shouldFetchChatRemoteModels('prov-pi', '')).toBe(false);
+  });
+
+  it('uses the official xAI remote catalog for Pi 换模型, not leftover defaultModel', () => {
+    const official = ['grok-4.3', 'grok-4.5', 'grok-4.6', 'grok-build-0.1'];
+    expect(
+      piChatModelOptions({
+        remoteModels: official,
+        liveModels: ['grok-code-fast-1'],
+        envelopeModels: ['grok-code-fast-1'],
+        currentModel: 'grok-code-fast-1',
+      }),
+    ).toEqual(official);
+    expect(
+      piChatModelOptions({
+        remoteModels: official,
+        liveModels: [],
+        envelopeModels: ['grok-4', 'grok-code-fast-1'],
+        currentModel: 'grok-code-fast-1',
+      }),
+    ).not.toContain('grok-code-fast-1');
   });
 });

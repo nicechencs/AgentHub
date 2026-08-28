@@ -231,7 +231,13 @@ fn build_run_spec_argv_snapshots() {
 
     match reg.get(AgentId::Pi).unwrap().build_run_spec(bin, "p", &o) {
         Ok(pi) => {
-            assert_eq!(&pi.args[..5], ["-p", "p", "--mode", "text", "--no-session"]);
+            // Live Pi config may prefix `--provider` / `--model` / `--thinking`
+            // before `-p`; the prompt tail is the stable contract.
+            let p_at = pi.args.iter().position(|a| a == "-p").expect("-p");
+            assert_eq!(
+                &pi.args[p_at..],
+                ["-p", "p", "--mode", "text", "--no-session"]
+            );
             for (k, v) in &pi.env {
                 assert_eq!(k, "PATH");
                 assert!(!v.is_empty());
@@ -255,8 +261,9 @@ fn build_run_spec_argv_snapshots() {
         .build_run_spec(bin, "p", &structured)
     {
         Ok(pi_s) => {
+            let p_at = pi_s.args.iter().position(|a| a == "-p").expect("-p");
             assert_eq!(
-                &pi_s.args[..5],
+                &pi_s.args[p_at..],
                 ["-p", "p", "--mode", "json", "--no-session"]
             );
         }

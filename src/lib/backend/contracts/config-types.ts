@@ -28,6 +28,8 @@ export interface ConfigFieldSchemaDto {
   validation?: FieldValidationDto | null;
   help?: string | null;
   capability?: string | null;
+  /** Outside-native secret location, e.g. `auth.OPENAI_API_KEY`. */
+  secretStorage?: string | null;
 }
 
 export type NativeConfigFormatDto = 'json' | 'toml';

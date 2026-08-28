@@ -5,6 +5,7 @@ mod adapter_bridge_controller;
 mod adapter_control_host;
 mod commands;
 mod exit_coordinator;
+mod file_manager;
 mod skill_watch;
 mod state;
 mod tray;
@@ -129,6 +130,7 @@ pub fn run() {
             commands::install::check_agent_updates,
             commands::install::uninstall_agent,
             commands::install::open_agent_config_dir,
+            commands::install::get_agent_live_paths,
             commands::install::open_path_in_file_manager,
             commands::agent_visibility::list_hidden_agents,
             commands::agent_visibility::set_agent_hidden,
@@ -215,6 +217,7 @@ pub fn run() {
             commands::chat::chat_send,
             commands::chat::chat_cancel,
             commands::chat::set_chat_model,
+            commands::chat::get_chat_model,
             // Agent projects / sessions
             commands::project::list_agent_projects,
             commands::project::list_agent_project_sessions,

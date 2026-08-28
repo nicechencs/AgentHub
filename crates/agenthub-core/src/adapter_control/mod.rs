@@ -22,3 +22,12 @@ pub use coordinator::AdapterSagaCoordinator;
 pub type AdapterBridgeSagaCoordinator = AdapterSagaCoordinator;
 pub use crate::bridge::host::InboundRequestRecord;
 pub use status::AdapterBridgeStatus;
+
+/// Unbind already failed. A failed restart must not disappear into `let _ =`.
+/// Never returns Ok — the caller always surfaces a failure.
+pub fn surface_unbind_and_restart(unbind_error: String, restart: Result<(), String>) -> String {
+    match restart {
+        Ok(()) => unbind_error,
+        Err(restart_error) => format!("{unbind_error}; {restart_error}"),
+    }
+}

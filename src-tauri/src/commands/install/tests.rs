@@ -1,4 +1,5 @@
 use super::*;
+use crate::file_manager::{explorer_select_arg, file_manager_action, FileManagerAction};
 
 #[test]
 fn file_manager_action_reveals_files_and_opens_dirs() {

@@ -35,6 +35,7 @@ export function useChatPageSend(input: {
   hiddenIds: Set<AgentId>;
   envNotReadyIds: Set<AgentId>;
   unconfiguredAuthIds: Set<AgentId>;
+  agentsReady: boolean;
   activeIdRef: MutableRefObject<string | null>;
   activeGenerationRef: MutableRefObject<number>;
   loadMessages: (id: string) => Promise<ChatMessage[]>;
@@ -54,6 +55,7 @@ export function useChatPageSend(input: {
     hiddenIds,
     envNotReadyIds,
     unconfiguredAuthIds,
+    agentsReady,
     activeIdRef,
     activeGenerationRef,
     loadMessages,
@@ -93,10 +95,11 @@ export function useChatPageSend(input: {
       hiddenIds,
       envNotReadyIds,
       unconfiguredAuthIds,
+      agentsReady,
       sendingConversationId: liveSendingConversationId,
       sendingTitle,
     });
-  }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, liveSendingConversationId, sendingTitle]);
+  }, [active, hiddenIds, envNotReadyIds, unconfiguredAuthIds, agentsReady, liveSendingConversationId, sendingTitle]);
 
   const retry = useMemo(() => retryTarget(turns, sending), [turns, sending]);
 

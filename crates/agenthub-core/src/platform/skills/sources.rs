@@ -164,46 +164,6 @@ pub(crate) fn single_child_dir(root: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Minimal zip extract without extra crates: shell out to tar/PowerShell on Windows.
 pub(crate) fn extract_zip_file(zip: &Path, dest: &Path) -> Result<()> {
-    fs::create_dir_all(dest)?;
-    #[cfg(windows)]
-    {
-        let status = std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!(
-                    "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
-                    zip.display(),
-                    dest.display()
-                ),
-            ])
-            .status()
-            .map_err(|e| {
-                AppError::message("skill.install", format!("Expand-Archive failed: {e}"))
-            })?;
-        if status.success() {
-            return Ok(());
-        }
-        return Err(AppError::message(
-            "skill.install",
-            "failed to extract zip (Expand-Archive)",
-        ));
-    }
-    #[cfg(not(windows))]
-    {
-        let status = std::process::Command::new("unzip")
-            .args(["-q", &zip.to_string_lossy(), "-d", &dest.to_string_lossy()])
-            .status()
-            .map_err(|e| AppError::message("skill.install", format!("unzip failed: {e}")))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(AppError::message(
-                "skill.install",
-                "failed to extract zip (unzip)",
-            ))
-        }
-    }
+    super::zip_extract::extract_zip_file(zip, dest)
 }

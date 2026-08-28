@@ -11,6 +11,7 @@ import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { TranslateFn } from '@/lib/i18n';
 import { localBridgeProfilesForSource } from './adapter-view-model';
+import { surfaceAfterCompensation } from './create-route-flow';
 
 type ToastFn = (input: { title: string; variant?: 'success' | 'danger' | 'default' }) => void;
 
@@ -68,13 +69,26 @@ export function useBridgeRuntimeActions(input: {
       setProfileBusy(member.id, true);
       clearProfileError(member.id);
     }
+    const started: string[] = [];
     try {
       for (const member of members) {
         updateBridgeStatus(await startAdapterBridge(member.id));
+        started.push(member.id);
       }
       reloadThenClearProfileErrors();
     } catch (error) {
-      setProfileErrors((current) => ({ ...current, [profile.id]: error }));
+      const compensationFailures: unknown[] = [];
+      for (const id of [...started].reverse()) {
+        try {
+          updateBridgeStatus(await stopAdapterBridge(id));
+        } catch (cause) {
+          compensationFailures.push(cause);
+        }
+      }
+      setProfileErrors((current) => ({
+        ...current,
+        [profile.id]: surfaceAfterCompensation(error, compensationFailures),
+      }));
     } finally {
       for (const member of members) setProfileBusy(member.id, false);
     }

@@ -34,9 +34,7 @@ impl AccountService {
         let _process_lock = process_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let _lock = self.acquire_live_lock(agent)?.ok_or_else(|| {
-            AppError::Unsupported("account live switching is not configured".into())
-        })?;
+        let live_guard = backup.acquire_live_write(agent)?;
 
         let adapter = self.registry.require(agent, Capability::AccountSwitch)?;
 
@@ -132,7 +130,8 @@ impl AccountService {
             .filter(|row| row.id == target.id)
             .map_or(target.updated_at.as_str(), |row| row.updated_at.as_str());
 
-        let snapshot = match backup.snapshot(
+        let snapshot = match backup.snapshot_with_guard(
+            &live_guard,
             agent,
             BackupKind::AutoSwitch,
             Some(&format!("before account switch to {}", target.id)),

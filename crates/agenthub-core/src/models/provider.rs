@@ -107,6 +107,20 @@ impl Provider {
             } else {
                 meta = json!({ "secretTail": tail });
             }
+        } else if meta
+            .get("secretTail")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or("")
+            .is_empty()
+        {
+            if let Some(tail) = crate::utils::redact::secret_tail_from_masked_preview(&self.name) {
+                if let Value::Object(map) = &mut meta {
+                    map.insert("secretTail".into(), json!(tail));
+                } else {
+                    meta = json!({ "secretTail": tail });
+                }
+            }
         }
         if let Some(hash) = crate::utils::redact::api_key_secret_hash(&self.settings_config) {
             if let Value::Object(map) = &mut meta {

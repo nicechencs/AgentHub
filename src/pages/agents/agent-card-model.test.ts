@@ -160,6 +160,27 @@ describe('extra copy labels', () => {
       updateVia: 'ide',
       uninstallVia: 'ide',
     });
+    expect(
+      listAgentInstalls({
+        agentId: 'workbuddy',
+        installed: true,
+        channel: 'native',
+        binPath: '/opt/workbuddy',
+        version: '1.0.0',
+        updateVia: 'official',
+        uninstallVia: 'in_app',
+      }),
+    ).toEqual([
+      {
+        source: 'native',
+        location: '/opt/workbuddy',
+        version: '1.0.0',
+        updateVia: 'official',
+        uninstallVia: 'in_app',
+        spawn: true,
+        kind: 'native',
+      },
+    ]);
     const rows = listAgentInstalls({
       agentId: 'codex',
       installed: true,

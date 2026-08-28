@@ -108,13 +108,13 @@ export function toCoreInput(p: Provider): CoreProviderInput {
   if (p.configFormat === 'toml') {
     settingsConfig = { format: 'toml', content: p.configText };
     // Codex dual shape: auth.OPENAI_API_KEY → live auth on switch
-    if (p.agentId === 'codex') {
-      if (p.authApiKey != null && p.authApiKey.trim()) {
-        settingsConfig.auth = { OPENAI_API_KEY: p.authApiKey.trim() };
-      } else if (p.authApiKey === '' || p.authApiKey === REDACTED_MARKER) {
-        // 留空 / 脱敏回传：写 marker，由 Tauri merge 保留原密钥
-        settingsConfig.auth = { OPENAI_API_KEY: REDACTED_MARKER };
-      }
+    if (p.authApiKey != null && p.authApiKey.trim()) {
+      settingsConfig.auth = { OPENAI_API_KEY: p.authApiKey.trim() };
+    } else if (
+      p.agentId === 'codex' &&
+      (p.authApiKey === '' || p.authApiKey === REDACTED_MARKER)
+    ) {
+      settingsConfig.auth = { OPENAI_API_KEY: REDACTED_MARKER };
     }
   } else {
     try {

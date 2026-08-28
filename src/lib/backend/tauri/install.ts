@@ -77,6 +77,20 @@ export function createTauriInstallPort(): InstallPort {
       }
     },
 
+    async getAgentLivePaths(agentId: AgentId) {
+      try {
+        return await invoke<{
+          config: string;
+          auth?: string | null;
+          extra?: string[];
+          openDir: string;
+        }>('get_agent_live_paths', { agentId });
+      } catch (e) {
+        log.error('get_agent_live_paths failed', e);
+        throw e;
+      }
+    },
+
     onProgress(handler: (payload: InstallProgressPayload) => void) {
       return onInstallProgress(handler);
     },

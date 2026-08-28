@@ -106,6 +106,12 @@ export function localTokenPreviewValue(token: string | null | undefined, t?: Tra
   return writeText(t, 'routes.write.localToken', WRITE_COPY.localToken);
 }
 
+/** last4 for a successful 写入登录 log. Never the full key. */
+export function switchWriteLast4(token: string | null | undefined): string | undefined {
+  const last4 = maskApiKeyLast4(token ?? '');
+  return last4 || undefined;
+}
+
 function localTokenField(token: string | null | undefined, t?: TranslateFn): ClientWriteField {
   return {
     key: writeText(t, 'routes.write.fieldLocalToken', WRITE_COPY.fieldLocalToken),

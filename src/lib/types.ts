@@ -103,6 +103,9 @@ export interface AgentStatus {
   latestVersion?: string;
   /** Spawn channel: `npm` / `native`, or observed `ide` / `desktop`. */
   channel?: string;
+  /** Spawn copy update path from detect (`in_app` / `official` / …). */
+  updateVia?: string | null;
+  uninstallVia?: string | null;
   binPath?: string;
   /** Other on-disk copies besides binPath (other channels, IDE, leftover npm). */
   extraCopies?: Array<{
@@ -246,6 +249,8 @@ export interface Account {
   secretTail?: string;
   /** SHA-256 of a stored API key. Identity only; never the raw secret. */
   secretHash?: string;
+  /** Upstream service address stored with this login (no secret). */
+  endpoint?: string;
 }
 
 /** 投影状态（与 core SkillSyncState 对齐） */

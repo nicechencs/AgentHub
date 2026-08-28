@@ -446,12 +446,16 @@ export default function ProjectsPage() {
   }
 
   function goContinue(p: AgentSession) {
-    setChatBootstrap({
+    const ok = setChatBootstrap({
       agentIds: [p.agentId],
       cwd: p.cwd ?? null,
       title: p.title,
       prompt: buildContinuePrompt(p),
     });
+    if (!ok) {
+      toast({ title: t('projects.toast.handoffFailed'), variant: 'danger' });
+      return;
+    }
     navigate('/chat?from=projects');
   }
 
@@ -471,12 +475,16 @@ export default function ProjectsPage() {
       const cwds = excerpts.map((e) => e.cwd).filter(Boolean) as string[];
       const cwd = cwds.length > 0 && cwds.every((c) => c === cwds[0]) ? cwds[0] : null;
       const name = agentMeta?.name ?? agentId;
-      setChatBootstrap({
+      const ok = setChatBootstrap({
         agentIds: [agentId],
         cwd,
         title: t('projects.toast.summarizeTitle', { n: excerpts.length }),
         prompt: buildSummaryPrompt(name, excerpts),
       });
+      if (!ok) {
+        toast({ title: t('projects.toast.handoffFailed'), variant: 'danger' });
+        return;
+      }
       navigate('/chat?from=projects');
     } catch (e) {
       toast({ title: e instanceof Error ? e.message : String(e), variant: 'danger' });

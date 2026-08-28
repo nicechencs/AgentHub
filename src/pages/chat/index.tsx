@@ -139,6 +139,7 @@ export default function ChatPage() {
                   connectionCaption={page.connectionCaption}
                   walletError={page.walletError}
                   onRetryWallet={() => void page.reloadWallet()}
+                  onRetryStatus={() => void page.refreshAgents().catch(() => {})}
                   onSend={() => void page.handleSend()}
                   onCancel={() => void page.cancelSending()}
                   onSelectAgent={(id) => void page.selectConversationAgentId(id)}

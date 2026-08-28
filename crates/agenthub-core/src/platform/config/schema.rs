@@ -51,7 +51,13 @@ pub struct ConfigFieldSchema {
     /// Capability gate for UI visibility (optional).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capability: Option<String>,
+    /// Where a secret is stored outside native config, e.g. `auth.OPENAI_API_KEY`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_storage: Option<String>,
 }
+
+/// Codex `auth.json` envelope key used by pool materialize / save.
+pub const AUTH_OPENAI_API_KEY_STORAGE: &str = "auth.OPENAI_API_KEY";
 
 /// Native on-disk format for this agent's primary config document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

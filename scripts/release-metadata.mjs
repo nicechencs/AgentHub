@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultRoot = path.resolve(__dirname, '..');
+const WORKSPACE_LOCK_PACKAGES = ['agenthub-cli', 'agenthub-core', 'agenthub-gui'];
 
 // SemVer 2.0.0, intentionally excluding a leading `v` and numeric leading
 // zeroes. Prerelease and build identifiers remain fully supported.
@@ -85,7 +86,7 @@ function readCargoWorkspaceVersion(cargoToml) {
 
 /** Read versions for the three local workspace packages from Cargo.lock. */
 function readCargoLockWorkspaceVersions(cargoLock) {
-  const expected = ['agenthub-cli', 'agenthub-core', 'agenthub-gui'];
+  const expected = WORKSPACE_LOCK_PACKAGES;
   const versions = new Map();
   let packageName = null;
 
@@ -251,8 +252,6 @@ function readReleaseMetadata(root = defaultRoot) {
     prerelease: isPrerelease(packageVersion),
   };
 }
-
-const WORKSPACE_LOCK_PACKAGES = ['agenthub-cli', 'agenthub-core', 'agenthub-gui'];
 
 /** Propagate package.json version into Cargo.toml and Cargo.lock workspace entries. */
 function syncReleaseVersionFromPackageJson(root = defaultRoot, explicitVersion) {

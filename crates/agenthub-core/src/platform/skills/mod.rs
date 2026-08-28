@@ -23,6 +23,7 @@ mod reconcile;
 mod scoped_lock;
 mod sources;
 mod target;
+pub(crate) mod zip_extract;
 mod time;
 mod yaml;
 

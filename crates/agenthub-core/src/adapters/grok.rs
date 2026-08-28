@@ -107,7 +107,7 @@ impl AgentAdapter for GrokAdapter {
                         "auth": body,
                     }),
                     label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
-                    extra: serde_json::json!({ "source": "config.toml+auth.json" }),
+                    extra: grok_api_key_extra("config.toml+auth.json"),
                 })
             }
             (Some(key), None)
@@ -121,7 +121,7 @@ impl AgentAdapter for GrokAdapter {
                         "api_key": key,
                     }),
                     label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
-                    extra: serde_json::json!({ "source": "config.toml" }),
+                    extra: grok_api_key_extra("config.toml"),
                 })
             }
             (_, Some(body)) => Ok(LiveAccount {
@@ -207,7 +207,7 @@ impl AgentAdapter for GrokAdapter {
                 "api_key": key,
             }),
             "API Key",
-            serde_json::json!({ "source": "manual" }),
+            grok_api_key_extra("manual"),
         ))
     }
 
@@ -839,6 +839,31 @@ fn grok_config_has_api_key_field(path: &Path) -> bool {
             .and_then(Item::as_str)
             .map(str::trim)
             .is_some_and(|key| !key.is_empty())
+}
+
+pub(crate) fn read_grok_live_base_url() -> Option<String> {
+    let home = agent_home(AgentId::Grok).ok()?;
+    read_grok_inline_field(&home.join("config.toml"), "base_url")
+        .ok()
+        .flatten()
+        .map(|value| value.trim().to_string())
+        .filter(|value| value.starts_with("http://") || value.starts_with("https://"))
+}
+
+/// Last4 of the live Grok API Key, if the file still holds a usable secret.
+pub(crate) fn read_grok_live_api_key_tail() -> Option<String> {
+    let home = agent_home(AgentId::Grok).ok()?;
+    let key = read_grok_api_key(&home.join("config.toml")).ok().flatten()?;
+    crate::utils::redact::mask_secret_tail(&key)
+}
+
+fn grok_api_key_extra(source: &str) -> serde_json::Value {
+    let mut extra = serde_json::Map::new();
+    extra.insert("source".into(), serde_json::json!(source));
+    if let Some(endpoint) = read_grok_live_base_url() {
+        extra.insert("endpoint".into(), serde_json::json!(endpoint));
+    }
+    serde_json::Value::Object(extra)
 }
 
 fn read_grok_inline_field(path: &Path, key: &str) -> Result<Option<String>> {
