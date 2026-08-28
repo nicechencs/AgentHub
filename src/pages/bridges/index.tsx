@@ -204,13 +204,6 @@ export default function BridgesPage() {
       inspect.open({ kind: 'edit', profile });
     },
     onShowDetail: (profile: AdapterProfile) => {
-      if (
-        inspect.target?.kind === 'detail'
-        && localBridgeSourceKey(inspect.target.profile) === localBridgeSourceKey(profile)
-      ) {
-        inspect.close();
-        return;
-      }
       inspect.open({ kind: 'detail', profile });
     },
     activeProfileId,
