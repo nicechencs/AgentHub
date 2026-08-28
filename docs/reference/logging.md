@@ -60,7 +60,7 @@ CLI 和 GUI 都调用 `agenthub-core::logging` 初始化同一套 tracing。生�
 | `gui` | `recognize` | 智能识别粘贴成功 |
 | `gui` | `use_official` | 勾选或取消「使用官方服务」 |
 | `core.provider` | `recycle` | 登录被送进回收站 |
-| `core.provider` | `switch_write` | 切换真正写了本机配置路径 |
+| `core.provider` | `switch_write` | 切换真正写了本机配置路径；带 `agent` 与 `last4`（`**xxxx`），从不写完整钥匙 |
 | `core.provider` | `switch` | 切换结束；失败时带 `code=provider.switch.rollback` |
 | `core.chat` | `send` | 对话一轮结束；Agent 失败时记 `send failed`，不记 `send ok` |
 | `core.install` | `install_agent` | 安装结束；只打开官网时带 `code=setup_guide`，不是安装失败 |

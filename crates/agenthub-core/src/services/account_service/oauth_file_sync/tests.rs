@@ -343,6 +343,31 @@ fn patch_codex_token_only_body_without_identity_fields() {
 }
 
 #[test]
+fn apply_refresh_file_sync_mark_keeps_partial_when_persist_fails() {
+    let persisted = row(
+        "2026-08-21 00:00:00.000000",
+        json!({
+            "type": "oauth",
+            "refresh_token": "rt-new",
+            "access_token": "at-new"
+        }),
+    );
+    let marked = apply_refresh_file_sync_mark(
+        persisted.clone(),
+        Err(crate::error::AppError::message(
+            "account.oauth_file_sync.mark",
+            "登录已刷新，客户端文件还没写上",
+        )),
+    );
+    assert_eq!(
+        marked.extra.get("oauthFileSync").and_then(|v| v.as_str()),
+        Some("needs_attention")
+    );
+    assert_eq!(marked.id, persisted.id);
+    assert_eq!(marked.credentials, persisted.credentials);
+}
+
+#[test]
 fn parse_account_timestamp_accepts_pool_and_rfc3339() {
     assert!(parse_account_timestamp("2026-08-21 00:00:00.123456").is_some());
     assert!(parse_account_timestamp("2026-08-21T00:00:00Z").is_some());

@@ -3,10 +3,14 @@ import { createTranslator } from '@/lib/i18n';
 import {
   chatModelOptions,
   extractModel,
+  extractPiDefaultProvider,
   extractPiSlotModels,
   formatDurationMs,
   isRetiredChatModel,
   localizeChatFailure,
+  officialPiModelsBaseUrl,
+  piChatModelOptions,
+  shouldFetchChatRemoteModels,
   thinkingChromeLabel,
 } from './chat-format';
 
@@ -74,5 +78,33 @@ describe('chat model options', () => {
       },
     });
     expect(extractPiSlotModels(text)).toEqual(['grok-4', 'grok-code-fast-1']);
+  });
+
+  it('does not skip the remote catalog fetch for a Pi official xAI login', () => {
+    expect(extractPiDefaultProvider('{"settings":{"defaultProvider":"xai"}}')).toBe('xai');
+    expect(officialPiModelsBaseUrl('xai')).toBe('https://api.x.ai/v1');
+    expect(officialPiModelsBaseUrl('openrouter')).toBe('');
+    expect(shouldFetchChatRemoteModels('prov-pi', 'https://api.x.ai/v1')).toBe(true);
+    expect(shouldFetchChatRemoteModels('prov-pi', '')).toBe(false);
+  });
+
+  it('uses the official xAI remote catalog for Pi 换模型, not leftover defaultModel', () => {
+    const official = ['grok-4.3', 'grok-4.5', 'grok-4.6', 'grok-build-0.1'];
+    expect(
+      piChatModelOptions({
+        remoteModels: official,
+        liveModels: ['grok-code-fast-1'],
+        envelopeModels: ['grok-code-fast-1'],
+        currentModel: 'grok-code-fast-1',
+      }),
+    ).toEqual(official);
+    expect(
+      piChatModelOptions({
+        remoteModels: official,
+        liveModels: [],
+        envelopeModels: ['grok-4', 'grok-code-fast-1'],
+        currentModel: 'grok-code-fast-1',
+      }),
+    ).not.toContain('grok-code-fast-1');
   });
 });
