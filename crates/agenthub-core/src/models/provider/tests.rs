@@ -141,6 +141,25 @@ fn provider_redacted_masks_opaque_toml_body() {
 }
 
 #[test]
+fn provider_redacted_recovers_secret_tail_from_stored_name() {
+    let p = Provider {
+        id: "p-name".into(),
+        agent_id: AgentId::Grok,
+        name: "xai-••••6aa9 (API Key)".into(),
+        settings_config: json!({
+            "format": "toml",
+            "content": "[model.\"grok\"]\napi_key = \"***\"\n"
+        }),
+        meta: json!({}),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t1".into(),
+    };
+    let redacted = p.redacted();
+    assert_eq!(redacted.meta["secretTail"], "**6aa9");
+}
+
+#[test]
 fn known_meta_keys_are_read_through_accessors() {
     let p = Provider {
         id: "p1".into(),

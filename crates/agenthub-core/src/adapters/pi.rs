@@ -84,6 +84,10 @@ pub(crate) fn build_pi_run_spec(
     // file has neither default, fall back to a single auth.json slot so
     // Chat works after an auth-only bind (no re-bind required).
     args.extend(pi_cli_provider_args());
+    if pi_should_disable_thinking() {
+        args.push("--thinking".into());
+        args.push("off".into());
+    }
     if opts.allow_dangerous {
         // Closest documented non-interactive trust flag for project files.
         args.push("--approve".into());
@@ -470,6 +474,31 @@ fn pi_cli_provider_args() -> Vec<String> {
         return vec!["--provider".into(), slots[0].to_string()];
     }
     Vec::new()
+}
+
+/// xAI `grok-code-fast-*` rejects `reasoningEffort`. Pi maps thinking → that
+/// parameter, so Chat must pass `--thinking off` instead of inheriting a
+/// leftover defaultThinkingLevel from another slot.
+fn pi_model_rejects_thinking(model: &str) -> bool {
+    let id = model
+        .trim()
+        .rsplit('/')
+        .next()
+        .unwrap_or(model)
+        .to_ascii_lowercase();
+    id == "grok-code-fast-1" || id.starts_with("grok-code-fast")
+}
+
+fn pi_should_disable_thinking() -> bool {
+    let live = pi_live_chat_model();
+    if live
+        .model
+        .as_deref()
+        .is_some_and(pi_model_rejects_thinking)
+    {
+        return true;
+    }
+    !live.models.is_empty() && live.models.iter().all(|id| pi_model_rejects_thinking(id))
 }
 
 fn nonempty_json_str(v: &serde_json::Value, key: &str) -> Option<String> {
@@ -931,6 +960,61 @@ mod tests {
                 .expect("--provider");
             assert_eq!(args[idx + 1], "xai");
             assert!(!args.iter().any(|a| a == "--model"));
+        });
+    }
+
+    #[test]
+    fn build_run_spec_disables_thinking_for_grok_code_fast() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-code-fast-1",
+                    "defaultThinkingLevel": "low"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
+            let idx = spec
+                .args
+                .iter()
+                .position(|a| a == "--thinking")
+                .expect("--thinking");
+            assert_eq!(spec.args[idx + 1], "off");
+        });
+    }
+
+    #[test]
+    fn build_run_spec_keeps_thinking_for_other_models() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-4",
+                    "defaultThinkingLevel": "low"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
+            assert!(!spec.args.iter().any(|a| a == "--thinking"), "{:?}", spec.args);
         });
     }
 

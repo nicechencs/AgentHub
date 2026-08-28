@@ -295,6 +295,7 @@ impl AccountService {
         row.credentials = live.credentials;
         row.extra = attach_identity_meta(adapter, live.kind, &row.credentials, &display, extra);
         Self::copy_persisted_surface(&persisted_extra, &mut row.extra);
+        Self::copy_persisted_identity(&persisted_extra, &mut row.extra);
         row.kind = live.kind;
         row.status = "active".into();
         let _ = crate::services::account_identity_heal::heal_account_identity(&mut row);

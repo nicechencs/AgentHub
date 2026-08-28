@@ -12,7 +12,7 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{Account, AccountKind, AgentId, LiveAccount};
 use crate::utils::loopback::credentials_are_loopback;
-use crate::utils::redact::api_key_tail;
+use crate::utils::redact::{api_key_secret_hash, api_key_tail};
 
 /// Process-local counterpart to the optional cross-process file lock. Services
 /// built without a backup root have no `lock_dir`, but concurrent UI reads can
@@ -428,6 +428,9 @@ pub(super) fn attach_identity_meta(
             if let Some(tail) = api_key_tail(credentials) {
                 obj.entry("secretTail".to_string()).or_insert_with(|| json!(tail));
             }
+            if let Some(hash) = api_key_secret_hash(credentials) {
+                obj.entry("secretHash".to_string()).or_insert_with(|| json!(hash));
+            }
         }
     } else if let Some(lab) = id_label {
         let mut map = serde_json::Map::new();
@@ -438,6 +441,9 @@ pub(super) fn attach_identity_meta(
         if kind == AccountKind::ApiKey {
             if let Some(tail) = api_key_tail(credentials) {
                 map.entry("secretTail".to_string()).or_insert_with(|| json!(tail));
+            }
+            if let Some(hash) = api_key_secret_hash(credentials) {
+                map.entry("secretHash".to_string()).or_insert_with(|| json!(hash));
             }
         }
         if let Value::Object(old) = extra {

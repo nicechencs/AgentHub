@@ -685,6 +685,7 @@ fn looks_like_raw_upstream_error(text: &str) -> bool {
         || hay.contains("token refresh failed")
         || hay.contains("stealth/ox")
         || (hay.contains("\"code\":404") || hay.contains("\"code\": 404"))
+        || looks_like_upstream_api_error(&hay)
 }
 
 fn looks_like_auth_refresh_failure(hay: &str) -> bool {
@@ -692,6 +693,18 @@ fn looks_like_auth_refresh_failure(hay: &str) -> bool {
         || hay.contains("invalid_grant")
         || hay.contains("invalid or unknown refresh token")
         || hay.contains("token refresh failed")
+}
+
+fn looks_like_upstream_api_error(hay: &str) -> bool {
+    hay.contains("openai api error")
+        || hay.contains("does not support parameter")
+        || hay.contains("reasoningeffort")
+        || hay.contains("reasoning_effort")
+        || ((hay.contains("(400)") || hay.contains(" 400:") || hay.contains("http 400"))
+            && (hay.contains("api error")
+                || hay.contains("parameter")
+                || hay.contains("model ")
+                || hay.contains("unsupported")))
 }
 
 fn upstream_failure_message(content: &str, stderr: &str, stdout: &str) -> Option<String> {
@@ -716,6 +729,15 @@ fn upstream_failure_message(content: &str, stderr: &str, stdout: &str) -> Option
                 || hay.contains("stealth")))
     {
         return Some("这个模型已经下架或当前登录用不了。请换一个模型后重试。".into());
+    }
+    if looks_like_upstream_api_error(&hay) {
+        if hay.contains("reasoningeffort")
+            || hay.contains("reasoning_effort")
+            || hay.contains("does not support parameter")
+        {
+            return Some("这个模型不支持当前思考设置。请点重试。".into());
+        }
+        return Some("这次发送没成功。请点重试。".into());
     }
     None
 }

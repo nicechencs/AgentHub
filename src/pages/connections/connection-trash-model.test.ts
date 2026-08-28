@@ -79,6 +79,25 @@ describe('humanizeTrashLabel', () => {
     assertNoInternalLeak(label);
   });
 
+  it('names a Grok row from a dotted mask stored on identityLabel', () => {
+    const item = trash({
+      id: 't-grok-dots',
+      agentId: 'grok',
+      kind: 'account',
+      sourceId: 'grok-acc-dots',
+      label: 'API Key',
+      account: acc({
+        id: 'grok-acc-dots',
+        kind: 'apikey',
+        label: 'API Key',
+        identityLabel: 'xai-....272f (API Key)',
+      }),
+    });
+    expect(trashItemSecretTail(item)).toBe('272f');
+    expect(humanizeTrashLabel(item)).toContain('272f');
+    expect(humanizeTrashLabel(item)).not.toBe('API Key');
+  });
+
   it('keeps a kind-name Grok row as API Key when no last4 or host is stored', () => {
     const item = trash({
       id: 't-grok-kind',
