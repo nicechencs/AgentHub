@@ -119,6 +119,16 @@ pub fn strip_bridge_leftovers_in_doc(doc: &mut DocumentMut) -> bool {
 
 /// Rewrite `config.toml` in place when leftover keys are present.
 pub fn strip_bridge_leftovers_in_path(path: &Path) -> Result<bool> {
+    rewrite_codex_toml(path, |doc| {
+        let mut changed = strip_bridge_leftovers_in_doc(doc);
+        if strip_env_key_provider_leftovers_in_doc(doc) {
+            changed = true;
+        }
+        changed
+    })
+}
+
+fn rewrite_codex_toml(path: &Path, mutate: impl FnOnce(&mut DocumentMut) -> bool) -> Result<bool> {
     if !path.exists() {
         return Ok(false);
     }
@@ -129,11 +139,89 @@ pub fn strip_bridge_leftovers_in_path(path: &Path) -> Result<bool> {
     let mut doc = live
         .parse::<DocumentMut>()
         .map_err(|e| AppError::InvalidArg(format!("existing Codex config.toml is invalid: {e}")))?;
-    if !strip_bridge_leftovers_in_doc(&mut doc) {
+    if !mutate(&mut doc) {
         return Ok(false);
     }
     atomic_write(path, doc.to_string().as_bytes())?;
     Ok(true)
+}
+
+/// Official ChatGPT OAuth writes `auth.json`. A leftover `model_provider`
+/// whose table requires `env_key` (OpenRouter, custom relays) still makes
+/// Codex look up that environment variable and fail locally.
+///
+/// Deactivate the leftover pointer. Do not invent a ChatGPT model name: drop
+/// OpenRouter-style leftover models (`provider/model`, `stealth/ox-*`) so
+/// Codex uses its own default. Keep the unused provider table so switching
+/// back to that API Key login can reuse it.
+pub fn strip_env_key_provider_leftovers_in_doc(doc: &mut DocumentMut) -> bool {
+    let slug = doc
+        .get("model_provider")
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .filter(|slug| !slug.is_empty())
+        .map(str::to_string);
+    let Some(slug) = slug else {
+        return strip_openrouter_style_leftover_model(doc, false);
+    };
+    if is_leftover_slug(&slug) {
+        return false;
+    }
+    let requires_env_key = doc
+        .get("model_providers")
+        .and_then(|item| item.as_table())
+        .and_then(|providers| providers.get(slug.as_str()))
+        .and_then(|item| item.as_table())
+        .and_then(|table| table.get("env_key"))
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .is_some_and(|key| !key.is_empty());
+    if !requires_env_key {
+        return false;
+    }
+    doc.remove("model_provider");
+    if doc
+        .get("preferred_auth_method")
+        .and_then(|item| item.as_str())
+        == Some("apikey")
+    {
+        doc.remove("preferred_auth_method");
+    }
+    strip_openrouter_style_leftover_model(doc, true);
+    true
+}
+
+fn strip_openrouter_style_leftover_model(doc: &mut DocumentMut, env_key_leftover: bool) -> bool {
+    if !env_key_leftover && model_provider_is_non_leftover_slug(doc) {
+        return false;
+    }
+    let model = doc
+        .get("model")
+        .and_then(|item| item.as_str())
+        .map(str::to_string);
+    let leftover = model.as_deref().is_some_and(is_openrouter_style_leftover_model);
+    if !leftover {
+        return false;
+    }
+    doc.remove("model");
+    if doc.get("model_reasoning_effort").is_some() {
+        doc.remove("model_reasoning_effort");
+    }
+    if doc.get("review_model").and_then(|item| item.as_str()).is_some_and(is_openrouter_style_leftover_model)
+    {
+        doc.remove("review_model");
+    }
+    true
+}
+
+fn is_openrouter_style_leftover_model(model: &str) -> bool {
+    let model = model.trim();
+    if model.is_empty() {
+        return false;
+    }
+    model.contains('/')
+        || model.starts_with("stealth/")
+        || crate::models::is_openrouter_backup_model(model)
 }
 
 /// Strip leftover AgentHub keys from the live Codex config.toml.

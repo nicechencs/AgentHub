@@ -218,6 +218,24 @@ pub const CODEX_CLAUDE_RESPONSES_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     multi_account: false,
 };
 
+pub const CODEX_CLAUDE_OAUTH_OTHER_EDGE: LocalBridgeEdge = LocalBridgeEdge {
+    rule_id: "codex-subscription-to-claude-responses-v1",
+    source: AdapterSourceProduct::CodexChatGptSubscription,
+    credential: AdapterCredentialClass::OauthOther,
+    transport: AdapterUpstreamTransport::CodexResponsesOauth,
+    target: AgentId::Claude,
+    protocol: AdapterTargetProtocol::AnthropicMessages,
+    version: MATRIX_VERSION,
+    support: AdapterSupport::Experimental,
+    can_apply: true,
+    reason: CODEX_SUBSCRIPTION_TO_CLAUDE_REASON,
+    limitations: CODEX_CLAUDE_LIMITS,
+    verified_at: "2026-08-15",
+    gates: AdapterCapabilityGates::all_open(),
+    default_model: "gpt-5.4",
+    multi_account: false,
+};
+
 pub const CODEX_GROK_EDGE: LocalBridgeEdge = LocalBridgeEdge {
     rule_id: CODEX_SUBSCRIPTION_TO_GROK_RULE_ID,
     source: AdapterSourceProduct::CodexChatGptSubscription,
@@ -356,6 +374,7 @@ pub const LOCAL_BRIDGE_EDGES: &[LocalBridgeEdge] = &[
     GROK_CODEX_EDGE,
     CODEX_CLAUDE_APP_SERVER_EDGE,
     CODEX_CLAUDE_RESPONSES_EDGE,
+    CODEX_CLAUDE_OAUTH_OTHER_EDGE,
     CODEX_GROK_EDGE,
     CODEX_GROK_OAUTH_OTHER_EDGE,
     CODEX_KIMI_EDGE,
