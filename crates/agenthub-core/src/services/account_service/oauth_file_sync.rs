@@ -43,6 +43,37 @@ pub(super) fn supports_oauth_file_sync(agent: AgentId) -> bool {
     matches!(agent, AgentId::Grok | AgentId::Codex | AgentId::Claude)
 }
 
+/// In-memory stamp so a failed persist still looks like a partial refresh.
+pub(super) fn stamp_oauth_file_sync_needs_attention(account: &Account) -> Account {
+    let mut next = account.clone();
+    if !next.extra.is_object() {
+        next.extra = json!({});
+    }
+    if next.extra.get(OAUTH_FILE_SYNC_EXTRA).and_then(|v| v.as_str())
+        == Some(OAUTH_FILE_SYNC_NEEDS_ATTENTION)
+    {
+        return next;
+    }
+    if let Some(obj) = next.extra.as_object_mut() {
+        obj.insert(
+            OAUTH_FILE_SYNC_EXTRA.into(),
+            json!(OAUTH_FILE_SYNC_NEEDS_ATTENTION),
+        );
+    }
+    next
+}
+
+/// File sync missed. Mark persist failure must still surface the partial refresh.
+pub(super) fn apply_refresh_file_sync_mark(
+    persisted: Account,
+    mark: Result<Account>,
+) -> Account {
+    match mark {
+        Ok(marked) => marked,
+        Err(_) => stamp_oauth_file_sync_needs_attention(&persisted),
+    }
+}
+
 pub(super) struct OauthFileSyncInput<'a> {
     pub row: &'a Account,
     pub file_credentials: &'a Value,
@@ -587,22 +618,18 @@ impl AccountService {
     }
 
     pub(super) fn mark_oauth_file_sync_needs_attention(&self, account: &Account) -> Result<Account> {
-        let mut extra = account.extra.clone();
-        if !extra.is_object() {
-            extra = json!({});
-        }
-        if extra.get(OAUTH_FILE_SYNC_EXTRA).and_then(|v| v.as_str())
-            == Some(OAUTH_FILE_SYNC_NEEDS_ATTENTION)
-        {
+        let stamped = stamp_oauth_file_sync_needs_attention(account);
+        if stamped.extra == account.extra {
             return Ok(account.clone());
         }
-        if let Some(obj) = extra.as_object_mut() {
-            obj.insert(
-                OAUTH_FILE_SYNC_EXTRA.into(),
-                json!(OAUTH_FILE_SYNC_NEEDS_ATTENTION),
-            );
-        }
-        self.persist_extra_keep_timestamp(account, extra)
+        self.persist_extra_keep_timestamp(account, stamped.extra)
+    }
+
+    pub(super) fn finish_refresh_after_cli_file_miss(&self, persisted: Account) -> Result<Account> {
+        Ok(apply_refresh_file_sync_mark(
+            persisted.clone(),
+            self.mark_oauth_file_sync_needs_attention(&persisted),
+        ))
     }
 
     fn clear_oauth_file_sync_attention(&self, row: Account) -> Result<Account> {
@@ -637,10 +664,17 @@ impl AccountService {
             .map_err(AppError::from)
         })?;
         if changed != 1 {
-            return self
+            let current = self
                 .repo
                 .get_by_id(&account.id)?
-                .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)));
+                .ok_or_else(|| AppError::NotFound(format!("account not found: {}", account.id)))?;
+            if current.extra != extra {
+                return Err(AppError::message(
+                    "account.oauth_file_sync.mark",
+                    "登录已刷新，客户端文件还没写上",
+                ));
+            }
+            return Ok(current);
         }
         self.repo
             .get_by_id(&account.id)?
