@@ -157,6 +157,9 @@ export function OAuthFlowDialog({
       if (flowTokenRef.current) flowTokenRef.current.cancelled = true;
       flowTokenRef.current = null;
       flowGenerationRef.current += 1;
+      const state = sessionStateRef.current;
+      sessionStateRef.current = null;
+      if (state) void cancelOAuth(state).catch(() => {});
       return;
     }
     const token = createOAuthFlowToken(++flowGenerationRef.current);
@@ -231,7 +234,10 @@ export function OAuthFlowDialog({
     setManualUrl('');
     try {
       const start = await startOAuth(agentId, true, selected?.id ?? null);
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        void cancelOAuth(start.state).catch(() => {});
+        return;
+      }
       sessionStateRef.current = start.state;
       setOauthState(start.state);
       setAuthorizeUrl(start.authorizeUrl);
@@ -270,7 +276,10 @@ export function OAuthFlowDialog({
     setStep('device');
     try {
       const start = await startDeviceOAuth(agentId, selected.id);
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        void cancelOAuth(start.state).catch(() => {});
+        return;
+      }
       sessionStateRef.current = start.state;
       setDeviceInfo(start);
       setOauthState(start.state);

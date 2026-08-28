@@ -324,3 +324,36 @@ fn merge_preserving_secrets_nested() {
     assert_eq!(merged["env"]["ANTHROPIC_BASE_URL"], "https://b");
     assert_eq!(merged["note"], "y");
 }
+
+#[test]
+fn stored_secret_remote_models_rejects_unsaved_base_url() {
+    let (_dir, hub) = hub_tmp();
+    upsert_provider_inner(
+        &hub,
+        ProviderInput {
+            id: "p-relay".into(),
+            agent_id: AgentId::Claude,
+            name: "Relay".into(),
+            settings_config: json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://relay.example.com",
+                    "ANTHROPIC_AUTH_TOKEN": "sk-live-secret"
+                }
+            }),
+            meta: json!({ "preset": "anthropic-compatible" }),
+            is_current: false,
+        },
+    )
+    .unwrap();
+
+    let err = list_remote_openai_models_for_provider_inner(
+        &hub,
+        "p-relay",
+        "http://evil.example/v1",
+    )
+    .unwrap_err();
+    assert!(
+        err.contains("重新填写") || err.contains("已保存"),
+        "{err}"
+    );
+}

@@ -41,13 +41,33 @@ describe('chat-bootstrap', () => {
     delete globalThis.sessionStorage;
   });
 
+  it('returns false when sessionStorage cannot write', () => {
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      value: {
+        setItem() {
+          throw new Error('quota');
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+    expect(
+      setChatBootstrap({
+        agentIds: ['claude'],
+        cwd: null,
+        title: 'x',
+        prompt: 'y',
+      }),
+    ).toBe(false);
+  });
+
   it('set then take returns payload once', () => {
-    setChatBootstrap({
+    expect(setChatBootstrap({
       agentIds: ['claude'],
       cwd: 'D:\\demo',
       title: 'from projects',
       prompt: 'continue please',
-    });
+    })).toBe(true);
     const once = takeChatBootstrap();
     expect(once).toEqual({
       agentIds: ['claude'],

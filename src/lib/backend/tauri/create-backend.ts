@@ -27,8 +27,6 @@ export const createBackend: CreateBackend = () => {
     providerUndoSwitch: true,
     providerTestLatency: true,
     accountUndoSwitch: true,
-    // Portable export package is still unimplemented.
-    backupExport: false,
   };
 
   const backend = {

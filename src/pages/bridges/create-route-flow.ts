@@ -1,5 +1,5 @@
-import { upsertProvider } from '@/lib/api/provider';
-import { bindTicket, planTicket, ticketIdFor } from '@/lib/api/tickets';
+import { deleteProvider, upsertProvider } from '@/lib/api/provider';
+import { bindTicket, planTicket, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
 import {
   isInternalGeneratedProvider,
   isLoopbackUrl,
@@ -132,12 +132,16 @@ export type CreateRouteDeps = {
   upsertProvider: typeof upsertProvider;
   planTicket: typeof planTicket;
   bindTicket: typeof bindTicket;
+  unbindTicket: typeof unbindTicket;
+  deleteProvider: typeof deleteProvider;
 };
 
 const defaultDeps: CreateRouteDeps = {
   upsertProvider,
   planTicket,
   bindTicket,
+  unbindTicket,
+  deleteProvider,
 };
 
 export function vendorById(id: CreateRouteVendorId): CreateRouteVendor {
@@ -568,18 +572,31 @@ export async function applyLocalRouteToAgents(
     sourceId: string;
     agents: readonly CreateRouteTarget[];
   },
-  deps: Pick<CreateRouteDeps, 'planTicket' | 'bindTicket'> = defaultDeps,
+  deps: Pick<CreateRouteDeps, 'planTicket' | 'bindTicket' | 'unbindTicket'> = defaultDeps,
 ): Promise<CreateRouteTarget[]> {
   const selected = CREATE_ROUTE_TARGETS.filter((target) => input.agents.includes(target));
   if (selected.length === 0) {
     throw new Error('required');
   }
   const ticketId = ticketIdFor(input.sourceKind, input.sourceId);
-  for (const agent of selected) {
-    await deps.planTicket(ticketId, agent);
-    await deps.bindTicket(ticketId, agent);
+  const applied: CreateRouteTarget[] = [];
+  try {
+    for (const agent of selected) {
+      await deps.planTicket(ticketId, agent);
+      await deps.bindTicket(ticketId, agent);
+      applied.push(agent);
+    }
+    return applied;
+  } catch (error) {
+    for (const agent of [...applied].reverse()) {
+      try {
+        await deps.unbindTicket(ticketId, agent);
+      } catch {
+        /* compensate best-effort; original error is the one to surface */
+      }
+    }
+    throw error;
   }
-  return selected;
 }
 
 export async function submitCreateRoute(
@@ -590,14 +607,23 @@ export async function submitCreateRoute(
     throw new Error('required');
   }
   const provider = await deps.upsertProvider(createRouteProviderDraft(input));
-  return applyLocalRouteToAgents(
-    {
-      sourceKind: 'provider',
-      sourceId: provider.id,
-      agents: input.endpoints,
-    },
-    deps,
-  );
+  try {
+    return await applyLocalRouteToAgents(
+      {
+        sourceKind: 'provider',
+        sourceId: provider.id,
+        agents: input.endpoints,
+      },
+      deps,
+    );
+  } catch (error) {
+    try {
+      await deps.deleteProvider(provider.agentId, provider.id);
+    } catch {
+      /* compensate best-effort; original error is the one to surface */
+    }
+    throw error;
+  }
 }
 
 export function importRouteTarget(agentId: AgentId): CreateRouteTarget {

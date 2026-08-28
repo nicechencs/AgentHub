@@ -30,6 +30,7 @@ export type ChatSendBlocker =
   | { kind: 'hiddenAgents'; agentIds: AgentId[] }
   | { kind: 'envNotReady'; agentIds: AgentId[] }
   | { kind: 'unconfiguredAuth'; agentIds: AgentId[] }
+  | { kind: 'statusUnknown' }
   | { kind: 'noCwd' }
   | { kind: 'sendingElsewhere'; conversationId: string; title: string };
 
@@ -222,10 +223,15 @@ export function sendBlockers(input: {
   hiddenIds: Set<AgentId>;
   envNotReadyIds?: Set<AgentId>;
   unconfiguredAuthIds?: Set<AgentId>;
+  agentsReady?: boolean;
   sendingConversationId: string | null;
   sendingTitle?: string;
 }): ChatSendBlocker[] {
   const out: ChatSendBlocker[] = [];
+  if (input.agentsReady === false) {
+    out.push({ kind: 'statusUnknown' });
+    return out;
+  }
   const hidden = input.conversation.agentIds.filter((id) => input.hiddenIds.has(id));
   if (hidden.length > 0) {
     out.push({ kind: 'hiddenAgents', agentIds: hidden });
@@ -656,7 +662,8 @@ export type ChatBlockerPrimaryTarget =
   | 'agents'
   | 'connections'
   | 'pick-directory'
-  | 'settings';
+  | 'settings'
+  | 'retry';
 
 export function blockerPrimaryTarget(
   blocker: Pick<ChatSendBlocker, 'kind'>,
@@ -667,6 +674,8 @@ export function blockerPrimaryTarget(
       return 'agents';
     case 'unconfiguredAuth':
       return 'connections';
+    case 'statusUnknown':
+      return 'retry';
     case 'noCwd':
       return 'pick-directory';
     case 'sendingElsewhere':
@@ -694,6 +703,11 @@ export function blockerCopy(t: TranslateFn, blocker: ChatSendBlocker): {
       return {
         text: t('chat.blocker.unconfigured'),
         primaryAction: t('chat.blocker.goConnections'),
+      };
+    case 'statusUnknown':
+      return {
+        text: t('chat.blocker.statusUnknown'),
+        primaryAction: t('chat.blocker.retryStatus'),
       };
     case 'noCwd':
       return {

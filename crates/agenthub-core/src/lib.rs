@@ -200,7 +200,10 @@ impl AgentHub {
     /// other agents keep using the current login's config write path.
     pub fn set_live_chat_model(&self, agent: AgentId, model: &str) -> Result<()> {
         match agent {
-            AgentId::Pi => crate::adapters::pi::set_pi_default_model(model),
+            AgentId::Pi => {
+                let _guard = self.backups.acquire_live_write(agent)?;
+                crate::adapters::pi::set_pi_default_model(model)
+            }
             _ => Err(error::AppError::Unsupported(
                 "换模型请用当前登录的配置".into(),
             )),

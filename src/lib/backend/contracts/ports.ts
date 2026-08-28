@@ -40,13 +40,11 @@ export interface BackendFeatures {
   providerUndoSwitch: boolean;
   providerTestLatency: boolean;
   accountUndoSwitch: boolean;
-  backupExport: boolean;
 }
 export const DEFAULT_BACKEND_FEATURES: BackendFeatures = {
   providerUndoSwitch: false,
   providerTestLatency: false,
   accountUndoSwitch: false,
-  backupExport: false,
 };
 export function resolveBackendFeatures(
   features?: Partial<BackendFeatures> | null,

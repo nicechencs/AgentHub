@@ -633,17 +633,13 @@ pub(crate) fn set_pi_default_model(model: &str) -> Result<()> {
             "这个模型已经下架，请另选一个".into(),
         ));
     }
-    let mut settings = serde_json::json!({ "defaultModel": model });
+    let dir = pi_config_dir()?;
+    let mut settings = read_json_object_or_empty(&dir.join("settings.json"))?;
+    settings["defaultModel"] = serde_json::json!(model);
     if pi_model_rejects_thinking(model) {
         settings["defaultThinkingLevel"] = serde_json::json!("off");
     }
-    write_pi_config(&crate::models::AgentConfig {
-        agent: AgentId::Pi,
-        raw: serde_json::json!({
-            "settings": settings,
-            "auth": {},
-        }),
-    })
+    write_json_value(&dir.join("settings.json"), &settings)
 }
 
 fn collect_pi_slot_model_ids(models: &serde_json::Value, slot: &str) -> Vec<String> {
@@ -1172,13 +1168,15 @@ mod tests {
                 .unwrap(),
             )
             .unwrap();
-            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            std::fs::write(dir.join("auth.json"), b"{\"openai\":{\"type\":\"oauth\"}}\n").unwrap();
             set_pi_default_model("openrouter/auto").unwrap();
             let settings: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
                     .unwrap();
             assert_eq!(settings["defaultModel"], "openrouter/auto");
             assert_eq!(settings["defaultProvider"], "openrouter");
+            let auth = std::fs::read_to_string(dir.join("auth.json")).unwrap();
+            assert!(auth.contains("openai"), "{auth}");
             let err = set_pi_default_model("stealth/ox-alpha").unwrap_err();
             assert!(err.to_string().contains("下架"), "{err}");
 

@@ -49,7 +49,6 @@ export const MOCK_BACKEND_FEATURES: BackendFeatures = {
   providerUndoSwitch: true,
   providerTestLatency: true,
   accountUndoSwitch: true,
-  backupExport: false,
 };
 
 /**

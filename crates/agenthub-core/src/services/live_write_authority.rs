@@ -23,7 +23,7 @@ pub struct LiveWriteAuthority {
 ///
 /// This type has no public constructor: callers can only obtain it from a
 /// [`LiveWriteAuthority`] and can pass it to `*_with_guard` APIs to avoid
-/// re-entering the same cross-process lock during a larger saga.
+/// re-entering the same OS exclusive lock during a larger saga.
 #[derive(Debug)]
 pub struct LiveWriteGuard {
     lock_dir: PathBuf,

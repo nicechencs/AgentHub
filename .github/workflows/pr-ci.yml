@@ -2,10 +2,6 @@ name: PR CI
 
 on:
   pull_request:
-  push:
-    branches:
-      - dev
-      - main
 
 permissions:
   contents: read

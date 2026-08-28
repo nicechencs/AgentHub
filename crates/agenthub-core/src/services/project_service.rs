@@ -24,6 +24,7 @@ pub(crate) use scan::is_session_file;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Instant, SystemTime};
 
 use chrono::{DateTime, Utc};
@@ -53,6 +54,7 @@ pub struct ProjectService {
     registry: AdapterRegistry,
     data_dir: PathBuf,
     project_sources: ProjectSourceRegistry,
+    meta_lock: Mutex<()>,
 }
 
 impl ProjectService {
@@ -73,6 +75,7 @@ impl ProjectService {
             registry,
             data_dir,
             project_sources,
+            meta_lock: Mutex::new(()),
         }
     }
 
@@ -97,6 +100,10 @@ impl ProjectService {
                 "invalid project id for metadata: {project_id}"
             )));
         }
+        let _guard = self
+            .meta_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut doc = self.get_metadata()?;
         let cleaned = ProjectUserMeta {
             hidden: meta.hidden,
@@ -113,7 +120,44 @@ impl ProjectService {
         self.save_metadata(&doc)
     }
 
+    /// Field patch under one mutex: hidden and alias merge independently.
+    pub fn patch_project_meta(
+        &self,
+        project_id: &str,
+        hidden: Option<bool>,
+        alias: Option<String>,
+    ) -> Result<()> {
+        if project_id.is_empty() || !project_id.contains(":proj:") {
+            return Err(AppError::InvalidArg(format!(
+                "invalid project id for metadata: {project_id}"
+            )));
+        }
+        let _guard = self
+            .meta_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut doc = self.get_metadata()?;
+        let mut meta = doc.projects.get(project_id).cloned().unwrap_or_default();
+        if let Some(hidden) = hidden {
+            meta.hidden = hidden;
+        }
+        if let Some(alias) = alias {
+            let trimmed = alias.trim().to_string();
+            meta.alias = if trimmed.is_empty() { None } else { Some(trimmed) };
+        }
+        if meta.is_empty() {
+            doc.projects.remove(project_id);
+        } else {
+            doc.projects.insert(project_id.to_string(), meta);
+        }
+        self.save_metadata(&doc)
+    }
+
     pub fn set_show_hidden_projects(&self, show: bool) -> Result<()> {
+        let _guard = self
+            .meta_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut doc = self.get_metadata()?;
         doc.show_hidden_projects = show;
         self.save_metadata(&doc)

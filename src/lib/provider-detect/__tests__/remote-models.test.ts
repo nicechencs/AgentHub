@@ -316,6 +316,7 @@ describe('shouldFetchRemoteModels', () => {
         baseUrl,
         apiKey: REDACTED_MARKER,
         hasStoredSecret: true,
+        savedBaseUrl: baseUrl,
       }),
     ).toBe(true);
     expect(
@@ -372,6 +373,7 @@ describe('shouldFetchRemoteModels', () => {
         baseUrl: 'https://mytokens.cc',
         apiKey: REDACTED_MARKER,
         hasStoredSecret: true,
+        savedBaseUrl: 'https://mytokens.cc',
       }),
     ).toBe(true);
     expect(
@@ -380,6 +382,7 @@ describe('shouldFetchRemoteModels', () => {
         baseUrl: 'https://openrouter.ai/api/v1',
         apiKey: '',
         hasStoredSecret: true,
+        savedBaseUrl: 'https://openrouter.ai/api/v1',
       }),
     ).toBe(true);
     expect(
@@ -388,8 +391,18 @@ describe('shouldFetchRemoteModels', () => {
         baseUrl: 'https://mytokens.cc',
         apiKey: '**abcd',
         hasStoredSecret: true,
+        savedBaseUrl: 'https://mytokens.cc',
       }),
     ).toBe(true);
+    expect(
+      shouldFetchRemoteModels({
+        useOfficial: false,
+        baseUrl: 'https://evil.example/v1',
+        apiKey: REDACTED_MARKER,
+        hasStoredSecret: true,
+        savedBaseUrl: 'https://mytokens.cc',
+      }),
+    ).toBe(false);
   });
 
   it('stays false for official, non-http URL, and add-mode empty key', () => {

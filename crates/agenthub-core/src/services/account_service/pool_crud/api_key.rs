@@ -153,7 +153,15 @@ impl AccountService {
             // live apply and any compensation. The old implementation only
             // acquired it after the DB mutation, allowing another process to
             // observe a half-committed account rotation.
-            let _live_lock = if key_changed {
+            let live_guard = if key_changed {
+                self.backup
+                    .as_ref()
+                    .map(|backup| backup.acquire_live_write(agent))
+                    .transpose()?
+            } else {
+                None
+            };
+            let _legacy_lock = if key_changed && live_guard.is_none() {
                 self.acquire_live_lock(agent)?
             } else {
                 None
@@ -200,11 +208,20 @@ impl AccountService {
                     Err(error) if error.code() == "not_found" => None,
                     Err(error) => return Err(error),
                 };
-                if let Err(error) = backup.snapshot(
-                    agent,
-                    BackupKind::AutoSwitch,
-                    Some(&format!("before applying current account {}", before.id)),
-                ) {
+                let snap = match live_guard.as_ref() {
+                    Some(guard) => backup.snapshot_with_guard(
+                        guard,
+                        agent,
+                        BackupKind::AutoSwitch,
+                        Some(&format!("before applying current account {}", before.id)),
+                    ),
+                    None => backup.snapshot(
+                        agent,
+                        BackupKind::AutoSwitch,
+                        Some(&format!("before applying current account {}", before.id)),
+                    ),
+                };
+                if let Err(error) = snap {
                     if error.code() != "not_found" {
                         return Err(error);
                     }
@@ -239,7 +256,18 @@ impl AccountService {
                     // Keep the established pool-only behavior for adapters
                     // that can store a key but cannot apply it to live files.
                     if error.code() == "unsupported" {
-                        self.snapshot_after_pool_change(agent, "after API Key account update");
+                        if let (Some(backup), Some(guard)) =
+                            (self.backup.as_ref(), live_guard.as_ref())
+                        {
+                            let _ = backup.snapshot_with_guard(
+                                guard,
+                                agent,
+                                BackupKind::AutoSwitch,
+                                Some("after API Key account update"),
+                            );
+                        } else {
+                            self.snapshot_after_pool_change(agent, "after API Key account update");
+                        }
                         return Ok(committed.stored);
                     }
                     let live_rollback = live_before

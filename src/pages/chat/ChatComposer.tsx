@@ -64,6 +64,7 @@ export function ChatComposer({
   connectionCaption,
   walletError,
   onRetryWallet,
+  onRetryStatus,
   onSend,
   onCancel,
   onSelectAgent,
@@ -95,6 +96,7 @@ export function ChatComposer({
   connectionCaption: string | null;
   walletError?: unknown;
   onRetryWallet?: () => void;
+  onRetryStatus?: () => void;
   onSend: () => void;
   onCancel: () => void;
   onSelectAgent: (id: AgentId) => void;
@@ -178,6 +180,7 @@ export function ChatComposer({
           onPickWorkingDirectory={onPickWorkingDirectory}
           onFocusConversation={onFocusConversation}
           onCancel={onCancel}
+          onRetryStatus={onRetryStatus}
         />
       )}
       <div
@@ -458,6 +461,7 @@ function BlockerNotice({
   onPickWorkingDirectory,
   onFocusConversation,
   onCancel,
+  onRetryStatus,
 }: {
   blocker: ChatSendBlocker;
   onGoAgents: () => void;
@@ -466,6 +470,7 @@ function BlockerNotice({
   onPickWorkingDirectory: () => void;
   onFocusConversation: (id: string) => void;
   onCancel: () => void;
+  onRetryStatus?: () => void;
 }) {
   const { t } = useI18n();
   const copy = blockerCopy(t, blocker);
@@ -505,6 +510,7 @@ function BlockerNotice({
           connections: onGoConnections,
           'pick-directory': onPickWorkingDirectory,
           settings: onOpenSettings,
+          retry: onRetryStatus,
         }[blockerPrimaryTarget(blocker)]
       }
     >

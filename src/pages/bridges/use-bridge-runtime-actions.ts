@@ -68,12 +68,21 @@ export function useBridgeRuntimeActions(input: {
       setProfileBusy(member.id, true);
       clearProfileError(member.id);
     }
+    const started: string[] = [];
     try {
       for (const member of members) {
         updateBridgeStatus(await startAdapterBridge(member.id));
+        started.push(member.id);
       }
       reloadThenClearProfileErrors();
     } catch (error) {
+      for (const id of [...started].reverse()) {
+        try {
+          updateBridgeStatus(await stopAdapterBridge(id));
+        } catch {
+          /* compensate best-effort */
+        }
+      }
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
       for (const member of members) setProfileBusy(member.id, false);
