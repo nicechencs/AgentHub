@@ -73,21 +73,24 @@ pub(crate) fn build_pi_run_spec(
     } else {
         "text"
     };
-    let mut args = vec![
-        "-p".into(),
-        prompt.to_string(),
-        "--mode".into(),
-        mode.into(),
-        "--no-session".into(),
-    ];
-    // Documented `--provider` / `--model`. Prefer settings.json; if that
-    // file has neither default, fall back to a single auth.json slot so
-    // Chat works after an auth-only bind (no re-bind required).
-    args.extend(pi_cli_provider_args());
-    if pi_should_disable_thinking() {
+    // `--provider` / `--model` / `--thinking` must come *before* `-p`.
+    // Some Pi builds treat tokens after `-p` as the prompt, so a trailing
+    // `--thinking off` never reaches the CLI and leftover
+    // `defaultThinkingLevel` is still mapped to `reasoningEffort`.
+    let mut args = pi_cli_provider_args();
+    if pi_send_model_id(&args)
+        .as_deref()
+        .is_some_and(pi_model_rejects_thinking)
+    {
+        pin_pi_thinking_off_for_send();
         args.push("--thinking".into());
         args.push("off".into());
     }
+    args.push("-p".into());
+    args.push(prompt.to_string());
+    args.push("--mode".into());
+    args.push(mode.into());
+    args.push("--no-session".into());
     if opts.allow_dangerous {
         // Closest documented non-interactive trust flag for project files.
         args.push("--approve".into());
@@ -477,28 +480,53 @@ fn pi_cli_provider_args() -> Vec<String> {
 }
 
 /// xAI `grok-code-fast-*` rejects `reasoningEffort`. Pi maps thinking → that
-/// parameter, so Chat must pass `--thinking off` instead of inheriting a
-/// leftover defaultThinkingLevel from another slot.
+/// parameter, so Chat must pass `--thinking off` for the *same* model id it
+/// puts on `--model`, not a second picker/remote read.
 fn pi_model_rejects_thinking(model: &str) -> bool {
     let id = model
         .trim()
         .rsplit('/')
         .next()
         .unwrap_or(model)
+        .split(':')
+        .next()
+        .unwrap_or(model)
         .to_ascii_lowercase();
     id == "grok-code-fast-1" || id.starts_with("grok-code-fast")
 }
 
-fn pi_should_disable_thinking() -> bool {
-    let live = pi_live_chat_model();
-    if live
-        .model
-        .as_deref()
-        .is_some_and(pi_model_rejects_thinking)
-    {
-        return true;
+fn pi_send_model_id(cli_args: &[String]) -> Option<String> {
+    cli_args
+        .windows(2)
+        .find(|pair| pair[0] == "--model")
+        .map(|pair| pair[1].clone())
+        .or_else(pi_settings_default_model)
+}
+
+fn pi_settings_default_model() -> Option<String> {
+    let Ok(dir) = pi_config_dir() else {
+        return None;
+    };
+    let settings =
+        read_json_object_or_empty(&dir.join("settings.json")).unwrap_or(serde_json::json!({}));
+    nonempty_json_str(&settings, "defaultModel")
+        .filter(|id| !crate::models::is_openrouter_backup_model(id))
+}
+
+/// Neutralize leftover `defaultThinkingLevel` so Pi cannot map `low` →
+/// `reasoningEffort` if it ignores `--thinking` for this send.
+fn pin_pi_thinking_off_for_send() {
+    let Ok(dir) = pi_config_dir() else {
+        return;
+    };
+    let Ok(mut settings) = read_json_object_or_empty(&dir.join("settings.json")) else {
+        return;
+    };
+    if nonempty_json_str(&settings, "defaultThinkingLevel").as_deref() == Some("off") {
+        return;
     }
-    !live.models.is_empty() && live.models.iter().all(|id| pi_model_rejects_thinking(id))
+    settings["defaultThinkingLevel"] = serde_json::json!("off");
+    let _ = write_json_value(&dir.join("settings.json"), &settings);
 }
 
 fn nonempty_json_str(v: &serde_json::Value, key: &str) -> Option<String> {
@@ -605,10 +633,14 @@ pub(crate) fn set_pi_default_model(model: &str) -> Result<()> {
             "这个模型已经下架，请另选一个".into(),
         ));
     }
+    let mut settings = serde_json::json!({ "defaultModel": model });
+    if pi_model_rejects_thinking(model) {
+        settings["defaultThinkingLevel"] = serde_json::json!("off");
+    }
     write_pi_config(&crate::models::AgentConfig {
         agent: AgentId::Pi,
         raw: serde_json::json!({
-            "settings": { "defaultModel": model },
+            "settings": settings,
             "auth": {},
         }),
     })
@@ -984,12 +1016,68 @@ mod tests {
                 Some(&fake_node22()),
             )
             .unwrap();
-            let idx = spec
+            let think = spec
                 .args
                 .iter()
                 .position(|a| a == "--thinking")
                 .expect("--thinking");
-            assert_eq!(spec.args[idx + 1], "off");
+            let dash_p = spec.args.iter().position(|a| a == "-p").expect("-p");
+            assert_eq!(spec.args[think + 1], "off");
+            assert!(
+                think < dash_p,
+                "--thinking must precede -p so Pi does not swallow it as the prompt: {:?}",
+                spec.args
+            );
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultThinkingLevel"], "off");
+        });
+    }
+
+    #[test]
+    fn build_run_spec_disables_thinking_when_catalog_also_has_grok_4() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-code-fast-1",
+                    "defaultThinkingLevel": "low"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("models.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "providers": {
+                        "xai": {
+                            "models": [
+                                { "id": "grok-4" },
+                                { "id": "grok-code-fast-1" }
+                            ]
+                        }
+                    }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            let spec = build_pi_run_spec(
+                Path::new("pi"),
+                "ping",
+                &RunOptions::default(),
+                Some(&fake_node22()),
+            )
+            .unwrap();
+            let think = spec
+                .args
+                .iter()
+                .position(|a| a == "--thinking")
+                .expect("--thinking must follow the send model, not the full catalog");
+            assert_eq!(spec.args[think + 1], "off");
+            assert!(think < spec.args.iter().position(|a| a == "-p").unwrap());
         });
     }
 
@@ -1015,6 +1103,10 @@ mod tests {
             )
             .unwrap();
             assert!(!spec.args.iter().any(|a| a == "--thinking"), "{:?}", spec.args);
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultThinkingLevel"], "low");
         });
     }
 
@@ -1089,6 +1181,13 @@ mod tests {
             assert_eq!(settings["defaultProvider"], "openrouter");
             let err = set_pi_default_model("stealth/ox-alpha").unwrap_err();
             assert!(err.to_string().contains("下架"), "{err}");
+
+            set_pi_default_model("grok-code-fast-1").unwrap();
+            let settings: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap())
+                    .unwrap();
+            assert_eq!(settings["defaultModel"], "grok-code-fast-1");
+            assert_eq!(settings["defaultThinkingLevel"], "off");
         });
     }
 
