@@ -448,51 +448,7 @@ fn download_file(url: &str, dest: &Path) -> Result<()> {
 }
 
 fn extract_zip(zip_path: &Path, dest_dir: &Path) -> Result<()> {
-    #[cfg(windows)]
-    {
-        let script = format!(
-            "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
-            zip_path.display().to_string().replace('\'', "''"),
-            dest_dir.display().to_string().replace('\'', "''"),
-        );
-        let output = Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-            .output()
-            .map_err(|e| {
-                AppError::message("skill.market", format!("Expand-Archive spawn failed: {e}"))
-            })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::message(
-                "skill.market",
-                format!("Expand-Archive failed: {}", stderr.trim()),
-            ));
-        }
-        return Ok(());
-    }
-    #[cfg(not(windows))]
-    {
-        let output = Command::new("unzip")
-            .args(["-q", "-o"])
-            .arg(zip_path)
-            .arg("-d")
-            .arg(dest_dir)
-            .output()
-            .map_err(|e| {
-                AppError::message(
-                    "skill.market",
-                    format!("unzip spawn failed (is unzip installed?): {e}"),
-                )
-            })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::message(
-                "skill.market",
-                format!("unzip failed: {}", stderr.trim()),
-            ));
-        }
-        Ok(())
-    }
+    crate::platform::skills::zip_extract::extract_zip_file(zip_path, dest_dir)
 }
 
 fn find_skill_package(root: &Path) -> Option<PathBuf> {

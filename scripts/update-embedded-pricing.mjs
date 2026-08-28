@@ -25,6 +25,7 @@ const ROOT = resolve(__dirname, '..');
 const OUT_JSON = join(ROOT, 'crates/agenthub-core/src/usage/embedded-pricing.json');
 const OUT_META = join(ROOT, 'crates/agenthub-core/src/usage/embedded-pricing.meta.json');
 const OVERRIDES_PATH = join(ROOT, 'scripts/pricing/overrides.json');
+const REQUIRED_KEYS_PATH = join(ROOT, 'scripts/pricing/required-keys.json');
 
 const LITELLM_URL =
   process.env.LITELLM_PRICING_URL ??
@@ -235,18 +236,11 @@ function buildTable(litellm, overridesRaw) {
     table[k] = row;
   }
 
-  // Required smoke keys (must exist after build for AgentHub agents).
-  const required = [
-    'claude-sonnet-4',
-    'claude-opus-4',
-    'claude-opus-5',
-    'gpt-5',
-    'gpt-4o',
-    'o4-mini',
-    'moonshot/kimi-k2.5',
-    'grok-4',
-    'kimi-for-coding',
-  ];
+  // Required smoke keys live in scripts/pricing/required-keys.json (not generation filters).
+  const required = JSON.parse(readFileSync(REQUIRED_KEYS_PATH, 'utf8'));
+  if (!Array.isArray(required) || required.some((k) => typeof k !== 'string')) {
+    throw new Error('scripts/pricing/required-keys.json must be a JSON array of strings');
+  }
   const missingRequired = required.filter((k) => !table[k]);
   if (missingRequired.length) {
     throw new Error(

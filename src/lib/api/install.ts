@@ -43,6 +43,15 @@ export async function openAgentConfigDir(agentId: AgentId): Promise<string> {
   return getBackend().install.openAgentConfigDir(agentId);
 }
 
+export async function getAgentLivePaths(agentId: AgentId): Promise<{
+  config: string;
+  auth?: string | null;
+  extra?: string[];
+  openDir: string;
+}> {
+  return getBackend().install.getAgentLivePaths(agentId);
+}
+
 /** Subscribe to live install/upgrade/uninstall log lines. */
 export async function onInstallProgress(
   handler: (payload: InstallProgressPayload) => void,

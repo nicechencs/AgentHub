@@ -5,6 +5,7 @@ pub mod pick_directory;
 use tauri::{AppHandle, State};
 
 use crate::commands::{map_err_string, with_hub_blocking};
+use crate::file_manager::open_in_file_manager;
 use crate::state::AppState;
 use agenthub_core::logging::targets;
 use agenthub_core::models::{AppSettings, PathInfo};
@@ -121,45 +122,6 @@ pub async fn open_logs_dir(state: State<'_, AppState>) -> Result<String, String>
         Ok(path.display().to_string())
     })
     .await
-}
-
-fn open_in_file_manager(path: &std::path::Path) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        std::process::Command::new("explorer")
-            .arg(path)
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("open explorer failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "open_logs_dir", "{msg}");
-                msg
-            })?;
-        Ok(())
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(path)
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("open failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "open_logs_dir", "{msg}");
-                msg
-            })?;
-        Ok(())
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(path)
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("xdg-open failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "open_logs_dir", "{msg}");
-                msg
-            })?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]

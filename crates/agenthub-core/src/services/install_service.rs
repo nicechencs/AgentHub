@@ -5,7 +5,7 @@
 //! - Never report success unless redetect confirms the expected state.
 //! - Env uninstall is intentionally not provided.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use std::path::{Path, PathBuf};
 
@@ -2371,39 +2371,18 @@ fn run_native_setup_guide(
         "opening official Setup page for native install"
     );
 
-    #[cfg(windows)]
-    let req = ExecRequest {
-        program: "cmd".into(),
-        args: vec!["/C".into(), "start".into(), "".into(), url.into()],
-        timeout: Duration::from_secs(15),
-        max_output_bytes: MAX_OUTPUT,
-    };
-    #[cfg(target_os = "macos")]
-    let req = ExecRequest {
-        program: "open".into(),
-        args: vec![url.into()],
-        timeout: Duration::from_secs(15),
-        max_output_bytes: MAX_OUTPUT,
-    };
-    #[cfg(all(not(windows), not(target_os = "macos")))]
-    let req = ExecRequest {
-        program: "xdg-open".into(),
-        args: vec![url.into()],
-        timeout: Duration::from_secs(15),
-        max_output_bytes: MAX_OUTPUT,
-    };
-
-    let res = executor.run(&req);
-    push_exec_logs(logs, &res, 15);
+    if let Err(err) = crate::oauth::open_in_browser(url) {
+        logs.push(format!("打开安装页失败：{err}"));
+    }
+    let _ = executor;
     logs.push("已尝试打开官网安装页。请完成安装后，完全退出并重启 AgentHub。".into());
-    // Always report non-success so install_agent does not claim Installed until redetect.
     Ok(ExecResult {
-        command: res.command,
+        command: format!("open {url}"),
         exit_code: Some(1),
-        stdout: res.stdout,
-        stderr: res.stderr,
-        timed_out: res.timed_out,
-        spawn_error: res.spawn_error,
+        stdout: String::new(),
+        stderr: String::new(),
+        timed_out: false,
+        spawn_error: None,
     })
 }
 

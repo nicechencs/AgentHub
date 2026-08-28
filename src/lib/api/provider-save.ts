@@ -125,8 +125,27 @@ export function parseJsonConfigBase(baseText: string):
   }
 }
 
+export const AUTH_OPENAI_API_KEY_STORAGE = 'auth.OPENAI_API_KEY';
+
+export function schemaUsesAuthEnvelope(
+  schema?: AgentConfigSchemaDto | null,
+): boolean {
+  return (schema?.fields ?? []).some(
+    (field) => field.secretStorage === AUTH_OPENAI_API_KEY_STORAGE,
+  );
+}
+
+function usesAuthEnvelope(
+  agentId: AgentId,
+  schema?: AgentConfigSchemaDto | null,
+): boolean {
+  if (schemaUsesAuthEnvelope(schema)) return true;
+  return !schema && agentId === 'codex';
+}
+
 function buildTomlBaseRaw(
   agentId: AgentId,
+  schema: AgentConfigSchemaDto | null | undefined,
   baseText: string,
   authApiKey: string | undefined,
 ): Record<string, unknown> {
@@ -135,7 +154,7 @@ function buildTomlBaseRaw(
     content: baseText,
   };
   if (
-    agentId === 'codex' &&
+    usesAuthEnvelope(agentId, schema) &&
     typeof authApiKey === 'string' &&
     authApiKey &&
     authApiKey !== REDACTED_MARKER
@@ -147,6 +166,7 @@ function buildTomlBaseRaw(
 
 function materializeToConfigText(
   agentId: AgentId,
+  schema: AgentConfigSchemaDto | null | undefined,
   raw: unknown,
 ):
   | { ok: true; finalText: string; authApiKey?: string }
@@ -167,7 +187,7 @@ function materializeToConfigText(
       ok: true,
       finalText: obj.content,
       authApiKey:
-        agentId === 'codex' && obj.auth?.OPENAI_API_KEY
+        usesAuthEnvelope(agentId, schema) && obj.auth?.OPENAI_API_KEY
           ? obj.auth.OPENAI_API_KEY
           : undefined,
     };
@@ -185,11 +205,12 @@ function materializeToConfigText(
 
 function resolveAuthApiKeyInput(
   agentId: AgentId,
+  schema: AgentConfigSchemaDto | null | undefined,
   isEdit: boolean,
   vars: ProviderFormVars,
   existing?: Provider | null,
 ): string | undefined {
-  if (agentId === 'codex') {
+  if (usesAuthEnvelope(agentId, schema)) {
     if (vars.apiKey.trim()) return vars.apiKey.trim();
     if (isEdit) return '';
     return undefined;
@@ -276,6 +297,7 @@ export async function runProviderSaveFlow(
   let finalText: string;
   let authApiKey = resolveAuthApiKeyInput(
     input.agentId,
+    input.configSchema,
     input.isEdit,
     input.vars,
     input.existing,
@@ -293,7 +315,12 @@ export async function runProviderSaveFlow(
     // Build baseRaw without falling back to {} on parse errors.
     let baseRaw: unknown;
     if (input.finalFormat === 'toml') {
-      baseRaw = buildTomlBaseRaw(input.agentId, input.baseText, authApiKey);
+      baseRaw = buildTomlBaseRaw(
+        input.agentId,
+        input.configSchema,
+        input.baseText,
+        authApiKey,
+      );
     } else {
       const parsed = parseJsonConfigBase(input.baseText);
       if (!parsed.ok) {
@@ -348,7 +375,11 @@ export async function runProviderSaveFlow(
       };
     }
 
-    const materialized = materializeToConfigText(input.agentId, raw);
+    const materialized = materializeToConfigText(
+      input.agentId,
+      input.configSchema,
+      raw,
+    );
     if (!materialized.ok) {
       return {
         ok: false,
