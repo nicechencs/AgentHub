@@ -133,6 +133,17 @@ describe('mapCoreAccount', () => {
     expect(key.refreshTokenPreview).toBeUndefined();
     expect(key.secretTail).toBe('**here');
     expect(key.secretHash).toBeUndefined();
+
+    const withEndpoint = mapCoreAccount(
+      core({
+        id: 'grok-key',
+        agentId: 'grok',
+        kind: 'apikey',
+        extra: { secretTail: '**8660', endpoint: 'https://mytokens.cc/v1' },
+      }),
+    );
+    expect(withEndpoint.secretTail).toBe('**8660');
+    expect(withEndpoint.endpoint).toBe('https://mytokens.cc/v1');
   });
 
   it('maps API key secretHash from extra', () => {

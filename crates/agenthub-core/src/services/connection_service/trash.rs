@@ -2,7 +2,9 @@ use rusqlite::{Transaction, TransactionBehavior};
 
 use crate::error::{AppError, Result};
 use crate::logging::targets;
-use crate::models::{Account, AgentId, ConnectionTrashItem, ConnectionTrashKind, Provider};
+use crate::models::{Account, AccountKind, AgentId, ConnectionTrashItem, ConnectionTrashKind, Provider};
+use crate::utils::redact::api_key_tail;
+use serde_json::json;
 use crate::storage::{
     account_create_conn, account_delete_for_agent_conn, account_get_by_id_conn,
     provider_create_conn, provider_delete_for_agent_conn, provider_get_by_id_conn,
@@ -18,7 +20,7 @@ impl ConnectionService {
         let now = Self::now();
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-            let account = account_get_by_id_conn(&tx, id)?
+            let mut account = account_get_by_id_conn(&tx, id)?
                 .ok_or_else(|| AppError::NotFound(format!("account not found: {id}")))?;
             if account.agent_id != agent {
                 return Err(AppError::NotFound(format!(
@@ -26,6 +28,7 @@ impl ConnectionService {
                     agent.as_str()
                 )));
             }
+            enrich_account_trash_identity(&mut account);
             ConnectionTrashRepo::insert_conn(
                 &tx,
                 &account.id,
@@ -57,7 +60,7 @@ impl ConnectionService {
         let now = Self::now();
         self.db.with_conn(|conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-            let account = account_get_by_id_conn(&tx, id)?
+            let mut account = account_get_by_id_conn(&tx, id)?
                 .ok_or_else(|| AppError::NotFound(format!("account not found: {id}")))?;
             if account.agent_id != agent {
                 return Err(AppError::NotFound(format!(
@@ -71,6 +74,7 @@ impl ConnectionService {
                     format!("account changed before duplicate deletion: {id}"),
                 ));
             }
+            enrich_account_trash_identity(&mut account);
             ConnectionTrashRepo::insert_conn(
                 &tx,
                 &account.id,
@@ -173,6 +177,39 @@ impl ConnectionService {
     pub fn delete_trash(&self, id: &str) -> Result<()> {
         self.trash.delete(id)
     }
+}
+
+fn enrich_account_trash_identity(account: &mut Account) {
+    if account.kind != AccountKind::ApiKey {
+        return;
+    }
+    let extra = if account.extra.is_object() {
+        account.extra.clone()
+    } else {
+        json!({})
+    };
+    let mut extra = extra;
+    if extra.get("secretTail").and_then(|v| v.as_str()).map(str::trim).unwrap_or("").is_empty() {
+        if let Some(tail) = api_key_tail(&account.credentials) {
+            if let Some(obj) = extra.as_object_mut() {
+                obj.insert("secretTail".into(), json!(tail));
+            }
+        }
+    }
+    let endpoint_missing = extra
+        .get("endpoint")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .unwrap_or("")
+        .is_empty();
+    if endpoint_missing && account.is_current && account.agent_id == AgentId::Grok {
+        if let Some(url) = crate::adapters::read_grok_live_base_url() {
+            if let Some(obj) = extra.as_object_mut() {
+                obj.insert("endpoint".into(), json!(url));
+            }
+        }
+    }
+    account.extra = extra;
 }
 
 pub(crate) fn log_recycle(agent: AgentId, id: &str, name: &str) {

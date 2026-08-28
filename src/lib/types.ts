@@ -246,6 +246,8 @@ export interface Account {
   secretTail?: string;
   /** SHA-256 of a stored API key. Identity only; never the raw secret. */
   secretHash?: string;
+  /** Upstream service address stored with this login (no secret). */
+  endpoint?: string;
 }
 
 /** 投影状态（与 core SkillSyncState 对齐） */

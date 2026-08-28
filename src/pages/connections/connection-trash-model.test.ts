@@ -56,6 +56,30 @@ function assertNoInternalLeak(label: string): void {
 }
 
 describe('humanizeTrashLabel', () => {
+  it('names an unnamed Grok account row from extra last4/host, not API Key', () => {
+    const item = trash({
+      id: 't-grok-acc',
+      agentId: 'grok',
+      kind: 'account',
+      sourceId: 'grok-acc-unnamed',
+      label: '•••• (API Key)',
+      account: acc({
+        id: 'grok-acc-unnamed',
+        kind: 'apikey',
+        label: '•••• (API Key)',
+        secretTail: '**8660',
+        endpoint: 'https://mytokens.cc/v1',
+      }),
+    });
+    const label = humanizeTrashLabel(item);
+    expect(label).toContain('8660');
+    expect(label).toContain('mytokens.cc');
+    expect(label).not.toBe('API Key');
+    expect(label).not.toBe('本机路由');
+    expect(label).not.toMatch(/•{2,}/);
+    assertNoInternalLeak(label);
+  });
+
   it('names a mask-only recycled Grok API Key by last4 or host, not ••••', () => {
     const item = trash({
       id: 't-ghost',

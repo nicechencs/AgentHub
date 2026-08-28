@@ -63,6 +63,70 @@ export function extractModel(configText: string): string | null {
   return json?.[1] ?? null;
 }
 
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function modelIdFromEntry(entry: unknown): string | null {
+  if (typeof entry === 'string') {
+    const id = entry.trim();
+    return id || null;
+  }
+  const obj = objectValue(entry);
+  if (typeof obj?.id === 'string') {
+    const id = obj.id.trim();
+    return id || null;
+  }
+  return null;
+}
+
+/**
+ * Models for the current Pi slot from a live envelope.
+ * Uses `settings.defaultProvider` — never the first provider that happens to have a URL.
+ */
+export function extractPiSlotModels(configText: string): string[] {
+  try {
+    const root = objectValue(JSON.parse(configText));
+    if (!root) return [];
+    const modelsObject = objectValue(root.models);
+    const providers = objectValue(modelsObject?.providers) ?? objectValue(root.providers);
+    if (!providers) return [];
+    const settings = objectValue(root.settings);
+    const slot =
+      typeof settings?.defaultProvider === 'string' ? settings.defaultProvider.trim() : '';
+    const chosen = (slot && objectValue(providers[slot]) ? slot : '') || Object.keys(providers)[0];
+    if (!chosen) return [];
+    const provider = objectValue(providers[chosen]);
+    const models = Array.isArray(provider?.models) ? provider.models : [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of models) {
+      const id = modelIdFromEntry(entry);
+      if (!id || seen.has(id) || isRetiredChatModel(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export function extractPiDefaultModel(configText: string): string | null {
+  try {
+    const root = objectValue(JSON.parse(configText));
+    const settings = objectValue(root?.settings);
+    if (typeof settings?.defaultModel === 'string') {
+      const id = settings.defaultModel.trim();
+      return id || null;
+    }
+  } catch {
+    /* fall through */
+  }
+  return extractModel(configText);
+}
+
 const RETIRED_OPENROUTER_BACKUP = /^stealth\/ox(?:-alpha)?$/i;
 
 export function isRetiredChatModel(model: string): boolean {
@@ -93,6 +157,14 @@ export function localizeChatFailure(text: string): string {
   }
   if (hay.includes('is not supported by any configured account') || hay.includes('model_unavailable')) {
     return '这个模型当前登录用不了。请换一个模型后重试。';
+  }
+  if (
+    hay.includes('oauth refresh failed')
+    || hay.includes('invalid_grant')
+    || hay.includes('invalid or unknown refresh token')
+    || hay.includes('token refresh failed')
+  ) {
+    return '这份登录已失效，请重新登录后重试。';
   }
   if (
     hay.includes('stealth/ox')
