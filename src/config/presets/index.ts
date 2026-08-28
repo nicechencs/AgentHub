@@ -52,9 +52,17 @@ const KIMI_COMPAT = [
 ].join('\n');
 
 const GROK_COMPAT = [
-  'model = "grok-code-fast-1"',
+  '[models]',
+  'default = "grok"',
+  'web_search = "grok"',
+  '',
+  '[model."grok"]',
+  'model = "grok-4.5"',
   'base_url = "https://your-relay.example.com/v1"',
   'api_key = "sk-xxxxxxxx"',
+  'api_backend = "responses"',
+  'context_window = 1000000',
+  'supports_backend_search = true',
   '',
 ].join('\n');
 
@@ -128,7 +136,19 @@ export const PRESETS: Record<AgentId, ProviderPreset[]> = {
       id: 'xai',
       label: 'xAI 官方',
       format: 'toml',
-      template: 'model = "grok-code-fast-1"\napi_key = "xai-xxxxxxxx"\n',
+      template: [
+        '[models]',
+        'default = "grok"',
+        'web_search = "grok"',
+        '',
+        '[model."grok"]',
+        'model = "grok-4.5"',
+        'api_key = "xai-xxxxxxxx"',
+        'api_backend = "responses"',
+        'context_window = 1000000',
+        'supports_backend_search = true',
+        '',
+      ].join('\n'),
     },
     {
       id: 'openai-compatible',

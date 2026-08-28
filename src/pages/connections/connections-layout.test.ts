@@ -20,6 +20,9 @@ describe('connections layout wiring', () => {
       'const allowedAgents = installedIds.length > 0 || !loading ? installedIds : visibleIds',
     );
     expect(page).toContain('const tabAgentIds = allowedAgents');
+    expect(page).toContain('useOAuthLoginAgents(allowedAgents)');
+    expect(page).toContain('buildTicketAddMenu(allowedAgents, oauthLoginAgents)');
+    expect(page).toContain('oauthLoginAgents={oauthLoginAgents}');
   });
 
   it('uses leftover-inactive filtered length for chips and footer; header descriptionCount stays unfiltered', () => {

@@ -72,6 +72,7 @@ import {
   type TicketDetailField,
   type TicketWalletRow,
 } from './ticket-wallet-model';
+import { useOAuthLoginAgents } from './use-oauth-login-agents';
 
 function CredentialMark({
   cls,
@@ -708,6 +709,7 @@ export function TicketWalletList({
   onOauth,
   onClearAgentFilter,
   installedAgentIds,
+  oauthLoginAgents: oauthLoginAgentsProp,
 }: {
   wallet: TicketWallet | null;
   loading?: boolean;
@@ -729,6 +731,7 @@ export function TicketWalletList({
   onOauth?: (agentId: AgentId) => void;
   onClearAgentFilter?: () => void;
   installedAgentIds?: readonly AgentId[];
+  oauthLoginAgents?: readonly AgentId[] | null;
 }) {
   const { t } = useI18n();
 
@@ -761,9 +764,13 @@ export function TicketWalletList({
     if (!next) return;
     moveInLive(liveIds, id, next);
   }, [liveIds, moveInLive]);
+  const fetchedOauthLoginAgents = useOAuthLoginAgents(
+    oauthLoginAgentsProp === undefined ? installedAgentIds : null,
+  );
+  const oauthLoginAgents = oauthLoginAgentsProp ?? fetchedOauthLoginAgents;
   const addAgents = React.useMemo(
-    () => buildTicketAddMenu(installedAgentIds),
-    [installedAgentIds],
+    () => buildTicketAddMenu(installedAgentIds, oauthLoginAgents),
+    [installedAgentIds, oauthLoginAgents],
   );
 
   const renderAddMenu = (variant?: 'default' | 'outline' | 'secondary') => (
