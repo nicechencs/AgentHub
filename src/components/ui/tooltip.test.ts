@@ -55,7 +55,7 @@ describe('tooltip surface contract', () => {
     expect(src).toContain('TooltipBody contentClassName={contentClassName}');
     expect(src).not.toContain('className={contentClassName}');
     expect(src).toContain('cn(className, TOOLTIP_SURFACE_CLASS)');
-    expect(src).not.toContain('disableHoverableContent');
+    expect(src).toContain('disableHoverableContent');
     expect(readFileSync(path.join(srcRoot, 'main.tsx'), 'utf8')).toContain(
       'delayDuration={TOOLTIP.delayMs}',
     );

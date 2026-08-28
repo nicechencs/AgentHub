@@ -295,6 +295,32 @@ describe('buildRouteGraph', () => {
     expect(rows.codex?.applied).toBe(false);
   });
 
+  it('does not take a listen port from another login targeting the same client', () => {
+    const graph = buildRouteGraph({
+      profile: profile(),
+      entries: [openRouterEntry()],
+      siblingProfiles: [
+        profile({
+          id: 'stale-codex',
+          sourceId: 'other-src',
+          targetAgentId: 'codex',
+          generatedProviderId: 'g-stale',
+          localPort: 43623,
+        }),
+        profile({
+          id: 'or-codex',
+          targetAgentId: 'codex',
+          generatedProviderId: 'g-or-codex',
+          localPort: 40661,
+        }),
+      ],
+      port: 40661,
+    });
+    const rows = byAgent(graph.rows);
+    expect(rows.codex?.localUrl).toContain(':40661/');
+    expect(rows.codex?.localUrl).not.toContain('43623');
+  });
+
   it('honours a custom host', () => {
     const graph = buildRouteGraph({
       profile: profile(),

@@ -66,14 +66,32 @@ pub fn extract_probe_url(settings: &serde_json::Value) -> Option<String> {
         }
     }
 
+    fn is_schema_or_secret_key(key: &str) -> bool {
+        matches!(
+            key,
+            "$schema" | "$id" | "schema" | "schemaUrl" | "$comment" | "$defs"
+        ) || key.eq_ignore_ascii_case("api_key")
+            || key.eq_ignore_ascii_case("apiKey")
+            || key.eq_ignore_ascii_case("token")
+            || key.eq_ignore_ascii_case("authorization")
+    }
+
+    fn is_endpoint_url(raw: &str) -> bool {
+        let Some(url) = from_str(raw) else {
+            return false;
+        };
+        let lower = url.to_ascii_lowercase();
+        !lower.contains("json.schemastore.org") && !lower.contains("/schema")
+    }
+
     fn walk(value: &serde_json::Value, out: &mut Option<String>) {
         if out.is_some() {
             return;
         }
         match value {
             serde_json::Value::String(text) => {
-                if let Some(url) = from_str(text) {
-                    *out = Some(url);
+                if is_endpoint_url(text) {
+                    *out = from_str(text);
                 }
             }
             serde_json::Value::Object(map) => {
@@ -86,18 +104,20 @@ pub fn extract_probe_url(settings: &serde_json::Value) -> Option<String> {
                 ];
                 for key in KEYS {
                     if let Some(serde_json::Value::String(text)) = map.get(*key) {
-                        if let Some(url) = from_str(text) {
-                            *out = Some(url);
+                        if is_endpoint_url(text) {
+                            *out = from_str(text);
                             return;
                         }
                     }
                 }
+                if let Some(env) = map.get("env") {
+                    walk(env, out);
+                    if out.is_some() {
+                        return;
+                    }
+                }
                 for (key, child) in map {
-                    if key.eq_ignore_ascii_case("api_key")
-                        || key.eq_ignore_ascii_case("apiKey")
-                        || key.eq_ignore_ascii_case("token")
-                        || key.eq_ignore_ascii_case("authorization")
-                    {
+                    if is_schema_or_secret_key(key) || key == "env" {
                         continue;
                     }
                     walk(child, out);

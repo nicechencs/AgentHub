@@ -6,6 +6,7 @@ import {
   formFieldVisibility,
   looksRedactedOrPlaceholder,
   maskConfigSecrets,
+  maskPasteSecrets,
   REDACTED_MARKER,
   resolveFormApiKeyFromEditor,
 } from '../index';
@@ -583,6 +584,20 @@ describe('provider-detect fields', () => {
     expect(toml).toContain(`api_key = "${REDACTED_MARKER}"`);
     expect(toml).toContain('env_key = "XAI_API_KEY"');
     expect(toml).not.toContain('sk-live-secret-value');
+  });
+
+  it('masks env-block keys in the recognize paste box after DeepSeek detect', () => {
+    const paste = [
+      'OPENAI_BASE_URL=https://api.deepseek.com',
+      'OPENAI_API_KEY=sk-fixture-deepseek-key-bbcd',
+      'MODEL=deepseek-v4-flash',
+    ].join('\n');
+    const masked = maskPasteSecrets(paste);
+    expect(masked).toContain('OPENAI_BASE_URL=https://api.deepseek.com');
+    expect(masked).toContain(`OPENAI_API_KEY=${REDACTED_MARKER}`);
+    expect(masked).toContain('MODEL=deepseek-v4-flash');
+    expect(masked).not.toContain('sk-fixture-deepseek-key-bbcd');
+    expect(maskConfigSecrets('dsh', paste, 'json')).not.toContain('sk-fixture-deepseek-key-bbcd');
   });
 
   it('keeps grok env_key and does not materialize api_key', () => {

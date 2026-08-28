@@ -37,6 +37,7 @@ export {
   FORM_FIELD_LABELS,
   looksRedactedOrPlaceholder,
   maskConfigSecrets,
+  maskPasteSecrets,
   parseJsonObjectConfig,
   resolveFormApiKeyFromEditor,
   writableSecret,

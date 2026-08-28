@@ -52,6 +52,7 @@ import {
   buildTicketAddMenu,
   focusedTicketAddAgent,
   handleTicketAddMenuSelect,
+  ticketAddMenuClosesOnKey,
   buildTicketDetailFields,
   buildTicketWalletRows,
   hasOfficialQuotaWindow,
@@ -122,7 +123,7 @@ function DisabledReasonButton({
   variant?: 'outline' | 'secondary' | 'dangerOutline';
 }) {
   return (
-    <Hint key={disabled ? reason ?? 'disabled' : 'enabled'} label={disabled ? reason : undefined}>
+    <Hint key={disabled ? `${ariaLabel}:${reason ?? 'disabled'}` : `${ariaLabel}:enabled`} label={disabled ? (reason || ariaLabel) : undefined}>
       <Button
         size="sm"
         variant={variant}
@@ -570,6 +571,18 @@ export function TicketAddMenu({
   const focused = focusedTicketAddAgent(agents, focusedAgentId);
   const expanded = expandedId ? agents.find((agent) => agent.id === expandedId) ?? null : null;
 
+  React.useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!ticketAddMenuClosesOnKey(event.key)) return;
+      event.preventDefault();
+      setOpen(false);
+      setExpandedId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
   const renderActions = (agent: TicketAddMenuAgent) =>
     agent.actions.map((action) => (
       <DropdownMenuItem
@@ -612,6 +625,11 @@ export function TicketAddMenu({
         align="end"
         className="min-w-[12rem]"
         onCloseAutoFocus={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+          setOpen(false);
+          setExpandedId(null);
+        }}
       >
         {agents.length === 0 ? (
           <>

@@ -93,6 +93,11 @@ export function dispatchTicketAddAction(
  * Close is delayed until after the click settles — timeout 0 unmounts the
  * submenu in time for the same click to hit AgentTabStrip (silence).
  */
+/** Expanded 添加登录 stays open after click-to-expand; Escape still closes it. */
+export function ticketAddMenuClosesOnKey(key: string): boolean {
+  return key === 'Escape' || key === 'Esc';
+}
+
 export function handleTicketAddMenuSelect(
   event: { preventDefault: () => void; stopPropagation?: () => void },
   kind: TicketAddKind,

@@ -27,7 +27,7 @@ import { switchProvider } from '@/lib/api/provider';
 import { logGuiEvent } from '@/lib/api/settings';
 import { applyLocalRouteToAgents, type CreateRouteTarget } from './create-route-flow';
 import { routeEndpointCopyKey } from './route-endpoint-copy';
-import type { RouteGraphRow } from './route-graph-model';
+import { localBridgeSiblingForTarget, type RouteGraphRow } from './route-graph-model';
 
 function statusVariant(status: ClientWriteStatus): 'success' | 'accent' | 'default' {
   if (status === 'applied') return 'success';
@@ -129,7 +129,7 @@ export function WriteClientConfigDialog({
       });
       const siblings = siblingProfiles ?? [profile];
       for (const agent of agents) {
-        const row = siblings.find((item) => item.targetAgentId === agent)
+        const row = localBridgeSiblingForTarget(siblings, profile, agent)
           ?? (profile.targetAgentId === agent ? profile : null);
         const generated = row?.generatedProviderId?.trim();
         if (!generated) continue;
