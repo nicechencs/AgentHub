@@ -693,7 +693,115 @@ fn official_openai_base_for_pi_slot(slot: &str) -> Option<&'static str> {
     }
 }
 
-/// Live default model + picker ids for this Pi slot. Never invents leftover Grok defaults.
+/// Parse `pi --list-models` table stdout for one provider slot.
+pub(crate) fn parse_pi_list_models_output(stdout: &str, slot: &str) -> Vec<String> {
+    let slot = slot.trim();
+    if slot.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut cols = line.split_whitespace();
+        let Some(provider) = cols.next() else {
+            continue;
+        };
+        if provider.eq_ignore_ascii_case("provider") {
+            continue;
+        }
+        if !provider.eq_ignore_ascii_case(slot) {
+            continue;
+        }
+        let Some(id) = cols.next() else {
+            continue;
+        };
+        let id = id.trim();
+        if id.is_empty() || crate::models::is_openrouter_backup_model(id) || !seen.insert(id.to_string())
+        {
+            continue;
+        }
+        out.push(id.to_string());
+    }
+    out
+}
+
+fn prefer_pi_catalog_model(catalog: &[String], current: Option<&str>) -> Option<String> {
+    if let Some(cur) = current {
+        if catalog.iter().any(|id| id == cur) {
+            return Some(cur.to_string());
+        }
+    }
+    for pref in ["grok-4.6", "grok-4.5", "grok-4.3", "grok-build-0.1"] {
+        if catalog.iter().any(|id| id == pref) {
+            return Some((*pref).to_string());
+        }
+    }
+    catalog.first().cloned()
+}
+
+fn write_pi_default_model_if_changed(dir: &Path, next: &str) -> Result<()> {
+    let mut settings = read_json_object_or_empty(&dir.join("settings.json"))?;
+    if nonempty_json_str(&settings, "defaultModel").as_deref() == Some(next) {
+        return Ok(());
+    }
+    settings["defaultModel"] = serde_json::json!(next);
+    write_json_value(&dir.join("settings.json"), &settings)
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PI_OFFICIAL_CATALOG: std::cell::RefCell<Option<Vec<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn official_pi_slot_models(slot: &str) -> Vec<String> {
+    let slot = slot.trim();
+    if slot.is_empty() {
+        return Vec::new();
+    }
+    #[cfg(test)]
+    {
+        if let Some(models) = TEST_PI_OFFICIAL_CATALOG.with(|cell| cell.borrow().clone()) {
+            return models
+                .into_iter()
+                .filter(|id| !crate::models::is_openrouter_backup_model(id))
+                .collect();
+        }
+    }
+    run_pi_list_models(slot)
+}
+
+fn run_pi_list_models(slot: &str) -> Vec<String> {
+    let detect = detect_installation();
+    let Some(bin) = detect.binary_path else {
+        return Vec::new();
+    };
+    let node22 = runtime::resolve_pi_node();
+    let Ok(extra) = require_pi_node22_env(node22.as_ref()) else {
+        return Vec::new();
+    };
+    let mut cmd = std::process::Command::new(&bin);
+    cmd.args(["--list-models", slot]);
+    for (key, value) in extra {
+        cmd.env(key, value);
+    }
+    let output = match cmd.output() {
+        Ok(output) => output,
+        Err(_) => return Vec::new(),
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    parse_pi_list_models_output(&String::from_utf8_lossy(&output.stdout), slot)
+}
+
+/// Live default model + picker ids for this Pi slot.
+/// Official catalog comes from `pi --list-models`; leftover defaults absent
+/// from that catalog are replaced, not kept as the only Chat model.
 pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
     let empty = crate::models::LiveChatModel {
         model: None,
@@ -706,13 +814,17 @@ pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
     let models_doc = read_json_object_or_empty(&dir.join("models.json")).unwrap_or(serde_json::json!({}));
     let auth = read_auth_json().unwrap_or(serde_json::json!({}));
     let slot = nonempty_json_str(&settings, "defaultProvider").unwrap_or_default();
-    let current = nonempty_json_str(&settings, "defaultModel")
+    let leftover = nonempty_json_str(&settings, "defaultModel")
         .filter(|id| !crate::models::is_openrouter_backup_model(id));
+
     let mut models = if slot.is_empty() {
         Vec::new()
     } else {
-        collect_pi_slot_model_ids(&models_doc, &slot)
+        official_pi_slot_models(&slot)
     };
+    if models.is_empty() && !slot.is_empty() {
+        models = collect_pi_slot_model_ids(&models_doc, &slot);
+    }
     if models.is_empty() {
         if let (true, Some(base), Some(key)) = (
             !slot.is_empty(),
@@ -733,11 +845,14 @@ pub(crate) fn pi_live_chat_model() -> crate::models::LiveChatModel {
             }
         }
     }
-    if let Some(current) = current.as_ref() {
-        if !models.iter().any(|id| id == current) {
-            models.insert(0, current.clone());
+
+    let current = prefer_pi_catalog_model(&models, leftover.as_deref());
+    if let Some(next) = current.as_deref() {
+        if leftover.as_deref() != Some(next) {
+            let _ = write_pi_default_model_if_changed(&dir, next);
         }
     }
+
     crate::models::LiveChatModel {
         model: current,
         models,
@@ -908,6 +1023,17 @@ mod tests {
     use std::sync::Mutex;
 
     static PI_CONFIG_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn with_pi_official_catalog<T>(models: Vec<String>, f: impl FnOnce() -> T) -> T {
+        super::TEST_PI_OFFICIAL_CATALOG.with(|cell| {
+            *cell.borrow_mut() = Some(models);
+        });
+        let result = f();
+        super::TEST_PI_OFFICIAL_CATALOG.with(|cell| {
+            *cell.borrow_mut() = None;
+        });
+        result
+    }
 
     fn with_pi_config_dir<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
         let _guard = PI_CONFIG_ENV_LOCK.lock().unwrap();
@@ -1243,6 +1369,112 @@ mod tests {
             let live = pi_live_chat_model();
             assert_eq!(live.model, None);
             assert!(live.models.is_empty(), "{live:?}");
+        });
+    }
+
+    #[test]
+    fn parse_pi_list_models_keeps_only_the_login_slot() {
+        let stdout = "\
+provider model            context max-out thinking images
+xai      grok-4.3         2M      64K     yes      yes
+xai      grok-4.5         256K    64K     yes      yes
+xai      grok-4.6         256K    64K     yes      yes
+xai      grok-build-0.1   128K    16K     no       no
+openrouter openrouter/auto 200K   16K     no       no
+";
+        assert_eq!(
+            parse_pi_list_models_output(stdout, "xai"),
+            vec![
+                "grok-4.3".to_string(),
+                "grok-4.5".to_string(),
+                "grok-4.6".to_string(),
+                "grok-build-0.1".to_string()
+            ]
+        );
+        assert!(parse_pi_list_models_output(stdout, "xai")
+            .iter()
+            .all(|id| !id.contains("openrouter")));
+    }
+
+    #[test]
+    fn pi_live_chat_model_uses_official_catalog_and_replaces_leftover_default() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-code-fast-1"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("models.json"), b"{}\n").unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            with_pi_official_catalog(
+                vec![
+                    "grok-4.3".into(),
+                    "grok-4.5".into(),
+                    "grok-4.6".into(),
+                    "grok-build-0.1".into(),
+                ],
+                || {
+                    let live = pi_live_chat_model();
+                    assert_eq!(
+                        live.models,
+                        vec![
+                            "grok-4.3".to_string(),
+                            "grok-4.5".to_string(),
+                            "grok-4.6".to_string(),
+                            "grok-build-0.1".to_string()
+                        ]
+                    );
+                    assert_eq!(live.model.as_deref(), Some("grok-4.6"));
+                    assert!(!live.models.iter().any(|id| id.contains("grok-code-fast")));
+                    let settings: serde_json::Value = serde_json::from_str(
+                        &std::fs::read_to_string(dir.join("settings.json")).unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(settings["defaultModel"], "grok-4.6");
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn pi_live_chat_model_keeps_catalog_current_without_rewriting() {
+        with_pi_config_dir(|dir| {
+            std::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec_pretty(&json!({
+                    "defaultProvider": "xai",
+                    "defaultModel": "grok-4.6"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::write(dir.join("models.json"), b"{}\n").unwrap();
+            std::fs::write(dir.join("auth.json"), b"{}\n").unwrap();
+            with_pi_official_catalog(
+                vec![
+                    "grok-4.3".into(),
+                    "grok-4.5".into(),
+                    "grok-4.6".into(),
+                    "grok-build-0.1".into(),
+                ],
+                || {
+                    let live = pi_live_chat_model();
+                    assert_eq!(live.model.as_deref(), Some("grok-4.6"));
+                    assert_eq!(
+                        live.models,
+                        vec![
+                            "grok-4.3".to_string(),
+                            "grok-4.5".to_string(),
+                            "grok-4.6".to_string(),
+                            "grok-build-0.1".to_string()
+                        ]
+                    );
+                },
+            );
         });
     }
 
