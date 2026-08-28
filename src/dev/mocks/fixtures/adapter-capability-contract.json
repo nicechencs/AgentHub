@@ -490,14 +490,14 @@
       },
       "target": "claude",
       "expect": {
-        "route": "unsupported",
-        "support": "unsupported",
+        "route": "local_bridge",
+        "support": "experimental",
         "canApply": false,
         "applyPath": "rejected",
-        "ruleId": null,
-        "gateKind": "subscription_candidate",
-        "reason": "Codex / ChatGPT 订阅现在还接不到 Claude Code。不会改配置，也不会开本机转发。这不表示现有连接坏了。可改用 Claude 自己的官方登录，或改用已支持的 API Key。",
-        "reusePath": "none"
+        "ruleId": "codex-subscription-to-claude-responses-v1",
+        "gateKind": "none",
+        "reason": "Codex / ChatGPT 订阅会经本机路由接到 Claude Code.",
+        "reusePath": "local_bridge"
       }
     },
     {

@@ -159,7 +159,10 @@ impl RunSpec {
         }
         parts.push(quote_if_needed(&self.program.display().to_string()));
         let mut hide_next = false;
-        for a in &self.args {
+        let last_prompt_index = self.args.iter().rposition(|a| {
+            !a.starts_with('-') && a != "exec" && a != "resume"
+        });
+        for (index, a) in self.args.iter().enumerate() {
             if hide_next {
                 parts.push("<prompt>".into());
                 hide_next = false;
@@ -167,6 +170,14 @@ impl RunSpec {
             }
             if a == "-p" || a == "--prompt" {
                 hide_next = true;
+                parts.push(quote_if_needed(a));
+                continue;
+            }
+            if last_prompt_index == Some(index)
+                && (self.agent == AgentId::Codex || self.agent == AgentId::Dsh)
+            {
+                parts.push("<prompt>".into());
+                continue;
             }
             parts.push(quote_if_needed(a));
         }
@@ -339,6 +350,25 @@ mod tests {
         assert!(s.contains('\"'));
         assert!(s.contains("<prompt>"));
         assert!(!s.contains("hello world"));
+    }
+
+    #[test]
+    fn run_spec_hides_codex_positional_prompt() {
+        let spec = RunSpec {
+            agent: AgentId::Codex,
+            program: PathBuf::from("codex"),
+            args: vec![
+                "exec".into(),
+                "--skip-git-repo-check".into(),
+                "--json".into(),
+                "只回一个字：好".into(),
+            ],
+            cwd: None,
+            env: vec![],
+        };
+        let s = spec.display_command();
+        assert!(s.contains("<prompt>"));
+        assert!(!s.contains("只回一个字"));
     }
 
     #[test]
