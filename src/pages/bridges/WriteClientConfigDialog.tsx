@@ -20,6 +20,7 @@ import {
   clientWriteWireNote,
   defaultClientWriteSelection,
   orderedClientWriteTargets,
+  switchWriteLast4,
   type ClientWriteSpec,
   type ClientWriteStatus,
 } from './client-config-model';
@@ -134,7 +135,10 @@ export function WriteClientConfigDialog({
         const generated = row?.generatedProviderId?.trim();
         if (!generated) continue;
         await switchProvider(agent, generated);
-        void logGuiEvent('switch_write', { agent });
+        void logGuiEvent('switch_write', {
+          agent,
+          last4: switchWriteLast4(localToken),
+        });
       }
       toast({ title: t('routes.write.success'), variant: 'success' });
       onOpenChange(false);

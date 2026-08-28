@@ -23,6 +23,7 @@ use crate::logging::targets;
 #[allow(unused_imports)]
 use crate::models::BackupKind;
 use crate::models::{AgentConfig, AgentId, Provider, ProviderInput};
+use crate::utils::redact::{api_key_tail, secret_tail_from_masked_preview};
 use crate::services::{
     AdapterSecretResolver, BackupService, ConnectionService, LiveWriteAuthority,
 };
@@ -95,12 +96,38 @@ impl ProviderService {
     }
 }
 
-pub(super) fn log_switch_write(agent: AgentId, path: &str) {
+pub(super) fn switch_write_last4(provider: &Provider) -> String {
+    provider
+        .meta
+        .get("secretTail")
+        .and_then(|value| value.as_str())
+        .and_then(logged_last4)
+        .or_else(|| api_key_tail(&provider.settings_config))
+        .or_else(|| secret_tail_from_masked_preview(&provider.name))
+        .unwrap_or_default()
+}
+
+fn logged_last4(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(tail) = secret_tail_from_masked_preview(trimmed) {
+        return Some(tail);
+    }
+    if trimmed.len() == 4 && trimmed.chars().all(|ch| ch.is_ascii_alphanumeric()) {
+        return Some(format!("**{trimmed}"));
+    }
+    None
+}
+
+pub(super) fn log_switch_write(agent: AgentId, path: &str, last4: &str) {
     tracing::info!(
         module = targets::PROVIDER,
         op = "switch_write",
         agent = agent.as_str(),
         path,
+        last4,
         "wrote live config"
     );
 }

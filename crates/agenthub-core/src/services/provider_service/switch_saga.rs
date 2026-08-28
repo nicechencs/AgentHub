@@ -141,7 +141,7 @@ impl ProviderService {
             let db_rollback = rollback_backfill();
             return Err(compensated_switch_error(error, live_rollback, db_rollback));
         }
-        log_live_switch_paths(agent, adapter.as_ref());
+        log_live_switch_paths(agent, adapter.as_ref(), &super::switch_write_last4(&target));
         let now = now_ts();
         // Single transaction: is_current + demote accounts + binding (B1 cleanup).
         let provider = match self.connections.activate_provider(

@@ -850,6 +850,13 @@ pub(crate) fn read_grok_live_base_url() -> Option<String> {
         .filter(|value| value.starts_with("http://") || value.starts_with("https://"))
 }
 
+/// Last4 of the live Grok API Key, if the file still holds a usable secret.
+pub(crate) fn read_grok_live_api_key_tail() -> Option<String> {
+    let home = agent_home(AgentId::Grok).ok()?;
+    let key = read_grok_api_key(&home.join("config.toml")).ok().flatten()?;
+    crate::utils::redact::mask_secret_tail(&key)
+}
+
 fn grok_api_key_extra(source: &str) -> serde_json::Value {
     let mut extra = serde_json::Map::new();
     extra.insert("source".into(), serde_json::json!(source));

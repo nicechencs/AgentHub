@@ -24,6 +24,7 @@ import {
   readCreateRouteCapabilities,
   listLocalRouteSurfacesFromConfig,
   applyLocalRouteToAgents,
+  surfaceAfterCompensation,
   submitCreateRoute,
   submitImportRoute,
   endpointUrlFor,
@@ -288,6 +289,51 @@ describe('create-route-flow', () => {
     expect(unbindTicket).toHaveBeenCalledTimes(1);
     expect(unbindTicket.mock.calls[0]?.[1]).toBe('claude');
     expect(deleteProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it('never turns a failed unbind or stop into success', () => {
+    const unbind = new Error('unbind failed');
+    const original = new Error('port in use');
+    expect(surfaceAfterCompensation(original, [unbind])).toBe(unbind);
+    expect(surfaceAfterCompensation(original, [])).toBe(original);
+  });
+
+  it('surfaces a failed unbind instead of treating 确认应用 rollback as success', async () => {
+    const bindTicket = vi.fn(async (_ticket: string, agent: string) => {
+      if (agent === 'codex') throw new Error('port in use');
+      return bindResult(agent as BindTicketResult['binding']['agentId']);
+    });
+    const unbindTicket = vi.fn(async () => {
+      throw new Error('unbind failed');
+    });
+
+    await expect(
+      applyLocalRouteToAgents(
+        { sourceKind: 'provider', sourceId: 'or-1', agents: ['claude', 'codex'] },
+        {
+          planTicket: vi.fn(async () => plan('claude')),
+          bindTicket,
+          unbindTicket,
+        },
+      ),
+    ).rejects.toThrow('unbind failed');
+    expect(unbindTicket).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the original 确认应用 error when unbind rollback succeeds', async () => {
+    await expect(
+      applyLocalRouteToAgents(
+        { sourceKind: 'provider', sourceId: 'or-1', agents: ['claude', 'codex'] },
+        {
+          planTicket: vi.fn(async () => plan('claude')),
+          bindTicket: vi.fn(async (_ticket: string, agent: string) => {
+            if (agent === 'codex') throw new Error('port in use');
+            return bindResult(agent as BindTicketResult['binding']['agentId']);
+          }),
+          unbindTicket: vi.fn(async () => {}),
+        },
+      ),
+    ).rejects.toThrow('port in use');
   });
 
   it('imports an existing login with one bind', async () => {

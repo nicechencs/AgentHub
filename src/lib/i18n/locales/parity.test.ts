@@ -91,5 +91,8 @@ describe('locale key parity', () => {
     expect(translate('en', 'routes.endpoint.messages')).toBe('Claude chat');
     expect(translate('zh', 'routes.inbound.empty')).toBe('还没有工具连上');
     expect(translate('en', 'routes.inbound.empty')).toBe('No tool has connected yet');
+    expect(translate('zh', 'routes.endpointCopied')).toBe('地址已复制');
+    expect(translate('en', 'routes.endpointCopied')).toBe('Address copied');
+    expect(translate('zh', 'routes.endpointCopied')).not.toContain('端点');
   });
 });
