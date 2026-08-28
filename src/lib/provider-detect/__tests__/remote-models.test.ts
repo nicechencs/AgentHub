@@ -108,7 +108,7 @@ describe('default / resolve / withDefaultModel', () => {
     expect(defaultModelForAgent('claude')).toBe('sonnet');
     expect(defaultModelForAgent('codex')).toBe('gpt-5.1-codex');
     expect(defaultModelForAgent('kimi')).toBe('kimi-k2');
-    expect(defaultModelForAgent('grok')).toBe('grok-code-fast-1');
+    expect(defaultModelForAgent('grok')).toBe('grok-4.5');
     expect(defaultModelForAgent('pi')).toBe(FALLBACK_CUSTOM_MODEL);
     expect(defaultModelForAgent('workbuddy')).toBe(FALLBACK_CUSTOM_MODEL);
     expect(defaultModelForAgent('cursor')).toBe(FALLBACK_CUSTOM_MODEL);

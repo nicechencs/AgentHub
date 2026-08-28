@@ -135,22 +135,24 @@ pub fn refresh_pi_provider(credentials: &Value) -> Result<Value> {
 
 fn refresh_anthropic(refresh_token: &str) -> Result<Value> {
     // Matches pi-ai anthropic refresh endpoint.
+    let provider = &super::providers::PI_ANTHROPIC;
     post_json(
-        "https://platform.claude.com/v1/oauth/token",
+        provider.token_url,
         &json!({
             "grant_type": "refresh_token",
-            "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+            "client_id": provider.client_id,
             "refresh_token": refresh_token,
         }),
     )
 }
 
 fn refresh_openai_codex(refresh_token: &str) -> Result<Value> {
+    let provider = &super::providers::PI_OPENAI_CODEX;
     post_form(
-        "https://auth.openai.com/oauth/token",
+        provider.token_url,
         &[
             ("grant_type", "refresh_token"),
-            ("client_id", "app_EMoamEEZ73f0CkXaXp7hrann"),
+            ("client_id", provider.client_id),
             ("refresh_token", refresh_token),
             ("scope", "openid profile email"),
         ],

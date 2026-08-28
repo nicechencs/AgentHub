@@ -58,8 +58,9 @@ const CODEX_GROK_RULE_ID: &str = CODEX_GROK_EDGE.rule_id;
 const CODEX_KIMI_RULE_ID: &str = CODEX_KIMI_EDGE.rule_id;
 const CODEX_DSH_RULE_ID: &str = CODEX_DSH_EDGE.rule_id;
 const RULE_VERSION: &str = "1";
-const KIMI_CHAT_BASE_URL: &str = "https://api.kimi.com/coding/v1";
-const ANTHROPIC_MESSAGES_BASE_URL: &str = "https://api.anthropic.com/v1";
+const KIMI_CHAT_BASE_URL: &str = crate::services::adapter_route_constants::KIMI_PI_BASE_URL;
+const ANTHROPIC_MESSAGES_BASE_URL: &str =
+    crate::services::adapter_route_constants::ANTHROPIC_MESSAGES_BASE_URL;
 const OPENAI_CHAT_BASE_URL: &str = crate::services::adapter_route_constants::OPENAI_GROK_BASE_URL;
 const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex/";
 const DEFAULT_MODEL: &str = KIMI_CODEX_EDGE.default_model;
