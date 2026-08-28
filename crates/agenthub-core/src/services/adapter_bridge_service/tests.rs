@@ -2199,7 +2199,7 @@ fn prepare_openrouter_claude_skips_retired_backup_and_keeps_1m_window() {
 }
 
 #[test]
-fn prepare_deepseek_claude_uses_anthropic_endpoint() {
+fn prepare_deepseek_claude_is_native_not_local_bridge() {
     let (_dir, db) = test_db();
     ProviderRepo::new(db.clone())
         .create(&Provider {
@@ -2220,24 +2220,15 @@ fn prepare_deepseek_claude_uses_anthropic_endpoint() {
             updated_at: "now".into(),
         })
         .unwrap();
-    let service = AdapterBridgeService::new(db.clone());
-    let prepared = service
+    let error = AdapterBridgeService::new(db)
         .prepare(&AdapterBridgePrepareRequest {
             source_kind: AdapterSourceKind::Provider,
             source_id: "ds-create".into(),
             target_agent_id: AgentId::Claude,
             auto_start: true,
         })
-        .unwrap();
-    let start = prepared.runtime_material().start_spec(None);
-    assert_eq!(
-        start.upstream.base_url,
-        "https://api.deepseek.com/anthropic"
-    );
-    assert_eq!(
-        start.upstream.protocol,
-        BridgeUpstreamProtocol::AnthropicMessages
-    );
+        .unwrap_err();
+    assert_eq!(error.code(), "unsupported");
 }
 
 #[test]
