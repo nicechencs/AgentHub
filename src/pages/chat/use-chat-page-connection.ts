@@ -17,6 +17,7 @@ import {
 } from '@/pages/connections/use-connection-page-actions';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentId, AgentStatus, Conversation, Provider } from '@/lib/types';
+import { officialApiDefaults } from '@/config/official-api';
 import { applyFormVars, extractFormVars } from '@/lib/provider-detect';
 import { filterRemoteModelsForAgent } from '@/lib/provider-detect/remote-models';
 import { chatModelOptions, extractModel, isRetiredChatModel } from './chat-format';
@@ -123,10 +124,15 @@ export function useChatPageConnection(input: {
     return null;
   }, [currentProvider, leftoverCurrent]);
 
-  const modelOptions = useMemo(
-    () => chatModelOptions(remoteModels, currentModel),
-    [remoteModels, currentModel],
-  );
+  const modelOptions = useMemo(() => {
+    const fromRemote = chatModelOptions(remoteModels, currentModel);
+    if (fromRemote.length > 0) return fromRemote;
+    if (primaryAgent === 'pi') {
+      const grok = officialApiDefaults('grok')?.model;
+      return chatModelOptions(grok ? [grok] : [], currentModel);
+    }
+    return fromRemote;
+  }, [remoteModels, currentModel, primaryAgent]);
 
   const connectionOptions = useMemo(
     () =>

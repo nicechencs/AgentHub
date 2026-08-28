@@ -73,13 +73,36 @@ export function isRetiredChatModel(model: string): boolean {
 export function chatModelOptions(ids: readonly string[], current?: string | null): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const raw of [...ids, current ?? '']) {
+  for (const raw of ids) {
     const id = raw.trim();
     if (!id || seen.has(id) || isRetiredChatModel(id)) continue;
     seen.add(id);
     out.push(id);
   }
-  return out;
+  if (out.length > 0) return out;
+  const fallback = (current ?? '').trim();
+  if (fallback && !isRetiredChatModel(fallback)) return [fallback];
+  return [];
+}
+
+/** Surface a Chinese failure instead of the raw English provider dump. Never include the user prompt. */
+export function localizeChatFailure(text: string): string {
+  const hay = text.toLowerCase();
+  if (hay.includes('missing environment variable')) {
+    return '这份登录还在用另一份 API Key 配置，没法发。请点重试。';
+  }
+  if (hay.includes('is not supported by any configured account') || hay.includes('model_unavailable')) {
+    return '这个模型当前登录用不了。请换一个模型后重试。';
+  }
+  if (
+    hay.includes('stealth/ox')
+    || hay.includes('stealth ox')
+    || ((hay.includes('"code":404') || hay.includes('"code": 404') || hay.includes(' 404:'))
+      && (hay.includes('model') || hay.includes('retired') || hay.includes('glm-5.3') || hay.includes('stealth')))
+  ) {
+    return '这个模型已经下架或当前登录用不了。请换一个模型后重试。';
+  }
+  return text;
 }
 
 export function relativeTime(iso: string, t: TranslateFn): string {

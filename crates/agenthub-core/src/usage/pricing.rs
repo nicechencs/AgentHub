@@ -443,9 +443,9 @@ mod tests {
     #[test]
     fn embedded_sonnet_exact() {
         assert!(has_embedded_pricing("claude-sonnet-4"));
-        let c = estimate_cost_usd("claude-sonnet-4", 1_000_000, 0, 0, 0, None);
-        // $3 / 1M input tokens
-        assert!((c - 3.0).abs() < 0.01, "got {c}");
+        // $3 / 1M input; 100k stays below the 200k long-context tier.
+        let c = estimate_cost_usd("claude-sonnet-4", 100_000, 0, 0, 0, None);
+        assert!((c - 0.3).abs() < 0.01, "got {c}");
     }
 
     #[test]
@@ -533,16 +533,16 @@ mod tests {
 
     #[test]
     fn cache_creation_1h_bills_at_twice_input() {
-        // 1M 1h-cache writes on sonnet-4: 2 × $3 = $6 (not the 5m create rate).
+        // 100k 1h-cache writes on sonnet-4: 2 × $3/1M = $0.60 (not the 5m create rate).
         let c = estimate_cost_from_tokens(
             "claude-sonnet-4",
             CostTokens {
-                cache_create_1h: 1_000_000,
+                cache_create_1h: 100_000,
                 ..CostTokens::default()
             },
             None,
         );
-        assert!((c - 6.0).abs() < 0.01, "got {c}");
+        assert!((c - 0.6).abs() < 0.01, "got {c}");
     }
 
     #[test]

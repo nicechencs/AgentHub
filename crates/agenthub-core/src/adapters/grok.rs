@@ -95,27 +95,35 @@ impl AgentAdapter for GrokAdapter {
         };
 
         match (api_key.as_deref(), auth_body) {
-            (Some(key), Some(body)) if !key.is_empty() => Ok(LiveAccount {
-                agent: AgentId::Grok,
-                kind: AccountKind::ApiKey,
-                credentials: serde_json::json!({
-                    "format": "grok_bundle",
-                    "api_key": key,
-                    "auth": body,
-                }),
-                label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
-                extra: serde_json::json!({ "source": "config.toml+auth.json" }),
-            }),
-            (Some(key), None) if !key.is_empty() => Ok(LiveAccount {
-                agent: AgentId::Grok,
-                kind: AccountKind::ApiKey,
-                credentials: serde_json::json!({
-                    "format": "api_key",
-                    "api_key": key,
-                }),
-                label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
-                extra: serde_json::json!({ "source": "config.toml" }),
-            }),
+            (Some(key), Some(body))
+                if !key.is_empty() && !crate::utils::redact::is_unusable_secret(key) =>
+            {
+                Ok(LiveAccount {
+                    agent: AgentId::Grok,
+                    kind: AccountKind::ApiKey,
+                    credentials: serde_json::json!({
+                        "format": "grok_bundle",
+                        "api_key": key,
+                        "auth": body,
+                    }),
+                    label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
+                    extra: serde_json::json!({ "source": "config.toml+auth.json" }),
+                })
+            }
+            (Some(key), None)
+                if !key.is_empty() && !crate::utils::redact::is_unusable_secret(key) =>
+            {
+                Ok(LiveAccount {
+                    agent: AgentId::Grok,
+                    kind: AccountKind::ApiKey,
+                    credentials: serde_json::json!({
+                        "format": "api_key",
+                        "api_key": key,
+                    }),
+                    label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
+                    extra: serde_json::json!({ "source": "config.toml" }),
+                })
+            }
             (_, Some(body)) => Ok(LiveAccount {
                 agent: AgentId::Grok,
                 kind: AccountKind::Oauth,
@@ -776,7 +784,7 @@ fn read_grok_api_key(path: &Path) -> Result<Option<String>> {
         .and_then(|entry| entry.get("api_key"))
         .and_then(Item::as_str)
         .map(str::trim)
-        .filter(|key| !key.is_empty())
+        .filter(|key| !key.is_empty() && !crate::utils::redact::is_unusable_secret(key))
     {
         return Ok(Some(key.to_owned()));
     }
@@ -792,7 +800,45 @@ fn read_grok_api_key(path: &Path) -> Result<Option<String>> {
             }
         }
     }
-    Ok(doc.get("api_key").and_then(Item::as_str).map(str::to_owned))
+    Ok(doc
+        .get("api_key")
+        .and_then(Item::as_str)
+        .map(str::trim)
+        .filter(|key| !key.is_empty() && !crate::utils::redact::is_unusable_secret(key))
+        .map(str::to_owned))
+}
+
+/// Leftover `api_key` field (including a redacted `***`) still competes with oauth.
+pub(crate) fn grok_live_has_leftover_api_key_field() -> bool {
+    let Ok(home) = agent_home(AgentId::Grok) else {
+        return false;
+    };
+    grok_config_has_api_key_field(&home.join("config.toml"))
+}
+
+fn grok_config_has_api_key_field(path: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(doc) = text.parse::<toml_edit::DocumentMut>() else {
+        return false;
+    };
+    let alias = active_model_alias(&doc);
+    let nested = doc
+        .get("model")
+        .and_then(Item::as_table)
+        .and_then(|models| models.get(&alias))
+        .and_then(Item::as_table)
+        .and_then(|entry| entry.get("api_key"))
+        .and_then(Item::as_str)
+        .map(str::trim)
+        .is_some_and(|key| !key.is_empty());
+    nested
+        || doc
+            .get("api_key")
+            .and_then(Item::as_str)
+            .map(str::trim)
+            .is_some_and(|key| !key.is_empty())
 }
 
 fn read_grok_inline_field(path: &Path, key: &str) -> Result<Option<String>> {

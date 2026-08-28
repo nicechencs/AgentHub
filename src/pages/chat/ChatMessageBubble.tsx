@@ -2,6 +2,7 @@ import { Copy, Loader2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { MarkdownView } from '@/components/shared/MarkdownView';
+import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { agentDisplayName } from '@/config/agents';
@@ -9,7 +10,7 @@ import { hasProcessDetails, processPhaseLabel } from '@/lib/chat-process';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { formatDurationMs } from './chat-format';
+import { formatDurationMs, localizeChatFailure } from './chat-format';
 import { messageStatusLabel } from './chat-model';
 import { ChatProcessPanel } from './ChatProcessPanel';
 
@@ -74,13 +75,20 @@ function AgentBubble({
 }) {
   const { t } = useI18n();
   const agent = message.agentId ?? 'claude';
-  const statusText = messageStatusLabel(t, message.status, process);
+  const displayContent = message.content ? localizeChatFailure(message.content) : '';
+  const displayError = message.error ? localizeChatFailure(message.error) : '';
+  const looksFailed =
+    message.status === 'failed' ||
+    message.status === 'cancelled' ||
+    message.status === 'timeout' ||
+    (message.status === 'ok' && displayContent !== message.content);
+  const statusText = messageStatusLabel(
+    t,
+    looksFailed && message.status === 'ok' ? 'failed' : message.status,
+    process,
+  );
   const running = message.status === 'running';
-  const showRetry =
-    isLastTurn &&
-    (message.status === 'failed' ||
-      message.status === 'cancelled' ||
-      message.status === 'timeout');
+  const showRetry = isLastTurn && looksFailed;
 
   return (
     <div id={`chat-msg-${message.id}`} className="group flex gap-3">
@@ -96,14 +104,14 @@ function AgentBubble({
                 multiAgent ? t('chat.bubble.retryAllHint') : undefined
               }
             >
-              <button
+              <Button
                 type="button"
+                size="sm"
                 disabled={retryDisabled}
                 onClick={onRetry}
-                className="rounded-btn px-1.5 py-0.5 text-meta text-secondary hover:bg-hover hover:text-primary disabled:opacity-50"
               >
                 {t('chat.bubble.retry')}
-              </button>
+              </Button>
             </Hint>
           )}
         </div>
@@ -116,8 +124,8 @@ function AgentBubble({
           />
         ) : null}
         <div className="text-body leading-relaxed text-primary">
-          {message.content ? (
-            <MarkdownView content={message.content} variant="chat" />
+          {displayContent ? (
+            <MarkdownView content={displayContent} variant="chat" />
           ) : running ? (
             <span className="inline-flex items-center gap-2 text-muted">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -126,10 +134,10 @@ function AgentBubble({
                 : t('chat.bubble.generating')}
             </span>
           ) : (
-            <span className="text-muted">{message.error || t('chat.bubble.noOutput')}</span>
+            <span className="text-muted">{displayError || t('chat.bubble.noOutput')}</span>
           )}
-          {message.error && message.status !== 'ok' && message.content && (
-            <p className="mt-2 text-body text-danger">{message.error}</p>
+          {displayError && (looksFailed || message.status !== 'ok') && displayContent && (
+            <p className="mt-2 text-body text-danger">{displayError}</p>
           )}
         </div>
         {!running && <CopyButton text={message.content} />}

@@ -966,6 +966,39 @@ fn key_native_detailed_uninstall_clears_install_and_records_operation() {
 fn builtin_executor_installs_non_agent_id_via_contribution_allowlist() {
     // P1-2 contract: BuiltinLifecycleInstallExecutor must consume InstallContribution
     // (npm package + flags) for keys outside the closed AgentId set.
+    let _env = crate::utils::test_env::lock_test_env();
+    let npm_dir = tempdir().unwrap();
+    let npm_bin = if cfg!(windows) {
+        npm_dir.path().join("npm.cmd")
+    } else {
+        npm_dir.path().join("npm")
+    };
+    std::fs::write(&npm_bin, b"").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&npm_bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let prev_path = std::env::var_os("PATH");
+    let mut path_entries = vec![npm_dir.path().to_path_buf()];
+    if let Some(prev) = &prev_path {
+        path_entries.extend(std::env::split_paths(prev));
+    }
+    std::env::set_var(
+        "PATH",
+        std::env::join_paths(path_entries).expect("join PATH"),
+    );
+    struct RestorePath(Option<std::ffi::OsString>);
+    impl Drop for RestorePath {
+        fn drop(&mut self) {
+            match &self.0 {
+                Some(value) => std::env::set_var("PATH", value),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+    }
+    let _path = RestorePath(prev_path);
+
     let (_dir, lifecycle, key, installed) = open_contribution_driven_lifecycle(
         "future-contrib-agent",
         "@agenthub/p1-2-contract-pkg",
@@ -978,9 +1011,11 @@ fn builtin_executor_installs_non_agent_id_via_contribution_allowlist() {
     };
     let mut sink = VecProgressSink::default();
 
-    let outcome = lifecycle
-        .install_agent_key(&key, "npm", false, &executor, Some(&mut sink))
-        .unwrap();
+    let outcome = crate::runtime::with_ensure_ok(|| {
+        lifecycle
+            .install_agent_key(&key, "npm", false, &executor, Some(&mut sink))
+            .unwrap()
+    });
 
     assert!(
         outcome.ok,
