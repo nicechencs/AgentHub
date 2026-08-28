@@ -680,13 +680,28 @@ fn leftover_agenthub_npm_is_never_the_spawn_target() {
     restore_env("PATH", prev_path);
     let result = found.expect("detect_binary must not panic");
 
-    assert_eq!(
-        result.status,
-        crate::models::DetectStatus::NotFound,
-        "leftover data-dir npm must not count as installed: {:?}",
-        result.notes
-    );
-    assert!(result.binary_path.is_none());
+    // A real dsh may legitimately live in npm-global well-known dirs on this
+    // machine. The guarded invariant: the leftover data-dir copy is never the
+    // spawn target and never comes from the agenthub data dir; when no real
+    // install exists, the leftover alone must not count as installed.
+    if let Some(target) = &result.binary_path {
+        assert_ne!(
+            target, &leftover,
+            "leftover data-dir npm must not become the spawn target"
+        );
+        assert!(
+            !target.starts_with(&data),
+            "spawn target must not come from the agenthub data dir: {}",
+            target.display()
+        );
+    } else {
+        assert_eq!(
+            result.status,
+            crate::models::DetectStatus::NotFound,
+            "leftover data-dir npm must not count as installed: {:?}",
+            result.notes
+        );
+    }
     assert!(
         result
             .extra_copies

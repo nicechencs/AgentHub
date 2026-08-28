@@ -1,9 +1,9 @@
 {
   "source": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
-  "fetchedAt": "2026-08-27T17:32:20.490Z",
-  "modelCount": 321,
-  "fromLitellmRows": 192,
-  "aliasKeysAdded": 124,
+  "fetchedAt": "2026-08-28T18:28:53.046Z",
+  "modelCount": 307,
+  "fromLitellmRows": 185,
+  "aliasKeysAdded": 117,
   "overrideKeys": 16,
   "unit": "USD per 1M tokens",
   "notes": "Offline embedded snapshot. Runtime does not fetch pricing. Re-run scripts/update-embedded-pricing.mjs or wait for daily CI."

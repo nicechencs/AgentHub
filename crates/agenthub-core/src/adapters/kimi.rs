@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use serde_json::{json, Map, Value};
+
 use crate::error::{AppError, Result};
 use crate::integrations::agents::kimi::managed::{
     ensure_kimi_model_alias, ensure_kimi_provider_entry,
@@ -93,25 +95,28 @@ impl AgentAdapter for KimiAdapter {
             None
         };
 
+        let config_text = if config_path.exists() {
+            std::fs::read_to_string(&config_path)?
+        } else {
+            String::new()
+        };
         match (api_key.as_deref(), cred_body) {
-            (Some(key), Some(body)) if !key.is_empty() => Ok(LiveAccount {
-                agent: AgentId::Kimi,
-                kind: AccountKind::ApiKey,
-                credentials: serde_json::json!({
-                    "format": "kimi_bundle",
-                    "api_key": key,
-                    "credentials_file": body,
-                }),
-                label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
-                extra: serde_json::json!({ "source": "config.toml+credentials" }),
-            }),
+            (Some(key), Some(body)) if !key.is_empty() => {
+                let mut credentials = kimi_api_key_credentials_map(key, &config_text);
+                credentials.insert("format".into(), json!("kimi_bundle"));
+                credentials.insert("credentials_file".into(), body);
+                Ok(LiveAccount {
+                    agent: AgentId::Kimi,
+                    kind: AccountKind::ApiKey,
+                    credentials: Value::Object(credentials),
+                    label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
+                    extra: serde_json::json!({ "source": "config.toml+credentials" }),
+                })
+            }
             (Some(key), None) if !key.is_empty() => Ok(LiveAccount {
                 agent: AgentId::Kimi,
                 kind: AccountKind::ApiKey,
-                credentials: serde_json::json!({
-                    "format": "api_key",
-                    "api_key": key,
-                }),
+                credentials: Value::Object(kimi_api_key_credentials_map(key, &config_text)),
                 label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
                 extra: serde_json::json!({ "source": "config.toml" }),
             }),
@@ -145,13 +150,7 @@ impl AgentAdapter for KimiAdapter {
             .unwrap_or("");
         match format {
             "api_key" => {
-                let key = account
-                    .credentials
-                    .get("api_key")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| AppError::InvalidArg("Kimi api_key is required".into()))?;
-                write_kimi_api_key(&home.join("config.toml"), key)?;
-                Ok(())
+                apply_kimi_api_key_credentials(&home.join("config.toml"), &account.credentials)
             }
             "credentials_json" => {
                 let body = account.credentials.get("body").cloned().ok_or_else(|| {
@@ -166,9 +165,7 @@ impl AgentAdapter for KimiAdapter {
                 Ok(())
             }
             "kimi_bundle" => {
-                if let Some(key) = account.credentials.get("api_key").and_then(|v| v.as_str()) {
-                    write_kimi_api_key(&home.join("config.toml"), key)?;
-                }
+                apply_kimi_api_key_credentials(&home.join("config.toml"), &account.credentials)?;
                 if let Some(body) = account.credentials.get("credentials_file") {
                     write_verified_json_object(
                         &home.join("credentials").join("kimi-code.json"),
@@ -217,7 +214,11 @@ impl AgentAdapter for KimiAdapter {
         let mut paths = Vec::new();
         if let Ok(home) = agent_home(AgentId::Kimi) {
             paths.push(home.join("config.toml"));
+            paths.push(home.join("tui.toml"));
+            paths.push(home.join("mcp.json"));
             paths.push(home.join("credentials").join("kimi-code.json"));
+            push_json_files_in(&mut paths, &home.join("credentials"));
+            push_json_files_in(&mut paths, &home.join("credentials").join("mcp"));
         }
         paths
     }
@@ -352,6 +353,173 @@ pub(crate) fn kimi_auth_state(config: &Path, cred: &Path) -> AuthState {
         revision: auth_file_revision(cred),
         also_present: Vec::new(),
         secret_hash: None,
+    }
+}
+
+/// Split a mixed live snapshot into OAuth + API Key rows. Pool never stores `kimi_bundle`.
+pub(crate) fn expand_kimi_live_accounts(snapshot: &LiveAccount) -> Vec<LiveAccount> {
+    if snapshot.agent != AgentId::Kimi {
+        return vec![snapshot.clone()];
+    }
+    if snapshot.credentials.get("format").and_then(|v| v.as_str()) != Some("kimi_bundle") {
+        return vec![snapshot.clone()];
+    }
+    let mut accounts = Vec::new();
+    if let Some(body) = snapshot.credentials.get("credentials_file") {
+        if body.is_object() {
+            accounts.push(LiveAccount {
+                agent: AgentId::Kimi,
+                kind: AccountKind::Oauth,
+                credentials: json!({
+                    "format": "credentials_json",
+                    "body": body,
+                }),
+                label_hint: Some("kimi-oauth".into()),
+                extra: json!({ "source": "credentials/kimi-code.json" }),
+            });
+        }
+    }
+    if let Some(key) = snapshot
+        .credentials
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let content = snapshot
+            .credentials
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        accounts.push(LiveAccount {
+            agent: AgentId::Kimi,
+            kind: AccountKind::ApiKey,
+            credentials: Value::Object(kimi_api_key_credentials_map(key, content)),
+            label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
+            extra: json!({ "source": "config.toml" }),
+        });
+    }
+    if accounts.is_empty() {
+        vec![snapshot.clone()]
+    } else {
+        accounts
+    }
+}
+
+fn kimi_api_key_credentials_map(key: &str, config_text: &str) -> Map<String, Value> {
+    let mut map = Map::new();
+    map.insert("format".into(), json!("api_key"));
+    map.insert("api_key".into(), json!(key));
+    if !config_text.is_empty() {
+        map.insert("content".into(), json!(config_text));
+        if let Ok(doc) = config_text.parse::<toml_edit::DocumentMut>() {
+            if let Some(model) = doc
+                .get("default_model")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                map.insert("model".into(), json!(model));
+            }
+            if let Some(slug) = doc
+                .get("default_provider")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                map.insert("providerSlug".into(), json!(slug));
+                if let Some(url) = doc
+                    .get("providers")
+                    .and_then(|p| p.as_table())
+                    .and_then(|t| t.get(slug))
+                    .and_then(|item| item.get("base_url"))
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    map.insert("base_url".into(), json!(url));
+                }
+            }
+        }
+    }
+    map
+}
+
+fn apply_kimi_api_key_credentials(path: &Path, credentials: &Value) -> Result<()> {
+    let key = credentials
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| AppError::InvalidArg("Kimi api_key is required".into()))?;
+    let snapshot = credentials
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !path.exists() && !snapshot.trim().is_empty() {
+        atomic_write(path, snapshot.as_bytes())?;
+    }
+    write_kimi_api_key(path, key)?;
+    let live = std::fs::read_to_string(path)?;
+    let mut doc = live
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| AppError::InvalidArg(format!("existing Kimi config.toml is invalid: {e}")))?;
+    let mut changed = false;
+    if let Some(model) = credentials
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        doc["default_model"] = toml_edit::value(model);
+        changed = true;
+    }
+    if let Some(url) = credentials
+        .get("base_url")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let slug = credentials
+            .get("providerSlug")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .or_else(|| {
+                doc.get("default_provider")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
+            })
+            .unwrap_or_else(|| "moonshot".into());
+        ensure_kimi_provider_entry(&mut doc, slug.as_str())?;
+        if let Some(providers) = doc.get_mut("providers").and_then(|p| p.as_table_mut()) {
+            providers[slug.as_str()]["base_url"] = toml_edit::value(url);
+            changed = true;
+        }
+    }
+    if changed {
+        atomic_write(path, doc.to_string().as_bytes())?;
+    }
+    Ok(())
+}
+
+fn push_json_files_in(paths: &mut Vec<PathBuf>, dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        {
+            if !paths.iter().any(|existing| existing == &path) {
+                paths.push(path);
+            }
+        }
     }
 }
 

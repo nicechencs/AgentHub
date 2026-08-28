@@ -23,11 +23,16 @@ pub(crate) fn explorer_select_arg(path: &std::path::Path) -> String {
     format!("/select,{p}")
 }
 
-/// Strip storage-key prefixes and normalize separators for the current OS.
+/// Strip storage-key prefixes, expand `~`, and normalize separators for the current OS.
 pub(crate) fn normalize_open_path_input(raw: &str) -> std::path::PathBuf {
     let mut s = raw.trim().to_string();
     if let Some(rest) = s.strip_prefix("cwd/") {
         s = rest.to_string();
+    }
+    if s == "~" || s.starts_with("~/") || s.starts_with("~\\") {
+        if let Ok(expanded) = agenthub_core::utils::paths::expand_user_path(&s) {
+            s = expanded.to_string_lossy().into_owned();
+        }
     }
     #[cfg(windows)]
     {

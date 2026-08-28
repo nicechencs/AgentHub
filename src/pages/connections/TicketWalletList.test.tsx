@@ -524,7 +524,7 @@ describe('TicketWalletList details', () => {
     expect(allMarkup).toContain('2 份登录');
   });
 
-  it('does not put 添加登录 in the list chrome when logins exist', () => {
+  it('does not put 添加授权 in the list chrome when logins exist', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: sampleWallet(),
@@ -537,12 +537,12 @@ describe('TicketWalletList details', () => {
         onImportLogin() {},
       }),
     );
-    expect(markup).not.toContain('添加登录');
+    expect(markup).not.toContain('添加授权');
     expect(markup).not.toContain('aria-label="登录类型筛选"');
     expect(markup).not.toContain('新 API Key');
   });
 
-  it('keeps 添加登录 on the empty-wallet next action', () => {
+  it('keeps 添加授权 on the empty-wallet next action', () => {
     const markup = renderWithTooltip(
       createElement(TicketWalletList, {
         wallet: { tickets: [], bindings: [], surfaceGroups: [] },
@@ -555,7 +555,7 @@ describe('TicketWalletList details', () => {
         onImportLogin() {},
       }),
     );
-    expect(markup).toContain('添加登录');
+    expect(markup).toContain('添加授权');
     expect(markup).toContain('还没有登录');
   });
 
@@ -888,6 +888,52 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('编辑配置');
     expect(markup).not.toContain('用量');
     expect(markup).not.toContain('更多');
+  });
+
+  it('lists associated files under login details with copy and 目录', () => {
+    const ticket = {
+      ...sampleWallet().tickets[0]!,
+      id: 'account:grok-1',
+      sourceKind: 'account' as const,
+      sourceId: 'grok-1',
+      agentId: 'grok' as const,
+      label: 'a@example.com',
+      surface: 'grok-xai-subscription' as const,
+      credentialClass: 'oauth' as const,
+    };
+    const secret = 'xai-file-key-12345678';
+    const markup = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'ticket-auth-files',
+        asPanel: true,
+        open: true,
+        ticket,
+        extras: {
+          credentialFiles: [
+            {
+              name: 'auth.json',
+              content: '{\n  "email": "a@example.com",\n  "refresh_token": "***"\n}\n',
+            },
+            {
+              name: 'config.toml',
+              content: 'api_key = "***"\n',
+            },
+          ],
+        },
+        onDelete() {},
+        onOpenChange() {},
+      }),
+    );
+    expect(markup).toContain('相关文件');
+    expect(markup).toContain('auth.json');
+    expect(markup).toContain('config.toml');
+    expect(markup).toContain('a@example.com');
+    expect(markup).toContain('~/.grok/auth.json');
+    expect(markup).toContain('~/.grok/config.toml');
+    expect(markup).toContain('aria-label="复制"');
+    expect(markup).toContain('aria-label="目录"');
+    expect(markup.indexOf('auth.json')).toBeLessThan(markup.indexOf('config.toml'));
+    expect(markup).not.toContain(secret);
   });
 });
 

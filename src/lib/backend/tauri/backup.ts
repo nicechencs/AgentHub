@@ -1,6 +1,7 @@
 import type { BackupPort } from '@/lib/backend/contracts';
 import {
   mapCoreBackup,
+  type CoreBackupInspect,
   type CoreBackupRecord,
   type CoreRestoreResult,
 } from '@/lib/backend/contracts/backup-map';
@@ -13,6 +14,10 @@ export function createTauriBackupPort(): BackupPort {
         agentId: agentId ?? null,
       });
       return rows.map(mapCoreBackup).filter((b): b is NonNullable<typeof b> => b !== null);
+    },
+
+    async inspectBackup(backupId) {
+      return invoke<CoreBackupInspect>('inspect_backup', { backupId });
     },
 
     async createBackup(agentId, note) {

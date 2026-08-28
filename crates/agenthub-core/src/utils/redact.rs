@@ -626,14 +626,12 @@ pub fn redact_json(value: &Value) -> Value {
     match value {
         Value::Object(map) => {
             let mut out = Map::new();
-            let toml_content = map.get("format").and_then(Value::as_str) == Some("toml")
-                && map.get("content").is_some_and(Value::is_string);
             for (k, v) in map {
                 if is_secret_key(k) {
                     out.insert(k.clone(), Value::String("***".into()));
-                } else if toml_content && k == "content" {
+                } else if is_snapshot_blob_key(k) && v.is_string() {
                     let content = v.as_str().unwrap_or("");
-                    out.insert(k.clone(), Value::String(redact_toml_content(content)));
+                    out.insert(k.clone(), Value::String(redact_snapshot_blob(content)));
                 } else {
                     out.insert(k.clone(), redact_json(v));
                 }
@@ -643,6 +641,25 @@ pub fn redact_json(value: &Value) -> Value {
         Value::Array(items) => Value::Array(items.iter().map(redact_json).collect()),
         other => other.clone(),
     }
+}
+
+fn is_snapshot_blob_key(key: &str) -> bool {
+    matches!(key, "content" | "config")
+}
+
+/// Account/provider snapshots store a whole file in `content` (TOML or JSON)
+/// even when `format` is `api_key`. Mask secrets inside that blob.
+fn redact_snapshot_blob(raw: &str) -> String {
+    let trimmed = raw.trim_start();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        if let Ok(parsed) = serde_json::from_str::<Value>(raw) {
+            if let Ok(text) = serde_json::to_string_pretty(&redact_json(&parsed)) {
+                return text;
+            }
+        }
+        return redact_text(raw);
+    }
+    redact_toml_content(raw)
 }
 
 #[cfg(test)]
@@ -729,6 +746,36 @@ mod tests {
             "{content}"
         );
         assert!(content.contains("[models]"), "{content}");
+    }
+
+    #[test]
+    fn api_key_format_toml_content_is_redacted() {
+        let input = json!({
+            "format": "api_key",
+            "api_key": "xai-secret-value-here",
+            "content": "[model.\"grok\"]\nmodel = \"grok-4.6\"\napi_key = \"xai-secret-value-here\"\n"
+        });
+        let output = redact_json(&input);
+        assert_eq!(output["api_key"], "***");
+        let content = output["content"].as_str().expect("content");
+        assert!(content.contains("grok-4.6"), "{content}");
+        assert!(!content.contains("xai-secret-value-here"), "{content}");
+        assert!(content.contains("***"), "{content}");
+    }
+
+    #[test]
+    fn api_key_format_json_content_is_redacted() {
+        let input = json!({
+            "format": "api_key",
+            "api_key": "sk-ant-secret",
+            "content": "{\n  \"env\": {\n    \"ANTHROPIC_AUTH_TOKEN\": \"sk-ant-secret\"\n  }\n}"
+        });
+        let output = redact_json(&input);
+        assert_eq!(output["api_key"], "***");
+        let content = output["content"].as_str().expect("content");
+        assert!(!content.contains("sk-ant-secret"), "{content}");
+        assert!(content.contains("***"), "{content}");
+        assert!(content.contains("ANTHROPIC_AUTH_TOKEN"), "{content}");
     }
 
     #[test]

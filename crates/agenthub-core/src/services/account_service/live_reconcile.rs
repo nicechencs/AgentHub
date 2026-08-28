@@ -143,6 +143,12 @@ impl AccountService {
                 &snapshot,
             ));
         }
+        if agent == AgentId::Kimi {
+            return Ok(crate::adapters::expand_kimi_live_accounts(&snapshot));
+        }
+        if agent == AgentId::Claude {
+            return Ok(crate::adapters::expand_claude_live_accounts(&snapshot));
+        }
         Ok(vec![snapshot])
     }
 

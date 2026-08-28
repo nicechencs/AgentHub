@@ -42,6 +42,8 @@ pub struct OAuthProvider {
     pub client_id: &'static str,
     /// Fixed loopback port when required by the provider; None = ephemeral.
     pub redirect_port: Option<u16>,
+    /// Host in the registered loopback redirect URI (`localhost` vs `127.0.0.1`).
+    pub redirect_host: &'static str,
     /// Path on the loopback redirect URI (e.g. `/callback`, `/auth/callback`).
     pub redirect_path: &'static str,
     pub scopes: &'static str,
@@ -70,6 +72,7 @@ pub static CLAUDE: OAuthProvider = OAuthProvider {
     token_url: "https://console.anthropic.com/v1/oauth/token",
     client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
     redirect_port: None,
+    redirect_host: "127.0.0.1",
     redirect_path: "/callback",
     scopes: "org:create_api_key user:profile user:inference",
     body_style: TokenBodyStyle::Json,
@@ -77,18 +80,31 @@ pub static CLAUDE: OAuthProvider = OAuthProvider {
     token_includes_state: false,
 };
 
+/// OpenAI Codex CLI public client. Hydra matches redirect_uri exactly
+/// (`localhost` ≠ `127.0.0.1`; path must be `/auth/callback`).
+const CODEX_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+const CODEX_AUTHORIZE_URL: &str = "https://auth.openai.com/oauth/authorize";
+const CODEX_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
+const CODEX_REDIRECT_HOST: &str = "localhost";
+const CODEX_REDIRECT_PATH: &str = "/auth/callback";
+const CODEX_SCOPES: &str =
+    "openid profile email offline_access api.connectors.read api.connectors.invoke";
+const CODEX_AUTHORIZE_EXTRA: &str =
+    "&id_token_add_organizations=true&codex_cli_simplified_flow=true&originator=codex_cli_rs";
+
 /// OpenAI Codex / ChatGPT OAuth (fixed loopback port required by provider).
 pub static CODEX: OAuthProvider = OAuthProvider {
     id: "codex",
     agent: AgentId::Codex,
-    authorize_url: "https://auth.openai.com/oauth/authorize",
-    token_url: "https://auth.openai.com/oauth/token",
-    client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+    authorize_url: CODEX_AUTHORIZE_URL,
+    token_url: CODEX_TOKEN_URL,
+    client_id: CODEX_CLIENT_ID,
     redirect_port: Some(1455),
-    redirect_path: "/callback",
-    scopes: "openid profile email offline_access",
+    redirect_host: CODEX_REDIRECT_HOST,
+    redirect_path: CODEX_REDIRECT_PATH,
+    scopes: CODEX_SCOPES,
     body_style: TokenBodyStyle::Form,
-    authorize_extra: "",
+    authorize_extra: CODEX_AUTHORIZE_EXTRA,
     token_includes_state: false,
 };
 
@@ -100,6 +116,7 @@ pub static XAI: OAuthProvider = OAuthProvider {
     token_url: "https://accounts.x.ai/oauth/token",
     client_id: "grok-cli",
     redirect_port: Some(56121),
+    redirect_host: "127.0.0.1",
     redirect_path: "/callback",
     scopes: "openid offline_access",
     body_style: TokenBodyStyle::Form,
@@ -116,6 +133,7 @@ pub static PI_ANTHROPIC: OAuthProvider = OAuthProvider {
     token_url: "https://platform.claude.com/v1/oauth/token",
     client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
     redirect_port: Some(53692),
+    redirect_host: "localhost",
     redirect_path: "/callback",
     scopes: "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
     body_style: TokenBodyStyle::Json,
@@ -127,18 +145,34 @@ pub static PI_ANTHROPIC: OAuthProvider = OAuthProvider {
 pub static PI_OPENAI_CODEX: OAuthProvider = OAuthProvider {
     id: "pi-openai-codex",
     agent: AgentId::Pi,
-    authorize_url: "https://auth.openai.com/oauth/authorize",
-    token_url: "https://auth.openai.com/oauth/token",
-    client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
+    authorize_url: CODEX_AUTHORIZE_URL,
+    token_url: CODEX_TOKEN_URL,
+    client_id: CODEX_CLIENT_ID,
     redirect_port: Some(1455),
-    redirect_path: "/auth/callback",
-    scopes: "openid profile email offline_access",
+    redirect_host: CODEX_REDIRECT_HOST,
+    redirect_path: CODEX_REDIRECT_PATH,
+    scopes: CODEX_SCOPES,
     body_style: TokenBodyStyle::Form,
-    authorize_extra: "",
+    authorize_extra: CODEX_AUTHORIZE_EXTRA,
     token_includes_state: false,
 };
 
 impl OAuthProvider {
+    /// Loopback redirect URI registered with the provider (host + path, not bind address).
+    pub fn loopback_redirect_uri(&self, port: u16) -> String {
+        let host = if self.redirect_host.is_empty() {
+            "127.0.0.1"
+        } else {
+            self.redirect_host
+        };
+        let path = if self.redirect_path.is_empty() {
+            "/callback"
+        } else {
+            self.redirect_path
+        };
+        format!("http://{host}:{port}{path}")
+    }
+
     pub fn build_authorize_url(&self, redirect_uri: &str, state: &str, challenge: &str) -> String {
         format!(
             "{base}?response_type=code&client_id={client}&redirect_uri={redir}&scope={scope}&state={state}&code_challenge={ch}&code_challenge_method=S256{extra}",
@@ -366,6 +400,39 @@ mod tests {
         assert!(url.contains("code_challenge=ch"));
         assert!(url.contains("code_challenge_method=S256"));
         assert!(url.contains("code=true"));
+    }
+
+    #[test]
+    fn claude_loopback_redirect_uses_ipv4_callback() {
+        assert_eq!(
+            CLAUDE.loopback_redirect_uri(12345),
+            "http://127.0.0.1:12345/callback"
+        );
+    }
+
+    #[test]
+    fn codex_authorize_url_matches_registered_cli_loopback() {
+        let redirect = CODEX.loopback_redirect_uri(1455);
+        assert_eq!(redirect, "http://localhost:1455/auth/callback");
+        let url = CODEX.build_authorize_url(&redirect, "st", "ch");
+        assert!(url.contains(&format!("client_id={}", CODEX_CLIENT_ID)));
+        assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback"));
+        assert!(url.contains("id_token_add_organizations=true"));
+        assert!(url.contains("codex_cli_simplified_flow=true"));
+        assert!(url.contains("originator=codex_cli_rs"));
+        assert!(url.contains("api.connectors.read"));
+        assert!(!url.contains("127.0.0.1"));
+        assert!(!url.contains("/callback&"));
+    }
+
+    #[test]
+    fn pi_openai_codex_shares_codex_authorize_registration() {
+        let redirect = PI_OPENAI_CODEX.loopback_redirect_uri(1455);
+        assert_eq!(redirect, CODEX.loopback_redirect_uri(1455));
+        let url = PI_OPENAI_CODEX.build_authorize_url(&redirect, "st", "ch");
+        assert!(url.contains("id_token_add_organizations=true"));
+        assert!(url.contains("codex_cli_simplified_flow=true"));
+        assert!(url.contains("originator=codex_cli_rs"));
     }
 
     #[test]

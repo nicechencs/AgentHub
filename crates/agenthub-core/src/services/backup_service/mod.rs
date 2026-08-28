@@ -17,6 +17,7 @@
 //! [`crate::services::BackupService`].
 
 mod catalog;
+mod inspect;
 mod path_safety;
 mod restore;
 mod snapshot;
@@ -99,6 +100,10 @@ impl BackupService {
     /// reuse this guard via [`Self::snapshot_with_guard`].
     pub fn acquire_live_write(&self, agent: AgentId) -> Result<LiveWriteGuard> {
         self.authority.acquire(agent)
+    }
+
+    pub(crate) fn keep_live_file_copies(&self) -> bool {
+        self.repo.keep_live_file_copies()
     }
 
     #[cfg(test)]

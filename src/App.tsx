@@ -64,7 +64,8 @@ export default function App() {
     pathname === '/projects' ||
     pathname === '/connections' ||
     pathname === '/routes' ||
-    pathname === '/plugins';
+    pathname === '/plugins' ||
+    pathname === '/settings';
   const fullBleed = isChat || isWorkbenchSplit;
   const updateHandleRef = useRef<UpdatePromptHandle | null>(null);
 

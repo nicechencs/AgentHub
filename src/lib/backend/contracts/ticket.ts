@@ -479,7 +479,7 @@ export function ticketCredentialClassLabel(cls: TicketCredentialClass): string {
 /** Surface chip label (short). */
 export function ticketSurfaceLabel(surface: TicketSurface): string {
   if (surface === 'kimi-code-membership') return '会员';
-  if (surface === 'anthropic-api') return '官方';
+  if (surface === 'anthropic-api') return 'API';
   if (surface === 'openai-api') return 'OpenAI';
   if (surface === 'xai-api') return 'xAI';
   if (surface === 'glm-coding-plan') return 'GLM';

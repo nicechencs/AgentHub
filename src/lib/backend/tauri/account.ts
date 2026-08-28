@@ -173,7 +173,7 @@ export function createTauriAccountPort(): AccountPort {
       if (!supported) {
         throw unsupportedError(
           'OAuth 浏览器授权',
-          '这个工具还不支持官方登录。请改用「导入当前登录」或「添加 API Key」',
+          '这个工具还不支持官方登录。请改用「导入授权」或「添加 API Key」',
         );
       }
       const options = await this.listOAuthOptions(agentId);
@@ -193,11 +193,21 @@ export function createTauriAccountPort(): AccountPort {
         throw unsupportedError('OAuth 授权', '设备码授权超时');
       }
       const start = await this.startOAuth(agentId, true, key);
-      const wait = await this.waitOAuth(start.state, OAUTH_WAIT_TIMEOUT_SECS);
-      if (wait.status === 'failed') {
-        throw unsupportedError('OAuth 授权', wait.error ?? '授权失败');
+      const deadline = Date.now() + (start.expiresInSecs || 900) * 1000;
+      while (Date.now() < deadline) {
+        const remainingSecs = Math.max(1, Math.ceil((deadline - Date.now()) / 1000));
+        const wait = await this.waitOAuth(
+          start.state,
+          Math.min(OAUTH_WAIT_TIMEOUT_SECS, remainingSecs),
+        );
+        if (wait.status === 'failed') {
+          throw unsupportedError('OAuth 授权', wait.error ?? '授权失败');
+        }
+        if (wait.status === 'callbackReceived' || wait.status === 'succeeded') {
+          return this.finishOAuth(start.state);
+        }
       }
-      return this.finishOAuth(start.state);
+      throw unsupportedError('OAuth 授权', '登录超时');
     },
 
     async deleteAccount(agentId, accountId) {

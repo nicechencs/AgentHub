@@ -25,6 +25,7 @@ import {
 } from '@/lib/api/update';
 import { applyTheme } from '@/lib/theme';
 import type { AppSettings } from '@/lib/types';
+import { cn } from '@/lib/utils';
 import { BackupsPanel } from '@/pages/backups/BackupsPanel';
 import { AboutPanel } from './AboutPanel';
 import { LocalPanel } from './LocalPanel';
@@ -185,45 +186,45 @@ export default function SettingsPage({
     })();
   };
 
+  const settingsHeader = (
+    <PageHeader
+      size="compact"
+      title={t('settings.page.title')}
+      description={t('settings.page.description')}
+      descriptionTip={t('settings.page.descriptionTip')}
+    />
+  );
+
   if (loading) {
     return (
-      <>
-        <PageHeader
-          title={t('settings.page.title')}
-          description={t('settings.page.description')}
-          descriptionTip={t('settings.page.descriptionTip')}
-        />
-        <div className={pageRhythm.readingColumn}>
-          <SettingsSkeleton />
+      <div className="flex h-full min-h-0 flex-col">
+        <div className={pageRhythm.workbenchHeader}>{settingsHeader}</div>
+        <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchY)}>
+          <div className={pageRhythm.readingColumn}>
+            <SettingsSkeleton />
+          </div>
         </div>
-      </>
+      </div>
     );
   }
 
   if (error || !settings) {
     return (
-      <>
-        <PageHeader
-          title={t('settings.page.title')}
-          description={t('settings.page.description')}
-          descriptionTip={t('settings.page.descriptionTip')}
-        />
-        <div className={pageRhythm.readingColumn}>
-          <ErrorState error={error ?? new Error(t('settings.page.emptyError'))} onRetry={() => void load()} />
+      <div className="flex h-full min-h-0 flex-col">
+        <div className={pageRhythm.workbenchHeader}>{settingsHeader}</div>
+        <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchY)}>
+          <div className={pageRhythm.readingColumn}>
+            <ErrorState error={error ?? new Error(t('settings.page.emptyError'))} onRetry={() => void load()} />
+          </div>
         </div>
-      </>
+      </div>
     );
   }
 
   return (
-    <>
-      <PageHeader
-        title={t('settings.page.title')}
-        description={t('settings.page.description')}
-        descriptionTip={t('settings.page.descriptionTip')}
-      />
-
-      <Tabs value={tab} onValueChange={setTab}>
+    <Tabs value={tab} onValueChange={setTab} className="flex h-full min-h-0 flex-col">
+      <div className={pageRhythm.workbenchHeader}>
+        {settingsHeader}
         <div className={pageRhythm.chrome}>
           <TabsList>
             <TabsTrigger value="preferences">{t('settings.page.tabPreferences')}</TabsTrigger>
@@ -241,42 +242,48 @@ export default function SettingsPage({
             </TabsTrigger>
           </TabsList>
         </div>
+      </div>
 
-        <div className={pageRhythm.readingColumn}>
-          <TabsContent value="preferences">
-            <PreferencesPanel
-              settings={settings}
-              patch={patch}
-              setSettings={setSettings}
-              committedThemeRef={committedThemeRef}
-              committedLanguageRef={committedLanguageRef}
-            />
-          </TabsContent>
-
-          <TabsContent value="local">
-            <LocalPanel
-              settings={settings}
-              patch={patch}
-              setSettings={setSettings}
-            />
-          </TabsContent>
-
-          <TabsContent value="backups">
+      <div className={cn('min-h-0 flex-1', tab === 'backups' ? 'overflow-hidden' : 'overflow-y-auto')}>
+        {tab === 'backups' ? (
+          <TabsContent value="backups" className="h-full min-h-0">
             <BackupsPanel />
           </TabsContent>
+        ) : (
+          <div className={cn(pageRhythm.workbenchX, pageRhythm.workbenchY)}>
+            <div className={pageRhythm.readingColumn}>
+              <TabsContent value="preferences">
+                <PreferencesPanel
+                  settings={settings}
+                  patch={patch}
+                  setSettings={setSettings}
+                  committedThemeRef={committedThemeRef}
+                  committedLanguageRef={committedLanguageRef}
+                />
+              </TabsContent>
 
-          <TabsContent value="about">
-            <AboutPanel
-              settings={settings}
-              pendingUpdate={pendingUpdate}
-              checking={checking}
-              installing={installing}
-              checkUpdate={checkUpdate}
-              installUpdate={installUpdate}
-            />
-          </TabsContent>
-        </div>
-      </Tabs>
-    </>
+              <TabsContent value="local">
+                <LocalPanel
+                  settings={settings}
+                  patch={patch}
+                  setSettings={setSettings}
+                />
+              </TabsContent>
+
+              <TabsContent value="about">
+                <AboutPanel
+                  settings={settings}
+                  pendingUpdate={pendingUpdate}
+                  checking={checking}
+                  installing={installing}
+                  checkUpdate={checkUpdate}
+                  installUpdate={installUpdate}
+                />
+              </TabsContent>
+            </div>
+          </div>
+        )}
+      </div>
+    </Tabs>
   );
 }
