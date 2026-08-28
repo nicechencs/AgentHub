@@ -64,9 +64,22 @@ impl AdapterBridgeService {
             protocol,
             context_window_tokens,
         ) = openai_source_upstream(self, &rule, request.source_kind, source_id);
+        let leftover_incomplete = existing_provider.as_ref().is_some_and(|provider| {
+            validate_generated_provider(provider, &profile, profile.local_port).is_err()
+                || local_bearer_from_provider(provider).is_err()
+        });
+        if leftover_incomplete {
+            tracing::warn!(
+                target: "core.adapter",
+                op = "prepare",
+                profile_id = %profile.id,
+                "本机路由配置不完整，正在重建"
+            );
+        }
         let (generated_provider_exists, generated_provider_is_current) =
-            if let Some(provider) = existing_provider.as_ref() {
-                validate_generated_provider(provider, &profile, profile.local_port)?;
+            if leftover_incomplete {
+                (true, false)
+            } else if let Some(provider) = existing_provider.as_ref() {
                 (
                     true,
                     provider_matches_current_projection(
@@ -81,16 +94,24 @@ impl AdapterBridgeService {
                 (false, false)
             };
 
-        if profile.status == AdapterProfileStatus::NeedsAttention {
+        if profile.status == AdapterProfileStatus::NeedsAttention || leftover_incomplete {
             profile.status = AdapterProfileStatus::Applying;
             profile.last_error_code = None;
+            if leftover_incomplete {
+                // Leftover port may belong to another live route. Rebind.
+                profile.local_port = None;
+            }
             profile.updated_at = now();
             profile = self.profiles.update(&profile)?;
         }
 
-        let local_bearer = match existing_provider.as_ref() {
-            Some(provider) => local_bearer_from_provider(provider)?,
-            None => generate_local_bearer()?,
+        let local_bearer = if leftover_incomplete {
+            generate_local_bearer()?
+        } else {
+            match existing_provider.as_ref() {
+                Some(provider) => local_bearer_from_provider(provider)?,
+                None => generate_local_bearer()?,
+            }
         };
         let material = self.attach_route_index(
             AdapterBridgeRuntimeMaterial {

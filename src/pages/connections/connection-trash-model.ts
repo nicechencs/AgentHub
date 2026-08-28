@@ -38,7 +38,10 @@ function isInternalDisplayToken(value: string | undefined | null): boolean {
 }
 
 function isGeneratedId(value: string | undefined | null): boolean {
-  return !!value && GENERATED_ID_RE.test(value);
+  if (!value) return false;
+  const text = value.trim();
+  if (/-adapter-|-bridge-/i.test(text)) return true;
+  return false;
 }
 
 function providerLooksLoopback(provider: Provider | undefined): boolean {
@@ -93,22 +96,40 @@ function localRouteTitle(t?: TranslateFn): string {
   return t ? t('kind.route.localRoute') : '本机路由';
 }
 
-/** Recycle-bin title: generated/bridge/mask-only rows become 本机路由 · identity. */
+function trashHost(item: ConnectionTrashItem): string | undefined {
+  const endpoint = trashItemEndpoint(item);
+  if (!endpoint) return undefined;
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return endpoint;
+  }
+}
+
+function maskOnlyIdentity(item: ConnectionTrashItem): string | undefined {
+  const last4 = trashItemSecretTail(item);
+  const host = trashHost(item);
+  if (last4 && host) return `末尾 ${last4} · ${host}`;
+  if (last4) return `末尾 ${last4}`;
+  if (host) return host;
+  return undefined;
+}
+
+/** Recycle-bin title: generated bridges become 本机路由 · identity; mask-only API keys show last4/host. */
 export function humanizeTrashLabel(item: ConnectionTrashItem, t?: TranslateFn): string {
+  const identity = sourceIdentity(item);
+  const maskIdentity = maskOnlyIdentity(item);
+  if (isMaskOnlyLabel(item.label) && !isGeneratedTrashItem(item)) {
+    return identity || maskIdentity || 'API Key';
+  }
   if (!isGeneratedTrashItem(item) && !isMaskOnlyLabel(item.label)) return item.label;
   const title = localRouteTitle(t);
-  const identity = sourceIdentity(item);
-  const last4 = trashItemSecretTail(item);
   if (identity) return `${title} · ${identity}`;
+  if (maskIdentity) return `${title} · ${maskIdentity}`;
+  const last4 = trashItemSecretTail(item);
   if (last4) return `${title} · 末尾 ${last4}`;
-  const endpoint = trashItemEndpoint(item);
-  if (endpoint) {
-    try {
-      return `${title} · ${new URL(endpoint).host}`;
-    } catch {
-      return `${title} · ${endpoint}`;
-    }
-  }
+  const host = trashHost(item);
+  if (host) return `${title} · ${host}`;
   return title;
 }
 
@@ -166,9 +187,8 @@ function groupingKeys(item: ConnectionTrashItem): string[] {
   if (last4 && host) {
     keys.push(`ident:${item.agentId}:${item.kind}:${last4}:${host}`);
   }
-  if (!isGeneratedTrashItem(item)) return keys;
-  // Same grok-live-* id may collapse a generated bridge across agents.
-  // Do not also union by bare email — the connections trash list is global.
+  // Same grok-live-* id may collapse a leftover API Key with a generated
+  // bridge across agents. Do not also union by bare email.
   for (const live of liveAccountKeys(item)) keys.push(`live:${live}`);
   return keys;
 }

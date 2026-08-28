@@ -73,6 +73,31 @@ pub fn live_active_provider_is_bridge_leftover() -> bool {
     })
 }
 
+/// True when live Codex still has an API Key `model_provider` pointer.
+///
+/// Official ChatGPT OAuth uses `auth.json`. Any active `model_provider` is a
+/// second live source and wins over the oauth grant (OpenRouter `env_key`,
+/// custom relays, leftover 本机路由).
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn live_oauth_has_competing_api_key_pointer() -> bool {
+    agent_home(AgentId::Codex).ok().is_some_and(|home| {
+        std::fs::read_to_string(home.join("config.toml"))
+            .ok()
+            .is_some_and(|text| toml_has_competing_api_key_pointer(&text))
+    })
+}
+
+/// True when this TOML still points Codex at an API Key provider.
+pub fn toml_has_competing_api_key_pointer(content: &str) -> bool {
+    let Ok(doc) = content.parse::<DocumentMut>() else {
+        return false;
+    };
+    doc.get("model_provider")
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .is_some_and(|slug| !slug.is_empty())
+}
+
 /// Remove AgentHub leftover keys. Returns whether the document changed.
 ///
 /// Bridge slugs may already be empty while a leftover `grok-*` / `claude-*` /
