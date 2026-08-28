@@ -19,6 +19,7 @@ import {
   type ProviderFormVars,
 } from '@/lib/provider-detect';
 import {
+  AUTH_OPENAI_API_KEY_STORAGE,
   parseJsonConfigBase,
   projectValuesToSchema,
   resolveSavePath,
@@ -60,6 +61,23 @@ const TEST_CLAUDE_SCHEMA: AgentConfigSchemaDto = {
       label: 'Context window',
       valueType: { kind: 'enum', options: ['auto', '200000', '1048576'] },
     },
+  ],
+};
+
+const TEST_CODEX_SCHEMA: AgentConfigSchemaDto = {
+  agentKey: 'codex',
+  schemaVersion: 1,
+  nativeFormat: 'toml',
+  relativePath: 'config.toml',
+  fields: [
+    {
+      key: 'apiKey',
+      label: 'API Key',
+      valueType: { kind: 'secret' },
+      secret: true,
+      secretStorage: AUTH_OPENAI_API_KEY_STORAGE,
+    },
+    { key: 'model', label: 'Model', valueType: { kind: 'string' } },
   ],
 };
 
@@ -521,6 +539,7 @@ describe('secret unchanged semantics', () => {
     const result = await runProviderSaveFlow(
       baseInput({
         agentId: 'codex',
+        configSchema: TEST_CODEX_SCHEMA,
         schemaStatus: 'ready',
         isEdit: true,
         existing,
@@ -567,6 +586,7 @@ describe('secret unchanged semantics', () => {
     const result = await runProviderSaveFlow(
       baseInput({
         agentId: 'codex',
+        configSchema: TEST_CODEX_SCHEMA,
         schemaStatus: 'ready',
         isEdit: true,
         existing,
