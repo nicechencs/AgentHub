@@ -610,13 +610,14 @@ fn expand_grok_auth_splits_nested_oauth_slots() {
 }
 
 #[test]
-fn expand_grok_bundle_stays_single_api_key_snapshot() {
+fn expand_grok_bundle_splits_oauth_people_and_api_key() {
     let snapshot = LiveAccount {
         agent: AgentId::Grok,
         kind: AccountKind::ApiKey,
         credentials: serde_json::json!({
             "format": "grok_bundle",
             "api_key": "xai-file-key",
+            "content": "[models]\ndefault = \"grok\"\n\n[model.\"grok\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://relay.example/v1\"\napi_key = \"xai-file-key\"\napi_backend = \"responses\"\n\n[mcp_servers.echo]\ncommand = \"echo\"\n",
             "auth": {
                 "https://auth.x.ai::client": {
                     "email": "a@example.com",
@@ -636,9 +637,91 @@ fn expand_grok_bundle_stays_single_api_key_snapshot() {
         extra: serde_json::json!({ "source": "config.toml+auth.json" }),
     };
     let slots = expand_grok_auth_to_live_accounts(&snapshot);
-    assert_eq!(slots.len(), 1);
-    assert_eq!(slots[0].kind, AccountKind::ApiKey);
-    assert_eq!(slots[0].credentials["format"], "grok_bundle");
+    assert_eq!(slots.len(), 3);
+    let oauth: Vec<_> = slots
+        .iter()
+        .filter(|row| row.kind == AccountKind::Oauth)
+        .collect();
+    let keys: Vec<_> = slots
+        .iter()
+        .filter(|row| row.kind == AccountKind::ApiKey)
+        .collect();
+    assert_eq!(oauth.len(), 2);
+    assert_eq!(keys.len(), 1);
+    assert_eq!(keys[0].credentials["format"], "api_key");
+    assert_eq!(keys[0].credentials["api_key"], "xai-file-key");
+    assert_eq!(keys[0].credentials["base_url"], "https://relay.example/v1");
+    assert_eq!(keys[0].credentials["api_backend"], "responses");
+    assert!(keys[0].credentials["content"]
+        .as_str()
+        .unwrap()
+        .contains("[mcp_servers.echo]"));
+    assert!(!keys[0].credentials.to_string().contains("rt-1"));
+}
+
+#[test]
+fn apply_api_key_overlay_keeps_mcp_and_writes_model_fields() {
+    let _guard = GROK_HOME_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let dir = tempdir().unwrap();
+    let prev = std::env::var_os("GROK_HOME");
+    std::env::set_var("GROK_HOME", dir.path());
+    fs::write(
+        dir.path().join("config.toml"),
+        r#"[models]
+default = "grok"
+
+[model."grok"]
+model = "old-model"
+base_url = "https://old.example/v1"
+
+[mcp_servers.echo]
+command = "echo"
+"#,
+    )
+    .unwrap();
+    let result = GrokAdapter.apply_account(&LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: serde_json::json!({
+            "format": "api_key",
+            "api_key": "xai-overlay-key",
+            "base_url": "https://relay.example/v1",
+            "model": "grok-4.5",
+            "alias": "grok",
+            "api_backend": "responses",
+            "context_window": 500000,
+            "content": "ignored-when-live-exists"
+        }),
+        label_hint: Some("API Key".into()),
+        extra: serde_json::json!({ "source": "config.toml" }),
+    });
+    let text = fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    match prev {
+        Some(value) => std::env::set_var("GROK_HOME", value),
+        None => std::env::remove_var("GROK_HOME"),
+    }
+    result.unwrap();
+    assert!(text.contains("xai-overlay-key"));
+    assert!(text.contains("https://relay.example/v1"));
+    assert!(text.contains("grok-4.5"));
+    assert!(text.contains("api_backend = \"responses\""));
+    assert!(text.contains("context_window = 500000"));
+    assert!(text.contains("[mcp_servers.echo]"));
+    assert!(text.contains("command = \"echo\""));
+}
+
+#[test]
+fn live_backup_paths_include_mcp_credentials() {
+    let paths = GrokAdapter.live_backup_paths();
+    let names: Vec<String> = paths
+        .iter()
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect();
+    assert!(names.iter().any(|n| n == "config.toml"));
+    assert!(names.iter().any(|n| n == "auth.json"));
+    assert!(names.iter().any(|n| n == "mcp_credentials.json"));
 }
 
 #[test]

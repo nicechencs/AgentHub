@@ -997,6 +997,172 @@ fn delete_account_moves_to_trash_and_restore_does_not_reactivate() {
     assert!(conn.list_trash(Some(AgentId::Claude)).unwrap().is_empty());
 }
 
+fn grok_mixed_account(id: &str, current: bool) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: "API Key".into(),
+        credentials: json!({
+            "format": "grok_bundle",
+            "api_key": "xai-file-key-12345678",
+            "content": "[model.\"grok\"]\napi_key = \"xai-file-key-12345678\"\n",
+            "auth": {
+                "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+                    "email": "a@example.com",
+                    "refresh_token": "rt-oauth-restore",
+                    "access_token": "at-oauth-restore"
+                }
+            }
+        }),
+        extra: json!({ "source": "config.toml+auth.json" }),
+        status: "active".into(),
+        is_current: current,
+        created_at: "t1".into(),
+        updated_at: "t1".into(),
+    }
+}
+
+#[test]
+fn restore_mixed_grok_trash_splits_oauth_and_api_key() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let created = accounts
+        .create(&grok_mixed_account("grok-mixed", true))
+        .unwrap();
+
+    conn.delete_account(&created.id, AgentId::Grok).unwrap();
+    let trash = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    conn.restore_trash(&trash[0].id).unwrap();
+
+    let restored = accounts.list(Some(AgentId::Grok)).unwrap();
+    assert_eq!(restored.len(), 2);
+    assert!(restored.iter().all(|row| !row.is_current));
+    let oauth = restored
+        .iter()
+        .find(|row| row.kind == AccountKind::Oauth)
+        .expect("oauth");
+    let key = restored
+        .iter()
+        .find(|row| row.kind == AccountKind::ApiKey)
+        .expect("api key");
+    assert_eq!(oauth.id, created.id);
+    assert_eq!(oauth.credentials["format"], "auth_json");
+    assert!(!oauth
+        .credentials
+        .to_string()
+        .contains("xai-file-key-12345678"));
+    assert_eq!(key.credentials["format"], "api_key");
+    assert_eq!(key.credentials["api_key"], "xai-file-key-12345678");
+    assert!(conn.list_trash(Some(AgentId::Grok)).unwrap().is_empty());
+}
+
+#[test]
+fn restore_mixed_grok_trash_skips_family_already_in_pool() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    accounts
+        .create(&Account {
+            id: "grok-oauth-existing".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "refresh_token": "rt-oauth-restore",
+                "access_token": "at-oauth-restore",
+                "body": {
+                    "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+                        "refresh_token": "rt-oauth-restore"
+                    }
+                }
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let created = accounts
+        .create(&grok_mixed_account("grok-mixed-2", false))
+        .unwrap();
+    conn.delete_account(&created.id, AgentId::Grok).unwrap();
+    let trash = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    conn.restore_trash(&trash[0].id).unwrap();
+
+    let restored = accounts.list(Some(AgentId::Grok)).unwrap();
+    let oauth: Vec<_> = restored
+        .iter()
+        .filter(|row| row.kind == AccountKind::Oauth)
+        .collect();
+    let keys: Vec<_> = restored
+        .iter()
+        .filter(|row| row.kind == AccountKind::ApiKey)
+        .collect();
+    assert_eq!(oauth.len(), 1);
+    assert_eq!(oauth[0].id, "grok-oauth-existing");
+    assert_eq!(keys.len(), 1);
+    assert_eq!(keys[0].credentials["api_key"], "xai-file-key-12345678");
+}
+
+#[test]
+fn trash_keeps_file_snapshot_but_list_redacts_content() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let secret = "xai-secret-value-here";
+    let created = accounts
+        .create(&Account {
+            id: "grok-snap".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::ApiKey,
+            label: "API Key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": secret,
+                "content": format!("[model.\"grok\"]\napi_key = \"{secret}\"\n"),
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t1".into(),
+            updated_at: "t1".into(),
+        })
+        .unwrap();
+
+    conn.delete_account(&created.id, AgentId::Grok).unwrap();
+    let trash = conn.list_trash(Some(AgentId::Grok)).unwrap();
+    let stored = trash[0].account.as_ref().unwrap();
+    assert!(
+        stored.credentials["content"]
+            .as_str()
+            .unwrap_or("")
+            .contains(secret),
+        "recovery payload must keep the file snapshot"
+    );
+
+    let listed = trash[0].redacted();
+    let listed_content = listed.account.as_ref().unwrap().credentials["content"]
+        .as_str()
+        .unwrap_or("");
+    assert!(!listed_content.contains(secret), "{listed_content}");
+    assert_eq!(
+        listed.account.as_ref().unwrap().credentials["api_key"],
+        "***"
+    );
+
+    conn.restore_trash(&trash[0].id).unwrap();
+    let restored = accounts.get_by_id(&created.id).unwrap().unwrap();
+    assert!(restored.credentials["content"]
+        .as_str()
+        .unwrap_or("")
+        .contains(secret));
+    assert!(!restored.is_current);
+}
+
 #[test]
 fn list_trash_recovers_last4_from_old_unnamed_grok_payload() {
     let (_d, db) = tmp();
@@ -1250,7 +1416,16 @@ fn list_trash_does_not_invent_last4_when_payload_has_no_identity() {
     let listed = conn.list_trash(Some(AgentId::Grok)).unwrap();
     let extra = &listed[0].account.as_ref().unwrap().extra;
     assert!(extra.get("secretTail").is_none(), "{extra}");
-    assert_eq!(listed[0].redacted().account.as_ref().unwrap().extra.get("secretTail"), None);
+    assert_eq!(
+        listed[0]
+            .redacted()
+            .account
+            .as_ref()
+            .unwrap()
+            .extra
+            .get("secretTail"),
+        None
+    );
 }
 
 #[test]

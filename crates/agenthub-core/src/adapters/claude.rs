@@ -73,8 +73,15 @@ impl AgentAdapter for ClaudeAdapter {
     fn read_account(&self) -> Result<LiveAccount> {
         let home = agent_home(AgentId::Claude)?;
         let settings_path = home.join("settings.json");
-        // Prefer explicit API key in settings (provider-style live config).
-        if let Some(account) = read_settings_api_key_account(&settings_path)? {
+        // API key in settings (provider-style). If OAuth is also present, keep
+        // a mixed snapshot; import expands it into two pool rows.
+        if let Some(mut account) = read_settings_api_key_account(&settings_path)? {
+            if let Some(bundle) = read_claude_oauth_bundle()? {
+                if let Some(map) = account.credentials.as_object_mut() {
+                    map.insert("format".into(), serde_json::json!("claude_bundle"));
+                    map.insert("body".into(), bundle.body);
+                }
+            }
             return Ok(account);
         }
 
@@ -130,18 +137,19 @@ impl AgentAdapter for ClaudeAdapter {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         match format {
-            "api_key" => {
-                let key = credentials
-                    .get("api_key")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| AppError::InvalidArg("Claude api_key is required".into()))?;
-                let env_key = credentials
-                    .get("env_key")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("ANTHROPIC_AUTH_TOKEN");
-                let base_url = credentials.get("base_url").and_then(|v| v.as_str());
-                write_claude_settings_token(&home.join("settings.json"), env_key, key, base_url)?;
+            "claude_bundle" => {
+                apply_claude_api_key_credentials(&home.join("settings.json"), &credentials)?;
+                ensure_claude_oauth_file_apply_supported()?;
+                if let Some(body) = credentials.get("body").cloned() {
+                    let path = home.join(".credentials.json");
+                    let mut bytes = serde_json::to_vec_pretty(&body)?;
+                    bytes.push(b'\n');
+                    atomic_write(&path, &bytes)?;
+                }
                 Ok(())
+            }
+            "api_key" => {
+                apply_claude_api_key_credentials(&home.join("settings.json"), &credentials)
             }
             "credentials_json" => {
                 ensure_claude_oauth_file_apply_supported()?;
@@ -432,6 +440,7 @@ fn read_settings_api_key_account(path: &Path) -> Result<Option<LiveAccount>> {
         "format": "api_key",
         "api_key": token,
         "env_key": env_key,
+        "content": serde_json::to_string_pretty(&settings)?,
     });
     if let Some(base_url) = claude_settings_base_url(&settings) {
         credentials["base_url"] = serde_json::json!(base_url);
@@ -443,6 +452,75 @@ fn read_settings_api_key_account(path: &Path) -> Result<Option<LiveAccount>> {
         label_hint: Some(format!("{} (API Key)", mask_secret_preview(&token))),
         extra: serde_json::json!({ "source": "settings.json" }),
     }))
+}
+
+pub(crate) fn expand_claude_live_accounts(snapshot: &LiveAccount) -> Vec<LiveAccount> {
+    if snapshot.agent != AgentId::Claude {
+        return vec![snapshot.clone()];
+    }
+    if snapshot.credentials.get("format").and_then(|v| v.as_str()) != Some("claude_bundle") {
+        return vec![snapshot.clone()];
+    }
+    let mut accounts = Vec::new();
+    if let Some(body) = snapshot.credentials.get("body") {
+        if body.is_object() {
+            accounts.push(LiveAccount {
+                agent: AgentId::Claude,
+                kind: AccountKind::Oauth,
+                credentials: serde_json::json!({
+                    "format": "credentials_json",
+                    "body": body,
+                }),
+                label_hint: snapshot.label_hint.clone(),
+                extra: serde_json::json!({ "source": "credentials" }),
+            });
+        }
+    }
+    if let Some(key) = snapshot
+        .credentials
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let mut cred = snapshot.credentials.clone();
+        if let Some(map) = cred.as_object_mut() {
+            map.insert("format".into(), serde_json::json!("api_key"));
+            map.remove("body");
+        }
+        accounts.push(LiveAccount {
+            agent: AgentId::Claude,
+            kind: AccountKind::ApiKey,
+            credentials: cred,
+            label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
+            extra: serde_json::json!({ "source": "settings.json" }),
+        });
+    }
+    if accounts.is_empty() {
+        vec![snapshot.clone()]
+    } else {
+        accounts
+    }
+}
+
+fn apply_claude_api_key_credentials(path: &Path, credentials: &serde_json::Value) -> Result<()> {
+    let key = credentials
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::InvalidArg("Claude api_key is required".into()))?;
+    let env_key = credentials
+        .get("env_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("ANTHROPIC_AUTH_TOKEN");
+    let base_url = credentials.get("base_url").and_then(|v| v.as_str());
+    if !path.exists() {
+        if let Some(content) = credentials.get("content").and_then(|v| v.as_str()) {
+            if !content.trim().is_empty() {
+                atomic_write(path, content.as_bytes())?;
+            }
+        }
+    }
+    write_claude_settings_token(path, env_key, key, base_url)
 }
 
 fn write_claude_settings_token(

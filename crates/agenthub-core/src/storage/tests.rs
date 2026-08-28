@@ -34,6 +34,21 @@ fn database_open_creates_schema_and_settings_roundtrip() {
         db.load_app_settings().expect("load").close_to_tray,
         "default close_to_tray is true when key missing"
     );
+    assert!(
+        db.load_app_settings()
+            .expect("load copies")
+            .keep_live_file_copies,
+        "default keep_live_file_copies is true"
+    );
+    db.set_setting("keep_live_file_copies", "false")
+        .expect("set copies off");
+    assert!(
+        !db.load_app_settings()
+            .expect("load copies off")
+            .keep_live_file_copies
+    );
+    db.set_setting("keep_live_file_copies", "true")
+        .expect("set copies on");
     db.set_setting("close_to_tray", "false").expect("set close");
     assert!(!db.load_app_settings().expect("load false").close_to_tray);
     db.set_setting("close_to_tray", "true")

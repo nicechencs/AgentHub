@@ -19,6 +19,9 @@ pub struct AppSettings {
     /// have the value only in webview localStorage).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage_collect_interval_min: Option<u32>,
+    /// When true, switch/import keep on-disk copies of live config files.
+    /// Default on; users can turn this off once structured records are enough.
+    pub keep_live_file_copies: bool,
 }
 
 impl Default for AppSettings {
@@ -31,6 +34,7 @@ impl Default for AppSettings {
             skill_market_source: SkillMarketSource::DEFAULT.as_str().into(),
             close_to_tray: true,
             usage_collect_interval_min: None,
+            keep_live_file_copies: true,
         }
     }
 }

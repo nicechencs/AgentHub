@@ -171,6 +171,10 @@ export const en = {
       pageDescription: 'Live config snapshots',
       pageDescriptionTip:
         'A snapshot of the current config is kept after switch, import, or update. You can also back up, restore, or delete. Session logs and full-app export are not included.',
+      keepCopiesLabel: 'Keep live config copies on switch and sync',
+      keepCopiesDescription: 'On by default',
+      keepCopiesTip:
+        'When you switch logins or import the current config, copy each agent’s live files into the backup folder. Turning this off stops stacking history; a switch still keeps one copy for rollback. Manual backups are unchanged.',
       kindAutoSwitch: 'Before switch',
       kindManual: 'Manual',
       titleManual: 'Manual backup',

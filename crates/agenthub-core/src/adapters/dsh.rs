@@ -164,14 +164,27 @@ impl AgentAdapter for DshAdapter {
         let creds = home.join(CREDENTIALS_FILE);
         let key = read_credential_value(&creds, DEFAULT_API_KEY_ENV)?.filter(|v| !v.is_empty());
         let key = key.ok_or_else(|| AppError::NotFound("no live DSH API key to import".into()))?;
+        let patch_path = home.join(HOME_PATCH_FILE);
+        let fields = read_llm_fields(&patch_path).unwrap_or_default();
+        let content = std::fs::read_to_string(&patch_path).unwrap_or_default();
+        let mut cred = json!({
+            "format": "api_key",
+            "api_key": key,
+            "provider": "deepseek",
+        });
+        if !content.is_empty() {
+            cred["content"] = json!(content);
+        }
+        if !fields.model.is_empty() {
+            cred["model"] = json!(fields.model);
+        }
+        if !fields.base_url.is_empty() {
+            cred["base_url"] = json!(fields.base_url);
+        }
         Ok(api_key_live_account(
             AgentId::Dsh,
             &key,
-            json!({
-                "format": "api_key",
-                "api_key": key,
-                "provider": "deepseek",
-            }),
+            cred,
             "API Key",
             json!({
                 "source": "live",
@@ -201,8 +214,36 @@ impl AgentAdapter for DshAdapter {
             key,
         )?;
         let patch = agent_home(AgentId::Dsh)?.join(HOME_PATCH_FILE);
+        if !patch.exists() {
+            if let Some(content) = account
+                .credentials
+                .get("content")
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+            {
+                crate::utils::atomic::atomic_write(&patch, content.as_bytes())?;
+            }
+        }
         let mut fields = read_llm_fields(&patch)?;
         fields.api_key_env = DEFAULT_API_KEY_ENV.to_string();
+        if let Some(model) = account
+            .credentials
+            .get("model")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            fields.model = model.to_string();
+        }
+        if let Some(base) = account
+            .credentials
+            .get("base_url")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            fields.base_url = base.to_string();
+        }
         write_llm_fields(&patch, &fields)
     }
 

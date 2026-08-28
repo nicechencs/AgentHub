@@ -11,7 +11,8 @@ use crate::models::{
 use crate::runtime;
 use crate::utils::atomic::atomic_write;
 use crate::utils::grok_toml::{
-    active_model_alias, ensure_grok_model_shape, EnsureGrokModelShapeOptions,
+    active_model_alias, extract_api_key_overlay, merge_api_key_overlay, overlay_from_credentials,
+    overlay_into_credentials,
 };
 use crate::utils::paths::{agent_home, home_dir};
 use crate::utils::redact::mask_secret_preview;
@@ -94,18 +95,22 @@ impl AgentAdapter for GrokAdapter {
             None
         };
 
+        let config_text = if config_path.exists() {
+            std::fs::read_to_string(&config_path)?
+        } else {
+            String::new()
+        };
         match (api_key.as_deref(), auth_body) {
             (Some(key), Some(body))
                 if !key.is_empty() && !crate::utils::redact::is_unusable_secret(key) =>
             {
+                let mut credentials = grok_api_key_credentials_map(key, &config_text);
+                credentials.insert("format".into(), json!("grok_bundle"));
+                credentials.insert("auth".into(), body);
                 Ok(LiveAccount {
                     agent: AgentId::Grok,
                     kind: AccountKind::ApiKey,
-                    credentials: serde_json::json!({
-                        "format": "grok_bundle",
-                        "api_key": key,
-                        "auth": body,
-                    }),
+                    credentials: Value::Object(credentials),
                     label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
                     extra: grok_api_key_extra("config.toml+auth.json"),
                 })
@@ -116,10 +121,7 @@ impl AgentAdapter for GrokAdapter {
                 Ok(LiveAccount {
                     agent: AgentId::Grok,
                     kind: AccountKind::ApiKey,
-                    credentials: serde_json::json!({
-                        "format": "api_key",
-                        "api_key": key,
-                    }),
+                    credentials: Value::Object(grok_api_key_credentials_map(key, &config_text)),
                     label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
                     extra: grok_api_key_extra("config.toml"),
                 })
@@ -154,22 +156,7 @@ impl AgentAdapter for GrokAdapter {
             .unwrap_or("");
         match format {
             "api_key" => {
-                let key = account
-                    .credentials
-                    .get("api_key")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| AppError::InvalidArg("Grok api_key is required".into()))?;
-                let path = home.join("config.toml");
-                write_grok_api_key(&path, key)?;
-                verify_grok_field(&path, "api_key", key)?;
-                tracing::info!(
-                    module = crate::logging::targets::PROVIDER,
-                    op = "switch_write",
-                    agent = "grok",
-                    path = %path.display(),
-                    "switch_write"
-                );
-                Ok(())
+                apply_grok_api_key_credentials(&home.join("config.toml"), &account.credentials)
             }
             "auth_json" | "" | "oauth" => {
                 let auth_path = home.join("auth.json");
@@ -182,10 +169,7 @@ impl AgentAdapter for GrokAdapter {
                 Ok(())
             }
             "grok_bundle" => {
-                if let Some(key) = account.credentials.get("api_key").and_then(|v| v.as_str()) {
-                    write_grok_api_key(&home.join("config.toml"), key)?;
-                    verify_grok_field(&home.join("config.toml"), "api_key", key)?;
-                }
+                apply_grok_api_key_credentials(&home.join("config.toml"), &account.credentials)?;
                 if let Some(body) = account.credentials.get("auth") {
                     write_verified_json_object(&home.join("auth.json"), body)?;
                 }
@@ -231,6 +215,7 @@ impl AgentAdapter for GrokAdapter {
         if let Ok(home) = agent_home(AgentId::Grok) {
             paths.push(home.join("config.toml"));
             paths.push(home.join("auth.json"));
+            paths.push(home.join("mcp_credentials.json"));
         }
         paths
     }
@@ -468,25 +453,71 @@ fn is_grok_slot_map_object(obj: &Map<String, Value>) -> bool {
             .all(|key| key.contains("auth.x.ai") || key.contains("://") || key == "xai")
 }
 
-/// Expand nested Grok `auth.json` profiles into one LiveAccount per OAuth slot.
+/// Expand a Grok live snapshot into pool rows: one OAuth person per slot,
+/// plus a separate API Key row when a usable key is present.
 ///
-/// `format=grok_bundle` / API-key snapshots stay a single account so OAuth
-/// people are not identity-merged with the API key row.
+/// `format=grok_bundle` is only the on-disk mixed snapshot. Import never
+/// persists that format: it splits into OAuth slots + an `api_key` overlay.
 pub(crate) fn expand_grok_auth_to_live_accounts(snapshot: &LiveAccount) -> Vec<LiveAccount> {
-    if snapshot.agent != AgentId::Grok || snapshot.kind != AccountKind::Oauth {
+    if snapshot.agent != AgentId::Grok {
         return vec![snapshot.clone()];
     }
-    if snapshot.credentials.get("format").and_then(|v| v.as_str()) != Some("auth_json") {
+    let format = snapshot
+        .credentials
+        .get("format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if format == "grok_bundle" {
+        return expand_grok_bundle_snapshot(snapshot);
+    }
+    if snapshot.kind != AccountKind::Oauth || format != "auth_json" {
         return vec![snapshot.clone()];
     }
-    let Some(body) = snapshot.credentials.get("body") else {
-        return vec![snapshot.clone()];
-    };
+    expand_grok_oauth_body(
+        snapshot.credentials.get("body").unwrap_or(&Value::Null),
+        snapshot,
+    )
+}
+
+fn expand_grok_bundle_snapshot(snapshot: &LiveAccount) -> Vec<LiveAccount> {
+    let mut accounts = Vec::new();
+    if let Some(auth) = snapshot.credentials.get("auth") {
+        accounts.extend(expand_grok_oauth_body(auth, snapshot));
+    }
+    if let Some(key) = snapshot
+        .credentials
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|key| !key.is_empty() && !crate::utils::redact::is_unusable_secret(key))
+    {
+        accounts.push(api_key_account_from_bundle(snapshot, key));
+    }
+    if accounts.is_empty() {
+        vec![snapshot.clone()]
+    } else {
+        accounts
+    }
+}
+
+fn expand_grok_oauth_body(body: &Value, snapshot: &LiveAccount) -> Vec<LiveAccount> {
     if !is_grok_slot_map(body) {
-        return vec![snapshot.clone()];
+        if grok_slot_is_oauth(body) {
+            return vec![LiveAccount {
+                agent: AgentId::Grok,
+                kind: AccountKind::Oauth,
+                credentials: json!({
+                    "format": "auth_json",
+                    "body": body,
+                }),
+                label_hint: snapshot.label_hint.clone(),
+                extra: json!({ "source": "auth.json" }),
+            }];
+        }
+        return Vec::new();
     }
     let Some(obj) = body.as_object() else {
-        return vec![snapshot.clone()];
+        return Vec::new();
     };
     let mut keys: Vec<String> = obj.keys().cloned().collect();
     keys.sort();
@@ -500,10 +531,32 @@ pub(crate) fn expand_grok_auth_to_live_accounts(snapshot: &LiveAccount) -> Vec<L
         }
         accounts.push(live_account_for_grok_slot(&key, slot));
     }
-    if accounts.is_empty() {
-        vec![snapshot.clone()]
-    } else {
-        accounts
+    accounts
+}
+
+fn api_key_account_from_bundle(snapshot: &LiveAccount, key: &str) -> LiveAccount {
+    let content = snapshot
+        .credentials
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let mut credentials = grok_api_key_credentials_map(key, content);
+    if content.is_empty() {
+        let overlay = overlay_from_credentials(&snapshot.credentials);
+        overlay_into_credentials(&mut credentials, &overlay);
+    }
+    LiveAccount {
+        agent: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        credentials: Value::Object(credentials),
+        label_hint: Some(format!("{} (API Key)", mask_secret_preview(key))),
+        extra: grok_api_key_extra(
+            snapshot
+                .extra
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("config.toml"),
+        ),
     }
 }
 
@@ -938,16 +991,17 @@ fn grok_auth_json_has_oauth(auth: &Path) -> bool {
     metadata.has_access_token || metadata.has_refresh_token
 }
 
+#[cfg(test)]
 fn ensure_grok_profile<'a>(
     doc: &'a mut DocumentMut,
     alias: &str,
 ) -> Result<&'a mut toml_edit::Table> {
     // Account writers set api_key immediately after ensure; strip root env_key so
     // leftover env pointers cannot shadow the nested registry entry.
-    ensure_grok_model_shape(
+    crate::utils::grok_toml::ensure_grok_model_shape(
         doc,
         alias,
-        EnsureGrokModelShapeOptions {
+        crate::utils::grok_toml::EnsureGrokModelShapeOptions {
             migrate_legacy_api_key: false,
             strip_root_env_key: true,
         },
@@ -1076,6 +1130,62 @@ fn read_grok_inline_field(path: &Path, key: &str) -> Result<Option<String>> {
         .or_else(|| doc.get(key).and_then(Item::as_str).map(str::to_owned)))
 }
 
+fn grok_api_key_credentials_map(key: &str, config_text: &str) -> Map<String, Value> {
+    let mut map = Map::new();
+    map.insert("format".into(), json!("api_key"));
+    map.insert("api_key".into(), json!(key));
+    if !config_text.is_empty() {
+        map.insert("content".into(), json!(config_text));
+        if let Ok(doc) = config_text.parse::<DocumentMut>() {
+            overlay_into_credentials(&mut map, &extract_api_key_overlay(&doc));
+        }
+    }
+    map
+}
+
+fn apply_grok_api_key_credentials(path: &Path, credentials: &Value) -> Result<()> {
+    let key = credentials
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| AppError::InvalidArg("Grok api_key is required".into()))?;
+    let overlay = overlay_from_credentials(credentials);
+    let snapshot = credentials
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let live = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => snapshot.to_string(),
+        Err(error) => return Err(error.into()),
+    };
+    let base = if live.trim().is_empty() {
+        snapshot
+    } else {
+        live.as_str()
+    };
+    let mut doc = if base.trim().is_empty() {
+        DocumentMut::new()
+    } else {
+        base.parse::<DocumentMut>().map_err(|e| {
+            AppError::InvalidArg(format!("existing Grok config.toml is invalid: {e}"))
+        })?
+    };
+    merge_api_key_overlay(&mut doc, &overlay)?;
+    atomic_write(path, doc.to_string().as_bytes())?;
+    verify_grok_field(path, "api_key", key)?;
+    tracing::info!(
+        module = crate::logging::targets::PROVIDER,
+        op = "switch_write",
+        agent = "grok",
+        path = %path.display(),
+        "switch_write"
+    );
+    Ok(())
+}
+
+#[cfg(test)]
 fn write_grok_api_key(path: &Path, value: &str) -> Result<()> {
     let live = match std::fs::read_to_string(path) {
         Ok(content) => content,

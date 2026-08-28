@@ -17,6 +17,7 @@ const baseSettings: AppSettings = {
   logRetentionDays: 14,
   skillMarketSource: 'auto',
   usageCollectIntervalMin: 30,
+  keepLiveFileCopies: true,
   appVersion: 'test',
 };
 
