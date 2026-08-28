@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::utils::process::apply_no_window;
 
 use serde_json::Value;
 
@@ -111,19 +112,21 @@ impl SkillsShMarket {
         let ua = skills_sh_user_agent();
         let connect = SKILLS_SH_CURL_CONNECT_SECS.to_string();
         let max_time = SKILLS_SH_CURL_MAX_SECS.to_string();
-        let output = Command::new(bin)
-            .args([
-                "-fsSL",
-                "--connect-timeout",
-                &connect,
-                "--max-time",
-                &max_time,
-                "-A",
-                &ua,
-                "-H",
-                "Accept: application/json, text/html;q=0.9,*/*;q=0.8",
-                url,
-            ])
+        let mut cmd = Command::new(bin);
+        cmd.args([
+            "-fsSL",
+            "--connect-timeout",
+            &connect,
+            "--max-time",
+            &max_time,
+            "-A",
+            &ua,
+            "-H",
+            "Accept: application/json, text/html;q=0.9,*/*;q=0.8",
+            url,
+        ]);
+        apply_no_window(&mut cmd);
+        let output = cmd
             .output()
             .map_err(|e| format!("spawn curl failed: {e}"))?;
         if !output.status.success() {
@@ -148,8 +151,10 @@ impl SkillsShMarket {
             timeout = SKILLS_SH_POWERSHELL_TIMEOUT_SECS,
             ua = ua.replace('\'', "''"),
         );
-        let output = Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        let mut cmd = Command::new("powershell.exe");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        apply_no_window(&mut cmd);
+        let output = cmd
             .output()
             .map_err(|e| format!("spawn powershell failed: {e}"))?;
         if !output.status.success() {
@@ -211,11 +216,10 @@ impl SkillsShMarket {
         let tmp = tempfile::tempdir()
             .map_err(|e| AppError::message("skill.market", format!("tempdir failed: {e}")))?;
         let repo = tmp.path().join("repo");
-        let status = Command::new("git")
-            .args(["clone", "--depth", "1", &git_url])
-            .arg(&repo)
-            .status()
-            .map_err(|e| {
+        let mut cmd = Command::new("git");
+        cmd.args(["clone", "--depth", "1", &git_url]).arg(&repo);
+        apply_no_window(&mut cmd);
+        let status = cmd.status().map_err(|e| {
                 AppError::message(
                     "skill.market",
                     format!("git clone failed (is git installed?): {e}"),

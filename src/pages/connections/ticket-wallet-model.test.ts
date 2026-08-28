@@ -475,10 +475,11 @@ describe('ticket detail fields', () => {
     const { advanced } = buildTicketDetailFields(ticket({ id: 'provider:kimi-1' }), {
       endpointMode: 'custom',
       endpointHost: 'https://relay.example.com/v1',
+      endpointUrl: 'https://relay.example.com/v1',
     });
     expect(advanced).toEqual(expect.arrayContaining([
-      { label: '端点', value: '自定义' },
-      { label: '主机', value: 'relay.example.com', mono: true },
+      { label: '端点', value: '自定义端点' },
+      { label: '地址', value: 'https://relay.example.com/v1', mono: true, copyable: true },
       { label: '接口', value: 'Claude' },
     ]));
     const customLabels = advanced.map((field) => field.label);
@@ -525,6 +526,39 @@ describe('ticket detail fields', () => {
     expect(labels).not.toContain('Endpoint');
   });
 
+  it('surfaces subscription, token remaining, and timeline for OAuth logins', () => {
+    const { advanced, timeline, tokenRemaining, diagnostics } = buildTicketDetailFields(
+      ticket({
+        id: 'account:oauth-2',
+        sourceKind: 'account',
+        sourceId: 'oauth-2',
+        agentId: 'claude',
+        label: 'me@example.com',
+        surface: 'claude-subscription',
+        credentialClass: 'oauth',
+        speaks: ['anthropic-messages'],
+        importedFrom: 'claude',
+      }),
+      {
+        subscription: 'Pro',
+        tokenRemainingSec: 7200,
+        lastUsedAt: '2026-08-28T08:00:00.000Z',
+        createdAt: '2026-08-01T10:00:00.000Z',
+        importedFrom: 'claude',
+      },
+    );
+    expect(advanced).toEqual(expect.arrayContaining([
+      { label: '套餐', value: 'Pro' },
+    ]));
+    expect(tokenRemaining).toMatch(/小时|h/i);
+    expect(timeline.map((f) => f.label)).toEqual(
+      expect.arrayContaining(['最近使用', '添加时间']),
+    );
+    expect(diagnostics.map((f) => f.label)).toEqual(
+      expect.arrayContaining(['导入来源', '记录 ID']),
+    );
+  });
+
   it('classifies mytokens.cc custom remote as a recognized API Key, not 未识别', () => {
     const row = ticket({
       id: 'provider:codex-mytokens',
@@ -542,14 +576,14 @@ describe('ticket detail fields', () => {
       endpointHost: 'https://mytokens.cc/v1',
     });
     expect(advanced).toEqual(expect.arrayContaining([
-      { label: '端点', value: '自定义' },
-      { label: '主机', value: 'mytokens.cc', mono: true },
+      { label: '端点', value: '自定义端点' },
+      { label: '地址', value: 'mytokens.cc', mono: true, copyable: true },
       { label: '接口', value: 'Chat' },
     ]));
     expect(advanced.map((field) => field.value).join(' ')).not.toContain('未识别');
   });
 
-  it('shows 端点 / 主机 for custom API Key, and skips 接口 when speaks is empty', () => {
+  it('shows 端点 / 地址 for custom API Key, and skips 接口 when speaks is empty', () => {
     const { advanced } = buildTicketDetailFields(
       ticket({
         id: 'provider:unk-1',
@@ -566,8 +600,8 @@ describe('ticket detail fields', () => {
       },
     );
     expect(advanced).toEqual([
-      { label: '端点', value: '自定义' },
-      { label: '主机', value: 'relay.example.com', mono: true },
+      { label: '端点', value: '自定义端点' },
+      { label: '地址', value: 'relay.example.com', mono: true, copyable: true },
     ]);
   });
 
@@ -588,8 +622,8 @@ describe('ticket detail fields', () => {
       },
     );
     expect(advanced).toEqual(expect.arrayContaining([
-      { label: '端点', value: '自定义' },
-      { label: '主机', value: 'openrouter.ai', mono: true },
+      { label: '端点', value: '自定义端点' },
+      { label: '地址', value: 'openrouter.ai', mono: true, copyable: true },
       { label: '接口', value: 'Chat' },
     ]));
     expect(advanced.map((field) => field.value).join(' ')).not.toContain('anthropic-messages');
@@ -615,7 +649,7 @@ describe('ticket detail fields', () => {
     );
     expect(advanced).toEqual(expect.arrayContaining([
       { label: '接口', value: 'Chat' },
-      { label: '主机', value: 'openrouter.ai', mono: true },
+      { label: '地址', value: 'openrouter.ai', mono: true, copyable: true },
     ]));
     expect(advanced).toEqual(expect.arrayContaining([
       { label: '本机路由', value: 'Claude', mono: true },
