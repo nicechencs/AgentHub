@@ -4,7 +4,7 @@ description: agenthub-cli 的当前命令树、全局参数、退出码和数据
 type: reference
 audience: user-and-contributor
 status: current
-updated: 2026-08-27
+updated: 2026-08-29
 ---
 
 # CLI 与配置参考
@@ -24,9 +24,9 @@ CLI 二进制名称为 `agenthub`，实现位于 `crates/agenthub-cli`，业务�
 | `-v`, `--verbose` | 本次进程文件/控制台至少使用 debug |
 | `-q`, `--quiet` | 等同 `--output quiet` |
 
-当前 Agent id 由 `AgentId::ALL` 提供，通常包含 `claude`、`codex`、`kimi`、`grok`、`pi`、`workbuddy`、`cursor`、`dsh`。以 `agenthub agent list` 和 CLI help 为准。
+当前 Agent id 由 `AgentId::ALL` 提供，通常包含 `claude`、`codex`、`kimi`、`grok`、`pi`、`workbuddy`、`cursor`、`dsh`、`zcode`。以 `agenthub agent list` 和 CLI help 为准。
 
-**dev 线 UI store-stamp**（`agent_visibility.json` 的 `store_stamp_version`）默认软隐藏 **Cursor Agent**：侧栏、Connections、Chat 等页面不展示，CLI/detect 仍可看到；Agents 管理页可取消隐藏。release 线不受此 stamp 影响。
+**UI store-stamp**（`agent_visibility.json` 的 `store_stamp_version`，当前为 `1`）默认软隐藏 **Cursor Agent**：侧栏、Connections、Chat 等页面不展示，CLI/detect 仍可看到；Agents 管理页可取消隐藏。这是界面偏好，在进程启动时写入用户数据目录，不是卸载。
 
 ## 命令树
 
@@ -85,13 +85,14 @@ SQLite 是 AgentHub 业务真源，live 文件由各 Agent adapter 管理。写 
 
 ## `config` 白名单
 
-可写 key：`theme`、`language`、`log_level`、`log_retention_days`、`skill_market_source`、`close_to_tray`、`usage_collect_interval_min`。只读 key：`app_version`。
+可写 key：`theme`、`language`、`log_level`、`log_retention_days`、`skill_market_source`、`close_to_tray`、`usage_collect_interval_min`、`keep_live_file_copies`。只读 key：`app_version`。
 
 - `log_level`：`error|warn|info|debug|trace`，下次进程启动生效。
 - `log_retention_days`：`1..=365`，默认 14，下次启动清理。
 - `skill_market_source`：`auto|skills.sh|skillhub.cn`。
 - `close_to_tray`：布尔值。
 - `usage_collect_interval_min`：`0..=1440`；0 表示仅手动。
+- `keep_live_file_copies`：布尔值，默认 `true`。切换或导入当前配置时，把各家本机配置文件原样拷到备份目录；关掉后不再堆积历史副本，当次切换仍留一份以便失败回滚。手动备份不受影响。
 - `data_dir` 只能用 `--data-dir` 或 `AGENTHUB_HOME` 定位，不能用 `config set` 修改。
 
 ## 常见例子

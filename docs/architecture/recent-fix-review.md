@@ -1,12 +1,14 @@
 ---
 title: 最近提交修复复核
 type: architecture
-status: current
+status: historical
 owner: maintainers
 updated: 2026-08-26
 ---
 
 # 最近提交修复复核
+
+本页是 2026-08-26 的一次性复核记录，不是现行契约。当前实现事实见 [STATUS](../STATUS.md)。
 
 ## 结论
 

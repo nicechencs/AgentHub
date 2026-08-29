@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: adapter, mock, and route contributors
 source-of-truth: crates/agenthub-core AdapterRouteService, src/dev/mocks/adapter, and adapter-capability-contract.json
-updated: 2026-08-25
+updated: 2026-08-29
 ---
 
 # Adapter 路线内核与查表投影

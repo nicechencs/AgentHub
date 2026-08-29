@@ -4,7 +4,7 @@ description: AgentHub 进程内 Gateway 的 loopback HTTP endpoint、鉴权和�
 type: reference
 audience: integrator
 status: current
-updated: 2026-08-27
+updated: 2026-08-29
 ---
 
 # 本机 Routes API
@@ -37,7 +37,9 @@ Authorization: Bearer <local-token>
 | `POST` | `/v1/messages` | Anthropic Messages surface |
 | `POST` | `/v1/chat/completions`、`/chat/completions` | OpenAI Chat Completions surface |
 
-`/models` 是兼容别名。对话请求使用带 `/v1` 的路径。
+`/models` 与 `/chat/completions` 是兼容别名。其余对话路径使用 `/v1/messages`、`/v1/responses`、`/v1/chat/completions`。
+
+目标客户端：Claude 用 `/v1/messages`；Codex 和 Grok 用 `/v1/responses`（配置里写本机令牌，按 API Key 方式）；Kimi / DSH 用 `/v1/chat/completions`。
 
 ## Models 响应
 
@@ -62,10 +64,15 @@ Authorization: Bearer <local-token>
 | Messages | OpenAI Chat Completions | 转换请求和响应 |
 | Responses | Codex/Grok Responses | 同协议 `/responses` |
 | Responses | OpenAI Chat Completions | 转换请求和响应 |
+| Responses | Anthropic Messages | 转换（Anthropic Key → Codex） |
+| Messages | xAI Responses | 转换（Grok 订阅 → Claude） |
 | Chat Completions | OpenAI Chat Completions | 同协议 `chat/completions` |
+| Chat Completions | Codex Responses | 转换（Codex 订阅 → Kimi / DSH） |
 | 任一支持 surface | 其它已注册协议 | 按 Route profile 的转换器处理 |
 
-请求路径和 Route surface 不匹配时，认证成功后返回 `404`，日志 code 为 `surface_mismatch`。
+Codex 与 Grok 都使用 `POST /v1/responses`。具体 Responses 格式（Codex 或 Grok）跟这条路由一起保存，由本机令牌选中，**不**根据请求正文或 URL 猜测。Messages 与 Chat Completions 不会继承这份 Responses 格式。接到 Codex 时写入 `wire_api = "responses"` 和 `preferred_auth_method = "apikey"`，本机令牌进 `auth.json` 的 `OPENAI_API_KEY`；接到 Grok 时写入 `api_backend = "responses"`，本机令牌进 `config.toml` 的 `api_key`。这与 Codex↔Grok 双向转换开关无关。
+
+请求路径和 Route surface 不匹配时，认证成功后返回 `404`，日志 code 为 `surface_mismatch`。`feature.codex_ingress_grok_upstream` / `feature.grok_ingress_codex_upstream` 默认关闭；关闭时 Responses 按身份转发。打开且当前来源/目标边未授权时，返回 `503`，日志 code 为 `route_unavailable`，不会退回直通。已保存的池 surface 或 Responses 格式与当前端点不一致时，准备启动失败，不会带着错误格式启动。
 
 ## 错误码
 
@@ -74,11 +81,14 @@ Authorization: Bearer <local-token>
 | `400` | `invalid_request` / `ProtocolError.code` | JSON、字段或协议不合法 |
 | `400` | `listed_models_reject` | model 不在用户提供的名单 |
 | `400` | `model_unavailable` | 没有正在运行的 Route 可提供该 model |
+| `400` | `continuation_unavailable` | 需要同一登录才能继续的对话，原成员已不可用 |
 | `401` | `invalid_api_key` | 本机令牌无效 |
 | `404` | `surface_mismatch`（日志） | 请求 surface 与 Route 不匹配；响应 body 为空 404 |
+| `408` | `request_timeout` | 请求体读取超时 |
 | `429` | `bridge_overloaded` | 本机并发门限已满，并带 `Retry-After: 1` |
 | `503` | `bridge_stopping` | listener 正在停止 |
 | `503` | `pool_exhausted` | 默认池当前没有可服务该请求的成员；可能带 `Retry-After` |
+| `503` | `route_unavailable` | 已打开 Codex↔Grok Responses 转换，但当前边未授权；不会退回直通 |
 | `502` | `upstream_error` | 上游不可用、认证失败或返回无效响应 |
 | `504` | `upstream_timeout` | 上游非流式请求超时 |
 
