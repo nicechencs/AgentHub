@@ -1,4 +1,5 @@
 use super::*;
+use crate::bridge::{DownstreamResponsesProfile, ResponsesDialect};
 use crate::models::{map_edge_model, AdapterModelMapResult, AdapterSourceProduct, AgentId};
 
 fn lead_codex_official(profile_id: &str) -> ModelSwitchCandidate {
@@ -6,6 +7,7 @@ fn lead_codex_official(profile_id: &str) -> ModelSwitchCandidate {
         profile_id: profile_id.into(),
         source: AdapterSourceProduct::CodexChatGptSubscription,
         target: AgentId::Claude,
+        downstream_responses_profile: None,
         custom_openai_compat: false,
         same_surface: true,
         running: true,
@@ -18,6 +20,7 @@ fn openrouter_claude(profile_id: &str, running: bool) -> ModelSwitchCandidate {
         profile_id: profile_id.into(),
         source: AdapterSourceProduct::OpenaiApi,
         target: AgentId::Claude,
+        downstream_responses_profile: None,
         custom_openai_compat: true,
         same_surface: true,
         running,
@@ -36,6 +39,7 @@ fn cand(
         profile_id: id.into(),
         source,
         target,
+        downstream_responses_profile: None,
         custom_openai_compat: custom,
         same_surface: true,
         running,
@@ -89,6 +93,7 @@ fn mapped_lead_stays() {
         profile_id: "official-codex".into(),
         source: AdapterSourceProduct::OpenaiApi,
         target: AgentId::Codex,
+        downstream_responses_profile: None,
         custom_openai_compat: false,
         same_surface: true,
         running: true,
@@ -139,6 +144,7 @@ fn does_not_switch_across_target_or_surface() {
         profile_id: "or-grok".into(),
         source: AdapterSourceProduct::OpenaiApi,
         target: AgentId::Grok,
+        downstream_responses_profile: None,
         custom_openai_compat: true,
         same_surface: true,
         running: true,
@@ -148,6 +154,7 @@ fn does_not_switch_across_target_or_surface() {
         profile_id: "or-claude-chat".into(),
         source: AdapterSourceProduct::OpenaiApi,
         target: AgentId::Claude,
+        downstream_responses_profile: None,
         custom_openai_compat: true,
         same_surface: false,
         running: true,
@@ -174,6 +181,7 @@ fn kimi_unknown_model_fail_closed_without_alternate() {
         profile_id: "kimi-codex".into(),
         source: AdapterSourceProduct::KimiCodeMembership,
         target: AgentId::Codex,
+        downstream_responses_profile: None,
         custom_openai_compat: false,
         same_surface: true,
         running: true,
@@ -195,6 +203,7 @@ fn custom_empty_listed_follows_downstream_model() {
         profile_id: "or-claude".into(),
         source: AdapterSourceProduct::OpenaiApi,
         target: AgentId::Claude,
+        downstream_responses_profile: None,
         custom_openai_compat: true,
         same_surface: true,
         running: true,
@@ -212,6 +221,7 @@ fn custom_listed_models_accept_case_insensitive() {
         profile_id: "or-claude".into(),
         source: AdapterSourceProduct::OpenaiApi,
         target: AgentId::Claude,
+        downstream_responses_profile: None,
         custom_openai_compat: true,
         same_surface: true,
         running: true,
@@ -258,6 +268,49 @@ fn model_switch_picks_running_openrouter_when_lead_misses() {
     );
     assert_eq!(
         decide_model_switch(&lead, "stealth/ox-alpha", &[stopped]),
+        ModelSwitchDecision::Unavailable
+    );
+}
+
+#[test]
+fn model_switch_rejects_alternate_with_different_downstream_profile() {
+    let lead = ModelSwitchCandidate {
+        profile_id: "codex-lead".into(),
+        source: AdapterSourceProduct::OpenaiApi,
+        target: AgentId::Codex,
+        downstream_responses_profile: Some(DownstreamResponsesProfile::new(
+            ResponsesDialect::Codex,
+        )),
+        // Keep the lead genuinely unable to serve the probe model. A custom
+        // lead with an empty listing intentionally accepts every model.
+        custom_openai_compat: false,
+        same_surface: true,
+        running: true,
+        listed_models: vec![],
+    };
+    let grok_profile = ModelSwitchCandidate {
+        profile_id: "grok-alternate".into(),
+        source: AdapterSourceProduct::OpenaiApi,
+        target: AgentId::Codex,
+        downstream_responses_profile: Some(DownstreamResponsesProfile::new(ResponsesDialect::Grok)),
+        custom_openai_compat: true,
+        same_surface: true,
+        running: true,
+        listed_models: vec![],
+    };
+    let same_profile = ModelSwitchCandidate {
+        profile_id: "codex-alternate".into(),
+        downstream_responses_profile: lead.downstream_responses_profile,
+        ..grok_profile.clone()
+    };
+    assert_eq!(
+        decide_model_switch(&lead, "stealth/ox-alpha", &[same_profile]),
+        ModelSwitchDecision::SwitchTo {
+            profile_id: "codex-alternate".into(),
+        }
+    );
+    assert_eq!(
+        decide_model_switch(&lead, "stealth/ox-alpha", &[grok_profile]),
         ModelSwitchDecision::Unavailable
     );
 }

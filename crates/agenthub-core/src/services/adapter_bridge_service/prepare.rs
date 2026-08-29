@@ -129,6 +129,9 @@ impl AdapterBridgeService {
                 local_surface: rule.local_surface,
                 source: rule.source,
                 target_agent: rule.target_agent,
+                downstream_dialect: crate::models::RouteDownstreamDialect::for_agent(
+                    rule.target_agent,
+                ),
                 upstream_auth,
                 local_bearer,
                 route_index: None,
@@ -138,7 +141,7 @@ impl AdapterBridgeService {
                 schedule_policy: Default::default(),
             },
             &profile,
-        );
+        )?;
         Ok(AdapterBridgePrepared {
             material,
             profile,

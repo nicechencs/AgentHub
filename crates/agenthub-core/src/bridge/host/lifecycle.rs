@@ -26,6 +26,9 @@ use super::{
     DRAIN_TIMEOUT, FORCE_CANCEL_GRACE, MAX_IN_FLIGHT_REQUESTS_PER_PROFILE, TASK_POLL_INTERVAL,
 };
 
+#[cfg(test)]
+mod tests;
+
 /// Owns the in-process loopback gateway. A host belongs to one desktop-process lifetime: once
 /// [`Self::shutdown`] begins, its closing latch rejects all further starts.
 #[derive(Clone)]
@@ -661,6 +664,7 @@ fn same_spec(left: &BridgeStartSpec, right: &BridgeStartSpec) -> bool {
         && left.upstream.protocol == right.upstream.protocol
         && left.upstream.local_surface == right.upstream.local_surface
         && left.listed_models == right.listed_models
+        && left.downstream_responses_profile == right.downstream_responses_profile
         && left.multi_account == right.multi_account
         && member_fingerprint(left) == member_fingerprint(right)
         && left.route_index == right.route_index

@@ -1001,7 +1001,9 @@ async fn attach_live_prior_index(
         Err(error) => return Err(map_bridge_host_error(error)),
     };
     with_hub_blocking(hub, move |hub| {
-        Ok(hub.adapter_bridge().attach_route_index(seeded, &profile))
+        hub.adapter_bridge()
+            .attach_route_index(seeded, &profile)
+            .map_err(|error| map_err_string("attach_adapter_bridge_route_index", error))
     })
     .await
 }
@@ -1043,9 +1045,9 @@ pub(crate) async fn enroll_v2_and_refresh_index(
     let seeded = seed_prior_from_host(host, material)?;
     let profile_for_attach = profile.clone();
     let refreshed = with_hub_blocking(hub.clone(), move |hub| {
-        Ok(hub
-            .adapter_bridge()
-            .attach_route_index(seeded, &profile_for_attach))
+        hub.adapter_bridge()
+            .attach_route_index(seeded, &profile_for_attach)
+            .map_err(|error| map_err_string("attach_adapter_bridge_route_index", error))
     })
     .await?;
     if refreshed.route_index().is_none() {

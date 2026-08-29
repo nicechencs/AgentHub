@@ -10,12 +10,17 @@ use crate::models::{
     mapping_table_is_active, AdapterModelMapResult, AdapterSourceProduct, AgentId,
 };
 
+use super::runtime::DownstreamResponsesProfile;
+
 /// One running (or known) edge the model-switch helper can pick.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ModelSwitchCandidate {
     pub profile_id: String,
     pub source: AdapterSourceProduct,
     pub target: AgentId,
+    /// Only edges with the same explicit downstream Responses profile may
+    /// switch requests. `None` is the generic/non-Responses host-test value.
+    pub downstream_responses_profile: Option<DownstreamResponsesProfile>,
     pub custom_openai_compat: bool,
     /// Same local surface as the authenticated lead. Cross-surface is never switched.
     pub same_surface: bool,
@@ -54,7 +59,10 @@ pub(crate) fn decide_model_switch(
         if candidate.profile_id == lead.profile_id {
             continue;
         }
-        if candidate.target != lead.target || !candidate.same_surface {
+        if candidate.target != lead.target
+            || !candidate.same_surface
+            || candidate.downstream_responses_profile != lead.downstream_responses_profile
+        {
             continue;
         }
         let result = map_edge_model(

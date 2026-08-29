@@ -3,14 +3,14 @@ use super::*;
 use crate::models::{
     Account, AccountKind, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterRoute,
     AdapterSourceKind, AdapterSourceProduct, AdapterTargetProtocol, AdapterUpstreamTransport,
+    Provider, RouteDownstreamDialect, RouteDownstreamSurface, RouteSchedulePolicy,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2, LOCAL_BRIDGE_EDGES,
-    Provider, RouteSchedulePolicy,
 };
 use crate::services::{ProviderService, RoutePoolService};
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo, RoutePoolRepo};
-use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::get;
+use axum::Router;
 use tokio::net::TcpListener;
 
 async fn health_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()>) {
@@ -963,6 +963,7 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::KimiCodeMembership,
         target_agent: AgentId::Codex,
+        downstream_dialect: RouteDownstreamDialect::Generic,
         upstream_auth: ResolvedAuth::bearer("upstream-secret"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -998,6 +999,7 @@ async fn codex_responses_health_probe_does_not_request_models() {
         local_surface: BridgeLocalSurface::Messages,
         source: AdapterSourceProduct::CodexChatGptSubscription,
         target_agent: AgentId::Claude,
+        downstream_dialect: RouteDownstreamDialect::Generic,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -1031,6 +1033,7 @@ async fn xai_responses_health_probe_does_not_request_models() {
         local_surface: BridgeLocalSurface::Messages,
         source: AdapterSourceProduct::XaiGrokSubscription,
         target_agent: AgentId::Claude,
+        downstream_dialect: RouteDownstreamDialect::Generic,
         upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -1064,6 +1067,7 @@ async fn deepseek_health_probe_skips_upstream_models() {
         local_surface: BridgeLocalSurface::Messages,
         source: AdapterSourceProduct::OpenaiApi,
         target_agent: AgentId::Claude,
+        downstream_dialect: RouteDownstreamDialect::Generic,
         upstream_auth: ResolvedAuth::bearer("deepseek-upstream-secret"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -1097,6 +1101,7 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::CodexChatGptSubscription,
         target_agent: AgentId::Grok,
+        downstream_dialect: RouteDownstreamDialect::Grok,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -1105,6 +1110,17 @@ fn start_spec_lists_codex_to_grok_dispatch_accepted_ids() {
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
     };
+    assert_eq!(
+        material.downstream_dialect(),
+        RouteDownstreamDialect::Grok,
+        "material carries the explicit downstream dialect"
+    );
+    assert_eq!(
+        material.start_spec(Some(0)).downstream_responses_profile,
+        Some(crate::bridge::DownstreamResponsesProfile::new(
+            crate::bridge::ResponsesDialect::Grok,
+        ))
+    );
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(!listed.is_empty());
     for model in &listed {
@@ -1130,6 +1146,7 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
         local_surface: BridgeLocalSurface::Messages,
         source: AdapterSourceProduct::XaiGrokSubscription,
         target_agent: AgentId::Claude,
+        downstream_dialect: RouteDownstreamDialect::Generic,
         upstream_auth: ResolvedAuth::bearer("grok-upstream-secret"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -1158,6 +1175,7 @@ fn start_spec_empty_when_mapping_and_default_are_missing() {
         local_surface: BridgeLocalSurface::ChatCompletions,
         source: AdapterSourceProduct::CodexChatGptSubscription,
         target_agent: AgentId::Kimi,
+        downstream_dialect: RouteDownstreamDialect::Generic,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -1183,6 +1201,7 @@ fn start_spec_lists_configured_default_when_mapping_is_missing() {
         local_surface: BridgeLocalSurface::ChatCompletions,
         source: AdapterSourceProduct::CodexChatGptSubscription,
         target_agent: AgentId::Kimi,
+        downstream_dialect: RouteDownstreamDialect::Generic,
         upstream_auth: ResolvedAuth::bearer("codex-upstream-secret"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -1211,6 +1230,7 @@ fn start_spec_lists_openai_to_codex_without_kimi_ids() {
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
         target_agent: AgentId::Codex,
+        downstream_dialect: RouteDownstreamDialect::Codex,
         upstream_auth: ResolvedAuth::bearer("openai-upstream-secret"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -2065,6 +2085,7 @@ fn start_spec_does_not_inject_retired_openrouter_backup() {
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
         target_agent: AgentId::Codex,
+        downstream_dialect: RouteDownstreamDialect::Generic,
         upstream_auth: ResolvedAuth::bearer("sk-or-placeholder-test-key"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -2094,6 +2115,7 @@ fn start_spec_keeps_every_user_listed_model() {
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
         target_agent: AgentId::Codex,
+        downstream_dialect: RouteDownstreamDialect::Generic,
         upstream_auth: ResolvedAuth::bearer("sk-or-placeholder-test-key"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -2126,6 +2148,7 @@ fn start_spec_strips_claude_1m_marker_from_listed_models() {
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
         target_agent: AgentId::Claude,
+        downstream_dialect: RouteDownstreamDialect::Generic,
         upstream_auth: ResolvedAuth::bearer("sk-or-placeholder-test-key"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -2153,6 +2176,7 @@ fn start_spec_official_openai_does_not_list_stealth() {
         local_surface: BridgeLocalSurface::Responses,
         source: AdapterSourceProduct::OpenaiApi,
         target_agent: AgentId::Codex,
+        downstream_dialect: RouteDownstreamDialect::Codex,
         upstream_auth: ResolvedAuth::bearer("openai-upstream-secret"),
         local_bearer: "local-secret".into(),
         route_index: None,
@@ -2396,17 +2420,155 @@ fn production_start_spec_attaches_pool_schedule_policy() {
         .get(&prepared.profile().id)
         .unwrap()
         .expect("legacy pool");
+    pool.downstream_dialect = RouteDownstreamDialect::Grok;
     pool.schedule_policy = RouteSchedulePolicy::RoundRobin;
     RoutePoolRepo::new(db.clone())
         .update_pool(&pool)
         .expect("persist round_robin");
     let prepared = service.prepare(&request("kimi-membership")).unwrap();
     assert_eq!(
+        prepared.runtime_material().preferred_port(),
+        Some(43155),
+        "persisted RoutePool gateway port is authoritative once enrolled"
+    );
+    assert_eq!(
         prepared
             .runtime_material()
             .start_spec(Some(0))
             .schedule_policy,
         RouteSchedulePolicy::RoundRobin
+    );
+    assert_eq!(
+        prepared
+            .runtime_material()
+            .start_spec(Some(0))
+            .downstream_responses_profile,
+        Some(crate::bridge::DownstreamResponsesProfile::new(
+            crate::bridge::ResponsesDialect::Grok,
+        )),
+        "persisted RoutePool dialect overrides the legacy target-agent fallback"
+    );
+}
+
+#[test]
+fn route_pool_disabled_keeps_legacy_target_agent_fallback() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "off").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-membership", "upstream-secret"))
+        .unwrap();
+
+    let prepared = AdapterBridgeService::new(db)
+        .prepare(&request("kimi-membership"))
+        .unwrap();
+    assert_eq!(
+        prepared.runtime_material().downstream_dialect(),
+        RouteDownstreamDialect::Codex,
+        "disabled RoutePool keeps target-agent fallback"
+    );
+    assert_eq!(
+        prepared
+            .runtime_material()
+            .start_spec(Some(0))
+            .downstream_responses_profile,
+        Some(crate::bridge::DownstreamResponsesProfile::new(
+            crate::bridge::ResponsesDialect::Codex,
+        ))
+    );
+}
+
+#[test]
+fn persisted_route_pool_surface_mismatch_fails_closed() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-membership", "upstream-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    let mut pool = RoutePoolService::new(db.clone())
+        .get(&prepared.profile().id)
+        .unwrap()
+        .expect("legacy pool");
+    pool.downstream_surface = RouteDownstreamSurface::Messages;
+    RoutePoolRepo::new(db.clone()).update_pool(&pool).unwrap();
+
+    let error = service
+        .prepare(&request("kimi-membership"))
+        .expect_err("surface mismatch must not start with an invalid profile");
+    assert_eq!(error.code(), "adapter.route_pool_invalid");
+    assert_eq!(
+        error.to_string(),
+        "The saved route format does not match this endpoint. Re-save the route and try again."
+    );
+}
+
+#[test]
+fn persisted_route_pool_dialect_mismatch_fails_closed() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-membership", "upstream-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    let mut pool = RoutePoolService::new(db.clone())
+        .get(&prepared.profile().id)
+        .unwrap()
+        .expect("legacy pool");
+    pool.downstream_dialect = RouteDownstreamDialect::Claude;
+    RoutePoolRepo::new(db.clone()).update_pool(&pool).unwrap();
+
+    let error = service
+        .prepare(&request("kimi-membership"))
+        .expect_err("dialect mismatch must not start with an invalid profile");
+    assert_eq!(error.code(), "adapter.route_pool_invalid");
+    assert_eq!(
+        error.to_string(),
+        "The saved route format does not match this endpoint. Re-save the route and try again."
+    );
+}
+
+#[test]
+fn persisted_route_pool_unparseable_dialect_is_not_silently_fallback() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source("kimi-membership", "upstream-secret"))
+        .unwrap();
+    let service = AdapterBridgeService::new(db.clone());
+    let prepared = service.prepare(&request("kimi-membership")).unwrap();
+    db.with_conn(|conn| {
+        conn.execute_batch("PRAGMA ignore_check_constraints = ON")?;
+        conn.execute(
+            "UPDATE route_pools SET downstream_dialect = 'not-a-dialect' WHERE id = ?1",
+            rusqlite::params![prepared.profile().id],
+        )?;
+        conn.execute_batch("PRAGMA ignore_check_constraints = OFF")?;
+        Ok(())
+    })
+    .unwrap();
+
+    let error = service
+        .prepare(&request("kimi-membership"))
+        .expect_err("invalid persisted dialect must propagate instead of fallback");
+    assert_eq!(error.code(), "route_pool.invalid_data");
+    assert!(error.to_string().contains("invalid downstream_dialect"));
+}
+
+#[test]
+fn non_responses_surface_never_creates_downstream_responses_profile() {
+    let mut material = AdapterBridgeRuntimeMaterial::for_test(
+        "non-responses-profile",
+        None,
+        "local-secret",
+        "upstream-secret",
+    );
+    material.local_surface = BridgeLocalSurface::Messages;
+    material.downstream_dialect = RouteDownstreamDialect::Grok;
+    assert_eq!(
+        material.start_spec(Some(0)).downstream_responses_profile,
+        None
     );
 }
 
@@ -2682,7 +2844,9 @@ fn attach_keeps_last_successful_sibling_when_prior_index_is_present() {
         vec!["m1", "m2"]
     );
     providers.delete("openai-b").unwrap();
-    let kept = service.attach_route_index(prior, prepared.profile());
+    let kept = service
+        .attach_route_index(prior, prepared.profile())
+        .unwrap();
     let index = kept
         .route_index()
         .expect("partial rebuild keeps last-successful sibling");

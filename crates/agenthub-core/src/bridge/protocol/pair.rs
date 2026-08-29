@@ -15,15 +15,10 @@ use serde_json::{Map, Value};
 
 use super::responses::{fold_official_codex_system_items, prepare_official_codex_request};
 
+pub use crate::bridge::runtime::ResponsesDialect;
+
 #[cfg(test)]
 mod tests;
-
-/// Downstream or upstream Responses dialect. Never inferred from the URL path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ResponsesDialect {
-    Codex,
-    Grok,
-}
 
 /// Explicit compatibility. Matching Responses surface is not a mark.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
