@@ -196,3 +196,22 @@ export function providerEndpointExtras(provider: Provider): {
     endpointMode: providerEndpointMode(provider, endpoint),
   };
 }
+
+/** API Key account endpoint fields. Missing URL keeps the legacy official mode. */
+export function accountEndpointExtras(
+  account: Pick<Account, 'kind' | 'agentId' | 'endpoint'>,
+): {
+  endpoint?: string;
+  endpointHost?: string;
+  endpointMode?: 'official' | 'custom';
+} {
+  if (account.kind !== 'apikey') return {};
+  const endpoint = account.endpoint?.trim();
+  if (!endpoint) return { endpointMode: 'official' };
+  const official = looksLikeOfficialEndpoint(account.agentId, endpoint);
+  return {
+    endpoint,
+    endpointHost: formatEndpointHost(endpoint),
+    endpointMode: official ? 'official' : 'custom',
+  };
+}

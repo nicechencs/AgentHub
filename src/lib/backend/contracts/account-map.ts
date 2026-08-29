@@ -36,6 +36,8 @@ export function mapCoreAccount(a: CoreAccount): Account {
     pickString(credentials.email_address) ??
     pickString(credentials.emailAddress);
   const provider =
+    pickString(credentials.provider_name) ??
+    pickString(credentials.name) ??
     pickString(extra.provider) ??
     pickString(credentials.provider) ??
     inferProviderFromBody(credentials.body);
@@ -143,6 +145,7 @@ export function mapCoreAccount(a: CoreAccount): Account {
       subjectId,
       agentId: a.agentId,
     }) ??
+    improveGenericApiKeyLabel(a.label, provider, a.agentId) ??
     a.label;
 
   return {
@@ -187,12 +190,28 @@ export function mapCoreAccount(a: CoreAccount): Account {
     refreshTokenPreview: a.kind === 'oauth' ? pickString(extra.refreshTokenPreview) : undefined,
     secretTail: recoveredSecretTail,
     secretHash: pickString(extra.secretHash),
-    endpoint: pickString(extra.endpoint) ?? pickString(extra.baseUrl) ?? pickString(extra.base_url),
+    endpoint:
+      pickString(extra.endpoint)
+      ?? pickString(extra.baseUrl)
+      ?? pickString(extra.base_url)
+      ?? pickString(credentials.base_url)
+      ?? pickString(credentials.baseURL)
+      ?? pickString(credentials.url)
+      ?? catalogRowEndpoint(credentials),
   };
 }
 
 function pickString(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+function catalogRowEndpoint(credentials: Record<string, unknown>): string | undefined {
+  const row = credentials.catalog_row;
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return undefined;
+  const options = (row as Record<string, unknown>).options;
+  if (!options || typeof options !== 'object' || Array.isArray(options)) return undefined;
+  return pickString((options as Record<string, unknown>).baseURL)
+    ?? pickString((options as Record<string, unknown>).base_url);
 }
 
 /** `**XXXX` from an already-stored mask. Does not invent a tail. */
@@ -287,6 +306,20 @@ function improveGenericOAuthLabel(
     if (bits.provider) return `pi:${bits.provider}`;
   }
   return id;
+}
+
+/** `**xxxx (API Key)` → `**xxxx (grok)` when the catalog provider name is known. */
+function improveGenericApiKeyLabel(
+  raw: string,
+  provider: string | undefined,
+  agentId?: string,
+): string | undefined {
+  const name = provider?.trim();
+  if (!name || name === agentId) return undefined;
+  const t = raw.trim();
+  if (!/\(\s*API Key\s*\)$/i.test(t)) return undefined;
+  if (t.toLowerCase().includes(name.toLowerCase())) return undefined;
+  return t.replace(/\(\s*API Key\s*\)$/i, `(${name})`);
 }
 
 function looksLikeUuid(s: string): boolean {

@@ -312,14 +312,17 @@ impl AgentAdapter for ZcodeAdapter {
                 "api_key": key,
                 "provider": "zcode",
                 "provider_id": BUILTIN_ZAI,
+                "provider_name": "Z.ai - API Key",
                 "kind": "anthropic",
+                "base_url": ZAI_ANTHROPIC_URL,
                 "models": DEFAULT_OFFICIAL_MODEL_IDS,
             }),
-            "API Key",
+            "Z.ai - API Key",
             json!({
                 "source": "manual",
                 "provider": "zcode",
                 "provider_id": BUILTIN_ZAI,
+                "endpoint": ZAI_ANTHROPIC_URL,
             }),
         ))
     }
@@ -345,15 +348,26 @@ impl AgentAdapter for ZcodeAdapter {
         credentials: &Value,
         label_hint: Option<&str>,
     ) -> Option<String> {
-        if let Some(hint) = label_hint.map(str::trim).filter(|s| !s.is_empty()) {
-            return Some(hint.to_string());
+        if let Some(name) = credentials
+            .get("provider_name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Some(name.to_string());
         }
-        credentials
+        if let Some(id) = credentials
             .get("provider_id")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .map(|id| format!("zcode:{id}"))
+        {
+            return Some(format!("zcode:{id}"));
+        }
+        label_hint
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
     }
 
     fn skills_dir(&self) -> Option<PathBuf> {
@@ -580,6 +594,8 @@ struct ProviderKeyHit {
     enabled: bool,
     source: Option<String>,
     models: Value,
+    /// Original catalog row, so the Connections file preview matches disk.
+    entry: Value,
 }
 
 fn is_non_portable_provider_secret(provider_id: &str, api_key: &str) -> bool {
@@ -689,6 +705,7 @@ fn providers_with_api_key(providers: &Value) -> Vec<ProviderKeyHit> {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             models: obj.get("models").cloned().unwrap_or_else(|| json!({})),
+            entry: entry.clone(),
         });
     }
     out
@@ -720,6 +737,7 @@ fn live_account_from_hit(hit: &ProviderKeyHit) -> LiveAccount {
         "api_key": hit.api_key,
         "provider": "zcode",
         "provider_id": hit.id,
+        "catalog_row": hit.entry.clone(),
     });
     if let Some(base) = hit.base_url.as_deref().filter(|s| !s.is_empty()) {
         cred["base_url"] = json!(base);
@@ -733,17 +751,21 @@ fn live_account_from_hit(hit: &ProviderKeyHit) -> LiveAccount {
     if models_map_nonempty(&hit.models) {
         cred["models"] = hit.models.clone();
     }
-    api_key_live_account(
-        AgentId::Zcode,
-        &hit.api_key,
-        cred,
-        "API Key",
-        json!({
-            "source": "live",
-            "provider": "zcode",
-            "provider_id": hit.id,
-        }),
-    )
+    let label = hit
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("API Key");
+    let mut extra = json!({
+        "source": "live",
+        "provider": "zcode",
+        "provider_id": hit.id,
+    });
+    if let Some(base) = hit.base_url.as_deref().filter(|s| !s.is_empty()) {
+        extra["endpoint"] = json!(base);
+    }
+    api_key_live_account(AgentId::Zcode, &hit.api_key, cred, label, extra)
 }
 
 fn expand_zcode_catalog(providers: &Value) -> Vec<LiveAccount> {

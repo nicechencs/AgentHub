@@ -1238,6 +1238,7 @@ export const en = {
       endpoint: "Endpoint",
       endpointHost: "Host",
       endpointAddress: "Address",
+      provider: "Provider",
       custom: "Custom",
       official: "Official",
       protocol: "Interface",

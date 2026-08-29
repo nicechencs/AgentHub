@@ -181,15 +181,19 @@ impl AgentAdapter for DshAdapter {
         if !fields.base_url.is_empty() {
             cred["base_url"] = json!(fields.base_url);
         }
+        let mut extra = json!({
+            "source": "live",
+            "provider": "deepseek",
+        });
+        if !fields.base_url.is_empty() {
+            extra["endpoint"] = json!(fields.base_url);
+        }
         Ok(api_key_live_account(
             AgentId::Dsh,
             &key,
             cred,
             "API Key",
-            json!({
-                "source": "live",
-                "provider": "deepseek",
-            }),
+            extra,
         ))
     }
 

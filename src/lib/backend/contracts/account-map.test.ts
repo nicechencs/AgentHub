@@ -289,6 +289,58 @@ describe('mapCoreAccount', () => {
     expect(mapped.label).toBe('user@example.com');
   });
 
+  it('reads ZCode catalog provider name and endpoint from credentials', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'zcode-1',
+        agentId: 'zcode',
+        kind: 'apikey',
+        label: 'sk-•••• (API Key)',
+        credentials: {
+          format: 'api_key',
+          api_key: '***',
+          provider: 'zcode',
+          provider_id: 'aabbcc',
+          provider_name: 'grok',
+          base_url: 'https://api.qooo.io/v1',
+        },
+        extra: { source: 'live', provider: 'zcode' },
+      }),
+    );
+    expect(mapped.provider).toBe('grok');
+    expect(mapped.label).toBe('sk-•••• (grok)');
+    expect(mapped.endpoint).toBe('https://api.qooo.io/v1');
+    expect(mapped.credentialFiles?.[0]?.name).toBe('config.json');
+    expect(mapped.credentialFiles?.[0]?.content).toContain('"baseURL": "https://api.qooo.io/v1"');
+    expect(mapped.credentialFiles?.[0]?.content).toContain('"name": "grok"');
+  });
+
+  it('reads WorkBuddy catalog model name and endpoint from credentials', () => {
+    const mapped = mapCoreAccount(
+      core({
+        id: 'wb-1',
+        agentId: 'workbuddy',
+        kind: 'apikey',
+        label: 'sk-•••• (API Key)',
+        credentials: {
+          format: 'api_key',
+          api_key: '***',
+          provider: 'workbuddy',
+          model_id: 'grok-4.6',
+          name: 'grok-4.6',
+          url: 'https://api.qooo.io/v1/chat/completions',
+          base_url: 'https://api.qooo.io/v1/chat/completions',
+        },
+        extra: { source: 'live', provider: 'workbuddy' },
+      }),
+    );
+    expect(mapped.provider).toBe('grok-4.6');
+    expect(mapped.label).toBe('sk-•••• (grok-4.6)');
+    expect(mapped.endpoint).toBe('https://api.qooo.io/v1/chat/completions');
+    expect(mapped.credentialFiles?.[0]?.name).toBe('models.json');
+    expect(mapped.credentialFiles?.[0]?.content).toContain('"url": "https://api.qooo.io/v1/chat/completions"');
+  });
+
   it('maps credential format / source / env_key for detail panel', () => {
     const mapped = mapCoreAccount(
       core({

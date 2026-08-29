@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 import type { Account, Provider } from '@/lib/types';
 import type { TicketView } from '@/lib/backend/contracts/ticket';
-import { providerEndpointMode, toCredentialRow } from './credential-row';
+import { accountEndpointExtras, providerEndpointMode, toCredentialRow } from './credential-row';
 
 function acc(partial: Partial<Account> & Pick<Account, 'id' | 'kind' | 'label'>): Account {
   return {
@@ -217,5 +217,26 @@ describe('providerEndpointMode', () => {
       configText: '{}',
     });
     expect(providerEndpointMode(emptyOfficial, '')).toBe('official');
+  });
+});
+
+describe('accountEndpointExtras', () => {
+  it('keeps API keys without a URL on the legacy official mode', () => {
+    expect(accountEndpointExtras(acc({ id: 'a1', kind: 'apikey', label: 'Key' }))).toEqual({
+      endpointMode: 'official',
+    });
+  });
+
+  it('marks a ZCode catalog URL that is not Z.ai as custom', () => {
+    const extras = accountEndpointExtras(acc({
+      id: 'z1',
+      agentId: 'zcode',
+      kind: 'apikey',
+      label: 'grok',
+      endpoint: 'https://api.qooo.io/v1',
+    }));
+    expect(extras.endpointMode).toBe('custom');
+    expect(extras.endpoint).toBe('https://api.qooo.io/v1');
+    expect(extras.endpointHost).toContain('api.qooo.io');
   });
 });
