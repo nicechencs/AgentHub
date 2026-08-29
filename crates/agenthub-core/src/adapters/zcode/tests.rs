@@ -368,10 +368,31 @@ fn read_auth_ignores_start_plan_jwt_fixture() {
         )
         .unwrap();
         let auth = ZcodeAdapter.read_auth().unwrap();
-        assert!(!auth.has_credentials);
-        assert_eq!(auth.health, AuthHealth::Missing);
+        assert!(auth.has_credentials);
+        assert_eq!(auth.kind.as_deref(), Some("desktop-login"));
+        assert_eq!(auth.health, AuthHealth::Configured);
         assert!(ZcodeAdapter.read_account().is_err());
     });
+}
+
+#[test]
+fn scrub_non_portable_secrets_clears_plan_slots_only() {
+    let mut raw = json!({
+        "provider": live_v2_provider_map()
+    });
+    raw["provider"]["aabbcc"] = json!({
+        "options": { "apiKey": "sk-keep" }
+    });
+    scrub_non_portable_provider_secrets(&mut raw);
+    assert_eq!(raw["provider"]["aabbcc"]["options"]["apiKey"], "sk-keep");
+    assert_eq!(
+        raw["provider"]["builtin:zai-start-plan"]["options"]["apiKey"],
+        ""
+    );
+    assert_eq!(
+        raw["provider"]["builtin:zai-coding-plan"]["options"]["apiKey"],
+        ""
+    );
 }
 
 #[test]

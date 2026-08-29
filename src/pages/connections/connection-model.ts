@@ -276,8 +276,16 @@ export function liveImportDialogMode(
   return isApiKeyLiveAuthKind(kind) ? 'api-key' : 'login';
 }
 
-/** `api-key` dialog must import a provider-pool Key, never an OAuth account. */
-export function liveImportAction(mode: LiveImportDialogMode): LiveImportAction {
+/**
+ * Catalog-append agents (ZCode / WorkBuddy) split one live file into many
+ * logins. Import them as accounts, not as one provider snapshot.
+ * Other API Key probes still import the live provider config.
+ */
+export function liveImportAction(
+  mode: LiveImportDialogMode,
+  agentId?: AgentId | null,
+): LiveImportAction {
+  if (agentId === 'zcode' || agentId === 'workbuddy') return 'account';
   return mode === 'api-key' ? 'provider' : 'account';
 }
 
@@ -306,7 +314,17 @@ export function liveAuthCoexistenceNotice(
   const also = alsoPresentKinds(probe);
   const alsoHasOAuth = also.some(isOAuthLiveAuthKind);
   const alsoHasApiKey = also.some(isApiKeyLiveAuthKind);
-  if (kind !== 'mixed' && !alsoHasOAuth && !alsoHasApiKey) return null;
+  const alsoHasDesktop = also.some((item) => item === 'desktop-login');
+  if (kind !== 'mixed' && !alsoHasOAuth && !alsoHasApiKey && !alsoHasDesktop) return null;
+
+  if (
+    (agentId === 'workbuddy' || agentId === 'zcode')
+    && (alsoHasDesktop || kind === 'desktop-login')
+  ) {
+    return t
+      ? t('connections.list.coexistCatalogDesktop')
+      : '自定义模型和桌面套餐登录不在一起。导入只会收下自定义模型，桌面登录留在应用内。';
+  }
 
   if (agentId === 'pi' || kind === 'mixed') {
     return t ? t('connections.list.coexistPi') : 'Pi 里同时有 API Key 和官方登录。导入会按服务商分行，不会猜一个当前账号。';

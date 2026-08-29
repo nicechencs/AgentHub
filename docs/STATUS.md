@@ -14,7 +14,7 @@ updated: 2026-08-27
 
 - 桌面端由 Tauri v2 承载，前端使用 React，核心业务和 CLI 使用 Rust。
 - 当前界面包含 Dashboard、Agents、Connections、Routes、Skills、MCP、Chat、Projects、Plugins 和 Settings。
-- Connections 是跨工具的登录列表；Dashboard 和 Connections 是日常连接入口；Routes 只管理本机路由运行时。
+- Connections 是跨工具的登录列表；Dashboard 和 Connections 是日常连接入口；Routes 只管理本机路由运行时。WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入；WorkBuddy 写入只认 `/v1/chat/completions`。
 - 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy 和 DeepSeek Harness。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
 

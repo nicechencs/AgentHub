@@ -567,7 +567,7 @@ export default function ConnectionsPage() {
     setImportingAccount(true);
     try {
       const imported =
-        liveImportAction(importDialogMode) === 'provider'
+        liveImportAction(importDialogMode, addAgentId) === 'provider'
           ? await importProviderLive(addAgentId)
           : await importCurrentLogin(addAgentId);
       const label = 'label' in imported ? imported.label : imported.name;

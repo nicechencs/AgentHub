@@ -178,7 +178,21 @@ impl AgentAdapter for ZcodeAdapter {
         };
         let providers = root.get("provider").cloned().unwrap_or_else(|| json!({}));
         let keyed = providers_with_api_key(&providers);
+        let plan_login = has_non_portable_provider_secret(&providers);
         if keyed.is_empty() {
+            if plan_login {
+                return Ok(AuthState {
+                    agent: AgentId::Zcode,
+                    kind: Some("desktop-login".into()),
+                    summary: "ZCode 套餐登录在应用内，不会导入".into(),
+                    has_credentials: true,
+                    health: AuthHealth::Configured,
+                    source: Some("zcode:v2-config".into()),
+                    revision: auth_file_revision(&path),
+                    also_present: Vec::new(),
+                    secret_hash: None,
+                });
+            }
             return Ok(AuthState {
                 agent: AgentId::Zcode,
                 kind: None,
@@ -192,6 +206,10 @@ impl AgentAdapter for ZcodeAdapter {
             });
         }
         let enabled = keyed.iter().filter(|p| p.enabled).count();
+        let mut also_present = Vec::new();
+        if plan_login {
+            also_present.push("desktop-login".into());
+        }
         Ok(AuthState {
             agent: AgentId::Zcode,
             kind: Some("api_key".into()),
@@ -204,7 +222,7 @@ impl AgentAdapter for ZcodeAdapter {
             health: AuthHealth::Configured,
             source: Some("zcode:v2-config".into()),
             revision: auth_file_revision(&path),
-            also_present: Vec::new(),
+            also_present,
             secret_hash: None,
         })
     }
@@ -577,6 +595,52 @@ fn is_non_portable_provider_secret(provider_id: &str, api_key: &str) -> bool {
         return true;
     }
     looks_like_jwt(api_key)
+}
+
+fn has_non_portable_provider_secret(providers: &Value) -> bool {
+    let Some(map) = providers.as_object() else {
+        return false;
+    };
+    map.iter().any(|(id, entry)| {
+        let Some(api_key) = entry
+            .get("options")
+            .and_then(|o| o.get("apiKey"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            return false;
+        };
+        is_non_portable_provider_secret(id, api_key)
+    })
+}
+
+/// Strip Coding Plan / Start Plan login tokens from a `read_config` snapshot
+/// so provider import cannot treat desktop plan login as a portable API Key.
+pub(crate) fn scrub_non_portable_provider_secrets(raw: &mut Value) {
+    let Some(map) = raw
+        .get_mut("provider")
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    for (id, entry) in map.iter_mut() {
+        let Some(api_key) = entry
+            .get("options")
+            .and_then(|o| o.get("apiKey"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        if api_key.is_empty() || !is_non_portable_provider_secret(id, &api_key) {
+            continue;
+        }
+        if let Some(options) = entry.get_mut("options").and_then(Value::as_object_mut) {
+            options.insert("apiKey".into(), json!(""));
+        }
+    }
 }
 
 fn looks_like_jwt(value: &str) -> bool {

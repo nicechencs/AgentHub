@@ -105,12 +105,15 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     sessionResume: { level: 'planned', reason: '待验证接入' },
   },
   workbuddy: {
-    configWrite: { level: 'full' },
-    accountSwitch: {
-      level: 'unsupported',
-      reason: '暂不支持账号池切换',
+    configWrite: {
+      level: 'partial',
+      reason: '只追加或更新一条自定义模型，不覆盖整份列表',
     },
-    apiKeyAccount: { level: 'unsupported', reason: '暂不支持 API Key 账号池' },
+    accountSwitch: {
+      level: 'partial',
+      reason: '只写入对应自定义模型，其它条目仍在列表里；不会改 WorkBuddy 当前选中的模型',
+    },
+    apiKeyAccount: { level: 'full' },
     skills: { level: 'full' },
     liveBackup: { level: 'full' },
     structuredStream: {
