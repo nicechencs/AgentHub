@@ -69,7 +69,7 @@ pnpm dev:mock
 
 ## 数据与隐私
 
-AgentHub 默认只处理本机数据。常见数据位置是 `~/.agenthub/`（状态、设置、日志和备份）与 `~/.agents/skills/`（共享 Skills）。Usage 只读解析本地会话或日志，不通过代理截取请求，也不上传云端；本机路由不记录请求或响应正文。
+AgentHub 默认只处理本机数据。常见数据位置是 `~/.agenthub/`（状态、设置、日志和备份）、`~/.agents/skills/`（用户技能）与项目里的 `.agents/skills/`（项目技能）。Usage 只读解析本地会话或日志，不通过代理截取请求，也不上传云端；本机路由不记录请求或响应正文。
 
 凭据沿用项目现有的本地存储方案，界面、CLI 和日志输出会脱敏。凭据落盘加密不在当前产品范围内。发布截图、测试数据、版本发布和禁止提交项见 [隐私与发布](docs/reference/privacy-and-release.md)，漏洞披露方式见 [安全策略](SECURITY.md)。
 

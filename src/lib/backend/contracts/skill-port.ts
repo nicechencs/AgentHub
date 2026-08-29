@@ -47,6 +47,26 @@ export interface SkillPort {
     skillId: string,
     privateAgent?: AgentId | null,
   ): Promise<SkillMarkdownPreviewDto>;
+  /** Skills under a workspace (`.agents/skills` plus known project folders). */
+  listProjectSkills(workspacePath: string): Promise<InstalledSkillDto[]>;
+  /** Install into `<workspace>/.agents/skills`. */
+  installProjectSkill(
+    workspacePath: string,
+    source: string,
+    overwrite?: boolean,
+  ): Promise<CoreSkill>;
+  /** Recycle a skill under the workspace. `origin` defaults to `.agents/skills`. */
+  uninstallProjectSkill(
+    workspacePath: string,
+    skillId: string,
+    origin?: string,
+  ): Promise<void>;
+  /** Read `SKILL.md` for a project skill. `origin` defaults to `.agents/skills`. */
+  readProjectSkillMarkdown(
+    workspacePath: string,
+    skillId: string,
+    origin?: string | null,
+  ): Promise<SkillMarkdownPreviewDto>;
   /** Subscribe to skill-directory changes. Returns an unsubscribe function. */
   onFsChanged(
     handler: (payload?: SkillsFsChangedPayload) => void,

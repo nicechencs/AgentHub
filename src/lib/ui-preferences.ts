@@ -29,6 +29,8 @@ export const StorageKey = {
   agentsCatalogOrder: `${PREFIX}agents-catalog-order`,
   /** Last Projects tab; used to preload that agent's list on boot. */
   projectsLastAgent: `${PREFIX}projects-last-agent`,
+  /** Last workspace chosen on the project-skills tab. */
+  skillsProjectWorkspace: `${PREFIX}skills-project-workspace`,
 } as const;
 
 export function loadJson<T>(key: string, fallback: T): T {

@@ -136,6 +136,36 @@ export function createTauriSkillPort(): SkillPort {
       });
     },
 
+    async listProjectSkills(workspacePath) {
+      return invoke<InstalledSkillDto[]>('list_project_skills', {
+        workspace: workspacePath,
+      });
+    },
+
+    async installProjectSkill(workspacePath, source, overwrite = false) {
+      return invoke<CoreSkill>('install_project_skill', {
+        workspace: workspacePath,
+        source,
+        overwrite,
+      });
+    },
+
+    async uninstallProjectSkill(workspacePath, skillId, origin) {
+      await invoke('uninstall_project_skill', {
+        workspace: workspacePath,
+        skillId,
+        origin: origin ?? null,
+      });
+    },
+
+    async readProjectSkillMarkdown(workspacePath, skillId, origin = null) {
+      return invoke<SkillMarkdownPreviewDto>('read_project_skill_markdown', {
+        workspace: workspacePath,
+        skillId,
+        origin: origin ?? null,
+      });
+    },
+
     onFsChanged(handler: (payload?: SkillsFsChangedPayload) => void) {
       return onSkillsFsChanged(handler);
     },

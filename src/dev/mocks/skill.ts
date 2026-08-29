@@ -237,11 +237,52 @@ const INITIAL_PRIVATE_SKILLS: InstalledSkillDto[] = [
 
 let mockPrivateSkills = structuredClone(INITIAL_PRIVATE_SKILLS);
 
+function workspaceKey(path: string): string {
+  return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+function mockProjectRow(
+  id: string,
+  name: string,
+  description: string,
+  workspace: string,
+  origin = '.agents/skills',
+): InstalledSkillDto {
+  const rootDir = `${workspace.replace(/\\/g, '/')}/${origin}`;
+  return {
+    id,
+    name,
+    description,
+    sourceDir: `${rootDir}/${id}`,
+    rootLabel: origin,
+    rootDir,
+    origin,
+    projectable: false,
+    mapStatus: 'available',
+    source: null,
+    projections: [],
+  };
+}
+
+const INITIAL_PROJECT_SKILLS: Record<string, InstalledSkillDto[]> = {
+  [workspaceKey('C:\\Users\\demo\\app')]: [
+    mockProjectRow('demo-notes', 'demo-notes', 'Project notes skill', 'C:\\Users\\demo\\app'),
+  ],
+  [workspaceKey('C:\\Users\\demo\\codex-work')]: [
+    mockProjectRow('review', 'review', 'Codex work review skill', 'C:\\Users\\demo\\codex-work'),
+  ],
+};
+
+let mockProjectSkills = new Map(
+  Object.entries(structuredClone(INITIAL_PROJECT_SKILLS)),
+);
+
 /** Restores seeded skill catalog so each backend factory starts clean. */
 export function resetMockSkills(): void {
   lastProjectionMode.clear();
   mockState = structuredClone(INITIAL_MOCK_STATE);
   mockPrivateSkills = structuredClone(INITIAL_PRIVATE_SKILLS);
+  mockProjectSkills = new Map(Object.entries(structuredClone(INITIAL_PROJECT_SKILLS)));
 }
 
 export function createMockSkillPort(): SkillPort {
@@ -488,6 +529,80 @@ export function createMockSkillPort(): SkillPort {
 
     onFsChanged() {
       return () => {};
+    },
+
+    async listProjectSkills(workspacePath) {
+      await delay(randomLatency());
+      const rows = mockProjectSkills.get(workspaceKey(workspacePath)) ?? [];
+      return rows.map((row) => ({ ...row, projections: [] }));
+    },
+
+    async installProjectSkill(workspacePath, source, overwrite = false) {
+      await delay(200);
+      const key = workspaceKey(workspacePath);
+      const trimmed = source.trim().replace(/[\\/]+$/, '');
+      const id = trimmed.split(/[\\/]/).pop()?.replace(/\.git$/i, '') || 'skill';
+      const rows = mockProjectSkills.get(key) ?? [];
+      const exists = rows.some((row) => row.id === id);
+      if (exists && !overwrite) {
+        throw new Error(`skill '${id}' already exists (pass overwrite to replace)`);
+      }
+      const next = mockProjectRow(id, id, `${id} project skill`, workspacePath);
+      const filtered = rows.filter((row) => row.id !== id);
+      filtered.push(next);
+      mockProjectSkills.set(key, filtered);
+      return {
+        id: next.id,
+        name: next.name,
+        description: next.description,
+        sourceDir: next.sourceDir,
+        projections: [],
+      };
+    },
+
+    async uninstallProjectSkill(workspacePath, skillId, origin) {
+      await delay(120);
+      const key = workspaceKey(workspacePath);
+      const rows = mockProjectSkills.get(key) ?? [];
+      const idx = rows.findIndex(
+        (row) => row.id === skillId && (!origin || row.origin === origin),
+      );
+      if (idx < 0) {
+        throw new Error(`技能不存在: ${skillId}`);
+      }
+      rows.splice(idx, 1);
+      mockProjectSkills.set(key, rows);
+    },
+
+    async readProjectSkillMarkdown(workspacePath, skillId, origin = null) {
+      await delay(120);
+      const key = workspaceKey(workspacePath);
+      const rows = mockProjectSkills.get(key) ?? [];
+      const hit = rows.find(
+        (row) => row.id === skillId && (!origin || row.origin === origin),
+      );
+      if (!hit) {
+        throw new Error(`技能不存在: ${skillId}`);
+      }
+      const content = [
+        '---',
+        `name: ${hit.name}`,
+        `description: ${hit.description}`,
+        '---',
+        '',
+        `# ${hit.name}`,
+        '',
+        hit.description,
+        '',
+        'This is a mock project skill.',
+      ].join('\n');
+      return {
+        skillId: hit.id,
+        name: hit.name,
+        path: `${hit.sourceDir}/SKILL.md`,
+        content,
+        truncated: false,
+      };
     },
 
     async readSkillMarkdown(skillId, privateAgent = null) {

@@ -30,7 +30,7 @@ updated: 2026-08-29
 - 登录的来源、目标和可行写入动作由 `plan` / `bind` / `unbind` 契约表达；领域实现仍保留 Ticket / TicketPort 等内部名称。
 - 本机路由运行时在桌面进程内运行，面向兼容客户端提供 `/v1/messages`、`/v1/responses`、`/v1/chat/completions` 和 `GET /models` 等端点。Codex 与 Grok 都走 Responses 口，具体格式跟这条路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex / Grok 时写入的是本机令牌（按 API Key 方式）和 Responses 接口，不是上游官方登录。领域背景见 [连接与路由](concepts/connections-and-routing.md)。
 - Usage 只读解析本地 Agent 会话或日志；优先使用日志中的官方成本字段，否则使用离线内嵌价表估算。运行时不联网拉取价格，也不做汇率换算。
-- Skills 使用共享目录 `~/.agents/skills/`；配置切换在修改前创建备份。
+- Skills 页分用户技能、项目技能和市场。用户技能仍用共享目录 `~/.agents/skills/`，并可启用到各工具；项目技能从项目页已识别的工作区下拉选择，读写该项目的 `.agents/skills/`（列表也会带上 `.claude/skills` 等已有目录）。配置切换在修改前创建备份。
 - MCP 页只读扫描已知 MCP server 配置；`Capability::Mcp` 对全部内置 Agent 仍为 Planned。见 [MCP inventory](reference/mcp-inventory.md)。
 - 插件页 `/plugins` 只读列出 Claude / Grok 的 plugin / extension 包（优先官方 CLI JSON，否则读 live 目录）。没有安装按钮，也没有 `Capability::Plugins`。Codex / Pi 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 

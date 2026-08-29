@@ -22,8 +22,8 @@ export function marketResultLabel(
   return marketSourceLabel(source);
 }
 
-/** library=本地表 · market=市场；workspace / installed 兼容旧 URL */
-export const SKILL_TABS = ['library', 'market'] as const;
+/** library=用户技能 · project=项目技能 · market=市场；workspace / installed 兼容旧 URL */
+export const SKILL_TABS = ['library', 'project', 'market'] as const;
 export type SkillTab = (typeof SKILL_TABS)[number];
 
 export function parseSkillTab(raw: string | null): SkillTab {

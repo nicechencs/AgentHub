@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { resetBackend } from '@/app/runtime';
-import { listInstalledSkills, listSkillCatalog } from '@/lib/api/skill';
+import { listInstalledSkills, listProjectSkills, listSkillCatalog } from '@/lib/api/skill';
 import { createTauriSkillPort } from '@/lib/backend/tauri/skill';
 import { createMockSkillPort } from '@/dev/mocks/skill';
 import {
@@ -86,9 +86,20 @@ describe('listSkillCatalog (browser mock)', () => {
     );
   });
 
+  it('lists seeded project skills for a known workspace', async () => {
+    const rows = await listProjectSkills('C:\\Users\\demo\\app');
+    expect(rows.some((row) => row.id === 'demo-notes')).toBe(true);
+    expect(rows.every((row) => row.projectable === false)).toBe(true);
+    expect(rows.every((row) => row.origin.startsWith('.'))).toBe(true);
+  });
+
   it('is implemented on both SkillPort adapters', () => {
     expect(typeof createMockSkillPort().listSkillCatalog).toBe('function');
     expect(typeof createTauriSkillPort().listSkillCatalog).toBe('function');
+    expect(typeof createMockSkillPort().listProjectSkills).toBe('function');
+    expect(typeof createTauriSkillPort().listProjectSkills).toBe('function');
+    expect(typeof createMockSkillPort().installProjectSkill).toBe('function');
+    expect(typeof createTauriSkillPort().uninstallProjectSkill).toBe('function');
   });
 });
 

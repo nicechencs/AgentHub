@@ -20,7 +20,7 @@ The application is organized by work and management, with Agent filtering inside
 |---|---|---|---|
 | Workspace | Chat | `/chat` | Full-height conversation workbench |
 | Workspace | Agents | `/agents` | Installed Agent catalog and lifecycle |
-| Workspace | Skills | `/skills` | Shared/private skill inventory and preview |
+| Workspace | Skills | `/skills` | User skills (shared library + this-tool), project skills by workspace, and market |
 | Workspace | MCP | `/mcp` | Read-only configuration inventory |
 | Workspace | Projects | `/projects` | Project/session tree and read-only preview |
 | Workspace | Plugins | `/plugins` | Read-only vendor plugin / extension pack inventory |
@@ -158,7 +158,9 @@ Skills, Projects, and Plugins are full-height workbenches with a left inventory 
 
 ### Skills
 
-- Library and Market are page-level tabs. Filtering and Agent scope stay in the chrome row.
+- User skills, Project skills, and Market are page-level tabs. Filtering and Agent scope stay in the chrome row.
+- User skills list the shared library plus this-tool-only skills, with the enablement matrix.
+- Project skills use a dropdown of workspaces already identified on the Projects page. After a project is selected, skills can be added or deleted for that workspace (canonical folder `.agents/skills`).
 - A skill name opens the preview; Enter is equivalent. Checkbox selection is only for batch operations and never opens the preview.
 - The preview identity is separate from checkbox selection. It remains open when filters hide the selected skill, with a short source label in the header.
 - The list keeps the name and at most one line of description. Absolute paths move to the preview footer or an explicit open-directory action.

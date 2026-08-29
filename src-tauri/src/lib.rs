@@ -171,6 +171,10 @@ pub fn run() {
             commands::skill::project_skill,
             commands::skill::search_skill_market,
             commands::skill::install_market_skill,
+            commands::skill::list_project_skills,
+            commands::skill::install_project_skill,
+            commands::skill::uninstall_project_skill,
+            commands::skill::read_project_skill_markdown,
             // Backup
             commands::backup::list_backups,
             commands::backup::inspect_backup,
