@@ -100,6 +100,8 @@ export default function ChatPage() {
               processMap={page.processMap}
               listLoading={page.listLoading}
               messagesLoading={page.messagesLoading}
+              messagesError={page.messagesError}
+              onRetryMessages={page.retryMessages}
               sending={page.sending}
               retryDisabled={page.blockers.length > 0}
               scrollRef={page.transcriptRef}

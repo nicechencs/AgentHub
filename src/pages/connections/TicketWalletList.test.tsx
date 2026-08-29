@@ -1001,7 +1001,7 @@ describe('TicketWalletList switch action', () => {
           sourceId: 'zcode-1',
           agentId: 'zcode',
           label: 'Z.ai',
-          surface: 'api-key',
+          surface: 'glm-coding-plan',
           credentialClass: 'api_key',
           speaks: ['anthropic-messages'],
           importedFrom: 'zcode',

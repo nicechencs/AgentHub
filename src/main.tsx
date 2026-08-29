@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import App from './App';
 import { BootSplash } from '@/components/shared/BootSplash';
+import { AppErrorBoundary } from '@/components/shared/AppErrorBoundary';
 import { ToastProvider } from '@/components/ui/toast';
 import { TooltipProvider, TOOLTIP } from '@/components/ui/tooltip';
 import { LanguageProvider } from '@/components/shared/LanguageProvider';
@@ -161,7 +162,9 @@ function boot() {
   // 立刻挂载 React：由 Root 内 splash 覆盖预加载，不再阻塞在 createRoot 之前
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <Root />
+      <AppErrorBoundary>
+        <Root />
+      </AppErrorBoundary>
     </React.StrictMode>,
   );
 }

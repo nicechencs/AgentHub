@@ -1,6 +1,6 @@
 //! Usage records + parse cursor repository.
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::error::Result;
 use crate::models::{
@@ -17,7 +17,7 @@ const UPSERT_USAGE_SQL: &str = r#"
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
         cost_usd, session_id, ts, raw_hash, fast
     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-    ON CONFLICT(agent_id, session_id, raw_hash) DO UPDATE SET
+    ON CONFLICT(agent_id, ifnull(session_id, ''), ifnull(raw_hash, '')) DO UPDATE SET
         model = excluded.model,
         input_tokens = excluded.input_tokens,
         output_tokens = excluded.output_tokens,
@@ -50,7 +50,7 @@ impl UsageRepo {
             return Ok(0);
         }
         self.db.with_conn(|conn| {
-            let tx = conn.unchecked_transaction()?;
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
             let mut inserted = 0u64;
             {
                 let mut stmt = tx.prepare(UPSERT_USAGE_SQL)?;
@@ -65,9 +65,9 @@ impl UsageRepo {
                         r.cache_read_tokens,
                         r.cache_write_tokens,
                         r.cost_usd,
-                        r.session_id,
+                        r.session_id.as_deref().unwrap_or(""),
                         r.ts,
-                        r.raw_hash,
+                        r.raw_hash.as_deref().unwrap_or(""),
                         r.fast,
                     ])?;
                     inserted += n as u64;
@@ -189,7 +189,7 @@ impl UsageRepo {
         F: FnMut(AgentId, &str, i64, i64, i64, i64, bool) -> Option<(i64, f64)>,
     {
         self.db.with_conn(|conn| {
-            let tx = conn.unchecked_transaction()?;
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
             let mut changed = 0u64;
             {
                 let mut sel = tx.prepare(
@@ -523,7 +523,7 @@ impl UsageRepo {
 
     pub fn save_parser_health(&self, rows: &[ParserHealth]) -> Result<()> {
         self.db.with_conn(|conn| {
-            let tx = conn.unchecked_transaction()?;
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
             for row in rows {
                 tx.execute(
                     r#"
@@ -829,7 +829,7 @@ impl UsageRepo {
         cursors: &[UsageCursor],
     ) -> Result<u64> {
         self.db.with_conn(|conn| {
-            let tx = conn.unchecked_transaction()?;
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
             let mut inserted = 0u64;
             if !rows.is_empty() {
                 // UPSERT: re-parse after cursor reset repairs double-peeled Codex

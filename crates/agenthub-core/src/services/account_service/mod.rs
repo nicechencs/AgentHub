@@ -91,7 +91,11 @@ impl AccountService {
 
     /// Full live-switch service with shared backup root / lock directory.
     pub fn with_live(db: Database, registry: AdapterRegistry, backups_root: PathBuf) -> Self {
-        let lock_dir = backups_root.parent().unwrap_or(&backups_root).join("locks");
+        // Same DB-rooted lock directory as ProviderService / BackupService —
+        // do not derive from backups_root or the two tracks can diverge.
+        let lock_dir = crate::services::LiveWriteAuthority::from_database(&db)
+            .lock_dir()
+            .to_path_buf();
         Self {
             db: db.clone(),
             repo: AccountRepo::new(db.clone()),

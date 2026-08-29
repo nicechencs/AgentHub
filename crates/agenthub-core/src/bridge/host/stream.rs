@@ -30,7 +30,7 @@ use super::http::{
 };
 use super::surface::DownstreamSurface;
 use super::transport::{UpstreamChannel, UpstreamDecode};
-use super::upstream::{capture_grok_completed, capture_grok_sse};
+use super::upstream::{capture_grok_completed, capture_grok_sse, grok_upstream};
 use super::{
     BODY_LIMIT_BYTES, STREAM_LIMIT_BYTES, UPSTREAM_BODY_IDLE_TIMEOUT, UPSTREAM_STREAM_IDLE_TIMEOUT,
 };
@@ -630,6 +630,7 @@ pub(super) fn passthrough_sse_response(
     let output = stream! {
         let _permit = permit;
         let mut upstream_bytes = 0usize;
+        let should_capture = grok_upstream(&observed);
         let mut capture = Vec::new();
         let mut responses_buffer = std::collections::VecDeque::new();
         let mut next_sequence_number = 0_u64;
@@ -671,7 +672,7 @@ pub(super) fn passthrough_sse_response(
                 return;
             }
             upstream_bytes += chunk.len();
-            if capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
+            if should_capture && capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
                 capture.extend_from_slice(&chunk);
             }
             if !is_responses {
@@ -771,8 +772,10 @@ pub(super) fn passthrough_sse_response(
             ));
             return;
         }
-        if let Ok(sse) = std::str::from_utf8(&capture) {
-            capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+        if should_capture {
+            if let Ok(sse) = std::str::from_utf8(&capture) {
+                capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+            }
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op, status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
@@ -988,6 +991,7 @@ pub(super) fn messages_stream_response(
         let mut buffer = std::collections::VecDeque::new();
         let mut upstream_bytes = 0usize;
         let mut output_bytes = 0usize;
+        let should_capture = grok_upstream(&observed);
         let mut capture = Vec::new();
         let _permit = permit;
         let mut saw_done = false;
@@ -1023,7 +1027,7 @@ pub(super) fn messages_stream_response(
                 return;
             }
             upstream_bytes += chunk.len();
-            if capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
+            if should_capture && capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
                 capture.extend_from_slice(&chunk);
             }
             buffer.extend(chunk.iter().copied());
@@ -1122,8 +1126,10 @@ pub(super) fn messages_stream_response(
                 yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
             }
         }
-        if let Ok(sse) = std::str::from_utf8(&capture) {
-            capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+        if should_capture {
+            if let Ok(sse) = std::str::from_utf8(&capture) {
+                capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+            }
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "messages_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
@@ -1156,6 +1162,7 @@ pub(super) fn chat_stream_response(
         let mut buffer = std::collections::VecDeque::new();
         let mut upstream_bytes = 0usize;
         let mut output_bytes = 0usize;
+        let should_capture = grok_upstream(&observed);
         let mut capture = Vec::new();
         let _permit = permit;
         let mut saw_done = false;
@@ -1191,7 +1198,7 @@ pub(super) fn chat_stream_response(
                 return;
             }
             upstream_bytes += chunk.len();
-            if capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
+            if should_capture && capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
                 capture.extend_from_slice(&chunk);
             }
             buffer.extend(chunk.iter().copied());
@@ -1305,8 +1312,10 @@ pub(super) fn chat_stream_response(
             output_bytes += frame.len();
             yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
         }
-        if let Ok(sse) = std::str::from_utf8(&capture) {
-            capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+        if should_capture {
+            if let Ok(sse) = std::str::from_utf8(&capture) {
+                capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+            }
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "chat_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
