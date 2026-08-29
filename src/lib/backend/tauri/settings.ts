@@ -207,10 +207,16 @@ function snapshotAfterCommittedWrite(
   return { ...base, ...patch };
 }
 
-/** GUI log helper: op + agent + last4 only. Never pass a raw key. */
+/** GUI log helper: op + agent + last4 (+ optional route fields). Never pass a raw key. */
 export async function logGuiEvent(
   op: string,
-  detail?: { agent?: string; last4?: string },
+  detail?: {
+    agent?: string;
+    last4?: string;
+    profileId?: string;
+    route?: string;
+    code?: string;
+  },
 ): Promise<void> {
   const trimmed = op.trim();
   if (!trimmed) return;
@@ -219,6 +225,9 @@ export async function logGuiEvent(
       op: trimmed,
       agent: detail?.agent ?? null,
       last4: detail?.last4 ?? null,
+      profileId: detail?.profileId ?? null,
+      route: detail?.route ?? null,
+      code: detail?.code ?? null,
     });
   } catch (e) {
     log.debug('logGuiEvent failed', e);

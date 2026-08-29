@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { Input } from '@/components/ui/input';
 import { SecretInput } from '@/components/shared/SecretInput';
+import { logGuiEvent, guiErrorCode } from '@/lib/api/settings';
 import type { TranslateFn } from '@/lib/i18n';
 import type { ClaudeContextWindowChoice } from '@/lib/claude-client-env';
 import {
@@ -136,10 +137,19 @@ export function CreateRouteDialog({
         ...createInput,
         models: vendor === 'openrouter' ? (models.trim() || DEFAULT_CREATE_ROUTE_MODEL) : models,
       });
+      void logGuiEvent('route_create', {
+        route: 'local_bridge',
+        agent: createInput.endpoints[0],
+      });
       reset();
       onOpenChange(false);
       onCreated();
     } catch (cause) {
+      void logGuiEvent('route_create_fail', {
+        route: 'local_bridge',
+        agent: createInput.endpoints[0],
+        code: guiErrorCode(cause),
+      });
       setError(cause instanceof Error ? cause.message : t('routes.create.fallback'));
     } finally {
       setBusy(false);

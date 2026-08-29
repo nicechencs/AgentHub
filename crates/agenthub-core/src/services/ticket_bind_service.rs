@@ -6,9 +6,11 @@
 //! hosted by the desktop controller; core refuses to own the listener.
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use crate::adapters::AdapterRegistry;
 use crate::error::{AppError, Result};
+use crate::logging::targets;
 use crate::models::CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID;
 use crate::models::{
     parse_ticket_id, AdapterApplyRequest, AdapterApplyResult, AdapterProfile, AdapterRoute,
@@ -18,6 +20,7 @@ use crate::models::{
 use crate::services::adapter_route_constants::is_unknown_custom_relay_provider;
 use crate::services::{AccountService, AdapterApplyService, ProviderService, TicketReadService};
 use crate::storage::{AdapterProfileRepo, Database};
+use crate::utils::redact::redact_text;
 
 const HOSTED_BRIDGE_BIND: &str = "ticket.bind_hosted_bridge";
 const PREVIOUS_CURRENT_ID: &str = "previousCurrentId";
@@ -68,6 +71,14 @@ impl TicketBindService {
     /// Provider ticket first. Projection tickets are rejected with the same
     /// [`crate::models::PROJECTION_NOT_A_TICKET`] reason as `plan`.
     pub fn bind(&self, request: &TicketPlanRequest) -> Result<TicketBinding> {
+        let started = Instant::now();
+        let agent = request.target_agent_id;
+        let result = self.bind_inner(request);
+        log_ticket_op("bind", agent, started, &result);
+        result
+    }
+
+    fn bind_inner(&self, request: &TicketPlanRequest) -> Result<TicketBinding> {
         let (source_kind, source_id) = self.tickets.parse_bindable_ticket(&request.ticket_id)?;
         let plan = self.tickets.plan(request)?;
         if !plan.can_apply {
@@ -128,6 +139,14 @@ impl TicketBindService {
     /// the Agent's previous live (when the generated row is current) and
     /// deletes the projection + profile. The source ticket remains.
     pub fn unbind(&self, request: &TicketUnbindRequest) -> Result<()> {
+        let started = Instant::now();
+        let agent = request.agent_id;
+        let result = self.unbind_inner(request);
+        log_ticket_op("unbind", agent, started, &result);
+        result
+    }
+
+    fn unbind_inner(&self, request: &TicketUnbindRequest) -> Result<()> {
         let (source_kind, source_id) =
             parse_ticket_id(&request.ticket_id).map_err(AppError::InvalidArg)?;
         let profile = self
@@ -214,6 +233,75 @@ pub fn ticket_binding_from_apply(ticket_id: &str, result: &AdapterApplyResult) -
         active: result.provider.is_current,
         profile_id: Some(result.profile.id.clone()),
         bridge,
+    }
+}
+
+fn binding_route_label(route: TicketBindingRoute) -> &'static str {
+    match route {
+        TicketBindingRoute::Native => "native",
+        TicketBindingRoute::Reshape => "reshape",
+        TicketBindingRoute::Bridge => "local_bridge",
+    }
+}
+
+fn log_ticket_op<T>(op: &str, agent: AgentId, started: Instant, result: &Result<T>)
+where
+    T: TicketOpLogFields,
+{
+    let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    match result {
+        Ok(value) => {
+            let msg = match op {
+                "bind" => "bound ticket",
+                "unbind" => "unbound ticket",
+                _ => "ok",
+            };
+            tracing::info!(
+                module = targets::ADAPTER,
+                op,
+                agent = agent.as_str(),
+                route = value.route_label().unwrap_or("-"),
+                profile_id = value.profile_id().unwrap_or("-"),
+                elapsed_ms,
+                "{msg}"
+            );
+        }
+        Err(err) => {
+            let msg = redact_text(&err.to_string());
+            tracing::error!(
+                module = targets::ADAPTER,
+                op,
+                agent = agent.as_str(),
+                code = err.code(),
+                elapsed_ms,
+                "{msg}"
+            );
+        }
+    }
+}
+
+trait TicketOpLogFields {
+    fn route_label(&self) -> Option<&'static str>;
+    fn profile_id(&self) -> Option<&str>;
+}
+
+impl TicketOpLogFields for TicketBinding {
+    fn route_label(&self) -> Option<&'static str> {
+        Some(binding_route_label(self.route))
+    }
+
+    fn profile_id(&self) -> Option<&str> {
+        self.profile_id.as_deref()
+    }
+}
+
+impl TicketOpLogFields for () {
+    fn route_label(&self) -> Option<&'static str> {
+        None
+    }
+
+    fn profile_id(&self) -> Option<&str> {
+        None
     }
 }
 
