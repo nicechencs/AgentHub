@@ -34,9 +34,10 @@ impl AdapterSecretResolver {
                 self.validate_local_token_target(provider)?;
                 Ok(false)
             }
-            Some(GENERATED_BY) if crate::utils::redact::api_key_secret(&provider.settings_config)
-                .and_then(|value| usable_secret(&value).map(str::to_owned))
-                .is_some() =>
+            Some(GENERATED_BY)
+                if crate::utils::redact::api_key_secret(&provider.settings_config)
+                    .and_then(|value| usable_secret(&value).map(str::to_owned))
+                    .is_some() =>
             {
                 Ok(false)
             }

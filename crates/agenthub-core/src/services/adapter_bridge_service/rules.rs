@@ -295,7 +295,8 @@ pub(super) fn validate_generated_provider(
             return Err(invalid_projection());
         }
         if let Some(port) = expected_port {
-            let matches_current = if projection_of(rule.target_agent) == BridgeProjection::GrokToml {
+            let matches_current = if projection_of(rule.target_agent) == BridgeProjection::GrokToml
+            {
                 content == grok_bridge_toml(&rule, port, &local_bearer)
                     || content == legacy_grok_bridge_toml(&rule, port, &local_bearer)
             } else {
@@ -401,8 +402,7 @@ pub(super) fn provider_owned_by(provider: &Provider, profile: &AdapterProfile) -
     };
     provider.id == stable_id(rule.provider_prefix, &profile.source_id)
         && provider.agent_id == rule.target_agent
-        && provider.meta.get("preset").and_then(Value::as_str)
-            == Some(preset_of(rule.target_agent))
+        && provider.meta.get("preset").and_then(Value::as_str) == Some(preset_of(rule.target_agent))
         && provider.meta.get("generatedBy").and_then(Value::as_str) == Some(GENERATED_BY)
         && provider.meta.get("adapterRuleId").and_then(Value::as_str) == Some(rule.rule_id)
         && provider

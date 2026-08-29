@@ -1,7 +1,7 @@
 use super::*;
 use crate::adapters::{AdapterRegistry, AgentAdapter};
-use std::collections::HashMap;
 use crate::utils::process::{ProcessRunner, RecordingProcessRunner, StreamingProcessRunner};
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;

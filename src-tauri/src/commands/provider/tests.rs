@@ -346,14 +346,8 @@ fn stored_secret_remote_models_rejects_unsaved_base_url() {
     )
     .unwrap();
 
-    let err = list_remote_openai_models_for_provider_inner(
-        &hub,
-        "p-relay",
-        "http://evil.example/v1",
-    )
-    .unwrap_err();
-    assert!(
-        err.contains("重新填写") || err.contains("已保存"),
-        "{err}"
-    );
+    let err =
+        list_remote_openai_models_for_provider_inner(&hub, "p-relay", "http://evil.example/v1")
+            .unwrap_err();
+    assert!(err.contains("重新填写") || err.contains("已保存"), "{err}");
 }

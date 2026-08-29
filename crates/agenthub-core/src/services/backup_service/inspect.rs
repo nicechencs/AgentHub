@@ -9,9 +9,7 @@ use crate::error::{AppError, Result};
 use crate::models::{
     AgentId, BackupFact, BackupFileView, BackupInspect, BackupListItem, BackupRecord,
 };
-use crate::utils::redact::{
-    mask_secret_tail, redact_json, redact_text, refresh_token_tail,
-};
+use crate::utils::redact::{mask_secret_tail, redact_json, redact_text, refresh_token_tail};
 
 use super::path_safety::{classify_path, is_path_inside, PathClass};
 use super::snapshot::{read_manifest, ManifestEntry};
@@ -50,7 +48,11 @@ impl BackupService {
         self.inspect_record(&record, true)
     }
 
-    fn inspect_record(&self, record: &BackupRecord, include_content: bool) -> Result<BackupInspect> {
+    fn inspect_record(
+        &self,
+        record: &BackupRecord,
+        include_content: bool,
+    ) -> Result<BackupInspect> {
         let dir = self.validate_snapshot_dir(record)?;
         let manifest = read_manifest(&dir).ok().flatten();
         let entries: Vec<(String, Option<String>)> = if let Some(manifest) = manifest {
@@ -60,7 +62,12 @@ impl BackupService {
                 .map(|ManifestEntry { stored, source, .. }| (stored, Some(source)))
                 .collect()
         } else {
-            record.files.iter().cloned().map(|name| (name, None)).collect()
+            record
+                .files
+                .iter()
+                .cloned()
+                .map(|name| (name, None))
+                .collect()
         };
 
         let mut files = Vec::new();
@@ -166,9 +173,8 @@ fn redacted_preview(text: &str) -> String {
     let trimmed = text.trim_start();
     if trimmed.starts_with('{') || trimmed.starts_with('[') {
         if let Ok(value) = serde_json::from_str::<Value>(text) {
-            let pretty = serde_json::to_string_pretty(&redact_json(&value)).unwrap_or_else(|_| {
-                redact_text(text)
-            });
+            let pretty = serde_json::to_string_pretty(&redact_json(&value))
+                .unwrap_or_else(|_| redact_text(text));
             return pretty;
         }
     }
@@ -256,8 +262,15 @@ fn consider_field(key: &str, value: &str, facts: &mut FactSet) {
                 facts.email = Some(v.to_string());
             }
         }
-        "api_key" | "apikey" | "access_token" | "accesstoken" | "refresh_token"
-        | "refreshtoken" | "auth_token" | "authtoken" | "anthropic_auth_token" => {
+        "api_key"
+        | "apikey"
+        | "access_token"
+        | "accesstoken"
+        | "refresh_token"
+        | "refreshtoken"
+        | "auth_token"
+        | "authtoken"
+        | "anthropic_auth_token" => {
             if facts.secret_tail.is_none() {
                 facts.secret_tail = mask_secret_tail(v);
             }

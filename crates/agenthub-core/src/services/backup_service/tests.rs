@@ -26,7 +26,8 @@ impl AgentAdapter for FakeAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![], extra_copies: Vec::new(),
+            notes: vec![],
+            extra_copies: Vec::new(),
         }
     }
 
@@ -141,7 +142,10 @@ fn inspect_redacts_secrets_and_extracts_email() {
     assert!(content.contains("a@example.com"));
     assert!(!content.contains("rt-secret-should-not-leak"));
     assert!(content.contains("***"));
-    assert!(inspect.facts.iter().any(|f| f.key == "email" && f.value == "a@example.com"));
+    assert!(inspect
+        .facts
+        .iter()
+        .any(|f| f.key == "email" && f.value == "a@example.com"));
 }
 
 #[test]
