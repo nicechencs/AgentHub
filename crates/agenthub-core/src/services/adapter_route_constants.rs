@@ -605,33 +605,37 @@ fn first_http_url(value: &Value, pointers: &[&str]) -> Option<String> {
 
 fn first_toml_http_url(content: &str) -> Option<String> {
     let doc = content.parse::<toml_edit::DocumentMut>().ok()?;
-    toml_table_base_url(&doc, "model_providers", toml_active_provider_slug(&doc).as_deref())
-        .or_else(|| {
-            toml_table_base_url(
-                &doc,
-                "providers",
-                toml_named_table_slug(&doc, "default_provider", "providers").as_deref(),
-            )
-        })
-        .or_else(|| {
-            let alias = doc
-                .get("models")
-                .and_then(|item| item.as_table())
-                .and_then(|models| models.get("default"))
-                .and_then(|item| item.as_str())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned);
-            toml_table_base_url(&doc, "model", alias.as_deref())
-        })
-        .or_else(|| {
-            doc.get("base_url")
-                .and_then(|item| item.as_str())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-        })
-        .filter(|value| normalized_http_host(value).is_some())
+    toml_table_base_url(
+        &doc,
+        "model_providers",
+        toml_active_provider_slug(&doc).as_deref(),
+    )
+    .or_else(|| {
+        toml_table_base_url(
+            &doc,
+            "providers",
+            toml_named_table_slug(&doc, "default_provider", "providers").as_deref(),
+        )
+    })
+    .or_else(|| {
+        let alias = doc
+            .get("models")
+            .and_then(|item| item.as_table())
+            .and_then(|models| models.get("default"))
+            .and_then(|item| item.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        toml_table_base_url(&doc, "model", alias.as_deref())
+    })
+    .or_else(|| {
+        doc.get("base_url")
+            .and_then(|item| item.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    })
+    .filter(|value| normalized_http_host(value).is_some())
 }
 
 fn toml_table_base_url(
@@ -809,7 +813,10 @@ pub(crate) fn openai_compat_listed_models(blob: &Value) -> Vec<String> {
     let mut listed = Vec::new();
     if let Some(items) = blob.get("listedModels").and_then(Value::as_array) {
         for item in items {
-            if let Some(model) = item.as_str().map(crate::models::strip_claude_context_marker).filter(|value| !value.is_empty())
+            if let Some(model) = item
+                .as_str()
+                .map(crate::models::strip_claude_context_marker)
+                .filter(|value| !value.is_empty())
             {
                 if !listed
                     .iter()
@@ -879,7 +886,9 @@ pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
         }
     };
     if let Some(listed) = blob.get("listedModels").and_then(Value::as_array) {
-        let first = listed.iter().find_map(|item| item.as_str().and_then(usable));
+        let first = listed
+            .iter()
+            .find_map(|item| item.as_str().and_then(usable));
         if first.is_some() {
             return first;
         }
@@ -891,7 +900,10 @@ pub(crate) fn openai_compat_pinned_model(blob: &Value) -> Option<String> {
     {
         if let Some(content) = blob.get("content").and_then(Value::as_str) {
             if let Ok(doc) = content.parse::<toml_edit::DocumentMut>() {
-                if let Some(model) = doc.get("model").and_then(|item| item.as_str()).and_then(usable)
+                if let Some(model) = doc
+                    .get("model")
+                    .and_then(|item| item.as_str())
+                    .and_then(usable)
                 {
                     return Some(model);
                 }

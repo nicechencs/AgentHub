@@ -426,10 +426,12 @@ pub(super) fn attach_identity_meta(
         }
         if kind == AccountKind::ApiKey {
             if let Some(tail) = api_key_tail(credentials) {
-                obj.entry("secretTail".to_string()).or_insert_with(|| json!(tail));
+                obj.entry("secretTail".to_string())
+                    .or_insert_with(|| json!(tail));
             }
             if let Some(hash) = api_key_secret_hash(credentials) {
-                obj.entry("secretHash".to_string()).or_insert_with(|| json!(hash));
+                obj.entry("secretHash".to_string())
+                    .or_insert_with(|| json!(hash));
             }
         }
     } else if let Some(lab) = id_label {
@@ -440,10 +442,12 @@ pub(super) fn attach_identity_meta(
         }
         if kind == AccountKind::ApiKey {
             if let Some(tail) = api_key_tail(credentials) {
-                map.entry("secretTail".to_string()).or_insert_with(|| json!(tail));
+                map.entry("secretTail".to_string())
+                    .or_insert_with(|| json!(tail));
             }
             if let Some(hash) = api_key_secret_hash(credentials) {
-                map.entry("secretHash".to_string()).or_insert_with(|| json!(hash));
+                map.entry("secretHash".to_string())
+                    .or_insert_with(|| json!(hash));
             }
         }
         if let Value::Object(old) = extra {

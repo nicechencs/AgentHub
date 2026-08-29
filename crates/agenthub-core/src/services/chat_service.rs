@@ -722,7 +722,9 @@ fn upstream_failure_message(content: &str, stderr: &str, stdout: &str) -> Option
     }
     if hay.contains("stealth/ox")
         || hay.contains("stealth ox")
-        || ((hay.contains("\"code\":404") || hay.contains("\"code\": 404") || hay.contains(" 404:"))
+        || ((hay.contains("\"code\":404")
+            || hay.contains("\"code\": 404")
+            || hay.contains(" 404:"))
             && (hay.contains("model")
                 || hay.contains("retired")
                 || hay.contains("glm-5.3")

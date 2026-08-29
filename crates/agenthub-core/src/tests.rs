@@ -38,7 +38,10 @@ fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
         }),
         "parser health must omit uninstalled agents"
     );
-    assert_eq!(hub.registry().all().len(), crate::models::AgentId::ALL.len());
+    assert_eq!(
+        hub.registry().all().len(),
+        crate::models::AgentId::ALL.len()
+    );
     assert!(report.db_ok);
     assert!(report.ok);
     assert_eq!(report.version, AgentHub::version());

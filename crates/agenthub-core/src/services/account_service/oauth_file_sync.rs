@@ -49,7 +49,10 @@ pub(super) fn stamp_oauth_file_sync_needs_attention(account: &Account) -> Accoun
     if !next.extra.is_object() {
         next.extra = json!({});
     }
-    if next.extra.get(OAUTH_FILE_SYNC_EXTRA).and_then(|v| v.as_str())
+    if next
+        .extra
+        .get(OAUTH_FILE_SYNC_EXTRA)
+        .and_then(|v| v.as_str())
         == Some(OAUTH_FILE_SYNC_NEEDS_ATTENTION)
     {
         return next;
@@ -64,10 +67,7 @@ pub(super) fn stamp_oauth_file_sync_needs_attention(account: &Account) -> Accoun
 }
 
 /// File sync missed. Mark persist failure must still surface the partial refresh.
-pub(super) fn apply_refresh_file_sync_mark(
-    persisted: Account,
-    mark: Result<Account>,
-) -> Account {
+pub(super) fn apply_refresh_file_sync_mark(persisted: Account, mark: Result<Account>) -> Account {
     match mark {
         Ok(marked) => marked,
         Err(_) => stamp_oauth_file_sync_needs_attention(&persisted),
@@ -617,7 +617,10 @@ impl AccountService {
         .map_err(|error| error.into_error())
     }
 
-    pub(super) fn mark_oauth_file_sync_needs_attention(&self, account: &Account) -> Result<Account> {
+    pub(super) fn mark_oauth_file_sync_needs_attention(
+        &self,
+        account: &Account,
+    ) -> Result<Account> {
         let stamped = stamp_oauth_file_sync_needs_attention(account);
         if stamped.extra == account.extra {
             return Ok(account.clone());

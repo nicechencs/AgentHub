@@ -4,10 +4,10 @@
 //! - `GET https://api.skillhub.cn/api/skills?page=&pageSize=&keyword=…`
 //! - `GET https://api.skillhub.cn/api/v1/download?slug=…` (302 → zip)
 
+use crate::utils::process::apply_no_window;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use crate::utils::process::apply_no_window;
 
 use serde_json::Value;
 
@@ -407,27 +407,25 @@ fn download_file(url: &str, dest: &Path) -> Result<()> {
     let max_time = (SKILLS_SH_CURL_MAX_SECS * 3).to_string();
     let mut cmd = Command::new(bin);
     cmd.args([
-            "-fsSL",
-            "-L",
-            "--connect-timeout",
-            &connect,
-            "--max-time",
-            &max_time,
-            "-A",
-            &ua,
-            "-o",
-        ])
-        .arg(dest)
-        .arg(url);
+        "-fsSL",
+        "-L",
+        "--connect-timeout",
+        &connect,
+        "--max-time",
+        &max_time,
+        "-A",
+        &ua,
+        "-o",
+    ])
+    .arg(dest)
+    .arg(url);
     apply_no_window(&mut cmd);
-    let output = cmd
-        .output()
-        .map_err(|e| {
-            AppError::message(
-                "skill.market",
-                format!("skillhub download (curl) failed: {e}"),
-            )
-        })?;
+    let output = cmd.output().map_err(|e| {
+        AppError::message(
+            "skill.market",
+            format!("skillhub download (curl) failed: {e}"),
+        )
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(AppError::message(

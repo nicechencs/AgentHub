@@ -11,9 +11,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::error::{AppError, Result};
 use crate::integrations::agents::codex::leftover;
 use crate::models::{
-    parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan,
-    AdapterProfile, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
-    AgentId, PersistedTicketSurface, Provider, Ticket, TicketBinding, TicketBindingRoute,
+    parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan, AdapterProfile,
+    AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId,
+    PersistedTicketSurface, Provider, Ticket, TicketBinding, TicketBindingRoute,
     TicketBridgeRuntime, TicketCredentialClass, TicketPlanRequest, TicketSurface,
     TicketSurfaceGroup, TicketSurfaceMember, TicketWallet, PROJECTION_NOT_A_TICKET,
 };

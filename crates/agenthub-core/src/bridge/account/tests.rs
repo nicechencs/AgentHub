@@ -143,11 +143,9 @@ fn pick_from_candidates_cannot_select_member_absent_from_resolve() {
         .pick_from_candidates(&candidates(&["acc-a"]), None, &[])
         .expect("A");
     assert_eq!(picked.source_id, "acc-a");
-    assert!(
-        picker
-            .pick_from_candidates(&candidates(&["acc-missing"]), None, &[])
-            .is_none()
-    );
+    assert!(picker
+        .pick_from_candidates(&candidates(&["acc-missing"]), None, &[])
+        .is_none());
 }
 
 #[test]

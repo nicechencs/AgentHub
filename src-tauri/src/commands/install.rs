@@ -299,7 +299,5 @@ pub async fn open_path_in_file_manager(path: String) -> Result<String, String> {
     Err(msg)
 }
 
-
-
 #[cfg(test)]
 mod tests;

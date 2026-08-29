@@ -18,7 +18,14 @@ use super::sources::{ensure_skill_md, infer_skill_id, SkillSourceService};
 #[test]
 fn safe_path_component_rejects_cmd_metacharacters() {
     use super::fs_safe::validate_safe_path_component;
-    for name in ["x&calc", "a^b", "%PATH%", "bang!me", "open(close)", "ok|pipe"] {
+    for name in [
+        "x&calc",
+        "a^b",
+        "%PATH%",
+        "bang!me",
+        "open(close)",
+        "ok|pipe",
+    ] {
         let err = validate_safe_path_component(name).expect_err(name);
         assert_eq!(err.code(), "invalid_arg", "{name}");
     }

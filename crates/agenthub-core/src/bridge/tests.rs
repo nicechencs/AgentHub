@@ -609,11 +609,9 @@ async fn stop_drains_an_inflight_request_before_returning() {
     reached_upstream.await;
     let draining_host = host.clone();
     let mut stop = tokio::spawn(async move { draining_host.stop("drain").await });
-    assert!(
-        tokio::time::timeout(Duration::from_millis(75), &mut stop)
-            .await
-            .is_err()
-    );
+    assert!(tokio::time::timeout(Duration::from_millis(75), &mut stop)
+        .await
+        .is_err());
     assert!(matches!(
         host.start(spec("drain", 0, upstream_port)).await,
         Err(BridgeHostError::Stopping)
@@ -840,11 +838,9 @@ async fn slow_unauthorized_body_is_rejected_before_json_extraction() {
         .await
         .expect("unauthorized request must not wait for body")
         .expect("read response");
-    assert!(
-        std::str::from_utf8(&response[..received])
-            .expect("http response")
-            .starts_with("HTTP/1.1 401")
-    );
+    assert!(std::str::from_utf8(&response[..received])
+        .expect("http response")
+        .starts_with("HTTP/1.1 401"));
     host.stop("slow-auth").await.expect("stop");
     upstream_task.abort();
 }
@@ -973,20 +969,18 @@ async fn stopping_one_profile_does_not_block_starting_or_stopping_another() {
     reached_upstream.await;
     let draining_host = host.clone();
     let stop = tokio::spawn(async move { draining_host.stop("cross-a").await });
-    assert!(
-        tokio::time::timeout(
-            Duration::from_millis(100),
-            host.start(spec_with_token(
-                "cross-b",
-                0,
-                upstream_port,
-                "local-token-cross-b-bbbbbb",
-            )),
-        )
-        .await
-        .expect("unrelated profile start must not queue")
-        .is_ok()
-    );
+    assert!(tokio::time::timeout(
+        Duration::from_millis(100),
+        host.start(spec_with_token(
+            "cross-b",
+            0,
+            upstream_port,
+            "local-token-cross-b-bbbbbb",
+        )),
+    )
+    .await
+    .expect("unrelated profile start must not queue")
+    .is_ok());
     release.notify_waiters();
     assert!(stop.await.expect("stop task").is_ok());
     assert!(request.await.expect("request task").is_ok());
@@ -1019,11 +1013,9 @@ async fn repeated_shutdown_joins_the_same_inflight_cleanup() {
     let first = tokio::spawn(async move { first_host.shutdown().await });
     let second_host = host.clone();
     let mut second = tokio::spawn(async move { second_host.shutdown().await });
-    assert!(
-        tokio::time::timeout(Duration::from_millis(75), &mut second)
-            .await
-            .is_err()
-    );
+    assert!(tokio::time::timeout(Duration::from_millis(75), &mut second)
+        .await
+        .is_err());
     release.notify_waiters();
     assert!(first.await.expect("first shutdown task").is_ok());
     assert!(second.await.expect("second shutdown task").is_ok());
@@ -1146,11 +1138,10 @@ async fn status_and_health_report_last_observed_upstream_without_a_new_probe() {
     let stopped = host.stop("observed").await.expect("stop");
     assert_eq!(stopped.state, BridgeRuntimeState::Stopped);
     assert_eq!(stopped.upstream_status, BridgeUpstreamStatus::Stopped);
-    assert!(
-        host.status("observed")
-            .expect("status after stop")
-            .is_none()
-    );
+    assert!(host
+        .status("observed")
+        .expect("status after stop")
+        .is_none());
     upstream_task.abort();
 }
 
@@ -1444,8 +1435,8 @@ async fn grok_responses_upstream() -> (u16, tokio::task::JoinHandle<()>) {
     (port, task)
 }
 
-async fn capturing_grok_responses_upstream()
--> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
+async fn capturing_grok_responses_upstream(
+) -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
     async fn responses(
         State(captured): State<Arc<Mutex<Vec<Value>>>>,
         Json(body): Json<Value>,
@@ -1662,8 +1653,8 @@ async fn codex_responses_sse_upstream() -> (u16, tokio::task::JoinHandle<()>) {
     (port, task)
 }
 
-async fn capturing_codex_responses_sse_upstream()
--> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
+async fn capturing_codex_responses_sse_upstream(
+) -> (u16, Arc<Mutex<Vec<Value>>>, tokio::task::JoinHandle<()>) {
     async fn responses(
         State(captured): State<Arc<Mutex<Vec<Value>>>>,
         headers: axum::http::HeaderMap,
@@ -2463,11 +2454,9 @@ async fn grok_claude_thinking_maps_to_upstream_reasoning() {
     assert_eq!(captured[0].body["reasoning"]["effort"], "high");
     assert_eq!(captured[0].body["reasoning"]["summary"], "detailed");
     let include = captured[0].body["include"].as_array().expect("include");
-    assert!(
-        include
-            .iter()
-            .any(|item| item == "reasoning.encrypted_content")
-    );
+    assert!(include
+        .iter()
+        .any(|item| item == "reasoning.encrypted_content"));
     assert!(captured[0].body.get("thinking").is_none());
     assert_eq!(captured[0].body["model"], "grok-4.5");
 

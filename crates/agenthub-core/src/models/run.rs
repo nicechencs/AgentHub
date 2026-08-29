@@ -159,9 +159,10 @@ impl RunSpec {
         }
         parts.push(quote_if_needed(&self.program.display().to_string()));
         let mut hide_next = false;
-        let last_prompt_index = self.args.iter().rposition(|a| {
-            !a.starts_with('-') && a != "exec" && a != "resume"
-        });
+        let last_prompt_index = self
+            .args
+            .iter()
+            .rposition(|a| !a.starts_with('-') && a != "exec" && a != "resume");
         for (index, a) in self.args.iter().enumerate() {
             if hide_next {
                 parts.push("<prompt>".into());

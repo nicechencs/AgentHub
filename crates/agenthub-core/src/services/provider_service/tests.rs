@@ -1898,7 +1898,11 @@ fn list_merges_claude_rows_that_only_differ_by_json_schema() {
         .iter()
         .filter(|row| row.meta.get("generatedBy").and_then(|v| v.as_str()) != Some("adapter"))
         .collect();
-    assert_eq!(user_rows.len(), 1, "same key+url must merge even when one row has $schema");
+    assert_eq!(
+        user_rows.len(),
+        1,
+        "same key+url must merge even when one row has $schema"
+    );
     let trash = svc.connections.list_trash(Some(AgentId::Claude)).unwrap();
     assert_eq!(trash.len(), 1);
     assert_eq!(

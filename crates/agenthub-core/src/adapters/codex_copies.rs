@@ -109,16 +109,8 @@ fn desktop_codex_bins() -> Vec<PathBuf> {
         if let Ok(rd) = std::fs::read_dir(r"C:\Program Files\WindowsApps") {
             for ent in rd.flatten() {
                 let name = ent.file_name();
-                if name
-                    .to_string_lossy()
-                    .starts_with("OpenAI.Codex_")
-                {
-                    out.push(
-                        ent.path()
-                            .join("app")
-                            .join("resources")
-                            .join("codex.exe"),
-                    );
+                if name.to_string_lossy().starts_with("OpenAI.Codex_") {
+                    out.push(ent.path().join("app").join("resources").join("codex.exe"));
                 }
             }
         }
@@ -134,5 +126,3 @@ fn desktop_codex_bins() -> Vec<PathBuf> {
     }
     out
 }
-
-

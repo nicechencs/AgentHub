@@ -1179,7 +1179,9 @@ fn npm_nonzero_permission_failure_is_not_blamed_on_path() {
 #[test]
 fn installer_fail_panel_collapses_npm_http_progress() {
     let noisy: Vec<String> = (0..80)
-        .map(|i| format!("npm http fetch GET 200 https://registry.npmjs.org/@openai/codex/-/{i}.tgz"))
+        .map(|i| {
+            format!("npm http fetch GET 200 https://registry.npmjs.org/@openai/codex/-/{i}.tgz")
+        })
         .collect();
     let mut body = vec!["$ npm install -g @openai/codex".into()];
     body.extend(noisy);
@@ -1188,7 +1190,9 @@ fn installer_fail_panel_collapses_npm_http_progress() {
     let summarized = summarize_installer_output_lines(body);
     assert_eq!(summarized[0], "$ npm install -g @openai/codex");
     assert!(
-        summarized.iter().any(|line| line.contains("已省略") && line.contains("下载进度")),
+        summarized
+            .iter()
+            .any(|line| line.contains("已省略") && line.contains("下载进度")),
         "expected collapsed download progress, got {summarized:?}"
     );
     assert!(summarized.iter().any(|line| line.contains("EACCES")));
@@ -1200,7 +1204,11 @@ fn installer_fail_panel_collapses_npm_http_progress() {
             < 5,
         "raw npm HTTP must not be the fail-panel body: {summarized:?}"
     );
-    assert!(summarized.len() < 20, "too many lines: {}", summarized.len());
+    assert!(
+        summarized.len() < 20,
+        "too many lines: {}",
+        summarized.len()
+    );
 }
 
 #[test]
@@ -1233,7 +1241,9 @@ fn npm_nonzero_permission_failure_keeps_diagnosis_and_collapses_http() {
         out.logs
     );
     assert!(
-        out.logs.iter().any(|line| line.contains("已省略") && line.contains("下载进度")),
+        out.logs
+            .iter()
+            .any(|line| line.contains("已省略") && line.contains("下载进度")),
         "fail panel must collapse npm HTTP, got {:?}",
         out.logs
     );

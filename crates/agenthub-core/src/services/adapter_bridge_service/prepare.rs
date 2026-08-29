@@ -79,23 +79,22 @@ impl AdapterBridgeService {
         } else if let Some(provider) = existing_provider.as_ref() {
             validate_generated_provider(provider, &profile, profile.local_port)?;
         }
-        let (generated_provider_exists, generated_provider_is_current) =
-            if leftover_incomplete {
-                (true, false)
-            } else if let Some(provider) = existing_provider.as_ref() {
-                (
-                    true,
-                    provider_matches_current_projection(
-                        provider,
-                        &profile,
-                        profile.local_port,
-                        &upstream_model,
-                        context_window_tokens,
-                    ),
-                )
-            } else {
-                (false, false)
-            };
+        let (generated_provider_exists, generated_provider_is_current) = if leftover_incomplete {
+            (true, false)
+        } else if let Some(provider) = existing_provider.as_ref() {
+            (
+                true,
+                provider_matches_current_projection(
+                    provider,
+                    &profile,
+                    profile.local_port,
+                    &upstream_model,
+                    context_window_tokens,
+                ),
+            )
+        } else {
+            (false, false)
+        };
 
         if profile.status == AdapterProfileStatus::NeedsAttention || leftover_incomplete {
             profile.status = AdapterProfileStatus::Applying;
@@ -195,7 +194,8 @@ impl AdapterBridgeService {
                         "generated provider does not belong to adapter bridge profile",
                     ));
                 }
-                let current_ok = validate_generated_provider(&provider, &profile, Some(port)).is_ok()
+                let current_ok = validate_generated_provider(&provider, &profile, Some(port))
+                    .is_ok()
                     && local_bearer_from_provider(&provider).ok().as_deref()
                         == Some(prepared.material.local_bearer.as_str())
                     && profile.status == AdapterProfileStatus::Active
@@ -308,9 +308,7 @@ impl AdapterBridgeService {
         source_id: &str,
     ) -> Result<crate::bridge::ResolvedAuth> {
         let rule = rule_for_id(rule_id).ok_or_else(|| {
-            AppError::InvalidArg(
-                "这条本机路由已失效，无法启动。请删除后重建。".into(),
-            )
+            AppError::InvalidArg("这条本机路由已失效，无法启动。请删除后重建。".into())
         })?;
         self.resolve_upstream_auth(&rule, source_kind, source_id)
     }
