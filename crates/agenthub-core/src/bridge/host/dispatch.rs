@@ -9,7 +9,7 @@ use super::admission::{admit_conversation, AdmittedRequest};
 use super::gateway::{Gateway, GatewayAuthError, ModelSwitchOutcome};
 use super::http::{error_response, reject_invalid_local_auth, stopping_response, EdgeState};
 use super::pair_policy::{
-    identity_relay, pair_adapter_active, pair_direction, pair_model_servable,
+    identity_relay, pair_adapter_active, pair_adapter_rejected, pair_direction, pair_model_servable,
 };
 use super::stream::{
     chat_non_stream_response, chat_stream_response, messages_non_stream_response,
@@ -58,6 +58,16 @@ pub(super) async fn handle_conversation(
         Ok(admitted) => admitted,
         Err(response) => return response,
     };
+    let initial_channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
+    if surface == DownstreamSurface::Responses
+        && pair_adapter_rejected(&admitted.state, initial_channel)
+    {
+        return pair_adapter_rejected_response(
+            &admitted.state,
+            &admitted.request_id,
+            admitted.started,
+        );
+    }
     if let Some(serde_json::Value::String(model)) = admitted.body.get_mut("model") {
         let stripped = crate::models::strip_claude_context_marker(model).to_owned();
         if stripped != *model {
@@ -152,6 +162,13 @@ pub(super) async fn handle_conversation(
         }
     }
     let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
+    if surface == DownstreamSurface::Responses && pair_adapter_rejected(&admitted.state, channel) {
+        return pair_adapter_rejected_response(
+            &admitted.state,
+            &admitted.request_id,
+            admitted.started,
+        );
+    }
     if pair_adapter_active(&admitted.state, channel)
         && !pair_model_servable(&admitted.state, &model)
     {
@@ -248,6 +265,29 @@ pub(super) async fn handle_conversation(
         "downstream surface converted to upstream path"
     );
     forward_upstream(surface, admitted, channel, prepared, continuation_locked).await
+}
+
+fn pair_adapter_rejected_response(
+    state: &EdgeState,
+    request_id: &str,
+    started: Instant,
+) -> Response {
+    tracing::warn!(
+        target: "core.adapter",
+        profile_id = %state.profile_id,
+        request_id = %request_id,
+        op = "upstream",
+        code = "route_unavailable",
+        status = 503_u16,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "explicit Responses profile is not authorized for this route"
+    );
+    error_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "route_unavailable",
+        "This route cannot serve the requested Responses format.",
+        None,
+    )
 }
 
 fn pick_bound_member(
