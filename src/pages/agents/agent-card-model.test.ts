@@ -102,7 +102,7 @@ describe('extra copy labels', () => {
     expect(extraCopyKindLabel('native', (key) => key)).toBe('agents.card.channelOfficial');
     expect(extraCopyKindLabel('ide', (key) => key)).toBe('agents.card.extraCopyIde');
     expect(zh.agents.card.channelOfficial).toBe('官方脚本');
-    expect(zh.agents.card.channelNpm).toBe('npm');
+    expect(zh.agents.card.channelNpm).toBe('npm 包');
   });
 
   it('lists unique versions on the card and points extra copies to details', () => {

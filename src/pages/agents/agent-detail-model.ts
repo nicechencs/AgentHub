@@ -74,6 +74,11 @@ export function isRawInstallChannelLabel(id: string, label: string): boolean {
   return false;
 }
 
+/** Catalog `npm @scope/pkg` is a package id — fine on 安装位置, not as 渠道. */
+export function isNpmPackageCatalogLabel(id: string, label: string): boolean {
+  return id === 'npm' && /^npm\s+@/i.test(label.trim());
+}
+
 export function catalogChannelLabel(
   agentId: string,
   channel: string,
@@ -86,10 +91,26 @@ export function catalogChannelLabel(
 }
 
 /**
- * Human channel label used on the Agents detail panel.
- * Catalog first; then the same extra-copy / official-script words the rest of Agents uses.
+ * 渠道: dest human kind only (官方脚本 / npm 包 / 官网 Setup / IDE / 桌面).
+ * Package ids stay off this field.
  */
-export function installChannelDisplayLabel(
+export function installChannelKindLabel(
+  agentId: string,
+  channel: string | null | undefined,
+  t: TranslateFn,
+  catalogChannels?: readonly Pick<InstallChannelMeta, 'id' | 'label'>[],
+): string | undefined {
+  const id = channel?.trim();
+  if (!id) return undefined;
+  if (id === 'npm') return extraCopyKindLabel('npm', t);
+  const catalog = catalogChannelLabel(agentId, id, catalogChannels);
+  if (catalog && !isNpmPackageCatalogLabel(id, catalog)) return catalog;
+  if (extraCopyKindLabelKey(id)) return extraCopyKindLabel(id, t);
+  return undefined;
+}
+
+/** 安装位置 may show the catalog package id; 渠道 must not. */
+export function installLocationSourceLabel(
   agentId: string,
   channel: string | null | undefined,
   t: TranslateFn,
@@ -99,9 +120,9 @@ export function installChannelDisplayLabel(
   if (!id) return undefined;
   const catalog = catalogChannelLabel(agentId, id, catalogChannels);
   if (catalog) return catalog;
-  if (extraCopyKindLabelKey(id)) return extraCopyKindLabel(id, t);
-  return undefined;
+  return installChannelKindLabel(agentId, id, t, catalogChannels);
 }
+
 
 export function isDisplayableConfigDir(value?: string | null): value is string {
   if (!value || !isLiveFilePath(value)) return false;

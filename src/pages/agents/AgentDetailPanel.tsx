@@ -28,7 +28,8 @@ import {
 import {
   displayAgentConfigDir,
   formatAgentConversationEndpoints,
-  installChannelDisplayLabel,
+  installChannelKindLabel,
+  installLocationSourceLabel,
 } from './agent-detail-model';
 
 function Field({ label, value }: { label: string; value?: string | null }) {
@@ -67,7 +68,7 @@ export function AgentDetailPanel({
   const [uninstalling, setUninstalling] = React.useState(false);
   const [opening, setOpening] = React.useState<string | null>(null);
   const [resolvedConfigDir, setResolvedConfigDir] = React.useState<string | null>(null);
-  const channelLabel = installChannelDisplayLabel(
+  const channelLabel = installChannelKindLabel(
     agent.agentId,
     spawn?.source ?? agent.channel,
     t,
@@ -317,7 +318,7 @@ function InstallLocationRow({
   const { t } = useI18n();
   const versionText = formatAgentVersion(inst.version);
   const openable = Boolean(normalizeOpenPath(inst.location));
-  const sourceLabel = installChannelDisplayLabel(agentId, inst.source, t);
+  const sourceLabel = installLocationSourceLabel(agentId, inst.source, t);
   return (
     <li className="rounded-card border border-border bg-subtle/60 px-3 py-2">
       <div className="flex items-center justify-between gap-2">

@@ -30,7 +30,8 @@ describe('agents layout wiring', () => {
     expect(detail).toContain('InspectSurface');
     expect(detail).toContain("t('agents.detail.installLocations')");
     expect(detail).toContain("t('agents.detail.endpointTypes')");
-    expect(detail).toContain('installChannelDisplayLabel');
+    expect(detail).toContain('installChannelKindLabel');
+    expect(detail).toContain('installLocationSourceLabel');
     expect(detail).toContain('displayAgentConfigDir');
     expect(detail).toContain("t('agents.card.openConfigDir')");
     expect(detail).toContain("t('agents.card.openInstallDir')");

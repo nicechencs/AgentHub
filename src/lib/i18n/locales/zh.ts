@@ -1803,7 +1803,7 @@ export const zh = {
       extraCopyDesktop: "桌面应用",
       extraCopyLeftover: "遗留数据目录 npm",
       channelOfficial: "官方脚本",
-      channelNpm: "npm",
+      channelNpm: "npm 包",
       extraCopyCanUpdate: "可更新",
       extraCopyIsLatest: "已最新",
       extraCopyUpgradeSpawnOnly: "升级只作用于当前启动渠道",
