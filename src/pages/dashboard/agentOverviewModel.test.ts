@@ -27,6 +27,7 @@ function meta(id: AgentId, name: string = id): AgentMeta {
     color: '#000',
     letter: id[0]!.toUpperCase(),
     installChannels: [],
+    occupancy: 'exclusive',
   };
 }
 
@@ -259,7 +260,7 @@ describe('buildAgentCardView', () => {
     expect(view.versionText).toBe('v2.1.218');
     expect(view.metaText).toBe('me@example.com');
     expect(view.action).toEqual({ kind: 'connect' });
-    expect(view.ariaLabel).toContain('官方登录 me@example.com');
+    expect(view.ariaLabel).toContain('Official login me@example.com');
   });
 
   it('installed with empty connection uses 未配置 fallbacks', () => {

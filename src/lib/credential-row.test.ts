@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import type { Account, Provider } from '@/lib/types';
 import type { TicketView } from '@/lib/backend/contracts/ticket';
 import { providerEndpointMode, toCredentialRow } from './credential-row';
@@ -110,7 +111,66 @@ describe('toCredentialRow', () => {
       title: 'Claude OAuth',
       isCurrent: true,
     });
-    expect(row.subtitle).toContain('官方登录');
+    expect(row.subtitle).toContain('Official login');
+  });
+
+  it('translates the ticket credential/surface subtitle when a translator is passed', () => {
+    const tZh = createTranslator('zh');
+    const tEn = createTranslator('en');
+    const input = {
+      source: 'ticket' as const,
+      ticket: ticket({
+        id: 'account:t2',
+        sourceKind: 'account' as const,
+        sourceId: 't2',
+        label: 'Claude OAuth',
+        credentialClass: 'oauth' as const,
+        surface: 'claude-subscription' as const,
+      }),
+      isCurrent: true,
+    };
+
+    const zhRow = toCredentialRow(input, tZh);
+    expect(zhRow.subtitle).toContain('官方登录');
+    expect(zhRow.auth.label).toBe('官方登录');
+
+    const enRow = toCredentialRow(input, tEn);
+    expect(enRow.subtitle).toContain('Official login');
+    expect(enRow.auth.label).toBe('Official login');
+  });
+
+  it('translates the account idle subtitle when a translator is passed', () => {
+    const tZh = createTranslator('zh');
+    const tEn = createTranslator('en');
+    const account = acc({ id: 'a2', kind: 'oauth', label: 'me@x.com', isCurrent: false });
+
+    const zhRow = toCredentialRow({ source: 'account', account }, tZh);
+    expect(zhRow.subtitle).toContain('未生效');
+
+    const enRow = toCredentialRow({ source: 'account', account }, tEn);
+    expect(enRow.subtitle).toContain('Not current');
+    expect(enRow.subtitle).not.toContain('未生效');
+  });
+
+  it('translates the provider endpoint/current subtitle when a translator is passed', () => {
+    const tZh = createTranslator('zh');
+    const tEn = createTranslator('en');
+    const provider = prov({ id: 'p2', name: 'Relay', isCurrent: true });
+
+    const zhRow = toCredentialRow({ source: 'provider', provider }, tZh);
+    expect(zhRow.subtitle).toContain('自定义端点');
+    expect(zhRow.subtitle).toContain('当前生效');
+
+    const enRow = toCredentialRow({ source: 'provider', provider }, tEn);
+    expect(enRow.subtitle).toContain('Custom endpoint');
+    expect(enRow.subtitle).toContain('current');
+    expect(enRow.subtitle).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it('falls back to Chinese literals when no translator is passed (backward compat)', () => {
+    const account = acc({ id: 'a3', kind: 'oauth', label: 'me@x.com', isCurrent: false });
+    const row = toCredentialRow({ source: 'account', account });
+    expect(row.subtitle).toContain('未生效');
   });
 });
 

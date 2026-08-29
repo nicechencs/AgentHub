@@ -1,4 +1,4 @@
-//! P2-1: production integrations + test-only ninth agent.
+//! P2-1: production integrations + test-only open-key agent.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use crate::models::AgentId;
 use crate::platform::AgentKey;
 
 #[test]
-fn production_register_integrations_covers_eight_agents_without_demo() {
+fn production_register_integrations_covers_all_agents_without_demo() {
     let prod = production_integrations();
     let expected: Vec<_> = AgentId::ALL
         .iter()
@@ -21,7 +21,17 @@ fn production_register_integrations_covers_eight_agents_without_demo() {
     assert_eq!(prod.detectors.supported_agent_keys(), expected);
     for agent in AgentId::ALL {
         assert!(prod.paths.contains(agent), "{}", agent.as_str());
-        assert!(prod.projects.contains(agent), "{}", agent.as_str());
+    }
+    // Projects are sparse: only agents with a verified scanner register a source.
+    for agent in AgentId::ALL {
+        if agent == AgentId::Zcode {
+            assert!(
+                !prod.projects.contains(agent),
+                "zcode project scanner is Planned — no fake source"
+            );
+        } else {
+            assert!(prod.projects.contains(agent), "{}", agent.as_str());
+        }
     }
 
     let demo = demo_agent::key();
@@ -67,4 +77,7 @@ fn kimi_omits_skills_target_like_before() {
     assert!(prod
         .skills
         .contains_key(&AgentKey::from_agent_id(AgentId::Cursor)));
+    assert!(prod
+        .skills
+        .contains_key(&AgentKey::from_agent_id(AgentId::Zcode)));
 }

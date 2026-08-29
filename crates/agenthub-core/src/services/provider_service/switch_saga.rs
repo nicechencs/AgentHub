@@ -66,18 +66,25 @@ impl ProviderService {
         require_live_config_write(adapter.as_ref(), agent)?;
         let live_before = adapter.read_config()?;
         ensure_config_agent(&live_before, agent)?;
+        // Opaque auth revision observed with the live config snapshot. A CLI
+        // login between this read and write_config must abort rather than
+        // overwrite the newer credentials (account switch already does this).
+        let auth_revision = probe_auth_revision(adapter.as_ref());
         let current = self.repo.get_current(agent)?;
         let previous_current_id = current.as_ref().map(|provider| provider.id.clone());
 
         let live_for_backfill = if live_config_is_empty(&live_before.raw) {
             None
         } else if let Some(current) = current.as_ref() {
-            Some(
-                self.secret_resolver
-                    .scrub_for_backfill(current, &live_before.raw)?,
-            )
+            let mut scrubbed = self
+                .secret_resolver
+                .scrub_for_backfill(current, &live_before.raw)?;
+            crate::adapters::strip_codex_live_auth_file(&mut scrubbed);
+            Some(scrubbed)
         } else {
-            Some(live_before.raw.clone())
+            let mut raw = live_before.raw.clone();
+            crate::adapters::strip_codex_live_auth_file(&mut raw);
+            Some(raw)
         };
         let backfilled_provider_id = current
             .as_ref()
@@ -135,6 +142,17 @@ impl ProviderService {
                 return Err(compensated_switch_error(error, None, db_rollback));
             }
         };
+
+        if let Some(observed_revision) = auth_revision.as_deref() {
+            if probe_auth_revision(adapter.as_ref()).as_deref() != Some(observed_revision) {
+                let db_rollback = rollback_backfill();
+                return Err(compensated_switch_error(
+                    live_revision_conflict(),
+                    None,
+                    db_rollback,
+                ));
+            }
+        }
 
         if let Err(error) = adapter.write_config(&target_config) {
             let live_rollback = adapter.write_config(&live_before).err();
@@ -211,5 +229,28 @@ pub(super) fn compensated_switch_error(
             "provider switch failed [{}]; compensation status: live={live}, database={database}",
             primary.code()
         ),
+    )
+}
+
+fn probe_auth_revision(adapter: &dyn crate::adapters::AgentAdapter) -> Option<String> {
+    match adapter.read_auth() {
+        Ok(state) => state.revision,
+        Err(error) if error.code() == "not_found" || error.code() == "unsupported" => None,
+        Err(error) => {
+            tracing::debug!(
+                module = crate::logging::targets::PROVIDER,
+                agent = adapter.id().as_str(),
+                error_code = error.code(),
+                "live auth revision probe unavailable during provider switch"
+            );
+            None
+        }
+    }
+}
+
+fn live_revision_conflict() -> AppError {
+    AppError::message(
+        "provider.live_conflict",
+        "live account changed while switching; retry the switch",
     )
 }

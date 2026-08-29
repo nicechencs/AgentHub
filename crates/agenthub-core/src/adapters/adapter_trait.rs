@@ -46,6 +46,19 @@ pub trait AgentAdapter: Send + Sync {
         )))
     }
 
+    /// Split a combined live snapshot into pool rows. Default is the snapshot itself.
+    fn expand_live_accounts(&self, snapshot: &LiveAccount) -> Result<Vec<LiveAccount>> {
+        Ok(vec![snapshot.clone()])
+    }
+
+    /// Restore a `read_config` snapshot captured for in-saga compensation.
+    ///
+    /// Default is [`write_config`]. Catalog-append adapters replace the catalog
+    /// map from that snapshot without going through the UI projected writer.
+    fn restore_config(&self, config: &AgentConfig) -> Result<()> {
+        self.write_config(config)
+    }
+
     /// Build an API-key live snapshot for `account add-apikey` (no live write).
     fn build_api_key_account(&self, _api_key: &str) -> Result<LiveAccount> {
         Err(AppError::Unsupported(format!(

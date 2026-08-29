@@ -1,6 +1,7 @@
 import type { RefObject } from 'react';
 import { Loader2 } from 'lucide-react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
+import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -24,6 +25,8 @@ export function ChatTranscript({
   processMap,
   listLoading,
   messagesLoading,
+  messagesError,
+  onRetryMessages,
   sending,
   retryDisabled,
   scrollRef,
@@ -36,6 +39,8 @@ export function ChatTranscript({
   processMap: ProcessMap;
   listLoading: boolean;
   messagesLoading: boolean;
+  messagesError?: unknown;
+  onRetryMessages?: () => void;
   sending: boolean;
   retryDisabled: boolean;
   scrollRef: RefObject<HTMLDivElement>;
@@ -65,6 +70,14 @@ export function ChatTranscript({
       {messagesLoading && turns.length === 0 ? (
         <div className="flex h-full flex-col justify-center p-6">
           <ListSkeleton rows={3} className="mx-auto w-full max-w-2xl" />
+        </div>
+      ) : messagesError && turns.length === 0 ? (
+        <div className="flex h-full items-center justify-center p-6">
+          <ErrorState
+            error={messagesError}
+            title={t('chat.transcript.loadFailed')}
+            onRetry={onRetryMessages ?? (() => {})}
+          />
         </div>
       ) : turns.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center px-6 py-10">

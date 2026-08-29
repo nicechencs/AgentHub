@@ -189,8 +189,15 @@ impl AgentAdapter for PiAdapter {
             ));
         }
         // Combined snapshot for "import whole file" / live status.
-        // Multi-provider expansion happens in AccountService::import_live.
+        // Multi-provider expansion happens in expand_live_accounts.
         combined_live_account(&body)
+    }
+
+    fn expand_live_accounts(&self, snapshot: &LiveAccount) -> Result<Vec<LiveAccount>> {
+        let body = snapshot.credentials.get("body").ok_or_else(|| {
+            AppError::InvalidArg("Pi combined live account is missing credentials.body".into())
+        })?;
+        crate::adapters::pi_auth::expand_auth_to_live_accounts(body)
     }
 
     fn apply_account(&self, account: &LiveAccount) -> Result<()> {

@@ -270,7 +270,20 @@ impl RunService {
             )));
         }
         let program = program_from_detect(detect.binary_path.as_deref(), id.as_str());
-        let spec = adapter.build_run_spec(&program, prompt, opts)?;
+        let spec = match adapter.build_run_spec(&program, prompt, opts) {
+            Ok(spec) => spec,
+            // Desktop-only ZCode has no verified headless argv (`Unsupported`).
+            // Skip that agent instead of aborting the rest of a multi-agent run.
+            // Other spec errors (e.g. InvalidArg) still fail the whole batch so
+            // chat resume can clear the native session id.
+            Err(e) if opts.skip_missing && matches!(e, AppError::Unsupported(_)) => {
+                return Ok(ResolveOutcome::Early(AgentRunResult::skipped(
+                    id,
+                    e.to_string(),
+                )));
+            }
+            Err(e) => return Err(e),
+        };
         if opts.dry_run {
             return Ok(ResolveOutcome::Early(AgentRunResult::dry_run(
                 id,

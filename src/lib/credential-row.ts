@@ -21,6 +21,7 @@ import {
   ticketSurfaceLabel,
   type TicketView,
 } from '@/lib/backend/contracts/ticket';
+import type { TranslateFn } from '@/lib/i18n';
 import type { Account, AgentId, AuthStatus, Provider } from '@/lib/types';
 
 /** Stable auth summary shared by list / picker / wallet projections. */
@@ -56,7 +57,7 @@ export type CredentialRowInput =
       isCurrent?: boolean;
     };
 
-function accountSubtitle(a: Account): string {
+function accountSubtitle(a: Account, t?: TranslateFn): string {
   if (a.isCurrent) {
     const bits: string[] = [];
     bits.push(authDisplayForAccount(a).label);
@@ -64,7 +65,7 @@ function accountSubtitle(a: Account): string {
     return bits.join(' · ');
   }
   const bits: string[] = [];
-  bits.push(authDisplayForAccount(a).label, '未生效');
+  bits.push(authDisplayForAccount(a).label, t ? t('connections.list.notCurrent') : '未生效');
   if (a.provider && !a.label.includes(a.provider)) bits.push(a.provider);
   if (a.subscription) bits.push(a.subscription);
   return bits.join(' · ');
@@ -88,30 +89,32 @@ function providerSubtitle(
   p: Provider,
   endpoint: string | undefined,
   mode: 'official' | 'custom',
+  t?: TranslateFn,
 ): string {
-  const modeLabel = mode === 'official' ? '官方端点' : '自定义端点';
+  const modeLabel = mode === 'official'
+    ? (t ? t('connections.list.officialEndpoint') : '官方端点')
+    : (t ? t('connections.list.customEndpoint') : '自定义端点');
   const host = endpoint ? formatEndpointHost(endpoint) : undefined;
-  const health = authHealthLabel('configured');
   if (p.isCurrent) {
     return host
-      ? `${health} · 当前生效 · ${modeLabel} · ${host}`
-      : `${health} · 当前生效 · ${modeLabel}`;
+      ? (t ? t('connections.list.configuredCurrentHost', { mode: modeLabel, host }) : `已配置 · 当前生效 · ${modeLabel} · ${host}`)
+      : (t ? t('connections.list.configuredCurrent', { mode: modeLabel }) : `已配置 · 当前生效 · ${modeLabel}`);
   }
   return host
-    ? `${health} · 未生效 · ${modeLabel} · ${host}`
-    : `${health} · 未生效 · ${modeLabel}`;
+    ? (t ? t('connections.list.configuredIdleHost', { mode: modeLabel, host }) : `已配置 · 未生效 · ${modeLabel} · ${host}`)
+    : (t ? t('connections.list.configuredIdle', { mode: modeLabel }) : `已配置 · 未生效 · ${modeLabel}`);
 }
 
-function ticketSubtitle(ticket: TicketView): string {
-  const classLabel = ticketCredentialClassLabel(ticket.credentialClass);
-  const surface = ticketSurfaceLabel(ticket.surface);
+function ticketSubtitle(ticket: TicketView, t?: TranslateFn): string {
+  const classLabel = ticketCredentialClassLabel(ticket.credentialClass, t);
+  const surface = ticketSurfaceLabel(ticket.surface, t);
   if (surface && surface !== classLabel) {
     return `${classLabel} · ${surface}`;
   }
   return classLabel;
 }
 
-function fromAccount(account: Account): CredentialRow {
+function fromAccount(account: Account, t?: TranslateFn): CredentialRow {
   const display = authDisplayForAccount(account);
   return {
     key: `account:${account.id}`,
@@ -119,7 +122,7 @@ function fromAccount(account: Account): CredentialRow {
     id: account.id,
     agentId: account.agentId,
     title: account.label,
-    subtitle: accountSubtitle(account),
+    subtitle: accountSubtitle(account, t),
     isCurrent: account.isCurrent,
     auth: {
       status: display.legacyStatus,
@@ -129,7 +132,7 @@ function fromAccount(account: Account): CredentialRow {
   };
 }
 
-function fromProvider(provider: Provider): CredentialRow {
+function fromProvider(provider: Provider, t?: TranslateFn): CredentialRow {
   const endpoint = extractProviderEndpoint(provider.configText, provider.configFormat);
   const internal = isInternalGeneratedProvider(provider);
   const mode = providerEndpointMode(provider, endpoint);
@@ -141,12 +144,12 @@ function fromProvider(provider: Provider): CredentialRow {
     id: provider.id,
     agentId: provider.agentId,
     title,
-    subtitle: providerSubtitle(provider, subtitleEndpoint, mode),
+    subtitle: providerSubtitle(provider, subtitleEndpoint, mode, t),
     isCurrent: provider.isCurrent,
     auth: {
       status: 'valid',
       health: 'configured',
-      label: authHealthLabel('configured'),
+      label: authHealthLabel('configured', t),
     },
   };
 }
@@ -154,6 +157,7 @@ function fromProvider(provider: Provider): CredentialRow {
 function fromTicket(
   ticket: TicketView,
   isCurrent: boolean,
+  t?: TranslateFn,
 ): CredentialRow {
   return {
     key: ticket.id,
@@ -161,21 +165,21 @@ function fromTicket(
     id: ticket.sourceId,
     agentId: ticket.agentId,
     title: isInternalGeneratedName(ticket.label) ? formatLocalRouteLabel() : ticket.label,
-    subtitle: ticketSubtitle(ticket),
+    subtitle: ticketSubtitle(ticket, t),
     isCurrent,
     auth: {
       status: 'valid',
       health: 'configured',
-      label: ticketCredentialClassLabel(ticket.credentialClass),
+      label: ticketCredentialClassLabel(ticket.credentialClass, t),
     },
   };
 }
 
 /** Single projection used by Connections and ConnectFlow (and ticket wallet). */
-export function toCredentialRow(input: CredentialRowInput): CredentialRow {
-  if (input.source === 'account') return fromAccount(input.account);
-  if (input.source === 'provider') return fromProvider(input.provider);
-  return fromTicket(input.ticket, input.isCurrent ?? false);
+export function toCredentialRow(input: CredentialRowInput, t?: TranslateFn): CredentialRow {
+  if (input.source === 'account') return fromAccount(input.account, t);
+  if (input.source === 'provider') return fromProvider(input.provider, t);
+  return fromTicket(input.ticket, input.isCurrent ?? false, t);
 }
 
 /** Provider endpoint fields for ConnectionEntry / ticket detail extras. */

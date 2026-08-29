@@ -8,7 +8,8 @@ export type DoctorAgentId =
   | 'pi'
   | 'workbuddy'
   | 'cursor'
-  | 'dsh';
+  | 'dsh'
+  | 'zcode';
 
 export type DoctorRuntimeId = 'nodejs' | 'npm' | 'powershell' | 'git';
 

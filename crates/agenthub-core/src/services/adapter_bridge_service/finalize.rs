@@ -262,6 +262,9 @@ impl AdapterBridgeService {
                 local_surface: rule.local_surface,
                 source: rule.source,
                 target_agent: rule.target_agent,
+                downstream_dialect: crate::models::RouteDownstreamDialect::for_agent(
+                    rule.target_agent,
+                ),
                 upstream_auth,
                 local_bearer: local_bearer_from_provider(&provider)?,
                 route_index: None,
@@ -271,7 +274,7 @@ impl AdapterBridgeService {
                 schedule_policy: Default::default(),
             },
             &profile,
-        );
+        )?;
         Ok(AdapterBridgeRestoreMaterial {
             material,
             needs_reprojection: !provider_matches_current_projection(

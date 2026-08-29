@@ -2508,7 +2508,8 @@ fn select_native_shell(
 fn native_shell_invocation(shell: &Path, url: &str) -> (Vec<String>, String) {
     let shell_text = shell.to_string_lossy();
     let script = format!(
-        "curl -fL --progress-bar {url} | {}",
+        "curl -fL --progress-bar {} | {}",
+        quote_posix_shell_word(url),
         quote_posix_shell_word(&shell_text)
     );
     let option = if shell

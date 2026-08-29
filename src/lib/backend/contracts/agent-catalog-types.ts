@@ -17,6 +17,21 @@ export interface CatalogInstallChannelDto {
   requires: RuntimeId[];
 }
 
+/** How a live write occupies this agent's config. Mirrors Core `LiveOccupancy`. */
+export type LiveOccupancyDto = 'exclusive' | 'namedSlots' | 'catalogAppend';
+
+export function catalogOccupancy(
+  occupancy?: LiveOccupancyDto | null,
+): LiveOccupancyDto {
+  return occupancy ?? 'exclusive';
+}
+
+export function isCatalogAppendOccupancy(
+  occupancy?: LiveOccupancyDto | null,
+): boolean {
+  return occupancy === 'catalogAppend';
+}
+
 /** One agent directory row from Core `AgentDescriptor`. */
 export interface AgentCatalogEntryDto {
   key: AgentKey;
@@ -26,6 +41,7 @@ export interface AgentCatalogEntryDto {
   capabilities: Record<string, CatalogCapabilityStateDto>;
   installChannels: CatalogInstallChannelDto[];
   configSchemaVersion?: number | null;
+  occupancy?: LiveOccupancyDto;
 }
 
 export function mapCatalogCapabilities(

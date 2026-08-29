@@ -10,13 +10,13 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    AgentConfig, AgentId, AuthState, Capability, CapabilityState, DetectResult, DetectStatus,
-    RunOptions, RunSpec,
+    AgentConfig, AgentId, AuthHealth, AuthState, Capability, CapabilityState, DetectResult,
+    DetectStatus, LiveAccount, RunOptions, RunSpec,
 };
 use crate::utils::expiry::{is_expired, normalize_credential_key};
 use crate::utils::paths::home_dir;
 
-use super::{auth_file_revision, AgentAdapter};
+use super::{api_key_live_account, auth_file_revision, require_api_key, AgentAdapter};
 
 /// Official setup landing page (no npm / no allowlisted install.ps1).
 pub const SETUP_URL: &str = "https://www.codebuddy.cn/work/";
@@ -161,89 +161,81 @@ impl AgentAdapter for WorkBuddyAdapter {
         write_workbuddy_config(_config)
     }
 
+    fn restore_config(&self, config: &AgentConfig) -> Result<()> {
+        restore_workbuddy_catalog(config)
+    }
+
     fn read_auth(&self) -> Result<AuthState> {
-        let Some(path) = auth_info_path() else {
-            return Ok(AuthState {
-                agent: AgentId::WorkBuddy,
-                kind: None,
-                summary: "WorkBuddy auth metadata path is unavailable".into(),
-                has_credentials: false,
-                health: crate::models::AuthHealth::Unknown,
-                source: None,
-                revision: None,
-                also_present: Vec::new(),
-                secret_hash: None,
-            });
+        workbuddy_auth_state()
+    }
+
+    fn read_account(&self) -> Result<LiveAccount> {
+        let models = read_models_json()?;
+        pick_model_for_import(&models)
+            .map(|entry| live_account_from_model_entry(&entry))
+            .ok_or_else(|| AppError::NotFound("no live WorkBuddy API key to import".into()))
+    }
+
+    fn expand_live_accounts(&self, snapshot: &LiveAccount) -> Result<Vec<LiveAccount>> {
+        let models = match read_models_json() {
+            Ok(value) => value,
+            Err(_) => return Ok(vec![snapshot.clone()]),
         };
-        if !path.is_file() {
-            return Ok(AuthState {
-                agent: AgentId::WorkBuddy,
-                kind: None,
-                summary: "no WorkBuddy desktop login metadata".into(),
-                has_credentials: false,
-                health: crate::models::AuthHealth::Missing,
-                source: Some("workbuddy:desktop-login-metadata".into()),
-                revision: None,
-                also_present: Vec::new(),
-                secret_hash: None,
-            });
+        let expanded = expand_workbuddy_catalog(&models);
+        if expanded.is_empty() {
+            return Ok(vec![snapshot.clone()]);
         }
-        let body = match std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        {
-            Some(body) => body,
-            None => {
-                return Ok(AuthState {
-                    agent: AgentId::WorkBuddy,
-                    kind: None,
-                    summary: "WorkBuddy login metadata could not be parsed".into(),
-                    has_credentials: false,
-                    health: crate::models::AuthHealth::Unknown,
-                    source: Some("workbuddy:desktop-login-metadata".into()),
-                    revision: auth_file_revision(&path),
-                    also_present: Vec::new(),
-                    secret_hash: None,
-                });
-            }
-        };
-        let metadata = workbuddy_auth_metadata(&body);
-        let Some(metadata) = metadata else {
-            return Ok(AuthState {
-                agent: AgentId::WorkBuddy,
-                kind: None,
-                summary: "WorkBuddy login metadata is incomplete".into(),
-                has_credentials: false,
-                health: crate::models::AuthHealth::Unknown,
-                source: Some("workbuddy:desktop-login-metadata".into()),
-                revision: auth_file_revision(&path),
-                also_present: Vec::new(),
-                secret_hash: None,
-            });
-        };
-        let health =
-            if metadata.expires_expired == Some(true) && metadata.refresh_expired == Some(true) {
-                crate::models::AuthHealth::NeedsLogin
-            } else if metadata.refresh_expired == Some(false) {
-                crate::models::AuthHealth::Renewable
-            } else {
-                crate::models::AuthHealth::Configured
-            };
-        Ok(AuthState {
-            agent: AgentId::WorkBuddy,
-            kind: Some("desktop-login".into()),
-            summary: if health == crate::models::AuthHealth::NeedsLogin {
-                "WorkBuddy desktop login metadata is expired; sign in via WorkBuddy UI".into()
-            } else {
-                "WorkBuddy desktop login metadata present (tokens not exposed)".into()
-            },
-            has_credentials: true,
-            health,
-            source: Some("workbuddy:desktop-login-metadata".into()),
-            revision: auth_file_revision(&path),
-            also_present: Vec::new(),
-            secret_hash: None,
-        })
+        Ok(expanded)
+    }
+
+    fn apply_account(&self, account: &LiveAccount) -> Result<()> {
+        upsert_workbuddy_model_from_account(account)
+    }
+
+    fn build_api_key_account(&self, api_key: &str) -> Result<LiveAccount> {
+        let key = require_api_key(api_key)?;
+        Ok(api_key_live_account(
+            AgentId::WorkBuddy,
+            key,
+            serde_json::json!({
+                "format": "api_key",
+                "api_key": key,
+                "provider": "workbuddy",
+            }),
+            "API Key",
+            serde_json::json!({
+                "source": "manual",
+                "provider": "workbuddy",
+            }),
+        ))
+    }
+
+    fn authorization_key(
+        &self,
+        kind: crate::models::AccountKind,
+        credentials: &serde_json::Value,
+    ) -> Option<String> {
+        let base = super::default_authorization_key(kind, credentials)?;
+        let slot = workbuddy_model_slot(credentials);
+        Some(format!("{base}:{slot}"))
+    }
+
+    fn identity_label(
+        &self,
+        _kind: crate::models::AccountKind,
+        credentials: &serde_json::Value,
+        label_hint: Option<&str>,
+    ) -> Option<String> {
+        if let Some(hint) = label_hint.map(str::trim).filter(|s| !s.is_empty()) {
+            return Some(hint.to_string());
+        }
+        credentials
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| Some(format!("workbuddy:{}", workbuddy_model_slot(credentials))))
     }
 
     fn skills_dir(&self) -> Option<PathBuf> {
@@ -253,17 +245,18 @@ impl AgentAdapter for WorkBuddyAdapter {
     fn capability(&self, cap: Capability) -> CapabilityState {
         use Capability::*;
         match cap {
-            Skills | LiveBackup | DangerousMode | ProjectHistory | ProjectDelete => {
-                CapabilityState::full()
+            Skills | LiveBackup | DangerousMode | ProjectHistory | ProjectDelete | Usage
+            | ApiKeyAccount => CapabilityState::full(),
+            ConfigWrite => {
+                CapabilityState::partial("只追加或更新一条自定义模型，不覆盖整份列表")
             }
-            ConfigWrite => CapabilityState::full(),
-            AccountSwitch => CapabilityState::unsupported("暂不支持账号池切换"),
-            ApiKeyAccount => CapabilityState::unsupported("暂不支持 API Key 账号池"),
+            AccountSwitch => CapabilityState::partial(
+                "只写入对应自定义模型，其它条目仍在列表里；不会改 WorkBuddy 当前选中的模型",
+            ),
             StructuredStream => {
                 CapabilityState::unsupported("CLI 仅提供 text 输出，无结构化事件流")
             }
             ProviderPresets => CapabilityState::unsupported("暂无内置 WorkBuddy provider 预设"),
-            Usage => CapabilityState::full(),
             Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
         }
     }
@@ -806,11 +799,444 @@ fn merge_redacted_json(
     }
 }
 
+const WORKBUDDY_CHAT_COMPLETIONS_SUFFIX: &str = "/v1/chat/completions";
+
+fn read_models_json() -> Result<serde_json::Value> {
+    let path = workbuddy_config_dir()?.join("models.json");
+    read_json_value_or_empty(&path)
+}
+
+fn looks_like_jwt(value: &str) -> bool {
+    let value = value.trim();
+    value.starts_with("eyJ") && value.bytes().filter(|&b| b == b'.').count() == 2
+}
+
+fn workbuddy_model_slot(credentials: &serde_json::Value) -> String {
+    credentials
+        .get("model_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            credentials
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or("custom")
+        .to_string()
+}
+
+fn portable_workbuddy_entries(models: &serde_json::Value) -> Vec<serde_json::Value> {
+    workbuddy_model_entries(models, "existing")
+        .unwrap_or_default()
+        .into_iter()
+        .filter(is_portable_workbuddy_entry)
+        .collect()
+}
+
+fn is_portable_workbuddy_entry(entry: &serde_json::Value) -> bool {
+    let Some(object) = entry.as_object() else {
+        return false;
+    };
+    let id = object
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let key = object
+        .get("apiKey")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != REDACTED_MARKER);
+    match (id, key) {
+        (Some(_), Some(api_key)) => !looks_like_jwt(api_key),
+        _ => false,
+    }
+}
+
+fn pick_model_for_import(models: &serde_json::Value) -> Option<serde_json::Value> {
+    portable_workbuddy_entries(models).into_iter().next()
+}
+
+fn expand_workbuddy_catalog(models: &serde_json::Value) -> Vec<LiveAccount> {
+    portable_workbuddy_entries(models)
+        .iter()
+        .map(live_account_from_model_entry)
+        .collect()
+}
+
+fn live_account_from_model_entry(entry: &serde_json::Value) -> LiveAccount {
+    let object = entry.as_object();
+    let id = object
+        .and_then(|o| o.get("id"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("custom");
+    let api_key = object
+        .and_then(|o| o.get("apiKey"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
+    let name = object
+        .and_then(|o| o.get("name"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let url = object
+        .and_then(|o| o.get("url"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let vendor = object
+        .and_then(|o| o.get("vendor"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let mut cred = serde_json::json!({
+        "format": "api_key",
+        "api_key": api_key,
+        "provider": "workbuddy",
+        "model_id": id,
+        "id": id,
+    });
+    if let Some(name) = name {
+        cred["name"] = serde_json::json!(name);
+    }
+    if let Some(url) = url {
+        cred["url"] = serde_json::json!(url);
+        cred["base_url"] = serde_json::json!(url);
+    }
+    if let Some(vendor) = vendor {
+        cred["vendor"] = serde_json::json!(vendor);
+    }
+    for flag in ["supportsToolCall", "supportsImages", "supportsReasoning"] {
+        if let Some(value) = object.and_then(|o| o.get(flag)).cloned() {
+            cred[flag] = value;
+        }
+    }
+    api_key_live_account(
+        AgentId::WorkBuddy,
+        api_key,
+        cred,
+        name.unwrap_or("API Key"),
+        serde_json::json!({
+            "source": "live",
+            "provider": "workbuddy",
+            "model_id": id,
+        }),
+    )
+}
+
+fn desktop_login_present() -> (bool, Option<PathBuf>, AuthHealth, String) {
+    let Some(path) = auth_info_path() else {
+        return (
+            false,
+            None,
+            AuthHealth::Unknown,
+            "WorkBuddy auth metadata path is unavailable".into(),
+        );
+    };
+    if !path.is_file() {
+        return (
+            false,
+            Some(path),
+            AuthHealth::Missing,
+            "no WorkBuddy desktop login metadata".into(),
+        );
+    }
+    let body = match std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    {
+        Some(body) => body,
+        None => {
+            return (
+                false,
+                Some(path),
+                AuthHealth::Unknown,
+                "WorkBuddy login metadata could not be parsed".into(),
+            );
+        }
+    };
+    let Some(metadata) = workbuddy_auth_metadata(&body) else {
+        return (
+            false,
+            Some(path),
+            AuthHealth::Unknown,
+            "WorkBuddy login metadata is incomplete".into(),
+        );
+    };
+    let health = if metadata.expires_expired == Some(true) && metadata.refresh_expired == Some(true)
+    {
+        AuthHealth::NeedsLogin
+    } else if metadata.refresh_expired == Some(false) {
+        AuthHealth::Renewable
+    } else {
+        AuthHealth::Configured
+    };
+    let summary = if health == AuthHealth::NeedsLogin {
+        "WorkBuddy 桌面登录已过期，请在 WorkBuddy 里重新登录".into()
+    } else {
+        "WorkBuddy 桌面登录在应用内，不会导入".into()
+    };
+    (true, Some(path), health, summary)
+}
+
+fn workbuddy_auth_state() -> Result<AuthState> {
+    let models = read_models_json().unwrap_or_else(|_| serde_json::json!([]));
+    let portable = portable_workbuddy_entries(&models);
+    let (desktop, desktop_path, desktop_health, desktop_summary) = desktop_login_present();
+    if !portable.is_empty() {
+        let mut also_present = Vec::new();
+        if desktop {
+            also_present.push("desktop-login".into());
+        }
+        return Ok(AuthState {
+            agent: AgentId::WorkBuddy,
+            kind: Some("api_key".into()),
+            summary: format!(
+                "API key present in {} custom model(s)",
+                portable.len()
+            ),
+            has_credentials: true,
+            health: AuthHealth::Configured,
+            source: Some("workbuddy:models.json".into()),
+            revision: workbuddy_config_dir()
+                .ok()
+                .map(|dir| dir.join("models.json"))
+                .and_then(|path| auth_file_revision(&path)),
+            also_present,
+            secret_hash: None,
+        });
+    }
+    if desktop {
+        return Ok(AuthState {
+            agent: AgentId::WorkBuddy,
+            kind: Some("desktop-login".into()),
+            summary: desktop_summary,
+            has_credentials: true,
+            health: desktop_health,
+            source: Some("workbuddy:desktop-login-metadata".into()),
+            revision: desktop_path.as_ref().and_then(|path| auth_file_revision(path)),
+            also_present: Vec::new(),
+            secret_hash: None,
+        });
+    }
+    Ok(AuthState {
+        agent: AgentId::WorkBuddy,
+        kind: None,
+        summary: desktop_summary,
+        has_credentials: false,
+        health: desktop_health,
+        source: desktop_path
+            .is_some()
+            .then(|| "workbuddy:desktop-login-metadata".into()),
+        revision: desktop_path.as_ref().and_then(|path| auth_file_revision(path)),
+        also_present: Vec::new(),
+        secret_hash: None,
+    })
+}
+
+/// WorkBuddy writes `/v1/chat/completions`. OpenAI-compatible hosts that
+/// expose `/chat/completions` (DeepSeek official) are rewritten to the `/v1` path.
+pub(crate) fn normalize_workbuddy_chat_url(raw: &str) -> Result<String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err(AppError::InvalidArg(
+            "WorkBuddy 只认 /v1/chat/completions 端点".into(),
+        ));
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.ends_with(WORKBUDDY_CHAT_COMPLETIONS_SUFFIX) {
+        return Ok(trimmed.to_string());
+    }
+    if lower.ends_with("/v1") {
+        return Ok(format!("{trimmed}/chat/completions"));
+    }
+    if let Some(prefix) = trimmed
+        .get(..trimmed.len() - "/chat/completions".len())
+        .filter(|_| lower.ends_with("/chat/completions"))
+    {
+        return Ok(format!("{prefix}{WORKBUDDY_CHAT_COMPLETIONS_SUFFIX}"));
+    }
+    Err(AppError::InvalidArg(
+        "WorkBuddy 只认 /v1/chat/completions 端点".into(),
+    ))
+}
+
+pub(crate) fn attach_api_key_catalog_fields(
+    credentials: &mut serde_json::Value,
+    base_url: Option<&str>,
+    model_id: Option<&str>,
+) -> Result<()> {
+    let url = base_url.map(str::trim).filter(|s| !s.is_empty());
+    let id = model_id.map(str::trim).filter(|s| !s.is_empty());
+    let (Some(url), Some(id)) = (url, id) else {
+        return Err(AppError::InvalidArg(
+            "WorkBuddy 添加登录需要模型名称和 /v1/chat/completions 接口地址".into(),
+        ));
+    };
+    let normalized = normalize_workbuddy_chat_url(url)?;
+    let object = credentials.as_object_mut().ok_or_else(|| {
+        AppError::InvalidArg("WorkBuddy credentials must be a JSON object".into())
+    })?;
+    object.insert("url".into(), serde_json::json!(normalized.clone()));
+    object.insert("base_url".into(), serde_json::json!(normalized));
+    object.insert("model_id".into(), serde_json::json!(id));
+    object.insert("id".into(), serde_json::json!(id));
+    Ok(())
+}
+
+fn restore_workbuddy_catalog(config: &AgentConfig) -> Result<()> {
+    if config.agent != AgentId::WorkBuddy {
+        return Err(AppError::InvalidArg(
+            "config agent mismatch: expected workbuddy".into(),
+        ));
+    }
+    let Some(models) = config.raw.get("models") else {
+        return Ok(());
+    };
+    let models_path = workbuddy_config_dir()?.join("models.json");
+    if let Some(parent) = models_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut bytes = serde_json::to_vec_pretty(models)?;
+    bytes.push(b'\n');
+    crate::utils::atomic::atomic_write(&models_path, &bytes)
+}
+
+fn upsert_workbuddy_model_from_account(account: &LiveAccount) -> Result<()> {
+    if account.agent != AgentId::WorkBuddy {
+        return Err(AppError::InvalidArg(
+            "account agent mismatch for workbuddy".into(),
+        ));
+    }
+    let key = account
+        .credentials
+        .get("api_key")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            AppError::InvalidArg("WorkBuddy account requires credentials.api_key".into())
+        })?;
+    let model_id = workbuddy_model_slot(&account.credentials);
+    if model_id == "custom"
+        && account
+            .credentials
+            .get("model_id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .is_none()
+        && account
+            .credentials
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .is_none()
+    {
+        return Err(AppError::InvalidArg(
+            "WorkBuddy 添加登录需要模型名称和 /v1/chat/completions 接口地址".into(),
+        ));
+    }
+    let url = account
+        .credentials
+        .get("url")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            account
+                .credentials
+                .get("base_url")
+                .and_then(serde_json::Value::as_str)
+        })
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            AppError::InvalidArg("WorkBuddy 只认 /v1/chat/completions 端点".into())
+        })?;
+    let url = normalize_workbuddy_chat_url(url)?;
+    let name = account
+        .credentials
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&model_id);
+    let vendor = account
+        .credentials
+        .get("vendor")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Custom");
+    let mut entry = serde_json::json!({
+        "id": model_id,
+        "name": name,
+        "vendor": vendor,
+        "url": url,
+        "apiKey": key,
+        "useCustomProtocol": false,
+    });
+    for flag in ["supportsToolCall", "supportsImages", "supportsReasoning"] {
+        if let Some(value) = account.credentials.get(flag).cloned() {
+            entry[flag] = value;
+        } else if flag == "supportsToolCall" {
+            entry[flag] = serde_json::json!(true);
+        }
+    }
+    let models_path = workbuddy_config_dir()?.join("models.json");
+    let live = read_json_value_or_empty(&models_path)?;
+    let merged = merge_workbuddy_models(&live, &serde_json::json!([entry]))?;
+    if let Some(parent) = models_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut bytes = serde_json::to_vec_pretty(&merged)?;
+    bytes.push(b'\n');
+    crate::utils::atomic::atomic_write(&models_path, &bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{AgentConfig, AgentId};
     use serde_json::json;
     use std::fs;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn restore_env(key: &str, prev: Option<std::ffi::OsString>) {
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            restore_env(self.key, self.prev.take());
+        }
+    }
+
+    fn with_workbuddy_config<T>(dir: &std::path::Path, f: impl FnOnce() -> T) -> T {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = EnvGuard {
+            key: "WORKBUDDY_CONFIG_DIR",
+            prev: std::env::var_os("WORKBUDDY_CONFIG_DIR"),
+        };
+        std::env::set_var("WORKBUDDY_CONFIG_DIR", dir);
+        f()
+    }
 
     #[test]
     fn install_channels_native_only_no_runtime() {
@@ -822,6 +1248,7 @@ mod tests {
 
     #[test]
     fn skills_dir_under_workbuddy_home() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = WorkBuddyAdapter.skills_dir().expect("skills_dir");
         let s = dir.to_string_lossy().replace('\\', "/");
         assert!(
@@ -956,13 +1383,138 @@ mod tests {
     }
 
     #[test]
-    fn account_switch_disabled_p0() {
+    fn catalog_capabilities_are_partial_not_blocked() {
         assert!(WorkBuddyAdapter
             .capability(crate::models::Capability::AccountSwitch)
-            .is_blocked());
+            .is_usable());
+        assert!(WorkBuddyAdapter
+            .capability(crate::models::Capability::ApiKeyAccount)
+            .is_usable());
+        assert!(WorkBuddyAdapter
+            .capability(crate::models::Capability::ConfigWrite)
+            .is_usable());
         assert!(WorkBuddyAdapter
             .capability(crate::models::Capability::Skills)
             .is_usable());
+        assert_eq!(
+            WorkBuddyAdapter
+                .capability(crate::models::Capability::ConfigWrite)
+                .level,
+            crate::models::CapabilityLevel::Partial
+        );
+    }
+
+    #[test]
+    fn normalize_chat_url_accepts_full_path_and_v1_root() {
+        assert_eq!(
+            normalize_workbuddy_chat_url("https://api.example.com/v1/chat/completions").unwrap(),
+            "https://api.example.com/v1/chat/completions"
+        );
+        assert_eq!(
+            normalize_workbuddy_chat_url("https://api.example.com/v1/").unwrap(),
+            "https://api.example.com/v1/chat/completions"
+        );
+        assert_eq!(
+            normalize_workbuddy_chat_url("https://api.deepseek.com/chat/completions").unwrap(),
+            "https://api.deepseek.com/v1/chat/completions"
+        );
+        assert!(normalize_workbuddy_chat_url("https://api.anthropic.com/v1/messages").is_err());
+    }
+
+    #[test]
+    fn expand_skips_empty_key_and_jwt_and_splits_portable_rows() {
+        let models = json!([
+            {
+                "id": "grok-4.6",
+                "name": "grok-4.6",
+                "url": "https://api.qooo.io/v1/chat/completions",
+                "apiKey": "sk-live-one"
+            },
+            {
+                "id": "missing-key",
+                "url": "https://api.example.com/v1/chat/completions",
+                "apiKey": ""
+            },
+            {
+                "id": "plan-jwt",
+                "url": "https://api.example.com/v1/chat/completions",
+                "apiKey": "eyJhbGciOiJub25lIn0.eyJzdWIiOiJwbGFuIn0.sig"
+            },
+            {
+                "id": "deepseek-v4-flash",
+                "name": "DeepSeek",
+                "url": "https://api.deepseek.com/chat/completions",
+                "apiKey": "sk-live-two"
+            }
+        ]);
+        let lives = expand_workbuddy_catalog(&models);
+        let ids: Vec<String> = lives
+            .iter()
+            .map(|live| workbuddy_model_slot(&live.credentials))
+            .collect();
+        assert_eq!(ids, ["grok-4.6", "deepseek-v4-flash"]);
+    }
+
+    #[test]
+    fn restore_replaces_models_json_instead_of_merging() {
+        let dir = tempfile_dir();
+        with_workbuddy_config(&dir, || {
+            let path = dir.join("models.json");
+            fs::write(
+                &path,
+                serde_json::to_vec_pretty(&json!([
+                    { "id": "keep-me", "apiKey": "secret" },
+                    { "id": "drop-me", "apiKey": "other" }
+                ]))
+                .unwrap(),
+            )
+            .unwrap();
+            restore_workbuddy_catalog(&AgentConfig {
+                agent: AgentId::WorkBuddy,
+                raw: json!({
+                    "models": [{ "id": "keep-me", "apiKey": "secret" }]
+                }),
+            })
+            .unwrap();
+            let written: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            assert_eq!(written.as_array().map(|a| a.len()), Some(1));
+            assert_eq!(written[0]["id"], "keep-me");
+        });
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn apply_account_rewrites_chat_completions_to_v1_path() {
+        let dir = tempfile_dir();
+        with_workbuddy_config(&dir, || {
+            let mut account = WorkBuddyAdapter
+                .build_api_key_account("sk-apply")
+                .unwrap();
+            attach_api_key_catalog_fields(
+                &mut account.credentials,
+                Some("https://api.anthropic.com/v1/messages"),
+                Some("claude"),
+            )
+            .unwrap_err();
+            attach_api_key_catalog_fields(
+                &mut account.credentials,
+                Some("https://api.deepseek.com/chat/completions"),
+                Some("deepseek-v4-flash"),
+            )
+            .unwrap();
+            WorkBuddyAdapter.apply_account(&account).unwrap();
+            let written: serde_json::Value = serde_json::from_str(
+                &fs::read_to_string(dir.join("models.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(written[0]["id"], "deepseek-v4-flash");
+            assert_eq!(
+                written[0]["url"],
+                "https://api.deepseek.com/v1/chat/completions"
+            );
+        });
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

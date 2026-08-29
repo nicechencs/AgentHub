@@ -8,13 +8,14 @@ pub mod grok;
 pub mod kimi;
 pub mod pi;
 pub mod workbuddy;
+pub mod zcode;
 
 #[cfg(test)]
 pub mod demo_agent;
 
 use super::IntegrationContext;
 
-/// Register the eight production agents. Do not add test-only keys here.
+/// Register the production agents. Do not add test-only keys here.
 pub fn register_production(ctx: &mut IntegrationContext<'_>) {
     claude::register(ctx);
     codex::register(ctx);
@@ -24,4 +25,5 @@ pub fn register_production(ctx: &mut IntegrationContext<'_>) {
     workbuddy::register(ctx);
     cursor::register(ctx);
     dsh::register(ctx);
+    zcode::register(ctx);
 }

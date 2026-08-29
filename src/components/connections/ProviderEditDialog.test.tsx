@@ -474,6 +474,32 @@ describe('projector path fail-closed', () => {
   });
 });
 
+describe('catalog occupancy on add', () => {
+  it('catalog-append add marks isCurrent so the key writes immediately', async () => {
+    const deps = mockDeps();
+    const result = await runProviderSaveFlow(
+      baseInput({
+        agentId: 'zcode',
+        schemaStatus: 'unsupported',
+        occupancy: 'catalogAppend',
+      }),
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.provider.isCurrent).toBe(true);
+  });
+
+  it('exclusive add stays pool-only until 切换', async () => {
+    const deps = mockDeps();
+    const result = await runProviderSaveFlow(
+      baseInput({ occupancy: 'exclusive' }),
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.provider.isCurrent).toBe(false);
+  });
+});
+
 describe('legacy path only when configSchemaVersion is null', () => {
   it('unsupported status calls applyFormVars then upsert; never validate/materialize', async () => {
     const deps = mockDeps();

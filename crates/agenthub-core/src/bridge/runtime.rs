@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use super::account::{AccountPicker, BridgeMemberSpec, MemberHealth, PickedMember};
 use super::route_index::EffectiveRouteIndex;
-use crate::models::{AdapterSourceProduct, AgentId, RouteSchedulePolicy};
+use crate::models::{AdapterSourceProduct, AgentId, RouteDownstreamDialect, RouteSchedulePolicy};
 
 /// Opaque callback that may rotate the in-memory upstream bearer.
 /// The host must not depend on AccountService types.
@@ -120,6 +120,66 @@ pub enum BridgeUpstreamProtocol {
     XaiResponsesOauth,
 }
 
+/// Responses wire dialect expected by a downstream client.
+///
+/// This is deliberately a runtime concern rather than a property inferred
+/// from the request body or URL.  The local bearer selects an EdgeState and
+/// the EdgeState carries this profile for the lifetime of the request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ResponsesDialect {
+    Codex,
+    Grok,
+}
+
+impl ResponsesDialect {
+    fn from_route_dialect(dialect: RouteDownstreamDialect) -> Option<Self> {
+        match dialect {
+            RouteDownstreamDialect::Codex => Some(Self::Codex),
+            RouteDownstreamDialect::Grok => Some(Self::Grok),
+            RouteDownstreamDialect::Claude
+            | RouteDownstreamDialect::Kimi
+            | RouteDownstreamDialect::Dsh
+            | RouteDownstreamDialect::Generic => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Codex => "codex",
+            Self::Grok => "grok",
+        }
+    }
+}
+
+/// Explicit downstream Responses client profile.
+///
+/// `None` on [`BridgeStartSpec`] means a generic/non-Responses host test and
+/// preserves the existing identity-relay behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DownstreamResponsesProfile {
+    pub dialect: ResponsesDialect,
+}
+
+impl DownstreamResponsesProfile {
+    pub const fn new(dialect: ResponsesDialect) -> Self {
+        Self { dialect }
+    }
+
+    /// Resolve the wire profile only when the local listener exposes the
+    /// Responses surface. Messages and Chat Completions have their own
+    /// response contracts and must never accidentally inherit a Responses
+    /// dialect from a persisted route pool.
+    pub fn from_surface_and_route_dialect(
+        surface: BridgeLocalSurface,
+        dialect: RouteDownstreamDialect,
+    ) -> Option<Self> {
+        if surface != BridgeLocalSurface::Responses {
+            return None;
+        }
+        ResponsesDialect::from_route_dialect(dialect).map(Self::new)
+    }
+}
+
 /// Local HTTP dialect this edge exposes. One edge, one surface.
 ///
 /// Chosen from the *target* Agent, not sniffed from the upstream host.
@@ -172,6 +232,9 @@ pub struct BridgeStartSpec {
     /// Mapping identity for request-scoped model switch. Optional for host tests.
     pub mapping_source: Option<AdapterSourceProduct>,
     pub mapping_target: Option<AgentId>,
+    /// Explicit dialect expected by the downstream Responses client. This is
+    /// carried by the authenticated edge rather than inferred from mapping.
+    pub downstream_responses_profile: Option<DownstreamResponsesProfile>,
     pub custom_openai: bool,
     /// Shared resolver snapshot. `None` keeps lead + `switch_edge_for_model`.
     pub route_index: Option<EffectiveRouteIndex>,
@@ -197,6 +260,10 @@ impl fmt::Debug for BridgeStartSpec {
             .field("multi_account", &self.multi_account)
             .field("mapping_source", &self.mapping_source)
             .field("mapping_target", &self.mapping_target)
+            .field(
+                "downstream_responses_profile",
+                &self.downstream_responses_profile,
+            )
             .field("custom_openai", &self.custom_openai)
             .field(
                 "route_index",
@@ -233,6 +300,7 @@ impl BridgeStartSpec {
             multi_account: false,
             mapping_source: None,
             mapping_target: None,
+            downstream_responses_profile: None,
             custom_openai: false,
             route_index: None,
             codex_ingress_grok_upstream: false,
@@ -260,6 +328,14 @@ impl BridgeStartSpec {
         self.mapping_source = Some(source);
         self.mapping_target = Some(target);
         self.custom_openai = custom_openai;
+        self
+    }
+
+    pub fn with_downstream_responses_profile(
+        mut self,
+        profile: Option<DownstreamResponsesProfile>,
+    ) -> Self {
+        self.downstream_responses_profile = profile;
         self
     }
 

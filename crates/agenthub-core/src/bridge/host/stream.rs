@@ -13,9 +13,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::bridge::account::PickedMember;
 use crate::bridge::protocol::anthropic_messages::{
-    anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse, AnthropicStreamToIr,
+    anthropic_message_to_ir, encode_anthropic_message, AnthropicStreamToIr, IrToAnthropicSse,
 };
-use crate::bridge::protocol::chat::{encode_chat_from_ir, encode_chat_sse, ChatStreamToIr};
+use crate::bridge::protocol::chat::{encode_chat_from_ir, ChatStreamToIr, IrToChatSse};
 use crate::bridge::protocol::pair::{
     sanitize_pair_response, sanitize_pair_sse_event, PairDirection,
 };
@@ -30,7 +30,7 @@ use super::http::{
 };
 use super::surface::DownstreamSurface;
 use super::transport::{UpstreamChannel, UpstreamDecode};
-use super::upstream::{capture_grok_completed, capture_grok_sse};
+use super::upstream::{capture_grok_completed, capture_grok_sse, grok_upstream};
 use super::{
     BODY_LIMIT_BYTES, STREAM_LIMIT_BYTES, UPSTREAM_BODY_IDLE_TIMEOUT, UPSTREAM_STREAM_IDLE_TIMEOUT,
 };
@@ -630,6 +630,7 @@ pub(super) fn passthrough_sse_response(
     let output = stream! {
         let _permit = permit;
         let mut upstream_bytes = 0usize;
+        let should_capture = grok_upstream(&observed);
         let mut capture = Vec::new();
         let mut responses_buffer = std::collections::VecDeque::new();
         let mut next_sequence_number = 0_u64;
@@ -671,7 +672,7 @@ pub(super) fn passthrough_sse_response(
                 return;
             }
             upstream_bytes += chunk.len();
-            if capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
+            if should_capture && capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
                 capture.extend_from_slice(&chunk);
             }
             if !is_responses {
@@ -771,8 +772,10 @@ pub(super) fn passthrough_sse_response(
             ));
             return;
         }
-        if let Ok(sse) = std::str::from_utf8(&capture) {
-            capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+        if should_capture {
+            if let Ok(sse) = std::str::from_utf8(&capture) {
+                capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+            }
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op, status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
@@ -984,11 +987,11 @@ pub(super) fn messages_stream_response(
         let model = state.upstream.model.clone().unwrap_or_default();
         let decode_kind = upstream_decode(&state);
         let mut translator = MessagesStreamCodec::new(decode_kind, request_id.clone(), model);
-        let mut ir_events: Vec<IrEvent> = Vec::new();
-        let mut emitted_frames = 0usize;
+        let mut encoder = IrToAnthropicSse::new();
         let mut buffer = std::collections::VecDeque::new();
         let mut upstream_bytes = 0usize;
         let mut output_bytes = 0usize;
+        let should_capture = grok_upstream(&observed);
         let mut capture = Vec::new();
         let _permit = permit;
         let mut saw_done = false;
@@ -1024,7 +1027,7 @@ pub(super) fn messages_stream_response(
                 return;
             }
             upstream_bytes += chunk.len();
-            if capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
+            if should_capture && capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
                 capture.extend_from_slice(&chunk);
             }
             buffer.extend(chunk.iter().copied());
@@ -1069,27 +1072,27 @@ pub(super) fn messages_stream_response(
                 let completed = events
                     .iter()
                     .any(|event| matches!(event, IrEvent::MessageEnd { .. }));
-                ir_events.extend(events);
-                let frames = match encode_anthropic_sse(&ir_events) {
-                    Ok(frames) => frames,
-                    Err(_) => {
-                        observed.record_upstream_failure();
-                        warn_stream_fail(&request_id, "stream_error");
+                for event in &events {
+                    let frames = match encoder.push_event(event) {
+                        Ok(frames) => frames,
+                        Err(_) => {
+                            observed.record_upstream_failure();
+                            warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
-                        return;
-                    }
-                };
-                for frame in frames.iter().skip(emitted_frames) {
-                    if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
-                        observed.record_upstream_failure();
-                        warn_stream_fail(&request_id, "stream_error");
+                            return;
+                        }
+                    };
+                    for frame in frames {
+                        if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                            observed.record_upstream_failure();
+                            warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
-                        return;
+                            return;
+                        }
+                        output_bytes += frame.len();
+                        yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
                     }
-                    output_bytes += frame.len();
-                    yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
                 }
-                emitted_frames = frames.len();
                 if completed {
                     saw_done = true;
                     break 'upstream;
@@ -1102,28 +1105,31 @@ pub(super) fn messages_stream_response(
                     yield Ok::<_, Infallible>(error_frame.clone());
             return;
         }
-        ir_events.extend(translator.finish());
-        let frames = match encode_anthropic_sse(&ir_events) {
-            Ok(frames) => frames,
-            Err(_) => {
-                observed.record_upstream_failure();
-                warn_stream_fail(&request_id, "stream_error");
+        for event in translator.finish() {
+            let frames = match encoder.push_event(&event) {
+                Ok(frames) => frames,
+                Err(_) => {
+                    observed.record_upstream_failure();
+                    warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
-                return;
-            }
-        };
-        for frame in frames.iter().skip(emitted_frames) {
-            if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
-                observed.record_upstream_failure();
-                warn_stream_fail(&request_id, "stream_error");
+                    return;
+                }
+            };
+            for frame in frames {
+                if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                    observed.record_upstream_failure();
+                    warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
-                return;
+                    return;
+                }
+                output_bytes += frame.len();
+                yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
             }
-            output_bytes += frame.len();
-            yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
         }
-        if let Ok(sse) = std::str::from_utf8(&capture) {
-            capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+        if should_capture {
+            if let Ok(sse) = std::str::from_utf8(&capture) {
+                capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+            }
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "messages_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
@@ -1152,11 +1158,11 @@ pub(super) fn chat_stream_response(
         let model = state.upstream.model.clone().unwrap_or_default();
         let decode_kind = upstream_decode(&state);
         let mut translator = MessagesStreamCodec::new(decode_kind, request_id.clone(), model);
-        let mut ir_events: Vec<IrEvent> = Vec::new();
-        let mut emitted_frames = 0usize;
+        let mut encoder = IrToChatSse::new(Some(&request_id));
         let mut buffer = std::collections::VecDeque::new();
         let mut upstream_bytes = 0usize;
         let mut output_bytes = 0usize;
+        let should_capture = grok_upstream(&observed);
         let mut capture = Vec::new();
         let _permit = permit;
         let mut saw_done = false;
@@ -1192,7 +1198,7 @@ pub(super) fn chat_stream_response(
                 return;
             }
             upstream_bytes += chunk.len();
-            if capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
+            if should_capture && capture.len().saturating_add(chunk.len()) <= STREAM_LIMIT_BYTES {
                 capture.extend_from_slice(&chunk);
             }
             buffer.extend(chunk.iter().copied());
@@ -1233,27 +1239,27 @@ pub(super) fn chat_stream_response(
                 let completed = events
                     .iter()
                     .any(|event| matches!(event, IrEvent::MessageEnd { .. }));
-                ir_events.extend(events);
-                let frames = match encode_chat_sse(&ir_events, Some(&request_id)) {
-                    Ok(frames) => frames,
-                    Err(_) => {
-                        observed.record_upstream_failure();
-                        warn_stream_fail(&request_id, "stream_error");
+                for event in &events {
+                    let frames = match encoder.push_event(event) {
+                        Ok(frames) => frames,
+                        Err(_) => {
+                            observed.record_upstream_failure();
+                            warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
-                        return;
-                    }
-                };
-                for frame in frames.iter().skip(emitted_frames) {
-                    if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
-                        observed.record_upstream_failure();
-                        warn_stream_fail(&request_id, "stream_error");
+                            return;
+                        }
+                    };
+                    for frame in frames {
+                        if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                            observed.record_upstream_failure();
+                            warn_stream_fail(&request_id, "stream_error");
                     yield Ok::<_, Infallible>(error_frame.clone());
-                        return;
+                            return;
+                        }
+                        output_bytes += frame.len();
+                        yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
                     }
-                    output_bytes += frame.len();
-                    yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
                 }
-                emitted_frames = frames.len();
                 if completed {
                     saw_done = true;
                     break 'upstream;
@@ -1266,17 +1272,37 @@ pub(super) fn chat_stream_response(
                     yield Ok::<_, Infallible>(error_frame.clone());
             return;
         }
-        ir_events.extend(translator.finish());
-        let frames = match encode_chat_sse(&ir_events, Some(&request_id)) {
+        for event in translator.finish() {
+            let frames = match encoder.push_event(&event) {
+                Ok(frames) => frames,
+                Err(_) => {
+                    observed.record_upstream_failure();
+                    warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(error_frame.clone());
+                    return;
+                }
+            };
+            for frame in frames {
+                if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
+                    observed.record_upstream_failure();
+                    warn_stream_fail(&request_id, "stream_error");
+                    yield Ok::<_, Infallible>(error_frame.clone());
+                    return;
+                }
+                output_bytes += frame.len();
+                yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
+            }
+        }
+        let frames = match encoder.finish() {
             Ok(frames) => frames,
             Err(_) => {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
-                    yield Ok::<_, Infallible>(error_frame.clone());
+                yield Ok::<_, Infallible>(error_frame.clone());
                 return;
             }
         };
-        for frame in frames.iter().skip(emitted_frames) {
+        for frame in frames {
             if output_bytes.saturating_add(frame.len()) > STREAM_LIMIT_BYTES {
                 observed.record_upstream_failure();
                 warn_stream_fail(&request_id, "stream_error");
@@ -1284,10 +1310,12 @@ pub(super) fn chat_stream_response(
                 return;
             }
             output_bytes += frame.len();
-            yield Ok::<_, Infallible>(axum::body::Bytes::from(frame.clone()));
+            yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
         }
-        if let Ok(sse) = std::str::from_utf8(&capture) {
-            capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+        if should_capture {
+            if let Ok(sse) = std::str::from_utf8(&capture) {
+                capture_grok_sse(&observed, replay_seed.as_deref(), partition.as_deref(), sse);
+            }
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "chat_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");

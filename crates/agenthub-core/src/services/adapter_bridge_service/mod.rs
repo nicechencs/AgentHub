@@ -19,29 +19,29 @@
 
 use std::time::Duration;
 
-use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use chrono::Utc;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use toml_edit::DocumentMut;
 
 use crate::bridge::grok_cli::GROK_CLI_PROXY_BASE_URL;
 use crate::bridge::{
-    BridgeLocalSurface, BridgeMemberSpec, BridgeStartSpec, BridgeUpstreamConfig,
-    BridgeUpstreamProtocol, EffectiveRouteIndex, MemberHealth, MemberListing, ResolvedAuth,
-    index_from_member_listings,
+    index_from_member_listings, BridgeLocalSurface, BridgeMemberSpec, BridgeStartSpec,
+    BridgeUpstreamConfig, BridgeUpstreamProtocol, EffectiveRouteIndex, MemberHealth, MemberListing,
+    ResolvedAuth,
 };
 use crate::error::{AppError, Result};
 use crate::models::{
-    ANTHROPIC_CODEX_EDGE, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
+    list_local_bridge_models, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
-    CODEX_CLAUDE_RESPONSES_EDGE, CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE,
-    GROK_CLAUDE_EDGE, GROK_CODEX_EDGE, KIMI_CODEX_EDGE, LocalBridgeEdge, OPENAI_CLAUDE_EDGE,
-    OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE, Provider, ProviderInput, RouteMember,
-    RouteSchedulePolicy, list_local_bridge_models,
+    LocalBridgeEdge, Provider, ProviderInput, RouteDownstreamDialect, RouteDownstreamSurface,
+    RouteMember, RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE,
+    CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE,
+    KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
 };
 use crate::services::{AdapterRouteService, AdapterSecretResolver, RoutePoolService};
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -501,6 +501,7 @@ pub struct AdapterBridgeRuntimeMaterial {
     local_surface: BridgeLocalSurface,
     source: AdapterSourceProduct,
     target_agent: AgentId,
+    downstream_dialect: RouteDownstreamDialect,
     upstream_auth: ResolvedAuth,
     local_bearer: String,
     route_index: Option<EffectiveRouteIndex>,
@@ -527,6 +528,7 @@ impl std::fmt::Debug for AdapterBridgeRuntimeMaterial {
             .field("local_surface", &self.local_surface)
             .field("source", &self.source)
             .field("target_agent", &self.target_agent)
+            .field("downstream_dialect", &self.downstream_dialect)
             .field("upstream_auth", &self.upstream_auth)
             .field("local_bearer", &"REDACTED")
             .field(
@@ -560,6 +562,10 @@ impl AdapterBridgeRuntimeMaterial {
         self.protocol
     }
 
+    pub fn downstream_dialect(&self) -> RouteDownstreamDialect {
+        self.downstream_dialect
+    }
+
     pub fn source_connection_id(&self) -> &str {
         &self.source_connection_id
     }
@@ -584,6 +590,7 @@ impl AdapterBridgeRuntimeMaterial {
             local_surface: BridgeLocalSurface::Responses,
             source: AdapterSourceProduct::KimiCodeMembership,
             target_agent: AgentId::Codex,
+            downstream_dialect: RouteDownstreamDialect::Generic,
             upstream_auth: ResolvedAuth::bearer(upstream_token),
             local_bearer: local_bearer.into(),
             route_index: None,
@@ -623,6 +630,12 @@ impl AdapterBridgeRuntimeMaterial {
         )
         .with_listed_models(lead_listed)
         .with_mapping(self.source, self.target_agent, custom)
+        .with_downstream_responses_profile(
+            crate::bridge::DownstreamResponsesProfile::from_surface_and_route_dialect(
+                self.local_surface,
+                self.downstream_dialect,
+            ),
+        )
         .with_pair_adapter_flags(
             self.codex_ingress_grok_upstream,
             self.grok_ingress_codex_upstream,
@@ -1001,26 +1014,28 @@ impl AdapterBridgeService {
         &self,
         mut material: AdapterBridgeRuntimeMaterial,
         profile: &AdapterProfile,
-    ) -> AdapterBridgeRuntimeMaterial {
+    ) -> Result<AdapterBridgeRuntimeMaterial> {
         material.index_enabled = self.route_pools.index_enabled();
         let (codex_to_grok, grok_to_codex) = self.route_pools.pair_adapter_flags();
         material.codex_ingress_grok_upstream = codex_to_grok;
         material.grok_ingress_codex_upstream = grok_to_codex;
-        let _ = self.route_pools.ensure_legacy_pool(profile);
-        if let Ok(Some(pool)) = self.route_pools.get(&material.profile_id) {
+        let pool = self.route_pools.ensure_legacy_pool(profile)?;
+        if let Some(pool) = pool.as_ref() {
+            validate_route_pool_profile(&material, pool)?;
+            // A persisted RoutePool dialect is authoritative. Legacy material
+            // already carries the one-time target-agent fallback above.
+            material.downstream_dialect = pool.downstream_dialect;
             material.schedule_policy = pool.schedule_policy;
-        }
-        if let Some(index) = self.route_index_for_material(&material, profile) {
-            if let Ok(Some(pool)) = self.route_pools.get(&material.profile_id) {
-                if let Some(port) = pool.gateway_port {
-                    material.preferred_port = Some(port);
-                }
+            if let Some(port) = pool.gateway_port {
+                material.preferred_port = Some(port);
             }
+        }
+        if let Some(index) = self.route_index_for_material(&material, profile, pool.as_ref())? {
             material.route_index = Some(index);
         } else {
             material.route_index = None;
         }
-        material
+        Ok(material)
     }
 
     /// Persist v2 enrollment only after the listener is already bound and
@@ -1041,16 +1056,21 @@ impl AdapterBridgeService {
         &self,
         material: &AdapterBridgeRuntimeMaterial,
         profile: &AdapterProfile,
-    ) -> Option<EffectiveRouteIndex> {
+        pool: Option<&crate::models::RoutePool>,
+    ) -> Result<Option<EffectiveRouteIndex>> {
         if !self.route_pools.index_enabled() {
-            return None;
+            return Ok(None);
         }
-        let pool = self.route_pools.get(&material.profile_id).ok().flatten()?;
+        let Some(pool) = pool else {
+            return Ok(None);
+        };
         if !pool.v2_enrolled {
-            return None;
+            return Ok(None);
         }
-        let members = self.route_pools.list_members(&pool.id).ok()?;
-        let rule = rule_for_id(&profile.rule_id)?;
+        let members = self.route_pools.list_members(&pool.id)?;
+        let Some(rule) = rule_for_id(&profile.rule_id) else {
+            return Ok(None);
+        };
         let endpoint = index_endpoint_key(material.local_surface);
         let prior = material
             .route_index
@@ -1068,14 +1088,10 @@ impl AdapterBridgeService {
             prior.as_deref(),
         );
         if self.route_pools.mixed_provider_enabled() {
-            let rules = self
-                .route_pools
-                .list_rules(&pool.id)
-                .ok()
-                .unwrap_or_default();
-            Some(index.with_mixed_provider_rules(true, rules))
+            let rules = self.route_pools.list_rules(&pool.id)?;
+            Ok(Some(index.with_mixed_provider_rules(true, rules)))
         } else {
-            Some(index)
+            Ok(Some(index))
         }
     }
 
@@ -1153,6 +1169,49 @@ impl AdapterBridgeService {
             snapshot_ok: true,
         }
     }
+}
+
+fn validate_route_pool_profile(
+    material: &AdapterBridgeRuntimeMaterial,
+    pool: &crate::models::RoutePool,
+) -> Result<()> {
+    let expected_surface = match material.local_surface {
+        BridgeLocalSurface::Responses => RouteDownstreamSurface::Responses,
+        BridgeLocalSurface::Messages => RouteDownstreamSurface::Messages,
+        BridgeLocalSurface::ChatCompletions => RouteDownstreamSurface::ChatCompletions,
+    };
+    if pool.downstream_surface != expected_surface {
+        return Err(AppError::message(
+            "adapter.route_pool_invalid",
+            "The saved route format does not match this endpoint. Re-save the route and try again.",
+        ));
+    }
+
+    let dialect_is_valid = match pool.downstream_surface {
+        RouteDownstreamSurface::Responses => matches!(
+            pool.downstream_dialect,
+            RouteDownstreamDialect::Codex
+                | RouteDownstreamDialect::Grok
+                | RouteDownstreamDialect::Generic
+        ),
+        RouteDownstreamSurface::Messages => matches!(
+            pool.downstream_dialect,
+            RouteDownstreamDialect::Claude | RouteDownstreamDialect::Generic
+        ),
+        RouteDownstreamSurface::ChatCompletions => matches!(
+            pool.downstream_dialect,
+            RouteDownstreamDialect::Kimi
+                | RouteDownstreamDialect::Dsh
+                | RouteDownstreamDialect::Generic
+        ),
+    };
+    if !dialect_is_valid {
+        return Err(AppError::message(
+            "adapter.route_pool_invalid",
+            "The saved route format does not match this endpoint. Re-save the route and try again.",
+        ));
+    }
+    Ok(())
 }
 
 fn rule_for_member_product(

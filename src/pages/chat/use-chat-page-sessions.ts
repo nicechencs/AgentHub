@@ -21,7 +21,7 @@ import {
 } from '@/lib/api/chat';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
 import type { AgentId, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
-import { isChatAgentSelectable, newConversationDefaults } from './chat-model';
+import { isChatAgentSelectable, newConversationDefaults, singleAgentConversationPatch } from './chat-model';
 import { conversationListState, createSingleFlight } from './chat-request';
 
 /**
@@ -67,6 +67,8 @@ export function useChatPageSessions(input: {
   const loadGenerationRef = useRef(0);
   /** Projects 页跳转：bootstrap 只处理一次 */
   const bootstrapDoneRef = useRef(false);
+  /** Multi-agent → single-agent one-shot migration runs once per load generation. */
+  const migratedGenerationRef = useRef(-1);
 
   const active = useMemo(
     () => conversations.find((c) => c.id === activeId) ?? null,
@@ -133,6 +135,45 @@ export function useChatPageSessions(input: {
     });
   }, [ensureConversation, refreshAgents]);
 
+  /**
+   * One-shot migrate any legacy multi-agent conversations to single-agent
+   * (product intent: `selectConversationAgent` 单选). Runs once per load
+   * generation instead of on every open; failures are aggregated into a
+   * single toast and never block the list from rendering.
+   */
+  const migrateMultiAgentConversations = useCallback(
+    async (convs: Conversation[], generation: number): Promise<Conversation[]> => {
+      if (migratedGenerationRef.current === generation) return convs;
+      migratedGenerationRef.current = generation;
+      const targets = convs.filter((c) => singleAgentConversationPatch(c.agentIds) !== null);
+      if (targets.length === 0) return convs;
+
+      const results = await Promise.allSettled(
+        targets.map((c) => {
+          const patch = singleAgentConversationPatch(c.agentIds);
+          return patch ? updateConversation(c.id, patch) : Promise.reject(new Error('no patch'));
+        }),
+      );
+      if (generation !== loadGenerationRef.current) return convs;
+
+      const updatedById = new Map<string, Conversation>();
+      let failures = 0;
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          updatedById.set(result.value.id, result.value);
+        } else {
+          failures += 1;
+        }
+      }
+      if (failures > 0) {
+        toast({ title: t('chat.toast.multiAgentMigrationFailed'), variant: 'danger' });
+      }
+      if (updatedById.size === 0) return convs;
+      return convs.map((c) => updatedById.get(c.id) ?? c);
+    },
+    [t, toast],
+  );
+
   useEffect(() => {
     const generation = ++loadGenerationRef.current;
     let cancelled = false;
@@ -148,6 +189,10 @@ export function useChatPageSessions(input: {
         const committed = conversationListState(convs);
         setConversations(committed.conversations);
         setActiveId(committed.activeId);
+        void migrateMultiAgentConversations(committed.conversations, generation).then((migrated) => {
+          if (cancelled || generation !== loadGenerationRef.current) return;
+          if (migrated !== committed.conversations) setConversations(migrated);
+        });
         // Projects → Chat：新建会话并预填（可选自动发送）提示
         const fromProjects = searchParams.get('from') === 'projects';
         if (fromProjects && !bootstrapDoneRef.current) {
@@ -277,6 +322,10 @@ export function useChatPageSessions(input: {
         const committed = conversationListState(next);
         setConversations(committed.conversations);
         setActiveId(committed.activeId);
+        void migrateMultiAgentConversations(committed.conversations, generation).then((migrated) => {
+          if (cancelled || generation !== loadGenerationRef.current) return;
+          if (migrated !== committed.conversations) setConversations(migrated);
+        });
       })
       .catch((e) => {
         if (!cancelled && generation === loadGenerationRef.current) setError(e);

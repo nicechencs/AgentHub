@@ -4,20 +4,36 @@ import { useToast } from '@/components/ui/toast';
 import type { AgentTabId } from '@/components/layout/AgentTabStrip';
 import { deleteAccount, switchAccount } from '@/lib/api/account';
 import { deleteProvider, switchPreview, switchProvider } from '@/lib/api/provider';
+import type { TranslateFn } from '@/lib/i18n';
 import {
   bindTicket,
   isActiveBindingForAgent,
   type TicketView,
   type TicketWallet,
 } from '@/lib/api/tickets';
+import type { LiveOccupancyDto } from '@/lib/backend/contracts/agent-catalog-types';
+import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
+import { resolveAgentMeta } from '@/config/agents';
 import { deleteConnectionToastDescription } from './connection-model';
 import { activeBindingForAgent } from './ticket-wallet-model';
 
-/** Success toast: switch wrote the login into this Agent's local files. */
+/** Success toast: switch wrote the login into this Agent's local files (Chinese fallback for callers without a translator). */
 export const SWITCH_WROTE_LIVE = '已写入本机配置';
 
-const CURSOR_LIVE_WRITE_UNSUPPORTED =
-  'Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。';
+/** Localized success toast for a switch that wrote to local config. */
+export function switchWroteLiveLabel(
+  t?: TranslateFn,
+  occupancy?: LiveOccupancyDto | null,
+): string {
+  if (isCatalogAppendOccupancy(occupancy)) {
+    return t ? t('connections.list.switchWroteCatalog') : '已写入模型列表';
+  }
+  return t ? t('connections.list.switchWroteLive') : SWITCH_WROTE_LIVE;
+}
+
+const FAILED_TO_WRITE_LIVE_FALLBACK = '未能写入本机配置';
+const CURSOR_LIVE_WRITE_UNSUPPORTED_FALLBACK =
+  '未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。';
 
 export function switchErrorText(error: unknown): string {
   if (typeof error === 'string' && error.trim()) return error.trim();
@@ -29,18 +45,26 @@ export function switchErrorText(error: unknown): string {
   return '';
 }
 
+/** Matches both the legacy Chinese wording and the English core error text for robustness. */
 function isUnsupportedProviderSwitch(text: string): boolean {
   return /provider\.switch\.rollback|\bunsupported\b|\[unsupported\]/i.test(text)
     || text.includes('暂时不能把这份登录写到本机配置')
+    || text.includes("can't write this login to")
     || text.includes('live config writes are not supported for cursor');
 }
 
-export function describeProviderSwitchError(agentId: string, error: unknown): string {
+export function describeProviderSwitchError(
+  agentId: string,
+  error: unknown,
+  t?: TranslateFn,
+): string {
   const text = switchErrorText(error).replace(/\s+\[[^\]]+\]\s*$/, '').trim();
   if (agentId === 'cursor' && isUnsupportedProviderSwitch(text || String(error))) {
-    return `未能写入本机配置。${CURSOR_LIVE_WRITE_UNSUPPORTED}`;
+    return t
+      ? t('connections.list.cursorLiveWriteUnsupportedFull')
+      : CURSOR_LIVE_WRITE_UNSUPPORTED_FALLBACK;
   }
-  return text || '未能写入本机配置';
+  return text || (t ? t('connections.list.failedToWriteLive') : FAILED_TO_WRITE_LIVE_FALLBACK);
 }
 
 /**
@@ -89,7 +113,9 @@ export function useConnectionPageActions(input: {
       }
       if (switchGen.current !== generation) return;
       toast({
-        title: wroteLocal ? SWITCH_WROTE_LIVE : t('connections.list.switchOk'),
+        title: wroteLocal
+          ? switchWroteLiveLabel(t, resolveAgentMeta(ticket.agentId).occupancy)
+          : t('connections.list.switchOk'),
         variant: 'success',
       });
       await poolReload().catch(() => {});
@@ -98,7 +124,7 @@ export function useConnectionPageActions(input: {
       if (switchGen.current !== generation) return;
       toast({
         title: t('connections.list.switchFail'),
-        description: describeProviderSwitchError(targetAgent, e),
+        description: describeProviderSwitchError(targetAgent, e, t),
         variant: 'danger',
       });
     } finally {

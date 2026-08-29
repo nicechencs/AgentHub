@@ -509,6 +509,36 @@ pub(crate) fn well_known_bin_paths(agent: AgentId) -> Vec<(PathBuf, &'static str
             push_native(&mut paths, home.join(".local").join("bin"));
             push_native(&mut paths, home.join(".dsh").join("bin"));
         }
+        AgentId::Zcode => {
+            #[cfg(windows)]
+            {
+                if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                    paths.push((
+                        PathBuf::from(&local)
+                            .join("Programs")
+                            .join("ZCode")
+                            .join("ZCode.exe"),
+                        "native",
+                    ));
+                    paths.push((
+                        PathBuf::from(local).join("ZCode").join("ZCode.exe"),
+                        "native",
+                    ));
+                }
+            }
+            #[cfg(target_os = "macos")]
+            {
+                paths.push((
+                    PathBuf::from("/Applications/ZCode.app/Contents/MacOS/ZCode"),
+                    "native",
+                ));
+            }
+            for npm_dir in npm_global_bin_dirs(&home) {
+                push_npm(&mut paths, npm_dir);
+            }
+            push_native(&mut paths, home.join(".local").join("bin"));
+            let _ = home;
+        }
     }
 
     paths

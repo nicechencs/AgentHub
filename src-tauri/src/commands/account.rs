@@ -57,18 +57,22 @@ pub async fn add_api_key_account(
     label: Option<String>,
     env_key: Option<String>,
     product_marker: Option<String>,
+    base_url: Option<String>,
+    model_id: Option<String>,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
     let agent = parse_agent(&agent_id)?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(agent).await;
     with_hub_blocking(hub, move |hub| {
-        add_api_key_account_inner_with_marker(
+        add_api_key_account_inner_with_catalog(
             hub,
             &agent_id,
             &key,
             label.as_deref(),
             env_key.as_deref(),
             product_marker.as_deref(),
+            base_url.as_deref(),
+            model_id.as_deref(),
         )
     })
     .await
@@ -249,9 +253,10 @@ fn add_api_key_account_inner(
     label: Option<&str>,
     env_key: Option<&str>,
 ) -> Result<Account, String> {
-    add_api_key_account_inner_with_marker(hub, agent_id, key, label, env_key, None)
+    add_api_key_account_inner_with_catalog(hub, agent_id, key, label, env_key, None, None, None)
 }
 
+#[allow(dead_code)]
 fn add_api_key_account_inner_with_marker(
     hub: &AgentHub,
     agent_id: &str,
@@ -260,10 +265,40 @@ fn add_api_key_account_inner_with_marker(
     env_key: Option<&str>,
     product_marker: Option<&str>,
 ) -> Result<Account, String> {
+    add_api_key_account_inner_with_catalog(
+        hub,
+        agent_id,
+        key,
+        label,
+        env_key,
+        product_marker,
+        None,
+        None,
+    )
+}
+
+fn add_api_key_account_inner_with_catalog(
+    hub: &AgentHub,
+    agent_id: &str,
+    key: &str,
+    label: Option<&str>,
+    env_key: Option<&str>,
+    product_marker: Option<&str>,
+    base_url: Option<&str>,
+    model_id: Option<&str>,
+) -> Result<Account, String> {
     let agent = parse_agent(agent_id)?;
     let item = hub
         .accounts()
-        .add_api_key_with_env_and_marker(agent, label, key, env_key, product_marker)
+        .add_api_key_with_catalog(
+            agent,
+            label,
+            key,
+            env_key,
+            product_marker,
+            base_url,
+            model_id,
+        )
         .map_err(|e| map_err_string("add_api_key_account", e))?;
     Ok(item.redacted())
 }

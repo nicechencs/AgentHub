@@ -66,5 +66,6 @@ pub fn descriptor() -> AgentDescriptor {
             requires: vec![RuntimeId::NodeJs],
         }],
         config_schema_version: Some(1),
+        occupancy: crate::domain::protocol_graph::LiveOccupancy::Exclusive,
     }
 }

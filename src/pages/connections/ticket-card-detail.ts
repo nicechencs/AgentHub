@@ -2,6 +2,8 @@
  * Ticket card chips, pool extras, and detail panel fields (Connections page).
  */
 import { agentDisplayName } from '@/config/agents';
+import type { LiveOccupancyDto } from '@/lib/backend/contracts/agent-catalog-types';
+import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
 import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
 import {
   extractProviderCredentialFiles,
@@ -35,6 +37,7 @@ function bindingDashboardRouteLabel(route: BindingRoute, t?: TranslateFn): strin
 }
 
 const IN_USE_TIP_FALLBACK = '这份登录已在当前工具使用中';
+const IN_CATALOG_TIP_FALLBACK = '这份登录已经出现在模型列表里';
 const SWITCH_BUSY_TIP_FALLBACK = '正在切换其他登录';
 const REFRESH_BUSY_TIP_FALLBACK = '正在刷新其他登录';
 
@@ -217,23 +220,51 @@ export function showsNativeSwitch(
   return !agentFilterId || agentFilterId === ticketAgentId;
 }
 
-/** Card action: unused → 切换; current live grant → disabled 使用中. */
+export type TicketSwitchChipOpts = {
+  occupancy?: LiveOccupancyDto | null;
+  agentName?: string;
+};
+
+/** Card action: unused → 切换; current live grant → disabled 使用中.
+ * Catalog-append occupancy uses 写入 {name} / 已在模型列表里. */
 export function ticketSwitchChip(
   extras?: Pick<TicketDetailExtras, 'isCurrent'> | null,
   t?: TranslateFn,
+  opts?: TicketSwitchChipOpts,
 ): TicketSwitchChip {
+  const catalog = isCatalogAppendOccupancy(opts?.occupancy);
   if (extras?.isCurrent) {
-    return { kind: 'in-use', label: t ? t('connections.list.inUse') : '使用中' };
+    return {
+      kind: 'in-use',
+      label: catalog
+        ? (t ? t('connections.list.inCatalog') : '已在模型列表里')
+        : (t ? t('connections.list.inUse') : '使用中'),
+    };
+  }
+  if (catalog) {
+    const name = opts?.agentName?.trim() || 'Agent';
+    return {
+      kind: 'switch',
+      label: t ? t('connections.list.writeCatalog', { name }) : `写入 ${name}`,
+    };
   }
   return { kind: 'switch', label: t ? t('connections.list.switch') : '切换' };
 }
 
 
 export function ticketSwitchDisabledReason(
-  input: { kind: TicketSwitchChip['kind']; switchBusy: boolean; canSwitch: boolean },
+  input: {
+    kind: TicketSwitchChip['kind'];
+    switchBusy: boolean;
+    canSwitch: boolean;
+    occupancy?: LiveOccupancyDto | null;
+  },
   t?: TranslateFn,
 ): string | undefined {
   if (input.kind === 'in-use') {
+    if (isCatalogAppendOccupancy(input.occupancy)) {
+      return t ? t('connections.list.inCatalogTip') : IN_CATALOG_TIP_FALLBACK;
+    }
     return t ? t('connections.list.inUseTip') : IN_USE_TIP_FALLBACK;
   }
   if (input.switchBusy) {
@@ -341,7 +372,7 @@ export function extrasFromPoolSource(
   };
 
   if (source.account) {
-    const row = toCredentialRow({ source: 'account', account: source.account });
+    const row = toCredentialRow({ source: 'account', account: source.account }, t);
     extras.identity =
       ticket.credentialClass === 'oauth'
         ? source.account.email
@@ -389,7 +420,7 @@ export function extrasFromPoolSource(
   }
 
   if (source.provider) {
-    const row = toCredentialRow({ source: 'provider', provider: source.provider });
+    const row = toCredentialRow({ source: 'provider', provider: source.provider }, t);
     const endpoint = providerEndpointExtras(source.provider);
     extras.endpointMode = endpoint.endpointMode;
     extras.endpointHost = endpoint.endpointHost;

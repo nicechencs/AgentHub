@@ -163,4 +163,6 @@ export const PRESETS: Record<AgentId, ProviderPreset[]> = {
   workbuddy: [],
   // Cursor Agent：半套接入，无 models.json/config.toml 供应商契约
   cursor: [],
+  // ZCode：自定义 Key 写入 ~/.zcode/v2/config.json；暂无内置预设模板
+  zcode: [],
 };

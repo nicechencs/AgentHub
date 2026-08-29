@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import {
   adapterRouteToBinding,
   bindingRouteDashboardLabel,
@@ -525,28 +526,54 @@ describe('Ticket Rust wire mappers', () => {
 });
 
 describe('ticket / binding display labels', () => {
-  it('maps route labels for usage and dashboard', () => {
-    expect(bindingRouteUsageLabel('native')).toBe('直连');
-    expect(bindingRouteUsageLabel('reshape')).toBe('改配置');
-    expect(bindingRouteUsageLabel('bridge')).toBe('本机路由');
-    expect(bindingRouteDashboardLabel('native')).toBe('直连');
-    expect(bindingRouteDashboardLabel('reshape')).toBe('改配置');
-    expect(bindingRouteDashboardLabel('bridge')).toBe('本机路由');
+  it('maps route labels for usage and dashboard (English fallback with no t)', () => {
+    expect(bindingRouteUsageLabel('native')).toBe('Direct');
+    expect(bindingRouteUsageLabel('reshape')).toBe('Rewrite config');
+    expect(bindingRouteUsageLabel('bridge')).toBe('Local route');
+    expect(bindingRouteDashboardLabel('native')).toBe('Direct');
+    expect(bindingRouteDashboardLabel('reshape')).toBe('Rewrite config');
+    expect(bindingRouteDashboardLabel('bridge')).toBe('Local route');
   });
 
-  it('maps credential and surface chip labels', () => {
-    expect(ticketCredentialClassLabel('oauth')).toBe('官方登录');
+  it('maps credential and surface chip labels (English fallback with no t)', () => {
+    expect(ticketCredentialClassLabel('oauth')).toBe('Official login');
     expect(ticketCredentialClassLabel('api_key')).toBe('API Key');
-    expect(ticketCredentialClassLabel('unknown')).toBe('未识别');
-    expect(ticketSurfaceLabel('kimi-code-membership')).toBe('会员');
+    expect(ticketCredentialClassLabel('unknown')).toBe('Unrecognized');
+    expect(ticketSurfaceLabel('kimi-code-membership')).toBe('Membership');
     expect(ticketSurfaceLabel('anthropic-api')).toBe('API');
     expect(ticketSurfaceLabel('openai-api')).toBe('OpenAI');
     expect(ticketSurfaceLabel('xai-api')).toBe('xAI');
     expect(ticketSurfaceLabel('glm-coding-plan')).toBe('GLM');
     expect(ticketSurfaceLabel('deepseek-api')).toBe('DeepSeek');
-    expect(ticketSurfaceLabel('codex-chatgpt-subscription')).toBe('订阅');
-    expect(ticketSurfaceLabel('claude-subscription')).toBe('订阅');
-    expect(ticketSurfaceLabel('grok-xai-subscription')).toBe('订阅');
-    expect(ticketSurfaceLabel('unknown')).toBe('未识别');
+    expect(ticketSurfaceLabel('codex-chatgpt-subscription')).toBe('Subscription');
+    expect(ticketSurfaceLabel('claude-subscription')).toBe('Subscription');
+    expect(ticketSurfaceLabel('grok-xai-subscription')).toBe('Subscription');
+    expect(ticketSurfaceLabel('unknown')).toBe('Unrecognized');
+  });
+
+  it('maps route labels via t for zh and en', () => {
+    const zh = createTranslator('zh');
+    const en = createTranslator('en');
+    expect(bindingRouteUsageLabel('native', zh)).toBe('直连');
+    expect(bindingRouteUsageLabel('reshape', zh)).toBe('改配置');
+    expect(bindingRouteUsageLabel('bridge', zh)).toBe('本机路由');
+    expect(bindingRouteUsageLabel('native', en)).toBe('Direct');
+    expect(bindingRouteUsageLabel('reshape', en)).toBe('Rewrite config');
+    expect(bindingRouteUsageLabel('bridge', en)).toBe('Local route');
+  });
+
+  it('maps credential and surface chip labels via t for zh and en', () => {
+    const zh = createTranslator('zh');
+    const en = createTranslator('en');
+    expect(ticketCredentialClassLabel('oauth', zh)).toBe('官方登录');
+    expect(ticketCredentialClassLabel('oauth', en)).toBe('Official login');
+    expect(ticketCredentialClassLabel('unknown', zh)).toBe('未识别');
+    expect(ticketCredentialClassLabel('unknown', en)).toBe('Unrecognized');
+    expect(ticketSurfaceLabel('kimi-code-membership', zh)).toBe('会员');
+    expect(ticketSurfaceLabel('kimi-code-membership', en)).toBe('Membership');
+    expect(ticketSurfaceLabel('codex-chatgpt-subscription', zh)).toBe('订阅');
+    expect(ticketSurfaceLabel('codex-chatgpt-subscription', en)).toBe('Subscription');
+    expect(ticketSurfaceLabel('unknown', zh)).toBe('未识别');
+    expect(ticketSurfaceLabel('unknown', en)).toBe('Unrecognized');
   });
 });

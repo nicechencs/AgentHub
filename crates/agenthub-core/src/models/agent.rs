@@ -18,10 +18,12 @@ pub enum AgentId {
     Cursor,
     /// DeepSeek Harness (`dsh`) — npm coding agent, not the DeepSeek API ticket.
     Dsh,
+    /// ZCode — Zhipu ADE desktop (+ optional `zcode` CLI); API keys in `~/.zcode/v2/config.json`.
+    Zcode,
 }
 
 impl AgentId {
-    pub const ALL: [AgentId; 8] = [
+    pub const ALL: [AgentId; 9] = [
         AgentId::Claude,
         AgentId::Codex,
         AgentId::Kimi,
@@ -30,6 +32,7 @@ impl AgentId {
         AgentId::WorkBuddy,
         AgentId::Cursor,
         AgentId::Dsh,
+        AgentId::Zcode,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -42,6 +45,7 @@ impl AgentId {
             Self::WorkBuddy => "workbuddy",
             Self::Cursor => "cursor",
             Self::Dsh => "dsh",
+            Self::Zcode => "zcode",
         }
     }
 
@@ -56,6 +60,7 @@ impl AgentId {
             // Alias: historical docs sometimes say cursor-agent; serialize id stays `cursor`.
             "cursor" | "cursor-agent" => Some(Self::Cursor),
             "dsh" | "deepseek-harness" => Some(Self::Dsh),
+            "zcode" => Some(Self::Zcode),
             _ => None,
         }
     }
@@ -91,6 +96,7 @@ impl AgentId {
             Self::WorkBuddy => "WorkBuddy",
             Self::Cursor => "Cursor Agent",
             Self::Dsh => "DeepSeek Harness",
+            Self::Zcode => "ZCode",
         }
     }
 
@@ -137,7 +143,7 @@ pub fn install_lifecycle(agent: AgentId, kind: &str) -> InstallLifecycle {
             update_via: "in_app",
             uninstall_via: "in_app",
         },
-        "native" if agent == AgentId::WorkBuddy => InstallLifecycle {
+        "native" if agent == AgentId::WorkBuddy || agent == AgentId::Zcode => InstallLifecycle {
             source: "native",
             update_via: "official",
             uninstall_via: "in_app",

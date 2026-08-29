@@ -85,13 +85,14 @@ function sourceDisplayName(
 function nativeAccountState(
   account: Account,
   capabilities: ReturnType<typeof resolveAgentMeta>['capabilities'],
+  t?: TranslateFn,
 ): SourceOption['state'] {
   if (account.isCurrent) return { kind: 'current' };
   // Capability catalog: isCapabilityBlocked(accountSwitch) + reason.
   if (isCapabilityBlocked(capabilities?.accountSwitch)) {
     return {
       kind: 'blocked_native',
-      reason: capabilities?.accountSwitch?.reason ?? ACCOUNT_SWITCH_BLOCKED_FALLBACK,
+      reason: capabilities?.accountSwitch?.reason ?? accountSwitchBlockedFallback(t),
     };
   }
   return { kind: 'switchable' };
@@ -100,14 +101,15 @@ function nativeAccountState(
 function nativeProviderState(
   provider: Provider,
   capabilities: ReturnType<typeof resolveAgentMeta>['capabilities'],
+  t?: TranslateFn,
 ): SourceOption['state'] {
   if (provider.isCurrent) return { kind: 'current' };
   // Capability catalog: providerCapabilityGate(caps).canSwitch + reason.
-  const gate = providerCapabilityGate(capabilities);
+  const gate = providerCapabilityGate(capabilities, t);
   if (!gate.canSwitch) {
     return {
       kind: 'blocked_native',
-      reason: gate.reason ?? PROVIDER_SWITCH_BLOCKED_FALLBACK,
+      reason: gate.reason ?? providerSwitchBlockedFallback(t),
     };
   }
   return { kind: 'switchable' };
@@ -167,7 +169,7 @@ export function isOauthIncomplete(account: Account): boolean {
 }
 
 export function buildSourceOptions(input: SourceOptionsInput): SourceOption[] {
-  const { targetAgentId, accounts, providers, profiles, agentStatuses } = input;
+  const { targetAgentId, accounts, providers, profiles, agentStatuses, t } = input;
   const generatedIds = generatedProviderIds(profiles);
   // Prefer live doctor capabilities when the target status carries them
   // Live doctor capabilities when present; otherwise catalog meta.
@@ -184,7 +186,7 @@ export function buildSourceOptions(input: SourceOptionsInput): SourceOption[] {
       agentId: row.agentId,
       label: row.title,
       sublabel: resolveAgentMeta(row.agentId).name,
-      state: nativeAccountState(account, capabilities),
+      state: nativeAccountState(account, capabilities, t),
       account,
     });
   };
@@ -197,7 +199,7 @@ export function buildSourceOptions(input: SourceOptionsInput): SourceOption[] {
       agentId: row.agentId,
       label: row.title,
       sublabel: resolveAgentMeta(row.agentId).name,
-      state: nativeProviderState(provider, capabilities),
+      state: nativeProviderState(provider, capabilities, t),
       viaAdapter: viaAdapterForProvider(provider, profiles, accounts, providers),
       provider,
     });

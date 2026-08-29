@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import {
   RUNTIME_MAP,
+  RUNTIMES,
+  runtimeDescriptionKey,
   runtimesForPlatform,
   runtimeRemediationsForPlatform,
 } from './runtimes';
@@ -30,9 +33,9 @@ describe('runtime remediation platform filtering', () => {
     expect(rows.some((row) => row.kind === 'command' && row.value.includes('apt-get'))).toBe(true);
     expect(rows.some((row) => row.kind === 'command' && row.value.includes('zypper'))).toBe(true);
     expect(rows.some((row) => row.kind === 'command' && row.value.includes('apk add'))).toBe(true);
-    expect(rows.some((row) => row.kind === 'hint' && row.value.includes('不要套用 apt-get'))).toBe(
-      true,
-    );
+    expect(
+      rows.some((row) => row.kind === 'hint' && row.value.includes("don't just use apt-get")),
+    ).toBe(true);
     expect(rows.some((row) => row.kind === 'url' && row.value.includes('nodejs.org'))).toBe(true);
     expect(rows.some((row) => row.kind === 'winget' || row.kind === 'brew')).toBe(false);
   });
@@ -49,5 +52,24 @@ describe('runtime remediation platform filtering', () => {
     expect(runtimesForPlatform('macos').map((r) => r.id)).not.toContain('powershell');
     expect(runtimesForPlatform('linux').map((r) => r.id)).not.toContain('powershell');
     expect(runtimesForPlatform('windows').map((r) => r.id)).toContain('powershell');
+  });
+});
+
+describe('runtime descriptions are English by default and translate via t', () => {
+  it('keeps English source-of-truth descriptions with no Chinese characters', () => {
+    for (const runtime of RUNTIMES) {
+      expect(runtime.description).not.toMatch(/[\u4e00-\u9fff]/);
+    }
+  });
+
+  it('translates each runtime description via env.runtimes.<id>.description (zh/en)', () => {
+    const tZh = createTranslator('zh');
+    const tEn = createTranslator('en');
+    for (const runtime of RUNTIMES) {
+      const key = runtimeDescriptionKey(runtime.id);
+      expect(tEn(key)).toBe(runtime.description);
+      expect(tZh(key)).toMatch(/[\u4e00-\u9fff]/);
+      expect(tZh(key)).not.toBe(key);
+    }
   });
 });

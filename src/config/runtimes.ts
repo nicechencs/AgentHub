@@ -6,6 +6,7 @@ export interface RuntimeMeta {
   name: string;
   /** 简短展示名(环境条) */
   shortName: string;
+  /** English source-of-truth description; UI prefers env.runtimes.<id>.description via t(). */
   description: string;
   minVersion?: string;
   /** 是否支持在 App 内引导自动安装 */
@@ -44,66 +45,66 @@ export const RUNTIMES: RuntimeMeta[] = [
     id: 'nodejs',
     name: 'Node.js',
     shortName: 'Node',
-    description: 'Claude / Codex 等 npm 渠道的硬依赖',
+    description: 'Hard dependency for npm-based channels like Claude / Codex',
     minVersion: '18',
     canAutoInstall: true,
     remediations: [
       {
         kind: 'winget',
         value: 'winget install OpenJS.NodeJS.LTS',
-        label: '用 winget 安装 LTS',
+        label: 'Install LTS via winget',
         platform: 'windows',
       },
       {
         kind: 'brew',
         value: 'brew install node',
-        label: '用 Homebrew 安装 Node.js',
+        label: 'Install Node.js via Homebrew',
         platform: 'macos',
       },
       {
         kind: 'command',
         value: 'sudo apt-get install -y nodejs npm',
-        label: 'Debian/Ubuntu 安装 Node.js',
+        label: 'Install Node.js on Debian/Ubuntu',
         platform: 'linux',
       },
       {
         kind: 'command',
         value: 'sudo dnf install -y nodejs npm',
-        label: 'Fedora 安装 Node.js',
+        label: 'Install Node.js on Fedora',
         platform: 'linux',
       },
       {
         kind: 'command',
         value: 'sudo pacman -S --needed nodejs npm',
-        label: 'Arch 安装 Node.js',
+        label: 'Install Node.js on Arch',
         platform: 'linux',
       },
       {
         kind: 'command',
         value: 'sudo zypper install -y nodejs npm',
-        label: 'openSUSE 安装 Node.js',
+        label: 'Install Node.js on openSUSE',
         platform: 'linux',
       },
       {
         kind: 'command',
         value: 'sudo apk add nodejs npm',
-        label: 'Alpine 安装 Node.js',
+        label: 'Install Node.js on Alpine',
         platform: 'linux',
       },
       {
         kind: 'hint',
         value:
-          '其他发行版不要套用 apt-get。请用本机包管理器，或打开 Node.js 官网安装 LTS。',
+          "Other distros: don't just use apt-get. Use your local package manager, or open the Node.js website to install the LTS release.",
         platform: 'linux',
       },
       {
         kind: 'url',
         value: 'https://nodejs.org/',
-        label: '打开 Node.js 官网',
+        label: 'Open the Node.js website',
       },
       {
         kind: 'hint',
-        value: '安装完成后请完全退出并重启 AgentHub,再点「重新检测」(GUI 可能继承旧 PATH)。',
+        value: 'After installing, fully quit and restart AgentHub, then click "Re-detect" (the GUI may still have the old PATH).',
       },
     ],
   },
@@ -111,22 +112,22 @@ export const RUNTIMES: RuntimeMeta[] = [
     id: 'npm',
     name: 'npm',
     shortName: 'npm',
-    description: '通常随 Node.js 安装;若 node 在而 npm 不在,请修复 PATH 或重装 Node',
+    description: 'Usually installed with Node.js; if node is present but npm is missing, fix PATH or reinstall Node',
     canAutoInstall: false,
     remediations: [
       {
         kind: 'command',
         value: 'node -v && npm -v',
-        label: '检测 node / npm',
+        label: 'Check node / npm',
       },
       {
         kind: 'hint',
-        value: 'npm 一般随 Node 安装。若仅缺 npm:重装 Node LTS,或检查 PATH 是否包含 npm 目录。',
+        value: 'npm is usually installed with Node. If only npm is missing, reinstall Node LTS, or check whether PATH includes the npm directory.',
       },
       {
         kind: 'url',
         value: 'https://nodejs.org/',
-        label: '重装 Node.js LTS',
+        label: 'Reinstall Node.js LTS',
       },
     ],
   },
@@ -135,20 +136,20 @@ export const RUNTIMES: RuntimeMeta[] = [
     name: 'PowerShell',
     shortName: 'PS',
     description:
-      'Windows native 安装脚本运行时。可分别识别 5.1 与 7(pwsh)，任一可用即可。macOS/Linux 不检测 PowerShell，native 安装走官方 bash/sh。',
+      "Runtime for Windows native install scripts. Detects either 5.1 or 7 (pwsh); either one is enough. macOS/Linux don't check PowerShell — native installs use the official bash/sh scripts.",
     canAutoInstall: false,
     remediations: [
       {
         kind: 'hint',
         value:
-          'Windows 通常自带 PowerShell 5.1；PowerShell 7 (pwsh) 可选但更推荐。AgentHub 不提供一键安装 PowerShell。若脚本被策略拦截，请调整 ExecutionPolicy。',
+          "Windows usually ships with PowerShell 5.1; PowerShell 7 (pwsh) is optional but recommended. AgentHub doesn't offer a one-click PowerShell install. If scripts are blocked by policy, adjust ExecutionPolicy.",
         platform: 'windows',
       },
       {
         kind: 'url',
         value:
           'https://learn.microsoft.com/powershell/scripting/install/installing-powershell',
-        label: '安装 PowerShell 7',
+        label: 'Install PowerShell 7',
         platform: 'windows',
       },
     ],
@@ -158,65 +159,65 @@ export const RUNTIMES: RuntimeMeta[] = [
     name: 'Git',
     shortName: 'Git',
     description:
-      'Skills 市场与 git URL 安装依赖（git clone / pull）。Agent 安装渠道不强制要求，但缺失时无法从远程装技能。',
+      "Dependency for the Skills marketplace and git URL installs (git clone / pull). Not required by Agent install channels, but skills can't be installed from a remote source without it.",
     canAutoInstall: true,
     remediations: [
       {
         kind: 'winget',
         value: 'winget install --id Git.Git -e --source winget',
-        label: '用 winget 安装 Git',
+        label: 'Install Git via winget',
         platform: 'windows',
       },
       {
         kind: 'brew',
         value: 'brew install git',
-        label: '用 Homebrew 安装 Git',
+        label: 'Install Git via Homebrew',
         platform: 'macos',
       },
       {
         kind: 'command',
         value: 'sudo apt-get install -y git',
-        label: 'Debian/Ubuntu 安装 Git',
+        label: 'Install Git on Debian/Ubuntu',
         platform: 'linux',
       },
       {
         kind: 'command',
         value: 'sudo dnf install -y git',
-        label: 'Fedora 安装 Git',
+        label: 'Install Git on Fedora',
         platform: 'linux',
       },
       {
         kind: 'command',
         value: 'sudo pacman -S --needed git',
-        label: 'Arch 安装 Git',
+        label: 'Install Git on Arch',
         platform: 'linux',
       },
       {
         kind: 'command',
         value: 'sudo zypper install -y git',
-        label: 'openSUSE 安装 Git',
+        label: 'Install Git on openSUSE',
         platform: 'linux',
       },
       {
         kind: 'command',
         value: 'sudo apk add git',
-        label: 'Alpine 安装 Git',
+        label: 'Install Git on Alpine',
         platform: 'linux',
       },
       {
         kind: 'hint',
-        value: '其他发行版不要套用 apt-get。请用本机包管理器，或打开 Git 官网下载。',
+        value: "Other distros: don't just use apt-get. Use your local package manager, or open the Git website to download it.",
         platform: 'linux',
       },
       {
         kind: 'url',
         value: 'https://git-scm.com/downloads',
-        label: '打开 Git 官网下载',
+        label: 'Open the Git website',
       },
       {
         kind: 'hint',
         value:
-          '安装完成后请完全退出并重启 AgentHub，再点「重新检测」（GUI 可能继承旧 PATH）。',
+          'After installing, fully quit and restart AgentHub, then click "Re-detect" (the GUI may still have the old PATH).',
       },
     ],
   },
@@ -225,3 +226,8 @@ export const RUNTIMES: RuntimeMeta[] = [
 export const RUNTIME_MAP: Record<RuntimeId, RuntimeMeta> = Object.fromEntries(
   RUNTIMES.map((r) => [r.id, r]),
 ) as Record<RuntimeId, RuntimeMeta>;
+
+/** i18n key for a runtime's localized description; falls back to `meta.description` (English) when absent. */
+export function runtimeDescriptionKey(id: RuntimeId): `env.runtimes.${RuntimeId}.description` {
+  return `env.runtimes.${id}.description`;
+}

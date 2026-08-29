@@ -9,14 +9,18 @@ use tokio_util::sync::CancellationToken;
 use crate::bridge::runtime::BridgeUpstreamProtocol;
 use crate::utils::redact::redact_text;
 
+use std::time::Duration;
+
 use super::http::{error_response, stopping_response, EdgeState};
 use super::stream::UpstreamBodyError;
-use super::{UPSTREAM_BODY_IDLE_TIMEOUT, UPSTREAM_RESPONSE_HEADER_TIMEOUT};
+use super::{
+    UPSTREAM_BODY_IDLE_TIMEOUT, UPSTREAM_NON_STREAM_TIMEOUT, UPSTREAM_RESPONSE_HEADER_TIMEOUT,
+};
 
 const ACCESS_JWT_EXPIRY_SKEW_SECS: i64 = 60;
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES: usize = 8 * 1024;
 
-fn grok_upstream(state: &EdgeState) -> bool {
+pub(super) fn grok_upstream(state: &EdgeState) -> bool {
     state.upstream.protocol == BridgeUpstreamProtocol::XaiResponsesOauth
 }
 
@@ -208,7 +212,10 @@ pub(super) async fn read_bounded_upstream_error(
 
 pub(super) enum UpstreamConnectError {
     Stopping,
+    /// Response headers did not arrive in time. The request may already be
+    /// accepted/billing upstream — callers must not failover-retry the same body.
     Timeout,
+    /// Transport-level failure before a usable response (safe to try another member).
     Unavailable,
 }
 
@@ -255,17 +262,45 @@ pub(super) fn map_v2_request_error(
     )
 }
 
+pub(super) fn upstream_header_timeout(stream: bool) -> Duration {
+    if stream {
+        UPSTREAM_RESPONSE_HEADER_TIMEOUT
+    } else {
+        UPSTREAM_NON_STREAM_TIMEOUT
+    }
+}
+
+#[cfg(test)]
+mod header_timeout_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn non_stream_header_budget_matches_body_timeout() {
+        assert_eq!(
+            upstream_header_timeout(false),
+            UPSTREAM_NON_STREAM_TIMEOUT,
+            "non-stream TTFB must use the 120s body budget, not the 30s stream TTFB"
+        );
+        assert_eq!(upstream_header_timeout(true), UPSTREAM_RESPONSE_HEADER_TIMEOUT);
+        assert!(upstream_header_timeout(false) > upstream_header_timeout(true));
+        assert_eq!(UPSTREAM_NON_STREAM_TIMEOUT, Duration::from_secs(120));
+        assert_eq!(UPSTREAM_RESPONSE_HEADER_TIMEOUT, Duration::from_secs(30));
+    }
+}
+
 pub(super) async fn post_upstream_attempt(
     state: &EdgeState,
     builder: reqwest::RequestBuilder,
     request_id: &str,
+    header_timeout: Duration,
 ) -> Result<reqwest::Response, UpstreamConnectError> {
     let result = tokio::select! {
         _ = state.force_shutdown.cancelled() => return Err(UpstreamConnectError::Stopping),
-        result = tokio::time::timeout(UPSTREAM_RESPONSE_HEADER_TIMEOUT, builder.send()) => match result {
+        result = tokio::time::timeout(header_timeout, builder.send()) => match result {
             Ok(result) => result,
             Err(_) => {
-                tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "header_timeout", status = 504_u16, "bridge upstream response headers timed out");
+                tracing::warn!(target: "core.adapter", profile_id = %state.profile_id, request_id = %request_id, op = "upstream", code = "header_timeout", status = 504_u16, header_timeout_ms = header_timeout.as_millis() as u64, "bridge upstream response headers timed out");
                 state.record_upstream_failure();
                 return Err(UpstreamConnectError::Timeout);
             }
@@ -286,7 +321,15 @@ pub(super) async fn post_upstream(
     builder: reqwest::RequestBuilder,
     request_id: &str,
 ) -> Result<reqwest::Response, Response> {
-    match post_upstream_attempt(state, builder, request_id).await {
+    // v1 edges do not thread stream intent here; keep the stricter stream TTFB.
+    match post_upstream_attempt(
+        state,
+        builder,
+        request_id,
+        UPSTREAM_RESPONSE_HEADER_TIMEOUT,
+    )
+    .await
+    {
         Ok(response) => Ok(response),
         Err(UpstreamConnectError::Stopping) => Err(stopping_response()),
         Err(UpstreamConnectError::Timeout) => Err(timeout_response()),

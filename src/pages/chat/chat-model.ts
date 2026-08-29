@@ -343,6 +343,18 @@ export function selectConversationAgent(input: {
   return patch;
 }
 
+/**
+ * One-shot migrate: multi-agent conversations → keep first agent only.
+ * Product intent is single-agent selection (see `selectConversationAgent`);
+ * this collapses any legacy multi-agent rows without re-running on every open.
+ */
+export function singleAgentConversationPatch(
+  agentIds: AgentId[],
+): { agentIds: AgentId[] } | null {
+  if (agentIds.length <= 1) return null;
+  return { agentIds: [agentIds[0]] };
+}
+
 export function newConversationDefaults(
   active: Conversation | null,
   agentStatus: AgentStatus[],

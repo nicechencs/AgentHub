@@ -12,33 +12,33 @@ export type ConnectionKind = 'oauth' | 'apikey';
 export type ConnectionKindFilter = 'all' | ConnectionKind;
 
 export const CONNECTION_KIND_FILTERS: Array<{ value: ConnectionKindFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'oauth', label: '官方登录' },
+  { value: 'all', label: 'All' },
+  { value: 'oauth', label: 'Official login' },
   { value: 'apikey', label: 'API Key' },
 ];
 
 export function connectionKindLabel(kind: ConnectionKind, t?: TranslateFn): string {
   if (t) return t(kind === 'oauth' ? 'kind.oauth' : 'kind.apikey');
-  return kind === 'oauth' ? '官方登录' : 'API Key';
+  return kind === 'oauth' ? 'Official login' : 'API Key';
 }
 
 export function connectionKindFilterLabel(filter: ConnectionKindFilter, t?: TranslateFn): string {
-  if (filter === 'all') return t ? t('kind.all') : '全部';
+  if (filter === 'all') return t ? t('kind.all') : 'All';
   return connectionKindLabel(filter, t);
 }
 
-export function kindBadge(kind: ConnectionKind): {
+export function kindBadge(kind: ConnectionKind, t?: TranslateFn): {
   label: string;
   variant: 'default' | 'info' | 'accent';
 } {
   return kind === 'oauth'
-    ? { label: connectionKindLabel('oauth'), variant: 'default' }
-    : { label: connectionKindLabel('apikey'), variant: 'info' };
+    ? { label: connectionKindLabel('oauth', t), variant: 'default' }
+    : { label: connectionKindLabel('apikey', t), variant: 'info' };
 }
 
 /** Search synonyms so "api" / "官方登录" both match. */
 export function connectionKindSearchText(kind: ConnectionKind): string {
-  return kind === 'oauth' ? '官方登录 oauth' : 'api key apikey';
+  return kind === 'oauth' ? '官方登录 oauth official login' : 'api key apikey';
 }
 
 /**

@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: core, Tauri, CLI, and runtime contributors
 source-of-truth: crates/agenthub-core, src-tauri, and current adapter control/bridge code
-updated: 2026-08-27
+updated: 2026-08-29
 ---
 
 # Core 与 Runtime
@@ -69,7 +69,7 @@ Tauri AppState
        └─ 127.0.0.1 listener + protocol conversion
 ```
 
-当前 listener 是 Tauri 进程内 `local_bridge`，只听 loopback。默认每个目标 Agent/surface 一个授权池：本机令牌挂在池上，成员引用 Connections 登录；`GET /models` 与 dispatch 共用 resolver。生成的本机令牌是运行时材料，不是用户登录，也不进入 Connections 登录列表。`native_endpoint`/`config_sync` 不依赖 bridge，也不会自动入池。
+当前 listener 是 Tauri 进程内 `local_bridge`，只听 loopback。默认每个目标 Agent/surface 一个授权池：本机令牌挂在池上，成员引用 Connections 登录；`GET /models` 与 dispatch 共用 resolver。Codex 与 Grok 共用 Responses 入口，格式跟路由一起保存，由本机令牌选中，不根据请求正文猜测。生成的本机令牌是运行时材料，不是用户登录，也不进入 Connections 登录列表。`native_endpoint`/`config_sync` 不依赖 bridge，也不会自动入池。
 
 方向态（提案，不是当前部署）：
 

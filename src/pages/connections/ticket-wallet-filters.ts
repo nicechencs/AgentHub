@@ -47,10 +47,10 @@ export function filterWalletByExcludedAgents(
 export type TicketWalletFilter = 'all' | TicketCredentialClass;
 
 export const TICKET_WALLET_FILTERS: Array<{ value: TicketWalletFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'oauth', label: '官方登录' },
+  { value: 'all', label: 'All' },
+  { value: 'oauth', label: 'Official login' },
   { value: 'api_key', label: 'API Key' },
-  { value: 'unknown', label: '未识别' },
+  { value: 'unknown', label: 'Unrecognized' },
 ];
 
 export function ticketWalletFilterLabel(
@@ -58,7 +58,7 @@ export function ticketWalletFilterLabel(
   t?: TranslateFn,
 ): string {
   if (!t) {
-    return TICKET_WALLET_FILTERS.find((item) => item.value === filter)?.label ?? '全部';
+    return TICKET_WALLET_FILTERS.find((item) => item.value === filter)?.label ?? 'All';
   }
   if (filter === 'all') return t('kind.all');
   if (filter === 'oauth') return t('kind.oauth');

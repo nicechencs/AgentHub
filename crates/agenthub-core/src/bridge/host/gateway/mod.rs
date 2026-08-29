@@ -160,6 +160,7 @@ impl Gateway {
             let state = &runtime.state;
             state.custom_openai
                 && state.mapping_target == lead.mapping_target
+                && state.downstream_responses_profile == lead.downstream_responses_profile
                 && !state.stopping.load(Ordering::SeqCst)
                 && !state.force_shutdown.is_cancelled()
         })
@@ -187,6 +188,7 @@ impl Gateway {
             profile_id: lead.profile_id.to_string(),
             source,
             target,
+            downstream_responses_profile: lead.downstream_responses_profile,
             custom_openai_compat: lead.custom_openai,
             same_surface: true,
             running: true,
@@ -211,6 +213,7 @@ impl Gateway {
                 profile_id: state.profile_id.to_string(),
                 source: src,
                 target: tgt,
+                downstream_responses_profile: state.downstream_responses_profile,
                 custom_openai_compat: state.custom_openai,
                 same_surface: state.upstream.local_surface == lead_surface,
                 running,

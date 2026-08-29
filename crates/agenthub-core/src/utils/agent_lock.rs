@@ -279,11 +279,16 @@ impl AgentWriteLock {
 
 impl Drop for AgentWriteLock {
     fn drop(&mut self) {
-        drop(self.file.take());
-        if let Ok(raw) = std::fs::read_to_string(&self.path) {
-            if LockOwner::parse(&raw).is_some_and(|owner| owner.token == self.token) {
-                let _ = std::fs::remove_file(&self.path);
+        // Unlink while the exclusive OS lock is still held. Dropping the
+        // handle first opens a TOCTOU window where another process can create
+        // a new lock leaf on the same path and both appear to hold the lock.
+        if let Some(file) = self.file.take() {
+            if let Ok(raw) = std::fs::read_to_string(&self.path) {
+                if LockOwner::parse(&raw).is_some_and(|owner| owner.token == self.token) {
+                    let _ = std::fs::remove_file(&self.path);
+                }
             }
+            drop(file);
         }
         release_lock_path(&self.path);
     }

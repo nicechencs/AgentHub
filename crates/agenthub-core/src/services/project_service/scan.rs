@@ -932,6 +932,7 @@ fn native_session_id_from_path(agent: AgentId, path: &Path) -> Option<String> {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string()),
+        AgentId::Zcode => None,
     }
 }
 
@@ -1831,6 +1832,7 @@ fn is_primary_session_file(agent: AgentId, path: &Path) -> bool {
                 )
         }
         AgentId::Cursor => false,
+        AgentId::Zcode => false,
     }
 }
 

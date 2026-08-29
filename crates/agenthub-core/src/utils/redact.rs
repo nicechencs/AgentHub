@@ -364,15 +364,16 @@ fn regex_replace_static(input: &str, pattern: &str, _replace: &str) -> String {
 }
 
 fn redact_bearer(input: &str) -> String {
-    // Char-safe scan (must not slice mid UTF-8).
+    // Single linear scan over chars (must not slice mid UTF-8). Avoid the
+    // previous O(n²) rebuild of `rest` / `rest_lower` on every index.
     let mut result = String::with_capacity(input.len());
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        let rest: String = chars[i..].iter().collect();
-        let rest_lower = rest.to_ascii_lowercase();
-        if rest_lower.starts_with("bearer ") {
-            result.push_str(&rest[..7]); // "bearer" + space (ASCII)
+        if bearer_prefix_at(&chars, i) {
+            for offset in 0..7 {
+                result.push(chars[i + offset]);
+            }
             i += 7;
             while i < chars.len() && chars[i].is_whitespace() {
                 result.push(chars[i]);
@@ -396,6 +397,17 @@ fn redact_bearer(input: &str) -> String {
         i += 1;
     }
     result
+}
+
+fn bearer_prefix_at(chars: &[char], i: usize) -> bool {
+    const NEEDLE: &[char] = &['b', 'e', 'a', 'r', 'e', 'r', ' '];
+    if i + NEEDLE.len() > chars.len() {
+        return false;
+    }
+    chars[i..i + NEEDLE.len()]
+        .iter()
+        .zip(NEEDLE.iter())
+        .all(|(c, n)| c.to_ascii_lowercase() == *n)
 }
 
 fn redact_key_assignments(input: &str) -> String {

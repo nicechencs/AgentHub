@@ -3,7 +3,7 @@ title: 插件（extension / plugin）管理
 type: proposal
 status: proposed
 owner: maintainers
-updated: 2026-08-26
+updated: 2026-08-29
 ---
 
 # 插件（extension / plugin）管理
@@ -91,7 +91,7 @@ Cline / Continue Hub / 官方 `registry.modelcontextprotocol.io` 管的是 **MCP
 
 - 不改 `/mcp` 的产品含义，不把它改名为插件。
 - 不把 Skills 市场、MCP registry、各家 plugin marketplace 合成一个目录。
-- 不给 Cursor Agent、Kimi、WorkBuddy 伪造插件商店。
+- 不给 Cursor Agent、Kimi、WorkBuddy、ZCode 伪造插件商店。
 - 不把 DSH Cordis 树、Pi `pi install` 扩展、Claude plugin 当成同一种包格式硬转。
 - 不为插件引入 AgentHub 自己的 `~/.agents/plugins` 真源（那是 Skills 模型）。
 - 不把凭据加密或国产 OAuth 绑进来。
@@ -125,7 +125,7 @@ Live 文件仍是各 Agent 的。AgentHub 只编排与展示。CLI 不可用时 
 | P1 | Codex | `codex plugin list --json`；`~/.codex/plugins/cache/` | `codex plugin add/remove`；enable 走 config |
 | P1 | Pi | `pi list` / settings 里的 packages | `pi install` / `pi remove` / `pi update --extensions` |
 | P2 | DSH | 仅当 Cordis 插件清单有稳定只读形状 | 默认 Unsupported，不映射成 Claude 式 marketplace |
-| 关闭 | Cursor / Kimi / WorkBuddy | 无已验证 CLI 插件系统 | 保持 Unsupported |
+| 关闭 | Cursor / Kimi / WorkBuddy / ZCode | 无已验证 CLI 插件系统 | 保持 Unsupported |
 
 附带 MCP 只在详情里列为组件。增删 MCP 条目继续走以后的 MCP 提案，不在本模块。
 

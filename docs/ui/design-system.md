@@ -3,7 +3,7 @@ title: UI 设计系统
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-25
+updated: 2026-08-29
 ---
 
 # UI Design System
@@ -17,7 +17,7 @@ updated: 2026-08-25
 - The user-facing navigation label is **Routes** in English and **路由** in Chinese. The canonical path is `/routes`.
 - **本机路由** describes the loopback forwarding method in explanatory copy. It is not an alternative navigation label.
 - The product surface says **登录**. Internal names such as Ticket, Binding, Adapter, and `local_bridge` may remain in implementation and diagnostic references, but do not leak into ordinary UI copy.
-- Navigation keeps stable product names in English: Dashboard, Chat, Agents, Skills, MCP, Projects, Connections, Routes, and Settings. Page content is Chinese-first with the English name available through the locale dictionary.
+- Navigation keeps stable product names in English: Dashboard, Chat, Agents, Skills, MCP, Projects, Plugins, Connections, Routes, and Settings. Page content is Chinese-first with the English name available through the locale dictionary.
 - The UI never describes a generated provider as a second account or a second wallet. Explain the user outcome: direct connection, using this login, or local routing.
 
 ## 2. Design principles

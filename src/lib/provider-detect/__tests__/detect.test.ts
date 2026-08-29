@@ -135,10 +135,30 @@ describe('liveConfigPaths', () => {
   });
 
   it('only exposes auth when it is a live file path', () => {
-    for (const agentId of ['claude', 'codex', 'kimi', 'grok', 'pi', 'workbuddy', 'cursor', 'unknown']) {
+    for (const agentId of ['claude', 'codex', 'kimi', 'grok', 'pi', 'workbuddy', 'cursor', 'zcode', 'unknown']) {
       const auth = liveConfigPaths(agentId).auth;
       if (auth) expect(isLiveFilePath(auth)).toBe(true);
     }
+  });
+
+  it('points ZCode at v2/config.json, not config.toml', () => {
+    const paths = liveConfigPaths('zcode');
+    expect(paths.config).toBe('~/.zcode/v2/config.json');
+    expect(paths.auth).toBe('~/.zcode/v2/config.json');
+    expect(paths.config).not.toMatch(/config\.toml/);
+  });
+});
+
+describe('ZCode catalog scaffold', () => {
+  it('defaults official BigModel slot with a model list', () => {
+    const parsed = JSON.parse(defaultConfigScaffold('zcode').text) as {
+      providerId: string;
+      baseURL: string;
+      models: string[];
+    };
+    expect(parsed.providerId).toBe('builtin:bigmodel');
+    expect(parsed.baseURL).toContain('open.bigmodel.cn');
+    expect(parsed.models.length).toBeGreaterThan(0);
   });
 });
 

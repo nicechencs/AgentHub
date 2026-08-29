@@ -2,8 +2,9 @@
 
 use crate::bridge::protocol::pair::{
     dialect_compatibility, explicit_transparent_relay, sanitizer_allows_transparent,
-    DialectCompatibility, PairDirection, ResponsesDialect,
+    DialectCompatibility, PairDirection,
 };
+use crate::bridge::runtime::ResponsesDialect;
 use crate::models::{listed_model_matches, AdapterSourceProduct, AgentId, LOCAL_BRIDGE_EDGES};
 
 use super::gateway::EdgeState;
@@ -11,7 +12,9 @@ use super::surface::DownstreamSurface;
 use super::transport::UpstreamChannel;
 
 pub(super) fn pair_direction(state: &EdgeState, channel: UpstreamChannel) -> Option<PairDirection> {
-    let downstream = ResponsesDialect::from_agent(state.mapping_target?)?;
+    let downstream = state
+        .downstream_responses_profile
+        .map(|profile| profile.dialect)?;
     let upstream = responses_dialect_from_channel(channel)?;
     PairDirection::from_dialects(downstream, upstream)
 }
@@ -24,6 +27,18 @@ pub(super) fn pair_adapter_active(state: &EdgeState, channel: UpstreamChannel) -
         return false;
     }
     pair_edge_can_apply(state.mapping_source, state.mapping_target)
+}
+/// A cross-dialect pair was explicitly requested and enabled, but the
+/// source/target mapping is not one of the authorized bridge edges.
+///
+/// Keep this distinct from `pair_adapter_active`: callers must fail closed
+/// instead of falling back to an identity relay when the explicit Responses
+/// profile and route authorization disagree.
+pub(super) fn pair_adapter_rejected(state: &EdgeState, channel: UpstreamChannel) -> bool {
+    let Some(direction) = pair_direction(state, channel) else {
+        return false;
+    };
+    flag_on(state, direction) && !pair_edge_can_apply(state.mapping_source, state.mapping_target)
 }
 
 pub(super) fn identity_relay(
@@ -40,6 +55,9 @@ pub(super) fn identity_relay(
     let Some(direction) = pair_direction(state, channel) else {
         return true;
     };
+    if pair_adapter_rejected(state, channel) {
+        return false;
+    }
     if !pair_adapter_active(state, channel) {
         return true;
     }
@@ -98,15 +116,5 @@ fn responses_dialect_from_channel(channel: UpstreamChannel) -> Option<ResponsesD
         UpstreamChannel::CodexResponses => Some(ResponsesDialect::Codex),
         UpstreamChannel::Grok => Some(ResponsesDialect::Grok),
         UpstreamChannel::OpenAiChat | UpstreamChannel::Anthropic => None,
-    }
-}
-
-impl ResponsesDialect {
-    fn from_agent(agent: AgentId) -> Option<Self> {
-        match agent {
-            AgentId::Codex => Some(Self::Codex),
-            AgentId::Grok => Some(Self::Grok),
-            _ => None,
-        }
     }
 }

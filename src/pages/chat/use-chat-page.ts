@@ -35,6 +35,7 @@ export function useChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   /** 当前会话消息 / provider 加载 */
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState<unknown>(null);
   const [draft, setDraft] = useState('');
   const {
     railOpen,
@@ -77,7 +78,6 @@ export function useChatPage() {
     agentStatus,
     agentsReady,
     error,
-    setError,
     listLoading,
     refreshAgents,
     handleNewChat,
@@ -147,22 +147,6 @@ export function useChatPage() {
   };
   const sending = send.sending;
 
-  useEffect(() => {
-    if (!active || sending) return;
-    if (active.agentIds.length <= 1) return;
-    const next = selectConversationAgent({
-      currentIds: [],
-      nextId: active.agentIds[0],
-      allowDangerous: active.allowDangerous,
-    });
-    if (!next) return;
-    void updateConversation(active.id, next)
-      .then((updated) => {
-        setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      })
-      .catch(() => {});
-  }, [active, sending]);
-
   const pickerRows = useMemo(
     () =>
       chatAgentPickerRows({
@@ -190,18 +174,24 @@ export function useChatPage() {
     stickToBottomRef.current = true;
     if (!activeId) {
       setMessages([]);
+      setMessagesError(null);
       return;
     }
     let cancelled = false;
     setMessagesLoading(true);
+    setMessagesError(null);
     loadMessages(activeId)
       .then((rows) => {
         if (!cancelled && activeIdRef.current === activeId) {
           setMessages(rows);
+          setMessagesError(null);
         }
       })
       .catch((e) => {
-        if (!cancelled) setError(e);
+        if (!cancelled && activeIdRef.current === activeId) {
+          setMessages([]);
+          setMessagesError(e);
+        }
       })
       .finally(() => {
         if (!cancelled) setMessagesLoading(false);
@@ -209,6 +199,26 @@ export function useChatPage() {
     return () => {
       cancelled = true;
     };
+  }, [activeId, loadMessages]);
+
+  const retryMessages = useCallback(() => {
+    if (!activeId) return;
+    setMessagesLoading(true);
+    setMessagesError(null);
+    loadMessages(activeId)
+      .then((rows) => {
+        if (activeIdRef.current === activeId) {
+          setMessages(rows);
+          setMessagesError(null);
+        }
+      })
+      .catch((e) => {
+        if (activeIdRef.current === activeId) {
+          setMessages([]);
+          setMessagesError(e);
+        }
+      })
+      .finally(() => setMessagesLoading(false));
   }, [activeId, loadMessages]);
 
   const onTranscriptScroll = useCallback(() => {
@@ -302,6 +312,8 @@ export function useChatPage() {
     error,
     listLoading,
     messagesLoading,
+    messagesError,
+    retryMessages,
     sending: send.sending,
     sendingHere: send.sendingHere,
     sendingConversationId: send.sendingConversationId,

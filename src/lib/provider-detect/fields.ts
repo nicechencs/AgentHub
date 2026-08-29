@@ -216,6 +216,146 @@ function extractPiProviderVars(root: unknown): ProviderFormVars {
   };
 }
 
+const ZCODE_ZAI_HOST = 'api.z.ai';
+const ZCODE_BIGMODEL_HOST = 'open.bigmodel.cn';
+const ZCODE_MANAGED_PROVIDER_ID = 'agenthub-managed';
+const ZCODE_BUILTIN_ZAI = 'builtin:zai';
+const ZCODE_BUILTIN_BIGMODEL = 'builtin:bigmodel';
+
+function zcodeSlotFromUrl(url: string): string | null {
+  const trimmed = url.trim().toLowerCase();
+  if (!trimmed) return null;
+  try {
+    const host = new URL(trimmed).host.toLowerCase();
+    if (host === ZCODE_ZAI_HOST || host.endsWith(`.${ZCODE_ZAI_HOST}`)) {
+      return ZCODE_BUILTIN_ZAI;
+    }
+    if (host === ZCODE_BIGMODEL_HOST || host.endsWith(`.${ZCODE_BIGMODEL_HOST}`)) {
+      return ZCODE_BUILTIN_BIGMODEL;
+    }
+  } catch {
+    if (trimmed.includes(ZCODE_ZAI_HOST)) return ZCODE_BUILTIN_ZAI;
+    if (trimmed.includes(ZCODE_BIGMODEL_HOST)) return ZCODE_BUILTIN_BIGMODEL;
+  }
+  return null;
+}
+
+function zcodeModelIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    const ids: string[] = [];
+    for (const item of value) {
+      if (typeof item === 'string' && item.trim()) {
+        ids.push(item.trim());
+        continue;
+      }
+      const obj = objectValue(item);
+      if (typeof obj?.id === 'string' && obj.id.trim()) ids.push(obj.id.trim());
+    }
+    return ids;
+  }
+  const obj = objectValue(value);
+  if (!obj) return [];
+  return Object.keys(obj)
+    .map((key) => key.trim())
+    .filter(Boolean);
+}
+
+function extractZcodeProviderEntry(entry: Record<string, unknown> | undefined): {
+  apiKey: string;
+  baseUrl: string;
+  models: string[];
+} {
+  const options = objectValue(entry?.options);
+  return {
+    apiKey: firstNonEmptyString(options?.apiKey, entry?.apiKey, entry?.api_key),
+    baseUrl: firstNonEmptyString(
+      options?.baseURL,
+      options?.baseUrl,
+      entry?.baseURL,
+      entry?.baseUrl,
+      entry?.base_url,
+    ),
+    models: zcodeModelIds(entry?.models),
+  };
+}
+
+function extractZcodeFormVars(root: Record<string, unknown>): ProviderFormVars {
+  const providers = objectValue(root.provider);
+  let providerId = firstNonEmptyString(root.providerId, root.provider_id);
+  let apiKey = firstNonEmptyString(root.apiKey, root.api_key);
+  let baseUrl = firstNonEmptyString(root.baseURL, root.baseUrl, root.base_url);
+  let models = zcodeModelIds(root.models);
+  if (providers) {
+    const preferredId =
+      providerId
+      || (providers[ZCODE_BUILTIN_ZAI] ? ZCODE_BUILTIN_ZAI : '')
+      || (providers[ZCODE_BUILTIN_BIGMODEL] ? ZCODE_BUILTIN_BIGMODEL : '')
+      || (providers[ZCODE_MANAGED_PROVIDER_ID] ? ZCODE_MANAGED_PROVIDER_ID : '')
+      || Object.keys(providers)[0]
+      || '';
+    const entry = extractZcodeProviderEntry(objectValue(providers[preferredId]));
+    providerId = providerId || preferredId;
+    apiKey = apiKey || entry.apiKey;
+    baseUrl = baseUrl || entry.baseUrl;
+    if (models.length === 0) models = entry.models;
+  }
+  if (!providerId) {
+    providerId = zcodeSlotFromUrl(baseUrl) ?? ZCODE_MANAGED_PROVIDER_ID;
+  }
+  return {
+    ...EMPTY_FORM_VARS,
+    apiKey: sanitizeSecretForForm(apiKey),
+    baseUrl,
+    providerSlug: providerId,
+    model: models.join(', '),
+  };
+}
+
+function isZcodeOfficialSlot(providerId: string, baseUrl: string): boolean {
+  if (providerId === ZCODE_BUILTIN_ZAI || providerId === ZCODE_BUILTIN_BIGMODEL) {
+    return true;
+  }
+  return zcodeSlotFromUrl(baseUrl) != null;
+}
+
+function applyZcodeFormVars(root: Record<string, unknown>, vars: ProviderFormVars): string {
+  const next: Record<string, unknown> = { ...root };
+  delete next.env;
+  delete next.provider;
+  const secret = writableSecret(vars.apiKey);
+  if (secret) next.apiKey = secret;
+  else if (typeof next.apiKey === 'string' || typeof next.api_key === 'string') {
+    next.apiKey = REDACTED_MARKER;
+  }
+  delete next.api_key;
+  const url = vars.baseUrl.trim();
+  if (url) next.baseURL = url;
+  else delete next.baseURL;
+  delete next.baseUrl;
+  delete next.base_url;
+  const slotFromUrl = zcodeSlotFromUrl(url);
+  const slug = vars.providerSlug.trim();
+  const providerId =
+    slug && slug !== 'custom'
+      ? slug
+      : slotFromUrl ?? ZCODE_MANAGED_PROVIDER_ID;
+  next.providerId = providerId;
+  next.kind = firstNonEmptyString(next.kind) || 'anthropic';
+  const modelIds = vars.model
+    .split(/[,;\n]+/)
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (isZcodeOfficialSlot(providerId, url)) {
+    delete next.models;
+  } else if (modelIds.length > 0) {
+    next.models = modelIds;
+  } else {
+    next.models = [];
+  }
+  delete next.model;
+  return JSON.stringify(next, null, 2);
+}
+
 function extractDshFormVars(root: Record<string, unknown>): ProviderFormVars {
   const env =
     root.env && typeof root.env === 'object' && !Array.isArray(root.env)
@@ -665,6 +805,7 @@ export function extractFormVars(
       if (agentId === 'workbuddy') return extractWorkBuddyModelVars(root);
       if (agentId === 'cursor') return extractCursorFormVars(root);
       if (agentId === 'dsh') return extractDshFormVars(root);
+      if (agentId === 'zcode') return extractZcodeFormVars(root);
 
       const env =
         root.env && typeof root.env === 'object' && !Array.isArray(root.env)
@@ -793,6 +934,7 @@ export function applyFormVars(
     if (agentId === 'workbuddy') return applyWorkBuddyModelVars({ ...parsed.value }, vars);
     if (agentId === 'cursor') return applyCursorFormVars({ ...parsed.value }, vars);
     if (agentId === 'dsh') return applyDshFormVars({ ...parsed.value }, vars);
+    if (agentId === 'zcode') return applyZcodeFormVars({ ...parsed.value }, vars);
 
     const root: Record<string, unknown> =
       agentId === 'claude'

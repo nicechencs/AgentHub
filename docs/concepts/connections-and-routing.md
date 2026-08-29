@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: Ticket/Connection services, adapter planner contracts, and product boundary decisions
-updated: 2026-08-27
+updated: 2026-08-29
 ---
 
 # Connections、Routes 与绑定
@@ -59,14 +59,15 @@ unbind(binding)        → 停桥（若有）、恢复上一份 live、保留登
 
 `bind` 必须重新规划并在 `canApply=false` 时 fail closed。`native`/`reshape` 由 Ticket/Adapter apply 与 Account/Provider/Connection service 协调；`bridge` 的启动、目标配置写入、运行状态和回滚由桌面 host saga 协调。页面不得绕过 `bind` 直接调用“apply 一份自动生成配置”。
 
-每个 Agent 同时只有一条 active binding；一份登录可以绑定多个目标 Agent，不会因绑定而复制成多份登录。`ConnectionService` 维护 current/binding 一致性，旧 `accounts.is_current` 和 `providers.is_current` 只是过渡镜像。
+每个 Agent 同时只有一条正在用的连接；一份登录可以接到多个目标 Agent，不会因绑定而复制成多份登录。WorkBuddy / ZCode 是目录追加：切换只写入对应模型或供应商，其它条目仍留在对方的列表里。`ConnectionService` 维护 current/binding 一致性，旧 `accounts.is_current` 和 `providers.is_current` 只是过渡镜像。
 
 ## 登录列表与 Routes
 
-- Connections 列出真实 accounts/providers；列表不包含 bridge 生成的 local Provider。登录仍由 Connections 管理。
+- Connections 列出真实 accounts/providers；列表不包含 bridge 生成的 local Provider。登录仍由 Connections 管理。官方登录与 API Key 分行保存；添加入口是「导入授权 / 官方登录 / 添加 API Key」。
+- WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入。
 - 行入口使用“分享 / 路由”，规划器按目的过滤可行目标；不可行项显示原因而不是隐藏。
 - Routes 管理本机转发 runtime：固定 loopback 入口、本机令牌、默认池成员、模型名单、启停、自动恢复、失败详情和解绑。
-- 接到本机转发后，目标客户端只认一个 loopback 口和一把本机令牌。默认每个目标 Agent/surface 一个池；往池里增删合格登录不改客户端配置。
+- 接到本机转发后，目标客户端只认一个 loopback 口和一把本机令牌。默认每个目标 Agent/surface 一个池；往池里增删合格登录不改客户端配置。Codex 与 Grok 共用 `/v1/responses`，具体格式跟路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex 时写入 Responses + 本机 API Key（进 `auth.json`）；接到 Grok 时写入 `api_backend = "responses"` 和本机令牌。这不是 Codex↔Grok 双向转换开关。
 - 调度留在本机网关：先解析模型和协议，再从合格成员里按默认 `priority_failover` 选择；`GET /models` 与实际请求共用同一份 resolver。未声明等价关系时，不会把请求发到另一个供应商。
 - 官方直连（`native_endpoint` / `config_sync`）不自动入池。Routes 对仍可改成本机转发的直连提供「交给本机网关」。
 - 生成的本机令牌只给目标客户端使用，上游登录信息留在 Hub；不监听公网，不做多人共享或转售。

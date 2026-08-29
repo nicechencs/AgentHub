@@ -20,6 +20,7 @@ mod kimi;
 pub(crate) mod pi;
 pub mod pi_auth;
 pub(crate) mod workbuddy;
+pub(crate) mod zcode;
 
 // Free install probes for platform detectors (P1-3) — no AdapterRegistry required.
 pub(crate) use claude::detect_installation as detect_claude_installation;
@@ -30,12 +31,14 @@ pub(crate) use grok::detect_installation as detect_grok_installation;
 pub(crate) use kimi::detect_installation as detect_kimi_installation;
 pub(crate) use pi::detect_installation as detect_pi_installation;
 pub(crate) use workbuddy::detect_installation as detect_workbuddy_installation;
+pub(crate) use zcode::detect_installation as detect_zcode_installation;
 
 // Codex / Claude OAuth PKCE historically stored flat token bundles; adapters +
 // oauth finish both need the same conversion into the live apply shape.
 pub(crate) use claude::expand_claude_live_accounts;
 pub(crate) use claude::normalize_oauth_credentials as normalize_claude_oauth_credentials;
 pub(crate) use codex::normalize_oauth_credentials as normalize_codex_oauth_credentials;
+pub(crate) use codex::strip_codex_live_auth_file;
 pub(crate) use grok::{
     expand_grok_auth_to_live_accounts, grok_live_has_leftover_api_key_field,
     grok_live_uses_default_auth_slot, read_grok_live_api_key_tail, read_grok_live_base_url,

@@ -106,17 +106,17 @@ export function planSchemaLoad(expectation: ProjectorExpectation): SchemaLoadPla
 export function schemaErrorMessage(reason: string): string {
   switch (reason) {
     case 'catalog_not_ready':
-      return 'Agent Catalog 尚未就绪，无法确认配置能力';
+      return '连接能力尚未就绪，请稍后再试';
     case 'catalog_unavailable':
-      return 'Agent Catalog 不可用，无法确认配置能力';
+      return '暂时无法确认该 Agent 的配置能力';
     case 'entry_missing':
-      return '当前 Agent 不在 Catalog 中，无法确认配置能力';
+      return '当前 Agent 暂不支持此配置操作';
     case 'version_undefined':
-      return 'Catalog 未声明 configSchemaVersion，禁止保存';
+      return '该 Agent 的配置能力未声明，禁止保存';
     case 'version_invalid':
-      return 'Catalog 的 configSchemaVersion 无效';
+      return '该 Agent 的配置版本无效，请更新应用后重试';
     case 'schema_load_failed':
-      return '加载配置 schema 失败';
+      return '加载配置表单失败';
     default:
       return reason || '配置能力未知';
   }

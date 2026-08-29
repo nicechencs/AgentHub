@@ -724,5 +724,65 @@ describe('provider-detect fields', () => {
     expect(parsed.baseUrl).toBe('https://api.deepseek.com');
     expect(parsed.env).toBeUndefined();
   });
+
+  it('extracts ZCode catalog JSON, not Claude env', () => {
+    const src = JSON.stringify(
+      {
+        apiKey: 'sk-zcode-live',
+        baseURL: 'https://api.z.ai/api/anthropic',
+        kind: 'anthropic',
+        providerId: 'builtin:zai',
+        models: ['GLM-5.3', 'GLM-5.3-Flash'],
+      },
+      null,
+      2,
+    );
+    const vars = extractFormVars('zcode', src, 'json');
+    expect(vars.apiKey).toBe('sk-zcode-live');
+    expect(vars.baseUrl).toBe('https://api.z.ai/api/anthropic');
+    expect(vars.providerSlug).toBe('builtin:zai');
+    expect(vars.model).toContain('GLM-5.3');
+  });
+
+  it('writes ZCode catalog fields and strips leftover Claude env', () => {
+    const out = applyFormVars(
+      'zcode',
+      JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'sk-old' }, apiKey: '' }),
+      'json',
+      {
+        ...EMPTY_FORM_VARS,
+        apiKey: 'sk-zcode-new',
+        baseUrl: 'https://api.z.ai/api/anthropic',
+        providerSlug: 'builtin:zai',
+        model: 'GLM-5.3',
+      },
+    );
+    const parsed = JSON.parse(out) as Record<string, unknown>;
+    expect(parsed.apiKey).toBe('sk-zcode-new');
+    expect(parsed.baseURL).toBe('https://api.z.ai/api/anthropic');
+    expect(parsed.providerId).toBe('builtin:zai');
+    expect(parsed.kind).toBe('anthropic');
+    expect(parsed.env).toBeUndefined();
+    expect(parsed.model).toBeUndefined();
+    expect(parsed.models).toBeUndefined();
+  });
+
+  it('writes custom ZCode models so they appear in the model list', () => {
+    const out = applyFormVars('zcode', '{}', 'json', {
+      ...EMPTY_FORM_VARS,
+      apiKey: 'sk-custom',
+      baseUrl: 'https://relay.example.com/v1',
+      providerSlug: 'custom',
+      model: 'my-model, other-model',
+    });
+    const parsed = JSON.parse(out) as {
+      providerId: string;
+      models: string[];
+      apiKey: string;
+    };
+    expect(parsed.providerId).toBe('agenthub-managed');
+    expect(parsed.models).toEqual(['my-model', 'other-model']);
+    expect(parsed.apiKey).toBe('sk-custom');
+  });
 });
 
