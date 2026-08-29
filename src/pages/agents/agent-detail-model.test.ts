@@ -1,10 +1,11 @@
-import { createElement } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { AGENT_MAP } from '@/config/agents';
 import { translate } from '@/lib/i18n';
 import { zh } from '@/lib/i18n/locales/zh';
 import { en } from '@/lib/i18n/locales/en';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { extraCopyKindLabel, extraCopyKindLabelKey } from './agent-card-model';
 import { AgentDetailPanel } from './AgentDetailPanel';
 import {
@@ -18,6 +19,21 @@ import {
   isRawInstallChannelLabel,
 } from './agent-detail-model';
 import type { AgentStatus } from '@/lib/types';
+
+function renderPanel(agent: AgentStatus): string {
+  return renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(AgentDetailPanel, {
+        agent,
+        width: 360,
+        onClose: () => undefined,
+        onChanged: () => undefined,
+      }) as ReactNode,
+    ),
+  );
+}
 
 const tZh = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) =>
   translate('zh', key, params);
@@ -125,14 +141,7 @@ describe('config directory display', () => {
 
 describe('AgentDetailPanel markup', () => {
   it('renders endpoint types, a human channel, and a real config path for Claude', () => {
-    const html = renderToStaticMarkup(
-      createElement(AgentDetailPanel, {
-        agent: installed('claude'),
-        width: 360,
-        onClose: () => undefined,
-        onChanged: () => undefined,
-      }),
-    );
+    const html = renderPanel(installed('claude'));
     expect(html).toContain('端点类型');
     expect(html).toContain('/v1/messages');
     expect(html).toContain('Claude 对话');
@@ -143,14 +152,7 @@ describe('AgentDetailPanel markup', () => {
   });
 
   it('keeps an honest empty endpoint line for Pi and does not invent a path style', () => {
-    const html = renderToStaticMarkup(
-      createElement(AgentDetailPanel, {
-        agent: installed('pi', 'npm'),
-        width: 360,
-        onClose: () => undefined,
-        onChanged: () => undefined,
-      }),
-    );
+    const html = renderPanel(installed('pi', 'npm'));
     expect(html).toContain('端点类型');
     expect(html).toContain('随当前登录而定');
     expect(html).not.toContain('/v1/chat/completions');
