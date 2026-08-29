@@ -77,31 +77,51 @@ pub fn parse_messages_request(value: &Value) -> ProtocolResult<BridgeRequest> {
     })
 }
 
-/// Encode IR events as Anthropic Messages SSE records (`event:` + `data:`).
-pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
-    let mut frames = Vec::new();
-    let mut content_index: Option<usize> = None;
-    let mut next_content_index: usize = 0;
-    let mut open_block: Option<OpenBlock> = None;
-    let mut usage = Usage {
-        input_tokens: 0,
-        output_tokens: 0,
-        total_tokens: 0,
-        cached_input_tokens: None,
-        reasoning_tokens: 0,
-    };
-    let mut saw_message_start = false;
-    let mut saw_message_end = false;
+/// Incremental IR → Anthropic Messages SSE encoder.
+///
+/// Feed each IR event to [`Self::push_event`] as it arrives; each call returns
+/// only the SSE frames produced by that event, so a long-running stream never
+/// needs to hold or re-render the full event history. `encode_anthropic_sse`
+/// remains a thin wrapper over this encoder for one-shot / non-streaming use.
+#[derive(Debug)]
+pub struct IrToAnthropicSse {
+    content_index: Option<usize>,
+    next_content_index: usize,
+    open_block: Option<OpenBlock>,
+    usage: Usage,
+    saw_message_start: bool,
+    saw_message_end: bool,
+}
 
-    for event in events {
+impl IrToAnthropicSse {
+    pub fn new() -> Self {
+        Self {
+            content_index: None,
+            next_content_index: 0,
+            open_block: None,
+            usage: Usage {
+                input_tokens: 0,
+                output_tokens: 0,
+                total_tokens: 0,
+                cached_input_tokens: None,
+                reasoning_tokens: 0,
+            },
+            saw_message_start: false,
+            saw_message_end: false,
+        }
+    }
+
+    /// Translate one IR event into the SSE frames it produces.
+    pub fn push_event(&mut self, event: &IrEvent) -> ProtocolResult<Vec<String>> {
+        let mut frames = Vec::new();
         match event {
             IrEvent::MessageStart { id, model } => {
-                if saw_message_start {
+                if self.saw_message_start {
                     return Err(ProtocolError::invalid_request(
                         "Duplicate message start in IR event stream.",
                     ));
                 }
-                saw_message_start = true;
+                self.saw_message_start = true;
                 frames.push(sse_frame(
                     "message_start",
                     json!({
@@ -123,17 +143,17 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
                 ));
             }
             IrEvent::TextDelta { text } => {
-                ensure_started(saw_message_start)?;
-                if !matches!(open_block, Some(OpenBlock::Text)) {
-                    close_open_block(&mut frames, &mut open_block, content_index)?;
-                    content_index = Some(next_content_index);
-                    next_content_index = next_content_index.saturating_add(1);
-                    open_block = Some(OpenBlock::Text);
+                ensure_started(self.saw_message_start)?;
+                if !matches!(self.open_block, Some(OpenBlock::Text)) {
+                    close_open_block(&mut frames, &mut self.open_block, self.content_index)?;
+                    self.content_index = Some(self.next_content_index);
+                    self.next_content_index = self.next_content_index.saturating_add(1);
+                    self.open_block = Some(OpenBlock::Text);
                     frames.push(sse_frame(
                         "content_block_start",
                         json!({
                             "type": "content_block_start",
-                            "index": content_index.unwrap(),
+                            "index": self.content_index.unwrap(),
                             "content_block": { "type": "text", "text": "" }
                         }),
                     ));
@@ -142,22 +162,22 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
                     "content_block_delta",
                     json!({
                         "type": "content_block_delta",
-                        "index": content_index.unwrap(),
+                        "index": self.content_index.unwrap(),
                         "delta": { "type": "text_delta", "text": text }
                     }),
                 ));
             }
             IrEvent::ToolCallStart { id, name } => {
-                ensure_started(saw_message_start)?;
-                close_open_block(&mut frames, &mut open_block, content_index)?;
-                content_index = Some(next_content_index);
-                next_content_index = next_content_index.saturating_add(1);
-                open_block = Some(OpenBlock::Tool);
+                ensure_started(self.saw_message_start)?;
+                close_open_block(&mut frames, &mut self.open_block, self.content_index)?;
+                self.content_index = Some(self.next_content_index);
+                self.next_content_index = self.next_content_index.saturating_add(1);
+                self.open_block = Some(OpenBlock::Tool);
                 frames.push(sse_frame(
                     "content_block_start",
                     json!({
                         "type": "content_block_start",
-                        "index": content_index.unwrap(),
+                        "index": self.content_index.unwrap(),
                         "content_block": {
                             "type": "tool_use",
                             "id": id,
@@ -171,8 +191,8 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
                 id: _,
                 arguments_delta,
             } => {
-                ensure_started(saw_message_start)?;
-                if !matches!(open_block, Some(OpenBlock::Tool)) {
+                ensure_started(self.saw_message_start)?;
+                if !matches!(self.open_block, Some(OpenBlock::Tool)) {
                     return Err(ProtocolError::invalid_request(
                         "Tool call delta without an open tool block.",
                     ));
@@ -181,7 +201,7 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
                     "content_block_delta",
                     json!({
                         "type": "content_block_delta",
-                        "index": content_index.unwrap(),
+                        "index": self.content_index.unwrap(),
                         "delta": {
                             "type": "input_json_delta",
                             "partial_json": arguments_delta
@@ -190,28 +210,28 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
                 ));
             }
             IrEvent::ToolCallEnd { id: _ } => {
-                ensure_started(saw_message_start)?;
-                close_open_block(&mut frames, &mut open_block, content_index)?;
+                ensure_started(self.saw_message_start)?;
+                close_open_block(&mut frames, &mut self.open_block, self.content_index)?;
             }
             IrEvent::Usage {
                 input_tokens,
                 output_tokens,
                 cached_input_tokens,
             } => {
-                usage.input_tokens = *input_tokens;
-                usage.output_tokens = *output_tokens;
-                usage.total_tokens = input_tokens.saturating_add(*output_tokens);
-                usage.cached_input_tokens = *cached_input_tokens;
+                self.usage.input_tokens = *input_tokens;
+                self.usage.output_tokens = *output_tokens;
+                self.usage.total_tokens = input_tokens.saturating_add(*output_tokens);
+                self.usage.cached_input_tokens = *cached_input_tokens;
             }
             IrEvent::MessageEnd { stop_reason } => {
-                ensure_started(saw_message_start)?;
-                if saw_message_end {
+                ensure_started(self.saw_message_start)?;
+                if self.saw_message_end {
                     return Err(ProtocolError::invalid_request(
                         "Duplicate message end in IR event stream.",
                     ));
                 }
-                saw_message_end = true;
-                close_open_block(&mut frames, &mut open_block, content_index)?;
+                self.saw_message_end = true;
+                close_open_block(&mut frames, &mut self.open_block, self.content_index)?;
                 let mut delta = Map::new();
                 delta.insert(
                     "stop_reason".to_owned(),
@@ -221,7 +241,7 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
                 let mut message_delta = Map::new();
                 message_delta.insert("type".to_owned(), Value::String("message_delta".to_owned()));
                 message_delta.insert("delta".to_owned(), Value::Object(delta));
-                message_delta.insert("usage".to_owned(), usage.to_anthropic_usage_json());
+                message_delta.insert("usage".to_owned(), self.usage.to_anthropic_usage_json());
                 frames.push(sse_frame("message_delta", Value::Object(message_delta)));
                 frames.push(sse_frame("message_stop", json!({ "type": "message_stop" })));
             }
@@ -242,8 +262,27 @@ pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
                 ));
             }
         }
+        Ok(frames)
     }
+}
 
+impl Default for IrToAnthropicSse {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Encode IR events as Anthropic Messages SSE records (`event:` + `data:`).
+///
+/// Thin wrapper around [`IrToAnthropicSse`] for one-shot / non-streaming
+/// callers; incremental stream paths should use the encoder directly instead
+/// of re-encoding the whole event history on every batch.
+pub fn encode_anthropic_sse(events: &[IrEvent]) -> ProtocolResult<Vec<String>> {
+    let mut encoder = IrToAnthropicSse::new();
+    let mut frames = Vec::new();
+    for event in events {
+        frames.extend(encoder.push_event(event)?);
+    }
     Ok(frames)
 }
 

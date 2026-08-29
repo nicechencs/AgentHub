@@ -14,6 +14,7 @@ import type {
   AdapterProfile,
   AdapterRouteRequest,
 } from '@/lib/api/adapter';
+import type { TranslateFn } from '@/lib/i18n';
 
 /** 全流程凭据身份：以 (kind, id) 为准，防 account/provider id 碰撞。 */
 export interface ConnectSourceRef {
@@ -79,6 +80,8 @@ export interface SourceOptionsInput {
   profiles: readonly AdapterProfile[];
   /** 实时 doctor statuses；有 target 且带 capabilities 时优先于 catalog。 */
   agentStatuses?: readonly AgentStatus[];
+  /** 翻译函数；缺省时门禁 reason 落回内置 fallback 文案。 */
+  t?: TranslateFn;
 }
 
 /**

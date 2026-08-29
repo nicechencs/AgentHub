@@ -143,7 +143,7 @@ describe('chat-process reduceProcessEvent', () => {
     expect(map['1:claude']?.command).toBe('x');
   });
 
-  it('maps English raw step notes to Chinese', () => {
+  it('maps raw step notes to the translated label (zh)', () => {
     expect(
       stepSummary({ type: 'raw', text: '{…}', note: 'unrecognized structured line' }, t),
     ).toBe('无法识别的输出行');
@@ -153,6 +153,22 @@ describe('chat-process reduceProcessEvent', () => {
     expect(stepSummary({ type: 'raw', text: 'x', note: 'line too long' }, t)).toBe('输出行过长');
     expect(stepSummary({ type: 'raw', text: '{…}', note: '无法识别的输出行' }, t)).toBe(
       '无法识别的输出行',
+    );
+  });
+
+  it('maps raw step notes to the translated label (en)', () => {
+    const tEn = createTranslator('en');
+    expect(
+      stepSummary({ type: 'raw', text: '{…}', note: 'unrecognized structured line' }, tEn),
+    ).toBe('Unrecognized output line');
+    expect(
+      stepSummary({ type: 'raw', text: 'oops', note: 'non-json line in structured mode' }, tEn),
+    ).toBe('Non-JSON line in structured mode');
+    expect(stepSummary({ type: 'raw', text: 'x', note: 'line too long' }, tEn)).toBe(
+      'Output line too long',
+    );
+    expect(stepSummary({ type: 'raw', text: '{…}', note: '无法识别的输出行' }, tEn)).toBe(
+      'Unrecognized output line',
     );
   });
 

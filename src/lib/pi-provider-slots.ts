@@ -3,6 +3,7 @@
  * Auth table: https://pi.dev/docs/latest/providers
  * Custom providers: https://pi.dev/docs/latest/models
  */
+import type { TranslateFn } from '@/lib/i18n';
 
 export const PI_PLACEHOLDER_BASE_URL = 'https://your-relay.example.com/v1';
 
@@ -45,19 +46,36 @@ export function isPiAuthJsonSlot(id: string): boolean {
 
 /** AgentHub models.json bind slots — not auth.json builtins. */
 const PI_MODELS_JSON_BIND_SLOTS: PiProviderSlot[] = [
-  { id: 'xai', label: 'xAI（自定义）', api: 'openai-completions' },
-  { id: 'kimi-for-coding', label: 'Kimi For Coding（自定义）', api: 'openai-completions' },
+  { id: 'xai', label: 'xAI (custom)', api: 'openai-completions' },
+  { id: 'kimi-for-coding', label: 'Kimi For Coding (custom)', api: 'openai-completions' },
 ];
 
 export const PI_PROVIDER_SLOT_OPTIONS: PiProviderSlot[] = [
   ...PI_AUTH_JSON_SLOTS,
   ...PI_MODELS_JSON_BIND_SLOTS,
-  { id: 'custom', label: '自定义服务', api: 'openai-completions' },
+  { id: 'custom', label: 'Custom service', api: 'openai-completions' },
 ];
+
+/** i18n keys for slot labels not covered by the official auth.json table (English source data above). */
+const PI_SLOT_LABEL_KEYS: Record<string, 'connections.pi.xaiCustomLabel' | 'connections.pi.kimiCustomLabel' | 'connections.pi.customServiceLabel'> = {
+  xai: 'connections.pi.xaiCustomLabel',
+  'kimi-for-coding': 'connections.pi.kimiCustomLabel',
+  custom: 'connections.pi.customServiceLabel',
+};
 
 export function piProviderSlotById(id: string): PiProviderSlot | undefined {
   const key = id.trim();
   return PI_PROVIDER_SLOT_OPTIONS.find((slot) => slot.id === key);
+}
+
+/** Localized label for a slot id; falls back to the slot's English default label. */
+export function piProviderSlotLabel(id: string, t?: TranslateFn): string {
+  const slug = id.trim() || 'custom';
+  const slot = piProviderSlotById(slug);
+  const fallback = slot?.label ?? slug;
+  const key = PI_SLOT_LABEL_KEYS[slug];
+  if (!t || !key) return fallback;
+  return t(key);
 }
 
 export function defaultPiProviderApi(id: string): string {
@@ -73,10 +91,14 @@ export function piFormRequiresBaseUrl(slug: string): boolean {
   return !isPiAuthJsonSlot(slug.trim() || 'custom');
 }
 
-export function piProviderSlotHint(id: string): string {
+export function piProviderSlotHint(id: string, t?: TranslateFn): string {
   const slug = id.trim() || 'custom';
   if (isPiAuthJsonSlot(slug)) {
-    return `密钥会写到 Pi 的官方登录文件（auth.json / ${slug}）。不填地址时用官方服务和模型。`;
+    return t
+      ? t('connections.pi.authJsonHint', { slug })
+      : `The key is written to Pi's official login file (auth.json / ${slug}). Leave the address blank to use the official service and models.`;
   }
-  return `会写到 Pi 的自定义服务配置（models.json / ${slug}）。必须填写服务地址。`;
+  return t
+    ? t('connections.pi.modelsJsonHint', { slug })
+    : `This writes to Pi's custom service config (models.json / ${slug}). A service address is required.`;
 }

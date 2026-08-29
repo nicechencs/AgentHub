@@ -44,7 +44,10 @@ pub(super) const MAX_IN_FLIGHT_REQUESTS_PER_PROFILE: usize = 256;
 #[cfg(test)]
 pub(super) const MAX_IN_FLIGHT_REQUESTS_PER_PROFILE: usize = 4;
 pub(super) const UPSTREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Streaming responses should start emitting headers promptly; 30s is enough for TTFB.
 pub(super) const UPSTREAM_RESPONSE_HEADER_TIMEOUT: Duration = Duration::from_secs(30);
+/// Non-stream upstreams often hold headers until the full JSON is ready, so the
+/// header wait must cover the same budget as the body read (not the stream TTFB).
 pub(super) const UPSTREAM_NON_STREAM_TIMEOUT: Duration = Duration::from_secs(120);
 pub(super) const UPSTREAM_BODY_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 #[cfg(not(test))]

@@ -964,84 +964,94 @@ pub fn encode_chat_from_ir(events: &[IrEvent], response_id: Option<&str>) -> Pro
     ))
 }
 
-/// Encode IR events as Chat Completions SSE `data:` frames, including a terminal `[DONE]`.
-pub fn encode_chat_sse(
-    events: &[IrEvent],
-    response_id: Option<&str>,
-) -> ProtocolResult<Vec<String>> {
-    let mut frames = Vec::new();
-    let mut id = response_id
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| "chatcmpl_agenthub".to_owned());
-    let mut model = String::from("unknown");
-    let mut started = false;
-    let mut tool_index: usize = 0;
-    let mut usage = None;
-    let mut stop_reason = StopReason::Stop;
-    let mut saw_end = false;
+/// Incremental IR → Chat Completions SSE encoder.
+///
+/// Feed each IR event to [`Self::push_event`] as it arrives; each call
+/// returns only the SSE frames produced by that event. `push_event` on
+/// [`IrEvent::MessageEnd`] only records terminal state (matching the
+/// original batch encoder, which deferred the finish chunk + `[DONE]` until
+/// after the loop) — call [`Self::finish`] once the stream ends to emit
+/// those terminal frames. `encode_chat_sse` remains a thin wrapper over this
+/// encoder for one-shot / non-streaming use.
+#[derive(Debug)]
+pub struct IrToChatSse {
+    id: String,
+    model: String,
+    started: bool,
+    tool_index: usize,
+    usage: Option<Usage>,
+    stop_reason: StopReason,
+    saw_end: bool,
+}
 
-    for event in events {
+impl IrToChatSse {
+    pub fn new(response_id: Option<&str>) -> Self {
+        Self {
+            id: response_id
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(|| "chatcmpl_agenthub".to_owned()),
+            model: String::from("unknown"),
+            started: false,
+            tool_index: 0,
+            usage: None,
+            stop_reason: StopReason::Stop,
+            saw_end: false,
+        }
+    }
+
+    fn ensure_started(&mut self, frames: &mut Vec<String>) {
+        if self.started {
+            return;
+        }
+        self.started = true;
+        frames.push(chat_sse_data(chat_chunk(
+            &self.id,
+            &self.model,
+            json!({ "role": "assistant" }),
+            None,
+            None,
+        )));
+    }
+
+    /// Translate one IR event into the SSE frames it produces. `MessageEnd`
+    /// only records terminal state; call [`Self::finish`] to emit the
+    /// finish chunk and `[DONE]`.
+    pub fn push_event(&mut self, event: &IrEvent) -> ProtocolResult<Vec<String>> {
+        let mut frames = Vec::new();
         match event {
             IrEvent::MessageStart {
                 id: message_id,
                 model: m,
             } => {
                 if let Some(stripped) = message_id.strip_prefix("msg_") {
-                    id = format!("chatcmpl_{stripped}");
+                    self.id = format!("chatcmpl_{stripped}");
                 }
                 if !m.is_empty() {
-                    model = m.clone();
+                    self.model = m.clone();
                 }
-                if !started {
-                    started = true;
-                    frames.push(chat_sse_data(chat_chunk(
-                        &id,
-                        &model,
-                        json!({ "role": "assistant" }),
-                        None,
-                        None,
-                    )));
-                }
+                self.ensure_started(&mut frames);
             }
             IrEvent::TextDelta { text } => {
                 if text.is_empty() {
-                    continue;
+                    return Ok(frames);
                 }
-                if !started {
-                    started = true;
-                    frames.push(chat_sse_data(chat_chunk(
-                        &id,
-                        &model,
-                        json!({ "role": "assistant" }),
-                        None,
-                        None,
-                    )));
-                }
+                self.ensure_started(&mut frames);
                 frames.push(chat_sse_data(chat_chunk(
-                    &id,
-                    &model,
+                    &self.id,
+                    &self.model,
                     json!({ "content": text }),
                     None,
                     None,
                 )));
             }
             IrEvent::ToolCallStart { id: call_id, name } => {
-                if !started {
-                    started = true;
-                    frames.push(chat_sse_data(chat_chunk(
-                        &id,
-                        &model,
-                        json!({ "role": "assistant" }),
-                        None,
-                        None,
-                    )));
-                }
+                self.ensure_started(&mut frames);
                 frames.push(chat_sse_data(chat_chunk(
-                    &id,
-                    &model,
+                    &self.id,
+                    &self.model,
                     json!({
                         "tool_calls": [{
-                            "index": tool_index,
+                            "index": self.tool_index,
                             "id": call_id,
                             "type": "function",
                             "function": { "name": name, "arguments": "" }
@@ -1056,14 +1066,14 @@ pub fn encode_chat_sse(
                 arguments_delta,
             } => {
                 if arguments_delta.is_empty() {
-                    continue;
+                    return Ok(frames);
                 }
                 frames.push(chat_sse_data(chat_chunk(
-                    &id,
-                    &model,
+                    &self.id,
+                    &self.model,
                     json!({
                         "tool_calls": [{
-                            "index": tool_index,
+                            "index": self.tool_index,
                             "function": { "arguments": arguments_delta }
                         }]
                     }),
@@ -1072,14 +1082,14 @@ pub fn encode_chat_sse(
                 )));
             }
             IrEvent::ToolCallEnd { id: _ } => {
-                tool_index = tool_index.saturating_add(1);
+                self.tool_index = self.tool_index.saturating_add(1);
             }
             IrEvent::Usage {
                 input_tokens,
                 output_tokens,
                 cached_input_tokens,
             } => {
-                usage = Some(Usage {
+                self.usage = Some(Usage {
                     input_tokens: *input_tokens,
                     output_tokens: *output_tokens,
                     total_tokens: input_tokens.saturating_add(*output_tokens),
@@ -1090,31 +1100,50 @@ pub fn encode_chat_sse(
             IrEvent::MessageEnd {
                 stop_reason: reason,
             } => {
-                saw_end = true;
-                stop_reason = reason.clone();
+                self.saw_end = true;
+                self.stop_reason = reason.clone();
             }
             IrEvent::Error { .. } => return Err(ProtocolError::upstream()),
         }
+        Ok(frames)
     }
-    if saw_end {
-        if !started {
-            frames.push(chat_sse_data(chat_chunk(
-                &id,
-                &model,
-                json!({ "role": "assistant" }),
-                None,
-                None,
-            )));
+
+    /// Emit the finish chunk + `[DONE]` if [`IrEvent::MessageEnd`] was seen.
+    /// Idempotent: returns no frames on subsequent calls.
+    pub fn finish(&mut self) -> ProtocolResult<Vec<String>> {
+        let mut frames = Vec::new();
+        if !self.saw_end {
+            return Ok(frames);
         }
+        self.saw_end = false;
+        self.ensure_started(&mut frames);
         frames.push(chat_sse_data(chat_chunk(
-            &id,
-            &model,
+            &self.id,
+            &self.model,
             json!({}),
-            Some(chat_finish_reason(&stop_reason)),
-            usage.as_ref(),
+            Some(chat_finish_reason(&self.stop_reason)),
+            self.usage.as_ref(),
         )));
         frames.push("data: [DONE]\n\n".to_owned());
+        Ok(frames)
     }
+}
+
+/// Encode IR events as Chat Completions SSE `data:` frames, including a terminal `[DONE]`.
+///
+/// Thin wrapper around [`IrToChatSse`] for one-shot / non-streaming callers;
+/// incremental stream paths should use the encoder directly instead of
+/// re-encoding the whole event history on every batch.
+pub fn encode_chat_sse(
+    events: &[IrEvent],
+    response_id: Option<&str>,
+) -> ProtocolResult<Vec<String>> {
+    let mut encoder = IrToChatSse::new(response_id);
+    let mut frames = Vec::new();
+    for event in events {
+        frames.extend(encoder.push_event(event)?);
+    }
+    frames.extend(encoder.finish()?);
     Ok(frames)
 }
 

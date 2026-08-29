@@ -7,6 +7,7 @@ import {
   type Capability,
   type CapabilityLevel,
 } from '@/lib/capability';
+import { createTranslator } from '@/lib/i18n';
 import { MOCK_CAPABILITIES } from '@/dev/mocks/capabilities';
 import type { AgentId } from '@/lib/types';
 
@@ -94,6 +95,31 @@ describe('providerCapabilityGate', () => {
       canSwitch: false,
       canUsePresets: false,
     });
+  });
+
+  it('falls back to an English default reason when no translator is passed', () => {
+    const gate = providerCapabilityGate({ configWrite: { level: 'unsupported' } });
+    expect(gate.reason).toBe('This agent does not support config writes');
+  });
+
+  it('translates the default reason via t when configWrite carries no explicit reason', () => {
+    const tZh = createTranslator('zh');
+    const tEn = createTranslator('en');
+    expect(
+      providerCapabilityGate({ configWrite: { level: 'unsupported' } }, tZh).reason,
+    ).toBe('该 Agent 不支持配置写入');
+    expect(
+      providerCapabilityGate({ configWrite: { level: 'unsupported' } }, tEn).reason,
+    ).toBe('This agent does not support config writes');
+  });
+
+  it('prefers the explicit configWrite.reason over the translator default', () => {
+    const tZh = createTranslator('zh');
+    const gate = providerCapabilityGate(
+      { configWrite: { level: 'unsupported', reason: 'no live writer' } },
+      tZh,
+    );
+    expect(gate.reason).toBe('no live writer');
   });
 
   it('allows the current Pi and WorkBuddy provider controls without affecting account capability', () => {

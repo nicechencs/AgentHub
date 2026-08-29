@@ -45,6 +45,7 @@ import {
   autoApproveFooter,
   autoApproveHint,
   selectConversationAgent,
+  singleAgentConversationPatch,
   retryTarget,
   sendBlockers,
   turnComparisonChips,
@@ -381,6 +382,22 @@ describe('selectConversationAgent', () => {
         allowDangerous: true,
       }),
     ).toEqual({ agentIds: ['pi'] });
+  });
+});
+
+describe('singleAgentConversationPatch', () => {
+  it('returns null for an already single-agent conversation', () => {
+    expect(singleAgentConversationPatch(['claude'])).toBeNull();
+  });
+
+  it('returns null for an empty agent list', () => {
+    expect(singleAgentConversationPatch([])).toBeNull();
+  });
+
+  it('collapses a legacy multi-agent conversation to the first agent only', () => {
+    expect(singleAgentConversationPatch(['claude', 'codex', 'grok'])).toEqual({
+      agentIds: ['claude'],
+    });
   });
 });
 

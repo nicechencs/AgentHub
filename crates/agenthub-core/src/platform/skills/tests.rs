@@ -16,6 +16,16 @@ use super::packages::{
 use super::sources::{ensure_skill_md, infer_skill_id, SkillSourceService};
 
 #[test]
+fn safe_path_component_rejects_cmd_metacharacters() {
+    use super::fs_safe::validate_safe_path_component;
+    for name in ["x&calc", "a^b", "%PATH%", "bang!me", "open(close)", "ok|pipe"] {
+        let err = validate_safe_path_component(name).expect_err(name);
+        assert_eq!(err.code(), "invalid_arg", "{name}");
+    }
+    validate_safe_path_component("normal-skill_id.v1").expect("portable id");
+}
+
+#[test]
 fn agent_hub_open_with_skills_root_stays_off_user_tree() {
     let (tmp, skills) = crate::utils::test_temp::isolated_skills_root();
     let data = tmp.path().join("data");
