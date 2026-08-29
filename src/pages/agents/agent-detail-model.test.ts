@@ -64,7 +64,7 @@ describe('agent conversation surfaces (dest RouteDownstreamSurface::for_agent)',
       {
         id: 'messages',
         path: '/v1/messages',
-        copyKey: 'routes.endpoint.messages',
+        copyKey: 'agents.detail.endpointMessages',
       },
     ]);
     expect(agentConversationEndpoints('codex')[0]?.path).toBe('/v1/responses');
@@ -83,7 +83,7 @@ describe('agent conversation surfaces (dest RouteDownstreamSurface::for_agent)',
     expect(formatAgentConversationEndpoints('pi', tEn)).toBe('Depends on the current login');
   });
 
-  it('reuses dest route endpoint copy for zh and en', () => {
+  it('uses Agents-page endpoint copy for zh and en', () => {
     const claude = agentConversationEndpoints('claude')[0]!;
     expect(formatConversationEndpointLabel(claude, tZh)).toBe('/v1/messages · Claude 对话');
     expect(formatConversationEndpointLabel(claude, tEn)).toBe('/v1/messages · Claude chat');
@@ -92,9 +92,12 @@ describe('agent conversation surfaces (dest RouteDownstreamSurface::for_agent)',
     expect(formatAgentConversationEndpoints('dsh', tEn)).toBe(
       '/v1/chat/completions · Kimi and other completions',
     );
-    expect(zh.routes.endpoint.messages).toBe('Claude 对话');
-    expect(zh.routes.pool.surface.messages).toBe('对话接口');
-    expect(en.routes.endpoint.responses).toBe('Codex / Grok chat');
+    expect(zh.agents.detail.endpointMessages).toBe('Claude 对话');
+    expect(zh.agents.detail.endpointResponses).toBe('Codex / Grok 对话');
+    expect(zh.agents.detail.endpointChatCompletions).toBe('Kimi 等补全');
+    expect(en.agents.detail.endpointMessages).toBe('Claude chat');
+    expect(en.agents.detail.endpointResponses).toBe('Codex / Grok chat');
+    expect(en.agents.detail.endpointChatCompletions).toBe('Kimi and other completions');
   });
 });
 
