@@ -1812,7 +1812,7 @@ export const en = {
       extraCopyDesktop: "desktop app",
       extraCopyLeftover: "leftover data-dir npm",
       channelOfficial: "Official script",
-      channelNpm: "npm",
+      channelNpm: "npm package",
       extraCopyCanUpdate: "update available",
       extraCopyIsLatest: "up to date",
       extraCopyUpgradeSpawnOnly: "Upgrade only updates the spawn channel",

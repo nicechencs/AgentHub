@@ -15,7 +15,9 @@ import {
   displayAgentConfigDir,
   formatAgentConversationEndpoints,
   formatConversationEndpointLabel,
-  installChannelDisplayLabel,
+  installChannelKindLabel,
+  installLocationSourceLabel,
+  isNpmPackageCatalogLabel,
   isRawInstallChannelLabel,
 } from './agent-detail-model';
 import type { AgentStatus } from '@/lib/types';
@@ -108,23 +110,32 @@ describe('install channel labels', () => {
     expect(isRawInstallChannelLabel('native', '官网 Setup（打开安装页）')).toBe(false);
     expect(isRawInstallChannelLabel('npm', 'npm')).toBe(true);
     expect(isRawInstallChannelLabel('npm', 'npm @anthropic-ai/claude-code')).toBe(false);
+    expect(isNpmPackageCatalogLabel('npm', 'npm @openai/codex')).toBe(true);
+    expect(isNpmPackageCatalogLabel('native', '官网 Setup（打开安装页）')).toBe(false);
   });
 
-  it('prefers catalog labels and falls back to official-script / npm words', () => {
+  it('uses dest human kind on 渠道 and keeps package ids on 安装位置', () => {
     expect(catalogChannelLabel('claude', 'native')).toBeUndefined();
     expect(catalogChannelLabel('workbuddy', 'native')).toBe('官网 Setup（打开安装页）');
     expect(catalogChannelLabel('claude', 'npm')).toBe('npm @anthropic-ai/claude-code');
-    expect(installChannelDisplayLabel('claude', 'native', tZh)).toBe('官方脚本');
-    expect(installChannelDisplayLabel('claude', 'native', tEn)).toBe('Official script');
-    expect(installChannelDisplayLabel('claude', 'npm', tZh)).toBe('npm @anthropic-ai/claude-code');
-    expect(installChannelDisplayLabel('workbuddy', 'native', tZh)).toBe('官网 Setup（打开安装页）');
-    expect(installChannelDisplayLabel('claude', 'ide', tZh)).toBe('IDE 插件');
-    expect(installChannelDisplayLabel('claude', 'desktop', tZh)).toBe('桌面应用');
-    expect(installChannelDisplayLabel('claude', undefined, tZh)).toBeUndefined();
+    expect(installChannelKindLabel('claude', 'native', tZh)).toBe('官方脚本');
+    expect(installChannelKindLabel('claude', 'native', tEn)).toBe('Official script');
+    expect(installChannelKindLabel('codex', 'npm', tZh)).toBe('npm 包');
+    expect(installChannelKindLabel('pi', 'npm', tZh)).toBe('npm 包');
+    expect(installChannelKindLabel('dsh', 'npm', tZh)).toBe('npm 包');
+    expect(installChannelKindLabel('codex', 'npm', tEn)).toBe('npm package');
+    expect(installLocationSourceLabel('codex', 'npm', tZh)).toBe('npm @openai/codex');
+    expect(installLocationSourceLabel('pi', 'npm', tZh)).toBe('npm @earendil-works/pi-coding-agent');
+    expect(installLocationSourceLabel('dsh', 'npm', tZh)).toBe('npm @deepseek-ai/dsh');
+    expect(installChannelKindLabel('workbuddy', 'native', tZh)).toBe('官网 Setup（打开安装页）');
+    expect(installChannelKindLabel('claude', 'ide', tZh)).toBe('IDE 插件');
+    expect(installChannelKindLabel('claude', 'desktop', tZh)).toBe('桌面应用');
+    expect(installChannelKindLabel('claude', undefined, tZh)).toBeUndefined();
     expect(AGENT_MAP.claude?.installChannels.some((row) => row.id === 'native')).toBe(true);
     expect(extraCopyKindLabelKey('native')).toBe('agents.card.channelOfficial');
     expect(extraCopyKindLabel('native', tZh)).toBe('官方脚本');
-    expect(extraCopyKindLabel('npm', tZh)).toBe('npm');
+    expect(extraCopyKindLabel('npm', tZh)).toBe('npm 包');
+    expect(zh.agents.card.channelNpm).toBe('npm 包');
   });
 });
 
@@ -163,7 +174,17 @@ describe('AgentDetailPanel markup', () => {
     expect(html).toContain('~/.pi/agent');
     expect(html).toContain('打开配置目录');
     expect(html).toContain('打开安装目录');
+    expect(html).toContain('npm 包');
+    expect(html).toContain('npm @earendil-works/pi-coding-agent');
     expect(html).not.toMatch(/>目录</);
+  });
+
+  it('shows npm 包 as 渠道 and keeps the package id on 安装位置', () => {
+    const html = renderPanel(installed('codex', 'npm'));
+    expect(html).toContain('npm 包');
+    expect(html).toContain('npm @openai/codex');
+    expect(html).not.toMatch(/>npm</);
+    expect(html).not.toContain('渠道</dt><dd class="min-w-0 break-all text-secondary">npm @');
   });
 
   it('opens an empty detail for an uninstalled agent', () => {
