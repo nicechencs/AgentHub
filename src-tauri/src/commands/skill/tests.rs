@@ -29,6 +29,16 @@ fn list_missing_source_is_empty() {
 }
 
 #[test]
+fn list_project_skills_rejects_relative_workspace() {
+    let (_dir, hub) = isolated_hub();
+    let err = list_project_skills_inner(&hub, "relative/ws").unwrap_err();
+    assert!(
+        err.to_lowercase().contains("absolute") || err.contains("invalid"),
+        "{err}"
+    );
+}
+
+#[test]
 fn list_skill_catalog_empty_source_is_empty_or_shared_only() {
     let (_dir, hub) = hub_with_skills(&[]);
     let catalog = list_skill_catalog_inner(&hub).unwrap();

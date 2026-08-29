@@ -14,7 +14,7 @@ import { segmentedItemClass, segmentedTrackClass } from '@/components/ui/segment
 import { Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
-import { readSkillMarkdown } from '@/lib/api/skill';
+import { readProjectSkillMarkdown, readSkillMarkdown } from '@/lib/api/skill';
 import {
   hasEscPriorityOverlay,
   skillPreviewActiveKey,
@@ -40,6 +40,10 @@ export type SkillPreviewTarget = {
   /** Adds a library tab; selected tab is `privateAgent == null` vs an agent id. */
   includeShared?: boolean;
   rowKey?: string;
+  /** Workspace path when previewing a project skill. */
+  workspacePath?: string | null;
+  /** Relative skill root under the workspace, e.g. `.agents/skills`. */
+  originRoot?: string | null;
 };
 
 function PreviewSkeleton() {
@@ -120,7 +124,14 @@ export function SkillMarkdownPreviewPanel({
     setTruncated(false);
     // Mode is session-stable across skill switches (not reset here).
 
-    void readSkillMarkdown(target.skillId, target.privateAgent ?? null)
+    const request = target.workspacePath
+      ? readProjectSkillMarkdown(
+          target.workspacePath,
+          target.skillId,
+          target.originRoot ?? null,
+        )
+      : readSkillMarkdown(target.skillId, target.privateAgent ?? null);
+    void request
       .then((row) => {
         if (requestSeq.current !== seq) return;
         // Guard against stale responses if parent swaps target mid-flight.
@@ -168,9 +179,11 @@ export function SkillMarkdownPreviewPanel({
     selectedCopy?.sourceDir ??
     target.sourceDir ??
     (path ? path.replace(/[\\/][^\\/]+$/, '') : null);
-  const originLabel = target.privateAgent
-    ? agentDisplayName(target.privateAgent)
-    : t('skills.preview.sharedOrigin');
+  const originLabel = target.workspacePath
+    ? target.originRoot?.trim() || t('skills.preview.projectOrigin')
+    : target.privateAgent
+      ? agentDisplayName(target.privateAgent)
+      : t('skills.preview.sharedOrigin');
   // 预览态剥 YAML frontmatter，避免 --- / name: / description: 被渲染成假正文
   const mdParts = !loading && !error && content ? splitSkillMarkdown(content) : null;
   const previewBody = mdParts?.body ?? '';

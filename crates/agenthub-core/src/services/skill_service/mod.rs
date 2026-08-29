@@ -10,6 +10,7 @@
 mod catalog;
 mod install;
 mod list;
+mod project;
 mod sync;
 
 #[cfg(test)]

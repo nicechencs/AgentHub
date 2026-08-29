@@ -48,6 +48,23 @@ describe('skillPreviewActiveKey', () => {
     expect(a).toBe(b);
     expect(privateSkillActiveKey('codex', 'same')).not.toBe(a);
   });
+
+  it('distinguishes project skills from user skills with the same id', () => {
+    const user = skillPreviewActiveKey({ skillId: 'notes' });
+    const project = skillPreviewActiveKey({
+      skillId: 'notes',
+      workspacePath: 'C:\\Users\\demo\\app',
+      originRoot: '.agents/skills',
+    });
+    const otherOrigin = skillPreviewActiveKey({
+      skillId: 'notes',
+      workspacePath: 'C:\\Users\\demo\\app',
+      originRoot: '.claude/skills',
+    });
+    expect(user).toBe('shared:notes');
+    expect(project).toBe('project:C:\\Users\\demo\\app:.agents/skills:notes');
+    expect(otherOrigin).not.toBe(project);
+  });
 });
 
 describe('hasEscPriorityOverlay', () => {

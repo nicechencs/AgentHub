@@ -72,7 +72,7 @@ updated: 2026-08-29
 
 **技能**
 
-- 投影根：`<claude-home>/skills`。AgentHub 共享源仍是 `~/.agents/skills/`。
+- 投影根：`<claude-home>/skills`。AgentHub 用户技能共享源仍是 `~/.agents/skills/`；项目技能写在工作区 `.agents/skills/`，列表也会看到 `.claude/skills/`。
 
 ## Codex
 
