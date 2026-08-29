@@ -87,3 +87,12 @@ describe('switch toast copy', () => {
     expect(src).toMatch(/const wroteLocal =\s*ticket\.agentId === targetAgent/);
   });
 });
+
+describe('guiErrorCode', () => {
+  it('reads a trailing bracket code', async () => {
+    const { guiErrorCode } = await import('@/lib/api/settings');
+    expect(guiErrorCode('provider switch failed [provider.switch.rollback]')).toBe('provider.switch.rollback');
+    expect(guiErrorCode(new Error('io failed [io]'))).toBe('io');
+    expect(guiErrorCode('plain text')).toBeUndefined();
+  });
+});
