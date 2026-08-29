@@ -1,24 +1,26 @@
 /**
  * Agent management detail view-model.
  *
- * Conversation surfaces follow dest `RouteDownstreamSurface::for_agent`:
- * this is the Agent's static capability, not the running local-route row.
+ * Conversation surfaces follow dest `RouteDownstreamSurface::for_agent`.
+ * This is the Agent's static capability, shown only on Agents detail.
  */
 import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
 import { isLiveFilePath, liveConfigPaths } from '@/lib/provider-detect';
-import {
-  routeEndpointPath,
-  type RouteEndpointId,
-} from '@/lib/route-endpoints';
 import { extraCopyKindLabel, extraCopyKindLabelKey } from './agent-card-model';
 
-export type AgentConversationSurface = RouteEndpointId;
+export type AgentConversationSurface = 'messages' | 'responses' | 'chat_completions';
 
 export type AgentConversationEndpoint = {
   id: AgentConversationSurface;
   path: string;
   copyKey: MessageKey;
+};
+
+const ENDPOINT_PATH: Record<AgentConversationSurface, string> = {
+  messages: '/v1/messages',
+  responses: '/v1/responses',
+  chat_completions: '/v1/chat/completions',
 };
 
 /** Mirrors dest `RouteDownstreamSurface::for_agent`. Cursor is omitted on purpose. */
@@ -34,18 +36,18 @@ export function agentConversationSurface(
 export function conversationEndpointCopyKey(
   id: AgentConversationSurface,
 ): MessageKey {
-  if (id === 'messages') return 'routes.endpoint.messages';
-  if (id === 'responses') return 'routes.endpoint.responses';
-  return 'routes.endpoint.chatCompletions';
+  if (id === 'messages') return 'agents.detail.endpointMessages';
+  if (id === 'responses') return 'agents.detail.endpointResponses';
+  return 'agents.detail.endpointChatCompletions';
 }
 
-/** Paths + existing product copy. Empty when dest has no default surface. */
+/** Paths + Agents-page product copy. Empty when dest has no default surface. */
 export function agentConversationEndpoints(
   agentId: string,
 ): AgentConversationEndpoint[] {
   const id = agentConversationSurface(agentId);
   if (!id) return [];
-  return [{ id, path: routeEndpointPath(id), copyKey: conversationEndpointCopyKey(id) }];
+  return [{ id, path: ENDPOINT_PATH[id], copyKey: conversationEndpointCopyKey(id) }];
 }
 
 export function formatConversationEndpointLabel(

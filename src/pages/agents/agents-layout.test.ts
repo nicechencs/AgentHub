@@ -52,6 +52,8 @@ describe('agents layout wiring', () => {
     expect(card).toContain('uniqueInstallVersions');
     expect(card).not.toContain("t('agents.card.openInstallDir')");
     expect(card).not.toContain("t('agents.card.uninstallProgram')");
+    expect(card).not.toContain("t('agents.detail.endpointTypes')");
+    expect(card).not.toContain('formatAgentConversationEndpoints');
     expect(card).not.toContain('<Hint label={inst.location}');
     expect(page).toContain('pageRhythm.stackDense');
   });
