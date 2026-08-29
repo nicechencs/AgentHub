@@ -154,8 +154,9 @@ export function defaultConfigScaffold(agentId: string): {
             apiKey: '',
             baseURL: 'https://open.bigmodel.cn/api/anthropic',
             kind: 'anthropic',
-            name: 'AgentHub',
-            providerId: 'agenthub-managed',
+            name: 'BigModel',
+            providerId: 'builtin:bigmodel',
+            models: ['GLM-5.3', 'GLM-5.3-Flash', 'GLM-5-Turbo'],
           },
           null,
           2,
@@ -257,7 +258,7 @@ export function liveConfigPaths(agentId: string): {
         auth: '~/.zcode/v2/config.json',
         extra: ['~/.zcode/cli/config.json'],
         openDir: '~/.zcode（或 ZCODE_HOME）',
-        hint: '自定义 API Key 写在 v2/config.json 的 provider 里。账号登录请在 ZCode 应用内完成。',
+        hint: '会作为一条供应商出现在 ZCode 的模型列表里，原来的条目还在。官方智谱地址写入已有的 BigModel 或 Z.ai 槽；自定义必须带模型名单。账号登录请在 ZCode 应用内完成。',
       };
     default:
       return {

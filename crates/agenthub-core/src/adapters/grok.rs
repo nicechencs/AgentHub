@@ -142,6 +142,10 @@ impl AgentAdapter for GrokAdapter {
         }
     }
 
+    fn expand_live_accounts(&self, snapshot: &LiveAccount) -> Result<Vec<LiveAccount>> {
+        Ok(expand_grok_auth_to_live_accounts(snapshot))
+    }
+
     fn apply_account(&self, account: &LiveAccount) -> Result<()> {
         if account.agent != AgentId::Grok {
             return Err(AppError::InvalidArg(

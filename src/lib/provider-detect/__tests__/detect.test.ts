@@ -149,6 +149,19 @@ describe('liveConfigPaths', () => {
   });
 });
 
+describe('ZCode catalog scaffold', () => {
+  it('defaults official BigModel slot with a model list', () => {
+    const parsed = JSON.parse(defaultConfigScaffold('zcode').text) as {
+      providerId: string;
+      baseURL: string;
+      models: string[];
+    };
+    expect(parsed.providerId).toBe('builtin:bigmodel');
+    expect(parsed.baseURL).toContain('open.bigmodel.cn');
+    expect(parsed.models.length).toBeGreaterThan(0);
+  });
+});
+
 describe('claude-code bash export (smoke from test fixtures only)', () => {
   it('detects basic bash export shape', () => {
     const r = smartDetectUrlAndKey(CLAUDE_CODE_BASH_EXPORT_BASIC);

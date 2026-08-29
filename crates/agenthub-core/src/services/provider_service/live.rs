@@ -234,7 +234,7 @@ impl ProviderService {
     ) -> Result<()> {
         self.validate_live_saga_guard(guard, snapshot.agent)?;
         let adapter = self.adapter(snapshot.agent)?;
-        adapter.write_config(&snapshot.config)
+        adapter.restore_config(&snapshot.config)
     }
 
     /// Capture the agent's complete live provider config as a new current row.

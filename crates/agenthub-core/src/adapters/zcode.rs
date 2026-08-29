@@ -1,15 +1,16 @@
-//! ZCode (智谱 ADE) adapter — WorkBuddy-shaped desktop install + API Key in
-//! `~/.zcode/v2/config.json` (`provider.*.options.apiKey`).
+//! ZCode (智谱 ADE) adapter — desktop install + catalog-append API Key rows in
+//! `~/.zcode/v2/config.json` (`provider` map).
 //!
 //! ## Scope
 //! - detect desktop app (and optional `zcode` CLI on PATH)
 //! - native install channel: open official download page
 //! - home `$ZCODE_HOME` or `~/.zcode`
 //! - skills projection: `$ZCODE_HOME/skills`
-//! - API Key pool: read/apply/build against `v2/config.json` provider map
+//! - API Key writes upsert one catalog row; siblings stay in the model dropdown
 //!
 //! ## Honest limits
-//! - No 国产 OAuth writer; only API Key / custom provider slots.
+//! - No 国产 OAuth writer; Coding Plan / Start Plan slots are not API Key rows.
+//! - Custom rows need a model list or ZCode will not show them.
 //! - Project history / usage / structured stream stay Planned until local
 //!   contracts are verified (desktop ADE sessions are not CLI JSONL).
 //! - Headless Chat run prefers `zcode` on PATH; desktop-only installs cannot
@@ -17,7 +18,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::error::{AppError, Result};
 use crate::models::{
@@ -31,11 +32,17 @@ use super::{
     api_key_live_account, auth_file_revision, detect_binary, require_api_key, AgentAdapter,
 };
 
-/// Official download / landing page (Setup-only, like WorkBuddy).
+/// Official download / landing page (Setup-only).
 pub const SETUP_URL: &str = "https://zcode.z.ai/";
 
-/// Stable provider id written by AgentHub into `v2/config.json`.
+/// Custom catalog row id when the write is not an official Z.ai / BigModel slot.
 pub const MANAGED_PROVIDER_ID: &str = "agenthub-managed";
+pub const BUILTIN_ZAI: &str = "builtin:zai";
+pub const BUILTIN_BIGMODEL: &str = "builtin:bigmodel";
+
+const DEFAULT_OFFICIAL_MODEL_IDS: &[&str] = &["GLM-5.3", "GLM-5.3-Flash", "GLM-5-Turbo"];
+const ZAI_ANTHROPIC_URL: &str = "https://api.z.ai/api/anthropic";
+const BIGMODEL_ANTHROPIC_URL: &str = "https://open.bigmodel.cn/api/anthropic";
 
 pub const V2_CONFIG_FILE: &str = "config.json";
 pub const V2_DIR: &str = "v2";
@@ -133,6 +140,10 @@ impl AgentAdapter for ZcodeAdapter {
         write_zcode_config(config)
     }
 
+    fn restore_config(&self, config: &AgentConfig) -> Result<()> {
+        restore_zcode_catalog(config)
+    }
+
     fn read_auth(&self) -> Result<AuthState> {
         let home = agent_home(AgentId::Zcode)?;
         let path = v2_config_path(&home);
@@ -206,33 +217,19 @@ impl AgentAdapter for ZcodeAdapter {
         let picked = pick_provider_for_import(&providers).ok_or_else(|| {
             AppError::NotFound("no live ZCode API key to import".into())
         })?;
-        let key = picked.api_key.clone();
-        let mut cred = json!({
-            "format": "api_key",
-            "api_key": key,
-            "provider": "zcode",
-            "provider_id": picked.id,
-        });
-        if let Some(base) = picked.base_url.as_deref().filter(|s| !s.is_empty()) {
-            cred["base_url"] = json!(base);
+        Ok(live_account_from_hit(&picked))
+    }
+
+    fn expand_live_accounts(&self, snapshot: &LiveAccount) -> Result<Vec<LiveAccount>> {
+        let home = agent_home(AgentId::Zcode)?;
+        let path = v2_config_path(&home);
+        let root = read_json_object_or_empty(&path)?;
+        let providers = root.get("provider").cloned().unwrap_or_else(|| json!({}));
+        let expanded = expand_zcode_catalog(&providers);
+        if expanded.is_empty() {
+            return Ok(vec![snapshot.clone()]);
         }
-        if let Some(kind) = picked.kind.as_deref().filter(|s| !s.is_empty()) {
-            cred["kind"] = json!(kind);
-        }
-        if let Some(name) = picked.name.as_deref().filter(|s| !s.is_empty()) {
-            cred["provider_name"] = json!(name);
-        }
-        Ok(api_key_live_account(
-            AgentId::Zcode,
-            &key,
-            cred,
-            "API Key",
-            json!({
-                "source": "live",
-                "provider": "zcode",
-                "provider_id": picked.id,
-            }),
-        ))
+        Ok(expanded)
     }
 
     fn apply_account(&self, account: &LiveAccount) -> Result<()> {
@@ -256,7 +253,7 @@ impl AgentAdapter for ZcodeAdapter {
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .unwrap_or(MANAGED_PROVIDER_ID);
+            .unwrap_or(BUILTIN_ZAI);
         let base_url = account
             .credentials
             .get("base_url")
@@ -277,7 +274,14 @@ impl AgentAdapter for ZcodeAdapter {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .unwrap_or("AgentHub");
-        upsert_provider_api_key(provider_id, key, base_url, kind, name)
+        upsert_catalog_row(CatalogWrite {
+            requested_id: provider_id,
+            api_key: key,
+            base_url,
+            kind,
+            name,
+            models: account.credentials.get("models"),
+        })
     }
 
     fn build_api_key_account(&self, api_key: &str) -> Result<LiveAccount> {
@@ -289,16 +293,49 @@ impl AgentAdapter for ZcodeAdapter {
                 "format": "api_key",
                 "api_key": key,
                 "provider": "zcode",
-                "provider_id": MANAGED_PROVIDER_ID,
+                "provider_id": BUILTIN_ZAI,
                 "kind": "anthropic",
+                "models": DEFAULT_OFFICIAL_MODEL_IDS,
             }),
             "API Key",
             json!({
                 "source": "manual",
                 "provider": "zcode",
-                "provider_id": MANAGED_PROVIDER_ID,
+                "provider_id": BUILTIN_ZAI,
             }),
         ))
+    }
+
+    fn authorization_key(
+        &self,
+        kind: crate::models::AccountKind,
+        credentials: &Value,
+    ) -> Option<String> {
+        let base = super::default_authorization_key(kind, credentials)?;
+        let slot = credentials
+            .get("provider_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(BUILTIN_ZAI);
+        Some(format!("{base}:{slot}"))
+    }
+
+    fn identity_label(
+        &self,
+        _kind: crate::models::AccountKind,
+        credentials: &Value,
+        label_hint: Option<&str>,
+    ) -> Option<String> {
+        if let Some(hint) = label_hint.map(str::trim).filter(|s| !s.is_empty()) {
+            return Some(hint.to_string());
+        }
+        credentials
+            .get("provider_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|id| format!("zcode:{id}"))
     }
 
     fn skills_dir(&self) -> Option<PathBuf> {
@@ -365,9 +402,11 @@ impl AgentAdapter for ZcodeAdapter {
         match cap {
             Skills | LiveBackup | ApiKeyAccount => CapabilityState::full(),
             ConfigWrite => CapabilityState::partial(
-                "只合并 v2/config.json 的 provider API Key 槽；整棵配置树 fail-closed",
+                "只追加或更新一条供应商，自定义必须带模型名单；不覆盖整份目录",
             ),
-            AccountSwitch => CapabilityState::partial("仅 API Key 引用切换，无账号 OAuth 写入"),
+            AccountSwitch => CapabilityState::partial(
+                "只启用对应供应商行，其它条目仍在模型列表里；无账号 OAuth 写入",
+            ),
             DangerousMode => CapabilityState::unsupported("无已验证的非交互跳过确认 flag"),
             StructuredStream => CapabilityState::unsupported("无已验证的结构化事件流"),
             ProviderPresets => CapabilityState::unsupported("暂无内置 ZCode provider 预设"),
@@ -390,7 +429,7 @@ pub fn v2_config_path(home: &Path) -> PathBuf {
     home.join(V2_DIR).join(V2_CONFIG_FILE)
 }
 
-/// Resolve desktop binary: fixed install dirs first (WorkBuddy-shaped).
+/// Resolve desktop binary from fixed install dirs.
 pub fn resolve_zcode_desktop() -> Option<PathBuf> {
     for p in well_known_exe_paths() {
         if p.is_file() {
@@ -529,6 +568,7 @@ struct ProviderKeyHit {
     api_key: String,
     enabled: bool,
     source: Option<String>,
+    models: Value,
 }
 
 fn is_non_portable_provider_secret(provider_id: &str, api_key: &str) -> bool {
@@ -597,6 +637,7 @@ fn providers_with_api_key(providers: &Value) -> Vec<ProviderKeyHit> {
                 .and_then(Value::as_str)
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
+            models: obj.get("models").cloned().unwrap_or_else(|| json!({})),
         });
     }
     out
@@ -622,6 +663,74 @@ fn pick_provider_for_import(providers: &Value) -> Option<ProviderKeyHit> {
     hits.into_iter().next()
 }
 
+fn live_account_from_hit(hit: &ProviderKeyHit) -> LiveAccount {
+    let mut cred = json!({
+        "format": "api_key",
+        "api_key": hit.api_key,
+        "provider": "zcode",
+        "provider_id": hit.id,
+    });
+    if let Some(base) = hit.base_url.as_deref().filter(|s| !s.is_empty()) {
+        cred["base_url"] = json!(base);
+    }
+    if let Some(kind) = hit.kind.as_deref().filter(|s| !s.is_empty()) {
+        cred["kind"] = json!(kind);
+    }
+    if let Some(name) = hit.name.as_deref().filter(|s| !s.is_empty()) {
+        cred["provider_name"] = json!(name);
+    }
+    if models_map_nonempty(&hit.models) {
+        cred["models"] = hit.models.clone();
+    }
+    api_key_live_account(
+        AgentId::Zcode,
+        &hit.api_key,
+        cred,
+        "API Key",
+        json!({
+            "source": "live",
+            "provider": "zcode",
+            "provider_id": hit.id,
+        }),
+    )
+}
+
+fn expand_zcode_catalog(providers: &Value) -> Vec<LiveAccount> {
+    providers_with_api_key(providers)
+        .iter()
+        .map(live_account_from_hit)
+        .collect()
+}
+
+fn restore_zcode_catalog(config: &AgentConfig) -> Result<()> {
+    if config.agent != AgentId::Zcode {
+        return Err(AppError::InvalidArg(
+            "config agent mismatch: expected zcode".into(),
+        ));
+    }
+    let Some(providers) = config.raw.get("provider") else {
+        return write_zcode_config(config);
+    };
+    if !providers.is_object() {
+        return Err(AppError::InvalidArg(
+            "ZCode catalog restore requires provider to be a JSON object".into(),
+        ));
+    }
+    let home = agent_home(AgentId::Zcode)?;
+    let path = v2_config_path(&home);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut root = read_json_object_or_empty(&path)?;
+    let root_obj = root.as_object_mut().ok_or_else(|| {
+        AppError::InvalidArg("ZCode v2 config root must be a JSON object".into())
+    })?;
+    root_obj.insert("provider".into(), providers.clone());
+    let mut bytes = serde_json::to_vec_pretty(&root)?;
+    bytes.push(b'\n');
+    atomic_write(&path, &bytes)
+}
+
 fn summarize_providers(providers: &Value) -> Value {
     let hits = providers_with_api_key(providers);
     let total = providers.as_object().map(|m| m.len()).unwrap_or(0);
@@ -633,13 +742,191 @@ fn summarize_providers(providers: &Value) -> Value {
     })
 }
 
-fn upsert_provider_api_key(
-    provider_id: &str,
-    api_key: &str,
-    base_url: Option<&str>,
-    kind: &str,
-    name: &str,
-) -> Result<()> {
+struct CatalogWrite<'a> {
+    requested_id: &'a str,
+    api_key: &'a str,
+    base_url: Option<&'a str>,
+    kind: &'a str,
+    name: &'a str,
+    models: Option<&'a Value>,
+}
+
+fn is_plan_slot(provider_id: &str) -> bool {
+    let id = provider_id.to_ascii_lowercase();
+    id.starts_with("builtin:") && (id.contains("coding-plan") || id.contains("start-plan"))
+}
+
+fn official_slot_for_url(url: &str) -> Option<&'static str> {
+    let normalized = url.trim().trim_end_matches('/').to_ascii_lowercase();
+    if normalized.contains("zcode.z.ai") {
+        return None;
+    }
+    if normalized.contains("open.bigmodel.cn") {
+        return Some(BUILTIN_BIGMODEL);
+    }
+    if normalized.contains("api.z.ai") {
+        return Some(BUILTIN_ZAI);
+    }
+    None
+}
+
+fn is_official_api_slot(provider_id: &str) -> bool {
+    provider_id == BUILTIN_ZAI || provider_id == BUILTIN_BIGMODEL
+}
+
+fn resolve_catalog_row_id(requested: &str, base_url: Option<&str>) -> Result<String> {
+    if is_plan_slot(requested) {
+        return Err(AppError::InvalidArg(
+            "ZCode 的套餐登录槽不能用 API Key 写入".into(),
+        ));
+    }
+    if let Some(url) = base_url {
+        if let Some(slot) = official_slot_for_url(url) {
+            return Ok(slot.to_string());
+        }
+    }
+    if requested.is_empty() || requested == MANAGED_PROVIDER_ID {
+        if base_url.is_none() {
+            return Ok(BUILTIN_ZAI.to_string());
+        }
+        return Ok(MANAGED_PROVIDER_ID.to_string());
+    }
+    Ok(requested.to_string())
+}
+
+fn models_map_nonempty(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => map.keys().any(|key| !key.trim().is_empty()),
+        Value::Array(items) => items.iter().any(|item| {
+            item.as_str()
+                .map(str::trim)
+                .is_some_and(|id| !id.is_empty())
+                || item
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .is_some_and(|id| !id.is_empty())
+        }),
+        _ => false,
+    }
+}
+
+fn default_official_models() -> Value {
+    let mut map = Map::new();
+    for id in DEFAULT_OFFICIAL_MODEL_IDS {
+        map.insert((*id).to_string(), json!({}));
+    }
+    Value::Object(map)
+}
+
+fn normalize_models_map(value: &Value) -> Result<Map<String, Value>> {
+    match value {
+        Value::Object(map) => {
+            let mut out = Map::new();
+            for (id, meta) in map {
+                let id = id.trim();
+                if id.is_empty() {
+                    continue;
+                }
+                out.insert(id.to_string(), meta.clone());
+            }
+            if out.is_empty() {
+                return Err(AppError::InvalidArg(
+                    "自定义供应商必须至少写一个模型，才会出现在 ZCode 的模型列表里".into(),
+                ));
+            }
+            Ok(out)
+        }
+        Value::Array(items) => {
+            let mut out = Map::new();
+            for item in items {
+                let id = item
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| {
+                        item.get("id")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                    });
+                let Some(id) = id else {
+                    continue;
+                };
+                let meta = item.as_object().map(|o| json!(o)).unwrap_or_else(|| json!({}));
+                out.entry(id.to_string()).or_insert(meta);
+            }
+            if out.is_empty() {
+                return Err(AppError::InvalidArg(
+                    "自定义供应商必须至少写一个模型，才会出现在 ZCode 的模型列表里".into(),
+                ));
+            }
+            Ok(out)
+        }
+        _ => Err(AppError::InvalidArg(
+            "自定义供应商必须至少写一个模型，才会出现在 ZCode 的模型列表里".into(),
+        )),
+    }
+}
+
+fn merge_model_maps(existing: &Value, incoming: Map<String, Value>) -> Value {
+    let mut out = existing.as_object().cloned().unwrap_or_default();
+    for (id, meta) in incoming {
+        out.entry(id).or_insert(meta);
+    }
+    Value::Object(out)
+}
+
+fn resolve_row_models(
+    existing: Option<&Value>,
+    incoming: Option<&Value>,
+    official: bool,
+) -> Result<Value> {
+    let existing_nonempty = existing.is_some_and(models_map_nonempty);
+    if let Some(incoming) = incoming.filter(|value| !value.is_null()) {
+        if models_map_nonempty(incoming) {
+            let incoming_map = normalize_models_map(incoming)?;
+            return Ok(match existing {
+                Some(prior) if models_map_nonempty(prior) => merge_model_maps(prior, incoming_map),
+                _ => Value::Object(incoming_map),
+            });
+        }
+        if !official {
+            return Err(AppError::InvalidArg(
+                "自定义供应商必须至少写一个模型，才会出现在 ZCode 的模型列表里".into(),
+            ));
+        }
+    }
+    if existing_nonempty {
+        return Ok(existing.cloned().unwrap_or_else(|| json!({})));
+    }
+    if official {
+        return Ok(default_official_models());
+    }
+    Err(AppError::InvalidArg(
+        "自定义供应商必须至少写一个模型，才会出现在 ZCode 的模型列表里".into(),
+    ))
+}
+
+fn default_official_name(provider_id: &str, fallback: &str) -> String {
+    match provider_id {
+        BUILTIN_ZAI => "Z.ai - API Key".into(),
+        BUILTIN_BIGMODEL => "Bigmodel - API Key".into(),
+        _ => fallback.to_string(),
+    }
+}
+
+fn default_official_base_url(provider_id: &str) -> Option<&'static str> {
+    match provider_id {
+        BUILTIN_ZAI => Some(ZAI_ANTHROPIC_URL),
+        BUILTIN_BIGMODEL => Some(BIGMODEL_ANTHROPIC_URL),
+        _ => None,
+    }
+}
+
+fn upsert_catalog_row(write: CatalogWrite<'_>) -> Result<()> {
+    let provider_id = resolve_catalog_row_id(write.requested_id, write.base_url)?;
+    let official = is_official_api_slot(&provider_id);
     let home = agent_home(AgentId::Zcode)?;
     let path = v2_config_path(&home);
     if let Some(parent) = path.parent() {
@@ -649,26 +936,33 @@ fn upsert_provider_api_key(
     let root_obj = root.as_object_mut().ok_or_else(|| {
         AppError::InvalidArg("ZCode v2 config root must be a JSON object".into())
     })?;
-    let provider_val = root_obj.entry("provider".to_string()).or_insert_with(|| json!({}));
+    let provider_val = root_obj
+        .entry("provider".to_string())
+        .or_insert_with(|| json!({}));
     let provider_map = provider_val.as_object_mut().ok_or_else(|| {
         AppError::InvalidArg("ZCode v2 config.provider must be a JSON object".into())
     })?;
 
-    let entry = provider_map
-        .entry(provider_id.to_string())
-        .or_insert_with(|| {
-            json!({
-                "name": name,
-                "kind": kind,
-                "options": {
-                    "apiKey": "",
-                    "apiKeyRequired": true
-                },
-                "enabled": true,
-                "source": "custom",
-                "models": {}
-            })
-        });
+    let existing_models = provider_map
+        .get(&provider_id)
+        .and_then(|entry| entry.get("models"))
+        .cloned();
+    let models = resolve_row_models(existing_models.as_ref(), write.models, official)?;
+
+    let name = default_official_name(&provider_id, write.name);
+    let entry = provider_map.entry(provider_id.clone()).or_insert_with(|| {
+        json!({
+            "name": name.clone(),
+            "kind": write.kind,
+            "options": {
+                "apiKey": "",
+                "apiKeyRequired": true
+            },
+            "enabled": true,
+            "source": "custom",
+            "models": {}
+        })
+    });
     let entry_obj = entry.as_object_mut().ok_or_else(|| {
         AppError::InvalidArg(format!(
             "ZCode provider '{provider_id}' must be a JSON object"
@@ -682,7 +976,7 @@ fn upsert_provider_api_key(
         entry_obj.insert("name".into(), json!(name));
     }
     if !entry_obj.contains_key("kind") {
-        entry_obj.insert("kind".into(), json!(kind));
+        entry_obj.insert("kind".into(), json!(write.kind));
     }
     let options = entry_obj
         .entry("options".to_string())
@@ -692,11 +986,21 @@ fn upsert_provider_api_key(
             "ZCode provider '{provider_id}'.options must be a JSON object"
         ))
     })?;
-    options_obj.insert("apiKey".into(), json!(api_key));
+    options_obj.insert("apiKey".into(), json!(write.api_key));
     options_obj.insert("apiKeyRequired".into(), json!(true));
-    if let Some(base) = base_url {
+    if let Some(base) = write.base_url {
         options_obj.insert("baseURL".into(), json!(base));
+    } else if !options_obj
+        .get("baseURL")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .is_some_and(|s| !s.is_empty())
+    {
+        if let Some(default_url) = default_official_base_url(&provider_id) {
+            options_obj.insert("baseURL".into(), json!(default_url));
+        }
     }
+    entry_obj.insert("models".into(), models);
 
     let mut bytes = serde_json::to_vec_pretty(&root)?;
     bytes.push(b'\n');
@@ -714,7 +1018,7 @@ fn write_zcode_config(config: &AgentConfig) -> Result<()> {
         AppError::InvalidArg("ZCode config must be a JSON object".into())
     })?;
 
-    // Projected apply shape from account / UI: apiKey (+ optional providerId/baseURL/kind).
+    // Projected apply shape from account / UI: apiKey (+ optional providerId/baseURL/kind/models).
     if let Some(api_key) = raw
         .get("apiKey")
         .and_then(Value::as_str)
@@ -744,50 +1048,64 @@ fn write_zcode_config(config: &AgentConfig) -> Result<()> {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .unwrap_or("AgentHub");
-        return upsert_provider_api_key(provider_id, api_key, base_url, kind, name);
+        return upsert_catalog_row(CatalogWrite {
+            requested_id: provider_id,
+            api_key,
+            base_url,
+            kind,
+            name,
+            models: raw.get("models"),
+        });
     }
 
-    // Full read_config envelope: merge only the managed provider row from `provider`.
+    // Full read_config envelope: merge official / Hub catalog rows only.
     if let Some(provider) = raw.get("provider").and_then(Value::as_object) {
-        if let Some(managed) = provider.get(MANAGED_PROVIDER_ID) {
-            let key = managed
+        let mut wrote = false;
+        for id in [BUILTIN_ZAI, BUILTIN_BIGMODEL, MANAGED_PROVIDER_ID] {
+            let Some(entry) = provider.get(id) else {
+                continue;
+            };
+            let key = entry
                 .get("options")
                 .and_then(|o| o.get("apiKey"))
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|s| !s.is_empty() && *s != "***");
-            if let Some(api_key) = key {
-                let base_url = managed
-                    .get("options")
-                    .and_then(|o| o.get("baseURL"))
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty());
-                let kind = managed
-                    .get("kind")
-                    .and_then(Value::as_str)
-                    .unwrap_or("anthropic");
-                let name = managed
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or("AgentHub");
-                return upsert_provider_api_key(
-                    MANAGED_PROVIDER_ID,
-                    api_key,
-                    base_url,
-                    kind,
-                    name,
-                );
-            }
+            let Some(api_key) = key else {
+                continue;
+            };
+            let base_url = entry
+                .get("options")
+                .and_then(|o| o.get("baseURL"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let kind = entry
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("anthropic");
+            let name = entry.get("name").and_then(Value::as_str).unwrap_or("AgentHub");
+            upsert_catalog_row(CatalogWrite {
+                requested_id: id,
+                api_key,
+                base_url,
+                kind,
+                name,
+                models: entry.get("models"),
+            })?;
+            wrote = true;
+        }
+        if wrote {
+            return Ok(());
         }
         return Err(AppError::InvalidArg(
-            "ZCode write_config only merges agenthub-managed provider API Key (or apiKey field)"
+            "ZCode write_config only merges builtin:zai / builtin:bigmodel / agenthub-managed API Key rows (or apiKey field)"
                 .into(),
         ));
     }
 
     Err(AppError::InvalidArg(
-        "ZCode write_config requires apiKey or provider.agenthub-managed".into(),
+        "ZCode write_config requires apiKey or a writable provider row".into(),
     ))
 }
 

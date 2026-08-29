@@ -1,9 +1,11 @@
 use std::time::Instant;
 
+use crate::adapters::AgentAdapter;
+use crate::domain::protocol_graph::{agent_bind_capability, LiveOccupancy};
 use crate::error::{AppError, Result};
 use crate::models::{
-    Account, AccountInput, AccountKind, AccountSwitchResult, AgentId, BackupKind, Capability,
-    LiveAccount,
+    Account, AccountInput, AccountKind, AccountSwitchResult, AgentConfig, AgentId, BackupKind,
+    Capability, LiveAccount,
 };
 use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, ACCOUNT_UNDO_PREFIX,
@@ -11,6 +13,18 @@ use crate::services::switch_undo::{
 
 use super::surface::*;
 use super::AccountService;
+
+fn rollback_catalog_or_account(
+    adapter: &dyn AgentAdapter,
+    occupancy: LiveOccupancy,
+    catalog_snapshot: Option<&AgentConfig>,
+    live_before: Option<&LiveAccount>,
+) -> Option<AppError> {
+    if occupancy == LiveOccupancy::CatalogAppend {
+        return catalog_snapshot.and_then(|snapshot| adapter.restore_config(snapshot).err());
+    }
+    live_before.and_then(|before| adapter.apply_account(before).err())
+}
 
 impl AccountService {
     pub fn switch(&self, id_or_label: &str, agent: AgentId) -> Result<AccountSwitchResult> {
@@ -37,6 +51,10 @@ impl AccountService {
         let live_guard = backup.acquire_live_write(agent)?;
 
         let adapter = self.registry.require(agent, Capability::AccountSwitch)?;
+        let occupancy = agent_bind_capability(agent).occupancy;
+        let catalog_snapshot = (occupancy == LiveOccupancy::CatalogAppend)
+            .then(|| adapter.read_config().ok())
+            .flatten();
 
         let mut target = self.get(id_or_label, Some(agent))?;
         // The live credentials are only accepted when their file revision is
@@ -160,10 +178,12 @@ impl AccountService {
         }
 
         if let Err(error) = adapter.apply_account(&apply_live) {
-            let live_rollback = match &live_before {
-                Some(before) => adapter.apply_account(before).err(),
-                None => None,
-            };
+            let live_rollback = rollback_catalog_or_account(
+                adapter.as_ref(),
+                occupancy,
+                catalog_snapshot.as_ref(),
+                live_before.as_ref(),
+            );
             let db_rollback = rollback_backfill();
             return Err(compensated_switch_error(error, live_rollback, db_rollback));
         }
@@ -178,10 +198,12 @@ impl AccountService {
         ) {
             Ok((account, _binding)) => account,
             Err(error) => {
-                let live_rollback = match &live_before {
-                    Some(before) => adapter.apply_account(before).err(),
-                    None => None,
-                };
+                let live_rollback = rollback_catalog_or_account(
+                    adapter.as_ref(),
+                    occupancy,
+                    catalog_snapshot.as_ref(),
+                    live_before.as_ref(),
+                );
                 let db_rollback = rollback_backfill();
                 return Err(compensated_switch_error(error, live_rollback, db_rollback));
             }
