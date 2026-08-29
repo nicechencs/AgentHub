@@ -29,6 +29,7 @@ export type ProjectTreeProps = {
   selected: Set<string>;
   busy: boolean;
   showDelete: boolean;
+  deleteHint?: string | null;
   previewSessionId: string | null;
   visibleSessions: (projectId: string) => AgentSession[];
   onToggleExpand: (project: AgentProject) => void;
@@ -52,6 +53,7 @@ export function ProjectTree({
   selected,
   busy,
   showDelete,
+  deleteHint,
   previewSessionId,
   visibleSessions,
   onToggleExpand,
@@ -164,6 +166,7 @@ export function ProjectTree({
                         selected={selected.has(s.id)}
                         busy={busy}
                         showDelete={showDelete}
+                        deleteHint={deleteHint}
                         previewOpen={previewSessionId === s.id}
                         onToggleOne={onToggleOne}
                         onPreviewSession={onPreviewSession}

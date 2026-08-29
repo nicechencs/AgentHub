@@ -2020,6 +2020,7 @@ export const en = {
       copyResumeCommand: "Copy official resume command: {command}",
       continue: "Continue in Chat",
       deleteSession: "Delete session",
+      deleteInAgent: "Delete this task in {name}",
       previewAria: "Preview conversation excerpt for {title} on the right",
     },
     preview: {

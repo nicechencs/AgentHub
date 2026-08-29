@@ -2011,6 +2011,7 @@ export const zh = {
       copyResumeCommand: "复制官方续接命令：{command}",
       continue: "在 Chat 继续",
       deleteSession: "删除会话",
+      deleteInAgent: "请到 {name} 里删除任务",
       previewAria: "在右侧预览 {title} 的对话摘录",
     },
     preview: {

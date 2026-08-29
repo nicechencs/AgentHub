@@ -17,6 +17,13 @@ describe('ProjectSessionRow', () => {
     expect(src).not.toContain('FolderOpen');
   });
 
+  it('shows a disabled delete control when deleteHint is set', () => {
+    expect(src).toContain('deleteHint');
+    expect(src).toContain('showDeleteAction');
+    expect(src).toContain('disabled={busy || Boolean(deleteHint)}');
+    expect(src).toContain('if (deleteHint) return;');
+  });
+
   it('keeps the action cluster on an auto track so icons cannot overlap the file name', () => {
     for (const grid of [projectSessionRowGrid(true), projectSessionRowGrid(false)]) {
       expect(grid).toContain('minmax(0,1fr)_auto');

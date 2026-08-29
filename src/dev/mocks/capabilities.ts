@@ -216,11 +216,11 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     },
     projectHistory: {
       level: 'partial',
-      reason: '列出工作区与任务，可预览对话；不删除',
+      reason: '列出工作区与任务，可预览对话；请到 ZCode 里删除任务',
     },
     projectDelete: {
-      level: 'planned',
-      reason: '不改 ZCode 任务库',
+      level: 'unsupported',
+      reason: '请到 ZCode 里删除任务',
     },
     providerPresets: {
       level: 'unsupported',

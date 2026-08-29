@@ -12,6 +12,7 @@
 //! - No 国产 OAuth writer; Coding Plan / Start Plan slots are not API Key rows.
 //! - Custom rows need a model list or ZCode will not show them.
 //! - Project history lists the desktop task index and previews CLI session text.
+//!   Delete stays closed: users remove tasks in ZCode.
 //! - Usage harvests CLI `model_usage` rows; structured stream stays closed.
 //! - Headless Chat run prefers `zcode` on PATH; desktop-only installs cannot
 //!   invent a bundled CLI path.
@@ -420,8 +421,10 @@ impl AgentAdapter for ZcodeAdapter {
             DangerousMode => CapabilityState::unsupported("无已验证的非交互跳过确认 flag"),
             StructuredStream => CapabilityState::unsupported("无已验证的结构化事件流"),
             ProviderPresets => CapabilityState::unsupported("暂无内置 ZCode provider 预设"),
-            ProjectHistory => CapabilityState::partial("列出工作区与任务，可预览对话；不删除"),
-            ProjectDelete => CapabilityState::planned("不改 ZCode 任务库"),
+            ProjectHistory => {
+                CapabilityState::partial("列出工作区与任务，可预览对话；请到 ZCode 里删除任务")
+            }
+            ProjectDelete => CapabilityState::unsupported("请到 ZCode 里删除任务"),
             Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
         }
     }

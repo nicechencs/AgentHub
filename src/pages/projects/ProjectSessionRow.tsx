@@ -36,6 +36,7 @@ export function ProjectSessionRow({
   selected,
   busy,
   showDelete,
+  deleteHint,
   previewOpen,
   onToggleOne,
   onPreviewSession,
@@ -49,6 +50,8 @@ export function ProjectSessionRow({
   selected: boolean;
   busy: boolean;
   showDelete: boolean;
+  /** When set, the delete control is visible but disabled (read-only agents). */
+  deleteHint?: string | null;
   previewOpen: boolean;
   onToggleOne: (id: string) => void;
   onPreviewSession: (session: AgentSession) => void;
@@ -63,6 +66,7 @@ export function ProjectSessionRow({
   const fileName = sessionFileName(session);
   const sid = nativeSessionId(session);
   const resume = nativeResumeCommand(session);
+  const showDeleteAction = showDelete || Boolean(deleteHint);
 
   return (
     <li
@@ -153,15 +157,18 @@ export function ProjectSessionRow({
         >
           <MessageSquarePlus className="h-3.5 w-3.5" />
         </Button>
-        {showDelete && (
+        {showDeleteAction && (
           <Button
             size="icon"
             variant="ghost"
-            disabled={busy}
+            disabled={busy || Boolean(deleteHint)}
             className="text-danger hover:text-danger"
-            aria-label={t('projects.tree.deleteSession')}
-            title={t('projects.tree.deleteSession')}
-            onClick={() => onRequestDelete(session)}
+            aria-label={deleteHint || t('projects.tree.deleteSession')}
+            title={deleteHint || t('projects.tree.deleteSession')}
+            onClick={() => {
+              if (deleteHint) return;
+              onRequestDelete(session);
+            }}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>

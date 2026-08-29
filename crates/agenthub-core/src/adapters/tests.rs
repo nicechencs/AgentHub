@@ -1244,6 +1244,10 @@ fn matrix_matches_documented_boundary_cells() {
         matrix[&AgentId::Zcode][&Capability::ProjectHistory].level,
         CapabilityLevel::Partial
     );
+    assert_eq!(
+        matrix[&AgentId::Zcode][&Capability::ProjectDelete].level,
+        CapabilityLevel::Unsupported
+    );
     assert!(supports_structured_stream(AgentId::Claude));
     assert!(!supports_structured_stream(AgentId::WorkBuddy));
     assert!(!supports_structured_stream(AgentId::Cursor));
