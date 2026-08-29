@@ -30,7 +30,7 @@ use std::time::Duration;
 
 pub(super) const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 
-pub(super) const BODY_LIMIT_BYTES: usize = 1_048_576;
+pub(super) const BODY_LIMIT_BYTES: usize = 20 * 1_048_576;
 /// Streamed Completions/Responses traffic can exceed the request-body safety
 /// ceiling; keep a hard cap while allowing realistic agent sessions.
 pub(super) const STREAM_LIMIT_BYTES: usize = 32 * 1_048_576;

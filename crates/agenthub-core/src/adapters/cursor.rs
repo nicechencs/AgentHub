@@ -801,10 +801,33 @@ fn version_looks_like_cursor(line: &str) -> bool {
     if version_looks_like_grok(line) {
         return false;
     }
-    lower.contains("cursor")
-        // Measured community versions: "2026.04.29-c83a488" style date builds.
-        || (line.chars().any(|c| c.is_ascii_digit())
-            && (lower.contains("agent") || line.contains('-')))
+    if lower.contains("cursor") {
+        return true;
+    }
+    // Measured Cursor community builds: "2026.04.29-c83a488". Do not accept
+    // arbitrary "digit + agent/-" strings from other CLIs.
+    cursor_date_build_version(line.trim())
+}
+
+fn cursor_date_build_version(line: &str) -> bool {
+    let Some((date, hash)) = line.split_once('-') else {
+        return false;
+    };
+    if hash.is_empty() || !hash.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return false;
+    }
+    let mut parts = date.split('.');
+    match (parts.next(), parts.next(), parts.next(), parts.next()) {
+        (Some(y), Some(m), Some(d), None) => {
+            y.len() == 4
+                && y.chars().all(|c| c.is_ascii_digit())
+                && m.len() == 2
+                && m.chars().all(|c| c.is_ascii_digit())
+                && d.len() == 2
+                && d.chars().all(|c| c.is_ascii_digit())
+        }
+        _ => false,
+    }
 }
 
 fn probe_cursor_binary(path: &Path) -> ProbeResult {
@@ -1033,6 +1056,8 @@ mod tests {
         assert!(!version_looks_like_cursor("grok 0.2.118 (1e1687c1cf)"));
         assert!(version_looks_like_cursor("2026.04.29-c83a488"));
         assert!(version_looks_like_cursor("cursor-agent 2026.04.29"));
+        assert!(!version_looks_like_cursor("my-agent 1.2.3"));
+        assert!(!version_looks_like_cursor("v1.0.0-beta"));
     }
 
     #[test]

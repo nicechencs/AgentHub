@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 describe('dev-runtime.json', () => {
-  it('is the source for Vite, Tauri devUrl/CSP, and run.ps1 port', () => {
+  it('is the source for Vite, Tauri devUrl, and run.ps1 port', () => {
     const runtime = JSON.parse(
       readFileSync(path.join(root, 'scripts/dev-runtime.json'), 'utf8'),
     ) as { host: string; port: number; e2ePort: number };
@@ -18,7 +18,9 @@ describe('dev-runtime.json', () => {
     const tauri = readFileSync(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8');
     const origin = `http://${runtime.host}:${runtime.port}`;
     expect(tauri).toContain(`"devUrl": "${origin}"`);
-    expect(tauri).toContain(`ws://${runtime.host}:${runtime.port}`);
-    expect(tauri).toContain(`http://${runtime.host}:${runtime.port}`);
+    // Production CSP must not list the Vite HMR origin. During `tauri:dev`
+    // the page loads from `devUrl`, so connect-src 'self' already covers it.
+    expect(tauri).not.toContain(`ws://${runtime.host}:${runtime.port}`);
+    expect(tauri).not.toContain(`ws://localhost:${runtime.port}`);
   });
 });

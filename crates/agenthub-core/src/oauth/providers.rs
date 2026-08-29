@@ -263,12 +263,20 @@ impl OAuthProvider {
             }
         };
 
-        let resp = result.map_err(|e| {
-            AppError::message(
-                "oauth.token",
-                format!("token request failed for {}: {e}", self.id),
-            )
-        })?;
+        // ureq 2 surfaces non-2xx as Error::Status and keeps the body on the
+        // response; map_err would swallow IdP messages like invalid_grant.
+        let resp = match result {
+            Ok(resp) => resp,
+            Err(ureq::Error::Status(status, resp)) => {
+                return Err(Self::token_status_error(self.id, status, resp));
+            }
+            Err(e) => {
+                return Err(AppError::message(
+                    "oauth.token",
+                    format!("token request failed for {}: {e}", self.id),
+                ));
+            }
+        };
 
         let status = resp.status();
         let body: Value = resp
@@ -276,25 +284,31 @@ impl OAuthProvider {
             .map_err(|e| AppError::message("oauth.token", format!("invalid token JSON: {e}")))?;
 
         if !(200..300).contains(&status) {
-            let msg = body
-                .get("error_description")
-                .or_else(|| body.get("error"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("token request rejected");
-            tracing::warn!(
-                module = targets::OAUTH,
-                op = "token",
-                provider = self.id,
-                status,
-                error = msg,
-                "token endpoint rejected"
-            );
-            return Err(AppError::message(
-                "oauth.token",
-                format!("{msg} (HTTP {status})"),
-            ));
+            return Err(Self::token_reject_error(self.id, status, &body));
         }
         Ok(body)
+    }
+
+    fn token_status_error(provider_id: &str, status: u16, response: ureq::Response) -> AppError {
+        let body: Value = response.into_json().unwrap_or(Value::Null);
+        Self::token_reject_error(provider_id, status, &body)
+    }
+
+    fn token_reject_error(provider_id: &str, status: u16, body: &Value) -> AppError {
+        let msg = body
+            .get("error_description")
+            .or_else(|| body.get("error"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("token request rejected");
+        tracing::warn!(
+            module = targets::OAUTH,
+            op = "token",
+            provider = provider_id,
+            status,
+            error = msg,
+            "token endpoint rejected"
+        );
+        AppError::message("oauth.token", format!("{msg} (HTTP {status})"))
     }
 
     fn bundle_from_token_json(&self, body: Value) -> Result<TokenBundle> {

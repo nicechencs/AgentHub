@@ -1687,6 +1687,7 @@ export const en = {
     transcript: {
       start: "Start chatting",
       firstMessage: "Send the first message to {agent}",
+      loadFailed: "Couldn't load messages",
       turnAgents: "{n} agents this turn",
       generating: "Generating",
       cancelled: "Cancelled",

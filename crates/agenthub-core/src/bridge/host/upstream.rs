@@ -20,7 +20,7 @@ use super::{
 const ACCESS_JWT_EXPIRY_SKEW_SECS: i64 = 60;
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES: usize = 8 * 1024;
 
-fn grok_upstream(state: &EdgeState) -> bool {
+pub(super) fn grok_upstream(state: &EdgeState) -> bool {
     state.upstream.protocol == BridgeUpstreamProtocol::XaiResponsesOauth
 }
 

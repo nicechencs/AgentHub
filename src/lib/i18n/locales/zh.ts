@@ -1678,6 +1678,7 @@ export const zh = {
     transcript: {
       start: "开始对话",
       firstMessage: "向 {agent} 发送第一条消息",
+      loadFailed: "消息加载失败",
       turnAgents: "本轮 {n} 个 Agent",
       generating: "生成中",
       cancelled: "已取消",

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 import type { AgentStatus } from '@/lib/types';
 import {
-  __resetDismissedAlertsForTests,
   buildAlertsFromAgents,
   dismissAlertLocal,
   filterDismissedAlerts,
@@ -46,7 +45,6 @@ function base(partial: Partial<AgentStatus> & Pick<AgentStatus, 'agentId'>): Age
 describe('buildAlertsFromAgents', () => {
   beforeEach(() => {
     installMemoryLocalStorage();
-    __resetDismissedAlertsForTests();
   });
 
   afterEach(() => {

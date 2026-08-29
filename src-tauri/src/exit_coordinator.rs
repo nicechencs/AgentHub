@@ -223,13 +223,31 @@ impl ExitCoordinator {
             // Keep this exclusive permit until `host.shutdown` returns. The
             // fixed lock ordering is barrier -> profile -> target/core, so no
             // bridge lifecycle operation can deadlock shutdown.
-            let _exclusive_permit = lifecycle_barrier.wait_for_sagas().await;
-            if let Err(error) = host.shutdown().await {
+            //
+            // Total watchdog: per-edge drain already has DRAIN_TIMEOUT, but
+            // wait_for_sagas / host.shutdown as a whole previously had no
+            // ceiling — a stuck saga left the process undead with no feedback.
+            const EXIT_DRAIN_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(12);
+            let drain = async {
+                let _exclusive_permit = lifecycle_barrier.wait_for_sagas().await;
+                if let Err(error) = host.shutdown().await {
+                    tracing::warn!(
+                        target: "gui",
+                        op = "exit",
+                        error = %error,
+                        "bridge shutdown failed while exiting"
+                    );
+                }
+            };
+            if tokio::time::timeout(EXIT_DRAIN_WATCHDOG, drain)
+                .await
+                .is_err()
+            {
                 tracing::warn!(
                     target: "gui",
                     op = "exit",
-                    error = %error,
-                    "bridge shutdown failed while exiting"
+                    watchdog_secs = EXIT_DRAIN_WATCHDOG.as_secs(),
+                    "bridge drain exceeded watchdog; forcing process exit"
                 );
             }
             exit_ready.store(true, Ordering::SeqCst);
