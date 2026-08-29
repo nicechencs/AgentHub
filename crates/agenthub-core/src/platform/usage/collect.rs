@@ -57,6 +57,28 @@ fn collect_with_optional_agent_id(
     let mut skipped = 0u64;
     let mut failed = 0u64;
 
+    match source.harvest_events() {
+        Ok(mut harvested) => {
+            if let Some(agent) = persistence_agent {
+                for ev in &mut harvested {
+                    ev.agent_id = agent;
+                }
+            }
+            events.extend(harvested);
+        }
+        Err(e) => {
+            let msg = redact_text(&e.to_string());
+            tracing::warn!(
+                module = targets::USAGE,
+                code = e.code(),
+                op = "harvest",
+                agent = persistence_agent.map(|a| a.as_str()).unwrap_or("-"),
+                "{msg}"
+            );
+            failed += 1;
+        }
+    }
+
     for path in files {
         let agent = persistence_agent.ok_or_else(|| {
             AppError::InvalidArg(format!(

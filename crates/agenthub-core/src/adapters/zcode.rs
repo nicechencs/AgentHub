@@ -11,8 +11,8 @@
 //! ## Honest limits
 //! - No 国产 OAuth writer; Coding Plan / Start Plan slots are not API Key rows.
 //! - Custom rows need a model list or ZCode will not show them.
-//! - Project history / usage / structured stream stay Planned until local
-//!   contracts are verified (desktop ADE sessions are not CLI JSONL).
+//! - Project history lists the desktop task index and previews CLI session text.
+//! - Usage harvests CLI `model_usage` rows; structured stream stays closed.
 //! - Headless Chat run prefers `zcode` on PATH; desktop-only installs cannot
 //!   invent a bundled CLI path.
 
@@ -232,9 +232,8 @@ impl AgentAdapter for ZcodeAdapter {
         let path = v2_config_path(&home);
         let root = read_json_object_or_empty(&path)?;
         let providers = root.get("provider").cloned().unwrap_or_else(|| json!({}));
-        let picked = pick_provider_for_import(&providers).ok_or_else(|| {
-            AppError::NotFound("no live ZCode API key to import".into())
-        })?;
+        let picked = pick_provider_for_import(&providers)
+            .ok_or_else(|| AppError::NotFound("no live ZCode API key to import".into()))?;
         Ok(live_account_from_hit(&picked))
     }
 
@@ -366,10 +365,7 @@ impl AgentAdapter for ZcodeAdapter {
         let Ok(home) = agent_home(AgentId::Zcode) else {
             return Vec::new();
         };
-        vec![
-            v2_config_path(&home),
-            home.join("cli").join("config.json"),
-        ]
+        vec![v2_config_path(&home), home.join("cli").join("config.json")]
     }
 
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
@@ -414,7 +410,7 @@ impl AgentAdapter for ZcodeAdapter {
     fn capability(&self, cap: Capability) -> CapabilityState {
         use Capability::*;
         match cap {
-            Skills | LiveBackup | ApiKeyAccount => CapabilityState::full(),
+            Skills | LiveBackup | ApiKeyAccount | Usage => CapabilityState::full(),
             ConfigWrite => CapabilityState::partial(
                 "只追加或更新一条供应商，自定义必须带模型名单；不覆盖整份目录",
             ),
@@ -424,10 +420,8 @@ impl AgentAdapter for ZcodeAdapter {
             DangerousMode => CapabilityState::unsupported("无已验证的非交互跳过确认 flag"),
             StructuredStream => CapabilityState::unsupported("无已验证的结构化事件流"),
             ProviderPresets => CapabilityState::unsupported("暂无内置 ZCode provider 预设"),
-            Usage => CapabilityState::planned("桌面用量契约未验证"),
-            ProjectHistory | ProjectDelete => {
-                CapabilityState::planned("任务/会话库布局未验证，暂不扫描")
-            }
+            ProjectHistory => CapabilityState::partial("列出工作区与任务，可预览对话；不删除"),
+            ProjectDelete => CapabilityState::planned("不改 ZCode 任务库"),
             Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
         }
     }
@@ -614,10 +608,7 @@ fn has_non_portable_provider_secret(providers: &Value) -> bool {
 /// Strip Coding Plan / Start Plan login tokens from a `read_config` snapshot
 /// so provider import cannot treat desktop plan login as a portable API Key.
 pub(crate) fn scrub_non_portable_provider_secrets(raw: &mut Value) {
-    let Some(map) = raw
-        .get_mut("provider")
-        .and_then(Value::as_object_mut)
-    else {
+    let Some(map) = raw.get_mut("provider").and_then(Value::as_object_mut) else {
         return;
     };
     for (id, entry) in map.iter_mut() {
@@ -667,10 +658,7 @@ fn providers_with_api_key(providers: &Value) -> Vec<ProviderKeyHit> {
         if is_non_portable_provider_secret(id, api_key) {
             continue;
         }
-        let enabled = obj
-            .get("enabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
+        let enabled = obj.get("enabled").and_then(Value::as_bool).unwrap_or(true);
         let base_url = obj
             .get("options")
             .and_then(|o| o.get("baseURL"))
@@ -782,9 +770,9 @@ fn restore_zcode_catalog(config: &AgentConfig) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let mut root = read_json_object_or_empty(&path)?;
-    let root_obj = root.as_object_mut().ok_or_else(|| {
-        AppError::InvalidArg("ZCode v2 config root must be a JSON object".into())
-    })?;
+    let root_obj = root
+        .as_object_mut()
+        .ok_or_else(|| AppError::InvalidArg("ZCode v2 config root must be a JSON object".into()))?;
     root_obj.insert("provider".into(), providers.clone());
     let mut bytes = serde_json::to_vec_pretty(&root)?;
     bytes.push(b'\n');
@@ -913,7 +901,10 @@ fn normalize_models_map(value: &Value) -> Result<Map<String, Value>> {
                 let Some(id) = id else {
                     continue;
                 };
-                let meta = item.as_object().map(|o| json!(o)).unwrap_or_else(|| json!({}));
+                let meta = item
+                    .as_object()
+                    .map(|o| json!(o))
+                    .unwrap_or_else(|| json!({}));
                 out.entry(id.to_string()).or_insert(meta);
             }
             if out.is_empty() {
@@ -993,9 +984,9 @@ fn upsert_catalog_row(write: CatalogWrite<'_>) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let mut root = read_json_object_or_empty(&path)?;
-    let root_obj = root.as_object_mut().ok_or_else(|| {
-        AppError::InvalidArg("ZCode v2 config root must be a JSON object".into())
-    })?;
+    let root_obj = root
+        .as_object_mut()
+        .ok_or_else(|| AppError::InvalidArg("ZCode v2 config root must be a JSON object".into()))?;
     let provider_val = root_obj
         .entry("provider".to_string())
         .or_insert_with(|| json!({}));
@@ -1074,9 +1065,10 @@ fn write_zcode_config(config: &AgentConfig) -> Result<()> {
             config.agent.as_str()
         )));
     }
-    let raw = config.raw.as_object().ok_or_else(|| {
-        AppError::InvalidArg("ZCode config must be a JSON object".into())
-    })?;
+    let raw = config
+        .raw
+        .as_object()
+        .ok_or_else(|| AppError::InvalidArg("ZCode config must be a JSON object".into()))?;
 
     // Projected apply shape from account / UI: apiKey (+ optional providerId/baseURL/kind/models).
     if let Some(api_key) = raw
@@ -1144,7 +1136,10 @@ fn write_zcode_config(config: &AgentConfig) -> Result<()> {
                 .get("kind")
                 .and_then(Value::as_str)
                 .unwrap_or("anthropic");
-            let name = entry.get("name").and_then(Value::as_str).unwrap_or("AgentHub");
+            let name = entry
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("AgentHub");
             upsert_catalog_row(CatalogWrite {
                 requested_id: id,
                 api_key,

@@ -143,7 +143,11 @@ impl ProjectService {
         }
         if let Some(alias) = alias {
             let trimmed = alias.trim().to_string();
-            meta.alias = if trimmed.is_empty() { None } else { Some(trimmed) };
+            meta.alias = if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            };
         }
         if meta.is_empty() {
             doc.projects.remove(project_id);
@@ -478,7 +482,7 @@ impl ProjectService {
         let mut out = Vec::with_capacity(ids.len());
         let mut failed = 0u32;
         for id in ids {
-            match load_excerpt(id, None) {
+            match load_excerpt_for_id(id, None) {
                 Ok(ex) => out.push(ex),
                 Err(e) => {
                     failed += 1;
@@ -638,6 +642,18 @@ pub(crate) fn list_sessions_for_project_key_home(
         Some(source) => source.list_sessions_in_project(&ctx, project_id, key),
         None => Ok(vec![]),
     }
+}
+
+fn load_excerpt_for_id(id: &str, home_override: Option<&Path>) -> Result<AgentProjectExcerpt> {
+    let (agent, rel) = parse_session_id(id)?;
+    if agent == AgentId::Zcode {
+        let home = match home_override {
+            Some(h) => h.to_path_buf(),
+            None => agent_home(agent)?,
+        };
+        return crate::integrations::agents::zcode::load_zcode_excerpt(&home, id, &rel);
+    }
+    load_excerpt(id, home_override)
 }
 
 /// Claude / WorkBuddy: one container per `projects/<encodedDir>/`, top-level session files only.

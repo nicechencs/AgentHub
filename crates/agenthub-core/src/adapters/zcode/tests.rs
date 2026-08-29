@@ -44,6 +44,14 @@ fn capability_is_exhaustive_and_honest() {
     );
     assert_eq!(
         adapter.capability(Capability::ProjectHistory).level,
+        CapabilityLevel::Partial
+    );
+    assert_eq!(
+        adapter.capability(Capability::Usage).level,
+        CapabilityLevel::Full
+    );
+    assert_eq!(
+        adapter.capability(Capability::ProjectDelete).level,
         CapabilityLevel::Planned
     );
     for cap in Capability::ALL {
@@ -107,8 +115,7 @@ fn apply_and_read_api_key_round_trip_preserves_other_providers() {
         assert!(auth.has_credentials);
         assert_eq!(auth.health, AuthHealth::Configured);
 
-        let disk: Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let disk: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
             disk.pointer("/provider/custom-uuid/options/apiKey")
                 .and_then(Value::as_str),
@@ -157,8 +164,7 @@ fn write_config_projected_api_key_shape() {
             })
             .unwrap();
         let path = v2_config_path(dir.path());
-        let disk: Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let disk: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
             disk.pointer("/provider/builtin:bigmodel/options/apiKey")
                 .and_then(Value::as_str),
@@ -211,7 +217,10 @@ fn detect_reports_not_found_without_desktop_or_cli() {
                 "detected binary must exist: {}",
                 path.display()
             );
-            let lower = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+            let lower = path
+                .to_string_lossy()
+                .replace('\\', "/")
+                .to_ascii_lowercase();
             assert!(
                 lower.ends_with("/programs/zcode/zcode.exe")
                     || lower.ends_with("/zcode/zcode.exe")
@@ -261,12 +270,7 @@ fn read_version_hint_none_without_unpacked_package_json() {
     let dir = tempfile::tempdir().unwrap();
     let exe = dir.path().join("ZCode.exe");
     std::fs::write(&exe, b"").unwrap();
-    std::fs::create_dir_all(
-        dir.path()
-            .join("resources")
-            .join("app.asar.unpacked"),
-    )
-    .unwrap();
+    std::fs::create_dir_all(dir.path().join("resources").join("app.asar.unpacked")).unwrap();
     assert_eq!(read_version_hint(&exe), None);
 }
 
@@ -275,10 +279,7 @@ fn read_version_hint_reads_unpacked_package_json() {
     let dir = tempfile::tempdir().unwrap();
     let exe = dir.path().join("ZCode.exe");
     std::fs::write(&exe, b"").unwrap();
-    let unpacked = dir
-        .path()
-        .join("resources")
-        .join("app.asar.unpacked");
+    let unpacked = dir.path().join("resources").join("app.asar.unpacked");
     std::fs::create_dir_all(&unpacked).unwrap();
     std::fs::write(unpacked.join("package.json"), r#"{"version":"3.10.1"}"#).unwrap();
     assert_eq!(read_version_hint(&exe).as_deref(), Some("3.10.1"));
@@ -451,7 +452,9 @@ fn is_desktop_app_binary_matches_windows_and_macos_layouts() {
 fn looks_like_jwt_requires_three_dot_separated_parts() {
     assert!(looks_like_jwt(START_PLAN_JWT));
     assert!(!looks_like_jwt("sk-not-a-jwt"));
-    assert!(!looks_like_jwt("c23be09d709f4c5aa2f4b8ac17d7ae1a.placeholder"));
+    assert!(!looks_like_jwt(
+        "c23be09d709f4c5aa2f4b8ac17d7ae1a.placeholder"
+    ));
 }
 
 #[test]
@@ -523,8 +526,7 @@ fn custom_catalog_row_with_models_appends_without_replacing_official() {
             })
             .unwrap();
 
-        let disk: Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let disk: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
             disk.pointer("/provider/builtin:zai/options/apiKey")
                 .and_then(Value::as_str),
@@ -591,8 +593,7 @@ fn official_slot_keeps_existing_models_when_incoming_list_empty() {
             .build_api_key_account("sk-fill-official")
             .unwrap();
         ZcodeAdapter.apply_account(&account).unwrap();
-        let disk: Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let disk: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
             disk.pointer("/provider/builtin:zai/models/GLM-5.3-Flash/reasoning")
                 .and_then(Value::as_str),
@@ -670,13 +671,14 @@ fn restore_config_puts_catalog_map_back_without_dropping_custom_rows() {
                 }),
             })
             .unwrap();
-        assert!(serde_json::from_str::<Value>(&std::fs::read_to_string(&path).unwrap())
-            .unwrap()
-            .pointer("/provider/agenthub-managed")
-            .is_some());
+        assert!(
+            serde_json::from_str::<Value>(&std::fs::read_to_string(&path).unwrap())
+                .unwrap()
+                .pointer("/provider/agenthub-managed")
+                .is_some()
+        );
         ZcodeAdapter.restore_config(&snapshot).unwrap();
-        let disk: Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let disk: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
             disk.pointer("/provider/aabbcc/options/apiKey")
                 .and_then(Value::as_str),
