@@ -18,6 +18,8 @@ const baseSettings: AppSettings = {
   skillMarketSource: 'auto',
   usageCollectIntervalMin: 30,
   keepLiveFileCopies: true,
+  warnDuplicateRouteCredential: true,
+  updateDuplicateRouteUrl: true,
   appVersion: 'test',
 };
 

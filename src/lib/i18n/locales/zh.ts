@@ -88,6 +88,14 @@ export const zh = {
       pluginsNavVisibleLabel: '显示插件页面',
       pluginsNavVisibleDescription: '在侧栏显示插件入口；关闭后仍可用链接打开。',
       pluginsNavVisibleTip: '隐藏侧栏入口不禁用插件页；仍可通过链接打开。',
+      warnDuplicateRouteCredentialLabel: '重复密钥提示',
+      warnDuplicateRouteCredentialDescription: '路由里密钥或登录已用过时只提示',
+      warnDuplicateRouteCredentialTip:
+        '开启后，新建或导入路由时若密钥或登录已出现过，只给提示，不拦截、不强制合并。关闭后不再检查。',
+      updateDuplicateRouteUrlLabel: '同地址更新路由',
+      updateDuplicateRouteUrlDescription: '同一客户端下地址相同则更新已有路由',
+      updateDuplicateRouteUrlTip:
+        '开启后，同一客户端下地址相同时更新已有路由，而不是再建一条。关闭后允许同地址再建。',
       skillMarketLabel: '技能市场',
       skillMarketDescription: '远程技能源',
       skillMarketTip: '自动：优先 skills.sh，网络不可达时回退 skillhub.cn。也可固定只用其一。',
@@ -726,6 +734,8 @@ export const zh = {
       submitting: "接上中…",
       required: "请填写名称、地址、密钥，并至少勾选一个客户端。",
       urlInvalid: "地址须以 http:// 或 https:// 开头。",
+      duplicateKeyTip: "这个密钥已经用过。仍可继续，不会强制合并。",
+      duplicateUrlUpdateTip: "同一客户端下已有相同地址的路由「{name}」，确认后会更新它。",
       fallback: "无法新建路由",
       success: "已接到路由页。",
       route: {
@@ -766,6 +776,7 @@ export const zh = {
       title: "用这份登录",
       description: "从已保存的连接里选一份登录，接到一条本机路由。不会另存一份密钥。",
       empty: "还没有可导入的登录。请先到连接页保存。",
+      alreadyRoutedTip: "这份登录已经接到过路由，仍可再次使用。",
       required: "请选择一份登录。",
       submit: "确认应用",
       submitting: "接上中…",

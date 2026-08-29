@@ -242,6 +242,8 @@ export default function BridgesPage() {
         asPanel
         open
         width={inspect.paneWidth}
+        providers={entries.flatMap((entry) => (entry.provider ? [entry.provider] : []))}
+        accounts={entries.flatMap((entry) => (entry.account ? [entry.account] : []))}
         onOpenChange={(open) => { if (!open) inspect.close(); }}
         onCreated={() => { void reload(); }}
       />
