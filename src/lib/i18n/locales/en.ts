@@ -1809,6 +1809,8 @@ export const en = {
       extraCopyIde: "IDE extension",
       extraCopyDesktop: "desktop app",
       extraCopyLeftover: "leftover data-dir npm",
+      channelOfficial: "Official script",
+      channelNpm: "npm",
       extraCopyCanUpdate: "update available",
       extraCopyIsLatest: "up to date",
       extraCopyUpgradeSpawnOnly: "Upgrade only updates the spawn channel",
@@ -1859,6 +1861,8 @@ export const en = {
       installLocations: "Install locations",
       openFolder: "Folder",
       configDir: "Config folder",
+      endpointTypes: "Endpoint types",
+      endpointDependsOnLogin: "Depends on the current login",
       uninstall: "Uninstall",
     },
     dialog: {

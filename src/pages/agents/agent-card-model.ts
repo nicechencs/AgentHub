@@ -56,7 +56,7 @@ export function resolveOfficialSetupUrl(
   return undefined;
 }
 
-/** Localized extra-copy kind; unknown kinds (npm/native) are shown as-is. */
+/** Localized extra-copy / install-channel kind; raw `native` is never product copy. */
 export function extraCopyKindLabelKey(kind: string): MessageKey | undefined {
   switch (kind) {
     case 'ide':
@@ -65,6 +65,10 @@ export function extraCopyKindLabelKey(kind: string): MessageKey | undefined {
       return 'agents.card.extraCopyDesktop';
     case 'leftover-agenthub':
       return 'agents.card.extraCopyLeftover';
+    case 'native':
+      return 'agents.card.channelOfficial';
+    case 'npm':
+      return 'agents.card.channelNpm';
     default:
       return undefined;
   }
