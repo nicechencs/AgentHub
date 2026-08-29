@@ -11,6 +11,8 @@ import type { AgentId, Provider } from '@/lib/types';
 import type { ProviderFormVars } from '@/lib/provider-detect';
 import { piProviderSlotById } from '@/lib/pi-provider-slots';
 import { REDACTED_MARKER } from '@/lib/provider-detect';
+import type { LiveOccupancyDto } from '@/lib/backend/contracts/agent-catalog-types';
+import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
 
 /** UI schema load state for the Provider edit dialog. */
 export type SchemaUiStatus = 'idle' | 'loading' | 'ready' | 'unsupported' | 'error';
@@ -59,6 +61,8 @@ export interface ProviderSaveFlowInput {
   finalFormat: 'json' | 'toml';
   /** Scaffold / official base when configText is empty or redacted. */
   baseText: string;
+  /** Catalog occupancy; catalog-append agents write live on add. */
+  occupancy?: LiveOccupancyDto | null;
 }
 
 /**
@@ -271,7 +275,7 @@ function buildProviderDraft(
     configText: finalText,
     configFormat: finalFormat,
     authApiKey,
-    isCurrent: false,
+    isCurrent: isCatalogAppendOccupancy(input.occupancy),
     official: useOfficial,
   };
 }

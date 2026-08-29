@@ -76,11 +76,14 @@ describe('switch toast copy', () => {
     expect(switchWroteLiveLabel(tZh)).toBe('已写入本机配置');
     expect(switchWroteLiveLabel(tEn)).toBe('Wrote to local config');
     expect(switchWroteLiveLabel()).toBe('已写入本机配置');
+    expect(switchWroteLiveLabel(tZh, 'catalogAppend')).toBe('已写入模型列表');
+    expect(switchWroteLiveLabel(tEn, 'catalogAppend')).toBe('Wrote to the model list');
+    expect(switchWroteLiveLabel(undefined, 'catalogAppend')).toBe('已写入模型列表');
   });
 
   it('keeps the wrote-live label off the bind-to-route success path', () => {
     const src = readFileSync(new URL('./use-connection-page-actions.ts', import.meta.url), 'utf8');
-    expect(src).toContain("wroteLocal ? switchWroteLiveLabel(t) : t('connections.list.switchOk')");
+    expect(src).toContain('switchWroteLiveLabel(t, resolveAgentMeta(ticket.agentId).occupancy)');
     expect(src).toMatch(/const wroteLocal =\s*ticket\.agentId === targetAgent/);
   });
 });

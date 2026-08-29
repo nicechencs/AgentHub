@@ -27,6 +27,10 @@ describe('agent catalog façade', () => {
     expect(AGENTS).toHaveLength(MOCK_AGENT_CATALOG.length);
     expect(AGENT_MAP.claude?.name).toBe('Claude Code');
     expect(AGENT_MAP.claude?.installChannels.length).toBeGreaterThan(0);
+    expect(AGENT_MAP.zcode?.occupancy).toBe('catalogAppend');
+    expect(AGENT_MAP.workbuddy?.occupancy).toBe('catalogAppend');
+    expect(AGENT_MAP.claude?.occupancy).toBe('exclusive');
+    expect(AGENT_MAP.pi?.occupancy).toBe('namedSlots');
   });
 
   it('unknown-demo appears with fallback display after fixture-only change', () => {

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::domain::protocol_graph::LiveOccupancy;
 use crate::models::{CapabilityStateDto, RuntimeId};
 
 use super::AgentKey;
@@ -34,4 +35,7 @@ pub struct AgentDescriptor {
     pub install_channels: Vec<InstallChannelDescriptor>,
     /// Present when the agent exposes a versioned config schema; optional in P01.
     pub config_schema_version: Option<u32>,
+    /// How a live write occupies this agent's config (catalog-append vs exclusive).
+    #[serde(default)]
+    pub occupancy: LiveOccupancy,
 }

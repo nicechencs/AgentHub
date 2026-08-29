@@ -5,6 +5,8 @@
 //! Writable routes still come only from an explicit matrix cell ∩ plan
 //! `write_gate`. See [connection-binding-model.md] §2.2 / §6.2.
 
+use serde::{Deserialize, Serialize};
+
 use crate::models::{AgentId, TicketProtocol};
 
 /// Target has no live-config writer and cannot be a bind sink (e.g. Cursor).
@@ -81,9 +83,13 @@ impl AgentAccept {
 ///
 /// Hub still keeps one current binding per agent; this only describes the
 /// on-disk write so callers do not assume "current" means "the only live row".
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Wire names (`exclusive` / `namedSlots` / `catalogAppend`) are projected on
+/// the agent catalog so UI can label add / write without matching AgentId.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub enum LiveOccupancy {
     /// Replace the live credential family (Claude env, Codex `auth.json`).
+    #[default]
     Exclusive,
     /// Merge one finite named slot; siblings stay (Pi).
     NamedSlots,

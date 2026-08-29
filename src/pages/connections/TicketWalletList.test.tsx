@@ -991,6 +991,56 @@ describe('TicketWalletList switch action', () => {
     expect(markup).toContain('这份登录已在当前工具使用中');
     expect(markup).not.toContain('aria-label="切换"');
   });
+
+  it('shows 写入 ZCode / 已在模型列表里 for catalog-append occupancy', () => {
+    const wallet: TicketWallet = {
+      tickets: [
+        {
+          id: 'provider:zcode-1',
+          sourceKind: 'provider',
+          sourceId: 'zcode-1',
+          agentId: 'zcode',
+          label: 'Z.ai',
+          surface: 'api-key',
+          credentialClass: 'api_key',
+          speaks: ['anthropic-messages'],
+          importedFrom: 'zcode',
+        },
+      ],
+      bindings: [],
+      surfaceGroups: [],
+    };
+    const idle = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        extrasForTicket: () => ({ isCurrent: false }),
+        onShareTicket() {},
+        onRouteTicket() {},
+        onSwitchTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(idle).toContain('aria-label="写入 ZCode"');
+    expect(idle).toContain('>写入 ZCode<');
+    expect(idle).not.toContain('aria-label="切换"');
+
+    const current = renderWithTooltip(
+      createElement(TicketWalletList, {
+        wallet,
+        extrasForTicket: () => ({ isCurrent: true }),
+        onShareTicket() {},
+        onRouteTicket() {},
+        onSwitchTicket() {},
+        onEditTicket() {},
+        onDeleteTicket() {},
+      }),
+    );
+    expect(current).toContain('aria-label="已在模型列表里"');
+    expect(current).toContain('>已在模型列表里<');
+    expect(current).toContain('这份登录已经出现在模型列表里');
+    expect(current).not.toContain('aria-label="使用中"');
+  });
 });
 
 describe('TicketWalletList bind actions', () => {

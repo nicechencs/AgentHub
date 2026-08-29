@@ -11,6 +11,9 @@ import {
   type TicketView,
   type TicketWallet,
 } from '@/lib/api/tickets';
+import type { LiveOccupancyDto } from '@/lib/backend/contracts/agent-catalog-types';
+import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
+import { resolveAgentMeta } from '@/config/agents';
 import { deleteConnectionToastDescription } from './connection-model';
 import { activeBindingForAgent } from './ticket-wallet-model';
 
@@ -18,7 +21,13 @@ import { activeBindingForAgent } from './ticket-wallet-model';
 export const SWITCH_WROTE_LIVE = '已写入本机配置';
 
 /** Localized success toast for a switch that wrote to local config. */
-export function switchWroteLiveLabel(t?: TranslateFn): string {
+export function switchWroteLiveLabel(
+  t?: TranslateFn,
+  occupancy?: LiveOccupancyDto | null,
+): string {
+  if (isCatalogAppendOccupancy(occupancy)) {
+    return t ? t('connections.list.switchWroteCatalog') : '已写入模型列表';
+  }
   return t ? t('connections.list.switchWroteLive') : SWITCH_WROTE_LIVE;
 }
 
@@ -104,7 +113,9 @@ export function useConnectionPageActions(input: {
       }
       if (switchGen.current !== generation) return;
       toast({
-        title: wroteLocal ? switchWroteLiveLabel(t) : t('connections.list.switchOk'),
+        title: wroteLocal
+          ? switchWroteLiveLabel(t, resolveAgentMeta(ticket.agentId).occupancy)
+          : t('connections.list.switchOk'),
         variant: 'success',
       });
       await poolReload().catch(() => {});
