@@ -383,11 +383,7 @@ impl AgentAdapter for ZcodeAdapter {
                 if is_desktop_app_binary(binary) {
                     return None;
                 }
-                let name = binary
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_ascii_lowercase();
+                let (name, _) = path_name_and_parent(binary);
                 if name == "zcode" || name == "zcode.exe" || name == "zcode.cmd" {
                     Some(binary.to_path_buf())
                 } else {
@@ -461,23 +457,23 @@ fn resolve_zcode_cli() -> Option<PathBuf> {
     which::which("zcode").ok()
 }
 
+/// Last file name and parent dir, treating both `/` and `\` as separators so
+/// Windows path strings still classify on Unix test hosts.
+fn path_name_and_parent(path: &Path) -> (String, String) {
+    let raw = path.to_string_lossy().replace('\\', "/");
+    let mut parts = raw.rsplit('/');
+    let name = parts.next().unwrap_or("").to_ascii_lowercase();
+    let parent = parts.next().unwrap_or("").to_ascii_lowercase();
+    (name, parent)
+}
+
 /// Electron desktop binary, not a CLI. Windows cannot tell `ZCode.exe` from
 /// `zcode.exe` by case, so parent dir (`ZCode` / `MacOS`) is the signal.
 fn is_desktop_app_binary(path: &Path) -> bool {
-    let name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
+    let (name, parent) = path_name_and_parent(path);
     if name.ends_with(".appimage") {
         return name.contains("zcode");
     }
-    let parent = path
-        .parent()
-        .and_then(|p| p.file_name())
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
     (name == "zcode.exe" || name == "zcode") && (parent == "zcode" || parent == "macos")
 }
 
