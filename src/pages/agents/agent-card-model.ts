@@ -56,7 +56,7 @@ export function resolveOfficialSetupUrl(
   return undefined;
 }
 
-/** Localized extra-copy kind; unknown kinds (npm/native) are shown as-is. */
+/** Localized extra-copy / install-channel kind; raw `native` is never product copy. */
 export function extraCopyKindLabelKey(kind: string): MessageKey | undefined {
   switch (kind) {
     case 'ide':
@@ -65,6 +65,10 @@ export function extraCopyKindLabelKey(kind: string): MessageKey | undefined {
       return 'agents.card.extraCopyDesktop';
     case 'leftover-agenthub':
       return 'agents.card.extraCopyLeftover';
+    case 'native':
+      return 'agents.card.channelOfficial';
+    case 'npm':
+      return 'agents.card.channelNpm';
     default:
       return undefined;
   }
@@ -368,9 +372,46 @@ function compareVersionCores(
   return 0;
 }
 
+export function isLeftoverInstallSource(source?: string | null): boolean {
+  return source === 'leftover-agenthub';
+}
+
+export function programInstalls<T extends { source: string }>(installs: readonly T[]): T[] {
+  return installs.filter((row) => !isLeftoverInstallSource(row.source));
+}
+
+export type AgentListDetailsHint = {
+  key: MessageKey;
+  params?: { count: number };
+};
+
+/**
+ * List hint must match detail locations. Leftover copies are leftover, not versions.
+ */
+export function agentListDetailsHint(
+  installs: ReadonlyArray<{ source: string; version?: string | null }>,
+): AgentListDetailsHint | null {
+  if (installs.length <= 1) return null;
+  const leftoverCount = installs.filter((row) => isLeftoverInstallSource(row.source)).length;
+  const extraCount = installs.length - 1;
+  const programVersions = uniqueInstallVersions(programInstalls(installs));
+  const allVersions = uniqueInstallVersions(installs);
+  if (leftoverCount > 0 && leftoverCount === extraCount && programVersions.length <= 1) {
+    return { key: 'agents.card.seeDetailsLeftover', params: { count: leftoverCount } };
+  }
+  if (
+    leftoverCount === 0 &&
+    programVersions.length > 1 &&
+    allVersions.length === installs.length
+  ) {
+    return { key: 'agents.card.seeDetails' };
+  }
+  return { key: 'agents.card.seeDetailsCopies', params: { count: extraCount } };
+}
+
 /** Unique formatted versions for the compact card; order follows install list. */
 export function uniqueInstallVersions(
-  installs: Array<{ version?: string | null }>,
+  installs: ReadonlyArray<{ version?: string | null }>,
 ): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
