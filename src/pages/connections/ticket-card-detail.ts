@@ -22,6 +22,7 @@ import {
   ticketSurfaceLabel,
 } from '@/lib/backend/contracts/ticket';
 import {
+  accountEndpointExtras,
   providerEndpointExtras,
   toCredentialRow,
 } from '@/lib/credential-row';
@@ -382,6 +383,8 @@ export function extrasFromPoolSource(
         : source.account.email ?? source.account.identityLabel ?? source.account.label;
     if (
       source.account.provider
+      && source.account.provider !== source.account.agentId
+      && !/^https?:\/\//i.test(source.account.provider)
       && typeof ticket.label === 'string'
       && !ticket.label.includes(source.account.provider)
     ) {
@@ -393,7 +396,10 @@ export function extrasFromPoolSource(
     extras.quota7dPct = source.account.quota7dPct;
     extras.quotaResetIn = source.account.quotaResetIn;
     extras.quota7dResetIn = source.account.quota7dResetIn;
-    extras.endpointMode = source.account.kind === 'apikey' ? 'official' : undefined;
+    const endpoint = accountEndpointExtras(source.account);
+    extras.endpointMode = endpoint.endpointMode;
+    extras.endpointHost = endpoint.endpointHost;
+    extras.endpointUrl = endpoint.endpoint;
     extras.oauthAction = oauthListAction(source.account);
     if (ticket.credentialClass === 'oauth' && source.account.refreshTokenPreview) {
       extras.refreshTokenPreview = source.account.refreshTokenPreview;
@@ -501,6 +507,19 @@ export function buildTicketDetailFields(
   bindings?: readonly BindingView[] | null,
 ): TicketDetailSections {
   const advanced: TicketDetailField[] = [];
+
+  const providerName = extras?.accountProvider?.trim();
+  if (
+    ticket.credentialClass === 'api_key'
+    && providerName
+    && providerName !== ticket.agentId
+    && !/^https?:\/\//i.test(providerName)
+  ) {
+    advanced.push({
+      label: t ? t('connections.list.provider') : '供应商',
+      value: providerName,
+    });
+  }
 
   const customEndpoint = extras != null && extras.endpointMode === 'custom';
   if (customEndpoint) {

@@ -446,15 +446,17 @@ fn read_settings_api_key_account(path: &Path) -> Result<Option<LiveAccount>> {
         "env_key": env_key,
         "content": serde_json::to_string_pretty(&settings)?,
     });
+    let mut extra = serde_json::json!({ "source": "settings.json" });
     if let Some(base_url) = claude_settings_base_url(&settings) {
         credentials["base_url"] = serde_json::json!(base_url);
+        extra["endpoint"] = serde_json::json!(base_url);
     }
     Ok(Some(LiveAccount {
         agent: AgentId::Claude,
         kind: AccountKind::ApiKey,
         credentials,
         label_hint: Some(format!("{} (API Key)", mask_secret_preview(&token))),
-        extra: serde_json::json!({ "source": "settings.json" }),
+        extra,
     }))
 }
 

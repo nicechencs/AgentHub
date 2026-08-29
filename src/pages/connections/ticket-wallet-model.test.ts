@@ -959,6 +959,42 @@ describe('ticket detail fields', () => {
     expect(keyExtras.endpointHost).toBe('relay.example.com');
     expect(keyExtras.secretTail).toBe('**wxyz');
     expect(ticketDetailEditLabel(keyExtras)).toBe('编辑配置');
+
+    const zcodeTicket = ticket({
+      id: 'account:zcode-1',
+      sourceKind: 'account',
+      sourceId: 'zcode-1',
+      agentId: 'zcode',
+      label: '**ce8f (API Key)',
+      surface: 'unknown',
+      credentialClass: 'api_key',
+      speaks: [],
+      importedFrom: 'zcode',
+    });
+    const zcodeExtras = extrasFromPoolSource(zcodeTicket, {
+      account: account({
+        id: 'zcode-1',
+        agentId: 'zcode',
+        kind: 'apikey',
+        label: '**ce8f (grok)',
+        provider: 'grok',
+        identityLabel: 'grok',
+        endpoint: 'https://api.qooo.io/v1',
+        credentialFiles: [{
+          name: 'config.json',
+          content: '{\n  "provider": {\n    "aabbcc": {\n      "name": "grok"\n    }\n  }\n}\n',
+        }],
+      }),
+    });
+    expect(zcodeExtras.accountProvider).toBe('grok');
+    expect(zcodeExtras.endpointMode).toBe('custom');
+    expect(zcodeExtras.endpointUrl).toBe('https://api.qooo.io/v1');
+    const zcodeFields = buildTicketDetailFields(zcodeTicket, zcodeExtras);
+    expect(zcodeFields.advanced).toEqual(expect.arrayContaining([
+      { label: '供应商', value: 'grok' },
+      { label: '端点', value: '自定义端点' },
+      { label: '地址', value: 'https://api.qooo.io/v1', mono: true, copyable: true },
+    ]));
   });
 
   it('splits Grok oauth extras by Hub vs CLI ownership', () => {

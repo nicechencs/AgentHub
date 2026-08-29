@@ -226,16 +226,22 @@ impl AgentAdapter for WorkBuddyAdapter {
         credentials: &serde_json::Value,
         label_hint: Option<&str>,
     ) -> Option<String> {
-        if let Some(hint) = label_hint.map(str::trim).filter(|s| !s.is_empty()) {
-            return Some(hint.to_string());
-        }
-        credentials
+        if let Some(name) = credentials
             .get("name")
             .and_then(serde_json::Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty())
+        {
+            return Some(name.to_string());
+        }
+        let slot = workbuddy_model_slot(credentials);
+        if slot != "custom" {
+            return Some(format!("workbuddy:{slot}"));
+        }
+        label_hint
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
-            .or_else(|| Some(format!("workbuddy:{}", workbuddy_model_slot(credentials))))
     }
 
     fn skills_dir(&self) -> Option<PathBuf> {
@@ -247,9 +253,7 @@ impl AgentAdapter for WorkBuddyAdapter {
         match cap {
             Skills | LiveBackup | DangerousMode | ProjectHistory | ProjectDelete | Usage
             | ApiKeyAccount => CapabilityState::full(),
-            ConfigWrite => {
-                CapabilityState::partial("只追加或更新一条自定义模型，不覆盖整份列表")
-            }
+            ConfigWrite => CapabilityState::partial("只追加或更新一条自定义模型，不覆盖整份列表"),
             AccountSwitch => CapabilityState::partial(
                 "只写入对应自定义模型，其它条目仍在列表里；不会改 WorkBuddy 当前选中的模型",
             ),
@@ -901,6 +905,7 @@ fn live_account_from_model_entry(entry: &serde_json::Value) -> LiveAccount {
         "provider": "workbuddy",
         "model_id": id,
         "id": id,
+        "catalog_row": entry.clone(),
     });
     if let Some(name) = name {
         cred["name"] = serde_json::json!(name);
@@ -912,22 +917,27 @@ fn live_account_from_model_entry(entry: &serde_json::Value) -> LiveAccount {
     if let Some(vendor) = vendor {
         cred["vendor"] = serde_json::json!(vendor);
     }
-    for flag in ["supportsToolCall", "supportsImages", "supportsReasoning"] {
+    for flag in [
+        "supportsToolCall",
+        "supportsImages",
+        "supportsReasoning",
+        "useCustomProtocol",
+        "reasoning",
+    ] {
         if let Some(value) = object.and_then(|o| o.get(flag)).cloned() {
             cred[flag] = value;
         }
     }
-    api_key_live_account(
-        AgentId::WorkBuddy,
-        api_key,
-        cred,
-        name.unwrap_or("API Key"),
-        serde_json::json!({
-            "source": "live",
-            "provider": "workbuddy",
-            "model_id": id,
-        }),
-    )
+    let label = name.unwrap_or("API Key");
+    let mut extra = serde_json::json!({
+        "source": "live",
+        "provider": "workbuddy",
+        "model_id": id,
+    });
+    if let Some(url) = url {
+        extra["endpoint"] = serde_json::json!(url);
+    }
+    api_key_live_account(AgentId::WorkBuddy, api_key, cred, label, extra)
 }
 
 fn desktop_login_present() -> (bool, Option<PathBuf>, AuthHealth, String) {
@@ -997,10 +1007,7 @@ fn workbuddy_auth_state() -> Result<AuthState> {
         return Ok(AuthState {
             agent: AgentId::WorkBuddy,
             kind: Some("api_key".into()),
-            summary: format!(
-                "API key present in {} custom model(s)",
-                portable.len()
-            ),
+            summary: format!("API key present in {} custom model(s)", portable.len()),
             has_credentials: true,
             health: AuthHealth::Configured,
             source: Some("workbuddy:models.json".into()),
@@ -1020,7 +1027,9 @@ fn workbuddy_auth_state() -> Result<AuthState> {
             has_credentials: true,
             health: desktop_health,
             source: Some("workbuddy:desktop-login-metadata".into()),
-            revision: desktop_path.as_ref().and_then(|path| auth_file_revision(path)),
+            revision: desktop_path
+                .as_ref()
+                .and_then(|path| auth_file_revision(path)),
             also_present: Vec::new(),
             secret_hash: None,
         });
@@ -1034,7 +1043,9 @@ fn workbuddy_auth_state() -> Result<AuthState> {
         source: desktop_path
             .is_some()
             .then(|| "workbuddy:desktop-login-metadata".into()),
-        revision: desktop_path.as_ref().and_then(|path| auth_file_revision(path)),
+        revision: desktop_path
+            .as_ref()
+            .and_then(|path| auth_file_revision(path)),
         also_present: Vec::new(),
         secret_hash: None,
     })
@@ -1156,9 +1167,7 @@ fn upsert_workbuddy_model_from_account(account: &LiveAccount) -> Result<()> {
         })
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            AppError::InvalidArg("WorkBuddy 只认 /v1/chat/completions 端点".into())
-        })?;
+        .ok_or_else(|| AppError::InvalidArg("WorkBuddy 只认 /v1/chat/completions 端点".into()))?;
     let url = normalize_workbuddy_chat_url(url)?;
     let name = account
         .credentials
@@ -1453,6 +1462,33 @@ mod tests {
             .map(|live| workbuddy_model_slot(&live.credentials))
             .collect();
         assert_eq!(ids, ["grok-4.6", "deepseek-v4-flash"]);
+        let grok = &lives[0];
+        assert_eq!(
+            grok.credentials.get("name").and_then(|v| v.as_str()),
+            Some("grok-4.6")
+        );
+        assert_eq!(
+            grok.credentials.get("url").and_then(|v| v.as_str()),
+            Some("https://api.qooo.io/v1/chat/completions")
+        );
+        assert_eq!(
+            grok.extra.get("endpoint").and_then(|v| v.as_str()),
+            Some("https://api.qooo.io/v1/chat/completions")
+        );
+        assert_eq!(grok.credentials["catalog_row"]["id"], "grok-4.6");
+        assert!(
+            grok.label_hint
+                .as_deref()
+                .is_some_and(|label| label.contains("grok-4.6")),
+            "label should name the catalog model, got {:?}",
+            grok.label_hint
+        );
+        assert_eq!(
+            WorkBuddyAdapter
+                .identity_label(crate::models::AccountKind::ApiKey, &grok.credentials, None)
+                .as_deref(),
+            Some("grok-4.6")
+        );
     }
 
     #[test]
@@ -1488,9 +1524,7 @@ mod tests {
     fn apply_account_rewrites_chat_completions_to_v1_path() {
         let dir = tempfile_dir();
         with_workbuddy_config(&dir, || {
-            let mut account = WorkBuddyAdapter
-                .build_api_key_account("sk-apply")
-                .unwrap();
+            let mut account = WorkBuddyAdapter.build_api_key_account("sk-apply").unwrap();
             attach_api_key_catalog_fields(
                 &mut account.credentials,
                 Some("https://api.anthropic.com/v1/messages"),
@@ -1504,10 +1538,9 @@ mod tests {
             )
             .unwrap();
             WorkBuddyAdapter.apply_account(&account).unwrap();
-            let written: serde_json::Value = serde_json::from_str(
-                &fs::read_to_string(dir.join("models.json")).unwrap(),
-            )
-            .unwrap();
+            let written: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(dir.join("models.json")).unwrap())
+                    .unwrap();
             assert_eq!(written[0]["id"], "deepseek-v4-flash");
             assert_eq!(
                 written[0]["url"],

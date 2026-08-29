@@ -16,8 +16,18 @@ describe('credential file names', () => {
     expect(configFileName('grok')).toBe('config.toml');
     expect(configFileName('claude')).toBe('settings.json');
     expect(configFileName('pi')).toBe('settings.json');
+    expect(configFileName('workbuddy')).toBe('models.json');
     expect(configFileName('zcode')).toBe('config.json');
     expect(authFileName('zcode')).toBe('config.json');
+  });
+
+  it('maps WorkBuddy live API Key files to models.json, not settings.json', () => {
+    expect(defaultLivePathForFile('workbuddy', 'models.json')).toBe(
+      '~/.workbuddy/models.json',
+    );
+    expect(defaultLivePathForFile('workbuddy', configFileName('workbuddy'))).toBe(
+      '~/.workbuddy/models.json',
+    );
   });
 
   it('maps ZCode live files to v2/config.json, not config.toml', () => {
@@ -126,6 +136,92 @@ describe('extractAccountCredentialFiles', () => {
     expect(files[0]!.name).toBe('settings.json');
     expect(files[0]!.content).toContain('ANTHROPIC_AUTH_TOKEN');
     expect(files[0]!.content).not.toContain('sk-ant-secret-12345678');
+  });
+
+  it('rebuilds ZCode config.json as a catalog row with provider name and URL', () => {
+    const files = extractAccountCredentialFiles({
+      agentId: 'zcode',
+      kind: 'apikey',
+      format: 'api_key',
+      source: 'live',
+      credentials: {
+        format: 'api_key',
+        api_key: 'sk-custom-secret-12345678',
+        provider: 'zcode',
+        provider_id: '03954ae6-61b1-4d42-97e3-42cee3ab2be1',
+        provider_name: 'grok',
+        kind: 'openai',
+        base_url: 'https://api.qooo.io/v1',
+        models: { 'grok-4.6': { limit: { context: 500000 } } },
+      },
+    });
+    expect(files).toHaveLength(1);
+    expect(files[0]!.name).toBe('config.json');
+    expect(files[0]!.content).toContain('"name": "grok"');
+    expect(files[0]!.content).toContain('"baseURL": "https://api.qooo.io/v1"');
+    expect(files[0]!.content).toContain('"kind": "openai"');
+    expect(files[0]!.content).toContain('grok-4.6');
+    expect(files[0]!.content).not.toContain('sk-custom-secret-12345678');
+    expect(files[0]!.content).toContain('"apiKey": "***"');
+  });
+
+  it('rebuilds WorkBuddy models.json as a native catalog row with name and URL', () => {
+    const files = extractAccountCredentialFiles({
+      agentId: 'workbuddy',
+      kind: 'apikey',
+      format: 'api_key',
+      source: 'live',
+      credentials: {
+        format: 'api_key',
+        api_key: 'sk-custom-secret-12345678',
+        provider: 'workbuddy',
+        model_id: 'grok-4.6',
+        id: 'grok-4.6',
+        name: 'grok-4.6',
+        vendor: 'Custom',
+        url: 'https://api.qooo.io/v1/chat/completions',
+        base_url: 'https://api.qooo.io/v1/chat/completions',
+        supportsToolCall: true,
+      },
+    });
+    expect(files).toHaveLength(1);
+    expect(files[0]!.name).toBe('models.json');
+    expect(files[0]!.content).toContain('"name": "grok-4.6"');
+    expect(files[0]!.content).toContain('"url": "https://api.qooo.io/v1/chat/completions"');
+    expect(files[0]!.content).toContain('"vendor": "Custom"');
+    expect(files[0]!.content).not.toContain('sk-custom-secret-12345678');
+    expect(files[0]!.content).toContain('"apiKey": "***"');
+    expect(files[0]!.content.trim().startsWith('[')).toBe(true);
+  });
+
+  it('prefers the original ZCode catalog row over flattened Hub fields', () => {
+    const files = extractAccountCredentialFiles({
+      agentId: 'zcode',
+      kind: 'apikey',
+      format: 'api_key',
+      credentials: {
+        format: 'api_key',
+        api_key: '***',
+        provider_id: 'aabbcc',
+        provider_name: 'should-not-win',
+        catalog_row: {
+          name: 'grok',
+          kind: 'openai',
+          options: {
+            apiKey: 'sk-live-secret-should-not-leak',
+            baseURL: 'https://example.test/v1',
+            apiKeyRequired: true,
+          },
+          source: 'custom',
+          models: { 'grok-4.6': { zcode: { priority: 1 } } },
+        },
+      },
+    });
+    expect(files[0]!.content).toContain('"name": "grok"');
+    expect(files[0]!.content).not.toContain('should-not-win');
+    expect(files[0]!.content).toContain('apiKeyRequired');
+    expect(files[0]!.content).toContain('"priority": 1');
+    expect(files[0]!.content).not.toContain('sk-live-secret-should-not-leak');
   });
 });
 

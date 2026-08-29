@@ -634,6 +634,40 @@ fn expand_live_accounts_lists_portable_rows_and_skips_plan_jwt() {
             .collect();
         assert_eq!(ids, vec!["aabbcc"]);
         assert!(!ids.iter().any(|id| id.contains("plan")));
+        let live = &lives[0];
+        assert_eq!(
+            live.credentials
+                .get("provider_name")
+                .and_then(Value::as_str),
+            Some("grok")
+        );
+        assert_eq!(
+            live.credentials.get("base_url").and_then(Value::as_str),
+            Some("https://example.test/v1")
+        );
+        assert_eq!(
+            live.credentials
+                .pointer("/catalog_row/options/baseURL")
+                .and_then(Value::as_str),
+            Some("https://example.test/v1")
+        );
+        assert_eq!(
+            live.extra.get("endpoint").and_then(Value::as_str),
+            Some("https://example.test/v1")
+        );
+        assert!(
+            live.label_hint
+                .as_deref()
+                .is_some_and(|label| label.contains("grok")),
+            "label should name the catalog provider, got {:?}",
+            live.label_hint
+        );
+        assert_eq!(
+            ZcodeAdapter
+                .identity_label(AccountKind::ApiKey, &live.credentials, None)
+                .as_deref(),
+            Some("grok")
+        );
     });
 }
 

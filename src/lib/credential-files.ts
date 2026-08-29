@@ -32,9 +32,11 @@ export function authFileName(agentId: string): string {
 }
 
 export function configFileName(agentId: string): string {
-  if (agentId === 'claude' || agentId === 'pi' || agentId === 'workbuddy') {
+  if (agentId === 'claude' || agentId === 'pi') {
     return 'settings.json';
   }
+  // WorkBuddy API Key rows live in models.json; settings.json is sandbox/plugins.
+  if (agentId === 'workbuddy') return 'models.json';
   if (agentId === 'dsh') return 'cordis.patch.yml';
   if (agentId === 'zcode') return 'config.json';
   return 'config.toml';
@@ -160,6 +162,11 @@ export function extractAccountCredentialFiles(input: {
     }
   }
 
+  const catalog = catalogFileSnapshot(input.agentId, credentials);
+  if (catalog && !seen.has(catalog.name)) {
+    pushJson(catalog.name, catalog.value);
+  }
+
   if (files.length === 0) {
     const snapshot = remainingCredentialSnapshot(credentials, format);
     const name = input.kind === 'oauth' || isAuthFormat(format)
@@ -214,15 +221,100 @@ function remainingCredentialSnapshot(
   credentials: Record<string, unknown>,
   format: string | undefined,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  if (format) out.format = format;
-  for (const key of ['env_key', 'provider', 'email', 'api_key']) {
-    if (credentials[key] !== undefined) out[key] = credentials[key];
-  }
-  if (Object.keys(out).length === 0) {
-    return format ? { format } : {};
-  }
+  const out: Record<string, unknown> = { ...credentials };
+  if (format && out.format === undefined) out.format = format;
   return out;
+}
+
+function pickCredentialString(
+  credentials: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = credentials[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * Catalog-append agents store many API Key rows in one JSON file.
+ * Preview the native row, not a Hub `{ format, provider, api_key }` stub.
+ */
+function catalogFileSnapshot(
+  agentId: AgentId | string,
+  credentials: Record<string, unknown>,
+): { name: string; value: unknown } | undefined {
+  if (agentId === 'zcode') {
+    const value = zcodeCatalogFileSnapshot(credentials);
+    return value === undefined ? undefined : { name: 'config.json', value };
+  }
+  if (agentId === 'workbuddy') {
+    const value = workbuddyCatalogFileSnapshot(credentials);
+    return value === undefined ? undefined : { name: 'models.json', value };
+  }
+  return undefined;
+}
+
+/**
+ * Rebuild the on-disk `config.json` shape for one ZCode catalog row.
+ * Hub stores flattened `api_key` / `base_url` fields; the file preview should
+ * look like `provider.<id>` from `~/.zcode/v2/config.json`.
+ */
+function zcodeCatalogFileSnapshot(
+  credentials: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const id = pickCredentialString(credentials, 'provider_id');
+  const name = pickCredentialString(credentials, 'provider_name');
+  const base =
+    pickCredentialString(credentials, 'base_url')
+    ?? pickCredentialString(credentials, 'baseURL');
+  const catalog = credentials.catalog_row;
+  if (catalog && typeof catalog === 'object' && !Array.isArray(catalog)) {
+    return { provider: { [id ?? 'custom']: catalog } };
+  }
+  if (!id && !name && !base) return undefined;
+
+  const row: Record<string, unknown> = {};
+  if (name) row.name = name;
+  const kind = pickCredentialString(credentials, 'kind');
+  if (kind) row.kind = kind;
+  const options: Record<string, unknown> = {};
+  if (credentials.api_key !== undefined) options.apiKey = credentials.api_key;
+  if (base) options.baseURL = base;
+  if (Object.keys(options).length > 0) row.options = options;
+  if (credentials.models !== undefined) row.models = credentials.models;
+  return { provider: { [id ?? 'custom']: row } };
+}
+
+/**
+ * Rebuild one WorkBuddy `models.json` entry (file is a top-level array).
+ */
+function workbuddyCatalogFileSnapshot(
+  credentials: Record<string, unknown>,
+): unknown[] | undefined {
+  const catalog = credentials.catalog_row;
+  if (catalog && typeof catalog === 'object' && !Array.isArray(catalog)) {
+    return [catalog];
+  }
+  const id =
+    pickCredentialString(credentials, 'model_id')
+    ?? pickCredentialString(credentials, 'id');
+  const name = pickCredentialString(credentials, 'name');
+  const url =
+    pickCredentialString(credentials, 'url')
+    ?? pickCredentialString(credentials, 'base_url')
+    ?? pickCredentialString(credentials, 'baseURL');
+  if (!id && !name && !url) return undefined;
+
+  const row: Record<string, unknown> = {};
+  if (id) row.id = id;
+  if (name) row.name = name;
+  const vendor = pickCredentialString(credentials, 'vendor');
+  if (vendor) row.vendor = vendor;
+  if (url) row.url = url;
+  if (credentials.api_key !== undefined) row.apiKey = credentials.api_key;
+  for (const flag of ['supportsToolCall', 'supportsImages', 'supportsReasoning', 'useCustomProtocol', 'reasoning']) {
+    if (credentials[flag] !== undefined) row[flag] = credentials[flag];
+  }
+  return [row];
 }
 
 function stringifyRedacted(value: unknown): string {

@@ -1229,6 +1229,7 @@ export const zh = {
       endpoint: "端点",
       endpointHost: "主机",
       endpointAddress: "地址",
+      provider: "供应商",
       custom: "自定义",
       official: "官方",
       protocol: "接口",
