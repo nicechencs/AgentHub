@@ -1040,7 +1040,8 @@ fn workbuddy_auth_state() -> Result<AuthState> {
     })
 }
 
-/// WorkBuddy only speaks OpenAI Chat Completions at `/v1/chat/completions`.
+/// WorkBuddy writes `/v1/chat/completions`. OpenAI-compatible hosts that
+/// expose `/chat/completions` (DeepSeek official) are rewritten to the `/v1` path.
 pub(crate) fn normalize_workbuddy_chat_url(raw: &str) -> Result<String> {
     let trimmed = raw.trim().trim_end_matches('/');
     if trimmed.is_empty() {
@@ -1054,6 +1055,12 @@ pub(crate) fn normalize_workbuddy_chat_url(raw: &str) -> Result<String> {
     }
     if lower.ends_with("/v1") {
         return Ok(format!("{trimmed}/chat/completions"));
+    }
+    if let Some(prefix) = trimmed
+        .get(..trimmed.len() - "/chat/completions".len())
+        .filter(|_| lower.ends_with("/chat/completions"))
+    {
+        return Ok(format!("{prefix}{WORKBUDDY_CHAT_COMPLETIONS_SUFFIX}"));
     }
     Err(AppError::InvalidArg(
         "WorkBuddy 只认 /v1/chat/completions 端点".into(),
@@ -1407,7 +1414,10 @@ mod tests {
             normalize_workbuddy_chat_url("https://api.example.com/v1/").unwrap(),
             "https://api.example.com/v1/chat/completions"
         );
-        assert!(normalize_workbuddy_chat_url("https://api.deepseek.com/chat/completions").is_err());
+        assert_eq!(
+            normalize_workbuddy_chat_url("https://api.deepseek.com/chat/completions").unwrap(),
+            "https://api.deepseek.com/v1/chat/completions"
+        );
         assert!(normalize_workbuddy_chat_url("https://api.anthropic.com/v1/messages").is_err());
     }
 
@@ -1475,7 +1485,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_account_rejects_non_v1_chat_completions_url() {
+    fn apply_account_rewrites_chat_completions_to_v1_path() {
         let dir = tempfile_dir();
         with_workbuddy_config(&dir, || {
             let mut account = WorkBuddyAdapter
@@ -1483,14 +1493,14 @@ mod tests {
                 .unwrap();
             attach_api_key_catalog_fields(
                 &mut account.credentials,
-                Some("https://api.deepseek.com/chat/completions"),
-                Some("deepseek-v4-flash"),
+                Some("https://api.anthropic.com/v1/messages"),
+                Some("claude"),
             )
             .unwrap_err();
             attach_api_key_catalog_fields(
                 &mut account.credentials,
-                Some("https://api.qooo.io/v1/chat/completions"),
-                Some("grok-4.6"),
+                Some("https://api.deepseek.com/chat/completions"),
+                Some("deepseek-v4-flash"),
             )
             .unwrap();
             WorkBuddyAdapter.apply_account(&account).unwrap();
@@ -1498,10 +1508,10 @@ mod tests {
                 &fs::read_to_string(dir.join("models.json")).unwrap(),
             )
             .unwrap();
-            assert_eq!(written[0]["id"], "grok-4.6");
+            assert_eq!(written[0]["id"], "deepseek-v4-flash");
             assert_eq!(
                 written[0]["url"],
-                "https://api.qooo.io/v1/chat/completions"
+                "https://api.deepseek.com/v1/chat/completions"
             );
         });
         let _ = fs::remove_dir_all(&dir);
