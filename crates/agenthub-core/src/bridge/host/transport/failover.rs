@@ -27,7 +27,8 @@ use super::super::surface::DownstreamSurface;
 use super::super::upstream::{
     extract_upstream_error_detail, grok_replay_model, join_upstream, map_upstream_http_error,
     map_v2_request_error, pool_exhausted_response, post_upstream_attempt,
-    read_bounded_upstream_error, replay_session, UpstreamConnectError,
+    read_bounded_upstream_error, replay_session, timeout_response, upstream_header_timeout,
+    UpstreamConnectError,
 };
 use super::{
     identity_for_member, log_serving_account, UpstreamChannel, UpstreamPrepare, UpstreamSendOutcome,
@@ -159,11 +160,23 @@ pub async fn send_upstream_v2(
                 &token,
                 identity.as_ref(),
             );
-            let response = match post_upstream_attempt(state, builder, request_id).await {
+            let response = match post_upstream_attempt(
+                state,
+                builder,
+                request_id,
+                upstream_header_timeout(stream),
+            )
+            .await
+            {
                 Ok(response) => response,
                 Err(UpstreamConnectError::Stopping) => return Err(stopping_response()),
-                Err(UpstreamConnectError::Timeout | UpstreamConnectError::Unavailable) => {
-                    // Transient: failover only because no downstream byte is committed here.
+                Err(UpstreamConnectError::Timeout) => {
+                    // Headers timed out after the request was sent; upstream may
+                    // already be generating/billing. Do not replay onto another member.
+                    return Err(timeout_response());
+                }
+                Err(UpstreamConnectError::Unavailable) => {
+                    // Transport failed before a usable response — safe to try another member.
                     exclude_member(&mut excluded, &member);
                     break;
                 }

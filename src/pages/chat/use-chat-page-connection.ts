@@ -13,7 +13,7 @@ import {
 import { bindTicket, isActiveBindingForAgent } from '@/lib/api/tickets';
 import {
   describeProviderSwitchError,
-  SWITCH_WROTE_LIVE,
+  switchWroteLiveLabel,
 } from '@/pages/connections/use-connection-page-actions';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
 import type { AgentId, AgentStatus, Conversation, Provider } from '@/lib/types';
@@ -263,13 +263,13 @@ export function useChatPageConnection(input: {
         refreshAgents({ force: true }).catch(() => []),
       ]);
       toast({
-        title: wroteLocal ? SWITCH_WROTE_LIVE : t('chat.connection.switched'),
+        title: wroteLocal ? switchWroteLiveLabel(t) : t('chat.connection.switched'),
         variant: 'success',
       });
     } catch (e) {
       toast({
         title: t('connections.list.switchFail'),
-        description: describeProviderSwitchError(primaryAgent, e),
+        description: describeProviderSwitchError(primaryAgent, e, t),
         variant: 'danger',
       });
     } finally {

@@ -1,6 +1,7 @@
 /** Capability matrix types — aligned with agenthub_core models::capability.
  * Pure model + helpers only. Browser demo matrix lives in src/dev/mocks/capabilities.ts.
  */
+import type { TranslateFn } from '@/lib/i18n';
 
 export type Capability =
   | 'configWrite'
@@ -56,6 +57,7 @@ export interface ProviderCapabilityGate {
 
 export function providerCapabilityGate(
   capabilities?: AgentCapabilities | null,
+  t?: TranslateFn,
 ): ProviderCapabilityGate {
   const configWrite = capabilities?.configWrite;
   const providerPresets = capabilities?.providerPresets;
@@ -67,7 +69,9 @@ export function providerCapabilityGate(
       canManage: false,
       canSwitch: false,
       canUsePresets,
-      reason: configWrite?.reason ?? '该 Agent 不支持配置写入',
+      reason:
+        configWrite?.reason ??
+        (t ? t('connections.capability.configWriteUnsupported') : 'This agent does not support config writes'),
     };
   }
   return { canManage: true, canSwitch: true, canUsePresets };

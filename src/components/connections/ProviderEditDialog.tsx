@@ -45,6 +45,7 @@ import {
   PI_PROVIDER_SLOT_OPTIONS,
   piFormRequiresBaseUrl,
   piProviderSlotHint,
+  piProviderSlotLabel,
 } from '@/lib/pi-provider-slots';
 import {
   getAgentConfigSchema,
@@ -1209,12 +1210,12 @@ export function ProviderEditDialog({
                     <SelectContent>
                       {piSlotSelectOptions(vars.providerSlug).map((slot) => (
                         <SelectItem key={slot.id} value={slot.id}>
-                          {slot.label}
+                          {piProviderSlotLabel(slot.id, t)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="text-meta text-muted">{piProviderSlotHint(piSlug)}</span>
+                  <span className="text-meta text-muted">{piProviderSlotHint(piSlug, t)}</span>
                 </label>
               ) : null}
               <label className="flex flex-col gap-1.5">

@@ -67,11 +67,29 @@ pub(crate) fn validate_safe_path_component(name: &str) -> Result<()> {
             "path component must not contain control characters: {name:?}"
         )));
     }
-    // Colon (ADS), angle brackets, quote, pipe, wildcards, and other Windows-illegal chars.
-    if name
-        .chars()
-        .any(|c| matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*' | '/' | '\\'))
-    {
+    // Colon (ADS), angle brackets, quote, pipe, wildcards, and other Windows-illegal
+    // chars. Also reject cmd.exe metacharacters: Windows junction creation still
+    // shells out to `cmd /C mklink /J`, and Rust's argv quoting does not escape
+    // `&`, `^`, `%`, `!`, or parentheses for cmd.exe.
+    if name.chars().any(|c| {
+        matches!(
+            c,
+            '<' | '>'
+                | ':'
+                | '"'
+                | '|'
+                | '?'
+                | '*'
+                | '/'
+                | '\\'
+                | '&'
+                | '^'
+                | '%'
+                | '!'
+                | '('
+                | ')'
+        )
+    }) {
         return Err(AppError::InvalidArg(format!(
             "path component contains reserved or non-portable characters: {name:?}"
         )));

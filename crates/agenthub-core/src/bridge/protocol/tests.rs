@@ -8,11 +8,11 @@ use super::{
     anthropic_messages::{
         anthropic_message_to_ir, encode_anthropic_message, encode_anthropic_sse,
         parse_messages_request, to_anthropic_messages_request,
-        translate_responses_to_anthropic_request, AnthropicStreamToIr,
+        translate_responses_to_anthropic_request, AnthropicStreamToIr, IrToAnthropicSse,
     },
     chat::{
-        encode_chat_from_ir, parse_chat_request, sse_frame, translate_chat_response,
-        ChatStreamToIr, ResponsesSseTranslator,
+        encode_chat_from_ir, encode_chat_sse, parse_chat_request, sse_frame,
+        translate_chat_response, ChatStreamToIr, IrToChatSse, ResponsesSseTranslator,
     },
     fixture_loader::fixture,
     responses::{
@@ -1598,6 +1598,106 @@ fn anthropic_sse_to_ir_to_responses_sse_tool_chunks() {
     assert!(joined.contains("\"call_id\":\"call_weather\""));
     assert!(joined.contains("\"delta\":\"{\\\"city\\\":\""));
     assert!(joined.contains("response.completed"));
+}
+
+#[test]
+fn ir_to_anthropic_sse_incremental_matches_batch_encode_for_many_text_deltas() {
+    let mut ir = vec![IrEvent::MessageStart {
+        id: "msg_incremental".to_owned(),
+        model: "claude-sonnet-4-20250514".to_owned(),
+    }];
+    for index in 0..500 {
+        ir.push(IrEvent::TextDelta {
+            text: format!("chunk-{index} "),
+        });
+    }
+    ir.push(IrEvent::Usage {
+        input_tokens: 10,
+        output_tokens: 500,
+        cached_input_tokens: None,
+    });
+    ir.push(IrEvent::MessageEnd {
+        stop_reason: StopReason::Stop,
+    });
+
+    let batch = encode_anthropic_sse(&ir).expect("batch encode");
+
+    // Pushing events one at a time must never require holding the prior IR
+    // history: each call only sees the single event handed to it.
+    let mut encoder = IrToAnthropicSse::new();
+    let incremental = ir
+        .iter()
+        .flat_map(|event| encoder.push_event(event).expect("incremental encode"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(incremental, batch);
+    assert!(incremental.join("").contains("chunk-499 "));
+}
+
+#[test]
+fn ir_to_chat_sse_incremental_matches_batch_encode_for_many_text_deltas() {
+    let mut ir = vec![IrEvent::MessageStart {
+        id: "msg_incremental_chat".to_owned(),
+        model: "grok-4".to_owned(),
+    }];
+    for index in 0..500 {
+        ir.push(IrEvent::TextDelta {
+            text: format!("piece-{index} "),
+        });
+    }
+    ir.push(IrEvent::Usage {
+        input_tokens: 7,
+        output_tokens: 500,
+        cached_input_tokens: None,
+    });
+    ir.push(IrEvent::MessageEnd {
+        stop_reason: StopReason::Stop,
+    });
+
+    let batch = encode_chat_sse(&ir, Some("req_incremental")).expect("batch encode");
+
+    let mut encoder = IrToChatSse::new(Some("req_incremental"));
+    let mut incremental = ir
+        .iter()
+        .flat_map(|event| encoder.push_event(event).expect("incremental encode"))
+        .collect::<Vec<_>>();
+    incremental.extend(encoder.finish().expect("finish"));
+
+    assert_eq!(incremental, batch);
+    assert!(incremental.join("").contains("piece-499 "));
+    assert!(incremental.last().unwrap().contains("[DONE]"));
+}
+
+#[test]
+fn ir_to_chat_sse_finish_is_idempotent_and_defers_terminal_frames() {
+    let mut encoder = IrToChatSse::new(Some("req_finish"));
+    let mut frames = encoder
+        .push_event(&IrEvent::MessageStart {
+            id: "msg_finish".to_owned(),
+            model: "grok-4".to_owned(),
+        })
+        .expect("start");
+    frames.extend(
+        encoder
+            .push_event(&IrEvent::TextDelta {
+                text: "hello".to_owned(),
+            })
+            .expect("text delta"),
+    );
+    // MessageEnd only records terminal state; no [DONE] yet.
+    let on_end = encoder
+        .push_event(&IrEvent::MessageEnd {
+            stop_reason: StopReason::Stop,
+        })
+        .expect("message end");
+    assert!(on_end.is_empty());
+    assert!(!frames.iter().any(|frame| frame.contains("[DONE]")));
+
+    let finished = encoder.finish().expect("finish emits terminal frames");
+    assert!(finished.last().unwrap().contains("[DONE]"));
+
+    // finish() is idempotent: a second call without another MessageEnd emits nothing.
+    assert!(encoder.finish().expect("idempotent finish").is_empty());
 }
 
 #[test]

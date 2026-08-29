@@ -341,7 +341,7 @@ export function extrasFromPoolSource(
   };
 
   if (source.account) {
-    const row = toCredentialRow({ source: 'account', account: source.account });
+    const row = toCredentialRow({ source: 'account', account: source.account }, t);
     extras.identity =
       ticket.credentialClass === 'oauth'
         ? source.account.email
@@ -389,7 +389,7 @@ export function extrasFromPoolSource(
   }
 
   if (source.provider) {
-    const row = toCredentialRow({ source: 'provider', provider: source.provider });
+    const row = toCredentialRow({ source: 'provider', provider: source.provider }, t);
     const endpoint = providerEndpointExtras(source.provider);
     extras.endpointMode = endpoint.endpointMode;
     extras.endpointHost = endpoint.endpointHost;

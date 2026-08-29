@@ -230,7 +230,7 @@ export function buildAgentCardView(
     kind === 'account'
       ? t
         ? t('dashboard.overview.hintAccount')
-        : '官方登录'
+        : 'Official login'
       : kind === 'api'
         ? t
           ? t('dashboard.overview.hintApi')

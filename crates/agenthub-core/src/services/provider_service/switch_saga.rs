@@ -72,12 +72,15 @@ impl ProviderService {
         let live_for_backfill = if live_config_is_empty(&live_before.raw) {
             None
         } else if let Some(current) = current.as_ref() {
-            Some(
-                self.secret_resolver
-                    .scrub_for_backfill(current, &live_before.raw)?,
-            )
+            let mut scrubbed = self
+                .secret_resolver
+                .scrub_for_backfill(current, &live_before.raw)?;
+            crate::adapters::strip_codex_live_auth_file(&mut scrubbed);
+            Some(scrubbed)
         } else {
-            Some(live_before.raw.clone())
+            let mut raw = live_before.raw.clone();
+            crate::adapters::strip_codex_live_auth_file(&mut raw);
+            Some(raw)
         };
         let backfilled_provider_id = current
             .as_ref()
