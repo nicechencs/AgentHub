@@ -45,6 +45,8 @@ pub mod targets {
     pub const SETTINGS: &str = "core.settings";
     pub const USAGE: &str = "core.usage";
     pub const OAUTH: &str = "core.oauth";
+    /// Ticket bind / local Routes / bridge lifecycle milestones.
+    pub const ADAPTER: &str = "core.adapter";
     pub const CLI: &str = "cli";
     pub const GUI: &str = "gui";
 }

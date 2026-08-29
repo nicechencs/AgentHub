@@ -5,6 +5,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { agentDisplayName } from '@/config/agents';
+import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
@@ -94,11 +95,16 @@ export function ImportRouteDialog({
         sourceId: picked.id,
         agentId: picked.agentId,
       });
+      void logGuiEvent('route_import', { agent: picked.agentId });
       setSelected(null);
       setExpanded(new Set());
       onOpenChange(false);
       onImported();
     } catch (cause) {
+      void logGuiEvent('route_import_fail', {
+        agent: picked.agentId,
+        code: guiErrorCode(cause),
+      });
       setError(cause instanceof Error ? cause.message : t('routes.import.fallback'));
     } finally {
       setBusy(false);

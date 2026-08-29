@@ -25,6 +25,7 @@ import {
 } from '@/lib/api/agent-connection';
 import type { AdapterProfile } from '@/lib/api/adapter';
 import { buildConnectionsGuideUrl } from '@/lib/connect-flow/connect-intent';
+import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
 import type { AgentId } from '@/lib/types';
 import type {
   ConnectFlowDialogProps,
@@ -352,6 +353,25 @@ export function ConnectFlowDialog({
         });
         if (session !== sessionRef.current) return;
         dispatch(settled.event);
+        if (settled.event.type === 'apply_succeeded') {
+          void logGuiEvent('bind', {
+            agent: settled.event.result.profile.targetAgentId,
+            profileId: settled.event.result.profile.id,
+            route: settled.event.result.profile.route,
+          });
+        } else if (settled.event.type === 'switch_succeeded') {
+          void logGuiEvent('switch', { agent: settled.event.agentId });
+        } else if (settled.event.type === 'apply_failed') {
+          void logGuiEvent('bind_fail', {
+            agent: currentTargetAgentId(begun.next) ?? undefined,
+            code: guiErrorCode(settled.event.error),
+          });
+        } else if (settled.event.type === 'switch_failed') {
+          void logGuiEvent('switch_fail', {
+            agent: selectedOption?.agentId ?? currentTargetAgentId(begun.next) ?? undefined,
+            code: guiErrorCode(settled.event.error),
+          });
+        }
         if (settled.event.type !== 'apply_succeeded' && settled.event.type !== 'switch_succeeded') return;
         if (session !== sessionRef.current) return;
         const outcome = settled.event.type === 'apply_succeeded'

@@ -4,7 +4,7 @@ description: CLI、GUI、core 和本机 Routes 共用的日志文件、级别、
 type: reference
 audience: user-and-contributor
 status: current
-updated: 2026-08-27
+updated: 2026-08-29
 ---
 
 # 日志参考
@@ -32,7 +32,7 @@ CLI 和 GUI 都调用 `agenthub-core::logging` 初始化同一套 tracing。生�
 
 ## 目标和字段
 
-核心目标常量包括：`core.boot`、`core.storage`、`core.lock`、`core.provider`、`core.account`、`core.backup`、`core.install`、`core.detect`、`core.skill`、`core.chat`、`core.project`、`core.run`、`core.capability`、`core.settings`、`core.usage`、`core.oauth`、`cli`、`gui`。
+核心目标常量包括：`core.boot`、`core.storage`、`core.lock`、`core.provider`、`core.account`、`core.backup`、`core.install`、`core.detect`、`core.skill`、`core.chat`、`core.project`、`core.run`、`core.capability`、`core.settings`、`core.usage`、`core.oauth`、`core.adapter`、`cli`、`gui`。
 
 本机 Routes 使用 `core.adapter` 和 `core.adapter.protocol`。部分 helper 通过 `module=` 字段记录逻辑模块，直接 tracing 调用通过 target 记录；排障时两者都搜。
 
@@ -59,13 +59,22 @@ CLI 和 GUI 都调用 `agenthub-core::logging` 初始化同一套 tracing。生�
 |---|---|---|
 | `gui` | `recognize` | 智能识别粘贴成功 |
 | `gui` | `use_official` | 勾选或取消「使用官方服务」 |
+| `gui` | `list_remote` | 拉取远程模型列表 |
+| `gui` | `switch` / `switch_fail` | 连接页或连接流程切换登录 |
+| `gui` | `bind` / `bind_fail` | 连接页跨 Agent 接入，或连接流程确认应用 |
+| `gui` | `delete_connection` / `delete_connection_fail` | 连接页删除进回收站 |
+| `gui` | `route_create` / `route_import` / `route_edit`（及对应 `_fail`） | 路由页新建 / 导入 / 编辑 |
+| `gui` | `bridge_start` / `bridge_stop` / `bridge_remove` / `bridge_enroll`（及对应 `_fail`） | 路由页启动 / 停止 / 移除 / 纳入默认池 |
+| `gui` | `switch_write` | 路由页「写入登录」成功；带 `last4` |
 | `core.provider` | `recycle` | 登录被送进回收站 |
 | `core.provider` | `switch_write` | 切换真正写了本机配置路径；带 `agent` 与 `last4`（`**xxxx`），从不写完整钥匙 |
 | `core.provider` | `switch` | 切换结束；失败时带 `code=provider.switch.rollback` |
+| `core.adapter` | `bind` / `unbind` | Ticket 绑定 / 解绑结束；成功带 `route` / `profile_id`，失败带 `code` |
+| `core.adapter` | `apply_bridge` / `start` / `stop` | 本机转发应用 / 启动 / 停止里程碑；带 `profile_id` |
 | `core.chat` | `send` | 对话一轮结束；Agent 失败时记 `send failed`，不记 `send ok` |
 | `core.install` | `install_agent` | 安装结束；只打开官网时带 `code=setup_guide`，不是安装失败 |
 
-前端 `logger.ts` 只打开发控制台。要进当天 `.log` 文件，GUI 事件必须走桌面后端（例如 `log_gui_event`）。
+前端 `logger.ts` 只打开发控制台。要进当天 `.log` 文件，GUI 事件必须走桌面后端（例如 `log_gui_event`）。`log_gui_event` 可选字段：`agent`、`last4`、`profile_id`、`route`、`code`；从不写明文钥匙。
 
 ## 必须脱敏
 

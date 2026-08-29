@@ -83,6 +83,9 @@ pub async fn log_gui_event(
     op: String,
     agent: Option<String>,
     last4: Option<String>,
+    profile_id: Option<String>,
+    route: Option<String>,
+    code: Option<String>,
 ) -> Result<(), String> {
     let op = op.trim().to_string();
     if op.is_empty() {
@@ -94,6 +97,9 @@ pub async fn log_gui_event(
         op = %op,
         agent = agent.as_deref().unwrap_or("-"),
         last4 = last4.as_deref().unwrap_or(""),
+        profile_id = profile_id.as_deref().unwrap_or("-"),
+        route = route.as_deref().unwrap_or("-"),
+        code = code.as_deref().unwrap_or(""),
         "gui event"
     );
     Ok(())

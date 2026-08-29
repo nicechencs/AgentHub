@@ -197,7 +197,18 @@ async fn apply_local_bridge_locked(
     .await;
 
     match result {
-        Ok(result) => Ok(result),
+        Ok(result) => {
+            tracing::info!(
+                target: "core.adapter",
+                op = "apply_bridge",
+                profile_id = %result.profile.id,
+                agent = result.profile.target_agent_id.as_str(),
+                route = "local_bridge",
+                port = port,
+                "local bridge applied"
+            );
+            Ok(result)
+        }
         Err(error) => {
             let listener_compensated =
                 compensate_started_bridge(&host, &profile_id, owns_listener).await;
@@ -242,6 +253,15 @@ pub(crate) async fn start_local_bridge(
         .status(&applied.profile.id)
         .map_err(map_bridge_host_error)?
         .ok_or_else(|| "bridge listener did not report a runtime status".to_string())?;
+    tracing::info!(
+        target: "core.adapter",
+        op = "start",
+        profile_id = %applied.profile.id,
+        agent = applied.profile.target_agent_id.as_str(),
+        route = "local_bridge",
+        port = status.port,
+        "local bridge started"
+    );
     Ok(status_dto(&host, &applied.profile.id, AdapterBridgeStatusDto::from_runtime(status)))
 }
 
@@ -281,8 +301,24 @@ pub(crate) async fn unbind_local_bridge(
         let restart = apply_local_bridge_locked(hub, host, coordinator, restart)
             .await
             .map(|_| ());
+        tracing::error!(
+            target: "core.adapter",
+            op = "unbind",
+            profile_id = %profile_id,
+            agent = profile.target_agent_id.as_str(),
+            route = "local_bridge",
+            "local bridge unbind failed; listener restart attempted"
+        );
         return Err(surface_unbind_and_restart(error, restart));
     }
+    tracing::info!(
+        target: "core.adapter",
+        op = "unbind",
+        profile_id = %profile_id,
+        agent = profile.target_agent_id.as_str(),
+        route = "local_bridge",
+        "local bridge unbound"
+    );
     Ok(())
 }
 
@@ -300,6 +336,14 @@ pub(crate) async fn stop_local_bridge(
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
     let profile = load_bridge_profile(hub, profile_id).await?;
     let status = stop_bridge_runtime(&host, &profile).await?;
+    tracing::info!(
+        target: "core.adapter",
+        op = "stop",
+        profile_id = %profile.id,
+        agent = profile.target_agent_id.as_str(),
+        route = "local_bridge",
+        "local bridge stopped"
+    );
     Ok(status_dto(&host, &profile.id, AdapterBridgeStatusDto::from_runtime(status)))
 }
 
