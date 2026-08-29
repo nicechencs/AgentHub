@@ -161,5 +161,43 @@ describe('AgentDetailPanel markup', () => {
     expect(html).not.toContain('/v1/chat/completions');
     expect(html).not.toContain('/v1/messages');
     expect(html).toContain('~/.pi/agent');
+    expect(html).toContain('打开配置目录');
+    expect(html).toContain('打开安装目录');
+    expect(html).not.toMatch(/>目录</);
+  });
+
+  it('opens an empty detail for an uninstalled agent', () => {
+    const html = renderPanel({
+      agentId: 'workbuddy',
+      installed: false,
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+    });
+    expect(html).toContain('WorkBuddy');
+    expect(html).toContain('未安装');
+    expect(html).toContain('端点类型');
+    expect(html).toContain('随当前登录而定');
+    expect(html).toContain('~/.workbuddy');
+    expect(html).toContain('卸载并删除配置');
+    expect(html).not.toContain('仅卸载程序');
+    expect(html).not.toMatch(/>native</);
+  });
+
+  it('labels leftover copies as leftover, not as another version', () => {
+    const html = renderPanel({
+      ...installed('codex', 'npm'),
+      extraCopies: [
+        {
+          path: '/home/box/.agenthub/npm/bin/codex',
+          kind: 'leftover-agenthub',
+          version: '0.50.0',
+        },
+      ],
+    });
+    expect(html).toContain('遗留数据目录 npm');
+    expect(html).toContain('/v1/responses');
+    expect(html).not.toMatch(/>native</);
+    expect(html).not.toMatch(/>npm</);
   });
 });

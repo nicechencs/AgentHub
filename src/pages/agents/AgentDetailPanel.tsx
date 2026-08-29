@@ -59,7 +59,9 @@ export function AgentDetailPanel({
   const installs = listAgentInstalls(agent);
   const spawn = spawnInstall(agent);
   const canUninstallProgram = canUninstallProgramInApp(agent);
-  const versionLabel = formatAgentVersion(agent.version);
+  const versionLabel = agent.installed
+    ? formatAgentVersion(agent.version)
+    : t('agents.card.notInstalled');
   const [confirmDialog, setConfirmDialog] = React.useState<AgentCardConfirmKind>(null);
   const [confirmName, setConfirmName] = React.useState('');
   const [uninstalling, setUninstalling] = React.useState(false);
@@ -80,9 +82,7 @@ export function AgentDetailPanel({
       .then((paths) => {
         if (!cancelled) setResolvedConfigDir(paths.openDir);
       })
-      .catch(() => {
-        if (!cancelled) setResolvedConfigDir(null);
-      });
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -185,7 +185,9 @@ export function AgentDetailPanel({
       <section className="mt-4">
         <h3 className="mb-2 text-body font-medium">{t('agents.detail.installLocations')}</h3>
         {installs.length === 0 ? (
-          <p className="text-meta text-muted">{t('agents.env.noInstallPath')}</p>
+          <p className="text-meta text-muted">
+            {agent.installed ? t('agents.env.noInstallPath') : t('agents.card.notInstalled')}
+          </p>
         ) : (
           <ul className="flex flex-col gap-3">
             {installs.map((inst) => (
@@ -208,6 +210,7 @@ export function AgentDetailPanel({
             <span className="min-w-0 break-all font-mono text-meta text-secondary">{configDir}</span>
             <OpenDirButton
               disabled={opening !== null || uninstalling}
+              label={t('agents.card.openConfigDir')}
               title={t('agents.card.openConfigDirTitle')}
               onClick={openConfigDir}
             />
@@ -223,21 +226,27 @@ export function AgentDetailPanel({
               size="sm"
               variant="outline"
               disabled={uninstalling || opening !== null}
+              title={t('agents.dialog.uninstallDesc')}
               onClick={() => setConfirmDialog('program')}
             >
               {t('agents.card.uninstallProgram')}
             </Button>
-          ) : (
+          ) : agent.installed ? (
             <p className="text-meta text-muted">
               {spawn
                 ? uninstallViaLabel(spawn.uninstallVia, t)
                 : t('agents.card.uninstallViaDesktop')}
             </p>
-          )}
+          ) : null}
           <Button
             size="sm"
             variant="danger"
             disabled={uninstalling || opening !== null}
+            title={
+              isSpecialInstallChannel(agent.channel)
+                ? t('agents.dialog.uninstallConfigKeepsApp')
+                : t('agents.dialog.uninstallConfigDesc')
+            }
             onClick={() => setConfirmDialog('config')}
           >
             {t('agents.card.uninstallConfig')}
@@ -269,14 +278,15 @@ export function AgentDetailPanel({
 
 function OpenDirButton({
   disabled,
+  label,
   title,
   onClick,
 }: {
   disabled: boolean;
+  label: string;
   title: string;
   onClick: () => void;
 }) {
-  const { t } = useI18n();
   return (
     <Button
       size="sm"
@@ -288,7 +298,7 @@ function OpenDirButton({
       onClick={onClick}
     >
       <FolderOpen className="h-3 w-3" />
-      {t('agents.detail.openFolder')}
+      {label}
     </Button>
   );
 }
@@ -322,6 +332,7 @@ function InstallLocationRow({
         </div>
         <OpenDirButton
           disabled={!openable || busy}
+          label={t('agents.card.openInstallDir')}
           title={t('agents.card.openInstallDir')}
           onClick={onOpen}
         />
