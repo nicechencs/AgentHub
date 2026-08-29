@@ -135,7 +135,3 @@ export function dismissAlertLocal(id: string, alerts: DashboardAlert[]): void {
   saveDismissed(map);
 }
 
-/** Test helper */
-export function __resetDismissedAlertsForTests(): void {
-  saveDismissed({});
-}

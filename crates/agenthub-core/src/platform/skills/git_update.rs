@@ -1,8 +1,6 @@
 //! Atomic git skill update: fetch into staging, never `git pull` on live.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use crate::utils::process::apply_no_window;
 
 use crate::error::{AppError, Result};
 use crate::platform::skills::fs_safe::{
@@ -57,33 +55,34 @@ pub(crate) fn prepare_git_skill_staging(
     let staging = unique_staging(skills_root, skill_id)?;
     let (url, branch) = parse_git_locator(locator);
 
-    let clone_status = {
-        let mut cmd = if let Some(branch) = branch.as_deref() {
-            let mut cmd = Command::new("git");
-            cmd.args([
+    let staging_str = staging.to_string_lossy().into_owned();
+    let clone_result = if let Some(branch) = branch.as_deref() {
+        crate::utils::process::run_capture_timeout(
+            "git",
+            &[
                 "clone",
                 "--depth",
                 "1",
                 "--branch",
                 branch,
                 &url,
-                &staging.to_string_lossy(),
-            ]);
-            cmd
-        } else {
-            let mut cmd = Command::new("git");
-            cmd.args(["clone", "--depth", "1", &url, &staging.to_string_lossy()]);
-            cmd
-        };
-        apply_no_window(&mut cmd);
-        cmd.status()
+                &staging_str,
+            ],
+            std::time::Duration::from_secs(120),
+        )
+    } else {
+        crate::utils::process::run_capture_timeout(
+            "git",
+            &["clone", "--depth", "1", &url, &staging_str],
+            std::time::Duration::from_secs(120),
+        )
     }
     .map_err(|e| {
         let _ = std::fs::remove_dir_all(&staging);
         AppError::message("skill.update", format!("git clone failed: {e}"))
     })?;
 
-    if !clone_status.success() {
+    if !clone_result.status.success() {
         let _ = std::fs::remove_dir_all(&staging);
         // Never put raw locator/userinfo into AppError (may reach ERROR logs).
         let safe_url = redact_url_userinfo(&url);
