@@ -105,9 +105,9 @@ function providerSubtitle(
     : (t ? t('connections.list.configuredIdle', { mode: modeLabel }) : `已配置 · 未生效 · ${modeLabel}`);
 }
 
-function ticketSubtitle(ticket: TicketView): string {
-  const classLabel = ticketCredentialClassLabel(ticket.credentialClass);
-  const surface = ticketSurfaceLabel(ticket.surface);
+function ticketSubtitle(ticket: TicketView, t?: TranslateFn): string {
+  const classLabel = ticketCredentialClassLabel(ticket.credentialClass, t);
+  const surface = ticketSurfaceLabel(ticket.surface, t);
   if (surface && surface !== classLabel) {
     return `${classLabel} · ${surface}`;
   }
@@ -157,6 +157,7 @@ function fromProvider(provider: Provider, t?: TranslateFn): CredentialRow {
 function fromTicket(
   ticket: TicketView,
   isCurrent: boolean,
+  t?: TranslateFn,
 ): CredentialRow {
   return {
     key: ticket.id,
@@ -164,12 +165,12 @@ function fromTicket(
     id: ticket.sourceId,
     agentId: ticket.agentId,
     title: isInternalGeneratedName(ticket.label) ? formatLocalRouteLabel() : ticket.label,
-    subtitle: ticketSubtitle(ticket),
+    subtitle: ticketSubtitle(ticket, t),
     isCurrent,
     auth: {
       status: 'valid',
       health: 'configured',
-      label: ticketCredentialClassLabel(ticket.credentialClass),
+      label: ticketCredentialClassLabel(ticket.credentialClass, t),
     },
   };
 }
@@ -178,7 +179,7 @@ function fromTicket(
 export function toCredentialRow(input: CredentialRowInput, t?: TranslateFn): CredentialRow {
   if (input.source === 'account') return fromAccount(input.account, t);
   if (input.source === 'provider') return fromProvider(input.provider, t);
-  return fromTicket(input.ticket, input.isCurrent ?? false);
+  return fromTicket(input.ticket, input.isCurrent ?? false, t);
 }
 
 /** Provider endpoint fields for ConnectionEntry / ticket detail extras. */

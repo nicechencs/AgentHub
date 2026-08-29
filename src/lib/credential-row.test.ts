@@ -111,7 +111,32 @@ describe('toCredentialRow', () => {
       title: 'Claude OAuth',
       isCurrent: true,
     });
-    expect(row.subtitle).toContain('官方登录');
+    expect(row.subtitle).toContain('Official login');
+  });
+
+  it('translates the ticket credential/surface subtitle when a translator is passed', () => {
+    const tZh = createTranslator('zh');
+    const tEn = createTranslator('en');
+    const input = {
+      source: 'ticket' as const,
+      ticket: ticket({
+        id: 'account:t2',
+        sourceKind: 'account' as const,
+        sourceId: 't2',
+        label: 'Claude OAuth',
+        credentialClass: 'oauth' as const,
+        surface: 'claude-subscription' as const,
+      }),
+      isCurrent: true,
+    };
+
+    const zhRow = toCredentialRow(input, tZh);
+    expect(zhRow.subtitle).toContain('官方登录');
+    expect(zhRow.auth.label).toBe('官方登录');
+
+    const enRow = toCredentialRow(input, tEn);
+    expect(enRow.subtitle).toContain('Official login');
+    expect(enRow.auth.label).toBe('Official login');
   });
 
   it('translates the account idle subtitle when a translator is passed', () => {
