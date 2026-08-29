@@ -135,10 +135,17 @@ describe('liveConfigPaths', () => {
   });
 
   it('only exposes auth when it is a live file path', () => {
-    for (const agentId of ['claude', 'codex', 'kimi', 'grok', 'pi', 'workbuddy', 'cursor', 'unknown']) {
+    for (const agentId of ['claude', 'codex', 'kimi', 'grok', 'pi', 'workbuddy', 'cursor', 'zcode', 'unknown']) {
       const auth = liveConfigPaths(agentId).auth;
       if (auth) expect(isLiveFilePath(auth)).toBe(true);
     }
+  });
+
+  it('points ZCode at v2/config.json, not config.toml', () => {
+    const paths = liveConfigPaths('zcode');
+    expect(paths.config).toBe('~/.zcode/v2/config.json');
+    expect(paths.auth).toBe('~/.zcode/v2/config.json');
+    expect(paths.config).not.toMatch(/config\.toml/);
   });
 });
 

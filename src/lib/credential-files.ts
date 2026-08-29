@@ -27,6 +27,7 @@ export function authFileName(agentId: string): string {
   if (agentId === 'claude') return '.credentials.json';
   if (agentId === 'kimi') return 'kimi-code.json';
   if (agentId === 'dsh') return '.credentials.yaml';
+  if (agentId === 'zcode') return 'config.json';
   return 'auth.json';
 }
 
@@ -35,6 +36,7 @@ export function configFileName(agentId: string): string {
     return 'settings.json';
   }
   if (agentId === 'dsh') return 'cordis.patch.yml';
+  if (agentId === 'zcode') return 'config.json';
   return 'config.toml';
 }
 

@@ -45,3 +45,12 @@ tower = { version = "0.5", features = ["timeout"] }
 futures-util = "0.3"
 async-stream = "0.3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+
+# Line tables are enough for backtraces. Full debuginfo on Windows inflates
+# target/debug (PDBs + incremental objects) to tens of GB across tauri:dev and
+# cargo test. Incremental stays on; delete target/debug/incremental if it grows.
+[profile.dev]
+debug = 1
+
+[profile.test]
+debug = 1

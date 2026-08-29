@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   authFileName,
   configFileName,
+  defaultLivePathForFile,
   extractAccountCredentialFiles,
   extractProviderCredentialFiles,
   resolveCredentialFilePath,
@@ -15,6 +16,17 @@ describe('credential file names', () => {
     expect(configFileName('grok')).toBe('config.toml');
     expect(configFileName('claude')).toBe('settings.json');
     expect(configFileName('pi')).toBe('settings.json');
+    expect(configFileName('zcode')).toBe('config.json');
+    expect(authFileName('zcode')).toBe('config.json');
+  });
+
+  it('maps ZCode live files to v2/config.json, not config.toml', () => {
+    expect(defaultLivePathForFile('zcode', 'config.json')).toBe(
+      '~/.zcode/v2/config.json',
+    );
+    expect(defaultLivePathForFile('zcode', configFileName('zcode'))).toBe(
+      '~/.zcode/v2/config.json',
+    );
   });
 });
 

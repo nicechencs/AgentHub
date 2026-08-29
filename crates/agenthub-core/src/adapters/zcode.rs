@@ -320,9 +320,14 @@ impl AgentAdapter for ZcodeAdapter {
     fn build_run_spec(&self, binary: &Path, prompt: &str, opts: &RunOptions) -> Result<RunSpec> {
         // Prefer a real `zcode` CLI. Desktop .exe / .app is not a verified
         // headless entry — fail closed rather than inventing Electron argv.
+        // Windows is case-insensitive: `ZCode.exe` lowercases to `zcode.exe`,
+        // so reject by install path, not by name.
         let program = resolve_zcode_cli()
-            .filter(|p| p.is_file())
+            .filter(|p| p.is_file() && !is_desktop_app_binary(p))
             .or_else(|| {
+                if is_desktop_app_binary(binary) {
+                    return None;
+                }
                 let name = binary
                     .file_name()
                     .and_then(|s| s.to_str())
@@ -397,6 +402,26 @@ pub fn resolve_zcode_desktop() -> Option<PathBuf> {
 
 fn resolve_zcode_cli() -> Option<PathBuf> {
     which::which("zcode").ok()
+}
+
+/// Electron desktop binary, not a CLI. Windows cannot tell `ZCode.exe` from
+/// `zcode.exe` by case, so parent dir (`ZCode` / `MacOS`) is the signal.
+fn is_desktop_app_binary(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if name.ends_with(".appimage") {
+        return name.contains("zcode");
+    }
+    let parent = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    (name == "zcode.exe" || name == "zcode") && (parent == "zcode" || parent == "macos")
 }
 
 fn well_known_exe_paths() -> Vec<PathBuf> {
@@ -506,6 +531,19 @@ struct ProviderKeyHit {
     source: Option<String>,
 }
 
+fn is_non_portable_provider_secret(provider_id: &str, api_key: &str) -> bool {
+    let id = provider_id.to_ascii_lowercase();
+    if id.starts_with("builtin:") && (id.contains("coding-plan") || id.contains("start-plan")) {
+        return true;
+    }
+    looks_like_jwt(api_key)
+}
+
+fn looks_like_jwt(value: &str) -> bool {
+    let value = value.trim();
+    value.starts_with("eyJ") && value.bytes().filter(|&b| b == b'.').count() == 2
+}
+
 fn providers_with_api_key(providers: &Value) -> Vec<ProviderKeyHit> {
     let Some(map) = providers.as_object() else {
         return Vec::new();
@@ -524,6 +562,11 @@ fn providers_with_api_key(providers: &Value) -> Vec<ProviderKeyHit> {
         let Some(api_key) = key else {
             continue;
         };
+        // Coding Plan / Start Plan slots store a login JWT in apiKey.
+        // Those are not portable API keys and must not be imported.
+        if is_non_portable_provider_secret(id, api_key) {
+            continue;
+        }
         let enabled = obj
             .get("enabled")
             .and_then(Value::as_bool)
