@@ -1072,6 +1072,16 @@ export const en = {
     },
   },
   connections: {
+    capability: {
+      configWriteUnsupported: "This agent does not support config writes",
+    },
+    pi: {
+      xaiCustomLabel: "xAI (custom)",
+      kimiCustomLabel: "Kimi For Coding (custom)",
+      customServiceLabel: "Custom service",
+      authJsonHint: "The key is written to Pi's official login file (auth.json / {slug}). Leave the address blank to use the official service and models.",
+      modelsJsonHint: "This writes to Pi's custom service config (models.json / {slug}). A service address is required.",
+    },
     page: {
       title: "Connections",
       description: "Login list",
@@ -1154,6 +1164,10 @@ export const en = {
       switching: "Switching…",
       switchOk: "Switched",
       switchFail: "Switch failed",
+      switchWroteLive: "Wrote to local config",
+      failedToWriteLive: "Failed to write local config",
+      cursorLiveWriteUnsupportedFull:
+        "Failed to write local config. Cursor can't write this login to its local config yet. Use Cursor's own sign-in, or set CURSOR_API_KEY.",
       refresh: "Refresh",
       syncCurrentLogin: "Sync current login",
       refreshing: "Refreshing…",
@@ -1640,6 +1654,9 @@ export const en = {
       waitingLogs: "Waiting for CLI process logs…",
       runDetails: "Run details",
       command: "Command",
+      unrecognizedLine: "Unrecognized output line",
+      nonJsonLine: "Non-JSON line in structured mode",
+      lineTooLong: "Output line too long",
     },
     settings: {
       title: "Session settings",
@@ -2111,6 +2128,20 @@ export const en = {
     },
     toast: {
       cannotOpenDir: "Couldn't open folder",
+    },
+  },
+  env: {
+    runtimes: {
+      nodejs: { description: 'Hard dependency for npm-based channels like Claude / Codex' },
+      npm: { description: 'Usually installed with Node.js; if node is present but npm is missing, fix PATH or reinstall Node' },
+      powershell: {
+        description:
+          "Runtime for Windows native install scripts. Detects either 5.1 or 7 (pwsh); either one is enough. macOS/Linux don't check PowerShell — native installs use the official bash/sh scripts.",
+      },
+      git: {
+        description:
+          "Dependency for the Skills marketplace and git URL installs (git clone / pull). Not required by Agent install channels, but skills can't be installed from a remote source without it.",
+      },
     },
   },
 } as const satisfies Dict;

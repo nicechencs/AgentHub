@@ -1063,6 +1063,16 @@ export const zh = {
     },
   },
   connections: {
+    capability: {
+      configWriteUnsupported: "该 Agent 不支持配置写入",
+    },
+    pi: {
+      xaiCustomLabel: "xAI（自定义）",
+      kimiCustomLabel: "Kimi For Coding（自定义）",
+      customServiceLabel: "自定义服务",
+      authJsonHint: "密钥会写到 Pi 的官方登录文件（auth.json / {slug}）。不填地址时用官方服务和模型。",
+      modelsJsonHint: "会写到 Pi 的自定义服务配置（models.json / {slug}）。必须填写服务地址。",
+    },
     page: {
       title: "连接",
       description: "登录列表",
@@ -1145,6 +1155,10 @@ export const zh = {
       switching: "切换中…",
       switchOk: "已切换",
       switchFail: "切换失败",
+      switchWroteLive: "已写入本机配置",
+      failedToWriteLive: "未能写入本机配置",
+      cursorLiveWriteUnsupportedFull:
+        "未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。",
       refresh: "刷新",
       syncCurrentLogin: "同步当前登录",
       refreshing: "刷新中…",
@@ -1631,6 +1645,9 @@ export const zh = {
       waitingLogs: "等待 CLI 输出过程日志…",
       runDetails: "运行详情",
       command: "命令",
+      unrecognizedLine: "无法识别的输出行",
+      nonJsonLine: "结构化模式下出现非 JSON 行",
+      lineTooLong: "输出行过长",
     },
     settings: {
       title: "会话设置",
@@ -2102,6 +2119,20 @@ export const zh = {
     },
     toast: {
       cannotOpenDir: '无法打开目录',
+    },
+  },
+  env: {
+    runtimes: {
+      nodejs: { description: "Claude / Codex 等 npm 渠道的硬依赖" },
+      npm: { description: "通常随 Node.js 安装；若 node 在而 npm 不在，请修复 PATH 或重装 Node" },
+      powershell: {
+        description:
+          "Windows native 安装脚本运行时。可分别识别 5.1 与 7（pwsh），任一可用即可。macOS/Linux 不检测 PowerShell，native 安装走官方 bash/sh。",
+      },
+      git: {
+        description:
+          "Skills 市场与 git URL 安装依赖（git clone / pull）。Agent 安装渠道不强制要求，但缺失时无法从远程装技能。",
+      },
     },
   },
 } as const;

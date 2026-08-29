@@ -77,19 +77,19 @@ export function processPhaseLabel(phase: ProcessPhase, t: TranslateFn): string {
   }
 }
 
-/** Map parser raw-step notes to Chinese; keep unknown notes as-is. */
+/** Map parser raw-step notes to a localized label; keep unknown notes as-is. */
 function mapRawStepNote(note: string | null | undefined, t: TranslateFn): string {
   if (!note) return t('chat.process.rawEvent');
   switch (note) {
     case 'unrecognized structured line':
     case '无法识别的输出行':
-      return '无法识别的输出行';
+      return t('chat.process.unrecognizedLine');
     case 'non-json line in structured mode':
     case '结构化模式下出现非 JSON 行':
-      return '结构化模式下出现非 JSON 行';
+      return t('chat.process.nonJsonLine');
     case 'line too long':
     case '输出行过长':
-      return '输出行过长';
+      return t('chat.process.lineTooLong');
     default:
       return note;
   }

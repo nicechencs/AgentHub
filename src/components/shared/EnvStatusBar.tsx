@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { StatusPin } from '@/components/shared/StatusPin';
-import { RUNTIME_MAP } from '@/config/runtimes';
+import { RUNTIME_MAP, runtimeDescriptionKey } from '@/config/runtimes';
 import { resolveAutoInstallPlan } from '@/lib/api/env';
 import type { TranslateFn } from '@/lib/i18n';
 import type { EnvStatus, RuntimeDetect } from '@/lib/types';
@@ -142,7 +142,7 @@ export function EnvStatusBar({
                   label={
                     <>
                       <p className="font-medium">{meta.name}</p>
-                      <p className="text-muted">{meta.description}</p>
+                      <p className="text-muted">{t(runtimeDescriptionKey(meta.id))}</p>
                       {r.path && <p className="mt-1 font-mono text-meta">{r.path}</p>}
                       {r.notes?.map((n) => (
                         <p key={n} className="mt-0.5 font-mono text-meta text-secondary">

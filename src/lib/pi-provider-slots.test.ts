@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import {
   defaultPiProviderApi,
   isPiAuthJsonSlot,
@@ -8,6 +9,7 @@ import {
   PI_PROVIDER_SLOT_OPTIONS,
   piFormRequiresBaseUrl,
   piProviderSlotHint,
+  piProviderSlotLabel,
 } from './pi-provider-slots';
 
 const AUTH_IDS = [
@@ -42,13 +44,13 @@ describe('pi-provider-slots', () => {
     const ids = PI_PROVIDER_SLOT_OPTIONS.map((slot) => slot.id);
     expect(ids).toEqual([...AUTH_IDS, 'xai', 'kimi-for-coding', 'custom']);
     expect(PI_PROVIDER_SLOT_OPTIONS.find((slot) => slot.id === 'xai')?.label).toBe(
-      'xAI（自定义）',
+      'xAI (custom)',
     );
     expect(PI_PROVIDER_SLOT_OPTIONS.find((slot) => slot.id === 'kimi-for-coding')?.label).toBe(
-      'Kimi For Coding（自定义）',
+      'Kimi For Coding (custom)',
     );
     expect(PI_PROVIDER_SLOT_OPTIONS.find((slot) => slot.id === 'custom')?.label).toBe(
-      '自定义服务',
+      'Custom service',
     );
   });
 
@@ -62,5 +64,27 @@ describe('pi-provider-slots', () => {
     expect(defaultPiProviderApi('google')).toBe('google-generative-ai');
     expect(piProviderSlotHint('openai')).toContain('auth.json');
     expect(piProviderSlotHint('custom')).toContain('models.json');
+  });
+
+  it('piProviderSlotHint translates via t when passed (zh/en)', () => {
+    const tZh = createTranslator('zh');
+    const tEn = createTranslator('en');
+    expect(piProviderSlotHint('openai', tZh)).toContain('auth.json');
+    expect(piProviderSlotHint('openai', tZh)).toContain('官方登录文件');
+    expect(piProviderSlotHint('custom', tEn)).toContain('models.json');
+    expect(piProviderSlotHint('custom', tEn)).toContain('custom service config');
+  });
+
+  it('piProviderSlotLabel falls back to the English default and translates via t', () => {
+    expect(piProviderSlotLabel('xai')).toBe('xAI (custom)');
+    expect(piProviderSlotLabel('custom')).toBe('Custom service');
+    expect(piProviderSlotLabel('anthropic')).toBe('Anthropic');
+
+    const tZh = createTranslator('zh');
+    expect(piProviderSlotLabel('xai', tZh)).toBe('xAI（自定义）');
+    expect(piProviderSlotLabel('kimi-for-coding', tZh)).toBe('Kimi For Coding（自定义）');
+    expect(piProviderSlotLabel('custom', tZh)).toBe('自定义服务');
+    // Official auth.json slots have no dedicated key; label stays language-neutral.
+    expect(piProviderSlotLabel('anthropic', tZh)).toBe('Anthropic');
   });
 });
