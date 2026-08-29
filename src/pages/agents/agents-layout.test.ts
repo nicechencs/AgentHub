@@ -20,8 +20,10 @@ describe('agents layout wiring', () => {
     expect(page).toContain("t('common.resizeSidePanel')");
     expect(page).toContain('<AgentDetailPanel');
     expect(page).toContain('inspect.open(a.agentId)');
-    expect(page).toContain('a.installed ? () => inspect.open(a.agentId) : undefined');
-    expect(page).toContain('if (!inspectAgent?.installed) inspect.close()');
+    expect(page).toContain('onSelect={() => inspect.open(a.agentId)}');
+    expect(page).toContain('if (!liveIds.includes(inspect.target)) inspect.close()');
+    expect(page).not.toContain('a.installed ? () => inspect.open(a.agentId) : undefined');
+    expect(page).not.toContain('if (!inspectAgent?.installed) inspect.close()');
     expect(page).toContain('ListSkeleton');
     expect(page).toContain('<ErrorState');
     expect(page).toContain('<EmptyState');
@@ -30,12 +32,13 @@ describe('agents layout wiring', () => {
     expect(detail).toContain("t('agents.detail.endpointTypes')");
     expect(detail).toContain('installChannelDisplayLabel');
     expect(detail).toContain('displayAgentConfigDir');
-    expect(detail).toContain("t('agents.detail.openFolder')");
+    expect(detail).toContain("t('agents.card.openConfigDir')");
+    expect(detail).toContain("t('agents.card.openInstallDir')");
     expect(detail).toContain('flex items-center justify-between gap-2');
     expect(detail).toContain('<OpenDirButton');
     expect(detail).toContain("title={t('agents.card.openConfigDirTitle')}");
     expect(detail).toContain("title={t('agents.card.openInstallDir')}");
-    expect(card).toContain("t('agents.card.seeDetails')");
+    expect(card).toContain('agentListDetailsHint');
     expect(detail).toContain("t('agents.card.uninstallProgram')");
     expect(detail).toContain("t('agents.card.uninstallConfig')");
     expect(detail).toContain('listAgentInstalls');
@@ -48,8 +51,8 @@ describe('agents layout wiring', () => {
     expect(card).toContain('LIST_ROW_PAD');
     expect(card).toContain('size="sm"');
     expect(card).not.toContain('min-h-20');
-    expect(card).toContain("t('agents.card.seeDetails')");
     expect(card).toContain('uniqueInstallVersions');
+    expect(card).toContain('programInstalls');
     expect(card).not.toContain("t('agents.card.openInstallDir')");
     expect(card).not.toContain("t('agents.card.uninstallProgram')");
     expect(card).not.toContain("t('agents.detail.endpointTypes')");

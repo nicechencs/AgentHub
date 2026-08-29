@@ -1788,6 +1788,8 @@ export const zh = {
       unsupportedUpdate: "该 Agent 不支持自动更新检测",
       notInstalled: "未安装",
       seeDetails: "多个版本，点开看详情",
+      seeDetailsCopies: "另有 {count} 份，点开看详情",
+      seeDetailsLeftover: "另有遗留副本，点开看详情",
       envNotReady: "环境未就绪",
       oneClickInstall: "可一键安装",
       envReady: "环境就绪",

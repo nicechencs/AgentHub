@@ -1797,6 +1797,8 @@ export const en = {
       unsupportedUpdate: "This agent does not support automatic update checks",
       notInstalled: "Not installed",
       seeDetails: "Multiple versions — open for details",
+      seeDetailsCopies: "{count} other copies — open for details",
+      seeDetailsLeftover: "Leftover copies — open for details",
       envNotReady: "Runtime not ready",
       oneClickInstall: "One-click install",
       envReady: "Runtime ready",
