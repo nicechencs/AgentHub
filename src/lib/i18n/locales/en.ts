@@ -1312,7 +1312,7 @@ export const en = {
       modelIdPlaceholder: "Upstream model id, e.g. grok-4.6",
       endpoint: "Endpoint",
       endpointPlaceholder: "https://api.example.com/v1/chat/completions",
-      endpointHint: "WorkBuddy only accepts /v1/chat/completions",
+      endpointHint: "WorkBuddy writes /v1/chat/completions; DeepSeek's official URL is rewritten to include /v1",
       envField: "How the key is written",
       envHint: "When this connection is active, the key is written into Claude's config. The default is fine for most cases.",
       envAuthToken: "Default method",

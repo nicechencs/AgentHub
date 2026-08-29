@@ -1303,7 +1303,7 @@ export const zh = {
       modelIdPlaceholder: "发给上游的模型名，例如 grok-4.6",
       endpoint: "接口地址",
       endpointPlaceholder: "https://api.example.com/v1/chat/completions",
-      endpointHint: "WorkBuddy 只认 /v1/chat/completions",
+      endpointHint: "WorkBuddy 写入 /v1/chat/completions；DeepSeek 官方地址会自动补上 /v1",
       envField: "密钥写入方式",
       envHint: "设为当前连接时，会把密钥写进 Claude 配置。大多数情况用默认即可。",
       envAuthToken: "默认写法",
