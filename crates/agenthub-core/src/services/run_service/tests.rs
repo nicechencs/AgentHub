@@ -377,6 +377,27 @@ fn parallel_mock_invokes_runner_for_installed() {
 }
 
 #[test]
+fn skip_missing_does_not_abort_batch_when_run_spec_cannot_be_built() {
+    let svc = RunService::with_runner(register_all(), Arc::new(RecordingProcessRunner::new()));
+    let report = svc
+        .run(&AgentId::ALL, "keep-going", &opts())
+        .expect("one unlaunchable agent must not abort the batch");
+    assert_eq!(report.results.len(), AgentId::ALL.len());
+    let zcode = report
+        .results
+        .iter()
+        .find(|r| r.agent == AgentId::Zcode)
+        .expect("zcode result");
+    // Desktop-only ZCode has no verified headless argv → Skipped.
+    // A real `zcode` CLI on PATH is launchable → mock runner Ok.
+    assert!(
+        matches!(zcode.status, RunStatus::Skipped | RunStatus::Ok),
+        "unexpected zcode status {:?}",
+        zcode.status
+    );
+}
+
+#[test]
 fn run_each_rejects_empty_jobs_and_empty_prompt() {
     let svc = RunService::with_runner(register_all(), Arc::new(RecordingProcessRunner::new()));
     let cancel = CancelToken::new();
