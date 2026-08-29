@@ -96,6 +96,7 @@ export async function addApiKeyAccount(
   label?: string | null,
   envKey?: string | null,
   productMarker?: string | null,
+  extras?: { baseUrl?: string | null; modelId?: string | null } | null,
 ): Promise<Account> {
   const account = await getBackend().account.addApiKeyAccount(
     agentId,
@@ -103,6 +104,7 @@ export async function addApiKeyAccount(
     label,
     envKey,
     productMarker,
+    extras,
   );
   authStateChanged(agentId);
   return account;

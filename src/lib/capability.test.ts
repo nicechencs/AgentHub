@@ -128,7 +128,7 @@ describe('providerCapabilityGate', () => {
       expect(gate.canManage, id).toBe(true);
       expect(gate.canSwitch, id).toBe(true);
       expect(MOCK_CAPABILITIES[id]!.accountSwitch!.level).toBe(
-        id === 'pi' ? 'full' : 'unsupported',
+        id === 'pi' ? 'full' : 'partial',
       );
     }
   });
@@ -165,7 +165,7 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
 
   it('matches known product boundaries', () => {
     expect(MOCK_CAPABILITIES.kimi!.skills!.level).toBe('unsupported');
-    expect(MOCK_CAPABILITIES.workbuddy!.accountSwitch!.level).toBe('unsupported');
+    expect(MOCK_CAPABILITIES.workbuddy!.accountSwitch!.level).toBe('partial');
     expect(MOCK_CAPABILITIES.cursor!.accountSwitch!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.cursor!.providerPresets!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.claude!.accountSwitch!.level).toBe('full');
@@ -179,7 +179,8 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
     const disabled = AGENT_IDS.filter((id) =>
       isCapabilityBlocked(MOCK_CAPABILITIES[id]?.accountSwitch),
     );
-    expect(disabled).toEqual(expect.arrayContaining(['workbuddy', 'cursor']));
+    expect(disabled).toEqual(expect.arrayContaining(['cursor']));
+    expect(disabled).not.toContain('workbuddy');
     expect(disabled).not.toContain('claude');
     expect(disabled).not.toContain('kimi');
   });

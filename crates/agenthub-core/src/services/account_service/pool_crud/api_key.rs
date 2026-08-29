@@ -48,8 +48,29 @@ impl AccountService {
         env_key: Option<&str>,
         product_marker: Option<&str>,
     ) -> Result<Account> {
+        self.add_api_key_with_catalog(agent, label, api_key, env_key, product_marker, None, None)
+    }
+
+    pub fn add_api_key_with_catalog(
+        &self,
+        agent: AgentId,
+        label: Option<&str>,
+        api_key: &str,
+        env_key: Option<&str>,
+        product_marker: Option<&str>,
+        base_url: Option<&str>,
+        model_id: Option<&str>,
+    ) -> Result<Account> {
         let started = Instant::now();
-        let result = self.add_api_key_inner(agent, label, api_key, env_key, product_marker);
+        let result = self.add_api_key_inner(
+            agent,
+            label,
+            api_key,
+            env_key,
+            product_marker,
+            base_url,
+            model_id,
+        );
         log_account_op("add_api_key", agent, started, &result);
         result
     }
@@ -61,6 +82,8 @@ impl AccountService {
         api_key: &str,
         env_key: Option<&str>,
         product_marker: Option<&str>,
+        base_url: Option<&str>,
+        model_id: Option<&str>,
     ) -> Result<Account> {
         let adapter = self.adapter(agent)?;
         let live = adapter.build_api_key_account(api_key)?;
@@ -75,6 +98,13 @@ impl AccountService {
                     obj.insert("env_key".into(), json!(ek));
                 }
             }
+        }
+        if agent == AgentId::WorkBuddy {
+            crate::adapters::workbuddy::attach_api_key_catalog_fields(
+                &mut credentials,
+                base_url,
+                model_id,
+            )?;
         }
         let display = label
             .map(str::trim)

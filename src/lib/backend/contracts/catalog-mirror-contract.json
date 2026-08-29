@@ -125,9 +125,9 @@
         "sessionResume": "待验证接入"
       },
       "workbuddy": {
-        "configWrite": null,
-        "accountSwitch": "暂不支持账号池切换",
-        "apiKeyAccount": "暂不支持 API Key 账号池",
+        "configWrite": "只追加或更新一条自定义模型，不覆盖整份列表",
+        "accountSwitch": "只写入对应自定义模型，其它条目仍在列表里；不会改 WorkBuddy 当前选中的模型",
+        "apiKeyAccount": null,
         "skills": null,
         "liveBackup": null,
         "structuredStream": "CLI 仅提供 text 输出，无结构化事件流",
@@ -271,9 +271,9 @@
         "sessionResume": "待验证接入"
       },
       "workbuddy": {
-        "configWrite": null,
-        "accountSwitch": "暂不支持账号池切换",
-        "apiKeyAccount": "暂不支持 API Key 账号池",
+        "configWrite": "只追加或更新一条自定义模型，不覆盖整份列表",
+        "accountSwitch": "只写入对应自定义模型，其它条目仍在列表里；不会改 WorkBuddy 当前选中的模型",
+        "apiKeyAccount": null,
         "skills": null,
         "liveBackup": null,
         "structuredStream": "CLI 仅提供 text 输出，无结构化事件流",

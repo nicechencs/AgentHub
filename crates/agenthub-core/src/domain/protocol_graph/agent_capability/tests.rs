@@ -80,11 +80,11 @@ fn table_registers_every_agent_accepts_and_writer() {
     assert_eq!(workbuddy.accepts, &[AgentAccept::WorkBuddyModelsJson]);
     assert!(
         workbuddy.writer,
-        "workbuddy.rs ConfigWrite is Full / write_config projects models.json"
+        "workbuddy.rs ConfigWrite is Partial / write_config projects models.json"
     );
-    assert!(
-        AgentAccept::WorkBuddyModelsJson.hears().is_empty(),
-        "WorkBuddy slot has no documented ticket protocol"
+    assert_eq!(
+        AgentAccept::WorkBuddyModelsJson.hears(),
+        &[TicketProtocol::OpenaiChat]
     );
 
     let zcode = agent_bind_capability(AgentId::Zcode);

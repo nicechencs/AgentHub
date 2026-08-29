@@ -274,17 +274,14 @@ describe('buildSourceOptions', () => {
     expect(options[0]?.group).toBe('cross');
   });
 
-  it('marks native account switch blocked with Connections reason text (workbuddy catalog)', () => {
+  it('marks native WorkBuddy account switchable from catalog capabilities', () => {
     const options = buildSourceOptions({
       targetAgentId: 'workbuddy',
       accounts: [account({ id: 'wb-1', agentId: 'workbuddy', label: 'wb@local', isCurrent: false })],
       providers: [],
       profiles: [],
     });
-    expect(options[0]?.state).toEqual({
-      kind: 'blocked_native',
-      reason: '暂不支持账号池切换',
-    });
+    expect(options[0]?.state).toEqual({ kind: 'switchable' });
   });
 
   it('marks native provider switch blocked with Connections gate reason (cursor catalog)', () => {

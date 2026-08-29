@@ -254,8 +254,11 @@ impl ProviderService {
     pub(super) fn import_live_inner(&self, agent: AgentId, name: Option<&str>) -> Result<Provider> {
         let _lock = self.acquire_live_lock(agent)?;
         let adapter = self.adapter(agent)?;
-        let live = adapter.read_config()?;
+        let mut live = adapter.read_config()?;
         ensure_config_agent(&live, agent)?;
+        if agent == AgentId::Zcode {
+            crate::adapters::zcode::scrub_non_portable_provider_secrets(&mut live.raw);
+        }
         if live_config_is_empty(&live.raw) {
             return Err(AppError::NotFound(format!(
                 "no live provider config found for agent {}",

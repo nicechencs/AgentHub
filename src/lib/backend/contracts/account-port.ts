@@ -149,6 +149,7 @@ export interface AccountPort {
     label?: string | null,
     envKey?: string | null,
     productMarker?: string | null,
+    extras?: { baseUrl?: string | null; modelId?: string | null } | null,
   ): Promise<Account>;
   /** Update API Key account label and/or key. Omit/empty key keeps the stored secret. */
   updateApiKeyAccount(

@@ -65,9 +65,8 @@ impl AgentAccept {
                 TicketProtocol::AnthropicMessages,
             ],
             Self::OpenAiChat => &[TicketProtocol::OpenaiChat],
-            // workbuddy.rs writes models.json; ProviderPresets is unsupported
-            // and no ticket wire protocol is documented for that slot.
-            Self::WorkBuddyModelsJson => &[],
+            // workbuddy.rs writes models.json Chat Completions rows only.
+            Self::WorkBuddyModelsJson => &[TicketProtocol::OpenaiChat],
             // dsh.rs writes the official DeepSeek Chat Completions plugin row.
             Self::DshLlmPluginSlot => &[TicketProtocol::OpenaiChat],
             // zcode.rs upserts one provider row with a model list; edges still need matrix cells.
@@ -146,7 +145,7 @@ pub const fn agent_bind_capability(id: AgentId) -> AgentBindCapability {
             writer: false,
             occupancy: LiveOccupancy::Exclusive,
         },
-        // adapters/workbuddy.rs: ConfigWrite = Full, `write_config` merges models.json by id.
+        // adapters/workbuddy.rs: ConfigWrite = Partial, catalog-append one models.json row.
         AgentId::WorkBuddy => AgentBindCapability {
             accepts: &[AgentAccept::WorkBuddyModelsJson],
             writer: true,
