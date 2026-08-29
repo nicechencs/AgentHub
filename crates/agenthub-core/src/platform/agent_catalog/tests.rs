@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::adapters::{register_all, AdapterRegistry, AgentAdapter};
+use crate::domain::protocol_graph::LiveOccupancy;
 use crate::models::{AgentId, Capability, CapabilityLevel, CapabilityStateDto, RuntimeId};
 
 use super::{AgentCatalogService, AgentDescriptor, AgentKey, InstallChannelDescriptor};
@@ -264,6 +265,22 @@ fn descriptor_serde_roundtrip() {
     assert!(v.get("integrationVersion").is_some());
     assert!(v.get("installChannels").is_some());
     assert!(v.get("configSchemaVersion").is_some());
+    assert!(v.get("occupancy").is_some());
+}
+
+#[test]
+fn builtin_catalog_projects_live_occupancy() {
+    let catalog = AgentCatalogService::builtin().expect("builtin");
+    let zcode = catalog.get_str("zcode").expect("zcode");
+    assert_eq!(zcode.occupancy, LiveOccupancy::CatalogAppend);
+    let workbuddy = catalog.get_str("workbuddy").expect("workbuddy");
+    assert_eq!(workbuddy.occupancy, LiveOccupancy::CatalogAppend);
+    let claude = catalog.get_str("claude").expect("claude");
+    assert_eq!(claude.occupancy, LiveOccupancy::Exclusive);
+    let pi = catalog.get_str("pi").expect("pi");
+    assert_eq!(pi.occupancy, LiveOccupancy::NamedSlots);
+    let v = serde_json::to_value(zcode).expect("json");
+    assert_eq!(v.get("occupancy").and_then(|x| x.as_str()), Some("catalogAppend"));
 }
 
 #[test]
@@ -290,6 +307,7 @@ fn test_only_extra_descriptor_does_not_require_service_changes() {
             requires: vec![RuntimeId::NodeJs],
         }],
         config_schema_version: None,
+        occupancy: LiveOccupancy::Exclusive,
     };
     let catalog = AgentCatalogService::new(vec![demo.clone()]).expect("catalog");
     assert_eq!(catalog.len(), 1);
@@ -309,6 +327,7 @@ fn new_rejects_duplicate_keys() {
         capabilities: BTreeMap::new(),
         install_channels: vec![],
         config_schema_version: None,
+        occupancy: LiveOccupancy::Exclusive,
     };
     let err = AgentCatalogService::new(vec![d.clone(), d]).expect_err("dup");
     assert_eq!(err.code(), "invalid_arg");
@@ -378,6 +397,7 @@ fn open_key_descriptor_via_new_is_queryable_without_agent_id() {
             requires: vec![RuntimeId::NodeJs],
         }],
         config_schema_version: None,
+        occupancy: LiveOccupancy::Exclusive,
     };
     let catalog = AgentCatalogService::new(vec![demo]).expect("catalog");
     assert_eq!(catalog.len(), 1);

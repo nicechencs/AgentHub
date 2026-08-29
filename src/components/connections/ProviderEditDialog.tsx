@@ -33,6 +33,7 @@ import { useToast } from '@/components/ui/toast';
 import type { TranslateFn } from '@/lib/i18n';
 import { useAgentCatalog } from '@/app/runtime';
 import { agentDisplayName } from '@/config/agents';
+import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
 import {
   agentHasOfficialApiTemplate,
   officialApiDefaults,
@@ -886,6 +887,7 @@ export function ProviderEditDialog({
           saveVars,
           finalFormat,
           baseText,
+          occupancy: catalogEntry?.occupancy,
         },
         {
           validateAgentConfig,
@@ -916,10 +918,15 @@ export function ProviderEditDialog({
       toast({
         title: isEdit ? t('connections.apiKeyDialog.updated') : t('connections.apiKeyDialog.added'),
         description: result.provider.isCurrent
-          ? t('connections.providerDialog.wroteLocal', {
-              name: result.provider.name,
-              endpoint: endpointLabel,
-            })
+          ? t(
+              isCatalogAppendOccupancy(catalogEntry?.occupancy)
+                ? 'connections.providerDialog.wroteCatalog'
+                : 'connections.providerDialog.wroteLocal',
+              {
+                name: result.provider.name,
+                endpoint: endpointLabel,
+              },
+            )
           : t('connections.providerDialog.savedPool', {
               name: result.provider.name,
               endpoint: endpointLabel,

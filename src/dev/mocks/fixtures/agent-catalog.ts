@@ -62,6 +62,12 @@ function configSchemaVersionFor(agentId: string): number | null {
   return null;
 }
 
+function occupancyFor(agentId: string): AgentCatalogEntryDto['occupancy'] {
+  if (agentId === 'zcode' || agentId === 'workbuddy') return 'catalogAppend';
+  if (agentId === 'pi' || agentId === 'dsh') return 'namedSlots';
+  return 'exclusive';
+}
+
 function buildBuiltinCatalog(): AgentCatalogEntryDto[] {
   return MOCK_INSTALL_CATALOG.map((row) => ({
     key: row.agentId,
@@ -75,6 +81,7 @@ function buildBuiltinCatalog(): AgentCatalogEntryDto[] {
       requires: ch.requires,
     })),
     configSchemaVersion: configSchemaVersionFor(row.agentId),
+    occupancy: occupancyFor(row.agentId),
   }));
 }
 
@@ -111,6 +118,7 @@ export const MOCK_UNKNOWN_DEMO_ENTRY: AgentCatalogEntryDto = {
     },
   ],
   configSchemaVersion: null,
+  occupancy: 'exclusive',
 };
 
 /** Catalog including unknown-demo (tests / optional demo seed). */

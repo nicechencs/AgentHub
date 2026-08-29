@@ -495,7 +495,11 @@ function TicketRow({
   const { ticket, usageParts, highlighted } = row;
   const editLabel = ticketDetailEditLabel(extras, t);
   const authChip = ticketAuthChip(extras);
-  const switchChip = ticketSwitchChip(extras, t);
+  const occupancy = resolveAgentMeta(ticket.agentId).occupancy;
+  const switchChip = ticketSwitchChip(extras, t, {
+    occupancy,
+    agentName: agentDisplayName(ticket.agentId),
+  });
   const switching = switchingId === ticket.id;
   const switchBusy = switchingId !== null;
   const title = ticketCardTitle(ticket, extras);
@@ -556,6 +560,7 @@ function TicketRow({
                   kind: switchChip.kind,
                   switchBusy,
                   canSwitch: Boolean(onSwitch),
+                  occupancy,
                 }, t)}
                 ariaLabel={switchChip.label}
                 onClick={() => {

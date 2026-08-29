@@ -820,6 +820,17 @@ describe('ticket detail fields', () => {
     expect(ticketSwitchChip({ isCurrent: true })).toEqual({ kind: 'in-use', label: '使用中' });
   });
 
+  it('uses 写入 / 已在模型列表里 for catalog-append occupancy', () => {
+    expect(ticketSwitchChip({ isCurrent: false }, undefined, {
+      occupancy: 'catalogAppend',
+      agentName: 'ZCode',
+    })).toEqual({ kind: 'switch', label: '写入 ZCode' });
+    expect(ticketSwitchChip({ isCurrent: true }, undefined, {
+      occupancy: 'catalogAppend',
+      agentName: 'ZCode',
+    })).toEqual({ kind: 'in-use', label: '已在模型列表里' });
+  });
+
   it('lists bindings as agent + one short status', () => {
     const wallet = sampleWallet();
     expect(formatTicketBindingDetailLines(
@@ -1377,6 +1388,12 @@ describe('row action disable reasons', () => {
       .toBe('正在切换其他登录');
     expect(ticketSwitchDisabledReason({ kind: 'switch', switchBusy: false, canSwitch: true }))
       .toBeUndefined();
+    expect(ticketSwitchDisabledReason({
+      kind: 'in-use',
+      switchBusy: false,
+      canSwitch: true,
+      occupancy: 'catalogAppend',
+    })).toBe('这份登录已经出现在模型列表里');
   });
 
   it('explains refresh lock', () => {

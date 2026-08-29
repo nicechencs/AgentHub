@@ -27,6 +27,7 @@ function meta(id: AgentId, name: string = id): AgentMeta {
     color: '#000',
     letter: id[0]!.toUpperCase(),
     installChannels: [],
+    occupancy: 'exclusive',
   };
 }
 
