@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: frontend and integration contributors
 source-of-truth: src/app/runtime, src/lib/backend/contracts, src/lib/backend/tauri, src/dev/mocks, and vite.config.ts
-updated: 2026-08-25
+updated: 2026-08-29
 ---
 
 # 前端与 Backend Adapter 边界
@@ -48,7 +48,7 @@ lib/backend/tauri/<port>.ts
 
 ## Contracts 与 port
 
-`src/lib/backend/contracts` 定义 Backend 聚合接口和按领域拆分的 port，例如 `account`、`provider`、`ticket`、`adapter`、`chat`、`config`、`install`、`catalog`、`project`、`skill` 和 `usage`。DTO 使用前后端稳定的 wire 形状；secret 字段只能以脱敏值或不可序列化的“引用动作”表达。
+`src/lib/backend/contracts` 定义 Backend 聚合接口和按领域拆分的 port，例如 `account`、`provider`、`ticket`、`adapter`、`agent`、`chat`、`config`、`backup`、`install`、`catalog`、`project`、`skill`、`usage`、`settings`、`dashboard`、`doctor`、`env`、`update`、`trash`、`mcp` 和 `plugins`。DTO 使用前后端稳定的 wire 形状；secret 字段只能以脱敏值或不可序列化的“引用动作”表达。
 
 页面不应根据 Agent 名称或 API URL 自己推导路线。连接流程应调用 backend 的 `ticket.plan`，展示 `route`、成熟度、`canApply` 和原因，再由唯一写入口执行 `bind`/`unbind`。具体概念见 [connections-and-routing](../concepts/connections-and-routing.md)。
 

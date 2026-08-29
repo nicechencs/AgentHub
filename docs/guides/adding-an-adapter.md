@@ -4,7 +4,7 @@ description: 为一个登录来源和目标 Agent 增加可验证的协议适配
 type: guide
 audience: contributor
 status: current
-updated: 2026-08-25
+updated: 2026-08-29
 ---
 
 # 添加 Route Adapter
@@ -36,10 +36,13 @@ updated: 2026-08-25
 `local_bridge` 需要同时定义：
 
 - downstream surface：Messages、Responses 或 Chat Completions；
+- 若 surface 是 Responses：显式保存 Codex 或 Grok 格式，绑到本机令牌选中的路由，不从请求正文推断；
 - upstream protocol：Anthropic Messages、OpenAI Chat Completions、Codex Responses 或 Grok Responses；
 - endpoint/base URL 选择和模型名单；
 - 本地随机 bearer、端口偏好和运行状态；
 - 请求、流式响应、协议转换、超时、取消和上游认证的行为。
+
+接到 Codex 的本机转发时，写入对方的是本机地址、本机令牌和 Responses（`preferred_auth_method = "apikey"`），不要改成官方登录文件。接到 Grok 时同样写 `api_backend = "responses"` 和本机令牌，不要再用 Chat Completions 当默认本机接口。Codex↔Grok 双向 Responses 仍是实验开关、默认关闭，不能当成身份转发已经做了格式转换。
 
 listener 是进程内 Gateway；`agenthub-adapterd` 仍是目标架构，不要在本任务中额外创建 sidecar。完整 HTTP 面见 [local-route-api.md](../reference/local-route-api.md)。
 
@@ -56,7 +59,7 @@ listener 是进程内 Gateway；`agenthub-adapterd` 仍是目标架构，不要�
 
 - 协议分析和 route 选择的纯函数测试；
 - plan/bind/unbind 的能力、writer、备份和失败补偿测试；
-- local bridge 的 auth、health、models、surface mismatch、模型拒绝、上游错误和 SSE 转换测试；
+- local bridge 的 auth、health、models、surface mismatch、Responses 格式不匹配（`route_unavailable`）、模型拒绝、上游错误和 SSE 转换测试；
 - 真实 HTTP fixture，禁止把完整 token、prompt 或上游原始错误写入 fixture；
 - UI contract test，验证 unavailable/unsupported 和 Routes 状态。
 

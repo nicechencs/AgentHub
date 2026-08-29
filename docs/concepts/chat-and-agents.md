@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: chat, adapter, and frontend contributors
 source-of-truth: ChatService/RunService, ChatEvent, stream parsers, Tauri Channel adapter, and chat process reducer
-updated: 2026-08-27
+updated: 2026-08-29
 ---
 
 # Chat 与 Agent 运行
@@ -43,7 +43,7 @@ Tauri transport 使用 `ipc::Channel<ChatEvent>`，不是 SSE。阻塞进程执�
 - 结构化 process step（thinking、tool、状态等，取决于 Agent parser）；
 - Agent finished、cancelled、failed 与整体 finished/error。
 
-Claude、Codex、Kimi、Grok、Pi 当前可走 `ProcessMode::Auto` 的结构化解析；WorkBuddy 没有结构化 parser 时按 text 展示。**Cursor Agent 在 dev 线默认软隐藏**，结构化输出与登录写入等兼容项修复完成前不在 Chat 等页面开放。解析失败降级为 raw/text 事件，不因某一行 JSON 不可识别而丢弃整次对话；CLI 不支持 flag 时不得静默重试成另一种语义。
+Claude、Codex、Kimi、Grok、Pi 当前可走 `ProcessMode::Auto` 的结构化解析；WorkBuddy 与 ZCode 没有结构化 parser 时按 text 展示。ZCode 对话需要 PATH 上的 `zcode`；只装了桌面端时不能凭空当成命令行。DeepSeek Harness 的 StructuredStream 仍是 Planned。**Cursor Agent 默认软隐藏**，结构化输出与登录写入等兼容项修复完成前不在 Chat 等页面开放。解析失败降级为 raw/text 事件，不因某一行 JSON 不可识别而丢弃整次对话；CLI 不支持 flag 时不得静默重试成另一种语义。
 
 过程数据目前主要是内存视图：最终 assistant 文本和会话消息入库，命令、stderr、步骤在刷新后不保证可回放。过程步骤落库、过程内 usage、交互式 tool approval 和完整原生多轮 session 不属于当前契约。
 

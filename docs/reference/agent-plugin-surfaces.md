@@ -4,12 +4,12 @@ description: 各内置 Agent 的 MCP、厂商 Plugin 与技能目录、安装/�
 type: reference
 audience: contributor
 status: current
-updated: 2026-08-26
+updated: 2026-08-29
 ---
 
 # Agent 插件表面
 
-本页对照八个内置 Agent 在**厂商侧**的两类扩展：`plugin` / `extension` **包**，以及单独配置的 **MCP server**。AgentHub 计划中的「插件」页只对前者；`/mcp` 只读页只对后者。来源是各家公开文档、本机路径和 adapter。能力等级以 [能力参考](capabilities.md) 为准。
+本页对照九个内置 Agent 在**厂商侧**的两类扩展：`plugin` / `extension` **包**，以及单独配置的 **MCP server**。AgentHub 计划中的「插件」页只对前者；`/mcp` 只读页只对后者。来源是各家公开文档、本机路径和 adapter。能力等级以 [能力参考](capabilities.md) 为准。
 
 术语：
 
@@ -33,8 +33,9 @@ updated: 2026-08-26
 | Cursor | **无** | AgentHub 管 `cursor-agent` CLI；VS Code/Cursor IDE 扩展市场不算 | 不支持 |
 | Kimi | **无已验证契约** | 无官方 plugin CLI / 目录 | 不支持 |
 | WorkBuddy | **未验证** | 无稳定 plugin CLI | 不支持 |
+| ZCode | **未验证** | 无稳定 plugin CLI | 不支持 |
 
-实现顺序见 [插件管理提案](../proposals/plugin-management.md) §6：Claude、Grok → Codex、Pi → DSH 保持关闭 → Cursor / Kimi / WorkBuddy 明确不支持。
+实现顺序见 [插件管理提案](../proposals/plugin-management.md) §6：Claude、Grok → Codex、Pi → DSH 保持关闭 → Cursor / Kimi / WorkBuddy / ZCode 明确不支持。
 
 ## 总览
 
@@ -173,6 +174,21 @@ updated: 2026-08-26
 **技能**
 
 - 投影根：`<config>/skills`。
+
+## ZCode
+
+**Plugin 包**
+
+- 无已验证的 plugin / extension CLI 或市场。插件页标不支持，不要伪造商店。
+
+**MCP**
+
+- inventory 只认 `<zcode-home>/mcp.json` 与 `.mcp.json`（`$ZCODE_HOME` 可改根，默认 `~/.zcode`）。桌面 ADE 契约未验证。
+- 管理 CLI、更新检测：**未验证**。写入前必须先有 round-trip 测试。
+
+**技能**
+
+- 投影根：`<zcode-home>/skills`。
 
 ## Kimi
 

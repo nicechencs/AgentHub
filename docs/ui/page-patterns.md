@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-27
+updated: 2026-08-29
 ---
 
 # UI Page Patterns
@@ -51,20 +51,20 @@ The page title is one line plus one short metadata line. Do not repeat the same 
 
 ### 2.2 Full-height workbench
 
-Chat, Skills, Projects, and Plugins manage their own vertical scrolling and use `fullBleed`. Full-height does not create a third content width: Chat messages use the reading column, while Skills, Projects, and Plugins use the edge column with a split preview surface. The workbench header uses the compact page-header rhythm.
+Chat, Skills, Projects, Plugins, Connections, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Skills, Projects, Plugins, Connections, and the Settings backups tab use the edge column with a split preview surface. The workbench header uses the compact page-header rhythm.
 
-### 2.3 Settings reading page
+### 2.3 Settings
 
-Settings keeps the standard shell and a reading-column content area. The four page tabs are:
+Settings uses the workbench header and four page tabs. Preferences, This device, and About keep a reading-column content area. Backups is a left-right workbench: the list is on the left, a redacted file inspect panel opens on the right.
 
 | Tab | Query | Contents |
 |---|---|---|
 | Preferences | `?tab=preferences` | Language, theme, startup, close-to-tray, Routes visibility, Plugins visibility, skill source, usage interval |
 | This device | `?tab=local` | Data directory, log level, retention, log directory |
-| Backups | `?tab=backups` | Agent live configuration snapshots and restore/delete |
+| Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; redacted file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
 
-Invalid or old tab values replace to the nearest current tab. Tab changes use `replace` so normal navigation history does not fill with panel changes.
+Invalid or old tab values replace to the nearest current tab. Tab changes use `replace` so normal navigation history does not fill with panel changes. The backups keep-copies switch (`keepLiveFileCopies`, default on) copies each Agent's live files into the backup directory on switch/import; turning it off stops piling historical copies, but the current switch still keeps one copy for rollback. Manual backups are unaffected. Lists and inspect panels never show a usable secret.
 
 ## 3. Shared page behavior
 
@@ -95,14 +95,16 @@ Dashboard is the overview for installed Agents and usage, not a second Connectio
 
 ## 5. Connections
 
-Connections is a global login list. It is not a list of generated route providers and it does not expose internal binding implementation names.
+Connections is a global login list in a full-height workbench split. It is not a list of generated route providers and it does not expose internal binding implementation names.
 
 - The top `AgentTabStrip` filters the list. Do not add a second row of “official / API key / unknown” filter chips.
+- The add menu is **导入授权** / **官方登录** / **添加 API Key**. Official login and API Key are stored as separate rows. WorkBuddy custom models and ZCode catalog providers split into one login per directory row; desktop package logins are not imported.
 - OAuth rows use an identity/person icon; API key rows use a key icon. The icon has an accessible label and a short hint.
+- Selecting a row opens the right-hand detail: related config files (redacted, copyable, open-directory), package, expiry, timeline, and the full endpoint. The list and detail never show a usable secret.
+- The official-login wait page does not show internal status or login file paths; failure keeps **重试** as the primary action.
 - The row actions are **分享** and **路由**. The destination action opens the shared ConnectFlow dialog with source and target context fixed by the entry point.
 - ConnectFlow explains one of four outcomes: **直连**, **用这份登录**, **本机路由**, or **当前不支持**. The explanation is a user outcome, not a protocol number.
 - A disabled destination retains the reason and offers the appropriate recovery path. Missing data and a genuinely empty login list are different states.
-- Connections never shows a secret in a row, badge, tooltip, or diagnostic copy.
 
 ## 6. Routes
 
