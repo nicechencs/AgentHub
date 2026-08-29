@@ -87,6 +87,11 @@ fn table_registers_every_agent_accepts_and_writer() {
         "WorkBuddy slot has no documented ticket protocol"
     );
 
+    let zcode = agent_bind_capability(AgentId::Zcode);
+    assert_eq!(zcode.accepts, &[AgentAccept::ZcodeV2ProviderSlot]);
+    assert!(zcode.writer);
+    assert_eq!(zcode.occupancy, LiveOccupancy::CatalogAppend);
+
     let dsh = agent_bind_capability(AgentId::Dsh);
     assert_eq!(dsh.accepts, &[AgentAccept::DshLlmPluginSlot]);
     assert!(
@@ -201,4 +206,27 @@ fn capability_table_never_opens_can_apply() {
     );
     assert!(kimi_grok.can_apply);
     assert_eq!(kimi_grok.route, AdapterRoute::NativeEndpoint);
+}
+
+#[test]
+fn live_occupancy_is_exhaustive_and_catalog_for_zcode() {
+    for agent in AgentId::ALL {
+        let _ = agent_bind_capability(agent).occupancy;
+    }
+    assert_eq!(
+        agent_bind_capability(AgentId::Claude).occupancy,
+        LiveOccupancy::Exclusive
+    );
+    assert_eq!(
+        agent_bind_capability(AgentId::Pi).occupancy,
+        LiveOccupancy::NamedSlots
+    );
+    assert_eq!(
+        agent_bind_capability(AgentId::WorkBuddy).occupancy,
+        LiveOccupancy::CatalogAppend
+    );
+    assert_eq!(
+        agent_bind_capability(AgentId::Zcode).occupancy,
+        LiveOccupancy::CatalogAppend
+    );
 }

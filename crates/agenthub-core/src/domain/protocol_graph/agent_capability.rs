@@ -39,7 +39,7 @@ pub enum AgentAccept {
     WorkBuddyModelsJson,
     /// DSH home-level official LLM plugin slot (`write_config` in dsh.rs, Partial).
     DshLlmPluginSlot,
-    /// ZCode `~/.zcode/v2/config.json` provider API Key slot.
+    /// ZCode `~/.zcode/v2/config.json` catalog row (`provider` map, not exclusive live).
     ZcodeV2ProviderSlot,
 }
 
@@ -68,13 +68,27 @@ impl AgentAccept {
             Self::WorkBuddyModelsJson => &[],
             // dsh.rs writes the official DeepSeek Chat Completions plugin row.
             Self::DshLlmPluginSlot => &[TicketProtocol::OpenaiChat],
-            // zcode.rs writes provider.*.options.apiKey; edges still need matrix cells.
+            // zcode.rs upserts one provider row with a model list; edges still need matrix cells.
             Self::ZcodeV2ProviderSlot => &[
                 TicketProtocol::AnthropicMessages,
                 TicketProtocol::OpenaiChat,
             ],
         }
     }
+}
+
+/// How apply occupies the agent's live config.
+///
+/// Hub still keeps one current binding per agent; this only describes the
+/// on-disk write so callers do not assume "current" means "the only live row".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveOccupancy {
+    /// Replace the live credential family (Claude env, Codex `auth.json`).
+    Exclusive,
+    /// Merge one finite named slot; siblings stay (Pi).
+    NamedSlots,
+    /// Upsert one unbounded catalog row; siblings stay (ZCode providers, WorkBuddy models).
+    CatalogAppend,
 }
 
 /// Bind-entry registration for one Agent. Exhaustive via [`agent_bind_capability`].
@@ -84,6 +98,7 @@ pub struct AgentBindCapability {
     /// Whether this Agent can write live config. `true` means an account /
     /// config writer exists — **not** that a cross-Agent edge is open.
     pub writer: bool,
+    pub occupancy: LiveOccupancy,
 }
 
 /// Compile-time `AgentId → { accepts, writer }`. New Agent: register here first.
@@ -92,10 +107,12 @@ pub const fn agent_bind_capability(id: AgentId) -> AgentBindCapability {
         AgentId::Claude => AgentBindCapability {
             accepts: &[AgentAccept::AnthropicMessagesEnv],
             writer: true,
+            occupancy: LiveOccupancy::Exclusive,
         },
         AgentId::Codex => AgentBindCapability {
             accepts: &[AgentAccept::OpenAiResponses],
             writer: true,
+            occupancy: LiveOccupancy::Exclusive,
         },
         AgentId::Pi => AgentBindCapability {
             accepts: &[
@@ -105,35 +122,42 @@ pub const fn agent_bind_capability(id: AgentId) -> AgentBindCapability {
                 AgentAccept::PiXaiOauthSlot,
             ],
             writer: true,
+            occupancy: LiveOccupancy::NamedSlots,
         },
         AgentId::Grok => AgentBindCapability {
             accepts: &[AgentAccept::OpenAiChatToml],
             // Account / toml writer exists; this does not open a cross-Agent edge.
             writer: true,
+            occupancy: LiveOccupancy::Exclusive,
         },
         AgentId::Kimi => AgentBindCapability {
             accepts: &[AgentAccept::OpenAiChat],
             writer: true,
+            occupancy: LiveOccupancy::Exclusive,
         },
         AgentId::Cursor => AgentBindCapability {
             accepts: &[],
             writer: false,
+            occupancy: LiveOccupancy::Exclusive,
         },
-        // adapters/workbuddy.rs: ConfigWrite = Full, `write_config` projects models.json.
+        // adapters/workbuddy.rs: ConfigWrite = Full, `write_config` merges models.json by id.
         AgentId::WorkBuddy => AgentBindCapability {
             accepts: &[AgentAccept::WorkBuddyModelsJson],
             writer: true,
+            occupancy: LiveOccupancy::CatalogAppend,
         },
         // adapters/dsh.rs: ConfigWrite = Partial, write_config projects the
         // official LLM plugin row. Writer exists; edges still come from the matrix.
         AgentId::Dsh => AgentBindCapability {
             accepts: &[AgentAccept::DshLlmPluginSlot],
             writer: true,
+            occupancy: LiveOccupancy::NamedSlots,
         },
-        // adapters/zcode.rs: ConfigWrite = Partial, v2 provider API Key upsert.
+        // adapters/zcode.rs: ConfigWrite = Partial, catalog-append one provider row.
         AgentId::Zcode => AgentBindCapability {
             accepts: &[AgentAccept::ZcodeV2ProviderSlot],
             writer: true,
+            occupancy: LiveOccupancy::CatalogAppend,
         },
     }
 }

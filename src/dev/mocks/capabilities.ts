@@ -194,11 +194,11 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
   zcode: {
     configWrite: {
       level: 'partial',
-      reason: '只合并 v2/config.json 的 provider API Key 槽；整棵配置树 fail-closed',
+      reason: '只追加或更新一条供应商，自定义必须带模型名单；不覆盖整份目录',
     },
     accountSwitch: {
       level: 'partial',
-      reason: '仅 API Key 引用切换，无账号 OAuth 写入',
+      reason: '只启用对应供应商行，其它条目仍在模型列表里；无账号 OAuth 写入',
     },
     apiKeyAccount: { level: 'full' },
     skills: { level: 'full' },
