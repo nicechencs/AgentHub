@@ -441,6 +441,10 @@ fn is_desktop_app_binary_matches_windows_and_macos_layouts() {
     assert!(is_desktop_app_binary(Path::new(
         "/Applications/ZCode.app/Contents/MacOS/ZCode"
     )));
+    assert!(!is_desktop_app_binary(Path::new("/usr/bin/zcode")));
+    assert!(is_desktop_app_binary(Path::new(
+        "/home/user/ZCode.AppImage"
+    )));
 }
 
 #[test]
