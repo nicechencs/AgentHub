@@ -107,6 +107,10 @@ export default function ProjectsPage() {
   const showSummarize = agentId !== 'cursor';
   const showDelete = canDelete;
   const agentMeta = AGENT_MAP[agentId];
+  const deleteHint =
+    agentId === 'zcode' && !canDelete
+      ? t('projects.tree.deleteInAgent', { name: agentMeta?.name ?? 'ZCode' })
+      : null;
 
   useEffect(() => {
     if (agentFromUrl && agentFromUrl !== agentId && tabAgents.some((a) => a.id === agentFromUrl)) {
@@ -574,6 +578,7 @@ export default function ProjectsPage() {
           selected={selected}
           busy={busy}
           showDelete={showDelete}
+          deleteHint={deleteHint}
           previewSessionId={preview.target?.id ?? null}
           visibleSessions={visibleSessions}
           onToggleExpand={(p) => void toggleExpand(p)}

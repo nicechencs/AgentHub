@@ -52,7 +52,7 @@ fn capability_is_exhaustive_and_honest() {
     );
     assert_eq!(
         adapter.capability(Capability::ProjectDelete).level,
-        CapabilityLevel::Planned
+        CapabilityLevel::Unsupported
     );
     for cap in Capability::ALL {
         let state = adapter.capability(cap);
