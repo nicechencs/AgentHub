@@ -1072,6 +1072,16 @@ export const en = {
     },
   },
   connections: {
+    capability: {
+      configWriteUnsupported: "This agent does not support config writes",
+    },
+    pi: {
+      xaiCustomLabel: "xAI (custom)",
+      kimiCustomLabel: "Kimi For Coding (custom)",
+      customServiceLabel: "Custom service",
+      authJsonHint: "The key is written to Pi's official login file (auth.json / {slug}). Leave the address blank to use the official service and models.",
+      modelsJsonHint: "This writes to Pi's custom service config (models.json / {slug}). A service address is required.",
+    },
     page: {
       title: "Connections",
       description: "Login list",
@@ -1151,9 +1161,17 @@ export const en = {
       refreshBusyTip: "Another login is refreshing",
       switch: "Switch",
       inUse: "In use",
+      writeCatalog: "Write to {name}",
+      inCatalog: "Already in the model list",
+      inCatalogTip: "This login is already in the model list",
       switching: "Switching…",
       switchOk: "Switched",
       switchFail: "Switch failed",
+      switchWroteLive: "Wrote to local config",
+      switchWroteCatalog: "Wrote to the model list",
+      failedToWriteLive: "Failed to write local config",
+      cursorLiveWriteUnsupportedFull:
+        "Failed to write local config. Cursor can't write this login to its local config yet. Use Cursor's own sign-in, or set CURSOR_API_KEY.",
       refresh: "Refresh",
       syncCurrentLogin: "Sync current login",
       refreshing: "Refreshing…",
@@ -1199,6 +1217,8 @@ export const en = {
       protocol: "Interface",
       officialEndpoint: "Official endpoint",
       customEndpoint: "Custom endpoint",
+      notCurrent: "Not current",
+      currentlyActive: "Current",
       subscription: "Plan",
       lastUsedAt: "Last used",
       createdAt: "Added",
@@ -1246,6 +1266,7 @@ export const en = {
       coexistGrok: "This computer has both an API Key and a grok login. A model-level Key is used first. Import only takes the one currently in use.",
       coexistKimi: "This computer has both a config.toml API Key and an official /login. Import only takes the one currently in use.",
       coexistCodex: "This computer has both an API Key and a ChatGPT login. Import takes the one currently detected as in use.",
+      coexistCatalogDesktop: "Custom models and the desktop plan login are separate. Import takes custom models only; the desktop login stays in the app.",
       authFilesTitle: "Related files",
       copyFile: "Copy",
       openedAuthFile: "Opened the folder",
@@ -1287,6 +1308,11 @@ export const en = {
       keyHint: "Leave empty to keep the current key.",
       keyPlaceholderEdit: "Enter a new secret to replace…",
       keyPlaceholderAdd: "sk-…",
+      modelId: "Model name",
+      modelIdPlaceholder: "Upstream model id, e.g. grok-4.6",
+      endpoint: "Endpoint",
+      endpointPlaceholder: "https://api.example.com/v1/chat/completions",
+      endpointHint: "WorkBuddy writes /v1/chat/completions; DeepSeek's official URL is rewritten to include /v1",
       envField: "How the key is written",
       envHint: "When this connection is active, the key is written into Claude's config. The default is fine for most cases.",
       envAuthToken: "Default method",
@@ -1313,6 +1339,7 @@ export const en = {
       schemaNotReady: "The form isn't ready yet",
       officialVendorSlot: "Official vendor",
       wroteLocal: "{name} · {endpoint} · wrote local config",
+      wroteCatalog: "{name} · {endpoint} · wrote to the model list",
       savedPool: "{name} · {endpoint} · saved to the connection list; writes local config after you switch",
       piDescBefore: "Official vendor keys go to",
       piDescMid: "; custom URLs go to",
@@ -1638,6 +1665,9 @@ export const en = {
       waitingLogs: "Waiting for CLI process logs…",
       runDetails: "Run details",
       command: "Command",
+      unrecognizedLine: "Unrecognized output line",
+      nonJsonLine: "Non-JSON line in structured mode",
+      lineTooLong: "Output line too long",
     },
     settings: {
       title: "Session settings",
@@ -1657,6 +1687,7 @@ export const en = {
     transcript: {
       start: "Start chatting",
       firstMessage: "Send the first message to {agent}",
+      loadFailed: "Couldn't load messages",
       turnAgents: "{n} agents this turn",
       generating: "Generating",
       cancelled: "Cancelled",
@@ -1733,6 +1764,7 @@ export const en = {
       fromProjectsDesc: "The prompt is filled in. Confirm the working directory, then send.",
       cancelRequested: "Cancel requested",
       cancelRequestedDesc: "Stopping the current generation. The process panel will show cancelled.",
+      multiAgentMigrationFailed: "Some older chats could not be auto-migrated to a single agent. Try again later.",
     },
     title: {
       newConversation: "New chat",
@@ -2108,6 +2140,20 @@ export const en = {
     },
     toast: {
       cannotOpenDir: "Couldn't open folder",
+    },
+  },
+  env: {
+    runtimes: {
+      nodejs: { description: 'Hard dependency for npm-based channels like Claude / Codex' },
+      npm: { description: 'Usually installed with Node.js; if node is present but npm is missing, fix PATH or reinstall Node' },
+      powershell: {
+        description:
+          "Runtime for Windows native install scripts. Detects either 5.1 or 7 (pwsh); either one is enough. macOS/Linux don't check PowerShell — native installs use the official bash/sh scripts.",
+      },
+      git: {
+        description:
+          "Dependency for the Skills marketplace and git URL installs (git clone / pull). Not required by Agent install channels, but skills can't be installed from a remote source without it.",
+      },
     },
   },
 } as const satisfies Dict;

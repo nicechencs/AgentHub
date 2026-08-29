@@ -122,6 +122,10 @@ impl AgentAdapter for ClaudeAdapter {
         ))
     }
 
+    fn expand_live_accounts(&self, snapshot: &LiveAccount) -> Result<Vec<LiveAccount>> {
+        Ok(expand_claude_live_accounts(snapshot))
+    }
+
     fn apply_account(&self, account: &LiveAccount) -> Result<()> {
         if account.agent != AgentId::Claude {
             return Err(AppError::InvalidArg(

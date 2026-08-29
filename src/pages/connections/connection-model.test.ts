@@ -827,6 +827,8 @@ describe('liveImportAction', () => {
   it('imports a provider-pool Key for the api-key dialog and an account otherwise', () => {
     expect(liveImportAction('api-key')).toBe('provider');
     expect(liveImportAction('login')).toBe('account');
+    expect(liveImportAction('api-key', 'zcode')).toBe('account');
+    expect(liveImportAction('api-key', 'workbuddy')).toBe('account');
     expect(
       liveImportAction(
         liveImportDialogMode({ agentId: 'codex', kind: 'api_key', hasCredentials: true }),

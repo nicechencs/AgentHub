@@ -64,11 +64,14 @@ export function ApiKeyAccountDialog({
   const [kimiProduct, setKimiProduct] = React.useState<'kimi-code-membership' | 'kimi-api'>(
     'kimi-api',
   );
+  const [modelId, setModelId] = React.useState('');
+  const [baseUrl, setBaseUrl] = React.useState('');
   const [saving, setSaving] = React.useState(false);
 
   const isEdit = mode === 'edit';
   const agentName = resolveAgentMeta(agentId).name;
   const showClaudeEnv = agentId === 'claude';
+  const showWorkBuddyCatalog = agentId === 'workbuddy' && !isEdit;
 
   React.useEffect(() => {
     if (!open) return;
@@ -77,17 +80,23 @@ export function ApiKeyAccountDialog({
       setKey('');
       setEnvKey('ANTHROPIC_AUTH_TOKEN');
       setKimiProduct('kimi-api');
+      setModelId('');
+      setBaseUrl('');
     } else {
       setLabel('');
       setKey('');
       setEnvKey('ANTHROPIC_AUTH_TOKEN');
       setKimiProduct('kimi-api');
+      setModelId('');
+      setBaseUrl('');
     }
   }, [open, isEdit, account]);
 
   const canSave = isEdit
     ? Boolean(label.trim() || key.trim())
-    : Boolean(key.trim());
+    : showWorkBuddyCatalog
+      ? Boolean(key.trim() && modelId.trim() && baseUrl.trim())
+      : Boolean(key.trim());
 
   const requestClose = () => {
     if (saving) return;
@@ -117,7 +126,7 @@ export function ApiKeyAccountDialog({
         const acc = await addApiKeyAccount(
           agentId,
           key.trim(),
-          label.trim() || null,
+          label.trim() || modelId.trim() || null,
           showClaudeEnv ? envKey : null,
           agentId === 'claude'
             ? 'anthropic'
@@ -128,6 +137,9 @@ export function ApiKeyAccountDialog({
                 : agentId === 'kimi'
                   ? kimiProduct
                   : null,
+          showWorkBuddyCatalog
+            ? { baseUrl: baseUrl.trim(), modelId: modelId.trim() }
+            : null,
         );
         toast({
           title: t('connections.apiKeyDialog.added'),
@@ -224,6 +236,34 @@ export function ApiKeyAccountDialog({
                 </SelectContent>
               </Select>
             </label>
+          ) : null}
+
+          {showWorkBuddyCatalog ? (
+            <>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted">
+                  {t('connections.apiKeyDialog.modelId')}
+                </span>
+                <Input
+                  value={modelId}
+                  onChange={(e) => setModelId(e.target.value)}
+                  placeholder={t('connections.apiKeyDialog.modelIdPlaceholder')}
+                  autoComplete="off"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted">
+                  {t('connections.apiKeyDialog.endpoint')}
+                </span>
+                <Input
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder={t('connections.apiKeyDialog.endpointPlaceholder')}
+                  autoComplete="off"
+                />
+                <p className="text-meta text-muted">{t('connections.apiKeyDialog.endpointHint')}</p>
+              </label>
+            </>
           ) : null}
 
           {agentId === 'kimi' && !isEdit ? (

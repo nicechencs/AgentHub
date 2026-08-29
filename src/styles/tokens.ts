@@ -70,6 +70,7 @@ export const AGENT_COLORS = {
   workbuddy: { light: '#0052d9', dark: '#3b82f6' },
   cursor: { light: '#f54e00', dark: '#ff6b2c' },
   dsh: { light: '#4d6bfe', dark: '#6b8cff' },
+  zcode: { light: '#1a6cff', dark: '#4d8dff' },
 } as const;
 
 export type TokenAgentId = keyof typeof AGENT_COLORS;

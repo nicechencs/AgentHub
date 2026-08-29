@@ -7,8 +7,14 @@
  * neutral fallback styling.
  */
 import type { AgentCapabilities } from '@/lib/capability';
-import type { AgentCatalogEntryDto } from '@/lib/backend/contracts/agent-catalog-types';
-import { mapCatalogCapabilities } from '@/lib/backend/contracts/agent-catalog-types';
+import type {
+  AgentCatalogEntryDto,
+  LiveOccupancyDto,
+} from '@/lib/backend/contracts/agent-catalog-types';
+import {
+  catalogOccupancy,
+  mapCatalogCapabilities,
+} from '@/lib/backend/contracts/agent-catalog-types';
 import type { AgentId, RuntimeId } from '@/lib/types';
 import { agentCssVar, type TokenAgentId } from '@/styles/tokens';
 
@@ -34,6 +40,8 @@ export interface AgentMeta {
   installChannels: InstallChannelMeta[];
   /** Catalog-declared capabilities (optional; doctor status may override). */
   capabilities?: AgentCapabilities;
+  /** How a live write occupies this agent's config. Missing → exclusive. */
+  occupancy: LiveOccupancyDto;
 }
 
 /** Pure display decoration for known agents — not the product set. */
@@ -48,6 +56,7 @@ export const AGENT_DISPLAY: Readonly<
   workbuddy: { letter: 'W', colorKey: 'workbuddy' },
   cursor: { letter: 'R', colorKey: 'cursor' },
   dsh: { letter: 'D', colorKey: 'dsh' },
+  zcode: { letter: 'Z', colorKey: 'zcode' },
 });
 
 const FALLBACK_COLOR = 'var(--text-muted)';
@@ -78,6 +87,7 @@ export function agentMetaFromCatalogEntry(entry: AgentCatalogEntryDto): AgentMet
       requires: ch.requires,
     })),
     capabilities: mapCatalogCapabilities(entry.capabilities),
+    occupancy: catalogOccupancy(entry.occupancy),
   };
 }
 
@@ -125,6 +135,7 @@ export function resolveAgentMeta(agentId: AgentId): AgentMeta {
     color: colorFor(agentId),
     letter: letterFor(agentId, agentId),
     installChannels: [],
+    occupancy: 'exclusive',
   };
 }
 

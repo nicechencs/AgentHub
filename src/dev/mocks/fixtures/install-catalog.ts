@@ -130,4 +130,15 @@ export const MOCK_INSTALL_CATALOG: AgentInstallCatalogEntryDto[] = [
       },
     ],
   },
+  {
+    agentId: 'zcode',
+    channels: [
+      {
+        id: 'native',
+        label: '官网 Setup（打开安装页）',
+        command: 'https://zcode.z.ai/',
+        requires: [],
+      },
+    ],
+  },
 ];

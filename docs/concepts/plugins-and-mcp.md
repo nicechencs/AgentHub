@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: SkillService, mcp_inventory.rs, plugin_inventory.rs, vendor plugin CLIs, and linked reference pages
-updated: 2026-08-26
+updated: 2026-08-29
 ---
 
 # 插件、MCP 与技能
@@ -24,13 +24,13 @@ updated: 2026-08-26
 
 Goose 把 MCP 叫做 “extension”。那是 Goose 的用词。AgentHub 的「插件」对齐 Claude / Codex / Grok / Pi 的 plugin 包，不对齐 Goose 的 MCP 别名。
 
-厂商侧谁有插件系统（AgentHub 均未接线）：**有** = Claude、Grok、Codex、Pi；**另一套、不硬转** = DSH Cordis；**无 / 未验证** = Cursor Agent、Kimi、WorkBuddy。逐项依据见 [Agent 插件表面 · 厂商插件系统](../reference/agent-plugin-surfaces.md#厂商插件系统plugin--extension-包)。同类产品怎么管见 [插件管理提案 · 同类怎么管](../proposals/plugin-management.md#3-同类怎么管2026-08-对照)。
+厂商侧谁有插件系统（AgentHub 均未接线）：**有** = Claude、Grok、Codex、Pi；**另一套、不硬转** = DSH Cordis；**无 / 未验证** = Cursor Agent、Kimi、WorkBuddy、ZCode。逐项依据见 [Agent 插件表面 · 厂商插件系统](../reference/agent-plugin-surfaces.md#厂商插件系统plugin--extension-包)。同类产品怎么管见 [插件管理提案 · 同类怎么管](../proposals/plugin-management.md#3-同类怎么管2026-08-对照)。
 
 ## 当前产品表面
 
 - **Skills**（`/skills`）管理共享技能与投影。`Capability::Skills` 由 adapter 声明；Kimi 为 Unsupported。
 - **MCP**（`/mcp`）列出已发现的 server 名、传输、命令/地址、来源文件。清单存在不等于能改配置，更不等于插件已安装。
-- **插件**（`/plugins`）只读列出 Claude / Grok 已装包：优先官方 CLI JSON，否则读 live 目录（`~/.claude/plugins/` + `enabledPlugins`，`~/.grok/plugins/`）。设置「显示插件页面」只藏侧栏入口。附带 MCP 只作为包内组件。Codex / Pi / 其他 Agent 尚未接线。
+- **插件**（`/plugins`）只读列出 Claude / Grok 已装包：优先官方 CLI JSON，否则读 live 目录（`~/.claude/plugins/` + `enabledPlugins`，`~/.grok/plugins/`）。设置「显示插件页面」只藏侧栏入口。附带 MCP 只作为包内组件。Codex / Pi 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode 明确不支持。
 - 厂商 Plugin 市场也不是 Skills 市场（`skills.sh` / `skillhub.cn`）。
 
 ## 所有权

@@ -155,20 +155,9 @@ impl PricingTable {
                 return Some(*r);
             }
         }
-        // Fuzzy contains match against known keys (longest first)
-        let mut best: Option<(&str, Rates)> = None;
-        for (k, r) in &self.by_key {
-            if stripped.contains(k.as_str()) || k.contains(stripped.as_str()) {
-                if best
-                    .as_ref()
-                    .map(|(bk, _)| k.len() > bk.len())
-                    .unwrap_or(true)
-                {
-                    best = Some((k.as_str(), *r));
-                }
-            }
-        }
-        best.map(|(_, r)| r)
+        // Do not fuzzy-contains-match unknown model ids onto a longer/shorter
+        // key — that silently applies the wrong rate. Unknown → unpriced.
+        None
     }
 }
 

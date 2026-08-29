@@ -12,6 +12,38 @@ use super::{
 };
 
 #[tokio::test]
+async fn lock_target_can_reacquire_after_explicit_drop() {
+    // Regression for unbind/remove compensation: holding the target guard while
+    // calling apply_local_bridge_locked (which locks the same target) deadlocks.
+    // Compensation must drop the guard first; this asserts same-task reacquire works.
+    let coordinator = AdapterSagaCoordinator::new();
+    let guard = coordinator.lock_target(AgentId::Codex).await;
+    drop(guard);
+    let reacquired = tokio::time::timeout(
+        std::time::Duration::from_millis(200),
+        coordinator.lock_target(AgentId::Codex),
+    )
+    .await
+    .expect("same-task reacquire after drop must not hang");
+    drop(reacquired);
+}
+
+#[tokio::test]
+async fn lock_target_same_task_reacquire_without_drop_times_out() {
+    let coordinator = AdapterSagaCoordinator::new();
+    let _held = coordinator.lock_target(AgentId::Codex).await;
+    let stuck = tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        coordinator.lock_target(AgentId::Codex),
+    )
+    .await;
+    assert!(
+        stuck.is_err(),
+        "tokio Mutex is not reentrant; compensation must drop first"
+    );
+}
+
+#[tokio::test]
 async fn lock_target_serializes_same_agent_and_allows_other_agents() {
     let coordinator = Arc::new(AdapterSagaCoordinator::new());
     let first = coordinator.lock_target(AgentId::Codex).await;

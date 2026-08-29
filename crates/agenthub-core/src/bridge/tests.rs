@@ -7,11 +7,11 @@ use std::time::Duration;
 use async_stream::stream;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{StatusCode, header};
+use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::sync::Notify;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -20,13 +20,13 @@ use tokio::{
 
 use super::host::{CleanupCompletion, MAX_IN_FLIGHT_REQUESTS_PER_PROFILE};
 use super::{
-    BridgeHostError, BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState,
-    BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus,
+    index_from_member_listings, protocol::responses::is_leftover_bridge_model, BridgeHostError,
+    BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeStartSpec,
+    BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, DownstreamResponsesProfile,
     EffectiveRouteIndex, MemberCapability, MemberCapabilitySnapshot, MemberHealth, MemberListing,
-    ResolvedAuth, UpstreamAuthReload, index_from_member_listings,
-    protocol::responses::is_leftover_bridge_model,
+    ResolvedAuth, ResponsesDialect, UpstreamAuthReload,
 };
-use crate::models::{AdapterSourceProduct, AgentId, ModelRouteRule, list_local_bridge_models};
+use crate::models::{list_local_bridge_models, AdapterSourceProduct, AgentId, ModelRouteRule};
 
 fn spec_with_token(
     profile_id: &str,
@@ -5268,6 +5268,9 @@ fn grok_codex_pair_spec(profile_id: &str, port: u16, upstream_port: u16) -> Brid
             AgentId::Codex,
             false,
         )
+        .with_downstream_responses_profile(Some(DownstreamResponsesProfile::new(
+            ResponsesDialect::Codex,
+        )))
         .with_pair_adapter_flags(true, false)
         .with_listed_models(vec!["grok-4.5".into()])
 }
@@ -5284,8 +5287,69 @@ fn codex_grok_pair_spec(profile_id: &str, port: u16, upstream_port: u16) -> Brid
         AgentId::Grok,
         false,
     )
+    .with_downstream_responses_profile(Some(DownstreamResponsesProfile::new(
+        ResponsesDialect::Grok,
+    )))
     .with_pair_adapter_flags(false, true)
     .with_listed_models(vec!["gpt-5.4".into()])
+}
+
+fn mismatched_grok_codex_pair_spec(
+    profile_id: &str,
+    port: u16,
+    upstream_port: u16,
+) -> BridgeStartSpec {
+    grok_codex_pair_spec(profile_id, port, upstream_port)
+        // Keep the explicit downstream wire profile bound to Codex while
+        // deliberately supplying a non-authorized Grok → Grok mapping.
+        .with_mapping(
+            AdapterSourceProduct::XaiGrokSubscription,
+            AgentId::Grok,
+            false,
+        )
+        .with_downstream_responses_profile(Some(DownstreamResponsesProfile::new(
+            ResponsesDialect::Codex,
+        )))
+}
+
+#[tokio::test]
+async fn explicit_responses_profile_mismatch_fails_closed_before_upstream_for_both_stream_modes() {
+    let (upstream_port, hits, upstream_task) = counting_responses_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(mismatched_grok_codex_pair_spec(
+            "pair-rejected",
+            0,
+            upstream_port,
+        ))
+        .await
+        .expect("start");
+
+    for stream in [false, true] {
+        let response = client()
+            .await
+            .post(format!("http://127.0.0.1:{}/v1/responses", status.port))
+            .header(header::AUTHORIZATION, "Bearer local-test-token")
+            .json(&json!({
+                "model": "grok-4.5",
+                "input": "hello",
+                "stream": stream,
+            }))
+            .send()
+            .await
+            .expect("request");
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body: Value = response.json().await.expect("json error");
+        assert_eq!(body["error"]["code"], "route_unavailable");
+        assert_eq!(
+            body["error"]["message"],
+            "This route cannot serve the requested Responses format."
+        );
+    }
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+
+    host.stop("pair-rejected").await.expect("stop");
+    upstream_task.abort();
 }
 
 async fn counting_responses_upstream() -> (u16, Arc<AtomicUsize>, tokio::task::JoinHandle<()>) {

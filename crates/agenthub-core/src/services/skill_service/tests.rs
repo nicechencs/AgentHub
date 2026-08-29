@@ -419,7 +419,12 @@ fn nested_identical_trees_are_copied() {
     for p in &skill.projections {
         match p.agent {
             // Fake registry: Kimi has no skills; Pi/WorkBuddy/Cursor unregistered → Unsupported.
-            AgentId::Kimi | AgentId::Pi | AgentId::WorkBuddy | AgentId::Cursor | AgentId::Dsh => {
+            AgentId::Kimi
+            | AgentId::Pi
+            | AgentId::WorkBuddy
+            | AgentId::Cursor
+            | AgentId::Dsh
+            | AgentId::Zcode => {
                 assert_eq!(p.state, SkillSyncState::Unsupported, "agent {}", p.agent);
             }
             AgentId::Claude | AgentId::Codex | AgentId::Grok => {
@@ -2105,6 +2110,7 @@ fn sync_targets_skips_unsupported_when_requested() {
         AgentId::WorkBuddy,
         AgentId::Cursor,
         AgentId::Dsh,
+        AgentId::Zcode,
     ] {
         assert!(
             report.skipped.iter().any(|a| a.agent == agent),

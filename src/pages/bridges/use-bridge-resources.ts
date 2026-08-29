@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useConnectionPool, useTicketWallet } from '@/app/runtime';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { getAdapterBridgeStatus, listAdapterProfiles } from '@/lib/api/adapter';
 import { bridgeWalletSnapshotFromWallet } from '@/lib/bridge-wallet-snapshot';
 import { mergeConnectionEntries } from '@/lib/connection-entry';
@@ -85,6 +86,7 @@ function connectionStateFromPool(
 
 /** Owns independent resource refreshes and rejects stale responses. */
 export function useAdapterResources() {
+  const { t } = useI18n();
   const pool = useConnectionPool();
   const ticketWallet = useTicketWallet();
   const [resources, setResources] = useState<AdapterPageResources>(initialResources);
@@ -153,7 +155,7 @@ export function useAdapterResources() {
   useEffect(() => {
     setResources((current) => ({
       ...current,
-      entries: mergeConnectionEntries(pool.accounts, pool.providers),
+      entries: mergeConnectionEntries(pool.accounts, pool.providers, undefined, t),
       connectionState: connectionStateFromPool(pool.state),
       errors: {
         ...current.errors,
@@ -161,7 +163,7 @@ export function useAdapterResources() {
         providers: pool.errors.providers,
       },
     }));
-  }, [pool.accounts, pool.errors, pool.providers, pool.state]);
+  }, [pool.accounts, pool.errors, pool.providers, pool.state, t]);
 
   const updateBridgeStatus = useCallback((status: AdapterBridgeRuntimeStatus) => {
     // Start/stop responses are mutations, so invalidate any poll that began

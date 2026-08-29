@@ -51,6 +51,9 @@ impl AgentAdapter for CodexAdapter {
         //   { "format": "toml", "content": "<config.toml>", "auth": { "OPENAI_API_KEY": "..." } }
         // `auth` is only attached when live auth holds a non-empty API key
         // (OAuth token blobs stay out of the provider pool).
+        // `__liveAuthFile` carries the raw auth.json bytes for live rollback only;
+        // callers that persist into the provider pool must strip it (see
+        // `strip_codex_live_auth_file`).
         let home = agent_home(AgentId::Codex)?;
         let path = home.join("config.toml");
         let mut raw = if path.exists() {
@@ -59,7 +62,14 @@ impl AgentAdapter for CodexAdapter {
         } else {
             json!({})
         };
-        if let Some(api_key) = read_live_openai_api_key(&home.join("auth.json"))? {
+        let auth_path = home.join("auth.json");
+        if auth_path.exists() {
+            let auth_text = std::fs::read_to_string(&auth_path)?;
+            if let Some(obj) = raw.as_object_mut() {
+                obj.insert(LIVE_AUTH_FILE_KEY.into(), json!(auth_text));
+            }
+        }
+        if let Some(api_key) = read_live_openai_api_key(&auth_path)? {
             if let Some(obj) = raw.as_object_mut() {
                 obj.insert("auth".into(), json!({ "OPENAI_API_KEY": api_key }));
             }
@@ -74,9 +84,20 @@ impl AgentAdapter for CodexAdapter {
         let home = agent_home(AgentId::Codex)?;
         let path = home.join("config.toml");
         write_toml_config(AgentId::Codex, &path, config)?;
+        let auth_path = home.join("auth.json");
         // API providers may also write live auth with OPENAI_API_KEY.
         if let Some(api_key) = extract_settings_openai_api_key(&config.raw) {
-            write_codex_api_key_auth(&home.join("auth.json"), &api_key)?;
+            write_codex_api_key_auth(&auth_path, &api_key)?;
+        } else if let Some(auth_text) = extract_live_auth_file(&config.raw) {
+            // Restore the pre-switch auth.json (OAuth blob or prior API key file).
+            let mut bytes = auth_text.into_bytes();
+            if !bytes.ends_with(b"\n") {
+                bytes.push(b'\n');
+            }
+            if let Some(parent) = auth_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            atomic_write(&auth_path, &bytes)?;
         }
         Ok(())
     }
@@ -351,6 +372,17 @@ fn extract_codex_label(body: &serde_json::Value) -> Option<String> {
         .or_else(|| Some("codex-oauth".into()))
 }
 
+/// Ephemeral key on Codex `AgentConfig.raw`: raw `auth.json` text for live
+/// rollback. Must never be persisted into the provider pool.
+pub(crate) const LIVE_AUTH_FILE_KEY: &str = "__liveAuthFile";
+
+/// Remove Codex live-restore-only keys before writing settings into the pool.
+pub(crate) fn strip_codex_live_auth_file(raw: &mut Value) {
+    if let Some(obj) = raw.as_object_mut() {
+        obj.remove(LIVE_AUTH_FILE_KEY);
+    }
+}
+
 /// Read OPENAI_API_KEY from live auth.json when it is a non-empty string.
 /// OAuth-shaped files often set `"OPENAI_API_KEY": null` — those are ignored.
 fn read_live_openai_api_key(path: &Path) -> Result<Option<String>> {
@@ -375,6 +407,12 @@ fn extract_settings_openai_api_key(raw: &Value) -> Option<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
+}
+
+fn extract_live_auth_file(raw: &Value) -> Option<String> {
+    raw.get(LIVE_AUTH_FILE_KEY)
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
 }
 
 /// Write API-key mode auth.json. Replaces OAuth blob.
@@ -570,6 +608,77 @@ mod tests {
             read_live_openai_api_key(&path).unwrap().as_deref(),
             Some("sk-from-pool")
         );
+    }
+
+    #[test]
+    fn oauth_to_api_key_rollback_restores_auth_json_blob() {
+        let _guard = crate::integrations::agents::codex::leftover::lock_codex_home();
+        let dir = tempfile::tempdir().unwrap();
+        let codex = dir.path().join(".codex");
+        std::fs::create_dir_all(&codex).unwrap();
+        std::fs::write(codex.join("config.toml"), "model = \"gpt-5\"\n").unwrap();
+        let oauth_blob = r#"{
+  "OPENAI_API_KEY": null,
+  "auth_mode": "chatgpt",
+  "tokens": {
+    "access_token": "at-oauth-keep",
+    "refresh_token": "rt-oauth-keep"
+  }
+}"#;
+        std::fs::write(codex.join("auth.json"), oauth_blob).unwrap();
+        let prev = std::env::var_os("CODEX_HOME");
+        std::env::set_var("CODEX_HOME", &codex);
+
+        let adapter = CodexAdapter;
+        let live_before = adapter.read_config().expect("read oauth live");
+        assert!(
+            live_before.raw.get(LIVE_AUTH_FILE_KEY).is_some(),
+            "snapshot must carry raw auth.json for rollback"
+        );
+        assert!(
+            extract_settings_openai_api_key(&live_before.raw).is_none(),
+            "oauth blob must stay out of the auth pool field"
+        );
+
+        let api_target = AgentConfig {
+            agent: AgentId::Codex,
+            raw: json!({
+                "format": "toml",
+                "content": "model = \"gpt-5\"\n",
+                "auth": { "OPENAI_API_KEY": "sk-switch-target" }
+            }),
+        };
+        adapter.write_config(&api_target).expect("switch to api key");
+        let overwritten: Value =
+            serde_json::from_str(&std::fs::read_to_string(codex.join("auth.json")).unwrap())
+                .unwrap();
+        assert_eq!(overwritten["OPENAI_API_KEY"], "sk-switch-target");
+        assert!(overwritten.get("tokens").is_none());
+
+        // Compensation path used by switch_saga: write_config(&live_before).
+        adapter
+            .write_config(&live_before)
+            .expect("rollback must restore oauth auth.json");
+        let restored = std::fs::read_to_string(codex.join("auth.json")).unwrap();
+        let restored_json: Value = serde_json::from_str(restored.trim()).unwrap();
+        assert_eq!(
+            restored_json["tokens"]["access_token"],
+            "at-oauth-keep",
+            "oauth tokens must come back after failed API-key switch compensation"
+        );
+        assert!(restored_json.get("OPENAI_API_KEY").unwrap().is_null());
+
+        let mut scrubbed = live_before.raw.clone();
+        strip_codex_live_auth_file(&mut scrubbed);
+        assert!(
+            scrubbed.get(LIVE_AUTH_FILE_KEY).is_none(),
+            "pool backfill must strip the ephemeral auth file key"
+        );
+
+        match prev {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
     }
 
     #[test]

@@ -18,7 +18,7 @@ use crate::bridge::account::{AccountPicker, PickedMember};
 use crate::bridge::auth_reload::AuthReloadCoordinator;
 use crate::bridge::grok_cli::GrokReasoningReplay;
 use crate::bridge::route_index::DispatchCandidate;
-use crate::bridge::runtime::{BridgeStartSpec, BridgeUpstreamStatus};
+use crate::bridge::runtime::{BridgeStartSpec, BridgeUpstreamStatus, DownstreamResponsesProfile};
 
 use super::super::surface::DownstreamSurface;
 use super::super::{MAX_IN_FLIGHT_REQUESTS_PER_PROFILE, UPSTREAM_CONNECT_TIMEOUT};
@@ -46,6 +46,7 @@ pub(in crate::bridge::host) struct EdgeState {
     pub(in crate::bridge::host) account_picker: AccountPicker,
     pub(in crate::bridge::host) mapping_source: Option<crate::models::AdapterSourceProduct>,
     pub(in crate::bridge::host) mapping_target: Option<crate::models::AgentId>,
+    pub(in crate::bridge::host) downstream_responses_profile: Option<DownstreamResponsesProfile>,
     pub(in crate::bridge::host) custom_openai: bool,
     pub(in crate::bridge::host) route_index:
         Option<crate::bridge::route_index::EffectiveRouteIndex>,
@@ -88,6 +89,7 @@ impl EdgeState {
             account_picker: spec.account_picker(),
             mapping_source: spec.mapping_source,
             mapping_target: spec.mapping_target,
+            downstream_responses_profile: spec.downstream_responses_profile,
             custom_openai: spec.custom_openai,
             route_index: spec.route_index.clone(),
             auth_reload,
@@ -176,11 +178,17 @@ impl EdgeState {
             .as_ref()
             .map(|index| index.route_id.as_str())
             .unwrap_or(self.profile_id.as_ref());
-        let dialect = self
-            .mapping_target
-            .map(crate::models::RouteDownstreamDialect::for_agent)
-            .unwrap_or(crate::models::RouteDownstreamDialect::Generic)
-            .as_str();
+        let dialect = match self.upstream.local_surface {
+            crate::bridge::runtime::BridgeLocalSurface::Responses => self
+                .downstream_responses_profile
+                .map(|profile| profile.dialect.as_str())
+                .unwrap_or("generic"),
+            _ => self
+                .mapping_target
+                .map(crate::models::RouteDownstreamDialect::for_agent)
+                .unwrap_or(crate::models::RouteDownstreamDialect::Generic)
+                .as_str(),
+        };
         Some(crate::bridge::account::route_scoped_affinity_key(
             route_id, dialect, &session,
         ))

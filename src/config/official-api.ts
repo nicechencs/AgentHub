@@ -107,6 +107,26 @@ const OFFICIAL: Partial<Record<AgentId, OfficialApiDefaults>> = {
       '',
     ].join('\n'),
   },
+  zcode: {
+    label: 'Z.ai 官方',
+    baseUrl: 'https://api.z.ai/api/anthropic',
+    displayBaseUrl: 'https://api.z.ai/api/anthropic',
+    model: 'GLM-5.3',
+    presetId: 'zcode-zai',
+    format: 'json',
+    scaffoldText: JSON.stringify(
+      {
+        apiKey: '',
+        baseURL: 'https://api.z.ai/api/anthropic',
+        kind: 'anthropic',
+        name: 'Z.ai - API Key',
+        providerId: 'builtin:zai',
+        models: ['GLM-5.3', 'GLM-5.3-Flash', 'GLM-5-Turbo'],
+      },
+      null,
+      2,
+    ),
+  },
 };
 
 export function officialApiDefaults(agentId: AgentId): OfficialApiDefaults | null {

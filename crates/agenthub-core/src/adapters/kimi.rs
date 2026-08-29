@@ -136,6 +136,10 @@ impl AgentAdapter for KimiAdapter {
         }
     }
 
+    fn expand_live_accounts(&self, snapshot: &LiveAccount) -> Result<Vec<LiveAccount>> {
+        Ok(expand_kimi_live_accounts(snapshot))
+    }
+
     fn apply_account(&self, account: &LiveAccount) -> Result<()> {
         if account.agent != AgentId::Kimi {
             return Err(AppError::InvalidArg(

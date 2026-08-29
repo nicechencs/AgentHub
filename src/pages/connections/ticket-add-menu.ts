@@ -20,9 +20,9 @@ export {
 export type TicketAddKind = 'import-login' | 'oauth' | 'api-key';
 
 export const TICKET_ADD_ACTIONS: Array<{ kind: TicketAddKind; label: string }> = [
-  { kind: 'import-login', label: '导入授权' },
-  { kind: 'oauth', label: '官方登录' },
-  { kind: 'api-key', label: '添加 API Key' },
+  { kind: 'import-login', label: 'Import login' },
+  { kind: 'oauth', label: 'Official login' },
+  { kind: 'api-key', label: 'Add API Key' },
 ];
 
 export function ticketAddActionsForAgent(
@@ -34,7 +34,7 @@ export function ticketAddActionsForAgent(
 
 export function ticketAddActionLabel(kind: TicketAddKind, t?: TranslateFn): string {
   if (!t) {
-    return TICKET_ADD_ACTIONS.find((item) => item.kind === kind)?.label ?? '导入授权';
+    return TICKET_ADD_ACTIONS.find((item) => item.kind === kind)?.label ?? 'Import login';
   }
   if (kind === 'import-login') return t('connections.list.importLogin');
   if (kind === 'oauth') return t('connections.list.addOauth');

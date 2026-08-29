@@ -7,6 +7,7 @@ import {
   type Capability,
   type CapabilityLevel,
 } from '@/lib/capability';
+import { createTranslator } from '@/lib/i18n';
 import { MOCK_CAPABILITIES } from '@/dev/mocks/capabilities';
 import type { AgentId } from '@/lib/types';
 
@@ -36,6 +37,7 @@ const AGENT_IDS: AgentId[] = [
   'workbuddy',
   'cursor',
   'dsh',
+  'zcode',
 ];
 
 describe('isCapabilityUsable / isCapabilityBlocked', () => {
@@ -95,13 +97,38 @@ describe('providerCapabilityGate', () => {
     });
   });
 
+  it('falls back to an English default reason when no translator is passed', () => {
+    const gate = providerCapabilityGate({ configWrite: { level: 'unsupported' } });
+    expect(gate.reason).toBe('This agent does not support config writes');
+  });
+
+  it('translates the default reason via t when configWrite carries no explicit reason', () => {
+    const tZh = createTranslator('zh');
+    const tEn = createTranslator('en');
+    expect(
+      providerCapabilityGate({ configWrite: { level: 'unsupported' } }, tZh).reason,
+    ).toBe('该 Agent 不支持配置写入');
+    expect(
+      providerCapabilityGate({ configWrite: { level: 'unsupported' } }, tEn).reason,
+    ).toBe('This agent does not support config writes');
+  });
+
+  it('prefers the explicit configWrite.reason over the translator default', () => {
+    const tZh = createTranslator('zh');
+    const gate = providerCapabilityGate(
+      { configWrite: { level: 'unsupported', reason: 'no live writer' } },
+      tZh,
+    );
+    expect(gate.reason).toBe('no live writer');
+  });
+
   it('allows the current Pi and WorkBuddy provider controls without affecting account capability', () => {
     for (const id of ['pi', 'workbuddy'] as const) {
       const gate = providerCapabilityGate(MOCK_CAPABILITIES[id]);
       expect(gate.canManage, id).toBe(true);
       expect(gate.canSwitch, id).toBe(true);
       expect(MOCK_CAPABILITIES[id]!.accountSwitch!.level).toBe(
-        id === 'pi' ? 'full' : 'unsupported',
+        id === 'pi' ? 'full' : 'partial',
       );
     }
   });
@@ -138,7 +165,7 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
 
   it('matches known product boundaries', () => {
     expect(MOCK_CAPABILITIES.kimi!.skills!.level).toBe('unsupported');
-    expect(MOCK_CAPABILITIES.workbuddy!.accountSwitch!.level).toBe('unsupported');
+    expect(MOCK_CAPABILITIES.workbuddy!.accountSwitch!.level).toBe('partial');
     expect(MOCK_CAPABILITIES.cursor!.accountSwitch!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.cursor!.providerPresets!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.claude!.accountSwitch!.level).toBe('full');
@@ -152,7 +179,8 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
     const disabled = AGENT_IDS.filter((id) =>
       isCapabilityBlocked(MOCK_CAPABILITIES[id]?.accountSwitch),
     );
-    expect(disabled).toEqual(expect.arrayContaining(['workbuddy', 'cursor']));
+    expect(disabled).toEqual(expect.arrayContaining(['cursor']));
+    expect(disabled).not.toContain('workbuddy');
     expect(disabled).not.toContain('claude');
     expect(disabled).not.toContain('kimi');
   });

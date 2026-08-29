@@ -4,7 +4,7 @@ description: 按稀疏端口、能力声明和目录注册把一个 Agent 接入
 type: guide
 audience: contributor
 status: current
-updated: 2026-08-26
+updated: 2026-08-29
 ---
 
 # 添加 Agent
@@ -31,6 +31,7 @@ updated: 2026-08-26
 | Adapter | `crates/agenthub-core/src/adapters/<id>.rs`、adapter registry、`register_all()` | 实现现有 trait；只暴露该 Agent 真实拥有的能力 |
 | 稀疏端口 | `crates/agenthub-core/src/integrations/agents/<key>/` | 按需增加 `paths`、`install`、`config`、`usage`、`stream`、`project` 等贡献 |
 | 身份 | `crates/agenthub-core/src/models/agent.rs` | 增加 `AgentId`、`ALL`、解析和展示名；兼容期仍需维护生产 façade |
+| 占用 | `agent_bind_capability` / `LiveOccupancy` | 声明独占写入、具名槽还是目录追加；WorkBuddy 模型行 / ZCode 供应商行是目录追加，不要默认覆盖整份配置 |
 | 目录 | Agent catalog / install registry | 让 doctor、Agents 页和安装流程从 catalog 看到同一份元数据 |
 | 前端 | `src/config/agents.ts`、`KNOWN_AGENT_IDS`、`src/styles/tokens.ts` | `agents.ts` 仅展示装饰；catalog 是列表真源，已知 id 集合不是封闭业务枚举，颜色集中在 tokens |
 
@@ -56,7 +57,7 @@ updated: 2026-08-26
 | 端口 | 适用条件 |
 |---|---|
 | `paths` | 能确定 home、配置目录或 skills 目录 |
-| `install` / `lifecycle` | 有可审计的 npm/native 安装渠道 |
+| `install` / `lifecycle` | 有可审计的 npm/native 安装渠道；只有官网、没有脚本时只打开官网并给中文指引，不要报成安装失败 |
 | `config` | 能安全读取/合并公开配置字段；无法保证 round-trip 时保持只读或 fail-closed |
 | `skills` | 有稳定的技能目标目录 |
 | MCP inventory 路径 | 仅当用户级 MCP live 文件形状已验证；写入仍要求 `Capability::Mcp` 不再是 Planned |
@@ -65,7 +66,7 @@ updated: 2026-08-26
 | `projects` | 有明确的会话/项目根和安全删除边界 |
 | `stream` | 已验证结构化 stdout/事件协议 |
 
-不支持的端口返回 typed unsupported；不要为了填满矩阵而伪造 Full，也不要把计划中的 install channel 放进可执行 catalog。
+不支持的端口返回 typed unsupported；不要为了填满矩阵而伪造 Full，也不要把计划中的 install channel 放进可执行 catalog。本机配置里若混有不可导入的套餐登录，探测要标出来，导入必须排除它们。
 
 ## 5. 前端接线
 

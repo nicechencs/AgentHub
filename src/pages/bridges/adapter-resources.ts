@@ -1,4 +1,5 @@
 import { mergeConnectionEntries, type ConnectionEntry } from '@/lib/connection-entry';
+import type { TranslateFn } from '@/lib/i18n';
 import type {
   Account,
   Provider,
@@ -110,7 +111,10 @@ export function unavailableBridgeStatusForPoll(
  * inspection is intentionally best effort: a status failure still returns
  * every persisted profile.
  */
-export async function loadAdapterPageResources(loaders: AdapterResourceLoaders): Promise<AdapterPageResources> {
+export async function loadAdapterPageResources(
+  loaders: AdapterResourceLoaders,
+  t?: TranslateFn,
+): Promise<AdapterPageResources> {
   const [accountsResult, providersResult, profilesResult] = await Promise.allSettled([
     Promise.resolve().then(loaders.listAccounts),
     Promise.resolve().then(loaders.listProviders),
@@ -147,7 +151,7 @@ export async function loadAdapterPageResources(loaders: AdapterResourceLoaders):
       : 'ready';
 
   return {
-    entries: mergeConnectionEntries(accounts, providers),
+    entries: mergeConnectionEntries(accounts, providers, undefined, t),
     profiles,
     bridgeStatuses,
     errors: {

@@ -2,6 +2,7 @@
  * Ticket / Binding read model + bind/unbind write (docs/connection-binding-model.md §2 / §4).
  * Wire shapes match Tauri `list_ticket_wallet` / `plan_ticket` / `bind_ticket` / `unbind_ticket`.
  */
+import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterRoute } from './adapter';
 import {
@@ -458,33 +459,35 @@ export interface TicketPort {
 }
 
 /** Route label for Connections usage line and Dashboard card meta. */
-export function bindingRouteUsageLabel(route: BindingRoute): string {
-  return bindingRouteDashboardLabel(route);
+export function bindingRouteUsageLabel(route: BindingRoute, t?: TranslateFn): string {
+  return bindingRouteDashboardLabel(route, t);
 }
 
 /** Route label for Dashboard card meta. */
-export function bindingRouteDashboardLabel(route: BindingRoute): string {
-  if (route === 'reshape') return '改配置';
-  if (route === 'bridge') return '本机路由';
-  return '直连';
+export function bindingRouteDashboardLabel(route: BindingRoute, t?: TranslateFn): string {
+  if (route === 'reshape') return t ? t('connections.list.routeReshape') : 'Rewrite config';
+  if (route === 'bridge') return t ? t('kind.route.localRoute') : 'Local route';
+  return t ? t('kind.route.direct') : 'Direct';
 }
 
 /** Credential-class chip label. */
-export function ticketCredentialClassLabel(cls: TicketCredentialClass): string {
-  if (cls === 'oauth') return '官方登录';
-  if (cls === 'api_key') return 'API Key';
-  return '未识别';
+export function ticketCredentialClassLabel(cls: TicketCredentialClass, t?: TranslateFn): string {
+  if (cls === 'oauth') return t ? t('kind.oauth') : 'Official login';
+  if (cls === 'api_key') return t ? t('kind.apikey') : 'API Key';
+  return t ? t('connections.list.unrecognized') : 'Unrecognized';
 }
 
 /** Surface chip label (short). */
-export function ticketSurfaceLabel(surface: TicketSurface): string {
-  if (surface === 'kimi-code-membership') return '会员';
-  if (surface === 'anthropic-api') return 'API';
-  if (surface === 'openai-api') return 'OpenAI';
-  if (surface === 'xai-api') return 'xAI';
-  if (surface === 'glm-coding-plan') return 'GLM';
-  if (surface === 'deepseek-api') return 'DeepSeek';
-  if (surface === 'codex-chatgpt-subscription') return '订阅';
-  if (surface === 'claude-subscription' || surface === 'grok-xai-subscription') return '订阅';
-  return '未识别';
+export function ticketSurfaceLabel(surface: TicketSurface, t?: TranslateFn): string {
+  if (surface === 'kimi-code-membership') return t ? t('connections.list.surfaceMember') : 'Membership';
+  if (surface === 'anthropic-api') return t ? t('connections.list.surfaceOfficial') : 'API';
+  if (surface === 'openai-api') return t ? t('connections.list.surfaceOpenai') : 'OpenAI';
+  if (surface === 'xai-api') return t ? t('connections.list.surfaceXai') : 'xAI';
+  if (surface === 'glm-coding-plan') return t ? t('connections.list.surfaceGlm') : 'GLM';
+  if (surface === 'deepseek-api') return t ? t('connections.list.surfaceDeepseek') : 'DeepSeek';
+  if (surface === 'codex-chatgpt-subscription') return t ? t('connections.list.surfaceSub') : 'Subscription';
+  if (surface === 'claude-subscription' || surface === 'grok-xai-subscription') {
+    return t ? t('connections.list.surfaceSub') : 'Subscription';
+  }
+  return t ? t('connections.list.unrecognized') : 'Unrecognized';
 }

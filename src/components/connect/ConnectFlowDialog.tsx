@@ -182,8 +182,9 @@ export function ConnectFlowDialog({
       providers: pool.providers,
       profiles,
       agentStatuses: statuses,
+      t,
     });
-  }, [entry, deps, pool.accounts, pool.providers, profiles, optionsReady, statuses]);
+  }, [entry, deps, pool.accounts, pool.providers, profiles, optionsReady, statuses, t]);
 
   const sourceAgentId = entry
     ? sourceAgentIdOf(entry, pool.accounts, pool.providers)

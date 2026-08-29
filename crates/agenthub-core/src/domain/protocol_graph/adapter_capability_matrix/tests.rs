@@ -548,7 +548,7 @@ fn cursor_target_uses_no_writer_reason_not_source_copy() {
 }
 
 #[test]
-fn workbuddy_hears_no_protocol_so_codex_login_stays_closed() {
+fn workbuddy_rejects_codex_subscription_login() {
     let decision = decide_adapter_capability(
         AdapterSourceProduct::CodexChatGptSubscription,
         AdapterCredentialClass::OauthAuthJson,

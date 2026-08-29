@@ -356,7 +356,7 @@ fn install_lifecycle_aligns_all_agents() {
         assert_eq!(npm.uninstall_via, "in_app");
         let native = install_lifecycle(agent, "native");
         assert_eq!(native.source, "native");
-        if agent == AgentId::WorkBuddy {
+        if matches!(agent, AgentId::WorkBuddy | AgentId::Zcode) {
             assert_eq!(native.update_via, "official");
             assert_eq!(native.uninstall_via, "in_app");
         } else {

@@ -4,7 +4,7 @@ description: 在桌面应用和真实连接上验收本机 Routes 的发布前�
 type: how-to
 status: current
 owner: maintainers
-updated: 2026-08-25
+updated: 2026-08-29
 ---
 
 # Route Adapter 真机 Dogfood
@@ -18,8 +18,9 @@ updated: 2026-08-25
 典型 smoke flow：
 
 1. Kimi Code 会员 API Key → Claude：直接改配置，不启动本机 Route。
-2. Kimi Code 会员 API Key → Codex：`local_bridge`，验证 loopback、端口和长流。
+2. Kimi Code 会员 API Key → Codex：`local_bridge`，验证 loopback、端口和长流；Codex 配置应为 `wire_api = "responses"`、`preferred_auth_method = "apikey"`，`auth.json` 的 `OPENAI_API_KEY` 为本机令牌。
 3. Anthropic API Key → Pi：写入 Pi 认的登录位置，不启动本机 Route。
+4. 任意已支持来源 → Grok 本机路由：`config.toml` 为 `api_backend = "responses"`，`api_key` 为本机令牌，客户端打 `POST /v1/responses`。
 
 本清单只记录结构化证据，不记录真实秘密。Kimi 会员 OAuth 不在本清单，产品不做 OAuth 反代、写入其他 Agent 或 OAuth 转 API。
 

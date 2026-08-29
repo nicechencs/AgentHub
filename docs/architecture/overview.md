@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: contributors and maintainers
 source-of-truth: current source tree and linked contract pages
-updated: 2026-08-27
+updated: 2026-08-29
 ---
 
 # AgentHub 架构总览

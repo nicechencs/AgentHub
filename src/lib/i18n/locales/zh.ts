@@ -1063,6 +1063,16 @@ export const zh = {
     },
   },
   connections: {
+    capability: {
+      configWriteUnsupported: "该 Agent 不支持配置写入",
+    },
+    pi: {
+      xaiCustomLabel: "xAI（自定义）",
+      kimiCustomLabel: "Kimi For Coding（自定义）",
+      customServiceLabel: "自定义服务",
+      authJsonHint: "密钥会写到 Pi 的官方登录文件（auth.json / {slug}）。不填地址时用官方服务和模型。",
+      modelsJsonHint: "会写到 Pi 的自定义服务配置（models.json / {slug}）。必须填写服务地址。",
+    },
     page: {
       title: "连接",
       description: "登录列表",
@@ -1142,9 +1152,17 @@ export const zh = {
       refreshBusyTip: "正在刷新其他登录",
       switch: "切换",
       inUse: "使用中",
+      writeCatalog: "写入 {name}",
+      inCatalog: "已在模型列表里",
+      inCatalogTip: "这份登录已经出现在模型列表里",
       switching: "切换中…",
       switchOk: "已切换",
       switchFail: "切换失败",
+      switchWroteLive: "已写入本机配置",
+      switchWroteCatalog: "已写入模型列表",
+      failedToWriteLive: "未能写入本机配置",
+      cursorLiveWriteUnsupportedFull:
+        "未能写入本机配置。Cursor 暂时不能把这份登录写到本机配置。请用 Cursor 自己的登录，或设置 CURSOR_API_KEY。",
       refresh: "刷新",
       syncCurrentLogin: "同步当前登录",
       refreshing: "刷新中…",
@@ -1190,6 +1208,8 @@ export const zh = {
       protocol: "接口",
       officialEndpoint: "官方端点",
       customEndpoint: "自定义端点",
+      notCurrent: "未生效",
+      currentlyActive: "当前生效",
       subscription: "套餐",
       lastUsedAt: "最近使用",
       createdAt: "添加时间",
@@ -1237,6 +1257,7 @@ export const zh = {
       coexistGrok: "这台电脑上同时有 API Key 和 grok login。写在模型上的 Key 会优先使用。导入只会收下现在正在用的那一份。",
       coexistKimi: "这台电脑上同时有 config.toml 里的 API Key 和官方 /login。导入只会收下现在正在用的那一份。",
       coexistCodex: "这台电脑上同时有 API Key 和 ChatGPT 登录。导入会收下现在正在用的那一份。",
+      coexistCatalogDesktop: "自定义模型和桌面套餐登录不在一起。导入只会收下自定义模型，桌面登录留在应用内。",
       authFilesTitle: "相关文件",
       copyFile: "复制",
       openedAuthFile: "已打开所在目录",
@@ -1278,6 +1299,11 @@ export const zh = {
       keyHint: "留空则保持不变。",
       keyPlaceholderEdit: "输入新密钥以替换…",
       keyPlaceholderAdd: "sk-…",
+      modelId: "模型名称",
+      modelIdPlaceholder: "发给上游的模型名，例如 grok-4.6",
+      endpoint: "接口地址",
+      endpointPlaceholder: "https://api.example.com/v1/chat/completions",
+      endpointHint: "WorkBuddy 写入 /v1/chat/completions；DeepSeek 官方地址会自动补上 /v1",
       envField: "密钥写入方式",
       envHint: "设为当前连接时，会把密钥写进 Claude 配置。大多数情况用默认即可。",
       envAuthToken: "默认写法",
@@ -1304,6 +1330,7 @@ export const zh = {
       schemaNotReady: "表单还没准备好",
       officialVendorSlot: "官方厂商",
       wroteLocal: "{name} · {endpoint} · 已写入本机配置",
+      wroteCatalog: "{name} · {endpoint} · 已写入模型列表",
       savedPool: "{name} · {endpoint} · 已保存到登录列表，切换后才会写入本机",
       piDescBefore: "官方厂商的 Key 写入",
       piDescMid: "；自定义 URL 写入",
@@ -1629,6 +1656,9 @@ export const zh = {
       waitingLogs: "等待 CLI 输出过程日志…",
       runDetails: "运行详情",
       command: "命令",
+      unrecognizedLine: "无法识别的输出行",
+      nonJsonLine: "结构化模式下出现非 JSON 行",
+      lineTooLong: "输出行过长",
     },
     settings: {
       title: "会话设置",
@@ -1648,6 +1678,7 @@ export const zh = {
     transcript: {
       start: "开始对话",
       firstMessage: "向 {agent} 发送第一条消息",
+      loadFailed: "消息加载失败",
       turnAgents: "本轮 {n} 个 Agent",
       generating: "生成中",
       cancelled: "已取消",
@@ -1724,6 +1755,7 @@ export const zh = {
       fromProjectsDesc: "提示词已填入；确认工作目录后发送。",
       cancelRequested: "已请求取消",
       cancelRequestedDesc: "正在停止当前生成，过程面板将显示已取消。",
+      multiAgentMigrationFailed: "部分历史会话未能自动整理为单 Agent，可稍后重试",
     },
     title: {
       newConversation: "新对话",
@@ -2099,6 +2131,20 @@ export const zh = {
     },
     toast: {
       cannotOpenDir: '无法打开目录',
+    },
+  },
+  env: {
+    runtimes: {
+      nodejs: { description: "Claude / Codex 等 npm 渠道的硬依赖" },
+      npm: { description: "通常随 Node.js 安装；若 node 在而 npm 不在，请修复 PATH 或重装 Node" },
+      powershell: {
+        description:
+          "Windows native 安装脚本运行时。可分别识别 5.1 与 7（pwsh），任一可用即可。macOS/Linux 不检测 PowerShell，native 安装走官方 bash/sh。",
+      },
+      git: {
+        description:
+          "Skills 市场与 git URL 安装依赖（git clone / pull）。Agent 安装渠道不强制要求，但缺失时无法从远程装技能。",
+      },
     },
   },
 } as const;

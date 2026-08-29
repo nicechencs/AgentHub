@@ -19,6 +19,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   workbuddy: 'WorkBuddy',
   cursor: 'Cursor Agent',
   dsh: 'DeepSeek Harness',
+  zcode: 'ZCode',
 };
 
 function capsToDto(
@@ -50,7 +51,7 @@ const PROJECTOR_SCHEMA_VERSION: Record<string, number> = {
 };
 
 /** Agents without projector: explicit null (legacy applyFormVars path). */
-const NO_PROJECTOR = new Set(['cursor', 'pi', 'workbuddy']);
+const NO_PROJECTOR = new Set(['cursor', 'pi', 'workbuddy', 'zcode']);
 
 function configSchemaVersionFor(agentId: string): number | null {
   if (agentId in PROJECTOR_SCHEMA_VERSION) {
@@ -59,6 +60,12 @@ function configSchemaVersionFor(agentId: string): number | null {
   if (NO_PROJECTOR.has(agentId)) return null;
   // Unknown keys in mock: null (no projector) unless tests override.
   return null;
+}
+
+function occupancyFor(agentId: string): AgentCatalogEntryDto['occupancy'] {
+  if (agentId === 'zcode' || agentId === 'workbuddy') return 'catalogAppend';
+  if (agentId === 'pi' || agentId === 'dsh') return 'namedSlots';
+  return 'exclusive';
 }
 
 function buildBuiltinCatalog(): AgentCatalogEntryDto[] {
@@ -74,10 +81,11 @@ function buildBuiltinCatalog(): AgentCatalogEntryDto[] {
       requires: ch.requires,
     })),
     configSchemaVersion: configSchemaVersionFor(row.agentId),
+    occupancy: occupancyFor(row.agentId),
   }));
 }
 
-/** Default mock catalog (eight built-ins). */
+/** Default mock catalog (built-ins). */
 export const MOCK_AGENT_CATALOG: AgentCatalogEntryDto[] = buildBuiltinCatalog();
 
 /** Extra demo agent used in tests — fallback letter/color only. */
@@ -110,6 +118,7 @@ export const MOCK_UNKNOWN_DEMO_ENTRY: AgentCatalogEntryDto = {
     },
   ],
   configSchemaVersion: null,
+  occupancy: 'exclusive',
 };
 
 /** Catalog including unknown-demo (tests / optional demo seed). */

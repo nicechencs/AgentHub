@@ -68,6 +68,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00020_keep_live_file_copies",
         include_str!("00020_keep_live_file_copies.sql"),
     ),
+    (
+        "00021_usage_dedup_nulls",
+        include_str!("00021_usage_dedup_nulls.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

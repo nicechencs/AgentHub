@@ -197,8 +197,8 @@ describe('binding usage text', () => {
     const wallet = sampleWallet();
     const kimiBindings = wallet.bindings.filter((b) => b.ticketId === 'provider:kimi-1');
     expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('正用于：');
-    expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('改配置');
-    expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('本机路由 · 运行中');
+    expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('Rewrite config');
+    expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('Local route · 运行中');
     expect(formatTicketUsageText([])).toBe('未使用');
     expect(formatTicketUsageText([], 'codex')).toBe(`${agentDisplayName('codex')} · 未使用`);
     const parts = formatTicketUsageParts(kimiBindings, 'kimi');
@@ -240,7 +240,7 @@ describe('binding usage text', () => {
     const rows = buildTicketWalletRows(wallet);
     const kimi = rows.find((row) => row.ticket.id === 'provider:kimi-1');
     expect(kimi?.usageText).toContain('2 份同类登录可轮换');
-    expect(kimi?.usageText).toContain('本机路由');
+    expect(kimi?.usageText).toContain('Local route');
     expect(kimi?.usageText).toContain('运行中');
     const ant = rows.find((row) => row.ticket.id === 'provider:ant-1');
     expect(ant?.usageText).not.toContain('可轮换');
@@ -254,7 +254,7 @@ describe('binding usage text', () => {
       active: true,
       profileId: null,
       bridge: null,
-    }], 'codex')).toBe(`${agentDisplayName('codex')}（直连）`);
+    }], 'codex')).toBe(`${agentDisplayName('codex')}（Direct）`);
     expect(formatTicketUsageText([{
       ticketId: 'account:codex-1',
       agentId: 'codex',
@@ -266,9 +266,9 @@ describe('binding usage text', () => {
   });
 
   it('maps dashboard meta text', () => {
-    expect(dashboardBindingMetaText('Kimi 会员', 'reshape')).toBe('Kimi 会员 · 改配置');
-    expect(dashboardBindingMetaText('Kimi 会员', 'bridge')).toBe('Kimi 会员 · 本机路由');
-    expect(dashboardBindingMetaText('me@…', 'native')).toBe('me@… · 直连');
+    expect(dashboardBindingMetaText('Kimi 会员', 'reshape')).toBe('Kimi 会员 · Rewrite config');
+    expect(dashboardBindingMetaText('Kimi 会员', 'bridge')).toBe('Kimi 会员 · Local route');
+    expect(dashboardBindingMetaText('me@…', 'native')).toBe('me@… · Direct');
   });
 });
 
@@ -820,6 +820,17 @@ describe('ticket detail fields', () => {
     expect(ticketSwitchChip({ isCurrent: true })).toEqual({ kind: 'in-use', label: '使用中' });
   });
 
+  it('uses 写入 / 已在模型列表里 for catalog-append occupancy', () => {
+    expect(ticketSwitchChip({ isCurrent: false }, undefined, {
+      occupancy: 'catalogAppend',
+      agentName: 'ZCode',
+    })).toEqual({ kind: 'switch', label: '写入 ZCode' });
+    expect(ticketSwitchChip({ isCurrent: true }, undefined, {
+      occupancy: 'catalogAppend',
+      agentName: 'ZCode',
+    })).toEqual({ kind: 'in-use', label: '已在模型列表里' });
+  });
+
   it('lists bindings as agent + one short status', () => {
     const wallet = sampleWallet();
     expect(formatTicketBindingDetailLines(
@@ -838,14 +849,14 @@ describe('ticket detail fields', () => {
         agentId: 'claude',
         agentLabel: agentDisplayName('claude'),
         status: '当前使用',
-        routeLabel: '改配置',
+        routeLabel: 'Rewrite config',
         localUrl: null,
       },
       {
         agentId: 'codex',
         agentLabel: agentDisplayName('codex'),
         status: '本机路由运行中',
-        routeLabel: '本机路由',
+        routeLabel: 'Local route',
         localUrl: 'http://127.0.0.1:8123/v1/responses',
       },
     ]);
@@ -1005,9 +1016,9 @@ describe('buildTicketAddMenu', () => {
       ['import-login', 'api-key'],
     ]);
     expect(menu[0]?.actions.map((a) => a.label)).toEqual([
-      '导入授权',
-      '官方登录',
-      '添加 API Key',
+      'Import login',
+      'Official login',
+      'Add API Key',
     ]);
   });
 
@@ -1377,6 +1388,12 @@ describe('row action disable reasons', () => {
       .toBe('正在切换其他登录');
     expect(ticketSwitchDisabledReason({ kind: 'switch', switchBusy: false, canSwitch: true }))
       .toBeUndefined();
+    expect(ticketSwitchDisabledReason({
+      kind: 'in-use',
+      switchBusy: false,
+      canSwitch: true,
+      occupancy: 'catalogAppend',
+    })).toBe('这份登录已经出现在模型列表里');
   });
 
   it('explains refresh lock', () => {

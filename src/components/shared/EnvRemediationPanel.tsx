@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { Tip } from '@/components/ui/tooltip';
-import { RUNTIME_MAP, runtimeRemediationsForPlatform } from '@/config/runtimes';
+import { RUNTIME_MAP, runtimeDescriptionKey, runtimeRemediationsForPlatform } from '@/config/runtimes';
 import {
   installRuntimeDetailed,
   resolveAutoInstallPlan,
@@ -188,7 +188,7 @@ export function EnvRemediationPanel({
           <p className="mt-1 text-xs text-secondary">
             {canOneClick
               ? `${t('chrome.env.willInstall', { summary: plan.summary })}${plan.skipped.length ? t('chrome.env.restManual', { list: formatMissingList(plan.skipped) }) : ''}`
-              : meta.description}
+              : t(runtimeDescriptionKey(meta.id))}
           </p>
         </div>
         {onDismiss && status !== 'running' && (

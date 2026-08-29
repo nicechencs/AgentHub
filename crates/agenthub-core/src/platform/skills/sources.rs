@@ -6,7 +6,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::utils::process::apply_no_window;
 use crate::error::{AppError, Result};
 
 /// Owns install-source materialization (path / zip / git → package dir).
@@ -111,22 +110,26 @@ pub(crate) fn materialize_install_package(
         let tmp = tempfile::tempdir()
             .map_err(|e| AppError::message("skill.install", format!("tempdir failed: {e}")))?;
         let dest = tmp.path().join("repo");
-        let mut cmd = std::process::Command::new("git");
-        cmd.args(["clone", "--depth", "1", source]).arg(&dest);
-        apply_no_window(&mut cmd);
-        let status = cmd.status().map_err(|e| {
-                AppError::message(
-                    "skill.install",
-                    format!(
-                        "git clone failed (is git installed? doctor / Agents 页运行环境可检测并安装 Git): {e}"
-                    ),
-                )
-            })?;
-        if !status.success() {
+        let dest_str = dest.to_string_lossy().into_owned();
+        let safe_url = crate::utils::redact::redact_url_userinfo(source);
+        let output = crate::utils::process::run_capture_timeout(
+            "git",
+            &["clone", "--depth", "1", source, &dest_str],
+            std::time::Duration::from_secs(120),
+        )
+        .map_err(|e| {
+            AppError::message(
+                "skill.install",
+                format!(
+                    "git clone failed for {safe_url} (is git installed? doctor / Agents 页运行环境可检测并安装 Git): {e}"
+                ),
+            )
+        })?;
+        if !output.status.success() {
             return Err(AppError::message(
                 "skill.install",
                 format!(
-                    "git clone failed for {source} (check network, or install Git via env/runtime)"
+                    "git clone failed for {safe_url} (check network, or install Git via env/runtime)"
                 ),
             ));
         }

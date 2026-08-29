@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: core, Tauri, and route/runtime contributors
 source-of-truth: AgentAdapter, adapter planner/apply ports, bridge host code, and the sidecar proposal
-updated: 2026-08-27
+updated: 2026-08-29
 ---
 
 # Adapters 与本机 Bridge
@@ -55,7 +55,7 @@ Adapter profile 是一条“source connection → target Agent”的受管投影
 
 默认每个目标 Agent/surface 一个授权池：listener 共用 loopback 口，令牌挂在池上，成员引用 Connections 里的登录。`GET /models` 与 dispatch 共用 resolver。混合供应商复合路由和 Codex↔Grok 双向 Responses 仍是实验开关、默认关闭。
 
-本机入口包括 Messages、Responses、Chat Completions；同协议直接转发，或转成上游协议。完整 endpoint 与转换表在 [本机路由 API](../reference/local-route-api.md)，本文不重复维护厂商端点清单。
+本机入口包括 Messages、Responses、Chat Completions；同协议直接转发，或转成上游协议。Codex 与 Grok 都走 Responses 口，格式跟路由一起保存，由本机令牌选中，不根据请求正文猜测。接到本机路由的 Codex / Grok 用本机令牌当 API Key 调 `POST /v1/responses`。完整 endpoint 与转换表在 [本机路由 API](../reference/local-route-api.md)，本文不重复维护厂商端点清单。
 
 ## sidecar 是方向，不是现状
 

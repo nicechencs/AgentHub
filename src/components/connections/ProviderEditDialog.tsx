@@ -33,6 +33,7 @@ import { useToast } from '@/components/ui/toast';
 import type { TranslateFn } from '@/lib/i18n';
 import { useAgentCatalog } from '@/app/runtime';
 import { agentDisplayName } from '@/config/agents';
+import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
 import {
   agentHasOfficialApiTemplate,
   officialApiDefaults,
@@ -45,6 +46,7 @@ import {
   PI_PROVIDER_SLOT_OPTIONS,
   piFormRequiresBaseUrl,
   piProviderSlotHint,
+  piProviderSlotLabel,
 } from '@/lib/pi-provider-slots';
 import {
   getAgentConfigSchema,
@@ -885,6 +887,7 @@ export function ProviderEditDialog({
           saveVars,
           finalFormat,
           baseText,
+          occupancy: catalogEntry?.occupancy,
         },
         {
           validateAgentConfig,
@@ -915,10 +918,15 @@ export function ProviderEditDialog({
       toast({
         title: isEdit ? t('connections.apiKeyDialog.updated') : t('connections.apiKeyDialog.added'),
         description: result.provider.isCurrent
-          ? t('connections.providerDialog.wroteLocal', {
-              name: result.provider.name,
-              endpoint: endpointLabel,
-            })
+          ? t(
+              isCatalogAppendOccupancy(catalogEntry?.occupancy)
+                ? 'connections.providerDialog.wroteCatalog'
+                : 'connections.providerDialog.wroteLocal',
+              {
+                name: result.provider.name,
+                endpoint: endpointLabel,
+              },
+            )
           : t('connections.providerDialog.savedPool', {
               name: result.provider.name,
               endpoint: endpointLabel,
@@ -1209,12 +1217,12 @@ export function ProviderEditDialog({
                     <SelectContent>
                       {piSlotSelectOptions(vars.providerSlug).map((slot) => (
                         <SelectItem key={slot.id} value={slot.id}>
-                          {slot.label}
+                          {piProviderSlotLabel(slot.id, t)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="text-meta text-muted">{piProviderSlotHint(piSlug)}</span>
+                  <span className="text-meta text-muted">{piProviderSlotHint(piSlug, t)}</span>
                 </label>
               ) : null}
               <label className="flex flex-col gap-1.5">

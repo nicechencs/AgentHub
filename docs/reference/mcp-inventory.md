@@ -4,7 +4,7 @@ description: AgentHub 只读 MCP 扫描的路径、格式、脱敏和已知缺�
 type: reference
 audience: contributor
 status: current
-updated: 2026-08-26
+updated: 2026-08-29
 ---
 
 # MCP inventory
@@ -22,7 +22,7 @@ updated: 2026-08-26
 
 ## 扫描位置
 
-路径经 `home_dir()` / `agent_home()` 解析，因此 Claude 的 `CLAUDE_CONFIG_DIR`、Pi 的 `PI_CODING_AGENT_DIR`、WorkBuddy 的 `WORKBUDDY_CONFIG_DIR` 会被尊重。**不**扫描项目目录下的 `.mcp.json` / `.cursor/mcp.json` / `.grok/config.toml`。
+路径经 `home_dir()` / `agent_home()` 解析，因此 Claude 的 `CLAUDE_CONFIG_DIR`、Pi 的 `PI_CODING_AGENT_DIR`、WorkBuddy 的 `WORKBUDDY_CONFIG_DIR`、ZCode 的 `ZCODE_HOME` 会被尊重。**不**扫描项目目录下的 `.mcp.json` / `.cursor/mcp.json` / `.grok/config.toml`。
 
 | Agent | 文件 | 格式 | 标签 |
 |---|---|---|---|
@@ -34,10 +34,10 @@ updated: 2026-08-26
 | Cursor | `<cursor-home>/mcp.json` | JSON | Cursor agent mcp.json |
 | Pi | `<pi-config>/mcp.json` | JSON | Pi mcp.json |
 | Pi | `<pi-config>/.mcp.json` | JSON | Pi .mcp.json |
-| Grok / Kimi / DSH | `<agent-home>/mcp.json` | JSON | 探测 mcp.json |
-| Grok / Kimi / DSH | `<agent-home>/.mcp.json` | JSON | 探测 .mcp.json |
+| Grok / Kimi / DSH / ZCode | `<agent-home>/mcp.json` | JSON | 探测 mcp.json |
+| Grok / Kimi / DSH / ZCode | `<agent-home>/.mcp.json` | JSON | 探测 .mcp.json |
 
-默认 home：Claude `~/.claude`，Codex `~/.codex`，Cursor `~/.cursor`，Pi config `~/.pi/agent`，Grok `~/.grok`，Kimi `~/.kimi-code`（否则 `~/.kimi`），DSH `~/.dsh`，WorkBuddy `~/.workbuddy`。
+默认 home：Claude `~/.claude`，Codex `~/.codex`，Cursor `~/.cursor`，Pi config `~/.pi/agent`，Grok `~/.grok`，Kimi `~/.kimi-code`（否则 `~/.kimi`），DSH `~/.dsh`，WorkBuddy `~/.workbuddy`，ZCode `~/.zcode`。
 
 ## 解析形状
 
@@ -69,7 +69,7 @@ TOML **只**读根表 `mcp_servers`（Codex 形状 `[mcp_servers.name]`）。没
 | 不枚举 Codex `~/.codex/plugins/cache/` 或 `codex plugin` | Plugin 市场与 `[mcp_servers]` 分离 |
 | 不枚举 Grok `~/.grok/plugins/` 或 `grok plugin` | Plugin 与 `[mcp_servers]` 分离 |
 | 不调用各家 CLI（`claude mcp`、`codex mcp`、`grok mcp`） | 只读文件，不启停、不 doctor |
-| Kimi / DSH 仅探测 JSON | 没有已验证的稳定 MCP 契约 |
+| Kimi / DSH / ZCode 仅探测 JSON | 没有已验证的稳定 MCP 契约 |
 
 ## 相关页面
 

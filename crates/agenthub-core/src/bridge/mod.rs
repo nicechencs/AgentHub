@@ -30,8 +30,8 @@ pub use route_index::{
 };
 pub use runtime::{
     BridgeLocalSurface, BridgeRuntimeState, BridgeRuntimeStatus, BridgeStartSpec,
-    BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, ResolvedAuth,
-    UpstreamAuthReload,
+    BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus, DownstreamResponsesProfile,
+    ResolvedAuth, ResponsesDialect, UpstreamAuthReload,
 };
 
 #[cfg(test)]

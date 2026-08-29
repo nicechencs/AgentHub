@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, core, and connection UI contributors
 source-of-truth: AccountService, Account/LiveAccount models, adapter authorization hooks, and ConnectionService
-updated: 2026-08-27
+updated: 2026-08-29
 ---
 
 # Accounts 与 Authorization Pool
@@ -23,7 +23,8 @@ updated: 2026-08-27
 
 - 同一 Agent + 同一稳定 OAuth identity 只保留一行；重新登录覆盖 credentials/label/updatedAt。
 - 跨 Agent 的同一 identity 各自保留一行，不能跨 `agent_id` 合并。
-- API Key 按密钥指纹分行；不同 Key 不因展示名相同而合并。同一把钥匙、同一地址保存成两张登录时，也不会悄悄把其中一张送进回收站。
+- API Key 按密钥指纹分行；不同 Key 不因展示名相同而合并。同一把钥匙、同一地址保存成两张登录时，也不会悄悄把其中一张送进回收站。官方登录与 API Key 永远分行，不会合成一张。
+- WorkBuddy 自定义模型按 `models.json` 一行一份登录；ZCode 按 `~/.zcode/v2/config.json` 的一条供应商分行。桌面套餐登录不导入。
 - Cursor 没有稳定的本机登录文件：登录可以留在登录列表，但不能写回 Cursor 本机配置；切换失败给出中文说明。Kimi 切换会写出带模型表的完整 `config.toml`。
 - identity 不明确时 fail closed，不根据 label、token preview 或猜测合并。
 - Pi 还要按官方 live slot 区分；同一人位于不同 provider 槽仍是不同账号行。
@@ -34,7 +35,7 @@ Adapter 的 `authorization_key` 用于识别同一授权（通常是 token/key h
 
 ## Live 与绑定
 
-导入 live：以 Agent adapter 能识别的当前 credential family 为准；同时存在 API Key 与官方登录时，报告 `alsoPresent` 供用户确认，但不把两族合成一张登录。切换 live：备份、写入目标 Agent 的官方文件、更新 current/binding，并保留池中其他行。跨 Agent 复用应走 [bind](connections-and-routing.md)，不能把目标的生成配置再导入为新登录。
+导入 live：以 Agent adapter 能识别的当前 credential family 为准；同时存在 API Key 与官方登录时，报告 `alsoPresent` 供用户确认，但不把两族合成一张登录。切换 live：备份、写入目标 Agent 的官方文件、更新 current/binding，并保留池中其他行。登录记下关键词和整份配置；详情列出相关文件（打码后可复制、打开所在目录），不含明文钥匙。跨 Agent 复用应走 [bind](connections-and-routing.md)，不能把目标的生成配置再导入为新登录。
 
 刷新归属遵循谁拥有登录文件谁续期：目标 CLI-owned OAuth 由目标工具刷新，AgentHub 只重新读取；Hub-owned grant 才由 AgentHub 按 account 行做 single-flight。跨进程或并发写入要依赖 revision/lock，不以最后一次列表刷新覆盖另一份新凭据。
 

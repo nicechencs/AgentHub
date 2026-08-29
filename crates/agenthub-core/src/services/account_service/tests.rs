@@ -151,6 +151,23 @@ impl AgentAdapter for FakeAdapter {
             .ok_or_else(|| AppError::NotFound("no live account".into()))
     }
 
+    fn expand_live_accounts(&self, snapshot: &LiveAccount) -> Result<Vec<LiveAccount>> {
+        match snapshot.agent {
+            AgentId::Grok => Ok(crate::adapters::expand_grok_auth_to_live_accounts(snapshot)),
+            AgentId::Kimi => Ok(crate::adapters::expand_kimi_live_accounts(snapshot)),
+            AgentId::Claude => Ok(crate::adapters::expand_claude_live_accounts(snapshot)),
+            AgentId::Pi => {
+                let body = snapshot.credentials.get("body").ok_or_else(|| {
+                    AppError::InvalidArg(
+                        "Pi combined live account is missing credentials.body".into(),
+                    )
+                })?;
+                crate::adapters::pi_auth::expand_auth_to_live_accounts(body)
+            }
+            _ => Ok(vec![snapshot.clone()]),
+        }
+    }
+
     fn apply_account(&self, account: &LiveAccount) -> Result<()> {
         if self.reject_api_key_apply.load(Ordering::SeqCst)
             && account

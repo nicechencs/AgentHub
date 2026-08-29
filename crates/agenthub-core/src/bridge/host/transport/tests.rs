@@ -10,8 +10,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::bridge::grok_cli::{is_reasoning_decode_failure, GrokReasoningReplay};
 use crate::bridge::runtime::{
-    BridgeLocalSurface, BridgeUpstreamConfig, BridgeUpstreamProtocol, BridgeUpstreamStatus,
-    ResolvedAuth,
+    BridgeLocalSurface, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol,
+    BridgeUpstreamStatus, DownstreamResponsesProfile, ResolvedAuth, ResponsesDialect,
 };
 
 use super::super::admission::AdmittedRequest;
@@ -20,7 +20,9 @@ use super::super::surface::DownstreamSurface;
 use super::super::ANTHROPIC_API_VERSION;
 use crate::models::{AdapterSourceProduct, AgentId};
 
-use super::super::pair_policy::{identity_relay, pair_adapter_active, pair_edge_can_apply};
+use super::super::pair_policy::{
+    identity_relay, pair_adapter_active, pair_adapter_rejected, pair_direction, pair_edge_can_apply,
+};
 use super::{RecoveryPolicy, UpstreamChannel};
 
 fn listener_state(
@@ -49,6 +51,7 @@ fn listener_state(
         reload_upstream_auth: None,
         mapping_source: None,
         mapping_target: None,
+        downstream_responses_profile: None,
         custom_openai: false,
         route_index: None,
         auth_reload: crate::bridge::auth_reload::AuthReloadCoordinator::new(),
@@ -108,6 +111,45 @@ fn prepare_responses(protocol: BridgeUpstreamProtocol) -> super::UpstreamPrepare
 }
 
 #[test]
+fn edge_state_carries_explicit_downstream_responses_profile_from_start_spec() {
+    let spec = BridgeStartSpec::new(
+        "profile",
+        0,
+        "local-token",
+        BridgeUpstreamConfig {
+            base_url: "http://127.0.0.1/v1/".to_owned(),
+            model: Some("model".to_owned()),
+            source_connection_id: None,
+            auth: ResolvedAuth::bearer("upstream-token"),
+            protocol: BridgeUpstreamProtocol::XaiResponsesOauth,
+            local_surface: BridgeLocalSurface::Responses,
+        },
+    )
+    .with_mapping(
+        crate::models::AdapterSourceProduct::CodexChatGptSubscription,
+        AgentId::Codex,
+        false,
+    )
+    .with_downstream_responses_profile(Some(DownstreamResponsesProfile::new(
+        ResponsesDialect::Grok,
+    )));
+    let edge = EdgeState::from_spec(
+        &spec,
+        reqwest::Url::parse("http://127.0.0.1/v1/").expect("test url"),
+        CancellationToken::new(),
+        crate::bridge::auth_reload::AuthReloadCoordinator::new(),
+    );
+    assert_eq!(
+        edge.downstream_responses_profile,
+        Some(DownstreamResponsesProfile::new(ResponsesDialect::Grok))
+    );
+    assert_eq!(
+        pair_direction(&edge, UpstreamChannel::CodexResponses),
+        Some(crate::bridge::protocol::pair::PairDirection::GrokIngressCodexUpstream)
+    );
+}
+
+#[test]
 fn prepare_selects_upstream_path_by_channel() {
     assert_eq!(
         prepare_responses(BridgeUpstreamProtocol::OpenAiChatCompletions).path,
@@ -159,6 +201,11 @@ fn pair_admitted(
     let mut request = admitted(protocol, BridgeLocalSurface::Responses, body);
     request.state.mapping_source = Some(source);
     request.state.mapping_target = Some(target);
+    request.state.downstream_responses_profile = match target {
+        AgentId::Codex => Some(DownstreamResponsesProfile::new(ResponsesDialect::Codex)),
+        AgentId::Grok => Some(DownstreamResponsesProfile::new(ResponsesDialect::Grok)),
+        _ => None,
+    };
     request.state.codex_ingress_grok_upstream = codex_to_grok;
     request.state.grok_ingress_codex_upstream = grok_to_codex;
     request.state.listed_models = Arc::from(vec!["grok-4.5".to_owned(), "gpt-5.4".to_owned()]);
@@ -181,6 +228,7 @@ fn flag_off_keeps_responses_identity_relay_for_codex_and_grok() {
         &grok.state
     ));
     assert!(!pair_adapter_active(&grok.state, UpstreamChannel::Grok));
+    assert!(!pair_adapter_rejected(&grok.state, UpstreamChannel::Grok));
     let codex = pair_admitted(
         BridgeUpstreamProtocol::CodexResponsesOauth,
         AdapterSourceProduct::CodexChatGptSubscription,
@@ -193,6 +241,10 @@ fn flag_off_keeps_responses_identity_relay_for_codex_and_grok() {
         UpstreamChannel::CodexResponses,
         DownstreamSurface::Responses,
         &codex.state
+    ));
+    assert!(!pair_adapter_rejected(
+        &codex.state,
+        UpstreamChannel::CodexResponses
     ));
 }
 
@@ -213,6 +265,7 @@ fn flag_on_disables_implicit_responses_passthrough_for_cross_product() {
         &grok.state
     ));
     assert!(pair_adapter_active(&grok.state, UpstreamChannel::Grok));
+    assert!(!pair_adapter_rejected(&grok.state, UpstreamChannel::Grok));
 }
 
 #[test]
@@ -231,6 +284,29 @@ fn same_dialect_does_not_force_pair_adapter_when_flags_on() {
         &same.state
     ));
     assert!(!pair_adapter_active(&same.state, UpstreamChannel::Grok));
+}
+
+#[test]
+fn pair_direction_uses_profile_even_when_mapping_target_disagrees() {
+    let mut request = pair_admitted(
+        BridgeUpstreamProtocol::XaiResponsesOauth,
+        AdapterSourceProduct::XaiGrokSubscription,
+        AgentId::Codex,
+        true,
+        false,
+        json!({ "model": "grok-4.5", "input": "hi" }),
+    );
+    request.state.mapping_target = Some(AgentId::Grok);
+    assert_eq!(
+        pair_direction(&request.state, UpstreamChannel::Grok),
+        Some(crate::bridge::protocol::pair::PairDirection::CodexIngressGrokUpstream)
+    );
+    assert!(pair_adapter_rejected(&request.state, UpstreamChannel::Grok));
+    assert!(!identity_relay(
+        UpstreamChannel::Grok,
+        DownstreamSurface::Responses,
+        &request.state
+    ));
 }
 
 #[test]

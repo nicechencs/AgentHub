@@ -145,6 +145,23 @@ export function defaultConfigScaffold(agentId: string): {
           2,
         ),
       };
+    case 'zcode':
+      return {
+        format: 'json',
+        preset: 'custom',
+        text: JSON.stringify(
+          {
+            apiKey: '',
+            baseURL: 'https://open.bigmodel.cn/api/anthropic',
+            kind: 'anthropic',
+            name: 'BigModel',
+            providerId: 'builtin:bigmodel',
+            models: ['GLM-5.3', 'GLM-5.3-Flash', 'GLM-5-Turbo'],
+          },
+          null,
+          2,
+        ),
+      };
     default:
       return {
         format: 'json',
@@ -234,6 +251,14 @@ export function liveConfigPaths(agentId: string): {
         auth: '~/.dsh/.credentials.yaml',
         openDir: '~/.dsh',
         hint: '服务设置写在 cordis.patch.yml，密钥写在 .credentials.yaml。切换后才会写到本机。官方 DeepSeek 用 https://api.deepseek.com，不要加 /anthropic。',
+      };
+    case 'zcode':
+      return {
+        config: '~/.zcode/v2/config.json',
+        auth: '~/.zcode/v2/config.json',
+        extra: ['~/.zcode/cli/config.json'],
+        openDir: '~/.zcode（或 ZCODE_HOME）',
+        hint: '会作为一条供应商出现在 ZCode 的模型列表里，原来的条目还在。官方智谱地址写入已有的 BigModel 或 Z.ai 槽；自定义必须带模型名单。账号登录请在 ZCode 应用内完成。',
       };
     default:
       return {

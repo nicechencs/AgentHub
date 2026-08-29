@@ -285,10 +285,13 @@ impl ChatRepo {
                 Ok(turn)
             })();
             match result {
-                Ok(turn) => {
-                    conn.execute_batch("COMMIT")?;
-                    Ok(turn)
-                }
+                Ok(turn) => match conn.execute_batch("COMMIT") {
+                    Ok(()) => Ok(turn),
+                    Err(error) => {
+                        let _ = conn.execute_batch("ROLLBACK");
+                        Err(error.into())
+                    }
+                },
                 Err(e) => {
                     let _ = conn.execute_batch("ROLLBACK");
                     Err(e)
