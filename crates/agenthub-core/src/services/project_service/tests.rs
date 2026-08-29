@@ -1906,24 +1906,10 @@ fn public_list_sessions_bad_id() {
 #[test]
 fn project_registry_covers_all_agents() {
     let reg = crate::platform::projects::builtin_project_registry();
-    // Projects are sparse: ZCode ProjectHistory is Planned — no fake scanner.
     for id in AgentId::ALL {
-        if id == AgentId::Zcode {
-            assert!(
-                !reg.contains(id),
-                "zcode project scanner is Planned — no fake source"
-            );
-        } else {
-            assert!(reg.contains(id), "missing {id:?}");
-        }
+        assert!(reg.contains(id), "missing {id:?}");
     }
-    assert_eq!(
-        reg.supported_agents().len(),
-        AgentId::ALL
-            .iter()
-            .filter(|id| **id != AgentId::Zcode)
-            .count()
-    );
+    assert_eq!(reg.supported_agents().len(), AgentId::ALL.len());
 }
 
 #[test]

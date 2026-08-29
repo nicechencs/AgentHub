@@ -15,11 +15,9 @@ pub(crate) fn managed_toml_provider_keys(agent: AgentId) -> Result<&'static [&'s
         | AgentId::WorkBuddy
         | AgentId::Cursor
         | AgentId::Dsh
-        | AgentId::Zcode => {
-            Err(AppError::InvalidArg(format!(
-                "{} provider config is JSON, not TOML",
-                agent.display_name()
-            )))
-        }
+        | AgentId::Zcode => Err(AppError::InvalidArg(format!(
+            "{} provider config is JSON, not TOML",
+            agent.display_name()
+        ))),
     }
 }

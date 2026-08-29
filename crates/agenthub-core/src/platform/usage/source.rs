@@ -56,4 +56,10 @@ pub trait UsageSource: Send + Sync {
 
     /// Start incremental parse for one file (`byte_offset` already resolved).
     fn begin_file(&self, path: &Path, byte_offset: u64) -> Box<dyn UsageFileParser>;
+
+    /// Optional whole-store harvest (SQLite indexes). Default is empty — file
+    /// discovery is the only path. Dedup still uses `raw_hash`.
+    fn harvest_events(&self) -> Result<Vec<ParsedUsageEvent>> {
+        Ok(Vec::new())
+    }
 }
