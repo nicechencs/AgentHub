@@ -102,7 +102,7 @@ export function installChannelDisplayLabel(
 }
 
 export function isDisplayableConfigDir(value?: string | null): value is string {
-  if (!isLiveFilePath(value)) return false;
+  if (!value || !isLiveFilePath(value)) return false;
   const trimmed = value.trim();
   return trimmed !== '~' && trimmed !== '~/';
 }
