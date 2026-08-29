@@ -259,7 +259,7 @@ pub(crate) async fn unbind_local_bridge(
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _profile_guard = coordinator.lock_profile(&profile_id).await;
     let profile = load_bridge_profile(hub.clone(), profile_id.clone()).await?;
-    let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
+    let target_guard = coordinator.lock_target(profile.target_agent_id).await;
     stop_bridge_runtime(&host, &profile).await?;
     let unbind_hub = hub.clone();
     let result = with_hub_blocking(unbind_hub, move |hub| {
@@ -269,6 +269,9 @@ pub(crate) async fn unbind_local_bridge(
     })
     .await;
     if let Err(error) = result {
+        // apply_local_bridge_locked takes the same target mutex; drop first or
+        // this task deadlocks on the non-reentrant tokio Mutex.
+        drop(target_guard);
         let restart = AdapterBridgePrepareRequest {
             source_kind: profile.source_kind,
             source_id: profile.source_id.clone(),
@@ -358,7 +361,7 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
     // Every route takes the same target authority before selecting its Core
     // removal path. This keeps direct Claude removal from interleaving a
     // target-level Tauri configuration/account/provider mutation.
-    let _target_guard = coordinator.lock_target(profile.target_agent_id).await;
+    let target_guard = coordinator.lock_target(profile.target_agent_id).await;
     if profile.route != AdapterRoute::LocalBridge {
         return with_hub_blocking(hub, move |hub| {
             hub.adapter_apply()
@@ -384,6 +387,9 @@ pub(crate) async fn remove_adapter_with_bridge_cleanup(
     })
     .await;
     if let Err(error) = result {
+        // apply_local_bridge_locked takes the same target mutex; drop first or
+        // this task deadlocks on the non-reentrant tokio Mutex.
+        drop(target_guard);
         let restart = AdapterBridgePrepareRequest {
             source_kind: profile.source_kind,
             source_id: profile.source_id.clone(),
