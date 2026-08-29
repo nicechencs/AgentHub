@@ -1800,6 +1800,8 @@ export const zh = {
       extraCopyIde: "IDE 插件",
       extraCopyDesktop: "桌面应用",
       extraCopyLeftover: "遗留数据目录 npm",
+      channelOfficial: "官方脚本",
+      channelNpm: "npm",
       extraCopyCanUpdate: "可更新",
       extraCopyIsLatest: "已最新",
       extraCopyUpgradeSpawnOnly: "升级只作用于当前启动渠道",
@@ -1850,6 +1852,8 @@ export const zh = {
       installLocations: "安装位置",
       openFolder: "目录",
       configDir: "配置目录",
+      endpointTypes: "端点类型",
+      endpointDependsOnLogin: "随当前登录而定",
       uninstall: "卸载",
     },
     dialog: {

@@ -88,16 +88,19 @@ describe('agent-card install log title', () => {
 });
 
 describe('extra copy labels', () => {
-  it('maps known kinds and leaves npm/native as channel ids', () => {
+  it('maps known kinds including official-script / npm product words', () => {
     expect(extraCopyKindLabelKey('ide')).toBe('agents.card.extraCopyIde');
     expect(extraCopyKindLabelKey('desktop')).toBe('agents.card.extraCopyDesktop');
     expect(extraCopyKindLabelKey('leftover-agenthub')).toBe(
       'agents.card.extraCopyLeftover',
     );
-    expect(extraCopyKindLabelKey('npm')).toBeUndefined();
-    expect(extraCopyKindLabelKey('native')).toBeUndefined();
-    expect(extraCopyKindLabel('npm', (key) => key)).toBe('npm');
+    expect(extraCopyKindLabelKey('npm')).toBe('agents.card.channelNpm');
+    expect(extraCopyKindLabelKey('native')).toBe('agents.card.channelOfficial');
+    expect(extraCopyKindLabel('npm', (key) => key)).toBe('agents.card.channelNpm');
+    expect(extraCopyKindLabel('native', (key) => key)).toBe('agents.card.channelOfficial');
     expect(extraCopyKindLabel('ide', (key) => key)).toBe('agents.card.extraCopyIde');
+    expect(zh.agents.card.channelOfficial).toBe('官方脚本');
+    expect(zh.agents.card.channelNpm).toBe('npm');
   });
 
   it('lists unique versions on the card and points extra copies to details', () => {

@@ -1,0 +1,119 @@
+/**
+ * Agent management detail view-model.
+ *
+ * Conversation surfaces follow dest `RouteDownstreamSurface::for_agent`:
+ * this is the Agent's static capability, not the running local-route row.
+ */
+import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
+import type { MessageKey, TranslateFn } from '@/lib/i18n';
+import { isLiveFilePath, liveConfigPaths } from '@/lib/provider-detect';
+import {
+  routeEndpointPath,
+  type RouteEndpointId,
+} from '@/lib/route-endpoints';
+import { extraCopyKindLabel, extraCopyKindLabelKey } from './agent-card-model';
+
+export type AgentConversationSurface = RouteEndpointId;
+
+export type AgentConversationEndpoint = {
+  id: AgentConversationSurface;
+  path: string;
+  copyKey: MessageKey;
+};
+
+/** Mirrors dest `RouteDownstreamSurface::for_agent`. Cursor is omitted on purpose. */
+export function agentConversationSurface(
+  agentId: string,
+): AgentConversationSurface | null {
+  if (agentId === 'claude') return 'messages';
+  if (agentId === 'codex' || agentId === 'grok') return 'responses';
+  if (agentId === 'kimi' || agentId === 'dsh') return 'chat_completions';
+  return null;
+}
+
+export function conversationEndpointCopyKey(
+  id: AgentConversationSurface,
+): MessageKey {
+  if (id === 'messages') return 'routes.endpoint.messages';
+  if (id === 'responses') return 'routes.endpoint.responses';
+  return 'routes.endpoint.chatCompletions';
+}
+
+/** Paths + existing product copy. Empty when dest has no default surface. */
+export function agentConversationEndpoints(
+  agentId: string,
+): AgentConversationEndpoint[] {
+  const id = agentConversationSurface(agentId);
+  if (!id) return [];
+  return [{ id, path: routeEndpointPath(id), copyKey: conversationEndpointCopyKey(id) }];
+}
+
+export function formatConversationEndpointLabel(
+  endpoint: AgentConversationEndpoint,
+  t: TranslateFn,
+): string {
+  return `${endpoint.path} · ${t(endpoint.copyKey)}`;
+}
+
+export function formatAgentConversationEndpoints(
+  agentId: string,
+  t: TranslateFn,
+): string {
+  const rows = agentConversationEndpoints(agentId);
+  if (rows.length === 0) return t('agents.detail.endpointDependsOnLogin');
+  return rows.map((row) => formatConversationEndpointLabel(row, t)).join('\n');
+}
+
+/** dest catalog prefixes the internal id (`native 官方脚本`); that is not product copy. */
+export function isRawInstallChannelLabel(id: string, label: string): boolean {
+  const trimmed = label.trim();
+  if (!trimmed || trimmed === id) return true;
+  if (id === 'native' && /^native(\s|$)/i.test(trimmed)) return true;
+  return false;
+}
+
+export function catalogChannelLabel(
+  agentId: string,
+  channel: string,
+  catalogChannels?: readonly Pick<InstallChannelMeta, 'id' | 'label'>[],
+): string | undefined {
+  const channels = catalogChannels ?? AGENT_MAP[agentId]?.installChannels ?? [];
+  const hit = channels.find((row) => row.id === channel);
+  if (!hit?.label || isRawInstallChannelLabel(channel, hit.label)) return undefined;
+  return hit.label.trim();
+}
+
+/**
+ * Human channel label used on the Agents detail panel.
+ * Catalog first; then the same extra-copy / official-script words the rest of Agents uses.
+ */
+export function installChannelDisplayLabel(
+  agentId: string,
+  channel: string | null | undefined,
+  t: TranslateFn,
+  catalogChannels?: readonly Pick<InstallChannelMeta, 'id' | 'label'>[],
+): string | undefined {
+  const id = channel?.trim();
+  if (!id) return undefined;
+  const catalog = catalogChannelLabel(agentId, id, catalogChannels);
+  if (catalog) return catalog;
+  if (extraCopyKindLabelKey(id)) return extraCopyKindLabel(id, t);
+  return undefined;
+}
+
+export function isDisplayableConfigDir(value?: string | null): value is string {
+  if (!isLiveFilePath(value)) return false;
+  const trimmed = value.trim();
+  return trimmed !== '~' && trimmed !== '~/';
+}
+
+/** Prefer a resolved live dir; otherwise dest's known default, never a heading-only card. */
+export function displayAgentConfigDir(
+  agentId: string,
+  resolvedOpenDir?: string | null,
+): string | null {
+  if (isDisplayableConfigDir(resolvedOpenDir)) return resolvedOpenDir.trim();
+  const fallback = liveConfigPaths(agentId).openDir;
+  const token = fallback.split(/[（(]/)[0]?.trim() ?? '';
+  return isDisplayableConfigDir(token) ? token : null;
+}

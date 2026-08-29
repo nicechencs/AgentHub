@@ -27,6 +27,9 @@ describe('agents layout wiring', () => {
     expect(page).toContain('<EmptyState');
     expect(detail).toContain('InspectSurface');
     expect(detail).toContain("t('agents.detail.installLocations')");
+    expect(detail).toContain("t('agents.detail.endpointTypes')");
+    expect(detail).toContain('installChannelDisplayLabel');
+    expect(detail).toContain('displayAgentConfigDir');
     expect(detail).toContain("t('agents.detail.openFolder')");
     expect(detail).toContain('flex items-center justify-between gap-2');
     expect(detail).toContain('<OpenDirButton');

@@ -11,13 +11,13 @@ import {
   openAgentConfig,
   uninstallAgentDetailed,
 } from '@/lib/api/agent';
+import { getAgentLivePaths } from '@/lib/api/install';
 import { openPathInFileManager } from '@/lib/api/skill';
 import { normalizeOpenPath } from '@/lib/path-open';
 import type { AgentStatus } from '@/lib/types';
 import { AgentCardDialogs, type AgentCardConfirmKind } from './AgentCardDialogs';
 import {
   canUninstallProgramInApp,
-  extraCopyKindLabel,
   formatAgentVersion,
   isSpecialInstallChannel,
   listAgentInstalls,
@@ -25,6 +25,11 @@ import {
   uninstallViaLabel,
   type AgentInstall,
 } from './agent-card-model';
+import {
+  displayAgentConfigDir,
+  formatAgentConversationEndpoints,
+  installChannelDisplayLabel,
+} from './agent-detail-model';
 
 function Field({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
@@ -59,6 +64,29 @@ export function AgentDetailPanel({
   const [confirmName, setConfirmName] = React.useState('');
   const [uninstalling, setUninstalling] = React.useState(false);
   const [opening, setOpening] = React.useState<string | null>(null);
+  const [resolvedConfigDir, setResolvedConfigDir] = React.useState<string | null>(null);
+  const channelLabel = installChannelDisplayLabel(
+    agent.agentId,
+    spawn?.source ?? agent.channel,
+    t,
+  );
+  const endpointLabel = formatAgentConversationEndpoints(agent.agentId, t);
+  const configDir = displayAgentConfigDir(agent.agentId, resolvedConfigDir);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setResolvedConfigDir(null);
+    void getAgentLivePaths(agent.agentId)
+      .then((paths) => {
+        if (!cancelled) setResolvedConfigDir(paths.openDir);
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedConfigDir(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.agentId]);
 
   const openFolder = (location: string) => {
     const target = normalizeOpenPath(location);
@@ -150,10 +178,8 @@ export function AgentDetailPanel({
       width={width}
     >
       <dl className="flex flex-col gap-2">
-        <Field
-          label={t('agents.card.channel')}
-          value={spawn ? extraCopyKindLabel(spawn.source, t) : agent.channel}
-        />
+        <Field label={t('agents.card.channel')} value={channelLabel} />
+        <Field label={t('agents.detail.endpointTypes')} value={endpointLabel} />
       </dl>
 
       <section className="mt-4">
@@ -165,6 +191,7 @@ export function AgentDetailPanel({
             {installs.map((inst) => (
               <InstallLocationRow
                 key={`${inst.source}:${inst.location}`}
+                agentId={agent.agentId}
                 inst={inst}
                 busy={opening === inst.location}
                 onOpen={() => openFolder(inst.location)}
@@ -174,17 +201,19 @@ export function AgentDetailPanel({
         )}
       </section>
 
-      <section className="mt-4">
-        <h3 className="mb-2 text-body font-medium">{t('agents.detail.configDir')}</h3>
-        <div className="flex items-center justify-between gap-2 rounded-card border border-border bg-subtle/60 px-3 py-2">
-          <span className="min-w-0 text-meta text-secondary">{t('agents.detail.configDir')}</span>
-          <OpenDirButton
-            disabled={opening !== null || uninstalling}
-            title={t('agents.card.openConfigDirTitle')}
-            onClick={openConfigDir}
-          />
-        </div>
-      </section>
+      {configDir ? (
+        <section className="mt-4">
+          <h3 className="mb-2 text-body font-medium">{t('agents.detail.configDir')}</h3>
+          <div className="flex items-center justify-between gap-2 rounded-card border border-border bg-subtle/60 px-3 py-2">
+            <span className="min-w-0 break-all font-mono text-meta text-secondary">{configDir}</span>
+            <OpenDirButton
+              disabled={opening !== null || uninstalling}
+              title={t('agents.card.openConfigDirTitle')}
+              onClick={openConfigDir}
+            />
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-4">
         <h3 className="mb-2 text-body font-medium">{t('agents.detail.uninstall')}</h3>
@@ -265,10 +294,12 @@ function OpenDirButton({
 }
 
 function InstallLocationRow({
+  agentId,
   inst,
   busy,
   onOpen,
 }: {
+  agentId: string;
   inst: AgentInstall;
   busy: boolean;
   onOpen: () => void;
@@ -276,14 +307,15 @@ function InstallLocationRow({
   const { t } = useI18n();
   const versionText = formatAgentVersion(inst.version);
   const openable = Boolean(normalizeOpenPath(inst.location));
+  const sourceLabel = installChannelDisplayLabel(agentId, inst.source, t);
   return (
     <li className="rounded-card border border-border bg-subtle/60 px-3 py-2">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           {inst.spawn ? <Badge>{t('agents.card.spawnCopy')}</Badge> : null}
-          <span className="text-meta font-medium text-secondary">
-            {extraCopyKindLabel(inst.source, t)}
-          </span>
+          {sourceLabel ? (
+            <span className="text-meta font-medium text-secondary">{sourceLabel}</span>
+          ) : null}
           {versionText ? (
             <span className="font-mono text-meta text-muted">{versionText}</span>
           ) : null}
