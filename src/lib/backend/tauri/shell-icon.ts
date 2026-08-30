@@ -1,6 +1,6 @@
 /**
- * Retint the running window (taskbar) and tray icon to the current accent.
- * Installer / pinned-shortcut icons stay the bundled default.
+ * Retint the running window (taskbar), tray, and Windows desktop shortcuts.
+ * The installer package icon stays the bundled default.
  */
 import { logger } from '@/lib/logger';
 import { appMarkSvg } from '@/lib/app-mark';
@@ -44,14 +44,15 @@ export async function invokeSetShellIcon(
   rgba: number[],
   width: number,
   height: number,
+  accentId: AccentId,
 ): Promise<void> {
-  await invoke('set_shell_icon', { rgba, width, height });
+  await invoke('set_shell_icon', { rgba, width, height, accentId });
 }
 
 export async function applyShellAccentIcon(id: AccentId): Promise<void> {
   const fill = ACCENT_PALETTES[id].light;
   const icon = await rasterizeAccentMark(fill);
-  await invokeSetShellIcon(icon.rgba, icon.width, icon.height);
+  await invokeSetShellIcon(icon.rgba, icon.width, icon.height, id);
 }
 
 export function applyShellAccentIconBestEffort(id: AccentId): void {
