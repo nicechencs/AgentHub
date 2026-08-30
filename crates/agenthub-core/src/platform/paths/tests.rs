@@ -29,6 +29,9 @@ fn every_agent_has_path_contribution() {
 
 #[test]
 fn resolve_agent_home_matches_registry() {
+    // Reads process env; hold the shared lock so env-mutating tests in this
+    // file cannot flip CLAUDE_CONFIG_DIR / CODEX_HOME / KIMI_CODE_HOME mid-run.
+    let _guard = crate::utils::test_env::lock_test_env();
     let reg = builtin_path_registry();
     for id in AgentId::ALL {
         let via_fn = resolve_agent_home(id).unwrap();

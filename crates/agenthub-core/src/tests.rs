@@ -59,7 +59,7 @@ fn agent_hub_open_doctor_has_all_runtimes_and_agents() {
     assert_eq!(
         report.capabilities[&crate::models::AgentId::Kimi][&crate::models::Capability::Skills]
             .level,
-        crate::models::CapabilityLevel::Unsupported
+        crate::models::CapabilityLevel::Partial
     );
 }
 
