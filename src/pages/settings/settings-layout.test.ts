@@ -10,11 +10,12 @@ function source(name: string): string {
 }
 
 describe('settings layout wiring', () => {
-  it('keeps the page title on the edge column; only the body uses the reading column', () => {
+  it('keeps tabs in the workbench header and centers the body; backups keeps the full-height split', () => {
     const page = source('index.tsx');
-    expect(page).toContain('pageRhythm.readingStart');
+    expect(page).not.toContain('pageRhythm.readingStart');
     expect(page).not.toContain('pageRhythm.formColumn');
-    expect(page.match(/className=\{pageRhythm\.readingStart\}/g)?.length).toBe(4);
+    expect(page.match(/className=\{pageRhythm\.readingColumn\}/g)?.length).toBe(3);
+    expect(page).toMatch(/workbenchHeader\}>\s*<div className=\{pageRhythm\.chrome\}/);
     expect(page).not.toMatch(/readingColumn\}>\s*<PageHeader/);
     expect(page).toContain('TabsContent value="backups" className="h-full min-h-0"');
     expect(page).toContain('toolbar={settingsTabList}');

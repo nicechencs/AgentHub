@@ -37,9 +37,8 @@ describe('pageRhythm (docs/ui/design-system.md §3)', () => {
     expect(pageRhythm.chatChromeX).toBe(pageChatTw.x);
   });
 
-  it('uses one centered reading column for Chat messages and a left-aligned one for Settings forms', () => {
+  it('uses one centered reading column for Chat messages and Settings forms', () => {
     expect(pageRhythm.readingColumn).toBe('mx-auto w-full max-w-3xl');
-    expect(pageRhythm.readingStart).toBe('w-full max-w-3xl');
   });
 
   it('keeps the current page inset at 8px (change pageEdge.inset to retune)', () => {

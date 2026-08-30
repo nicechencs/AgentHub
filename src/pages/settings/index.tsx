@@ -217,7 +217,7 @@ export default function SettingsPage({
       <div className="flex h-full min-h-0 flex-col">
         {settingsHeader}
         <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchPadT, pageRhythm.workbenchY)}>
-          <div className={pageRhythm.readingStart}>
+          <div className={pageRhythm.readingColumn}>
             <SettingsSkeleton />
           </div>
         </div>
@@ -230,7 +230,7 @@ export default function SettingsPage({
       <div className="flex h-full min-h-0 flex-col">
         {settingsHeader}
         <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchPadT, pageRhythm.workbenchY)}>
-          <div className={pageRhythm.readingStart}>
+          <div className={pageRhythm.readingColumn}>
             <ErrorState error={error ?? new Error(t('settings.page.emptyError'))} onRetry={() => void load()} />
           </div>
         </div>
@@ -250,12 +250,10 @@ export default function SettingsPage({
       ) : (
         <>
           <div className={pageRhythm.workbenchHeader}>
-            <div className={pageRhythm.readingStart}>
-              <div className={pageRhythm.chrome}>{settingsTabList}</div>
-            </div>
+            <div className={pageRhythm.chrome}>{settingsTabList}</div>
           </div>
           <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchY)}>
-            <div className={pageRhythm.readingStart}>
+            <div className={pageRhythm.readingColumn}>
               <TabsContent value="preferences">
                 <PreferencesPanel
                   settings={settings}

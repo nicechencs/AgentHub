@@ -25,28 +25,33 @@ test('app boots on mock and primary navigation works', async ({ page }) => {
   ).toBeVisible();
 });
 
-test('Settings tabs share the form left edge; backups toolbar stays on one row', async ({ page }) => {
+test('Settings tabs stay on the workbench-header left; form cards use the centered reading column; backups toolbar stays on one row', async ({ page }) => {
   await openApp(page);
   await goNav(page, '设置');
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
   const prefsTab = page.getByRole('tab', { name: '偏好' });
   await expect(prefsTab).toBeVisible();
   await expect(page.getByText('语言')).toBeVisible();
+  const heading = page.getByRole('heading', { name: '设置' });
   const tabsList = page.getByRole('tablist').first();
   const card = page.locator('[data-card="default"]').filter({ hasText: '语言' }).first();
   await expect(card).toBeVisible();
+  const headingBox = await heading.boundingBox();
   const tabListBox = await tabsList.boundingBox();
   const cardBox = await card.boundingBox();
+  expect(headingBox).toBeTruthy();
   expect(tabListBox).toBeTruthy();
   expect(cardBox).toBeTruthy();
-  expect(Math.abs(tabListBox!.x - cardBox!.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(tabListBox!.x - headingBox!.x)).toBeLessThanOrEqual(2);
+  expect(cardBox!.x).toBeGreaterThan(tabListBox!.x + 24);
 
   await page.getByRole('tab', { name: '本机' }).click();
   await expect(page.getByText('数据目录')).toBeVisible();
   const localCard = page.locator('[data-card="default"]').filter({ hasText: '数据目录' }).first();
   const localCardBox = await localCard.boundingBox();
   const localTabsBox = await page.getByRole('tablist').first().boundingBox();
-  expect(Math.abs(localTabsBox!.x - localCardBox!.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(localTabsBox!.x - headingBox!.x)).toBeLessThanOrEqual(2);
+  expect(localCardBox!.x).toBeGreaterThan(localTabsBox!.x + 24);
 
   await page.getByRole('tab', { name: '备份' }).click();
   const keepCopies = page.getByText('保留本机配置副本');
@@ -54,12 +59,15 @@ test('Settings tabs share the form left edge; backups toolbar stays on one row',
   await expect(page.getByRole('tab', { name: /Claude/ })).toBeVisible();
   await expect(keepCopies).toBeVisible();
   await expect(backupBtn).toBeVisible();
-  const agentStrip = page.getByRole('tablist').nth(1);
+  const pageTabs = page.getByRole('tablist').first();
   const keepBox = await keepCopies.boundingBox();
-  const stripBox = await agentStrip.boundingBox();
+  const btnBox = await backupBtn.boundingBox();
+  const pageTabsBox = await pageTabs.boundingBox();
   expect(keepBox).toBeTruthy();
-  expect(stripBox).toBeTruthy();
-  expect(Math.abs(keepBox!.y + keepBox!.height / 2 - (stripBox!.y + stripBox!.height / 2))).toBeLessThanOrEqual(10);
+  expect(btnBox).toBeTruthy();
+  expect(pageTabsBox).toBeTruthy();
+  expect(Math.abs(keepBox!.y + keepBox!.height / 2 - (btnBox!.y + btnBox!.height / 2))).toBeLessThanOrEqual(10);
+  expect(Math.abs(keepBox!.y + keepBox!.height / 2 - (pageTabsBox!.y + pageTabsBox!.height / 2))).toBeLessThanOrEqual(10);
 });
 
 async function pageTitleBox(page: Parameters<typeof goNav>[0]) {
@@ -157,11 +165,17 @@ test('new install hides Routes and Plugins until enabled in Settings', async ({ 
   const nav = page.getByRole('navigation');
   await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: /^插件(?:$| — )/ })).toHaveCount(0);
+  await expect(nav.getByRole('link', { name: /^MCP — / })).toBeVisible();
 
   await goNav(page, '设置');
   await expect(page.getByRole('switch', { name: '显示路由页面' })).not.toBeChecked();
   await expect(page.getByRole('switch', { name: '显示插件页面' })).not.toBeChecked();
-  await expect(page.getByText('开发中').first()).toBeVisible();
+  await expect(
+    page.getByText('显示路由页面', { exact: true }).locator('..').getByText('开发中'),
+  ).toBeVisible();
+  await expect(
+    page.getByText('显示插件页面', { exact: true }).locator('..').getByText('开发中'),
+  ).toBeVisible();
 
   await page.getByRole('switch', { name: '显示路由页面' }).click();
   await page.getByRole('switch', { name: '显示插件页面' }).click();
@@ -176,5 +190,10 @@ test('new install hides Routes and Plugins until enabled in Settings', async ({ 
   await goNav(page, '插件');
   await expect(page).toHaveURL(/#\/plugins/);
   await expect(page.getByRole('heading', { name: '插件' })).toBeVisible();
+  await expect(page.locator('header').getByText('开发中')).toBeVisible();
+
+  await goNav(page, 'MCP');
+  await expect(page).toHaveURL(/#\/mcp/);
+  await expect(page.getByRole('heading', { name: 'MCP' })).toBeVisible();
   await expect(page.locator('header').getByText('开发中')).toBeVisible();
 });
