@@ -6,7 +6,7 @@ import {
 } from '@/lib/backend/contracts/agent-connection';
 import type { RouteEndpointId } from '@/lib/route-endpoints';
 import { routeEndpointIdForBinding, routeEndpointPath } from '@/lib/route-endpoints';
-import type { AgentId, Provider } from '@/lib/types';
+import type { AgentId, AppSettings, Provider } from '@/lib/types';
 import {
   contextWindowTokensFromChoice,
   parseContextWindowChoice,
@@ -308,6 +308,91 @@ export function isGeneratedLocalRouteEntry(entry: {
     || isInternalGeneratedProvider(entry.provider);
 }
 
+/** Trim + strip trailing slash + optional trailing `/v1` for same-route URL compare. */
+export function normalizeRouteCompareUrl(url: string): string {
+  const trimmed = normalizeCreateRouteUrl(url);
+  if (!trimmed) return '';
+  return trimmed
+    .replace(/\/v1$/i, '')
+    .replace(/\/+$/, '');
+}
+
+export function readRouteProviderBaseUrl(configText: string | undefined): string {
+  return readCreateRouteConfigMeta(configText).baseUrl;
+}
+
+/** SHA-256 hex of a trimmed secret (matches core `secret_sha256_hex`). */
+export async function sha256Hex(secret: string): Promise<string> {
+  const data = new TextEncoder().encode(secret.trim());
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+export type RouteDuplicatePolicy = {
+  /** Tip when key/login already used. Default true. Does not block. */
+  warnDuplicateCredential: boolean;
+  /** Same Agent + same URL → update existing route. Default true. */
+  updateDuplicateUrl: boolean;
+};
+
+export const DEFAULT_ROUTE_DUPLICATE_POLICY: RouteDuplicatePolicy = {
+  warnDuplicateCredential: true,
+  updateDuplicateUrl: true,
+};
+
+export function routeDuplicatePolicyFromSettings(
+  settings: Partial<Pick<AppSettings, 'warnDuplicateRouteCredential' | 'updateDuplicateRouteUrl'>> | null | undefined,
+): RouteDuplicatePolicy {
+  return {
+    warnDuplicateCredential: settings?.warnDuplicateRouteCredential !== false,
+    updateDuplicateUrl: settings?.updateDuplicateRouteUrl !== false,
+  };
+}
+
+/** Existing user route (not a generated local leftover) with the same Agent + URL. */
+export function findRouteProviderByUrl(
+  providers: readonly Provider[],
+  url: string,
+  agentId: AgentId,
+): Provider | undefined {
+  const target = normalizeRouteCompareUrl(url);
+  if (!target) return undefined;
+  return providers.find((provider) => {
+    if (provider.agentId !== agentId) return false;
+    if (isGeneratedLocalRouteEntry({ title: provider.name, provider })) return false;
+    return normalizeRouteCompareUrl(readRouteProviderBaseUrl(provider.configText)) === target;
+  });
+}
+
+export async function routeCredentialMatchesExisting(
+  key: string,
+  providers: readonly Provider[],
+  accounts: readonly { secretHash?: string | null }[] = [],
+): Promise<boolean> {
+  const secret = key.trim();
+  if (!secret) return false;
+  const hash = await sha256Hex(secret);
+  if (accounts.some((account) => (account.secretHash?.trim() ?? '') === hash)) {
+    return true;
+  }
+  return providers.some((provider) => {
+    if (isGeneratedLocalRouteEntry({ title: provider.name, provider })) return false;
+    return (provider.secretHash?.trim() ?? '') === hash;
+  });
+}
+
+export type CreateRouteSubmitResult = {
+  agents: string[];
+  updatedExisting: boolean;
+};
+
+export type CreateRouteSubmitContext = {
+  existingProviders?: readonly Provider[];
+  policy?: Partial<RouteDuplicatePolicy>;
+};
+
 function entryMatchesRoutedProfile<T extends {
   source: 'account' | 'provider';
   id: string;
@@ -329,6 +414,31 @@ function entryMatchesRoutedProfile<T extends {
   return false;
 }
 
+export type ImportableConnectionOptions = {
+  /**
+   * When true (default), already-routed logins stay listed and are flagged for a tip.
+   * When false, the duplicate check is off: still list them, but do not flag.
+   * Generated local leftovers stay hidden either way.
+   */
+  checkDuplicateCredential?: boolean;
+};
+
+export type ImportableConnectionEntry<T> = T & { alreadyRouted?: boolean };
+
+function entryIsAlreadyRouted<T extends {
+  source: 'account' | 'provider';
+  id: string;
+  title?: string;
+  provider?: Pick<Provider, 'id' | 'name'>;
+}>(
+  entry: T,
+  routedKeys: ReadonlySet<string>,
+  profiles: readonly RoutedProfileHint[],
+): boolean {
+  if (routedKeys.has(connectionSourceKey(entry.source, entry.id))) return true;
+  return profiles.some((profile) => entryMatchesRoutedProfile(entry, profile));
+}
+
 export function importableConnectionEntries<T extends {
   source: 'account' | 'provider';
   id: string;
@@ -339,25 +449,16 @@ export function importableConnectionEntries<T extends {
   entries: readonly T[],
   routedKeys: ReadonlySet<string>,
   profiles: readonly RoutedProfileHint[] = [],
-): T[] {
-  const routedTitles = new Set<string>();
-  for (const entry of entries) {
-    if (entry.source !== 'provider') continue;
-    const title = entry.title?.trim();
-    if (!title) continue;
-    const key = connectionSourceKey(entry.source, entry.id);
-    const occupied = routedKeys.has(key)
-      || profiles.some((profile) => entryMatchesRoutedProfile(entry, profile));
-    if (occupied) routedTitles.add(title);
-  }
-  return entries.filter((entry) => {
-    if (routedKeys.has(connectionSourceKey(entry.source, entry.id))) return false;
-    if (profiles.some((profile) => entryMatchesRoutedProfile(entry, profile))) return false;
-    if (entry.source === 'provider') {
-      const title = entry.title?.trim();
-      if (title && routedTitles.has(title)) return false;
-    }
-    return !isGeneratedLocalRouteEntry(entry);
+  options: ImportableConnectionOptions = {},
+): ImportableConnectionEntry<T>[] {
+  const checkDuplicate = options.checkDuplicateCredential !== false;
+  return entries.flatMap((entry) => {
+    if (isGeneratedLocalRouteEntry(entry)) return [];
+    const alreadyRouted = entryIsAlreadyRouted(entry, routedKeys, profiles);
+    return [{
+      ...entry,
+      ...(checkDuplicate && alreadyRouted ? { alreadyRouted: true as const } : {}),
+    }];
   });
 }
 
@@ -614,13 +715,33 @@ export async function applyLocalRouteToAgents(
 export async function submitCreateRoute(
   input: CreateRouteInput,
   deps: CreateRouteDeps = defaultDeps,
-): Promise<string[]> {
+  context: CreateRouteSubmitContext = {},
+): Promise<CreateRouteSubmitResult> {
   if (!canSubmitCreateRoute(input)) {
     throw new Error('required');
   }
-  const provider = await deps.upsertProvider(createRouteProviderDraft(input));
+  const updateDuplicateUrl = context.policy?.updateDuplicateUrl !== false;
+  const draft = createRouteProviderDraft(input);
+  const existing = updateDuplicateUrl
+    ? findRouteProviderByUrl(
+      context.existingProviders ?? [],
+      input.url,
+      draft.agentId,
+    )
+    : undefined;
+  const providerDraft = existing
+    ? {
+      ...draft,
+      id: existing.id,
+      agentId: existing.agentId,
+      isCurrent: existing.isCurrent,
+      official: existing.official,
+      preset: existing.preset || draft.preset,
+    }
+    : draft;
+  const provider = await deps.upsertProvider(providerDraft);
   try {
-    return await applyLocalRouteToAgents(
+    const agents = await applyLocalRouteToAgents(
       {
         sourceKind: 'provider',
         sourceId: provider.id,
@@ -628,11 +749,14 @@ export async function submitCreateRoute(
       },
       deps,
     );
+    return { agents, updatedExisting: Boolean(existing) };
   } catch (error) {
-    try {
-      await deps.deleteProvider(provider.agentId, provider.id);
-    } catch {
-      /* compensate best-effort; original error is the one to surface */
+    if (!existing) {
+      try {
+        await deps.deleteProvider(provider.agentId, provider.id);
+      } catch {
+        /* compensate best-effort; original error is the one to surface */
+      }
     }
     throw error;
   }

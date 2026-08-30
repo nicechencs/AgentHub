@@ -78,6 +78,8 @@ const DEFAULTS: AppSettings = {
   skillMarketSource: 'auto',
   usageCollectIntervalMin: 30,
   keepLiveFileCopies: true,
+  warnDuplicateRouteCredential: true,
+  updateDuplicateRouteUrl: true,
   // Real value comes from Tauri getVersion(); do not hardcode a product semver.
   appVersion: UNKNOWN_APP_VERSION,
 };
@@ -107,6 +109,8 @@ interface CoreAppSettings {
   /** Foreground usage collect interval (minutes). Omitted on older cores. */
   usageCollectIntervalMin?: number;
   keepLiveFileCopies?: boolean;
+  warnDuplicateRouteCredential?: boolean;
+  updateDuplicateRouteUrl?: boolean;
 }
 
 interface CorePathInfo {
@@ -297,6 +301,14 @@ export function createTauriSettingsPort(): SettingsPort {
             typeof core.keepLiveFileCopies === 'boolean'
               ? core.keepLiveFileCopies
               : DEFAULTS.keepLiveFileCopies,
+          warnDuplicateRouteCredential:
+            typeof core.warnDuplicateRouteCredential === 'boolean'
+              ? core.warnDuplicateRouteCredential
+              : DEFAULTS.warnDuplicateRouteCredential,
+          updateDuplicateRouteUrl:
+            typeof core.updateDuplicateRouteUrl === 'boolean'
+              ? core.updateDuplicateRouteUrl
+              : DEFAULTS.updateDuplicateRouteUrl,
           // OS login item is authoritative when the plugin is available.
           autoStart:
             typeof osAutoStart === 'boolean'
@@ -359,6 +371,18 @@ export function createTauriSettingsPort(): SettingsPort {
             await invoke('set_setting', {
               key: 'keep_live_file_copies',
               value: closeToTraySettingValue(patch.keepLiveFileCopies),
+            });
+          }
+          if (patch.warnDuplicateRouteCredential !== undefined) {
+            await invoke('set_setting', {
+              key: 'warn_duplicate_route_credential',
+              value: closeToTraySettingValue(patch.warnDuplicateRouteCredential),
+            });
+          }
+          if (patch.updateDuplicateRouteUrl !== undefined) {
+            await invoke('set_setting', {
+              key: 'update_duplicate_route_url',
+              value: closeToTraySettingValue(patch.updateDuplicateRouteUrl),
             });
           }
           if (patch.usageCollectIntervalMin !== undefined) {

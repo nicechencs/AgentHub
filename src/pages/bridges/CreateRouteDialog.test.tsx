@@ -27,6 +27,15 @@ vi.mock('react-router-dom', () => ({
     createElement('a', { href: to }, children),
 }));
 
+vi.mock('@/lib/api/settings', () => ({
+  getSettings: async () => ({
+    warnDuplicateRouteCredential: true,
+    updateDuplicateRouteUrl: true,
+  }),
+  logGuiEvent: async () => {},
+  guiErrorCode: () => 'test',
+}));
+
 function renderCreate() {
   return renderToStaticMarkup(
     createElement(TooltipProvider, null, createElement(CreateRouteDialog, {
@@ -194,7 +203,7 @@ describe('ImportRouteDialog', () => {
     expect(markup).not.toContain('PKCE');
   });
 
-  it('omits logins already attached to a local-bridge profile', () => {
+  it('keeps already-routed logins listed with a tip', () => {
     const markup = renderToStaticMarkup(
       createElement(TooltipProvider, null, createElement(ImportRouteDialog, {
         open: true,
@@ -233,7 +242,8 @@ describe('ImportRouteDialog', () => {
         onImported: vi.fn(),
       })),
     );
-    expect(markup).not.toContain('Already routed');
+    expect(markup).toContain('Already routed · Claude · 官方端点');
+    expect(markup).toContain('这份登录已经接到过路由，仍可再次使用。');
     expect(markup).toContain('Still free · Codex · 官方端点');
     expect(markup).toContain('type="radio"');
   });

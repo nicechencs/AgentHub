@@ -93,6 +93,14 @@ export const en = {
         'Show the Plugins entry in the left nav. Hiding it does not disable the page.',
       pluginsNavVisibleTip:
         'When hidden, you can still open Plugins via the URL or direct links.',
+      warnDuplicateRouteCredentialLabel: 'Warn on reused keys',
+      warnDuplicateRouteCredentialDescription: 'Tip only when a route key or login was already used',
+      warnDuplicateRouteCredentialTip:
+        'When on, creating or importing a route only shows a tip if the key or login was already used — no block and no forced merge. Turn off to skip the check.',
+      updateDuplicateRouteUrlLabel: 'Update on same URL',
+      updateDuplicateRouteUrlDescription: 'Same client + same URL updates the existing route',
+      updateDuplicateRouteUrlTip:
+        'When on, the same URL under the same client updates the existing route instead of creating another. Turn off to allow another route with the same URL.',
       skillMarketLabel: 'Skill market',
       skillMarketDescription: 'Remote skill source',
       skillMarketTip:
@@ -761,6 +769,8 @@ export const en = {
       submitting: "Connecting…",
       required: "Name, URL, key, and at least one client are required.",
       urlInvalid: "URL must start with http:// or https://.",
+      duplicateKeyTip: "This key was already used. You can continue; nothing is force-merged.",
+      duplicateUrlUpdateTip: "A route with this URL already exists for this client (“{name}”). Confirming will update it.",
       fallback: "Could not create the route",
       success: "Routed on the Routes page.",
       route: {
@@ -801,6 +811,7 @@ export const en = {
       title: "Use this login",
       description: "Pick a saved connection and connect it as one local route. The key stays where it already is.",
       empty: "No saved login to import. Save one on Connections first.",
+      alreadyRoutedTip: "This login is already on a route. You can use it again.",
       required: "Pick a login.",
       submit: "Confirm apply",
       submitting: "Connecting…",

@@ -72,6 +72,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00021_usage_dedup_nulls",
         include_str!("00021_usage_dedup_nulls.sql"),
     ),
+    (
+        "00022_route_duplicate_settings",
+        include_str!("00022_route_duplicate_settings.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {
