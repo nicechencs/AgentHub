@@ -93,11 +93,11 @@ function inferredAccountHealth(account: Pick<
 }
 
 /** Single account-to-display mapping used by Accounts, Connections and API façade. */
-export function authDisplayForAccount(account: Account): AuthDisplay {
+export function authDisplayForAccount(account: Account, t?: TranslateFn): AuthDisplay {
   const health = inferredAccountHealth(account);
   return {
     health,
-    label: authHealthLabel(health),
+    label: authHealthLabel(health, t),
     legacyStatus: authHealthToLegacyStatus(health, account),
   };
 }

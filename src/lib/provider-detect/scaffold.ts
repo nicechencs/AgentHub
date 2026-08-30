@@ -1,3 +1,5 @@
+import type { MessageKey, TranslateFn } from '@/lib/i18n';
+
 /**
  * 各 agent 默认空配置骨架（写回 settings_config 用，不依赖预设列表）。
  * Live 落盘路径见 {@link liveConfigPaths}。
@@ -183,7 +185,7 @@ export function isLiveFilePath(value: string | undefined): value is string {
  * 打开目录请用 `openAgentConfigDir(agentId)`（会解析 CLAUDE_CONFIG_DIR 等覆盖）。
  * 完整读写规则以 adapter 为准；此处仅给用户「打开目录 / 备份」提示。
  */
-export function liveConfigPaths(agentId: string): {
+export function liveConfigPaths(agentId: string, t?: TranslateFn): {
   /** 主配置文件 */
   config: string;
   /** 凭据 / 账号文件（若有） */
@@ -194,6 +196,9 @@ export function liveConfigPaths(agentId: string): {
   openDir: string;
   hint: string;
 } {
+  const hint = (key: MessageKey, zh: string) => (t ? t(key) : zh);
+  const openDirOr = (dir: string, env: string, zh: string) =>
+    t ? t('connections.providerDialog.pathOpenDirOr', { dir, env }) : zh;
   switch (agentId) {
     case 'claude':
       return {
@@ -201,70 +206,100 @@ export function liveConfigPaths(agentId: string): {
         auth: '~/.claude/.credentials.json',
         extra: ['~/.claude.json'],
         openDir: '~/.claude',
-        hint: '保存后会写进 settings.json。用 Claude 官方账号登录的，写在 .credentials.json。目录也可能由 CLAUDE_CONFIG_DIR 覆盖。',
+        hint: hint(
+          'connections.providerDialog.pathHintClaude',
+          '保存后会写进 settings.json。用 Claude 官方账号登录的，写在 .credentials.json。目录也可能由 CLAUDE_CONFIG_DIR 覆盖。',
+        ),
       };
     case 'codex':
       return {
         config: '~/.codex/config.toml',
         auth: '~/.codex/auth.json',
         openDir: '~/.codex',
-        hint: '服务设置写在 config.toml，登录信息写在 auth.json。',
+        hint: hint(
+          'connections.providerDialog.pathHintCodex',
+          '服务设置写在 config.toml，登录信息写在 auth.json。',
+        ),
       };
     case 'kimi':
       return {
         config: '~/.kimi-code/config.toml',
         auth: '~/.kimi-code/credentials/kimi-code.json',
         openDir: '~/.kimi-code',
-        hint: 'API Key 写在 config.toml。用官方登录的，凭据在 credentials/kimi-code.json。旧目录是 ~/.kimi。',
+        hint: hint(
+          'connections.providerDialog.pathHintKimi',
+          'API Key 写在 config.toml。用官方登录的，凭据在 credentials/kimi-code.json。旧目录是 ~/.kimi。',
+        ),
       };
     case 'grok':
       return {
         config: '~/.grok/config.toml',
         auth: '~/.grok/auth.json',
         openDir: '~/.grok',
-        hint: 'API Key 可以写在 config.toml；官方登录写在 auth.json。',
+        hint: hint(
+          'connections.providerDialog.pathHintGrok',
+          'API Key 可以写在 config.toml；官方登录写在 auth.json。',
+        ),
       };
     case 'pi':
       return {
         config: '~/.pi/agent/settings.json',
         auth: '~/.pi/agent/auth.json',
         extra: ['~/.pi/agent/models.json'],
-        openDir: '~/.pi/agent（或 PI_CODING_AGENT_DIR）',
-        hint: '官方厂商的密钥写在 auth.json，自己的服务地址写在 models.json。保存到列表后，切换才会写到本机。',
+        openDir: openDirOr('~/.pi/agent', 'PI_CODING_AGENT_DIR', '~/.pi/agent（或 PI_CODING_AGENT_DIR）'),
+        hint: hint(
+          'connections.providerDialog.pathHintPi',
+          '官方厂商的密钥写在 auth.json，自己的服务地址写在 models.json。保存到列表后，切换才会写到本机。',
+        ),
       };
     case 'workbuddy':
       return {
         config: '~/.workbuddy/settings.json',
         extra: ['~/.workbuddy/models.json', '~/.workbuddy/.mcp.json'],
-        openDir: '~/.workbuddy（或 WORKBUDDY_CONFIG_DIR）',
-        hint: '服务设置写在 models.json。暂不支持在这里切换账号。',
+        openDir: openDirOr('~/.workbuddy', 'WORKBUDDY_CONFIG_DIR', '~/.workbuddy（或 WORKBUDDY_CONFIG_DIR）'),
+        hint: hint(
+          'connections.providerDialog.pathHintWorkbuddy',
+          '服务设置写在 models.json。暂不支持在这里切换账号。',
+        ),
       };
     case 'cursor':
       return {
-        config: '无稳定 provider 配置文件',
+        config: hint('connections.providerDialog.pathConfigCursor', '无稳定 provider 配置文件'),
         openDir: '~/.cursor',
-        hint: '暂时不能把连接写回 Cursor 的本机配置。',
+        hint: hint(
+          'connections.providerDialog.pathHintCursor',
+          '暂时不能把连接写回 Cursor 的本机配置。',
+        ),
       };
     case 'dsh':
       return {
         config: '~/.dsh/cordis.patch.yml',
         auth: '~/.dsh/.credentials.yaml',
         openDir: '~/.dsh',
-        hint: '服务设置写在 cordis.patch.yml，密钥写在 .credentials.yaml。切换后才会写到本机。官方 DeepSeek 用 https://api.deepseek.com，不要加 /anthropic。',
+        hint: hint(
+          'connections.providerDialog.pathHintDsh',
+          '服务设置写在 cordis.patch.yml，密钥写在 .credentials.yaml。切换后才会写到本机。官方 DeepSeek 用 https://api.deepseek.com，不要加 /anthropic。',
+        ),
       };
     case 'zcode':
       return {
         config: '~/.zcode/v2/config.json',
         auth: '~/.zcode/v2/config.json',
         extra: ['~/.zcode/cli/config.json'],
-        openDir: '~/.zcode（或 ZCODE_HOME）',
-        hint: '会作为一条供应商出现在 ZCode 的模型列表里，原来的条目还在。官方智谱地址写入已有的 BigModel 或 Z.ai 槽；自定义必须带模型名单。账号登录请在 ZCode 应用内完成。',
+        openDir: openDirOr('~/.zcode', 'ZCODE_HOME', '~/.zcode（或 ZCODE_HOME）'),
+        hint: hint(
+          'connections.providerDialog.pathHintZcode',
+          '会作为一条供应商出现在 ZCode 的模型列表里，原来的条目还在。官方智谱地址写入已有的 BigModel 或 Z.ai 槽；自定义必须带模型名单。账号登录请在 ZCode 应用内完成。',
+        ),
       };
     default:
       return {
-        config: '（该工具暂无本机服务配置写回）',
+        config: hint('connections.providerDialog.pathConfigNone', '（该工具暂无本机服务配置写回）'),
         openDir: '~',
-        hint: '只会保存在 AgentHub 里，不一定写到本机。',
+        hint: hint(
+          'connections.providerDialog.pathHintDefault',
+          '只会保存在 AgentHub 里，不一定写到本机。',
+        ),
       };
   }
 }

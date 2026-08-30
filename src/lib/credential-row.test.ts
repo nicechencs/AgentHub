@@ -150,6 +150,24 @@ describe('toCredentialRow', () => {
     const enRow = toCredentialRow({ source: 'account', account }, tEn);
     expect(enRow.subtitle).toContain('Not current');
     expect(enRow.subtitle).not.toContain('未生效');
+    expect(enRow.subtitle).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(enRow.auth.label).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it('translates generated local-route titles when a translator is passed', () => {
+    const tEn = createTranslator('en');
+    const row = toCredentialRow({
+      source: 'provider',
+      provider: prov({
+        id: 'claude-grok-adapter-bridge-grok-live-1',
+        name: 'Grok Subscription Bridge',
+        configText: JSON.stringify({
+          env: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:44227' },
+        }),
+      }),
+    }, tEn);
+    expect(row.title).toBe('Local route');
+    expect(row.title).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
   it('translates the provider endpoint/current subtitle when a translator is passed', () => {
