@@ -122,6 +122,10 @@ Connections is a global login list in a full-height workbench split. It is not a
 
 Routes is the runtime management page for local loopback forwarding. It is not a general connection-binding editor.
 
+### 6.0 Secondary nav and board
+
+Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: a one-line fleet summary, an optional “needs attention” block, remaining route rows with start/stop (same source-group semantics as the list), and a short recent-request snapshot that deep-links to Activity (`?filter=` / `?route=`). Configuration edits stay on the list; request filtering stays on Activity.
+
 ### 6.1 List
 
 The list is an edge-column management table with stable rows. Each row shows the route target, runtime state, loopback address (`127.0.0.1` and port when available), upstream summary, and the permitted actions. A row can be opened through `?profile=<id>`.
