@@ -14,6 +14,7 @@ describe('plugins layout wiring', () => {
     const page = source('index.tsx');
     expect(page).toContain('WorkbenchSplitPage');
     expect(page).toContain('PageHeader');
+    expect(page).toContain("t('common.inDevelopment')");
     expect(page).toContain("t('common.resizeSidePanel')");
     expect(page).toContain('pageRhythm.chromeRow');
     expect(page).toContain('pageRhythm.chromeActions');

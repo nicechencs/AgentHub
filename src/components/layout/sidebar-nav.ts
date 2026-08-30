@@ -21,18 +21,22 @@ export const NAV_WORKSPACE = [
   { to: '/skills', navKey: 'nav.skills', icon: Blocks },
   { to: '/mcp', navKey: 'nav.mcp', icon: Plug },
   { to: '/projects', navKey: 'nav.projects', icon: FolderKanban },
-  { to: '/plugins', navKey: 'nav.plugins', icon: Puzzle },
+  { to: '/plugins', navKey: 'nav.plugins', icon: Puzzle, inDevelopment: true },
 ] as const;
 
 /** 管理 */
 export const NAV_MANAGE = [
   { to: '/', navKey: 'nav.dashboard', icon: Gauge },
   { to: '/connections', navKey: 'nav.connections', icon: Key },
-  { to: BRIDGES_PATH, navKey: 'nav.routes', icon: Cable },
+  { to: BRIDGES_PATH, navKey: 'nav.routes', icon: Cable, inDevelopment: true },
   { to: '/settings', navKey: 'nav.settings', icon: Settings2 },
 ] as const;
 
 export type SidebarNavItem = (typeof NAV_WORKSPACE)[number] | (typeof NAV_MANAGE)[number];
+
+export function navItemInDevelopment(item: SidebarNavItem): boolean {
+  return 'inDevelopment' in item && item.inDevelopment === true;
+}
 
 /** 管理区导航：按「路由」可见性过滤（路由仍可通过 URL 直接访问）。 */
 export function filterManageNavItems<T extends { to: string }>(

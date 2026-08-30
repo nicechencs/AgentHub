@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import {
   Select,
@@ -186,22 +187,26 @@ export function PreferencesPanel({
         </SettingsRow>
         <SettingsRow
           label={t('settings.general.routesNavVisibleLabel')}
+          badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
           description={t('settings.general.routesNavVisibleDescription')}
           descriptionTip={t('settings.general.routesNavVisibleTip')}
         >
           <Switch
             checked={routesNavVisible}
             onCheckedChange={setRoutesNavVisible}
+            aria-label={t('settings.general.routesNavVisibleLabel')}
           />
         </SettingsRow>
         <SettingsRow
           label={t('settings.general.pluginsNavVisibleLabel')}
+          badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
           description={t('settings.general.pluginsNavVisibleDescription')}
           descriptionTip={t('settings.general.pluginsNavVisibleTip')}
         >
           <Switch
             checked={pluginsNavVisible}
             onCheckedChange={setPluginsNavVisible}
+            aria-label={t('settings.general.pluginsNavVisibleLabel')}
           />
         </SettingsRow>
         <SettingsRow

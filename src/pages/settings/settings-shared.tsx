@@ -7,12 +7,14 @@ import { cn } from '@/lib/utils';
 /** 表单行：左侧标签 + 短说明；细节用 descriptionTip 悬停展示 */
 export function SettingsRow({
   label,
+  badge,
   description,
   descriptionTip,
   children,
   wide = false,
 }: {
   label: string;
+  badge?: ReactNode;
   description?: string;
   descriptionTip?: string;
   children: ReactNode;
@@ -22,7 +24,10 @@ export function SettingsRow({
   return (
     <div className={cn('flex gap-6 py-3', wide ? 'items-start' : 'items-center justify-between')}>
       <div className="min-w-0 shrink-0">
-        <p className="text-sm">{label}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm">{label}</p>
+          {badge}
+        </div>
         {description &&
           (descriptionTip ? (
             <Tip className="mt-0.5 block text-xs text-muted" label={descriptionTip}>
