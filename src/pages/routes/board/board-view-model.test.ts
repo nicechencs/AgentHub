@@ -4,6 +4,7 @@ import {
   activityHref,
   boardAttentionReason,
   boardFleetSummary,
+  boardLifetimeSummaryLabel,
   boardRecentSummaryLabel,
   buildRouteBoardStatusRows,
   mergeRecentInbound,
@@ -153,12 +154,53 @@ describe('board-view-model', () => {
       profileStatus: 'active',
     })).toBe('unavailable');
     expect(boardRecentSummaryLabel(
-      { lastAt: null, failedInWindow: 0, windowSize: 0 },
+      { lastAt: null, failedInWindow: 0, windowSize: 0, totalRequestCount: 0, failedRequestCount: 0 },
       null,
     )).toContain('还没有请求');
     expect(boardRecentSummaryLabel(
-      { lastAt: 't', failedInWindow: 2, windowSize: 5 },
+      { lastAt: 't', failedInWindow: 2, windowSize: 5, totalRequestCount: 25, failedRequestCount: 5 },
       '3 分钟前',
     )).toContain('失败');
+  });
+
+  it('exposes process-lifetime counters and prefers lastRequestAt', () => {
+    const rows = buildRouteBoardStatusRows(
+      [profile({ id: 'p1', name: 'Counted' })],
+      {
+        p1: {
+          profileId: 'p1',
+          state: 'running',
+          port: 9,
+          upstreamStatus: 'connected',
+          totalRequestCount: 42,
+          failedRequestCount: 3,
+          lastRequestAt: '2026-08-12T00:00:09.000Z',
+          recentInbound: [
+            { at: '2026-08-12T00:00:01.000Z', method: 'GET', path: '/models', status: 200, ok: true },
+          ],
+        },
+      },
+    );
+    expect(rows[0].recent).toMatchObject({
+      lastAt: '2026-08-12T00:00:09.000Z',
+      totalRequestCount: 42,
+      failedRequestCount: 3,
+      windowSize: 1,
+    });
+    expect(boardLifetimeSummaryLabel(rows[0].recent)).toBe('共 42 次 · 失败 3 次');
+    expect(boardLifetimeSummaryLabel({
+      lastAt: null,
+      failedInWindow: 0,
+      windowSize: 0,
+      totalRequestCount: 10,
+      failedRequestCount: 0,
+    })).toBe('共 10 次');
+    expect(boardLifetimeSummaryLabel({
+      lastAt: null,
+      failedInWindow: 0,
+      windowSize: 0,
+      totalRequestCount: 0,
+      failedRequestCount: 0,
+    })).toBeNull();
   });
 });

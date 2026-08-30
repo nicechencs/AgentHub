@@ -44,6 +44,7 @@ import {
   BOARD_INBOUND_SNAPSHOT_LIMIT,
   boardAttentionReasonLabel,
   boardFleetSummary,
+  boardLifetimeSummaryLabel,
   boardRecentSummaryLabel,
   buildRouteBoardStatusRows,
   countFailedInbound,
@@ -80,6 +81,7 @@ function BoardRouteRow({
   const transitioning = row.state === 'starting' || row.state === 'stopping';
   const relativeLast = row.recent.lastAt ? fmtRelativeI18n(row.recent.lastAt, t) : null;
   const recentLabel = boardRecentSummaryLabel(row.recent, relativeLast, t);
+  const lifetimeLabel = boardLifetimeSummaryLabel(row.recent, t);
   const attentionLabel = boardAttentionReasonLabel(row.attentionReason, row.lastErrorCode, t);
   const uptimeLabel = row.startedAt && (row.state === 'running' || row.state === 'degraded')
     ? t('routes.board.uptime', { relative: fmtRelativeI18n(row.startedAt, t) })
@@ -110,6 +112,7 @@ function BoardRouteRow({
               {adapterBridgeUpstreamLabel(row.upstreamStatus, t)}
             </span>
             <span className="text-meta text-muted">{uptimeLabel}</span>
+            {lifetimeLabel ? <span className="text-meta text-muted">{lifetimeLabel}</span> : null}
             {recentLabel ? <span className="text-meta text-muted">{recentLabel}</span> : null}
             {attentionLabel ? (
               <span className="w-full text-meta text-warning">{attentionLabel}</span>

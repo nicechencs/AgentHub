@@ -24,6 +24,8 @@ export type RouteBoardRecentSummary = {
   lastAt: string | null;
   failedInWindow: number;
   windowSize: number;
+  totalRequestCount: number;
+  failedRequestCount: number;
 };
 
 export type RouteBoardStatusRow = {
@@ -65,13 +67,15 @@ const STATE_RANK: Record<string, number> = {
 };
 
 function summarizeRecent(
-  inbound: readonly AdapterBridgeInboundRequest[] | undefined,
+  status: AdapterBridgeRuntimeStatus | undefined,
 ): RouteBoardRecentSummary {
-  const window = (inbound ?? []).slice(0, BOARD_INBOUND_WINDOW);
+  const window = (status?.recentInbound ?? []).slice(0, BOARD_INBOUND_WINDOW);
   return {
-    lastAt: window[0]?.at ?? null,
+    lastAt: status?.lastRequestAt?.trim() || window[0]?.at || null,
     failedInWindow: window.filter((row) => !row.ok).length,
     windowSize: window.length,
+    totalRequestCount: status?.totalRequestCount ?? 0,
+    failedRequestCount: status?.failedRequestCount ?? 0,
   };
 }
 
@@ -146,7 +150,7 @@ export function buildRouteBoardStatusRows(
       statusUnavailable,
       profileStatus: profile.status,
       profile,
-      recent: summarizeRecent(status?.recentInbound),
+      recent: summarizeRecent(status),
       needsAttention: attentionReason != null,
       attentionReason,
     };
@@ -240,7 +244,7 @@ export function boardRecentSummaryLabel(
   relativeLast: string | null,
   t?: TranslateFn,
 ): string | null {
-  if (recent.windowSize === 0) {
+  if (recent.windowSize === 0 && recent.totalRequestCount === 0) {
     return t ? t('routes.board.recentNone') : '还没有请求';
   }
   if (recent.failedInWindow > 0) {
@@ -252,10 +256,33 @@ export function boardRecentSummaryLabel(
         })
       : `${relativeLast ?? '—'} · 近 ${recent.windowSize} 条中 ${recent.failedInWindow} 条失败`;
   }
+  if (recent.windowSize === 0) {
+    return relativeLast
+      ? (t ? t('routes.board.recentLastOnly', { relative: relativeLast }) : relativeLast)
+      : null;
+  }
   return t
     ? t('routes.board.recentOk', {
         relative: relativeLast ?? '—',
         window: recent.windowSize,
       })
     : `${relativeLast ?? '—'} · 近 ${recent.windowSize} 条`;
+}
+
+export function boardLifetimeSummaryLabel(
+  recent: RouteBoardRecentSummary,
+  t?: TranslateFn,
+): string | null {
+  if (recent.totalRequestCount <= 0) return null;
+  if (recent.failedRequestCount > 0) {
+    return t
+      ? t('routes.board.lifetimeFailed', {
+          total: recent.totalRequestCount,
+          failed: recent.failedRequestCount,
+        })
+      : `共 ${recent.totalRequestCount} 次 · 失败 ${recent.failedRequestCount} 次`;
+  }
+  return t
+    ? t('routes.board.lifetimeOk', { total: recent.totalRequestCount })
+    : `共 ${recent.totalRequestCount} 次`;
 }
