@@ -8,6 +8,7 @@
  *
  * Consumers:
  * - CSS / Tailwind → `var(--…)` (see `tailwind.config.ts`)
+ * - Product accent → `--accent` from `ACCENT_PALETTES` + `html[data-accent]`
  * - TS that needs hex (contrast, charts) → `agentHex()` / `THEME`
  * - Agent meta, dots, logos, endpoint paths → `agentCssVar(id)`
  *   (surfaces pick an Agent id; they do not copy hex)
@@ -16,6 +17,27 @@
  */
 
 export type ThemeScheme = 'light' | 'dark';
+
+/**
+ * Switchable product accent. `--accent` is the only runtime color pages should
+ * use for primary actions, checked switches, focus rings, and the in-app mark.
+ * Installer / OS icons stay the default indigo PNG.
+ */
+export const ACCENT_PALETTES = {
+  indigo: { light: '#4f46e5', dark: '#6366f1' },
+  blue: { light: '#2563eb', dark: '#3b82f6' },
+  teal: { light: '#0f766e', dark: '#14b8a6' },
+  rose: { light: '#e11d48', dark: '#f43f5e' },
+  amber: { light: '#c2410c', dark: '#ea580c' },
+} as const;
+
+export type AccentId = keyof typeof ACCENT_PALETTES;
+export const DEFAULT_ACCENT_ID = 'indigo' as const satisfies AccentId;
+export const ACCENT_IDS = Object.keys(ACCENT_PALETTES) as AccentId[];
+
+export function isAccentId(value: string): value is AccentId {
+  return (ACCENT_IDS as readonly string[]).includes(value);
+}
 
 /** Semantic theme colors. Keys map to CSS vars `--{key}`. */
 export const THEME = {
@@ -31,7 +53,7 @@ export const THEME = {
     'text-secondary': '#55555d',
     'text-muted': '#70707a',
     'text-disabled': '#a1a1aa',
-    accent: '#4f46e5',
+    accent: ACCENT_PALETTES[DEFAULT_ACCENT_ID].light,
     success: '#16a34a',
     warning: '#c2740c',
     danger: '#dc2626',
@@ -49,7 +71,7 @@ export const THEME = {
     'text-secondary': '#a1a1aa',
     'text-muted': '#8b8b96',
     'text-disabled': '#52525b',
-    accent: '#6366f1',
+    accent: ACCENT_PALETTES[DEFAULT_ACCENT_ID].dark,
     success: '#22c55e',
     warning: '#f59e0b',
     danger: '#ef4444',
@@ -254,6 +276,18 @@ function themeDecls(scheme: ThemeScheme): string[] {
   return lines;
 }
 
+/** `[data-accent]` overrides for `--accent`. Default indigo is already in `:root` / `.dark`. */
+export function buildAccentOverrideCss(): string {
+  return ACCENT_IDS.flatMap((id) => [
+    `:root[data-accent="${id}"] {`,
+    `  --accent: ${ACCENT_PALETTES[id].light};`,
+    '}',
+    `html.dark[data-accent="${id}"], .dark[data-accent="${id}"] {`,
+    `  --accent: ${ACCENT_PALETTES[id].dark};`,
+    '}',
+  ]).join('\n');
+}
+
 /** Full design-token CSS for the app bundle (`:root` + `.dark`). */
 export function buildDesignTokensCss(): string {
   return [
@@ -265,6 +299,8 @@ export function buildDesignTokensCss(): string {
     '.dark {',
     cssDecls(themeDecls('dark')),
     '}',
+    '',
+    buildAccentOverrideCss(),
     '',
   ].join('\n');
 }
@@ -307,5 +343,6 @@ export function buildBootCriticalCss(): string {
     'html.dark {',
     cssDecls(darkLines),
     '}',
+    buildAccentOverrideCss(),
   ].join('\n');
 }

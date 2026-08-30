@@ -7,6 +7,8 @@ const PREFIX = 'agenthub:';
 
 export const StorageKey = {
   theme: `${PREFIX}theme`,
+  /** Product accent id (`indigo` | `blue` | `teal` | `rose` | `amber`) */
+  accent: `${PREFIX}accent`,
   language: `${PREFIX}language`,
   /** One-shot: first-launch system language already seeded into core */
   languageSystemSeeded: `${PREFIX}language-system-seeded-v1`,
@@ -14,9 +16,9 @@ export const StorageKey = {
   usageGuideDismissed: `${PREFIX}usage-guide-dismissed`,
   dismissedAlertIds: `${PREFIX}dismissed-alert-ids`,
   sidebarCollapsed: `${PREFIX}sidebar-collapsed`,
-  /** 侧栏是否显示「路由」入口；缺省为可见 */
+  /** 侧栏是否显示「路由」入口；缺省隐藏（功能开发中） */
   routesNavVisible: `${PREFIX}routes-nav-visible`,
-  /** 侧栏是否显示「插件」入口；缺省为可见 */
+  /** 侧栏是否显示「插件」入口；缺省隐藏（功能开发中） */
   pluginsNavVisible: `${PREFIX}plugins-nav-visible`,
   /** epoch ms of last successful usage collect (manual or auto) */
   usageLastCollectAt: `${PREFIX}usage-last-collect-at`,
@@ -32,6 +34,11 @@ export const StorageKey = {
   /** Last workspace chosen on the project-skills tab. */
   skillsProjectWorkspace: `${PREFIX}skills-project-workspace`,
 } as const;
+
+/** 新安装：侧栏不显示路由入口。已保存的偏好优先。 */
+export const DEFAULT_ROUTES_NAV_VISIBLE = false;
+/** 新安装：侧栏不显示插件入口。已保存的偏好优先。 */
+export const DEFAULT_PLUGINS_NAV_VISIBLE = false;
 
 export function loadJson<T>(key: string, fallback: T): T {
   try {

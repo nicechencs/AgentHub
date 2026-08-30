@@ -16,6 +16,7 @@ pub mod plugins;
 pub mod project;
 pub mod provider;
 pub mod settings;
+pub mod shell_icon;
 pub mod skill;
 pub mod trash;
 pub mod usage;

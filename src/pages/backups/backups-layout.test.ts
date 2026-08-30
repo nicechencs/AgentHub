@@ -36,6 +36,9 @@ describe('backups layout wiring', () => {
     const panel = source('BackupsPanel.tsx');
     const detail = source('backup-detail-panel.tsx');
     expect(panel).toContain('WorkbenchSplitPage');
+    expect(panel).not.toContain('flushTop');
+    expect(panel).toContain('toolbar');
+    expect(panel).toContain('pageRhythm.chromeActions');
     expect(panel).toContain('useSideSplit');
     expect(panel).toContain("t('common.resizeSidePanel')");
     expect(panel).toContain('inspect.open(bk.id)');

@@ -456,6 +456,12 @@ fn purge_must_fail_closed_for_env_override(agent: AgentId, key: &'static str) {
 }
 
 #[test]
+fn custom_kimi_code_home_purge_fails_before_external_executor() {
+    let _env = crate::utils::test_env::lock_test_env();
+    purge_must_fail_closed_for_env_override(AgentId::Kimi, "KIMI_CODE_HOME");
+}
+
+#[test]
 fn custom_pi_config_dir_purge_fails_before_external_executor() {
     let _env = crate::utils::test_env::lock_test_env();
     purge_must_fail_closed_for_env_override(AgentId::Pi, "PI_CODING_AGENT_DIR");

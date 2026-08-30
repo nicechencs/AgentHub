@@ -164,7 +164,7 @@ describe('MOCK_CAPABILITIES (dev/mocks)', () => {
   });
 
   it('matches known product boundaries', () => {
-    expect(MOCK_CAPABILITIES.kimi!.skills!.level).toBe('unsupported');
+    expect(MOCK_CAPABILITIES.kimi!.skills!.level).toBe('partial');
     expect(MOCK_CAPABILITIES.workbuddy!.accountSwitch!.level).toBe('partial');
     expect(MOCK_CAPABILITIES.cursor!.accountSwitch!.level).toBe('unsupported');
     expect(MOCK_CAPABILITIES.cursor!.providerPresets!.level).toBe('unsupported');

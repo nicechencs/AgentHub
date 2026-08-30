@@ -74,13 +74,17 @@ describe('PageHeader', () => {
     expect(source('pages/bridges/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/projects/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(topBar).toContain('PageTitleBlock');
+    expect(topBar).toContain('FeedbackButton');
+    expect(topBar).toContain('NotificationBell');
     expect(topBar).toContain('pageRhythm.topChrome');
     expect(topBar).toContain('pageRhythm.workbenchX');
     expect(source('components/layout/Sidebar.tsx')).toContain('pageRhythm.topChrome');
     expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/settings/index.tsx')).toContain('pageRhythm.workbenchHeader');
-    expect(source('pages/backups/BackupsPanel.tsx')).toContain('flushTop');
+    expect(source('pages/settings/index.tsx')).toContain('toolbar={settingsTabList}');
+    expect(source('pages/backups/BackupsPanel.tsx')).not.toContain('flushTop');
+    expect(source('pages/backups/BackupsPanel.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');

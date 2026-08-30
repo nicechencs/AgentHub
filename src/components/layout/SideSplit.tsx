@@ -76,8 +76,8 @@ export function SideSplitFrame<T>({
  * Full-height workbench: list column | optional inspect pane.
  * Page title lives in TopBar. Toolbar (tabs/filters + page commands) and
  * listFooter stay in the list column, left of the separator.
- * `flushTop` skips the shared page-edge top inset when this split already sits
- * under another chrome row (Settings backups).
+ * Both columns start at `pageEdge.inset` so the inspect header lines up with
+ * the list chrome (Skills / Connections / Settings backups).
  */
 export function WorkbenchSplitPage<T>({
   split,
@@ -85,7 +85,6 @@ export function WorkbenchSplitPage<T>({
   panel,
   listFooter,
   listOverflowX = 'auto',
-  flushTop = false,
   children,
 }: {
   split: SideSplitController<T>;
@@ -95,14 +94,11 @@ export function WorkbenchSplitPage<T>({
   listFooter?: ReactNode;
   /** Projects hides horizontal overflow while the preview is open. */
   listOverflowX?: 'auto' | 'hidden';
-  /** Nested under an already-padded page chrome; both columns start flush. */
-  flushTop?: boolean;
   children: ReactNode;
 }) {
   const paneOpen = Boolean(split.mounted && panel);
   const listInset = paneOpen ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX;
   const overflowX = paneOpen && listOverflowX === 'hidden' ? 'overflow-x-hidden' : 'overflow-x-auto';
-  const padTop = flushTop ? 0 : SIDE_SPLIT_FRAME_PAD_Y;
   return (
     <div ref={split.splitRef} className="flex h-full min-h-0 overflow-hidden bg-canvas">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -112,7 +108,7 @@ export function WorkbenchSplitPage<T>({
             overflowX,
             listInset,
             listFooter ? undefined : pageRhythm.workbenchY,
-            padTop > 0 ? pageRhythm.workbenchPadT : undefined,
+            pageRhythm.workbenchPadT,
           )}
         >
           {children}
@@ -124,7 +120,7 @@ export function WorkbenchSplitPage<T>({
         ) : null}
       </div>
       {split.mounted && panel ? (
-        <SideSplitFrame split={split} resizeAria={resizeAria} padTop={padTop}>
+        <SideSplitFrame split={split} resizeAria={resizeAria} padTop={SIDE_SPLIT_FRAME_PAD_Y}>
           {panel}
         </SideSplitFrame>
       ) : null}

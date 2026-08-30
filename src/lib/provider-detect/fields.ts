@@ -12,6 +12,7 @@ import {
   contextWindowTokensFromChoice,
   parseContextWindowChoice,
 } from '@/lib/claude-client-env';
+import { kimiProviderTypeForUrl } from '@/lib/kimi-provider-type';
 import {
   firstNonEmptyString,
   stripClaudeForeignRootKeys,
@@ -1141,7 +1142,7 @@ function defaultTomlScaffold(agentId: AgentId, vars: ProviderFormVars): string {
       `default_model = "${model}"`,
       `default_provider = "${slug}"`,
       `[providers.${slug}]`,
-      'type = "openai"',
+      `type = "${kimiProviderTypeForUrl(vars.baseUrl)}"`,
       `base_url = "${vars.baseUrl.trim() || 'https://your-relay.example.com/v1'}"`,
       'api_key = "sk-xxxxxxxx"',
       `[models."${model}"]`,

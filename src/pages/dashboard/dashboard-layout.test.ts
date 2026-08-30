@@ -40,6 +40,15 @@ describe('dashboard layout wiring', () => {
     expect(source('index.tsx')).not.toContain("t('dashboard.overview.manage')");
   });
 
+  it('restores usage filters from in-process memory when returning to the page', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('rememberedUsageFilters');
+    expect(page).toContain('rememberUsageFilters');
+    expect(page).toContain('resolveUsageModelFilter');
+    expect(page).not.toContain("useState<DateRange>('7d')");
+    expect(page).toContain('if (!modelsReady) return');
+  });
+
   it('plots overlay usage series in agent brand hex, not a stacked CSS-var area', () => {
     const page = source('index.tsx');
     expect(page).toContain('resolveChartColor');

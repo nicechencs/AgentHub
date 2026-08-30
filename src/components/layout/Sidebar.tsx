@@ -14,9 +14,11 @@ import { Hint } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/layout/SidebarContext';
 import {
   manageNavItems,
+  navItemInDevelopment,
   type SidebarNavItem,
   workspaceNavItems,
 } from '@/components/layout/sidebar-nav';
+import { Badge } from '@/components/ui/badge';
 import {
   agentHasCatalogUpdate,
   sidebarInstallStats,
@@ -44,14 +46,18 @@ function SidebarNavLink({
   const { t } = useI18n();
   const { to, navKey, icon: Icon } = item;
   const label = t(navKey);
+  const inDevelopment = navItemInDevelopment(item);
+  const developmentLabel = t('common.inDevelopment');
   const tip = notice?.label;
-  const a11yLabel = tip ? `${label} — ${tip}` : label;
+  const a11yLabel = [label, inDevelopment ? developmentLabel : null, tip]
+    .filter(Boolean)
+    .join(' — ');
 
   return (
     <NavLink
       to={to}
       end={to === '/'}
-      aria-label={collapsed || tip ? a11yLabel : undefined}
+      aria-label={collapsed || tip || inDevelopment ? a11yLabel : undefined}
       className="block rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
     >
       {({ isActive }) => {
@@ -65,6 +71,11 @@ function SidebarNavLink({
             {!collapsed && (
               <>
                 <span className="truncate">{label}</span>
+                {inDevelopment && (
+                  <Badge variant="default" className="ml-auto shrink-0" aria-hidden>
+                    {developmentLabel}
+                  </Badge>
+                )}
                 {notice && <StatusPin tone="warning" label={tip} className="ml-auto" />}
               </>
             )}

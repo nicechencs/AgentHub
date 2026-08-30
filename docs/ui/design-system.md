@@ -59,7 +59,7 @@ Use semantic surface roles:
 | Active | `bg-active` | Current page item, current preview target, current connection |
 | Overlay | panel plus shadow | Menus, popovers, dialogs, and toasts |
 
-The current accent remains indigo, but exposure is deliberately low. Use it for focus, links, checked controls, and the one primary action. Do not use an Agent color as a page background or as a substitute for semantic status colors.
+The product accent is `--accent` (`bg-accent` / `text-accent` / `ring-accent`). Default is indigo. Settings exposes a small palette (purple / blue / teal / rose / orange) that writes `html[data-accent]` and only changes `--accent`. Use it for focus, links, checked switches, the in-app mark, and the one primary action. Do not hardcode the indigo hex, do not use an Agent color as a page background, and do not substitute an Agent color for semantic status colors. The running window (taskbar button), tray icon, and Windows Desktop / Start-menu shortcuts that already point at this app follow the same mark. The installer package icon stays the default indigo asset.
 
 Status colors are semantic: `success`, `warning`, `danger`, and `info`. A status must also have text or an icon; color alone is insufficient.
 

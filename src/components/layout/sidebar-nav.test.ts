@@ -1,13 +1,23 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BRIDGES_PATH } from '@/lib/bridges-path';
+import {
+  DEFAULT_PLUGINS_NAV_VISIBLE,
+  DEFAULT_ROUTES_NAV_VISIBLE,
+} from '@/lib/ui-preferences';
 import {
   filterManageNavItems,
   filterWorkspaceNavItems,
   manageNavItems,
   NAV_MANAGE,
   NAV_WORKSPACE,
+  navItemInDevelopment,
   workspaceNavItems,
 } from './sidebar-nav';
+
+const dir = path.dirname(fileURLToPath(import.meta.url));
 
 const MANAGE = [
   { to: '/', navKey: 'nav.dashboard' },
@@ -126,5 +136,36 @@ describe('workspaceNavItems / manageNavItems', () => {
       '/connections',
       '/settings',
     ]);
+  });
+
+  it('hides routes and plugins in the sidebar for a new install', () => {
+    expect(DEFAULT_ROUTES_NAV_VISIBLE).toBe(false);
+    expect(DEFAULT_PLUGINS_NAV_VISIBLE).toBe(false);
+    expect(workspaceNavItems(DEFAULT_PLUGINS_NAV_VISIBLE).map((item) => item.to)).not.toContain(
+      '/plugins',
+    );
+    expect(manageNavItems(DEFAULT_ROUTES_NAV_VISIBLE).map((item) => item.to)).not.toContain(
+      BRIDGES_PATH,
+    );
+    const ctx = readFileSync(path.join(dir, 'SidebarContext.tsx'), 'utf8');
+    expect(ctx).toContain('loadBool(StorageKey.routesNavVisible, DEFAULT_ROUTES_NAV_VISIBLE)');
+    expect(ctx).toContain('loadBool(StorageKey.pluginsNavVisible, DEFAULT_PLUGINS_NAV_VISIBLE)');
+  });
+
+  it('marks routes, plugins, and MCP as in development', () => {
+    const mcp = NAV_WORKSPACE.find((item) => item.to === '/mcp');
+    const plugins = NAV_WORKSPACE.find((item) => item.to === '/plugins');
+    const routes = NAV_MANAGE.find((item) => item.to === BRIDGES_PATH);
+    expect(mcp).toBeDefined();
+    expect(plugins).toBeDefined();
+    expect(routes).toBeDefined();
+    expect(navItemInDevelopment(mcp!)).toBe(true);
+    expect(navItemInDevelopment(plugins!)).toBe(true);
+    expect(navItemInDevelopment(routes!)).toBe(true);
+    expect(navItemInDevelopment(NAV_WORKSPACE[0])).toBe(false);
+    expect(navItemInDevelopment(NAV_MANAGE[0])).toBe(false);
+    const sidebar = readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
+    expect(sidebar).toContain('navItemInDevelopment');
+    expect(sidebar).toContain("t('common.inDevelopment')");
   });
 });
