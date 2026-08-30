@@ -25,6 +25,43 @@ test('app boots on mock and primary navigation works', async ({ page }) => {
   ).toBeVisible();
 });
 
+test('Settings tabs share the form left edge; backups toolbar stays on one row', async ({ page }) => {
+  await openApp(page);
+  await goNav(page, '设置');
+  await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
+  const prefsTab = page.getByRole('tab', { name: '偏好' });
+  await expect(prefsTab).toBeVisible();
+  await expect(page.getByText('语言')).toBeVisible();
+  const tabsList = page.getByRole('tablist').first();
+  const card = page.locator('[data-card="default"]').filter({ hasText: '语言' }).first();
+  await expect(card).toBeVisible();
+  const tabListBox = await tabsList.boundingBox();
+  const cardBox = await card.boundingBox();
+  expect(tabListBox).toBeTruthy();
+  expect(cardBox).toBeTruthy();
+  expect(Math.abs(tabListBox!.x - cardBox!.x)).toBeLessThanOrEqual(2);
+
+  await page.getByRole('tab', { name: '本机' }).click();
+  await expect(page.getByText('数据目录')).toBeVisible();
+  const localCard = page.locator('[data-card="default"]').filter({ hasText: '数据目录' }).first();
+  const localCardBox = await localCard.boundingBox();
+  const localTabsBox = await page.getByRole('tablist').first().boundingBox();
+  expect(Math.abs(localTabsBox!.x - localCardBox!.x)).toBeLessThanOrEqual(2);
+
+  await page.getByRole('tab', { name: '备份' }).click();
+  const keepCopies = page.getByText('保留本机配置副本');
+  const backupBtn = page.getByRole('button', { name: '备份', exact: true });
+  await expect(page.getByRole('tab', { name: /Claude/ })).toBeVisible();
+  await expect(keepCopies).toBeVisible();
+  await expect(backupBtn).toBeVisible();
+  const agentStrip = page.getByRole('tablist').nth(1);
+  const keepBox = await keepCopies.boundingBox();
+  const stripBox = await agentStrip.boundingBox();
+  expect(keepBox).toBeTruthy();
+  expect(stripBox).toBeTruthy();
+  expect(Math.abs(keepBox!.y + keepBox!.height / 2 - (stripBox!.y + stripBox!.height / 2))).toBeLessThanOrEqual(10);
+});
+
 async function pageTitleBox(page: Parameters<typeof goNav>[0]) {
   const heading = page.getByRole('heading', { level: 1 }).first();
   await expect(heading).toBeVisible();
