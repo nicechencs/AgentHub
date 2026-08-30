@@ -100,14 +100,17 @@ import {
 import { UsageDetailsTable } from './UsageDetailsTable';
 import { isLatestUsageRequest } from './usage-request';
 import {
-  coerceModelFilter,
   decorateUsageDistribution,
   filterByAgent,
   filterByModel,
   filterHiddenUsageOverview,
   filterWindowUsage,
   overviewToUsageMetrics,
+  rememberUsageFilters,
+  rememberedUsageFilters,
+  resolveUsageModelFilter,
   sortUsageRowsDesc,
+  usageModelSelectOptions,
   usageWindowBound,
   type DateRange,
 } from './usageOverviewModel';
@@ -165,9 +168,16 @@ export default function DashboardPage() {
   const [runtimes, setRuntimes] = useState<RuntimeDetect[]>([]);
 
   // —— 页面级共享筛选（时间 + Agent + 模型；指标 / 趋势 / 分布 / 明细共用）——
-  const [dateRange, setDateRange] = useState<DateRange>('7d');
-  const [agentFilter, setAgentFilter] = useState<AgentId | 'all'>('all');
-  const [modelFilter, setModelFilter] = useState<string>('all');
+  // 进程内记住上次选择：切走再回来保持；关应用后回到默认。
+  const [dateRange, setDateRange] = useState<DateRange>(
+    () => rememberedUsageFilters().dateRange,
+  );
+  const [agentFilter, setAgentFilter] = useState<AgentId | 'all'>(
+    () => rememberedUsageFilters().agentFilter,
+  );
+  const [modelFilter, setModelFilter] = useState(
+    () => rememberedUsageFilters().modelFilter,
+  );
 
   // —— 用量：overview/trend 先画图；明细表另拉 capped 页 ——
   const [usageAvailability, setUsageAvailability] = useState<UsageAvailability | null>(null);
@@ -508,13 +518,24 @@ export default function DashboardPage() {
   }, [usageOverview, omittedIds, groupedByAgent]);
 
   const modelOptions = visibleOverview?.models ?? [];
-  const effectiveModelFilter = coerceModelFilter(modelFilter, modelOptions);
+  const modelsReady = usageOverview != null;
+  const effectiveModelFilter = resolveUsageModelFilter(
+    modelFilter,
+    modelOptions,
+    modelsReady,
+  );
+  const modelSelectOptions = usageModelSelectOptions(effectiveModelFilter, modelOptions);
 
   useEffect(() => {
+    if (!modelsReady) return;
     if (modelFilter !== effectiveModelFilter) {
       setModelFilter(effectiveModelFilter);
     }
-  }, [modelFilter, effectiveModelFilter]);
+  }, [modelsReady, modelFilter, effectiveModelFilter]);
+
+  useEffect(() => {
+    rememberUsageFilters({ dateRange, agentFilter, modelFilter });
+  }, [dateRange, agentFilter, modelFilter]);
 
   const rangedTrend = useMemo(() => {
     const visible = filterVisibleTrend(usageTrendPoints, omittedIds);
@@ -644,6 +665,12 @@ export default function DashboardPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t('dashboard.page.allAgents')}</SelectItem>
+              {agentFilter !== 'all' &&
+              !installedAgents.some((agent) => agent.id === agentFilter) ? (
+                <SelectItem value={agentFilter}>
+                  {agentDisplayName(agentFilter)}
+                </SelectItem>
+              ) : null}
               {installedAgents.map((a) => (
                 <SelectItem key={a.id} value={a.id}>
                   {a.name}
@@ -657,7 +684,7 @@ export default function DashboardPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t('dashboard.page.allModels')}</SelectItem>
-              {modelOptions.map((m) => (
+              {modelSelectOptions.map((m) => (
                 <SelectItem key={m} value={m}>
                   {m}
                 </SelectItem>
