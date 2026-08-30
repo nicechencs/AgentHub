@@ -750,6 +750,58 @@ fn workbuddy_model_entries(
     }
 }
 
+fn workbuddy_entry_id(entry: &serde_json::Value) -> Option<&str> {
+    entry
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+}
+
+fn workbuddy_entry_api_key(entry: &serde_json::Value) -> Option<&str> {
+    entry
+        .get("apiKey")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+}
+
+fn is_generic_workbuddy_model_id(id: &str) -> bool {
+    matches!(id, "custom" | "custom-model")
+}
+
+fn uniquify_workbuddy_model_id(base: &str, entries: &[serde_json::Value]) -> String {
+    let taken = |candidate: &str| {
+        entries
+            .iter()
+            .any(|entry| workbuddy_entry_id(entry) == Some(candidate))
+    };
+    if !taken(base) {
+        return base.to_string();
+    }
+    let mut n = 2;
+    loop {
+        let candidate = format!("{base}-{n}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+fn merge_workbuddy_entry_keep_id(
+    existing: &serde_json::Value,
+    desired: &serde_json::Value,
+) -> serde_json::Value {
+    let mut merged = merge_redacted_json(existing, desired);
+    if let Some(existing_id) = workbuddy_entry_id(existing) {
+        if let Some(object) = merged.as_object_mut() {
+            object.insert("id".into(), serde_json::json!(existing_id));
+        }
+    }
+    merged
+}
+
 fn merge_workbuddy_entries(
     live: &[serde_json::Value],
     desired: &[serde_json::Value],
@@ -766,13 +818,52 @@ fn merge_workbuddy_entries(
             .ok_or_else(|| {
                 AppError::InvalidArg("WorkBuddy model entry requires a non-empty id".into())
             })?;
-        if let Some(existing_index) = merged.iter().position(|entry| {
-            entry
-                .get("id")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|existing_id| existing_id == id)
-        }) {
-            merged[existing_index] = merge_redacted_json(&merged[existing_index], desired_entry);
+        let incoming_key = workbuddy_entry_api_key(desired_entry)
+            .filter(|key| *key != REDACTED_MARKER);
+
+        // Same API key already in the list: update that row and keep its id.
+        // Re-writing a login after a generic-id uniquify must not append again.
+        if let Some(key) = incoming_key {
+            if let Some(existing_index) = merged
+                .iter()
+                .position(|entry| workbuddy_entry_api_key(entry) == Some(key))
+            {
+                merged[existing_index] =
+                    merge_workbuddy_entry_keep_id(&merged[existing_index], desired_entry);
+                continue;
+            }
+        }
+
+        if let Some(existing_index) = merged
+            .iter()
+            .position(|entry| workbuddy_entry_id(entry) == Some(id))
+        {
+            let existing_key = workbuddy_entry_api_key(&merged[existing_index]);
+            let different_key = match (existing_key, incoming_key) {
+                (Some(old), Some(new)) => old != new,
+                _ => false,
+            };
+            // Default scaffold ids (`custom` / `custom-model`) are shared by
+            // every "add API Key" form. A second key must append, not replace.
+            if is_generic_workbuddy_model_id(id) && different_key {
+                let unique_id = uniquify_workbuddy_model_id(id, &merged);
+                let mut unique = desired_entry.clone();
+                if let Some(object) = unique.as_object_mut() {
+                    object.insert("id".into(), serde_json::json!(unique_id.clone()));
+                    let name = object
+                        .get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .unwrap_or("");
+                    if name.is_empty() || is_generic_workbuddy_model_id(name) || name == id {
+                        object.insert("name".into(), serde_json::json!(unique_id));
+                    }
+                }
+                merged.push(unique);
+            } else {
+                merged[existing_index] =
+                    merge_redacted_json(&merged[existing_index], desired_entry);
+            }
         } else {
             merged.push(desired_entry.clone());
         }
@@ -1392,6 +1483,39 @@ mod tests {
     }
 
     #[test]
+    fn merge_generic_id_with_a_different_key_appends_instead_of_replacing() {
+        let live = json!([
+            { "id": "custom-model", "name": "Custom Model", "apiKey": "sk-first" }
+        ]);
+        let desired = json!([
+            { "id": "custom-model", "name": "Custom Model", "apiKey": "sk-second" }
+        ]);
+        let merged = merge_workbuddy_models(&live, &desired).unwrap();
+        let rows = merged.as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["id"], "custom-model");
+        assert_eq!(rows[0]["apiKey"], "sk-first");
+        assert_eq!(rows[1]["id"], "custom-model-2");
+        assert_eq!(rows[1]["apiKey"], "sk-second");
+    }
+
+    #[test]
+    fn merge_same_api_key_updates_the_existing_row_even_if_ids_differ() {
+        let live = json!([
+            { "id": "custom-model-2", "name": "Custom Model", "apiKey": "sk-keep" }
+        ]);
+        let desired = json!([
+            { "id": "custom-model", "name": "Renamed", "apiKey": "sk-keep" }
+        ]);
+        let merged = merge_workbuddy_models(&live, &desired).unwrap();
+        let rows = merged.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], "custom-model-2");
+        assert_eq!(rows[0]["name"], "Renamed");
+        assert_eq!(rows[0]["apiKey"], "sk-keep");
+    }
+
+    #[test]
     fn catalog_capabilities_are_partial_not_blocked() {
         assert!(WorkBuddyAdapter
             .capability(crate::models::Capability::AccountSwitch)
@@ -1546,6 +1670,40 @@ mod tests {
                 written[0]["url"],
                 "https://api.deepseek.com/v1/chat/completions"
             );
+        });
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn apply_account_appends_a_second_generic_api_key() {
+        let dir = tempfile_dir();
+        with_workbuddy_config(&dir, || {
+            let mut first = WorkBuddyAdapter.build_api_key_account("sk-first").unwrap();
+            attach_api_key_catalog_fields(
+                &mut first.credentials,
+                Some("https://api.deepseek.com/v1/chat/completions"),
+                Some("custom-model"),
+            )
+            .unwrap();
+            WorkBuddyAdapter.apply_account(&first).unwrap();
+
+            let mut second = WorkBuddyAdapter.build_api_key_account("sk-second").unwrap();
+            attach_api_key_catalog_fields(
+                &mut second.credentials,
+                Some("https://api.qooo.io/v1/chat/completions"),
+                Some("custom-model"),
+            )
+            .unwrap();
+            WorkBuddyAdapter.apply_account(&second).unwrap();
+
+            let written: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(dir.join("models.json")).unwrap())
+                    .unwrap();
+            let rows = written.as_array().unwrap();
+            assert_eq!(rows.len(), 2, "second generic id must not replace the first key");
+            assert_eq!(rows[0]["apiKey"], "sk-first");
+            assert_eq!(rows[1]["apiKey"], "sk-second");
+            assert_ne!(rows[0]["id"], rows[1]["id"]);
         });
         let _ = fs::remove_dir_all(&dir);
     }

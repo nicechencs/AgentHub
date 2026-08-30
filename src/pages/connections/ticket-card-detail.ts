@@ -1,7 +1,7 @@
 /**
  * Ticket card chips, pool extras, and detail panel fields (Connections page).
  */
-import { agentDisplayName } from '@/config/agents';
+import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { LiveOccupancyDto } from '@/lib/backend/contracts/agent-catalog-types';
 import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
 import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
@@ -364,12 +364,21 @@ export function extrasFromPoolSource(
   t?: TranslateFn,
   tabCurrentTicketId?: string | null,
 ): TicketDetailExtras {
+  const poolCurrent = source.account?.isCurrent === true || source.provider?.isCurrent === true;
+  const liveCatalog = source.account?.source === 'live';
+  const catalog = isCatalogAppendOccupancy(resolveAgentMeta(ticket.agentId).occupancy);
   const extras: TicketDetailExtras = {
     canEditKey: ticket.sourceKind === 'account' && source.account?.kind === 'apikey',
     canEditConfig: ticket.sourceKind === 'provider' && Boolean(source.provider),
-    isCurrent: tabCurrentTicketId === undefined
-      ? source.account?.isCurrent === true || source.provider?.isCurrent === true
-      : ticket.id === tabCurrentTicketId,
+    // Catalog-append tools keep many live rows. "in catalog" is not the
+    // exclusive current pointer: a previously written row stays listed.
+    isCurrent: catalog
+      ? poolCurrent
+        || liveCatalog
+        || (tabCurrentTicketId != null && ticket.id === tabCurrentTicketId)
+      : tabCurrentTicketId === undefined
+        ? poolCurrent
+        : ticket.id === tabCurrentTicketId,
   };
 
   if (source.account) {
@@ -507,6 +516,15 @@ export function buildTicketDetailFields(
   bindings?: readonly BindingView[] | null,
 ): TicketDetailSections {
   const advanced: TicketDetailField[] = [];
+
+  if (isCatalogAppendOccupancy(resolveAgentMeta(ticket.agentId).occupancy)) {
+    advanced.push({
+      label: t ? t('connections.list.catalogStatus') : '模型列表',
+      value: extras?.isCurrent
+        ? (t ? t('connections.list.inCatalog') : '已在模型列表里')
+        : (t ? t('connections.list.notInCatalog') : '未写入模型列表'),
+    });
+  }
 
   const providerName = extras?.accountProvider?.trim();
   if (

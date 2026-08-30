@@ -151,6 +151,14 @@ describe('connections layout wiring', () => {
     expect(account).toContain('headerActions={headerActions}');
   });
 
+  it('adds a WorkBuddy API Key as a catalog login, not a replacing provider snapshot', () => {
+    const page = source('index.tsx');
+    expect(page).toContain("next.addAgentId === 'workbuddy'");
+    expect(page).toContain("kind: 'account'");
+    expect(page).toContain('account: null');
+    expect(page).toContain("mode={inspectTarget.account ? 'edit' : 'add'}");
+  });
+
   it('clears the guided-add marker when the provider pane is dismissed', () => {
     const page = source('index.tsx').replace(/\r\n/g, '\n');
     expect(page).toContain(
