@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { AppLogo } from '@/components/shared/AppLogo';
@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { StorageKey } from '@/lib/ui-preferences';
-
+import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
 const ICON_CLASS = 'h-4 w-4 shrink-0';
 
 function SidebarNavLink({
@@ -217,6 +217,7 @@ function SidebarAgentStrip({
 /** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
 export function Sidebar() {
   const { collapsed, toggle, routesNavVisible, pluginsNavVisible } = useSidebar();
+  const { pathname } = useLocation();
   const { t } = useI18n();
   const { statuses: agents } = useAgentStatusesOptional();
   const appUpdate = useAppUpdateAvailable();
@@ -243,9 +244,11 @@ export function Sidebar() {
     () => workspaceNavItems(pluginsNavVisible),
     [pluginsNavVisible],
   );
+  // Deep-link into /routes* still shows the Routes entry so the primary nav
+  // has an active item; preference remains off when leaving the area.
   const visibleManageNav = React.useMemo(
-    () => manageNavItems(routesNavVisible),
-    [routesNavVisible],
+    () => manageNavItems(routesNavVisible || isRoutesAreaPath(pathname)),
+    [pathname, routesNavVisible],
   );
 
   return (

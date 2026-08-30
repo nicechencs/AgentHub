@@ -95,9 +95,13 @@ describe('PageHeader', () => {
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
     expect(source('pages/chat/ChatSessionHeader.tsx')).not.toContain('pageRhythm.workbenchHeader');
     expect(source('App.tsx')).toContain("pathname === '/connections'");
-    expect(source('App.tsx')).toContain("pathname === '/routes'");
+    expect(source('App.tsx')).toContain('isRoutesAreaPath');
+    expect(source('App.tsx')).toContain('isRoutesArea');
+    expect(source('App.tsx')).not.toContain("pathname === '/routes'");
     expect(source('App.tsx')).toContain("pathname === '/agents'");
     expect(source('App.tsx')).toContain("pathname === '/plugins'");
     expect(source('App.tsx')).toContain("pathname === '/settings'");
+    expect(source('pages/routes/RoutesNav.tsx')).toContain('data-routes-nav');
+    expect(source('pages/routes/RoutesLayout.tsx')).toContain('enterRoutesArea');
   });
 });
