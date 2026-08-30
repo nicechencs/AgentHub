@@ -22,6 +22,15 @@ describe('settings layout wiring', () => {
     expect(page).not.toContain('flushTop');
   });
 
+  it('puts brand-color swatches next to the theme row', () => {
+    const prefs = source('PreferencesPanel.tsx');
+    expect(prefs).toContain("t('settings.general.accentLabel')");
+    expect(prefs).toContain('persistAccent');
+    expect(prefs.indexOf("t('settings.general.themeLabel')")).toBeLessThan(
+      prefs.indexOf("t('settings.general.accentLabel')"),
+    );
+  });
+
   it('exposes a plugins nav toggle next to the routes toggle', () => {
     const prefs = source('PreferencesPanel.tsx');
     expect(prefs).toContain("t('settings.general.routesNavVisibleLabel')");

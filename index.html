@@ -16,6 +16,8 @@
               window.matchMedia('(prefers-color-scheme: dark)').matches);
           document.documentElement.classList.toggle('dark', dark);
           document.documentElement.classList.toggle('light', !dark);
+          var accent = localStorage.getItem('agenthub:accent') || 'indigo';
+          document.documentElement.setAttribute('data-accent', accent);
         } catch (e) {
           document.documentElement.classList.add('light');
         }
@@ -56,6 +58,16 @@
         --agent-workbuddy: #3b82f6;
         --agent-cursor: #ff6b2c;
       }
+      :root[data-accent="indigo"] { --accent: #4f46e5; }
+      html.dark[data-accent="indigo"], .dark[data-accent="indigo"] { --accent: #6366f1; }
+      :root[data-accent="blue"] { --accent: #2563eb; }
+      html.dark[data-accent="blue"], .dark[data-accent="blue"] { --accent: #3b82f6; }
+      :root[data-accent="teal"] { --accent: #0f766e; }
+      html.dark[data-accent="teal"], .dark[data-accent="teal"] { --accent: #14b8a6; }
+      :root[data-accent="rose"] { --accent: #e11d48; }
+      html.dark[data-accent="rose"], .dark[data-accent="rose"] { --accent: #f43f5e; }
+      :root[data-accent="amber"] { --accent: #c2410c; }
+      html.dark[data-accent="amber"], .dark[data-accent="amber"] { --accent: #ea580c; }
       /* @@design-tokens-boot:end@@ */
       html,
       body,
@@ -120,11 +132,15 @@
         justify-content: center;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
       }
-      #boot-fallback .mark img {
+      #boot-fallback .mark img,
+      #boot-fallback .mark svg {
         width: 48px;
         height: 48px;
         display: block;
-        object-fit: cover;
+        color: var(--accent);
+      }
+      #boot-fallback .mark svg rect {
+        fill: currentColor;
       }
       #boot-fallback .title {
         font-size: 16px;
@@ -283,8 +299,14 @@
         <div class="mark-wrap">
           <span class="mark-ring" aria-hidden="true"></span>
           <span class="mark" aria-hidden="true">
-            <!-- public/app-icon.png：与安装包 / 桌面图标同源 -->
-            <img src="./app-icon.png" width="48" height="48" alt="" />
+            <!-- 产品标随 --accent；安装包图标仍是默认紫 PNG -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="48" height="48" aria-hidden="true">
+              <rect width="1024" height="1024" rx="224" fill="currentColor" />
+              <path d="M300 682 430 342h164l130 340M354 548h316" fill="none" stroke="#fff" stroke-width="78" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="300" cy="682" r="52" fill="#fff" />
+              <circle cx="512" cy="548" r="52" fill="#fff" />
+              <circle cx="724" cy="682" r="52" fill="#fff" />
+            </svg>
           </span>
         </div>
         <div style="display: flex; flex-direction: column; align-items: center; gap: 6px">

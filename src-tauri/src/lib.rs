@@ -240,6 +240,7 @@ pub fn run() {
             commands::settings::open_logs_dir,
             commands::settings::open_external_url,
             commands::settings::pick_directory::pick_directory,
+            commands::shell_icon::set_shell_icon,
         ])
         .build(tauri::generate_context!())
         .expect("error while building AgentHub GUI")

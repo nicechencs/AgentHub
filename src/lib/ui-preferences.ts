@@ -7,6 +7,8 @@ const PREFIX = 'agenthub:';
 
 export const StorageKey = {
   theme: `${PREFIX}theme`,
+  /** Product accent id (`indigo` | `blue` | `teal` | `rose` | `amber`) */
+  accent: `${PREFIX}accent`,
   language: `${PREFIX}language`,
   /** One-shot: first-launch system language already seeded into core */
   languageSystemSeeded: `${PREFIX}language-system-seeded-v1`,
