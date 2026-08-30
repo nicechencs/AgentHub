@@ -26,12 +26,24 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Plugins | `/plugins` | Read-only vendor plugin / extension pack inventory |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
 | Manage | Connections | `/connections` | Global login list and connection actions |
-| Manage | Routes | `/routes` | Local route runtime list and details |
+| Manage | Routes | `/routes` | Local route runtime list and details (secondary nav for board / pool / tokens / activity) |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
 `Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes and Plugins sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows those entries; the pages stay reachable at `/routes` and `/plugins`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
+
+Routes nested paths (secondary nav):
+
+| Label | Path | Role |
+|---|---|---|
+| Route list | `/routes` | Runtime list + detail (existing workbench) |
+| Board | `/routes/board` | Health overview and recent requests |
+| Auth pool | `/routes/pool` | Default-pool members per route (read-only; gated) |
+| Local tokens | `/routes/tokens` | Entry-key management (in development placeholder) |
+| Activity | `/routes/activity` | Cross-route recent request feed |
+
+Entering any `/routes*` path shows a shell-level secondary nav panel and applies a **session-only** primary-sidebar collapse (does not write `agenthub:sidebar-collapsed`). The secondary nav top-left control expands the primary sidebar for the session. Leaving the routes area clears the override.
 
 ## 2. Application shell
 

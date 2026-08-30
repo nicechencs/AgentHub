@@ -47,8 +47,8 @@ import {
   routePoolMembersSectionVisible,
   routePoolSurfaceLabel,
 } from './route-pool-view-model';
+import { InboundRequestList } from '@/components/shared/InboundRequestList';
 import {
-  formatInboundAt,
   ROUTE_LOCAL_ADDRESS_LEGEND,
   routeEndpointCopyKey,
 } from './route-endpoint-copy';
@@ -531,26 +531,7 @@ function InboundRequestsSection({ rows }: { rows: readonly AdapterBridgeInboundR
   return (
     <section className="space-y-2" data-route-inbound>
       <h3 className="text-body font-medium">{t('routes.inbound.title')}</h3>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted">{t('routes.inbound.empty')}</p>
-      ) : (
-        <ul className="space-y-1 rounded-card border border-border bg-subtle p-3">
-          {rows.map((row, index) => (
-            <li
-              key={`${row.at}:${row.method}:${row.path}:${row.status}:${index}`}
-              className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-meta"
-            >
-              <span className="text-muted">{formatInboundAt(row.at)}</span>
-              <span>{row.method}</span>
-              <span className="min-w-0 truncate">{row.path}</span>
-              <span>{row.status}</span>
-              <span className={row.ok ? 'text-success' : 'text-danger'}>
-                {row.ok ? t('routes.inbound.ok') : t('routes.inbound.fail')}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <InboundRequestList rows={rows} emptyLabel={t('routes.inbound.empty')} />
     </section>
   );
 }
