@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Database, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
@@ -63,7 +63,7 @@ function backupKindLabel(kind: BackupKind, t: TranslateFn): string {
   }
 }
 
-export function BackupsPanel() {
+export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { t, lang } = useI18n();
@@ -242,25 +242,9 @@ export function BackupsPanel() {
         split={inspect}
         resizeAria={t('common.resizeSidePanel')}
         panel={inspectPanel}
-        flushTop
       >
       <div className={pageRhythm.chromeRow}>
-        {pageLoading ? (
-          <Skeleton className="h-9 w-64 rounded-card" />
-        ) : (
-          <AgentTabStrip
-            value={agentId ?? visibleAgents[0]?.id ?? AGENTS[0].id}
-            onChange={setAgentId}
-            agents={visibleAgents}
-            emptyLabel={t('settings.backups.emptyAgents')}
-          />
-        )}
-        {!pageLoading && agentMeta && agentId && (
-          <span className="text-xs text-muted">
-            {t('settings.backups.recordCount', { name: agentMeta.name, count: counts[agentId] ?? 0 })}
-            {!isInstalled && t('settings.backups.uninstalledHint')}
-          </span>
-        )}
+        {toolbar}
         <div className={pageRhythm.chromeActions}>
           <Tip className="max-w-[12rem] truncate text-meta text-secondary" label={t('settings.backups.keepCopiesTip')}>
             {t('settings.backups.keepCopiesLabel')}
@@ -286,6 +270,26 @@ export function BackupsPanel() {
             </Button>
           )}
         </div>
+      </div>
+      <div className={pageRhythm.chromeRow}>
+        {pageLoading ? (
+          <Skeleton className="h-9 w-64 rounded-card" />
+        ) : (
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <AgentTabStrip
+              value={agentId ?? visibleAgents[0]?.id ?? AGENTS[0].id}
+              onChange={setAgentId}
+              agents={visibleAgents}
+              emptyLabel={t('settings.backups.emptyAgents')}
+            />
+          </div>
+        )}
+        {!pageLoading && agentMeta && agentId && (
+          <span className="shrink-0 text-xs text-muted">
+            {t('settings.backups.recordCount', { name: agentMeta.name, count: counts[agentId] ?? 0 })}
+            {!isInstalled && t('settings.backups.uninstalledHint')}
+          </span>
+        )}
       </div>
 
       {pageLoading ? (

@@ -112,7 +112,7 @@ export const pageRhythm = {
    * 滚动条仍贴着分隔条（分隔条 hit 区还会叠进滚动条）。
    */
   workbenchXSplit: `${pageInsetTw.l} ${pageCanvasTw.r} ${pageCanvasTw.mr}`,
-  /** Settings 等：顶栏下的 Tab 行，顶距与页边相同 */
+  /** 表单页：顶栏下的 Tab 行，顶距与页边相同。分栏页把 Tab 放进列表列 chromeRow。 */
   workbenchHeader: `shrink-0 ${pageInsetTw.x} ${pageInsetTw.t}`,
   /** 全高列表顶距，与预览列 padTop 相同 */
   workbenchPadT: pageInsetTw.t,
