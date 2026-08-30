@@ -23,10 +23,12 @@ export async function rasterizeAccentMark(
   fill: string,
   size = SHELL_ICON_SIZE,
 ): Promise<{ rgba: number[]; width: number; height: number }> {
-  const blob = new Blob([appMarkSvg(fill)], { type: 'image/svg+xml;charset=utf-8' });
+  const blob = new Blob([appMarkSvg(fill, size)], { type: 'image/svg+xml;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   try {
     const img = await loadImage(url);
+    img.width = size;
+    img.height = size;
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;

@@ -1,17 +1,20 @@
 //! Runtime window / tray / desktop-shortcut icon (product mark tinted to accent).
 //!
-//! The bundled installer `.ico` stays the default indigo. This retints the
-//! running window (taskbar), the tray icon, and Windows shortcuts that already
-//! point at this executable (Desktop / Start menu).
-
-use std::path::PathBuf;
+//! Cross-platform:
+//! - In-app mark / CSS `--accent`: all platforms.
+//! - Window icon (`set_icon`): Windows taskbar + Linux running-window icon.
+//!   macOS: tao no-op (Dock uses the signed `.app` icns).
+//! - Tray icon: all desktop platforms (macOS menu bar, Linux AppIndicator).
+//! - Desktop / Start-menu `.lnk`: Windows only.
 
 use tauri::{image::Image, AppHandle, Manager, State};
 
 use crate::state::AppState;
 use crate::tray;
 
+#[cfg_attr(not(windows), allow(dead_code))]
 mod ico;
+#[cfg_attr(not(windows), allow(dead_code))]
 mod shortcuts;
 #[cfg(windows)]
 mod desktop;
@@ -41,6 +44,7 @@ pub(crate) fn validate_shell_icon_rgba(rgba: &[u8], width: u32, height: u32) -> 
     Ok(())
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn sanitize_accent_id(id: &str) -> Result<&str, String> {
     if !id.is_empty()
         && id.len() <= 16
@@ -54,13 +58,15 @@ pub(crate) fn sanitize_accent_id(id: &str) -> Result<&str, String> {
     }
 }
 
-fn shell_icon_file(state: &AppState, accent_id: &str) -> Result<PathBuf, String> {
+#[cfg(windows)]
+fn shell_icon_file(state: &AppState, accent_id: &str) -> Result<std::path::PathBuf, String> {
     let data_dir = state.hub()?.settings().path_info().data_dir;
-    Ok(PathBuf::from(data_dir)
+    Ok(std::path::PathBuf::from(data_dir)
         .join("cache")
         .join(format!("shell-icon-{accent_id}.ico")))
 }
 
+#[cfg(windows)]
 fn persist_desktop_icon(
     state: &AppState,
     accent_id: &str,
@@ -75,9 +81,20 @@ fn persist_desktop_icon(
     }
     let bytes = ico::encode_ico_rgba(rgba, width, height)?;
     std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-    #[cfg(windows)]
     desktop::publish_shortcut_icon(&path)?;
-    let _ = path;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn persist_desktop_icon(
+    _state: &AppState,
+    _accent_id: &str,
+    _rgba: &[u8],
+    _width: u32,
+    _height: u32,
+) -> Result<(), String> {
+    // macOS Dock uses the signed .app icns; Linux launchers use .desktop Icon=.
+    // Neither is a Windows .lnk. Window + tray still update via RGBA below.
     Ok(())
 }
 
