@@ -89,7 +89,7 @@ Dashboard is the overview for installed Agents and usage, not a second Connectio
 
 - Render only installed Agents. Use an auto-fit grid so the number of Agents is not encoded in the layout.
 - Agent cards show identity, readiness, and one primary “连接 / 切换” entry. Do not duplicate management buttons already present in Agents or Connections.
-- Usage filters are shared by summary metrics, trend, distribution, and details: time, Agent, and model. Model options are the distinct models in the selected records, not a model-management catalog.
+- Usage filters are shared by summary metrics, trend, distribution, and details: time, Agent, and model. Model options are the distinct models in the selected records, not a model-management catalog. Leaving Dashboard and coming back in the same run keeps the last time / Agent / model selection; closing the app starts from the defaults.
 - Usage collection is explicit and shows last/next sync. A parser health block is compact and partial; it names the affected Agent and keeps the rest of the dashboard usable.
 - A usage-empty state guides the first manual collection. Routes health-empty is the exception described below.
 
