@@ -11,8 +11,8 @@ import { MarkdownView } from '@/components/shared/MarkdownView';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { Button } from '@/components/ui/button';
 import { segmentedItemClass, segmentedTrackClass } from '@/components/ui/segmented-styles';
-import { Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import { readProjectSkillMarkdown, readSkillMarkdown } from '@/lib/api/skill';
@@ -373,13 +373,13 @@ export function SkillMarkdownPreviewPanel({
       </div>
 
       <footer className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-1.5">
-        <Tip
-          className="min-w-0 flex-1 truncate font-mono text-meta text-muted"
-          label={path ?? target.sourceDir ?? undefined}
-        >
-          {path ?? target.sourceDir ?? target.skillId}
-          {truncated ? t('skills.preview.truncatedSuffix') : ''}
-        </Tip>
+        <CopyableFileName
+          path={path ?? target.sourceDir ?? target.skillId}
+          className="min-w-0 flex-1"
+        />
+        {truncated ? (
+          <span className="shrink-0 text-meta text-muted">{t('skills.preview.truncatedSuffix')}</span>
+        ) : null}
       </footer>
     </aside>
   );

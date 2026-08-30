@@ -113,7 +113,7 @@ fn make_svc(agent: AgentId, paths: Vec<PathBuf>) -> (tempfile::TempDir, BackupSe
 }
 
 #[test]
-fn inspect_redacts_secrets_and_extracts_email() {
+fn inspect_shows_file_and_extracts_email() {
     let live = tempdir().unwrap();
     let auth = live.path().join("auth.json");
     write_file(
@@ -140,8 +140,7 @@ fn inspect_redacts_secrets_and_extracts_email() {
     assert_eq!(file.name, "auth.json");
     let content = file.content.as_deref().unwrap();
     assert!(content.contains("a@example.com"));
-    assert!(!content.contains("rt-secret-should-not-leak"));
-    assert!(content.contains("***"));
+    assert!(content.contains("rt-secret-should-not-leak"));
     assert!(inspect
         .facts
         .iter()
@@ -162,8 +161,7 @@ fn inspect_falls_back_to_key_tail_for_toml() {
         .unwrap();
     let inspect = svc.inspect(&rec.id).unwrap();
     let content = inspect.files[0].content.as_deref().unwrap();
-    assert!(!content.contains("xai-file-key-12345678"));
-    assert!(content.contains("***"));
+    assert!(content.contains("xai-file-key-12345678"));
     assert!(inspect.identity.as_deref().is_some());
     assert!(inspect
         .facts

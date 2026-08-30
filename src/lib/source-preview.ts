@@ -1,9 +1,9 @@
 /**
  * Shared JSON/TOML preview helpers.
  *
- * This layer never redacts and never restores secrets. Callers already decide:
- * login files, backups, MCP snippets, and the supplier editor pass masked
- * text; session tool payloads are shown as emitted.
+ * This layer never redacts and never restores secrets. Login files, backups,
+ * and MCP snippets are the local file text. Session tool payloads are shown
+ * as emitted. The supplier editor keeps its own keep-previous-secret masking.
  */
 
 export type SourceFormat = 'json' | 'toml' | 'text';

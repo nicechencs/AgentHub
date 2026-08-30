@@ -83,7 +83,7 @@ pub struct BackupFact {
     pub value: String,
 }
 
-/// Redacted preview of one file inside a snapshot directory.
+/// Preview of one file inside a snapshot directory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupFileView {
@@ -93,7 +93,7 @@ pub struct BackupFileView {
     /// Absolute snapshot path; GUI uses it to reveal the file.
     pub path: String,
     pub size: u64,
-    /// Redacted UTF-8 text. `None` when the file is not text.
+    /// UTF-8 text as stored. `None` when the file is not text.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
   CopyableRouteEndpointUrl,
@@ -257,7 +258,9 @@ function WriteTargetRow({
         <dt className="text-muted">{t('routes.write.wireLabel')}</dt>
         <dd className="min-w-0 text-secondary">{clientWriteWireNote(spec.agent, t)}</dd>
         <dt className="text-muted">{t('routes.write.configPathLabel')}</dt>
-        <dd className="min-w-0 break-all font-mono text-secondary">{spec.configPath}</dd>
+        <dd className="min-w-0">
+          <CopyableFileName path={spec.configPath} wrap="break" />
+        </dd>
         <dt className="text-muted">{t('routes.write.fieldsLabel')}</dt>
         <dd className="min-w-0 space-y-0.5 font-mono text-secondary">
           {spec.fields.map((field) => (

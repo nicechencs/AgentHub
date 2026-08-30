@@ -27,6 +27,7 @@ import {
 import { ConfigEditor } from '@/components/shared/ConfigEditor';
 import { GenericConfigForm, SuggestableInput } from '@/components/shared/GenericConfigForm';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { SecretInput } from '@/components/shared/SecretInput';
 import { Hint, Tip } from '@/components/ui/tooltip';
@@ -975,19 +976,19 @@ export function ProviderEditDialog({
   const form = (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-meta text-muted">
-            <div className="min-w-0 flex-1">
-              <Tip label={livePaths.hint}>
-                <span className="block">
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="min-w-0">
+                <Tip label={livePaths.hint}>
                   <span className="text-secondary">{t('connections.providerDialog.liveConfig')}</span>
-                  <code className="break-all font-mono">{livePaths.config}</code>
-                  {isLiveFilePath(livePaths.auth) ? (
-                    <span className="mt-0.5 block">
-                      <span className="text-secondary">{t('connections.providerDialog.liveAuth')}</span>
-                      <code className="break-all font-mono">{livePaths.auth}</code>
-                    </span>
-                  ) : null}
-                </span>
-              </Tip>
+                </Tip>
+                <CopyableFileName path={livePaths.config} wrap="break" />
+              </div>
+              {isLiveFilePath(livePaths.auth) ? (
+                <div className="min-w-0">
+                  <span className="text-secondary">{t('connections.providerDialog.liveAuth')}</span>
+                  <CopyableFileName path={livePaths.auth} wrap="break" />
+                </div>
+              ) : null}
             </div>
             <OpenDirButton
               labeled

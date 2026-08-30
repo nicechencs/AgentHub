@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { InspectSurface } from '@/components/layout/InspectSurface';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
@@ -232,7 +233,7 @@ export function AgentDetailPanel({
         <section className="mt-4">
           <h3 className="mb-2 text-body font-medium">{t('agents.detail.configDir')}</h3>
           <div className="flex items-center justify-between gap-2 rounded-card border border-border bg-subtle/60 px-3 py-2">
-            <span className="min-w-0 break-all font-mono text-meta text-secondary">{configDir}</span>
+            <CopyableFileName path={configDir} wrap="break" className="min-w-0 flex-1" />
             <OpenDirButton
               labeled
               disabled={opening !== null || uninstalling}
@@ -335,7 +336,9 @@ function InstallLocationRow({
           onClick={onOpen}
         />
       </div>
-      <p className="mt-1 break-all font-mono text-meta text-secondary">{inst.location}</p>
+      <div className="mt-1">
+        <CopyableFileName path={inst.location} wrap="break" />
+      </div>
     </li>
   );
 }

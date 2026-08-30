@@ -13,6 +13,8 @@ export const zh = {
     close: '关闭',
     copy: '复制',
     copied: '已复制',
+    copyFileName: '复制文件名',
+    copiedFileName: '已复制 {name}',
     copyMessage: '复制消息',
     collapse: '收起',
     resizeSidePanel: '调整侧栏宽度',

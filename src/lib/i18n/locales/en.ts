@@ -14,6 +14,8 @@ export const en = {
     close: 'Close',
     copy: 'Copy',
     copied: 'Copied',
+    copyFileName: 'Copy file name',
+    copiedFileName: 'Copied {name}',
     copyMessage: 'Copy message',
     collapse: 'Collapse',
     resizeSidePanel: 'Resize side panel',

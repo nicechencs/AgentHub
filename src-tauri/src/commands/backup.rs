@@ -20,7 +20,7 @@ pub async fn list_backups(
     with_hub_blocking(hub, move |hub| list_backups_inner(hub, agent_id.as_deref())).await
 }
 
-/// Invoke: `inspect_backup` — redacted file text + distinguishing facts.
+/// Invoke: `inspect_backup` — file text + distinguishing facts.
 #[tauri::command]
 pub async fn inspect_backup(
     state: State<'_, AppState>,

@@ -9,13 +9,12 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::{json, Map as JsonMap, Value as JsonValue};
-use toml_edit::{value as toml_value, DocumentMut, Item, Table, Value as TomlValue};
+use toml_edit::{DocumentMut, Item, Table};
 
 use crate::models::AgentId;
 use crate::utils::paths::{agent_home, home_dir};
-use crate::utils::redact::is_secret_key;
 
-/// One discovered MCP server entry (redacted; no env secrets).
+/// One discovered MCP server entry. Snippets are the local file fragment.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerEntry {
@@ -29,7 +28,7 @@ pub struct McpServerEntry {
     /// json | toml
     pub source_format: String,
     pub enabled: Option<bool>,
-    /// Redacted raw fragment for this server only (pretty JSON / TOML).
+    /// Local-file fragment for this server only (pretty JSON / TOML).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<String>,
 }
@@ -46,7 +45,7 @@ pub struct McpSourceFile {
     pub server_count: usize,
     /// Human label for the file role
     pub label: String,
-    /// Redacted MCP-related section of the file (not the whole config).
+    /// MCP-related section of the file (not the whole config).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<String>,
 }
@@ -268,7 +267,7 @@ fn parse_json_value(agent: AgentId, root: &JsonValue, source_path: &str) -> Pars
             entries: Vec::new(),
         };
     };
-    let snippet = pretty_json(&redact_mcp_json(&found.source_value()));
+    let snippet = pretty_json(&found.source_value());
     let entries = found
         .map()
         .iter()
@@ -397,7 +396,7 @@ fn entry_from_json_cfg(
         _ => None,
     };
 
-    let snippet = pretty_json(&redact_mcp_json(&json!({ name: cfg })));
+    let snippet = pretty_json(&json!({ name: cfg }));
     McpServerEntry {
         agent,
         name: name.to_string(),
@@ -475,7 +474,6 @@ fn parse_toml_file(agent: AgentId, path: &Path) -> Result<ParsedSource, String> 
 fn toml_source_snippet(servers_item: &Item) -> Option<String> {
     let mut snippet_doc = DocumentMut::new();
     snippet_doc.insert("mcp_servers", servers_item.clone());
-    redact_toml_document(&mut snippet_doc);
     clip_snippet(snippet_doc.to_string())
 }
 
@@ -485,52 +483,7 @@ fn toml_server_snippet(name: &str, item: &Item) -> Option<String> {
     servers.insert(name, item.clone());
     let mut snippet_doc = DocumentMut::new();
     snippet_doc.insert("mcp_servers", Item::Table(servers));
-    redact_toml_document(&mut snippet_doc);
     clip_snippet(snippet_doc.to_string())
-}
-
-fn is_mcp_secret_bag(key: &str) -> bool {
-    matches!(
-        key.to_ascii_lowercase().as_str(),
-        "env" | "headers" | "header" | "secrets"
-    )
-}
-
-fn redact_mcp_json(value: &JsonValue) -> JsonValue {
-    match value {
-        JsonValue::Object(map) => {
-            let mut out = JsonMap::new();
-            for (k, child) in map {
-                if is_secret_key(k) {
-                    out.insert(k.clone(), JsonValue::String("***".into()));
-                } else if is_mcp_secret_bag(k) {
-                    out.insert(k.clone(), mask_json_string_leaves(child));
-                } else {
-                    out.insert(k.clone(), redact_mcp_json(child));
-                }
-            }
-            JsonValue::Object(out)
-        }
-        JsonValue::Array(items) => JsonValue::Array(items.iter().map(redact_mcp_json).collect()),
-        other => other.clone(),
-    }
-}
-
-fn mask_json_string_leaves(value: &JsonValue) -> JsonValue {
-    match value {
-        JsonValue::Object(map) => {
-            let mut out = JsonMap::new();
-            for (k, child) in map {
-                out.insert(k.clone(), mask_json_string_leaves(child));
-            }
-            JsonValue::Object(out)
-        }
-        JsonValue::Array(items) => {
-            JsonValue::Array(items.iter().map(mask_json_string_leaves).collect())
-        }
-        JsonValue::String(_) => JsonValue::String("***".into()),
-        other => other.clone(),
-    }
 }
 
 fn pretty_json(value: &JsonValue) -> Option<String> {
@@ -551,103 +504,6 @@ fn clip_snippet(s: String) -> Option<String> {
         end -= 1;
     }
     Some(format!("{}…\n(truncated)", &s[..end]))
-}
-
-fn redact_toml_document(doc: &mut DocumentMut) {
-    let keys: Vec<String> = doc.iter().map(|(k, _)| k.to_string()).collect();
-    for k in keys {
-        if is_secret_key(&k) {
-            doc[&k] = toml_value("***");
-            continue;
-        }
-        if let Some(item) = doc.get_mut(&k) {
-            if is_mcp_secret_bag(&k) {
-                mask_toml_string_leaves(item);
-            } else {
-                redact_toml_item(item);
-            }
-        }
-    }
-}
-
-fn redact_toml_item(item: &mut Item) {
-    match item {
-        Item::None => {}
-        Item::Value(v) => redact_toml_value(v, false),
-        Item::Table(t) => redact_toml_table(t, false),
-        Item::ArrayOfTables(a) => {
-            for t in a.iter_mut() {
-                redact_toml_table(t, false);
-            }
-        }
-    }
-}
-
-fn redact_toml_table(table: &mut Table, mask_all_strings: bool) {
-    let keys: Vec<String> = table.iter().map(|(k, _)| k.to_string()).collect();
-    for k in keys {
-        if is_secret_key(&k) {
-            table[&k] = toml_value("***");
-            continue;
-        }
-        let bag = is_mcp_secret_bag(&k);
-        match table.get_mut(&k) {
-            Some(Item::Value(v)) => redact_toml_value(v, mask_all_strings || bag),
-            Some(Item::Table(t)) => redact_toml_table(t, mask_all_strings || bag),
-            Some(Item::ArrayOfTables(a)) => {
-                for t in a.iter_mut() {
-                    redact_toml_table(t, mask_all_strings || bag);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn redact_toml_value(val: &mut TomlValue, mask_all_strings: bool) {
-    match val {
-        TomlValue::String(_) if mask_all_strings => {
-            *val = TomlValue::from("***");
-        }
-        TomlValue::InlineTable(t) => {
-            let keys: Vec<String> = t
-                .get_values()
-                .into_iter()
-                .filter_map(|(path, _)| path.first().map(|k| k.get().to_string()))
-                .collect();
-            for k in keys {
-                let secret = is_secret_key(&k);
-                let bag = is_mcp_secret_bag(&k);
-                let is_string = t.get(&k).and_then(|v| v.as_str()).is_some();
-                if secret || (mask_all_strings && is_string) {
-                    t.insert(&k, TomlValue::from("***"));
-                    continue;
-                }
-                if let Some(inner) = t.get_mut(&k) {
-                    redact_toml_value(inner, mask_all_strings || bag);
-                }
-            }
-        }
-        TomlValue::Array(arr) => {
-            for v in arr.iter_mut() {
-                redact_toml_value(v, mask_all_strings);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn mask_toml_string_leaves(item: &mut Item) {
-    match item {
-        Item::Value(v) => redact_toml_value(v, true),
-        Item::Table(t) => redact_toml_table(t, true),
-        Item::ArrayOfTables(a) => {
-            for t in a.iter_mut() {
-                redact_toml_table(t, true);
-            }
-        }
-        Item::None => {}
-    }
 }
 
 fn classify_transport(type_hint: &str, command: Option<&str>, url: Option<&str>) -> String {
