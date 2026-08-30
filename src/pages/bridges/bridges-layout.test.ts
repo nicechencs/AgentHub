@@ -15,6 +15,7 @@ describe('routes layout wiring', () => {
     const page = source('pages/bridges/index.tsx');
     expect(page).toContain('WorkbenchSplitPage');
     expect(page).toContain('PageHeader');
+    expect(page).toContain("t('common.inDevelopment')");
     expect(page).toContain('pageRhythm.chromeActions');
     expect(page).toContain("t('common.resizeSidePanel')");
     expect(page).toContain('useSideSplit');

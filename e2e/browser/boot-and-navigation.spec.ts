@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { goNav, openApp } from './helpers';
+import { goNav, goPath, openApp } from './helpers';
 
 test('app boots on mock and primary navigation works', async ({ page }) => {
   await openApp(page);
@@ -10,9 +10,9 @@ test('app boots on mock and primary navigation works', async ({ page }) => {
   await expect(page).toHaveURL(/#\/connections/);
   await expect(page.getByRole('heading', { name: '连接' })).toBeVisible();
 
-  await goNav(page, '路由');
-  await expect(page).toHaveURL(/#\/routes/);
-  await expect(page.getByRole('heading', { name: '路由' })).toBeVisible();
+  const nav = page.getByRole('navigation');
+  await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toHaveCount(0);
+  await expect(nav.getByRole('link', { name: /^插件(?:$| — )/ })).toHaveCount(0);
 
   await goNav(page, 'Projects');
   await expect(page).toHaveURL(/#\/projects/);
@@ -132,7 +132,7 @@ test('page title sits in the top bar with notifications; Chat has neither', asyn
   const mcpTop = (await mcpTabs.boundingBox())!.y;
   expect(Math.abs(mcpTop - connectionsTop)).toBeLessThanOrEqual(4);
 
-  await goNav(page, '路由');
+  await goPath(page, '/routes');
   const createRoute = page.getByRole('button', { name: '新建路由' });
   const importRoute = page.getByRole('button', { name: '导入', exact: true });
   const routesLead = page.getByText(/个本机路由|孤立本机路由/);
@@ -150,4 +150,31 @@ test('page title sits in the top bar with notifications; Chat has neither', asyn
   await expect(page).toHaveURL(/#\/chat/);
   await expect(page.getByRole('button', { name: '通知' })).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);
+});
+
+test('new install hides Routes and Plugins until enabled in Settings', async ({ page }) => {
+  await openApp(page);
+  const nav = page.getByRole('navigation');
+  await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toHaveCount(0);
+  await expect(nav.getByRole('link', { name: /^插件(?:$| — )/ })).toHaveCount(0);
+
+  await goNav(page, '设置');
+  await expect(page.getByRole('switch', { name: '显示路由页面' })).not.toBeChecked();
+  await expect(page.getByRole('switch', { name: '显示插件页面' })).not.toBeChecked();
+  await expect(page.getByText('开发中').first()).toBeVisible();
+
+  await page.getByRole('switch', { name: '显示路由页面' }).click();
+  await page.getByRole('switch', { name: '显示插件页面' }).click();
+  await expect(nav.getByRole('link', { name: /^路由 — / })).toBeVisible();
+  await expect(nav.getByRole('link', { name: /^插件 — / })).toBeVisible();
+
+  await goNav(page, '路由');
+  await expect(page).toHaveURL(/#\/routes/);
+  await expect(page.getByRole('heading', { name: '路由' })).toBeVisible();
+  await expect(page.locator('header').getByText('开发中')).toBeVisible();
+
+  await goNav(page, '插件');
+  await expect(page).toHaveURL(/#\/plugins/);
+  await expect(page.getByRole('heading', { name: '插件' })).toBeVisible();
+  await expect(page.locator('header').getByText('开发中')).toBeVisible();
 });

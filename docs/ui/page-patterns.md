@@ -29,7 +29,7 @@ The application is organized by work and management, with Agent filtering inside
 | Manage | Routes | `/routes` | Local route runtime list and details |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
-`Routes` is shown in the sidebar by default. The `routesNavVisible` preference can hide the sidebar item, but it does not disable the page or change `/routes`. `Plugins` is shown in the workspace nav under Projects by default. The `pluginsNavVisible` preference can hide that sidebar item, but it does not disable `/plugins`. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
+`Routes` and `Plugins` are in development. New installs hide both sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows the entry; the pages stay reachable at `/routes` and `/plugins`. Settings, the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 

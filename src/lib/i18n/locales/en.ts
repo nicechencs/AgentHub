@@ -28,6 +28,7 @@ export const en = {
     showSecret: 'Show',
     resizeColumn: 'Drag to resize column',
     resizeColumnNamed: 'Resize {label} column',
+    inDevelopment: 'In development',
   },
   nav: {
     workspace: 'Workspace',
@@ -92,14 +93,14 @@ export const en = {
         'The close button hides the window to the system tray and keeps the process running. You can quit from the tray. Restore from the tray icon on Windows, or the menu-bar tray / Dock icon on macOS.',
       routesNavVisibleLabel: 'Show Routes in sidebar',
       routesNavVisibleDescription:
-        'Show the Routes entry in the left nav. Hiding it does not disable the page.',
+        'In development. Show the Routes entry in the left nav. Hiding it does not disable the page.',
       routesNavVisibleTip:
-        'When hidden, you can still open Routes via the URL or direct links.',
+        'Hidden by default on a new install. When hidden, you can still open Routes via the URL or direct links.',
       pluginsNavVisibleLabel: 'Show Plugins in sidebar',
       pluginsNavVisibleDescription:
-        'Show the Plugins entry in the left nav. Hiding it does not disable the page.',
+        'In development. Show the Plugins entry in the left nav. Hiding it does not disable the page.',
       pluginsNavVisibleTip:
-        'When hidden, you can still open Plugins via the URL or direct links.',
+        'Hidden by default on a new install. When hidden, you can still open Plugins via the URL or direct links.',
       warnDuplicateRouteCredentialLabel: 'Warn on reused keys',
       warnDuplicateRouteCredentialDescription: 'Tip only when a route key or login was already used',
       warnDuplicateRouteCredentialTip:

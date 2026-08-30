@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tip } from '@/components/ui/tooltip';
 import { Boxes } from 'lucide-react';
@@ -323,6 +324,7 @@ export default function BridgesPage() {
     >
       <PageHeader
         title={t('routes.page.title')}
+        badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
         description={t('routes.page.description')}
         descriptionTip={t('routes.page.descriptionTip')}
       />

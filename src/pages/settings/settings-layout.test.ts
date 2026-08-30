@@ -30,4 +30,13 @@ describe('settings layout wiring', () => {
       prefs.indexOf("t('settings.general.pluginsNavVisibleLabel')"),
     );
   });
+
+  it('marks routes and plugins toggles as in development', () => {
+    const prefs = source('PreferencesPanel.tsx');
+    expect(prefs).toContain("t('common.inDevelopment')");
+    expect(prefs).toContain('badge={<Badge');
+    expect((prefs.match(/t\('common\.inDevelopment'\)/g) ?? []).length).toBe(2);
+    expect(prefs).toContain("aria-label={t('settings.general.routesNavVisibleLabel')}");
+    expect(prefs).toContain("aria-label={t('settings.general.pluginsNavVisibleLabel')}");
+  });
 });

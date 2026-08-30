@@ -8,6 +8,7 @@ import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
@@ -150,6 +151,7 @@ export default function PluginsPage() {
     >
       <PageHeader
         title={t('plugins.page.title')}
+        badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
         description={
           data
             ? t('plugins.page.descriptionCount', { n: visiblePlugins.length })

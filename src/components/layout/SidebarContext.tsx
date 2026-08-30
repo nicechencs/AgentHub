@@ -1,5 +1,11 @@
 import * as React from 'react';
-import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
+import {
+  DEFAULT_PLUGINS_NAV_VISIBLE,
+  DEFAULT_ROUTES_NAV_VISIBLE,
+  loadBool,
+  saveBool,
+  StorageKey,
+} from '@/lib/ui-preferences';
 
 interface SidebarContextValue {
   collapsed: boolean;
@@ -27,10 +33,10 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     () => loadBool(StorageKey.sidebarCollapsed, false),
   );
   const [routesNavVisible, setRoutesNavVisibleState] = React.useState(
-    () => loadBool(StorageKey.routesNavVisible, true),
+    () => loadBool(StorageKey.routesNavVisible, DEFAULT_ROUTES_NAV_VISIBLE),
   );
   const [pluginsNavVisible, setPluginsNavVisibleState] = React.useState(
-    () => loadBool(StorageKey.pluginsNavVisible, true),
+    () => loadBool(StorageKey.pluginsNavVisible, DEFAULT_PLUGINS_NAV_VISIBLE),
   );
 
   const setCollapsed = React.useCallback((v: boolean) => {

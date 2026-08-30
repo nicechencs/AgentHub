@@ -23,7 +23,16 @@ export async function openApp(page: Page, hash = '/'): Promise<void> {
 }
 
 export async function goNav(page: Page, name: string): Promise<void> {
-  await page.getByRole('link', { name, exact: true }).click();
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await page
+    .getByRole('navigation')
+    .getByRole('link', { name: new RegExp(`^${escaped}(?:$| — )`) })
+    .click();
+}
+
+export async function goPath(page: Page, hash: string): Promise<void> {
+  const path = hash.startsWith('#') ? `/${hash}` : `/#${hash.startsWith('/') ? hash : `/${hash}`}`;
+  await page.goto(path);
 }
 
 async function waitForConnectionsReady(page: Page): Promise<void> {
