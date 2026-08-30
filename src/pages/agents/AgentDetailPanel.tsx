@@ -255,6 +255,7 @@ export function AgentDetailPanel({
             <Button
               size="sm"
               variant="outline"
+              className="text-danger hover:text-danger"
               disabled={uninstalling || opening !== null}
               title={t('agents.dialog.uninstallDesc')}
               onClick={() => setConfirmDialog('program')}
