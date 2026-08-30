@@ -56,9 +56,10 @@ describe('unified route endpoints', () => {
       .toBe('http://127.0.0.1:{port}/v1/responses');
     const parts = routeEndpointHttpParts({ path: '/v1/chat/completions', port: 8123 });
     expect(parts.href).toBe('http://127.0.0.1:8123/v1/chat/completions');
-    expect(parts.brandAgentId).toBe('kimi');
+    expect(parts.brandAgentId).toBe('codex');
     expect(routeEndpointBrandAgentId('messages')).toBe('claude');
     expect(routeEndpointBrandAgentId('responses')).toBe('codex');
+    expect(routeEndpointBrandAgentId('chat_completions')).toBe('codex');
     expect(routeEndpointHttpParts({ path: '/v1/messages' }).href).toBeNull();
   });
 });

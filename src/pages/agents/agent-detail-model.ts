@@ -1,36 +1,58 @@
 /**
  * Agent management detail view-model.
  *
- * Conversation surfaces follow dest `RouteDownstreamSurface::for_agent`.
- * This is the Agent's static capability, shown only on Agents detail.
+ * Conversation surfaces are what this Agent speaks as a client — not dest
+ * `RouteDownstreamSurface::for_agent` (that list is only local-route writers).
+ * Shown on Agents detail. Path color reuses the Agent token
+ * (`AGENT_COLORS` / `--agent-*`), not a second palette.
  */
 import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
 import { isLiveFilePath, liveConfigPaths } from '@/lib/provider-detect';
+import {
+  routeEndpointBrandAgentId,
+  routeEndpointPath,
+  type RouteEndpointId,
+} from '@/lib/route-endpoints';
+import type { TokenAgentId } from '@/styles/tokens';
 import { extraCopyKindLabel, extraCopyKindLabelKey } from './agent-card-model';
 
-export type AgentConversationSurface = 'messages' | 'responses' | 'chat_completions';
+export type AgentConversationSurface = RouteEndpointId;
 
 export type AgentConversationEndpoint = {
   id: AgentConversationSurface;
   path: string;
   copyKey: MessageKey;
+  brandAgentId: TokenAgentId;
 };
 
-const ENDPOINT_PATH: Record<AgentConversationSurface, string> = {
-  messages: '/v1/messages',
-  responses: '/v1/responses',
-  chat_completions: '/v1/chat/completions',
-};
+/**
+ * HTTP conversation paths this Agent actually uses.
+ *
+ * Cursor Agent talks to Cursor's own backend (not these three paths) — omit.
+ * Pi can use all three depending on the current login.
+ * ZCode official slots are Anthropic; custom rows also take OpenAI-compatible chat completions.
+ * DeepSeek official API (DSH) exposes Anthropic Messages, Responses, and Chat Completions.
+ */
+export function agentConversationSurfaces(
+  agentId: string,
+): readonly AgentConversationSurface[] {
+  if (agentId === 'claude') return ['messages'];
+  if (agentId === 'codex' || agentId === 'grok') return ['responses'];
+  if (agentId === 'kimi' || agentId === 'workbuddy') {
+    return ['chat_completions'];
+  }
+  if (agentId === 'zcode') return ['messages', 'chat_completions'];
+  if (agentId === 'dsh' || agentId === 'pi') {
+    return ['messages', 'responses', 'chat_completions'];
+  }
+  return [];
+}
 
-/** Mirrors dest `RouteDownstreamSurface::for_agent`. Cursor is omitted on purpose. */
 export function agentConversationSurface(
   agentId: string,
 ): AgentConversationSurface | null {
-  if (agentId === 'claude') return 'messages';
-  if (agentId === 'codex' || agentId === 'grok') return 'responses';
-  if (agentId === 'kimi' || agentId === 'dsh') return 'chat_completions';
-  return null;
+  return agentConversationSurfaces(agentId)[0] ?? null;
 }
 
 export function conversationEndpointCopyKey(
@@ -41,13 +63,16 @@ export function conversationEndpointCopyKey(
   return 'agents.detail.endpointChatCompletions';
 }
 
-/** Paths + Agents-page product copy. Empty when dest has no default surface. */
+/** Paths + Agents-page product copy. Empty when the Agent has no public HTTP surface. */
 export function agentConversationEndpoints(
   agentId: string,
 ): AgentConversationEndpoint[] {
-  const id = agentConversationSurface(agentId);
-  if (!id) return [];
-  return [{ id, path: ENDPOINT_PATH[id], copyKey: conversationEndpointCopyKey(id) }];
+  return agentConversationSurfaces(agentId).map((id) => ({
+    id,
+    path: routeEndpointPath(id),
+    copyKey: conversationEndpointCopyKey(id),
+    brandAgentId: routeEndpointBrandAgentId(id),
+  }));
 }
 
 export function formatConversationEndpointLabel(

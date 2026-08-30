@@ -1,5 +1,6 @@
 import { ChevronDown, Copy } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
@@ -517,7 +518,9 @@ function ClientRow({ row }: { row: RouteGraphRow }) {
           url={url}
           ariaLabel={t('routes.graph.copyLocal', { endpoint: url || row.localPath })}
         />
-        <span className="ml-1 text-meta text-muted">{t(routeEndpointCopyKey(row.localEndpointId))}</span>
+        <RouteEndpointTypeText endpointId={row.localEndpointId} className="ml-1 text-meta">
+          {t(routeEndpointCopyKey(row.localEndpointId))}
+        </RouteEndpointTypeText>
       </span>
     </li>
   );

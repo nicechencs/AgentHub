@@ -2,6 +2,7 @@ import * as React from 'react';
 import { InspectSurface } from '@/components/layout/InspectSurface';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
@@ -26,8 +27,8 @@ import {
   type AgentInstall,
 } from './agent-card-model';
 import {
+  agentConversationEndpoints,
   displayAgentConfigDir,
-  formatAgentConversationEndpoints,
   installChannelKindLabel,
   installLocationSourceLabel,
 } from './agent-detail-model';
@@ -38,6 +39,30 @@ function Field({ label, value }: { label: string; value?: string | null }) {
     <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-meta">
       <dt className="text-muted">{label}</dt>
       <dd className="min-w-0 break-all text-secondary">{value}</dd>
+    </div>
+  );
+}
+
+function EndpointTypesField({ agentId }: { agentId: string }) {
+  const { t } = useI18n();
+  const rows = agentConversationEndpoints(agentId);
+  return (
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-meta">
+      <dt className="text-muted">{t('agents.detail.endpointTypes')}</dt>
+      <dd className="min-w-0 break-all">
+        {rows.length === 0 ? (
+          <span className="text-secondary">{t('agents.detail.endpointDependsOnLogin')}</span>
+        ) : (
+          <span className="flex flex-col gap-0.5 font-mono">
+            {rows.map((row) => (
+              <span key={row.id}>
+                <RouteEndpointTypeText endpointId={row.id}>{row.path}</RouteEndpointTypeText>
+                <span className="text-secondary"> · {t(row.copyKey)}</span>
+              </span>
+            ))}
+          </span>
+        )}
+      </dd>
     </div>
   );
 }
@@ -73,7 +98,6 @@ export function AgentDetailPanel({
     spawn?.source ?? agent.channel,
     t,
   );
-  const endpointLabel = formatAgentConversationEndpoints(agent.agentId, t);
   const configDir = displayAgentConfigDir(agent.agentId, resolvedConfigDir);
 
   React.useEffect(() => {
@@ -180,7 +204,7 @@ export function AgentDetailPanel({
     >
       <dl className="flex flex-col gap-2">
         <Field label={t('agents.card.channel')} value={channelLabel} />
-        <Field label={t('agents.detail.endpointTypes')} value={endpointLabel} />
+        <EndpointTypesField agentId={agent.agentId} />
       </dl>
 
       <section className="mt-4">

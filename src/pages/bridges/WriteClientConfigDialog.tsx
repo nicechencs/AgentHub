@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
+import {
+  CopyableRouteEndpointUrl,
+  RouteEndpointTypeText,
+} from '@/components/shared/RouteEndpointUrl';
 import {
   closeConfirmationOnOpenChange,
 } from '@/components/shared/busy-confirmation';
@@ -247,7 +250,9 @@ function WriteTargetRow({
             endpointId={spec.endpointId}
             className="text-meta"
           />
-          <span className="mt-0.5 block text-muted">{t(routeEndpointCopyKey(spec.endpointId))}</span>
+          <RouteEndpointTypeText endpointId={spec.endpointId} className="mt-0.5 block">
+            {t(routeEndpointCopyKey(spec.endpointId))}
+          </RouteEndpointTypeText>
         </dd>
         <dt className="text-muted">{t('routes.write.wireLabel')}</dt>
         <dd className="min-w-0 text-secondary">{clientWriteWireNote(spec.agent, t)}</dd>
