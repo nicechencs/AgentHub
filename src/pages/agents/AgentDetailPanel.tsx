@@ -33,6 +33,7 @@ import {
   installChannelKindLabel,
   installLocationSourceLabel,
 } from './agent-detail-model';
+import { localizeInstallCopy } from './install-labels';
 
 function Field({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
@@ -170,7 +171,7 @@ export function AgentDetailPanel({
       if (!outcome.ok) {
         toast({
           title: t('agents.lifecycle.uninstallIncomplete'),
-          description: outcome.message,
+          description: localizeInstallCopy(outcome.message, t),
           variant: 'danger',
         });
         return;
@@ -185,7 +186,11 @@ export function AgentDetailPanel({
       });
     } catch (e) {
       const msg = e instanceof InstallFailedError ? e.message : String(e);
-      toast({ title: t('agents.lifecycle.uninstallFailed'), description: msg, variant: 'danger' });
+      toast({
+        title: t('agents.lifecycle.uninstallFailed'),
+        description: localizeInstallCopy(msg, t),
+        variant: 'danger',
+      });
     } finally {
       setUninstalling(false);
     }

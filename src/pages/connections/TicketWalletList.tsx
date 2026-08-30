@@ -494,7 +494,7 @@ function TicketRow({
   const { t } = useI18n();
   const { ticket, usageParts, highlighted } = row;
   const editLabel = ticketDetailEditLabel(extras, t);
-  const authChip = ticketAuthChip(extras);
+  const authChip = ticketAuthChip(extras, t);
   const occupancy = resolveAgentMeta(ticket.agentId).occupancy;
   const switchChip = ticketSwitchChip(extras, t, {
     occupancy,

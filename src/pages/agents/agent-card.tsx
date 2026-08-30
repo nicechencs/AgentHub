@@ -36,6 +36,7 @@ import {
   uniqueInstallVersions,
 } from './agent-card-model';
 import { AgentCardDialogs } from './AgentCardDialogs';
+import { localizeInstallCopy } from './install-labels';
 import { useAgentCardLifecycle } from './use-agent-card-lifecycle';
 
 export function AgentCard({
@@ -234,7 +235,8 @@ export function AgentCard({
   const upgradeTooltip = (() => {
     if (checkingUpdate) return t('agents.update.checking');
     if (updateUnsupported) {
-      const note = agent.update?.note ?? t('agents.card.unsupportedUpdate');
+      const note = localizeInstallCopy(agent.update?.note ?? '', t)
+        || t('agents.card.unsupportedUpdate');
       return officialSetupUrl
         ? t('agents.update.clickOfficial', { note })
         : note;
@@ -252,7 +254,9 @@ export function AgentCard({
     if (updateState === 'unknown') {
       if (isNodeTooOldUpdateNote(agent.update?.note)) return t('agents.card.needsNode22');
       return agent.update?.note
-        ? t('agents.update.unknownForceNote', { note: agent.update.note })
+        ? t('agents.update.unknownForceNote', {
+          note: localizeInstallCopy(agent.update.note, t),
+        })
         : t('agents.update.unknownForce');
     }
     return t('agents.update.forceLatest');

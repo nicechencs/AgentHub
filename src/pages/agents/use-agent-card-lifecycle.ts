@@ -15,8 +15,10 @@ import {
   onInstallProgress,
 } from '@/lib/api/install';
 import { checkChannelEnv, formatMissingList } from '@/lib/env';
+import type { TranslateFn } from '@/lib/i18n';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import type { AgentCardConfirmKind } from './AgentCardDialogs';
+import { localizeInstallCopy } from './install-labels';
 
 export type AgentCardTask = {
   action: 'install' | 'upgrade' | 'oneclick';
@@ -60,12 +62,16 @@ function isInstallerProgressNoise(line: string): boolean {
 }
 
 /** Collapse npm HTTP progress so the fail panel is diagnosis-first. */
-export function summarizeInstallDisplayLines(lines: string[]): string[] {
+export function summarizeInstallDisplayLines(lines: string[], t?: TranslateFn): string[] {
   const out: string[] = [];
   let skipped = 0;
   const flush = () => {
     if (skipped === 0) return;
-    out.push(`（已省略 ${skipped} 行下载进度）`);
+    out.push(
+      t
+        ? t('agents.installCopy.omittedProgress', { n: skipped })
+        : `（已省略 ${skipped} 行下载进度）`,
+    );
     skipped = 0;
   };
   for (const line of lines) {
@@ -75,24 +81,29 @@ export function summarizeInstallDisplayLines(lines: string[]): string[] {
       continue;
     }
     flush();
-    out.push(line);
+    out.push(localizeInstallCopy(line, t));
   }
   flush();
   if (out.length <= 40) return out;
   return [
     ...out.slice(0, 12),
-    `（已省略 ${out.length - 24} 行安装输出）`,
+    t
+      ? t('agents.installCopy.omittedOutput', { n: out.length - 24 })
+      : `（已省略 ${out.length - 24} 行安装输出）`,
     ...out.slice(-12),
   ];
 }
 
-export function splitInstallOutcomeDisplay(outcome: {
-  message: string;
-  logs: string[];
-}): { diagnosis: string; lines: string[] } {
-  const diagnosis = outcome.message.trim();
+export function splitInstallOutcomeDisplay(
+  outcome: {
+    message: string;
+    logs: string[];
+  },
+  t?: TranslateFn,
+): { diagnosis: string; lines: string[] } {
+  const diagnosis = localizeInstallCopy(outcome.message.trim(), t);
   const raw = outcome.logs.length ? outcome.logs : diagnosis ? [diagnosis] : [];
-  return { diagnosis, lines: summarizeInstallDisplayLines(raw) };
+  return { diagnosis, lines: summarizeInstallDisplayLines(raw, t) };
 }
 
 const DONE_HOLD_MS = 500;
@@ -288,7 +299,7 @@ export function useAgentCardLifecycle(input: {
       const outcome = await run();
       if (cancelToken.cancelled) return;
       const status = resolveInstallTaskStatus(outcome);
-      const { diagnosis, lines } = splitInstallOutcomeDisplay(outcome);
+      const { diagnosis, lines } = splitInstallOutcomeDisplay(outcome, t);
       setTask({
         action,
         command,
@@ -302,31 +313,39 @@ export function useAgentCardLifecycle(input: {
       } else if (isSetupGuideOutcome(outcome)) {
         toast({
           title: t('agents.lifecycle.setupGuide'),
-          description: outcome.message,
+          description: localizeInstallCopy(outcome.message, t),
         });
       } else {
-        toast({ title: t('agents.lifecycle.notOk'), description: outcome.message, variant: 'danger' });
+        toast({
+          title: t('agents.lifecycle.notOk'),
+          description: localizeInstallCopy(outcome.message, t),
+          variant: 'danger',
+        });
       }
     } catch (e) {
       if (cancelToken.cancelled) return;
       if (e instanceof InstallFailedError) {
         const status = resolveInstallTaskStatus(e.outcome);
-        const { diagnosis, lines } = splitInstallOutcomeDisplay(e.outcome);
+        const { diagnosis, lines } = splitInstallOutcomeDisplay(e.outcome, t);
         setTask({
           action,
           command,
-          lines: lines.length ? lines : e.logs.length ? e.logs : [e.message],
+          lines: lines.length ? lines : e.logs.length ? e.logs.map((line) => localizeInstallCopy(line, t)) : [localizeInstallCopy(e.message, t)],
           status,
-          diagnosis: diagnosis || e.message,
+          diagnosis: diagnosis || localizeInstallCopy(e.message, t),
         });
         if (isSetupGuideOutcome(e.outcome)) {
           toast({
             title: t('agents.lifecycle.setupGuide'),
-            description: e.message,
+            description: localizeInstallCopy(e.message, t),
           });
           return;
         }
-        toast({ title: t('agents.lifecycle.failed'), description: e.message, variant: 'danger' });
+        toast({
+          title: t('agents.lifecycle.failed'),
+          description: localizeInstallCopy(e.message, t),
+          variant: 'danger',
+        });
         return;
       }
       setTask((prev) => (prev ? { ...prev, status: 'failed', lines: [String(e)] } : prev));
@@ -437,13 +456,13 @@ export function useAgentCardLifecycle(input: {
       if (!outcome.ok) {
         toast({
           title: t('agents.lifecycle.uninstallIncomplete'),
-          description: outcome.message,
+          description: localizeInstallCopy(outcome.message, t),
           variant: 'danger',
         });
         setTask({
           action: 'install',
           command: `$ agenthub agent uninstall ${agent.agentId}`,
-          lines: outcome.logs,
+          lines: outcome.logs.map((line) => localizeInstallCopy(line, t)),
           status: 'failed',
         });
         return;
@@ -460,7 +479,11 @@ export function useAgentCardLifecycle(input: {
       });
     } catch (e) {
       const msg = e instanceof InstallFailedError ? e.message : String(e);
-      toast({ title: t('agents.lifecycle.uninstallFailed'), description: msg, variant: 'danger' });
+      toast({
+        title: t('agents.lifecycle.uninstallFailed'),
+        description: localizeInstallCopy(msg, t),
+        variant: 'danger',
+      });
     } finally {
       setUninstalling(false);
     }

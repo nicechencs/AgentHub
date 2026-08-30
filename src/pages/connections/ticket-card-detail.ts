@@ -31,6 +31,7 @@ import {
   routeEndpointPathForBinding,
 } from '@/lib/route-endpoints';
 import type { TranslateFn } from '@/lib/i18n';
+import { localizeStoredUiCopy } from '@/lib/i18n/stored-copy';
 import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
 
 function bindingDashboardRouteLabel(route: BindingRoute, t?: TranslateFn): string {
@@ -168,9 +169,10 @@ const AUTH_LABEL_HUMAN: Record<string, string> = {
 };
 
 /** Quiet header chip: 可续期 / 已配置 / 已验证 — never 未验证 / 尚未验证. */
-export function humanizeTicketAuthLabel(label: string): string {
+export function humanizeTicketAuthLabel(label: string, t?: TranslateFn): string {
   const mapped = AUTH_LABEL_HUMAN[label] ?? label.replace(/·/g, '，');
-  return mapped.replace(/[·，]\s*(尚未验证|未验证)\s*$/u, '').trim() || mapped;
+  const stripped = mapped.replace(/[·，]\s*(尚未验证|未验证)\s*$/u, '').trim() || mapped;
+  return t ? localizeStoredUiCopy(stripped, t) : stripped;
 }
 
 const SECRET_TAIL_HEALTH = new Set(['可续期', '已配置', 'Renewable', 'Configured']);
@@ -178,11 +180,13 @@ const SECRET_TAIL_HEALTH = new Set(['可续期', '已配置', 'Renewable', 'Conf
 /** Card chip: secret tail (`**JF6Q`) in place of 可续期 / 已配置 when known. */
 export function ticketAuthChip(
   extras?: TicketDetailExtras | null,
+  t?: TranslateFn,
 ): { label: string; mono: boolean } | null {
   if (!extras) return null;
-  const health = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel) : '';
+  const health = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel, t) : '';
   const tail = extras.secretTail?.trim();
-  if (tail && (!health || SECRET_TAIL_HEALTH.has(health))) {
+  const healthKey = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel) : '';
+  if (tail && (!healthKey || SECRET_TAIL_HEALTH.has(healthKey))) {
     return { label: tail, mono: true };
   }
   if (health) return { label: health, mono: false };

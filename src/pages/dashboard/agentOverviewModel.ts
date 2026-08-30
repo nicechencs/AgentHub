@@ -3,41 +3,14 @@ import { sliceAgentStatus } from '@/lib/backend/contracts/agent-status-view';
 import {
   authDisplayForAgentStatus,
   authHealthLabel,
-  type AuthHealth,
 } from '@/lib/backend/contracts/auth-state';
 import type { TranslateFn } from '@/lib/i18n';
+import { localizeStoredUiCopy } from '@/lib/i18n/stored-copy';
 import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
-
-const STORED_HEALTH_LABEL: Record<string, AuthHealth> = {
-  已验证: 'verified',
-  Verified: 'verified',
-  可续期: 'renewable',
-  Renewable: 'renewable',
-  已配置: 'configured',
-  Configured: 'configured',
-  需要重新登录: 'needs_login',
-  'Sign in again': 'needs_login',
-  状态未知: 'unknown',
-  Unknown: 'unknown',
-  未登录: 'missing',
-  'Not signed in': 'missing',
-};
 
 /** Backend/store rows keep Chinese literals. Remap at display time when `t` is set. */
 export function localizeStoredDashboardCopy(raw: string, t?: TranslateFn): string {
-  if (!t || !raw) return raw;
-  if (raw === '未配置' || raw === 'Not configured') return t('dashboard.overview.unconfigured');
-  if (raw === '已登录' || raw === 'Signed in') return t('chat.connection.signedIn');
-  if (raw === '本机路由' || raw === 'Local route') return t('kind.route.localRoute');
-  if (raw.startsWith('本机路由 · ')) {
-    return `${t('kind.route.localRoute')} · ${raw.slice('本机路由 · '.length)}`;
-  }
-  if (raw.startsWith('Local route · ')) {
-    return `${t('kind.route.localRoute')} · ${raw.slice('Local route · '.length)}`;
-  }
-  const health = STORED_HEALTH_LABEL[raw];
-  if (health) return authHealthLabel(health, t);
-  return raw;
+  return localizeStoredUiCopy(raw, t);
 }
 
 /** 内容与骨架屏共用：auto-fit 自适应，支持任意 agent 数量 */
