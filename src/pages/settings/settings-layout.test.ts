@@ -49,4 +49,25 @@ describe('settings layout wiring', () => {
     expect(prefs).toContain("aria-label={t('settings.general.routesNavVisibleLabel')}");
     expect(prefs).toContain("aria-label={t('settings.general.pluginsNavVisibleLabel')}");
   });
+
+  it('groups preference rows into labeled sections in a stable order', () => {
+    const prefs = source('PreferencesPanel.tsx');
+    const shared = source('settings-shared.tsx');
+    expect(shared).toContain('export function SettingsGroup');
+    expect(prefs).toContain("t('settings.general.sectionAppearance')");
+    expect(prefs).toContain('SettingsGroup first');
+    const keys = [
+      'sectionAppearance',
+      'sectionLaunch',
+      'sectionSidebar',
+      'sectionRoutes',
+      'sectionSkills',
+      'sectionUsage',
+    ];
+    const indexes = keys.map((key) => prefs.indexOf(`t('settings.general.${key}')`));
+    for (const index of indexes) expect(index).toBeGreaterThan(-1);
+    for (let i = 1; i < indexes.length; i += 1) {
+      expect(indexes[i - 1]).toBeLessThan(indexes[i]);
+    }
+  });
 });

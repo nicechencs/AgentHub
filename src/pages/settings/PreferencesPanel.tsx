@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Hint } from '@/components/ui/tooltip';
@@ -33,7 +32,7 @@ import {
   skillMarketLabel,
 } from './settings-format';
 import { useSidebar } from '@/components/layout/SidebarContext';
-import { SettingsRow } from './settings-shared';
+import { SettingsGroup, SettingsRow } from './settings-shared';
 
 const ACCENT_NAME_KEY = {
   indigo: 'settings.general.accentIndigo',
@@ -123,8 +122,8 @@ export function PreferencesPanel({
   };
 
   return (
-    <Card>
-      <CardContent className="divide-y divide-border pt-1">
+    <>
+      <SettingsGroup first title={t('settings.general.sectionAppearance')}>
         <SettingsRow
           label={t('settings.general.languageLabel')}
           description={t('settings.general.languageDescription')}
@@ -206,6 +205,8 @@ export function PreferencesPanel({
             })}
           </div>
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionLaunch')}>
         <SettingsRow
           label={t('settings.general.autoStartLabel')}
           description={t('settings.general.autoStartDescription')}
@@ -232,6 +233,8 @@ export function PreferencesPanel({
             }}
           />
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionSidebar')}>
         <SettingsRow
           label={t('settings.general.routesNavVisibleLabel')}
           badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
@@ -256,6 +259,8 @@ export function PreferencesPanel({
             aria-label={t('settings.general.pluginsNavVisibleLabel')}
           />
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionRoutes')}>
         <SettingsRow
           label={t('settings.general.warnDuplicateRouteCredentialLabel')}
           description={t('settings.general.warnDuplicateRouteCredentialDescription')}
@@ -282,6 +287,8 @@ export function PreferencesPanel({
             }}
           />
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionSkills')}>
         <SettingsRow
           label={t('settings.general.skillMarketLabel')}
           description={t('settings.general.skillMarketDescription')}
@@ -309,6 +316,8 @@ export function PreferencesPanel({
             </SelectContent>
           </Select>
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionUsage')}>
         <SettingsRow
           label={t('settings.data.usageIntervalLabel')}
           description={t('settings.data.usageIntervalDescription')}
@@ -349,7 +358,7 @@ export function PreferencesPanel({
             {t('common.view')}
           </Link>
         </SettingsRow>
-      </CardContent>
-    </Card>
+      </SettingsGroup>
+    </>
   );
 }
