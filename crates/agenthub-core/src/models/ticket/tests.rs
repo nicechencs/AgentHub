@@ -1,8 +1,7 @@
 use super::*;
 use serde_json::Value;
 
-const FIXTURE: &str =
-    include_str!("../../../../../src/lib/backend/contracts/ticket-speaks.json");
+const FIXTURE: &str = include_str!("../../../../../src/lib/backend/contracts/ticket-speaks.json");
 
 fn all_surfaces() -> [TicketSurface; 10] {
     [

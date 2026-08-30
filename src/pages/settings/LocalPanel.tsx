@@ -1,9 +1,9 @@
 import { useRef } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tip } from '@/components/ui/tooltip';
 import {
   Select,
   SelectValue,
@@ -60,15 +60,15 @@ export function LocalPanel({
             description={t('settings.data.dataDirDescription')}
             descriptionTip={t('settings.data.dataDirTip')}
           >
-            <Tip
-              className="min-w-0 flex-1 break-all text-right font-mono text-xs text-secondary"
-              label={settings.dataDir}
-            >
-              {settings.dataDir}
-            </Tip>
-            <Button
-              size="sm"
-              variant="outline"
+            <CopyableFileName
+              path={settings.dataDir}
+              wrap="break"
+              align="end"
+              className="min-w-0 flex-1"
+            />
+            <OpenDirButton
+              labeled
+              title={settings.dataDir}
               onClick={() => {
                 void (async () => {
                   try {
@@ -83,9 +83,7 @@ export function LocalPanel({
                   }
                 })();
               }}
-            >
-              {t('common.open')}
-            </Button>
+            />
           </SettingsRow>
           <SettingsRow
             label={t('settings.data.logLevelLabel')}
@@ -160,15 +158,15 @@ export function LocalPanel({
             description={t('settings.data.logsDirDescription')}
             descriptionTip={t('settings.data.logsDirTip')}
           >
-            <Tip
-              className="min-w-0 flex-1 break-all text-right font-mono text-xs text-secondary"
-              label={settings.logsDir}
-            >
-              {settings.logsDir}
-            </Tip>
-            <Button
-              size="sm"
-              variant="outline"
+            <CopyableFileName
+              path={settings.logsDir}
+              wrap="break"
+              align="end"
+              className="min-w-0 flex-1"
+            />
+            <OpenDirButton
+              labeled
+              title={settings.logsDir}
               onClick={() => {
                 void (async () => {
                   try {
@@ -183,9 +181,7 @@ export function LocalPanel({
                   }
                 })();
               }}
-            >
-              {t('common.open')}
-            </Button>
+            />
           </SettingsRow>
       </CardContent>
     </Card>

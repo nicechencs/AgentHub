@@ -147,32 +147,17 @@ export default function PluginsPage() {
       split={inspect}
       resizeAria={t('common.resizeSidePanel')}
       panel={inspectPanel}
-      header={(
-        <PageHeader
-          size="compact"
-          title={t('plugins.page.title')}
-          description={
-            data
-              ? t('plugins.page.descriptionCount', { n: visiblePlugins.length })
-              : t('plugins.page.description')
-          }
-          descriptionTip={t('plugins.page.descriptionTip')}
-          actions={
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={loading}
-              onClick={() => void load()}
-              className="gap-1.5"
-            >
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              {t('plugins.page.refresh')}
-            </Button>
-          }
-        />
-      )}
     >
-      <div className={pageRhythm.chrome}>
+      <PageHeader
+        title={t('plugins.page.title')}
+        description={
+          data
+            ? t('plugins.page.descriptionCount', { n: visiblePlugins.length })
+            : t('plugins.page.description')
+        }
+        descriptionTip={t('plugins.page.descriptionTip')}
+      />
+      <div className={pageRhythm.chromeRow}>
         <AgentTabStrip
           showAll
           allLabel={t('kind.all')}
@@ -189,6 +174,18 @@ export default function PluginsPage() {
           emptyLabel={t('plugins.page.emptyTabs')}
           aria-label={t('plugins.page.filterAria')}
         />
+        <div className={pageRhythm.chromeActions}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={loading}
+            onClick={() => void load()}
+            className="gap-1.5"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {t('plugins.page.refresh')}
+          </Button>
+        </div>
       </div>
       {loading && !data ? (
         <ListSkeleton rows={4} />

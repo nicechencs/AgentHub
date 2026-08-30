@@ -318,27 +318,21 @@ fn prepare_project_finalize_and_restore_keep_source_secret_out_of_persistence() 
             .len(),
         47
     );
-    assert!(
-        generated.settings_config["content"]
-            .as_str()
-            .unwrap()
-            .contains("http://127.0.0.1:43121/v1")
-    );
-    assert!(
-        !serde_json::to_string(&generated)
-            .unwrap()
-            .contains("upstream-membership-secret")
-    );
+    assert!(generated.settings_config["content"]
+        .as_str()
+        .unwrap()
+        .contains("http://127.0.0.1:43121/v1"));
+    assert!(!serde_json::to_string(&generated)
+        .unwrap()
+        .contains("upstream-membership-secret"));
 
     let finalized = service.finalize(&prepared, 43121).unwrap();
     assert_eq!(finalized.status, AdapterProfileStatus::Active);
     assert_eq!(finalized.local_port, Some(43121));
     assert!(finalized.auto_start);
-    assert!(
-        !serde_json::to_string(&finalized)
-            .unwrap()
-            .contains("upstream-membership-secret")
-    );
+    assert!(!serde_json::to_string(&finalized)
+        .unwrap()
+        .contains("upstream-membership-secret"));
 
     let restorable = service.list_auto_start_profiles().unwrap();
     assert_eq!(restorable, vec![finalized.clone()]);
@@ -365,11 +359,9 @@ fn account_prepare_projects_without_plaintext_and_oauth_is_rejected() {
 
     let generated = create_projection(&db, &prepared, 43123);
     assert_eq!(generated.meta["adapterSourceRef"]["kind"], "account");
-    assert!(
-        !serde_json::to_string(&generated)
-            .unwrap()
-            .contains("account-upstream-secret")
-    );
+    assert!(!serde_json::to_string(&generated)
+        .unwrap()
+        .contains("account-upstream-secret"));
 
     let (_oauth_dir, oauth_db) = test_db();
     AccountRepo::new(oauth_db.clone())
@@ -422,12 +414,10 @@ fn retry_reuses_local_bearer_and_requests_provider_update_after_rebind() {
         first_bearer
     );
     let updated = ProviderService::new(db.clone()).update(&input).unwrap();
-    assert!(
-        updated.settings_config["content"]
-            .as_str()
-            .unwrap()
-            .contains("127.0.0.1:43122/v1")
-    );
+    assert!(updated.settings_config["content"]
+        .as_str()
+        .unwrap()
+        .contains("127.0.0.1:43122/v1"));
     let finalized = service.finalize(&retry, 43122).unwrap();
     assert_eq!(finalized.local_port, Some(43122));
 }
@@ -443,12 +433,10 @@ fn invalid_source_and_provider_collision_fail_without_creating_profile() {
         service.prepare(&request("missing-key")).unwrap_err().code(),
         "invalid_arg"
     );
-    assert!(
-        AdapterProfileRepo::new(db.clone())
-            .list(None, None, None)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(AdapterProfileRepo::new(db.clone())
+        .list(None, None, None)
+        .unwrap()
+        .is_empty());
 
     let source = kimi_source("colliding-source", "upstream-membership-secret");
     ProviderRepo::new(db.clone()).create(&source).unwrap();
@@ -467,12 +455,10 @@ fn invalid_source_and_provider_collision_fail_without_creating_profile() {
         service.prepare(&request(&source.id)).unwrap_err().code(),
         "adapter.provider_conflict"
     );
-    assert!(
-        AdapterProfileRepo::new(db)
-            .list(None, None, None)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(AdapterProfileRepo::new(db)
+        .list(None, None, None)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -547,11 +533,14 @@ fn prepare_rebuilds_leftover_incomplete_generated_provider() {
         agent_id: AgentId::Claude,
         name: "Codex Subscription Bridge".into(),
         settings_config: json!({ "env": {} }),
-        meta: first.provider_projection(40661).ok().and_then(|p| match p {
-            AdapterBridgeProviderProjection::Create(input) => Some(input.meta),
-            _ => None,
-        })
-        .unwrap_or_else(|| json!({ "generatedBy": "adapter" })),
+        meta: first
+            .provider_projection(40661)
+            .ok()
+            .and_then(|p| match p {
+                AdapterBridgeProviderProjection::Create(input) => Some(input.meta),
+                _ => None,
+            })
+            .unwrap_or_else(|| json!({ "generatedBy": "adapter" })),
         is_current: false,
         created_at: "now".into(),
         updated_at: "now".into(),
@@ -564,7 +553,9 @@ fn prepare_rebuilds_leftover_incomplete_generated_provider() {
     profile.status = AdapterProfileStatus::Active;
     profile.local_port = Some(40661);
     profile.last_error_code = Some("retryable:adapter.bridge_restore_source".into());
-    AdapterProfileRepo::new(db.clone()).update(&profile).unwrap();
+    AdapterProfileRepo::new(db.clone())
+        .update(&profile)
+        .unwrap();
 
     let prepared = service
         .prepare(&codex_claude_request("codex-subscription"))
@@ -623,7 +614,10 @@ fn revalidate_projection_rebuilds_incomplete_generated_provider() {
     let token = input.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"]
         .as_str()
         .unwrap_or("");
-    assert!(token.starts_with("ahb_"), "rebuild must persist the local token");
+    assert!(
+        token.starts_with("ahb_"),
+        "rebuild must persist the local token"
+    );
     assert!(!token.is_empty());
     assert_eq!(
         ProviderRepo::new(db)
@@ -660,12 +654,10 @@ fn auto_start_and_attention_are_profile_only_state_transitions() {
         attention.last_error_code.as_deref(),
         Some("adapter.port_in_use")
     );
-    assert!(
-        ProviderRepo::new(db)
-            .list(Some(AgentId::Codex))
-            .unwrap()
-            .is_empty()
-    );
+    assert!(ProviderRepo::new(db)
+        .list(Some(AgentId::Codex))
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -1322,12 +1314,10 @@ fn bridge_remove_preflight_requires_owned_non_current_provider_then_removes_prof
 
     ProviderRepo::new(db.clone()).delete(&generated.id).unwrap();
     service.complete_remove(&removal).unwrap();
-    assert!(
-        AdapterProfileRepo::new(db)
-            .get(&profile.id)
-            .unwrap()
-            .is_none()
-    );
+    assert!(AdapterProfileRepo::new(db)
+        .get(&profile.id)
+        .unwrap()
+        .is_none());
 }
 
 #[test]
@@ -1559,26 +1549,18 @@ fn prepare_codex_subscription_projects_only_claude_loopback_env() {
         "http://127.0.0.1:43144"
     );
     assert_eq!(input.settings_config["env"]["ANTHROPIC_MODEL"], "gpt-5.4");
-    assert!(
-        input.settings_config["env"]
-            .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
-            .is_none()
-    );
-    assert!(
-        input.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"]
-            .as_str()
-            .is_some_and(|token| token.starts_with("ahb_"))
-    );
-    assert!(
-        !serde_json::to_string(&input)
-            .unwrap()
-            .contains("codex-upstream-access-secret")
-    );
-    assert!(
-        !serde_json::to_string(&input)
-            .unwrap()
-            .contains("refresh-must-not-enter-bridge")
-    );
+    assert!(input.settings_config["env"]
+        .get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+        .is_none());
+    assert!(input.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"]
+        .as_str()
+        .is_some_and(|token| token.starts_with("ahb_")));
+    assert!(!serde_json::to_string(&input)
+        .unwrap()
+        .contains("codex-upstream-access-secret"));
+    assert!(!serde_json::to_string(&input)
+        .unwrap()
+        .contains("refresh-must-not-enter-bridge"));
 }
 
 #[test]
@@ -1651,11 +1633,9 @@ fn prepare_codex_subscription_projects_chat_loopback_for_grok_kimi_dsh() {
             !haystack.contains("gpt-"),
             "{target:?} invented ChatGPT model"
         );
-        assert!(
-            !serde_json::to_string(&input)
-                .unwrap()
-                .contains("codex-upstream-access-secret")
-        );
+        assert!(!serde_json::to_string(&input)
+            .unwrap()
+            .contains("codex-upstream-access-secret"));
     }
 }
 
@@ -1714,11 +1694,9 @@ fn prepare_anthropic_provider_projects_messages_bridge_not_kimi() {
     assert!(content.contains(ANTHROPIC_DEFAULT_MODEL));
     assert!(!content.contains(PROVIDER_SLUG));
     assert!(!content.contains("kimi-k2.5"));
-    assert!(
-        !serde_json::to_string(&generated)
-            .unwrap()
-            .contains("sk-ant-secret")
-    );
+    assert!(!serde_json::to_string(&generated)
+        .unwrap()
+        .contains("sk-ant-secret"));
 }
 
 #[test]
@@ -1805,11 +1783,9 @@ fn prepare_openai_provider_projects_chat_completions_bridge() {
     assert!(!content.contains(PROVIDER_SLUG));
     assert!(!content.contains("kimi-k2.5"));
     assert!(!content.contains("grok-"));
-    assert!(
-        !serde_json::to_string(&generated)
-            .unwrap()
-            .contains("sk-openai-secret")
-    );
+    assert!(!serde_json::to_string(&generated)
+        .unwrap()
+        .contains("sk-openai-secret"));
 }
 
 #[test]
@@ -2053,14 +2029,12 @@ fn legacy_toml_with_drifted_port_still_conflicts() {
     service.finalize(&prepared, 43145).unwrap();
     let mut drifted = generated.clone();
     let content = drifted.settings_config["content"].as_str().unwrap();
-    drifted.settings_config["content"] = json!(
-        content
-            .replace(
-                "api_backend = \"responses\"",
-                "api_backend = \"chat_completions\""
-            )
-            .replace("43145", "43199")
-    );
+    drifted.settings_config["content"] = json!(content
+        .replace(
+            "api_backend = \"responses\"",
+            "api_backend = \"chat_completions\""
+        )
+        .replace("43145", "43199"));
     persist_mutated_provider(&db, drifted);
     assert_eq!(
         service
@@ -2126,11 +2100,9 @@ fn start_spec_keeps_every_user_listed_model() {
     };
     let listed = material.start_spec(Some(0)).listed_models;
     assert!(listed.iter().any(|model| model == "openai/gpt-4o"));
-    assert!(
-        listed
-            .iter()
-            .any(|model| model == "anthropic/claude-sonnet-4")
-    );
+    assert!(listed
+        .iter()
+        .any(|model| model == "anthropic/claude-sonnet-4"));
     assert!(!listed.iter().any(|model| model == "stealth/ox-alpha"));
 }
 

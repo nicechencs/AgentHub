@@ -392,7 +392,9 @@ fn list_remote_openai_models_for_provider_inner(
     if normalize_base_url(base_url) != stored_url {
         return Err(map_err_string(
             "list_remote_openai_models_for_provider",
-            AppError::InvalidArg("改地址后请重新填写 API Key，已保存的 Key 只能请求已保存的地址".into()),
+            AppError::InvalidArg(
+                "改地址后请重新填写 API Key，已保存的 Key 只能请求已保存的地址".into(),
+            ),
         ));
     }
     let last4 = mask_secret_tail(&key).unwrap_or_default();

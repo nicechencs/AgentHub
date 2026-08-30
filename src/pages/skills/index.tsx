@@ -44,15 +44,23 @@ import { shouldIgnoreListKeyboard } from '@/lib/skills/preview-keys';
 import {
   runImportPrivateSkill,
   runInstallMarketSkill,
+  runInstallProjectSkill,
   runInstallSkill,
+  runUninstallProjectSkill,
   runUninstallSkill,
   useSkillCatalog,
   useSkillMarket,
   useSkillsCacheVersion,
 } from '@/lib/hooks/useSkills';
+import { useProjectSkills } from '@/lib/hooks/useProjectSkills';
+import {
+  fetchAgentProjectsShared,
+  useProjectShowHidden,
+} from '@/lib/hooks/useProjects';
+import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 import { getSettings } from '@/lib/api/settings';
 import { FEATURE_NOT_WIRED } from '@/lib/platform';
-import type { AgentId, Skill, SkillMarketSource } from '@/lib/types';
+import type { AgentId, AgentProject, Skill, SkillMarketSource } from '@/lib/types';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import {
   adoptFailedToast,
@@ -106,6 +114,13 @@ import {
 } from './skills-preview-model';
 import { SkillsLibraryPanel } from './SkillsLibraryPanel';
 import { SkillsMarketPanel } from './SkillsMarketPanel';
+import { SkillsProjectPanel } from './SkillsProjectPanel';
+import {
+  filterProjectSkillRows,
+  matchProjectSkillOption,
+  projectSkillOptions,
+  projectSkillRowKey,
+} from './skills-project-model';
 
 const SKILLS_PREVIEW_WIDTH_KEY = 'agenthub.skills.previewWidth';
 
@@ -152,6 +167,23 @@ export default function SkillsPage() {
   const [pendingCells, setPendingCells] = useState<Set<string>>(new Set());
   const [installSource, setInstallSource] = useState('');
   const [installOpen, setInstallOpen] = useState(false);
+  const [installTarget, setInstallTarget] = useState<'user' | 'project'>('user');
+  const [projectSearch, setProjectSearch] = useState('');
+  const [projectRows, setProjectRows] = useState<AgentProject[] | null>(null);
+  const [projectListError, setProjectListError] = useState<unknown>(null);
+  const [projectListLoading, setProjectListLoading] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState<string | null>(() => {
+    const fromUrl = searchParams.get('workspace');
+    if (fromUrl?.trim()) return fromUrl;
+    const stored = loadString(StorageKey.skillsProjectWorkspace, '');
+    return stored.trim() ? stored : null;
+  });
+  const [removeProject, setRemoveProject] = useState<{
+    skillId: string;
+    name: string;
+    origin: string;
+  } | null>(null);
+  const { showHidden, ready: hiddenReady } = useProjectShowHidden();
   const [importingIds, setImportingIds] = useState<Set<string>>(new Set());
   const [importConflict, setImportConflict] = useState<{
     skillId: string;
@@ -195,10 +227,55 @@ export default function SkillsPage() {
 
   const activeMarketProvider = market.data?.[0]?.providerId;
 
+  const projectOptions = useMemo(
+    () => projectSkillOptions(projectRows ?? []),
+    [projectRows],
+  );
+  const selectedProject = matchProjectSkillOption(projectOptions, workspacePath);
+  const projectSkills = useProjectSkills(selectedProject?.workspacePath ?? null, tab === 'project');
+
+  const loadProjectList = useCallback(async () => {
+    setProjectListLoading(true);
+    try {
+      const rows = await fetchAgentProjectsShared(null, showHidden);
+      setProjectRows(rows);
+      setProjectListError(null);
+    } catch (err) {
+      setProjectListError(err);
+    } finally {
+      setProjectListLoading(false);
+    }
+  }, [showHidden]);
+
+  useEffect(() => {
+    if (tab !== 'project' || !hiddenReady) return;
+    void loadProjectList();
+  }, [tab, hiddenReady, loadProjectList]);
+
+  useEffect(() => {
+    if (!previewTarget?.workspacePath) return;
+    if (previewTarget.workspacePath === selectedProject?.workspacePath) return;
+    preview.close();
+  }, [previewTarget, selectedProject, preview.close]);
+
+  const selectWorkspace = useCallback(
+    (path: string) => {
+      setWorkspacePath(path);
+      saveString(StorageKey.skillsProjectWorkspace, path);
+      const p = new URLSearchParams(searchParams);
+      p.set('tab', 'project');
+      p.set('workspace', path);
+      setSearchParams(p, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
   const setTab = (next: SkillTab) => {
     const p = new URLSearchParams(searchParams);
     if (next === 'library') p.delete('tab');
     else p.set('tab', next);
+    if (next === 'project' && workspacePath) p.set('workspace', workspacePath);
+    else if (next !== 'project') p.delete('workspace');
     setSearchParams(p, { replace: true });
   };
 
@@ -210,7 +287,7 @@ export default function SkillsPage() {
   const sharedCount = localRows.filter(isSharedCatalogRow).length;
   /** 仅本地（可收编）数量，不含「已在真源」的投影/副本 */
   const privateOnlyCount = localRows.filter(isPrivateSourceRow).length;
-  /** Tab「本地技能」角标：列表可见行（共享库 + 只在本工具） */
+  /** Tab「用户技能」角标：列表可见行（共享库 + 只在本工具） */
   const localCount = localRows.length;
 
   /** 筛选角标：全量计数，不受搜索影响 */
@@ -378,6 +455,30 @@ export default function SkillsPage() {
       return;
     }
     try {
+      if (installTarget === 'project') {
+        if (!selectedProject) {
+          toast({
+            title: t('skills.toast.projectNeedWorkspace'),
+            variant: 'danger',
+          });
+          return;
+        }
+        const skill = await runInstallProjectSkill(
+          selectedProject.workspacePath,
+          installSource.trim(),
+          false,
+        );
+        toast({
+          title: t('skills.toast.projectInstallOk'),
+          description: t('skills.toast.projectInstallOkDesc', { name: skill.name }),
+          variant: 'success',
+          duration: 8000,
+        });
+        setInstallOpen(false);
+        setInstallSource('');
+        await projectSkills.reload();
+        return;
+      }
       await runInstallSkill(installSource.trim(), false);
       toast({
         ...installOkToast(t),
@@ -585,6 +686,32 @@ export default function SkillsPage() {
     }
   };
 
+  const confirmDeleteProjectSkill = async () => {
+    if (!removeProject || !selectedProject) return;
+    const { skillId, name, origin } = removeProject;
+    setDangerBusy(true);
+    try {
+      await runUninstallProjectSkill(selectedProject.workspacePath, skillId, origin);
+      toast({
+        title: t('skills.toast.projectDeleteOk'),
+        description: t('skills.toast.projectDeleteOkDesc', { skillName: name }),
+        variant: 'success',
+      });
+      setRemoveProject(null);
+      if (previewTarget?.skillId === skillId && previewTarget.workspacePath) {
+        preview.close();
+      }
+      await projectSkills.reload();
+    } catch (e) {
+      toast({
+        ...removeFailedToast(t, e instanceof Error ? e.message : String(e)),
+        variant: 'danger',
+      });
+    } finally {
+      setDangerBusy(false);
+    }
+  };
+
   const confirmRemoveFromTool = async () => {
     if (!removeFromTool) return;
     const { skillId, agentId, name } = removeFromTool;
@@ -619,6 +746,23 @@ export default function SkillsPage() {
       preview.open(previewTargetFromCatalogRow(row, agentId));
     },
     [preview.open],
+  );
+
+  const openProjectPreview = useCallback(
+    (row: InstalledSkillDto) => {
+      if (!selectedProject) return;
+      preview.open({
+        skillId: row.id,
+        name: row.name,
+        sourceDir: row.sourceDir,
+        privateAgent: null,
+        includeShared: false,
+        workspacePath: selectedProject.workspacePath,
+        originRoot: row.origin,
+        rowKey: projectSkillRowKey(row),
+      });
+    },
+    [preview.open, selectedProject],
   );
 
   const selectPreviewCopy = useCallback((agentId: AgentId | null) => {
@@ -683,11 +827,26 @@ export default function SkillsPage() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       if (shouldIgnoreListKeyboard(e.target)) return;
-      if (tab !== 'library') return;
-      if (filtered.length === 0) return;
-
+      if (tab === 'library') {
+        if (filtered.length === 0) return;
+        e.preventDefault();
+        const keys = filtered.map((row) => catalogRowKey(row));
+        const cur = activeKey;
+        let idx = cur ? keys.indexOf(cur) : -1;
+        if (idx < 0) idx = e.key === 'ArrowDown' ? -1 : 0;
+        const nextIdx =
+          e.key === 'ArrowDown'
+            ? Math.min(keys.length - 1, idx + 1)
+            : Math.max(0, idx <= 0 ? 0 : idx - 1);
+        const row = filtered[nextIdx];
+        if (row) openCatalogPreview(row);
+        return;
+      }
+      if (tab !== 'project') return;
+      const projectFiltered = filterProjectSkillRows(projectSkills.data ?? [], projectSearch);
+      if (projectFiltered.length === 0) return;
       e.preventDefault();
-      const keys = filtered.map((row) => catalogRowKey(row));
+      const keys = projectFiltered.map((row) => projectSkillRowKey(row));
       const cur = activeKey;
       let idx = cur ? keys.indexOf(cur) : -1;
       if (idx < 0) idx = e.key === 'ArrowDown' ? -1 : 0;
@@ -695,8 +854,8 @@ export default function SkillsPage() {
         e.key === 'ArrowDown'
           ? Math.min(keys.length - 1, idx + 1)
           : Math.max(0, idx <= 0 ? 0 : idx - 1);
-      const row = filtered[nextIdx];
-      if (row) openCatalogPreview(row);
+      const row = projectFiltered[nextIdx];
+      if (row) openProjectPreview(row);
     };
 
     window.addEventListener('keydown', onKey);
@@ -708,6 +867,9 @@ export default function SkillsPage() {
     filtered,
     activeKey,
     openCatalogPreview,
+    openProjectPreview,
+    projectSkills.data,
+    projectSearch,
   ]);
 
   /** Enter on focused name already handled in row; Enter while preview open → focus document. */
@@ -735,26 +897,35 @@ export default function SkillsPage() {
       onOpenDir={(path) => void handleOpenDir(path)}
       onSelectCopy={selectPreviewCopy}
       onRemoveCopy={
-        previewTarget.includeShared && !previewTarget.privateAgent
+        previewTarget.workspacePath
           ? () =>
-              handleDeleteShared({
-                id: previewTarget.skillId,
-                name: previewTarget.name,
+              setRemoveProject({
+                skillId: previewTarget.skillId,
+                name: previewTarget.name ?? previewTarget.skillId,
+                origin: previewTarget.originRoot ?? '.agents/skills',
               })
-          : previewTarget.privateAgent && !previewTarget.includeShared
+          : previewTarget.includeShared && !previewTarget.privateAgent
             ? () =>
-                handleUninstallPrivate(
-                  previewTarget.skillId,
-                  previewTarget.privateAgent!,
-                  previewTarget.name,
-                  false,
-                )
-            : undefined
+                handleDeleteShared({
+                  id: previewTarget.skillId,
+                  name: previewTarget.name,
+                })
+            : previewTarget.privateAgent && !previewTarget.includeShared
+              ? () =>
+                  handleUninstallPrivate(
+                    previewTarget.skillId,
+                    previewTarget.privateAgent!,
+                    previewTarget.name,
+                    false,
+                  )
+              : undefined
       }
       removeCopyLabel={
-        previewTarget.includeShared && !previewTarget.privateAgent
-          ? t('skills.preview.removeShared')
-          : undefined
+        previewTarget.workspacePath
+          ? t('skills.workspace.delete')
+          : previewTarget.includeShared && !previewTarget.privateAgent
+            ? t('skills.preview.removeShared')
+            : undefined
       }
       contentRef={previewBodyRef}
       className="h-full min-w-0 shrink-0"
@@ -767,25 +938,30 @@ export default function SkillsPage() {
       split={preview}
       resizeAria={t('skills.preview.resizeAria')}
       panel={previewPanel}
-      header={(
+    >
             <PageHeader
-              size="compact"
               title={t('skills.page.title')}
-              description={t('skills.page.meta', {
-                shared: catalog == null ? '…' : sharedCount,
-                privateOnly: privateOnlyCount,
-              })}
-              descriptionTip={t('skills.page.descriptionTip')}
-              actions={
-                <Button onClick={() => setInstallOpen(true)}>
-                  <Plus className="h-3.5 w-3.5" /> {t('skills.page.installCta')}
-                </Button>
+              description={
+                tab === 'project'
+                  ? selectedProject
+                    ? t('skills.page.projectMeta', {
+                        project: selectedProject.label,
+                        n: projectSkills.data?.length ?? 0,
+                      })
+                    : t('skills.page.projectMetaIdle')
+                  : t('skills.page.meta', {
+                      shared: catalog == null ? '…' : sharedCount,
+                      privateOnly: privateOnlyCount,
+                    })
+              }
+              descriptionTip={
+                tab === 'project'
+                  ? t('skills.page.projectDescriptionTip')
+                  : t('skills.page.descriptionTip')
               }
             />
-      )}
-    >
           <Tabs value={tab} onValueChange={(v) => setTab(parseSkillTab(v))}>
-            <div className={pageRhythm.chrome}>
+            <div className={pageRhythm.chromeRow}>
               <TabsList>
                 <TabsTrigger value="library" className="gap-1.5">
                   {t('skills.tabs.library')}
@@ -795,11 +971,39 @@ export default function SkillsPage() {
                     </Tip>
                   ) : null}
                 </TabsTrigger>
+                <TabsTrigger value="project" className="gap-1.5">
+                  {t('skills.tabs.project')}
+                  {tab === 'project' && projectSkills.data != null ? (
+                    <Tip
+                      className={segmentedCountClass}
+                      label={t('skills.tabs.projectBadge', { n: projectSkills.data.length })}
+                    >
+                      {projectSkills.data.length}
+                    </Tip>
+                  ) : null}
+                </TabsTrigger>
                 <TabsTrigger value="market" className="gap-1.5">
                   <Store className="h-3.5 w-3.5" />
                   {t('skills.tabs.market')}
                 </TabsTrigger>
               </TabsList>
+              <div className={pageRhythm.chromeActions}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setInstallTarget(tab === 'project' ? 'project' : 'user');
+                    setInstallOpen(true);
+                  }}
+                  disabled={tab === 'project' && !selectedProject}
+                  title={
+                    tab === 'project' && !selectedProject
+                      ? t('skills.dialog.pickProjectFirst')
+                      : undefined
+                  }
+                >
+                  <Plus className="h-3.5 w-3.5" /> {t('skills.page.installCta')}
+                </Button>
+              </div>
             </div>
             <TabsContent value="library" className="space-y-3">
               <SkillsLibraryPanel
@@ -833,6 +1037,31 @@ export default function SkillsPage() {
                 onDeleteFromTool={handleDeleteFromTool}
                 agents={matrixAgents}
                 installedAgentIds={installedAgentIds}
+              />
+            </TabsContent>
+            <TabsContent value="project" className="space-y-3">
+              <SkillsProjectPanel
+                options={projectOptions}
+                workspacePath={selectedProject?.workspacePath ?? null}
+                onWorkspaceChange={selectWorkspace}
+                projectsLoading={projectListLoading}
+                projectsError={projectListError}
+                onRetryProjects={() => void loadProjectList()}
+                search={projectSearch}
+                onSearchChange={setProjectSearch}
+                rows={projectSkills.data}
+                loading={projectSkills.loading}
+                error={projectSkills.error}
+                onRetry={() => void projectSkills.reload()}
+                activeKey={previewTarget?.workspacePath ? previewTarget.rowKey ?? null : null}
+                onPreview={openProjectPreview}
+                onDelete={(row) =>
+                  setRemoveProject({
+                    skillId: row.id,
+                    name: row.name,
+                    origin: row.origin,
+                  })
+                }
               />
             </TabsContent>
             <TabsContent value="market">
@@ -964,11 +1193,54 @@ export default function SkillsPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={removeProject !== null}
+        onOpenChange={(open) => !open && !dangerBusy && setRemoveProject(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('skills.dialog.deleteProjectTitle')}</DialogTitle>
+            <DialogDescription>
+              {removeProject
+                ? t('skills.dialog.deleteProjectBody', {
+                    skillName: removeProject.name,
+                    origin: removeProject.origin,
+                  })
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              disabled={dangerBusy}
+              onClick={() => setRemoveProject(null)}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              disabled={dangerBusy}
+              onClick={() => void confirmDeleteProjectSkill()}
+            >
+              {dangerBusy ? t('skills.dialog.busy') : t('skills.dialog.deleteProjectConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={installOpen} onOpenChange={setInstallOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('skills.dialog.installTitle')}</DialogTitle>
-            <DialogDescription>{t('skills.dialog.installBody')}</DialogDescription>
+            <DialogTitle>
+              {installTarget === 'project'
+                ? t('skills.dialog.installProjectTitle')
+                : t('skills.dialog.installTitle')}
+            </DialogTitle>
+            <DialogDescription>
+              {installTarget === 'project'
+                ? t('skills.dialog.installProjectBody')
+                : t('skills.dialog.installBody')}
+            </DialogDescription>
           </DialogHeader>
           <Input
             value={installSource}

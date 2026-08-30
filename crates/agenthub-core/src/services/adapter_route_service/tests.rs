@@ -1097,7 +1097,10 @@ fn kimi_custom_mytokens_is_openai_compat_local_bridge() {
         .unwrap();
     assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
     assert!(plan.can_apply, "{}", plan.analysis.reason);
-    assert_eq!(plan.analysis.rule_id.as_deref(), Some("openai-api-to-claude-v1"));
+    assert_eq!(
+        plan.analysis.rule_id.as_deref(),
+        Some("openai-api-to-claude-v1")
+    );
 }
 
 #[test]

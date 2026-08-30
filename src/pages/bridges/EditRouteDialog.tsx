@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
+import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { ClaudeContextWindowChoice } from '@/lib/claude-client-env';
@@ -131,10 +132,21 @@ export function EditRouteDialog({
     setError(null);
     try {
       await submitEditRoute(sourceProvider, editInput);
+      void logGuiEvent('route_edit', {
+        agent: profile.targetAgentId,
+        profileId: profile.id,
+        route: profile.route,
+      });
       onOpenChange(false);
       onSaved();
       toast({ title: t('routes.edit.success'), variant: 'success' });
     } catch (cause) {
+      void logGuiEvent('route_edit_fail', {
+        agent: profile.targetAgentId,
+        profileId: profile.id,
+        route: profile.route,
+        code: guiErrorCode(cause),
+      });
       setError(cause instanceof Error ? cause.message : t('routes.edit.fallback'));
     } finally {
       setSubmitting(false);

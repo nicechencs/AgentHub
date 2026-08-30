@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { FolderOpen } from 'lucide-react';
 import { InspectSurface } from '@/components/layout/InspectSurface';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { agentDisplayName } from '@/config/agents';
@@ -135,16 +136,13 @@ export function PluginDetailPanel({
           <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-meta">
             <dt className="text-muted">{t('plugins.detail.path')}</dt>
             <dd className="min-w-0">
-              <p className="break-all font-mono text-secondary">{plugin.path}</p>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="mt-1 h-7 px-2"
+              <CopyableFileName path={plugin.path} wrap="break" />
+              <OpenDirButton
+                labeled
+                className="mt-1"
+                title={plugin.path}
                 onClick={() => onLocate(plugin.path!)}
-              >
-                <FolderOpen className="h-3 w-3" />
-                {t('plugins.detail.directory')}
-              </Button>
+              />
             </dd>
           </div>
         ) : null}

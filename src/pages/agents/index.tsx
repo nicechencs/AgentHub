@@ -225,11 +225,11 @@ export default function AgentsPage() {
 
   React.useEffect(() => {
     if (!inspect.target) return;
-    if (!inspectAgent?.installed) inspect.close();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- close when the selected agent is gone or not installed
-  }, [inspect.target, inspectAgent?.installed]);
+    if (!liveIds.includes(inspect.target)) inspect.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- close when the selected agent leaves the list
+  }, [inspect.target, liveIds]);
 
-  const inspectPanel = inspectAgent?.installed ? (
+  const inspectPanel = inspectAgent ? (
     <AgentDetailPanel
       agent={inspectAgent}
       width={inspect.paneWidth}
@@ -243,15 +243,12 @@ export default function AgentsPage() {
       split={inspect}
       resizeAria={t('common.resizeSidePanel')}
       panel={inspectPanel}
-      header={(
-        <PageHeader
-          size="compact"
-          title={t('agents.page.title')}
-          description={t('agents.page.description')}
-          descriptionTip={t('agents.page.descriptionTip')}
-        />
-      )}
     >
+      <PageHeader
+        title={t('agents.page.title')}
+        description={t('agents.page.description')}
+        descriptionTip={t('agents.page.descriptionTip')}
+      />
       <div className={pageRhythm.lead}>
         <EnvStatusBar
           runtimes={runtimes}
@@ -313,7 +310,7 @@ export default function AgentsPage() {
                   agent={a}
                   runtimes={runtimes}
                   selected={inspect.target === a.agentId}
-                  onSelect={a.installed ? () => inspect.open(a.agentId) : undefined}
+                  onSelect={() => inspect.open(a.agentId)}
                   onChanged={refreshAgents}
                   onEnvChanged={() => void refreshEnv()}
                   onRecheckUpdate={() => refreshAgentUpdate(a.agentId)}

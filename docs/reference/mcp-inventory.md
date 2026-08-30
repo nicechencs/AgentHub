@@ -1,10 +1,10 @@
 ---
 title: MCP inventory
-description: AgentHub 只读 MCP 扫描的路径、格式、脱敏和已知缺口。
+description: AgentHub 只读 MCP 扫描的路径、格式、片段和已知缺口。
 type: reference
 audience: contributor
 status: current
-updated: 2026-08-29
+updated: 2026-08-30
 ---
 
 # MCP inventory
@@ -15,8 +15,8 @@ updated: 2026-08-29
 
 | 字段 | 含义 |
 |---|---|
-| `sources[]` | 每个已知配置文件一条：路径、是否存在、是否可读、解析错误、server 数量、角色标签、脱敏片段 |
-| `servers[]` | 每个解析出的 server 一条：Agent、名称、传输、command、url、来源路径/格式、enabled、脱敏片段 |
+| `sources[]` | 每个已知配置文件一条：路径、是否存在、是否可读、解析错误、server 数量、角色标签、本机文件片段 |
+| `servers[]` | 每个解析出的 server 一条：Agent、名称、传输、command、url、来源路径/格式、enabled、本机文件片段 |
 
 不存在的探测路径仍会出现在 `sources` 里，`exists=false`，方便 UI 显示「未发现已知配置文件」。`servers` 按 Agent、名称、路径排序。
 
@@ -53,9 +53,9 @@ TOML **只**读根表 `mcp_servers`（Codex 形状 `[mcp_servers.name]`）。没
 
 传输分类：显式 `type`/`transport` 含 sse / http / streamablehttp；否则有 `command` 视为 stdio；否则有 `url` 视为 http；否则 `unknown`。`enabled` 来自 `enabled` 或取反后的 `disabled`；Codex TOML 当前不填 enabled。
 
-## 脱敏
+## 片段
 
-片段最多 16KiB。密钥键（`is_secret_key`）替换为 `***`。`env` / `headers` / `header` / `secrets` 下的字符串叶子全部遮罩。UI 和 toast 不得再拼回原文。
+片段最多 16KiB，内容与本机文件一致，不按字段名打码。这是用户自己的配置；列表、日志和密钥输入框仍走原有遮罩。
 
 ## 当前缺口（实现事实，不是待办承诺）
 

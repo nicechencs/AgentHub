@@ -29,10 +29,16 @@ export async function pickDirectory(options?: {
   return getBackend().settings.pickDirectory(options);
 }
 
-/** GUI log line (op + agent + last4). Best-effort; never pass a raw key. */
+/** GUI log line (op + agent + last4 + optional route fields). Best-effort; never pass a raw key. */
 export async function logGuiEvent(
   op: string,
-  detail?: { agent?: string; last4?: string },
+  detail?: {
+    agent?: string;
+    last4?: string;
+    profileId?: string;
+    route?: string;
+    code?: string;
+  },
 ): Promise<void> {
   try {
     const port = getBackend().settings;
@@ -42,6 +48,19 @@ export async function logGuiEvent(
   } catch {
     // Logging must not break the form.
   }
+}
+
+/** Stable `[code]` suffix from core/GUI error strings, when present. */
+export function guiErrorCode(error: unknown): string | undefined {
+  let text = '';
+  if (typeof error === 'string') text = error.trim();
+  else if (error instanceof Error) text = error.message.trim();
+  else if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message: unknown }).message;
+    if (typeof message === 'string') text = message.trim();
+  }
+  const match = text.match(/\[([a-z0-9_.]+)\]\s*$/i);
+  return match?.[1];
 }
 
 /** Static options (avoid module-init getBackend for tree-shaking / SSR-less safety). */

@@ -18,7 +18,7 @@ updated: 2026-08-29
 |---|---|---|---|
 | **插件** | 可安装的 **extension / plugin 包**（常打包 skills、commands、agents、hooks，有时附带 MCP） | Claude `/plugin`、Codex `/plugins`、Grok `plugin`、Pi `pi install` | **只读列表** `/plugins`（Claude / Grok）。无安装/写入，无能力键 |
 | **MCP** | Agent 作为客户端去连接的 **MCP server 条目** | `claude mcp`、`codex mcp`、`grok mcp`、`~/.cursor/mcp.json` | **只读盘点** `/mcp`。`Capability::Mcp` 全部 Planned |
-| **技能** | 带 `SKILL.md` 的技能目录 | 各家 `skills/` 目录 | **已管理** `/skills`，共享源 `~/.agents/skills/` |
+| **技能** | 带 `SKILL.md` 的技能目录 | 各家 `skills/` 目录 | **已管理** `/skills`：用户技能共享源 `~/.agents/skills/`；项目技能在所选工作区的 `.agents/skills/` |
 
 插件包里可以**含有** MCP，但安装/卸载的对象是整个包。不要把 `/mcp` 改名为插件页，也不要用 MCP inventory 冒充已安装插件列表。
 
@@ -28,7 +28,7 @@ Goose 把 MCP 叫做 “extension”。那是 Goose 的用词。AgentHub 的「�
 
 ## 当前产品表面
 
-- **Skills**（`/skills`）管理共享技能与投影。`Capability::Skills` 由 adapter 声明；Kimi 为 Unsupported。
+- **Skills**（`/skills`）管理用户技能（共享库与各工具目录）和项目技能（按项目页已识别的工作区选择）。`Capability::Skills` 由 adapter 声明；Kimi 为 Unsupported。
 - **MCP**（`/mcp`）列出已发现的 server 名、传输、命令/地址、来源文件。清单存在不等于能改配置，更不等于插件已安装。
 - **插件**（`/plugins`）只读列出 Claude / Grok 已装包：优先官方 CLI JSON，否则读 live 目录（`~/.claude/plugins/` + `enabledPlugins`，`~/.grok/plugins/`）。设置「显示插件页面」只藏侧栏入口。附带 MCP 只作为包内组件。Codex / Pi 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode 明确不支持。
 - 厂商 Plugin 市场也不是 Skills 市场（`skills.sh` / `skillhub.cn`）。
@@ -37,7 +37,7 @@ Goose 把 MCP 叫做 “extension”。那是 Goose 的用词。AgentHub 的「�
 
 | 对象 | 真源属于谁 |
 |---|---|
-| 技能共享源 | AgentHub：`~/.agents/skills/` |
+| 技能共享源 | AgentHub：用户技能 `~/.agents/skills/`；项目技能 `<工作区>/.agents/skills/` |
 | MCP live 配置 | 各 Agent 自己的 json/toml |
 | 插件包 | 各 Agent 的 plugin 缓存/目录 + `enabledPlugins` / `[plugins]` / Pi settings |
 

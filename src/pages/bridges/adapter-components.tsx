@@ -14,11 +14,11 @@ export function AdapterErrorLines({
   fallback: string;
 }) {
   const { t } = useI18n();
-  const details = adapterErrorDetails(error);
+  const details = adapterErrorDetails(error, t);
   const retryHint = adapterErrorRetryHint(error, t);
   return (
     <>
-      <p className="text-sm text-danger" role="alert">{errorMessage(error, fallback)}</p>
+      <p className="text-sm text-danger" role="alert">{errorMessage(error, fallback, t)}</p>
       {details ? <p className="text-xs text-secondary">{details}</p> : null}
       {retryHint ? <p className="text-xs text-secondary">{retryHint}</p> : null}
     </>

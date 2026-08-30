@@ -1,13 +1,14 @@
 /**
- * Associated login files for an authorization (filename + redacted snapshot).
+ * Associated login files for an authorization (filename + file snapshot).
  * Paths are display paths (`~/...`); opening expands them in the file manager.
+ * Preview text is not masked by field name — this is the user's own local file.
  */
 import type { AccountKind, AgentId, Provider } from '@/lib/types';
 
 export interface CredentialFileView {
   /** Basename, e.g. `auth.json`. */
   name: string;
-  /** Redacted file text. Never contains a usable secret. */
+  /** File snapshot as stored. Not masked in this layer. */
   content: string;
 }
 
@@ -18,11 +19,6 @@ export type AgentLivePathSet = {
   openDir: string;
 };
 
-const SECRET_KEY =
-  /^(api[_-]?key|apikey|token|auth[_-]?token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|authorization|password|client[_-]?secret|private[_-]?key)$/i;
-
-const SECRET_PREFIX = /^(sk-|xai-|ghp_|gho_|github_pat_|xox[bp]-)/i;
-
 export function authFileName(agentId: string): string {
   if (agentId === 'claude') return '.credentials.json';
   if (agentId === 'kimi') return 'kimi-code.json';
@@ -32,9 +28,11 @@ export function authFileName(agentId: string): string {
 }
 
 export function configFileName(agentId: string): string {
-  if (agentId === 'claude' || agentId === 'pi' || agentId === 'workbuddy') {
+  if (agentId === 'claude' || agentId === 'pi') {
     return 'settings.json';
   }
+  // WorkBuddy API Key rows live in models.json; settings.json is sandbox/plugins.
+  if (agentId === 'workbuddy') return 'models.json';
   if (agentId === 'dsh') return 'cordis.patch.yml';
   if (agentId === 'zcode') return 'config.json';
   return 'config.toml';
@@ -122,12 +120,12 @@ export function extractAccountCredentialFiles(input: {
   const pushJson = (name: string, value: unknown) => {
     if (seen.has(name)) return;
     seen.add(name);
-    files.push({ name, content: stringifyRedacted(value) });
+    files.push({ name, content: stringifyPreview(value) });
   };
   const pushText = (name: string, text: string) => {
     if (seen.has(name)) return;
     seen.add(name);
-    files.push({ name, content: redactFreeformText(text) });
+    files.push({ name, content: text });
   };
 
   const authName = fileNameFromSource(input.source, 'auth') ?? authFileName(input.agentId);
@@ -160,6 +158,11 @@ export function extractAccountCredentialFiles(input: {
     }
   }
 
+  const catalog = catalogFileSnapshot(input.agentId, credentials);
+  if (catalog && !seen.has(catalog.name)) {
+    pushJson(catalog.name, catalog.value);
+  }
+
   if (files.length === 0) {
     const snapshot = remainingCredentialSnapshot(credentials, format);
     const name = input.kind === 'oauth' || isAuthFormat(format)
@@ -183,10 +186,10 @@ export function extractProviderCredentialFiles(provider: Pick<
   if (provider.configFormat === 'json' || looksLikeJson(text)) {
     const parsed = tryParseJson(text);
     if (parsed !== undefined) {
-      return [{ name, content: stringifyRedacted(parsed) }];
+      return [{ name, content: stringifyPreview(parsed) }];
     }
   }
-  return [{ name, content: redactFreeformText(text) }];
+  return [{ name, content: text }];
 }
 
 function isAuthFormat(format: string | undefined): boolean {
@@ -214,53 +217,104 @@ function remainingCredentialSnapshot(
   credentials: Record<string, unknown>,
   format: string | undefined,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  if (format) out.format = format;
-  for (const key of ['env_key', 'provider', 'email', 'api_key']) {
-    if (credentials[key] !== undefined) out[key] = credentials[key];
-  }
-  if (Object.keys(out).length === 0) {
-    return format ? { format } : {};
-  }
+  const out: Record<string, unknown> = { ...credentials };
+  if (format && out.format === undefined) out.format = format;
   return out;
 }
 
-function stringifyRedacted(value: unknown): string {
-  return `${JSON.stringify(redactValue(value), null, 2)}\n`;
+function pickCredentialString(
+  credentials: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = credentials[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-function redactValue(value: unknown): unknown {
-  if (typeof value === 'string') {
-    return redactSecretString(value);
+/**
+ * Catalog-append agents store many API Key rows in one JSON file.
+ * Preview the native row, not a Hub `{ format, provider, api_key }` stub.
+ */
+function catalogFileSnapshot(
+  agentId: AgentId | string,
+  credentials: Record<string, unknown>,
+): { name: string; value: unknown } | undefined {
+  if (agentId === 'zcode') {
+    const value = zcodeCatalogFileSnapshot(credentials);
+    return value === undefined ? undefined : { name: 'config.json', value };
   }
-  if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item));
+  if (agentId === 'workbuddy') {
+    const value = workbuddyCatalogFileSnapshot(credentials);
+    return value === undefined ? undefined : { name: 'models.json', value };
   }
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = SECRET_KEY.test(key) && typeof child === 'string'
-        ? redactSecretString(child, true)
-        : redactValue(child);
-    }
-    return out;
-  }
-  return value;
+  return undefined;
 }
 
-function redactSecretString(value: string, force = false): string {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === '***') return trimmed || value;
-  if (force) return '***';
-  if (SECRET_PREFIX.test(trimmed) && trimmed.length >= 12) return '***';
-  return value;
+/**
+ * Rebuild the on-disk `config.json` shape for one ZCode catalog row.
+ * Hub stores flattened `api_key` / `base_url` fields; the file preview should
+ * look like `provider.<id>` from `~/.zcode/v2/config.json`.
+ */
+function zcodeCatalogFileSnapshot(
+  credentials: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const id = pickCredentialString(credentials, 'provider_id');
+  const name = pickCredentialString(credentials, 'provider_name');
+  const base =
+    pickCredentialString(credentials, 'base_url')
+    ?? pickCredentialString(credentials, 'baseURL');
+  const catalog = credentials.catalog_row;
+  if (catalog && typeof catalog === 'object' && !Array.isArray(catalog)) {
+    return { provider: { [id ?? 'custom']: catalog } };
+  }
+  if (!id && !name && !base) return undefined;
+
+  const row: Record<string, unknown> = {};
+  if (name) row.name = name;
+  const kind = pickCredentialString(credentials, 'kind');
+  if (kind) row.kind = kind;
+  const options: Record<string, unknown> = {};
+  if (credentials.api_key !== undefined) options.apiKey = credentials.api_key;
+  if (base) options.baseURL = base;
+  if (Object.keys(options).length > 0) row.options = options;
+  if (credentials.models !== undefined) row.models = credentials.models;
+  return { provider: { [id ?? 'custom']: row } };
 }
 
-function redactFreeformText(text: string): string {
-  return text.replace(
-    /^(\s*(?:api[_-]?key|auth[_-]?token|access[_-]?token|refresh[_-]?token|token|password|client[_-]?secret)\s*[=:]\s*)(["']?)([^\s"',;#]+)\2/gim,
-    (_match, prefix: string, quote: string) => `${prefix}${quote}***${quote}`,
-  );
+/**
+ * Rebuild one WorkBuddy `models.json` entry (file is a top-level array).
+ */
+function workbuddyCatalogFileSnapshot(
+  credentials: Record<string, unknown>,
+): unknown[] | undefined {
+  const catalog = credentials.catalog_row;
+  if (catalog && typeof catalog === 'object' && !Array.isArray(catalog)) {
+    return [catalog];
+  }
+  const id =
+    pickCredentialString(credentials, 'model_id')
+    ?? pickCredentialString(credentials, 'id');
+  const name = pickCredentialString(credentials, 'name');
+  const url =
+    pickCredentialString(credentials, 'url')
+    ?? pickCredentialString(credentials, 'base_url')
+    ?? pickCredentialString(credentials, 'baseURL');
+  if (!id && !name && !url) return undefined;
+
+  const row: Record<string, unknown> = {};
+  if (id) row.id = id;
+  if (name) row.name = name;
+  const vendor = pickCredentialString(credentials, 'vendor');
+  if (vendor) row.vendor = vendor;
+  if (url) row.url = url;
+  if (credentials.api_key !== undefined) row.apiKey = credentials.api_key;
+  for (const flag of ['supportsToolCall', 'supportsImages', 'supportsReasoning', 'useCustomProtocol', 'reasoning']) {
+    if (credentials[flag] !== undefined) row[flag] = credentials[flag];
+  }
+  return [row];
+}
+
+function stringifyPreview(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function looksLikeJson(text: string): boolean {

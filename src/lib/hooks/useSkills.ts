@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   importPrivateSkillToShared,
   installMarketSkill,
+  installProjectSkill,
   installSkillFromSource,
   listSkillCatalog,
   listSkills,
@@ -21,6 +22,7 @@ import {
   searchSkillMarket,
   syncAll,
   toggleSkillSync,
+  uninstallProjectSkill,
   uninstallSkill,
   updateSkill,
   type CoreSkill,
@@ -507,6 +509,22 @@ export async function runInstallSkill(source: string, overwrite = false) {
   const skill = await installSkillFromSource(source, overwrite);
   invalidateSkills(['skills', 'catalog', 'market']);
   return skill;
+}
+
+export async function runInstallProjectSkill(
+  workspacePath: string,
+  source: string,
+  overwrite = false,
+) {
+  return installProjectSkill(workspacePath, source, overwrite);
+}
+
+export async function runUninstallProjectSkill(
+  workspacePath: string,
+  skillId: string,
+  origin?: string,
+) {
+  await uninstallProjectSkill(workspacePath, skillId, origin);
 }
 
 export async function runImportPrivateSkill(

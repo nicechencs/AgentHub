@@ -129,5 +129,3 @@ pub(crate) fn complete_kimi_live_toml(doc: &mut DocumentMut) -> Result<()> {
     };
     ensure_kimi_model_alias(doc, slug.as_str(), &alias)
 }
-
-

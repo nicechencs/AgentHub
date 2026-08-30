@@ -303,6 +303,25 @@
         <div class="bar" aria-hidden="true"><i></i></div>
       </div>
     </div>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('agenthub:language') || '';
+          var isEn = raw === 'en' || raw.indexOf('en') === 0;
+          if (!raw) {
+            var nav = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+            isEn = /^en(-|$)/i.test(nav);
+          }
+          if (!isEn) return;
+          document.documentElement.lang = 'en';
+          var root = document.getElementById('boot-fallback');
+          if (!root) return;
+          root.setAttribute('aria-label', 'AgentHub is starting');
+          var sub = root.querySelector('.sub');
+          if (sub) sub.textContent = 'Starting…';
+        } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

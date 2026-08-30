@@ -17,6 +17,7 @@ import {
   type ConnectionUsageMap,
 } from '@/lib/connect-flow/types';
 import {
+  accountEndpointExtras,
   providerEndpointExtras,
   toCredentialRow,
 } from '@/lib/credential-row';
@@ -86,6 +87,7 @@ export function accountToEntry(
   const saved = savedAuthOf(view);
   const live = liveAuthOf(view);
   const authHealth = live !== 'unset' ? live : saved !== 'unset' ? saved : row.auth.health;
+  const endpoint = accountEndpointExtras(account);
   return attachUsage(
     {
       key: row.key,
@@ -105,7 +107,8 @@ export function accountToEntry(
       quota7dPct: account.quota7dPct,
       quotaResetIn: account.quotaResetIn,
       quota7dResetIn: account.quota7dResetIn,
-      endpointMode: account.kind === 'apikey' ? 'official' : undefined,
+      endpointHost: endpoint.endpointHost,
+      endpointMode: endpoint.endpointMode,
       account,
     },
     usageMap,

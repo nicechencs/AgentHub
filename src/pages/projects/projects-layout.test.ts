@@ -14,7 +14,8 @@ describe('projects split layout', () => {
     const page = source('index.tsx');
     expect(page).toContain('WorkbenchSplitPage');
     expect(page).toContain('useSideSplit');
-    expect(page).toContain("size=\"compact\"");
+    expect(page).toContain('PageHeader');
+    expect(page).toContain('pageRhythm.chromeActions');
     expect(page).toContain("t('projects.preview.resizeAria')");
     expect(page).toContain('listOverflowX="hidden"');
     expect(page).toContain('<ProjectConversationPreviewPanel');

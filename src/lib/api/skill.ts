@@ -129,6 +129,34 @@ export async function readSkillMarkdown(
   return getBackend().skill.readSkillMarkdown(skillId, privateAgent);
 }
 
+export async function listProjectSkills(workspacePath: string): Promise<InstalledSkillDto[]> {
+  return getBackend().skill.listProjectSkills(workspacePath);
+}
+
+export async function installProjectSkill(
+  workspacePath: string,
+  source: string,
+  overwrite = false,
+): Promise<CoreSkill> {
+  return getBackend().skill.installProjectSkill(workspacePath, source, overwrite);
+}
+
+export async function uninstallProjectSkill(
+  workspacePath: string,
+  skillId: string,
+  origin?: string,
+): Promise<void> {
+  return getBackend().skill.uninstallProjectSkill(workspacePath, skillId, origin);
+}
+
+export async function readProjectSkillMarkdown(
+  workspacePath: string,
+  skillId: string,
+  origin?: string | null,
+): Promise<SkillMarkdownPreviewDto> {
+  return getBackend().skill.readProjectSkillMarkdown(workspacePath, skillId, origin);
+}
+
 /** Subscribe to skill-directory changes. Browser mock is a no-op. */
 export async function onSkillsFsChanged(
   handler: (payload?: SkillsFsChangedPayload) => void,

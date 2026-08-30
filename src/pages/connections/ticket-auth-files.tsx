@@ -74,7 +74,6 @@ export function TicketAuthFiles({
               path={resolveCredentialFilePath(file.name, livePaths, agentId)}
               content={file.content}
               copyLabel={t('connections.list.copyFile')}
-              openLabel={t('agents.detail.openFolder')}
               opening={opening === file.name}
               onOpen={() => void openFile(file.name)}
             />

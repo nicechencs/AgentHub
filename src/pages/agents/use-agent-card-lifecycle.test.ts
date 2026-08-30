@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import {
   createInstallProgressSubscription,
   installOutputChunksToLines,
@@ -132,6 +133,24 @@ describe('setup-guide install outcome', () => {
     );
     expect(display.lines.filter((line) => line.includes('http fetch')).length).toBeLessThan(3);
     expect(display.lines.some((line) => line.includes('EACCES'))).toBe(true);
+  });
+
+  it('localizes diagnosis and omitted-progress lines when a translator is passed', () => {
+    const tEn = createTranslator('en');
+    const display = splitInstallOutcomeDisplay(
+      {
+        message: 'workbuddy 已打开官网安装页，请完成安装后重启 AgentHub',
+        logs: [
+          '诊断：该 Agent 没有脚本安装，已打开官网安装页。请完成安装后，完全退出并重启 AgentHub。',
+        ],
+      },
+      tEn,
+    );
+    expect(display.diagnosis).toBe(
+      'workbuddy opened the official setup page. Finish setup, then restart AgentHub.',
+    );
+    expect(display.lines[0]).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(display.diagnosis).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
   it('marks ok outcomes done even if a leftover code is present', () => {

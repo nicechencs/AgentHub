@@ -1,10 +1,11 @@
 import { useId, useState } from 'react';
-import { FolderOpen } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailsToggle } from '@/components/shared/DetailsToggle';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
+import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   ColumnResizeHandle,
   Table,
@@ -82,7 +83,6 @@ function FileGroupHeader({
   colSpan: number;
   onLocate: (path: string) => void;
 }) {
-  const { t } = useI18n();
   return (
     <TableRow className="bg-subtle hover:bg-subtle">
       <TableCell colSpan={colSpan} className="py-1.5">
@@ -95,19 +95,13 @@ function FileGroupHeader({
                 <span className="text-muted">·</span>
               </>
             ) : null}
-            <Tip label={path}>
-              <p className="min-w-0 truncate font-mono text-meta text-muted">{path}</p>
-            </Tip>
+            <CopyableFileName path={path} className="min-w-0" />
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="shrink-0"
+          <OpenDirButton
+            labeled
+            title={path}
             onClick={() => void onLocate(path)}
-          >
-            <FolderOpen className="h-3 w-3" />
-            {t('mcp.table.directory')}
-          </Button>
+          />
         </div>
       </TableCell>
     </TableRow>
@@ -154,12 +148,12 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
       {open && hasSnippet ? (
         <TableRow className="hover:bg-transparent">
           <TableCell colSpan={4} className="bg-subtle/50">
-            <pre
+            <SourcePreview
               id={detailsId}
-              className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-card font-mono text-meta leading-relaxed text-secondary"
-            >
-              {server.snippet}
-            </pre>
+              value={server.snippet ?? ''}
+              format={server.sourceFormat}
+              showCopy
+            />
           </TableCell>
         </TableRow>
       ) : null}

@@ -26,6 +26,8 @@ const DEFAULTS: AppSettings = {
   skillMarketSource: 'auto',
   usageCollectIntervalMin: 30,
   keepLiveFileCopies: true,
+  warnDuplicateRouteCredential: true,
+  updateDuplicateRouteUrl: true,
   // Tracks package.json via Vite inject — no hand-maintained semver.
   appVersion: packageAppVersion(),
 };
@@ -69,6 +71,14 @@ function loadState(): AppSettings {
       typeof stored.keepLiveFileCopies === 'boolean'
         ? stored.keepLiveFileCopies
         : DEFAULTS.keepLiveFileCopies,
+    warnDuplicateRouteCredential:
+      typeof stored.warnDuplicateRouteCredential === 'boolean'
+        ? stored.warnDuplicateRouteCredential
+        : DEFAULTS.warnDuplicateRouteCredential,
+    updateDuplicateRouteUrl:
+      typeof stored.updateDuplicateRouteUrl === 'boolean'
+        ? stored.updateDuplicateRouteUrl
+        : DEFAULTS.updateDuplicateRouteUrl,
     dataDir: stored.dataDir ?? DEFAULTS.dataDir,
     logsDir: stored.logsDir ?? DEFAULTS.logsDir,
     logLevel,

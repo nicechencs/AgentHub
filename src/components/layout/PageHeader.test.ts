@@ -13,13 +13,13 @@ function source(rel: string): string {
 describe('PageHeader', () => {
   it('does not draw a rule under the title; Skills/Projects match other pages', () => {
     expect(source('components/layout/PageHeader.tsx')).not.toContain('border-b');
-    expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchHeader');
     expect(source('components/layout/SideSplit.tsx')).not.toContain('border-b');
     expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/agents/index.tsx')).toContain('WorkbenchSplitPage');
   });
 
   it('uses the split-list inset when a preview pane is mounted', () => {
@@ -28,52 +28,71 @@ describe('PageHeader', () => {
     expect(source('pages/projects/index.tsx')).toContain('listOverflowX="hidden"');
   });
 
-  it('keeps workbench header actions in the list column, left of the separator', () => {
+  it('keeps page commands in the list column, left of the separator', () => {
     const split = source('components/layout/SideSplit.tsx');
     const pageFn = split.slice(split.indexOf('export function WorkbenchSplitPage'));
     const splitRefAt = pageFn.indexOf('split.splitRef');
     const listColAt = pageFn.indexOf('flex min-h-0 min-w-0 flex-1 flex-col');
-    const headerAt = pageFn.indexOf('pageRhythm.workbenchHeader');
     const inspectAt = pageFn.indexOf('<SideSplitFrame');
     expect(splitRefAt).toBeGreaterThan(0);
     expect(listColAt).toBeGreaterThan(splitRefAt);
-    expect(headerAt).toBeGreaterThan(listColAt);
-    expect(inspectAt).toBeGreaterThan(headerAt);
+    expect(inspectAt).toBeGreaterThan(listColAt);
     const listFooterAt = pageFn.indexOf('{listFooter ?');
-    expect(listFooterAt).toBeGreaterThan(headerAt);
+    expect(listFooterAt).toBeGreaterThan(listColAt);
     expect(inspectAt).toBeGreaterThan(listFooterAt);
 
-    expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
-    expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/projects/index.tsx')).toContain('pageRhythm.chromeActions');
+    expect(source('pages/skills/index.tsx')).toContain('pageRhythm.chromeActions');
   });
 
   it('starts non-Chat body flush under the title slot', () => {
-    expect(source('components/layout/PageHeader.tsx')).toContain("compact ? 'mb-0' : 'mb-[18px]'");
-    expect(source('components/layout/page-rhythm.ts')).toContain("workbenchY: 'pb-[18px]'");
-    expect(source('pages/skills/index.tsx')).toContain('pageRhythm.chrome');
+    expect(source('components/layout/PageHeader.tsx')).toContain('return null');
+    expect(source('components/layout/page-rhythm.ts')).toContain('workbenchY: pageInsetTw.b');
+    expect(source('pages/skills/index.tsx')).toContain('pageRhythm.chromeRow');
+    expect(source('pages/skills/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/skills/index.tsx')).not.toContain('className="mb-2"');
-    expect(source('components/layout/SideSplit.tsx')).toContain('paddingTop: 0');
+    expect(source('components/layout/SideSplit.tsx')).toContain('paddingTop: padTop');
+    expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchPadT');
     expect(source('components/ui/tabs.tsx')).not.toContain('mt-4 focus:outline-none');
     expect(source('pages/settings/index.tsx')).toContain('pageRhythm.chrome');
   });
 
   it('keeps page titles on the same type, height, and inset when switching pages', () => {
-    const header = source('components/layout/PageHeader.tsx');
-    expect(header).toContain('pageRhythm.pageTitle');
-    expect(header).toContain('pageRhythm.pageTitleBlock');
-    expect(header).toContain("description || '\\u00a0'");
+    const title = source('components/layout/PageHeader.tsx');
+    const topBar = source('components/layout/TopBar.tsx');
+    expect(title).toContain('pageRhythm.pageTitle');
+    expect(title).toContain('pageRhythm.pageTitleBlock');
+    expect(title).toContain('pageRhythm.pageTitleMeta');
+    expect(title).toContain("shrink-0");
+    expect(title).not.toContain("description || '\\u00a0'");
+    expect(title).toContain('useRegisterPageChrome');
+    expect(title).toContain('return null');
+    expect(title).not.toContain('actions?:');
+    expect(source('pages/connections/index.tsx')).toContain('pageRhythm.chromeActions');
+    expect(source('pages/plugins/index.tsx')).toContain('pageRhythm.chromeActions');
+    expect(source('pages/mcp/index.tsx')).toContain('pageRhythm.chromeActions');
+    expect(source('pages/bridges/index.tsx')).toContain('pageRhythm.chromeActions');
+    expect(source('pages/projects/index.tsx')).toContain('pageRhythm.chromeActions');
+    expect(topBar).toContain('PageTitleBlock');
+    expect(topBar).toContain('pageRhythm.topChrome');
+    expect(topBar).toContain('pageRhythm.workbenchX');
+    expect(source('components/layout/Sidebar.tsx')).toContain('pageRhythm.topChrome');
     expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
-    expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchHeader');
+    expect(source('pages/settings/index.tsx')).toContain('pageRhythm.workbenchHeader');
+    expect(source('pages/backups/BackupsPanel.tsx')).toContain('flushTop');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/agents/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('App.tsx')).toContain('!isChat && <TopBar');
+    expect(source('App.tsx')).toContain('PageChromeProvider');
     expect(source('pages/settings/index.tsx')).not.toMatch(/readingColumn\}>\s*<PageHeader/);
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
     expect(source('pages/chat/ChatSessionHeader.tsx')).not.toContain('pageRhythm.workbenchHeader');
     expect(source('App.tsx')).toContain("pathname === '/connections'");
     expect(source('App.tsx')).toContain("pathname === '/routes'");
+    expect(source('App.tsx')).toContain("pathname === '/agents'");
     expect(source('App.tsx')).toContain("pathname === '/plugins'");
     expect(source('App.tsx')).toContain("pathname === '/settings'");
   });

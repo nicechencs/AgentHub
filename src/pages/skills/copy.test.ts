@@ -62,12 +62,14 @@ describe('skills copy via createTranslator(zh)', () => {
     expect(privateSkillRowHint(t)).toContain('可加入共享库');
   });
 
-  it('tabs are library + market only', () => {
-    const tabKeys = ['library', 'market', 'libraryBadge', 'privateBadge'];
+  it('tabs are user skills + project skills + market', () => {
+    const tabKeys = ['library', 'project', 'market', 'libraryBadge', 'projectBadge', 'privateBadge'];
     expect(tabKeys).not.toContain('workspace');
-    expect(t('skills.tabs.library')).toBe('本地技能');
+    expect(t('skills.tabs.library')).toBe('用户技能');
+    expect(t('skills.tabs.project')).toBe('项目技能');
     expect(t('skills.tabs.market')).toBe('技能市场');
-    expect(t('skills.tabs.libraryBadge', { n: 12 })).toBe('12 个本地技能');
+    expect(t('skills.tabs.libraryBadge', { n: 12 })).toBe('12 个用户技能');
+    expect(t('skills.tabs.projectBadge', { n: 3 })).toBe('3 个项目技能');
     expect(t('skills.menu.removePrivate')).toBe('从该工具目录删除');
     expect(t('skills.menu.enableLink')).toBe('启用为共用');
     expect(t('skills.menu.enableCopy')).toBe('启用为副本');

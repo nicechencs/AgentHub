@@ -23,12 +23,12 @@ use crate::logging::targets;
 #[allow(unused_imports)]
 use crate::models::BackupKind;
 use crate::models::{AgentConfig, AgentId, Provider, ProviderInput};
-use crate::utils::redact::{api_key_tail, secret_tail_from_masked_preview};
 use crate::services::{
     AdapterSecretResolver, BackupService, ConnectionService, LiveWriteAuthority,
 };
 use crate::storage::{Database, ProviderRepo};
 use crate::utils::redact::redact_text;
+use crate::utils::redact::{api_key_tail, secret_tail_from_masked_preview};
 
 pub use live::ProviderLiveConfigSnapshot;
 pub use lock::ProviderLiveSagaGuard;

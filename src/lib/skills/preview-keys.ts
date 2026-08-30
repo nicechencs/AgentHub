@@ -1,17 +1,24 @@
 import type { AgentId } from '@/lib/types';
 
-/** Stable identity for the open SKILL.md preview (shared vs private). */
+/** Stable identity for the open SKILL.md preview (shared vs private vs project). */
 export type SkillPreviewTargetLike = {
   skillId: string;
   privateAgent?: AgentId | null;
+  workspacePath?: string | null;
+  originRoot?: string | null;
 };
 
 /**
- * Composite key that distinguishes shared vs agent-private skills with the same id.
+ * Composite key that distinguishes shared vs agent-private vs project skills with the same id.
  * - shared: `shared:${skillId}`
  * - private: `agent:${privateAgent}:${skillId}`
+ * - project: `project:${workspacePath}:${origin}:${skillId}`
  */
 export function skillPreviewActiveKey(target: SkillPreviewTargetLike): string {
+  if (target.workspacePath) {
+    const origin = target.originRoot?.trim() || '.agents/skills';
+    return `project:${target.workspacePath}:${origin}:${target.skillId}`;
+  }
   const agent = target.privateAgent;
   if (agent) return `agent:${agent}:${target.skillId}`;
   return `shared:${target.skillId}`;

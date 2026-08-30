@@ -4,11 +4,11 @@
 //! - `GET https://skills.sh/api/search?q=…&limit=…`
 //! - Leaderboard pages at `https://skills.sh/` (and `/trending`, `/hot`) embed skill JSON
 
+use crate::utils::process::apply_no_window;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use crate::utils::process::apply_no_window;
 
 use serde_json::Value;
 
@@ -220,11 +220,11 @@ impl SkillsShMarket {
         cmd.args(["clone", "--depth", "1", &git_url]).arg(&repo);
         apply_no_window(&mut cmd);
         let status = cmd.status().map_err(|e| {
-                AppError::message(
-                    "skill.market",
-                    format!("git clone failed (is git installed?): {e}"),
-                )
-            })?;
+            AppError::message(
+                "skill.market",
+                format!("git clone failed (is git installed?): {e}"),
+            )
+        })?;
         if !status.success() {
             return Err(AppError::message(
                 "skill.market",

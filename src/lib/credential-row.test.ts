@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
 import type { Account, Provider } from '@/lib/types';
 import type { TicketView } from '@/lib/backend/contracts/ticket';
-import { providerEndpointMode, toCredentialRow } from './credential-row';
+import { accountEndpointExtras, providerEndpointMode, toCredentialRow } from './credential-row';
 
 function acc(partial: Partial<Account> & Pick<Account, 'id' | 'kind' | 'label'>): Account {
   return {
@@ -150,6 +150,24 @@ describe('toCredentialRow', () => {
     const enRow = toCredentialRow({ source: 'account', account }, tEn);
     expect(enRow.subtitle).toContain('Not current');
     expect(enRow.subtitle).not.toContain('未生效');
+    expect(enRow.subtitle).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(enRow.auth.label).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it('translates generated local-route titles when a translator is passed', () => {
+    const tEn = createTranslator('en');
+    const row = toCredentialRow({
+      source: 'provider',
+      provider: prov({
+        id: 'claude-grok-adapter-bridge-grok-live-1',
+        name: 'Grok Subscription Bridge',
+        configText: JSON.stringify({
+          env: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:44227' },
+        }),
+      }),
+    }, tEn);
+    expect(row.title).toBe('Local route');
+    expect(row.title).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
   it('translates the provider endpoint/current subtitle when a translator is passed', () => {
@@ -217,5 +235,26 @@ describe('providerEndpointMode', () => {
       configText: '{}',
     });
     expect(providerEndpointMode(emptyOfficial, '')).toBe('official');
+  });
+});
+
+describe('accountEndpointExtras', () => {
+  it('keeps API keys without a URL on the legacy official mode', () => {
+    expect(accountEndpointExtras(acc({ id: 'a1', kind: 'apikey', label: 'Key' }))).toEqual({
+      endpointMode: 'official',
+    });
+  });
+
+  it('marks a ZCode catalog URL that is not Z.ai as custom', () => {
+    const extras = accountEndpointExtras(acc({
+      id: 'z1',
+      agentId: 'zcode',
+      kind: 'apikey',
+      label: 'grok',
+      endpoint: 'https://api.qooo.io/v1',
+    }));
+    expect(extras.endpointMode).toBe('custom');
+    expect(extras.endpoint).toBe('https://api.qooo.io/v1');
+    expect(extras.endpointHost).toContain('api.qooo.io');
   });
 });

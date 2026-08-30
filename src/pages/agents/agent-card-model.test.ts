@@ -18,6 +18,8 @@ import {
   isSpecialInstallChannel,
   specialChannelUpdateTargets,
   uniqueInstallVersions,
+  agentListDetailsHint,
+  programInstalls,
 } from './agent-card-model';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -30,7 +32,7 @@ describe('agent-card menu wiring', () => {
 
     expect(card).toContain('canInstallAlongsideSpecial');
     expect(card).toContain('uniqueInstallVersions');
-    expect(card).toContain("t('agents.card.seeDetails')");
+    expect(card).toContain('agentListDetailsHint');
     expect(card).not.toContain('openAgentCardUninstallConfirm');
     expect(card).not.toContain("t('agents.card.uninstallProgram')");
     expect(card).not.toContain("t('agents.card.uninstallConfig')");
@@ -88,23 +90,26 @@ describe('agent-card install log title', () => {
 });
 
 describe('extra copy labels', () => {
-  it('maps known kinds and leaves npm/native as channel ids', () => {
+  it('maps known kinds including official-script / npm product words', () => {
     expect(extraCopyKindLabelKey('ide')).toBe('agents.card.extraCopyIde');
     expect(extraCopyKindLabelKey('desktop')).toBe('agents.card.extraCopyDesktop');
     expect(extraCopyKindLabelKey('leftover-agenthub')).toBe(
       'agents.card.extraCopyLeftover',
     );
-    expect(extraCopyKindLabelKey('npm')).toBeUndefined();
-    expect(extraCopyKindLabelKey('native')).toBeUndefined();
-    expect(extraCopyKindLabel('npm', (key) => key)).toBe('npm');
+    expect(extraCopyKindLabelKey('npm')).toBe('agents.card.channelNpm');
+    expect(extraCopyKindLabelKey('native')).toBe('agents.card.channelOfficial');
+    expect(extraCopyKindLabel('npm', (key) => key)).toBe('agents.card.channelNpm');
+    expect(extraCopyKindLabel('native', (key) => key)).toBe('agents.card.channelOfficial');
     expect(extraCopyKindLabel('ide', (key) => key)).toBe('agents.card.extraCopyIde');
+    expect(zh.agents.card.channelOfficial).toBe('官方脚本');
+    expect(zh.agents.card.channelNpm).toBe('npm 包');
   });
 
   it('lists unique versions on the card and points extra copies to details', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
     expect(card).toContain('uniqueInstallVersions');
     expect(card).toContain('listAgentInstalls');
-    expect(card).toContain("t('agents.card.seeDetails')");
+    expect(card).toContain('agentListDetailsHint');
     expect(card).not.toContain('CopyVersionButton');
     expect(card).not.toContain('copyVersion');
     expect(card).not.toContain('extraCopyKindLabel');
@@ -117,10 +122,57 @@ describe('extra copy labels', () => {
     expect(card).not.toContain('specialChannelUpdateTargets');
     expect(card).not.toContain('updateViaDesktop');
     expect(zh.agents.card.seeDetails).toBe('多个版本，点开看详情');
+    expect(zh.agents.card.seeDetailsCopies).toBe('另有 {count} 份，点开看详情');
+    expect(zh.agents.card.seeDetailsLeftover).toBe('另有遗留副本，点开看详情');
+    expect(zh.agents.card.extraCopyLeftover).toBe('遗留数据目录 npm');
     expect(zh.agents.card.updateViaDesktop).toBe('请到桌面应用更新');
     expect(zh.agents.card.updateViaIde).toBe('请到 IDE 插件更新');
     expect(zh.agents.dialog.installAlongsideDesc).toContain('不会被替换');
     expect(zh.agents.card.extraCopyDesktop).toBe('桌面应用');
+  });
+
+  it('does not count leftover copies as versions on the list', () => {
+    const rows = [
+      {
+        source: 'npm' as const,
+        location: '/usr/bin/codex',
+        version: '0.50.0',
+        spawn: true,
+      },
+      {
+        source: 'leftover-agenthub' as const,
+        location: '~/.agenthub/npm/codex',
+        version: '0.50.0',
+        spawn: false,
+      },
+      {
+        source: 'npm' as const,
+        location: '~/.npm-global/bin/codex',
+        version: '0.50.0',
+        spawn: false,
+      },
+    ];
+    expect(uniqueInstallVersions(programInstalls(rows))).toEqual(['v0.50.0']);
+    expect(agentListDetailsHint(rows)).toEqual({
+      key: 'agents.card.seeDetailsCopies',
+      params: { count: 2 },
+    });
+    expect(
+      agentListDetailsHint([
+        { source: 'npm', version: '0.50.0' },
+        { source: 'leftover-agenthub', version: '0.49.0' },
+      ]),
+    ).toEqual({
+      key: 'agents.card.seeDetailsLeftover',
+      params: { count: 1 },
+    });
+    expect(
+      agentListDetailsHint([
+        { source: 'npm', version: '0.50.0' },
+        { source: 'ide', version: '0.49.0' },
+      ]),
+    ).toEqual({ key: 'agents.card.seeDetails' });
+    expect(agentListDetailsHint([{ source: 'npm', version: '0.50.0' }])).toBeNull();
   });
 
   it('dedupes install versions for the compact card', () => {

@@ -217,6 +217,12 @@ impl Database {
         if let Some(v) = self.get_setting("keep_live_file_copies")? {
             s.keep_live_file_copies = parse_stored_bool(&v);
         }
+        if let Some(v) = self.get_setting("warn_duplicate_route_credential")? {
+            s.warn_duplicate_route_credential = parse_stored_bool(&v);
+        }
+        if let Some(v) = self.get_setting("update_duplicate_route_url")? {
+            s.update_duplicate_route_url = parse_stored_bool(&v);
+        }
         Ok(s)
     }
 }

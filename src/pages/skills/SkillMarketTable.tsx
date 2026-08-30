@@ -17,6 +17,7 @@ import { useToast } from '@/components/ui/toast';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { SkillListingDto } from '@/lib/api/skill';
+import { localizeSkillMarketDescription } from '@/lib/i18n/stored-copy';
 import { openExternalLink } from '@/lib/open-external';
 import { cn } from '@/lib/utils';
 
@@ -159,9 +160,9 @@ export function SkillMarketTable({
                   {item.description ? (
                     <Tip
                       className="mt-0.5 line-clamp-1 truncate text-xs text-secondary"
-                      label={item.description}
+                      label={localizeSkillMarketDescription(item.description, t)}
                     >
-                      {item.description}
+                      {localizeSkillMarketDescription(item.description, t)}
                     </Tip>
                   ) : null}
                 </TableCell>

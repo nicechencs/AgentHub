@@ -223,7 +223,13 @@ impl AccountService {
     /// snapshot arrives without them (redacted `***`, leftover import). Never
     /// invents a key or copies another login's identity.
     pub(super) fn copy_persisted_identity(from: &Value, into: &mut Value) {
-        for key in ["secretTail", "secretHash", "endpoint", "baseUrl", "base_url"] {
+        for key in [
+            "secretTail",
+            "secretHash",
+            "endpoint",
+            "baseUrl",
+            "base_url",
+        ] {
             copy_missing_extra_string(from, into, key);
         }
         let old_label = from

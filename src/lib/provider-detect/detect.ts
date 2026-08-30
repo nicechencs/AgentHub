@@ -1,5 +1,6 @@
 import { DETECTORS } from './detectors';
 import type { SmartDetectResult } from './types';
+import type { TranslateFn } from '@/lib/i18n';
 // SmartDetectResult used for claudeAuthEnv typing in locals
 
 /**
@@ -8,7 +9,7 @@ import type { SmartDetectResult } from './types';
  * 流水线：按 DETECTORS 顺序尝试；专用样式先命中，最后 generic-mixed 兜底。
  * 合并策略：先到先得（已有字段不被后序 detector 覆盖）。
  */
-export function smartDetectUrlAndKey(raw: string): SmartDetectResult {
+export function smartDetectUrlAndKey(raw: string, t?: TranslateFn): SmartDetectResult {
   const text = raw.trim();
   const hints: string[] = [];
   const matchedDetectors: string[] = [];
@@ -81,27 +82,68 @@ export function smartDetectUrlAndKey(raw: string): SmartDetectResult {
   }
 
   if (matchedDetectors.includes('plain-url') && baseUrl) {
-    hints.push('识别到：整段都是服务地址');
+    hints.push(t ? t('connections.providerDialog.detectPlainUrl') : '识别到：整段都是服务地址');
   } else if (matchedDetectors.includes('plain-api-key') && apiKey) {
-    hints.push('识别到：整段都是密钥');
+    hints.push(t ? t('connections.providerDialog.detectPlainKey') : '识别到：整段都是密钥');
   } else {
-    if (baseUrl) hints.push(`识别到服务地址：${baseUrl}`);
+    if (baseUrl) {
+      hints.push(
+        t
+          ? t('connections.providerDialog.detectFoundUrl', { url: baseUrl })
+          : `识别到服务地址：${baseUrl}`,
+      );
+    }
     if (apiKey) {
       const tail = apiKey.length > 8 ? apiKey.slice(-4) : '';
-      hints.push(`识别到密钥${tail ? `（末尾 ${tail}）` : ''}`);
+      hints.push(
+        t
+          ? tail
+            ? t('connections.providerDialog.detectFoundKeyTail', { tail })
+            : t('connections.providerDialog.detectFoundKey')
+          : `识别到密钥${tail ? `（末尾 ${tail}）` : ''}`,
+      );
     }
-    if (model) hints.push(`识别到模型：${model}`);
-    if (providerSlug) hints.push(`服务商：${providerSlug}`);
-    if (envKey) hints.push(`密钥字段：${envKey}`);
-    if (reasoningEffort) hints.push(`思考强度：${reasoningEffort}`);
+    if (model) {
+      hints.push(
+        t ? t('connections.providerDialog.detectFoundModel', { model }) : `识别到模型：${model}`,
+      );
+    }
+    if (providerSlug) {
+      hints.push(
+        t
+          ? t('connections.providerDialog.detectProvider', { slug: providerSlug })
+          : `服务商：${providerSlug}`,
+      );
+    }
+    if (envKey) {
+      hints.push(
+        t ? t('connections.providerDialog.detectEnvKey', { key: envKey }) : `密钥字段：${envKey}`,
+      );
+    }
+    if (reasoningEffort) {
+      hints.push(
+        t
+          ? t('connections.providerDialog.detectReasoning', { effort: reasoningEffort })
+          : `思考强度：${reasoningEffort}`,
+      );
+    }
     if (extraEnv && Object.keys(extraEnv).length) {
-      hints.push(`额外配置：${Object.keys(extraEnv).join(', ')}`);
+      const keys = Object.keys(extraEnv).join(', ');
+      hints.push(
+        t ? t('connections.providerDialog.detectExtraEnv', { keys }) : `额外配置：${keys}`,
+      );
     }
-    if (rawConfigText) hints.push('已保留完整配置文件');
+    if (rawConfigText) {
+      hints.push(t ? t('connections.providerDialog.detectKeptConfig') : '已保留完整配置文件');
+    }
   }
 
   if (!baseUrl && !apiKey && !rawConfigText) {
-    hints.push('没有识别到服务地址或密钥，请在下方填写');
+    hints.push(
+      t
+        ? t('connections.providerDialog.detectNone')
+        : '没有识别到服务地址或密钥，请在下方填写',
+    );
   }
 
   return {

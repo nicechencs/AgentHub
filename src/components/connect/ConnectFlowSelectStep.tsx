@@ -9,7 +9,7 @@ import { Notice } from '@/components/shared/Notice';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
+import { RouteEndpointTypeText, RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { agentDisplayName } from '@/config/agents';
 import { planMaturityLabel, planRouteSummary } from '@/lib/connect-flow/eligibility';
 import { ROUTE_ENDPOINTS } from '@/lib/route-endpoints';
@@ -20,6 +20,7 @@ import type {
   SourceOption,
 } from '@/lib/connect-flow/types';
 import { cn } from '@/lib/utils';
+import { localizeStoredUiCopy } from '@/lib/i18n/stored-copy';
 import {
   agentsForRouteEndpoint,
   eligibilityForRouteEndpoint,
@@ -44,11 +45,13 @@ export function EffectiveSummary({
   authLabel: string;
 }) {
   const { t } = useI18n();
+  const shownLabel = localizeStoredUiCopy(label, t);
+  const shownAuth = localizeStoredUiCopy(authLabel, t);
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       <AgentDot agentId={agentId} size="sm" title={null} />
-      <span>{t('connect.dialog.currentEffective', { label })}</span>
-      <Badge variant="default">{authLabel}</Badge>
+      <span>{t('connect.dialog.currentEffective', { label: shownLabel })}</span>
+      <Badge variant="default">{shownAuth}</Badge>
     </span>
   );
 }
@@ -461,12 +464,14 @@ function EndpointGrid({
                 endpointId={endpoint.id}
                 className="text-sm font-medium"
               />
-              <p className="text-xs text-muted">
-                {endpoint.id === 'messages'
-                  ? t('connect.select.endpointMessages')
-                  : endpoint.id === 'responses'
-                    ? t('connect.select.endpointResponses')
-                    : t('connect.select.endpointChat')}
+              <p className="text-xs">
+                <RouteEndpointTypeText endpointId={endpoint.id}>
+                  {endpoint.id === 'messages'
+                    ? t('connect.select.endpointMessages')
+                    : endpoint.id === 'responses'
+                      ? t('connect.select.endpointResponses')
+                      : t('connect.select.endpointChat')}
+                </RouteEndpointTypeText>
               </p>
             </div>
             {representative ? (

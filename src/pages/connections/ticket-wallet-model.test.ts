@@ -774,6 +774,21 @@ describe('ticket detail fields', () => {
     expect(humanizeTicketAuthLabel('已验证')).toBe('已验证');
   });
 
+  it('humanizes stored Chinese health labels on English login chips', () => {
+    const tEn = createTranslator('en');
+    expect(humanizeTicketAuthLabel('可续期·未验证', tEn)).toBe('Renewable');
+    expect(humanizeTicketAuthLabel('已配置', tEn)).toBe('Configured');
+    expect(humanizeTicketAuthLabel('已验证', tEn)).toBe('Verified');
+    expect(ticketAuthChip({ authLabel: '可续期·未验证' }, tEn)).toEqual({
+      label: 'Renewable',
+      mono: false,
+    });
+    expect(ticketAuthChip({ authLabel: '已配置', secretTail: '**wxyz' }, tEn)).toEqual({
+      label: '**wxyz',
+      mono: true,
+    });
+  });
+
   it('replaces 可续期 / 已配置 chips with the secret tail', () => {
     expect(ticketAuthChip({
       authLabel: '可续期·未验证',
@@ -829,6 +844,53 @@ describe('ticket detail fields', () => {
       occupancy: 'catalogAppend',
       agentName: 'ZCode',
     })).toEqual({ kind: 'in-use', label: '已在模型列表里' });
+  });
+
+  it('keeps catalog-append logins in the model list after another row becomes current', () => {
+    const wb = ticket({
+      id: 'account:wb-1',
+      sourceKind: 'account',
+      sourceId: 'wb-1',
+      agentId: 'workbuddy',
+      label: 'deepseek',
+      surface: 'unknown',
+      credentialClass: 'api_key',
+      speaks: ['openai-chat'],
+      importedFrom: 'workbuddy',
+    });
+    const live = extrasFromPoolSource(wb, {
+      account: account({
+        id: 'wb-1',
+        agentId: 'workbuddy',
+        kind: 'apikey',
+        label: 'deepseek',
+        isCurrent: false,
+        source: 'live',
+      }),
+    }, undefined, 'account:wb-other');
+    expect(live.isCurrent).toBe(true);
+    expect(ticketSwitchChip(live, undefined, {
+      occupancy: 'catalogAppend',
+      agentName: 'WorkBuddy',
+    })).toEqual({ kind: 'in-use', label: '已在模型列表里' });
+    expect(buildTicketDetailFields(wb, live).advanced).toEqual(expect.arrayContaining([
+      { label: '模型列表', value: '已在模型列表里' },
+    ]));
+
+    const pending = extrasFromPoolSource(wb, {
+      account: account({
+        id: 'wb-1',
+        agentId: 'workbuddy',
+        kind: 'apikey',
+        label: 'deepseek',
+        isCurrent: false,
+        source: 'manual',
+      }),
+    });
+    expect(pending.isCurrent).toBe(false);
+    expect(buildTicketDetailFields(wb, pending).advanced).toEqual(expect.arrayContaining([
+      { label: '模型列表', value: '未写入模型列表' },
+    ]));
   });
 
   it('lists bindings as agent + one short status', () => {
@@ -959,6 +1021,42 @@ describe('ticket detail fields', () => {
     expect(keyExtras.endpointHost).toBe('relay.example.com');
     expect(keyExtras.secretTail).toBe('**wxyz');
     expect(ticketDetailEditLabel(keyExtras)).toBe('编辑配置');
+
+    const zcodeTicket = ticket({
+      id: 'account:zcode-1',
+      sourceKind: 'account',
+      sourceId: 'zcode-1',
+      agentId: 'zcode',
+      label: '**ce8f (API Key)',
+      surface: 'unknown',
+      credentialClass: 'api_key',
+      speaks: [],
+      importedFrom: 'zcode',
+    });
+    const zcodeExtras = extrasFromPoolSource(zcodeTicket, {
+      account: account({
+        id: 'zcode-1',
+        agentId: 'zcode',
+        kind: 'apikey',
+        label: '**ce8f (grok)',
+        provider: 'grok',
+        identityLabel: 'grok',
+        endpoint: 'https://api.qooo.io/v1',
+        credentialFiles: [{
+          name: 'config.json',
+          content: '{\n  "provider": {\n    "aabbcc": {\n      "name": "grok"\n    }\n  }\n}\n',
+        }],
+      }),
+    });
+    expect(zcodeExtras.accountProvider).toBe('grok');
+    expect(zcodeExtras.endpointMode).toBe('custom');
+    expect(zcodeExtras.endpointUrl).toBe('https://api.qooo.io/v1');
+    const zcodeFields = buildTicketDetailFields(zcodeTicket, zcodeExtras);
+    expect(zcodeFields.advanced).toEqual(expect.arrayContaining([
+      { label: '供应商', value: 'grok' },
+      { label: '端点', value: '自定义端点' },
+      { label: '地址', value: 'https://api.qooo.io/v1', mono: true, copyable: true },
+    ]));
   });
 
   it('splits Grok oauth extras by Hub vs CLI ownership', () => {

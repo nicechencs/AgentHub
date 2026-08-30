@@ -282,7 +282,10 @@ mod header_timeout_tests {
             UPSTREAM_NON_STREAM_TIMEOUT,
             "non-stream TTFB must use the 120s body budget, not the 30s stream TTFB"
         );
-        assert_eq!(upstream_header_timeout(true), UPSTREAM_RESPONSE_HEADER_TIMEOUT);
+        assert_eq!(
+            upstream_header_timeout(true),
+            UPSTREAM_RESPONSE_HEADER_TIMEOUT
+        );
         assert!(upstream_header_timeout(false) > upstream_header_timeout(true));
         assert_eq!(UPSTREAM_NON_STREAM_TIMEOUT, Duration::from_secs(120));
         assert_eq!(UPSTREAM_RESPONSE_HEADER_TIMEOUT, Duration::from_secs(30));
@@ -322,13 +325,7 @@ pub(super) async fn post_upstream(
     request_id: &str,
 ) -> Result<reqwest::Response, Response> {
     // v1 edges do not thread stream intent here; keep the stricter stream TTFB.
-    match post_upstream_attempt(
-        state,
-        builder,
-        request_id,
-        UPSTREAM_RESPONSE_HEADER_TIMEOUT,
-    )
-    .await
+    match post_upstream_attempt(state, builder, request_id, UPSTREAM_RESPONSE_HEADER_TIMEOUT).await
     {
         Ok(response) => Ok(response),
         Err(UpstreamConnectError::Stopping) => Err(stopping_response()),

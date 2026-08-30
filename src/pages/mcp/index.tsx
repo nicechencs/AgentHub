@@ -111,21 +111,9 @@ export default function McpPage() {
         title={t('mcp.page.title')}
         description={t('mcp.page.description')}
         descriptionTip={t('mcp.page.descriptionTip', { next: t('mcp.page.nextStep') })}
-        actions={
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={loading}
-            onClick={() => void load()}
-            className="gap-1.5"
-          >
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            {t('mcp.page.refresh')}
-          </Button>
-        }
       />
 
-      <div className={pageRhythm.chrome}>
+      <div className={pageRhythm.chromeRow}>
         <AgentTabStrip
           showAll
           allLabel={t('kind.all')}
@@ -142,6 +130,18 @@ export default function McpPage() {
           emptyLabel={t('mcp.page.emptyTabs')}
           aria-label={t('mcp.page.filterAria')}
         />
+        <div className={pageRhythm.chromeActions}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={loading}
+            onClick={() => void load()}
+            className="gap-1.5"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {t('mcp.page.refresh')}
+          </Button>
+        </div>
       </div>
 
       <PageSection first>

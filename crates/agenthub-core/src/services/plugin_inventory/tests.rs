@@ -132,12 +132,10 @@ fn cli_json_lists_claude_and_grok_plugins() {
         claude.path.as_deref(),
         Some("~/.claude/plugins/cache/demo/1.2.0")
     );
-    assert!(
-        claude
-            .components
-            .iter()
-            .any(|c| c.kind == "skills" && c.name == "ship")
-    );
+    assert!(claude
+        .components
+        .iter()
+        .any(|c| c.kind == "skills" && c.name == "ship"));
 
     let grok = inv
         .plugins
@@ -146,11 +144,10 @@ fn cli_json_lists_claude_and_grok_plugins() {
         .unwrap();
     assert_eq!(grok.name, "gdrive");
     assert_eq!(grok.source, "cli");
-    assert!(
-        grok.components
-            .iter()
-            .any(|c| c.kind == "mcp" && c.name == "gdrive")
-    );
+    assert!(grok
+        .components
+        .iter()
+        .any(|c| c.kind == "mcp" && c.name == "gdrive"));
     assert!(!inv.plugins.iter().any(|p| p.name == "mcpServers"));
 }
 
@@ -241,11 +238,10 @@ fn missing_cli_reads_live_files_and_skips_mcp_servers() {
         None,
     ));
 
-    assert!(
-        !inv.plugins
-            .iter()
-            .any(|p| p.name == "filesystem" || p.name == "docs" || p.name == "mcpServers")
-    );
+    assert!(!inv
+        .plugins
+        .iter()
+        .any(|p| p.name == "filesystem" || p.name == "docs" || p.name == "mcpServers"));
     let claude_plug = inv
         .plugins
         .iter()
@@ -263,18 +259,14 @@ fn missing_cli_reads_live_files_and_skips_mcp_servers() {
         .unwrap();
     assert_eq!(grok_plug.name, "gdrive");
     assert_eq!(grok_plug.enabled, Some(true));
-    assert!(
-        grok_plug
-            .components
-            .iter()
-            .any(|c| c.kind == "skills" && c.name == "search")
-    );
-    assert!(
-        grok_plug
-            .components
-            .iter()
-            .any(|c| c.kind == "mcp" && c.name == "gdrive")
-    );
+    assert!(grok_plug
+        .components
+        .iter()
+        .any(|c| c.kind == "skills" && c.name == "search"));
+    assert!(grok_plug
+        .components
+        .iter()
+        .any(|c| c.kind == "mcp" && c.name == "gdrive"));
 
     let claude_st = inv
         .agents
@@ -372,11 +364,10 @@ fn other_agents_are_not_listed_from_mcp() {
         assert_eq!(st.support, "unsupported");
         assert_eq!(st.plugin_count, 0);
     }
-    assert!(
-        !inv.plugins
-            .iter()
-            .any(|p| !matches!(p.agent, AgentId::Claude | AgentId::Grok))
-    );
+    assert!(!inv
+        .plugins
+        .iter()
+        .any(|p| !matches!(p.agent, AgentId::Claude | AgentId::Grok)));
 }
 
 #[test]

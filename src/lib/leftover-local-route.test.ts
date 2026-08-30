@@ -27,4 +27,16 @@ describe('isLeftoverLocalRouteProvider', () => {
     } satisfies Pick<Provider, 'id' | 'name' | 'preset' | 'configText' | 'configFormat'>;
     expect(isLeftoverLocalRouteProvider(leftover)).toBe(true);
   });
+
+  it('detects the English Local route marker', () => {
+    expect(
+      isLeftoverLocalRouteProvider({
+        id: 'prov-en',
+        name: 'Local route',
+        preset: '',
+        configText: '',
+        configFormat: 'json',
+      }),
+    ).toBe(true);
+  });
 });

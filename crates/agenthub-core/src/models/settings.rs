@@ -22,6 +22,12 @@ pub struct AppSettings {
     /// When true, switch/import keep on-disk copies of live config files.
     /// Default on; users can turn this off once structured records are enough.
     pub keep_live_file_copies: bool,
+    /// When true, Routes UI tips when an API key / login was already used.
+    /// Does not block create/import. Default on.
+    pub warn_duplicate_route_credential: bool,
+    /// When true, creating a route with the same URL under the same Agent
+    /// updates the existing route row instead of inserting a new one. Default on.
+    pub update_duplicate_route_url: bool,
 }
 
 impl Default for AppSettings {
@@ -35,6 +41,8 @@ impl Default for AppSettings {
             close_to_tray: true,
             usage_collect_interval_min: None,
             keep_live_file_copies: true,
+            warn_duplicate_route_credential: true,
+            update_duplicate_route_url: true,
         }
     }
 }

@@ -13,11 +13,18 @@ export interface SettingsPort {
   }): Promise<string | null>;
   /**
    * Best-effort GUI log line. `last4` only — never a raw key.
+   * Optional `profileId` / `route` / `code` help correlate Routes actions.
    * Mock is a no-op.
    */
   logGuiEvent?(
     op: string,
-    detail?: { agent?: string; last4?: string },
+    detail?: {
+      agent?: string;
+      last4?: string;
+      profileId?: string;
+      route?: string;
+      code?: string;
+    },
   ): Promise<void>;
   logLevelOptions: { value: LogLevel; label: string }[];
 }

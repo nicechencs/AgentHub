@@ -27,7 +27,8 @@ impl AgentAdapter for StubAdapter {
             binary_path: None,
             channel: None,
             env_ready: false,
-            notes: Vec::new(), extra_copies: Vec::new(),
+            notes: Vec::new(),
+            extra_copies: Vec::new(),
         }
     }
 
@@ -280,7 +281,10 @@ fn builtin_catalog_projects_live_occupancy() {
     let pi = catalog.get_str("pi").expect("pi");
     assert_eq!(pi.occupancy, LiveOccupancy::NamedSlots);
     let v = serde_json::to_value(zcode).expect("json");
-    assert_eq!(v.get("occupancy").and_then(|x| x.as_str()), Some("catalogAppend"));
+    assert_eq!(
+        v.get("occupancy").and_then(|x| x.as_str()),
+        Some("catalogAppend")
+    );
 }
 
 #[test]

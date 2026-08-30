@@ -1,5 +1,7 @@
 # AgentHub
 
+**简体中文** · [English](README.en.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6.svg)](#快速开始)
 [![Release](https://img.shields.io/github/v/release/nicechencs/AgentHub?label=version)](https://github.com/nicechencs/AgentHub/releases)
@@ -10,11 +12,84 @@ AgentHub 是一个本地运行的多 Agent 桌面工具。它用一个 GUI 和 C
 
 - 管理 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode、Cursor Agent 和 DeepSeek Harness 等本机 Agent。Cursor Agent 默认不出现在侧栏和连接页，可在 Agents 里取消隐藏。
 - 查看跨工具的登录与连接，优先直接写入目标工具配置；只有存在开放规则和受测协议转换时才使用本机路由，否则明确显示“当前不支持”，不会静默转发。
-- 管理共享 Skills、查看 MCP 能力、浏览项目与会话。
+- 管理共享 Skills、查看已发现的 MCP、浏览项目与会话。
 - 在桌面端启动本机会话并查看流式过程，解析本地会话日志中的用量与成本估算。
 - 通过 CLI 执行 `doctor`、`env`、`agent`、`provider`、`account`、`skill`、`usage`、`backup`、`run` 和 `config` 等操作。
 
 当前实现的边界与已知未实现项见 [实现状态](docs/STATUS.md)。产品决策与连接模型见 [文档索引](docs/README.md)。
+
+## 界面预览
+
+当前桌面端有这些页面。截图为 dest 真窗口截图，已裁掉系统栏，邮箱与本机家目录已处理。
+
+### 总览
+
+看各 Agent 是否就绪，以及从本机日志解析出的用量和成本估算。需要登录或切换时，从这里进连接页。
+
+![总览](docs/assets/screenshots/dashboard.png)
+
+### 连接
+
+跨工具的**登录列表**。可以导入本机已有授权、用**浏览器登录**做官方登录，或添加 API Key。接到其他工具时，优先**直连**或**用这份登录**；两边说的话不同、并且已有可用规则时才走**本机路由**，否则会明确显示「当前不支持」。
+
+![连接 / 登录列表](docs/assets/screenshots/connections.png)
+
+### Chat
+
+在桌面里和已安装的 Agent 对话。左侧是会话列表，中间是对话，过程步骤可以展开看。先选 Agent 和工作目录再发送。
+
+![Chat](docs/assets/screenshots/chat.png)
+
+### Agents
+
+检测并修复本机运行环境，再按**渠道**安装或升级各 Agent。点开一张卡片可以看到**端点类型**、渠道和**配置目录**，也能打开配置目录。Cursor Agent 默认不出现在侧栏和连接页，可在这里取消隐藏。
+
+![Agents](docs/assets/screenshots/agents.png)
+
+### Skills
+
+用户技能放在共享库，可以启用到各工具；项目技能按工作区管理。也可以从技能市场安装。
+
+![Skills](docs/assets/screenshots/skills.png)
+
+### Projects
+
+按 Agent 浏览本机项目和会话。可以打开目录、预览摘录，或在 Chat 里继续。
+
+![Projects](docs/assets/screenshots/projects.png)
+
+### 设置
+
+四个栏：
+
+- **偏好**：语言、主题、开机自启、关闭到托盘、侧栏是否显示路由 / 插件、技能市场等
+- **本机**：数据目录与日志
+- **备份**：切换或导入前留下的配置快照，可恢复或删除
+- **关于**：版本、检查更新与仓库入口
+
+![设置：偏好 / 本机 / 备份 / 关于](docs/assets/screenshots/settings.png)
+
+### MCP
+
+只扫描并列出已经发现的 MCP，不会安装，也不能在这里改各工具的设置。写入和管理还没做。
+
+### 插件
+
+只读查看 Claude 和 Grok 已经装好的插件包。没有安装按钮，也不会改这些包。
+
+### 本机路由
+
+管理本机转发：给客户端填本机地址。登录信息仍在连接页。多数连接用直连或「用这份登录」即可。混合供应商和部分协议转换仍在开发中，不是已经做完的万能路由。
+
+## 路线图
+
+本机路由、插件以及类似的管理能力会继续补，目前标为**开发中**。
+
+- **插件**：现在只读列出 Claude / Grok 的插件包，没有安装按钮。
+- **MCP**：现在只是只读扫描；写入和管理还没做。
+- **本机路由**：已经能转发部分连接；混合供应商和部分协议转换仍在做，不要当成已经做完的万能路由。
+
+更细的实现边界见 [实现状态](docs/STATUS.md)。
 
 ## 快速开始
 
@@ -69,7 +144,7 @@ pnpm dev:mock
 
 ## 数据与隐私
 
-AgentHub 默认只处理本机数据。常见数据位置是 `~/.agenthub/`（状态、设置、日志和备份）与 `~/.agents/skills/`（共享 Skills）。Usage 只读解析本地会话或日志，不通过代理截取请求，也不上传云端；本机路由不记录请求或响应正文。
+AgentHub 默认只处理本机数据。常见数据位置是 `~/.agenthub/`（状态、设置、日志和备份）、`~/.agents/skills/`（用户技能）与项目里的 `.agents/skills/`（项目技能）。Usage 只读解析本地会话或日志，不通过代理截取请求，也不上传云端；本机路由不记录请求或响应正文。
 
 凭据沿用项目现有的本地存储方案，界面、CLI 和日志输出会脱敏。凭据落盘加密不在当前产品范围内。发布截图、测试数据、版本发布和禁止提交项见 [隐私与发布](docs/reference/privacy-and-release.md)，漏洞披露方式见 [安全策略](SECURITY.md)。
 

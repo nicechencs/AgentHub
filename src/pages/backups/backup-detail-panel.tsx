@@ -145,7 +145,6 @@ export function BackupDetailPanel({
                     content={file.content}
                     emptyHint={t('settings.backups.noTextContent')}
                     copyLabel={t('settings.backups.copyFile')}
-                    openLabel={t('agents.detail.openFolder')}
                     opening={opening === file.path}
                     onOpen={() => void openFile(file.path)}
                   />

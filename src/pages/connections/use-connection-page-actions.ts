@@ -4,6 +4,7 @@ import { useToast } from '@/components/ui/toast';
 import type { AgentTabId } from '@/components/layout/AgentTabStrip';
 import { deleteAccount, switchAccount } from '@/lib/api/account';
 import { deleteProvider, switchPreview, switchProvider } from '@/lib/api/provider';
+import { logGuiEvent, guiErrorCode } from '@/lib/api/settings';
 import type { TranslateFn } from '@/lib/i18n';
 import {
   bindTicket,
@@ -15,7 +16,6 @@ import type { LiveOccupancyDto } from '@/lib/backend/contracts/agent-catalog-typ
 import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
 import { resolveAgentMeta } from '@/config/agents';
 import { deleteConnectionToastDescription } from './connection-model';
-import { activeBindingForAgent } from './ticket-wallet-model';
 
 /** Success toast: switch wrote the login into this Agent's local files (Chinese fallback for callers without a translator). */
 export const SWITCH_WROTE_LIVE = '已写入本机配置';
@@ -81,7 +81,7 @@ export function useConnectionPageActions(input: {
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const { filterAgent, wallet, extrasForTicket, loadWallet, poolReload } = input;
+  const { filterAgent, extrasForTicket, loadWallet, poolReload } = input;
   const [switchingTicketId, setSwitchingTicketId] = useState<string | null>(null);
   const switchGen = useRef(0);
   const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
@@ -89,15 +89,14 @@ export function useConnectionPageActions(input: {
 
   const handleSwitchTicket = useCallback(async (ticket: TicketView) => {
     const targetAgent = filterAgent === 'all' ? ticket.agentId : filterAgent;
-    const tabCurrentId = wallet
-      ? activeBindingForAgent(wallet, targetAgent)?.ticket.id ?? null
-      : null;
-    if (tabCurrentId === ticket.id) return;
+    // Skip with the same "already written / already current" signal the chip
+    // uses. Catalog-append occupancy must not no-op just because another
+    // exclusive wallet pointer still names this ticket.
+    if (extrasForTicket(ticket)?.isCurrent) return;
     const generation = ++switchGen.current;
     setSwitchingTicketId(ticket.id);
+    const wroteLocal = ticket.agentId === targetAgent;
     try {
-      const wroteLocal =
-        ticket.agentId === targetAgent;
       if (wroteLocal) {
         if (ticket.sourceKind === 'account') {
           await switchAccount(ticket.agentId, ticket.sourceId);
@@ -112,6 +111,7 @@ export function useConnectionPageActions(input: {
         }
       }
       if (switchGen.current !== generation) return;
+      void logGuiEvent(wroteLocal ? 'switch' : 'bind', { agent: targetAgent });
       toast({
         title: wroteLocal
           ? switchWroteLiveLabel(t, resolveAgentMeta(ticket.agentId).occupancy)
@@ -122,6 +122,10 @@ export function useConnectionPageActions(input: {
       await loadWallet();
     } catch (e) {
       if (switchGen.current !== generation) return;
+      void logGuiEvent(wroteLocal ? 'switch_fail' : 'bind_fail', {
+        agent: targetAgent,
+        code: guiErrorCode(e),
+      });
       toast({
         title: t('connections.list.switchFail'),
         description: describeProviderSwitchError(targetAgent, e, t),
@@ -130,7 +134,7 @@ export function useConnectionPageActions(input: {
     } finally {
       if (switchGen.current === generation) setSwitchingTicketId(null);
     }
-  }, [filterAgent, loadWallet, poolReload, t, toast, wallet]);
+  }, [extrasForTicket, filterAgent, loadWallet, poolReload, t, toast]);
 
   const confirmDeleteTicket = async () => {
     if (!deleteTicket) return;
@@ -142,6 +146,7 @@ export function useConnectionPageActions(input: {
       } else {
         await deleteProvider(deleteTicket.agentId, deleteTicket.sourceId);
       }
+      void logGuiEvent('delete_connection', { agent: deleteTicket.agentId });
       setDeleteTicket(null);
       toast({
         title: t('connections.delete.toastOk'),
@@ -151,6 +156,10 @@ export function useConnectionPageActions(input: {
       await loadWallet();
       await poolReload().catch(() => {});
     } catch (e) {
+      void logGuiEvent('delete_connection_fail', {
+        agent: deleteTicket.agentId,
+        code: guiErrorCode(e),
+      });
       toast({
         title: t('connections.delete.toastFail'),
         description: e instanceof Error ? e.message : String(e),

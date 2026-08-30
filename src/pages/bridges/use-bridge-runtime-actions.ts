@@ -7,6 +7,7 @@ import {
   startAdapterBridge,
   stopAdapterBridge,
 } from '@/lib/api/adapter';
+import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
 import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { TranslateFn } from '@/lib/i18n';
@@ -74,6 +75,11 @@ export function useBridgeRuntimeActions(input: {
       for (const member of members) {
         updateBridgeStatus(await startAdapterBridge(member.id));
         started.push(member.id);
+        void logGuiEvent('bridge_start', {
+          agent: member.targetAgentId,
+          profileId: member.id,
+          route: member.route,
+        });
       }
       reloadThenClearProfileErrors();
     } catch (error) {
@@ -85,6 +91,12 @@ export function useBridgeRuntimeActions(input: {
           compensationFailures.push(cause);
         }
       }
+      void logGuiEvent('bridge_start_fail', {
+        agent: profile.targetAgentId,
+        profileId: profile.id,
+        route: profile.route,
+        code: guiErrorCode(error),
+      });
       setProfileErrors((current) => ({
         ...current,
         [profile.id]: surfaceAfterCompensation(error, compensationFailures),
@@ -112,10 +124,21 @@ export function useBridgeRuntimeActions(input: {
     try {
       for (const member of members) {
         updateBridgeStatus(await stopAdapterBridge(member.id));
+        void logGuiEvent('bridge_stop', {
+          agent: member.targetAgentId,
+          profileId: member.id,
+          route: member.route,
+        });
       }
       setStopConfirm(null);
       reloadThenClearProfileErrors();
     } catch (error) {
+      void logGuiEvent('bridge_stop_fail', {
+        agent: profile.targetAgentId,
+        profileId: profile.id,
+        route: profile.route,
+        code: guiErrorCode(error),
+      });
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
       for (const member of members) setProfileBusy(member.id, false);
@@ -144,10 +167,21 @@ export function useBridgeRuntimeActions(input: {
         const agentId = binding?.agentId ?? member.targetAgentId;
         await unbindTicket(ticketId, agentId);
         removeProfile(member.id);
+        void logGuiEvent('bridge_remove', {
+          agent: agentId,
+          profileId: member.id,
+          route: member.route,
+        });
       }
       setRemoveConfirm(null);
       reloadThenClearProfileErrors();
     } catch (error) {
+      void logGuiEvent('bridge_remove_fail', {
+        agent: profile.targetAgentId,
+        profileId,
+        route: profile.route,
+        code: guiErrorCode(error),
+      });
       setProfileErrors((errors) => ({ ...errors, [profileId]: error }));
     } finally {
       setRemovingProfileId(null);
@@ -166,10 +200,21 @@ export function useBridgeRuntimeActions(input: {
     clearProfileError(profile.id);
     try {
       await enrollNativeToGateway(profile.id);
+      void logGuiEvent('bridge_enroll', {
+        agent: profile.targetAgentId,
+        profileId: profile.id,
+        route: profile.route,
+      });
       toast({ title: t('routes.pool.enrollSuccess'), variant: 'success' });
       onEnrollDone?.();
       reloadThenClearProfileErrors();
     } catch (error) {
+      void logGuiEvent('bridge_enroll_fail', {
+        agent: profile.targetAgentId,
+        profileId: profile.id,
+        route: profile.route,
+        code: guiErrorCode(error),
+      });
       setProfileErrors((current) => ({ ...current, [profile.id]: error }));
     } finally {
       setEnrollingProfileId(null);

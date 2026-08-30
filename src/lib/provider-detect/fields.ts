@@ -504,17 +504,22 @@ function applyWorkBuddyModelVars(root: Record<string, unknown>, vars: ProviderFo
     ? nestedModels
     : root;
   const models = Array.isArray(native.models) ? [...native.models] : [];
-  const existingModel = objectValue(models[0]);
+  const modelId = vars.model.trim() || 'custom-model';
+  let index = models.findIndex((item) => objectValue(item)?.id === modelId);
+  // A one-row document is this login's catalog slot: rename in place.
+  // Multi-row live snapshots keep siblings and upsert/append by id.
+  if (index < 0 && models.length === 1) index = 0;
+  const existingModel = index >= 0 ? objectValue(models[index]) : undefined;
   const model: Record<string, unknown> = existingModel ? { ...existingModel } : {};
   const oldId = typeof model.id === 'string' ? model.id : '';
-  const modelId = vars.model.trim() || oldId || 'custom-model';
 
   model.id = modelId;
-  if (typeof model.name !== 'string' || !model.name) model.name = modelId;
+  if (typeof model.name !== 'string' || !model.name || model.name === oldId) model.name = modelId;
   if (vars.baseUrl.trim()) model.url = vars.baseUrl.trim();
   if (writableSecret(vars.apiKey)) model.apiKey = writableSecret(vars.apiKey);
   else if (typeof model.apiKey === 'string') model.apiKey = REDACTED_MARKER;
-  models[0] = model;
+  if (index >= 0) models[index] = model;
+  else models.push(model);
   native.models = models;
 
   const available = Array.isArray(native.availableModels)

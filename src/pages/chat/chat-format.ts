@@ -1,4 +1,14 @@
-import type { TranslateFn } from '@/lib/i18n';
+import { formatJsonPayload } from '@/lib/source-preview';
+import type { MessageKey, TranslateFn } from '@/lib/i18n';
+
+const CHAT_FAILURE_KEY = {
+  missingEnv: 'chat.failure.missingEnv',
+  modelUnavailable: 'chat.failure.modelUnavailable',
+  loginExpired: 'chat.failure.loginExpired',
+  modelRetired: 'chat.failure.modelRetired',
+  thinkingUnsupported: 'chat.failure.thinkingUnsupported',
+  sendFailed: 'chat.failure.sendFailed',
+} as const satisfies Record<string, MessageKey>;
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
 
@@ -9,13 +19,7 @@ export type TurnGroup = {
 };
 
 export function formatStepInput(input: unknown): string | null {
-  if (input == null) return null;
-  try {
-    const s = typeof input === 'string' ? input : JSON.stringify(input);
-    return s.length > 240 ? `${s.slice(0, 240)}…` : s;
-  } catch {
-    return String(input);
-  }
+  return formatJsonPayload(input);
 }
 
 export function formatDurationMs(ms: number): string {
@@ -197,14 +201,16 @@ export function chatModelOptions(ids: readonly string[], current?: string | null
   return [];
 }
 
-/** Surface a Chinese failure instead of the raw English provider dump. Never include the user prompt. */
-export function localizeChatFailure(text: string): string {
+/** Surface a localized failure instead of the raw provider dump. Never include the user prompt. */
+export function localizeChatFailure(text: string, t?: TranslateFn): string {
   const hay = text.toLowerCase();
+  const copy = (key: keyof typeof CHAT_FAILURE_KEY, zh: string) =>
+    t ? t(CHAT_FAILURE_KEY[key]) : zh;
   if (hay.includes('missing environment variable')) {
-    return '这份登录还在用另一份 API Key 配置，没法发。请点重试。';
+    return copy('missingEnv', '这份登录还在用另一份 API Key 配置，没法发。请点重试。');
   }
   if (hay.includes('is not supported by any configured account') || hay.includes('model_unavailable')) {
-    return '这个模型当前登录用不了。请换一个模型后重试。';
+    return copy('modelUnavailable', '这个模型当前登录用不了。请换一个模型后重试。');
   }
   if (
     hay.includes('oauth refresh failed')
@@ -212,7 +218,7 @@ export function localizeChatFailure(text: string): string {
     || hay.includes('invalid or unknown refresh token')
     || hay.includes('token refresh failed')
   ) {
-    return '这份登录已失效，请重新登录后重试。';
+    return copy('loginExpired', '这份登录已失效，请重新登录后重试。');
   }
   if (
     hay.includes('stealth/ox')
@@ -220,7 +226,7 @@ export function localizeChatFailure(text: string): string {
     || ((hay.includes('"code":404') || hay.includes('"code": 404') || hay.includes(' 404:'))
       && (hay.includes('model') || hay.includes('retired') || hay.includes('glm-5.3') || hay.includes('stealth')))
   ) {
-    return '这个模型已经下架或当前登录用不了。请换一个模型后重试。';
+    return copy('modelRetired', '这个模型已经下架或当前登录用不了。请换一个模型后重试。');
   }
   if (
     hay.includes('openai api error')
@@ -235,9 +241,9 @@ export function localizeChatFailure(text: string): string {
       || hay.includes('reasoning_effort')
       || hay.includes('does not support parameter')
     ) {
-      return '这个模型不支持当前思考设置。请点重试。';
+      return copy('thinkingUnsupported', '这个模型不支持当前思考设置。请点重试。');
     }
-    return '这次发送没成功。请点重试。';
+    return copy('sendFailed', '这次发送没成功。请点重试。');
   }
   return text;
 }

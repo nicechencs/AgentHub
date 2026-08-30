@@ -128,7 +128,8 @@ fn reject_unknown_custom_relay(
     let provider = hub.providers.get(source_id, None)?;
     if is_unknown_custom_relay_provider(&provider) {
         return Err(AppError::Unsupported(
-            "这份自定义上游还缺有效的服务地址，没法开本机转发。请补上地址后重试，或删除后重建。".into(),
+            "这份自定义上游还缺有效的服务地址，没法开本机转发。请补上地址后重试，或删除后重建。"
+                .into(),
         ));
     }
     Ok(())

@@ -30,7 +30,7 @@ updated: 2026-08-29
 - 登录的来源、目标和可行写入动作由 `plan` / `bind` / `unbind` 契约表达；领域实现仍保留 Ticket / TicketPort 等内部名称。
 - 本机路由运行时在桌面进程内运行，面向兼容客户端提供 `/v1/messages`、`/v1/responses`、`/v1/chat/completions` 和 `GET /models` 等端点。Codex 与 Grok 都走 Responses 口，具体格式跟这条路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex / Grok 时写入的是本机令牌（按 API Key 方式）和 Responses 接口，不是上游官方登录。领域背景见 [连接与路由](concepts/connections-and-routing.md)。
 - Usage 只读解析本地 Agent 会话或日志；优先使用日志中的官方成本字段，否则使用离线内嵌价表估算。运行时不联网拉取价格，也不做汇率换算。
-- Skills 使用共享目录 `~/.agents/skills/`；配置切换在修改前创建备份。
+- Skills 页分用户技能、项目技能和市场。用户技能仍用共享目录 `~/.agents/skills/`，并可启用到各工具；项目技能从项目页已识别的工作区下拉选择，读写该项目的 `.agents/skills/`（列表也会带上 `.claude/skills` 等已有目录）。配置切换在修改前创建备份。
 - MCP 页只读扫描已知 MCP server 配置；`Capability::Mcp` 对全部内置 Agent 仍为 Planned。见 [MCP inventory](reference/mcp-inventory.md)。
 - 插件页 `/plugins` 只读列出 Claude / Grok 的 plugin / extension 包（优先官方 CLI JSON，否则读 live 目录）。没有安装按钮，也没有 `Capability::Plugins`。Codex / Pi 仍为 Planned；Cursor / Kimi / WorkBuddy / DSH / ZCode 为 Unsupported。见 [插件、MCP 与技能](concepts/plugins-and-mcp.md)。
 
@@ -55,12 +55,13 @@ updated: 2026-08-29
 - Codex 安装、外部渠道 Chat 调用与连接/路由模块化审查见 [Codex 安装与模块化审查](status/codex-install-modularity-review.md)（2026-08-27）。
 - npm 渠道安装写到检测会扫的用户前缀（`~/.npm-global`，Windows 为 `%APPDATA%\npm`）。`~/.agenthub` 以及其中的 `npm` 只是遗留，不是安装目标，也不是启动路径。
 - WorkBuddy 本机安装只打开官网安装页，界面给中文指引，不当成「安装失败」。真失败时「重试」是主按钮；失败面板先显示诊断，不把 npm 下载进度当正文。
-- ZCode 本机安装同样只打开官网；API Key 按目录追加写入 `~/.zcode/v2/config.json` 的一条供应商（官方槽或自定义行），不替换其它条目；套餐登录不导入；自定义行必须带模型名单。Chat 优先 PATH 上的 `zcode` CLI，只有桌面安装时不会虚构一条捆绑命令。
+- ZCode 本机安装同样只打开官网；API Key 按目录追加写入 `~/.zcode/v2/config.json` 的一条供应商（官方槽或自定义行），不替换其它条目；套餐登录不导入；自定义行必须带模型名单。Chat 优先 PATH 上的 `zcode` CLI，只有桌面安装时不会虚构一条捆绑命令。Projects 只读任务索引，预览从命令行会话库读取对话正文；删除按钮禁用，提示到 ZCode 里删除。用量从命令行 `model_usage` 采集。
+- WorkBuddy 用量读取 `projects/**/*.jsonl` 里的 `providerData.usage`（以及旧的 `message.usage` 形状）。
 - Kimi 切换写出带模型表的完整 `~/.kimi-code/config.toml`，使 `kimi-k2` 能用；旧登录再切换也会补上模型表。对话失败用中文。
 - Cursor 没有稳定的本机登录文件可写。切换失败给出中文说明，不静默。保存第二张登录不会因同一把钥匙悄悄把第一张送进回收站。**dev 线默认软隐藏 Cursor Agent**（`agent_visibility.json` store-stamp）；兼容修复完成前不在侧栏、连接、Chat 等页面展示，Agents 管理页可取消隐藏。
 - 「使用官方服务」默认勾选不禁用智能识别。高级编辑器不回显明文钥匙。同一工具切换成功 toast 说明已写入本机配置；接到本机路由则仍说已切换。备份标题是「切换前自动 / 手动 + 时间」。设置里的安全备份默认在切换/导入时保留本机配置副本（可关闭自动堆积；当次切换仍留一份以便失败回滚）；卡片左右分栏，点开在右侧展示打码后的文件内容。
 - 官方登录等待页不显示内部状态或登录文件路径；失败时「重试」是主按钮。Windows 上子进程统一无窗启动。
-- GUI 日志：智能识别 `gui`/`recognize`，勾选官方 `gui`/`use_official`，删进回收站 `core.provider`/`recycle`，切换写本机路径 `core.provider`/`switch_write`。只记 last4。见 [日志参考](reference/logging.md)。
+- GUI 日志：智能识别 `gui`/`recognize`，勾选官方 `gui`/`use_official`，删进回收站 `core.provider`/`recycle`，切换写本机路径 `core.provider`/`switch_write`。连接/路由页成功失败另记 `gui`/`switch`·`bind`·`route_*`·`bridge_*`；核心绑定记 `core.adapter`/`bind`·`unbind`。只记 last4，不写明文钥匙。见 [日志参考](reference/logging.md)。
 - 凭据落盘加密不在产品范围内；国产 OAuth 适配以及 OAuth 转 API 也不在产品范围内。它们不是当前 backlog。
 
 ## 真源优先级

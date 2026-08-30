@@ -12,7 +12,8 @@ function source(name: string): string {
 describe('mcp layout wiring', () => {
   it('keeps the agent strip mounted while inventory loads so the table does not jump', () => {
     const page = source('index.tsx');
-    expect(page).toContain('pageRhythm.chrome');
+    expect(page).toContain('pageRhythm.chromeRow');
+    expect(page).toContain('pageRhythm.chromeActions');
     expect(page).toContain('<AgentTabStrip');
     expect(page).toContain('TableSkeleton');
     expect(page).not.toContain('ListSkeleton');
@@ -37,6 +38,8 @@ describe('mcp layout wiring', () => {
     expect(page).not.toContain('onInstall');
     expect(page).not.toContain('mcp.install');
     const table = source('McpServerTable.tsx');
-    expect(table).toContain("t('mcp.table.directory')");
+    expect(table).toContain('<OpenDirButton');
+    expect(table).toContain('labeled');
+    expect(table).toContain('<CopyableFileName');
   });
 });

@@ -94,5 +94,16 @@ describe('locale key parity', () => {
     expect(translate('zh', 'routes.endpointCopied')).toBe('地址已复制');
     expect(translate('en', 'routes.endpointCopied')).toBe('Address copied');
     expect(translate('zh', 'routes.endpointCopied')).not.toContain('端点');
+    expect(translate('en', 'common.hideSecret')).toBe('Hide');
+    expect(translate('en', 'agents.terminal.done')).toBe('Done');
+    expect(translate('en', 'connections.apiKeyDialog.kimiOpenApi')).toBe(
+      'Kimi Open Platform API Key',
+    );
+    expect(translate('en', 'skills.market.fromInstalls', { source: 'skills.sh', count: '12' })).toBe(
+      'From skills.sh · 12 installs',
+    );
+    expect(translate('en', 'connect.result.bindUnreadable')).toBe(
+      "Couldn't read the connect result. Try again",
+    );
   });
 });

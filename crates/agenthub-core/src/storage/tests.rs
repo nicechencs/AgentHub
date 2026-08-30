@@ -40,6 +40,18 @@ fn database_open_creates_schema_and_settings_roundtrip() {
             .keep_live_file_copies,
         "default keep_live_file_copies is true"
     );
+    assert!(
+        db.load_app_settings()
+            .expect("load warn")
+            .warn_duplicate_route_credential,
+        "default warn_duplicate_route_credential is true"
+    );
+    assert!(
+        db.load_app_settings()
+            .expect("load update url")
+            .update_duplicate_route_url,
+        "default update_duplicate_route_url is true"
+    );
     db.set_setting("keep_live_file_copies", "false")
         .expect("set copies off");
     assert!(
@@ -47,8 +59,26 @@ fn database_open_creates_schema_and_settings_roundtrip() {
             .expect("load copies off")
             .keep_live_file_copies
     );
+    db.set_setting("warn_duplicate_route_credential", "false")
+        .expect("set warn off");
+    assert!(
+        !db.load_app_settings()
+            .expect("load warn off")
+            .warn_duplicate_route_credential
+    );
+    db.set_setting("update_duplicate_route_url", "false")
+        .expect("set update url off");
+    assert!(
+        !db.load_app_settings()
+            .expect("load update url off")
+            .update_duplicate_route_url
+    );
     db.set_setting("keep_live_file_copies", "true")
         .expect("set copies on");
+    db.set_setting("warn_duplicate_route_credential", "true")
+        .expect("set warn on");
+    db.set_setting("update_duplicate_route_url", "true")
+        .expect("set update url on");
     db.set_setting("close_to_tray", "false").expect("set close");
     assert!(!db.load_app_settings().expect("load false").close_to_tray);
     db.set_setting("close_to_tray", "true")

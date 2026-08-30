@@ -346,6 +346,29 @@ describe('provider-detect fields', () => {
     expect(parsed.mcp.servers).toEqual({});
   });
 
+  it('appends a WorkBuddy catalog row instead of replacing siblings', () => {
+    const source = JSON.stringify({
+      models: [
+        { id: 'keep', url: 'https://keep.example.com/v1/chat/completions', apiKey: 'sk-keep' },
+        { id: 'other', url: 'https://other.example.com/v1/chat/completions', apiKey: 'sk-other' },
+      ],
+      availableModels: ['keep', 'other'],
+    });
+    const next = applyFormVars('workbuddy', source, 'json', {
+      ...extractFormVars('workbuddy', source, 'json'),
+      model: 'added',
+      baseUrl: 'https://added.example.com/v1/chat/completions',
+      apiKey: 'sk-added',
+    });
+    const parsed = JSON.parse(next) as {
+      models: { id: string; apiKey?: string }[];
+      availableModels: string[];
+    };
+    expect(parsed.models.map((row) => row.id)).toEqual(['keep', 'other', 'added']);
+    expect(parsed.models[0]?.apiKey).toBe('sk-keep');
+    expect(parsed.availableModels).toEqual(['keep', 'other', 'added']);
+  });
+
   it('keeps *** for untouched opaque TOML content', () => {
     const out = applyFormVars('codex', REDACTED_MARKER, 'toml', {
       baseUrl: '',

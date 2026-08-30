@@ -196,7 +196,9 @@ fn is_installer_progress_noise(line: &str) -> bool {
 }
 
 /// Keep diagnosis / command / errors; collapse npm HTTP progress into one line.
-fn summarize_installer_output_lines(lines: impl IntoIterator<Item = impl AsRef<str>>) -> Vec<String> {
+fn summarize_installer_output_lines(
+    lines: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Vec<String> {
     let mut out = Vec::new();
     let mut skipped_noise = 0usize;
     let flush_noise = |out: &mut Vec<String>, skipped_noise: &mut usize| {

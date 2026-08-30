@@ -650,7 +650,7 @@ function validateLegacyTerminology(filePath, lines, errors) {
 
 function runChecks() {
   const errors = [];
-  const rootMarkdownFiles = ['README.md', 'CONTRIBUTING.md', 'AGENTS.md', 'agent.md', 'SECURITY.md']
+  const rootMarkdownFiles = ['README.md', 'README.en.md', 'CONTRIBUTING.md', 'AGENTS.md', 'agent.md', 'SECURITY.md']
     .map((fileName) => join(rootDir, fileName))
     .filter((filePath) => {
       try {

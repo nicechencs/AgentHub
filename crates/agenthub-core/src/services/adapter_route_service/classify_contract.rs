@@ -2,9 +2,7 @@
 //! Does not change production classify results.
 
 use super::*;
-use crate::models::{
-    Account, AccountKind, AdapterSourceProduct, AgentId, Provider, TicketSurface,
-};
+use crate::models::{Account, AccountKind, AdapterSourceProduct, AgentId, Provider, TicketSurface};
 use crate::services::adapter_route_constants::{
     ANTHROPIC_API_ENDPOINT_NEEDLE, DEEPSEEK_API_ENDPOINT_NEEDLE, DEEPSEEK_API_PRESET,
     GLM_CODING_ANTHROPIC_NEEDLE, GLM_CODING_CHAT_NEEDLE, GLM_CODING_PLAN_PRESET,
@@ -81,7 +79,10 @@ struct ClassifyCase {
 fn load_contract() -> ClassifyContract {
     let path = contract_path();
     let text = std::fs::read_to_string(&path).unwrap_or_else(|err| {
-        panic!("read source-classify-contract.json from {}: {err}", path.display())
+        panic!(
+            "read source-classify-contract.json from {}: {err}",
+            path.display()
+        )
     });
     let _ = CONTRACT_WATCH;
     serde_json::from_str(&text).expect("source-classify-contract.json")
@@ -168,7 +169,10 @@ fn shared_classify_cases_match_production() {
                     kind: AccountKind::parse(case.account_kind.as_deref().unwrap_or("apikey"))
                         .expect("accountKind"),
                     label: case.id.clone(),
-                    credentials: case.credentials.clone().unwrap_or_else(|| serde_json::json!({})),
+                    credentials: case
+                        .credentials
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({})),
                     extra: case.extra.clone().unwrap_or_else(|| serde_json::json!({})),
                     status: "active".into(),
                     is_current: false,
@@ -182,7 +186,10 @@ fn shared_classify_cases_match_production() {
                     id: case.id.clone(),
                     agent_id: AgentId::parse_required(&case.agent_id).unwrap(),
                     name: case.id.clone(),
-                    settings_config: case.settings.clone().unwrap_or_else(|| serde_json::json!({})),
+                    settings_config: case
+                        .settings
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({})),
                     meta: serde_json::json!({
                         "preset": case.preset.as_deref().unwrap_or("custom")
                     }),

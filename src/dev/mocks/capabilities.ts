@@ -215,18 +215,18 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
       reason: '无已验证的非交互跳过确认 flag',
     },
     projectHistory: {
-      level: 'planned',
-      reason: '任务/会话库布局未验证，暂不扫描',
+      level: 'partial',
+      reason: '列出工作区与任务，可预览对话；请到 ZCode 里删除任务',
     },
     projectDelete: {
-      level: 'planned',
-      reason: '任务/会话库布局未验证，暂不扫描',
+      level: 'unsupported',
+      reason: '请到 ZCode 里删除任务',
     },
     providerPresets: {
       level: 'unsupported',
       reason: '暂无内置 ZCode provider 预设',
     },
-    usage: { level: 'planned', reason: '桌面用量契约未验证' },
+    usage: { level: 'full' },
     mcp: { level: 'planned', reason: '待验证接入' },
     modelSelect: { level: 'planned', reason: '待验证接入' },
     sessionResume: { level: 'planned', reason: '待验证接入' },

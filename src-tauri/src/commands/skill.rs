@@ -255,6 +255,104 @@ pub async fn install_market_skill(
     .await
 }
 
+/// Invoke: `list_project_skills` — skills under a workspace (`.agents/skills` + known folders).
+#[tauri::command]
+pub async fn list_project_skills(
+    state: State<'_, AppState>,
+    workspace: String,
+) -> Result<Vec<InstalledSkill>, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| list_project_skills_inner(hub, &workspace)).await
+}
+
+fn list_project_skills_inner(
+    hub: &AgentHub,
+    workspace: &str,
+) -> Result<Vec<InstalledSkill>, String> {
+    hub.skills()
+        .list_project_skills(workspace)
+        .map_err(|e| map_err_string("list_project_skills", e))
+}
+
+/// Invoke: `install_project_skill` — install into `<workspace>/.agents/skills`.
+#[tauri::command]
+pub async fn install_project_skill(
+    state: State<'_, AppState>,
+    workspace: String,
+    source: String,
+    overwrite: Option<bool>,
+) -> Result<Skill, String> {
+    let hub = state.hub_arc()?;
+    let overwrite = overwrite.unwrap_or(false);
+    with_hub_blocking(hub, move |hub| {
+        install_project_skill_inner(hub, &workspace, &source, overwrite)
+    })
+    .await
+}
+
+fn install_project_skill_inner(
+    hub: &AgentHub,
+    workspace: &str,
+    source: &str,
+    overwrite: bool,
+) -> Result<Skill, String> {
+    hub.skills()
+        .install_project_skill(workspace, source, overwrite)
+        .map_err(|e| map_err_string("install_project_skill", e))
+}
+
+/// Invoke: `uninstall_project_skill` — recycle a skill under the workspace.
+#[tauri::command]
+pub async fn uninstall_project_skill(
+    state: State<'_, AppState>,
+    workspace: String,
+    skill_id: String,
+    origin: Option<String>,
+) -> Result<(), String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        uninstall_project_skill_inner(hub, &workspace, &skill_id, origin.as_deref())
+    })
+    .await
+}
+
+fn uninstall_project_skill_inner(
+    hub: &AgentHub,
+    workspace: &str,
+    skill_id: &str,
+    origin: Option<&str>,
+) -> Result<(), String> {
+    hub.skills()
+        .uninstall_project_skill(workspace, skill_id, origin)
+        .map_err(|e| map_err_string("uninstall_project_skill", e))
+}
+
+/// Invoke: `read_project_skill_markdown` — `SKILL.md` under a workspace skill root.
+#[tauri::command]
+pub async fn read_project_skill_markdown(
+    state: State<'_, AppState>,
+    workspace: String,
+    skill_id: String,
+    origin: Option<String>,
+) -> Result<SkillMarkdownPreview, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        read_project_skill_markdown_inner(hub, &workspace, &skill_id, origin.as_deref())
+    })
+    .await
+}
+
+fn read_project_skill_markdown_inner(
+    hub: &AgentHub,
+    workspace: &str,
+    skill_id: &str,
+    origin: Option<&str>,
+) -> Result<SkillMarkdownPreview, String> {
+    hub.skills()
+        .read_project_skill_markdown(workspace, skill_id, origin)
+        .map_err(|e| map_err_string("read_project_skill_markdown", e))
+}
+
 fn sync_skill_inner(
     hub: &AgentHub,
     skill_id: &str,
