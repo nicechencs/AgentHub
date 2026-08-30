@@ -29,7 +29,7 @@ The application is organized by work and management, with Agent filtering inside
 | Manage | Routes | `/routes` | Local route runtime list and details |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
-`Routes` and `Plugins` are in development. New installs hide both sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows the entry; the pages stay reachable at `/routes` and `/plugins`. Settings, the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
+`Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes and Plugins sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows those entries; the pages stay reachable at `/routes` and `/plugins`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 
@@ -55,7 +55,7 @@ Chat, Skills, Projects, Plugins, Connections, Routes, and Settings use `fullBlee
 
 ### 2.3 Settings
 
-Settings uses the workbench header and four page tabs. Preferences, This computer, and About keep a reading-column content area. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
+Settings uses the workbench header and four page tabs; the tab row stays at the top-left of the workbench header. Preferences, This computer, and About center their content on the reading column. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
 
 | Tab | Query | Contents |
 |---|---|---|

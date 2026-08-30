@@ -152,11 +152,14 @@ describe('workspaceNavItems / manageNavItems', () => {
     expect(ctx).toContain('loadBool(StorageKey.pluginsNavVisible, DEFAULT_PLUGINS_NAV_VISIBLE)');
   });
 
-  it('marks routes and plugins as in development', () => {
+  it('marks routes, plugins, and MCP as in development', () => {
+    const mcp = NAV_WORKSPACE.find((item) => item.to === '/mcp');
     const plugins = NAV_WORKSPACE.find((item) => item.to === '/plugins');
     const routes = NAV_MANAGE.find((item) => item.to === BRIDGES_PATH);
+    expect(mcp).toBeDefined();
     expect(plugins).toBeDefined();
     expect(routes).toBeDefined();
+    expect(navItemInDevelopment(mcp!)).toBe(true);
     expect(navItemInDevelopment(plugins!)).toBe(true);
     expect(navItemInDevelopment(routes!)).toBe(true);
     expect(navItemInDevelopment(NAV_WORKSPACE[0])).toBe(false);
