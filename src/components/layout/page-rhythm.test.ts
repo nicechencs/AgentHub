@@ -1,23 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { pageEdgePx, pageRhythm } from '@/components/layout/page-rhythm';
+import {
+  pageCanvasTw,
+  pageChatTw,
+  pageEdge,
+  pageEdgePx,
+  pageInsetTw,
+  pageRhythm,
+} from '@/components/layout/page-rhythm';
 
-describe('pageRhythm (docs/ui-design.md §2 / §3.1)', () => {
-  it('keeps the app chrome as two rounded columns on an 8px canvas gutter', () => {
-    expect(pageRhythm.shell).toContain('p-2');
-    expect(pageRhythm.shell).toContain('gap-2');
+describe('pageRhythm (docs/ui/design-system.md §3)', () => {
+  it('keeps the app chrome as two rounded columns on the canvas gutter', () => {
+    expect(pageRhythm.shell).toContain(pageCanvasTw.p);
+    expect(pageRhythm.shell).toContain(pageCanvasTw.gap);
     expect(pageRhythm.shellNav).toContain('rounded-card');
     expect(pageRhythm.shellMain).toContain('rounded-card');
     expect(pageRhythm.shellNav).toContain('overflow-hidden');
     expect(pageRhythm.shellMain).toContain('overflow-hidden');
   });
 
-  it('uses the edge-inset column: fill the main pane at 12px, no max-width cap', () => {
-    expect(pageRhythm.pageShell).toContain('px-3');
-    expect(pageRhythm.pageShell).toContain('py-3');
+  it('derives every page inset class and pixel from pageEdge.inset', () => {
+    expect(pageEdgePx.x).toBe(pageEdge.inset);
+    expect(pageEdgePx.previewY).toBe(pageEdge.inset);
+    expect(pageEdgePx.separator).toBe(pageEdge.separator);
+    expect(pageRhythm.workbenchX).toBe(pageInsetTw.x);
+    expect(pageRhythm.workbenchPadT).toBe(pageInsetTw.t);
+    expect(pageRhythm.workbenchY).toBe(pageInsetTw.b);
+    expect(pageRhythm.pageShell).toContain(pageInsetTw.x);
+    expect(pageRhythm.pageShell).toContain(pageInsetTw.y);
     expect(pageRhythm.pageShell).not.toContain('max-w-');
     expect(pageRhythm.pageShell).not.toContain('mx-auto');
-    expect(pageRhythm.workbenchX).toBe('px-3');
-    expect(pageEdgePx.x).toBe(12);
+    expect(pageRhythm.workbenchHeader).toContain(pageInsetTw.x);
+    expect(pageRhythm.workbenchHeader).toContain(pageInsetTw.t);
+    expect(pageRhythm.workbenchHeader).not.toContain(pageInsetTw.y);
+    expect(pageRhythm.workbenchXSplit).toBe(`${pageInsetTw.l} ${pageCanvasTw.r} ${pageCanvasTw.mr}`);
+    expect(pageRhythm.workbenchXSplit).not.toContain('px-');
+    expect(pageRhythm.chatChromeX).toBe(pageChatTw.x);
   });
 
   it('uses one centered reading column for Chat messages and a left-aligned one for Settings forms', () => {
@@ -25,25 +42,18 @@ describe('pageRhythm (docs/ui-design.md §2 / §3.1)', () => {
     expect(pageRhythm.readingStart).toBe('w-full max-w-3xl');
   });
 
-  it('keeps Chat chrome at 16px and the workbench at 12px', () => {
-    expect(pageRhythm.chatChromeX).toBe('px-4');
-    expect(pageRhythm.workbenchX).toBe('px-3');
+  it('keeps the current page inset at 8px (change pageEdge.inset to retune)', () => {
+    expect(pageEdge.inset).toBe(8);
+    expect(pageEdge.canvas).toBe(8);
+    expect(pageEdge.chat).toBe(16);
+    expect(pageInsetTw.x).toBe('px-2');
+    expect(pageChatTw.x).toBe('px-4');
   });
 
-  it('pulls the split-list scrollbar off the separator instead of padding the cards', () => {
-    expect(pageRhythm.workbenchXSplit).toBe('pl-3 pr-2 mr-2');
-    expect(pageRhythm.workbenchXSplit).not.toContain('px-');
-  });
-
-  it('locks page titles to one type, one-line title+meta, and 12px inset', () => {
-    expect(pageRhythm.workbenchHeader).toContain('px-3');
-    expect(pageRhythm.workbenchHeader).toContain('pt-3');
-    expect(pageRhythm.workbenchHeader).not.toContain('py-3');
+  it('locks page titles to one type, one-line title+meta, and the shared inset', () => {
     expect(pageRhythm.chromeRow).toContain('min-h-10');
     expect(pageRhythm.chromeActions).toContain('ml-auto');
     expect(pageRhythm.lead).toContain('mb-3');
-    expect(pageRhythm.pageShell).toContain('px-3');
-    expect(pageRhythm.pageShell).toContain('py-3');
     expect(pageRhythm.pageTitle).toBe('text-title font-semibold tracking-tight text-primary');
     expect(pageRhythm.pageTitleMeta).toContain('text-meta');
     expect(pageRhythm.pageTitleMeta).toContain('text-secondary');
@@ -51,11 +61,10 @@ describe('pageRhythm (docs/ui-design.md §2 / §3.1)', () => {
     expect(pageRhythm.topChrome).toBe('h-10');
   });
 
-  it('starts workbench body flush under the 12px header, with 12px bottom inset', () => {
-    expect(pageRhythm.workbenchY).toBe('pb-3');
+  it('starts workbench body with inset top/bottom and no extra py on the bottom token', () => {
     expect(pageRhythm.workbenchY).not.toMatch(/pt-|py-/);
-    expect(pageRhythm.workbenchPadT).toBe('pt-3');
-    expect(pageEdgePx.previewY).toBe(12);
+    expect(pageRhythm.workbenchY).toBe(pageInsetTw.b);
+    expect(pageRhythm.workbenchPadT).toBe(pageInsetTw.t);
   });
 
   it('separates page sections from nav eyebrows', () => {
