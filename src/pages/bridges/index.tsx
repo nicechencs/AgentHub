@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -62,6 +63,7 @@ import {
   ROUTES_INSPECT_WIDTH_KEY,
   type RouteInspect,
 } from './route-inspect';
+import { resolveBridgesProfileQuery } from './adapter-copy';
 
 /**
  * Routes（本机转发）页：bridge 运行时 ops 为主；创建/导入路由并 bind 为产品例外
@@ -71,6 +73,9 @@ import {
 export default function BridgesPage() {
   const { t } = useI18n();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const profileQuery = searchParams.get('profile');
+  const openedProfileQueryRef = useRef<string | null>(null);
   const {
     entries,
     profiles,
@@ -114,6 +119,19 @@ export default function BridgesPage() {
     confirmRemove,
     handleEnrollNative,
   } = runtime;
+
+  // Deep link: /routes?profile=<id> opens detail when the runtime exists.
+  // Missing id stays on the list with no success toast.
+  useEffect(() => {
+    if (loading && profiles.length === 0) return;
+    if (openedProfileQueryRef.current === profileQuery) return;
+    const resolvedId = resolveBridgesProfileQuery(profileQuery, profiles);
+    openedProfileQueryRef.current = profileQuery;
+    if (!resolvedId) return;
+    const profile = profiles.find((row) => row.id === resolvedId);
+    if (!profile) return;
+    inspect.open({ kind: 'detail', profile });
+  }, [inspect.open, loading, profileQuery, profiles]);
 
   const inspectTarget = inspect.target;
   const detailTarget = inspectTarget?.kind === 'detail'

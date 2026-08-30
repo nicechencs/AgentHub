@@ -19,6 +19,7 @@ import ProjectsPage from '@/pages/projects';
 import SettingsPage from '@/pages/settings';
 import { RoutesLayout } from '@/pages/routes/RoutesLayout';
 import { RoutesNav } from '@/pages/routes/RoutesNav';
+import { RoutesUnknownRedirect } from '@/pages/routes/RoutesUnknownRedirect';
 import RoutesBoardPage from '@/pages/routes/board';
 import RoutesPoolPage from '@/pages/routes/pool';
 import RoutesTokensPage from '@/pages/routes/tokens';
@@ -146,7 +147,7 @@ export default function App() {
                     <Route path="pool" element={<RoutesPoolPage />} />
                     <Route path="tokens" element={<RoutesTokensPage />} />
                     <Route path="activity" element={<RoutesActivityPage />} />
-                    <Route path="*" element={<Navigate to="/routes" replace />} />
+                    <Route path="*" element={<RoutesUnknownRedirect />} />
                   </Route>
                   <Route path="/bridges" element={<LegacyBridgesRedirect />} />
                   <Route path="/adapter" element={<LegacyBridgesRedirect />} />

@@ -43,7 +43,7 @@ Routes nested paths (secondary nav):
 | Local tokens | `/routes/tokens` | Entry-key management (in development placeholder) |
 | Activity | `/routes/activity` | Cross-route recent request feed |
 
-Entering any `/routes*` path shows a shell-level secondary nav panel and applies a **session-only** primary-sidebar collapse (does not write `agenthub:sidebar-collapsed`). The secondary nav top-left control expands the primary sidebar for the session. Leaving the routes area clears the override.
+Entering any `/routes*` path shows a shell-level secondary nav panel and applies a **session-only** primary-sidebar collapse (does not write `agenthub:sidebar-collapsed`). The secondary nav top-left control expands the primary sidebar for the session. Leaving the routes area clears the override. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if the preference is off, so the active item remains visible; the preference itself is unchanged.
 
 ## 2. Application shell
 

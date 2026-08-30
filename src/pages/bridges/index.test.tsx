@@ -1,4 +1,7 @@
 import { createElement, type ComponentProps, type ReactNode } from 'react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { AdapterBridgeRuntimeStatus } from '@/lib/backend/contracts/adapter';
@@ -162,6 +165,16 @@ describe('Bridges page', () => {
     expect(resolveBridgesProfileQuery('bridge-1', [{ id: 'bridge-1' }])).toBe('bridge-1');
     expect(resolveBridgesProfileQuery('missing', [{ id: 'bridge-1' }])).toBeNull();
     expect(resolveBridgesProfileQuery(null, [{ id: 'bridge-1' }])).toBeNull();
+  });
+
+  it('bridges list page wires the profile deep-link helper', () => {
+    const source = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), 'index.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('resolveBridgesProfileQuery');
+    expect(source).toContain("searchParams.get('profile')");
+    expect(source).toContain("inspect.open({ kind: 'detail', profile })");
   });
 
   it('renders a healthy empty list without leaving-the-page CTAs', () => {

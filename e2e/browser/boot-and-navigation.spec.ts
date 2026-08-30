@@ -197,3 +197,26 @@ test('new install hides Routes and Plugins until enabled in Settings', async ({ 
   await expect(page.getByRole('heading', { name: 'MCP' })).toBeVisible();
   await expect(page.locator('header').getByText('开发中')).toBeVisible();
 });
+
+test('Routes secondary nav appears under /routes*; primary session-collapses', async ({ page }) => {
+  await openApp(page);
+  await goPath(page, '/routes');
+  await expect(page).toHaveURL(/#\/routes/);
+  const secondary = page.locator('[data-routes-nav]');
+  await expect(secondary).toBeVisible();
+  await expect(secondary.getByRole('link', { name: /^路由列表/ })).toBeVisible();
+  await expect(secondary.getByRole('link', { name: /^看板/ })).toBeVisible();
+  await expect(secondary.getByRole('button', { name: '展开侧栏' })).toBeVisible();
+
+  await secondary.getByRole('link', { name: /^看板/ }).click();
+  await expect(page).toHaveURL(/#\/routes\/board/);
+  await expect(page.getByRole('heading', { name: '看板' })).toBeVisible();
+
+  await secondary.getByRole('link', { name: /^活动/ }).click();
+  await expect(page).toHaveURL(/#\/routes\/activity/);
+  await expect(page.getByRole('heading', { name: '活动' })).toBeVisible();
+
+  await goNav(page, '总览');
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(page.locator('[data-routes-nav]')).toHaveCount(0);
+});
