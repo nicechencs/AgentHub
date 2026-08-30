@@ -57,10 +57,9 @@ function EndpointTypesField({ agentId }: { agentId: string }) {
         ) : (
           <span className="flex flex-col gap-0.5 font-mono">
             {rows.map((row) => (
-              <span key={row.id}>
-                <RouteEndpointTypeText endpointId={row.id}>{row.path}</RouteEndpointTypeText>
-                <span className="text-secondary"> · {t(row.copyKey)}</span>
-              </span>
+              <RouteEndpointTypeText key={row.id} endpointId={row.id}>
+                {row.path}
+              </RouteEndpointTypeText>
             ))}
           </span>
         )}
@@ -256,6 +255,7 @@ export function AgentDetailPanel({
             <Button
               size="sm"
               variant="outline"
+              className="text-danger hover:text-danger"
               disabled={uninstalling || opening !== null}
               title={t('agents.dialog.uninstallDesc')}
               onClick={() => setConfirmDialog('program')}

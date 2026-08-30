@@ -8,7 +8,7 @@
  * 窗内画布缝是 `pageEdge.canvas`；Chat 主列水平是 `pageEdge.chat`，不要和页边混用。
  *
  * ## 内容宽度（两套，docs/ui/design-system.md §3.4）
- * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。设置表单用 `readingStart` 同宽贴左。
+ * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。设置表单正文（备份分栏页除外）同列居中；页签留在页头贴左，不进阅读列。
  * 2. 贴边列：其余页。铺满主列，左右用 `pageEdge.inset`（`pageShell` / `workbenchX`）。
  * 新页默认贴边列；对话 / 表单 / 长文才用阅读列。禁止第三套 `max-w-*`。
  * 页标题一律贴边、同一行（大号深色标题 + 小号浅色说明），放在非对话页顶栏左侧。
@@ -97,10 +97,8 @@ export const pageRhythm = {
     'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas shadow-xs',
   /** 常规页外壳：铺满主列，与 Skills / Projects 右缘对齐 */
   pageShell: `w-full min-w-0 ${pageInsetTw.x} ${pageInsetTw.y}`,
-  /** Chat 消息列：居中阅读宽。页头不进此列。 */
+  /** Chat 消息列：居中阅读宽。页头不进此列。设置表单正文（备份分栏页除外）共用同一列。 */
   readingColumn: 'mx-auto w-full max-w-3xl',
-  /** 设置表单：与页签同宽、左缘贴边，避免页签在左、卡片在中间。 */
-  readingStart: 'w-full max-w-3xl',
   /** 侧栏品牌行与非对话页顶栏同高，横线对齐 */
   topChrome: 'h-10',
   /** 全高工作台水平 inset — 与常规页水平一致 */
@@ -112,7 +110,7 @@ export const pageRhythm = {
    * 滚动条仍贴着分隔条（分隔条 hit 区还会叠进滚动条）。
    */
   workbenchXSplit: `${pageInsetTw.l} ${pageCanvasTw.r} ${pageCanvasTw.mr}`,
-  /** Settings 等：顶栏下的 Tab 行，顶距与页边相同 */
+  /** 表单页：顶栏下的 Tab 行，顶距与页边相同。分栏页把 Tab 放进列表列 chromeRow。 */
   workbenchHeader: `shrink-0 ${pageInsetTw.x} ${pageInsetTw.t}`,
   /** 全高列表顶距，与预览列 padTop 相同 */
   workbenchPadT: pageInsetTw.t,

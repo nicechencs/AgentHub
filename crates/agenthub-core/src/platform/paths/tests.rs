@@ -29,6 +29,9 @@ fn every_agent_has_path_contribution() {
 
 #[test]
 fn resolve_agent_home_matches_registry() {
+    // Reads process env; hold the shared lock so env-mutating tests in this
+    // file cannot flip CLAUDE_CONFIG_DIR / CODEX_HOME / KIMI_CODE_HOME mid-run.
+    let _guard = crate::utils::test_env::lock_test_env();
     let reg = builtin_path_registry();
     for id in AgentId::ALL {
         let via_fn = resolve_agent_home(id).unwrap();
@@ -124,6 +127,23 @@ fn workbuddy_config_dir_honors_env_overrides() {
     restore_env("WORKBUDDY_CONFIG_DIR", prev_wb);
     restore_env("CODEBUDDY_CONFIG_DIR", prev_cb);
     assert_eq!(overridden, expected);
+}
+
+#[test]
+fn kimi_home_honors_kimi_code_home_env() {
+    let _guard = crate::utils::test_env::lock_test_env();
+    let expected = PathBuf::from(if cfg!(windows) {
+        r"D:\tmp\agenthub-kimi-home-test"
+    } else {
+        "/tmp/agenthub-kimi-home-test"
+    });
+    let prev = std::env::var_os("KIMI_CODE_HOME");
+    std::env::set_var("KIMI_CODE_HOME", &expected);
+    let home = resolve_agent_home(AgentId::Kimi).unwrap();
+    let is_default = crate::platform::paths::agent_home_is_default(AgentId::Kimi).unwrap();
+    restore_env("KIMI_CODE_HOME", prev);
+    assert_eq!(home, expected);
+    assert!(!is_default);
 }
 
 #[test]

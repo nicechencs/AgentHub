@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AgentId, UsageRecord } from '@/lib/types';
 
@@ -8,13 +8,18 @@ import {
   buildUsageDistribution,
   coerceModelFilter,
   decorateUsageDistribution,
+  DEFAULT_USAGE_OVERVIEW_FILTERS,
   filterByAgent,
   filterByModel,
   filterHiddenUsageOverview,
   filterWindowUsage,
   isLocalToday,
   overviewToUsageMetrics,
+  rememberUsageFilters,
+  rememberedUsageFilters,
+  resolveUsageModelFilter,
   sortUsageRowsDesc,
+  usageModelSelectOptions,
   usageWindowBound,
 } from './usageOverviewModel';
 
@@ -195,6 +200,18 @@ describe('model filter + shared scoped records', () => {
     expect(coerceModelFilter('all', ['opus'])).toBe('all');
   });
 
+  it('keeps the remembered model until overview models are ready', () => {
+    expect(resolveUsageModelFilter('opus', [], false)).toBe('opus');
+    expect(resolveUsageModelFilter('opus', [], true)).toBe('all');
+    expect(resolveUsageModelFilter('opus', ['opus', 'sonnet'], true)).toBe('opus');
+  });
+
+  it('keeps a remembered model in the select list while it is missing from the window', () => {
+    expect(usageModelSelectOptions('opus', ['sonnet'])).toEqual(['opus', 'sonnet']);
+    expect(usageModelSelectOptions('all', ['sonnet'])).toEqual(['sonnet']);
+    expect(usageModelSelectOptions('sonnet', ['sonnet'])).toEqual(['sonnet']);
+  });
+
   it('applies agent + model to distribution and table together', () => {
     const scoped = filterByModel(filterByAgent(rows, 'all'), 'opus');
 
@@ -250,5 +267,31 @@ describe('model filter + shared scoped records', () => {
         cost: 1,
       },
     ]);
+  });
+});
+
+describe('remembered usage filters', () => {
+  afterEach(() => {
+    rememberUsageFilters({ ...DEFAULT_USAGE_OVERVIEW_FILTERS });
+  });
+
+  it('starts from defaults and keeps the last in-process selection', () => {
+    expect(rememberedUsageFilters()).toEqual(DEFAULT_USAGE_OVERVIEW_FILTERS);
+    rememberUsageFilters({
+      dateRange: 'today',
+      agentFilter: 'claude',
+      modelFilter: 'opus',
+    });
+    expect(rememberedUsageFilters()).toEqual({
+      dateRange: 'today',
+      agentFilter: 'claude',
+      modelFilter: 'opus',
+    });
+  });
+
+  it('returns a copy so callers cannot mutate the store', () => {
+    const snapshot = rememberedUsageFilters();
+    snapshot.modelFilter = 'opus';
+    expect(rememberedUsageFilters().modelFilter).toBe('all');
   });
 });

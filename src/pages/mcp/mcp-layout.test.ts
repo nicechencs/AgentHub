@@ -31,6 +31,7 @@ describe('mcp layout wiring', () => {
 
   it('says the page only scans and points at the existing folder button', () => {
     const page = source('index.tsx');
+    expect(page).toContain("t('common.inDevelopment')");
     expect(page).toContain("t('mcp.page.description')");
     expect(page).toContain("t('mcp.page.empty'");
     expect(page).toContain("t('mcp.page.nextStep')");

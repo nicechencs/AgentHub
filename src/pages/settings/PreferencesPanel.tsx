@@ -1,6 +1,7 @@
-import { useRef } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
+import { useRef, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Hint } from '@/components/ui/tooltip';
 import {
   Select,
   SelectValue,
@@ -15,8 +16,11 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import { invalidateSkills } from '@/lib/hooks/useSkills';
 import type { AppSettings } from '@/lib/types';
+import { loadStoredAccent, persistAccent } from '@/lib/accent';
 import { applyTheme } from '@/lib/theme';
 import { notifyUsageSettingsChanged } from '@/lib/usage-sync';
+import { cn } from '@/lib/utils';
+import { ACCENT_IDS, ACCENT_PALETTES } from '@/styles/tokens';
 import {
   createSettingsPersistenceTracker,
   mergeSettingsResponse,
@@ -28,7 +32,15 @@ import {
   skillMarketLabel,
 } from './settings-format';
 import { useSidebar } from '@/components/layout/SidebarContext';
-import { SettingsRow } from './settings-shared';
+import { SettingsGroup, SettingsRow } from './settings-shared';
+
+const ACCENT_NAME_KEY = {
+  indigo: 'settings.general.accentIndigo',
+  blue: 'settings.general.accentBlue',
+  teal: 'settings.general.accentTeal',
+  rose: 'settings.general.accentRose',
+  amber: 'settings.general.accentAmber',
+} as const;
 
 export function PreferencesPanel({
   settings,
@@ -48,6 +60,7 @@ export function PreferencesPanel({
   const { t, setLanguage } = useI18n();
   const { routesNavVisible, setRoutesNavVisible, pluginsNavVisible, setPluginsNavVisible } =
     useSidebar();
+  const [accent, setAccent] = useState(loadStoredAccent);
   const usageBaselineRef = useRef(settings.usageCollectIntervalMin);
   const persistenceTrackerRef = useRef<ReturnType<typeof createSettingsPersistenceTracker> | null>(null);
 
@@ -109,8 +122,8 @@ export function PreferencesPanel({
   };
 
   return (
-    <Card>
-      <CardContent className="divide-y divide-border pt-1">
+    <>
+      <SettingsGroup first title={t('settings.general.sectionAppearance')}>
         <SettingsRow
           label={t('settings.general.languageLabel')}
           description={t('settings.general.languageDescription')}
@@ -159,6 +172,42 @@ export function PreferencesPanel({
           </Select>
         </SettingsRow>
         <SettingsRow
+          label={t('settings.general.accentLabel')}
+          description={t('settings.general.accentDescription')}
+        >
+          <div
+            className="flex items-center justify-end gap-1.5"
+            role="radiogroup"
+            aria-label={t('settings.general.accentLabel')}
+          >
+            {ACCENT_IDS.map((id) => {
+              const name = t(ACCENT_NAME_KEY[id]);
+              const selected = accent === id;
+              return (
+                <Hint key={id} label={name}>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    aria-label={name}
+                    className={cn(
+                      'h-6 w-6 shrink-0 rounded-full border border-black/10',
+                      selected && 'ring-2 ring-accent ring-offset-2 ring-offset-panel',
+                    )}
+                    style={{ backgroundColor: ACCENT_PALETTES[id].light }}
+                    onClick={() => {
+                      setAccent(id);
+                      persistAccent(id);
+                    }}
+                  />
+                </Hint>
+              );
+            })}
+          </div>
+        </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionLaunch')}>
+        <SettingsRow
           label={t('settings.general.autoStartLabel')}
           description={t('settings.general.autoStartDescription')}
           descriptionTip={t('settings.general.autoStartTip')}
@@ -184,26 +233,34 @@ export function PreferencesPanel({
             }}
           />
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionSidebar')}>
         <SettingsRow
           label={t('settings.general.routesNavVisibleLabel')}
+          badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
           description={t('settings.general.routesNavVisibleDescription')}
           descriptionTip={t('settings.general.routesNavVisibleTip')}
         >
           <Switch
             checked={routesNavVisible}
             onCheckedChange={setRoutesNavVisible}
+            aria-label={t('settings.general.routesNavVisibleLabel')}
           />
         </SettingsRow>
         <SettingsRow
           label={t('settings.general.pluginsNavVisibleLabel')}
+          badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
           description={t('settings.general.pluginsNavVisibleDescription')}
           descriptionTip={t('settings.general.pluginsNavVisibleTip')}
         >
           <Switch
             checked={pluginsNavVisible}
             onCheckedChange={setPluginsNavVisible}
+            aria-label={t('settings.general.pluginsNavVisibleLabel')}
           />
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionRoutes')}>
         <SettingsRow
           label={t('settings.general.warnDuplicateRouteCredentialLabel')}
           description={t('settings.general.warnDuplicateRouteCredentialDescription')}
@@ -230,6 +287,8 @@ export function PreferencesPanel({
             }}
           />
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionSkills')}>
         <SettingsRow
           label={t('settings.general.skillMarketLabel')}
           description={t('settings.general.skillMarketDescription')}
@@ -257,6 +316,8 @@ export function PreferencesPanel({
             </SelectContent>
           </Select>
         </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup title={t('settings.general.sectionUsage')}>
         <SettingsRow
           label={t('settings.data.usageIntervalLabel')}
           description={t('settings.data.usageIntervalDescription')}
@@ -297,7 +358,7 @@ export function PreferencesPanel({
             {t('common.view')}
           </Link>
         </SettingsRow>
-      </CardContent>
-    </Card>
+      </SettingsGroup>
+    </>
   );
 }

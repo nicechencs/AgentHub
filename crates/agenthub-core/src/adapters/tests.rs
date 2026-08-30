@@ -1160,12 +1160,12 @@ fn declared_capabilities_match_actual_behavior() {
 fn require_blocks_unsupported_and_allows_full() {
     let reg = register_all();
     assert!(reg.require(AgentId::Claude, Capability::Skills).is_ok());
-    let err = match reg.require(AgentId::Kimi, Capability::Skills) {
-        Ok(_) => panic!("kimi skills should be blocked"),
+    let err = match reg.require(AgentId::Cursor, Capability::Usage) {
+        Ok(_) => panic!("cursor usage should be blocked"),
         Err(e) => e,
     };
     assert_eq!(err.code(), "unsupported");
-    assert!(err.to_string().contains("技能"));
+    assert!(err.to_string().contains("用量统计"));
     assert!(err.to_string().contains("不支持"));
 }
 
@@ -1173,6 +1173,7 @@ fn require_blocks_unsupported_and_allows_full() {
 fn require_planned_uses_distinct_copy_from_unsupported() {
     let reg = register_all();
     // Claude Usage is Full; SessionResume is Partial (print+resume). Grok SessionResume stays Planned.
+    // Cursor Usage stays Unsupported (IDE-internal usage store is out of scope).
     assert!(reg.require(AgentId::Claude, Capability::Usage).is_ok());
     assert!(reg
         .require(AgentId::Claude, Capability::SessionResume)
@@ -1181,8 +1182,8 @@ fn require_planned_uses_distinct_copy_from_unsupported() {
         Ok(_) => panic!("grok session resume should be planned/blocked"),
         Err(e) => e,
     };
-    let unsupported = match reg.require(AgentId::Kimi, Capability::Skills) {
-        Ok(_) => panic!("kimi skills should be unsupported"),
+    let unsupported = match reg.require(AgentId::Cursor, Capability::Usage) {
+        Ok(_) => panic!("cursor usage should be unsupported"),
         Err(e) => e,
     };
     assert_eq!(planned.code(), "unsupported");
@@ -1218,7 +1219,7 @@ fn matrix_matches_documented_boundary_cells() {
     let matrix = reg.matrix();
     assert_eq!(
         matrix[&AgentId::Kimi][&Capability::Skills].level,
-        CapabilityLevel::Unsupported
+        CapabilityLevel::Partial
     );
     assert_eq!(
         matrix[&AgentId::Cursor][&Capability::AccountSwitch].level,
@@ -2109,6 +2110,24 @@ api_key = "old"
     assert!(text.contains("max_context_size = 131072"), "{text}");
     assert!(text.contains("type = \"openai\""), "{text}");
     assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+}
+
+#[test]
+fn write_kimi_api_key_fills_official_moonshot_type() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"default_model = "kimi-k2"
+[providers.moonshot]
+base_url = "https://api.moonshot.cn/v1"
+api_key = "old"
+"#,
+    )
+    .unwrap();
+    kimi::write_kimi_api_key(&path, "sk-new-key").unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("type = \"kimi\""), "{text}");
 }
 
 #[test]

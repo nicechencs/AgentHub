@@ -29,7 +29,7 @@ The application is organized by work and management, with Agent filtering inside
 | Manage | Routes | `/routes` | Local route runtime list and details |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
-`Routes` is shown in the sidebar by default. The `routesNavVisible` preference can hide the sidebar item, but it does not disable the page or change `/routes`. `Plugins` is shown in the workspace nav under Projects by default. The `pluginsNavVisible` preference can hide that sidebar item, but it does not disable `/plugins`. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
+`Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes and Plugins sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows those entries; the pages stay reachable at `/routes` and `/plugins`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
 
@@ -55,11 +55,11 @@ Chat, Skills, Projects, Plugins, Connections, Routes, and Settings use `fullBlee
 
 ### 2.3 Settings
 
-Settings uses the workbench header and four page tabs. Preferences, This computer, and About keep a reading-column content area. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
+Settings uses the workbench header and four page tabs; the tab row stays at the top-left of the workbench header. Preferences, This computer, and About center their content on the reading column. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
 
 | Tab | Query | Contents |
 |---|---|---|
-| Preferences | `?tab=preferences` | Language, theme, startup, close-to-tray, Routes visibility, Plugins visibility, skill source, usage interval |
+| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (Routes / Plugins visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
 | This computer | `?tab=local` | Data directory, log level, retention, log directory |
 | Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
@@ -89,7 +89,7 @@ Dashboard is the overview for installed Agents and usage, not a second Connectio
 
 - Render only installed Agents. Use an auto-fit grid so the number of Agents is not encoded in the layout.
 - Agent cards show identity, readiness, and one primary “连接 / 切换” entry. Do not duplicate management buttons already present in Agents or Connections.
-- Usage filters are shared by summary metrics, trend, distribution, and details: time, Agent, and model. Model options are the distinct models in the selected records, not a model-management catalog.
+- Usage filters are shared by summary metrics, trend, distribution, and details: time, Agent, and model. Model options are the distinct models in the selected records, not a model-management catalog. Leaving Dashboard and coming back in the same run keeps the last time / Agent / model selection; closing the app starts from the defaults.
 - Usage collection is explicit and shows last/next sync. A parser health block is compact and partial; it names the affected Agent and keeps the rest of the dashboard usable.
 - A usage-empty state guides the first manual collection. Routes health-empty is the exception described below.
 

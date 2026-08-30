@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/ui/toast';
 
 export type AgentCardConfirmKind = 'program' | 'config' | 'force-upgrade' | 'install' | 'oneclick' | null;
 
@@ -48,6 +49,14 @@ export function AgentCardDialogs({
   specialInstall,
 }: AgentCardDialogsProps) {
   const { t } = useI18n();
+  const { toast } = useToast();
+  const typeToConfirmPrompt = t('agents.dialog.typeToConfirm', { name: agentName });
+  const nameAt = typeToConfirmPrompt.indexOf(agentName);
+  const copyConfirmName = () => {
+    void navigator.clipboard.writeText(agentName).then(() => {
+      toast({ title: t('common.copied'), variant: 'success' });
+    }).catch(() => {});
+  };
   const onDialogOpenChange = (nextOpen: boolean) => {
     if (shouldIgnoreDismiss?.(nextOpen)) return;
     if (!nextOpen) onClose();
@@ -125,7 +134,22 @@ export function AgentCardDialogs({
             </DialogDescription>
           </DialogHeader>
           <div className="text-sm text-secondary">
-            {t('agents.dialog.typeToConfirm', { name: agentName })}
+            {nameAt < 0 ? (
+              typeToConfirmPrompt
+            ) : (
+              <>
+                {typeToConfirmPrompt.slice(0, nameAt)}
+                <button
+                  type="button"
+                  className="cursor-pointer font-medium text-primary underline decoration-dotted underline-offset-2 hover:text-accent"
+                  aria-label={t('common.copy')}
+                  onClick={copyConfirmName}
+                >
+                  {agentName}
+                </button>
+                {typeToConfirmPrompt.slice(nameAt + agentName.length)}
+              </>
+            )}
           </div>
           <Input
             value={confirmName}

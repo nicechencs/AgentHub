@@ -5,10 +5,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { UpdateInfo } from '@/lib/api/update';
+import { GITHUB_NEW_ISSUE_URL, GITHUB_REPO_URL } from '@/lib/github';
 import { openExternalLink } from '@/lib/open-external';
 import type { AppSettings } from '@/lib/types';
 import { SecurityPanel } from './SecurityPanel';
-import { GITHUB_REPO_URL } from './settings-format';
 import { SettingsRow } from './settings-shared';
 
 export function AboutPanel({
@@ -87,6 +87,28 @@ export function AboutPanel({
             >
               <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
               {t('settings.about.openRepo')}
+            </Button>
+          </SettingsRow>
+          <SettingsRow
+            label={t('settings.about.feedbackLabel')}
+            description={t('settings.about.feedbackDescription')}
+            descriptionTip={GITHUB_NEW_ISSUE_URL}
+          >
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void openExternalLink(GITHUB_NEW_ISSUE_URL).catch((e) => {
+                  toast({
+                    title: t('chrome.feedback.openFailed'),
+                    description: e instanceof Error ? e.message : String(e),
+                    variant: 'danger',
+                  });
+                });
+              }}
+            >
+              <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+              {t('settings.about.openFeedback')}
             </Button>
           </SettingsRow>
         </CardContent>

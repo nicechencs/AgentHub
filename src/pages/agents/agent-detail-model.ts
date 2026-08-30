@@ -7,7 +7,7 @@
  * (`AGENT_COLORS` / `--agent-*`), not a second palette.
  */
 import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
-import type { MessageKey, TranslateFn } from '@/lib/i18n';
+import type { TranslateFn } from '@/lib/i18n';
 import { isLiveFilePath, liveConfigPaths } from '@/lib/provider-detect';
 import {
   routeEndpointBrandAgentId,
@@ -22,7 +22,6 @@ export type AgentConversationSurface = RouteEndpointId;
 export type AgentConversationEndpoint = {
   id: AgentConversationSurface;
   path: string;
-  copyKey: MessageKey;
   brandAgentId: TokenAgentId;
 };
 
@@ -30,20 +29,20 @@ export type AgentConversationEndpoint = {
  * HTTP conversation paths this Agent actually uses.
  *
  * Cursor Agent talks to Cursor's own backend (not these three paths) — omit.
- * Pi can use all three depending on the current login.
- * ZCode official slots are Anthropic; custom rows also take OpenAI-compatible chat completions.
- * DeepSeek official API (DSH) exposes Anthropic Messages, Responses, and Chat Completions.
+ * Pi, ZCode, Kimi Code, and DeepSeek official API (DSH) can use all three.
  */
 export function agentConversationSurfaces(
   agentId: string,
 ): readonly AgentConversationSurface[] {
   if (agentId === 'claude') return ['messages'];
   if (agentId === 'codex' || agentId === 'grok') return ['responses'];
-  if (agentId === 'kimi' || agentId === 'workbuddy') {
-    return ['chat_completions'];
-  }
-  if (agentId === 'zcode') return ['messages', 'chat_completions'];
-  if (agentId === 'dsh' || agentId === 'pi') {
+  if (agentId === 'workbuddy') return ['chat_completions'];
+  if (
+    agentId === 'dsh'
+    || agentId === 'pi'
+    || agentId === 'zcode'
+    || agentId === 'kimi'
+  ) {
     return ['messages', 'responses', 'chat_completions'];
   }
   return [];
@@ -55,31 +54,15 @@ export function agentConversationSurface(
   return agentConversationSurfaces(agentId)[0] ?? null;
 }
 
-export function conversationEndpointCopyKey(
-  id: AgentConversationSurface,
-): MessageKey {
-  if (id === 'messages') return 'agents.detail.endpointMessages';
-  if (id === 'responses') return 'agents.detail.endpointResponses';
-  return 'agents.detail.endpointChatCompletions';
-}
-
-/** Paths + Agents-page product copy. Empty when the Agent has no public HTTP surface. */
+/** Paths this Agent speaks. Empty when the Agent has no public HTTP surface. */
 export function agentConversationEndpoints(
   agentId: string,
 ): AgentConversationEndpoint[] {
   return agentConversationSurfaces(agentId).map((id) => ({
     id,
     path: routeEndpointPath(id),
-    copyKey: conversationEndpointCopyKey(id),
     brandAgentId: routeEndpointBrandAgentId(id),
   }));
-}
-
-export function formatConversationEndpointLabel(
-  endpoint: AgentConversationEndpoint,
-  t: TranslateFn,
-): string {
-  return `${endpoint.path} · ${t(endpoint.copyKey)}`;
 }
 
 export function formatAgentConversationEndpoints(
@@ -88,7 +71,7 @@ export function formatAgentConversationEndpoints(
 ): string {
   const rows = agentConversationEndpoints(agentId);
   if (rows.length === 0) return t('agents.detail.endpointDependsOnLogin');
-  return rows.map((row) => formatConversationEndpointLabel(row, t)).join('\n');
+  return rows.map((row) => row.path).join('\n');
 }
 
 /** dest catalog prefixes the internal id (`native 官方脚本`); that is not product copy. */

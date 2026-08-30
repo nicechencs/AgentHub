@@ -68,7 +68,7 @@ const BUILTIN: &[PresetDef] = &[
         id: "moonshot",
         label: "Moonshot 官方",
         format: ConfigFormat::Toml,
-        template: "default_model = \"kimi-k2\"\ndefault_provider = \"moonshot\"\n\n[providers.moonshot]\ntype = \"openai\"\nbase_url = \"https://api.moonshot.cn/v1\"\napi_key = \"\"\n\n[models.\"kimi-k2\"]\nprovider = \"moonshot\"\nmodel = \"kimi-k2\"\nmax_context_size = 131072\n",
+        template: "default_model = \"kimi-k2\"\ndefault_provider = \"moonshot\"\n\n[providers.moonshot]\ntype = \"kimi\"\nbase_url = \"https://api.moonshot.cn/v1\"\napi_key = \"\"\n\n[models.\"kimi-k2\"]\nprovider = \"moonshot\"\nmodel = \"kimi-k2\"\nmax_context_size = 131072\n",
     },
     PresetDef {
         agent: AgentId::Kimi,

@@ -28,6 +28,7 @@ export const en = {
     showSecret: 'Show',
     resizeColumn: 'Drag to resize column',
     resizeColumnNamed: 'Resize {label} column',
+    inDevelopment: 'In development',
   },
   nav: {
     workspace: 'Workspace',
@@ -82,6 +83,13 @@ export const en = {
       themeLight: 'Light',
       themeDark: 'Dark',
       themeSystem: 'System',
+      accentLabel: 'Brand color',
+      accentDescription: 'Buttons, switches, and the app mark',
+      accentIndigo: 'Purple',
+      accentBlue: 'Blue',
+      accentTeal: 'Teal',
+      accentRose: 'Rose',
+      accentAmber: 'Orange',
       autoStartLabel: 'Launch at login',
       autoStartDescription: 'Start after you sign in',
       autoStartTip:
@@ -92,14 +100,14 @@ export const en = {
         'The close button hides the window to the system tray and keeps the process running. You can quit from the tray. Restore from the tray icon on Windows, or the menu-bar tray / Dock icon on macOS.',
       routesNavVisibleLabel: 'Show Routes in sidebar',
       routesNavVisibleDescription:
-        'Show the Routes entry in the left nav. Hiding it does not disable the page.',
+        'In development. Show the Routes entry in the left nav. Hiding it does not disable the page.',
       routesNavVisibleTip:
-        'When hidden, you can still open Routes via the URL or direct links.',
+        'Hidden by default on a new install. When hidden, you can still open Routes via the URL or direct links.',
       pluginsNavVisibleLabel: 'Show Plugins in sidebar',
       pluginsNavVisibleDescription:
-        'Show the Plugins entry in the left nav. Hiding it does not disable the page.',
+        'In development. Show the Plugins entry in the left nav. Hiding it does not disable the page.',
       pluginsNavVisibleTip:
-        'When hidden, you can still open Plugins via the URL or direct links.',
+        'Hidden by default on a new install. When hidden, you can still open Plugins via the URL or direct links.',
       warnDuplicateRouteCredentialLabel: 'Warn on reused keys',
       warnDuplicateRouteCredentialDescription: 'Tip only when a route key or login was already used',
       warnDuplicateRouteCredentialTip:
@@ -115,6 +123,12 @@ export const en = {
       skillMarketAuto: 'Auto (switch if unreachable)',
       skillMarketSkillsSh: 'skills.sh',
       skillMarketSkillhub: 'skillhub.cn',
+      sectionAppearance: 'Language and appearance',
+      sectionLaunch: 'Launch and close',
+      sectionSidebar: 'Sidebar',
+      sectionRoutes: 'Routes',
+      sectionSkills: 'Skills',
+      sectionUsage: 'Usage',
       savedToast: 'General settings saved',
       trayOnClose: 'Close to tray',
       quitOnClose: 'Quit on close',
@@ -176,9 +190,12 @@ export const en = {
       updating: 'Updating…',
       oneClickUpdate: 'One-click update',
       githubLabel: 'GitHub',
-      githubDescription: 'Source, issues, and releases',
+      githubDescription: 'Source and releases',
       openRepo: 'Open repository',
       openGithubFailed: "Couldn't open GitHub",
+      feedbackLabel: 'Report a problem',
+      feedbackDescription: 'Tell us about a problem or idea',
+      openFeedback: 'Write a report',
       tagline: 'AgentHub — manage AI coding agent config, accounts, and usage in one place.',
     },
     backups: {
@@ -360,6 +377,10 @@ export const en = {
       title: "Needs attention",
       dismissAll: "Dismiss all",
       empty: "No new notifications",
+    },
+    feedback: {
+      label: "Report a problem",
+      openFailed: "Couldn't open the feedback page",
     },
     authStatus: {
       valid: "Signed in",
@@ -1977,9 +1998,6 @@ export const en = {
       openFolder: "Folder",
       configDir: "Config folder",
       endpointTypes: "Endpoint types",
-      endpointMessages: "Claude chat",
-      endpointResponses: "Codex / Grok chat",
-      endpointChatCompletions: "Kimi and other completions",
       endpointDependsOnLogin: "Depends on the current login",
       uninstall: "Uninstall",
     },

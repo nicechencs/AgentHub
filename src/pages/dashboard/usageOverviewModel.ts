@@ -10,6 +10,29 @@ import { usageTokenParts } from '@/lib/usage-tokens';
 /** 日期筛选预设：today / 24h 均按 days=1 拉取，today 再按本地日历日收窄 */
 export type DateRange = 'today' | '24h' | '7d' | '30d';
 
+/** 总览用量筛选：进程内记忆，关应用后回到默认 */
+export interface UsageOverviewFilters {
+  dateRange: DateRange;
+  agentFilter: AgentId | 'all';
+  modelFilter: string;
+}
+
+export const DEFAULT_USAGE_OVERVIEW_FILTERS: UsageOverviewFilters = {
+  dateRange: '7d',
+  agentFilter: 'all',
+  modelFilter: 'all',
+};
+
+let rememberedFilters: UsageOverviewFilters = { ...DEFAULT_USAGE_OVERVIEW_FILTERS };
+
+export function rememberedUsageFilters(): UsageOverviewFilters {
+  return { ...rememberedFilters };
+}
+
+export function rememberUsageFilters(next: UsageOverviewFilters): void {
+  rememberedFilters = { ...next };
+}
+
 /** SQL window for overview / trend / table. `today` AND-s local midnight. */
 export function usageWindowBound(
   dateRange: DateRange,
@@ -115,6 +138,29 @@ export function filterByModel(
 export function coerceModelFilter(selected: string, available: readonly string[]): string {
   if (selected === 'all' || selected === '') return 'all';
   return available.includes(selected) ? selected : 'all';
+}
+
+/**
+ * overview 未到之前保留记忆中的模型，避免空列表把筛选打回「全部」。
+ */
+export function resolveUsageModelFilter(
+  selected: string,
+  available: readonly string[],
+  modelsReady: boolean,
+): string {
+  if (!modelsReady) return selected === '' ? 'all' : selected;
+  return coerceModelFilter(selected, available);
+}
+
+/** 记忆中的模型还不在窗口列表时先挂上，Select 触发器才有文案。 */
+export function usageModelSelectOptions(
+  selected: string,
+  available: readonly string[],
+): string[] {
+  if (selected === 'all' || selected === '' || available.includes(selected)) {
+    return [...available];
+  }
+  return [selected, ...available];
 }
 
 export function sortUsageRowsDesc(records: readonly UsageRecord[]): UsageRecord[] {

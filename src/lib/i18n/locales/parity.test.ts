@@ -41,6 +41,7 @@ describe('locale key parity', () => {
     expect(keys).toContain('mcp.page.title');
     expect(keys).toContain('plugins.page.title');
     expect(keys).toContain('settings.general.pluginsNavVisibleLabel');
+    expect(keys).toContain('common.inDevelopment');
     expect(keys).toContain('nav.plugins');
     expect(keys).toContain('connections.providerDialog.useOfficial');
     expect(keys).toContain('connections.providerDialog.remoteModelsLoading');
