@@ -47,7 +47,7 @@ describe('PageHeader', () => {
 
   it('starts non-Chat body flush under the title slot', () => {
     expect(source('components/layout/PageHeader.tsx')).toContain('return null');
-    expect(source('components/layout/page-rhythm.ts')).toContain("workbenchY: 'pb-3'");
+    expect(source('components/layout/page-rhythm.ts')).toContain('workbenchY: pageInsetTw.b');
     expect(source('pages/skills/index.tsx')).toContain('pageRhythm.chromeRow');
     expect(source('pages/skills/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/skills/index.tsx')).not.toContain('className="mb-2"');

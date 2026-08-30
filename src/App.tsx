@@ -124,7 +124,7 @@ export default function App() {
                 fullBleed ? 'overflow-hidden' : 'overflow-y-auto',
               )}
             >
-              {/* 常规页铺满主列 + 12px inset；chat 与左右分栏工作台全高自管 */}
+              {/* 常规页铺满主列 + pageRhythm.pageShell；chat 与左右分栏工作台全高自管 */}
               <div className={fullBleed ? 'h-full min-h-0' : pageRhythm.pageShell}>
                 <Routes>
                   <Route path="/" element={<DashboardPage />} />

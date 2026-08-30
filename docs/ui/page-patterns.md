@@ -37,7 +37,7 @@ The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. 
 
 ### 2.1 Standard shell
 
-The standard shell has an 8px canvas gutter, a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with a 12px horizontal inset. Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. The notification control stays on the right. Chat has no top bar and owns its session name. A standard page is composed in this order:
+The standard shell has an 8px canvas gutter (`pageEdge.canvas`), a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with a shared horizontal inset (`pageEdge.inset`, currently 8px). Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. The notification control stays on the right. Chat has no top bar and owns its session name. A standard page is composed in this order:
 
 ```text
 TopBar (title + metadata | notification)
@@ -51,7 +51,7 @@ The page title is a single line: name, then short description. Distinguish them 
 
 ### 2.2 Full-height workbench
 
-Chat, Skills, Projects, Plugins, Connections, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Skills, Projects, Plugins, Connections, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same 12px top and bottom inset so both edges line up. The page title itself stays in the top bar.
+Chat, Skills, Projects, Plugins, Connections, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Skills, Projects, Plugins, Connections, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same `pageEdge.inset` top and bottom so both edges line up. The page title itself stays in the top bar.
 
 ### 2.3 Settings
 
