@@ -75,8 +75,8 @@ function AgentBubble({
 }) {
   const { t } = useI18n();
   const agent = message.agentId ?? 'claude';
-  const displayContent = message.content ? localizeChatFailure(message.content) : '';
-  const displayError = message.error ? localizeChatFailure(message.error) : '';
+  const displayContent = message.content ? localizeChatFailure(message.content, t) : '';
+  const displayError = message.error ? localizeChatFailure(message.error, t) : '';
   const looksFailed =
     message.status === 'failed' ||
     message.status === 'cancelled' ||

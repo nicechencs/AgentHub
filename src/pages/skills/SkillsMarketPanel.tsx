@@ -63,7 +63,7 @@ export function SkillsMarketPanel({
               });
             }}
           >
-            {marketResultLabel(activeMarketProvider, skillMarketSource)}
+            {marketResultLabel(activeMarketProvider, skillMarketSource, t)}
           </button>
           {' · '}
           {marketSuffix(

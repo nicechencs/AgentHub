@@ -7,6 +7,7 @@ import {
   liveConfigPaths,
   smartDetectUrlAndKey,
 } from '../index';
+import { createTranslator } from '@/lib/i18n';
 import { CLAUDE_CODE_BASH_EXPORT_BASIC } from './fixtures/claude-code-samples';
 
 describe('smartDetectUrlAndKey', () => {
@@ -132,6 +133,14 @@ describe('liveConfigPaths', () => {
     expect(`${paths.auth ?? ''} ${paths.hint}`).not.toMatch(
       /detect|文件型凭据|环境变量|未必在单一文件|Endpoint|schema/i,
     );
+  });
+
+  it('translates path hints when a translator is passed', () => {
+    const tEn = createTranslator('en');
+    const paths = liveConfigPaths('claude', tEn);
+    expect(paths.hint).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(liveConfigPaths('cursor', tEn).config).toBe('No stable provider config file');
+    expect(liveConfigPaths('pi', tEn).openDir).toBe('~/.pi/agent (or PI_CODING_AGENT_DIR)');
   });
 
   it('only exposes auth when it is a live file path', () => {

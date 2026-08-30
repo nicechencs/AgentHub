@@ -40,7 +40,10 @@ describe('RouteEndpointUrl', () => {
     expect(routeEndpointTypeColor('responses')).toBe('var(--agent-codex)');
     expect(routeEndpointTypeColor('chat_completions')).toBe('var(--agent-codex)');
     const html = renderToStaticMarkup(
-      createElement(RouteEndpointTypeText, { endpointId: 'messages' }, 'Claude 对话'),
+      createElement(RouteEndpointTypeText, {
+        endpointId: 'messages',
+        children: 'Claude 对话',
+      }),
     );
     expect(html).toContain('Claude 对话');
     expect(html).toContain('var(--agent-claude)');

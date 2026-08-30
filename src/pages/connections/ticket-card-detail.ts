@@ -42,6 +42,17 @@ const IN_CATALOG_TIP_FALLBACK = '这份登录已经出现在模型列表里';
 const SWITCH_BUSY_TIP_FALLBACK = '正在切换其他登录';
 const REFRESH_BUSY_TIP_FALLBACK = '正在刷新其他登录';
 
+export function localizeQuotaResetIn(raw: string | undefined, t?: TranslateFn): string | undefined {
+  if (!raw) return undefined;
+  if (!t) return raw;
+  if (raw === '即将重置' || raw === 'Resets soon') return t('connections.list.quotaResetSoon');
+  const zh = raw.match(/^(.+?)\s*后重置$/);
+  if (zh) return t('connections.list.quotaResetIn', { when: zh[1].trim() });
+  const en = raw.match(/^Resets in\s+(.+)$/i);
+  if (en) return t('connections.list.quotaResetIn', { when: en[1].trim() });
+  return raw;
+}
+
 export function ticketCredentialClassChipLabel(
   cls: TicketCredentialClass,
   t?: TranslateFn,
@@ -403,8 +414,8 @@ export function extrasFromPoolSource(
     extras.authStatus = row.auth.status;
     extras.quota5hPct = source.account.quota5hPct;
     extras.quota7dPct = source.account.quota7dPct;
-    extras.quotaResetIn = source.account.quotaResetIn;
-    extras.quota7dResetIn = source.account.quota7dResetIn;
+    extras.quotaResetIn = localizeQuotaResetIn(source.account.quotaResetIn, t);
+    extras.quota7dResetIn = localizeQuotaResetIn(source.account.quota7dResetIn, t);
     const endpoint = accountEndpointExtras(source.account);
     extras.endpointMode = endpoint.endpointMode;
     extras.endpointHost = endpoint.endpointHost;

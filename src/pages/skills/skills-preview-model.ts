@@ -1,9 +1,10 @@
 import type { SkillMarketSource } from '@/lib/types';
+import type { TranslateFn } from '@/lib/i18n';
 
-export function marketSourceLabel(source: SkillMarketSource): string {
+export function marketSourceLabel(source: SkillMarketSource, t?: TranslateFn): string {
   if (source === 'skillhub.cn') return 'skillhub.cn';
   if (source === 'skills.sh') return 'skills.sh';
-  return '自动';
+  return t ? t('skills.market.sourceAuto') : '自动';
 }
 
 export function marketHomeUrl(activeProvider: string | undefined, source: SkillMarketSource): string {
@@ -15,11 +16,12 @@ export function marketHomeUrl(activeProvider: string | undefined, source: SkillM
 export function marketResultLabel(
   activeProvider: string | undefined,
   source: SkillMarketSource,
+  t?: TranslateFn,
 ): string {
   if (activeProvider === 'skills.sh' || activeProvider === 'skillhub.cn') {
     return activeProvider;
   }
-  return marketSourceLabel(source);
+  return marketSourceLabel(source, t);
 }
 
 /** library=用户技能 · project=项目技能 · market=市场；workspace / installed 兼容旧 URL */

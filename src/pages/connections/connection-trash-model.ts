@@ -120,11 +120,15 @@ function last4FromMaskLabel(value: string | undefined | null): string | undefine
   return tail ? tail.replace(/^\*+/, '').slice(-4) : undefined;
 }
 
-function maskOnlyIdentity(item: ConnectionTrashItem): string | undefined {
+function last4Label(last4: string, t?: TranslateFn): string {
+  return t ? t('connections.trash.last4', { last4 }) : `末尾 ${last4}`;
+}
+
+function maskOnlyIdentity(item: ConnectionTrashItem, t?: TranslateFn): string | undefined {
   const last4 = trashItemSecretTail(item);
   const host = trashHost(item);
-  if (last4 && host) return `末尾 ${last4} · ${host}`;
-  if (last4) return `末尾 ${last4}`;
+  if (last4 && host) return `${last4Label(last4, t)} · ${host}`;
+  if (last4) return last4Label(last4, t);
   if (host) return host;
   return undefined;
 }
@@ -132,7 +136,7 @@ function maskOnlyIdentity(item: ConnectionTrashItem): string | undefined {
 /** Recycle-bin title: generated bridges become 本机路由 · identity; mask-only API keys show last4/host. */
 export function humanizeTrashLabel(item: ConnectionTrashItem, t?: TranslateFn): string {
   const identity = sourceIdentity(item);
-  const maskIdentity = maskOnlyIdentity(item);
+  const maskIdentity = maskOnlyIdentity(item, t);
   if (isMaskOnlyLabel(item.label) && !isGeneratedTrashItem(item)) {
     return identity || maskIdentity || 'API Key';
   }
@@ -141,7 +145,7 @@ export function humanizeTrashLabel(item: ConnectionTrashItem, t?: TranslateFn): 
   if (identity) return `${title} · ${identity}`;
   if (maskIdentity) return `${title} · ${maskIdentity}`;
   const last4 = trashItemSecretTail(item);
-  if (last4) return `${title} · 末尾 ${last4}`;
+  if (last4) return `${title} · ${last4Label(last4, t)}`;
   const host = trashHost(item);
   if (host) return `${title} · ${host}`;
   return title;
