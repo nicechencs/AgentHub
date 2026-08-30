@@ -65,11 +65,11 @@ Browse local projects and sessions by agent. You can open a folder, preview an e
 Four tabs:
 
 - **Preferences**: language, theme, launch at login, close to tray, whether the sidebar shows Routes / Plugins, skill market, and related options
-- **This device**: data directory and logs
+- **This computer**: data directory and logs
 - **Backups**: config snapshots kept before a switch or import; restore or delete
 - **About**: version, check for updates, and the repository link
 
-![Settings: Preferences / This device / Backups / About](docs/assets/screenshots/settings.png)
+![Settings: Preferences / This computer / Backups / About](docs/assets/screenshots/settings.png)
 
 ### MCP
 

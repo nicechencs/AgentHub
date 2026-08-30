@@ -931,7 +931,8 @@ describe('TicketDetailPanel', () => {
     expect(markup).toContain('~/.grok/auth.json');
     expect(markup).toContain('~/.grok/config.toml');
     expect(markup).toContain('aria-label="复制"');
-    expect(markup).toContain('aria-label="目录"');
+    expect(markup).toContain('>目录<');
+    expect(markup).toContain('aria-label="~/.grok/auth.json"');
     expect(markup.indexOf('auth.json')).toBeLessThan(markup.indexOf('config.toml'));
     expect(markup).not.toContain(secret);
   });

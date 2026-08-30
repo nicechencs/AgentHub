@@ -3,6 +3,7 @@
  * UI 只调此函数即可完成「智能识别并填入」。
  */
 import { parseContextWindowChoice } from '@/lib/claude-client-env';
+import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId } from '@/lib/types';
 import { smartDetectUrlAndKey } from './detect';
 import { applyFormVars, extractFormVars } from './fields';
@@ -141,9 +142,10 @@ export function applySmartPaste(
     vars?: ProviderFormVars;
     /** true：已有非空字段不被识别结果覆盖 */
     preferExisting?: boolean;
+    t?: TranslateFn;
   },
 ): SmartPasteApplyResult {
-  const detect = smartDetectUrlAndKey(paste);
+  const detect = smartDetectUrlAndKey(paste, current?.t);
   const scaffold = defaultConfigScaffold(agentId);
   const initialFormat = current?.configFormat ?? scaffold.format;
   const base = ensureBaseText(agentId, current?.configText ?? '', initialFormat);

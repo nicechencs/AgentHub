@@ -3,6 +3,7 @@ import { createTranslator } from '@/lib/i18n';
 import type { ConnectionTrashItem } from '@/lib/backend/contracts';
 import type { Account, Provider } from '@/lib/types';
 import { dedupTrashItems, humanizeTrashLabel, trashItemSecretTail } from './connection-trash-model';
+import { localizeQuotaResetIn } from './ticket-card-detail';
 
 const SECRET = 'sk-ant-secret-do-not-leak';
 const LOOPBACK_CONFIG = JSON.stringify({
@@ -490,5 +491,13 @@ describe('dedupTrashItems', () => {
       'grok-live-a-trash',
       'grok-live-b-trash',
     ]);
+  });
+});
+
+describe('localizeQuotaResetIn', () => {
+  it('keeps Chinese when no translator is passed and translates with English', () => {
+    expect(localizeQuotaResetIn('2h13m 后重置')).toBe('2h13m 后重置');
+    expect(localizeQuotaResetIn('2h13m 后重置', createTranslator('en'))).toBe('Resets in 2h13m');
+    expect(localizeQuotaResetIn('即将重置', createTranslator('en'))).toBe('Resets soon');
   });
 });

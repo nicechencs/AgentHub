@@ -209,7 +209,7 @@ export function ProviderEditDialog({
   const catalog = useAgentCatalog();
   const isEdit = mode === 'edit';
   const agentName = agentDisplayName(agentId);
-  const [livePaths, setLivePaths] = React.useState(() => liveConfigPaths(agentId));
+  const [livePaths, setLivePaths] = React.useState(() => liveConfigPaths(agentId, t));
 
   const [name, setName] = React.useState('');
   const [configText, setConfigText] = React.useState('');
@@ -249,7 +249,7 @@ export function ProviderEditDialog({
   );
 
   React.useEffect(() => {
-    const fallback = liveConfigPaths(agentId);
+    const fallback = liveConfigPaths(agentId, t);
     setLivePaths(fallback);
     let cancelled = false;
     void getAgentLivePaths(agentId)
@@ -269,7 +269,7 @@ export function ProviderEditDialog({
     return () => {
       cancelled = true;
     };
-  }, [agentId]);
+  }, [agentId, t]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -279,7 +279,7 @@ export function ProviderEditDialog({
       catalogStatus: catalog.status,
       entry: catalogEntry,
     });
-    const plan = planSchemaLoad(expectation);
+    const plan = planSchemaLoad(expectation, t);
 
     if (plan.action === 'wait') {
       setSchemaStatus('loading');
@@ -316,15 +316,15 @@ export function ProviderEditDialog({
         setSchemaStatus('error');
         setSchemaError(
           e instanceof Error
-            ? e.message || schemaErrorMessage('schema_load_failed')
-            : schemaErrorMessage('schema_load_failed'),
+            ? e.message || schemaErrorMessage('schema_load_failed', t)
+            : schemaErrorMessage('schema_load_failed', t),
         );
       });
 
     return () => {
       cancelled = true;
     };
-  }, [open, agentId, catalog.status, catalogEntry, schemaLoadToken]);
+  }, [open, agentId, catalog.status, catalogEntry, schemaLoadToken, t]);
 
   const retrySchemaLoad = () => {
     // Do not clear name / vars / configText — only re-evaluate Catalog + schema.
@@ -458,6 +458,7 @@ export function ProviderEditDialog({
         configText,
         configFormat,
         vars,
+        t,
       });
       result.vars.apiKey = writableSecret(result.vars.apiKey);
       const nextText = maskConfigSecrets(agentId, result.configText, result.configFormat);
