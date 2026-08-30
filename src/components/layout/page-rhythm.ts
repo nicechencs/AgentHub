@@ -3,7 +3,7 @@
  * 业务页优先引用语义 class，避免自创 mb-3 / mt-4 / mt-8 混用。
  *
  * ## 内容宽度（两套，docs/ui-design.md §3.1）
- * 1. 阅读列 `readingColumn`：Chat 消息列、Settings 表单区。固定 `max-w-3xl` 居中。
+ * 1. 阅读列 `readingColumn`：Chat 消息列。固定 `max-w-3xl` 居中。设置表单用 `readingStart` 同宽贴左。
  * 2. 贴边列：其余页。铺满主列，左右 12px（`pageShell` / `workbenchX`）。
  * 新页默认贴边列；对话 / 表单 / 长文才用阅读列。禁止第三套 `max-w-*`。
  * 页标题一律贴边、同一行（大号深色标题 + 小号浅色说明），放在非对话页顶栏左侧。
@@ -16,7 +16,8 @@
  * | TopBar | 12 (`px-3`) | h-10（同一行标题 + 说明 + 通知铃） |
  * | Skills / Projects / Connections / Routes / Agents 列表 | 12 (`px-3`)；分栏打开时改 `workbenchXSplit` | 顶 12 / 底 12，与预览列相同 |
  * | Chat 全高 | 主区 chrome 16 (`px-4`) | 会话 rail 自管 |
- * | 阅读列（Chat 消息列 / Settings 表单） | `readingColumn` `max-w-3xl` 居中 | — |
+ * | 阅读列（Chat 消息列） | `readingColumn` `max-w-3xl` 居中 | — |
+ * | 设置表单 | `readingStart` `max-w-3xl` 贴左，与页签左缘对齐 | — |
  *
  * 层级（自上而下）：
  * 1. TopBar 页标题（非对话页；对话页自管会话名）
@@ -35,8 +36,10 @@ export const pageRhythm = {
     'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-canvas shadow-xs',
   /** 常规页外壳：铺满主列，与 Skills / Projects 右缘对齐 */
   pageShell: 'w-full min-w-0 px-3 py-3',
-  /** Chat 消息列与 Settings 表单区共用：居中阅读宽。页头不进此列。 */
+  /** Chat 消息列：居中阅读宽。页头不进此列。 */
   readingColumn: 'mx-auto w-full max-w-3xl',
+  /** 设置表单：与页签同宽、左缘贴边，避免页签在左、卡片在中间。 */
+  readingStart: 'w-full max-w-3xl',
   /** 侧栏品牌行与非对话页顶栏同高，横线对齐 */
   topChrome: 'h-10',
   /** 全高工作台水平 inset（Skills / Projects / Connections / Routes 列表）— 与常规页水平一致 */

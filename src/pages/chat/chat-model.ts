@@ -766,7 +766,7 @@ export function composerUsesCssFieldSizing(css?: CssSupports | null): boolean {
   return typeof api?.supports === 'function' && api.supports('field-sizing', 'content');
 }
 
-/** 对话记录与 composer 共用的主列宽，与 Settings 共用 `pageRhythm.readingColumn`。 */
+/** 对话记录与 composer 共用的主列宽（`pageRhythm.readingColumn`）。 */
 export const chatMainColumnClass = pageRhythm.readingColumn;
 
 /** 对话记录与输入壳外侧同一圈 16px 缝（水平再叠 `chatChromeX`）。 */

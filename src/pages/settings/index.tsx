@@ -199,7 +199,7 @@ export default function SettingsPage({
       <div className="flex h-full min-h-0 flex-col">
         {settingsHeader}
         <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchPadT, pageRhythm.workbenchY)}>
-          <div className={pageRhythm.readingColumn}>
+          <div className={pageRhythm.readingStart}>
             <SettingsSkeleton />
           </div>
         </div>
@@ -212,7 +212,7 @@ export default function SettingsPage({
       <div className="flex h-full min-h-0 flex-col">
         {settingsHeader}
         <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchPadT, pageRhythm.workbenchY)}>
-          <div className={pageRhythm.readingColumn}>
+          <div className={pageRhythm.readingStart}>
             <ErrorState error={error ?? new Error(t('settings.page.emptyError'))} onRetry={() => void load()} />
           </div>
         </div>
@@ -224,22 +224,24 @@ export default function SettingsPage({
     <Tabs value={tab} onValueChange={setTab} className="flex h-full min-h-0 flex-col">
       <div className={pageRhythm.workbenchHeader}>
         {settingsHeader}
-        <div className={pageRhythm.chromeRow}>
-          <TabsList>
-            <TabsTrigger value="preferences">{t('settings.page.tabPreferences')}</TabsTrigger>
-            <TabsTrigger value="local">{t('settings.page.tabLocal')}</TabsTrigger>
-            <TabsTrigger value="backups">{t('settings.page.tabBackups')}</TabsTrigger>
-            <TabsTrigger value="about" className="gap-1.5">
-              {t('settings.page.tabAbout')}
-              {pendingUpdate && (
-                <StatusPin
-                  tone="warning"
-                  label={t('settings.page.updatePin', { version: pendingUpdate.version })}
-                  className="shrink-0"
-                />
-              )}
-            </TabsTrigger>
-          </TabsList>
+        <div className={pageRhythm.readingStart}>
+          <div className={pageRhythm.chrome}>
+            <TabsList>
+              <TabsTrigger value="preferences">{t('settings.page.tabPreferences')}</TabsTrigger>
+              <TabsTrigger value="local">{t('settings.page.tabLocal')}</TabsTrigger>
+              <TabsTrigger value="backups">{t('settings.page.tabBackups')}</TabsTrigger>
+              <TabsTrigger value="about" className="gap-1.5">
+                {t('settings.page.tabAbout')}
+                {pendingUpdate && (
+                  <StatusPin
+                    tone="warning"
+                    label={t('settings.page.updatePin', { version: pendingUpdate.version })}
+                    className="shrink-0"
+                  />
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </div>
         </div>
       </div>
 
@@ -250,7 +252,7 @@ export default function SettingsPage({
           </TabsContent>
         ) : (
           <div className={cn(pageRhythm.workbenchX, pageRhythm.workbenchY)}>
-            <div className={pageRhythm.readingColumn}>
+            <div className={pageRhythm.readingStart}>
               <TabsContent value="preferences">
                 <PreferencesPanel
                   settings={settings}
