@@ -17,10 +17,16 @@ pub(crate) fn file_manager_action(path: &std::path::Path) -> FileManagerAction {
     }
 }
 
+/// Explorer switch fragment: `/select,"<path>"`.
+///
+/// Explorer does not use `CommandLineToArgvW`. It wants the `/select,` switch
+/// and a quoted path as one raw command-line token. `Command::arg` wraps that
+/// whole token when the path has spaces (`C:\Users\Nice Chen\…`), so Explorer
+/// never sees a `/select` switch and opens the user folder instead.
 #[cfg(any(test, windows))]
 pub(crate) fn explorer_select_arg(path: &std::path::Path) -> String {
     let p = path.to_string_lossy().replace('/', "\\");
-    format!("/select,{p}")
+    format!("/select,\"{p}\"")
 }
 
 /// Strip storage-key prefixes, expand `~`, and normalize separators for the current OS.
@@ -44,8 +50,9 @@ pub(crate) fn normalize_open_path_input(raw: &str) -> std::path::PathBuf {
 pub(crate) fn reveal_in_file_manager(path: &std::path::Path) -> Result<(), String> {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
         std::process::Command::new("explorer")
-            .arg(explorer_select_arg(path))
+            .raw_arg(explorer_select_arg(path))
             .spawn()
             .map_err(|e| {
                 let msg = format!("open explorer failed: {e}");

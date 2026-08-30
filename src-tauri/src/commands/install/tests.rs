@@ -22,7 +22,18 @@ fn file_manager_action_reveals_files_and_opens_dirs() {
 #[test]
 fn explorer_select_arg_points_at_the_file() {
     let arg = explorer_select_arg(std::path::Path::new(r"C:\Users\demo\.claude.json"));
-    assert_eq!(arg, r"/select,C:\Users\demo\.claude.json");
+    assert_eq!(arg, r#"/select,"C:\Users\demo\.claude.json""#);
+}
+
+#[test]
+fn explorer_select_arg_quotes_paths_with_spaces() {
+    let arg = explorer_select_arg(std::path::Path::new(
+        r"C:\Users\Nice Chen\.claude\settings.json",
+    ));
+    assert_eq!(
+        arg,
+        r#"/select,"C:\Users\Nice Chen\.claude\settings.json""#
+    );
 }
 
 #[test]
