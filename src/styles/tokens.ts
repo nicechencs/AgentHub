@@ -9,7 +9,8 @@
  * Consumers:
  * - CSS / Tailwind → `var(--…)` (see `tailwind.config.ts`)
  * - TS that needs hex (contrast, charts) → `agentHex()` / `THEME`
- * - Agent meta → `agentCssVar(id)` for style bindings
+ * - Agent meta, dots, logos, endpoint paths → `agentCssVar(id)`
+ *   (surfaces pick an Agent id; they do not copy hex)
  *
  * Docs: `docs/ui-design.md` §2
  */

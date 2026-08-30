@@ -9,7 +9,7 @@ import { Notice } from '@/components/shared/Notice';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
+import { RouteEndpointTypeText, RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { agentDisplayName } from '@/config/agents';
 import { planMaturityLabel, planRouteSummary } from '@/lib/connect-flow/eligibility';
 import { ROUTE_ENDPOINTS } from '@/lib/route-endpoints';
@@ -461,12 +461,14 @@ function EndpointGrid({
                 endpointId={endpoint.id}
                 className="text-sm font-medium"
               />
-              <p className="text-xs text-muted">
-                {endpoint.id === 'messages'
-                  ? t('connect.select.endpointMessages')
-                  : endpoint.id === 'responses'
-                    ? t('connect.select.endpointResponses')
-                    : t('connect.select.endpointChat')}
+              <p className="text-xs">
+                <RouteEndpointTypeText endpointId={endpoint.id}>
+                  {endpoint.id === 'messages'
+                    ? t('connect.select.endpointMessages')
+                    : endpoint.id === 'responses'
+                      ? t('connect.select.endpointResponses')
+                      : t('connect.select.endpointChat')}
+                </RouteEndpointTypeText>
               </p>
             </div>
             {representative ? (

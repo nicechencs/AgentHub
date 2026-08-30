@@ -8,12 +8,13 @@ export type RouteLocalAddressRow = {
   method: 'GET' | 'POST';
   path: string;
   copyKey: MessageKey;
+  endpointId?: RouteEndpointId;
 };
 
 export const ROUTE_LOCAL_ADDRESS_LEGEND: readonly RouteLocalAddressRow[] = [
-  { method: 'POST', path: '/v1/messages', copyKey: 'routes.endpoint.messages' },
-  { method: 'POST', path: '/v1/responses', copyKey: 'routes.endpoint.responses' },
-  { method: 'POST', path: '/v1/chat/completions', copyKey: 'routes.endpoint.chatCompletions' },
+  { method: 'POST', path: '/v1/messages', copyKey: 'routes.endpoint.messages', endpointId: 'messages' },
+  { method: 'POST', path: '/v1/responses', copyKey: 'routes.endpoint.responses', endpointId: 'responses' },
+  { method: 'POST', path: '/v1/chat/completions', copyKey: 'routes.endpoint.chatCompletions', endpointId: 'chat_completions' },
   { method: 'GET', path: ROUTE_MODELS_PATH, copyKey: 'routes.endpoint.models' },
 ];
 
