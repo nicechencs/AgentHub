@@ -831,6 +831,53 @@ describe('ticket detail fields', () => {
     })).toEqual({ kind: 'in-use', label: '已在模型列表里' });
   });
 
+  it('keeps catalog-append logins in the model list after another row becomes current', () => {
+    const wb = ticket({
+      id: 'account:wb-1',
+      sourceKind: 'account',
+      sourceId: 'wb-1',
+      agentId: 'workbuddy',
+      label: 'deepseek',
+      surface: 'unknown',
+      credentialClass: 'api_key',
+      speaks: ['openai-chat'],
+      importedFrom: 'workbuddy',
+    });
+    const live = extrasFromPoolSource(wb, {
+      account: account({
+        id: 'wb-1',
+        agentId: 'workbuddy',
+        kind: 'apikey',
+        label: 'deepseek',
+        isCurrent: false,
+        source: 'live',
+      }),
+    }, undefined, 'account:wb-other');
+    expect(live.isCurrent).toBe(true);
+    expect(ticketSwitchChip(live, undefined, {
+      occupancy: 'catalogAppend',
+      agentName: 'WorkBuddy',
+    })).toEqual({ kind: 'in-use', label: '已在模型列表里' });
+    expect(buildTicketDetailFields(wb, live).advanced).toEqual(expect.arrayContaining([
+      { label: '模型列表', value: '已在模型列表里' },
+    ]));
+
+    const pending = extrasFromPoolSource(wb, {
+      account: account({
+        id: 'wb-1',
+        agentId: 'workbuddy',
+        kind: 'apikey',
+        label: 'deepseek',
+        isCurrent: false,
+        source: 'manual',
+      }),
+    });
+    expect(pending.isCurrent).toBe(false);
+    expect(buildTicketDetailFields(wb, pending).advanced).toEqual(expect.arrayContaining([
+      { label: '模型列表', value: '未写入模型列表' },
+    ]));
+  });
+
   it('lists bindings as agent + one short status', () => {
     const wallet = sampleWallet();
     expect(formatTicketBindingDetailLines(

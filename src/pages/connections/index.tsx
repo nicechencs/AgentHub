@@ -102,7 +102,7 @@ import type { Account, Provider } from '@/lib/types';
 
 type ConnectionInspect =
   | { kind: 'provider'; agentId: AgentId; mode: 'add' | 'edit'; provider: Provider | null }
-  | { kind: 'account'; agentId: AgentId; account: Account }
+  | { kind: 'account'; agentId: AgentId; account: Account | null }
   | { kind: 'detail'; ticketId: string }
   | { kind: 'connect'; entry: Extract<ConnectFlowEntry, { mode: 'for-source' }> };
 
@@ -115,7 +115,7 @@ function inspectActiveTicketId(target: ConnectionInspect | null): string | null 
   if (target.kind === 'provider' && target.mode === 'edit' && target.provider) {
     return ticketIdFor('provider', target.provider.id);
   }
-  if (target.kind === 'account') {
+  if (target.kind === 'account' && target.account) {
     return ticketIdFor('account', target.account.id);
   }
   return null;
@@ -490,12 +490,22 @@ export default function ConnectionsPage() {
     if (next.apiKeyDialogOpen) {
       setLoginImportOpen(false);
       setOauthOpen(false);
-      inspect.open({
-        kind: 'provider',
-        mode: 'add',
-        agentId: next.addAgentId,
-        provider: null,
-      });
+      // WorkBuddy custom models are catalog rows (account + models.json),
+      // not a single provider snapshot that would replace the live API key.
+      if (next.addAgentId === 'workbuddy') {
+        inspect.open({
+          kind: 'account',
+          agentId: next.addAgentId,
+          account: null,
+        });
+      } else {
+        inspect.open({
+          kind: 'provider',
+          mode: 'add',
+          agentId: next.addAgentId,
+          provider: null,
+        });
+      }
     }
     scheduleAfterMenuClose(() => {
       ignoreMenuDialogDismissRef.current = false;
@@ -646,7 +656,7 @@ export default function ConnectionsPage() {
         open
         width={inspect.paneWidth}
         agentId={inspectTarget.agentId}
-        mode="edit"
+        mode={inspectTarget.account ? 'edit' : 'add'}
         account={inspectTarget.account}
         onOpenChange={(v) => {
           if (!v) inspect.close();

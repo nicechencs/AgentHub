@@ -1194,6 +1194,8 @@ export const zh = {
       inUse: "使用中",
       writeCatalog: "写入 {name}",
       inCatalog: "已在模型列表里",
+      notInCatalog: "未写入模型列表",
+      catalogStatus: "模型列表",
       inCatalogTip: "这份登录已经出现在模型列表里",
       switching: "切换中…",
       switchOk: "已切换",

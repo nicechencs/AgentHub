@@ -85,6 +85,8 @@ describe('switch toast copy', () => {
     const src = readFileSync(new URL('./use-connection-page-actions.ts', import.meta.url), 'utf8');
     expect(src).toContain('switchWroteLiveLabel(t, resolveAgentMeta(ticket.agentId).occupancy)');
     expect(src).toMatch(/const wroteLocal =\s*ticket\.agentId === targetAgent/);
+    expect(src).toContain('extrasForTicket(ticket)?.isCurrent');
+    expect(src).not.toContain('tabCurrentId');
   });
 });
 

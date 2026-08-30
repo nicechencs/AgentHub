@@ -1203,6 +1203,8 @@ export const en = {
       inUse: "In use",
       writeCatalog: "Write to {name}",
       inCatalog: "Already in the model list",
+      notInCatalog: "Not in the model list",
+      catalogStatus: "Model list",
       inCatalogTip: "This login is already in the model list",
       switching: "Switching…",
       switchOk: "Switched",
