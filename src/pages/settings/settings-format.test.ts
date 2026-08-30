@@ -147,6 +147,21 @@ describe('settings-format i18n helpers', () => {
     expect(tEn('settings.page.descriptionTip')).toContain('Backups manage config snapshots');
   });
 
+  it('labels preference groups in the active language', () => {
+    expect(tZh('settings.general.sectionAppearance')).toBe('语言与外观');
+    expect(tEn('settings.general.sectionAppearance')).toBe('Language and appearance');
+    expect(tZh('settings.general.sectionLaunch')).toBe('启动与关闭');
+    expect(tEn('settings.general.sectionLaunch')).toBe('Launch and close');
+    expect(tZh('settings.general.sectionSidebar')).toBe('侧栏');
+    expect(tEn('settings.general.sectionSidebar')).toBe('Sidebar');
+    expect(tZh('settings.general.sectionRoutes')).toBe('路由');
+    expect(tEn('settings.general.sectionRoutes')).toBe('Routes');
+    expect(tZh('settings.general.sectionSkills')).toBe('技能');
+    expect(tEn('settings.general.sectionSkills')).toBe('Skills');
+    expect(tZh('settings.general.sectionUsage')).toBe('用量');
+    expect(tEn('settings.general.sectionUsage')).toBe('Usage');
+  });
+
   it('labels follow the active language', () => {
     expect(skillMarketLabel('auto', tZh)).toBe('自动（不通则切换）');
     expect(skillMarketLabel('auto', tEn)).toBe('Auto (switch if unreachable)');

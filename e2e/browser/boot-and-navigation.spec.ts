@@ -31,10 +31,16 @@ test('Settings tabs stay on the workbench-header left; form cards use the center
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
   const prefsTab = page.getByRole('tab', { name: '偏好' });
   await expect(prefsTab).toBeVisible();
-  await expect(page.getByText('语言')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '语言与外观' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '启动与关闭' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '侧栏' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '路由' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '技能' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '用量' })).toBeVisible();
+  await expect(page.getByText('语言', { exact: true })).toBeVisible();
   const heading = page.getByRole('heading', { name: '设置' });
   const tabsList = page.getByRole('tablist').first();
-  const card = page.locator('[data-card="default"]').filter({ hasText: '语言' }).first();
+  const card = page.locator('[data-card="default"]').filter({ hasText: '主题' }).first();
   await expect(card).toBeVisible();
   const headingBox = await heading.boundingBox();
   const tabListBox = await tabsList.boundingBox();

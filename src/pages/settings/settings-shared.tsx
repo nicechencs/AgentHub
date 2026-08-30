@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { PageSection } from '@/components/layout/PageSection';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
@@ -46,6 +47,25 @@ export function SettingsRow({
         {children}
       </div>
     </div>
+  );
+}
+
+/** 偏好分组：段标题 + 一张卡片，组内行用分割线。 */
+export function SettingsGroup({
+  title,
+  first = false,
+  children,
+}: {
+  title: string;
+  first?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <PageSection first={first} title={title}>
+      <Card>
+        <CardContent className="divide-y divide-border pt-1">{children}</CardContent>
+      </Card>
+    </PageSection>
   );
 }
 

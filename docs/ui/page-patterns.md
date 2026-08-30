@@ -59,7 +59,7 @@ Settings uses the workbench header and four page tabs; the tab row stays at the 
 
 | Tab | Query | Contents |
 |---|---|---|
-| Preferences | `?tab=preferences` | Language, theme, brand color, startup, close-to-tray, Routes visibility, Plugins visibility, skill source, usage interval |
+| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (Routes / Plugins visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
 | This computer | `?tab=local` | Data directory, log level, retention, log directory |
 | Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
