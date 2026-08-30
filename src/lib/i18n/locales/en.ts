@@ -83,6 +83,13 @@ export const en = {
       themeLight: 'Light',
       themeDark: 'Dark',
       themeSystem: 'System',
+      accentLabel: 'Brand color',
+      accentDescription: 'Buttons, switches, and the app mark',
+      accentIndigo: 'Purple',
+      accentBlue: 'Blue',
+      accentTeal: 'Teal',
+      accentRose: 'Rose',
+      accentAmber: 'Orange',
       autoStartLabel: 'Launch at login',
       autoStartDescription: 'Start after you sign in',
       autoStartTip:

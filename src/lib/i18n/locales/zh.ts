@@ -82,6 +82,13 @@ export const zh = {
       themeLight: '浅色',
       themeDark: '深色',
       themeSystem: '跟随系统',
+      accentLabel: '主色',
+      accentDescription: '按钮、开关和标志',
+      accentIndigo: '紫色',
+      accentBlue: '蓝色',
+      accentTeal: '青色',
+      accentRose: '玫红',
+      accentAmber: '橙色',
       autoStartLabel: '开机自启',
       autoStartDescription: '登录后启动',
       autoStartTip:
