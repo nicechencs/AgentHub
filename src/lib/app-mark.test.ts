@@ -6,8 +6,10 @@ import { APP_MARK_PATH, appMarkSvg } from './app-mark';
 
 describe('app mark svg', () => {
   it('paints the tile with the given fill and the shared glyph path', () => {
-    const svg = appMarkSvg('#2563eb');
+    const svg = appMarkSvg('#2563eb', 64);
     expect(svg).toContain('fill="#2563eb"');
+    expect(svg).toContain('width="64"');
+    expect(svg).toContain('height="64"');
     expect(svg).toContain(APP_MARK_PATH);
     expect(svg).not.toContain('#4f46e5');
   });
