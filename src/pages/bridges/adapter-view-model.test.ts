@@ -262,7 +262,11 @@ describe('managed adapter profiles view model', () => {
       running: 2,
       label: '3 个本机路由 · 2 个运行中 · 需保持托盘运行',
     });
-    expect(adapterBridgeFleetSummary([bridgeProfile()], { 'bridge-1': { state: 'running' } })).toBeNull();
+    expect(adapterBridgeFleetSummary([bridgeProfile()], { 'bridge-1': { state: 'running' } })).toEqual({
+      total: 1,
+      running: 1,
+      label: '1 个本机路由 · 1 个运行中 · 需保持托盘运行',
+    });
   });
 
   it('derives the state-matched primary action including statusUnavailable', () => {
