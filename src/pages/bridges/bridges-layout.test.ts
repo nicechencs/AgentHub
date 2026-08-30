@@ -21,6 +21,25 @@ describe('routes layout wiring', () => {
     expect(page).not.toContain('flex items-start gap-3');
   });
 
+  it('puts fleet summary or orphan lead on the same chrome row as import/create', () => {
+    const page = source('pages/bridges/index.tsx');
+    const chromeStart = page.indexOf('pageRhythm.chromeRow');
+    const listStart = page.indexOf('pageRhythm.stackDense');
+    expect(chromeStart).toBeGreaterThan(0);
+    expect(listStart).toBeGreaterThan(chromeStart);
+    const chrome = page.slice(chromeStart, listStart);
+    expect(chrome).toContain('orphanOnly');
+    expect(chrome).toContain('fleetSummary.label');
+    expect(chrome).toContain("t('routes.import.action')");
+    expect(chrome).toContain("t('routes.create.action')");
+    expect(chrome).toContain('size="sm"');
+    expect(chrome).toContain('pageRhythm.chromeActions');
+    const list = page.slice(listStart);
+    expect(list).not.toContain('fleetSummary.label');
+    expect(list).toContain('first={orphanOnly}');
+    expect(list).toContain('title={orphanOnly ? undefined');
+  });
+
   it('uses a plain 详情 button on Routes and Connections (no chevron)', () => {
     const list = source('pages/bridges/AdapterProfilesList.tsx');
     expect(list).toContain("t('routes.detail')");

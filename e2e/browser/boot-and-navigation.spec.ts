@@ -132,6 +132,20 @@ test('page title sits in the top bar with notifications; Chat has neither', asyn
   const mcpTop = (await mcpTabs.boundingBox())!.y;
   expect(Math.abs(mcpTop - connectionsTop)).toBeLessThanOrEqual(4);
 
+  await goNav(page, '路由');
+  const createRoute = page.getByRole('button', { name: '新建路由' });
+  const importRoute = page.getByRole('button', { name: '导入', exact: true });
+  const routesLead = page.getByText(/个本机路由|孤立本机路由/);
+  await expect(createRoute).toBeVisible();
+  await expect(importRoute).toBeVisible();
+  await expect(routesLead).toBeVisible();
+  const createBox = await createRoute.boundingBox();
+  const leadBox = await routesLead.boundingBox();
+  expect(createBox).toBeTruthy();
+  expect(leadBox).toBeTruthy();
+  expect(Math.abs(createBox!.y + createBox!.height / 2 - (leadBox!.y + leadBox!.height / 2))).toBeLessThanOrEqual(8);
+  expect(Math.abs(leadBox!.y - connectionsTop)).toBeLessThanOrEqual(12);
+
   await goNav(page, 'Chat');
   await expect(page).toHaveURL(/#\/chat/);
   await expect(page.getByRole('button', { name: '通知' })).toHaveCount(0);

@@ -260,14 +260,14 @@ export function bridgesPageViewState(input: {
 
 // ---------- Managed profiles ----------
 
-/** Fleet one-liner when there are at least two local bridges; `running` includes degraded. */
+/** Fleet one-liner for the chrome row; `running` includes degraded. */
 export function adapterBridgeFleetSummary(
   profiles: readonly Pick<AdapterProfile, 'id' | 'route'>[],
   bridgeStatuses: Record<string, { state: AdapterBridgeRuntimeState } | undefined>,
   t?: TranslateFn,
 ): { total: number; running: number; label: string } | null {
   const bridges = profiles.filter((profile) => profile.route === 'local_bridge');
-  if (bridges.length < 2) return null;
+  if (bridges.length === 0) return null;
   const running = bridges.filter((profile) => {
     const state = bridgeStatuses[profile.id]?.state;
     return state === 'running' || state === 'degraded';
