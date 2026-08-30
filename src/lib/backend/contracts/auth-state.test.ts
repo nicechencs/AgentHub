@@ -84,6 +84,7 @@ describe('auth state display mapping', () => {
           agentId: 'grok',
           installed: true,
           authStatus: 'valid',
+          authLabel: '可续期',
           authHealth: 'renewable',
           running: false,
         },
