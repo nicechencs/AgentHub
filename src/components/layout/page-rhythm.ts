@@ -14,8 +14,8 @@
  * | 窗内画布缝 | 8 (`p-2 gap-2`) | 8 |
  * | 贴边列（相对主列内缘） | 18 (`px-[18px]`) | 18 (`py-[18px]`) |
  * | TopBar | 18 (`px-[18px]`) | h-10 |
- * | Skills / Projects / Connections / Routes 页头 | 18 | 四周 18 |
- * | Skills / Projects / Connections / Routes 列表 | 18 (`px-[18px]`)；分栏打开时改 `workbenchXSplit` | 顶距 0（页头已 18）；底距 18 |
+ * | Skills / Projects / Connections / Routes / Agents 页头 | 18 | 四周 18 |
+ * | Skills / Projects / Connections / Routes / Agents 列表 | 18 (`px-[18px]`)；分栏打开时改 `workbenchXSplit` | 顶距 0（页头已 18）；底距 18 |
  * | Chat 全高 | 主区 chrome 16 (`px-4`) | 会话 rail 自管 |
  * | 阅读列（Chat 消息列 / Settings 表单） | `readingColumn` `max-w-3xl` 居中 | — |
  *

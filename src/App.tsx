@@ -58,12 +58,13 @@ export default function App() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isChat = pathname === '/chat';
-  /** Skills / Projects / Connections / Routes 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
+  /** Skills / Projects / Connections / Routes / Agents / Plugins / Settings 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
   const isWorkbenchSplit =
     pathname === '/skills' ||
     pathname === '/projects' ||
     pathname === '/connections' ||
     pathname === '/routes' ||
+    pathname === '/agents' ||
     pathname === '/plugins' ||
     pathname === '/settings';
   const fullBleed = isChat || isWorkbenchSplit;
