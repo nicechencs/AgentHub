@@ -198,7 +198,7 @@ export default function SettingsPage({
     return (
       <div className="flex h-full min-h-0 flex-col">
         {settingsHeader}
-        <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, 'pt-[18px]', pageRhythm.workbenchY)}>
+        <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchPadT, pageRhythm.workbenchY)}>
           <div className={pageRhythm.readingColumn}>
             <SettingsSkeleton />
           </div>
@@ -211,7 +211,7 @@ export default function SettingsPage({
     return (
       <div className="flex h-full min-h-0 flex-col">
         {settingsHeader}
-        <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, 'pt-[18px]', pageRhythm.workbenchY)}>
+        <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchPadT, pageRhythm.workbenchY)}>
           <div className={pageRhythm.readingColumn}>
             <ErrorState error={error ?? new Error(t('settings.page.emptyError'))} onRetry={() => void load()} />
           </div>
