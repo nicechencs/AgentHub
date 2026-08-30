@@ -16,6 +16,7 @@ describe('agents layout wiring', () => {
     const detail = source('pages/agents/AgentDetailPanel.tsx');
     const card = source('pages/agents/agent-card.tsx');
     expect(page).toContain('WorkbenchSplitPage');
+    expect(source('App.tsx')).toContain("pathname === '/agents'");
     expect(page).toContain("size=\"compact\"");
     expect(page).toContain("t('common.resizeSidePanel')");
     expect(page).toContain('<AgentDetailPanel');
