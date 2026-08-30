@@ -21,6 +21,7 @@ pub use gateway::BridgeHostError;
 #[allow(unused_imports)]
 pub(super) use gateway::CleanupCompletion;
 pub use inbound::InboundRequestRecord;
+pub use inbound::InboundRequestStats;
 pub use lifecycle::BridgeRuntimeHost;
 
 #[cfg(test)]

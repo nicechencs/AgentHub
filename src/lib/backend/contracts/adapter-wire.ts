@@ -87,6 +87,9 @@ export interface AdapterBridgeStatusDtoWire {
   sourceConnectionId?: string;
   startedAtUnixMs?: number;
   recentInbound?: AdapterBridgeInboundRequestWire[];
+  totalRequestCount?: number;
+  failedRequestCount?: number;
+  lastRequestAtUnixMs?: number;
   localToken?: string | null;
 }
 
@@ -306,6 +309,11 @@ function mapStartedAt(value: number | undefined): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function mapRequestCount(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return 0;
+  return value;
+}
+
 export function mapAdapterProfile(wire: AdapterProfileWire): AdapterProfile {
   return {
     id: wire.id,
@@ -458,6 +466,9 @@ export function mapAdapterBridgeStatusDto(
     startedAt: mapStartedAt(wire.startedAtUnixMs),
     upstreamStatus: mapUpstreamStatus(wire.upstreamStatus),
     recentInbound: mapInboundRequests(wire.recentInbound),
+    totalRequestCount: mapRequestCount(wire.totalRequestCount),
+    failedRequestCount: mapRequestCount(wire.failedRequestCount),
+    lastRequestAt: mapStartedAt(wire.lastRequestAtUnixMs),
     localToken: typeof wire.localToken === 'string' && wire.localToken.trim()
       ? wire.localToken.trim()
       : null,

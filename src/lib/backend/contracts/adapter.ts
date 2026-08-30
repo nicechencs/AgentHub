@@ -177,6 +177,12 @@ export interface AdapterBridgeRuntimeStatus {
   upstreamStatus?: AdapterBridgeUpstreamStatus | string | null;
   /** Newest first. Empty when no tool has connected yet. */
   recentInbound?: AdapterBridgeInboundRequest[];
+  /** Authenticated inbound requests since this process started (not ring-capped). */
+  totalRequestCount?: number;
+  /** Failed authenticated inbound requests since this process started. */
+  failedRequestCount?: number;
+  /** ISO time of the latest authenticated inbound request this process has seen. */
+  lastRequestAt?: string | null;
   /** Loopback bearer (`ahb_…`) accepted by this listener. */
   localToken?: string | null;
 }

@@ -25,6 +25,24 @@ fn ring_keeps_last_20_newest_first() {
 }
 
 #[test]
+fn stats_survive_ring_truncation_and_count_failures() {
+    let log = InboundRequestLog::new();
+    for i in 0..25_u16 {
+        let status = if i % 5 == 0 { 500 } else { 200 };
+        log.push(
+            "profile-a",
+            InboundRequestRecord::new("POST", "/v1/responses", status),
+        );
+    }
+    let stats = log.stats("profile-a");
+    assert_eq!(stats.total_request_count, 25);
+    assert_eq!(stats.failed_request_count, 5);
+    assert!(stats.last_request_at_unix_ms.is_some());
+    assert_eq!(log.recent("profile-a").len(), INBOUND_LOG_CAP);
+    assert_eq!(log.stats("profile-b").total_request_count, 0);
+}
+
+#[test]
 fn record_struct_never_serializes_secrets() {
     let record = InboundRequestRecord::new(
         "POST",
@@ -128,6 +146,10 @@ async fn http_health_and_models_are_logged_without_query_or_secrets() {
     assert!(recent[0].ok);
     assert_eq!(recent[1].path, "/health");
     assert_eq!(recent[1].status, 200);
+    let stats = host.inbound_stats("inbound-profile");
+    assert_eq!(stats.total_request_count, 2);
+    assert_eq!(stats.failed_request_count, 0);
+    assert_eq!(stats.last_request_at_unix_ms, Some(recent[0].at_unix_ms));
     let json = serde_json::to_string(&recent).expect("json");
     assert!(!json.contains("sk-secret"));
     assert!(!json.contains("local-test-token"));
