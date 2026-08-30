@@ -76,7 +76,7 @@ export function SideSplitFrame<T>({
  * Full-height workbench: list column | optional inspect pane.
  * Page title lives in TopBar. Toolbar (tabs/filters + page commands) and
  * listFooter stay in the list column, left of the separator.
- * `flushTop` skips the shared 18px top inset when this split already sits
+ * `flushTop` skips the shared 12px top inset when this split already sits
  * under another chrome row (Settings backups).
  */
 export function WorkbenchSplitPage<T>({
@@ -112,7 +112,7 @@ export function WorkbenchSplitPage<T>({
             overflowX,
             listInset,
             listFooter ? undefined : pageRhythm.workbenchY,
-            padTop > 0 ? 'pt-[18px]' : undefined,
+            padTop > 0 ? pageRhythm.workbenchPadT : undefined,
           )}
         >
           {children}

@@ -47,12 +47,12 @@ describe('PageHeader', () => {
 
   it('starts non-Chat body flush under the title slot', () => {
     expect(source('components/layout/PageHeader.tsx')).toContain('return null');
-    expect(source('components/layout/page-rhythm.ts')).toContain("workbenchY: 'pb-[18px]'");
+    expect(source('components/layout/page-rhythm.ts')).toContain("workbenchY: 'pb-3'");
     expect(source('pages/skills/index.tsx')).toContain('pageRhythm.chromeRow');
     expect(source('pages/skills/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/skills/index.tsx')).not.toContain('className="mb-2"');
     expect(source('components/layout/SideSplit.tsx')).toContain('paddingTop: padTop');
-    expect(source('components/layout/SideSplit.tsx')).toContain('pt-[18px]');
+    expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchPadT');
     expect(source('components/ui/tabs.tsx')).not.toContain('mt-4 focus:outline-none');
     expect(source('pages/settings/index.tsx')).toContain('pageRhythm.chromeRow');
   });
