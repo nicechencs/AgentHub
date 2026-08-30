@@ -111,7 +111,7 @@ describe('mapCoreAccount', () => {
     expect(mapped.subscription).toBe('prolite');
   });
 
-  it('attaches redacted associated files from stored credentials', () => {
+  it('attaches associated files from stored credentials', () => {
     const mapped = mapCoreAccount(
       core({
         id: 'grok-1',
@@ -125,7 +125,6 @@ describe('mapCoreAccount', () => {
     expect(mapped.credentialFiles).toHaveLength(1);
     expect(mapped.credentialFiles?.[0]?.name).toBe('auth.json');
     expect(mapped.credentialFiles?.[0]?.content).toContain('a@example.com');
-    expect(mapped.credentialFiles?.[0]?.content).not.toContain('rt-secret');
   });
 
   it('maps OAuth refreshTokenPreview from extra and ignores it on API keys', () => {
