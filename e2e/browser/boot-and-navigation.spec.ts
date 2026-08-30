@@ -216,7 +216,7 @@ test('Routes secondary nav appears under /routes*; primary session-collapses', a
   await expect(page).toHaveURL(/#\/routes\/activity/);
   await expect(page.getByRole('heading', { name: '活动' })).toBeVisible();
 
-  await goNav(page, '总览');
+  await goPath(page, '/');
   await expect(page).toHaveURL(/#\/$/);
   await expect(page.locator('[data-routes-nav]')).toHaveCount(0);
 });

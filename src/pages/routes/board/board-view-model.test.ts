@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import {
+  activityHref,
+  boardAttentionReason,
+  boardFleetSummary,
+  boardRecentSummaryLabel,
   buildRouteBoardStatusRows,
   mergeRecentInbound,
+  parseActivityFilter,
+  partitionBoardRows,
 } from './board-view-model';
 
 function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>): AdapterProfile {
   return {
     name: partial.name ?? partial.id,
     sourceKind: 'provider',
-    sourceId: 'src',
+    sourceId: partial.sourceId ?? `src-${partial.id}`,
     targetAgentId: 'claude',
     route: 'local_bridge',
     mode: 'api',
@@ -24,11 +30,11 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
 }
 
 describe('board-view-model', () => {
-  it('orders status rows with errors first', () => {
+  it('orders status rows with attention and errors first', () => {
     const rows = buildRouteBoardStatusRows(
       [
-        profile({ id: 'ok', name: 'Ok' }),
-        profile({ id: 'bad', name: 'Bad' }),
+        profile({ id: 'ok', name: 'Ok', sourceId: 'a' }),
+        profile({ id: 'bad', name: 'Bad', sourceId: 'b' }),
       ],
       {
         ok: { profileId: 'ok', state: 'running', port: 1, upstreamStatus: 'connected' },
@@ -37,6 +43,66 @@ describe('board-view-model', () => {
     );
     expect(rows.map((row) => row.profileId)).toEqual(['bad', 'ok']);
     expect(rows[0].endpoint).toBe('127.0.0.1:2');
+    expect(rows[0].needsAttention).toBe(true);
+    expect(rows[0].attentionReason).toBe('error');
+  });
+
+  it('does not treat status-read failure as stopped', () => {
+    const rows = buildRouteBoardStatusRows(
+      [profile({ id: 'x', name: 'X' })],
+      { x: { profileId: 'x', state: 'running', port: 9, upstreamStatus: 'connected' } },
+      { x: new Error('poll failed') },
+    );
+    expect(rows[0].statusUnavailable).toBe(true);
+    expect(rows[0].needsAttention).toBe(true);
+    expect(rows[0].attentionReason).toBe('unavailable');
+    expect(rows[0].endpoint).toBeNull();
+  });
+
+  it('groups multiple profiles that share a source into one row', () => {
+    const rows = buildRouteBoardStatusRows(
+      [
+        profile({ id: 'p1', name: 'A', sourceId: 'same', targetAgentId: 'claude' }),
+        profile({ id: 'p2', name: 'B', sourceId: 'same', targetAgentId: 'codex' }),
+      ],
+      {
+        p1: { profileId: 'p1', state: 'running', port: 1, upstreamStatus: 'connected' },
+        p2: { profileId: 'p2', state: 'stopped', upstreamStatus: 'stopped' },
+      },
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it('partitions attention vs rest', () => {
+    const rows = buildRouteBoardStatusRows(
+      [
+        profile({ id: 'ok', sourceId: 'a' }),
+        profile({ id: 'bad', sourceId: 'b', lastErrorCode: 'cannot_start' }),
+      ],
+      {
+        ok: { profileId: 'ok', state: 'running', port: 1, upstreamStatus: 'connected' },
+        bad: { profileId: 'bad', state: 'error', upstreamStatus: 'unavailable' },
+      },
+    );
+    const parts = partitionBoardRows(rows);
+    expect(parts.attention.map((row) => row.profileId)).toEqual(['bad']);
+    expect(parts.rest.map((row) => row.profileId)).toEqual(['ok']);
+  });
+
+  it('summarizes fleet with attention count', () => {
+    const rows = buildRouteBoardStatusRows(
+      [
+        profile({ id: 'ok', sourceId: 'a' }),
+        profile({ id: 'bad', sourceId: 'b' }),
+      ],
+      {
+        ok: { profileId: 'ok', state: 'running', port: 1, upstreamStatus: 'connected' },
+        bad: { profileId: 'bad', state: 'degraded', port: 2, upstreamStatus: 'degraded' },
+      },
+    );
+    const fleet = boardFleetSummary(rows);
+    expect(fleet).toMatchObject({ total: 2, running: 2, needsAttention: 1 });
+    expect(fleet?.label).toContain('需要处理');
   });
 
   it('merges inbound requests newest first and caps length', () => {
@@ -68,5 +134,31 @@ describe('board-view-model', () => {
     expect(merged[0].path).toBe('/models');
     expect(merged[0].sourceLabel).toBe('Beta');
     expect(merged[1].path).toBe('/v1/b');
+  });
+
+  it('builds activity deep links and parses filter', () => {
+    expect(activityHref({})).toBe('/routes/activity');
+    expect(activityHref({ filter: 'failed' })).toBe('/routes/activity?filter=failed');
+    expect(activityHref({ route: 'p1', filter: 'failed' })).toBe(
+      '/routes/activity?filter=failed&route=p1',
+    );
+    expect(parseActivityFilter('failed')).toBe('failed');
+    expect(parseActivityFilter('nope')).toBe('all');
+  });
+
+  it('labels attention reasons and recent summaries', () => {
+    expect(boardAttentionReason({
+      statusUnavailable: true,
+      state: 'running',
+      profileStatus: 'active',
+    })).toBe('unavailable');
+    expect(boardRecentSummaryLabel(
+      { lastAt: null, failedInWindow: 0, windowSize: 0 },
+      null,
+    )).toContain('还没有请求');
+    expect(boardRecentSummaryLabel(
+      { lastAt: 't', failedInWindow: 2, windowSize: 5 },
+      '3 分钟前',
+    )).toContain('失败');
   });
 });
