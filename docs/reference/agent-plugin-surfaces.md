@@ -47,7 +47,7 @@ updated: 2026-08-29
 | Cursor | `~/.cursor/mcp.json` 的 `mcpServers` | IDE MCP 设置；改 JSON 后重载 | CLI **无**插件包系统；IDE 扩展市场不是 cursor-agent | `~/.cursor/skills-cursor` | Planned | Full |
 | Pi | `~/.pi/agent/mcp.json`（或 `$PI_CODING_AGENT_DIR`） | 扩展/适配器读取该文件；热更因发行而异 | `pi install` 装的是 Pi 扩展，不是 MCP server | `~/.pi/agent/skills` | Planned | Full |
 | WorkBuddy | `<config>/.mcp.json` | 未验证稳定 CLI | 未验证 | `<config>/skills` | Planned | Full |
-| Kimi | 无已验证契约；inventory 只探 `mcp.json` | 未验证 | 未验证 | 无（Skills Unsupported） | Planned | Unsupported |
+| Kimi | 无已验证契约；inventory 只探 `mcp.json` | 未验证 | 未验证 | 不投影（Kimi 自己读共享库 `~/.agents/skills/` 与 `$KIMI_CODE_HOME/skills`） | Planned | Partial |
 | DSH | 无已验证 MCP 契约；inventory 只探 JSON | 未验证 | Cordis 插件树，**不是** Claude 式 plugin 包，也不是 MCP | `~/.dsh/skills` | Planned | Full |
 | ZCode | inventory 只探 home 下 JSON；桌面契约未验证 | 未验证 | 未验证 | `~/.zcode/skills` | Planned | Full |
 
@@ -196,7 +196,7 @@ updated: 2026-08-29
 
 - 无已验证 plugin CLI / 目录。插件页标不支持。
 
-- Skills：Unsupported，「Kimi 不支持技能目录」。
+- Skills：Partial。Kimi Code 会读共享库 `~/.agents/skills/` 和 `$KIMI_CODE_HOME/skills/`（默认 `~/.kimi-code/skills/`）。Hub 不再把共享库链进 Kimi 专属目录。
 - MCP：无已验证路径。inventory 探测 `<kimi-home>/mcp.json` 与 `.mcp.json` 以便 UI 显示未发现，不表示格式已确认。
 - 不要为填矩阵伪造 Full。
 

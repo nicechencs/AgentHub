@@ -726,6 +726,55 @@ fn restore_config_puts_catalog_map_back_without_dropping_custom_rows() {
 }
 
 #[test]
+fn kind_follows_endpoint_when_omitted() {
+    assert_eq!(zcode_kind_for_url(None), "anthropic");
+    assert_eq!(
+        zcode_kind_for_url(Some("https://api.z.ai/api/anthropic")),
+        "anthropic"
+    );
+    assert_eq!(
+        zcode_kind_for_url(Some("http://127.0.0.1:43121/v1/messages")),
+        "anthropic"
+    );
+    assert_eq!(
+        zcode_kind_for_url(Some("http://127.0.0.1:43121/v1/responses")),
+        "openai"
+    );
+    assert_eq!(
+        zcode_kind_for_url(Some("https://api.openai.com/v1")),
+        "openai"
+    );
+    assert_eq!(
+        zcode_kind_for_url(Some("https://example.test/v1")),
+        "openai-compatible"
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    with_zcode_home(dir.path(), || {
+        ZcodeAdapter
+            .write_config(&AgentConfig {
+                agent: AgentId::Zcode,
+                raw: json!({
+                    "apiKey": "sk-custom",
+                    "baseURL": "https://example.test/v1",
+                    "name": "relay",
+                    "models": ["relay-model"]
+                }),
+            })
+            .unwrap();
+        let disk: Value = serde_json::from_str(
+            &std::fs::read_to_string(v2_config_path(dir.path())).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            disk.pointer("/provider/agenthub-managed/kind")
+                .and_then(Value::as_str),
+            Some("openai-compatible")
+        );
+    });
+}
+
+#[test]
 fn authorization_key_includes_catalog_slot() {
     let left = json!({ "api_key": "sk-same", "provider_id": "builtin:zai" });
     let right = json!({ "api_key": "sk-same", "provider_id": "aabbcc" });

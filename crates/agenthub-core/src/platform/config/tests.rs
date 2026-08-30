@@ -688,6 +688,10 @@ api_key = "sk-kimi-old"
     assert_kimi_model_table(&text, "kimi-k2.5", "moonshot");
     assert!(text.contains("type = \"openai\""), "{text}");
     assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+    assert!(
+        !text.contains("type = \"kimi\""),
+        "example.kimi is not the official platform root; {text}"
+    );
 
     // Materialize pool settings from base content + new secret value.
     let base = json!({ "format": "toml", "content": text });

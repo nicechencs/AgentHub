@@ -4,7 +4,7 @@ use serde_json::{json, Map, Value};
 
 use crate::error::{AppError, Result};
 use crate::integrations::agents::kimi::managed::{
-    ensure_kimi_model_alias, ensure_kimi_provider_entry,
+    ensure_kimi_model_alias, ensure_kimi_provider_entry, fill_missing_kimi_provider_type,
 };
 use crate::logging::targets;
 use crate::models::{
@@ -207,7 +207,7 @@ impl AgentAdapter for KimiAdapter {
         match cap {
             ConfigWrite | AccountSwitch | ApiKeyAccount | LiveBackup | StructuredStream
             | ProjectHistory | ProjectDelete | ProviderPresets => CapabilityState::full(),
-            Skills => CapabilityState::unsupported("Kimi 不支持技能目录"),
+            Skills => CapabilityState::partial("共享库里的技能会直接生效，不必再同步一份"),
             DangerousMode => CapabilityState::partial("-p 与 --yolo 互斥，headless 下该开关不生效"),
             Usage => CapabilityState::full(),
             Mcp | ModelSelect | SessionResume => CapabilityState::planned("待验证接入"),
@@ -501,6 +501,7 @@ fn apply_kimi_api_key_credentials(path: &Path, credentials: &Value) -> Result<()
             providers[slug.as_str()]["base_url"] = toml_edit::value(url);
             changed = true;
         }
+        fill_missing_kimi_provider_type(&mut doc, slug.as_str())?;
     }
     if changed {
         atomic_write(path, doc.to_string().as_bytes())?;
@@ -643,6 +644,7 @@ pub(crate) fn write_kimi_api_key(path: &Path, key: &str) -> Result<()> {
         doc["default_provider"] = toml_edit::value(provider_name.as_str());
     }
     ensure_kimi_provider_entry(&mut doc, provider_name.as_str())?;
+    fill_missing_kimi_provider_type(&mut doc, provider_name.as_str())?;
     let stored = doc
         .get("default_model")
         .and_then(|v| v.as_str())

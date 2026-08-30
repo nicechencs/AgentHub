@@ -39,7 +39,7 @@ agenthub agent capabilities --markdown
 | ConfigWrite | Full | Full | Full | Full | Full | Partial | Unsupported | Partial | Partial |
 | AccountSwitch | Full | Full | Full | Full | Full | Partial | Unsupported | Partial | Partial |
 | ApiKeyAccount | Full | Partial | Full | Full | Partial | Full | Partial | Full | Full |
-| Skills | Full | Full | Unsupported | Full | Full | Full | Full | Full | Full |
+| Skills | Full | Full | Partial | Full | Full | Full | Full | Full | Full |
 | LiveBackup | Full | Full | Full | Full | Full | Full | Unsupported | Full | Full |
 | StructuredStream | Full | Full | Full | Full | Full | Unsupported | Unsupported | Planned | Unsupported |
 | DangerousMode | Full | Full | Partial | Full | Partial | Full | Full | Partial | Unsupported |

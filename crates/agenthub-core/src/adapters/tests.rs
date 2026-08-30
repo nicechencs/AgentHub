@@ -1218,7 +1218,7 @@ fn matrix_matches_documented_boundary_cells() {
     let matrix = reg.matrix();
     assert_eq!(
         matrix[&AgentId::Kimi][&Capability::Skills].level,
-        CapabilityLevel::Unsupported
+        CapabilityLevel::Partial
     );
     assert_eq!(
         matrix[&AgentId::Cursor][&Capability::AccountSwitch].level,
@@ -2109,6 +2109,24 @@ api_key = "old"
     assert!(text.contains("max_context_size = 131072"), "{text}");
     assert!(text.contains("type = \"openai\""), "{text}");
     assert!(text.contains("default_provider = \"moonshot\""), "{text}");
+}
+
+#[test]
+fn write_kimi_api_key_fills_official_moonshot_type() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"default_model = "kimi-k2"
+[providers.moonshot]
+base_url = "https://api.moonshot.cn/v1"
+api_key = "old"
+"#,
+    )
+    .unwrap();
+    kimi::write_kimi_api_key(&path, "sk-new-key").unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("type = \"kimi\""), "{text}");
 }
 
 #[test]
