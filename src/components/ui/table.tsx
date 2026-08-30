@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Card } from '@/components/ui/card';
 import { Hint } from '@/components/ui/tooltip';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { cn } from '@/lib/utils';
 import {
   persistColumnWidths,
@@ -219,12 +220,13 @@ export function ColumnResizeHandle<K extends string>({
   label: string;
   onResizeStart: (key: K, e: React.MouseEvent | React.PointerEvent) => void;
 }) {
+  const { t } = useI18n();
   return (
-    <Hint label="拖动调整列宽">
+    <Hint label={t('common.resizeColumn')}>
       <span
         role="separator"
         aria-orientation="vertical"
-        aria-label={`调整${label}列宽`}
+        aria-label={t('common.resizeColumnNamed', { label })}
         onPointerDown={(e) => onResizeStart(columnKey, e)}
         onMouseDown={(e) => onResizeStart(columnKey, e)}
         className={tableStyles.resizeHandle}

@@ -24,6 +24,10 @@ export const en = {
     relativeMinutes: '{n} min ago',
     relativeHours: '{n} h ago',
     relativeDays: '{n} d ago',
+    hideSecret: 'Hide',
+    showSecret: 'Show',
+    resizeColumn: 'Drag to resize column',
+    resizeColumnNamed: 'Resize {label} column',
   },
   nav: {
     workspace: 'Workspace',
@@ -517,6 +521,7 @@ export const en = {
       colVersion: "Version",
       colActions: "Actions",
       versionUnknown: "Unknown",
+      fromInstalls: "From {source} · {count} installs",
     },
     menu: {
       preview: "Preview",
@@ -1374,6 +1379,9 @@ export const en = {
       envHint: "When this connection is active, the key is written into Claude's config. The default is fine for most cases.",
       envAuthToken: "Default method",
       envApiKey: "Alternate method",
+      kimiProductType: "Kimi key type",
+      kimiOpenApi: "Kimi Open Platform API Key",
+      kimiCodeMembership: "Kimi Code membership key",
       saveEdit: "Save changes",
       missingAccount: "No account to edit",
       updated: "API Key account updated",
@@ -1617,6 +1625,9 @@ export const en = {
       deletedSource: "Source was deleted",
       illegalTarget: "Invalid target tool",
       generatedReuse: "This is a generated local address, not a login, and cannot be connected to another tool",
+      bindUnreadable: "Couldn't read the connect result. Try again",
+      planUnreadable: "Couldn't read the connection plan. Try again",
+      unbindUnreadable: "Couldn't read the stop-and-restore result. Try again",
       poolPartial: "Some resources failed to load",
       poolPartialParts: "Some resources failed to load: {parts}. Retry. Do not treat missing data as an empty list.",
       partAccounts: "accounts",
@@ -2022,6 +2033,48 @@ export const en = {
       uninstalled: "{name} uninstalled",
       configHandled: "Config handled (shared runtimes such as Node were not uninstalled)",
       uninstallFailed: "Uninstall failed",
+    },
+    terminal: {
+      runningWait: "In progress · waited {elapsed} (download/install may take a few minutes)",
+      running: "In progress…",
+      done: "Done",
+      failed: "Failed. Try running the command above yourself",
+      guided: "Finish setup on the official site, then restart AgentHub",
+    },
+    installCopy: {
+      setupGuideDiagnosis:
+        "This agent has no script install. The official setup page is open. Finish setup, then fully quit and restart AgentHub.",
+      setupGuideOpened: "{name} opened the official setup page. Finish setup, then restart AgentHub.",
+      noWritePermission: "No write permission. This is not a PATH problem.",
+      timedOut: "Install timed out.",
+      cannotStartCommand: "The install command could not start.",
+      exitCode: "The install command did not exit successfully (exit code {code}).",
+      ideUninstall: "This is an IDE extension install. Uninstall the program in the IDE extension.",
+      desktopUninstall:
+        "This is a desktop-app install. Uninstall the program in the desktop app or Microsoft Store.",
+      ideUninstallPurge:
+        "This is an IDE extension install. Uninstall the program in the IDE extension. Only the config folder will be cleaned here.",
+      desktopUninstallPurge:
+        "This is a desktop-app install. Uninstall the program in the desktop app or Microsoft Store. Only the config folder will be cleaned here.",
+      ideUpdate: "This is an IDE extension install. Update it in the IDE extension.",
+      desktopUpdate: "This is a desktop-app install. Update it in the desktop app.",
+      setupOnly: "This agent only offers official Setup and cannot check for updates automatically.",
+      cannotDetect: "Couldn't check for updates: {error}",
+      cannotDetectShort: "Couldn't check for updates",
+      fromIde: "Current install is from the IDE extension. Update it there; AgentHub cannot update it.",
+      fromDesktop: "Current install is from the desktop app. Update it there; AgentHub cannot update it.",
+      channelNpm:
+        "Current install channel is {channel}; compared with the npm dist-tag. Upgrade still uses this computer's channel.",
+      channelOfficial:
+        "Current install channel is {channel}; compared with the official source ({source}). Upgrade still uses this computer's channel.",
+      deletedConfigKeptApp:
+        "{name} config deleted. The program is still in the IDE extension or desktop app.",
+      uninstallDone: "{name} uninstalled",
+      uninstallStillDetected:
+        "{name} was uninstalled but a binary is still detected (PATH leftover or another location).",
+      uninstallProgramFailed: "{name} could not uninstall the program automatically.",
+      omittedProgress: "({n} download-progress lines omitted)",
+      omittedOutput: "({n} install-output lines omitted)",
     },
     update: {
       checking: "Checking for updates…",

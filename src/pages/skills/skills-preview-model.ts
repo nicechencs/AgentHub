@@ -1,5 +1,8 @@
 import type { SkillMarketSource } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
+import { localizeSkillMarketDescription } from '@/lib/i18n/stored-copy';
+
+export { localizeSkillMarketDescription };
 
 export function marketSourceLabel(source: SkillMarketSource, t?: TranslateFn): string {
   if (source === 'skillhub.cn') return 'skillhub.cn';

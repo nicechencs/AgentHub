@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import type { Account, Provider } from '@/lib/types';
 import type {
   AdapterApplyPlan,
@@ -27,6 +28,7 @@ import {
   canRetry,
   connectFlowEntryKey,
   connectFlowResultMessage,
+  formatConnectFlowError,
   createConnectFlowState,
   describePlanPreview,
   eligibilityOf,
@@ -1383,5 +1385,20 @@ describe('route endpoint grouping', () => {
       kimiSource,
       map,
     )).toBe('dsh');
+  });
+});
+
+describe('formatConnectFlowError', () => {
+  it('localizes unreadable bind / plan results on English', () => {
+    const tEn = createTranslator('en');
+    expect(formatConnectFlowError(new Error('绑定结果无法识别，请重试'), tEn)).toBe(
+      "Couldn't read the connect result. Try again",
+    );
+    expect(formatConnectFlowError(new Error('连接方案无法识别，请重试'), tEn)).toBe(
+      "Couldn't read the connection plan. Try again",
+    );
+    expect(formatConnectFlowError(new Error('停止并还原结果无法识别，请重试'), tEn)).not.toMatch(
+      /[\u4e00-\u9fff]/,
+    );
   });
 });

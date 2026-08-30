@@ -55,12 +55,12 @@ Chat, Skills, Projects, Plugins, Connections, Routes, and Settings use `fullBlee
 
 ### 2.3 Settings
 
-Settings uses the workbench header and four page tabs. Preferences, This device, and About keep a reading-column content area. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
+Settings uses the workbench header and four page tabs. Preferences, This computer, and About keep a reading-column content area. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
 
 | Tab | Query | Contents |
 |---|---|---|
 | Preferences | `?tab=preferences` | Language, theme, startup, close-to-tray, Routes visibility, Plugins visibility, skill source, usage interval |
-| This device | `?tab=local` | Data directory, log level, retention, log directory |
+| This computer | `?tab=local` | Data directory, log level, retention, log directory |
 | Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
 
@@ -133,7 +133,7 @@ The detail panel is a focused dialog or side surface opened from the list. It sh
 
 Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Connections remains the login list; Routes does not become a second place to add credentials.
 
-The primary runtime actions are start, stop, retry, and remove/unbind where the product flow permits them. A stop or unbind confirmation explains listener impact and whether the current live configuration will be restored. A failed unbind remains retryable; it must not fall back to force deletion.
+The primary runtime actions are start, stop, retry, and remove/unbind where the product flow permits them. A stop or unbind confirmation explains listener impact and whether the current local configuration will be restored. A failed unbind remains retryable; it must not fall back to force deletion.
 
 ### 6.3 Runtime boundary
 

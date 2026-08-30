@@ -774,6 +774,21 @@ describe('ticket detail fields', () => {
     expect(humanizeTicketAuthLabel('已验证')).toBe('已验证');
   });
 
+  it('humanizes stored Chinese health labels on English login chips', () => {
+    const tEn = createTranslator('en');
+    expect(humanizeTicketAuthLabel('可续期·未验证', tEn)).toBe('Renewable');
+    expect(humanizeTicketAuthLabel('已配置', tEn)).toBe('Configured');
+    expect(humanizeTicketAuthLabel('已验证', tEn)).toBe('Verified');
+    expect(ticketAuthChip({ authLabel: '可续期·未验证' }, tEn)).toEqual({
+      label: 'Renewable',
+      mono: false,
+    });
+    expect(ticketAuthChip({ authLabel: '已配置', secretTail: '**wxyz' }, tEn)).toEqual({
+      label: '**wxyz',
+      mono: true,
+    });
+  });
+
   it('replaces 可续期 / 已配置 chips with the secret tail', () => {
     expect(ticketAuthChip({
       authLabel: '可续期·未验证',

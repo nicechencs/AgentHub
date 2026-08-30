@@ -119,33 +119,36 @@ export function attachLiveAgentAuth(account: Account, status: AgentStatus | unde
 export const authStateForAccount = authDisplayForAccount;
 
 /** Map an AgentStatus while accepting old backend rows without health fields. */
-export function authDisplayForAgentStatus(status: AgentStatus | undefined): AuthDisplay {
+export function authDisplayForAgentStatus(
+  status: AgentStatus | undefined,
+  t?: TranslateFn,
+): AuthDisplay {
   if (!status || !status.installed) {
-    return { health: 'missing', label: AUTH_HEALTH_LABEL.missing, legacyStatus: 'none' };
+    return { health: 'missing', label: authHealthLabel('missing', t), legacyStatus: 'none' };
   }
   const explicit = normalizeAuthHealth(status.authHealth);
   if (explicit) {
     return {
       health: explicit,
-      label: authHealthLabel(explicit),
+      label: authHealthLabel(explicit, t),
       legacyStatus: authHealthToLegacyStatus(explicit),
     };
   }
   // Old doctor values are retained for compatibility, but renewable/unknown
   // rows are no longer treated as invalid by Dashboard.
   if (status.authStatus === 'expired') {
-    return { health: 'needs_login', label: AUTH_HEALTH_LABEL.needs_login, legacyStatus: 'expired' };
+    return { health: 'needs_login', label: authHealthLabel('needs_login', t), legacyStatus: 'expired' };
   }
   if (status.authStatus === 'none') {
-    return { health: 'missing', label: AUTH_HEALTH_LABEL.missing, legacyStatus: 'none' };
+    return { health: 'missing', label: authHealthLabel('missing', t), legacyStatus: 'none' };
   }
   if (status.authLabel === 'API' || status.effectiveKind === 'api') {
-    return { health: 'configured', label: AUTH_HEALTH_LABEL.configured, legacyStatus: 'valid' };
+    return { health: 'configured', label: authHealthLabel('configured', t), legacyStatus: 'valid' };
   }
   if (status.authStatus === 'expiring') {
-    return { health: 'unknown', label: AUTH_HEALTH_LABEL.unknown, legacyStatus: 'expiring' };
+    return { health: 'unknown', label: authHealthLabel('unknown', t), legacyStatus: 'expiring' };
   }
-  return { health: 'unknown', label: AUTH_HEALTH_LABEL.unknown, legacyStatus: 'valid' };
+  return { health: 'unknown', label: authHealthLabel('unknown', t), legacyStatus: 'valid' };
 }
 
 export const authStateForAgentStatus = authDisplayForAgentStatus;

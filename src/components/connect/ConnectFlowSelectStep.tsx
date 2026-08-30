@@ -20,6 +20,7 @@ import type {
   SourceOption,
 } from '@/lib/connect-flow/types';
 import { cn } from '@/lib/utils';
+import { localizeStoredUiCopy } from '@/lib/i18n/stored-copy';
 import {
   agentsForRouteEndpoint,
   eligibilityForRouteEndpoint,
@@ -44,11 +45,13 @@ export function EffectiveSummary({
   authLabel: string;
 }) {
   const { t } = useI18n();
+  const shownLabel = localizeStoredUiCopy(label, t);
+  const shownAuth = localizeStoredUiCopy(authLabel, t);
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       <AgentDot agentId={agentId} size="sm" title={null} />
-      <span>{t('connect.dialog.currentEffective', { label })}</span>
-      <Badge variant="default">{authLabel}</Badge>
+      <span>{t('connect.dialog.currentEffective', { label: shownLabel })}</span>
+      <Badge variant="default">{shownAuth}</Badge>
     </span>
   );
 }
