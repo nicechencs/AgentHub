@@ -1,10 +1,9 @@
 import { useId, useState } from 'react';
-import { FolderOpen } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailsToggle } from '@/components/shared/DetailsToggle';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   ColumnResizeHandle,
   Table,
@@ -82,7 +81,6 @@ function FileGroupHeader({
   colSpan: number;
   onLocate: (path: string) => void;
 }) {
-  const { t } = useI18n();
   return (
     <TableRow className="bg-subtle hover:bg-subtle">
       <TableCell colSpan={colSpan} className="py-1.5">
@@ -99,15 +97,11 @@ function FileGroupHeader({
               <p className="min-w-0 truncate font-mono text-meta text-muted">{path}</p>
             </Tip>
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="shrink-0"
+          <OpenDirButton
+            labeled
+            title={path}
             onClick={() => void onLocate(path)}
-          >
-            <FolderOpen className="h-3 w-3" />
-            {t('mcp.table.directory')}
-          </Button>
+          />
         </div>
       </TableCell>
     </TableRow>

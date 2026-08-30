@@ -1,5 +1,7 @@
 import * as React from 'react';
-import { Check, Copy, FolderOpen } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
+import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 
 /** Filename + path, copy, and 「目录」 — used by login details and backup details. */
@@ -9,7 +11,6 @@ export function ConfigFileCard({
   content,
   emptyHint,
   copyLabel,
-  openLabel,
   opening = false,
   onOpen,
 }: {
@@ -18,10 +19,10 @@ export function ConfigFileCard({
   content?: string | null;
   emptyHint?: string;
   copyLabel: string;
-  openLabel: string;
   opening?: boolean;
   onOpen: () => void;
 }) {
+  const { t } = useI18n();
   const [copied, setCopied] = React.useState(false);
   const text = content?.trim() ? content : null;
   const onCopy = () => {
@@ -56,19 +57,12 @@ export function ConfigFileCard({
               {copyLabel}
             </Button>
           ) : null}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 shrink-0 px-2"
+          <OpenDirButton
+            labeled
             disabled={opening || !path}
-            title={path || openLabel}
-            aria-label={openLabel}
+            title={path || t('common.directory')}
             onClick={onOpen}
-          >
-            <FolderOpen className="h-3 w-3" />
-            {openLabel}
-          </Button>
+          />
         </div>
       </div>
       {text ? (

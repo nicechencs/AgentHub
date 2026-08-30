@@ -6,13 +6,14 @@ import {
   type RefObject,
   type TransitionEvent as ReactTransitionEvent,
 } from 'react';
-import { Code2, Eye, FolderOpen, PanelRightClose, Trash2 } from 'lucide-react';
+import { Code2, Eye, PanelRightClose, Trash2 } from 'lucide-react';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { Button } from '@/components/ui/button';
 import { segmentedItemClass, segmentedTrackClass } from '@/components/ui/segmented-styles';
 import { Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import { readProjectSkillMarkdown, readSkillMarkdown } from '@/lib/api/skill';
 import {
@@ -238,16 +239,10 @@ export function SkillMarkdownPreviewPanel({
           </div>
 
           {openFolderPath && onOpenDir ? (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 shrink-0"
+            <OpenDirButton
               title={t('skills.preview.openDir')}
-              aria-label={t('skills.preview.openDir')}
               onClick={() => onOpenDir(openFolderPath)}
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-            </Button>
+            />
           ) : null}
 
           {onRemoveCopy ? (

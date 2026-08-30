@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
-import { FolderOpen, MessageSquarePlus, PanelRightClose } from 'lucide-react';
+import { MessageSquarePlus, PanelRightClose } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
@@ -138,16 +139,10 @@ export function ProjectConversationPreviewPanel({
           <MessageSquarePlus className="h-3.5 w-3.5" />
         </Button>
         {record ? (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 shrink-0"
-            aria-label={t('projects.preview.openRecord')}
+          <OpenDirButton
             title={t('projects.preview.openRecord')}
             onClick={() => onOpenRecord(session)}
-          >
-            <FolderOpen className="h-3.5 w-3.5" />
-          </Button>
+          />
         ) : null}
         <Button
           size="icon"

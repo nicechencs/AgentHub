@@ -6,6 +6,7 @@ export const zh = {
     saveFailed: '保存失败',
     cancel: '取消',
     open: '打开',
+    directory: '目录',
     view: '查看',
     delete: '删除',
     restore: '恢复',
