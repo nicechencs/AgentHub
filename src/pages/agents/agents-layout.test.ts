@@ -67,6 +67,14 @@ describe('agents layout wiring', () => {
     expect(page).toContain('pageRhythm.stackDense');
   });
 
+  it('lets the uninstall type-to-confirm name copy with one click', () => {
+    const dialogs = source('pages/agents/AgentCardDialogs.tsx');
+    expect(dialogs).toContain("t('agents.dialog.typeToConfirm', { name: agentName })");
+    expect(dialogs).toContain('navigator.clipboard.writeText(agentName)');
+    expect(dialogs).toContain("toast({ title: t('common.copied'), variant: 'success' })");
+    expect(dialogs).toContain("aria-label={t('common.copy')}");
+  });
+
   it('drag-reorders Agent cards and remembers the catalog order', () => {
     const page = source('pages/agents/index.tsx');
     expect(page).toContain('SortHandle');
