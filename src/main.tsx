@@ -22,7 +22,10 @@ import { fetchCatalogShared } from '@/lib/hooks/useSkills';
 import { fetchAgentProjectsShared, rememberedProjectAgent } from '@/lib/hooks/useProjects';
 import { reconcileAccountPool } from '@/lib/api/account';
 import { applyLanguage, loadStoredLanguage } from '@/lib/i18n';
+import { applyAccent, loadStoredAccent, registerShellIconSync } from '@/lib/accent';
+import { applyShellAccentIconBestEffort } from '@/lib/backend/tauri/shell-icon';
 import { applyTheme, loadStoredTheme } from '@/lib/theme';
+import { isTauriApp } from '@/lib/platform';
 import { logger } from '@/lib/logger';
 // Design tokens first (SSOT: src/styles/tokens.ts), then structural styles
 import 'virtual:agenthub-design-tokens.css';
@@ -155,9 +158,14 @@ function Root() {
 }
 
 function boot() {
-  // 首屏前同步主题,避免闪烁
+  // 首屏前同步主题和主色,避免闪烁
   applyTheme(loadStoredTheme());
+  applyAccent(loadStoredAccent());
   applyLanguage(loadStoredLanguage());
+  if (isTauriApp()) {
+    registerShellIconSync(applyShellAccentIconBestEffort);
+    applyShellAccentIconBestEffort(loadStoredAccent());
+  }
 
   // 立刻挂载 React：由 Root 内 splash 覆盖预加载，不再阻塞在 createRoot 之前
   ReactDOM.createRoot(document.getElementById('root')!).render(
