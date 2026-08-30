@@ -168,9 +168,12 @@ export const zh = {
       updating: '更新中…',
       oneClickUpdate: '一键更新',
       githubLabel: 'GitHub',
-      githubDescription: '源码、Issue 与发布页',
+      githubDescription: '源码与发布页',
       openRepo: '打开仓库',
       openGithubFailed: '无法打开 GitHub',
+      feedbackLabel: '反馈问题',
+      feedbackDescription: '遇到问题或有建议时填写',
+      openFeedback: '去填写',
       tagline: 'AgentHub — 统一管理 AI coding agent 的配置、账号与用量。',
     },
     backups: {
@@ -351,6 +354,10 @@ export const zh = {
       title: "需要关注",
       dismissAll: "全部忽略",
       empty: "暂无新通知",
+    },
+    feedback: {
+      label: "反馈问题",
+      openFailed: "无法打开反馈页",
     },
     authStatus: {
       valid: "已认证",

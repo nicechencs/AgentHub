@@ -1,7 +1,7 @@
 import type { TranslateFn } from '@/lib/i18n';
 import type { LogLevel, SkillMarketSource } from '@/lib/types';
 
-export const GITHUB_REPO_URL = 'https://github.com/nicechencs/AgentHub';
+export { GITHUB_NEW_ISSUE_URL, GITHUB_REPO_URL } from '@/lib/github';
 
 export const SKILL_MARKET_VALUES: SkillMarketSource[] = ['auto', 'skills.sh', 'skillhub.cn'];
 
