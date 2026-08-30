@@ -1,3 +1,4 @@
+import { formatJsonPayload } from '@/lib/source-preview';
 import type { TranslateFn } from '@/lib/i18n';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { ChatMessage } from '@/lib/types';
@@ -9,13 +10,7 @@ export type TurnGroup = {
 };
 
 export function formatStepInput(input: unknown): string | null {
-  if (input == null) return null;
-  try {
-    const s = typeof input === 'string' ? input : JSON.stringify(input);
-    return s.length > 240 ? `${s.slice(0, 240)}…` : s;
-  } catch {
-    return String(input);
-  }
+  return formatJsonPayload(input);
 }
 
 export function formatDurationMs(ms: number): string {

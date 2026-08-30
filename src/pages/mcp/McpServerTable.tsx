@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailsToggle } from '@/components/shared/DetailsToggle';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
+import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -148,12 +149,12 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
       {open && hasSnippet ? (
         <TableRow className="hover:bg-transparent">
           <TableCell colSpan={4} className="bg-subtle/50">
-            <pre
+            <SourcePreview
               id={detailsId}
-              className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-card font-mono text-meta leading-relaxed text-secondary"
-            >
-              {server.snippet}
-            </pre>
+              value={server.snippet ?? ''}
+              format={server.sourceFormat}
+              showCopy
+            />
           </TableCell>
         </TableRow>
       ) : null}
