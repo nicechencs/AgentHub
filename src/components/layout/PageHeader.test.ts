@@ -74,6 +74,8 @@ describe('PageHeader', () => {
     expect(source('pages/bridges/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/projects/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(topBar).toContain('PageTitleBlock');
+    expect(topBar).toContain('FeedbackButton');
+    expect(topBar).toContain('NotificationBell');
     expect(topBar).toContain('pageRhythm.topChrome');
     expect(topBar).toContain('pageRhythm.workbenchX');
     expect(source('components/layout/Sidebar.tsx')).toContain('pageRhythm.topChrome');

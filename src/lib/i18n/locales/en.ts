@@ -176,9 +176,12 @@ export const en = {
       updating: 'Updating…',
       oneClickUpdate: 'One-click update',
       githubLabel: 'GitHub',
-      githubDescription: 'Source, issues, and releases',
+      githubDescription: 'Source and releases',
       openRepo: 'Open repository',
       openGithubFailed: "Couldn't open GitHub",
+      feedbackLabel: 'Report a problem',
+      feedbackDescription: 'Tell us about a problem or idea',
+      openFeedback: 'Write a report',
       tagline: 'AgentHub — manage AI coding agent config, accounts, and usage in one place.',
     },
     backups: {
@@ -360,6 +363,10 @@ export const en = {
       title: "Needs attention",
       dismissAll: "Dismiss all",
       empty: "No new notifications",
+    },
+    feedback: {
+      label: "Report a problem",
+      openFailed: "Couldn't open the feedback page",
     },
     authStatus: {
       valid: "Signed in",
