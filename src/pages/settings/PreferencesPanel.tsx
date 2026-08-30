@@ -205,6 +205,32 @@ export function PreferencesPanel({
           />
         </SettingsRow>
         <SettingsRow
+          label={t('settings.general.warnDuplicateRouteCredentialLabel')}
+          description={t('settings.general.warnDuplicateRouteCredentialDescription')}
+          descriptionTip={t('settings.general.warnDuplicateRouteCredentialTip')}
+        >
+          <Switch
+            checked={settings.warnDuplicateRouteCredential !== false}
+            onCheckedChange={(v) => {
+              patch({ warnDuplicateRouteCredential: v });
+              void persist({ warnDuplicateRouteCredential: v });
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.updateDuplicateRouteUrlLabel')}
+          description={t('settings.general.updateDuplicateRouteUrlDescription')}
+          descriptionTip={t('settings.general.updateDuplicateRouteUrlTip')}
+        >
+          <Switch
+            checked={settings.updateDuplicateRouteUrl !== false}
+            onCheckedChange={(v) => {
+              patch({ updateDuplicateRouteUrl: v });
+              void persist({ updateDuplicateRouteUrl: v });
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow
           label={t('settings.general.skillMarketLabel')}
           description={t('settings.general.skillMarketDescription')}
           descriptionTip={t('settings.general.skillMarketTip')}

@@ -415,6 +415,16 @@ export interface AppSettings {
   usageCollectIntervalMin: number;
   /** Switch/import keep byte copies of live config files. Default on. */
   keepLiveFileCopies: boolean;
+  /**
+   * Routes: tip when an API key / login was already used. Default on.
+   * Does not block create or import.
+   */
+  warnDuplicateRouteCredential: boolean;
+  /**
+   * Routes: same Agent + same URL updates the existing route instead of creating
+   * a new one. Default on.
+   */
+  updateDuplicateRouteUrl: boolean;
   appVersion: string;
 }
 
