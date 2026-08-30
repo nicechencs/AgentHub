@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createTranslator } from '@/lib/i18n';
 import { sliceAgentStatus } from './agent-status-view';
 import { authDisplayForAccount, authDisplayForAgentStatus } from './auth-state';
 import type { Account, AgentStatus } from '@/lib/types';
@@ -72,5 +73,22 @@ describe('auth state display mapping', () => {
       label: '可续期',
       legacyStatus: 'valid',
     });
+  });
+
+  it('renders English health labels when a translator is passed', () => {
+    const tEn = createTranslator('en');
+    expect(authDisplayForAccount(account({ authHealth: 'verified' }), tEn).label).toBe('Verified');
+    expect(
+      authDisplayForAgentStatus(
+        {
+          agentId: 'grok',
+          installed: true,
+          authStatus: 'valid',
+          authHealth: 'renewable',
+          running: false,
+        },
+        tEn,
+      ).label,
+    ).toBe('Renewable');
   });
 });

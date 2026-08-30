@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { useI18n } from '@/components/shared/LanguageProvider';
 
 /**
  * 密钥输入。隐藏时用 password 类型，值始终是明文，避免脱敏串吞字。
@@ -19,6 +20,7 @@ export function SecretInput({
   disabled?: boolean;
   readOnly?: boolean;
 }) {
+  const { t } = useI18n();
   const [revealed, setRevealed] = React.useState(false);
   const locked = Boolean(disabled || readOnly);
 
@@ -52,7 +54,7 @@ export function SecretInput({
           if (locked) return;
           setRevealed((current) => !current);
         }}
-        title={revealed ? '遮蔽' : '显示'}
+        title={revealed ? t('common.hideSecret') : t('common.showSecret')}
       >
         {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
       </Button>
