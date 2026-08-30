@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { FolderOpen } from 'lucide-react';
 import { InspectSurface } from '@/components/layout/InspectSurface';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -210,8 +210,8 @@ export function AgentDetailPanel({
           <div className="flex items-center justify-between gap-2 rounded-card border border-border bg-subtle/60 px-3 py-2">
             <span className="min-w-0 break-all font-mono text-meta text-secondary">{configDir}</span>
             <OpenDirButton
+              labeled
               disabled={opening !== null || uninstalling}
-              label={t('agents.card.openConfigDir')}
               title={t('agents.card.openConfigDirTitle')}
               onClick={openConfigDir}
             />
@@ -277,33 +277,6 @@ export function AgentDetailPanel({
   );
 }
 
-function OpenDirButton({
-  disabled,
-  label,
-  title,
-  onClick,
-}: {
-  disabled: boolean;
-  label: string;
-  title: string;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      className="h-7 shrink-0 px-2"
-      disabled={disabled}
-      title={title}
-      aria-label={title}
-      onClick={onClick}
-    >
-      <FolderOpen className="h-3 w-3" />
-      {label}
-    </Button>
-  );
-}
-
 function InstallLocationRow({
   agentId,
   inst,
@@ -332,8 +305,8 @@ function InstallLocationRow({
           ) : null}
         </div>
         <OpenDirButton
+          labeled
           disabled={!openable || busy}
-          label={t('agents.card.openInstallDir')}
           title={t('agents.card.openInstallDir')}
           onClick={onOpen}
         />

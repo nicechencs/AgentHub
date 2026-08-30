@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tip } from '@/components/ui/tooltip';
 import {
@@ -66,9 +66,9 @@ export function LocalPanel({
             >
               {settings.dataDir}
             </Tip>
-            <Button
-              size="sm"
-              variant="outline"
+            <OpenDirButton
+              labeled
+              title={settings.dataDir}
               onClick={() => {
                 void (async () => {
                   try {
@@ -83,9 +83,7 @@ export function LocalPanel({
                   }
                 })();
               }}
-            >
-              {t('common.open')}
-            </Button>
+            />
           </SettingsRow>
           <SettingsRow
             label={t('settings.data.logLevelLabel')}
@@ -166,9 +164,9 @@ export function LocalPanel({
             >
               {settings.logsDir}
             </Tip>
-            <Button
-              size="sm"
-              variant="outline"
+            <OpenDirButton
+              labeled
+              title={settings.logsDir}
               onClick={() => {
                 void (async () => {
                   try {
@@ -183,9 +181,7 @@ export function LocalPanel({
                   }
                 })();
               }}
-            >
-              {t('common.open')}
-            </Button>
+            />
           </SettingsRow>
       </CardContent>
     </Card>

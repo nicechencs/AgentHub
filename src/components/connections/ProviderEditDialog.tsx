@@ -6,7 +6,7 @@
  *   仅 configSchemaVersion === null 时走 legacy applyFormVars。
  */
 import * as React from 'react';
-import { ChevronDown, FolderOpen, RefreshCw, Sparkles } from 'lucide-react';
+import { ChevronDown, RefreshCw, Sparkles } from 'lucide-react';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import {
   Dialog,
@@ -27,6 +27,7 @@ import {
 import { ConfigEditor } from '@/components/shared/ConfigEditor';
 import { GenericConfigForm, SuggestableInput } from '@/components/shared/GenericConfigForm';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { SecretInput } from '@/components/shared/SecretInput';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
@@ -988,16 +989,11 @@ export function ProviderEditDialog({
                 </span>
               </Tip>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              onClick={() => void openLiveDir()}
+            <OpenDirButton
+              labeled
               title={t('connections.providerDialog.openDirTitle', { dir: livePaths.openDir })}
-            >
-              <FolderOpen className="h-3.5 w-3.5" /> {t('connections.providerDialog.openDir')}
-            </Button>
+              onClick={() => void openLiveDir()}
+            />
           </div>
 
           {official ? (

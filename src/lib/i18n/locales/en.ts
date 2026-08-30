@@ -7,6 +7,7 @@ export const en = {
     saveFailed: 'Save failed',
     cancel: 'Cancel',
     open: 'Open',
+    directory: 'Folder',
     view: 'View',
     delete: 'Delete',
     restore: 'Restore',

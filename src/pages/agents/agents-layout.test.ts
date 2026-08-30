@@ -34,10 +34,11 @@ describe('agents layout wiring', () => {
     expect(detail).toContain('installChannelKindLabel');
     expect(detail).toContain('installLocationSourceLabel');
     expect(detail).toContain('displayAgentConfigDir');
-    expect(detail).toContain("t('agents.card.openConfigDir')");
+    expect(detail).toContain("from '@/components/shared/OpenDirButton'");
     expect(detail).toContain("t('agents.card.openInstallDir')");
     expect(detail).toContain('flex items-center justify-between gap-2');
     expect(detail).toContain('<OpenDirButton');
+    expect(detail).toContain('labeled');
     expect(detail).toContain("title={t('agents.card.openConfigDirTitle')}");
     expect(detail).toContain("title={t('agents.card.openInstallDir')}");
     expect(card).toContain('agentListDetailsHint');

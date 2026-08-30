@@ -37,6 +37,7 @@ describe('mcp layout wiring', () => {
     expect(page).not.toContain('onInstall');
     expect(page).not.toContain('mcp.install');
     const table = source('McpServerTable.tsx');
-    expect(table).toContain("t('mcp.table.directory')");
+    expect(table).toContain('<OpenDirButton');
+    expect(table).toContain('labeled');
   });
 });
