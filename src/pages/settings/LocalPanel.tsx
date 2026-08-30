@@ -1,9 +1,9 @@
 import { useRef } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Tip } from '@/components/ui/tooltip';
 import {
   Select,
   SelectValue,
@@ -60,12 +60,12 @@ export function LocalPanel({
             description={t('settings.data.dataDirDescription')}
             descriptionTip={t('settings.data.dataDirTip')}
           >
-            <Tip
-              className="min-w-0 flex-1 break-all text-right font-mono text-xs text-secondary"
-              label={settings.dataDir}
-            >
-              {settings.dataDir}
-            </Tip>
+            <CopyableFileName
+              path={settings.dataDir}
+              wrap="break"
+              align="end"
+              className="min-w-0 flex-1"
+            />
             <OpenDirButton
               labeled
               title={settings.dataDir}
@@ -158,12 +158,12 @@ export function LocalPanel({
             description={t('settings.data.logsDirDescription')}
             descriptionTip={t('settings.data.logsDirTip')}
           >
-            <Tip
-              className="min-w-0 flex-1 break-all text-right font-mono text-xs text-secondary"
-              label={settings.logsDir}
-            >
-              {settings.logsDir}
-            </Tip>
+            <CopyableFileName
+              path={settings.logsDir}
+              wrap="break"
+              align="end"
+              className="min-w-0 flex-1"
+            />
             <OpenDirButton
               labeled
               title={settings.logsDir}

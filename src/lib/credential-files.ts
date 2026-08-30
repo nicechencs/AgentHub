@@ -1,13 +1,14 @@
 /**
- * Associated login files for an authorization (filename + redacted snapshot).
+ * Associated login files for an authorization (filename + file snapshot).
  * Paths are display paths (`~/...`); opening expands them in the file manager.
+ * Preview text is not masked by field name — this is the user's own local file.
  */
 import type { AccountKind, AgentId, Provider } from '@/lib/types';
 
 export interface CredentialFileView {
   /** Basename, e.g. `auth.json`. */
   name: string;
-  /** Redacted file text. Never contains a usable secret. */
+  /** File snapshot as stored. Not masked in this layer. */
   content: string;
 }
 
@@ -17,11 +18,6 @@ export type AgentLivePathSet = {
   extra?: string[];
   openDir: string;
 };
-
-const SECRET_KEY =
-  /^(api[_-]?key|apikey|token|auth[_-]?token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|authorization|password|client[_-]?secret|private[_-]?key)$/i;
-
-const SECRET_PREFIX = /^(sk-|xai-|ghp_|gho_|github_pat_|xox[bp]-)/i;
 
 export function authFileName(agentId: string): string {
   if (agentId === 'claude') return '.credentials.json';
@@ -124,12 +120,12 @@ export function extractAccountCredentialFiles(input: {
   const pushJson = (name: string, value: unknown) => {
     if (seen.has(name)) return;
     seen.add(name);
-    files.push({ name, content: stringifyRedacted(value) });
+    files.push({ name, content: stringifyPreview(value) });
   };
   const pushText = (name: string, text: string) => {
     if (seen.has(name)) return;
     seen.add(name);
-    files.push({ name, content: redactFreeformText(text) });
+    files.push({ name, content: text });
   };
 
   const authName = fileNameFromSource(input.source, 'auth') ?? authFileName(input.agentId);
@@ -190,10 +186,10 @@ export function extractProviderCredentialFiles(provider: Pick<
   if (provider.configFormat === 'json' || looksLikeJson(text)) {
     const parsed = tryParseJson(text);
     if (parsed !== undefined) {
-      return [{ name, content: stringifyRedacted(parsed) }];
+      return [{ name, content: stringifyPreview(parsed) }];
     }
   }
-  return [{ name, content: redactFreeformText(text) }];
+  return [{ name, content: text }];
 }
 
 function isAuthFormat(format: string | undefined): boolean {
@@ -317,42 +313,8 @@ function workbuddyCatalogFileSnapshot(
   return [row];
 }
 
-function stringifyRedacted(value: unknown): string {
-  return `${JSON.stringify(redactValue(value), null, 2)}\n`;
-}
-
-function redactValue(value: unknown): unknown {
-  if (typeof value === 'string') {
-    return redactSecretString(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item));
-  }
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = SECRET_KEY.test(key) && typeof child === 'string'
-        ? redactSecretString(child, true)
-        : redactValue(child);
-    }
-    return out;
-  }
-  return value;
-}
-
-function redactSecretString(value: string, force = false): string {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === '***') return trimmed || value;
-  if (force) return '***';
-  if (SECRET_PREFIX.test(trimmed) && trimmed.length >= 12) return '***';
-  return value;
-}
-
-function redactFreeformText(text: string): string {
-  return text.replace(
-    /^(\s*(?:api[_-]?key|auth[_-]?token|access[_-]?token|refresh[_-]?token|token|password|client[_-]?secret)\s*[=:]\s*)(["']?)([^\s"',;#]+)\2/gim,
-    (_match, prefix: string, quote: string) => `${prefix}${quote}***${quote}`,
-  );
+function stringifyPreview(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function looksLikeJson(text: string): boolean {

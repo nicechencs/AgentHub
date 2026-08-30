@@ -62,11 +62,10 @@ describe('extractAccountCredentialFiles', () => {
     expect(files[0]!.name).toBe('auth.json');
     expect(files[0]!.content).toContain('a@example.com');
     expect(files[0]!.content).toContain('refresh_token');
-    expect(files[0]!.content).not.toContain('rt-secret-should-not-leak');
-    expect(files[0]!.content).toContain('***');
+    expect(files[0]!.content).toContain('rt-secret-should-not-leak');
   });
 
-  it('shows config.toml from a Grok API Key snapshot and redacts the key', () => {
+  it('shows config.toml from a Grok API Key snapshot as stored', () => {
     const files = extractAccountCredentialFiles({
       agentId: 'grok',
       kind: 'apikey',
@@ -80,8 +79,7 @@ describe('extractAccountCredentialFiles', () => {
     });
     expect(files).toHaveLength(1);
     expect(files[0]!.name).toBe('config.toml');
-    expect(files[0]!.content).toContain('api_key = "***"');
-    expect(files[0]!.content).not.toContain('xai-file-key-12345678');
+    expect(files[0]!.content).toContain('api_key = "xai-file-key-12345678"');
   });
 
   it('shows both files for a mixed Grok snapshot', () => {
@@ -101,8 +99,8 @@ describe('extractAccountCredentialFiles', () => {
     });
     expect(files.map((file) => file.name)).toEqual(['auth.json', 'config.toml']);
     expect(files[0]!.content).toContain('b@example.com');
-    expect(files[0]!.content).not.toContain('rt-oauth-secret');
-    expect(files[1]!.content).not.toContain('xai-file-key-12345678');
+    expect(files[0]!.content).toContain('rt-oauth-secret');
+    expect(files[1]!.content).toContain('xai-file-key-12345678');
   });
 
   it('uses .credentials.json for Claude official login', () => {
@@ -117,10 +115,10 @@ describe('extractAccountCredentialFiles', () => {
       },
     });
     expect(files[0]!.name).toBe('.credentials.json');
-    expect(files[0]!.content).not.toContain('claude-at-secret');
+    expect(files[0]!.content).toContain('claude-at-secret');
   });
 
-  it('falls back to a redacted keyword snapshot when no file body was stored', () => {
+  it('falls back to a keyword snapshot when no file body was stored', () => {
     const files = extractAccountCredentialFiles({
       agentId: 'claude',
       kind: 'apikey',
@@ -135,7 +133,7 @@ describe('extractAccountCredentialFiles', () => {
     expect(files).toHaveLength(1);
     expect(files[0]!.name).toBe('settings.json');
     expect(files[0]!.content).toContain('ANTHROPIC_AUTH_TOKEN');
-    expect(files[0]!.content).not.toContain('sk-ant-secret-12345678');
+    expect(files[0]!.content).toContain('sk-ant-secret-12345678');
   });
 
   it('rebuilds ZCode config.json as a catalog row with provider name and URL', () => {
@@ -161,8 +159,8 @@ describe('extractAccountCredentialFiles', () => {
     expect(files[0]!.content).toContain('"baseURL": "https://api.qooo.io/v1"');
     expect(files[0]!.content).toContain('"kind": "openai"');
     expect(files[0]!.content).toContain('grok-4.6');
-    expect(files[0]!.content).not.toContain('sk-custom-secret-12345678');
-    expect(files[0]!.content).toContain('"apiKey": "***"');
+    expect(files[0]!.content).toContain('sk-custom-secret-12345678');
+    expect(files[0]!.content).toContain('"apiKey": "sk-custom-secret-12345678"');
   });
 
   it('rebuilds WorkBuddy models.json as a native catalog row with name and URL', () => {
@@ -189,8 +187,8 @@ describe('extractAccountCredentialFiles', () => {
     expect(files[0]!.content).toContain('"name": "grok-4.6"');
     expect(files[0]!.content).toContain('"url": "https://api.qooo.io/v1/chat/completions"');
     expect(files[0]!.content).toContain('"vendor": "Custom"');
-    expect(files[0]!.content).not.toContain('sk-custom-secret-12345678');
-    expect(files[0]!.content).toContain('"apiKey": "***"');
+    expect(files[0]!.content).toContain('sk-custom-secret-12345678');
+    expect(files[0]!.content).toContain('"apiKey": "sk-custom-secret-12345678"');
     expect(files[0]!.content.trim().startsWith('[')).toBe(true);
   });
 
@@ -221,12 +219,12 @@ describe('extractAccountCredentialFiles', () => {
     expect(files[0]!.content).not.toContain('should-not-win');
     expect(files[0]!.content).toContain('apiKeyRequired');
     expect(files[0]!.content).toContain('"priority": 1');
-    expect(files[0]!.content).not.toContain('sk-live-secret-should-not-leak');
+    expect(files[0]!.content).toContain('sk-live-secret-should-not-leak');
   });
 });
 
 describe('extractProviderCredentialFiles', () => {
-  it('shows the provider config file and redacts keys in JSON', () => {
+  it('shows the provider config file as stored', () => {
     const files = extractProviderCredentialFiles({
       agentId: 'claude',
       configFormat: 'json',
@@ -234,7 +232,7 @@ describe('extractProviderCredentialFiles', () => {
     });
     expect(files[0]!.name).toBe('settings.json');
     expect(files[0]!.content).toContain('ANTHROPIC_AUTH_TOKEN');
-    expect(files[0]!.content).not.toContain('sk-ant-secret-12345678');
+    expect(files[0]!.content).toContain('sk-ant-secret-12345678');
   });
 });
 

@@ -67,7 +67,7 @@ fn json_server_snippet_is_only_that_server() {
 }
 
 #[test]
-fn json_snippet_redacts_env_and_secret_keys() {
+fn json_snippet_keeps_env_and_secret_values() {
     let v: JsonValue = serde_json::json!({
         "mcpServers": {
             "gh": {
@@ -79,11 +79,11 @@ fn json_snippet_redacts_env_and_secret_keys() {
     });
     let parsed = parse_json_value(AgentId::Claude, &v, "x");
     let snippet = parsed.snippet.expect("snippet");
-    assert!(!snippet.contains("gho_secret"), "{snippet}");
-    assert!(!snippet.contains("secret-token"), "{snippet}");
-    assert!(snippet.contains("***"), "{snippet}");
+    assert!(snippet.contains("gho_secret"), "{snippet}");
+    assert!(snippet.contains("secret-token"), "{snippet}");
+    assert!(!snippet.contains("***"), "{snippet}");
     let server = parsed.entries[0].snippet.as_deref().unwrap();
-    assert!(!server.contains("gho_secret"), "{server}");
+    assert!(server.contains("gho_secret"), "{server}");
 }
 
 #[test]
@@ -144,7 +144,7 @@ command = "echo"
 }
 
 #[test]
-fn toml_snippet_redacts_env_values() {
+fn toml_snippet_keeps_env_values() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("config.toml");
     let mut f = fs::File::create(&path).unwrap();
@@ -159,8 +159,8 @@ env = {{ API_KEY = "sk-secret", DEBUG = "1" }}
     .unwrap();
     let parsed = parse_toml_file(AgentId::Codex, &path).unwrap();
     let snippet = parsed.snippet.expect("snippet");
-    assert!(!snippet.contains("sk-secret"), "{snippet}");
-    assert!(snippet.contains("***"), "{snippet}");
+    assert!(snippet.contains("sk-secret"), "{snippet}");
+    assert!(!snippet.contains("***"), "{snippet}");
 }
 
 #[test]

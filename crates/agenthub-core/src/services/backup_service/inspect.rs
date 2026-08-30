@@ -1,4 +1,4 @@
-//! Read snapshot files for the backup details pane. Secrets are redacted.
+//! Read snapshot files for the backup details pane.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ use crate::error::{AppError, Result};
 use crate::models::{
     AgentId, BackupFact, BackupFileView, BackupInspect, BackupListItem, BackupRecord,
 };
-use crate::utils::redact::{mask_secret_tail, redact_json, redact_text, refresh_token_tail};
+use crate::utils::redact::{mask_secret_tail, refresh_token_tail};
 
 use super::path_safety::{classify_path, is_path_inside, PathClass};
 use super::snapshot::{read_manifest, ManifestEntry};
@@ -42,7 +42,7 @@ impl BackupService {
             .collect())
     }
 
-    /// Redacted file contents + distinguishing facts for one backup.
+    /// File contents + distinguishing facts for one backup.
     pub fn inspect(&self, id: &str) -> Result<BackupInspect> {
         let record = self.get_by_id(id)?;
         self.inspect_record(&record, true)
@@ -151,7 +151,7 @@ fn preview_stored_file(
         Ok(text) => {
             collect_from_text(text, &mut facts);
             if include_content {
-                Some(redacted_preview(text))
+                Some(file_preview(text))
             } else {
                 None
             }
@@ -169,16 +169,16 @@ fn preview_stored_file(
     })
 }
 
-fn redacted_preview(text: &str) -> String {
+fn file_preview(text: &str) -> String {
     let trimmed = text.trim_start();
     if trimmed.starts_with('{') || trimmed.starts_with('[') {
         if let Ok(value) = serde_json::from_str::<Value>(text) {
-            let pretty = serde_json::to_string_pretty(&redact_json(&value))
-                .unwrap_or_else(|_| redact_text(text));
-            return pretty;
+            if let Ok(pretty) = serde_json::to_string_pretty(&value) {
+                return pretty;
+            }
         }
     }
-    redact_text(text)
+    text.to_string()
 }
 
 fn collect_from_text(text: &str, facts: &mut FactSet) {

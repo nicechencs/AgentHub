@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailsToggle } from '@/components/shared/DetailsToggle';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -94,9 +95,7 @@ function FileGroupHeader({
                 <span className="text-muted">·</span>
               </>
             ) : null}
-            <Tip label={path}>
-              <p className="min-w-0 truncate font-mono text-meta text-muted">{path}</p>
-            </Tip>
+            <CopyableFileName path={path} className="min-w-0" />
           </div>
           <OpenDirButton
             labeled
