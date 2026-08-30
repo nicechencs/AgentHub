@@ -28,7 +28,9 @@ import {
   installRetryButtonVariant,
   isNodeTooOldUpdateNote,
   isSpecialInstallChannel,
+  agentListDetailsHint,
   listAgentInstalls,
+  programInstalls,
   spawnInstall,
   resolveOfficialSetupUrl,
   uniqueInstallVersions,
@@ -155,7 +157,8 @@ export function AgentCard({
   const updateState = agent.update?.state;
   const checkingUpdate = updateState === 'checking';
   const installs = listAgentInstalls(agent);
-  const versions = uniqueInstallVersions(installs);
+  const versions = uniqueInstallVersions(programInstalls(installs));
+  const detailsHint = agentListDetailsHint(installs);
   const spawn = spawnInstall(agent);
   const inAppChannel = spawn?.updateVia === 'in_app';
   const upgradable =
@@ -179,7 +182,6 @@ export function AgentCard({
   const latestLabel =
     agent.update?.latestVersion ?? agent.latestVersion ?? undefined;
   const latestVersionLabel = formatAgentVersion(latestLabel);
-  const showDetailsHint = agent.installed && installs.length > 1;
 
   const openOfficialSetup = () => {
     if (!officialSetupUrl) {
@@ -291,8 +293,10 @@ export function AgentCard({
             ) : (
               <span className="text-meta text-muted">{t('agents.card.notInstalled')}</span>
             )}
-            {showDetailsHint ? (
-              <span className="text-meta text-muted">{t('agents.card.seeDetails')}</span>
+            {detailsHint ? (
+              <span className="text-meta text-muted">
+                {t(detailsHint.key, detailsHint.params)}
+              </span>
             ) : null}
           </>
         )}
