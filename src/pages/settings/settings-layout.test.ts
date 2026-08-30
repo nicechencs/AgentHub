@@ -17,6 +17,8 @@ describe('settings layout wiring', () => {
     expect(page.match(/className=\{pageRhythm\.readingStart\}/g)?.length).toBe(4);
     expect(page).not.toMatch(/readingColumn\}>\s*<PageHeader/);
     expect(page).toContain('TabsContent value="backups" className="h-full min-h-0"');
+    expect(page).toContain('toolbar={settingsTabList}');
+    expect(page).not.toContain('flushTop');
   });
 
   it('exposes a plugins nav toggle next to the routes toggle', () => {
