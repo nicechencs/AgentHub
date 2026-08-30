@@ -20,8 +20,9 @@ describe('pageRhythm (docs/ui-design.md §2 / §3.1)', () => {
     expect(pageEdgePx.x).toBe(12);
   });
 
-  it('uses one centered reading column for Chat messages and Settings forms', () => {
+  it('uses one centered reading column for Chat messages and a left-aligned one for Settings forms', () => {
     expect(pageRhythm.readingColumn).toBe('mx-auto w-full max-w-3xl');
+    expect(pageRhythm.readingStart).toBe('w-full max-w-3xl');
   });
 
   it('keeps Chat chrome at 16px and the workbench at 12px', () => {

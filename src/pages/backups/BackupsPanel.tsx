@@ -245,21 +245,6 @@ export function BackupsPanel() {
         flushTop
       >
       <div className={pageRhythm.chromeRow}>
-        <Tip className="min-w-0 truncate text-meta text-secondary" label={t('settings.backups.keepCopiesTip')}>
-          {t('settings.backups.keepCopiesLabel')}
-        </Tip>
-        <Switch
-          className="ml-auto shrink-0"
-          checked={keepCopies}
-          onCheckedChange={(v) => {
-            setKeepCopies(v);
-            void updateSettings({ keepLiveFileCopies: v }).catch(() => {
-              setKeepCopies(!v);
-            });
-          }}
-        />
-      </div>
-      <div className={pageRhythm.chromeRow}>
         {pageLoading ? (
           <Skeleton className="h-9 w-64 rounded-card" />
         ) : (
@@ -276,17 +261,31 @@ export function BackupsPanel() {
             {!isInstalled && t('settings.backups.uninstalledHint')}
           </span>
         )}
-        {agentMeta && (
-          <Button
-            className="ml-auto"
-            disabled={creating || !isInstalled}
-            title={!isInstalled ? t('settings.backups.createTitleNotInstalled') : undefined}
-            onClick={() => void handleCreate()}
-          >
-            <Plus className="h-4 w-4" />
-            {creating ? t('settings.backups.creating') : t('settings.backups.backupNow')}
-          </Button>
-        )}
+        <div className={pageRhythm.chromeActions}>
+          <Tip className="max-w-[12rem] truncate text-meta text-secondary" label={t('settings.backups.keepCopiesTip')}>
+            {t('settings.backups.keepCopiesLabel')}
+          </Tip>
+          <Switch
+            checked={keepCopies}
+            onCheckedChange={(v) => {
+              setKeepCopies(v);
+              void updateSettings({ keepLiveFileCopies: v }).catch(() => {
+                setKeepCopies(!v);
+              });
+            }}
+          />
+          {agentMeta && (
+            <Button
+              size="sm"
+              disabled={creating || !isInstalled}
+              title={!isInstalled ? t('settings.backups.createTitleNotInstalled') : undefined}
+              onClick={() => void handleCreate()}
+            >
+              <Plus className="h-4 w-4" />
+              {creating ? t('settings.backups.creating') : t('settings.backups.backupNow')}
+            </Button>
+          )}
+        </div>
       </div>
 
       {pageLoading ? (

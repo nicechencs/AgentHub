@@ -22,6 +22,14 @@ describe('skills split layout', () => {
     expect(page).not.toContain('onPreviewResizeStart');
   });
 
+  it('keeps the project picker trigger to a single line', () => {
+    const panel = source('SkillsProjectPanel.tsx');
+    expect(panel).toContain('SelectValue');
+    expect(panel).toContain('description={option.subtitle}');
+    expect(panel).toContain('{option.label}');
+    expect(panel).not.toContain('flex min-w-0 flex-col');
+  });
+
   it('keeps the install action on the tab row in the left split column', () => {
     const page = source('index.tsx');
     const installStart = page.indexOf('setInstallOpen(true)');

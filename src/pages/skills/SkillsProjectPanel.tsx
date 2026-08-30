@@ -1,4 +1,5 @@
 import { FolderKanban, PackageSearch, Trash2 } from 'lucide-react';
+import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { SearchField } from '@/components/shared/SearchField';
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui/table';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { Hint } from '@/components/ui/tooltip';
 import type { InstalledSkillDto } from '@/lib/api/skill';
 import { cn } from '@/lib/utils';
 import type { ProjectSkillOption } from './skills-project-model';
@@ -76,28 +78,30 @@ export function SkillsProjectPanel(props: SkillsProjectPanelProps) {
     return <TableSkeleton rows={6} cols={3} />;
   }
 
+  const selectedOption = options.find((o) => o.workspacePath === selected) ?? null;
+
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className={pageRhythm.chromeRow}>
         <Select
           value={selected || undefined}
           onValueChange={onWorkspaceChange}
           disabled={options.length === 0}
         >
-          <SelectTrigger className="w-72 max-w-full" aria-label={t('skills.filters.projectAria')}>
-            <SelectValue placeholder={t('skills.filters.projectPlaceholder')} />
-          </SelectTrigger>
+          <Hint label={selectedOption?.subtitle} side="bottom">
+            <SelectTrigger className="w-72 max-w-full" aria-label={t('skills.filters.projectAria')}>
+              <SelectValue placeholder={t('skills.filters.projectPlaceholder')} />
+            </SelectTrigger>
+          </Hint>
           <SelectContent className="min-w-[18rem]">
             {options.map((option) => (
               <SelectItem
                 key={option.workspacePath}
                 value={option.workspacePath}
                 textValue={option.label}
+                description={option.subtitle}
               >
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate">{option.label}</span>
-                  <span className="truncate text-meta text-muted">{option.subtitle}</span>
-                </span>
+                {option.label}
               </SelectItem>
             ))}
           </SelectContent>

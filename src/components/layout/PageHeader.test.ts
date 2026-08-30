@@ -54,7 +54,7 @@ describe('PageHeader', () => {
     expect(source('components/layout/SideSplit.tsx')).toContain('paddingTop: padTop');
     expect(source('components/layout/SideSplit.tsx')).toContain('pageRhythm.workbenchPadT');
     expect(source('components/ui/tabs.tsx')).not.toContain('mt-4 focus:outline-none');
-    expect(source('pages/settings/index.tsx')).toContain('pageRhythm.chromeRow');
+    expect(source('pages/settings/index.tsx')).toContain('pageRhythm.chrome');
   });
 
   it('keeps page titles on the same type, height, and inset when switching pages', () => {
