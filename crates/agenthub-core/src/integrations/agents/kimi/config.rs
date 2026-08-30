@@ -6,7 +6,9 @@ use std::path::Path;
 use serde_json::{json, Value};
 use toml_edit::DocumentMut;
 
-use super::managed::{ensure_kimi_model_alias, ensure_kimi_provider_entry};
+use super::managed::{
+    ensure_kimi_model_alias, ensure_kimi_provider_entry, fill_missing_kimi_provider_type,
+};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::AgentId;
@@ -197,6 +199,15 @@ impl KimiConfigProjector {
                     entry["base_url"] = toml_edit::value(t);
                 }
             }
+        }
+        fill_missing_kimi_provider_type(&mut doc, slug.as_str())?;
+        {
+            let providers = doc["providers"]
+                .as_table_mut()
+                .ok_or_else(|| AppError::InvalidArg("Kimi providers must be a table".into()))?;
+            let entry = providers.get_mut(slug.as_str()).ok_or_else(|| {
+                AppError::InvalidArg(format!("Kimi providers.{slug} must be a table"))
+            })?;
             if let Some(key) = get_str_map(desired, "apiKey") {
                 if !secret_unchanged(Some(&key)) {
                     entry["api_key"] = toml_edit::value(key.trim());

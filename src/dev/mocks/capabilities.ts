@@ -47,7 +47,7 @@ export const MOCK_CAPABILITIES: Record<string, AgentCapabilities> = {
     configWrite: { level: 'full' },
     accountSwitch: { level: 'full' },
     apiKeyAccount: { level: 'full' },
-    skills: { level: 'unsupported', reason: 'Kimi 不支持技能目录' },
+    skills: { level: 'partial', reason: '共享库里的技能会直接生效，不必再同步一份' },
     liveBackup: { level: 'full' },
     structuredStream: { level: 'full' },
     dangerousMode: {

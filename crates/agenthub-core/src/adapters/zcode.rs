@@ -278,13 +278,14 @@ impl AgentAdapter for ZcodeAdapter {
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty());
+        let inferred = zcode_kind_for_url(base_url);
         let kind = account
             .credentials
             .get("kind")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .unwrap_or("anthropic");
+            .unwrap_or(inferred);
         let name = account
             .credentials
             .get("provider_name")
@@ -829,6 +830,30 @@ fn is_plan_slot(provider_id: &str) -> bool {
     id.starts_with("builtin:") && (id.contains("coding-plan") || id.contains("start-plan"))
 }
 
+/// ZCode catalog `kind` for an API root.
+///
+/// `anthropic` → Messages, `openai` → official OpenAI / Responses,
+/// `openai-compatible` → Chat Completions relays.
+pub(crate) fn zcode_kind_for_url(url: Option<&str>) -> &'static str {
+    let Some(url) = url.map(str::trim).filter(|s| !s.is_empty()) else {
+        return "anthropic";
+    };
+    let lower = url.to_ascii_lowercase();
+    if lower.contains("anthropic")
+        || lower.contains("/v1/messages")
+        || lower.ends_with("/messages")
+    {
+        return "anthropic";
+    }
+    if lower.contains("/v1/responses")
+        || lower.contains("/responses")
+        || lower.contains("api.openai.com")
+    {
+        return "openai";
+    }
+    "openai-compatible"
+}
+
 fn official_slot_for_url(url: &str) -> Option<&'static str> {
     let normalized = url.trim().trim_end_matches('/').to_ascii_lowercase();
     if normalized.contains("zcode.z.ai") {
@@ -1113,12 +1138,13 @@ fn write_zcode_config(config: &AgentConfig) -> Result<()> {
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty());
+        let inferred = zcode_kind_for_url(base_url);
         let kind = raw
             .get("kind")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .unwrap_or("anthropic");
+            .unwrap_or(inferred);
         let name = raw
             .get("name")
             .and_then(Value::as_str)
@@ -1157,10 +1183,13 @@ fn write_zcode_config(config: &AgentConfig) -> Result<()> {
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|s| !s.is_empty());
+            let inferred = zcode_kind_for_url(base_url);
             let kind = entry
                 .get("kind")
                 .and_then(Value::as_str)
-                .unwrap_or("anthropic");
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(inferred);
             let name = entry
                 .get("name")
                 .and_then(Value::as_str)

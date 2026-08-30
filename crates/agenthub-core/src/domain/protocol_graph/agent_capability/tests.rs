@@ -69,7 +69,11 @@ fn table_registers_every_agent_accepts_and_writer() {
     assert!(kimi.writer);
     assert_eq!(
         AgentAccept::OpenAiChat.hears(),
-        &[TicketProtocol::OpenaiChat]
+        &[
+            TicketProtocol::AnthropicMessages,
+            TicketProtocol::OpenaiResponses,
+            TicketProtocol::OpenaiChat
+        ]
     );
 
     let cursor = agent_bind_capability(AgentId::Cursor);
@@ -91,6 +95,14 @@ fn table_registers_every_agent_accepts_and_writer() {
     assert_eq!(zcode.accepts, &[AgentAccept::ZcodeV2ProviderSlot]);
     assert!(zcode.writer);
     assert_eq!(zcode.occupancy, LiveOccupancy::CatalogAppend);
+    assert_eq!(
+        AgentAccept::ZcodeV2ProviderSlot.hears(),
+        &[
+            TicketProtocol::AnthropicMessages,
+            TicketProtocol::OpenaiResponses,
+            TicketProtocol::OpenaiChat
+        ]
+    );
 
     let dsh = agent_bind_capability(AgentId::Dsh);
     assert_eq!(dsh.accepts, &[AgentAccept::DshLlmPluginSlot]);

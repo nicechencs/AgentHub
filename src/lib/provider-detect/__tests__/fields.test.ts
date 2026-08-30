@@ -667,6 +667,20 @@ describe('provider-detect fields', () => {
     });
     expect(out).toContain('type = "openai"');
     expect(out).toContain('[models."kimi-k2"]');
+    const official = applyFormVars('kimi', REDACTED_MARKER, 'toml', {
+      ...EMPTY_FORM_VARS,
+      model: 'kimi-k2',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      apiKey: 'sk-test-kimi-abcdefghijklmnop',
+    });
+    expect(official).toContain('type = "kimi"');
+    const messages = applyFormVars('kimi', REDACTED_MARKER, 'toml', {
+      ...EMPTY_FORM_VARS,
+      model: 'claude-sonnet',
+      baseUrl: 'https://api.anthropic.com/v1/messages',
+      apiKey: 'sk-test-kimi-abcdefghijklmnop',
+    });
+    expect(messages).toContain('type = "anthropic"');
     expect(out).toContain('provider = "custom"');
     expect(out).toContain('max_context_size = 131072');
   });

@@ -1,4 +1,5 @@
 use super::*;
+use crate::bridge::BridgeLocalSurface;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BridgeProjection {
@@ -210,10 +211,18 @@ pub(super) fn legacy_grok_bridge_toml(
     )
 }
 
-/// Kimi config.toml for Codex official login. No invented ChatGPT `default_model`.
+/// Kimi config.toml for a local-bridge write. `type` follows the local surface.
 pub(super) fn kimi_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: &str) -> String {
+    let (ty, base) = match rule.local_surface {
+        BridgeLocalSurface::Messages => ("anthropic", format!("http://127.0.0.1:{port}")),
+        BridgeLocalSurface::Responses => (
+            "openai_responses",
+            format!("http://127.0.0.1:{port}/v1"),
+        ),
+        BridgeLocalSurface::ChatCompletions => ("openai", format!("http://127.0.0.1:{port}/v1")),
+    };
     format!(
-        "default_provider = \"{slug}\"\n\n[providers.{slug}]\nname = \"{name}\"\nbase_url = \"http://127.0.0.1:{port}/v1\"\napi_key = \"{token}\"\n",
+        "default_provider = \"{slug}\"\n\n[providers.{slug}]\nname = \"{name}\"\ntype = \"{ty}\"\nbase_url = \"{base}\"\napi_key = \"{token}\"\n",
         slug = rule.provider_slug,
         name = rule.toml_name,
         token = local_bearer,

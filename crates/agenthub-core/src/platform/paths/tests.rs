@@ -127,6 +127,23 @@ fn workbuddy_config_dir_honors_env_overrides() {
 }
 
 #[test]
+fn kimi_home_honors_kimi_code_home_env() {
+    let _guard = crate::utils::test_env::lock_test_env();
+    let expected = PathBuf::from(if cfg!(windows) {
+        r"D:\tmp\agenthub-kimi-home-test"
+    } else {
+        "/tmp/agenthub-kimi-home-test"
+    });
+    let prev = std::env::var_os("KIMI_CODE_HOME");
+    std::env::set_var("KIMI_CODE_HOME", &expected);
+    let home = resolve_agent_home(AgentId::Kimi).unwrap();
+    let is_default = crate::platform::paths::agent_home_is_default(AgentId::Kimi).unwrap();
+    restore_env("KIMI_CODE_HOME", prev);
+    assert_eq!(home, expected);
+    assert!(!is_default);
+}
+
+#[test]
 fn grok_home_honors_grok_home_env() {
     let _guard = crate::utils::test_env::lock_test_env();
     let expected = PathBuf::from(if cfg!(windows) {

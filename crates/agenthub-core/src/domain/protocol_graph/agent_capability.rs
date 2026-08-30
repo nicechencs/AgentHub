@@ -35,7 +35,7 @@ pub enum AgentAccept {
     PiXaiOauthSlot,
     /// Grok `config.toml` (`api_backend` is `responses` | `chat_completions` | `messages`).
     OpenAiChatToml,
-    /// OpenAI Chat Completions (Kimi `config.toml`).
+    /// Kimi `config.toml` (Messages, Responses, and Chat Completions).
     OpenAiChat,
     /// WorkBuddy `models.json` model-list slot (`write_config` in workbuddy.rs).
     WorkBuddyModelsJson,
@@ -64,7 +64,11 @@ impl AgentAccept {
                 TicketProtocol::OpenaiChat,
                 TicketProtocol::AnthropicMessages,
             ],
-            Self::OpenAiChat => &[TicketProtocol::OpenaiChat],
+            Self::OpenAiChat => &[
+                TicketProtocol::AnthropicMessages,
+                TicketProtocol::OpenaiResponses,
+                TicketProtocol::OpenaiChat,
+            ],
             // workbuddy.rs writes models.json Chat Completions rows only.
             Self::WorkBuddyModelsJson => &[TicketProtocol::OpenaiChat],
             // dsh.rs writes the official DeepSeek Chat Completions plugin row.
@@ -72,6 +76,7 @@ impl AgentAccept {
             // zcode.rs upserts one provider row with a model list; edges still need matrix cells.
             Self::ZcodeV2ProviderSlot => &[
                 TicketProtocol::AnthropicMessages,
+                TicketProtocol::OpenaiResponses,
                 TicketProtocol::OpenaiChat,
             ],
         }

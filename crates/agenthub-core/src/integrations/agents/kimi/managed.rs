@@ -17,7 +17,56 @@ pub const PROJECTOR_TOML_KEYS: &[&str] =
 pub const DEFAULT_MODEL_ALIAS: &str = "kimi-k2";
 pub const DEFAULT_MAX_CONTEXT_SIZE: i64 = 131_072;
 
-/// Ensure `[providers.<slug>]` exists and has required `type` (openai-compatible).
+/// Kimi Code `providers.<slug>.type` for an API root.
+///
+/// `anthropic` → Messages, `openai_responses` → Responses, `kimi` → official
+/// Moonshot/Kimi platform, `openai` → Chat Completions (custom relays / loopback).
+pub(crate) fn kimi_provider_type_for_url(url: Option<&str>) -> &'static str {
+    let Some(url) = url.map(str::trim).filter(|s| !s.is_empty()) else {
+        return "openai";
+    };
+    let lower = url.to_ascii_lowercase();
+    if lower.contains("/anthropic")
+        || lower.contains("/v1/messages")
+        || lower.ends_with("/messages")
+    {
+        return "anthropic";
+    }
+    if lower.contains("/v1/responses") || lower.contains("/responses") {
+        return "openai_responses";
+    }
+    if is_official_kimi_platform_url(&lower) {
+        return "kimi";
+    }
+    "openai"
+}
+
+fn is_official_kimi_platform_url(lower: &str) -> bool {
+    if lower.contains("/coding") {
+        return false;
+    }
+    lower.contains("api.moonshot.") || lower.contains("api.kimi.com")
+}
+
+fn provider_type_missing(entry: &toml_edit::Table) -> bool {
+    entry
+        .get("type")
+        .and_then(Item::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_none()
+}
+
+fn fill_missing_type(entry: &mut toml_edit::Table) {
+    if !provider_type_missing(entry) {
+        return;
+    }
+    let url = entry.get("base_url").and_then(|v| v.as_str());
+    entry["type"] = toml_edit::value(kimi_provider_type_for_url(url));
+}
+
+/// Ensure `[providers.<slug>]` exists. Call [`fill_missing_kimi_provider_type`]
+/// after `base_url` is known so type is inferred from the final address.
 pub(crate) fn ensure_kimi_provider_entry(doc: &mut DocumentMut, slug: &str) -> Result<()> {
     if doc.get("providers").is_none() {
         doc["providers"] = toml_edit::table();
@@ -28,19 +77,24 @@ pub(crate) fn ensure_kimi_provider_entry(doc: &mut DocumentMut, slug: &str) -> R
     if providers.get(slug).is_none() {
         providers.insert(slug, toml_edit::table());
     }
-    let entry = providers
+    providers
         .get_mut(slug)
         .and_then(Item::as_table_mut)
         .ok_or_else(|| AppError::InvalidArg(format!("Kimi providers.{slug} must be a table")))?;
-    let missing_type = entry
-        .get("type")
-        .and_then(Item::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .is_none();
-    if missing_type {
-        entry["type"] = toml_edit::value("openai");
-    }
+    Ok(())
+}
+
+/// Fill `type` after `base_url` is known. Does not overwrite an existing type.
+pub(crate) fn fill_missing_kimi_provider_type(doc: &mut DocumentMut, slug: &str) -> Result<()> {
+    let Some(entry) = doc
+        .get_mut("providers")
+        .and_then(Item::as_table_mut)
+        .and_then(|t| t.get_mut(slug))
+        .and_then(Item::as_table_mut)
+    else {
+        return Ok(());
+    };
+    fill_missing_type(entry);
     Ok(())
 }
 
@@ -116,6 +170,7 @@ pub(crate) fn complete_kimi_live_toml(doc: &mut DocumentMut) -> Result<()> {
         doc["default_provider"] = toml_edit::value(slug.as_str());
     }
     ensure_kimi_provider_entry(doc, slug.as_str())?;
+    fill_missing_kimi_provider_type(doc, slug.as_str())?;
     let stored = doc
         .get("default_model")
         .and_then(|v| v.as_str())
@@ -129,3 +184,6 @@ pub(crate) fn complete_kimi_live_toml(doc: &mut DocumentMut) -> Result<()> {
     };
     ensure_kimi_model_alias(doc, slug.as_str(), &alias)
 }
+
+#[cfg(test)]
+mod tests;

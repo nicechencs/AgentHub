@@ -113,7 +113,7 @@ export const PRESETS: Record<AgentId, ProviderPreset[]> = {
         'default_provider = "moonshot"',
         '',
         '[providers.moonshot]',
-        'type = "openai"',
+        'type = "kimi"',
         'base_url = "https://api.moonshot.cn/v1"',
         'api_key = ""',
         '',

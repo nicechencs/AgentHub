@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest';
 import { AGENT_MAP } from '@/config/agents';
 import { translate } from '@/lib/i18n';
 import { zh } from '@/lib/i18n/locales/zh';
-import { en } from '@/lib/i18n/locales/en';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { extraCopyKindLabel, extraCopyKindLabelKey } from './agent-card-model';
 import { AgentDetailPanel } from './AgentDetailPanel';
@@ -15,7 +14,6 @@ import {
   catalogChannelLabel,
   displayAgentConfigDir,
   formatAgentConversationEndpoints,
-  formatConversationEndpointLabel,
   installChannelKindLabel,
   installLocationSourceLabel,
   isNpmPackageCatalogLabel,
@@ -61,14 +59,13 @@ describe('agent conversation surfaces', () => {
     expect(agentConversationSurface('claude')).toBe('messages');
     expect(agentConversationSurface('codex')).toBe('responses');
     expect(agentConversationSurface('grok')).toBe('responses');
-    expect(agentConversationSurface('kimi')).toBe('chat_completions');
+    expect(agentConversationSurface('kimi')).toBe('messages');
     expect(agentConversationSurface('dsh')).toBe('messages');
     expect(agentConversationSurface('workbuddy')).toBe('chat_completions');
     expect(agentConversationEndpoints('claude')).toEqual([
       {
         id: 'messages',
         path: '/v1/messages',
-        copyKey: 'agents.detail.endpointMessages',
         brandAgentId: 'claude',
       },
     ]);
@@ -77,7 +74,11 @@ describe('agent conversation surfaces', () => {
       path: '/v1/responses',
       brandAgentId: 'codex',
     });
-    expect(agentConversationEndpoints('kimi')[0]?.path).toBe('/v1/chat/completions');
+    expect(agentConversationEndpoints('kimi').map((row) => row.path)).toEqual([
+      '/v1/messages',
+      '/v1/responses',
+      '/v1/chat/completions',
+    ]);
     expect(agentConversationEndpoints('workbuddy')[0]).toMatchObject({
       id: 'chat_completions',
       path: '/v1/chat/completions',
@@ -97,37 +98,26 @@ describe('agent conversation surfaces', () => {
       ['/v1/chat/completions', 'codex'],
     ]);
     expect(formatAgentConversationEndpoints('dsh', tZh)).toBe(
-      [
-        '/v1/messages · Claude 对话',
-        '/v1/responses · Codex / Grok 对话',
-        '/v1/chat/completions · Kimi 等补全',
-      ].join('\n'),
+      ['/v1/messages', '/v1/responses', '/v1/chat/completions'].join('\n'),
     );
   });
 
-  it('lists ZCode Anthropic + OpenAI and Pi login-dependent surfaces', () => {
-    expect(agentConversationSurfaces('zcode')).toEqual(['messages', 'chat_completions']);
-    expect(agentConversationEndpoints('zcode').map((row) => [row.id, row.brandAgentId])).toEqual([
-      ['messages', 'claude'],
-      ['chat_completions', 'codex'],
-    ]);
-    expect(agentConversationSurfaces('pi')).toEqual([
-      'messages',
-      'responses',
-      'chat_completions',
-    ]);
-    expect(agentConversationEndpoints('pi').map((row) => row.path)).toEqual([
-      '/v1/messages',
-      '/v1/responses',
-      '/v1/chat/completions',
-    ]);
-    expect(formatAgentConversationEndpoints('pi', tZh)).toBe(
-      [
-        '/v1/messages · Claude 对话',
-        '/v1/responses · Codex / Grok 对话',
-        '/v1/chat/completions · Kimi 等补全',
-      ].join('\n'),
-    );
+  it('lists ZCode, Kimi Code, and Pi on Messages, Responses, and Chat Completions', () => {
+    for (const agentId of ['zcode', 'kimi', 'pi'] as const) {
+      expect(agentConversationSurfaces(agentId)).toEqual([
+        'messages',
+        'responses',
+        'chat_completions',
+      ]);
+      expect(agentConversationEndpoints(agentId).map((row) => [row.id, row.brandAgentId])).toEqual([
+        ['messages', 'claude'],
+        ['responses', 'codex'],
+        ['chat_completions', 'codex'],
+      ]);
+      expect(formatAgentConversationEndpoints(agentId, tZh)).toBe(
+        ['/v1/messages', '/v1/responses', '/v1/chat/completions'].join('\n'),
+      );
+    }
   });
 
   it('does not invent a public HTTP surface for Cursor Agent', () => {
@@ -137,21 +127,17 @@ describe('agent conversation surfaces', () => {
     expect(formatAgentConversationEndpoints('cursor', tEn)).toBe('Depends on the current login');
   });
 
-  it('uses Agents-page endpoint copy for zh and en', () => {
-    const claude = agentConversationEndpoints('claude')[0]!;
-    expect(formatConversationEndpointLabel(claude, tZh)).toBe('/v1/messages · Claude 对话');
-    expect(formatConversationEndpointLabel(claude, tEn)).toBe('/v1/messages · Claude chat');
-    expect(formatAgentConversationEndpoints('grok', tZh)).toBe('/v1/responses · Codex / Grok 对话');
-    expect(formatAgentConversationEndpoints('kimi', tZh)).toBe('/v1/chat/completions · Kimi 等补全');
-    expect(formatAgentConversationEndpoints('workbuddy', tEn)).toBe(
-      '/v1/chat/completions · Kimi and other completions',
+  it('lists only the conversation path, without a second Agent name', () => {
+    expect(formatAgentConversationEndpoints('claude', tZh)).toBe('/v1/messages');
+    expect(formatAgentConversationEndpoints('claude', tEn)).toBe('/v1/messages');
+    expect(formatAgentConversationEndpoints('grok', tZh)).toBe('/v1/responses');
+    expect(formatAgentConversationEndpoints('kimi', tZh)).toBe(
+      ['/v1/messages', '/v1/responses', '/v1/chat/completions'].join('\n'),
     );
-    expect(zh.agents.detail.endpointMessages).toBe('Claude 对话');
-    expect(zh.agents.detail.endpointResponses).toBe('Codex / Grok 对话');
-    expect(zh.agents.detail.endpointChatCompletions).toBe('Kimi 等补全');
-    expect(en.agents.detail.endpointMessages).toBe('Claude chat');
-    expect(en.agents.detail.endpointResponses).toBe('Codex / Grok chat');
-    expect(en.agents.detail.endpointChatCompletions).toBe('Kimi and other completions');
+    expect(formatAgentConversationEndpoints('workbuddy', tEn)).toBe('/v1/chat/completions');
+    expect(formatAgentConversationEndpoints('zcode', tZh)).toBe(
+      ['/v1/messages', '/v1/responses', '/v1/chat/completions'].join('\n'),
+    );
   });
 });
 
@@ -210,7 +196,7 @@ describe('AgentDetailPanel markup', () => {
     const html = renderPanel(installed('claude'));
     expect(html).toContain('端点类型');
     expect(html).toContain('/v1/messages');
-    expect(html).toContain('Claude 对话');
+    expect(html).not.toContain('Claude 对话');
     expect(html).toContain('var(--agent-claude)');
     expect(html).toContain('官方脚本');
     expect(html).not.toMatch(/>native</);
@@ -235,10 +221,14 @@ describe('AgentDetailPanel markup', () => {
     expect(html).toContain('npm @earendil-works/pi-coding-agent');
   });
 
-  it('colors ZCode messages and completions with Claude / Codex tokens', () => {
+  it('colors ZCode messages, responses, and completions with Claude / Codex tokens', () => {
     const html = renderPanel(installed('zcode', 'native'));
     expect(html).toContain('/v1/messages');
+    expect(html).toContain('/v1/responses');
     expect(html).toContain('/v1/chat/completions');
+    expect(html).not.toContain('Claude 对话');
+    expect(html).not.toContain('Codex / Grok 对话');
+    expect(html).not.toContain('Kimi 等补全');
     expect(html).toContain('var(--agent-claude)');
     expect(html).toContain('var(--agent-codex)');
   });
@@ -271,7 +261,7 @@ describe('AgentDetailPanel markup', () => {
     expect(html).toContain('未安装');
     expect(html).toContain('端点类型');
     expect(html).toContain('/v1/chat/completions');
-    expect(html).toContain('Kimi 等补全');
+    expect(html).not.toContain('Kimi 等补全');
     expect(html).toContain('var(--agent-codex)');
     expect(html).not.toContain('随当前登录而定');
     expect(html).toContain('~/.workbuddy');
