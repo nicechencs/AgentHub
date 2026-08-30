@@ -938,9 +938,8 @@ export default function SkillsPage() {
       split={preview}
       resizeAria={t('skills.preview.resizeAria')}
       panel={previewPanel}
-      header={(
+    >
             <PageHeader
-              size="compact"
               title={t('skills.page.title')}
               description={
                 tab === 'project'
@@ -960,27 +959,9 @@ export default function SkillsPage() {
                   ? t('skills.page.projectDescriptionTip')
                   : t('skills.page.descriptionTip')
               }
-              actions={
-                <Button
-                  onClick={() => {
-                    setInstallTarget(tab === 'project' ? 'project' : 'user');
-                    setInstallOpen(true);
-                  }}
-                  disabled={tab === 'project' && !selectedProject}
-                  title={
-                    tab === 'project' && !selectedProject
-                      ? t('skills.dialog.pickProjectFirst')
-                      : undefined
-                  }
-                >
-                  <Plus className="h-3.5 w-3.5" /> {t('skills.page.installCta')}
-                </Button>
-              }
             />
-      )}
-    >
           <Tabs value={tab} onValueChange={(v) => setTab(parseSkillTab(v))}>
-            <div className={pageRhythm.chrome}>
+            <div className={pageRhythm.chromeRow}>
               <TabsList>
                 <TabsTrigger value="library" className="gap-1.5">
                   {t('skills.tabs.library')}
@@ -1006,6 +987,23 @@ export default function SkillsPage() {
                   {t('skills.tabs.market')}
                 </TabsTrigger>
               </TabsList>
+              <div className={pageRhythm.chromeActions}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setInstallTarget(tab === 'project' ? 'project' : 'user');
+                    setInstallOpen(true);
+                  }}
+                  disabled={tab === 'project' && !selectedProject}
+                  title={
+                    tab === 'project' && !selectedProject
+                      ? t('skills.dialog.pickProjectFirst')
+                      : undefined
+                  }
+                >
+                  <Plus className="h-3.5 w-3.5" /> {t('skills.page.installCta')}
+                </Button>
+              </div>
             </div>
             <TabsContent value="library" className="space-y-3">
               <SkillsLibraryPanel

@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-29
+updated: 2026-08-30
 ---
 
 # UI Page Patterns
@@ -37,34 +37,34 @@ The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. 
 
 ### 2.1 Standard shell
 
-The standard shell has an 8px canvas gutter, a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with an 18px horizontal inset. A standard page is composed in this order:
+The standard shell has an 8px canvas gutter, a rounded sidebar panel, a rounded main panel, and a top bar. The main column uses the edge-column pattern with an 18px horizontal inset. Non-chat pages put the page title on the left of the top bar as one line: the page name in the title size and primary color, then a short description in the meta size and secondary color. The notification control stays on the right. Chat has no top bar and owns its session name. A standard page is composed in this order:
 
 ```text
-PageHeader
-  -> chrome / chromeRow (tabs, filters, Agent strip, or actions)
+TopBar (title + metadata | notification)
+  -> chrome / chromeRow (tabs, filters, Agent strip; page commands on the right of the same row)
   -> lead (environment status or one Notice)
   -> stack / blocks (main content)
   -> PageSection / ruled section where a real boundary is needed
 ```
 
-The page title is one line plus one short metadata line. Do not repeat the same explanation in a card immediately below the title.
+The page title is a single line: name, then short description. Distinguish them with type size and color, not a second row. Do not repeat the same explanation in a card immediately below the title. Do not keep a second title block in the page body.
 
 ### 2.2 Full-height workbench
 
-Chat, Skills, Projects, Plugins, Connections, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Skills, Projects, Plugins, Connections, and the Settings backups tab use the edge column with a split preview surface. The workbench header uses the compact page-header rhythm.
+Chat, Skills, Projects, Plugins, Connections, Routes, and Settings use `fullBleed` and manage their own vertical scrolling. Full-height does not create a third content width: Chat messages use the reading column; Skills, Projects, Plugins, Connections, and the Settings backups tab use the edge column with a split preview surface. Page-level commands stay in the list column, on the right of the same row as tabs or filters. They do not occupy a row of their own. The workbench list and the preview column share the same 18px top and bottom inset so both edges line up. The page title itself stays in the top bar.
 
 ### 2.3 Settings
 
-Settings uses the workbench header and four page tabs. Preferences, This device, and About keep a reading-column content area. Backups is a left-right workbench: the list is on the left, a redacted file inspect panel opens on the right.
+Settings uses the workbench header and four page tabs. Preferences, This device, and About keep a reading-column content area. Backups is a left-right workbench: the list is on the left, a file inspect panel opens on the right.
 
 | Tab | Query | Contents |
 |---|---|---|
 | Preferences | `?tab=preferences` | Language, theme, startup, close-to-tray, Routes visibility, Plugins visibility, skill source, usage interval |
 | This device | `?tab=local` | Data directory, log level, retention, log directory |
-| Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; redacted file inspect |
+| Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
 
-Invalid or old tab values replace to the nearest current tab. Tab changes use `replace` so normal navigation history does not fill with panel changes. The backups keep-copies switch (`keepLiveFileCopies`, default on) copies each Agent's live files into the backup directory on switch/import; turning it off stops piling historical copies, but the current switch still keeps one copy for rollback. Manual backups are unaffected. Lists and inspect panels never show a usable secret.
+Invalid or old tab values replace to the nearest current tab. Tab changes use `replace` so normal navigation history does not fill with panel changes. The backups keep-copies switch (`keepLiveFileCopies`, default on) copies each Agent's live files into the backup directory on switch/import; turning it off stops piling historical copies, but the current switch still keeps one copy for rollback. Manual backups are unaffected. The backup list identity stays a short label (email or key tail). The file preview shows the snapshot as stored.
 
 ## 3. Shared page behavior
 
@@ -100,7 +100,7 @@ Connections is a global login list in a full-height workbench split. It is not a
 - The top `AgentTabStrip` filters the list. Do not add a second row of “official / API key / unknown” filter chips.
 - The add menu is **导入授权** / **官方登录** / **添加 API Key**. Official login and API Key are stored as separate rows. WorkBuddy custom models and ZCode catalog providers split into one login per directory row; desktop package logins are not imported.
 - OAuth rows use an identity/person icon; API key rows use a key icon. The icon has an accessible label and a short hint.
-- Selecting a row opens the right-hand detail: related config files (redacted, copyable, open-directory), package, expiry, timeline, and the full endpoint. The list and detail never show a usable secret.
+- Selecting a row opens the right-hand detail: related config files (copyable, open-directory), package, expiry, timeline, and the full endpoint. The list uses masked labels; the file preview shows the stored snapshot.
 - The official-login wait page does not show internal status or login file paths; failure keeps **重试** as the primary action.
 - The row actions are **分享** and **路由**. The destination action opens the shared ConnectFlow dialog with source and target context fixed by the entry point.
 - ConnectFlow explains one of four outcomes: **直连**, **用这份登录**, **本机路由**, or **当前不支持**. The explanation is a user outcome, not a protocol number.

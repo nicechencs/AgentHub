@@ -34,13 +34,20 @@ describe('pageRhythm (docs/ui-design.md §2 / §3.1)', () => {
     expect(pageRhythm.workbenchXSplit).not.toContain('px-');
   });
 
-  it('locks page titles to one type, two-line height, and 18px inset', () => {
+  it('locks page titles to one type, one-line title+meta, and 18px inset', () => {
     expect(pageRhythm.workbenchHeader).toContain('px-[18px]');
-    expect(pageRhythm.workbenchHeader).toContain('py-[18px]');
+    expect(pageRhythm.workbenchHeader).toContain('pt-[18px]');
+    expect(pageRhythm.workbenchHeader).not.toContain('py-[18px]');
+    expect(pageRhythm.chromeRow).toContain('min-h-10');
+    expect(pageRhythm.chromeActions).toContain('ml-auto');
+    expect(pageRhythm.lead).toContain('mb-3');
     expect(pageRhythm.pageShell).toContain('px-[18px]');
     expect(pageRhythm.pageShell).toContain('py-[18px]');
     expect(pageRhythm.pageTitle).toBe('text-title font-semibold tracking-tight text-primary');
-    expect(pageRhythm.pageTitleBlock).toBe('min-h-10');
+    expect(pageRhythm.pageTitleMeta).toContain('text-meta');
+    expect(pageRhythm.pageTitleMeta).toContain('text-secondary');
+    expect(pageRhythm.pageTitleBlock).toBe('flex min-w-0 items-baseline gap-2.5');
+    expect(pageRhythm.topChrome).toBe('h-10');
   });
 
   it('starts workbench body flush under the 18px header, with 18px bottom inset', () => {

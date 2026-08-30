@@ -46,7 +46,8 @@ describe('connections layout wiring', () => {
   it('opens edit/add as a resizable workbench inspect pane', () => {
     const page = source('index.tsx');
     expect(page).toContain('WorkbenchSplitPage');
-    expect(page).toContain("size=\"compact\"");
+    expect(page).toContain('PageHeader');
+    expect(page).toContain('pageRhythm.chromeActions');
     expect(page).toContain("t('common.resizeSidePanel')");
     expect(page).toContain('asPanel');
     expect(page).not.toContain('<Dialog open={apiKeyDialogOpen}');

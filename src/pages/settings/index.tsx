@@ -188,7 +188,6 @@ export default function SettingsPage({
 
   const settingsHeader = (
     <PageHeader
-      size="compact"
       title={t('settings.page.title')}
       description={t('settings.page.description')}
       descriptionTip={t('settings.page.descriptionTip')}
@@ -198,8 +197,8 @@ export default function SettingsPage({
   if (loading) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className={pageRhythm.workbenchHeader}>{settingsHeader}</div>
-        <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchY)}>
+        {settingsHeader}
+        <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, 'pt-[18px]', pageRhythm.workbenchY)}>
           <div className={pageRhythm.readingColumn}>
             <SettingsSkeleton />
           </div>
@@ -211,8 +210,8 @@ export default function SettingsPage({
   if (error || !settings) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className={pageRhythm.workbenchHeader}>{settingsHeader}</div>
-        <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, pageRhythm.workbenchY)}>
+        {settingsHeader}
+        <div className={cn('min-h-0 flex-1 overflow-y-auto', pageRhythm.workbenchX, 'pt-[18px]', pageRhythm.workbenchY)}>
           <div className={pageRhythm.readingColumn}>
             <ErrorState error={error ?? new Error(t('settings.page.emptyError'))} onRetry={() => void load()} />
           </div>
@@ -225,7 +224,7 @@ export default function SettingsPage({
     <Tabs value={tab} onValueChange={setTab} className="flex h-full min-h-0 flex-col">
       <div className={pageRhythm.workbenchHeader}>
         {settingsHeader}
-        <div className={pageRhythm.chrome}>
+        <div className={pageRhythm.chromeRow}>
           <TabsList>
             <TabsTrigger value="preferences">{t('settings.page.tabPreferences')}</TabsTrigger>
             <TabsTrigger value="local">{t('settings.page.tabLocal')}</TabsTrigger>

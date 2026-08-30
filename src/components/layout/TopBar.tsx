@@ -1,17 +1,32 @@
+import { usePageChrome } from '@/components/layout/PageChromeContext';
+import { PageTitleBlock } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { NotificationBell } from '@/components/shared/NotificationBell';
 import { cn } from '@/lib/utils';
 
-/** 顶栏:仅右侧操作区（面包屑已删，避免与 PageHeader 重复） */
+/** 非对话页顶栏：左侧页标题 + 一行说明，右侧通知。对话页不渲染。 */
 export function TopBar() {
+  const chrome = usePageChrome();
+
   return (
     <header
       className={cn(
-        'flex h-10 shrink-0 items-center justify-end border-b border-border bg-panel',
+        'flex shrink-0 items-center gap-4 border-b border-border bg-panel',
+        pageRhythm.topChrome,
         pageRhythm.workbenchX,
       )}
     >
-      <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1">
+        {chrome ? (
+          <PageTitleBlock
+            title={chrome.title}
+            badge={chrome.badge}
+            description={chrome.description}
+            descriptionTip={chrome.descriptionTip}
+          />
+        ) : null}
+      </div>
+      <div className="flex shrink-0 items-center">
         <NotificationBell />
       </div>
     </header>

@@ -14,7 +14,8 @@ describe('routes layout wiring', () => {
   it('uses the Skills/Projects workbench split for inspect panes', () => {
     const page = source('pages/bridges/index.tsx');
     expect(page).toContain('WorkbenchSplitPage');
-    expect(page).toContain('size="compact"');
+    expect(page).toContain('PageHeader');
+    expect(page).toContain('pageRhythm.chromeActions');
     expect(page).toContain("t('common.resizeSidePanel')");
     expect(page).toContain('useSideSplit');
     expect(page).not.toContain('flex items-start gap-3');

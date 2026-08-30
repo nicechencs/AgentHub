@@ -39,10 +39,12 @@ export function SideSplitSeparator<T>({
 export function SideSplitFrame<T>({
   split,
   resizeAria,
+  padTop = 0,
   children,
 }: {
   split: SideSplitController<T>;
   resizeAria: string;
+  padTop?: number;
   children: ReactNode;
 }) {
   if (!split.mounted) return null;
@@ -58,7 +60,7 @@ export function SideSplitFrame<T>({
           className="box-border flex h-full min-h-0"
           style={{
             width: split.paneWidth + SIDE_SPLIT_FRAME_PAD_RIGHT,
-            paddingTop: 0,
+            paddingTop: padTop,
             paddingBottom: SIDE_SPLIT_FRAME_PAD_Y,
             paddingRight: SIDE_SPLIT_FRAME_PAD_RIGHT,
           }}
@@ -71,21 +73,21 @@ export function SideSplitFrame<T>({
 }
 
 /**
- * Full-height workbench: list column (compact header + list) | optional inspect pane.
- * Header and optional listFooter stay in the list column so actions sit left
- * of the separator and travel with it while resizing — not the far edge of
- * the page.
+ * Full-height workbench: list column | optional inspect pane.
+ * Page title lives in TopBar. Toolbar (tabs/filters + page commands) and
+ * listFooter stay in the list column, left of the separator.
+ * `flushTop` skips the shared 18px top inset when this split already sits
+ * under another chrome row (Settings backups).
  */
 export function WorkbenchSplitPage<T>({
-  header,
   split,
   resizeAria,
   panel,
   listFooter,
   listOverflowX = 'auto',
+  flushTop = false,
   children,
 }: {
-  header: ReactNode;
   split: SideSplitController<T>;
   resizeAria: string;
   panel?: ReactNode;
@@ -93,21 +95,24 @@ export function WorkbenchSplitPage<T>({
   listFooter?: ReactNode;
   /** Projects hides horizontal overflow while the preview is open. */
   listOverflowX?: 'auto' | 'hidden';
+  /** Nested under an already-padded page chrome; both columns start flush. */
+  flushTop?: boolean;
   children: ReactNode;
 }) {
   const paneOpen = Boolean(split.mounted && panel);
   const listInset = paneOpen ? pageRhythm.workbenchXSplit : pageRhythm.workbenchX;
   const overflowX = paneOpen && listOverflowX === 'hidden' ? 'overflow-x-hidden' : 'overflow-x-auto';
+  const padTop = flushTop ? 0 : SIDE_SPLIT_FRAME_PAD_Y;
   return (
     <div ref={split.splitRef} className="flex h-full min-h-0 overflow-hidden bg-canvas">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className={pageRhythm.workbenchHeader}>{header}</div>
         <div
           className={cn(
             'min-h-0 min-w-0 flex-1 overflow-y-auto bg-canvas',
             overflowX,
             listInset,
             listFooter ? undefined : pageRhythm.workbenchY,
+            padTop > 0 ? 'pt-[18px]' : undefined,
           )}
         >
           {children}
@@ -119,7 +124,7 @@ export function WorkbenchSplitPage<T>({
         ) : null}
       </div>
       {split.mounted && panel ? (
-        <SideSplitFrame split={split} resizeAria={resizeAria}>
+        <SideSplitFrame split={split} resizeAria={resizeAria} padTop={padTop}>
           {panel}
         </SideSplitFrame>
       ) : null}

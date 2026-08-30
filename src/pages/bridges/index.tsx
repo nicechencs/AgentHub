@@ -318,30 +318,27 @@ export default function BridgesPage() {
       split={inspect}
       resizeAria={t('common.resizeSidePanel')}
       panel={inspectPanel}
-      header={(
-        <PageHeader
-          size="compact"
-          title={t('routes.page.title')}
-          description={t('routes.page.description')}
-          descriptionTip={t('routes.page.descriptionTip')}
-          actions={
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => inspect.open({ kind: 'import' })}>
-                {t('routes.import.action')}
-              </Button>
-              <Button onClick={() => inspect.open({ kind: 'create' })}>
-                {t('routes.create.action')}
-              </Button>
-            </div>
-          }
-        />
-      )}
     >
-      {connectionWarning ? (
-        <div className={pageRhythm.lead}>
-          <Notice tone="warning">{connectionWarning}</Notice>
+      <PageHeader
+        title={t('routes.page.title')}
+        description={t('routes.page.description')}
+        descriptionTip={t('routes.page.descriptionTip')}
+      />
+      <div className={pageRhythm.chromeRow}>
+        {connectionWarning ? (
+          <Notice tone="warning" className="min-w-0 flex-1">
+            {connectionWarning}
+          </Notice>
+        ) : null}
+        <div className={pageRhythm.chromeActions}>
+          <Button variant="secondary" onClick={() => inspect.open({ kind: 'import' })}>
+            {t('routes.import.action')}
+          </Button>
+          <Button onClick={() => inspect.open({ kind: 'create' })}>
+            {t('routes.create.action')}
+          </Button>
         </div>
-      ) : null}
+      </div>
 
       <div className={pageRhythm.stackDense}>
         {pageView === 'loading' ? (
