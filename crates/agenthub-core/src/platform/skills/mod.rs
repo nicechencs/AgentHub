@@ -18,14 +18,15 @@ mod journal;
 mod lockfile;
 mod ownership;
 mod packages;
+mod project_fs;
 mod projection_link;
 mod reconcile;
 mod scoped_lock;
 mod sources;
 mod target;
-pub(crate) mod zip_extract;
 mod time;
 mod yaml;
+pub(crate) mod zip_extract;
 
 pub use assignment::SkillAssignmentService;
 pub use bootstrap::{bootstrap_skill_assignments, SkillBootstrapReport};
@@ -73,6 +74,10 @@ pub(crate) use ownership::{
 #[cfg(test)]
 pub(crate) use packages::write_skill_tree;
 pub(crate) use packages::{materialize_projection, validate_and_collect_source};
+pub(crate) use project_fs::{
+    canonical_project_skills_root, list_project_workspace_skills, normalize_origin,
+    project_skill_root, resolve_project_workspace, PROJECT_SKILLS_CANONICAL_ORIGIN,
+};
 pub(crate) use projection_link::create_projection_link;
 pub(crate) use scoped_lock::{acquire_skill_lock, acquire_skill_root_lock};
 pub(crate) use time::chrono_now;

@@ -6,6 +6,7 @@ import {
   extractPiDefaultProvider,
   extractPiSlotModels,
   formatDurationMs,
+  formatStepInput,
   isRetiredChatModel,
   localizeChatFailure,
   officialPiModelsBaseUrl,
@@ -15,6 +16,19 @@ import {
 } from './chat-format';
 
 const t = createTranslator('zh');
+
+describe('chat-format tool payload', () => {
+  it('pretty-prints JSON tool input and does not mask session payloads', () => {
+    expect(formatStepInput({ path: '/tmp', token: 'sk-live-not-masked' })).toContain(
+      'sk-live-not-masked',
+    );
+    expect(formatStepInput('{"a":1,"b":{"c":2}}')).toBe(
+      '{\n  "a": 1,\n  "b": {\n    "c": 2\n  }\n}',
+    );
+    expect(formatStepInput('plain text')).toBe('plain text');
+    expect(formatStepInput(null)).toBeNull();
+  });
+});
 
 describe('chat-format thinking chrome', () => {
   it('formatDurationMs uses ms / s / m s', () => {
@@ -42,24 +56,36 @@ describe('chat model options', () => {
   });
 
   it('localizes leftover API Key and retired-model failures without dumping English', () => {
-    expect(localizeChatFailure('Missing environment variable: `OPENROUTER_API_KEY`.')).toContain('重试');
-    expect(localizeChatFailure('Missing environment variable: `OPENROUTER_API_KEY`.')).not.toContain('OPENROUTER');
+    expect(localizeChatFailure('Missing environment variable: `OPENROUTER_API_KEY`.', t)).toContain('重试');
+    expect(localizeChatFailure('Missing environment variable: `OPENROUTER_API_KEY`.', t)).not.toContain('OPENROUTER');
     expect(
-      localizeChatFailure('error: Model "kimi-k2" is not supported by any configured account in this group'),
+      localizeChatFailure('error: Model "kimi-k2" is not supported by any configured account in this group', t),
     ).toContain('换一个模型');
     expect(
-      localizeChatFailure('404: {"message":"Stealth Ox Alpha testing period","code":404}'),
+      localizeChatFailure('404: {"message":"Stealth Ox Alpha testing period","code":404}', t),
     ).toContain('下架');
     expect(
       localizeChatFailure(
         'OAuth refresh failed for xai: xAI OAuth token refresh failed (HTTP 400): invalid_grant: Invalid or unknown refresh token',
+        t,
       ),
     ).toBe('这份登录已失效，请重新登录后重试。');
     expect(
       localizeChatFailure(
         'OpenAI API error (400): 400 "Model grok-code-fast-1 does not support parameter reasoningEffort."',
+        t,
       ),
     ).toBe('这个模型不支持当前思考设置。请点重试。');
+    const tEn = createTranslator('en');
+    expect(
+      localizeChatFailure('Missing environment variable: `OPENROUTER_API_KEY`.', tEn),
+    ).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(
+      localizeChatFailure(
+        'OAuth refresh failed for xai: invalid_grant: Invalid or unknown refresh token',
+        tEn,
+      ),
+    ).toBe('This login has expired. Sign in again, then retry.');
   });
 
   it('reads Pi slot models from the current defaultProvider, not a leftover URL slot', () => {

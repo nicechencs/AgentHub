@@ -45,7 +45,8 @@ impl AgentAdapter for FakeClaudeAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![], extra_copies: Vec::new(),
+            notes: vec![],
+            extra_copies: Vec::new(),
         }
     }
     fn install_channels(&self) -> Vec<InstallChannel> {
@@ -107,7 +108,8 @@ impl AgentAdapter for FakePiAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![], extra_copies: Vec::new(),
+            notes: vec![],
+            extra_copies: Vec::new(),
         }
     }
     fn install_channels(&self) -> Vec<InstallChannel> {
@@ -520,8 +522,7 @@ fn bind_openai_and_xai_provider_and_account_to_pi_then_unbind() {
     if let Err(err) = relay {
         let text = err.to_string();
         assert!(
-            !text.contains("unknown custom relay")
-                && !text.contains("还缺有效的服务地址"),
+            !text.contains("unknown custom relay") && !text.contains("还缺有效的服务地址"),
             "custom relay with a usable URL must not be rejected as unknown: {text}"
         );
     }
@@ -933,8 +934,7 @@ fn bind_glm_and_deepseek_to_claude_then_unbind_rejects_unknown_relay() {
     if let Err(err) = relay {
         let text = err.to_string();
         assert!(
-            !text.contains("unknown custom relay")
-                && !text.contains("还缺有效的服务地址"),
+            !text.contains("unknown custom relay") && !text.contains("还缺有效的服务地址"),
             "custom relay with a usable URL must not be rejected as unknown: {text}"
         );
     }
@@ -1032,7 +1032,8 @@ impl AgentAdapter for FakeCodexAdapter {
             binary_path: None,
             channel: None,
             env_ready: true,
-            notes: vec![], extra_copies: Vec::new(),
+            notes: vec![],
+            extra_copies: Vec::new(),
         }
     }
     fn install_channels(&self) -> Vec<InstallChannel> {

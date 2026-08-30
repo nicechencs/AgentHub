@@ -138,7 +138,9 @@ describe('legacy backups hash', () => {
 describe('settings-format i18n helpers', () => {
   it('lists backups as a peer Settings tab', () => {
     expect(tZh('settings.page.description')).toBe('偏好、本机、备份与关于');
-    expect(tEn('settings.page.description')).toBe('Preferences, this device, backups, and about');
+    expect(tEn('settings.page.description')).toBe('Preferences, this computer, backups, and about');
+    expect(tZh('settings.page.tabLocal')).toBe('本机');
+    expect(tEn('settings.page.tabLocal')).toBe('This computer');
     expect(tZh('settings.page.tabBackups')).toBe('备份');
     expect(tEn('settings.page.tabBackups')).toBe('Backups');
     expect(tZh('settings.page.descriptionTip')).toContain('备份管理配置快照');

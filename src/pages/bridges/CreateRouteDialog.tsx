@@ -1,27 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { Input } from '@/components/ui/input';
 import { SecretInput } from '@/components/shared/SecretInput';
+import { getSettings, logGuiEvent, guiErrorCode } from '@/lib/api/settings';
 import type { TranslateFn } from '@/lib/i18n';
 import type { ClaudeContextWindowChoice } from '@/lib/claude-client-env';
+import type { Account, Provider } from '@/lib/types';
 import {
   canSubmitCreateRoute,
   CREATE_ROUTE_TARGETS,
   CREATE_ROUTE_VENDORS,
   DEFAULT_CREATE_ROUTE_MODEL,
   createRouteAutoNames,
+  createRouteOwner,
   defaultCreateRouteEndpoints,
   defaultCreateRouteName,
   endpointUrlFor,
+  findRouteProviderByUrl,
   nextCreateRouteName,
   formatCreateRouteModels,
   isCreateRouteUrlValid,
+  routeCredentialMatchesExisting,
+  routeDuplicatePolicyFromSettings,
   submitCreateRoute,
   vendorById,
   type CreateRouteTarget,
   type CreateRouteVendorId,
+  type RouteDuplicatePolicy,
 } from './create-route-flow';
 import { localAddressCopyForTarget } from './route-endpoint-copy';
 
@@ -58,12 +65,16 @@ export function CreateRouteDialog({
   onCreated,
   asPanel = false,
   width,
+  providers = [],
+  accounts = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
   asPanel?: boolean;
   width?: number;
+  providers?: readonly Provider[];
+  accounts?: readonly Pick<Account, 'secretHash'>[];
 }) {
   const { t } = useI18n();
   const [vendor, setVendor] = useState<CreateRouteVendorId>('openrouter');
@@ -78,9 +89,45 @@ export function CreateRouteDialog({
   const [endpointUrls, setEndpointUrls] = useState<Partial<Record<CreateRouteTarget, string>>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [policy, setPolicy] = useState<RouteDuplicatePolicy>(routeDuplicatePolicyFromSettings(null));
+  const [duplicateKey, setDuplicateKey] = useState(false);
 
   const createInput = { name, url, key, vendor, endpoints, models, contextWindow, endpointUrls };
   const canSubmit = canSubmitCreateRoute(createInput);
+
+  const urlUpdateTarget = useMemo(() => {
+    if (!policy.updateDuplicateUrl || !isCreateRouteUrlValid(url)) return undefined;
+    return findRouteProviderByUrl(providers, url, createRouteOwner(endpoints));
+  }, [policy.updateDuplicateUrl, providers, url, endpoints]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void getSettings()
+      .then((settings) => {
+        if (!cancelled) setPolicy(routeDuplicatePolicyFromSettings(settings));
+      })
+      .catch(() => {
+        if (!cancelled) setPolicy(routeDuplicatePolicyFromSettings(null));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !policy.warnDuplicateCredential || !key.trim()) {
+      setDuplicateKey(false);
+      return;
+    }
+    let cancelled = false;
+    void routeCredentialMatchesExisting(key, providers, accounts).then((matched) => {
+      if (!cancelled) setDuplicateKey(matched);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, policy.warnDuplicateCredential, key, providers, accounts]);
 
   const reset = () => {
     setVendor('openrouter');
@@ -92,6 +139,7 @@ export function CreateRouteDialog({
     setEndpoints(defaultCreateRouteEndpoints('openrouter'));
     setEndpointUrls({});
     setError(null);
+    setDuplicateKey(false);
   };
 
   const applyVendor = (next: CreateRouteVendorId) => {
@@ -132,14 +180,30 @@ export function CreateRouteDialog({
     setBusy(true);
     setError(null);
     try {
-      await submitCreateRoute({
-        ...createInput,
-        models: vendor === 'openrouter' ? (models.trim() || DEFAULT_CREATE_ROUTE_MODEL) : models,
+      await submitCreateRoute(
+        {
+          ...createInput,
+          models: vendor === 'openrouter' ? (models.trim() || DEFAULT_CREATE_ROUTE_MODEL) : models,
+        },
+        undefined,
+        {
+          existingProviders: providers,
+          policy,
+        },
+      );
+      void logGuiEvent('route_create', {
+        route: 'local_bridge',
+        agent: createInput.endpoints[0],
       });
       reset();
       onOpenChange(false);
       onCreated();
     } catch (cause) {
+      void logGuiEvent('route_create_fail', {
+        route: 'local_bridge',
+        agent: createInput.endpoints[0],
+        code: guiErrorCode(cause),
+      });
       setError(cause instanceof Error ? cause.message : t('routes.create.fallback'));
     } finally {
       setBusy(false);
@@ -205,6 +269,14 @@ export function CreateRouteDialog({
               <span className="text-xs text-muted">{t('routes.create.key')}</span>
               <SecretInput value={key} onChange={setKey} />
             </div>
+            {duplicateKey ? (
+              <p className="text-meta text-muted">{t('routes.create.duplicateKeyTip')}</p>
+            ) : null}
+            {urlUpdateTarget ? (
+              <p className="text-meta text-muted">
+                {t('routes.create.duplicateUrlUpdateTip', { name: urlUpdateTarget.name })}
+              </p>
+            ) : null}
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-muted">{t('routes.create.models')}</span>
               <Input

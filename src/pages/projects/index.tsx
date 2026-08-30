@@ -107,6 +107,10 @@ export default function ProjectsPage() {
   const showSummarize = agentId !== 'cursor';
   const showDelete = canDelete;
   const agentMeta = AGENT_MAP[agentId];
+  const deleteHint =
+    agentId === 'zcode' && !canDelete
+      ? t('projects.tree.deleteInAgent', { name: agentMeta?.name ?? 'ZCode' })
+      : null;
 
   useEffect(() => {
     if (agentFromUrl && agentFromUrl !== agentId && tabAgents.some((a) => a.id === agentFromUrl)) {
@@ -520,6 +524,46 @@ export default function ProjectsPage() {
           <EyeOff className="h-3.5 w-3.5" />
           {showHidden ? t('projects.page.hideItems') : t('projects.page.showHidden')}
         </Button>
+        <div className={pageRhythm.chromeActions}>
+          {selected.size > 0 && (
+            <>
+              {showSummarize && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void handleSummarize()}
+                >
+                  {busy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  {t('projects.page.summarize', { n: selected.size })}
+                </Button>
+              )}
+              {showDelete && (
+                <Button
+                  size="sm"
+                  variant="dangerOutline"
+                  disabled={busy}
+                  onClick={() => setBatchDeleteOpen(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {t('projects.page.delete', { n: selected.size })}
+                </Button>
+              )}
+            </>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={showListSkeleton || busy || tabAgents.length === 0}
+            onClick={() => void reloadProjects()}
+          >
+            {t('projects.page.refresh')}
+          </Button>
+        </div>
       </div>
 
       <div className={pageRhythm.chromeRow}>
@@ -574,6 +618,7 @@ export default function ProjectsPage() {
           selected={selected}
           busy={busy}
           showDelete={showDelete}
+          deleteHint={deleteHint}
           previewSessionId={preview.target?.id ?? null}
           visibleSessions={visibleSessions}
           onToggleExpand={(p) => void toggleExpand(p)}
@@ -612,57 +657,12 @@ export default function ProjectsPage() {
       resizeAria={t('projects.preview.resizeAria')}
       panel={previewPanel}
       listOverflowX="hidden"
-      header={(
+    >
             <PageHeader
-              size="compact"
               title={t('projects.page.title')}
               description={t('projects.page.description')}
               descriptionTip={t('projects.page.descriptionTip')}
-              actions={
-                <div className="flex items-center gap-2">
-                  {selected.size > 0 && (
-                    <>
-                      {showSummarize && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => void handleSummarize()}
-                        >
-                          {busy ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-3.5 w-3.5" />
-                          )}
-                          {t('projects.page.summarize', { n: selected.size })}
-                        </Button>
-                      )}
-                      {showDelete && (
-                        <Button
-                          size="sm"
-                          variant="dangerOutline"
-                          disabled={busy}
-                          onClick={() => setBatchDeleteOpen(true)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          {t('projects.page.delete', { n: selected.size })}
-                        </Button>
-                      )}
-                    </>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={showListSkeleton || busy || tabAgents.length === 0}
-                    onClick={() => void reloadProjects()}
-                  >
-                    {t('projects.page.refresh')}
-                  </Button>
-                </div>
-              }
             />
-      )}
-    >
       {listPane}
     </WorkbenchSplitPage>
 

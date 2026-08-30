@@ -50,7 +50,10 @@ struct CatalogChannels {
 fn load_contract() -> CatalogMirror {
     let path = contract_path();
     let text = std::fs::read_to_string(&path).unwrap_or_else(|err| {
-        panic!("read catalog-mirror-contract.json from {}: {err}", path.display())
+        panic!(
+            "read catalog-mirror-contract.json from {}: {err}",
+            path.display()
+        )
     });
     let _ = CONTRACT_WATCH;
     serde_json::from_str(&text).expect("catalog-mirror-contract.json")
@@ -60,11 +63,25 @@ fn load_contract() -> CatalogMirror {
 fn shared_catalog_fixture_covers_every_agent_and_capability() {
     let contract = load_contract();
     let agents: Vec<&str> = AgentId::ALL.into_iter().map(AgentId::as_str).collect();
-    assert_eq!(agents, contract.agents.iter().map(String::as_str).collect::<Vec<_>>());
-    let caps: Vec<&str> = Capability::ALL.into_iter().map(Capability::as_str).collect();
+    assert_eq!(
+        agents,
+        contract
+            .agents
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+    );
+    let caps: Vec<&str> = Capability::ALL
+        .into_iter()
+        .map(Capability::as_str)
+        .collect();
     assert_eq!(
         caps,
-        contract.capabilities.iter().map(String::as_str).collect::<Vec<_>>()
+        contract
+            .capabilities
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
     );
 }
 

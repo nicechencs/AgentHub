@@ -1,17 +1,18 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
-import { FolderOpen, MessageSquarePlus, PanelRightClose } from 'lucide-react';
+import { MessageSquarePlus, PanelRightClose } from 'lucide-react';
 import { AgentDot } from '@/components/shared/AgentDot';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { MarkdownView } from '@/components/shared/MarkdownView';
 import { Button } from '@/components/ui/button';
-import { Tip } from '@/components/ui/tooltip';
 import { AGENT_MAP } from '@/config/agents';
 import { getAgentProjectExcerpts } from '@/lib/api/project';
 import { normalizeOpenPath } from '@/lib/path-open';
 import { hasEscPriorityOverlay } from '@/lib/skills/preview-keys';
 import type { AgentSession } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { relativeTime, shortPath } from './project-format';
+import { relativeTime } from './project-format';
 import { classifyExcerptRows, splitExcerptTurns } from './session-excerpt';
 
 function PreviewSkeleton() {
@@ -138,16 +139,10 @@ export function ProjectConversationPreviewPanel({
           <MessageSquarePlus className="h-3.5 w-3.5" />
         </Button>
         {record ? (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 shrink-0"
-            aria-label={t('projects.preview.openRecord')}
+          <OpenDirButton
             title={t('projects.preview.openRecord')}
             onClick={() => onOpenRecord(session)}
-          >
-            <FolderOpen className="h-3.5 w-3.5" />
-          </Button>
+          />
         ) : null}
         <Button
           size="icon"
@@ -256,12 +251,10 @@ export function ProjectConversationPreviewPanel({
       </div>
 
       <footer className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-1.5">
-        <Tip
-          className="min-w-0 flex-1 truncate font-mono text-meta text-muted"
-          label={cwd || record || session.path}
-        >
-          {shortPath(cwd || record || session.path, 48)}
-        </Tip>
+        <CopyableFileName
+          path={cwd || record || session.path}
+          className="min-w-0 flex-1"
+        />
       </footer>
     </aside>
   );

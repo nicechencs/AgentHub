@@ -3,7 +3,7 @@ title: UI 设计系统
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-29
+updated: 2026-08-30
 ---
 
 # UI Design System
@@ -78,7 +78,7 @@ There are two content systems only:
 | System | Token/pattern | Use |
 |---|---|---|
 | Reading column | `pageRhythm.readingColumn` (`mx-auto w-full max-w-3xl`) | Chat transcript/composer, Settings form, long-form reading |
-| Edge column | `pageRhythm.pageShell` / `workbenchX` with 18px side inset | Tables, lists, dashboards, split workbenches, Routes. When a split pane is open, the scrolling list uses `workbenchXSplit` (18px left; 8px pad + 8px margin on the right) so the scrollbar is not flush against the separator. |
+| Edge column | `pageRhythm.pageShell` / `workbenchX` from `pageEdge.inset` (currently 8px) | Tables, lists, dashboards, split workbenches, Routes. Change `pageEdge.inset` in `src/components/layout/page-rhythm.ts` to retune every page edge. When a split pane is open, the scrolling list uses `workbenchXSplit` (`inset` left; canvas gutter pad + margin on the right) so the scrollbar is not flush against the separator. |
 
 Do not introduce page-private `max-w-*` values, a third content width, or a second left-aligned reading width. `fullBleed` describes height and scrolling behavior, not a third width system.
 

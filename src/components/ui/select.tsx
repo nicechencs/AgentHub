@@ -49,22 +49,36 @@ SelectContent.displayName = 'SelectContent';
 
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
+    /** Shown under the label in the menu only; not copied into the trigger. */
+    description?: string;
+  }
+>(({ className, children, description, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex cursor-default select-none items-center rounded-btn py-1.5 pl-7 pr-2 text-body outline-none focus:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      'relative flex cursor-default select-none rounded-btn py-1.5 pl-7 pr-2 text-body outline-none focus:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      description ? 'items-start' : 'items-center',
       className,
     )}
     {...props}
   >
-    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+    <span
+      className={cn(
+        'absolute left-2 flex h-3.5 w-3.5 items-center justify-center',
+        description ? 'top-2' : 'top-1/2 -translate-y-1/2',
+      )}
+    >
       <SelectPrimitive.ItemIndicator>
         <Check className="h-3.5 w-3.5" />
       </SelectPrimitive.ItemIndicator>
     </span>
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    <span className="flex min-w-0 flex-1 flex-col">
+      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {description ? (
+        <span className="truncate text-meta text-muted">{description}</span>
+      ) : null}
+    </span>
   </SelectPrimitive.Item>
 ));
 SelectItem.displayName = 'SelectItem';

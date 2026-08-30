@@ -60,12 +60,12 @@ export type CredentialRowInput =
 function accountSubtitle(a: Account, t?: TranslateFn): string {
   if (a.isCurrent) {
     const bits: string[] = [];
-    bits.push(authDisplayForAccount(a).label);
+    bits.push(authDisplayForAccount(a, t).label);
     if (a.subscription) bits.push(a.subscription);
     return bits.join(' · ');
   }
   const bits: string[] = [];
-  bits.push(authDisplayForAccount(a).label, t ? t('connections.list.notCurrent') : '未生效');
+  bits.push(authDisplayForAccount(a, t).label, t ? t('connections.list.notCurrent') : '未生效');
   if (a.provider && !a.label.includes(a.provider)) bits.push(a.provider);
   if (a.subscription) bits.push(a.subscription);
   return bits.join(' · ');
@@ -115,7 +115,7 @@ function ticketSubtitle(ticket: TicketView, t?: TranslateFn): string {
 }
 
 function fromAccount(account: Account, t?: TranslateFn): CredentialRow {
-  const display = authDisplayForAccount(account);
+  const display = authDisplayForAccount(account, t);
   return {
     key: `account:${account.id}`,
     source: 'account',
@@ -136,7 +136,7 @@ function fromProvider(provider: Provider, t?: TranslateFn): CredentialRow {
   const endpoint = extractProviderEndpoint(provider.configText, provider.configFormat);
   const internal = isInternalGeneratedProvider(provider);
   const mode = providerEndpointMode(provider, endpoint);
-  const title = internal ? formatLocalRouteLabel() : provider.name;
+  const title = internal ? formatLocalRouteLabel(undefined, t) : provider.name;
   const subtitleEndpoint = internal ? undefined : endpoint;
   return {
     key: `provider:${provider.id}`,
@@ -164,7 +164,7 @@ function fromTicket(
     source: ticket.sourceKind,
     id: ticket.sourceId,
     agentId: ticket.agentId,
-    title: isInternalGeneratedName(ticket.label) ? formatLocalRouteLabel() : ticket.label,
+    title: isInternalGeneratedName(ticket.label) ? formatLocalRouteLabel(undefined, t) : ticket.label,
     subtitle: ticketSubtitle(ticket, t),
     isCurrent,
     auth: {
@@ -194,5 +194,24 @@ export function providerEndpointExtras(provider: Provider): {
     endpoint: internal ? undefined : endpoint,
     endpointHost: internal || !endpoint ? undefined : formatEndpointHost(endpoint),
     endpointMode: providerEndpointMode(provider, endpoint),
+  };
+}
+
+/** API Key account endpoint fields. Missing URL keeps the legacy official mode. */
+export function accountEndpointExtras(
+  account: Pick<Account, 'kind' | 'agentId' | 'endpoint'>,
+): {
+  endpoint?: string;
+  endpointHost?: string;
+  endpointMode?: 'official' | 'custom';
+} {
+  if (account.kind !== 'apikey') return {};
+  const endpoint = account.endpoint?.trim();
+  if (!endpoint) return { endpointMode: 'official' };
+  const official = looksLikeOfficialEndpoint(account.agentId, endpoint);
+  return {
+    endpoint,
+    endpointHost: formatEndpointHost(endpoint),
+    endpointMode: official ? 'official' : 'custom',
   };
 }

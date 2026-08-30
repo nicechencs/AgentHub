@@ -1,8 +1,17 @@
 import { resolveAgentMeta, type AgentMeta } from '@/config/agents';
 import { sliceAgentStatus } from '@/lib/backend/contracts/agent-status-view';
-import { authDisplayForAgentStatus, authHealthLabel } from '@/lib/backend/contracts/auth-state';
+import {
+  authDisplayForAgentStatus,
+  authHealthLabel,
+} from '@/lib/backend/contracts/auth-state';
 import type { TranslateFn } from '@/lib/i18n';
+import { localizeStoredUiCopy } from '@/lib/i18n/stored-copy';
 import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
+
+/** Backend/store rows keep Chinese literals. Remap at display time when `t` is set. */
+export function localizeStoredDashboardCopy(raw: string, t?: TranslateFn): string {
+  return localizeStoredUiCopy(raw, t);
+}
 
 /** 内容与骨架屏共用：auto-fit 自适应，支持任意 agent 数量 */
 export const AGENT_OVERVIEW_GRID =
@@ -192,18 +201,20 @@ export function buildAgentCardView(
   const view = sliceAgentStatus(status ?? {});
   const kind = view.effectiveConnection.kind === 'unset' ? 'none' : view.effectiveConnection.kind;
   const unconfigured = t ? t('dashboard.overview.unconfigured') : '未配置';
-  const effective =
+  const rawEffective =
     view.effectiveConnection.label !== 'unset'
       ? view.effectiveConnection.label
       : view.effectiveConnection.currentProvider !== 'unset'
         ? view.effectiveConnection.currentProvider
         : unconfigured;
+  const effective = localizeStoredDashboardCopy(rawEffective, t);
   const version = status?.version ?? '—';
   const versionText = missing ? null : `v${version}`;
-  const authLabel =
+  const rawAuthLabel =
     view.liveAuth.health === 'unset'
       ? (status?.authLabel || '—')
       : authHealthLabel(view.liveAuth.health, t);
+  const authLabel = localizeStoredDashboardCopy(rawAuthLabel, t);
 
   let metaText: string;
   let metaClass: 'text-muted' | 'text-warning' = 'text-muted';
@@ -264,8 +275,8 @@ export function buildAgentCardView(
   }
   const binding = badges?.binding?.ticketLabel
     ? {
-        ticketLabel: badges.binding.ticketLabel,
-        routeLabel: badges.binding.routeLabel,
+        ticketLabel: localizeStoredDashboardCopy(badges.binding.ticketLabel, t),
+        routeLabel: localizeStoredDashboardCopy(badges.binding.routeLabel, t),
       }
     : undefined;
   if (viaAdapter) {

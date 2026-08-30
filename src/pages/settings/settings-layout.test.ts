@@ -12,9 +12,9 @@ function source(name: string): string {
 describe('settings layout wiring', () => {
   it('keeps the page title on the edge column; only the body uses the reading column', () => {
     const page = source('index.tsx');
-    expect(page).toContain('pageRhythm.readingColumn');
+    expect(page).toContain('pageRhythm.readingStart');
     expect(page).not.toContain('pageRhythm.formColumn');
-    expect(page.match(/className=\{pageRhythm\.readingColumn\}/g)?.length).toBe(3);
+    expect(page.match(/className=\{pageRhythm\.readingStart\}/g)?.length).toBe(4);
     expect(page).not.toMatch(/readingColumn\}>\s*<PageHeader/);
     expect(page).toContain('TabsContent value="backups" className="h-full min-h-0"');
   });

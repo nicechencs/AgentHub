@@ -28,7 +28,6 @@ import { createBackup, deleteBackup, listBackups, restoreBackup } from '@/lib/ap
 import { getSettings, updateSettings } from '@/lib/api/settings';
 import type { TranslateFn } from '@/lib/i18n';
 import { Switch } from '@/components/ui/switch';
-import { SettingsRow } from '@/pages/settings/settings-shared';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
 import { BackupDetailPanel } from './backup-detail-panel';
@@ -243,25 +242,9 @@ export function BackupsPanel() {
         split={inspect}
         resizeAria={t('common.resizeSidePanel')}
         panel={inspectPanel}
-        header={(
-          <SettingsRow
-            label={t('settings.backups.keepCopiesLabel')}
-            description={t('settings.backups.keepCopiesDescription')}
-            descriptionTip={t('settings.backups.keepCopiesTip')}
-          >
-            <Switch
-              checked={keepCopies}
-              onCheckedChange={(v) => {
-                setKeepCopies(v);
-                void updateSettings({ keepLiveFileCopies: v }).catch(() => {
-                  setKeepCopies(!v);
-                });
-              }}
-            />
-          </SettingsRow>
-        )}
+        flushTop
       >
-      <div className={`${pageRhythm.chrome} flex flex-wrap items-center gap-3`}>
+      <div className={pageRhythm.chromeRow}>
         {pageLoading ? (
           <Skeleton className="h-9 w-64 rounded-card" />
         ) : (
@@ -278,17 +261,31 @@ export function BackupsPanel() {
             {!isInstalled && t('settings.backups.uninstalledHint')}
           </span>
         )}
-        {agentMeta && (
-          <Button
-            className="ml-auto"
-            disabled={creating || !isInstalled}
-            title={!isInstalled ? t('settings.backups.createTitleNotInstalled') : undefined}
-            onClick={() => void handleCreate()}
-          >
-            <Plus className="h-4 w-4" />
-            {creating ? t('settings.backups.creating') : t('settings.backups.backupNow')}
-          </Button>
-        )}
+        <div className={pageRhythm.chromeActions}>
+          <Tip className="max-w-[12rem] truncate text-meta text-secondary" label={t('settings.backups.keepCopiesTip')}>
+            {t('settings.backups.keepCopiesLabel')}
+          </Tip>
+          <Switch
+            checked={keepCopies}
+            onCheckedChange={(v) => {
+              setKeepCopies(v);
+              void updateSettings({ keepLiveFileCopies: v }).catch(() => {
+                setKeepCopies(!v);
+              });
+            }}
+          />
+          {agentMeta && (
+            <Button
+              size="sm"
+              disabled={creating || !isInstalled}
+              title={!isInstalled ? t('settings.backups.createTitleNotInstalled') : undefined}
+              onClick={() => void handleCreate()}
+            >
+              <Plus className="h-4 w-4" />
+              {creating ? t('settings.backups.creating') : t('settings.backups.backupNow')}
+            </Button>
+          )}
+        </div>
       </div>
 
       {pageLoading ? (

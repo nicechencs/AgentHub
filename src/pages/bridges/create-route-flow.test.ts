@@ -13,6 +13,7 @@ import {
   defaultCreateRouteEndpoints,
   defaultCreateRouteName,
   alreadyRoutedSourceKeys,
+  findRouteProviderByUrl,
   importableConnectionEntries,
   importRouteRowTitle,
   importRouteTarget,
@@ -261,7 +262,7 @@ describe('create-route-flow', () => {
     expect(upsertProvider).toHaveBeenCalledOnce();
     expect(planTicket).toHaveBeenCalledTimes(3);
     expect(bindTicket).toHaveBeenCalledTimes(3);
-    expect(bound).toEqual(['claude', 'codex', 'grok']);
+    expect(bound).toEqual({ agents: ['claude', 'codex', 'grok'], updatedExisting: false });
     expect(bindTicket.mock.calls.map((call) => call[1])).toEqual(['claude', 'codex', 'grok']);
   });
 
@@ -362,23 +363,28 @@ describe('importable vs already routed logins', () => {
     { source: 'account' as const, id: 'acc-2' },
   ];
 
-  it('omits a login that already has a local-bridge profile', () => {
+  it('keeps already-routed logins listed and flags them when the check is on', () => {
     const keys = alreadyRoutedSourceKeys([
       { id: 'p1', sourceKind: 'account', sourceId: 'acc-1', route: 'local_bridge' },
     ]);
     expect([...keys]).toEqual(['account:acc-1']);
-    expect(importableConnectionEntries(entries, keys).map((row) => row.id)).toEqual(['prov-1', 'acc-2']);
+    const rows = importableConnectionEntries(entries, keys);
+    expect(rows.map((row) => row.id)).toEqual(['acc-1', 'prov-1', 'acc-2']);
+    expect(rows.find((row) => row.id === 'acc-1')?.alreadyRouted).toBe(true);
+    expect(rows.find((row) => row.id === 'prov-1')?.alreadyRouted).toBeUndefined();
   });
 
-  it('omits a profile source even when route is native_endpoint', () => {
+  it('flags a profile source even when route is native_endpoint', () => {
     const keys = alreadyRoutedSourceKeys([
       { id: 'p2', sourceKind: 'provider', sourceId: 'prov-1', route: 'native_endpoint' },
     ]);
     expect([...keys]).toEqual(['provider:prov-1']);
-    expect(importableConnectionEntries(entries, keys).map((row) => row.id)).toEqual(['acc-1', 'acc-2']);
+    const rows = importableConnectionEntries(entries, keys);
+    expect(rows.map((row) => row.id)).toEqual(['acc-1', 'prov-1', 'acc-2']);
+    expect(rows.find((row) => row.id === 'prov-1')?.alreadyRouted).toBe(true);
   });
 
-  it('omits generatedProviderId as a provider login', () => {
+  it('flags generatedProviderId as a provider login without hiding others', () => {
     const keys = alreadyRoutedSourceKeys([
       {
         id: 'p-gen',
@@ -394,7 +400,9 @@ describe('importable vs already routed logins', () => {
       ...entries,
       { source: 'provider' as const, id: 'gen-local-1' },
     ];
-    expect(importableConnectionEntries(mixed, keys).map((row) => row.id)).toEqual(['prov-1', 'acc-2']);
+    const rows = importableConnectionEntries(mixed, keys);
+    expect(rows.map((row) => row.id)).toEqual(['acc-1', 'prov-1', 'acc-2', 'gen-local-1']);
+    expect(rows.filter((row) => row.alreadyRouted).map((row) => row.id)).toEqual(['acc-1', 'gen-local-1']);
   });
 
   it('omits a 本机路由 loopback login even without a matching profile key', () => {
@@ -419,7 +427,13 @@ describe('importable vs already routed logins', () => {
     const keys = alreadyRoutedSourceKeys([
       { id: 'p-or', sourceKind: 'provider', sourceId: 'or-1', route: 'native_endpoint' },
     ]);
-    expect(importableConnectionEntries([oauth, { source: 'provider' as const, id: 'or-1', title: 'OpenRouter 备选' }], keys).map((row) => row.id)).toEqual(['acc-oauth']);
+    const rows = importableConnectionEntries(
+      [oauth, { source: 'provider' as const, id: 'or-1', title: 'OpenRouter 备选' }],
+      keys,
+    );
+    expect(rows.map((row) => row.id)).toEqual(['acc-oauth', 'or-1']);
+    expect(rows.find((row) => row.id === 'or-1')?.alreadyRouted).toBe(true);
+    expect(rows.find((row) => row.id === 'acc-oauth')?.alreadyRouted).toBeUndefined();
   });
 
   it('create-route OpenRouter 备选 id matches the bound profile sourceId', () => {
@@ -434,10 +448,11 @@ describe('importable vs already routed logins', () => {
       },
     ]);
     expect(keys.has(`provider:${draft.id}`)).toBe(true);
-    expect(importableConnectionEntries(
+    const rows = importableConnectionEntries(
       [{ source: 'provider' as const, id: draft.id, title: 'OpenRouter 备选' }],
       keys,
-    )).toEqual([]);
+    );
+    expect(rows).toEqual([{ source: 'provider', id: draft.id, title: 'OpenRouter 备选', alreadyRouted: true }]);
   });
 
   it('matches sourceKind+sourceId so account and provider ids do not collide', () => {
@@ -448,7 +463,10 @@ describe('importable vs already routed logins', () => {
       { source: 'account' as const, id: 'same' },
       { source: 'provider' as const, id: 'same' },
     ];
-    expect(importableConnectionEntries(mixed, keys)).toEqual([{ source: 'provider', id: 'same' }]);
+    expect(importableConnectionEntries(mixed, keys)).toEqual([
+      { source: 'account', id: 'same', alreadyRouted: true },
+      { source: 'provider', id: 'same' },
+    ]);
   });
 
   it('skips empty sourceId', () => {
@@ -458,11 +476,20 @@ describe('importable vs already routed logins', () => {
     expect(keys.size).toBe(0);
   });
 
+  it('does not flag already-routed rows when the duplicate check is off', () => {
+    const keys = alreadyRoutedSourceKeys([
+      { id: 'p1', sourceKind: 'account', sourceId: 'acc-1', route: 'local_bridge' },
+    ]);
+    const rows = importableConnectionEntries(entries, keys, [], { checkDuplicateCredential: false });
+    expect(rows.map((row) => row.id)).toEqual(['acc-1', 'prov-1', 'acc-2']);
+    expect(rows.every((row) => !row.alreadyRouted)).toBe(true);
+  });
+
   const liveSourceId = 'openai-compat-0e08e310-97ba-4575-a50b-3e3db6eec38c';
   const liveTrunc = 'openai-compat-0e08e310-97ba-4575-a50b-3e';
   const liveBackup = 'openai-compat-openrouter-backup';
 
-  it('omits same-titled leftover OpenRouter 备选 when UUID source is already routed', () => {
+  it('flags same-titled leftover OpenRouter 备选 when UUID source is already routed', () => {
     const profiles = [
       {
         id: 'p-claude',
@@ -490,27 +517,35 @@ describe('importable vs already routed logins', () => {
     };
     const gmail = { source: 'account' as const, id: 'acc-gmail', title: 'cunsen.chen@gmail.com' };
     const qq = { source: 'account' as const, id: 'acc-qq', title: '41375197@qq.com' };
-    expect(importableConnectionEntries(
+    const rows = importableConnectionEntries(
       [leftover, routedLogin, gmail, qq],
       keys,
       profiles,
-    ).map((row) => row.id)).toEqual(['acc-gmail', 'acc-qq']);
+    );
+    expect(rows.map((row) => row.id)).toEqual([liveBackup, liveSourceId, 'acc-gmail', 'acc-qq']);
+    expect(rows.find((row) => row.id === liveSourceId)?.alreadyRouted).toBe(true);
+    // Same title alone no longer force-hides a different id; only true source matches flag.
+    expect(rows.find((row) => row.id === liveBackup)?.alreadyRouted).toBeUndefined();
   });
 
-  it('omits a provider when profile.name equals entry.title', () => {
+  it('flags a provider when profile.name equals entry.title', () => {
     const profiles = [
       { id: 'p', name: 'OpenRouter 备选', sourceKind: 'provider' as const, sourceId: liveSourceId, route: 'native_endpoint' },
     ];
     const leftover = { source: 'provider' as const, id: liveBackup, title: 'OpenRouter 备选' };
-    expect(importableConnectionEntries([leftover], alreadyRoutedSourceKeys(profiles), profiles)).toEqual([]);
+    expect(importableConnectionEntries([leftover], alreadyRoutedSourceKeys(profiles), profiles)).toEqual([
+      { ...leftover, alreadyRouted: true },
+    ]);
   });
 
-  it('omits when profile.sourceId is a prefix, suffix, or ticket wrapper of the entry id', () => {
+  it('flags when profile.sourceId is a prefix, suffix, or ticket wrapper of the entry id', () => {
     const prefixProfile = [
       { id: 'p', name: 'bridge', sourceKind: 'provider' as const, sourceId: liveTrunc, route: 'local_bridge' },
     ];
     const full = { source: 'provider' as const, id: liveSourceId, title: 'OpenRouter 备选' };
-    expect(importableConnectionEntries([full], alreadyRoutedSourceKeys(prefixProfile), prefixProfile)).toEqual([]);
+    expect(importableConnectionEntries([full], alreadyRoutedSourceKeys(prefixProfile), prefixProfile)).toEqual([
+      { ...full, alreadyRouted: true },
+    ]);
 
     const wrapped = [
       { id: 'p2', name: 'bridge', sourceKind: 'provider' as const, sourceId: `provider:${liveSourceId}`, route: 'local_bridge' },
@@ -519,10 +554,10 @@ describe('importable vs already routed logins', () => {
       [{ source: 'provider' as const, id: liveSourceId, title: 'x' }],
       alreadyRoutedSourceKeys(wrapped),
       wrapped,
-    )).toEqual([]);
+    )).toEqual([{ source: 'provider', id: liveSourceId, title: 'x', alreadyRouted: true }]);
   });
 
-  it('omits when entry.provider.id appears in profile sourceId or generatedProviderId', () => {
+  it('flags when entry.provider.id appears in profile sourceId or generatedProviderId', () => {
     const profiles = [
       {
         id: 'p',
@@ -539,7 +574,9 @@ describe('importable vs already routed logins', () => {
       title: 'other',
       provider: { id: liveSourceId, name: 'OpenRouter 备选', preset: 'openrouter', configText: '{}', configFormat: 'json' as const },
     };
-    expect(importableConnectionEntries([entry], alreadyRoutedSourceKeys(profiles), profiles)).toEqual([]);
+    expect(importableConnectionEntries([entry], alreadyRoutedSourceKeys(profiles), profiles)).toEqual([
+      { ...entry, alreadyRouted: true },
+    ]);
   });
 
   it('does not hide never-routed gmail/qq oauth without a profile', () => {
@@ -592,5 +629,124 @@ describe('importable vs already routed logins', () => {
       { target: 'codex', enabled: true, url: DEFAULT_CREATE_ROUTE_URL },
       { target: 'grok', enabled: true, url: DEFAULT_CREATE_ROUTE_URL },
     ]);
+  });
+});
+
+describe('route duplicate URL / credential policy', () => {
+  it('finds an existing route by same Agent + normalized URL', () => {
+    const existing: Provider = {
+      id: 'openai-compat-existing',
+      agentId: 'claude',
+      name: '旧路由',
+      preset: 'openai-compat',
+      configText: JSON.stringify({ baseURL: 'https://openrouter.ai/api/v1', apiKey: '***' }),
+      configFormat: 'json',
+      isCurrent: false,
+      official: false,
+    };
+    expect(findRouteProviderByUrl([existing], 'https://openrouter.ai/api/v1/', 'claude')?.id)
+      .toBe('openai-compat-existing');
+    expect(findRouteProviderByUrl([existing], 'https://openrouter.ai/api/v1', 'codex')).toBeUndefined();
+  });
+
+  it('updates the existing provider id when same-URL policy is on', async () => {
+    const existing: Provider = {
+      id: 'openai-compat-existing',
+      agentId: 'claude',
+      name: '旧路由',
+      preset: 'openrouter',
+      configText: JSON.stringify({ baseURL: DEFAULT_CREATE_ROUTE_URL, apiKey: 'old' }),
+      configFormat: 'json',
+      isCurrent: false,
+      official: false,
+    };
+    const upsertProvider = vi.fn(async (provider: Provider) => provider);
+    const result = await submitCreateRoute(
+      input(),
+      {
+        upsertProvider,
+        planTicket: vi.fn(async (_ticket: string, agent: string) =>
+          plan(agent as AdapterApplyPlan['targetAgentId']),
+        ),
+        bindTicket: vi.fn(async (_ticket: string, agent: string) =>
+          bindResult(agent as BindTicketResult['binding']['agentId']),
+        ),
+        unbindTicket: vi.fn(async () => {}),
+        deleteProvider: vi.fn(async () => {}),
+      },
+      {
+        existingProviders: [existing],
+        policy: { updateDuplicateUrl: true },
+      },
+    );
+    expect(result.updatedExisting).toBe(true);
+    expect(upsertProvider.mock.calls[0]?.[0]?.id).toBe('openai-compat-existing');
+  });
+
+  it('creates a new provider when same-URL policy is off', async () => {
+    const existing: Provider = {
+      id: 'openai-compat-existing',
+      agentId: 'claude',
+      name: '旧路由',
+      preset: 'openrouter',
+      configText: JSON.stringify({ baseURL: DEFAULT_CREATE_ROUTE_URL, apiKey: 'old' }),
+      configFormat: 'json',
+      isCurrent: false,
+      official: false,
+    };
+    const upsertProvider = vi.fn(async (provider: Provider) => provider);
+    const result = await submitCreateRoute(
+      input(),
+      {
+        upsertProvider,
+        planTicket: vi.fn(async (_ticket: string, agent: string) =>
+          plan(agent as AdapterApplyPlan['targetAgentId']),
+        ),
+        bindTicket: vi.fn(async (_ticket: string, agent: string) =>
+          bindResult(agent as BindTicketResult['binding']['agentId']),
+        ),
+        unbindTicket: vi.fn(async () => {}),
+        deleteProvider: vi.fn(async () => {}),
+      },
+      {
+        existingProviders: [existing],
+        policy: { updateDuplicateUrl: false },
+      },
+    );
+    expect(result.updatedExisting).toBe(false);
+    expect(upsertProvider.mock.calls[0]?.[0]?.id).not.toBe('openai-compat-existing');
+  });
+
+  it('does not delete an updated existing provider when bind fails', async () => {
+    const existing: Provider = {
+      id: 'openai-compat-existing',
+      agentId: 'claude',
+      name: '旧路由',
+      preset: 'openrouter',
+      configText: JSON.stringify({ baseURL: DEFAULT_CREATE_ROUTE_URL, apiKey: 'old' }),
+      configFormat: 'json',
+      isCurrent: false,
+      official: false,
+    };
+    const deleteProvider = vi.fn(async () => {});
+    await expect(
+      submitCreateRoute(
+        input(),
+        {
+          upsertProvider: vi.fn(async (provider: Provider) => provider),
+          planTicket: vi.fn(async () => plan('claude')),
+          bindTicket: vi.fn(async () => {
+            throw new Error('port in use');
+          }),
+          unbindTicket: vi.fn(async () => {}),
+          deleteProvider,
+        },
+        {
+          existingProviders: [existing],
+          policy: { updateDuplicateUrl: true },
+        },
+      ),
+    ).rejects.toThrow('port in use');
+    expect(deleteProvider).not.toHaveBeenCalled();
   });
 });

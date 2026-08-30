@@ -22,16 +22,13 @@ fn production_register_integrations_covers_all_agents_without_demo() {
     for agent in AgentId::ALL {
         assert!(prod.paths.contains(agent), "{}", agent.as_str());
     }
-    // Projects are sparse: only agents with a verified scanner register a source.
     for agent in AgentId::ALL {
-        if agent == AgentId::Zcode {
-            assert!(
-                !prod.projects.contains(agent),
-                "zcode project scanner is Planned — no fake source"
-            );
-        } else {
-            assert!(prod.projects.contains(agent), "{}", agent.as_str());
-        }
+        assert!(prod.projects.contains(agent), "{}", agent.as_str());
+        assert!(
+            prod.usage.contains(agent) || agent == AgentId::Cursor,
+            "{}",
+            agent.as_str()
+        );
     }
 
     let demo = demo_agent::key();

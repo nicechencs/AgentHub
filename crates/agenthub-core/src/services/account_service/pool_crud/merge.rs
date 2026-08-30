@@ -135,9 +135,7 @@ impl AccountService {
                 tx.commit()?;
                 for row in &committed.deleted {
                     crate::services::connection_service::trash::log_recycle(
-                        agent,
-                        &row.id,
-                        &row.label,
+                        agent, &row.id, &row.label,
                     );
                 }
                 Ok(committed)
@@ -232,9 +230,7 @@ impl AccountService {
                 tx.commit()?;
                 for row in &committed.deleted {
                     crate::services::connection_service::trash::log_recycle(
-                        agent,
-                        &row.id,
-                        &row.label,
+                        agent, &row.id, &row.label,
                     );
                 }
                 Ok(committed)

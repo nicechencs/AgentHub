@@ -85,5 +85,16 @@ describe('switch toast copy', () => {
     const src = readFileSync(new URL('./use-connection-page-actions.ts', import.meta.url), 'utf8');
     expect(src).toContain('switchWroteLiveLabel(t, resolveAgentMeta(ticket.agentId).occupancy)');
     expect(src).toMatch(/const wroteLocal =\s*ticket\.agentId === targetAgent/);
+    expect(src).toContain('extrasForTicket(ticket)?.isCurrent');
+    expect(src).not.toContain('tabCurrentId');
+  });
+});
+
+describe('guiErrorCode', () => {
+  it('reads a trailing bracket code', async () => {
+    const { guiErrorCode } = await import('@/lib/api/settings');
+    expect(guiErrorCode('provider switch failed [provider.switch.rollback]')).toBe('provider.switch.rollback');
+    expect(guiErrorCode(new Error('io failed [io]'))).toBe('io');
+    expect(guiErrorCode('plain text')).toBeUndefined();
   });
 });

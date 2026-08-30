@@ -371,7 +371,7 @@ pub(super) mod prepare;
 mod removal;
 mod rules;
 
-pub use persist_saga::{BridgeProviderSnapshot, should_make_bridge_current};
+pub use persist_saga::{should_make_bridge_current, BridgeProviderSnapshot};
 
 use rules::*;
 
@@ -809,7 +809,11 @@ pub(crate) fn parse_openai_models_json(bytes: &[u8]) -> Option<Vec<String>> {
                 .map(str::to_owned)
         })
         .collect();
-    if ids.is_empty() { None } else { Some(ids) }
+    if ids.is_empty() {
+        None
+    } else {
+        Some(ids)
+    }
 }
 
 /// A prepared bridge saga. This is an in-process only object: it carries

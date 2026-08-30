@@ -172,9 +172,10 @@ impl BridgeRuntimeHost {
     /// The loopback bearer this listener actually accepts. Empty when not running.
     pub fn local_token(&self, profile_id: &str) -> Result<Option<String>, BridgeHostError> {
         let registry = self.gateway.lock()?;
-        Ok(registry.runtimes.get(profile_id).map(|runtime| {
-            runtime.state.local_token.as_ref().to_owned()
-        }))
+        Ok(registry
+            .runtimes
+            .get(profile_id)
+            .map(|runtime| runtime.state.local_token.as_ref().to_owned()))
     }
 
     /// Last inbound requests for this profile (newest first). Credential-free.

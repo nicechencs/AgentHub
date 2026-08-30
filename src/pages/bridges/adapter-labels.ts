@@ -6,7 +6,19 @@ import {
   type AdapterProfile,
   type AdapterProfileStatus,
 } from '@/lib/backend/contracts/adapter';
-import type { TranslateFn } from '@/lib/i18n';
+import type { MessageKey, TranslateFn } from '@/lib/i18n';
+
+const ADAPTER_ERROR_KEY = {
+  invalidProjection: 'routes.error.invalidProjection',
+  portInUse: 'routes.error.portInUse',
+  unsupportedBridge: 'routes.error.unsupportedBridge',
+  unknownRelay: 'routes.error.unknownRelay',
+  invalidSecret: 'routes.error.invalidSecret',
+  cannotListen: 'routes.error.cannotListen',
+  cannotStart: 'routes.error.cannotStart',
+  grokKey: 'routes.error.grokKey',
+  loginKey: 'routes.error.loginKey',
+} as const satisfies Record<string, MessageKey>;
 
 export function adapterProfileStatusLabel(status: AdapterProfileStatus, t?: TranslateFn): string {
   if (status === 'active') return t ? t('routes.profileStatus.active') : '已生效';
@@ -85,27 +97,57 @@ export function profileStatusBadge(
 const INTERNAL_ID_RE =
   /\b(?:adapter-[a-z0-9-]+|retryable:adapter\.[a-z0-9._-]+|adapter\.[a-z0-9._-]+|[a-z0-9-]+-to-[a-z0-9-]+-v\d+)\b/gi;
 
-function localizeAdapterCopy(raw: string): string {
+function localizeAdapterCopy(raw: string, t?: TranslateFn): string {
   const trimmed = raw.trim();
-  if (/generated bridge provider has an invalid projection/i.test(trimmed)) {
-    return '这条本机路由的配置不完整，无法启动。请点重试，或删除后重建。';
+  const copy = (key: keyof typeof ADAPTER_ERROR_KEY, zh: string) =>
+    t ? t(ADAPTER_ERROR_KEY[key]) : zh;
+  if (
+    /generated bridge provider has an invalid projection/i.test(trimmed)
+    || trimmed.includes('配置不完整')
+  ) {
+    return copy('invalidProjection', '这条本机路由的配置不完整，无法启动。请点重试，或删除后重建。');
   }
-  if (/failed to bind loopback bridge listener|address already in use/i.test(trimmed)) {
-    return '本机端口已被占用。将自动换一个空闲端口，请点重试。';
+  if (
+    /failed to bind loopback bridge listener|address already in use/i.test(trimmed)
+    || trimmed.includes('端口已被占用')
+  ) {
+    return copy('portInUse', '本机端口已被占用。将自动换一个空闲端口，请点重试。');
   }
-  if (/adapter profile is not a supported local bridge/i.test(trimmed)) {
-    return '这条本机路由已失效，无法启动。请删除后重建。';
+  if (
+    /adapter profile is not a supported local bridge/i.test(trimmed)
+    || trimmed.includes('本机路由已失效')
+  ) {
+    return copy('unsupportedBridge', '这条本机路由已失效，无法启动。请删除后重建。');
   }
-  if (/unknown custom relay provider/i.test(trimmed)) {
-    return '这份自定义上游还缺有效的服务地址，没法开本机转发。请补上地址后重试。';
+  if (
+    /unknown custom relay provider/i.test(trimmed)
+    || trimmed.includes('自定义上游还缺')
+  ) {
+    return copy('unknownRelay', '这份自定义上游还缺有效的服务地址，没法开本机转发。请补上地址后重试。');
   }
-  if (/invalid adapter secret reference/i.test(trimmed)) {
-    return '没法把本机令牌写进客户端配置。请点重试。';
+  if (/invalid adapter secret reference/i.test(trimmed) || trimmed.includes('本机令牌写进')) {
+    return copy('invalidSecret', '没法把本机令牌写进客户端配置。请点重试。');
+  }
+  if (trimmed.includes('无法监听端口') || /couldn't listen|cannot listen/i.test(trimmed)) {
+    return copy('cannotListen', '本机转发无法监听端口，请点重试。');
+  }
+  if (
+    trimmed.includes('无法启动或停止')
+    || trimmed.includes('本机转发启动失败')
+    || /failed to start or stop|bridge start/i.test(trimmed)
+  ) {
+    return copy('cannotStart', '本机转发无法启动或停止，请点重试。');
+  }
+  if (trimmed.includes('Grok 登录没法解析') || /grok login couldn.?t/i.test(trimmed)) {
+    return copy('grokKey', '这份 Grok 登录没法解析成 Claude 路由要用的密钥');
+  }
+  if (trimmed.includes('没法解析成目标路由') || /couldn.?t be turned into the key/i.test(trimmed)) {
+    return copy('loginKey', '这份登录没法解析成目标路由要用的密钥');
   }
   return trimmed.replace(INTERNAL_ID_RE, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-export function errorMessage(error: unknown, fallback: string): string {
+export function errorMessage(error: unknown, fallback: string, t?: TranslateFn): string {
   const raw = error instanceof AdapterCommandError && error.message.trim()
     ? error.message
     : error instanceof Error && error.message.trim()
@@ -114,7 +156,7 @@ export function errorMessage(error: unknown, fallback: string): string {
         ? error
         : '';
   if (!raw) return fallback;
-  const localized = localizeAdapterCopy(raw);
+  const localized = localizeAdapterCopy(raw, t);
   return localized || fallback;
 }
 
@@ -129,7 +171,7 @@ export function isAdapterErrorRetryable(error: unknown): boolean {
   return false;
 }
 
-export function adapterErrorDetails(error: unknown): string | null {
+export function adapterErrorDetails(error: unknown, t?: TranslateFn): string | null {
   let details: string | null = null;
   if (error instanceof AdapterCommandError) {
     details = error.details?.trim() || null;
@@ -137,7 +179,7 @@ export function adapterErrorDetails(error: unknown): string | null {
     details = error.details.trim() || null;
   }
   if (!details) return null;
-  const cleaned = localizeAdapterCopy(details);
+  const cleaned = localizeAdapterCopy(details, t);
   if (!cleaned || /adapter-|retryable:|wire_api|projection|loopback|PKCE/i.test(cleaned)) {
     return null;
   }
@@ -155,7 +197,7 @@ export function adapterFailurePresentation(error: unknown, fallback: string, t?:
 } {
   const retryable = isAdapterErrorRetryable(error);
   return {
-    message: errorMessage(error, fallback),
+    message: errorMessage(error, fallback, t),
     retryable,
     hint: retryable
       ? (t ? t('routes.failureRetryable') : '可重试；不会自动反复重试。')

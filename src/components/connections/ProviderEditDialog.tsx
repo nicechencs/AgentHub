@@ -6,7 +6,7 @@
  *   仅 configSchemaVersion === null 时走 legacy applyFormVars。
  */
 import * as React from 'react';
-import { ChevronDown, FolderOpen, RefreshCw, Sparkles } from 'lucide-react';
+import { ChevronDown, RefreshCw, Sparkles } from 'lucide-react';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import {
   Dialog,
@@ -27,6 +27,8 @@ import {
 import { ConfigEditor } from '@/components/shared/ConfigEditor';
 import { GenericConfigForm, SuggestableInput } from '@/components/shared/GenericConfigForm';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { CopyableFileName } from '@/components/shared/CopyableFileName';
+import { OpenDirButton } from '@/components/shared/OpenDirButton';
 import { SecretInput } from '@/components/shared/SecretInput';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
@@ -207,7 +209,7 @@ export function ProviderEditDialog({
   const catalog = useAgentCatalog();
   const isEdit = mode === 'edit';
   const agentName = agentDisplayName(agentId);
-  const [livePaths, setLivePaths] = React.useState(() => liveConfigPaths(agentId));
+  const [livePaths, setLivePaths] = React.useState(() => liveConfigPaths(agentId, t));
 
   const [name, setName] = React.useState('');
   const [configText, setConfigText] = React.useState('');
@@ -247,7 +249,7 @@ export function ProviderEditDialog({
   );
 
   React.useEffect(() => {
-    const fallback = liveConfigPaths(agentId);
+    const fallback = liveConfigPaths(agentId, t);
     setLivePaths(fallback);
     let cancelled = false;
     void getAgentLivePaths(agentId)
@@ -267,7 +269,7 @@ export function ProviderEditDialog({
     return () => {
       cancelled = true;
     };
-  }, [agentId]);
+  }, [agentId, t]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -277,7 +279,7 @@ export function ProviderEditDialog({
       catalogStatus: catalog.status,
       entry: catalogEntry,
     });
-    const plan = planSchemaLoad(expectation);
+    const plan = planSchemaLoad(expectation, t);
 
     if (plan.action === 'wait') {
       setSchemaStatus('loading');
@@ -314,15 +316,15 @@ export function ProviderEditDialog({
         setSchemaStatus('error');
         setSchemaError(
           e instanceof Error
-            ? e.message || schemaErrorMessage('schema_load_failed')
-            : schemaErrorMessage('schema_load_failed'),
+            ? e.message || schemaErrorMessage('schema_load_failed', t)
+            : schemaErrorMessage('schema_load_failed', t),
         );
       });
 
     return () => {
       cancelled = true;
     };
-  }, [open, agentId, catalog.status, catalogEntry, schemaLoadToken]);
+  }, [open, agentId, catalog.status, catalogEntry, schemaLoadToken, t]);
 
   const retrySchemaLoad = () => {
     // Do not clear name / vars / configText — only re-evaluate Catalog + schema.
@@ -456,6 +458,7 @@ export function ProviderEditDialog({
         configText,
         configFormat,
         vars,
+        t,
       });
       result.vars.apiKey = writableSecret(result.vars.apiKey);
       const nextText = maskConfigSecrets(agentId, result.configText, result.configFormat);
@@ -974,30 +977,25 @@ export function ProviderEditDialog({
   const form = (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-meta text-muted">
-            <div className="min-w-0 flex-1">
-              <Tip label={livePaths.hint}>
-                <span className="block">
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="min-w-0">
+                <Tip label={livePaths.hint}>
                   <span className="text-secondary">{t('connections.providerDialog.liveConfig')}</span>
-                  <code className="break-all font-mono">{livePaths.config}</code>
-                  {isLiveFilePath(livePaths.auth) ? (
-                    <span className="mt-0.5 block">
-                      <span className="text-secondary">{t('connections.providerDialog.liveAuth')}</span>
-                      <code className="break-all font-mono">{livePaths.auth}</code>
-                    </span>
-                  ) : null}
-                </span>
-              </Tip>
+                </Tip>
+                <CopyableFileName path={livePaths.config} wrap="break" />
+              </div>
+              {isLiveFilePath(livePaths.auth) ? (
+                <div className="min-w-0">
+                  <span className="text-secondary">{t('connections.providerDialog.liveAuth')}</span>
+                  <CopyableFileName path={livePaths.auth} wrap="break" />
+                </div>
+              ) : null}
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              onClick={() => void openLiveDir()}
+            <OpenDirButton
+              labeled
               title={t('connections.providerDialog.openDirTitle', { dir: livePaths.openDir })}
-            >
-              <FolderOpen className="h-3.5 w-3.5" /> {t('connections.providerDialog.openDir')}
-            </Button>
+              onClick={() => void openLiveDir()}
+            />
           </div>
 
           {official ? (

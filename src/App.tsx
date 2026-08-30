@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { PageChromeProvider } from '@/components/layout/PageChromeContext';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { SidebarProvider } from '@/components/layout/SidebarContext';
 import { TopBar } from '@/components/layout/TopBar';
@@ -58,12 +59,13 @@ export default function App() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isChat = pathname === '/chat';
-  /** Skills / Projects / Connections / Routes 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
+  /** Skills / Projects / Connections / Routes / Agents / Plugins / Settings 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
   const isWorkbenchSplit =
     pathname === '/skills' ||
     pathname === '/projects' ||
     pathname === '/connections' ||
     pathname === '/routes' ||
+    pathname === '/agents' ||
     pathname === '/plugins' ||
     pathname === '/settings';
   const fullBleed = isChat || isWorkbenchSplit;
@@ -113,42 +115,44 @@ export default function App() {
     <SidebarProvider>
       <div className={pageRhythm.shell}>
         <Sidebar />
-        <div className={pageRhythm.shellMain}>
-          {!isChat && <TopBar />}
-          <main
-            className={cn(
-              'min-h-0 flex-1',
-              fullBleed ? 'overflow-hidden' : 'overflow-y-auto',
-            )}
-          >
-            {/* 常规页铺满主列 + 18px inset；chat 与左右分栏工作台全高自管 */}
-            <div className={fullBleed ? 'h-full min-h-0' : pageRhythm.pageShell}>
-              <Routes>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/chat" element={<ChatPage />} />
-                <Route path="/agents" element={<AgentsPage />} />
-                <Route path="/connections" element={<ConnectionsPage />} />
-                <Route path="/routes" element={<BridgesPage />} />
-                <Route path="/bridges" element={<LegacyBridgesRedirect />} />
-                <Route path="/adapter" element={<LegacyBridgesRedirect />} />
-                <Route path="/router" element={<LegacyBridgesRedirect />} />
-                {/* 兼容旧路由与深链 */}
-                <Route path="/providers" element={<LegacyConnectionsRedirect mode="providers" />} />
-                <Route path="/accounts" element={<LegacyConnectionsRedirect mode="accounts" />} />
-                <Route path="/skills" element={<SkillsPage />} />
-                <Route path="/mcp" element={<McpPage />} />
-                <Route path="/projects" element={<ProjectsPage />} />
-                <Route path="/plugins" element={<PluginsPage />} />
-                <Route path="/usage" element={<LegacyUsageRedirect />} />
-                <Route path="/backups" element={<LegacyBackupsRedirect />} />
-                <Route
-                  path="/settings"
-                  element={<SettingsPage onCheckUpdate={checkForAppUpdate} />}
-                />
-              </Routes>
-            </div>
-          </main>
-        </div>
+        <PageChromeProvider>
+          <div className={pageRhythm.shellMain}>
+            {!isChat && <TopBar />}
+            <main
+              className={cn(
+                'min-h-0 flex-1',
+                fullBleed ? 'overflow-hidden' : 'overflow-y-auto',
+              )}
+            >
+              {/* 常规页铺满主列 + pageRhythm.pageShell；chat 与左右分栏工作台全高自管 */}
+              <div className={fullBleed ? 'h-full min-h-0' : pageRhythm.pageShell}>
+                <Routes>
+                  <Route path="/" element={<DashboardPage />} />
+                  <Route path="/chat" element={<ChatPage />} />
+                  <Route path="/agents" element={<AgentsPage />} />
+                  <Route path="/connections" element={<ConnectionsPage />} />
+                  <Route path="/routes" element={<BridgesPage />} />
+                  <Route path="/bridges" element={<LegacyBridgesRedirect />} />
+                  <Route path="/adapter" element={<LegacyBridgesRedirect />} />
+                  <Route path="/router" element={<LegacyBridgesRedirect />} />
+                  {/* 兼容旧路由与深链 */}
+                  <Route path="/providers" element={<LegacyConnectionsRedirect mode="providers" />} />
+                  <Route path="/accounts" element={<LegacyConnectionsRedirect mode="accounts" />} />
+                  <Route path="/skills" element={<SkillsPage />} />
+                  <Route path="/mcp" element={<McpPage />} />
+                  <Route path="/projects" element={<ProjectsPage />} />
+                  <Route path="/plugins" element={<PluginsPage />} />
+                  <Route path="/usage" element={<LegacyUsageRedirect />} />
+                  <Route path="/backups" element={<LegacyBackupsRedirect />} />
+                  <Route
+                    path="/settings"
+                    element={<SettingsPage onCheckUpdate={checkForAppUpdate} />}
+                  />
+                </Routes>
+              </div>
+            </main>
+          </div>
+        </PageChromeProvider>
         <OnboardingDialog />
         <UpdatePrompt onReady={onUpdateReady} />
       </div>

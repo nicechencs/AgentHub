@@ -648,7 +648,9 @@ mod tests {
                 "auth": { "OPENAI_API_KEY": "sk-switch-target" }
             }),
         };
-        adapter.write_config(&api_target).expect("switch to api key");
+        adapter
+            .write_config(&api_target)
+            .expect("switch to api key");
         let overwritten: Value =
             serde_json::from_str(&std::fs::read_to_string(codex.join("auth.json")).unwrap())
                 .unwrap();
@@ -662,8 +664,7 @@ mod tests {
         let restored = std::fs::read_to_string(codex.join("auth.json")).unwrap();
         let restored_json: Value = serde_json::from_str(restored.trim()).unwrap();
         assert_eq!(
-            restored_json["tokens"]["access_token"],
-            "at-oauth-keep",
+            restored_json["tokens"]["access_token"], "at-oauth-keep",
             "oauth tokens must come back after failed API-key switch compensation"
         );
         assert!(restored_json.get("OPENAI_API_KEY").unwrap().is_null());

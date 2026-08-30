@@ -527,6 +527,15 @@ export function formatConnectFlowError(error: unknown, t?: TranslateFn): string 
   if (/invalid ticket id/i.test(message) || /Invalid ticket/.test(message)) {
     return t ? t('connect.result.illegalSource') : ILLEGAL_SOURCE_MESSAGE;
   }
+  if (message.includes('绑定结果无法识别') || /couldn't read the (connect|bind) result/i.test(message)) {
+    return t ? t('connect.result.bindUnreadable') : message;
+  }
+  if (message.includes('连接方案无法识别') || /couldn't read the connection plan/i.test(message)) {
+    return t ? t('connect.result.planUnreadable') : message;
+  }
+  if (message.includes('停止并还原结果无法识别') || /couldn't read the stop-and-restore result/i.test(message)) {
+    return t ? t('connect.result.unbindUnreadable') : message;
+  }
   return message;
 }
 

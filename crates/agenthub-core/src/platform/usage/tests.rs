@@ -60,8 +60,9 @@ fn builtin_covers_usage_agents_not_cursor() {
     assert!(reg.contains(AgentId::Pi));
     assert!(reg.contains(AgentId::WorkBuddy));
     assert!(reg.contains(AgentId::Dsh));
+    assert!(reg.contains(AgentId::Zcode));
     assert!(!reg.contains(AgentId::Cursor));
-    assert_eq!(reg.supported_agents().len(), 7);
+    assert_eq!(reg.supported_agents().len(), 8);
 }
 
 #[test]

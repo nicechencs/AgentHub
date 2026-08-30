@@ -4,7 +4,6 @@
  */
 import type { SkillMapStatus, SkillSyncState } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
-import { mapStatusLabel } from '@/lib/api/skill';
 import type { LocalFilter } from './skills-preview-model';
 
 export function privateSkillRowHint(t: TranslateFn): string {
@@ -33,7 +32,7 @@ export function skillCellTip(
     case 'conflict':
       if (state === 'foreign') return t('skills.cell.conflictForeign');
       if (state === 'conflict') return t('skills.cell.conflictUnknown');
-      return mapStatusLabel('conflict');
+      return t('skills.cell.conflictForeign');
     case 'available':
       break;
   }

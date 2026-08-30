@@ -6,7 +6,7 @@
 use crate::models::{AgentId, ParsedUsageEvent};
 use crate::usage::grok::{grok_model_has_pricing, pricing_candidates};
 use crate::usage::{
-    CostTokens, estimate_cost_usd_for_agent_at, has_embedded_pricing, has_embedded_pricing_for,
+    estimate_cost_usd_for_agent_at, has_embedded_pricing, has_embedded_pricing_for, CostTokens,
 };
 
 pub fn event_missing_pricing(ev: &ParsedUsageEvent) -> bool {

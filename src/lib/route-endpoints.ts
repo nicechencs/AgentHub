@@ -3,6 +3,7 @@
  * internally; UI for purpose=route shows these three endpoints instead.
  */
 import type { AgentId } from '@/lib/types';
+import type { TokenAgentId } from '@/styles/tokens';
 
 export type RouteEndpointId = 'messages' | 'responses' | 'chat_completions';
 
@@ -79,13 +80,13 @@ export const ROUTE_ENDPOINT_HOST = '127.0.0.1';
 export const ROUTE_ENDPOINT_PENDING_PORT = '{port}';
 
 /**
- * Brand color for each unified surface. Chat Completions uses Kimi (not Grok)
- * so the path stays visible — Grok's token is black.
+ * Which Agent token a surface reuses. Not a second palette —
+ * colors still come from `AGENT_COLORS` / `--agent-*`.
+ * Messages → Claude; OpenAI-family paths → Codex (Grok's token is black).
  */
-export function routeEndpointBrandAgentId(id: RouteEndpointId): AgentId {
+export function routeEndpointBrandAgentId(id: RouteEndpointId): TokenAgentId {
   if (id === 'messages') return 'claude';
-  if (id === 'responses') return 'codex';
-  return 'kimi';
+  return 'codex';
 }
 
 export type RouteEndpointHttpParts = {
@@ -96,7 +97,8 @@ export type RouteEndpointHttpParts = {
   path: string;
   href: string | null;
   display: string;
-  brandAgentId: AgentId;
+  endpointId: RouteEndpointId;
+  brandAgentId: TokenAgentId;
 };
 
 export function routeEndpointHttpParts(input: {
@@ -124,6 +126,7 @@ export function routeEndpointHttpParts(input: {
     path,
     href: port != null ? `http://${host}:${port}${path}` : null,
     display: `${origin}${path}`,
+    endpointId,
     brandAgentId: routeEndpointBrandAgentId(endpointId),
   };
 }

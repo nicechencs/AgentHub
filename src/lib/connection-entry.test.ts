@@ -72,6 +72,18 @@ describe('connection-entry', () => {
     expect(row.title).toBe('Key');
   });
 
+  it('maps a ZCode API Key with a custom URL as a custom endpoint', () => {
+    const row = accountToEntry(acc({
+      id: 'z1',
+      agentId: 'zcode',
+      kind: 'apikey',
+      label: 'grok',
+      endpoint: 'https://api.qooo.io/v1',
+    }));
+    expect(row.endpointMode).toBe('custom');
+    expect(row.endpointHost).toContain('api.qooo.io');
+  });
+
   it('sorts current rows first when merging pools', () => {
     const rows = mergeConnectionEntries(
       [acc({ id: 'a1', kind: 'oauth', label: 'old', isCurrent: false, updatedAt: '1' })],

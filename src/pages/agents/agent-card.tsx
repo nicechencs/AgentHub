@@ -28,12 +28,15 @@ import {
   installRetryButtonVariant,
   isNodeTooOldUpdateNote,
   isSpecialInstallChannel,
+  agentListDetailsHint,
   listAgentInstalls,
+  programInstalls,
   spawnInstall,
   resolveOfficialSetupUrl,
   uniqueInstallVersions,
 } from './agent-card-model';
 import { AgentCardDialogs } from './AgentCardDialogs';
+import { localizeInstallCopy } from './install-labels';
 import { useAgentCardLifecycle } from './use-agent-card-lifecycle';
 
 export function AgentCard({
@@ -155,7 +158,8 @@ export function AgentCard({
   const updateState = agent.update?.state;
   const checkingUpdate = updateState === 'checking';
   const installs = listAgentInstalls(agent);
-  const versions = uniqueInstallVersions(installs);
+  const versions = uniqueInstallVersions(programInstalls(installs));
+  const detailsHint = agentListDetailsHint(installs);
   const spawn = spawnInstall(agent);
   const inAppChannel = spawn?.updateVia === 'in_app';
   const upgradable =
@@ -179,7 +183,6 @@ export function AgentCard({
   const latestLabel =
     agent.update?.latestVersion ?? agent.latestVersion ?? undefined;
   const latestVersionLabel = formatAgentVersion(latestLabel);
-  const showDetailsHint = agent.installed && installs.length > 1;
 
   const openOfficialSetup = () => {
     if (!officialSetupUrl) {
@@ -232,7 +235,8 @@ export function AgentCard({
   const upgradeTooltip = (() => {
     if (checkingUpdate) return t('agents.update.checking');
     if (updateUnsupported) {
-      const note = agent.update?.note ?? t('agents.card.unsupportedUpdate');
+      const note = localizeInstallCopy(agent.update?.note ?? '', t)
+        || t('agents.card.unsupportedUpdate');
       return officialSetupUrl
         ? t('agents.update.clickOfficial', { note })
         : note;
@@ -250,7 +254,9 @@ export function AgentCard({
     if (updateState === 'unknown') {
       if (isNodeTooOldUpdateNote(agent.update?.note)) return t('agents.card.needsNode22');
       return agent.update?.note
-        ? t('agents.update.unknownForceNote', { note: agent.update.note })
+        ? t('agents.update.unknownForceNote', {
+          note: localizeInstallCopy(agent.update.note, t),
+        })
         : t('agents.update.unknownForce');
     }
     return t('agents.update.forceLatest');
@@ -291,8 +297,10 @@ export function AgentCard({
             ) : (
               <span className="text-meta text-muted">{t('agents.card.notInstalled')}</span>
             )}
-            {showDetailsHint ? (
-              <span className="text-meta text-muted">{t('agents.card.seeDetails')}</span>
+            {detailsHint ? (
+              <span className="text-meta text-muted">
+                {t(detailsHint.key, detailsHint.params)}
+              </span>
             ) : null}
           </>
         )}

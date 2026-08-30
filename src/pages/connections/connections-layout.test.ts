@@ -46,7 +46,8 @@ describe('connections layout wiring', () => {
   it('opens edit/add as a resizable workbench inspect pane', () => {
     const page = source('index.tsx');
     expect(page).toContain('WorkbenchSplitPage');
-    expect(page).toContain("size=\"compact\"");
+    expect(page).toContain('PageHeader');
+    expect(page).toContain('pageRhythm.chromeActions');
     expect(page).toContain("t('common.resizeSidePanel')");
     expect(page).toContain('asPanel');
     expect(page).not.toContain('<Dialog open={apiKeyDialogOpen}');
@@ -148,6 +149,14 @@ describe('connections layout wiring', () => {
     expect(account).toContain("t('common.cancel')");
     expect(account).toContain('variant="secondary"');
     expect(account).toContain('headerActions={headerActions}');
+  });
+
+  it('adds a WorkBuddy API Key as a catalog login, not a replacing provider snapshot', () => {
+    const page = source('index.tsx');
+    expect(page).toContain("next.addAgentId === 'workbuddy'");
+    expect(page).toContain("kind: 'account'");
+    expect(page).toContain('account: null');
+    expect(page).toContain("mode={inspectTarget.account ? 'edit' : 'add'}");
   });
 
   it('clears the guided-add marker when the provider pane is dismissed', () => {

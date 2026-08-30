@@ -1,12 +1,36 @@
+import type { ReactNode } from 'react';
 import { Copy } from 'lucide-react';
-import { resolveAgentMeta } from '@/config/agents';
 import {
+  routeEndpointBrandAgentId,
   routeEndpointHttpParts,
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
+import { agentCssVar } from '@/styles/tokens';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
+
+/** Same `--agent-*` token the Agent logo/dot uses. Change colors in AGENT_COLORS. */
+export function routeEndpointTypeColor(endpointId: RouteEndpointId): string {
+  return agentCssVar(routeEndpointBrandAgentId(endpointId));
+}
+
+/** Endpoint-type copy colored with the surface's Agent. */
+export function RouteEndpointTypeText({
+  endpointId,
+  className,
+  children,
+}: {
+  endpointId: RouteEndpointId;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className={className} style={{ color: routeEndpointTypeColor(endpointId) }}>
+      {children}
+    </span>
+  );
+}
 
 export function RouteEndpointUrl({
   path,
@@ -22,11 +46,10 @@ export function RouteEndpointUrl({
   className?: string;
 }) {
   const parts = routeEndpointHttpParts({ path, port, host, endpointId });
-  const color = resolveAgentMeta(parts.brandAgentId).color;
   return (
     <span className={cn('inline font-mono', className)}>
       <span className="text-secondary">{parts.origin}</span>
-      <span style={{ color }}>{parts.path}</span>
+      <span style={{ color: routeEndpointTypeColor(parts.endpointId) }}>{parts.path}</span>
     </span>
   );
 }

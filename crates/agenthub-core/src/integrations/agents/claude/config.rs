@@ -280,8 +280,8 @@ impl ClaudeConfigProjector {
         };
         env.remove(other);
 
-        let desired_cleared_url = get_str_map(desired, "baseUrl")
-            .is_some_and(|base| base.trim().is_empty());
+        let desired_cleared_url =
+            get_str_map(desired, "baseUrl").is_some_and(|base| base.trim().is_empty());
         if let Some(base) = get_str_map(desired, "baseUrl") {
             let t = base.trim();
             if t.is_empty() {

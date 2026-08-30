@@ -154,7 +154,9 @@ pub fn agent_live_paths(agent: AgentId) -> Result<AgentLivePaths> {
         },
         AgentId::Kimi => AgentLivePaths {
             config: join(&home, "config.toml")?,
-            auth: Some(display_user_path(&home.join("credentials").join("kimi-code.json"))?),
+            auth: Some(display_user_path(
+                &home.join("credentials").join("kimi-code.json"),
+            )?),
             extra: Vec::new(),
             open_dir,
         },

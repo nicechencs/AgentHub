@@ -5,6 +5,16 @@
 import type { AgentCatalogStatus } from '@/app/runtime/agent-catalog-store';
 import type { AgentCatalogEntryDto } from '@/lib/backend/contracts/agent-catalog-types';
 import type { SchemaUiStatus } from '@/lib/api/provider-save';
+import type { MessageKey, TranslateFn } from '@/lib/i18n';
+
+const SCHEMA_ERROR_KEY: Record<string, MessageKey> = {
+  catalog_not_ready: 'connections.providerDialog.schemaCatalogNotReady',
+  catalog_unavailable: 'connections.providerDialog.schemaCatalogUnavailable',
+  entry_missing: 'connections.providerDialog.schemaEntryMissing',
+  version_undefined: 'connections.providerDialog.schemaVersionUndefined',
+  version_invalid: 'connections.providerDialog.schemaVersionInvalid',
+  schema_load_failed: 'connections.providerDialog.schemaLoadFailed',
+};
 
 export type { SchemaUiStatus };
 
@@ -86,7 +96,7 @@ export type SchemaLoadPlan =
  * Decide what the dialog should do when opening / retrying schema load.
  * Does not call the network — pure plan from catalog expectation.
  */
-export function planSchemaLoad(expectation: ProjectorExpectation): SchemaLoadPlan {
+export function planSchemaLoad(expectation: ProjectorExpectation, t?: TranslateFn): SchemaLoadPlan {
   switch (expectation.kind) {
     case 'unknown':
       if (expectation.reason === 'catalog_not_ready') {
@@ -94,7 +104,7 @@ export function planSchemaLoad(expectation: ProjectorExpectation): SchemaLoadPla
       }
       return {
         action: 'error',
-        message: schemaErrorMessage(expectation.reason),
+        message: schemaErrorMessage(expectation.reason, t),
       };
     case 'unsupported':
       return { action: 'unsupported' };
@@ -103,7 +113,9 @@ export function planSchemaLoad(expectation: ProjectorExpectation): SchemaLoadPla
   }
 }
 
-export function schemaErrorMessage(reason: string): string {
+export function schemaErrorMessage(reason: string, t?: TranslateFn): string {
+  const key = SCHEMA_ERROR_KEY[reason];
+  if (t && key) return t(key);
   switch (reason) {
     case 'catalog_not_ready':
       return '连接能力尚未就绪，请稍后再试';
@@ -118,6 +130,6 @@ export function schemaErrorMessage(reason: string): string {
     case 'schema_load_failed':
       return '加载配置表单失败';
     default:
-      return reason || '配置能力未知';
+      return reason || (t ? t('connections.providerDialog.schemaUnknown') : '配置能力未知');
   }
 }

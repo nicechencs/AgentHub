@@ -1,7 +1,7 @@
 /**
  * Ticket card chips, pool extras, and detail panel fields (Connections page).
  */
-import { agentDisplayName } from '@/config/agents';
+import { agentDisplayName, resolveAgentMeta } from '@/config/agents';
 import type { LiveOccupancyDto } from '@/lib/backend/contracts/agent-catalog-types';
 import { isCatalogAppendOccupancy } from '@/lib/backend/contracts/agent-catalog-types';
 import { oauthListAction, type AccountAction } from '@/lib/backend/contracts/account-actions';
@@ -22,6 +22,7 @@ import {
   ticketSurfaceLabel,
 } from '@/lib/backend/contracts/ticket';
 import {
+  accountEndpointExtras,
   providerEndpointExtras,
   toCredentialRow,
 } from '@/lib/credential-row';
@@ -30,6 +31,7 @@ import {
   routeEndpointPathForBinding,
 } from '@/lib/route-endpoints';
 import type { TranslateFn } from '@/lib/i18n';
+import { localizeStoredUiCopy } from '@/lib/i18n/stored-copy';
 import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
 
 function bindingDashboardRouteLabel(route: BindingRoute, t?: TranslateFn): string {
@@ -40,6 +42,17 @@ const IN_USE_TIP_FALLBACK = '这份登录已在当前工具使用中';
 const IN_CATALOG_TIP_FALLBACK = '这份登录已经出现在模型列表里';
 const SWITCH_BUSY_TIP_FALLBACK = '正在切换其他登录';
 const REFRESH_BUSY_TIP_FALLBACK = '正在刷新其他登录';
+
+export function localizeQuotaResetIn(raw: string | undefined, t?: TranslateFn): string | undefined {
+  if (!raw) return undefined;
+  if (!t) return raw;
+  if (raw === '即将重置' || raw === 'Resets soon') return t('connections.list.quotaResetSoon');
+  const zh = raw.match(/^(.+?)\s*后重置$/);
+  if (zh) return t('connections.list.quotaResetIn', { when: zh[1].trim() });
+  const en = raw.match(/^Resets in\s+(.+)$/i);
+  if (en) return t('connections.list.quotaResetIn', { when: en[1].trim() });
+  return raw;
+}
 
 export function ticketCredentialClassChipLabel(
   cls: TicketCredentialClass,
@@ -156,9 +169,10 @@ const AUTH_LABEL_HUMAN: Record<string, string> = {
 };
 
 /** Quiet header chip: 可续期 / 已配置 / 已验证 — never 未验证 / 尚未验证. */
-export function humanizeTicketAuthLabel(label: string): string {
+export function humanizeTicketAuthLabel(label: string, t?: TranslateFn): string {
   const mapped = AUTH_LABEL_HUMAN[label] ?? label.replace(/·/g, '，');
-  return mapped.replace(/[·，]\s*(尚未验证|未验证)\s*$/u, '').trim() || mapped;
+  const stripped = mapped.replace(/[·，]\s*(尚未验证|未验证)\s*$/u, '').trim() || mapped;
+  return t ? localizeStoredUiCopy(stripped, t) : stripped;
 }
 
 const SECRET_TAIL_HEALTH = new Set(['可续期', '已配置', 'Renewable', 'Configured']);
@@ -166,11 +180,13 @@ const SECRET_TAIL_HEALTH = new Set(['可续期', '已配置', 'Renewable', 'Conf
 /** Card chip: secret tail (`**JF6Q`) in place of 可续期 / 已配置 when known. */
 export function ticketAuthChip(
   extras?: TicketDetailExtras | null,
+  t?: TranslateFn,
 ): { label: string; mono: boolean } | null {
   if (!extras) return null;
-  const health = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel) : '';
+  const health = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel, t) : '';
   const tail = extras.secretTail?.trim();
-  if (tail && (!health || SECRET_TAIL_HEALTH.has(health))) {
+  const healthKey = extras.authLabel ? humanizeTicketAuthLabel(extras.authLabel) : '';
+  if (tail && (!healthKey || SECRET_TAIL_HEALTH.has(healthKey))) {
     return { label: tail, mono: true };
   }
   if (health) return { label: health, mono: false };
@@ -363,12 +379,21 @@ export function extrasFromPoolSource(
   t?: TranslateFn,
   tabCurrentTicketId?: string | null,
 ): TicketDetailExtras {
+  const poolCurrent = source.account?.isCurrent === true || source.provider?.isCurrent === true;
+  const liveCatalog = source.account?.source === 'live';
+  const catalog = isCatalogAppendOccupancy(resolveAgentMeta(ticket.agentId).occupancy);
   const extras: TicketDetailExtras = {
     canEditKey: ticket.sourceKind === 'account' && source.account?.kind === 'apikey',
     canEditConfig: ticket.sourceKind === 'provider' && Boolean(source.provider),
-    isCurrent: tabCurrentTicketId === undefined
-      ? source.account?.isCurrent === true || source.provider?.isCurrent === true
-      : ticket.id === tabCurrentTicketId,
+    // Catalog-append tools keep many live rows. "in catalog" is not the
+    // exclusive current pointer: a previously written row stays listed.
+    isCurrent: catalog
+      ? poolCurrent
+        || liveCatalog
+        || (tabCurrentTicketId != null && ticket.id === tabCurrentTicketId)
+      : tabCurrentTicketId === undefined
+        ? poolCurrent
+        : ticket.id === tabCurrentTicketId,
   };
 
   if (source.account) {
@@ -382,6 +407,8 @@ export function extrasFromPoolSource(
         : source.account.email ?? source.account.identityLabel ?? source.account.label;
     if (
       source.account.provider
+      && source.account.provider !== source.account.agentId
+      && !/^https?:\/\//i.test(source.account.provider)
       && typeof ticket.label === 'string'
       && !ticket.label.includes(source.account.provider)
     ) {
@@ -391,9 +418,12 @@ export function extrasFromPoolSource(
     extras.authStatus = row.auth.status;
     extras.quota5hPct = source.account.quota5hPct;
     extras.quota7dPct = source.account.quota7dPct;
-    extras.quotaResetIn = source.account.quotaResetIn;
-    extras.quota7dResetIn = source.account.quota7dResetIn;
-    extras.endpointMode = source.account.kind === 'apikey' ? 'official' : undefined;
+    extras.quotaResetIn = localizeQuotaResetIn(source.account.quotaResetIn, t);
+    extras.quota7dResetIn = localizeQuotaResetIn(source.account.quota7dResetIn, t);
+    const endpoint = accountEndpointExtras(source.account);
+    extras.endpointMode = endpoint.endpointMode;
+    extras.endpointHost = endpoint.endpointHost;
+    extras.endpointUrl = endpoint.endpoint;
     extras.oauthAction = oauthListAction(source.account);
     if (ticket.credentialClass === 'oauth' && source.account.refreshTokenPreview) {
       extras.refreshTokenPreview = source.account.refreshTokenPreview;
@@ -501,6 +531,28 @@ export function buildTicketDetailFields(
   bindings?: readonly BindingView[] | null,
 ): TicketDetailSections {
   const advanced: TicketDetailField[] = [];
+
+  if (isCatalogAppendOccupancy(resolveAgentMeta(ticket.agentId).occupancy)) {
+    advanced.push({
+      label: t ? t('connections.list.catalogStatus') : '模型列表',
+      value: extras?.isCurrent
+        ? (t ? t('connections.list.inCatalog') : '已在模型列表里')
+        : (t ? t('connections.list.notInCatalog') : '未写入模型列表'),
+    });
+  }
+
+  const providerName = extras?.accountProvider?.trim();
+  if (
+    ticket.credentialClass === 'api_key'
+    && providerName
+    && providerName !== ticket.agentId
+    && !/^https?:\/\//i.test(providerName)
+  ) {
+    advanced.push({
+      label: t ? t('connections.list.provider') : '供应商',
+      value: providerName,
+    });
+  }
 
   const customEndpoint = extras != null && extras.endpointMode === 'custom';
   if (customEndpoint) {

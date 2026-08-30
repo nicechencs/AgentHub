@@ -281,6 +281,40 @@ describe('buildAgentCardView', () => {
     expect(view.action).toEqual({ kind: 'connect' });
   });
 
+  it('translates stored Chinese connection labels on English dashboard cards', () => {
+    const tEn = createTranslator('en');
+    const view = buildAgentCardView(
+      claude,
+      status('claude', {
+        effectiveKind: 'none',
+        effectiveLabel: '未配置',
+        currentProvider: undefined,
+        version: '2.1.218',
+        authLabel: '已验证',
+      }),
+      null,
+      tEn,
+    );
+    expect(view.metaText).toBe('Not configured');
+    expect(view.titleFull).toBe('Not configured · Verified');
+    expect(view.ariaLabel).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(view.ariaLabel).toContain('Not configured');
+
+    const routed = buildAgentCardView(
+      claude,
+      status('claude', {
+        effectiveKind: 'api',
+        effectiveLabel: '本机路由 · Kimi 会员',
+        authLabel: '已登录',
+      }),
+      { viaAdapter: { sourceLabel: 'Kimi 会员' } },
+      tEn,
+    );
+    expect(routed.metaText).toBe('Local route · Kimi 会员');
+    expect(routed.ariaLabel).toContain('Local route · Kimi 会员');
+    expect(routed.ariaLabel).not.toContain('本机路由');
+  });
+
   it('not installed: install CTA and navigate /agents', () => {
     const view = buildAgentCardView(
       claude,

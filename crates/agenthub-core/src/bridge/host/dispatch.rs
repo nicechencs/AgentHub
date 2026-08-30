@@ -227,12 +227,11 @@ pub(super) async fn handle_conversation(
         match &resolver_candidates {
             // v2: never fall back to pick_new() — that ignores cooldown,
             // auth isolation, and the resolver candidate set.
-            Some(candidates) => admitted.state.pick_v2(
-                candidates,
-                &model,
-                &[],
-                admitted.affinity_key.as_deref(),
-            ),
+            Some(candidates) => {
+                admitted
+                    .state
+                    .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref())
+            }
             None => admitted.state.account_picker.pick_new(),
         }
     }) else {

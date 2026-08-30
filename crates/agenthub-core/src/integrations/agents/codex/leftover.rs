@@ -224,7 +224,9 @@ fn strip_openrouter_style_leftover_model(doc: &mut DocumentMut, env_key_leftover
         .get("model")
         .and_then(|item| item.as_str())
         .map(str::to_string);
-    let leftover = model.as_deref().is_some_and(is_openrouter_style_leftover_model);
+    let leftover = model
+        .as_deref()
+        .is_some_and(is_openrouter_style_leftover_model);
     if !leftover {
         return false;
     }
@@ -232,7 +234,10 @@ fn strip_openrouter_style_leftover_model(doc: &mut DocumentMut, env_key_leftover
     if doc.get("model_reasoning_effort").is_some() {
         doc.remove("model_reasoning_effort");
     }
-    if doc.get("review_model").and_then(|item| item.as_str()).is_some_and(is_openrouter_style_leftover_model)
+    if doc
+        .get("review_model")
+        .and_then(|item| item.as_str())
+        .is_some_and(is_openrouter_style_leftover_model)
     {
         doc.remove("review_model");
     }

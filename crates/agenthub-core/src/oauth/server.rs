@@ -83,21 +83,22 @@ pub fn spawn_callback_listener(
             ));
         }
         match listener.accept() {
-            Ok((stream, _)) => match handle_connection(stream, &store, expected_state, expected_path)
-            {
-                Ok(CallbackOutcome::Completed | CallbackOutcome::Denied) => return Ok(()),
-                Ok(CallbackOutcome::Ignored) => {}
-                Err(e) => {
-                    let err_msg = redact_text(&e.to_string());
-                    tracing::warn!(
-                        module = targets::OAUTH,
-                        code = e.code(),
-                        op = "handle",
-                        error = %err_msg,
-                        "oauth http handle ignored"
-                    );
+            Ok((stream, _)) => {
+                match handle_connection(stream, &store, expected_state, expected_path) {
+                    Ok(CallbackOutcome::Completed | CallbackOutcome::Denied) => return Ok(()),
+                    Ok(CallbackOutcome::Ignored) => {}
+                    Err(e) => {
+                        let err_msg = redact_text(&e.to_string());
+                        tracing::warn!(
+                            module = targets::OAUTH,
+                            code = e.code(),
+                            op = "handle",
+                            error = %err_msg,
+                            "oauth http handle ignored"
+                        );
+                    }
                 }
-            },
+            }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(Duration::from_millis(100));
             }
@@ -130,7 +131,10 @@ fn handle_connection(
     let err = params.get("error").cloned();
 
     if method != "GET" || req_path != expected_path || state != expected_state {
-        let body = html_page("OAuth 回调未就绪", "请关闭此页，完成授权后等待 AgentHub 接收回调。");
+        let body = html_page(
+            "OAuth 回调未就绪",
+            "请关闭此页，完成授权后等待 AgentHub 接收回调。",
+        );
         let _ = write_response(&mut stream, 404, &body);
         return Ok(CallbackOutcome::Ignored);
     }

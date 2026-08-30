@@ -174,7 +174,10 @@ fn resolve_bind_action_rejects_unknown_custom_relay_without_persistence() {
     let before_profile_count = profiles.list(None, None, None).unwrap().len();
 
     let action = resolve_bind_action(&hub, &ticket, AgentId::Codex).unwrap();
-    assert!(matches!(action, crate::adapter_control::BindAction::LocalBridge(_)));
+    assert!(matches!(
+        action,
+        crate::adapter_control::BindAction::LocalBridge(_)
+    ));
     assert_eq!(providers.list(None).unwrap().len(), before_provider_count);
     assert_eq!(
         profiles.list(None, None, None).unwrap().len(),

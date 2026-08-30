@@ -25,8 +25,8 @@ import { resolveAgentMeta } from '@/config/agents';
 import type { Account, AgentId } from '@/lib/types';
 
 const CLAUDE_ENV_KEYS = [
-  { value: 'ANTHROPIC_AUTH_TOKEN', label: 'ANTHROPIC_AUTH_TOKEN（默认 Bearer）' },
-  { value: 'ANTHROPIC_API_KEY', label: 'ANTHROPIC_API_KEY（x-api-key）' },
+  { value: 'ANTHROPIC_AUTH_TOKEN' },
+  { value: 'ANTHROPIC_API_KEY' },
 ] as const;
 
 export type ApiKeyDialogMode = 'add' | 'edit';
@@ -268,14 +268,14 @@ export function ApiKeyAccountDialog({
 
           {agentId === 'kimi' && !isEdit ? (
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted">Kimi Key 类型</span>
+              <span className="text-xs text-muted">{t('connections.apiKeyDialog.kimiProductType')}</span>
               <Select value={kimiProduct} onValueChange={(value) => setKimiProduct(value as typeof kimiProduct)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="kimi-api">Kimi 开放平台 API Key</SelectItem>
-                  <SelectItem value="kimi-code-membership">Kimi Code 会员 Key</SelectItem>
+                  <SelectItem value="kimi-api">{t('connections.apiKeyDialog.kimiOpenApi')}</SelectItem>
+                  <SelectItem value="kimi-code-membership">{t('connections.apiKeyDialog.kimiCodeMembership')}</SelectItem>
                 </SelectContent>
               </Select>
             </label>

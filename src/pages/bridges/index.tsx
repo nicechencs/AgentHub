@@ -12,6 +12,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Notice } from '@/components/shared/Notice';
 import { Button } from '@/components/ui/button';
+import { Tip } from '@/components/ui/tooltip';
 import { Boxes } from 'lucide-react';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import { useToast } from '@/components/ui/toast';
@@ -161,6 +162,7 @@ export default function BridgesPage() {
     [groupedBound, groupedOrphan],
   );
   const fleetSummary = adapterBridgeFleetSummary(listedBridges, bridgeStatuses, t);
+  const orphanOnly = orderedBound.length === 0 && orderedOrphan.length > 0;
   const pageView = bridgesPageViewState({
     profileState: loading && profileState !== 'error' ? 'loading' : profileState,
     bound: groupedBound,
@@ -242,6 +244,8 @@ export default function BridgesPage() {
         asPanel
         open
         width={inspect.paneWidth}
+        providers={entries.flatMap((entry) => (entry.provider ? [entry.provider] : []))}
+        accounts={entries.flatMap((entry) => (entry.account ? [entry.account] : []))}
         onOpenChange={(open) => { if (!open) inspect.close(); }}
         onCreated={() => { void reload(); }}
       />
@@ -316,30 +320,33 @@ export default function BridgesPage() {
       split={inspect}
       resizeAria={t('common.resizeSidePanel')}
       panel={inspectPanel}
-      header={(
-        <PageHeader
-          size="compact"
-          title={t('routes.page.title')}
-          description={t('routes.page.description')}
-          descriptionTip={t('routes.page.descriptionTip')}
-          actions={
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => inspect.open({ kind: 'import' })}>
-                {t('routes.import.action')}
-              </Button>
-              <Button onClick={() => inspect.open({ kind: 'create' })}>
-                {t('routes.create.action')}
-              </Button>
-            </div>
-          }
-        />
-      )}
     >
-      {connectionWarning ? (
-        <div className={pageRhythm.lead}>
-          <Notice tone="warning">{connectionWarning}</Notice>
+      <PageHeader
+        title={t('routes.page.title')}
+        description={t('routes.page.description')}
+        descriptionTip={t('routes.page.descriptionTip')}
+      />
+      <div className={pageRhythm.chromeRow}>
+        {connectionWarning ? (
+          <Notice tone="warning" className="min-w-0 flex-1 items-center py-1">
+            {connectionWarning}
+          </Notice>
+        ) : orphanOnly ? (
+          <Tip className="min-w-0 truncate text-meta text-secondary" label={t('routes.orphan.description')}>
+            {t('routes.orphan.title')}
+          </Tip>
+        ) : fleetSummary ? (
+          <p className="min-w-0 truncate text-meta text-secondary">{fleetSummary.label}</p>
+        ) : null}
+        <div className={pageRhythm.chromeActions}>
+          <Button size="sm" variant="secondary" onClick={() => inspect.open({ kind: 'import' })}>
+            {t('routes.import.action')}
+          </Button>
+          <Button size="sm" onClick={() => inspect.open({ kind: 'create' })}>
+            {t('routes.create.action')}
+          </Button>
         </div>
-      ) : null}
+      </div>
 
       <div className={pageRhythm.stackDense}>
         {pageView === 'loading' ? (
@@ -374,9 +381,6 @@ export default function BridgesPage() {
         ) : null}
         {pageView === 'list' || (pageView === 'healthy_empty' && directProfiles.length > 0) ? (
           <>
-            {fleetSummary ? (
-              <p className="text-xs text-secondary">{fleetSummary.label}</p>
-            ) : null}
             {orderedBound.length > 0 ? (
               <AdapterProfiles
                 {...listProps}
@@ -388,8 +392,9 @@ export default function BridgesPage() {
             ) : null}
             {orderedOrphan.length > 0 ? (
               <PageSection
-                title={t('routes.orphan.title')}
-                description={t('routes.orphan.description')}
+                first={orphanOnly}
+                title={orphanOnly ? undefined : t('routes.orphan.title')}
+                description={orphanOnly ? undefined : t('routes.orphan.description')}
               >
                 <AdapterProfiles
                   {...listProps}
@@ -402,6 +407,7 @@ export default function BridgesPage() {
             ) : null}
             {directProfiles.length > 0 ? (
               <PageSection
+                first={orderedBound.length === 0 && orderedOrphan.length === 0}
                 title={t('routes.direct.title')}
                 description={t('routes.direct.description')}
               >

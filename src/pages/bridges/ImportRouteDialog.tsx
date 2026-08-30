@@ -1,10 +1,11 @@
-import { useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { DetailsToggle } from '@/components/shared/DetailsToggle';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { InspectSurface as DialogOrSide } from '@/components/layout/InspectSurface';
 import { agentDisplayName } from '@/config/agents';
+import { getSettings, guiErrorCode, logGuiEvent } from '@/lib/api/settings';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { MessageKey, TranslateFn } from '@/lib/i18n';
@@ -13,6 +14,7 @@ import {
   alreadyRoutedSourceKeys,
   importableConnectionEntries,
   importRouteRowTitle,
+  routeDuplicatePolicyFromSettings,
   submitImportRoute,
 } from './create-route-flow';
 
@@ -59,14 +61,35 @@ export function ImportRouteDialog({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkDuplicateCredential, setCheckDuplicateCredential] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void getSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setCheckDuplicateCredential(
+            routeDuplicatePolicyFromSettings(settings).warnDuplicateCredential,
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCheckDuplicateCredential(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const importable = useMemo(
     () => importableConnectionEntries(
       entries,
       alreadyRoutedSourceKeys(profiles ?? [], bindingProfileIds),
       profiles ?? [],
+      { checkDuplicateCredential },
     ),
-    [entries, profiles, bindingProfileIds],
+    [entries, profiles, bindingProfileIds, checkDuplicateCredential],
   );
 
   const picked = importable.find((entry) => entry.key === selected) ?? null;
@@ -94,11 +117,16 @@ export function ImportRouteDialog({
         sourceId: picked.id,
         agentId: picked.agentId,
       });
+      void logGuiEvent('route_import', { agent: picked.agentId });
       setSelected(null);
       setExpanded(new Set());
       onOpenChange(false);
       onImported();
     } catch (cause) {
+      void logGuiEvent('route_import_fail', {
+        agent: picked.agentId,
+        code: guiErrorCode(cause),
+      });
       setError(cause instanceof Error ? cause.message : t('routes.import.fallback'));
     } finally {
       setBusy(false);
@@ -172,6 +200,11 @@ export function ImportRouteDialog({
                             officialEndpoint: t('connections.list.officialEndpoint'),
                             customEndpoint: t('connections.list.customEndpoint'),
                           })}
+                          {entry.alreadyRouted ? (
+                            <span className="mt-0.5 block text-meta text-muted">
+                              {t('routes.import.alreadyRoutedTip')}
+                            </span>
+                          ) : null}
                         </span>
                       </label>
                       <DetailsToggle
