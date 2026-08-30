@@ -160,4 +160,4 @@ AgentHub 默认只处理本机数据。常见数据位置是 `~/.agenthub/`（�
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)。用量解析与配置切换部分借鉴了 [ccusage](https://github.com/ccusage/ccusage) 和 [cc-switch](https://github.com/farion1231/cc-switch)。
+本项目采用 [MIT License](LICENSE)。用量解析与配置切换部分借鉴了 [ccusage](https://github.com/ccusage/ccusage) 和 [cc-switch](https://github.com/farion1231/cc-switch)；路由部分借鉴了 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)。
