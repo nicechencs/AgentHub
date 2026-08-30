@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACCENT_PALETTES,
+  ACCENT_IDS,
   AGENT_COLORS,
   AGENT_COLOR_VARS,
   AGENT_CSS_VAR_TO_HEX_LIGHT,
+  DEFAULT_ACCENT_ID,
   TOKEN_AGENT_IDS,
   THEME,
   TYPE_SCALE,
   TYPE_SCALE_ALIASES,
   agentCssVar,
   agentHex,
+  buildAccentOverrideCss,
   resolveChartColor,
   buildBootCriticalCss,
   buildDesignTokensCss,
@@ -51,10 +55,25 @@ describe('design tokens SSOT', () => {
     expect(resolveChartColor('#d97757')).toBe('#d97757');
   });
 
+  it('keeps THEME.accent aligned with the default indigo palette', () => {
+    expect(THEME.light.accent).toBe(ACCENT_PALETTES[DEFAULT_ACCENT_ID].light);
+    expect(THEME.dark.accent).toBe(ACCENT_PALETTES[DEFAULT_ACCENT_ID].dark);
+  });
+
+  it('emits data-accent overrides for every palette', () => {
+    const css = buildAccentOverrideCss();
+    for (const id of ACCENT_IDS) {
+      expect(css).toContain(`:root[data-accent="${id}"]`);
+      expect(css).toContain(`--accent: ${ACCENT_PALETTES[id].light};`);
+      expect(css).toContain(`--accent: ${ACCENT_PALETTES[id].dark};`);
+    }
+  });
+
   it('builds :root / .dark CSS from THEME + AGENT_COLORS', () => {
     const css = buildDesignTokensCss();
     expect(css).toContain(':root {');
     expect(css).toContain('.dark {');
+    expect(css).toContain(':root[data-accent="teal"]');
     expect(css).toContain(`--bg-canvas: ${THEME.light['bg-canvas']};`);
     expect(css).toContain(`--bg-canvas: ${THEME.dark['bg-canvas']};`);
     expect(css).toContain(`--agent-grok: ${AGENT_COLORS.grok.light};`);
@@ -75,6 +94,7 @@ describe('design tokens SSOT', () => {
     expect(boot).toContain(':root {');
     expect(boot).toContain('html.dark {');
     expect(boot).toContain(`--accent: ${THEME.light.accent};`);
+    expect(boot).toContain(':root[data-accent="blue"]');
     expect(boot).toContain(`--agent-claude: ${AGENT_COLORS.claude.light};`);
     expect(boot).toContain(`--agent-claude: ${AGENT_COLORS.claude.dark};`);
     expect(boot).toContain(`--font-meta-size: ${TYPE_SCALE.meta.size};`);

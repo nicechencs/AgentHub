@@ -22,7 +22,7 @@ use crate::tray_i18n::{
     TrayUiLanguage,
 };
 
-const TRAY_ID: &str = "main";
+pub(crate) const TRAY_ID: &str = "main";
 pub(crate) const MENU_SHOW: &str = "tray-show";
 pub(crate) const MENU_ROUTES: &str = "tray-routes";
 pub(crate) const MENU_OPEN_ROUTES: &str = "tray-open-routes";
