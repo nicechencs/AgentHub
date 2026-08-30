@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { SourcePreview } from '@/components/shared/SourcePreview';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
   phaseFromMessageStatus,
@@ -6,6 +7,7 @@ import {
   stepSummary,
   type AgentProcessView,
 } from '@/lib/chat-process';
+import { looksLikeJsonObject, tryPrettyJson } from '@/lib/source-preview';
 import type { TranslateFn } from '@/lib/i18n';
 import type { ProcessStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -17,18 +19,44 @@ import {
   thinkingChromeLabel,
 } from './chat-format';
 
+function looksLikeDiff(text: string): boolean {
+  return (
+    /^(?:diff --git|@@ |--- |\+\+\+ )/m.test(text) ||
+    (text.includes('\n+') && text.includes('\n-') && /^(?:[+-](?![+-])).+/m.test(text))
+  );
+}
+
+function PayloadPreview({
+  text,
+  density,
+  className,
+}: {
+  text: string;
+  density: 'preview' | 'compact';
+  className?: string;
+}) {
+  if (looksLikeDiff(text)) {
+    return <DiffAwarePre text={text} className={className} />;
+  }
+  const pretty = tryPrettyJson(text);
+  if (pretty || looksLikeJsonObject(text)) {
+    return (
+      <SourcePreview
+        value={pretty ?? text}
+        format="json"
+        density={density}
+        pretty={false}
+        className={className}
+      />
+    );
+  }
+  const clipped = text.length > 4000 ? `${text.slice(0, 4000)}…` : text;
+  return <pre className={className}>{clipped}</pre>;
+}
+
 /** Render tool/stderr text; highlight unified-diff style lines when present. */
 function DiffAwarePre({ text, className }: { text: string; className?: string }) {
   const { t } = useI18n();
-  const looksDiff =
-    /^(?:diff --git|@@ |--- |\+\+\+ )/m.test(text) ||
-    (text.includes('\n+') && text.includes('\n-') && /^(?:[+-](?![+-])).+/m.test(text));
-
-  if (!looksDiff) {
-    return (
-      <pre className={className}>{text.length > 4000 ? `${text.slice(0, 4000)}…` : text}</pre>
-    );
-  }
 
   const lines = text.split('\n').slice(0, 200);
   return (
@@ -65,14 +93,13 @@ function ProcessStepRow({ step }: { step: ProcessStep }) {
           ⚙ {step.name} · {step.status}
         </div>
         {input ? (
-          <pre className="mt-0.5 max-h-16 overflow-auto whitespace-pre-wrap break-all font-mono text-meta text-muted">
-            {input}
-          </pre>
+          <PayloadPreview text={input} density="compact" className="mt-0.5" />
         ) : null}
         {step.result ? (
-          <DiffAwarePre
+          <PayloadPreview
             text={step.result}
-            className="mt-1 max-h-28 overflow-auto font-mono text-meta leading-relaxed text-secondary"
+            density="compact"
+            className="mt-1"
           />
         ) : null}
       </div>

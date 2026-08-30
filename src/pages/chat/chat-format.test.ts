@@ -6,6 +6,7 @@ import {
   extractPiDefaultProvider,
   extractPiSlotModels,
   formatDurationMs,
+  formatStepInput,
   isRetiredChatModel,
   localizeChatFailure,
   officialPiModelsBaseUrl,
@@ -15,6 +16,19 @@ import {
 } from './chat-format';
 
 const t = createTranslator('zh');
+
+describe('chat-format tool payload', () => {
+  it('pretty-prints JSON tool input and does not mask session payloads', () => {
+    expect(formatStepInput({ path: '/tmp', token: 'sk-live-not-masked' })).toContain(
+      'sk-live-not-masked',
+    );
+    expect(formatStepInput('{"a":1,"b":{"c":2}}')).toBe(
+      '{\n  "a": 1,\n  "b": {\n    "c": 2\n  }\n}',
+    );
+    expect(formatStepInput('plain text')).toBe('plain text');
+    expect(formatStepInput(null)).toBeNull();
+  });
+});
 
 describe('chat-format thinking chrome', () => {
   it('formatDurationMs uses ms / s / m s', () => {
