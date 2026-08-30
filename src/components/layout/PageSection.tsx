@@ -11,7 +11,7 @@ export type PageSectionProps = HTMLAttributes<HTMLElement> & {
    */
   ruled?: boolean;
   /**
-   * 页内第一段（紧接 PageHeader；标题槽已含底距）。
+   * 页内第一段（紧接顶栏标题或页内操作；标题槽已含底距）。
    * 默认 false。
    */
   first?: boolean;

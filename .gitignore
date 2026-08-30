@@ -69,3 +69,4 @@ latest.json
 .codex/
 *.exe
 .pi/
+temp-pic/

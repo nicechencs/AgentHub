@@ -6,23 +6,22 @@
  * 1. 阅读列 `readingColumn`：Chat 消息列、Settings 表单区。固定 `max-w-3xl` 居中。
  * 2. 贴边列：其余页。铺满主列，左右 18px（`pageShell` / `workbenchX`）。
  * 新页默认贴边列；对话 / 表单 / 长文才用阅读列。禁止第三套 `max-w-*`。
- * 页标题一律贴边、两行槽（标题 + 一行 meta），四周 18px。
+ * 页标题一律贴边、同一行（大号深色标题 + 小号浅色说明），放在非对话页顶栏左侧。
  *
  * ## 边缘（edge）
  * | 场景 | 水平 | 垂直 |
  * |------|------|------|
  * | 窗内画布缝 | 8 (`p-2 gap-2`) | 8 |
  * | 贴边列（相对主列内缘） | 18 (`px-[18px]`) | 18 (`py-[18px]`) |
- * | TopBar | 18 (`px-[18px]`) | h-10 |
- * | Skills / Projects / Connections / Routes / Agents 页头 | 18 | 四周 18 |
- * | Skills / Projects / Connections / Routes / Agents 列表 | 18 (`px-[18px]`)；分栏打开时改 `workbenchXSplit` | 顶距 0（页头已 18）；底距 18 |
+ * | TopBar | 18 (`px-[18px]`) | h-10（同一行标题 + 说明 + 通知铃） |
+ * | Skills / Projects / Connections / Routes / Agents 列表 | 18 (`px-[18px]`)；分栏打开时改 `workbenchXSplit` | 顶 18 / 底 18，与预览列相同 |
  * | Chat 全高 | 主区 chrome 16 (`px-4`) | 会话 rail 自管 |
  * | 阅读列（Chat 消息列 / Settings 表单） | `readingColumn` `max-w-3xl` 居中 | — |
  *
  * 层级（自上而下）：
- * 1. PageHeader（常规页 mb 18px；compact 由 workbenchHeader 提供底距）
- * 2. 正文起点：标题槽已含 18px 底距，第一块不加顶距。切页顶边对齐（Chat 除外）
- * 3. chrome：筛选条 / AgentTab / 工具行（`mb-3`）
+ * 1. TopBar 页标题（非对话页；对话页自管会话名）
+ * 2. 正文起点：顶栏已含页标题。常规页 pageShell 顶距 18px；全高页列表顶距 18px。第一块不加额外顶距
+ * 3. chrome / chromeRow：筛选条 / AgentTab / 工具行（`mb-3`）。页内操作放右侧 `chromeActions`，不独占一行
  * 4. lead：环境条、Notice 等引导块
  * 5. stack / blocks：列表与同段卡片
  * 6. section / sectionRuled：主内容大段
@@ -38,6 +37,8 @@ export const pageRhythm = {
   pageShell: 'w-full min-w-0 px-[18px] py-[18px]',
   /** Chat 消息列与 Settings 表单区共用：居中阅读宽。页头不进此列。 */
   readingColumn: 'mx-auto w-full max-w-3xl',
+  /** 侧栏品牌行与非对话页顶栏同高，横线对齐 */
+  topChrome: 'h-10',
   /** 全高工作台水平 inset（Skills / Projects / Connections / Routes 列表）— 与常规页水平一致 */
   workbenchX: 'px-[18px]',
   /**
@@ -47,15 +48,17 @@ export const pageRhythm = {
    * 滚动条仍贴着分隔条（分隔条 hit 区还会叠进滚动条）。
    */
   workbenchXSplit: 'pl-[18px] pr-2 mr-2',
-  /** 全高页页头：四周 18px，与 pageShell 对齐 */
-  workbenchHeader: 'shrink-0 px-[18px] py-[18px]',
-  /** 页标题：PageHeader h1 与 Chat 会话名共用 */
+  /** Settings 等：顶栏下的 Tab 行，顶距 18px */
+  workbenchHeader: 'shrink-0 px-[18px] pt-[18px]',
+  /** 页标题：非对话页顶栏 h1（大号、深色） */
   pageTitle: 'text-title font-semibold tracking-tight text-primary',
-  /** 标题 + 一行 meta，切页高度不跳（约 40px） */
-  pageTitleBlock: 'min-h-10',
+  /** 页说明：紧跟标题同一行（小号、浅色），过长截断 */
+  pageTitleMeta: 'min-w-0 truncate text-meta font-normal text-secondary',
+  /** 顶栏标题行：标题与说明基线对齐 */
+  pageTitleBlock: 'flex min-w-0 items-baseline gap-2.5',
   /**
-   * 全高工作台列表底距。顶距 0：页头 `workbenchHeader` 已提供 18px，
-   * 与常规页 PageHeader `mb-[18px]` 对齐，切页正文顶边不跳。
+   * 全高工作台列表底距。顶距由 WorkbenchSplitPage 与预览列共用 18px，
+   * 左右列上下内边对齐。
    */
   workbenchY: 'pb-[18px]',
   /** Chat 消息列 chrome 水平（transcript / composer 外框，不含页头） */
@@ -63,10 +66,12 @@ export const pageRhythm = {
 
   /** 页头下：Agent 条 / Tabs / 单行筛选工具带 */
   chrome: 'mb-3',
-  /** 工具行（flex 包装 + 底距） */
-  chromeRow: 'mb-3 flex flex-wrap items-center gap-2',
-  /** Header 后引导区（环境条、提示组） */
-  lead: 'mb-4 space-y-3',
+  /** 工具行：与预览列页头同高，左侧筛选、右侧操作 */
+  chromeRow: 'mb-3 flex min-h-10 flex-wrap items-center gap-2',
+  /** 工具行右侧页内操作，与左侧 Tab/筛选同一行 */
+  chromeActions: 'ml-auto flex shrink-0 items-center gap-2',
+  /** Header 后引导区（环境条、提示组）；底距与 chrome 相同，切页列表顶边对齐 */
+  lead: 'mb-3 space-y-3',
   /** 主列表纵向（Agent 卡、连接卡） */
   stack: 'flex flex-col gap-3',
   /** 更密列表（分组内卡片） */

@@ -14,21 +14,22 @@ describe('skills split layout', () => {
     const page = source('index.tsx');
     expect(page).toContain('WorkbenchSplitPage');
     expect(page).toContain('useSideSplit');
-    expect(page).toContain("size=\"compact\"");
+    expect(page).toContain('PageHeader');
+    expect(page).toContain('pageRhythm.chromeActions');
     expect(page).toContain("t('skills.preview.resizeAria')");
     expect(page).toContain('<SkillMarkdownPreviewPanel');
     expect(page).not.toContain('previewShellMounted');
     expect(page).not.toContain('onPreviewResizeStart');
   });
 
-  it('keeps the page header and install action in the left split column', () => {
+  it('keeps the install action on the tab row in the left split column', () => {
     const page = source('index.tsx');
-    const headerStart = page.indexOf('header={(');
     const installStart = page.indexOf('setInstallOpen(true)');
     const listStart = page.indexOf('<Tabs ');
 
-    expect(headerStart).toBeGreaterThanOrEqual(0);
-    expect(installStart).toBeGreaterThan(headerStart);
-    expect(installStart).toBeLessThan(listStart);
+    expect(listStart).toBeGreaterThan(0);
+    expect(installStart).toBeGreaterThan(listStart);
+    expect(page).toContain('pageRhythm.chromeActions');
+    expect(page).not.toContain('header={(');
   });
 });

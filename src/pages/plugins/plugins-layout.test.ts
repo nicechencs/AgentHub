@@ -13,9 +13,10 @@ describe('plugins layout wiring', () => {
   it('uses WorkbenchSplitPage and keeps empty/loading/error in the list column', () => {
     const page = source('index.tsx');
     expect(page).toContain('WorkbenchSplitPage');
-    expect(page).toContain("size=\"compact\"");
+    expect(page).toContain('PageHeader');
     expect(page).toContain("t('common.resizeSidePanel')");
-    expect(page).toContain('pageRhythm.chrome');
+    expect(page).toContain('pageRhythm.chromeRow');
+    expect(page).toContain('pageRhythm.chromeActions');
     expect(page).toContain('<AgentTabStrip');
     expect(page).toContain('ListSkeleton');
     expect(page).toContain('<ErrorState');

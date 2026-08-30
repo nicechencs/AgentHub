@@ -55,3 +55,48 @@ test('Agents page title shares the same top-left inset as other pages', async ({
     expect(Math.abs(box.y - dashboard.y)).toBeLessThanOrEqual(1);
   }
 });
+
+test('page title sits in the top bar with notifications; Chat has neither', async ({ page }) => {
+  await openApp(page);
+  const heading = page.getByRole('heading', { level: 1 }).first();
+  const bell = page.getByRole('button', { name: '通知' });
+  await expect(heading).toBeVisible();
+  await expect(bell).toBeVisible();
+  const titleBox = await heading.boundingBox();
+  const bellBox = await bell.boundingBox();
+  expect(titleBox).toBeTruthy();
+  expect(bellBox).toBeTruthy();
+  expect(titleBox!.x).toBeLessThan(bellBox!.x);
+  expect(titleBox!.y).toBeLessThan(bellBox!.y + bellBox!.height);
+  expect(bellBox!.y).toBeLessThan(titleBox!.y + titleBox!.height);
+
+  await goNav(page, '连接');
+  await expect(page.getByRole('heading', { name: '连接' })).toBeVisible();
+  const addLogin = page.getByRole('button', { name: '添加授权' });
+  const agentTabs = page.getByRole('tablist', { name: '按 Agent 筛选登录' });
+  await expect(addLogin).toBeVisible();
+  await expect(agentTabs).toBeVisible();
+  const addBox = await addLogin.boundingBox();
+  const tabsBox = await agentTabs.boundingBox();
+  expect(addBox).toBeTruthy();
+  expect(tabsBox).toBeTruthy();
+  expect(Math.abs(addBox!.y + addBox!.height / 2 - (tabsBox!.y + tabsBox!.height / 2))).toBeLessThanOrEqual(8);
+  const connectionsTop = tabsBox!.y;
+
+  await goNav(page, 'Skills');
+  const skillsTabs = page.getByRole('tab', { name: /用户技能/ });
+  await expect(skillsTabs).toBeVisible();
+  const skillsTop = (await skillsTabs.boundingBox())!.y;
+  expect(Math.abs(skillsTop - connectionsTop)).toBeLessThanOrEqual(4);
+
+  await goNav(page, 'MCP');
+  const mcpTabs = page.getByRole('tablist').first();
+  await expect(mcpTabs).toBeVisible();
+  const mcpTop = (await mcpTabs.boundingBox())!.y;
+  expect(Math.abs(mcpTop - connectionsTop)).toBeLessThanOrEqual(4);
+
+  await goNav(page, 'Chat');
+  await expect(page).toHaveURL(/#\/chat/);
+  await expect(page.getByRole('button', { name: '通知' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);
+});

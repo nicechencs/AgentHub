@@ -702,15 +702,12 @@ export default function ConnectionsPage() {
         resizeAria={t('common.resizeSidePanel')}
         panel={inspectPanel}
         listFooter={trashDock}
-        header={(
-          <PageHeader
-            size="compact"
-            title={t('connections.page.title')}
-            description={t('connections.page.description')}
-            descriptionTip={t('connections.page.descriptionTipLoading')}
-          />
-        )}
       >
+        <PageHeader
+          title={t('connections.page.title')}
+          description={t('connections.page.description')}
+          descriptionTip={t('connections.page.descriptionTipLoading')}
+        />
         <div className={pageRhythm.chrome}>
           <ListSkeleton rows={4} />
         </div>
@@ -725,15 +722,12 @@ export default function ConnectionsPage() {
         resizeAria={t('common.resizeSidePanel')}
         panel={inspectPanel}
         listFooter={trashDock}
-        header={(
-          <PageHeader
-            size="compact"
-            title={t('connections.page.title')}
-            description={t('connections.page.description')}
-            descriptionTip={t('connections.page.descriptionTipError')}
-          />
-        )}
       >
+        <PageHeader
+          title={t('connections.page.title')}
+          description={t('connections.page.description')}
+          descriptionTip={t('connections.page.descriptionTipError')}
+        />
         <ErrorState error={error} title={t('connections.page.agentStatusError')} onRetry={() => void reload()} />
       </WorkbenchSplitPage>
     );
@@ -746,15 +740,12 @@ export default function ConnectionsPage() {
         resizeAria={t('common.resizeSidePanel')}
         panel={inspectPanel}
         listFooter={trashDock}
-        header={(
-          <PageHeader
-            size="compact"
-            title={t('connections.page.title')}
-            description={t('connections.page.description')}
-            descriptionTip={t('connections.page.descriptionTipEmpty')}
-          />
-        )}
       >
+        <PageHeader
+          title={t('connections.page.title')}
+          description={t('connections.page.description')}
+          descriptionTip={t('connections.page.descriptionTipEmpty')}
+        />
         <EmptyState
           icon={Cable}
           title={t('connections.page.emptyTitle')}
@@ -773,30 +764,17 @@ export default function ConnectionsPage() {
       resizeAria={t('common.resizeSidePanel')}
       panel={inspectPanel}
       listFooter={trashDock}
-      header={(
-        <PageHeader
-          size="compact"
-          title={t('connections.page.title')}
-          description={
-            visibleWallet
-              ? t('connections.page.descriptionCount', { n: visibleWallet.tickets.length })
-              : t('connections.page.descriptionKinds')
-          }
-          descriptionTip={t('connections.page.descriptionTip')}
-          actions={
-            <TicketAddMenu
-              agents={buildTicketAddMenu(allowedAgents, oauthLoginAgents)}
-              focusedAgentId={filterAgent === 'all' ? null : filterAgent}
-              onImportLogin={(id) => openTicketAdd('import-login', id)}
-              onOauth={(id) => openTicketAdd('oauth', id)}
-              onAddKey={(id) => openTicketAdd('api-key', id)}
-            />
-          }
-        />
-      )}
     >
-
-      <div className={pageRhythm.chrome}>
+      <PageHeader
+        title={t('connections.page.title')}
+        description={
+          visibleWallet
+            ? t('connections.page.descriptionCount', { n: visibleWallet.tickets.length })
+            : t('connections.page.descriptionKinds')
+        }
+        descriptionTip={t('connections.page.descriptionTip')}
+      />
+      <div className={pageRhythm.chromeRow}>
         <AgentTabStrip
           showAll
           allLabel={t('kind.all')}
@@ -813,6 +791,15 @@ export default function ConnectionsPage() {
           emptyLabel={t('connections.page.emptyTitle')}
           aria-label={t('connections.page.filterAria')}
         />
+        <div className={pageRhythm.chromeActions}>
+          <TicketAddMenu
+            agents={buildTicketAddMenu(allowedAgents, oauthLoginAgents)}
+            focusedAgentId={filterAgent === 'all' ? null : filterAgent}
+            onImportLogin={(id) => openTicketAdd('import-login', id)}
+            onOauth={(id) => openTicketAdd('oauth', id)}
+            onAddKey={(id) => openTicketAdd('api-key', id)}
+          />
+        </div>
       </div>
 
       {showDiscoveryBanner && discoveryKind ? (

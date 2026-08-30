@@ -243,15 +243,12 @@ export default function AgentsPage() {
       split={inspect}
       resizeAria={t('common.resizeSidePanel')}
       panel={inspectPanel}
-      header={(
-        <PageHeader
-          size="compact"
-          title={t('agents.page.title')}
-          description={t('agents.page.description')}
-          descriptionTip={t('agents.page.descriptionTip')}
-        />
-      )}
     >
+      <PageHeader
+        title={t('agents.page.title')}
+        description={t('agents.page.description')}
+        descriptionTip={t('agents.page.descriptionTip')}
+      />
       <div className={pageRhythm.lead}>
         <EnvStatusBar
           runtimes={runtimes}

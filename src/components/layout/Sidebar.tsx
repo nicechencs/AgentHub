@@ -248,7 +248,8 @@ export function Sidebar() {
       {/* 品牌 + 折叠按钮 */}
       <div
         className={cn(
-          'flex h-10 shrink-0 items-center border-b border-border',
+          'flex shrink-0 items-center border-b border-border',
+          pageRhythm.topChrome,
           collapsed ? 'justify-center' : 'justify-between px-3',
         )}
       >
