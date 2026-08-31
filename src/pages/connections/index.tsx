@@ -323,6 +323,11 @@ export default function ConnectionsPage() {
       setPendingGuide(null);
       return;
     }
+    if (intent === 'oauth') {
+      setOauthOpen(true);
+      setPendingGuide(null);
+      return;
+    }
     if (intent === 'import-login') {
       setLoginImportOpen(true);
       setPendingGuide(null);

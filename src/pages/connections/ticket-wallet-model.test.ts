@@ -202,7 +202,7 @@ describe('binding usage text', () => {
     expect(formatTicketUsageText([])).toBe('未使用');
     expect(formatTicketUsageText([], 'codex')).toBe(`${agentDisplayName('codex')} · 未使用`);
     const parts = formatTicketUsageParts(kimiBindings, 'kimi');
-    expect(parts.some((part) => part.kind === 'bridge' && part.href === '/routes?profile=p2')).toBe(true);
+    expect(parts.some((part) => part.kind === 'bridge' && part.href === '/routes/pool?profile=p2')).toBe(true);
     expect(formatTicketUsageParts([{
       ticketId: 'provider:kimi-1',
       agentId: 'codex',
@@ -210,7 +210,7 @@ describe('binding usage text', () => {
       active: true,
       profileId: null,
       bridge: { port: 8123, running: true },
-    }]).some((part) => part.kind === 'bridge' && part.href === '/routes')).toBe(true);
+    }]).some((part) => part.kind === 'bridge' && part.href === '/routes/pool')).toBe(true);
   });
 
   it('annotates bridge usage with N-member poll pool copy', () => {

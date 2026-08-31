@@ -26,7 +26,7 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Plugins | `/plugins` | Read-only vendor plugin / extension pack inventory |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
 | Manage | Connections | `/connections` | Global login list and connection actions |
-| Manage | Routes | `/routes` | Local route runtime list and details (secondary nav for board / pool / tokens / activity) |
+| Manage | Routes | `/routes` | Local route runtime. `/routes` opens the board; secondary nav: board / pool / tokens / activity |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
 `Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes and Plugins sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows those entries; the pages stay reachable at `/routes` and `/plugins`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
@@ -37,10 +37,9 @@ Routes nested paths (secondary nav):
 
 | Label | Path | Role |
 |---|---|---|
-| Route list | `/routes` | Runtime list + detail (existing workbench) |
-| Board | `/routes/board` | Health overview and recent requests |
-| Auth pool | `/routes/pool` | Default-pool members per route (read-only; gated) |
-| Local tokens | `/routes/tokens` | Entry-key management (in development placeholder) |
+| Board | `/routes/board` | Health overview, usage, and start/stop. Bare `/routes` redirects here. |
+| Auth pool | `/routes/pool` | Local-entry workbench (replaces the old list): members, write to client, unbind, enroll. `?profile=` opens detail. |
+| Local tokens | `/routes/tokens` | Entry-key copy (in development) |
 | Activity | `/routes/activity` | Cross-route recent request feed |
 
 Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Preferences → Sidebar. The secondary nav top-left control expands the primary sidebar. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
@@ -124,11 +123,11 @@ Routes is the runtime management page for local loopback forwarding. It is not a
 
 ### 6.0 Secondary nav and board
 
-Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: a one-line fleet summary, an optional “needs attention” block, remaining route rows with start/stop (same source-group semantics as the list), and a short recent-request snapshot that deep-links to Activity (`?filter=` / `?route=`). Configuration edits stay on the list; request filtering stays on Activity.
+Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: usage charts, a one-line fleet summary, an optional “needs attention” block, remaining route rows with start/stop, and a short recent-request snapshot that deep-links to Activity (`?filter=` / `?route=`). Configuration edits stay on the auth pool (`/routes/pool`); request filtering stays on Activity. `/routes?profile=` opens pool detail. `/adapter`, `/router`, and `/bridges` redirect into this area.
 
-### 6.1 List
+### 6.1 Auth pool
 
-The list is an edge-column management table with stable rows. Each row shows the route target, runtime state, loopback address (`127.0.0.1` and port when available), upstream summary, and the permitted actions. A row can be opened through `?profile=<id>`.
+The auth pool is an edge-column workbench. Each card is one local entry (target Agent × surface): loopback address (`127.0.0.1` and port when available), enrolled logins, runtime state, and the permitted actions. A row can be opened through `?profile=<id>`. Adding logins goes to Connections; this page does not host a second credential editor.
 
 The page treats the following states separately:
 
@@ -145,7 +144,7 @@ Do not infer “running” from a durable database row when the runtime host is 
 
 ### 6.2 Detail
 
-The detail panel is a focused dialog or side surface opened from the list. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
+The detail panel is a focused dialog or side surface opened from the auth pool. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
 
 Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Connections remains the login list; Routes does not become a second place to add credentials.
 

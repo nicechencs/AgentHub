@@ -12,18 +12,17 @@ function source(rel: string): string {
 
 describe('routes layout wiring', () => {
   it('uses the Skills/Projects workbench split for inspect panes', () => {
-    const page = source('pages/bridges/index.tsx');
+    const page = source('pages/routes/pool/index.tsx');
     expect(page).toContain('WorkbenchSplitPage');
     expect(page).toContain('PageHeader');
-    expect(page).toContain("t('common.inDevelopment')");
     expect(page).toContain('pageRhythm.chromeActions');
     expect(page).toContain("t('common.resizeSidePanel')");
     expect(page).toContain('useSideSplit');
     expect(page).not.toContain('flex items-start gap-3');
   });
 
-  it('puts fleet summary or orphan lead on the same chrome row as import/create', () => {
-    const page = source('pages/bridges/index.tsx');
+  it('puts fleet summary or orphan lead on the same chrome row as pool add actions', () => {
+    const page = source('pages/routes/pool/index.tsx');
     const chromeStart = page.indexOf('pageRhythm.chromeRow');
     const listStart = page.indexOf('pageRhythm.stackDense');
     expect(chromeStart).toBeGreaterThan(0);
@@ -31,8 +30,7 @@ describe('routes layout wiring', () => {
     const chrome = page.slice(chromeStart, listStart);
     expect(chrome).toContain('orphanOnly');
     expect(chrome).toContain('fleetSummary.label');
-    expect(chrome).toContain("t('routes.import.action')");
-    expect(chrome).toContain("t('routes.create.action')");
+    expect(chrome).toContain('PoolAddButtons');
     expect(chrome).toContain('size="sm"');
     expect(chrome).toContain('pageRhythm.chromeActions');
     const list = page.slice(listStart);
@@ -74,17 +72,16 @@ describe('routes layout wiring', () => {
   });
 
   it('groups Claude/Codex/Grok profiles that share one source onto one card', () => {
-    const page = source('pages/bridges/index.tsx');
+    const page = source('pages/routes/pool/index.tsx');
     const actions = source('pages/bridges/use-bridge-runtime-actions.ts');
     expect(page).toContain('groupLocalBridgeProfiles');
-    expect(page).toContain('localBridgeSourceKey');
     expect(actions).toContain('localBridgeProfilesForSource');
     const model = source('pages/bridges/adapter-view-model.ts');
     expect(model).toContain('One list card per upstream source');
   });
 
   it('opens edit and detail in the same right-hand inspect pane', () => {
-    const page = source('pages/bridges/index.tsx');
+    const page = source('pages/routes/pool/index.tsx');
     const inspect = source('pages/bridges/route-inspect.ts');
     expect(inspect).toContain("{ kind: 'edit'; profile: AdapterProfile }");
     expect(inspect).toContain("{ kind: 'detail'; profile: AdapterProfile }");
@@ -114,12 +111,12 @@ describe('routes layout wiring', () => {
   });
 
   it('keeps the healthy empty state informational without a second create CTA', () => {
-    const page = source('pages/bridges/index.tsx');
+    const page = source('pages/routes/pool/index.tsx');
     const emptyBlock = page.slice(
       page.indexOf("pageView === 'healthy_empty'"),
       page.indexOf("pageView === 'list'"),
     );
-    expect(emptyBlock).toContain("t('routes.empty.title')");
+    expect(emptyBlock).toContain("t('routes.pool.page.emptyTitle')");
     expect(emptyBlock).not.toContain('actionLabel');
     expect(emptyBlock).not.toContain("t('routes.create.action')");
   });

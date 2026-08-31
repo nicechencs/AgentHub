@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/dialog';
 import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
-import { bridgesHrefForProfile, BRIDGES_PATH } from '@/lib/bridges-path';
+import { bridgesHrefForProfile, ROUTES_POOL_PATH } from '@/lib/bridges-path';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { fmtRelativeI18n } from '@/pages/backups/backup-format';
 import { AdapterErrorLines } from '@/pages/bridges/adapter-components';
@@ -248,7 +248,7 @@ export default function RoutesBoardPage() {
               size="sm"
               variant="outline"
               className="mt-2"
-              onClick={() => navigate(BRIDGES_PATH)}
+              onClick={() => navigate(ROUTES_POOL_PATH)}
             >
               {t('routes.nav.goToList')}
             </Button>

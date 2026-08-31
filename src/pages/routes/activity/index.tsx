@@ -9,7 +9,7 @@ import { InboundRequestList } from '@/components/shared/InboundRequestList';
 import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
-import { BRIDGES_PATH } from '@/lib/bridges-path';
+import { ROUTES_POOL_PATH } from '@/lib/bridges-path';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import {
@@ -146,7 +146,7 @@ export default function RoutesActivityPage() {
               size="sm"
               variant="outline"
               className="mt-2"
-              onClick={() => navigate(BRIDGES_PATH)}
+              onClick={() => navigate(ROUTES_POOL_PATH)}
             >
               {t('routes.nav.goToList')}
             </Button>

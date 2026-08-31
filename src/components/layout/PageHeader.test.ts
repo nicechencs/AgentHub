@@ -17,7 +17,7 @@ describe('PageHeader', () => {
     expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
-    expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/routes/pool/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/agents/index.tsx')).toContain('WorkbenchSplitPage');
   });
@@ -71,7 +71,7 @@ describe('PageHeader', () => {
     expect(source('pages/connections/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/plugins/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/mcp/index.tsx')).toContain('pageRhythm.chromeActions');
-    expect(source('pages/bridges/index.tsx')).toContain('pageRhythm.chromeActions');
+    expect(source('pages/routes/pool/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/projects/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(topBar).toContain('PageTitleBlock');
     expect(topBar).toContain('FeedbackButton');
@@ -86,7 +86,7 @@ describe('PageHeader', () => {
     expect(source('pages/backups/BackupsPanel.tsx')).not.toContain('flushTop');
     expect(source('pages/backups/BackupsPanel.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
-    expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/routes/pool/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/agents/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('App.tsx')).toContain('!isChat && <TopBar');
