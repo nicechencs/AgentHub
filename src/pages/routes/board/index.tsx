@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
@@ -169,20 +168,15 @@ export default function RoutesBoardPage() {
             )}
             <div className="mt-3 flex items-center gap-2">
               <p className="min-w-0 flex-1 text-sm text-secondary">{loginHint}</p>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
+              <PageRefreshButton
                 className="ml-auto shrink-0"
-                disabled={pageLoading}
+                loading={pageLoading}
                 onClick={() => {
                   void reload();
                   setUsageRefreshKey((key) => key + 1);
                 }}
-              >
-                {pageLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {t('routes.board.refresh')}
-              </Button>
+                label={t('routes.board.refresh')}
+              />
             </div>
           </PageSection>
 
