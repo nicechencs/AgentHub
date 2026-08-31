@@ -136,6 +136,17 @@ impl UpstreamChannel {
         }
     }
 
+    /// Stable name for the gateway usage spool / `gateway_usage` table.
+    #[allow(dead_code)]
+    pub(super) fn name(self) -> &'static str {
+        match self {
+            Self::OpenAiChat => "openai_chat",
+            Self::Anthropic => "anthropic",
+            Self::CodexResponses => "codex_responses",
+            Self::Grok => "grok",
+        }
+    }
+
     /// Resolve the transport implementation once. Callers must not match on
     /// this enum for path / auth / prepare / decode / recovery.
     pub(super) fn transport(self) -> &'static dyn UpstreamTransport {

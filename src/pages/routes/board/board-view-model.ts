@@ -177,6 +177,20 @@ export function partitionBoardRows(rows: readonly RouteBoardStatusRow[]): {
   return { attention, rest };
 }
 
+/** Process-lifetime request counters summed across route rows (reset on app restart). */
+export function sumRouteRequestTotals(rows: readonly RouteBoardStatusRow[]): {
+  total: number;
+  failed: number;
+} {
+  let total = 0;
+  let failed = 0;
+  for (const row of rows) {
+    total += row.recent.totalRequestCount;
+    failed += row.recent.failedRequestCount;
+  }
+  return { total, failed };
+}
+
 export function boardFleetSummary(
   rows: readonly RouteBoardStatusRow[],
   t?: TranslateFn,

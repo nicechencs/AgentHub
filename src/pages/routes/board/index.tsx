@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Boxes, Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -6,7 +6,6 @@ import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
-import { InboundRequestList } from '@/components/shared/InboundRequestList';
 import { ListRow, ListRowBody, LIST_ROW_PAD } from '@/components/shared/ListRow';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -41,17 +40,15 @@ import { useBridgeRuntimeActions } from '@/pages/bridges/use-bridge-runtime-acti
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import {
   activityHref,
-  BOARD_INBOUND_SNAPSHOT_LIMIT,
   boardAttentionReasonLabel,
   boardFleetSummary,
   boardLifetimeSummaryLabel,
   boardRecentSummaryLabel,
   buildRouteBoardStatusRows,
-  countFailedInbound,
-  mergeRecentInbound,
   partitionBoardRows,
   type RouteBoardStatusRow,
 } from '@/pages/routes/board/board-view-model';
+import { BoardUsageSection } from '@/pages/routes/board/board-usage-section';
 
 function BoardRouteRow({
   row,
@@ -200,11 +197,7 @@ export default function RoutesBoardPage() {
     [profiles, bridgeStatuses, errors.bridgeStatuses],
   );
   const { attention, rest } = useMemo(() => partitionBoardRows(statusRows), [statusRows]);
-  const recent = useMemo(
-    () => mergeRecentInbound(profiles, bridgeStatuses, BOARD_INBOUND_SNAPSHOT_LIMIT),
-    [profiles, bridgeStatuses],
-  );
-  const failedRecent = countFailedInbound(recent);
+  const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const fleet = boardFleetSummary(statusRows, t);
   const stopError = stopConfirm ? profileErrors[stopConfirm.id] : null;
   const stopDialogBusy = Boolean(stopConfirm && busyProfileIds[stopConfirm.id]);
@@ -225,7 +218,10 @@ export default function RoutesBoardPage() {
             size="sm"
             variant="secondary"
             disabled={loading}
-            onClick={() => void reload()}
+            onClick={() => {
+              void reload();
+              setUsageRefreshKey((key) => key + 1);
+            }}
           >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
             {t('routes.board.refresh')}
@@ -237,7 +233,10 @@ export default function RoutesBoardPage() {
         <ErrorState
           title={t('routes.loadError')}
           error={errors.profiles ?? t('routes.loadError')}
-          onRetry={() => void reload()}
+          onRetry={() => {
+            void reload();
+            setUsageRefreshKey((key) => key + 1);
+          }}
         />
       ) : statusRows.length === 0 && !loading ? (
         <EmptyState
@@ -257,8 +256,14 @@ export default function RoutesBoardPage() {
         />
       ) : (
         <div className={pageRhythm.blocks}>
+          <BoardUsageSection
+            profiles={profiles}
+            hiddenTargetIds={hiddenTargetIds}
+            refreshKey={usageRefreshKey}
+          />
+
           {attention.length > 0 ? (
-            <PageSection first title={t('routes.board.attentionSection')}>
+            <PageSection title={t('routes.board.attentionSection')}>
               <div className={pageRhythm.stackDense}>
                 {attention.map((row) => (
                   <BoardRouteRow
@@ -276,7 +281,6 @@ export default function RoutesBoardPage() {
 
           {rest.length > 0 ? (
             <PageSection
-              first={attention.length === 0}
               title={attention.length > 0 ? t('routes.board.otherSection') : t('routes.board.statusSection')}
             >
               <div className={pageRhythm.stackDense} aria-label={t('routes.board.statusSection')}>
@@ -293,30 +297,6 @@ export default function RoutesBoardPage() {
               </div>
             </PageSection>
           ) : null}
-
-          <PageSection title={t('routes.board.inboundSnapshot')}>
-            <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta">
-              <Link
-                to={activityHref({})}
-                className="text-secondary hover:text-primary"
-              >
-                {t('routes.board.viewAllActivity')}
-              </Link>
-              {failedRecent > 0 ? (
-                <Link
-                  to={activityHref({ filter: 'failed' })}
-                  className="text-danger hover:text-primary"
-                >
-                  {t('routes.board.viewFailedActivity', { count: failedRecent })}
-                </Link>
-              ) : null}
-            </div>
-            {recent.length === 0 ? (
-              <p className="text-sm text-muted">{t('routes.board.noRequests')}</p>
-            ) : (
-              <InboundRequestList rows={recent} />
-            )}
-          </PageSection>
         </div>
       )}
 

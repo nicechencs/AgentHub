@@ -1,7 +1,8 @@
 //! Usage Tauri commands — collect / query / trend / models / health.
 
 use agenthub_core::models::{
-    AgentId, CollectResult, ParserHealth, UsageOverview, UsageQuery, UsageRecord,
+    AgentId, CollectResult, GatewayUsageOverview, GatewayUsageQuery, GatewayUsageRow,
+    ParserHealth, UsageOverview, UsageQuery, UsageRecord,
 };
 use serde_json::Value;
 use tauri::State;
@@ -160,6 +161,52 @@ pub async fn usage_missing_pricing(
         hub.usage()
             .missing_pricing_models(d)
             .map_err(|e| map_err_string("usage_missing_pricing", e))
+    })
+    .await
+}
+
+/// Per-request usage observed by the local bridge (separate `gateway_usage`
+/// table; never merged into `usage_records`).
+#[tauri::command]
+pub async fn gateway_usage_query(
+    state: State<'_, AppState>,
+    since: Option<String>,
+    until: Option<String>,
+    profile_id: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<GatewayUsageRow>, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.usage()
+            .gateway_usage_query(GatewayUsageQuery {
+                since: since.filter(|s| !s.is_empty()),
+                until: until.filter(|s| !s.is_empty()),
+                profile_id: profile_id.filter(|p| !p.is_empty()),
+                limit,
+            })
+            .map_err(|e| map_err_string("gateway_usage_query", e))
+    })
+    .await
+}
+
+/// Aggregated overview over the `gateway_usage` table for a time window.
+#[tauri::command]
+pub async fn gateway_usage_overview(
+    state: State<'_, AppState>,
+    since: Option<String>,
+    until: Option<String>,
+    profile_id: Option<String>,
+) -> Result<GatewayUsageOverview, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| {
+        hub.usage()
+            .gateway_usage_overview(GatewayUsageQuery {
+                since: since.filter(|s| !s.is_empty()),
+                until: until.filter(|s| !s.is_empty()),
+                profile_id: profile_id.filter(|p| !p.is_empty()),
+                limit: None,
+            })
+            .map_err(|e| map_err_string("gateway_usage_overview", e))
     })
     .await
 }

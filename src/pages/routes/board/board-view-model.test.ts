@@ -10,6 +10,7 @@ import {
   mergeRecentInbound,
   parseActivityFilter,
   partitionBoardRows,
+  sumRouteRequestTotals,
 } from './board-view-model';
 
 function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>): AdapterProfile {
@@ -161,6 +162,24 @@ describe('board-view-model', () => {
       { lastAt: 't', failedInWindow: 2, windowSize: 5, totalRequestCount: 25, failedRequestCount: 5 },
       '3 分钟前',
     )).toContain('失败');
+  });
+
+  it('sums process-lifetime request counters across rows', () => {
+    const rows = buildRouteBoardStatusRows(
+      [profile({ id: 'a', name: 'A', sourceId: 'sa' }), profile({ id: 'b', name: 'B', sourceId: 'sb' })],
+      {
+        a: {
+          profileId: 'a',
+          state: 'running',
+          port: 1,
+          upstreamStatus: 'connected',
+          totalRequestCount: 42,
+          failedRequestCount: 3,
+        },
+        b: { profileId: 'b', state: 'stopped', upstreamStatus: 'stopped' },
+      },
+    );
+    expect(sumRouteRequestTotals(rows)).toEqual({ total: 42, failed: 3 });
   });
 
   it('exposes process-lifetime counters and prefers lastRequestAt', () => {
