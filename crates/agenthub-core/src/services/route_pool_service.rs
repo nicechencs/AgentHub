@@ -21,7 +21,7 @@ use crate::models::{
     AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId, DefaultRoutePoolList,
     DefaultRoutePoolOverview, ModelRouteRule, RouteDownstreamDialect, RouteDownstreamSurface,
     RouteMember, RouteMemberOverview, RoutePool, RouteSchedulePolicy,
-    SyncConnectionAuthorizationsResult, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
+    SyncConnectionAuthorizationsResult, SyncConnectionSource, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
     FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
     FEATURE_ROUTE_POOL_V2,
 };
