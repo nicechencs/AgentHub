@@ -174,7 +174,14 @@ impl AdapterControl for DesktopAdapterControl {
         profile_id: String,
         auto_start: bool,
     ) -> Result<AdapterProfile, String> {
-        set_local_bridge_auto_start(Arc::clone(&self.hub), profile_id, auto_start).await
+        set_local_bridge_auto_start(
+            Arc::clone(&self.hub),
+            Arc::clone(&self.coordinator),
+            Arc::clone(&self.lifecycle_barrier),
+            profile_id,
+            auto_start,
+        )
+        .await
     }
 }
 
