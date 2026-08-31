@@ -33,6 +33,14 @@ type AdapterBridgeStatusPollHost = {
   clearIntervalFn?: typeof clearInterval;
 };
 
+/** A stale profile response must never settle the newer request's loading flag. */
+export function isCurrentProfileReload(
+  requestGeneration: number,
+  latestGeneration: number,
+): boolean {
+  return requestGeneration === latestGeneration;
+}
+
 /** Starts the 4s stored-status poll and returns a disposer for unmount/generation changes. */
 export function startAdapterBridgeStatusPoll(host: AdapterBridgeStatusPollHost): () => void {
   const getBridgeStatus = host.getBridgeStatus ?? getAdapterBridgeStatus;
@@ -92,43 +100,56 @@ export function useAdapterResources() {
   const [resources, setResources] = useState<AdapterPageResources>(initialResources);
   const [profilesLoading, setProfilesLoading] = useState(true);
   const generation = useRef(0);
+  // Profile-list refreshes have their own generation. Runtime mutations also
+  // advance `generation` to invalidate status polls, but must not strand a
+  // profile refresh in the loading state.
+  const profileGeneration = useRef(0);
   const resourcesRef = useRef(resources);
   resourcesRef.current = resources;
 
   const reloadProfiles = useCallback(async () => {
-    const currentGeneration = ++generation.current;
+    const currentGeneration = ++profileGeneration.current;
     setProfilesLoading(true);
-    const listed = await loadAdapterProfilesList(listAdapterProfiles);
-    if (currentGeneration !== generation.current) return;
-    // Paint persisted profiles before per-profile bridge inspection.
-    setResources((current) => {
-      const merged = mergeAdapterProfileLoad(current, {
-        profiles: listed.profiles,
-        bridgeStatuses: {},
-        profileState: listed.profileState,
-        profileError: listed.profileError,
-        bridgeStatusErrors: {},
+    try {
+      const listed = await loadAdapterProfilesList(listAdapterProfiles);
+      if (!isCurrentProfileReload(currentGeneration, profileGeneration.current)) return;
+      // Paint persisted profiles before per-profile bridge inspection.
+      setResources((current) => {
+        const merged = mergeAdapterProfileLoad(current, {
+          profiles: listed.profiles,
+          bridgeStatuses: {},
+          profileState: listed.profileState,
+          profileError: listed.profileError,
+          bridgeStatusErrors: {},
+        });
+        return {
+          ...current,
+          profiles: merged.profiles,
+          profileState: merged.profileState,
+          errors: {
+            ...current.errors,
+            profiles: merged.profileError,
+            bridgeStatuses: current.errors.bridgeStatuses,
+          },
+        };
       });
-      return {
-        ...current,
-        profiles: merged.profiles,
-        profileState: merged.profileState,
-        errors: {
-          ...current.errors,
-          profiles: merged.profileError,
-          bridgeStatuses: current.errors.bridgeStatuses,
-        },
-      };
-    });
-    setProfilesLoading(false);
 
-    const localBridgeProfiles = listed.profiles.filter((profile) => profile.route === 'local_bridge');
-    if (listed.profileError || localBridgeProfiles.length === 0) return;
-    const statusResults = await Promise.allSettled(
-      localBridgeProfiles.map((profile) => getAdapterBridgeStatus(profile.id)),
-    );
-    if (currentGeneration !== generation.current) return;
-    setResources((current) => applyAdapterBridgeStatusPoll(current, localBridgeProfiles, statusResults));
+      const localBridgeProfiles = listed.profiles.filter((profile) => profile.route === 'local_bridge');
+      if (listed.profileError || localBridgeProfiles.length === 0) return;
+      const statusGeneration = generation.current;
+      const statusResults = await Promise.allSettled(
+        localBridgeProfiles.map((profile) => getAdapterBridgeStatus(profile.id)),
+      );
+      if (
+        !isCurrentProfileReload(currentGeneration, profileGeneration.current)
+        || statusGeneration !== generation.current
+      ) return;
+      setResources((current) => applyAdapterBridgeStatusPoll(current, localBridgeProfiles, statusResults));
+    } finally {
+      if (isCurrentProfileReload(currentGeneration, profileGeneration.current)) {
+        setProfilesLoading(false);
+      }
+    }
   }, []);
 
   const reload = useCallback(async () => {

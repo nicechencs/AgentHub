@@ -55,9 +55,15 @@ export function useBridgeRuntimeActions(input: {
     });
   }, []);
 
-  const reloadThenClearProfileErrors = useCallback(() => {
+  const reloadThenClearProfileErrors = useCallback((profileIds: readonly string[]) => {
     void reloadProfiles().then(
-      () => { setProfileErrors({}); },
+      () => {
+        if (profileIds.length === 0) return;
+        const affected = new Set(profileIds);
+        setProfileErrors((current) => Object.fromEntries(
+          Object.entries(current).filter(([profileId]) => !affected.has(profileId)),
+        ));
+      },
       () => undefined,
     );
   }, [reloadProfiles]);
@@ -81,7 +87,7 @@ export function useBridgeRuntimeActions(input: {
           route: member.route,
         });
       }
-      reloadThenClearProfileErrors();
+      reloadThenClearProfileErrors(members.map((member) => member.id));
     } catch (error) {
       const compensationFailures: unknown[] = [];
       for (const id of [...started].reverse()) {
@@ -131,7 +137,7 @@ export function useBridgeRuntimeActions(input: {
         });
       }
       setStopConfirm(null);
-      reloadThenClearProfileErrors();
+      reloadThenClearProfileErrors(members.map((member) => member.id));
     } catch (error) {
       void logGuiEvent('bridge_stop_fail', {
         agent: profile.targetAgentId,
@@ -174,7 +180,7 @@ export function useBridgeRuntimeActions(input: {
         });
       }
       setRemoveConfirm(null);
-      reloadThenClearProfileErrors();
+      reloadThenClearProfileErrors(members.map((member) => member.id));
     } catch (error) {
       void logGuiEvent('bridge_remove_fail', {
         agent: profile.targetAgentId,
@@ -207,7 +213,7 @@ export function useBridgeRuntimeActions(input: {
       });
       toast({ title: t('routes.pool.enrollSuccess'), variant: 'success' });
       onEnrollDone?.();
-      reloadThenClearProfileErrors();
+      reloadThenClearProfileErrors([profile.id]);
     } catch (error) {
       void logGuiEvent('bridge_enroll_fail', {
         agent: profile.targetAgentId,
