@@ -46,7 +46,7 @@ const PROJECTOR_SCHEMA_VERSION: Record<string, number> = {
   claude: 1,
   codex: 1,
   kimi: 1,
-  grok: 2,
+  grok: 3,
   dsh: 1,
 };
 

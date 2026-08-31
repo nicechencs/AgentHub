@@ -158,6 +158,10 @@ impl Provider {
         json_str(&self.meta, "generatedBy")
     }
 
+    pub fn home(&self) -> Option<&str> {
+        json_str(&self.meta, "home")
+    }
+
     pub fn meta_provider(&self) -> Option<&str> {
         json_str(&self.meta, "provider")
     }

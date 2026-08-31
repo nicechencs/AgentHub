@@ -14,6 +14,32 @@ use crate::utils::redact::redact_text;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(8);
 
+/// API endpoint shapes the connection form can configure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApiEndpointType {
+    Messages,
+    Responses,
+    ChatCompletions,
+}
+
+impl ApiEndpointType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Messages => "messages",
+            Self::Responses => "responses",
+            Self::ChatCompletions => "chat_completions",
+        }
+    }
+
+    fn path(self) -> &'static str {
+        match self {
+            Self::Messages => "messages",
+            Self::Responses => "responses",
+            Self::ChatCompletions => "chat/completions",
+        }
+    }
+}
+
 /// Build GET URL for `{base}/v1/models`, collapsing a trailing `/v1`.
 pub fn openai_models_url(base_url: &str) -> String {
     let trimmed = base_url.trim();
@@ -37,6 +63,18 @@ pub fn openai_models_url(base_url: &str) -> String {
         format!("{stripped}/models")
     } else {
         format!("{stripped}/v1/models")
+    }
+}
+
+fn api_endpoint_url(base_url: &str, endpoint: ApiEndpointType) -> String {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    let has_v1 = trimmed
+        .rsplit_once('/')
+        .is_some_and(|(_, last)| last.eq_ignore_ascii_case("v1"));
+    if has_v1 {
+        format!("{trimmed}/{}", endpoint.path())
+    } else {
+        format!("{trimmed}/v1/{}", endpoint.path())
     }
 }
 
@@ -87,6 +125,52 @@ pub fn parse_openai_model_list(input: &Value) -> Vec<String> {
 fn looks_http_url(base: &str) -> bool {
     let lower = base.to_ascii_lowercase();
     lower.starts_with("http://") || lower.starts_with("https://")
+}
+
+fn probe_api_endpoint(base_url: &str, api_key: &str, endpoint: ApiEndpointType) -> bool {
+    let url = api_endpoint_url(base_url, endpoint);
+    let mut request = ureq::post(&url)
+        .set("Authorization", &format!("Bearer {api_key}"))
+        .set("Accept", "application/json")
+        .set("Content-Type", "application/json")
+        .timeout(HTTP_TIMEOUT);
+    if endpoint == ApiEndpointType::Messages {
+        request = request
+            .set("x-api-key", api_key)
+            .set("anthropic-version", "2023-06-01");
+    }
+    match request.send_string("{}") {
+        Ok(_) => true,
+        Err(ureq::Error::Status(code, _)) => code != 404 && code != 405,
+        Err(_) => false,
+    }
+}
+
+/// Probe known API paths with an empty request body. A 400/401/422 means the
+/// endpoint exists; only 404/405 rule it out. No model request is sent.
+pub fn detect_api_endpoint_types(base_url: &str, api_key: &str) -> Result<Vec<String>> {
+    let base = base_url.trim();
+    if base.is_empty() {
+        return Err(AppError::InvalidArg("base URL is required".into()));
+    }
+    if !looks_http_url(base) {
+        return Err(AppError::InvalidArg("base URL must be http(s)".into()));
+    }
+    let key = api_key.trim();
+    if key.is_empty() {
+        return Err(AppError::InvalidArg("API key is required".into()));
+    }
+
+    Ok([
+        ApiEndpointType::Messages,
+        ApiEndpointType::Responses,
+        ApiEndpointType::ChatCompletions,
+    ]
+    .into_iter()
+    .filter(|endpoint| probe_api_endpoint(base, key, *endpoint))
+    .map(ApiEndpointType::as_str)
+    .map(str::to_string)
+    .collect())
 }
 
 /// GET `{base}/v1/models` with `Authorization: Bearer`. No saved provider id.

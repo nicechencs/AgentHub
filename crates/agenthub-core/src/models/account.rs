@@ -178,6 +178,11 @@ impl Account {
         json_str(&self.extra, "source")
     }
 
+    /// `extra.home` — `route_pool` stays off the Connections ticket list.
+    pub fn home(&self) -> Option<&str> {
+        json_str(&self.extra, "home")
+    }
+
     pub fn extra_provider(&self) -> Option<&str> {
         json_str(&self.extra, "provider")
     }

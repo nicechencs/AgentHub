@@ -277,11 +277,21 @@ export interface DefaultRoutePoolList {
   pools: DefaultRoutePoolOverview[];
 }
 
+export interface AttachPoolOwnedAuthorizationRequest {
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+  targetAgentId: AgentId;
+  surface: RoutePoolSurface;
+}
+
 export interface AdapterPort {
   analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
   listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
   listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
+  attachPoolOwnedAuthorization(
+    request: AttachPoolOwnedAuthorizationRequest,
+  ): Promise<DefaultRoutePoolOverview>;
   enrollNativeToGateway(profileId: string): Promise<DefaultRoutePoolOverview>;
   apply(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
   remove(profileId: string): Promise<void>;

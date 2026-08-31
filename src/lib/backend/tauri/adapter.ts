@@ -94,6 +94,12 @@ export function createTauriAdapterPort(): AdapterPort {
       const wire = await invokeAdapter<DefaultRoutePoolListWire>('list_default_route_pools', {});
       return mapDefaultRoutePoolList(wire);
     },
+    async attachPoolOwnedAuthorization(request) {
+      const wire = await invokeAdapter<DefaultRoutePoolOverviewWire>('attach_pool_owned_authorization', {
+        ...request,
+      });
+      return mapDefaultRoutePoolOverview(wire);
+    },
     async enrollNativeToGateway(profileId) {
       const wire = await invokeAdapter<DefaultRoutePoolOverviewWire>('enroll_native_to_gateway', {
         profileId,

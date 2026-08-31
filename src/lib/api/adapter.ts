@@ -9,6 +9,7 @@ import type {
   AdapterProfileFilter,
   AdapterRouteAnalysis,
   AdapterRouteRequest,
+  AttachPoolOwnedAuthorizationRequest,
   DefaultRoutePoolList,
   DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
@@ -32,6 +33,7 @@ export type {
   AdapterServiceImpact,
   AdapterSourceKind,
   AdapterSupport,
+  AttachPoolOwnedAuthorizationRequest,
 } from '@/lib/backend/contracts/adapter';
 
 export async function analyzeAdapter(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis> {
@@ -51,6 +53,19 @@ export async function listAdapterProfiles(filter?: AdapterProfileFilter): Promis
 /** Default-pool overview for Routes. Flag off returns `{ enabled: false, pools: [] }`. */
 export async function listDefaultRoutePools(): Promise<DefaultRoutePoolList> {
   return getBackend().adapter.listDefaultRoutePools();
+}
+
+/** Enroll an authorization into the default auth pool and keep it off Connections. */
+export async function attachPoolOwnedAuthorization(
+  request: AttachPoolOwnedAuthorizationRequest,
+): Promise<DefaultRoutePoolOverview> {
+  const result = await getBackend().adapter.attachPoolOwnedAuthorization(request);
+  try {
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+  } catch {
+    // Write succeeded; the pool store keeps previous rows if refresh fails.
+  }
+  return result;
 }
 
 /** Convert a direct login into the target Agent default local route. */

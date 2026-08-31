@@ -9,8 +9,9 @@ import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/con
 export function useRoutePoolState(input: {
   profiles: readonly AdapterProfile[];
   detailTarget: AdapterProfile | null;
+  reloadKey?: number;
 }) {
-  const { profiles, detailTarget } = input;
+  const { profiles, detailTarget, reloadKey = 0 } = input;
   const [routePoolV2, setRoutePoolV2] = useState(false);
   const [defaultPools, setDefaultPools] = useState<DefaultRoutePoolOverview[]>([]);
   const [nativeCanApplyById, setNativeCanApplyById] = useState<Record<string, boolean>>({});
@@ -31,7 +32,7 @@ export function useRoutePoolState(input: {
     return () => {
       cancelled = true;
     };
-  }, [profiles]);
+  }, [profiles, reloadKey]);
 
   useEffect(() => {
     if (!routePoolV2 || !detailTarget) return;

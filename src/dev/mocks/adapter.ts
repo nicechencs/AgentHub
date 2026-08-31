@@ -11,12 +11,16 @@ import {
   type AdapterProfile,
   type AdapterProfileFilter,
   type DefaultRoutePoolOverview,
+  type RoutePoolDialect,
+  type RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
 import { delay } from './delay';
 import { analyze } from './adapter/analyze';
 import { materializeApply } from './adapter/apply';
 import { buildPlan } from './adapter/plan';
 import type { MockAdapterSourceResolver, MockAdapterState } from './adapter/types';
+import { getMockAccountById, upsertMockAccount } from './account';
+import { getMockProviderById, upsertMockProvider } from './provider';
 
 const adapterStates = new Set<MockAdapterState>();
 
@@ -211,6 +215,103 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           members: pool.members.map((member) => ({ ...member })),
           listedModels: [...(pool.listedModels ?? [])],
         })),
+      };
+    },
+    async attachPoolOwnedAuthorization(request) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      if (request.sourceKind === 'provider') {
+        const provider = getMockProviderById(request.sourceId);
+        if (!provider) {
+          throw adapterCommandError({
+            code: 'not_found',
+            message: `provider not found: ${request.sourceId}`,
+            retryable: false,
+          });
+        }
+        if (provider.agentId !== request.targetAgentId) {
+          throw adapterCommandError({
+            code: 'invalid_arg',
+            message: 'authorization does not belong to this Agent',
+            retryable: false,
+          });
+        }
+        if (provider.isCurrent) {
+          throw adapterCommandError({
+            code: 'invalid_arg',
+            message: 'the live login cannot be pool-only',
+            retryable: false,
+          });
+        }
+        upsertMockProvider({ ...provider, home: 'route_pool' });
+      } else {
+        const account = getMockAccountById(request.sourceId);
+        if (!account) {
+          throw adapterCommandError({
+            code: 'not_found',
+            message: `account not found: ${request.sourceId}`,
+            retryable: false,
+          });
+        }
+        if (account.agentId !== request.targetAgentId) {
+          throw adapterCommandError({
+            code: 'invalid_arg',
+            message: 'authorization does not belong to this Agent',
+            retryable: false,
+          });
+        }
+        if (account.isCurrent) {
+          throw adapterCommandError({
+            code: 'invalid_arg',
+            message: 'the live login cannot be pool-only',
+            retryable: false,
+          });
+        }
+        upsertMockAccount({ ...account, home: 'route_pool' });
+      }
+      const dialect: RoutePoolDialect =
+        request.targetAgentId === 'claude'
+        || request.targetAgentId === 'codex'
+        || request.targetAgentId === 'grok'
+        || request.targetAgentId === 'kimi'
+        || request.targetAgentId === 'dsh'
+          ? request.targetAgentId
+          : 'generic';
+      const surface: RoutePoolSurface = request.surface;
+      let pool = state.defaultPools.find((item) => (
+        item.targetAgentId === request.targetAgentId && item.surface === surface
+      ));
+      if (!pool) {
+        pool = {
+          id: `pool-${request.targetAgentId}-${surface}`,
+          targetAgentId: request.targetAgentId,
+          surface,
+          dialect,
+          v2Enrolled: false,
+          members: [],
+          listedModels: [],
+        };
+        state.defaultPools.push(pool);
+      }
+      if (!pool.members.some((member) => (
+        member.sourceKind === request.sourceKind && member.sourceId === request.sourceId
+      ))) {
+        pool.members.push({
+          sourceKind: request.sourceKind,
+          sourceId: request.sourceId,
+          enabled: true,
+        });
+      }
+      return {
+        ...pool,
+        members: pool.members.map((member) => ({ ...member })),
+        listedModels: [...(pool.listedModels ?? [])],
       };
     },
     async enrollNativeToGateway(profileId) {

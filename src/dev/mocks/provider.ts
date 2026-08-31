@@ -189,6 +189,14 @@ export function createMockProviderPort(): ProviderPort {
       await delay(randomLatency());
       return mockRemoteModelIds(baseUrl, providerId);
     },
+
+    async detectApiEndpointTypes(baseUrl) {
+      await delay(randomLatency());
+      if (baseUrl.includes('claude')) return ['messages'];
+      if (baseUrl.includes('grok')) return ['responses', 'chat_completions'];
+      if (baseUrl.includes('fail')) throw new Error('endpoint detection failed');
+      return ['responses', 'chat_completions'];
+    },
   };
 }
 

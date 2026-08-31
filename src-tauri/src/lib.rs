@@ -104,6 +104,7 @@ pub fn run() {
             commands::adapter::unbind_ticket,
             commands::adapter::list_adapter_profiles,
             commands::adapter::list_default_route_pools,
+            commands::adapter::attach_pool_owned_authorization,
             commands::adapter::enroll_native_to_gateway,
             commands::adapter::apply_adapter,
             commands::adapter::start_adapter_bridge,
@@ -155,6 +156,7 @@ pub fn run() {
             commands::provider::undo_switch_provider,
             commands::provider::test_provider_latency,
             commands::provider::list_remote_openai_models,
+            commands::provider::detect_api_endpoint_types,
             commands::provider::list_remote_openai_models_for_provider,
             // Skill
             commands::skill::list_skills,

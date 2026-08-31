@@ -196,6 +196,32 @@ describe('Tauri adapter route port', () => {
     expect(enrolled.v2Enrolled).toBe(true);
     expect(JSON.stringify(enrolled)).not.toContain('hubToken');
   });
+
+  it('forwards attach_pool_owned_authorization without a hub token', async () => {
+    invokeMock.mockResolvedValueOnce({
+      id: 'pool-1',
+      targetAgentId: 'codex',
+      surface: 'responses',
+      dialect: 'codex',
+      v2Enrolled: false,
+      members: [{ sourceKind: 'provider', sourceId: 'codex-api', enabled: true }],
+    });
+    const port = createTauriAdapterPort();
+    const attached = await port.attachPoolOwnedAuthorization({
+      sourceKind: 'provider',
+      sourceId: 'codex-api',
+      targetAgentId: 'codex',
+      surface: 'responses',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('attach_pool_owned_authorization', {
+      sourceKind: 'provider',
+      sourceId: 'codex-api',
+      targetAgentId: 'codex',
+      surface: 'responses',
+    });
+    expect(attached.members[0]?.sourceId).toBe('codex-api');
+    expect(JSON.stringify(attached)).not.toContain('hubToken');
+  });
 });
 
 describe('mapAdapterInvokeError', () => {

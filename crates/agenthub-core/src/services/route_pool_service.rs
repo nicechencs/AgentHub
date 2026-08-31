@@ -12,15 +12,18 @@ use super::AdapterRouteService;
 use crate::bridge::BridgeRuntimeHost;
 use crate::error::{AppError, Result};
 use crate::models::{
-    choose_default_pool_id, enroll_native_plan_is_open, feature_flag_enabled, generate_hub_token,
-    list_local_bridge_models, product_flag_enabled, AdapterApplyPlan, AdapterProfile,
-    AdapterProfileFilter, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId,
-    DefaultRoutePoolList, DefaultRoutePoolOverview, ModelRouteRule, RouteDownstreamDialect,
-    RouteDownstreamSurface, RouteMember, RouteMemberOverview, RoutePool, RouteSchedulePolicy,
+    authorization_is_route_pool_home, choose_default_pool_id, enroll_native_plan_is_open,
+    feature_flag_enabled, generate_hub_token, list_local_bridge_models, product_flag_enabled,
+    set_authorization_route_pool_home, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter,
+    AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId, DefaultRoutePoolList,
+    DefaultRoutePoolOverview, ModelRouteRule, RouteDownstreamDialect, RouteDownstreamSurface,
+    RouteMember, RouteMemberOverview, RoutePool, RouteSchedulePolicy,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
-use crate::storage::{binding_get_conn, AdapterProfileRepo, Database, RoutePoolRepo};
+use crate::storage::{
+    binding_get_conn, AccountRepo, AdapterProfileRepo, Database, ProviderRepo, RoutePoolRepo,
+};
 
 #[cfg(test)]
 mod tests;
@@ -29,6 +32,8 @@ pub struct RoutePoolService {
     db: Database,
     pools: RoutePoolRepo,
     profiles: AdapterProfileRepo,
+    accounts: AccountRepo,
+    providers: ProviderRepo,
 }
 
 impl RoutePoolService {
@@ -36,6 +41,8 @@ impl RoutePoolService {
         Self {
             pools: RoutePoolRepo::new(db.clone()),
             profiles: AdapterProfileRepo::new(db.clone()),
+            accounts: AccountRepo::new(db.clone()),
+            providers: ProviderRepo::new(db.clone()),
             db,
         }
     }
@@ -187,6 +194,18 @@ impl RoutePoolService {
                 "native enroll persist requires a local_bridge profile".into(),
             ));
         }
+        let previous_default_id = RouteDownstreamSurface::for_agent(bound_profile.target_agent_id)
+            .and_then(|surface| {
+                self.pools
+                    .list_pools(Some(bound_profile.target_agent_id), Some(surface))
+                    .ok()
+            })
+            .and_then(|pools| {
+                pools
+                    .into_iter()
+                    .find(|pool| pool.is_default && pool.id != bound_profile.id)
+                    .map(|pool| pool.id)
+            });
         self.ensure_legacy_pool(bound_profile)?;
         let enrolled = self.enroll_v2(&bound_profile.id, port)?;
         // Bind just made this login the Agent's active route; it is the default
@@ -197,7 +216,67 @@ impl RoutePoolService {
         } else {
             self.pools.set_default(&enrolled.id)?
         };
+        if let Some(previous_id) = previous_default_id {
+            if previous_id != pool.id {
+                self.copy_members(&previous_id, &pool.id)?;
+            }
+        }
         self.overview_from_pool(&pool)
+    }
+
+    /// Create or reuse the default pool for this Agent/surface, mark the
+    /// authorization as pool-owned, and enroll it as a member.
+    ///
+    /// Pool-owned rows stay off the Connections ticket list until the user
+    /// later associates them with a tool.
+    pub fn attach_pool_owned_authorization(
+        &self,
+        target_agent_id: AgentId,
+        surface: RouteDownstreamSurface,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<DefaultRoutePoolOverview> {
+        self.require_enabled()?;
+        self.stamp_route_pool_home(target_agent_id, source_kind, source_id)?;
+        let pool = self.ensure_default_pool(target_agent_id, surface)?;
+        let members = self.pools.list_members(&pool.id)?;
+        if !members.iter().any(|member| {
+            member.source_kind == source_kind && member.source_id == source_id
+        }) {
+            self.add_member(&pool.id, source_kind, source_id)?;
+        }
+        let pool = self.pools.get_pool(&pool.id)?.ok_or_else(|| {
+            AppError::message("db.route_pool", "pool missing after attach")
+        })?;
+        self.overview_from_pool(&pool)
+    }
+
+    pub fn ensure_default_pool(
+        &self,
+        target_agent_id: AgentId,
+        surface: RouteDownstreamSurface,
+    ) -> Result<RoutePool> {
+        self.require_enabled()?;
+        let existing = self.pools.list_pools(Some(target_agent_id), Some(surface))?;
+        if let Some(pool) = existing.into_iter().find(|pool| pool.is_default) {
+            return Ok(pool);
+        }
+        let now = now();
+        self.pools.create_pool(&RoutePool {
+            id: Uuid::new_v4().to_string(),
+            target_agent_id,
+            downstream_surface: surface,
+            downstream_dialect: RouteDownstreamDialect::for_agent(target_agent_id),
+            hub_token: generate_hub_token()?,
+            schedule_policy: RouteSchedulePolicy::PriorityFailover,
+            is_default: true,
+            v2_enrolled: false,
+            policy_revision: 1,
+            auto_start: true,
+            gateway_port: None,
+            created_at: now.clone(),
+            updated_at: now,
+        })
     }
 
     pub fn list_members(&self, pool_id: &str) -> Result<Vec<RouteMember>> {
@@ -533,6 +612,72 @@ impl RoutePoolService {
             created_at: now.clone(),
             updated_at: now,
         })?;
+        Ok(())
+    }
+
+    fn stamp_route_pool_home(
+        &self,
+        target_agent_id: AgentId,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<()> {
+        match source_kind {
+            AdapterSourceKind::Provider => {
+                let mut provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("provider not found: {source_id}"))
+                })?;
+                if provider.agent_id != target_agent_id {
+                    return Err(AppError::InvalidArg(
+                        "authorization does not belong to this Agent".into(),
+                    ));
+                }
+                if provider.is_current {
+                    return Err(AppError::InvalidArg(
+                        "the live login cannot be pool-only".into(),
+                    ));
+                }
+                if authorization_is_route_pool_home(&provider.meta) {
+                    return Ok(());
+                }
+                set_authorization_route_pool_home(&mut provider.meta);
+                provider.updated_at = now();
+                self.providers.update(&provider)?;
+            }
+            AdapterSourceKind::Account => {
+                let mut account = self.accounts.get_by_id(source_id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("account not found: {source_id}"))
+                })?;
+                if account.agent_id != target_agent_id {
+                    return Err(AppError::InvalidArg(
+                        "authorization does not belong to this Agent".into(),
+                    ));
+                }
+                if account.is_current {
+                    return Err(AppError::InvalidArg(
+                        "the live login cannot be pool-only".into(),
+                    ));
+                }
+                if authorization_is_route_pool_home(&account.extra) {
+                    return Ok(());
+                }
+                set_authorization_route_pool_home(&mut account.extra);
+                account.updated_at = now();
+                self.accounts.update(&account)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn copy_members(&self, from_pool_id: &str, to_pool_id: &str) -> Result<()> {
+        let existing = self.pools.list_members(to_pool_id)?;
+        for member in self.pools.list_members(from_pool_id)? {
+            if existing.iter().any(|row| {
+                row.source_kind == member.source_kind && row.source_id == member.source_id
+            }) {
+                continue;
+            }
+            self.add_member(to_pool_id, member.source_kind, &member.source_id)?;
+        }
         Ok(())
     }
 
