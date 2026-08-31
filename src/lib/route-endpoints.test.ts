@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  LOCAL_ENDPOINT_KINDS,
   ROUTE_ENDPOINTS,
   formatRouteEndpointHttpUrl,
+  localEndpointKindForTargetAgent,
+  localEndpointKindFromPool,
+  localEndpointPath,
+  localEndpointSurface,
   routeEndpointBrandAgentId,
   routeEndpointHttpParts,
   routeEndpointIdForBinding,
@@ -19,6 +24,28 @@ describe('unified route endpoints', () => {
       '/v1/responses',
       '/v1/chat/completions',
     ]);
+  });
+
+  it('splits Responses into Codex and Grok UI kinds that share the path', () => {
+    expect(LOCAL_ENDPOINT_KINDS.map((item) => [item.kind, item.path, item.surface])).toEqual([
+      ['messages', '/v1/messages', 'messages'],
+      ['responses_codex', '/v1/responses', 'responses'],
+      ['responses_grok', '/v1/responses', 'responses'],
+      ['chat_completions', '/v1/chat/completions', 'chat_completions'],
+    ]);
+    expect(localEndpointKindForTargetAgent('codex')).toBe('responses_codex');
+    expect(localEndpointKindForTargetAgent('grok')).toBe('responses_grok');
+    expect(localEndpointPath('responses_grok')).toBe('/v1/responses');
+    expect(localEndpointSurface('responses_codex')).toBe('responses');
+    expect(localEndpointKindFromPool({
+      surface: 'responses',
+      dialect: 'grok',
+      targetAgentId: 'grok',
+    })).toBe('responses_grok');
+    expect(localEndpointKindFromPool({
+      surface: 'responses',
+      dialect: 'codex',
+    })).toBe('responses_codex');
   });
 
   it('maps writer agents onto the surface they consume', () => {

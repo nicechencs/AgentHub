@@ -12,10 +12,14 @@ import type {
   RouteMemberOverview,
   RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
-import { ROUTE_ENDPOINTS } from '@/lib/route-endpoints';
+import {
+  LOCAL_ENDPOINT_KINDS,
+  localEndpointKindFromPool,
+  type LocalEndpointKind,
+} from '@/lib/route-endpoints';
 import type { AgentId } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
-import { routePoolSurfaceLabel } from '@/pages/bridges/route-pool-view-model';
+import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
 
 export const BOARD_INBOUND_SNAPSHOT_LIMIT = 8;
 export const BOARD_INBOUND_WINDOW = 20;
@@ -69,8 +73,9 @@ export type BoardFleetSummary = {
   label: string;
 };
 
-/** One card per downstream endpoint type, independent of writer Agent. */
+/** One card per UI endpoint kind (Responses split into Codex / Grok). */
 export type BoardEndpointTypeRow = {
+  kind: LocalEndpointKind;
   surface: RoutePoolSurface;
   path: string;
   oauthCount: number;
@@ -89,17 +94,18 @@ function memberUsable(
   return member.availability == null || member.availability === 'ready';
 }
 
-/** Unique official-login / API Key counts for one endpoint type. */
+/** Unique official-login / API Key counts for one endpoint kind. */
 export function buildBoardEndpointTypeRows(
   pools: readonly DefaultRoutePoolOverview[],
   hiddenTargetIds: ReadonlySet<string> = new Set(),
 ): BoardEndpointTypeRow[] {
-  return ROUTE_ENDPOINTS.map((endpoint) => {
+  return LOCAL_ENDPOINT_KINDS.map((endpoint) => {
     const usable = new Map<string, boolean>();
     const kindByKey = new Map<string, 'oauth' | 'apikey'>();
     for (const pool of pools) {
-      if (pool.surface !== endpoint.id) continue;
       if (hiddenTargetIds.has(pool.targetAgentId)) continue;
+      const poolKind = localEndpointKindFromPool(pool);
+      if (poolKind !== endpoint.kind) continue;
       for (const member of pool.members) {
         const key = `${member.sourceKind}:${member.sourceId}`;
         kindByKey.set(key, member.sourceKind === 'account' ? 'oauth' : 'apikey');
@@ -115,7 +121,8 @@ export function buildBoardEndpointTypeRows(
       else apikeyCount += 1;
     }
     return {
-      surface: endpoint.id,
+      kind: endpoint.kind,
+      surface: endpoint.surface,
       path: endpoint.path,
       oauthCount,
       apikeyCount,
@@ -193,10 +200,14 @@ export function boardAttentionReasonLabel(
 }
 
 export function boardPoolLabel(
-  pool: Pick<DefaultRoutePoolOverview, 'targetAgentId' | 'surface'>,
+  pool: Pick<DefaultRoutePoolOverview, 'targetAgentId' | 'surface' | 'dialect'>,
   t?: TranslateFn,
 ): string {
-  return `${agentDisplayName(pool.targetAgentId)} · ${routePoolSurfaceLabel(pool.surface, t)}`;
+  const kind = localEndpointKindFromPool(pool);
+  const surfaceLabel = kind
+    ? localEndpointKindLabel(kind, t)
+    : pool.surface;
+  return `${agentDisplayName(pool.targetAgentId)} · ${surfaceLabel}`;
 }
 
 /** Local listeners that belong to this connection-pool entry. */
