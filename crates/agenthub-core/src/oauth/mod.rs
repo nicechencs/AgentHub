@@ -455,6 +455,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn grok_login_uses_device_code_instead_of_pkce() {
+        let err = start_oauth(AgentId::Grok, false, None).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("device-code"),
+            "Grok must not start loopback PKCE: {msg}"
+        );
+        assert!(msg.contains("start_device_oauth"), "{msg}");
+    }
+
+    #[test]
     fn unimplemented_pi_login_does_not_redirect_to_device_code() {
         let err = start_oauth(AgentId::Pi, false, Some("github-copilot")).unwrap_err();
         let msg = err.to_string();

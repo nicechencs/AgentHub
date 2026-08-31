@@ -29,6 +29,17 @@ describe('mock OAuth sessions', () => {
     expect(acc.label).toMatch(/^pi:anthropic · /);
   });
 
+  it('lists Grok official login as device-code, not browser PKCE', async () => {
+    const accounts = createMockAccountPort();
+    const opts = await accounts.listOAuthOptions('grok');
+    expect(opts).toHaveLength(1);
+    expect(opts[0]).toMatchObject({
+      id: 'xai',
+      agentId: 'grok',
+      flow: 'deviceCode',
+    });
+  });
+
   it('finishDeviceOAuth uses the started device session instead of hardcoding pi/xai', async () => {
     const accounts = createMockAccountPort();
     const start = await accounts.startDeviceOAuth('grok', 'xai');

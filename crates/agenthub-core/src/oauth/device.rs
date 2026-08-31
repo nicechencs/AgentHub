@@ -1,26 +1,26 @@
 //! OAuth 2.0 device-code flow (RFC 8628) for providers that do not use loopback PKCE.
 //!
-//! Currently used for Pi → xAI (matches `@earendil-works/pi-ai` xai OAuth).
+//! Used for Grok (official CLI client) and Pi → xAI (same client as `@earendil-works/pi-ai`).
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::catalog::limits::{OAUTH_REFRESH_SKEW_MS, OAUTH_SESSION_TTL};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
-use crate::models::{Account, AgentId};
+use crate::models::{Account, AccountInput, AccountKind, AgentId};
 use crate::services::AccountService;
 
-use super::catalog::pi_auth_json_key;
+use super::catalog::is_device_code_option;
+use super::providers::{
+    XAI, XAI_DEVICE_CLIENT_ID, XAI_DEVICE_CODE_URL, XAI_DEVICE_ISSUER, XAI_DEVICE_SCOPE,
+    XAI_DEVICE_TOKEN_URL,
+};
 
-const XAI_CLIENT_ID: &str = "b1a00492-073a-47ea-816f-4c329264a828";
-const XAI_SCOPE: &str = "openid profile email offline_access grok-cli:access api:access";
-const XAI_DEVICE_CODE_URL: &str = "https://auth.x.ai/oauth2/device/code";
-const XAI_TOKEN_URL: &str = "https://auth.x.ai/oauth2/token";
 const DEFAULT_POLL_INTERVAL_SECS: u64 = 5;
 const DEVICE_COMPLETION_TTL_SECS: u64 = 300;
 
@@ -58,7 +58,6 @@ pub enum DeviceOAuthStatus {
 
 #[derive(Clone)]
 struct DeviceSession {
-    #[allow(dead_code)]
     agent: AgentId,
     provider_key: String,
     device_code: String,
@@ -171,28 +170,52 @@ pub fn device_oauth_agent(state: &str) -> Result<AgentId> {
         .ok_or_else(|| AppError::NotFound("device oauth session not found".into()))
 }
 
-/// Start xAI (or future) device-code login for Pi.
+struct DeviceOAuthTarget {
+    provider_key: &'static str,
+    referrer: &'static str,
+}
+
+fn resolve_device_oauth_target(agent: AgentId, provider_key: &str) -> Result<DeviceOAuthTarget> {
+    let key = provider_key.trim();
+    let key_opt = if key.is_empty() { None } else { Some(key) };
+    if !is_device_code_option(agent, key_opt) {
+        return Err(match agent {
+            AgentId::Pi => AppError::Unsupported(format!(
+                "device-code flow not implemented for provider '{key}' yet; use Pi CLI `/login {key}`"
+            )),
+            AgentId::Grok => AppError::InvalidArg(format!(
+                "Grok device-code login does not accept provider '{key}'"
+            )),
+            _ => AppError::Unsupported(
+                "device-code OAuth is currently only wired for Grok and Pi xAI".into(),
+            ),
+        });
+    }
+    match agent {
+        AgentId::Pi => Ok(DeviceOAuthTarget {
+            provider_key: "xai",
+            referrer: "pi",
+        }),
+        AgentId::Grok => Ok(DeviceOAuthTarget {
+            provider_key: "xai",
+            referrer: "grok",
+        }),
+        _ => Err(AppError::Unsupported(
+            "device-code OAuth is currently only wired for Grok and Pi xAI".into(),
+        )),
+    }
+}
+
+/// Start xAI device-code login for Grok or Pi.
 pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOAuthStart> {
-    if agent != AgentId::Pi {
-        return Err(AppError::Unsupported(
-            "device-code OAuth is currently only wired for Pi".into(),
-        ));
-    }
-    let key = pi_auth_json_key(provider_key).ok_or_else(|| {
-        AppError::InvalidArg(format!("unknown Pi OAuth provider: {provider_key}"))
-    })?;
-    if key != "xai" {
-        return Err(AppError::Unsupported(format!(
-            "device-code flow not implemented for provider '{key}' yet; use Pi CLI `/login {key}`"
-        )));
-    }
+    let target = resolve_device_oauth_target(agent, provider_key)?;
 
     let body = post_form(
         XAI_DEVICE_CODE_URL,
         &[
-            ("client_id", XAI_CLIENT_ID),
-            ("scope", XAI_SCOPE),
-            ("referrer", "pi"),
+            ("client_id", XAI_DEVICE_CLIENT_ID),
+            ("scope", XAI_DEVICE_SCOPE),
+            ("referrer", target.referrer),
         ],
     )?;
 
@@ -219,7 +242,7 @@ pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOA
     let state = format!("dev-{}", uuid::Uuid::new_v4());
     let session = DeviceSession {
         agent,
-        provider_key: key.to_string(),
+        provider_key: target.provider_key.to_string(),
         device_code,
         interval: Duration::from_secs(interval),
         expires_at: Instant::now() + Duration::from_secs(expires_in),
@@ -250,14 +273,14 @@ pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOA
         module = targets::OAUTH,
         op = "device_start",
         agent = agent.as_str(),
-        provider = key,
+        provider = target.provider_key,
         "device-code oauth started"
     );
 
     Ok(DeviceOAuthStart {
         state,
         agent_id: agent,
-        provider_key: key.to_string(),
+        provider_key: target.provider_key.to_string(),
         user_code,
         verification_uri,
         verification_uri_complete,
@@ -270,10 +293,10 @@ pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOA
 pub fn poll_device_oauth(state: &str) -> Result<DeviceOAuthPoll> {
     poll_device_oauth_with(state, |device_code| {
         post_form(
-            XAI_TOKEN_URL,
+            XAI_DEVICE_TOKEN_URL,
             &[
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-                ("client_id", XAI_CLIENT_ID),
+                ("client_id", XAI_DEVICE_CLIENT_ID),
                 ("device_code", device_code),
             ],
         )
@@ -512,26 +535,14 @@ pub fn complete_device_oauth(accounts: &AccountService, state: &str) -> Result<A
     drop(guard);
 
     let attempt = (|| -> Result<Account> {
-        let access = snapshot
-            .access
-            .as_deref()
-            .ok_or_else(|| AppError::message("oauth.device", "missing access token"))?;
-        let expires_at = snapshot.expires_at_ms.and_then(|ms| {
-            chrono::DateTime::from_timestamp(ms / 1000, 0).map(|dt| dt.to_rfc3339())
-        });
-        let live = crate::adapters::pi_auth::live_account_from_oauth_tokens(
-            &snapshot.provider_key,
-            access,
-            snapshot.refresh.as_deref(),
-            expires_at.as_deref(),
-            None,
-            None,
-        )?;
-        let label = live
-            .label_hint
-            .clone()
-            .unwrap_or_else(|| format!("pi:{}", snapshot.provider_key));
-        accounts.persist_pi_oauth_live(live, label)
+        match snapshot.agent {
+            AgentId::Pi => persist_pi_device_account(accounts, &snapshot),
+            AgentId::Grok => persist_grok_device_account(accounts, &snapshot),
+            other => Err(AppError::Unsupported(format!(
+                "device-code OAuth completion is not wired for {}",
+                other.as_str()
+            ))),
+        }
     })();
 
     let account = match attempt {
@@ -560,12 +571,86 @@ pub fn complete_device_oauth(accounts: &AccountService, state: &str) -> Result<A
     tracing::info!(
         module = targets::OAUTH,
         op = "device_complete",
-        agent = "pi",
+        agent = snapshot.agent.as_str(),
         provider = %snapshot.provider_key,
         account_id = %account.id,
         "device-code oauth stored"
     );
     Ok(account)
+}
+
+fn persist_pi_device_account(
+    accounts: &AccountService,
+    snapshot: &DeviceSession,
+) -> Result<Account> {
+    let access = snapshot
+        .access
+        .as_deref()
+        .ok_or_else(|| AppError::message("oauth.device", "missing access token"))?;
+    let expires_at = snapshot
+        .expires_at_ms
+        .and_then(|ms| chrono::DateTime::from_timestamp(ms / 1000, 0).map(|dt| dt.to_rfc3339()));
+    let live = crate::adapters::pi_auth::live_account_from_oauth_tokens(
+        &snapshot.provider_key,
+        access,
+        snapshot.refresh.as_deref(),
+        expires_at.as_deref(),
+        None,
+        None,
+    )?;
+    let label = live
+        .label_hint
+        .clone()
+        .unwrap_or_else(|| format!("pi:{}", snapshot.provider_key));
+    accounts.persist_pi_oauth_live(live, label)
+}
+
+fn grok_device_account_input(snapshot: &DeviceSession) -> Result<AccountInput> {
+    let access = snapshot
+        .access
+        .as_deref()
+        .ok_or_else(|| AppError::message("oauth.device", "missing access token"))?;
+    let mut body = json!({
+        "access_token": access,
+        "token_type": "Bearer",
+    });
+    if let Some(obj) = body.as_object_mut() {
+        if let Some(refresh) = snapshot
+            .refresh
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            obj.insert("refresh_token".into(), json!(refresh));
+        }
+        if let Some(ms) = snapshot.expires_at_ms {
+            if let Some(expires_at) = chrono::DateTime::from_timestamp(ms / 1000, 0) {
+                obj.insert("expires_at".into(), json!(expires_at.to_rfc3339()));
+            }
+        }
+    }
+    let bundle = XAI.bundle_from_token_json(body)?;
+    let mut credentials = bundle.credentials;
+    if let Some(obj) = credentials.as_object_mut() {
+        obj.insert("oidc_issuer".into(), json!(XAI_DEVICE_ISSUER));
+        obj.insert("oidc_client_id".into(), json!(XAI_DEVICE_CLIENT_ID));
+        obj.insert("auth_mode".into(), json!("oidc"));
+    }
+    let label = bundle.label_hint.unwrap_or_else(|| "Grok · OAuth".into());
+    Ok(AccountInput {
+        agent_id: AgentId::Grok,
+        kind: AccountKind::Oauth,
+        label,
+        credentials,
+        extra: bundle.extra,
+        is_current: false,
+    })
+}
+
+fn persist_grok_device_account(
+    accounts: &AccountService,
+    snapshot: &DeviceSession,
+) -> Result<Account> {
+    accounts.create(grok_device_account_input(snapshot)?)
 }
 
 fn post_form(url: &str, fields: &[(&str, &str)]) -> Result<Value> {

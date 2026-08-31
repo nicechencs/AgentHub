@@ -1860,7 +1860,7 @@ export const zh = {
       option: {
         claude: { label: "Claude Pro/Max", description: "用浏览器登录 Claude 订阅" },
         codex: { label: "ChatGPT Plus/Pro", description: "用浏览器登录 ChatGPT 订阅" },
-        grok: { label: "Grok / xAI", description: "用浏览器登录 Grok 订阅" },
+        grok: { label: "Grok / xAI", description: "用设备码登录 Grok 订阅" },
         piAnthropic: { label: "Claude Pro/Max", description: "浏览器登录，写入 Pi 的登录列表" },
         piCodex: { label: "ChatGPT Plus/Pro (Codex)", description: "浏览器登录，写入 Pi 的登录列表" },
         piXai: { label: "xAI (Grok 订阅)", description: "设备码登录，写入 Pi 的登录列表" },

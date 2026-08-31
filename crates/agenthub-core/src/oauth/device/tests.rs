@@ -312,3 +312,62 @@ fn complete_session_is_purged_after_completion_ttl() {
         .expect("device store lock")
         .contains_key(state));
 }
+
+#[test]
+fn resolve_device_oauth_target_accepts_grok_and_pi_xai() {
+    let grok = resolve_device_oauth_target(AgentId::Grok, "").expect("grok");
+    assert_eq!(grok.provider_key, "xai");
+    assert_eq!(grok.referrer, "grok");
+    assert_eq!(
+        resolve_device_oauth_target(AgentId::Grok, "XAI")
+            .expect("alias")
+            .referrer,
+        "grok"
+    );
+    let pi = resolve_device_oauth_target(AgentId::Pi, "xai").expect("pi");
+    assert_eq!(pi.provider_key, "xai");
+    assert_eq!(pi.referrer, "pi");
+    assert!(resolve_device_oauth_target(AgentId::Grok, "claude").is_err());
+    assert!(resolve_device_oauth_target(AgentId::Claude, "").is_err());
+    assert!(resolve_device_oauth_target(AgentId::Pi, "anthropic").is_err());
+}
+
+#[test]
+fn grok_device_account_input_uses_official_cli_client() {
+    let (_, mut value) = session(
+        "grok-input",
+        DeviceOAuthStatus::Complete,
+        Instant::now() + Duration::from_secs(60),
+    );
+    value.agent = AgentId::Grok;
+    value.provider_key = "xai".into();
+    let input = grok_device_account_input(&value).expect("grok input");
+    assert_eq!(input.agent_id, AgentId::Grok);
+    assert_eq!(input.kind, crate::models::AccountKind::Oauth);
+    assert_eq!(
+        input
+            .credentials
+            .get("access_token")
+            .and_then(|v| v.as_str()),
+        Some("access-secret")
+    );
+    assert_eq!(
+        input
+            .credentials
+            .get("oidc_client_id")
+            .and_then(|v| v.as_str()),
+        Some(super::super::providers::XAI_DEVICE_CLIENT_ID)
+    );
+    assert_eq!(
+        input
+            .credentials
+            .get("oidc_issuer")
+            .and_then(|v| v.as_str()),
+        Some(super::super::providers::XAI_DEVICE_ISSUER)
+    );
+    assert_eq!(
+        input.extra.get("source").and_then(|v| v.as_str()),
+        Some("oauth_pkce")
+    );
+    assert!(!input.is_current);
+}
