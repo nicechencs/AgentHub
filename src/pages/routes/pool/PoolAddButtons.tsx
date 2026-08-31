@@ -1,6 +1,7 @@
 /**
  * 授权池页右上角的接入入口：先在浮动页面中选择接入方式，再打开对应的配置页面。
  * OAuth 只提供官方登录支持的三个 Agent；API 接入按下游接口类型提供固定选项。
+ * 这里接入的授权只给授权池用，不会出现在连接页。
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import { AgentLogo } from '@/components/shared/AgentLogo';
@@ -11,18 +12,19 @@ import { SecretInput } from '@/components/shared/SecretInput';
 import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/ui/toast';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import type { AgentId } from '@/lib/types';
-import { attachPoolOwnedAuthorization } from '@/lib/api/adapter';
+import { attachPoolOwnedAuthorization, syncConnectionAuthorizations } from '@/lib/api/adapter';
 import { detectApiEndpointTypes } from '@/lib/api/provider';
 import type { AdapterSourceKind, DetectedApiEndpointType, RoutePoolSurface } from '@/lib/backend/contracts';
-import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
 export type PoolAccessAgent = 'claude' | 'codex' | 'grok';
@@ -392,6 +394,8 @@ export function PoolAddButtons({
   const [oauthAgentId, setOauthAgentId] = useState<PoolAccessAgent | null>(null);
   const [apiChoice, setApiChoice] = useState<PoolApiChoice | null>(null);
   const [apiCredentials, setApiCredentials] = useState<{ baseUrl: string; apiKey: string } | null>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const oauthChoices = useMemo(
     () => poolOAuthChoices(agents, oauthAgents),
     [agents, oauthAgents],
@@ -418,6 +422,29 @@ export function PoolAddButtons({
         description: error instanceof Error ? error.message : String(error),
         variant: 'danger',
       });
+    }
+  };
+
+  const syncFromConnections = async () => {
+    setSyncing(true);
+    try {
+      const result = await syncConnectionAuthorizations();
+      setSyncOpen(false);
+      toast({
+        title: result.added > 0
+          ? t('routes.pool.page.synced', { count: result.added })
+          : t('routes.pool.page.syncNone'),
+        variant: 'success',
+      });
+      onChanged?.();
+    } catch (error) {
+      toast({
+        title: t('routes.pool.page.syncFailed'),
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'danger',
+      });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -465,6 +492,36 @@ export function PoolAddButtons({
       >
         {t('routes.pool.page.addApiKey')}
       </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        onClick={() => setSyncOpen(true)}
+      >
+        {t('routes.pool.page.syncFromConnections')}
+      </Button>
+
+      <Dialog open={syncOpen} onOpenChange={(open) => { if (!syncing) setSyncOpen(open); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('routes.pool.page.syncTitle')}</DialogTitle>
+            <DialogDescription>{t('routes.pool.page.syncDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setSyncOpen(false)}
+              disabled={syncing}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button type="button" onClick={() => void syncFromConnections()} disabled={syncing}>
+              {syncing ? t('routes.pool.page.syncing') : t('routes.pool.page.syncConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ChoiceDialog
         open={picker === 'oauth'}

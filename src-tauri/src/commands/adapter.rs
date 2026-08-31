@@ -8,8 +8,9 @@ use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
-    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, RouteDownstreamSurface, TicketBinding,
-    TicketBindingRoute, TicketPlanRequest, TicketWallet,
+    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, RouteDownstreamSurface,
+    SyncConnectionAuthorizationsResult, TicketBinding, TicketBindingRoute, TicketPlanRequest,
+    TicketWallet,
 };
 use agenthub_core::AgentHub;
 use tauri::State;
@@ -287,6 +288,22 @@ pub async fn attach_pool_owned_authorization(
                 &source_id,
             )
             .map_err(|err| map_err_string("attach_pool_owned_authorization", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Enroll existing Connections authorizations into default auth pools.
+/// Does not remove them from Connections.
+#[tauri::command]
+pub async fn sync_connection_authorizations(
+    state: State<'_, AppState>,
+) -> Result<SyncConnectionAuthorizationsResult, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .sync_connection_authorizations()
+            .map_err(|err| map_err_string("sync_connection_authorizations", err))
     })
     .await
     .map_err(adapter_error_from_string)

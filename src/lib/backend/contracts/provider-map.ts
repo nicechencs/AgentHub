@@ -99,6 +99,7 @@ export function mapCoreProvider(p: CoreProvider): Provider {
     official,
     secretTail,
     secretHash,
+    home: p.meta && p.meta.home === 'route_pool' ? 'route_pool' : undefined,
   };
 }
 
@@ -142,6 +143,7 @@ export function toCoreInput(p: Provider): CoreProviderInput {
       preset: p.preset,
       // 产品：API Key 官方/自定义端点
       ...(p.official !== undefined ? { official: p.official } : {}),
+      ...(p.home ? { home: p.home } : {}),
     },
     isCurrent: p.isCurrent,
   };

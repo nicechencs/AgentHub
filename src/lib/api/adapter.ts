@@ -12,6 +12,7 @@ import type {
   AttachPoolOwnedAuthorizationRequest,
   DefaultRoutePoolList,
   DefaultRoutePoolOverview,
+  SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
 
 export type {
@@ -34,6 +35,7 @@ export type {
   AdapterSourceKind,
   AdapterSupport,
   AttachPoolOwnedAuthorizationRequest,
+  SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
 
 export async function analyzeAdapter(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis> {
@@ -60,6 +62,17 @@ export async function attachPoolOwnedAuthorization(
   request: AttachPoolOwnedAuthorizationRequest,
 ): Promise<DefaultRoutePoolOverview> {
   const result = await getBackend().adapter.attachPoolOwnedAuthorization(request);
+  try {
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+  } catch {
+    // Write succeeded; the pool store keeps previous rows if refresh fails.
+  }
+  return result;
+}
+
+/** Enroll Connections authorizations into the auth pool without removing them from Connections. */
+export async function syncConnectionAuthorizations(): Promise<SyncConnectionAuthorizationsResult> {
+  const result = await getBackend().adapter.syncConnectionAuthorizations();
   try {
     await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
   } catch {

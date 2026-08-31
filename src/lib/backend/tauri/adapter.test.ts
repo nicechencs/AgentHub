@@ -222,6 +222,13 @@ describe('Tauri adapter route port', () => {
     expect(attached.members[0]?.sourceId).toBe('codex-api');
     expect(JSON.stringify(attached)).not.toContain('hubToken');
   });
+
+  it('forwards sync_connection_authorizations', async () => {
+    invokeMock.mockResolvedValueOnce({ added: 2, skipped: 1 });
+    const port = createTauriAdapterPort();
+    await expect(port.syncConnectionAuthorizations()).resolves.toEqual({ added: 2, skipped: 1 });
+    expect(invokeMock).toHaveBeenCalledWith('sync_connection_authorizations', {});
+  });
 });
 
 describe('mapAdapterInvokeError', () => {

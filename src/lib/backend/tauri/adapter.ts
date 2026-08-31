@@ -2,6 +2,7 @@ import {
   adapterCommandError,
   isAdapterErrorCodeRetryable,
   type AdapterPort,
+  type SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
 import {
   mapAdapterApplyPlan,
@@ -99,6 +100,9 @@ export function createTauriAdapterPort(): AdapterPort {
         ...request,
       });
       return mapDefaultRoutePoolOverview(wire);
+    },
+    async syncConnectionAuthorizations() {
+      return invokeAdapter<SyncConnectionAuthorizationsResult>('sync_connection_authorizations', {});
     },
     async enrollNativeToGateway(profileId) {
       const wire = await invokeAdapter<DefaultRoutePoolOverviewWire>('enroll_native_to_gateway', {

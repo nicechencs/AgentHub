@@ -284,6 +284,11 @@ export interface AttachPoolOwnedAuthorizationRequest {
   surface: RoutePoolSurface;
 }
 
+export interface SyncConnectionAuthorizationsResult {
+  added: number;
+  skipped: number;
+}
+
 export interface AdapterPort {
   analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
@@ -292,6 +297,7 @@ export interface AdapterPort {
   attachPoolOwnedAuthorization(
     request: AttachPoolOwnedAuthorizationRequest,
   ): Promise<DefaultRoutePoolOverview>;
+  syncConnectionAuthorizations(): Promise<SyncConnectionAuthorizationsResult>;
   enrollNativeToGateway(profileId: string): Promise<DefaultRoutePoolOverview>;
   apply(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
   remove(profileId: string): Promise<void>;
