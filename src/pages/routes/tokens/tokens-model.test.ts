@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
-import { buildLocalTokenRows } from './tokens-model';
+import { buildLocalTokenRows, maskLocalToken } from './tokens-model';
 
 function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>): AdapterProfile {
   return {
@@ -21,6 +21,10 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
 }
 
 describe('tokens-model', () => {
+  it('masks complete local keys while preserving the prefix and tail', () => {
+    expect(maskLocalToken('ahb_0123456789')).toBe('ahb_••••6789');
+    expect(maskLocalToken('')).toBe('');
+  });
   it('lists only local_bridge routes with token and endpoint', () => {
     const rows = buildLocalTokenRows(
       [
@@ -63,5 +67,22 @@ describe('tokens-model', () => {
       {},
     );
     expect(rows.map((row) => row.name)).toEqual(['Alpha', 'Bravo']);
+  });
+
+  it('marks failed status reads unavailable and withholds the token', () => {
+    const rows = buildLocalTokenRows(
+      [profile({ id: 'bridge' })],
+      {
+        bridge: {
+          profileId: 'bridge',
+          state: 'running',
+          port: 8101,
+          upstreamStatus: 'unavailable',
+          localToken: 'ahb_secret',
+        },
+      },
+      { bridge: new Error('status unavailable') },
+    );
+    expect(rows[0]).toMatchObject({ unavailable: true, token: null, maskedToken: null });
   });
 });
