@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { resolveAgentMeta } from '@/config/agents';
 import type { AgentId } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
@@ -32,7 +33,7 @@ function brandHex(agentId: AgentId): string | undefined {
   return undefined;
 }
 
-/** logo 用字母圆标代替(初版无真实 logo 资源) */
+/** 展示 agent 本地 logo；未知 agent 或 logo 加载失败时回退为首字母圆标。 */
 export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentId; size?: 'sm' | 'md' | 'lg' }) {
   const meta = resolveAgentMeta(agentId);
   const sizeCls = {
@@ -44,19 +45,41 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentId; size?: '
   const color = meta.color;
   const letter = meta.letter;
   const name = meta.name;
+  const logoSrc = meta.logoSrc;
+  // Keep the error scoped to the source that failed. A different agent/source
+  // must get a fresh chance to render its own logo after a prop change.
+  const [logoState, setLogoState] = useState<{ src?: string; failed: boolean }>({
+    src: logoSrc,
+    failed: false,
+  });
+  const showLogo = Boolean(logoSrc && !(logoState.src === logoSrc && logoState.failed));
   const lightBg = relativeLuminance(brandHex(agentId) ?? color) > 0.55;
   return (
     <Hint label={name}>
       <span
         className={cn(
           'inline-flex shrink-0 items-center justify-center rounded-full font-bold',
-          lightBg ? 'text-primary' : 'text-white',
+          showLogo
+            ? 'border border-border bg-white p-0.5 dark:bg-zinc-100'
+            : lightBg
+              ? 'text-primary'
+              : 'text-white',
           sizeCls,
         )}
-        style={{ backgroundColor: color }}
+        style={showLogo ? undefined : { backgroundColor: color }}
         aria-label={name}
       >
-        {letter}
+        {logoSrc && showLogo ? (
+          <img
+            src={logoSrc}
+            alt=""
+            aria-hidden="true"
+            className="h-full w-full rounded-full object-contain"
+            onError={() => setLogoState({ src: logoSrc, failed: true })}
+          />
+        ) : (
+          letter
+        )}
       </span>
     </Hint>
   );
