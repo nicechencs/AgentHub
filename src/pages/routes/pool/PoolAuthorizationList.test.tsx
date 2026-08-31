@@ -21,7 +21,7 @@ function item(partial: Partial<PoolAuthorizationItem> = {}): PoolAuthorizationIt
 }
 
 describe('PoolAuthorizationList', () => {
-  it('renders one authorization row with login kind and status', () => {
+  it('renders a field table with login kind and status', () => {
     const markup = renderToStaticMarkup(
       createElement(
         TooltipProvider,
@@ -29,17 +29,29 @@ describe('PoolAuthorizationList', () => {
         createElement(PoolAuthorizationList, { items: [item()] }),
       ),
     );
+    expect(markup).toContain('<table');
+    expect(markup).toContain('data-col="enabled"');
+    expect(markup).toContain('data-col="login"');
+    expect(markup).toContain('data-col="kind"');
+    expect(markup).toContain('data-col="status"');
     expect(markup).toContain('data-pool-authorization="account:grok-1"');
     expect(markup).toContain('Grok · OAuth');
     expect(markup).toContain('官方登录');
     expect(markup).toContain('可续期');
+    expect(markup).not.toContain('data-col="bindings"');
+    expect(markup).not.toContain('data-col="quota"');
+    expect(markup).not.toContain('data-col="lastUsed"');
+    expect(markup).not.toContain('data-col="priority"');
+    expect(markup).toContain('data-table-shell="default"');
+    expect(markup).toContain('role="separator"');
+    expect(markup).toContain('调整登录列宽');
     expect(markup).not.toContain('回复接口');
     expect(markup).not.toContain('本机入口');
     expect(markup).not.toContain('本页添加');
     expect(markup).not.toContain('auth.json');
   });
 
-  it('shows enable switch, last used, quota, bindings, and priority when present', () => {
+  it('adds enable, quota, bindings, last used, and priority columns when present', () => {
     const markup = renderToStaticMarkup(
       createElement(
         TooltipProvider,
@@ -57,9 +69,15 @@ describe('PoolAuthorizationList', () => {
       ),
     );
     expect(markup).toContain('role="switch"');
+    expect(markup).toContain('data-col="bindings"');
+    expect(markup).toContain('data-col="quota"');
+    expect(markup).toContain('data-col="lastUsed"');
+    expect(markup).toContain('data-col="priority"');
     expect(markup).toContain('7d 22%');
-    expect(markup).toContain('1 个连接');
-    expect(markup).toContain('优先级 1');
+    expect(markup).toContain('连接数量');
+    expect(markup).toContain('调用窗口');
+    expect(markup).toContain('最近使用');
+    expect(markup).toContain('优先级');
   });
 
   it('marks the row as openable when a detail handler is provided', () => {

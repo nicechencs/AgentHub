@@ -1163,6 +1163,11 @@ export const en = {
           apiVendorMistral: "Mistral",
         choiceUnavailable: "Not installed or unavailable",
       },
+      table: {
+        login: "Login",
+        kind: "Type",
+        status: "Status",
+      },
       detail: {
         title: "Login details",
         enabled: "Enabled",

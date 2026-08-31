@@ -1096,7 +1096,7 @@ export const zh = {
       page: {
         title: "连接池",
         description: "查看官方登录和 API Key 是否可用",
-        chromeHint: "每一份登录一行，这里只看登录状态。",
+        chromeHint: "oauth 及 API 信息",
         disabledTitle: "连接池还没开启",
         disabledDescription: "当前版本的路由各自使用自己的登录。开启后这里会显示每条路由默认可用的登录。",
         emptyTitle: "还没有登录",
@@ -1152,6 +1152,11 @@ export const zh = {
           apiVendorGemini: "Gemini（Google，海外）",
           apiVendorMistral: "Mistral（海外）",
         choiceUnavailable: "尚未安装或暂不可用",
+      },
+      table: {
+        login: "登录",
+        kind: "类型",
+        status: "状态",
       },
       detail: {
         title: "登录详情",

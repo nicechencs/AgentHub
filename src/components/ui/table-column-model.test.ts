@@ -82,6 +82,7 @@ describe('resizable table wiring', () => {
     'src/pages/mcp/McpServerTable.tsx',
     'src/pages/skills/SkillMarketTable.tsx',
     'src/pages/skills/SkillMatrix.tsx',
+    'src/pages/routes/pool/PoolAuthorizationList.tsx',
   ];
 
   it('every useColumnWidths call passes a storage key', () => {
