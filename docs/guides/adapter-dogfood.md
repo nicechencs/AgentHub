@@ -13,7 +13,7 @@ updated: 2026-08-29
 
 ## 范围和入口
 
-使用 `pnpm tauri:dev` 和真实连接验证。产品入口是 Dashboard 的连接/切换和 Connections 的分享/路由；本机 Routes 页面（中文“路由”，英文 `Routes`）只管理已绑定 Route 的运行时。不要把内部 `bridge` 名称写成用户功能名。
+使用 `pnpm tauri:dev` 和真实连接验证。产品入口是 Dashboard 的连接/切换和 Connections 的「分享至连接池」；本机 Routes 页面（中文“路由”，英文 `Routes`）只管理已绑定 Route 的运行时。不要把内部 `bridge` 名称写成用户功能名。
 
 典型 smoke flow：
 
@@ -42,7 +42,7 @@ cargo test -p agenthub-gui --locked adapter_bridge_controller
 | 来源连接 | 只记产品和 provider id 后缀 |
 | `profile_id` | |
 | 首选端口 / 实际端口 | |
-| `auto_start` | 默认 false；第 7 项再打开 |
+| `auto_start` | 默认 true；第 7 项确认自动恢复；如本次测试前已关闭，先恢复为 true |
 
 ## 证据规则
 
@@ -101,7 +101,7 @@ cargo test -p agenthub-gui --locked adapter_bridge_controller
 
 ### 7. 自动恢复和失败回滚
 
-1. 打开该 Route 的 `auto_start`，退出再启动 AgentHub。
+1. 确认该 Route 的 `auto_start` 为 `true`（当前默认值），退出再启动 AgentHub。
 2. 核对只恢复 `Active + auto_start + local_bridge`。
 3. 让 preferred port 被占用，验证恢复时重绑定并写回新端口。
 4. 人为触发恢复失败，检查旧 `local_port`/provider `base_url` 保持一致且新 listener 已停止。

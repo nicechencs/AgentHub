@@ -6,6 +6,7 @@
 
 - 日常开发和 PR 合入 **`dev`**。不要直接在 `release` 上提交；`release` 只用于正式发版。
 - 凭据落盘加密、国产 OAuth 适配、把 OAuth 转成 API：范围外，不得列为待办或实施任务。
+- 所有 API Key 都可以分享（含 WorkBuddy / ZCode 等上配置的）；国产官方登录不能分享。不要按所属 Agent 把 API Key 挡在连接池外。
 - 对用户说话、写界面和提示时，用对方已经在用的词或界面上的词。
 
 ## 对用户说话
@@ -65,7 +66,7 @@ src/
 
 ## 国产 OAuth
 
-不为中国产 AI 的 OAuth 开 Adapter 边，也不把 OAuth 转成 API 或伪装成 API Key。现有国产路由只认官方 API Key 登录。不得把现有 Key 边扩成 OAuth 边。用户明确推翻前不要讨论。
+不为中国产 AI 的 OAuth 开 Adapter 边，也不把 OAuth 转成 API 或伪装成 API Key。国产官方登录不可分享至连接池，也不可接到其他工具。所有 API Key（含 WorkBuddy / ZCode 等上配置的）都可以分享：钥匙本身可拷贝，不按所属 Agent 挡掉。现有国产路由只认官方 API Key 登录。不得把现有 Key 边扩成 OAuth 边。用户明确推翻前不要讨论。
 
 ## 测试
 

@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: SkillService, mcp_inventory.rs, plugin_inventory.rs, vendor plugin CLIs, and linked reference pages
-updated: 2026-08-29
+updated: 2026-08-31
 ---
 
 # 插件、MCP 与技能
@@ -45,7 +45,7 @@ Goose 把 MCP 叫做 “extension”。那是 Goose 的用词。AgentHub 的「�
 
 ## 和连接 / 路由 / MCP 的边界
 
-- Connections 管登录；Routes 管本机转发。都不安装插件。
+- Connections 和 Routes 都不安装插件。登录可以从 Connections 或 Routes 添加，仍是同一份登录；Routes 另外管本机转发。
 - MCP 页管 server 条目；插件页管包。从插件卸掉一个包，可能顺带去掉它附带的 MCP，但那是厂商副作用，不是 MCP 页的删除按钮。
 - 凭据落盘加密和国产 OAuth 转 API 仍在范围外。
 
