@@ -84,6 +84,8 @@ export interface ProviderFormVars {
   claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN' | 'ANTHROPIC_API_KEY';
   reasoningEffort: string;
   wireApi: string;
+  /** Grok: api_backend */
+  apiBackend: string;
   providerSlug: string;
 }
 
@@ -100,6 +102,7 @@ export const EMPTY_FORM_VARS: ProviderFormVars = {
   claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
   reasoningEffort: '',
   wireApi: '',
+  apiBackend: '',
   providerSlug: 'custom',
 };
 
@@ -116,6 +119,7 @@ export type FormFieldKey =
   | 'claudeAuthEnv'
   | 'reasoningEffort'
   | 'wireApi'
+  | 'apiBackend'
   | 'providerSlug';
 
 /** 粘贴 → 识别 → 合并进表单 + 配置正文 的一站式结果 */

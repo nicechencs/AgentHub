@@ -8,6 +8,7 @@ use std::fmt;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use super::{AdapterApplyPlan, AdapterProfile, AdapterRoute, AdapterSourceKind, AgentId};
 use crate::error::{AppError, Result};
@@ -293,6 +294,22 @@ pub fn generate_hub_token() -> Result<String> {
         AppError::message("route_pool.hub_token", format!("random failed: {error}"))
     })?;
     Ok(format!("ahb_{}", URL_SAFE_NO_PAD.encode(bytes)))
+}
+
+/// `meta.home` / `extra.home` for authorizations created on the auth-pool page.
+/// Connections tickets omit these rows unless the user later associates them.
+pub const AUTHORIZATION_HOME_ROUTE_POOL: &str = "route_pool";
+
+pub fn authorization_is_route_pool_home(blob: &Value) -> bool {
+    blob.get("home").and_then(Value::as_str) == Some(AUTHORIZATION_HOME_ROUTE_POOL)
+}
+
+pub fn set_authorization_route_pool_home(blob: &mut Value) {
+    if let Value::Object(map) = blob {
+        map.insert("home".into(), json!(AUTHORIZATION_HOME_ROUTE_POOL));
+        return;
+    }
+    *blob = json!({ "home": AUTHORIZATION_HOME_ROUTE_POOL });
 }
 
 /// Temporary availability for Routes. Not a stable capability.

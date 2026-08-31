@@ -8,8 +8,8 @@ use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
-    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, TicketBinding, TicketBindingRoute,
-    TicketPlanRequest, TicketWallet,
+    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, RouteDownstreamSurface, TicketBinding,
+    TicketBindingRoute, TicketPlanRequest, TicketWallet,
 };
 use agenthub_core::AgentHub;
 use tauri::State;
@@ -257,6 +257,36 @@ pub async fn list_default_route_pools(
         hub.route_pools()
             .list_default_overviews()
             .map_err(|err| map_err_string("list_default_route_pools", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Enroll a newly added authorization into the default auth pool and mark it
+/// pool-owned so it does not appear on the Connections list.
+#[tauri::command]
+pub async fn attach_pool_owned_authorization(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+    target_agent_id: String,
+    surface: String,
+) -> Result<DefaultRoutePoolOverview, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        let target_agent_id = parse_agent(&target_agent_id)?;
+        let surface = RouteDownstreamSurface::parse(&surface).ok_or_else(|| {
+            "invalid route pool surface, expected: messages|responses|chat_completions".to_string()
+        })?;
+        hub.route_pools()
+            .attach_pool_owned_authorization(
+                target_agent_id,
+                surface,
+                source_kind,
+                &source_id,
+            )
+            .map_err(|err| map_err_string("attach_pool_owned_authorization", err))
     })
     .await
     .map_err(adapter_error_from_string)

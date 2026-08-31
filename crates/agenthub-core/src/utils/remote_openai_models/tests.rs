@@ -1,6 +1,9 @@
 use serde_json::json;
 
-use super::{list_remote_openai_models, openai_models_url, parse_openai_model_list};
+use super::{
+    api_endpoint_url, list_remote_openai_models, openai_models_url, parse_openai_model_list,
+    ApiEndpointType,
+};
 use crate::error::AppError;
 
 #[test]
@@ -38,6 +41,22 @@ fn openai_models_url_normalizes_trailing_slash_and_v1() {
     assert_eq!(
         openai_models_url("https://api.deepseek.com/anthropic"),
         "https://api.deepseek.com/models"
+    );
+}
+
+#[test]
+fn api_endpoint_url_normalizes_base_and_v1() {
+    assert_eq!(
+        api_endpoint_url("https://api.example.com", ApiEndpointType::Responses),
+        "https://api.example.com/v1/responses"
+    );
+    assert_eq!(
+        api_endpoint_url("https://api.example.com/v1/", ApiEndpointType::ChatCompletions),
+        "https://api.example.com/v1/chat/completions"
+    );
+    assert_eq!(
+        api_endpoint_url("https://api.anthropic.com", ApiEndpointType::Messages),
+        "https://api.anthropic.com/v1/messages"
     );
 }
 

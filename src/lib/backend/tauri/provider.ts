@@ -1,4 +1,4 @@
-import type { ProviderPort } from '@/lib/backend/contracts';
+import type { DetectedApiEndpointType, ProviderPort } from '@/lib/backend/contracts';
 import {
   mapCoreProvider,
   toCoreInput,
@@ -164,6 +164,15 @@ export function createTauriProviderPort(): ProviderPort {
         });
       } catch (e) {
         log.error('list_remote_openai_models_for_provider failed', e);
+        throw e;
+      }
+    },
+
+    async detectApiEndpointTypes(baseUrl, apiKey) {
+      try {
+        return await invoke<DetectedApiEndpointType[]>('detect_api_endpoint_types', { baseUrl, apiKey });
+      } catch (e) {
+        log.error('detect_api_endpoint_types failed', e);
         throw e;
       }
     },

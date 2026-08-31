@@ -1867,3 +1867,53 @@ fn list_wallet_merges_duplicate_claude_keys_and_drops_unusable_api_key() {
     assert_eq!(claude.len(), 1, "same key+url must be one login");
     assert!(!wallet.tickets.iter().any(|t| t.source_id == "grok-ghost"));
 }
+
+#[test]
+fn route_pool_home_authorizations_are_not_connection_tickets() {
+    let (_dir, db) = test_db();
+    let mut pool_provider = provider(
+        "pool-codex",
+        AgentId::Codex,
+        "Codex API",
+        "custom",
+        false,
+    );
+    pool_provider.meta = serde_json::json!({
+        "preset": "custom",
+        "home": "route_pool"
+    });
+    ProviderRepo::new(db.clone())
+        .create(&pool_provider)
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&provider(
+            "conn-codex",
+            AgentId::Codex,
+            "Connection API",
+            "custom",
+            false,
+        ))
+        .unwrap();
+    let mut pool_account = account(
+        "pool-oauth",
+        AgentId::Codex,
+        AccountKind::Oauth,
+        "Codex OAuth",
+        false,
+    );
+    pool_account.extra = serde_json::json!({ "home": "route_pool" });
+    AccountRepo::new(db.clone()).create(&pool_account).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&account(
+            "conn-oauth",
+            AgentId::Codex,
+            AccountKind::Oauth,
+            "Connection OAuth",
+            false,
+        ))
+        .unwrap();
+
+    let wallet = TicketReadService::new(db).list_wallet().unwrap();
+    let ids: Vec<_> = wallet.tickets.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, vec!["account:conn-oauth", "provider:conn-codex"]);
+}

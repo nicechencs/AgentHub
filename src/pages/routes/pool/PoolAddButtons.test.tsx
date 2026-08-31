@@ -2,7 +2,13 @@ import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AgentId } from '@/lib/types';
-import { PoolAddButtons, poolApiChoices, poolOAuthChoices } from './PoolAddButtons';
+import {
+  PoolAddButtons,
+  poolApiChoices,
+  poolOAuthChoices,
+  poolSurfaceForApiChoice,
+  poolSurfaceForOAuth,
+} from './PoolAddButtons';
 
 const AGENTS = ['claude', 'codex', 'grok'] as const satisfies readonly AgentId[];
 
@@ -24,18 +30,35 @@ describe('poolOAuthChoices', () => {
 });
 
 describe('poolApiChoices', () => {
-  it('maps the three API choices to their Agent and endpoint', () => {
+  it('maps API choices to their Agent, endpoint, and API format', () => {
     const choices = poolApiChoices(AGENTS);
-    expect(choices.map(({ agentId, endpoint }) => [agentId, endpoint])).toEqual([
-      ['claude', '/v1/messages'],
-      ['codex', '/v1/responses'],
-      ['grok', '/v1/responses'],
+    expect(choices.map(({ agentId, endpoint, grokApiBackend }) => [agentId, endpoint, grokApiBackend])).toEqual([
+      ['claude', '/v1/messages', undefined],
+      ['codex', '/v1/responses', undefined],
+      ['grok', '/v1/responses', 'responses'],
+      ['grok', '/v1/chat/completions', 'chat_completions'],
     ]);
   });
 
   it('keeps unavailable API choices discoverable', () => {
     const choices = poolApiChoices(['claude']);
-    expect(choices.map((choice) => choice.available)).toEqual([true, false, false]);
+    expect(choices.map((choice) => choice.available)).toEqual([true, false, false, false]);
+  });
+});
+
+describe('poolSurfaceForOAuth', () => {
+  it('maps each OAuth Agent to its local entry surface', () => {
+    expect(poolSurfaceForOAuth('claude')).toBe('messages');
+    expect(poolSurfaceForOAuth('codex')).toBe('responses');
+    expect(poolSurfaceForOAuth('grok')).toBe('responses');
+  });
+});
+
+describe('poolSurfaceForApiChoice', () => {
+  it('maps each API endpoint to its local entry surface', () => {
+    expect(poolSurfaceForApiChoice({ endpoint: '/v1/messages' })).toBe('messages');
+    expect(poolSurfaceForApiChoice({ endpoint: '/v1/responses' })).toBe('responses');
+    expect(poolSurfaceForApiChoice({ endpoint: '/v1/chat/completions' })).toBe('chat_completions');
   });
 });
 

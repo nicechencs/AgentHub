@@ -821,5 +821,17 @@ describe('provider-detect fields', () => {
     expect(parsed.models).toEqual(['my-model', 'other-model']);
     expect(parsed.apiKey).toBe('sk-custom');
   });
+
+  it('writes the selected Grok API format', () => {
+    const out = applyFormVars('grok', '', 'toml', {
+      ...EMPTY_FORM_VARS,
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-chat',
+      model: 'gpt-4o',
+      apiBackend: 'chat_completions',
+    });
+
+    expect(out).toContain('api_backend = "chat_completions"');
+  });
 });
 

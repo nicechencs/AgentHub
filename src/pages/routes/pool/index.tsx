@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Boxes, Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -92,6 +92,11 @@ export default function RoutesPoolPage() {
   const allowedAgents = installedIds.length > 0 || !agentsLoading ? installedIds : visibleIds;
   const oauthLoginAgents = useOAuthLoginAgents(allowedAgents);
   const inspect = useSideSplit<RouteInspect>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
+  const [poolReloadKey, setPoolReloadKey] = useState(0);
+  const reloadAll = () => {
+    void reload();
+    setPoolReloadKey((value) => value + 1);
+  };
 
   const runtime = useBridgeRuntimeActions({
     profiles,
@@ -137,6 +142,7 @@ export default function RoutesPoolPage() {
   const { routePoolV2, defaultPools, nativeCanApplyById } = useRoutePoolState({
     profiles,
     detailTarget,
+    reloadKey: poolReloadKey,
   });
 
   const { bound, orphan } = useMemo(
@@ -336,14 +342,14 @@ export default function RoutesPoolPage() {
             <PoolAddButtons
               agents={allowedAgents}
               oauthAgents={oauthLoginAgents}
-              onChanged={() => { void reload(); }}
+              onChanged={reloadAll}
             />
             <Button
               type="button"
               size="sm"
               variant="secondary"
               disabled={loading}
-              onClick={() => void reload()}
+              onClick={reloadAll}
             >
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
               {t('routes.board.refresh')}

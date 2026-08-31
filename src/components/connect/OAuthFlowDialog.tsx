@@ -89,11 +89,19 @@ export function OAuthFlowDialog({
   open,
   onOpenChange,
   onCompleted,
+  onStored,
+  offerSwitch = true,
+  successDescription,
 }: {
   agentId: AgentId;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCompleted: (acc: Account) => void;
+  /** Called as soon as the login is persisted, before the user picks a next step. */
+  onStored?: (acc: Account) => void;
+  /** When false, the success step only closes — it does not switch the live login. */
+  offerSwitch?: boolean;
+  successDescription?: string;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -232,6 +240,7 @@ export function OAuthFlowDialog({
       if (!isCurrent()) return;
       setAccount(acc);
       setStep('done');
+      onStored?.(acc);
     } catch (e) {
       if (!isCurrent()) return;
       const display = officialLoginErrorDisplay(
@@ -500,13 +509,15 @@ export function OAuthFlowDialog({
               </Card>
             ) : null}
             <p className="text-xs text-muted">
-              {agentId === 'pi' ? t('connect.oauth.writtenPi') : t('connect.oauth.writtenPool')}
+              {successDescription
+                ?? (agentId === 'pi' ? t('connect.oauth.writtenPi') : t('connect.oauth.writtenPool'))}
             </p>
           </div>
         )}
 
         <DialogFooter>
           {footer === 'success' && account ? (
+            offerSwitch ? (
             <>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 {t('connect.oauth.later')}
@@ -520,6 +531,11 @@ export function OAuthFlowDialog({
                 {t('connect.oauth.switchNow')}
               </Button>
             </>
+            ) : (
+              <Button onClick={() => handleOpenChange(false)}>
+                {t('common.done')}
+              </Button>
+            )
           ) : footer === 'retry' ? (
             <>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>

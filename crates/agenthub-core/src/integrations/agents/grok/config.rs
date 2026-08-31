@@ -28,7 +28,7 @@ use crate::platform::config::{
 };
 use crate::platform::config::{ConfigApplyResult, ConfigChangePlan, NormalizedConfigDocument};
 
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 const REL_PATH: &str = "config.toml";
 
 pub struct GrokConfigProjector;
@@ -64,6 +64,14 @@ impl GrokConfigProjector {
                     true,
                     false,
                     Some("api_key in [model.<alias>]"),
+                ),
+                field(
+                    "apiBackend",
+                    "API backend",
+                    ConfigValueType::String,
+                    false,
+                    false,
+                    Some("api_backend in [model.<alias>]"),
                 ),
             ],
         }
@@ -140,6 +148,14 @@ impl GrokConfigProjector {
                     .or_else(|| doc.get("api_key").and_then(Item::as_str)),
             ),
         );
+        values.insert(
+            "apiBackend".into(),
+            string_val(
+                entry
+                    .and_then(|table| table.get("api_backend"))
+                    .and_then(Item::as_str),
+            ),
+        );
         values
     }
 
@@ -170,6 +186,14 @@ impl GrokConfigProjector {
         if let Some(key) = get_str_map(desired, "apiKey") {
             if !secret_unchanged(Some(&key)) {
                 entry["api_key"] = toml_edit::value(key.trim());
+            }
+        }
+        if let Some(backend) = get_str_map(desired, "apiBackend") {
+            let t = backend.trim();
+            if t.is_empty() {
+                entry.remove("api_backend");
+            } else {
+                entry["api_backend"] = toml_edit::value(t);
             }
         }
         Ok(doc)

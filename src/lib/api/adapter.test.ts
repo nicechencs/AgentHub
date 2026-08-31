@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { applyPort, removePort, enrollPort, refreshRuntimeReadModels } = vi.hoisted(() => ({
+const { applyPort, removePort, enrollPort, attachPort, refreshRuntimeReadModels } = vi.hoisted(() => ({
   applyPort: vi.fn(),
   removePort: vi.fn(),
   enrollPort: vi.fn(),
+  attachPort: vi.fn(),
   refreshRuntimeReadModels: vi.fn(),
 }));
 
@@ -13,12 +14,13 @@ vi.mock('@/app/runtime', () => ({
       apply: applyPort,
       remove: removePort,
       enrollNativeToGateway: enrollPort,
+      attachPoolOwnedAuthorization: attachPort,
     },
   }),
   refreshRuntimeReadModels,
 }));
 
-import { applyAdapter, enrollNativeToGateway, removeAdapter } from './adapter';
+import { applyAdapter, attachPoolOwnedAuthorization, enrollNativeToGateway, removeAdapter } from './adapter';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -47,6 +49,7 @@ describe('adapter façade pool refresh', () => {
     applyPort.mockReset();
     removePort.mockReset();
     enrollPort.mockReset();
+    attachPort.mockReset();
     refreshRuntimeReadModels.mockReset();
   });
 
@@ -111,6 +114,18 @@ describe('adapter façade pool refresh', () => {
     await expect(enroll).resolves.toEqual({ enabled: true, pools: [] });
     expect(settled).toBe(true);
     expectPoolRefreshOnly();
+  });
+
+  it('refreshes connection and ticket lists after attaching a pool-owned authorization', async () => {
+    attachPort.mockResolvedValue({ id: 'pool-1', members: [] });
+    refreshRuntimeReadModels.mockResolvedValue(undefined);
+    await expect(attachPoolOwnedAuthorization({
+      sourceKind: 'provider',
+      sourceId: 'codex-api',
+      targetAgentId: 'codex',
+      surface: 'responses',
+    })).resolves.toEqual({ id: 'pool-1', members: [] });
+    expectBindRefresh();
   });
 
   it('still returns the mutation result when the follow-up pool refresh fails', async () => {

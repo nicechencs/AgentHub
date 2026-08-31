@@ -1,9 +1,10 @@
 use crate::models::{
-    enroll_native_plan_is_open, AdapterApplyPlan, AdapterGateKind, AdapterMaturity, AdapterProfile,
-    AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
-    AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId, Provider,
-    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
-    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    authorization_is_route_pool_home, enroll_native_plan_is_open, AdapterApplyPlan, AdapterGateKind,
+    AdapterMaturity, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath,
+    AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport,
+    AgentId, Provider, RouteDownstreamSurface, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
+    FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
+    FEATURE_ROUTE_POOL_V2,
 };
 use crate::services::RoutePoolService;
 use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
@@ -536,6 +537,88 @@ fn persist_enroll_after_native_bind_promotes_over_sibling_default() {
     let listed = service.list_default_overviews().unwrap();
     assert_eq!(listed.pools.len(), 1);
     assert_eq!(listed.pools[0].id, "bound-new");
+    assert!(listed.pools[0].members.iter().any(|member| member.source_id == "acc-old"));
+    assert!(listed.pools[0].members.iter().any(|member| member.source_id == "acc-a"));
+}
+
+#[test]
+fn attach_pool_owned_authorization_creates_default_pool_and_hides_from_home_stamp() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "codex-api".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex API".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let overview = service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-api",
+        )
+        .unwrap();
+    assert_eq!(overview.target_agent_id, AgentId::Codex);
+    assert_eq!(overview.surface, RouteDownstreamSurface::Responses);
+    assert_eq!(overview.members.len(), 1);
+    assert_eq!(overview.members[0].source_id, "codex-api");
+    let stored = ProviderRepo::new(db).get_by_id("codex-api").unwrap().unwrap();
+    assert!(authorization_is_route_pool_home(&stored.meta));
+    let again = service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-api",
+        )
+        .unwrap();
+    assert_eq!(again.id, overview.id);
+    assert_eq!(again.members.len(), 1);
+}
+
+#[test]
+fn attach_pool_owned_authorization_reuses_existing_default_pool() {
+    let (_dir, db, service, profiles) = tmp();
+    let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
+    profiles.create(&profile).unwrap();
+    service
+        .create_legacy_pool(&profile, "ahb_stable-token", true)
+        .unwrap();
+    ProviderRepo::new(db)
+        .create(&Provider {
+            id: "codex-api".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex API".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let overview = service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-api",
+        )
+        .unwrap();
+    assert_eq!(overview.id, "profile-a");
+    assert!(overview
+        .members
+        .iter()
+        .any(|member| member.source_id == "acc-a"));
+    assert!(overview
+        .members
+        .iter()
+        .any(|member| member.source_id == "codex-api"));
 }
 
 #[test]
