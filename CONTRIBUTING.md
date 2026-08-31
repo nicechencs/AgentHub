@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢参与 AgentHub。先阅读根目录 [AGENTS.md](AGENTS.md) 的红线，再按本页准备开发环境、验证改动并提交 PR。
+感谢参与 AgentHub。红线在根目录 [AGENTS.md](AGENTS.md)。本页是提交和发版步骤；Agent 已加载红线时，不要为了遵守本页再通读文档树。
 
 ## 开发环境
 
@@ -36,7 +36,7 @@ cargo test -p agenthub-core --locked
 pnpm check:docs
 ```
 
-Rust CLI 或 GUI 改动分别补跑 `cargo test -p agenthub-cli --locked` 和 `cargo test -p agenthub-gui --locked`。不要为页面或纯函数改动默认编 GUI crate 或跑全部 Rust crate。前端 backend 分层、mock 边界和 CI 矩阵见 [测试参考](docs/reference/testing.md)。失败时保留失败用例和原始错误，不要通过削弱测试来绕过问题。
+Rust CLI 或 GUI 改动分别补跑 `cargo test -p agenthub-cli --locked` 和 `cargo test -p agenthub-gui --locked`。不要为页面或纯函数改动默认编 GUI crate 或跑全部 Rust crate。查完整命令表或 CI 矩阵时再打开 [测试参考](docs/reference/testing.md)。失败时保留失败用例和原始错误，不要通过削弱测试来绕过问题。
 
 ## 文档变更
 
