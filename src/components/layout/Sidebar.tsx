@@ -24,12 +24,24 @@ import {
   sidebarInstallStats,
 } from '@/components/layout/sidebar-stats';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import {
+  ContextMenu,
+  ContextMenuItem,
+  type ContextMenuPoint,
+} from '@/components/ui/context-menu';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { StorageKey } from '@/lib/ui-preferences';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
 const ICON_CLASS = 'h-4 w-4 shrink-0';
+const MENU_ICON_CLASS = 'h-3.5 w-3.5';
+
+/** 右键菜单图标：与折叠按钮同款 PanelLeft 图标 */
+const railMenuIcon = {
+  expand: <PanelLeftOpen className={MENU_ICON_CLASS} strokeWidth={1.8} />,
+  collapse: <PanelLeftClose className={MENU_ICON_CLASS} strokeWidth={1.8} />,
+} as const;
 
 function SidebarNavLink({
   item,
@@ -216,7 +228,7 @@ function SidebarAgentStrip({
 
 /** 侧边导航:可折叠;底部为 agent 在线状态迷你条 */
 export function Sidebar() {
-  const { collapsed, toggle, routesNavVisible, pluginsNavVisible } = useSidebar();
+  const { collapsed, setCollapsed, toggle, routesNavVisible, pluginsNavVisible } = useSidebar();
   const { pathname } = useLocation();
   const { t } = useI18n();
   const { statuses: agents } = useAgentStatusesOptional();
@@ -224,6 +236,22 @@ export function Sidebar() {
   const settingsNotice = appUpdate
     ? { label: t('nav.updateAvailable', { version: appUpdate.version }) }
     : null;
+
+  // 右键导航栏：展开态只允许收起，收起态只允许展开
+  const [railMenu, setRailMenu] = React.useState<ContextMenuPoint | null>(null);
+  const openRailMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setRailMenu({ x: e.clientX, y: e.clientY });
+  };
+  const closeRailMenu = React.useCallback(() => setRailMenu(null), []);
+  const expandFromRailMenu = React.useCallback(() => {
+    setCollapsed(false);
+    setRailMenu(null);
+  }, [setCollapsed]);
+  const collapseFromRailMenu = React.useCallback(() => {
+    setCollapsed(true);
+    setRailMenu(null);
+  }, [setCollapsed]);
 
   const itemClass = (isActive: boolean) =>
     cn(
@@ -252,91 +280,107 @@ export function Sidebar() {
   );
 
   return (
-    <aside
-      className={cn(
-        pageRhythm.shellNav,
-        collapsed ? 'w-14' : 'w-56',
-        'transition-[width] duration-200 ease-in-out',
-      )}
-    >
-      {/* 品牌 + 折叠按钮 */}
-      <div
+    <>
+      <aside
         className={cn(
-          'flex shrink-0 items-center border-b border-border',
-          pageRhythm.topChrome,
-          collapsed ? 'justify-center' : 'justify-between px-3',
+          pageRhythm.shellNav,
+          collapsed ? 'w-14' : 'w-56',
+          'transition-[width] duration-200 ease-in-out',
         )}
+        onContextMenu={openRailMenu}
       >
-        {collapsed ? (
-          <Hint label={t('nav.expandSidebar')} side="right">
-            <button
-              type="button"
-              onClick={toggle}
-              className="group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
-              aria-label={t('nav.expandSidebar')}
-            >
-              <span className="flex h-7 w-7 items-center justify-center rounded-btn transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
-                <AppLogo size={20} className="h-5 w-5" />
-              </span>
-              <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
-                <PanelLeftOpen className="h-4 w-4" strokeWidth={1.8} />
-              </span>
-            </button>
-          </Hint>
-        ) : (
-          <>
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn">
-                <AppLogo size={20} className="h-5 w-5" />
-              </span>
-              <span className="truncate text-sm font-semibold tracking-tight">AgentHub</span>
-            </div>
-            <Hint label={t('nav.collapseSidebar')} side="right">
+        {/* 品牌 + 折叠按钮 */}
+        <div
+          className={cn(
+            'flex shrink-0 items-center border-b border-border',
+            pageRhythm.topChrome,
+            collapsed ? 'justify-center' : 'justify-between px-3',
+          )}
+        >
+          {collapsed ? (
+            <Hint label={t('nav.expandSidebar')} side="right">
               <button
                 type="button"
                 onClick={toggle}
-                className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary"
-                aria-label={t('nav.collapseSidebar')}
+                className="group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
+                aria-label={t('nav.expandSidebar')}
               >
-                <PanelLeftClose className="h-4 w-4" strokeWidth={1.8} />
+                <span className="flex h-7 w-7 items-center justify-center rounded-btn transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
+                  <AppLogo size={20} className="h-5 w-5" />
+                </span>
+                <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
+                  <PanelLeftOpen className="h-4 w-4" strokeWidth={1.8} />
+                </span>
               </button>
             </Hint>
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn">
+                  <AppLogo size={20} className="h-5 w-5" />
+                </span>
+                <span className="truncate text-sm font-semibold tracking-tight">AgentHub</span>
+              </div>
+              <Hint label={t('nav.collapseSidebar')} side="right">
+                <button
+                  type="button"
+                  onClick={toggle}
+                  className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary"
+                  aria-label={t('nav.collapseSidebar')}
+                >
+                  <PanelLeftClose className="h-4 w-4" strokeWidth={1.8} />
+                </button>
+              </Hint>
+            </>
+          )}
+        </div>
 
-      {/* 工作区置顶；管理区 mt-auto 贴底（在 agent 状态条上方） */}
-      <nav
-        className={cn(
-          'flex min-h-0 flex-1 flex-col gap-1 pt-1',
-          collapsed ? 'px-1.5' : 'px-2',
-        )}
-      >
-        <NavGroup label={t('nav.workspace')} collapsed={collapsed}>
-          {visibleWorkspaceNav.map((item) => (
-            <SidebarNavLink key={item.to} item={item} collapsed={collapsed} itemClass={itemClass} />
-          ))}
-        </NavGroup>
-        <NavGroup label={t('nav.manage')} collapsed={collapsed} className="mt-auto pb-2">
-          {visibleManageNav.map((item) => (
-            <SidebarNavLink
-              key={item.to}
-              item={item}
-              collapsed={collapsed}
-              itemClass={itemClass}
-              notice={item.to === '/settings' ? settingsNotice : null}
-            />
-          ))}
-        </NavGroup>
-      </nav>
+        {/* 工作区置顶；管理区 mt-auto 贴底（在 agent 状态条上方） */}
+        <nav
+          className={cn(
+            'flex min-h-0 flex-1 flex-col gap-1 pt-1',
+            collapsed ? 'px-1.5' : 'px-2',
+          )}
+        >
+          <NavGroup label={t('nav.workspace')} collapsed={collapsed}>
+            {visibleWorkspaceNav.map((item) => (
+              <SidebarNavLink key={item.to} item={item} collapsed={collapsed} itemClass={itemClass} />
+            ))}
+          </NavGroup>
+          <NavGroup label={t('nav.manage')} collapsed={collapsed} className="mt-auto pb-2">
+            {visibleManageNav.map((item) => (
+              <SidebarNavLink
+                key={item.to}
+                item={item}
+                collapsed={collapsed}
+                itemClass={itemClass}
+                notice={item.to === '/settings' ? settingsNotice : null}
+              />
+            ))}
+          </NavGroup>
+        </nav>
 
-      <SidebarAgentStrip
-        collapsed={collapsed}
-        agents={agents}
-        installedCount={stats.installedCount}
-        visibleTotal={stats.visibleTotal}
-        orderedInstalledMetas={stats.orderedInstalledMetas}
-      />
-    </aside>
+        <SidebarAgentStrip
+          collapsed={collapsed}
+          agents={agents}
+          installedCount={stats.installedCount}
+          visibleTotal={stats.visibleTotal}
+          orderedInstalledMetas={stats.orderedInstalledMetas}
+        />
+        </aside>
+      <ContextMenu open={railMenu !== null} point={railMenu} onClose={closeRailMenu}>
+        {collapsed ? (
+          <ContextMenuItem onSelect={expandFromRailMenu}>
+            {railMenuIcon.expand}
+            {t('nav.expandSidebar')}
+          </ContextMenuItem>
+        ) : (
+          <ContextMenuItem onSelect={collapseFromRailMenu}>
+            {railMenuIcon.collapse}
+            {t('nav.collapseSidebar')}
+          </ContextMenuItem>
+        )}
+      </ContextMenu>
+    </>
   );
 }
