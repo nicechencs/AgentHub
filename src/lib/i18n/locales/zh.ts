@@ -97,6 +97,10 @@ export const zh = {
       closeToTrayDescription: '关窗不退出',
       closeToTrayTip:
         '点击关闭按钮后隐藏到系统托盘，进程保持运行。可从托盘退出。Windows 可从托盘图标恢复；macOS 可从菜单栏托盘或 Dock 图标恢复。',
+      autoCollapseOnRoutesLabel: '打开路由时自动折叠',
+      autoCollapseOnRoutesDescription: '点侧栏「路由」时收起最左侧栏。关掉后不再自动展开或折叠。',
+      autoCollapseOnRoutesTip:
+        '只在点「路由」时自动收起。去其他页面、刷新、或在路由页内切换，都保持你手动展开或折叠的状态。折叠按钮始终可用。',
       routesNavVisibleLabel: '显示路由页面',
       routesNavVisibleDescription: '功能开发中。打开后在侧栏显示入口；关闭后仍可用链接打开。',
       routesNavVisibleTip: '新安装默认不显示。隐藏侧栏入口不禁用路由页；仍可通过链接打开。',

@@ -11,6 +11,7 @@ import {
 } from '@/app/runtime';
 import type { AgentStatus } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
+import { collapsedAfterPrimaryNavClick } from '@/components/layout/sidebar-collapse-override';
 import { useSidebar } from '@/components/layout/SidebarContext';
 import {
   manageNavItems,
@@ -56,6 +57,7 @@ function SidebarNavLink({
   notice?: { label: string } | null;
 }) {
   const { t } = useI18n();
+  const { setCollapsed, autoCollapseOnRoutes } = useSidebar();
   const { to, navKey, icon: Icon } = item;
   const label = t(navKey);
   const inDevelopment = navItemInDevelopment(item);
@@ -71,6 +73,14 @@ function SidebarNavLink({
       end={to === '/'}
       aria-label={collapsed || tip || inDevelopment ? a11yLabel : undefined}
       className="block rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
+      onClick={() => {
+        const next = collapsedAfterPrimaryNavClick({
+          itemTo: to,
+          currentCollapsed: collapsed,
+          autoCollapseOnRoutes,
+        });
+        if (next !== collapsed) setCollapsed(next);
+      }}
     >
       {({ isActive }) => {
         const node = (

@@ -174,6 +174,7 @@ test('new install hides Routes and Plugins until enabled in Settings', async ({ 
   await expect(nav.getByRole('link', { name: /^MCP — / })).toBeVisible();
 
   await goNav(page, '设置');
+  await expect(page.getByRole('switch', { name: '打开路由时自动折叠' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '显示路由页面' })).not.toBeChecked();
   await expect(page.getByRole('switch', { name: '显示插件页面' })).not.toBeChecked();
   await expect(
@@ -192,6 +193,7 @@ test('new install hides Routes and Plugins until enabled in Settings', async ({ 
   await expect(page).toHaveURL(/#\/routes/);
   await expect(page.getByRole('heading', { name: '路由' })).toBeVisible();
   await expect(page.locator('header').getByText('开发中')).toBeVisible();
+  await expect(page.getByRole('button', { name: '折叠侧栏' })).toHaveCount(0);
 
   await goNav(page, '插件');
   await expect(page).toHaveURL(/#\/plugins/);
@@ -204,7 +206,7 @@ test('new install hides Routes and Plugins until enabled in Settings', async ({ 
   await expect(page.locator('header').getByText('开发中')).toBeVisible();
 });
 
-test('Routes secondary nav appears under /routes*; primary session-collapses', async ({ page }) => {
+test('Routes secondary nav appears under /routes*; URL entry does not auto-collapse', async ({ page }) => {
   await openApp(page);
   await goPath(page, '/routes');
   await expect(page).toHaveURL(/#\/routes/);
@@ -213,6 +215,7 @@ test('Routes secondary nav appears under /routes*; primary session-collapses', a
   await expect(secondary.getByRole('link', { name: /^路由列表/ })).toBeVisible();
   await expect(secondary.getByRole('link', { name: /^看板/ })).toBeVisible();
   await expect(secondary.getByRole('button', { name: '展开侧栏' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '折叠侧栏' })).toBeVisible();
 
   await secondary.getByRole('link', { name: /^看板/ }).click();
   await expect(page).toHaveURL(/#\/routes\/board/);

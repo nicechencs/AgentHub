@@ -102,6 +102,7 @@ describe('PageHeader', () => {
     expect(source('App.tsx')).toContain("pathname === '/plugins'");
     expect(source('App.tsx')).toContain("pathname === '/settings'");
     expect(source('pages/routes/RoutesNav.tsx')).toContain('data-routes-nav');
-    expect(source('pages/routes/RoutesLayout.tsx')).toContain('enterRoutesArea');
+    expect(source('pages/routes/RoutesLayout.tsx')).toContain('data-routes-layout');
+    expect(source('pages/routes/RoutesLayout.tsx')).not.toContain('enterRoutesArea');
   });
 });
