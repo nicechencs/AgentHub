@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Boxes, Loader2 } from 'lucide-react';
+import { Boxes } from 'lucide-react';
 import { useTicketWallet } from '@/app/runtime';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
@@ -10,6 +10,7 @@ import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { Notice } from '@/components/shared/Notice';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -514,16 +515,11 @@ export default function RoutesPoolPage() {
               defaultPools={defaultPools}
               onChanged={reloadAll}
             />
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={loading}
+            <PageRefreshButton
+              loading={loading}
               onClick={reloadAll}
-            >
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              {t('routes.board.refresh')}
-            </Button>
+              label={t('routes.board.refresh')}
+            />
           </div>
         </div>
 

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { KeyRound, Loader2 } from 'lucide-react';
+import { KeyRound } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { ListRow, ListRowBody, LIST_ROW_PAD } from '@/components/shared/ListRow';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
@@ -63,16 +64,11 @@ export default function RoutesTokensPage() {
       <div className={pageRhythm.chromeRow}>
         <p className="min-w-0 truncate text-meta text-muted">{t('routes.tokens.scopeNote')}</p>
         <div className={pageRhythm.chromeActions}>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={loading}
+          <PageRefreshButton
+            loading={loading}
             onClick={() => void reload()}
-          >
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            {t('routes.board.refresh')}
-          </Button>
+            label={t('routes.board.refresh')}
+          />
         </div>
       </div>
 
