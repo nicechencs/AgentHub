@@ -11,6 +11,7 @@ import type {
   RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
 import { authHealthLabel, type AuthHealth } from '@/lib/backend/contracts/auth-state';
+import type { TicketView } from '@/lib/backend/contracts/ticket';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { ConnectionKind } from '@/lib/connection-kind';
 import type { AgentId, AuthStatus } from '@/lib/types';
@@ -152,6 +153,18 @@ export type PoolAuthorizationItem = {
   addedHere: boolean;
   authHealth?: AuthHealth;
   authStatus?: AuthStatus;
+  enabled?: boolean;
+  canToggle?: boolean;
+  priority?: number;
+  lastUsedAt?: string;
+  quota5hPct?: number;
+  quota7dPct?: number;
+  quotaResetIn?: string;
+  quota7dResetIn?: string;
+  bindingCount?: number;
+  subscription?: string;
+  endpointHost?: string;
+  secretTail?: string;
 };
 
 function poolAuthorizationItem(
@@ -165,6 +178,9 @@ function poolAuthorizationItem(
     title: string;
     surface: RoutePoolSurface | null;
     addedHere: boolean;
+    enabled?: boolean;
+    canToggle?: boolean;
+    priority?: number;
   },
 ): PoolAuthorizationItem {
   return {
@@ -178,6 +194,17 @@ function poolAuthorizationItem(
     addedHere: fallback.addedHere,
     authHealth: match?.authHealth,
     authStatus: match?.authStatus,
+    enabled: fallback.enabled,
+    canToggle: fallback.canToggle,
+    priority: fallback.priority,
+    lastUsedAt: match?.account?.lastUsedAt,
+    quota5hPct: match?.quota5hPct,
+    quota7dPct: match?.quota7dPct,
+    quotaResetIn: match?.quotaResetIn,
+    quota7dResetIn: match?.quota7dResetIn,
+    subscription: match?.subscription ?? match?.account?.subscription,
+    endpointHost: match?.endpointHost,
+    secretTail: match?.account?.secretTail ?? match?.provider?.secretTail,
   };
 }
 
@@ -202,10 +229,30 @@ export function poolAuthorizationStatusView(
   return { label: authHealthLabel(health, t), tone };
 }
 
+/** Ticket-shaped row for the shared login detail panel. */
+export function poolAuthorizationTicketView(
+  item: Pick<PoolAuthorizationItem, 'key' | 'sourceKind' | 'sourceId' | 'agentId' | 'title' | 'kind'>,
+  walletTicket?: TicketView | null,
+): TicketView {
+  if (walletTicket && walletTicket.id === item.key) return walletTicket;
+  return {
+    id: item.key,
+    sourceKind: item.sourceKind,
+    sourceId: item.sourceId,
+    agentId: item.agentId,
+    label: item.title,
+    surface: 'unknown',
+    credentialClass: item.kind === 'oauth' ? 'oauth' : 'api_key',
+    speaks: [],
+    importedFrom: null,
+  };
+}
+
 /** Every OAuth / API authorization visible on the auth-pool page. */
 export function collectPoolAuthorizations(
   pools: readonly DefaultRoutePoolOverview[],
   entries: readonly ConnectionEntry[],
+  bindingCounts: ReadonlyMap<string, number> = new Map(),
 ): PoolAuthorizationItem[] {
   const items = new Map<string, PoolAuthorizationItem>();
   const entryBySource = new Map<string, ConnectionEntry>(
@@ -215,6 +262,13 @@ export function collectPoolAuthorizations(
     for (const member of pool.members) {
       const key = `${member.sourceKind}:${member.sourceId}`;
       const match = entryBySource.get(key);
+      const existing = items.get(key);
+      const enabled = member.enabled === true || existing?.enabled === true;
+      const priority = existing?.priority == null
+        ? member.priority
+        : member.priority == null
+          ? existing.priority
+          : Math.min(existing.priority, member.priority);
       items.set(key, poolAuthorizationItem(
         key,
         member.sourceKind,
@@ -226,6 +280,9 @@ export function collectPoolAuthorizations(
           title: member.sourceId,
           surface: pool.surface,
           addedHere: match ? entryHome(match) === 'route_pool' : false,
+          enabled,
+          canToggle: true,
+          priority,
         },
       ));
     }
@@ -248,12 +305,17 @@ export function collectPoolAuthorizations(
       },
     ));
   }
-  return [...items.values()].sort((left, right) => {
-    const agent = left.agentId.localeCompare(right.agentId);
-    if (agent !== 0) return agent;
-    if (left.kind !== right.kind) return left.kind === 'oauth' ? -1 : 1;
-    return left.title.localeCompare(right.title) || left.key.localeCompare(right.key);
-  });
+  return [...items.values()]
+    .map((item) => {
+      const bindingCount = bindingCounts.get(item.key) ?? 0;
+      return bindingCount > 0 ? { ...item, bindingCount } : item;
+    })
+    .sort((left, right) => {
+      const agent = left.agentId.localeCompare(right.agentId);
+      if (agent !== 0) return agent;
+      if (left.kind !== right.kind) return left.kind === 'oauth' ? -1 : 1;
+      return left.title.localeCompare(right.title) || left.key.localeCompare(right.key);
+    });
 }
 
 /** Fold pool-owned authorizations into workbench cards so they always appear. */

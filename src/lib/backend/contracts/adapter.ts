@@ -254,9 +254,11 @@ export type MemberAvailability = 'ready' | 'cooling' | 'isolated' | 'disabled';
 
 /** Credential-free member row. Never includes login secrets or Hub tokens. */
 export interface RouteMemberOverview {
+  id?: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
   enabled: boolean;
+  priority?: number;
   availability?: MemberAvailability;
 }
 
@@ -297,6 +299,11 @@ export interface AdapterPort {
   attachPoolOwnedAuthorization(
     request: AttachPoolOwnedAuthorizationRequest,
   ): Promise<DefaultRoutePoolOverview>;
+  setRouteAuthorizationEnabled(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+    enabled: boolean,
+  ): Promise<number>;
   syncConnectionAuthorizations(): Promise<SyncConnectionAuthorizationsResult>;
   enrollNativeToGateway(profileId: string): Promise<DefaultRoutePoolOverview>;
   apply(request: AdapterApplyRequest): Promise<AdapterApplyResult>;

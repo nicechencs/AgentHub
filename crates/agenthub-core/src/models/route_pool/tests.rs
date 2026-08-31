@@ -127,9 +127,11 @@ fn default_overview_json_never_includes_hub_token() {
         v2_enrolled: true,
         gateway_port: Some(43121),
         members: vec![crate::models::RouteMemberOverview {
+            id: "member-1".into(),
             source_kind: AdapterSourceKind::Account,
             source_id: "acc-1".into(),
             enabled: true,
+            priority: 0,
             availability: None,
         }],
         listed_models: vec!["gpt-4o".into()],

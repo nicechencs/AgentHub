@@ -26,7 +26,8 @@ updated: 2026-08-31
 | 写进对方认的登录 | `config_sync` | 将登录投影到目标 Agent 能识别的配置/登录契约 |
 | 本机转发 | `local_bridge` | 通过 loopback listener 转发或转换协议 |
 | 本机令牌 | Hub token / local bearer | 默认池给目标客户端用的本机凭据；不等于上游 API Key。增删池内登录不改这把令牌 |
-| 默认池 | default RoutePool | 每个目标 Agent/surface 一个授权池；Routes 日常只展示默认池 |
+| 连接池 | default RoutePool | Routes 里列出登录的页面，与「连接」同一套登录；每个目标 Agent/surface 一个默认池 |
+| 默认池 | default RoutePool | 每个目标 Agent/surface 一个连接池；Routes 日常只展示默认池 |
 | 能力 | `Capability` | adapter 对某操作的静态声明，不等于安装状态 |
 | 完整 | `Full` | 能力已经接入且契约完整 |
 | 部分支持 | `Partial` | 可用但有降级，必须提示 |

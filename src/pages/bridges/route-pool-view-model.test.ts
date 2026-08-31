@@ -12,6 +12,7 @@ import {
   mergeOwnedAuthorizationsIntoRows,
   nativeEnrollCtaVisible,
   poolAuthorizationStatusView,
+  poolAuthorizationTicketView,
   poolSurfaceForAgent,
   routePoolMemberLabels,
   routePoolMembersSectionVisible,
@@ -200,7 +201,8 @@ describe('route pool v2 view-model', () => {
       agentId: 'codex' as const,
       kind: 'oauth' as const,
       authHealth: 'renewable' as const,
-      account: { home: 'route_pool' as const },
+      quota7dPct: 30,
+      account: { home: 'route_pool' as const, lastUsedAt: '2026-08-31T12:00:00Z' },
     } as ConnectionEntry;
     const api = {
       source: 'provider' as const,
@@ -213,15 +215,25 @@ describe('route pool v2 view-model', () => {
     const items = collectPoolAuthorizations([
       pool({
         members: [
-          { sourceKind: 'account', sourceId: 'oauth-1', enabled: true },
-          { sourceKind: 'provider', sourceId: 'api-1', enabled: true },
+          { sourceKind: 'account', sourceId: 'oauth-1', enabled: true, priority: 2 },
+          { sourceKind: 'provider', sourceId: 'api-1', enabled: false },
         ],
       }),
-    ], [oauth, api]);
+    ], [oauth, api], new Map([['account:oauth-1', 2]]));
     expect(items.map((item) => [item.kind, item.title, item.addedHere, item.authHealth])).toEqual([
       ['oauth', 'Codex login', true, 'renewable'],
       ['apikey', 'Codex API', false, 'configured'],
     ]);
+    expect(items[0]).toMatchObject({
+      enabled: true,
+      canToggle: true,
+      priority: 2,
+      lastUsedAt: '2026-08-31T12:00:00Z',
+      quota7dPct: 30,
+      bindingCount: 2,
+    });
+    expect(items[1]?.enabled).toBe(false);
+    expect(items[1]?.bindingCount).toBeUndefined();
   });
 
   it('keeps one row when the same authorization is in two pools', () => {
@@ -258,6 +270,39 @@ describe('route pool v2 view-model', () => {
     expect(poolAuthorizationStatusView({ authStatus: 'expired' }).label).toBe('需要重新登录');
     expect(poolAuthorizationStatusView({ authStatus: 'expired' }).tone).toBe('danger');
     expect(poolAuthorizationStatusView({}).label).toBe('状态未知');
+  });
+
+  it('builds a ticket-shaped row for the login detail panel', () => {
+    const item = {
+      key: 'account:grok-1',
+      sourceKind: 'account' as const,
+      sourceId: 'grok-1',
+      agentId: 'grok' as const,
+      title: 'Grok · OAuth',
+      kind: 'oauth' as const,
+    };
+    expect(poolAuthorizationTicketView(item)).toEqual({
+      id: 'account:grok-1',
+      sourceKind: 'account',
+      sourceId: 'grok-1',
+      agentId: 'grok',
+      label: 'Grok · OAuth',
+      surface: 'unknown',
+      credentialClass: 'oauth',
+      speaks: [],
+      importedFrom: null,
+    });
+    expect(poolAuthorizationTicketView(item, {
+      id: 'account:grok-1',
+      sourceKind: 'account',
+      sourceId: 'grok-1',
+      agentId: 'grok',
+      label: 'user@x.ai',
+      surface: 'grok-xai-subscription',
+      credentialClass: 'oauth',
+      speaks: ['openai-responses'],
+      importedFrom: null,
+    }).label).toBe('user@x.ai');
   });
 
   it('folds a pool-owned authorization into a workbench card', () => {

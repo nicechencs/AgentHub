@@ -38,7 +38,7 @@ Routes nested paths (secondary nav):
 | Label | Path | Role |
 |---|---|---|
 | Board | `/routes/board` | Health overview, usage, and start/stop. Bare `/routes` redirects here. |
-| Auth pool | `/routes/pool` | Local-entry workbench (replaces the old list): members, write to client, unbind, enroll. `?profile=` opens detail. |
+| Connection pool | `/routes/pool` | Login list with status and detail; `?profile=` opens route detail. |
 | Local tokens | `/routes/tokens` | Entry-key copy (in development) |
 | Activity | `/routes/activity` | Cross-route recent request feed |
 
@@ -123,11 +123,11 @@ Routes is the runtime management page for local loopback forwarding. It is not a
 
 ### 6.0 Secondary nav and board
 
-Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: usage charts, a one-line fleet summary, an optional “needs attention” block, remaining route rows with start/stop, and a short recent-request snapshot that deep-links to Activity (`?filter=` / `?route=`). Configuration edits stay on the auth pool (`/routes/pool`); request filtering stays on Activity. `/routes?profile=` opens pool detail. `/adapter`, `/router`, and `/bridges` redirect into this area.
+Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: usage charts, a one-line fleet summary, an optional “needs attention” block, remaining route rows with start/stop, and a short recent-request snapshot that deep-links to Activity (`?filter=` / `?route=`). Logins for local forwarding are listed on the connection pool (`/routes/pool`); request filtering stays on Activity. `/routes?profile=` opens pool detail. `/adapter`, `/router`, and `/bridges` redirect into this area.
 
-### 6.1 Auth pool
+### 6.1 Connection pool
 
-The auth pool is an edge-column workbench. Each card is one local entry (target Agent × surface): loopback address (`127.0.0.1` and port when available), enrolled logins, runtime state, and the permitted actions. A row can be opened through `?profile=<id>`. Adding logins goes to Connections; this page does not host a second credential editor.
+The connection pool lists official logins and API keys used for local forwarding, one row each, with status and a detail panel like Connections. A route row can still be opened through `?profile=<id>`.
 
 The page treats the following states separately:
 
@@ -144,7 +144,7 @@ Do not infer “running” from a durable database row when the runtime host is 
 
 ### 6.2 Detail
 
-The detail panel is a focused dialog or side surface opened from the auth pool. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
+The detail panel is a focused dialog or side surface opened from the connection pool. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
 
 Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Connections remains the login list; Routes does not become a second place to add credentials.
 

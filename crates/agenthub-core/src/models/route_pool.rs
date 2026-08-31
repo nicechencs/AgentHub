@@ -326,11 +326,19 @@ pub enum MemberAvailability {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteMemberOverview {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     pub source_kind: AdapterSourceKind,
     pub source_id: String,
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "is_default_priority")]
+    pub priority: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub availability: Option<MemberAvailability>,
+}
+
+fn is_default_priority(value: &i64) -> bool {
+    *value == 0
 }
 
 /// Default-pool overview for Routes. Never includes `hub_token`.

@@ -36,5 +36,46 @@ describe('PoolAuthorizationList', () => {
     expect(markup).not.toContain('回复接口');
     expect(markup).not.toContain('本机入口');
     expect(markup).not.toContain('本页添加');
+    expect(markup).not.toContain('auth.json');
+  });
+
+  it('shows enable switch, last used, quota, bindings, and priority when present', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(PoolAuthorizationList, {
+          items: [item({
+            canToggle: true,
+            enabled: true,
+            priority: 1,
+            lastUsedAt: '2026-08-31T08:00:00Z',
+            quota7dPct: 22,
+            bindingCount: 1,
+          })],
+        }),
+      ),
+    );
+    expect(markup).toContain('role="switch"');
+    expect(markup).toContain('7d 22%');
+    expect(markup).toContain('1 个连接');
+    expect(markup).toContain('优先级 1');
+  });
+
+  it('marks the row as openable when a detail handler is provided', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(PoolAuthorizationList, {
+          items: [item()],
+          activeKey: 'account:grok-1',
+          onShowDetail: () => {},
+        }),
+      ),
+    );
+    expect(markup).toContain('data-active="true"');
+    expect(markup).toContain('tabindex="0"');
+    expect(markup).toContain('cursor-pointer');
   });
 });
