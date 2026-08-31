@@ -715,3 +715,60 @@ fn occupancy_fail_skips_persist_and_leaves_unenrolled() {
     assert!(!stored.v2_enrolled);
     assert_eq!(stored.gateway_port, None);
 }
+#[test]
+fn selected_connection_sync_enrolls_only_requested_sources() {
+    use crate::models::{
+        Account, AccountKind, AdapterSourceKind, AgentId, Provider, SyncConnectionSource,
+        FEATURE_ROUTE_POOL_V2,
+    };
+    use crate::services::RoutePoolService;
+    use crate::storage::{AccountRepo, Database, ProviderRepo};
+    use serde_json::json;
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("route-pool-selected-sync.db")).unwrap();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+
+    let account = |id: &str| Account {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        kind: AccountKind::ApiKey,
+        label: id.into(),
+        credentials: json!({"format": "api_key", "api_key": "redacted-test-secret"}),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    };
+    AccountRepo::new(db.clone()).create(&account("account-selected")).unwrap();
+    AccountRepo::new(db.clone()).create(&account("account-unselected")).unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "provider-unselected".into(),
+            agent_id: AgentId::Codex,
+            name: "Provider unselected".into(),
+            settings_config: json!({"api_key": "redacted-test-secret"}),
+            meta: json!({}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let service = RoutePoolService::new(db);
+    let result = service
+        .sync_connection_authorizations_selected(Some(&[SyncConnectionSource {
+            source_kind: AdapterSourceKind::Account,
+            source_id: "account-selected".into(),
+        }]))
+        .unwrap();
+    assert_eq!(result.added, 1);
+    assert_eq!(result.skipped, 0);
+
+    let pools = service.list_default_overviews().unwrap();
+    let members = &pools.pools[0].members;
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].source_kind, AdapterSourceKind::Account);
+    assert_eq!(members[0].source_id, "account-selected");
+}
