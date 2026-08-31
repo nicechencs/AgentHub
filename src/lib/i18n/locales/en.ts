@@ -1178,6 +1178,8 @@ export const en = {
         bindingCount: "{count} connections",
         source: "Source",
         secretTail: "Key tail",
+        refreshTokenTail: "Refresh token tail",
+        identityUnavailable: "Account unavailable",
         toggleFailed: "Couldn't update enabled state",
       },
     },

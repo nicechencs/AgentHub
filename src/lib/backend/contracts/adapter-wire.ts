@@ -479,6 +479,8 @@ export interface RouteMemberOverviewWire {
   id?: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
+  displayLabel?: string | null;
+  refreshTokenTail?: string | null;
   enabled: boolean;
   priority?: number;
   availability?: string;
@@ -536,6 +538,12 @@ function mapMemberOverview(wire: RouteMemberOverviewWire): RouteMemberOverview {
     id: typeof wire.id === 'string' && wire.id.trim() ? wire.id : undefined,
     sourceKind: mapSourceKind(wire.sourceKind),
     sourceId: wire.sourceId,
+    displayLabel: typeof wire.displayLabel === 'string' && wire.displayLabel.trim()
+      ? wire.displayLabel.trim()
+      : undefined,
+    refreshTokenTail: typeof wire.refreshTokenTail === 'string' && wire.refreshTokenTail.trim()
+      ? wire.refreshTokenTail.trim()
+      : undefined,
     enabled: wire.enabled === true,
     priority,
     availability: mapAvailability(wire.availability),

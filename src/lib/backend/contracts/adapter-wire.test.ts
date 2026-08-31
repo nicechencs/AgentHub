@@ -466,13 +466,23 @@ describe('Adapter Rust wire mappers', () => {
         dialect: 'codex',
         v2Enrolled: true,
         gatewayPort: 43121,
-        members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
+        members: [{
+          sourceKind: 'account',
+          sourceId: 'oauth-1',
+          displayLabel: 'user@example.com',
+          refreshTokenTail: '**5678',
+          enabled: true,
+        }],
         listedModels: ['kimi-k2.5'],
       }],
     });
     expect(listed.enabled).toBe(true);
     expect(listed.pools[0]?.gatewayPort).toBe(43121);
-    expect(listed.pools[0]?.members[0]?.sourceId).toBe('kimi-1');
+    expect(listed.pools[0]?.members[0]).toMatchObject({
+      sourceId: 'oauth-1',
+      displayLabel: 'user@example.com',
+      refreshTokenTail: '**5678',
+    });
     expect(JSON.stringify(listed)).not.toContain('hubToken');
   });
 });

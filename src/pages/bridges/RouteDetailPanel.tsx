@@ -409,7 +409,11 @@ function RoutePoolOverviewSection({
 }) {
   const { t } = useI18n();
   const entry = defaultPoolEntryUrl(pool.gatewayPort);
-  const members = routePoolMemberLabels(pool.members, entries);
+  const members = routePoolMemberLabels(
+    pool.members,
+    entries,
+    t('routes.pool.detail.identityUnavailable'),
+  );
   return (
     <section className="space-y-2" data-route-pool={pool.id}>
       <h3 className="text-body font-medium">{t('routes.pool.entry')}</h3>

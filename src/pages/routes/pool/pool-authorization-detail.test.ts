@@ -21,6 +21,7 @@ const t = (key: string, params?: Record<string, string | number>) => {
   if (key === 'routes.pool.detail.enabled') return '启用';
   if (key === 'routes.pool.detail.quota') return '调用窗口';
   if (key === 'connections.list.lastUsedAt') return '最近使用';
+  if (key === 'routes.pool.detail.refreshTokenTail') return 'Refresh Token tail';
   return key;
 };
 
@@ -49,6 +50,17 @@ describe('pool authorization detail fields', () => {
       'enabled',
     ]);
     expect(poolAuthorizationQuotaParts(item())).toEqual([]);
+  });
+
+  it('shows only the masked refresh-token tail for OAuth', () => {
+    const rows = poolAuthorizationDetailRows(item({ refreshTokenTail: '**5678' }), t);
+    expect(rows).toContainEqual({
+      id: 'refreshTokenTail',
+      label: 'Refresh Token tail',
+      value: '**5678',
+      mono: true,
+    });
+    expect(rows.map((entry) => entry.value)).not.toContain('refresh-token-secret');
   });
 
   it('shows last used, quota, bindings, and priority columns when present', () => {

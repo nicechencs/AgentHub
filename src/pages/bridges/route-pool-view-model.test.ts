@@ -92,6 +92,36 @@ describe('route pool v2 view-model', () => {
     expect(JSON.stringify(overview)).not.toContain('ahb_');
   });
 
+  it('uses pool member display labels and masked OAuth tails when Connections has no row', () => {
+    const items = collectPoolAuthorizations([
+      pool({
+        members: [{
+          sourceKind: 'account',
+          sourceId: 'oauth-owned-id',
+          displayLabel: 'owner@example.com',
+          refreshTokenTail: '**5678',
+          enabled: true,
+        }],
+      }),
+    ], []);
+    expect(items[0]).toMatchObject({
+      title: 'owner@example.com',
+      identityLabel: 'owner@example.com',
+      refreshTokenTail: '**5678',
+    });
+    expect(items[0]?.title).not.toContain('oauth-owned-id');
+    expect(routePoolMemberLabels([
+      { sourceKind: 'account', sourceId: 'missing-id', enabled: true },
+    ], [])).toEqual([{
+      title: '未提供账号',
+      enabled: true,
+      availability: undefined,
+      sourceKind: 'account',
+      sourceId: 'missing-id',
+      kind: undefined,
+    }]);
+  });
+
   it('uses pending copy when the gateway port is not allocated', () => {
     expect(defaultPoolEntryUrl(null)).toEqual({ url: null, pending: true });
     expect(defaultPoolEntryUrl(0)).toEqual({ url: null, pending: true });
@@ -319,7 +349,12 @@ describe('route pool v2 view-model', () => {
       [owned],
     );
     expect(merged[0]?.pool?.members).toEqual([
-      { sourceKind: 'provider', sourceId: 'pool-api', enabled: true },
+      {
+        sourceKind: 'provider',
+        sourceId: 'pool-api',
+        displayLabel: 'Pool API',
+        enabled: true,
+      },
     ]);
   });
 

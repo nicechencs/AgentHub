@@ -1168,6 +1168,8 @@ export const zh = {
         bindingCount: "{count} 个连接",
         source: "来源",
         secretTail: "密钥尾号",
+        refreshTokenTail: "Refresh Token 尾号",
+        identityUnavailable: "未提供账号",
         toggleFailed: "无法更改启用状态",
       },
     },

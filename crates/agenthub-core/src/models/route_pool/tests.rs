@@ -130,6 +130,8 @@ fn default_overview_json_never_includes_hub_token() {
             id: "member-1".into(),
             source_kind: AdapterSourceKind::Account,
             source_id: "acc-1".into(),
+            display_label: None,
+            refresh_token_tail: None,
             enabled: true,
             priority: 0,
             availability: None,

@@ -108,11 +108,14 @@ export function poolAuthorizationDetailRows(
       copyable: true,
     });
   }
-  if (item.secretTail?.trim()) {
+  const secretTail = item.kind === 'oauth' ? item.refreshTokenTail : item.secretTail;
+  if (secretTail?.trim()) {
     rows.push({
-      id: 'secret',
-      label: t('routes.pool.detail.secretTail'),
-      value: item.secretTail.trim(),
+      id: item.kind === 'oauth' ? 'refreshTokenTail' : 'secret',
+      label: item.kind === 'oauth'
+        ? t('routes.pool.detail.refreshTokenTail')
+        : t('routes.pool.detail.secretTail'),
+      value: secretTail.trim(),
       mono: true,
     });
   }

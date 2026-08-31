@@ -772,3 +772,72 @@ fn selected_connection_sync_enrolls_only_requested_sources() {
     assert_eq!(members[0].source_kind, AdapterSourceKind::Account);
     assert_eq!(members[0].source_id, "account-selected");
 }
+
+#[test]
+fn pool_member_overview_exposes_safe_source_label_and_oauth_refresh_tail() {
+    let (_dir, db, service, _profiles) = tmp();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "codex-oauth".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "internal-oauth-row".into(),
+            credentials: json!({
+                "tokens": {"refresh_token": "refresh-token-12345678", "access_token": "access-secret"}
+            }),
+            extra: json!({"identityLabel": "user@example.com"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "codex-provider".into(),
+            agent_id: AgentId::Codex,
+            name: "Team API".into(),
+            settings_config: json!({"apiKey": "api-secret"}),
+            meta: json!({}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let first = service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Account,
+            "codex-oauth",
+        )
+        .unwrap();
+    let overview = service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-provider",
+        )
+        .unwrap();
+    assert_eq!(overview.id, first.id);
+    let oauth = overview
+        .members
+        .iter()
+        .find(|member| member.source_id == "codex-oauth")
+        .unwrap();
+    assert_eq!(oauth.display_label.as_deref(), Some("user@example.com"));
+    assert_eq!(oauth.refresh_token_tail.as_deref(), Some("**5678"));
+    let api = overview
+        .members
+        .iter()
+        .find(|member| member.source_id == "codex-provider")
+        .unwrap();
+    assert_eq!(api.display_label.as_deref(), Some("Team API"));
+    assert!(api.refresh_token_tail.is_none());
+    let encoded = serde_json::to_string(&overview).unwrap();
+    assert!(!encoded.contains("refresh-token-12345678"));
+    assert!(!encoded.contains("access-secret"));
+    assert!(!encoded.contains("api-secret"));
+}

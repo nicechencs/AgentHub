@@ -18,7 +18,7 @@ use crate::models::{
     authorization_is_route_pool_home, choose_default_pool_id, enroll_native_plan_is_open,
     feature_flag_enabled, generate_hub_token, list_local_bridge_models, product_flag_enabled,
     set_authorization_route_pool_home, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter,
-    AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId, DefaultRoutePoolList,
+    AccountKind, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId, DefaultRoutePoolList,
     DefaultRoutePoolOverview, ModelRouteRule, RouteDownstreamDialect, RouteDownstreamSurface,
     RouteMember, RouteMemberOverview, RoutePool, RouteSchedulePolicy,
     SyncConnectionAuthorizationsResult, SyncConnectionSource, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
@@ -148,6 +148,24 @@ impl RoutePoolService {
     pub fn overview_from_pool(&self, pool: &RoutePool) -> Result<DefaultRoutePoolOverview> {
         let members = self.pools.list_members(&pool.id)?;
         let listed_models = self.listed_models_for_pool(pool, &members);
+        let mut member_overviews = Vec::with_capacity(members.len());
+        for member in members {
+            let (display_label, refresh_token_tail) = self.member_display_fields(&member)?;
+            member_overviews.push(RouteMemberOverview {
+                id: member.id,
+                source_kind: member.source_kind,
+                source_id: member.source_id,
+                display_label,
+                refresh_token_tail,
+                enabled: member.enabled,
+                priority: member.priority,
+                availability: Some(if member.enabled {
+                    crate::models::MemberAvailability::Ready
+                } else {
+                    crate::models::MemberAvailability::Disabled
+                }),
+            });
+        }
         Ok(DefaultRoutePoolOverview {
             id: pool.id.clone(),
             target_agent_id: pool.target_agent_id,
@@ -155,21 +173,7 @@ impl RoutePoolService {
             dialect: pool.downstream_dialect,
             v2_enrolled: pool.v2_enrolled,
             gateway_port: pool.gateway_port,
-            members: members
-                .into_iter()
-                .map(|member| RouteMemberOverview {
-                    id: member.id,
-                    source_kind: member.source_kind,
-                    source_id: member.source_id,
-                    enabled: member.enabled,
-                    priority: member.priority,
-                    availability: Some(if member.enabled {
-                        crate::models::MemberAvailability::Ready
-                    } else {
-                        crate::models::MemberAvailability::Disabled
-                    }),
-                })
-                .collect(),
+            members: member_overviews,
             listed_models,
         })
     }
@@ -926,6 +930,42 @@ impl RoutePoolService {
         list_local_bridge_models(product, pool.target_agent_id, None)
     }
 
+    fn member_display_fields(
+        &self,
+        member: &RouteMember,
+    ) -> Result<(Option<String>, Option<String>)> {
+        match member.source_kind {
+            AdapterSourceKind::Account => {
+                let Some(account) = self.accounts.get_by_id(&member.source_id)? else {
+                    return Ok((None, None));
+                };
+                let display_label = if account.kind == AccountKind::Oauth {
+                    account
+                        .identity_label()
+                        .or_else(|| account.extra_email())
+                        .or_else(|| account.credential_email())
+                        .or_else(|| non_empty_label(&account.label))
+                } else {
+                    non_empty_label(&account.label)
+                }
+                .map(str::to_owned);
+                let refresh_token_tail = if account.kind == AccountKind::Oauth {
+                    crate::utils::redact::refresh_token_tail(&account.credentials)
+                } else {
+                    None
+                };
+                Ok((display_label, refresh_token_tail))
+            }
+            AdapterSourceKind::Provider => {
+                let display_label = self
+                    .providers
+                    .get_by_id(&member.source_id)?
+                    .and_then(|provider| non_empty_label(&provider.name).map(str::to_owned));
+                Ok((display_label, None))
+            }
+        }
+    }
+
     fn require_member(&self, member_id: &str) -> Result<RouteMember> {
         self.pools
             .get_member(member_id)?
@@ -949,4 +989,9 @@ impl RoutePoolService {
 
 fn now() -> String {
     Utc::now().to_rfc3339()
+}
+
+fn non_empty_label(value: &str) -> Option<&str> {
+    let value = value.trim();
+    (!value.is_empty()).then_some(value)
 }

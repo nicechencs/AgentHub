@@ -257,6 +257,10 @@ export interface RouteMemberOverview {
   id?: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
+  /** Safe account/provider label; never a credential or source-id fallback. */
+  displayLabel?: string;
+  /** Masked OAuth refresh-token tail, e.g. `**1234`; never the raw token. */
+  refreshTokenTail?: string;
   enabled: boolean;
   priority?: number;
   availability?: MemberAvailability;
