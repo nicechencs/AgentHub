@@ -66,10 +66,16 @@ describe('poolSurfaceForApiChoice', () => {
 
 describe('poolSyncCandidates', () => {
   it('marks existing source memberships disabled and keeps account/provider identity', () => {
-    const entry = (source: 'account' | 'provider', id: string, agentId: AgentId, home?: 'route_pool') => ({
+    const entry = (
+      source: 'account' | 'provider',
+      id: string,
+      agentId: AgentId,
+      home?: 'route_pool',
+      kind: ConnectionEntry['kind'] = source === 'account' ? 'oauth' : 'apikey',
+    ) => ({
       key: `${source}:${id}`,
       source,
-      kind: source === 'account' ? 'oauth' : 'apikey',
+      kind,
       id,
       agentId,
       title: id,
@@ -85,7 +91,10 @@ describe('poolSyncCandidates', () => {
         entry('account', 'account-synced', 'codex'),
         entry('provider', 'provider-new', 'grok'),
         entry('account', 'pool-owned', 'claude', 'route_pool'),
-        entry('provider', 'unsupported', 'pi'),
+        entry('account', 'wb-key', 'workbuddy', undefined, 'apikey'),
+        entry('account', 'zcode-key', 'zcode', undefined, 'apikey'),
+        entry('provider', 'pi-key', 'pi'),
+        entry('account', 'kimi-oauth', 'kimi'),
       ],
       [{
         id: 'pool-codex',
@@ -100,6 +109,9 @@ describe('poolSyncCandidates', () => {
     expect(candidates.map((candidate) => [candidate.sourceKind, candidate.sourceId])).toEqual([
       ['account', 'account-synced'],
       ['provider', 'provider-new'],
+      ['account', 'wb-key'],
+      ['account', 'zcode-key'],
+      ['provider', 'pi-key'],
     ]);
     expect(candidates[0]?.alreadySynced).toBe(true);
     expect(candidates[1]?.alreadySynced).toBe(false);

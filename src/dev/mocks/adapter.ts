@@ -24,6 +24,62 @@ import { getMockProviderById, listMockProviders, upsertMockProvider } from './pr
 
 const adapterStates = new Set<MockAdapterState>();
 
+const MOCK_POOL_WRITERS = ['claude', 'codex', 'grok', 'kimi', 'dsh'] as const satisfies readonly DefaultRoutePoolOverview['targetAgentId'][];
+
+function mockWriterSurface(agentId: string): RoutePoolSurface | null {
+  if (agentId === 'claude') return 'messages';
+  if (agentId === 'codex' || agentId === 'grok') return 'responses';
+  if (agentId === 'kimi' || agentId === 'dsh') return 'chat_completions';
+  return null;
+}
+
+function mockWriterDialect(agentId: DefaultRoutePoolOverview['targetAgentId']): RoutePoolDialect {
+  if (
+    agentId === 'claude'
+    || agentId === 'codex'
+    || agentId === 'grok'
+    || agentId === 'kimi'
+    || agentId === 'dsh'
+  ) {
+    return agentId;
+  }
+  return 'generic';
+}
+
+function mockPoolTargetsForSync(
+  agentId: string,
+  kind: 'oauth' | 'apikey',
+): Array<{
+  agentId: DefaultRoutePoolOverview['targetAgentId'];
+  surface: RoutePoolSurface;
+  dialect: RoutePoolDialect;
+}> {
+  if (kind === 'oauth' && agentId !== 'claude' && agentId !== 'codex' && agentId !== 'grok') {
+    return [];
+  }
+  const native = mockWriterSurface(agentId);
+  if (native) {
+    const target = agentId as DefaultRoutePoolOverview['targetAgentId'];
+    return [{ agentId: target, surface: native, dialect: mockWriterDialect(target) }];
+  }
+  if (kind === 'oauth') return [];
+  const surfaces: RoutePoolSurface[] = agentId === 'workbuddy'
+    ? ['chat_completions']
+    : agentId === 'zcode' || agentId === 'pi'
+      ? ['messages', 'responses', 'chat_completions']
+      : [];
+  return MOCK_POOL_WRITERS
+    .filter((writer) => {
+      const surface = mockWriterSurface(writer);
+      return surface != null && surfaces.includes(surface);
+    })
+    .map((writer) => ({
+      agentId: writer,
+      surface: mockWriterSurface(writer)!,
+      dialect: writer,
+    }));
+}
+
 export function resetMockAdapters(): void {
   adapterStates.forEach((state) => {
     state.generatedProviders.forEach((provider) => state.removeGeneratedProvider?.(provider));
@@ -365,57 +421,48 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       let added = 0;
       let skipped = 0;
       const enroll = (
-        agentId: DefaultRoutePoolOverview['targetAgentId'],
+        agentId: string,
         sourceKind: 'account' | 'provider',
         sourceId: string,
         home?: 'route_pool',
+        kind: 'oauth' | 'apikey' = 'apikey',
       ) => {
         if (home === 'route_pool') {
           skipped += 1;
           return;
         }
-        const surface: RoutePoolSurface | null = agentId === 'claude'
-          ? 'messages'
-          : agentId === 'kimi' || agentId === 'dsh'
-            ? 'chat_completions'
-            : agentId === 'codex' || agentId === 'grok'
-              ? 'responses'
-              : null;
-        if (!surface) {
+        const targets = mockPoolTargetsForSync(agentId, kind);
+        if (targets.length === 0) {
           skipped += 1;
           return;
         }
-        const dialect: RoutePoolDialect =
-          agentId === 'claude'
-          || agentId === 'codex'
-          || agentId === 'grok'
-          || agentId === 'kimi'
-          || agentId === 'dsh'
-            ? agentId
-            : 'generic';
-        let pool = state.defaultPools.find((item) => (
-          item.targetAgentId === agentId && item.surface === surface
-        ));
-        if (!pool) {
-          pool = {
-            id: `pool-${agentId}-${surface}`,
-            targetAgentId: agentId,
-            surface,
-            dialect,
-            v2Enrolled: false,
-            members: [],
-            listedModels: [],
-          };
-          state.defaultPools.push(pool);
+        let addedAny = false;
+        for (const target of targets) {
+          let pool = state.defaultPools.find((item) => (
+            item.targetAgentId === target.agentId && item.surface === target.surface
+          ));
+          if (!pool) {
+            pool = {
+              id: `pool-${target.agentId}-${target.surface}`,
+              targetAgentId: target.agentId,
+              surface: target.surface,
+              dialect: target.dialect,
+              v2Enrolled: false,
+              members: [],
+              listedModels: [],
+            };
+            state.defaultPools.push(pool);
+          }
+          if (pool.members.some((member) => (
+            member.sourceKind === sourceKind && member.sourceId === sourceId
+          ))) {
+            continue;
+          }
+          pool.members.push({ sourceKind, sourceId, enabled: true });
+          addedAny = true;
         }
-        if (pool.members.some((member) => (
-          member.sourceKind === sourceKind && member.sourceId === sourceId
-        ))) {
-          skipped += 1;
-          return;
-        }
-        pool.members.push({ sourceKind, sourceId, enabled: true });
-        added += 1;
+        if (addedAny) added += 1;
+        else skipped += 1;
       };
       const accounts = listMockAccounts();
       const providers = listMockProviders();
@@ -423,8 +470,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         for (const source of request.sources) {
           if (source.sourceKind === 'account') {
             const account = accounts.find((item) => item.id === source.sourceId);
-            if (account) enroll(account.agentId, 'account', account.id, account.home);
-            else skipped += 1;
+            if (account) {
+              enroll(account.agentId, 'account', account.id, account.home, account.kind);
+            } else skipped += 1;
             continue;
           }
           const provider = providers.find((item) => item.id === source.sourceId);
@@ -436,18 +484,18 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
             skipped += 1;
             continue;
           }
-          enroll(provider.agentId, 'provider', provider.id, provider.home);
+          enroll(provider.agentId, 'provider', provider.id, provider.home, 'apikey');
         }
       } else {
         for (const account of accounts) {
-          enroll(account.agentId, 'account', account.id, account.home);
+          enroll(account.agentId, 'account', account.id, account.home, account.kind);
         }
         for (const provider of providers) {
           if (state.generatedProviders.has(provider.id)) {
             skipped += 1;
             continue;
           }
-          enroll(provider.agentId, 'provider', provider.id, provider.home);
+          enroll(provider.agentId, 'provider', provider.id, provider.home, 'apikey');
         }
       }
       return { added, skipped };

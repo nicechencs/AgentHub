@@ -854,6 +854,81 @@ fn selected_connection_sync_enrolls_only_requested_sources() {
 }
 
 #[test]
+fn connection_sync_enrolls_api_keys_from_workbuddy_and_zcode() {
+    let (_dir, db, service, _profiles) = tmp();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "wb-key".into(),
+            agent_id: AgentId::WorkBuddy,
+            kind: AccountKind::ApiKey,
+            label: "WorkBuddy custom".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "sk-wb",
+                "url": "https://api.example.com/v1/chat/completions"
+            }),
+            extra: json!({ "provider": "workbuddy" }),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "zcode-key".into(),
+            agent_id: AgentId::Zcode,
+            kind: AccountKind::ApiKey,
+            label: "Z.ai API Key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "sk-zcode",
+                "base_url": "https://api.z.ai/api/anthropic"
+            }),
+            extra: json!({ "provider": "zcode", "endpoint": "https://api.z.ai/api/anthropic" }),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db)
+        .create(&Account {
+            id: "kimi-oauth".into(),
+            agent_id: AgentId::Kimi,
+            kind: AccountKind::Oauth,
+            label: "Kimi login".into(),
+            credentials: json!({"format": "auth_json", "tokens": {"access_token": "x"}}),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let result = service.sync_connection_authorizations().unwrap();
+    assert_eq!(result.added, 2);
+    assert!(result.skipped >= 1);
+
+    let listed = service.list_default_overviews().unwrap();
+    let members: Vec<_> = listed
+        .pools
+        .iter()
+        .flat_map(|pool| {
+            pool.members
+                .iter()
+                .map(|member| (pool.target_agent_id, member.source_id.as_str()))
+        })
+        .collect();
+    assert!(members.iter().any(|(_, id)| *id == "wb-key"));
+    assert!(members.iter().any(|(_, id)| *id == "zcode-key"));
+    assert!(members.iter().any(|(agent, id)| *id == "wb-key"
+        && matches!(*agent, AgentId::Kimi | AgentId::Dsh)));
+    assert!(!members.iter().any(|(_, id)| *id == "kimi-oauth"));
+}
+
+#[test]
 fn pool_member_overview_exposes_safe_source_label_and_oauth_refresh_tail() {
     let (_dir, db, service, _profiles) = tmp();
     AccountRepo::new(db.clone())
