@@ -45,14 +45,36 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentId; size?: '
   const color = meta.color;
   const letter = meta.letter;
   const name = meta.name;
-  const logoSrc = meta.logoSrc;
-  // Keep the error scoped to the source that failed. A different agent/source
-  // must get a fresh chance to render its own logo after a prop change.
-  const [logoState, setLogoState] = useState<{ src?: string; failed: boolean }>({
-    src: logoSrc,
-    failed: false,
+  const svgLogoSrc = meta.logoSvgSrc;
+  const pngLogoSrc = meta.logoSrc;
+  const logoBackground = meta.logoBackground ?? '#ffffff';
+
+  type LogoLoadState = {
+    agentId: AgentId;
+    svgSrc?: string;
+    pngSrc?: string;
+    svgFailed: boolean;
+    pngFailed: boolean;
+  };
+
+  // Keep failures scoped to the exact agent/source pair. A different
+  // agent—or a refreshed asset URL—must get a fresh chance to render its logo.
+  const [logoState, setLogoState] = useState<LogoLoadState>({
+    agentId,
+    svgSrc: svgLogoSrc,
+    pngSrc: pngLogoSrc,
+    svgFailed: false,
+    pngFailed: false,
   });
-  const showLogo = Boolean(logoSrc && !(logoState.src === logoSrc && logoState.failed));
+  const sameAssetSet =
+    logoState.agentId === agentId &&
+    logoState.svgSrc === svgLogoSrc &&
+    logoState.pngSrc === pngLogoSrc;
+  const svgFailed = sameAssetSet && logoState.svgFailed;
+  const pngFailed = sameAssetSet && logoState.pngFailed;
+  const logoSrc = svgLogoSrc && !svgFailed ? svgLogoSrc : !pngFailed ? pngLogoSrc : undefined;
+  const logoKind = logoSrc === svgLogoSrc ? 'svg' : logoSrc === pngLogoSrc ? 'png' : undefined;
+  const showLogo = Boolean(logoSrc);
   const lightBg = relativeLuminance(brandHex(agentId) ?? color) > 0.55;
   return (
     <Hint label={name}>
@@ -60,13 +82,13 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentId; size?: '
         className={cn(
           'inline-flex shrink-0 items-center justify-center rounded-full font-bold',
           showLogo
-            ? 'border border-border bg-white p-0.5 dark:bg-zinc-100'
+            ? 'border border-border p-0.5'
             : lightBg
               ? 'text-primary'
               : 'text-white',
           sizeCls,
         )}
-        style={showLogo ? undefined : { backgroundColor: color }}
+        style={{ backgroundColor: showLogo ? logoBackground : color }}
         aria-label={name}
       >
         {logoSrc && showLogo ? (
@@ -75,7 +97,31 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentId; size?: '
             alt=""
             aria-hidden="true"
             className="h-full w-full rounded-full object-contain"
-            onError={() => setLogoState({ src: logoSrc, failed: true })}
+            onError={() => {
+              setLogoState((previous) => {
+                // Ignore a stale error from an image that belonged to an
+                // earlier agent/source after props changed.
+                const current =
+                  previous.agentId === agentId &&
+                  previous.svgSrc === svgLogoSrc &&
+                  previous.pngSrc === pngLogoSrc;
+                if (!current) {
+                  // Props can change before React has committed a state
+                  // update. Seed the new source pair from this error event so
+                  // its fallback chain still works on the next render.
+                  return {
+                    agentId,
+                    svgSrc: svgLogoSrc,
+                    pngSrc: pngLogoSrc,
+                    svgFailed: logoKind === 'svg',
+                    pngFailed: logoKind === 'png',
+                  };
+                }
+                if (logoKind === 'svg') return { ...previous, svgFailed: true };
+                if (logoKind === 'png') return { ...previous, pngFailed: true };
+                return previous;
+              });
+            }}
           />
         ) : (
           letter

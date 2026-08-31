@@ -6,16 +6,14 @@ import { AGENT_DISPLAY } from '@/config/agents';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AgentLogo } from './AgentLogo';
 
-const KNOWN_AGENT_IDS = [
+const SVG_AGENT_IDS = [
   'claude',
   'codex',
   'kimi',
   'grok',
   'pi',
-  'workbuddy',
   'cursor',
   'dsh',
-  'zcode',
 ] as const;
 
 function markup(agentId: string, size: 'sm' | 'md' | 'lg' = 'md'): string {
@@ -86,16 +84,41 @@ function logoImage(tree: ReactElement): ReactElement | null {
 }
 
 describe('AgentLogo', () => {
-  it('uses a local logo image for every known agent id', () => {
-    for (const agentId of KNOWN_AGENT_IDS) {
+  it('uses a local SVG logo first for every known agent id', () => {
+    for (const agentId of SVG_AGENT_IDS) {
+      expect(AGENT_DISPLAY[agentId]?.logoSvgSrc, agentId).toBeTruthy();
       expect(AGENT_DISPLAY[agentId]?.logoSrc, agentId).toBeTruthy();
 
       const html = markup(agentId);
       expect(html, agentId).toContain('<img');
       expect(html, agentId).toContain('alt=""');
       expect(html, agentId).toContain('aria-hidden="true"');
-      expect(html, agentId).toContain('.png');
+      expect(html, agentId).toContain('.svg');
+      expect(html, agentId).not.toContain('.png');
     }
+  });
+
+  it.each(['workbuddy', 'zcode'] as const)(
+    'uses %s PNG directly because its SVG embeds a raster image',
+    (agentId) => {
+      expect(AGENT_DISPLAY[agentId].logoSvgSrc).toBeUndefined();
+      expect(AGENT_DISPLAY[agentId].logoSrc).toMatch(new RegExp(`${agentId}\\.png$`));
+
+      const html = markup(agentId);
+      expect(html).toContain('.png');
+      expect(html).not.toContain('.svg');
+    },
+  );
+
+  it('uses contrasting logo backgrounds without changing letter fallback styling', () => {
+    const codexCircle = logoCircle(logoHarness('codex').render());
+    expect(codexCircle.props.style).toMatchObject({ backgroundColor: '#111827' });
+
+    const kimiCircle = logoCircle(logoHarness('kimi').render());
+    expect(kimiCircle.props.style).toMatchObject({ backgroundColor: '#7c6cff' });
+
+    const unknownCircle = logoCircle(logoHarness('unknown-agent').render());
+    expect(unknownCircle.props.style).toMatchObject({ backgroundColor: 'var(--text-muted)' });
   });
 
   it('keeps the circular initial fallback for an unknown agent', () => {
@@ -107,25 +130,43 @@ describe('AgentLogo', () => {
     expect(html).not.toContain('<img');
   });
 
-  it('falls back after an image error and resets for a different agent logo', () => {
+  it('falls back from SVG to PNG and then to the initial after both errors', () => {
     const harness = logoHarness('claude');
     const initial = harness.render();
     const initialImage = logoImage(initial);
 
     expect(initialImage).not.toBeNull();
+    expect(initialImage?.props.src).toMatch(/claude\.svg$/);
     initialImage?.props.onError();
+
+    const pngFallback = harness.render();
+    const pngImage = logoImage(pngFallback);
+    expect(pngImage).not.toBeNull();
+    expect(pngImage?.props.src).toMatch(/claude\.png$/);
+    pngImage?.props.onError();
 
     const failed = harness.render();
     expect(logoImage(failed)).toBeNull();
     expect(logoCircle(failed).props.children).toBe('C');
+  });
+
+  it('resets source failure state when switching agents', () => {
+    const harness = logoHarness('claude');
+    const initial = harness.render();
+    logoImage(initial)?.props.onError();
+    expect(logoImage(harness.render())?.props.src).toMatch(/claude\.png$/);
 
     const switched = harness.render('codex');
     const switchedImage = logoImage(switched);
     expect(switchedImage).not.toBeNull();
-    expect(switchedImage?.props.src).toMatch(/codex\.png$/);
+    expect(switchedImage?.props.src).toMatch(/codex\.svg$/);
+    switchedImage?.props.onError();
+    const switchedPng = logoImage(harness.render('codex'));
+    expect(switchedPng?.props.src).toMatch(/codex\.png$/);
   });
 
   it('maps the dsh agent to the DeepSeek logo asset', () => {
+    expect(AGENT_DISPLAY.dsh.logoSvgSrc).toMatch(/deepseek\.svg$/);
     expect(AGENT_DISPLAY.dsh.logoSrc).toMatch(/deepseek\.png$/);
   });
 
