@@ -333,7 +333,11 @@ export default function RoutesPoolPage() {
             </p>
           )}
           <div className={pageRhythm.chromeActions}>
-            <PoolAddButtons agents={allowedAgents} oauthAgents={oauthLoginAgents} />
+            <PoolAddButtons
+              agents={allowedAgents}
+              oauthAgents={oauthLoginAgents}
+              onChanged={() => { void reload(); }}
+            />
             <Button
               type="button"
               size="sm"
