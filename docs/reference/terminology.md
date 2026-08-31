@@ -14,19 +14,21 @@ updated: 2026-08-31
 | 用户界面术语 | 内部/代码术语 | 含义 |
 |---|---|---|
 | Agent | `AgentId` / `AgentKey` / `AgentAdapter` | 被 AgentHub 检测、安装、配置或运行的第三方 CLI/runtime |
-| 登录 | account / credential / Ticket（内部） | 用户可选择的授权或 API key 记录；实现中仍可能出现 Ticket，但 UI 不说“票” |
+| 登录 | account / credential / Ticket（内部） | 用户可选择的授权或 API key 记录；从 Connections 或 Routes 添加都是同一份登录。实现中仍可能出现 Ticket，但 UI 不说“票” |
 | 官方登录 | oauth / 「官方登录」入口 | 浏览器或设备码订阅登录，与 API Key 分行保存 |
 | API Key | api_key / 「添加 API Key」 | 钥匙登录；本机若是官方登录则引导改用「导入授权」 |
 | 相关文件 | credential files | 登录详情里记下的配置/登录文件（打码后可复制、打开所在目录） |
 | 保留本机配置副本 | `keepLiveFileCopies` | 切换/导入时把各家本机配置拷到备份目录；默认开启 |
 | 供应商 | provider | 某 Agent 的 API 端点、模型和相关配置记录 |
-| 路由 / Routes | adapter profile / route | Connections 之外用于管理本机转发 listener 的产品表面 |
+| 路由 / Routes | adapter profile / route | 管理本机转发 listener 的产品表面；也可添加官方登录 / API Key，仍出现在 Connections |
 | bridge | `local_bridge` / in-process Gateway | Routes 的内部协议转换实现；不作为普通用户功能名 |
 | 直接配置 | `native_endpoint` | 将来源端点写入目标 Agent 自己的配置 |
 | 写进对方认的登录 | `config_sync` | 将登录投影到目标 Agent 能识别的配置/登录契约 |
 | 本机转发 | `local_bridge` | 通过 loopback listener 转发或转换协议 |
 | 本机令牌 | Hub token / local bearer | 默认池给目标客户端用的本机凭据；不等于上游 API Key。增删池内登录不改这把令牌 |
 | 连接池 | default RoutePool | Routes 里列出登录的页面，与「连接」同一套登录；每个目标 Agent/surface 一个默认池 |
+| 分享至连接池 | `syncConnectionAuthorizations`（按这份登录） | 连接页把这份登录加入默认连接池；登录仍留在连接页。API Key 都可以加入（不按所属 Agent 挡掉）；国产官方登录不能分享。已经在池里、或这份登录不能加入时按钮禁用 |
+| 从连接同步 | `syncConnectionAuthorizations`（多选） | 连接池页一次加入连接页里可分享的登录（所有 API Key；Claude / Codex / Grok 官方登录仍按已登记的接法）。已经在池里的会跳过。国产官方登录不进入候选 |
 | 默认池 | default RoutePool | 每个目标 Agent/surface 一个连接池；Routes 日常只展示默认池 |
 | 能力 | `Capability` | adapter 对某操作的静态声明，不等于安装状态 |
 | 完整 | `Full` | 能力已经接入且契约完整 |

@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, core, and connection UI contributors
 source-of-truth: AccountService, Account/LiveAccount models, adapter authorization hooks, and ConnectionService
-updated: 2026-08-29
+updated: 2026-08-31
 ---
 
 # Accounts 与 Authorization Pool
@@ -29,13 +29,13 @@ updated: 2026-08-29
 - identity 不明确时 fail closed，不根据 label、token preview 或猜测合并。
 - Pi 还要按官方 live slot 区分；同一人位于不同 provider 槽仍是不同账号行。
 - 每个 Agent 的 live 生效位最多一条；切换不会删除池内其他授权。
-- `local_bridge` 的默认池按目标 Agent/surface 唯一；本机口和本机令牌更新覆盖。池内可以有多份合格登录，但不与官方 OAuth/API Key 合并，也不出现在登录列表。
+- `local_bridge` 的默认池按目标 Agent/surface 唯一；本机口和本机令牌更新覆盖。池内可以有多份合格登录。入池不复制登录，也不把本机令牌当成新的登录；这些登录仍出现在 Connections。
 
 Adapter 的 `authorization_key` 用于识别同一授权（通常是 token/key hash）；OAuth 同身份覆盖另由 service 使用稳定 identity label/字段判断。不要把 email 当 authorization key，也不要把 capability 枚举当去重规则。
 
 ## Live 与绑定
 
-导入 live：以 Agent adapter 能识别的当前 credential family 为准；同时存在 API Key 与官方登录时，报告 `alsoPresent` 供用户确认，但不把两族合成一张登录。切换 live：备份、写入目标 Agent 的官方文件、更新 current/binding，并保留池中其他行。登录记下关键词和整份配置；详情列出相关文件（打码后可复制、打开所在目录），不含明文钥匙。跨 Agent 复用应走 [bind](connections-and-routing.md)，不能把目标的生成配置再导入为新登录。
+导入 live：以 Agent adapter 能识别的当前 credential family 为准；同时存在 API Key 与官方登录时，报告 `alsoPresent` 供用户确认，但不把两族合成一张登录。切换 live：备份、写入目标 Agent 的官方文件、更新 current/binding，并保留池中其他行。登录记下关键词和整份配置；详情列出相关文件（打码后可复制、打开所在目录），不含明文钥匙。接到某个工具从 Dashboard「连接/切换」，写入仍走 [bind](connections-and-routing.md)；连接页把登录「分享至连接池」。**API Key 都可以分享**（含 WorkBuddy / ZCode 等上配置的）；**国产官方登录不能分享**。不能把目标的生成配置再导入为新登录。
 
 刷新归属遵循谁拥有登录文件谁续期：目标 CLI-owned OAuth 由目标工具刷新，AgentHub 只重新读取；Hub-owned grant 才由 AgentHub 按 account 行做 single-flight。跨进程或并发写入要依赖 revision/lock，不以最后一次列表刷新覆盖另一份新凭据。
 
@@ -47,7 +47,9 @@ Adapter 的 `authorization_key` 用于识别同一授权（通常是 token/key h
 
 ## 国产 OAuth 边界
 
-中国产 AI 的 OAuth（包括 Kimi CLI 会员 OAuth，以及 GLM、DeepSeek、通义、豆包等）不开放跨 Agent adapter 边，也不转换为 API。国产路由只认产品明确支持的官方 API Key；这属于产品边界，不是“稍后补 writer”的 roadmap。
+中国产 AI 的 OAuth（包括 Kimi CLI 会员 OAuth，以及 GLM、DeepSeek、通义、豆包等）不开放跨 Agent adapter 边，也不转换为 API，也不可分享至连接池或接到其他工具。国产路由只认产品明确支持的官方 API Key；这属于产品边界，不是“稍后补 writer”的 roadmap。
+
+所有 API Key 都可以分享。入池和接到其他工具看的是「这是 API Key」，不是「这份登录挂在哪个 Agent」。WorkBuddy / ZCode 上配置的 Key 与其它工具上的 Key 同一条规则。详见 [产品边界](../decisions/product-boundaries.md)。
 
 ## 相关页面
 

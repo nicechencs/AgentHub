@@ -4,7 +4,7 @@ description: CLI、GUI、core 和本机 Routes 共用的日志文件、级别、
 type: reference
 audience: user-and-contributor
 status: current
-updated: 2026-08-29
+updated: 2026-08-31
 ---
 
 # 日志参考
@@ -61,7 +61,7 @@ CLI 和 GUI 都调用 `agenthub-core::logging` 初始化同一套 tracing。生�
 | `gui` | `use_official` | 勾选或取消「使用官方服务」 |
 | `gui` | `list_remote` | 拉取远程模型列表 |
 | `gui` | `switch` / `switch_fail` | 连接页或连接流程切换登录 |
-| `gui` | `bind` / `bind_fail` | 连接页跨 Agent 接入，或连接流程确认应用 |
+| `gui` | `bind` / `bind_fail` | Dashboard 连接流程确认应用 |
 | `gui` | `delete_connection` / `delete_connection_fail` | 连接页删除进回收站 |
 | `gui` | `route_create` / `route_import` / `route_edit`（及对应 `_fail`） | 路由页新建 / 导入 / 编辑 |
 | `gui` | `bridge_start` / `bridge_stop` / `bridge_remove` / `bridge_enroll`（及对应 `_fail`） | 路由页启动 / 停止 / 移除 / 纳入默认池 |

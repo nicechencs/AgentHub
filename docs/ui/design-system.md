@@ -3,7 +3,7 @@ title: UI 设计系统
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-30
+updated: 2026-08-31
 ---
 
 # UI Design System
@@ -143,7 +143,7 @@ L3 must not occupy the default main column on a dense management page. L4 must n
 - `Button title` is routed through `Hint`; do not use native browser `title` as teaching copy in pages, layout, or shared components.
 - Use `Tip` for truncated text and complete paths. Use a `Notice` for a page-level condition that needs an action. Use `Toast` for a short result, with a title of six Chinese characters or fewer where practical.
 - Do not put stack traces, full paths, or implementation terminology in a toast title. A copy-diagnostics action may expose them in a dedicated surface.
-- Use the product terms “登录”, “分享”, “路由”, and “本机路由” consistently. Avoid “票”, “钱包”, and implementation phase numbers in ordinary user copy.
+- Use the product terms “登录”, “连接池”, “分享至连接池”, “路由”, and “本机路由” consistently. Avoid “票”, “钱包”, and implementation phase numbers in ordinary user copy.
 
 ### 5.3 Confirmation content
 
