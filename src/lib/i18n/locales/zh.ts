@@ -987,6 +987,7 @@ export const zh = {
     board: {
       title: "路由看板",
       description: "本机转发的请求用量 · 仅 127.0.0.1",
+      descriptionTip: "上半为各本机路由状态，下半为经本机转发的请求用量。",
       refresh: "刷新",
       noFleet: "还没有本机路由",
       statusSection: "路由状态",

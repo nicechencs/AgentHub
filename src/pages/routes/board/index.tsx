@@ -1,19 +1,21 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Boxes, Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { AgentLogo } from '@/components/shared/AgentLogo';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
-import { ListRow, ListRowBody, LIST_ROW_PAD } from '@/components/shared/ListRow';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import {
   closeConfirmationOnOpenChange,
   preventBusyConfirmationDismissal,
 } from '@/components/shared/busy-confirmation';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -22,48 +24,42 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Hint } from '@/components/ui/tooltip';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { bridgesHrefForProfile, ROUTES_POOL_PATH } from '@/lib/bridges-path';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { fmtRelativeI18n } from '@/pages/backups/backup-format';
+import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from '@/pages/bridges/adapter-components';
-import { adapterBridgeUpstreamLabel } from '@/pages/bridges/adapter-labels';
 import {
   adapterProfileFlowLabel,
   adapterProfilePrimaryAction,
-  adapterStatusTextClass,
   bridgeRuntimeStatusView,
 } from '@/pages/bridges/adapter-view-model';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useBridgeRuntimeActions } from '@/pages/bridges/use-bridge-runtime-actions';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import {
-  activityHref,
-  boardAttentionReasonLabel,
+  BOARD_ROUTE_GRID,
   boardFleetSummary,
-  boardLifetimeSummaryLabel,
-  boardRecentSummaryLabel,
   buildRouteBoardStatusRows,
-  partitionBoardRows,
   type RouteBoardStatusRow,
 } from '@/pages/routes/board/board-view-model';
 import { BoardUsageSection } from '@/pages/routes/board/board-usage-section';
 
-function BoardRouteRow({
+function BoardRouteCard({
   row,
   busy,
-  targetHidden,
   onStart,
   onStop,
 }: {
   row: RouteBoardStatusRow;
   busy: boolean;
-  targetHidden: boolean;
   onStart: () => void;
   onStop: () => void;
 }) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const view = bridgeRuntimeStatusView({
     route: 'local_bridge',
     bridgeState: row.state,
@@ -76,82 +72,97 @@ function BoardRouteRow({
     statusUnavailable: row.statusUnavailable,
   }, t);
   const transitioning = row.state === 'starting' || row.state === 'stopping';
-  const relativeLast = row.recent.lastAt ? fmtRelativeI18n(row.recent.lastAt, t) : null;
-  const recentLabel = boardRecentSummaryLabel(row.recent, relativeLast, t);
-  const lifetimeLabel = boardLifetimeSummaryLabel(row.recent, t);
-  const attentionLabel = boardAttentionReasonLabel(row.attentionReason, row.lastErrorCode, t);
-  const uptimeLabel = row.startedAt && (row.state === 'running' || row.state === 'degraded')
-    ? t('routes.board.uptime', { relative: fmtRelativeI18n(row.startedAt, t) })
-    : t('routes.board.uptimeStopped');
+  const go = () => navigate(bridgesHrefForProfile(row.profileId));
 
   return (
-    <ListRow className={LIST_ROW_PAD}>
-      <ListRowBody
-        leading={
-          view ? (
+    <Card
+      role="button"
+      tabIndex={0}
+      aria-label={row.name}
+      onClick={go}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          go();
+        }
+      }}
+      className={cn(
+        'cursor-pointer p-3 transition-colors hover:border-accent/40 hover:bg-hover/40',
+        row.needsAttention && 'border-warning/40',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <AgentLogo agentId={row.profile.targetAgentId} size="sm" />
+        <Tip className="min-w-0 flex-1 truncate text-sm font-medium" label={row.name}>
+          {row.name}
+        </Tip>
+        {view ? (
+          <Tip className="shrink-0" label={view.label}>
             <StatusPin
               tone={view.tone}
               size="md"
               className={view.pulse ? 'animate-pulse' : undefined}
             />
-          ) : undefined
-        }
-        main={
-          <>
-            <span className="min-w-0 truncate text-sm font-medium text-primary">{row.name}</span>
-            {view ? (
-              <span className={adapterStatusTextClass(view.tone)}>{view.label}</span>
-            ) : null}
-            <span className="font-mono text-meta text-muted">
-              {row.endpoint ?? t('routes.pendingPort')}
-            </span>
-            <span className="text-meta text-muted">
-              {adapterBridgeUpstreamLabel(row.upstreamStatus, t)}
-            </span>
-            <span className="text-meta text-muted">{uptimeLabel}</span>
-            {lifetimeLabel ? <span className="text-meta text-muted">{lifetimeLabel}</span> : null}
-            {recentLabel ? <span className="text-meta text-muted">{recentLabel}</span> : null}
-            {attentionLabel ? (
-              <span className="w-full text-meta text-warning">{attentionLabel}</span>
-            ) : null}
-          </>
-        }
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {action ? (
-              <Hint
-                label={
-                  targetHidden && action.kind !== 'stop'
-                    ? t('routes.targetHiddenHint')
-                    : undefined
-                }
-              >
-                <Button
-                  variant={action.kind === 'stop' ? 'dangerOutline' : 'outline'}
-                  size="sm"
-                  disabled={busy || transitioning || (targetHidden && action.kind !== 'stop')}
-                  onClick={() => (action.kind === 'stop' ? onStop() : onStart())}
-                >
-                  {busy ? t('routes.busy') : action.label}
-                </Button>
-              </Hint>
-            ) : null}
-            <Link
-              to={activityHref({ route: row.profileId })}
-              className="text-meta text-secondary hover:text-primary"
-            >
-              {t('routes.board.viewRequests')}
-            </Link>
-            <Link
-              to={bridgesHrefForProfile(row.profileId)}
-              className="text-meta text-secondary hover:text-primary"
-            >
-              {t('routes.detail')}
-            </Link>
+          </Tip>
+        ) : null}
+      </div>
+      <div className="mt-1.5 flex min-w-0 items-center gap-1">
+        <Tip
+          className="min-w-0 truncate font-mono text-xs text-muted"
+          label={row.endpoint ?? t('routes.pendingPort')}
+        >
+          {row.endpoint ?? t('routes.pendingPort')}
+        </Tip>
+        {view ? (
+          <Badge
+            variant={
+              view.tone === 'success'
+                ? 'success'
+                : view.tone === 'warning'
+                  ? 'warning'
+                  : view.tone === 'danger'
+                    ? 'danger'
+                    : 'default'
+            }
+            className="h-5 shrink-0 px-1.5 text-meta"
+          >
+            {view.label}
+          </Badge>
+        ) : null}
+        {action ? (
+          <Button
+            className="ml-auto shrink-0"
+            variant={action.kind === 'stop' ? 'dangerOutline' : 'outline'}
+            size="sm"
+            disabled={busy || transitioning}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (action.kind === 'stop') onStop();
+              else onStart();
+            }}
+          >
+            {busy ? t('routes.busy') : action.label}
+          </Button>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function BoardRouteSkeleton({ count }: { count: number }) {
+  const n = Math.max(1, count);
+  return (
+    <div className={BOARD_ROUTE_GRID}>
+      {Array.from({ length: n }).map((_, i) => (
+        <Card key={i} className="p-3">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
+            <Skeleton className="h-4 w-24" />
           </div>
-        }
-      />
-    </ListRow>
+          <Skeleton className="mt-2 h-4 w-32" />
+        </Card>
+      ))}
+    </div>
   );
 }
 
@@ -193,25 +204,28 @@ export default function RoutesBoardPage() {
   } = runtime;
 
   const statusRows = useMemo(
-    () => buildRouteBoardStatusRows(profiles, bridgeStatuses, errors.bridgeStatuses),
-    [profiles, bridgeStatuses, errors.bridgeStatuses],
+    () => buildRouteBoardStatusRows(
+      profiles,
+      bridgeStatuses,
+      errors.bridgeStatuses,
+      hiddenTargetIds,
+    ),
+    [profiles, bridgeStatuses, errors.bridgeStatuses, hiddenTargetIds],
   );
-  const { attention, rest } = useMemo(() => partitionBoardRows(statusRows), [statusRows]);
   const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const fleet = boardFleetSummary(statusRows, t);
   const stopError = stopConfirm ? profileErrors[stopConfirm.id] : null;
   const stopDialogBusy = Boolean(stopConfirm && busyProfileIds[stopConfirm.id]);
+  const showStatusSkeleton = loading && statusRows.length === 0;
 
   return (
     <RoutesPane>
       <PageHeader
         title={t('routes.board.title')}
-        description={t('routes.board.description')}
+        description={fleet?.label ?? t('routes.board.description')}
+        descriptionTip={t('routes.board.descriptionTip')}
       />
       <div className={pageRhythm.chromeRow}>
-        <p className="min-w-0 truncate text-meta text-muted">
-          {fleet?.label ?? t('routes.board.noFleet')}
-        </p>
         <div className={pageRhythm.chromeActions}>
           <Button
             type="button"
@@ -256,47 +270,29 @@ export default function RoutesBoardPage() {
         />
       ) : (
         <div className={pageRhythm.blocks}>
+          <PageSection first aria-label={t('routes.board.statusSection')}>
+            {showStatusSkeleton ? (
+              <BoardRouteSkeleton count={4} />
+            ) : (
+              <div className={BOARD_ROUTE_GRID}>
+                {statusRows.map((row) => (
+                  <BoardRouteCard
+                    key={row.profileId}
+                    row={row}
+                    busy={busyProfileIds[row.profileId] === true}
+                    onStart={() => void handleStartBridge(row.profile)}
+                    onStop={() => setStopConfirm(row.profile)}
+                  />
+                ))}
+              </div>
+            )}
+          </PageSection>
+
           <BoardUsageSection
             profiles={profiles}
             hiddenTargetIds={hiddenTargetIds}
             refreshKey={usageRefreshKey}
           />
-
-          {attention.length > 0 ? (
-            <PageSection title={t('routes.board.attentionSection')}>
-              <div className={pageRhythm.stackDense}>
-                {attention.map((row) => (
-                  <BoardRouteRow
-                    key={row.profileId}
-                    row={row}
-                    busy={busyProfileIds[row.profileId] === true}
-                    targetHidden={hiddenTargetIds.has(row.profile.targetAgentId)}
-                    onStart={() => void handleStartBridge(row.profile)}
-                    onStop={() => setStopConfirm(row.profile)}
-                  />
-                ))}
-              </div>
-            </PageSection>
-          ) : null}
-
-          {rest.length > 0 ? (
-            <PageSection
-              title={attention.length > 0 ? t('routes.board.otherSection') : t('routes.board.statusSection')}
-            >
-              <div className={pageRhythm.stackDense} aria-label={t('routes.board.statusSection')}>
-                {rest.map((row) => (
-                  <BoardRouteRow
-                    key={row.profileId}
-                    row={row}
-                    busy={busyProfileIds[row.profileId] === true}
-                    targetHidden={hiddenTargetIds.has(row.profile.targetAgentId)}
-                    onStart={() => void handleStartBridge(row.profile)}
-                    onStop={() => setStopConfirm(row.profile)}
-                  />
-                ))}
-              </div>
-            </PageSection>
-          ) : null}
         </div>
       )}
 

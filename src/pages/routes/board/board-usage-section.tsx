@@ -14,7 +14,6 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -47,13 +46,11 @@ import {
   buildGatewayTrend,
   filterGatewayUsageRows,
   profileToEntryIdMap,
-  availableBoardGroupBy,
-  coerceBoardGroupBy,
+  deriveBoardGroupBy,
   rememberBoardUsageFilters,
   rememberedBoardUsageFilters,
   seriesKeyForRow,
   summarizeGatewayUsage,
-  type BoardGroupBy,
   type BoardUsageRange,
   type BoardUsageSurface,
 } from './board-usage-model';
@@ -106,9 +103,6 @@ export function BoardUsageSection({
   const [surface, setSurface] = useState(() => rememberedBoardUsageFilters().surface);
   const [modelFilter, setModelFilter] = useState(
     () => rememberedBoardUsageFilters().modelFilter,
-  );
-  const [groupBy, setGroupBy] = useState<BoardGroupBy>(
-    () => rememberedBoardUsageFilters().groupBy,
   );
   const [retryKey, setRetryKey] = useState(0);
   const [collectKey, setCollectKey] = useState(0);
@@ -167,13 +161,7 @@ export function BoardUsageSection({
     modelsReady,
   );
   const modelSelectOptions = usageModelSelectOptions(effectiveModelFilter, modelOptions);
-  const groupingOptions = availableBoardGroupBy({
-    entryId,
-    surface,
-    modelFilter: effectiveModelFilter,
-    entryCount: entries.length,
-  });
-  const effectiveGroupBy = coerceBoardGroupBy(groupBy, groupingOptions);
+  const effectiveGroupBy = deriveBoardGroupBy(entryId);
 
   useEffect(() => {
     if (!modelsReady) return;
@@ -181,18 +169,13 @@ export function BoardUsageSection({
   }, [modelsReady, modelFilter, effectiveModelFilter]);
 
   useEffect(() => {
-    if (groupBy !== effectiveGroupBy) setGroupBy(effectiveGroupBy);
-  }, [groupBy, effectiveGroupBy]);
-
-  useEffect(() => {
     rememberBoardUsageFilters({
       dateRange,
       entryId,
       surface,
       modelFilter,
-      groupBy: effectiveGroupBy,
     });
-  }, [dateRange, entryId, surface, modelFilter, effectiveGroupBy]);
+  }, [dateRange, entryId, surface, modelFilter]);
 
   const rangeLabel = t(DATE_RANGE_LABEL_KEYS[dateRange]);
   const seriesMeta = useMemo(() => {
@@ -218,27 +201,13 @@ export function BoardUsageSection({
   }, [entries, totals.modelNames, selectedEntry, t]);
 
   const trendSeries = useMemo(() => {
-    if (effectiveGroupBy === 'surface') {
-      return BOARD_SURFACES.map((item) => ({
-        key: item,
-        label: seriesMeta[item]?.label ?? item,
-        color: seriesMeta[item]?.color ?? FALLBACK_COLOR,
-      }));
-    }
-    if (effectiveGroupBy === 'entry') {
-      const list = selectedEntry ? [selectedEntry] : entries;
-      return list.map((item) => ({
-        key: item.id,
-        label: item.name,
-        color: seriesMeta[item.id]?.color ?? FALLBACK_COLOR,
-      }));
-    }
-    return totals.modelNames.slice(0, 8).map((model) => ({
-      key: model,
-      label: model,
-      color: seriesMeta[model]?.color ?? FALLBACK_COLOR,
+    const list = selectedEntry ? [selectedEntry] : entries;
+    return list.map((item) => ({
+      key: item.id,
+      label: item.name,
+      color: seriesMeta[item.id]?.color ?? FALLBACK_COLOR,
     }));
-  }, [effectiveGroupBy, selectedEntry, entries, totals.modelNames, seriesMeta]);
+  }, [selectedEntry, entries, seriesMeta]);
 
   const rangedTrend = useMemo(() => {
     if (usage.status !== 'ready') return [];
@@ -247,9 +216,9 @@ export function BoardUsageSection({
       days,
       since,
       trendSeries.map((item) => item.key),
-      (item) => seriesKeyForRow(item, effectiveGroupBy, entryMap),
+      (item) => seriesKeyForRow(item, 'entry', entryMap),
     );
-  }, [usage, scopedRows, days, since, trendSeries, effectiveGroupBy, entryMap]);
+  }, [usage, scopedRows, days, since, trendSeries, entryMap]);
 
   const distribution = useMemo(
     () => buildGatewayDistribution(scopedRows, effectiveGroupBy, entryMap, seriesMeta),
@@ -257,15 +226,12 @@ export function BoardUsageSection({
   );
   const maxTokens = distribution[0]?.tokens ?? 0;
   const distTitle =
-    effectiveGroupBy === 'surface'
-      ? t('routes.board.distBySurface')
-      : effectiveGroupBy === 'entry'
-        ? t('routes.board.distByEntry')
-        : t('routes.board.distByModel');
-  const groupingLocked = t('routes.board.groupByLocked');
+    effectiveGroupBy === 'entry'
+      ? t('routes.board.distByEntry')
+      : t('routes.board.distByModel');
 
   return (
-    <PageSection first title={t('routes.board.usageSection')}>
+    <PageSection title={t('routes.board.usageSection')}>
       <div className={pageRhythm.chromeRow}>
         <Select value={entryId} onValueChange={setEntryId}>
           <SelectTrigger className="w-40" aria-label={t('routes.board.entryFilterAria')}>
@@ -327,33 +293,6 @@ export function BoardUsageSection({
           </Link>
         </div>
       </div>
-      <div className={pageRhythm.chromeRow}>
-        <SegmentedControl
-          aria-label={t('routes.board.groupByAria')}
-          value={effectiveGroupBy}
-          onChange={setGroupBy}
-          options={[
-            {
-              value: 'entry',
-              label: t('routes.board.groupByEntry'),
-              disabled: !groupingOptions.includes('entry'),
-              title: groupingOptions.includes('entry') ? undefined : groupingLocked,
-            },
-            {
-              value: 'model',
-              label: t('routes.board.groupByModel'),
-              disabled: !groupingOptions.includes('model'),
-              title: groupingOptions.includes('model') ? undefined : groupingLocked,
-            },
-            {
-              value: 'surface',
-              label: t('routes.board.groupBySurface'),
-              disabled: !groupingOptions.includes('surface'),
-              title: groupingOptions.includes('surface') ? undefined : groupingLocked,
-            },
-          ]}
-        />
-      </div>
 
       {usage.status === 'loading' || (usage.status === 'idle' && entries.length > 0) ? (
         <UsageOverviewSkeleton />
@@ -381,15 +320,10 @@ export function BoardUsageSection({
             usage.refreshing ? 'opacity-60 transition-opacity' : 'transition-opacity',
           )}
         >
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <MetricCard
               label={t('routes.board.statRequests')}
               value={totals.requestCount.toLocaleString()}
-              hint={t('routes.board.windowNote', { range: rangeLabel })}
-            />
-            <MetricCard
-              label={t('routes.board.statFailed')}
-              value={totals.failedCount.toLocaleString()}
             />
             <MetricCard
               label={t('dashboard.page.metricInput', { range: rangeLabel })}
@@ -404,14 +338,8 @@ export function BoardUsageSection({
               value={fmtTokens(totals.cachedInputTokens)}
             />
             <MetricCard
-              label={t('routes.board.statLatency')}
-              value={
-                totals.avgLatencyMs == null
-                  ? t('dashboard.page.noDataShort')
-                  : t('routes.board.statLatencyValue', {
-                      ms: Math.round(totals.avgLatencyMs).toLocaleString(),
-                    })
-              }
+              label={t('routes.board.statFailed')}
+              value={totals.failedCount.toLocaleString()}
             />
           </div>
 
@@ -557,20 +485,11 @@ export function BoardUsageSection({
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
+function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="h-full p-3">
+    <Card className="p-3">
       <p className="text-xs text-muted">{label}</p>
       <p className="mt-1 text-title font-semibold tracking-tight">{value}</p>
-      {hint ? <p className="mt-0.5 text-meta text-muted">{hint}</p> : null}
     </Card>
   );
 }
@@ -578,8 +497,8 @@ function MetricCard({
 function UsageOverviewSkeleton() {
   return (
     <div className={pageRhythm.blocks}>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
           <Skeleton key={i} className="h-20" />
         ))}
       </div>

@@ -9,10 +9,13 @@ import type {
   AdapterProfileStatus,
 } from '@/lib/backend/contracts/adapter';
 import type { TranslateFn } from '@/lib/i18n';
-import { groupLocalBridgeProfiles } from '@/pages/bridges/adapter-view-model';
 
 export const BOARD_INBOUND_SNAPSHOT_LIMIT = 8;
 export const BOARD_INBOUND_WINDOW = 20;
+
+/** Same auto-fit card grid as 总览 Agent cards. */
+export const BOARD_ROUTE_GRID =
+  'grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]';
 
 export type RouteBoardAttentionReason =
   | 'unavailable'
@@ -114,20 +117,19 @@ export function boardAttentionReasonLabel(
   return t ? t('routes.board.reasonError') : '启动失败';
 }
 
-/** One row per upstream source (same grouping as the list page). */
+/** One card per local listener (same unit as default-pool / 本机入口). */
 export function buildRouteBoardStatusRows(
   profiles: readonly AdapterProfile[],
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
   statusErrors: Record<string, unknown> = {},
+  hiddenTargetIds: ReadonlySet<string> = new Set(),
 ): RouteBoardStatusRow[] {
-  const local = profiles.filter((profile) => profile.route === 'local_bridge');
-  const statusMap: Record<string, AdapterBridgeRuntimeStatus> = {};
-  for (const profile of local) {
-    const status = bridgeStatuses[profile.id];
-    if (status) statusMap[profile.id] = status;
-  }
-  const bridges = groupLocalBridgeProfiles(local, statusMap);
-  const rows = bridges.map((profile) => {
+  const local = profiles.filter((profile) => {
+    if (profile.route !== 'local_bridge') return false;
+    if (hiddenTargetIds.has(profile.targetAgentId)) return false;
+    return true;
+  });
+  const rows = local.map((profile) => {
     const status = bridgeStatuses[profile.id];
     const statusUnavailable = Boolean(statusErrors[profile.id]);
     const port = statusUnavailable ? null : (status?.port ?? profile.localPort);

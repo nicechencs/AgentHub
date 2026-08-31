@@ -997,6 +997,7 @@ export const en = {
     board: {
       title: "Board",
       description: "Local-forwarding request usage · 127.0.0.1 only",
+      descriptionTip: "Top: each local route’s status. Bottom: request usage that went through local forwarding.",
       refresh: "Refresh",
       noFleet: "No local routes yet",
       statusSection: "Route status",

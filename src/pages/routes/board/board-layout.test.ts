@@ -17,7 +17,7 @@ describe('routes board layout wiring', () => {
     const page = source('index.tsx');
     expect(page).toContain('BoardUsageSection');
     expect(page).toContain('boardFleetSummary');
-    expect(page).toContain('partitionBoardRows');
+    expect(page).toContain('BoardRouteCard');
     expect(page).not.toContain('recharts');
   });
 
@@ -33,16 +33,14 @@ describe('routes board layout wiring', () => {
     expect(section).not.toContain('stopColor={meta.color}');
   });
 
-  it('groups local-forwarding usage by entry, model, and endpoint, not by Agent session logs', () => {
+  it('groups local-forwarding usage like 总览: overlay by local route, then by model', () => {
     const section = source('board-usage-section.tsx');
     expect(source('use-board-usage.ts')).toContain('gatewayUsageQuery');
     expect(section).toContain('routes.board.allEntries');
     expect(section).toContain('routes.board.allSurfaces');
     expect(section).toContain('dashboard.page.allModels');
-    expect(section).toContain('SegmentedControl');
-    expect(section).toContain('routes.board.groupByAria');
-    expect(section).toContain('availableBoardGroupBy');
-    expect(section).toContain('coerceBoardGroupBy');
+    expect(section).toContain('deriveBoardGroupBy');
+    expect(section).not.toContain('SegmentedControl');
     expect(section).not.toContain('dashboard.page.allAgents');
     expect(section).not.toContain('dashboard.page.distByAgent');
     expect(section).toContain('rememberedBoardUsageFilters');
@@ -53,7 +51,7 @@ describe('routes board layout wiring', () => {
     const page = source('index.tsx');
     expect(page).toContain('handleStartBridge');
     expect(page).toContain('setStopConfirm');
-    expect(page).toContain('BoardRouteRow');
+    expect(page).toContain('BoardRouteCard');
   });
 });
 
