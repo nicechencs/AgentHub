@@ -16,6 +16,9 @@ mod surface;
 mod transport;
 mod upstream;
 
+#[cfg(test)]
+mod usage_capture_tests;
+
 pub use gateway::BridgeHostError;
 // Re-exported for bridge tests.
 #[allow(unused_imports)]

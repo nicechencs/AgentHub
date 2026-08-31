@@ -16,6 +16,7 @@ pub mod session;
 pub mod types;
 pub mod upstream_class;
 mod usage;
+pub mod usage_capture;
 
 pub use account::{
     route_scoped_affinity_key, AccountPicker, BridgeMemberSpec, MemberHealth, MemberHealthSink,

@@ -51,3 +51,53 @@ export interface UsageOverview {
 export type UsageAvailability =
   | { status: 'available' }
   | { status: 'unavailable'; reason: string };
+
+/** Downstream conversation surface observed by the local gateway. */
+export type GatewayUsageSurface = 'messages' | 'responses' | 'chat';
+
+/** One per-request row captured by the local gateway (bridge). */
+export interface GatewayUsageRow {
+  requestId: string;
+  ts: string;
+  profileId: string;
+  surface: string;
+  upstreamChannel?: string;
+  ticketId?: string;
+  accountSourceKind?: string;
+  accountSourceId?: string;
+  model?: string;
+  upstreamModel?: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+  status: 'ok' | 'failed' | string;
+  statusCode?: number;
+  errorClass?: string;
+  latencyMs?: number;
+  ttftMs?: number;
+  attempts?: number;
+  sessionId?: string;
+}
+
+/** Filter for local gateway usage queries (time range optional). */
+export interface GatewayUsageQuery {
+  since?: string | null;
+  until?: string | null;
+  profileId?: string | null;
+  limit?: number | null;
+}
+
+/** Aggregated local gateway usage overview for a time window. */
+export interface GatewayUsageOverview {
+  requestCount: number;
+  okCount: number;
+  failedCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  avgLatencyMs?: number;
+  p95LatencyMs?: number;
+  avgTtftMs?: number;
+}

@@ -6,6 +6,7 @@ mod backup_repo;
 mod binding_repo;
 mod chat_repo;
 mod connection_trash_repo;
+pub(crate) mod gateway_usage_repo;
 mod migrations;
 mod operation_repo;
 mod provider_repo;

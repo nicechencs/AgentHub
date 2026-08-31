@@ -6,6 +6,9 @@ import type { UsageCollectResult } from '@/lib/backend/contracts/ports';
 import type { AgentId, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
 
 export type {
+  GatewayUsageOverview,
+  GatewayUsageQuery,
+  GatewayUsageRow,
   UsageAvailability,
   UsageOverview,
   UsageOverviewDistributionSlice,
@@ -14,6 +17,9 @@ export type {
 } from '@/lib/backend/contracts/usage-types';
 export type { UsageCollectResult };
 import type {
+  GatewayUsageOverview,
+  GatewayUsageQuery,
+  GatewayUsageRow,
   UsageAvailability,
   UsageOverview,
   UsageQuery,
@@ -59,4 +65,16 @@ export async function collectUsage(
   onProgress?: (pct: number) => void,
 ): Promise<UsageCollectResult | void> {
   return getBackend().usage.collectUsage(onProgress);
+}
+
+export async function gatewayUsageQuery(
+  q: GatewayUsageQuery = {},
+): Promise<GatewayUsageRow[]> {
+  return getBackend().usage.gatewayUsageQuery(q);
+}
+
+export async function gatewayUsageOverview(
+  q: GatewayUsageQuery = {},
+): Promise<GatewayUsageOverview> {
+  return getBackend().usage.gatewayUsageOverview(q);
 }
