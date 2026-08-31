@@ -85,15 +85,24 @@ export const THEME = {
  * Keys are color slots, not the product catalog.
  */
 export const AGENT_COLORS = {
+  /** Claude Code SVG fill `#D97757`. */
   claude: { light: '#d97757', dark: '#d97757' },
-  codex: { light: '#10a37f', dark: '#10a37f' },
-  kimi: { light: '#7c6cff', dark: '#8b7cff' },
-  grok: { light: '#000000', dark: '#000000' },
-  pi: { light: '#0ea5e9', dark: '#38bdf8' },
-  workbuddy: { light: '#0052d9', dark: '#3b82f6' },
-  cursor: { light: '#f54e00', dark: '#ff6b2c' },
+  /** Codex cloud gradient mid-stop `#7189ff` (lavender → `#3438f5`). */
+  codex: { light: '#7189ff', dark: '#8b9bff' },
+  /** Kimi K-only brand `#1783FF`. */
+  kimi: { light: '#1783ff', dark: '#3d94ff' },
+  /** White mark on black; invert in dark so dots stay visible. */
+  grok: { light: '#111111', dark: '#f5f5f5' },
+  /** Pi mark is black; invert in dark. */
+  pi: { light: '#111111', dark: '#f5f5f5' },
+  /** WorkBuddy disc gradient `#0EC8A9` → `#01C886`. */
+  workbuddy: { light: '#0ec8a9', dark: '#2dd4bf' },
+  /** Cursor cube is near-black; SVG fill `#edecec` on dark. */
+  cursor: { light: '#171717', dark: '#edecec' },
+  /** DeepSeek SVG fill `#4D6BFE`. */
   dsh: { light: '#4d6bfe', dark: '#6b8cff' },
-  zcode: { light: '#1a6cff', dark: '#4d8dff' },
+  /** ZCode mark is black; invert in dark. */
+  zcode: { light: '#171717', dark: '#e5e5e5' },
 } as const;
 
 export type TokenAgentId = keyof typeof AGENT_COLORS;

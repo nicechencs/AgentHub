@@ -84,6 +84,8 @@ describe('agents layout wiring', () => {
     expect(page).toContain('StorageKey.agentsCatalogOrder');
     expect(page).toContain('applyStoredAgentOrder');
     expect(page).toContain('sortHandle=');
+    expect(page).toContain('resolveAgentMeta(a.agentId).color');
+    expect(page).toContain('color={resolveAgentMeta(a.agentId).color}');
     const card = source('pages/agents/agent-card.tsx');
     expect(card).toContain('sortHandle?:');
     expect(card).toContain('leading={sortHandle}');
