@@ -655,6 +655,44 @@ fn openai_and_xai_explicit_markers_plan_for_pi_and_reject_custom_relays() {
 }
 
 #[test]
+fn ambiguous_custom_relay_is_closed_by_plan_and_bind_preflight() {
+    let (_dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "ambiguous-relay".into(),
+            agent_id: AgentId::Claude,
+            name: "Ambiguous relay".into(),
+            settings_config: serde_json::json!({
+                "apiKey": "must-not-leak",
+                "baseUrl": "https://api.openai.com/v1",
+                "base_url": "https://relay.example/v1"
+            }),
+            meta: serde_json::json!({"preset": "openai-compatible"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+
+    let plan = AdapterRouteService::new(db)
+        .plan(&request(
+            AdapterSourceKind::Provider,
+            "ambiguous-relay",
+            AgentId::Codex,
+        ))
+        .unwrap();
+    assert_eq!(plan.analysis.route, AdapterRoute::LocalBridge);
+    assert!(!plan.can_apply);
+    assert_eq!(
+        plan.reason,
+        crate::services::adapter_route_constants::UNKNOWN_CUSTOM_RELAY_REASON
+    );
+    assert!(!serde_json::to_string(&plan)
+        .unwrap()
+        .contains("must-not-leak"));
+}
+
+#[test]
 fn non_openai_provider_tags_cannot_be_promoted_by_base_urls() {
     let (_dir, db) = test_db();
     let providers = ProviderRepo::new(db.clone());
