@@ -71,7 +71,7 @@ type ApiEndpointPreset = {
   id: string;
   labelKey:
     | 'routes.pool.page.apiVendorAnthropic'
-    | 'routes.pool.page.apiVendorZhipu'
+    | 'routes.pool.page.apiVendorZhipuBigModel'
     | 'routes.pool.page.apiVendorKimiCn'
     | 'routes.pool.page.apiVendorKimiGlobal'
     | 'routes.pool.page.apiVendorOpenai'
@@ -80,7 +80,7 @@ type ApiEndpointPreset = {
     | 'routes.pool.page.apiVendorQwenCn'
     | 'routes.pool.page.apiVendorQwenSingapore'
     | 'routes.pool.page.apiVendorQwenUs'
-    | 'routes.pool.page.apiVendorZhipuGlobal'
+    | 'routes.pool.page.apiVendorZhipuZai'
     | 'routes.pool.page.apiVendorOpenRouter'
     | 'routes.pool.page.apiVendorNvidia'
     | 'routes.pool.page.apiVendorGroq'
@@ -97,12 +97,16 @@ const API_ENDPOINT_PRESETS: Record<PoolApiChoice['type'], readonly ApiEndpointPr
     { id: 'qwen-cn', labelKey: 'routes.pool.page.apiVendorQwenCn', baseUrl: 'https://dashscope.aliyuncs.com/apps/anthropic' },
     { id: 'qwen-sg', labelKey: 'routes.pool.page.apiVendorQwenSingapore', baseUrl: 'https://dashscope-intl.aliyuncs.com/apps/anthropic' },
     { id: 'qwen-us', labelKey: 'routes.pool.page.apiVendorQwenUs', baseUrl: 'https://dashscope-us.aliyuncs.com/apps/anthropic' },
-    { id: 'zhipu', labelKey: 'routes.pool.page.apiVendorZhipu', baseUrl: 'https://open.bigmodel.cn/api/anthropic' },
+    { id: 'zhipu-bigmodel', labelKey: 'routes.pool.page.apiVendorZhipuBigModel', baseUrl: 'https://open.bigmodel.cn/api/anthropic' },
+    { id: 'zhipu-zai', labelKey: 'routes.pool.page.apiVendorZhipuZai', baseUrl: 'https://api.z.ai/api/anthropic' },
     { id: 'deepseek', labelKey: 'routes.pool.page.apiVendorDeepseek', baseUrl: 'https://api.deepseek.com/anthropic' },
+    { id: 'kimi-cn', labelKey: 'routes.pool.page.apiVendorKimiCn', baseUrl: 'https://api.moonshot.cn/anthropic' },
+    { id: 'kimi-global', labelKey: 'routes.pool.page.apiVendorKimiGlobal', baseUrl: 'https://api.moonshot.ai/anthropic' },
     { id: 'openrouter', labelKey: 'routes.pool.page.apiVendorOpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
   ],
   openaiResponses: [
     { id: 'openai', labelKey: 'routes.pool.page.apiVendorOpenai', baseUrl: 'https://api.openai.com/v1' },
+    { id: 'deepseek', labelKey: 'routes.pool.page.apiVendorDeepseek', baseUrl: 'https://api.deepseek.com' },
     { id: 'openrouter', labelKey: 'routes.pool.page.apiVendorOpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
   ],
   grokResponses: [
@@ -114,8 +118,8 @@ const API_ENDPOINT_PRESETS: Record<PoolApiChoice['type'], readonly ApiEndpointPr
     { id: 'qwen-cn', labelKey: 'routes.pool.page.apiVendorQwenCn', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
     { id: 'qwen-sg', labelKey: 'routes.pool.page.apiVendorQwenSingapore', baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1' },
     { id: 'qwen-us', labelKey: 'routes.pool.page.apiVendorQwenUs', baseUrl: 'https://dashscope-us.aliyuncs.com/compatible-mode/v1' },
-    { id: 'zhipu', labelKey: 'routes.pool.page.apiVendorZhipu', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
-    { id: 'zhipu-global', labelKey: 'routes.pool.page.apiVendorZhipuGlobal', baseUrl: 'https://api.z.ai/api/paas/v4' },
+    { id: 'zhipu-bigmodel', labelKey: 'routes.pool.page.apiVendorZhipuBigModel', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+    { id: 'zhipu-zai', labelKey: 'routes.pool.page.apiVendorZhipuZai', baseUrl: 'https://api.z.ai/api/paas/v4' },
     { id: 'deepseek', labelKey: 'routes.pool.page.apiVendorDeepseek', baseUrl: 'https://api.deepseek.com' },
     { id: 'kimi-cn', labelKey: 'routes.pool.page.apiVendorKimiCn', baseUrl: 'https://api.moonshot.cn/v1' },
     { id: 'kimi-global', labelKey: 'routes.pool.page.apiVendorKimiGlobal', baseUrl: 'https://api.moonshot.ai/v1' },
