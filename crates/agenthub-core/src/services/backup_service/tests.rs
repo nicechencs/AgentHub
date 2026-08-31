@@ -100,6 +100,15 @@ fn try_symlink_file(target: &Path, link: &Path) -> bool {
 }
 
 fn make_svc(agent: AgentId, paths: Vec<PathBuf>) -> (tempfile::TempDir, BackupService, PathBuf) {
+    let (root, db, svc, backups_root) = make_svc_with_db(agent, paths);
+    drop(db);
+    (root, svc, backups_root)
+}
+
+fn make_svc_with_db(
+    agent: AgentId,
+    paths: Vec<PathBuf>,
+) -> (tempfile::TempDir, Database, BackupService, PathBuf) {
     let root = tempdir().unwrap();
     let db = Database::open(&root.path().join("ah.db")).unwrap();
     let backups_root = root.path().join("backups");
@@ -108,8 +117,8 @@ fn make_svc(agent: AgentId, paths: Vec<PathBuf>) -> (tempfile::TempDir, BackupSe
     let mut registry = AdapterRegistry::new();
     registry.register(Arc::new(FakeAdapter { id: agent, paths }));
 
-    let svc = BackupService::new(db, registry, backups_root.clone());
-    (root, svc, backups_root)
+    let svc = BackupService::new(db.clone(), registry, backups_root.clone());
+    (root, db, svc, backups_root)
 }
 
 #[test]
@@ -559,6 +568,7 @@ fn restore_rejects_tampered_manifest_destination() {
             stored: "settings.json".into(),
             source: evil_target.display().to_string(),
             sha256: None,
+            absent_before: false,
         }],
     };
     write_manifest(Path::new(&snap.path), &manifest).unwrap();
@@ -712,6 +722,7 @@ fn restore_rejects_manifest_that_omits_an_indexed_file() {
             stored: "first.json".into(),
             source: a.display().to_string(),
             sha256: None,
+            absent_before: false,
         }],
     };
     write_manifest(Path::new(&snap.path), &manifest).unwrap();
@@ -743,11 +754,13 @@ fn restore_rejects_manifest_with_duplicate_destination() {
                 stored: "first.json".into(),
                 source: a.display().to_string(),
                 sha256: None,
+                absent_before: false,
             },
             ManifestEntry {
                 stored: "second.json".into(),
                 source: a.display().to_string(),
                 sha256: None,
+                absent_before: false,
             },
         ],
     };
@@ -1180,6 +1193,7 @@ fn restore_legacy_manifest_without_sha256() {
             stored: "settings.json".into(),
             source: f.display().to_string(),
             sha256: None,
+            absent_before: false,
         }],
     };
     write_manifest(Path::new(&snap.path), &manifest).unwrap();
@@ -1221,4 +1235,132 @@ fn restore_of_identical_live_reuses_prerestore() {
     assert_eq!(svc.list(None).unwrap().len(), 1);
     assert_eq!(count_agent_snapshot_dirs(&backups_root, "claude"), 1);
     assert_eq!(std::fs::read(&f).unwrap(), b"original");
+}
+
+#[test]
+fn snapshot_manifest_records_absent_files() {
+    let live = tempdir().unwrap();
+    let present = live.path().join("settings.json");
+    let absent = live.path().join("auth.json");
+    write_file(&present, b"keep");
+    let (_root, _db, svc, _) =
+        make_svc_with_db(AgentId::Claude, vec![present.clone(), absent.clone()]);
+
+    let rec = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+    // The DB index lists present payload files only.
+    assert_eq!(rec.files, vec!["settings.json".to_string()]);
+
+    let raw = std::fs::read(PathBuf::from(&rec.path).join(MANIFEST_FILE)).unwrap();
+    let manifest: BackupManifest = serde_json::from_slice(&raw).unwrap();
+    assert_eq!(manifest.entries.len(), 2);
+    let absent_entry = manifest
+        .entries
+        .iter()
+        .find(|entry| entry.absent_before)
+        .expect("absent_before entry");
+    assert_eq!(absent_entry.source, absent.display().to_string());
+    assert_eq!(absent_entry.sha256, None);
+    assert!(!PathBuf::from(&rec.path).join(&absent_entry.stored).exists());
+    assert!(manifest
+        .entries
+        .iter()
+        .any(|entry| !entry.absent_before && entry.source == present.display().to_string()));
+
+    // Unchanged live state reuses the same snapshot (absent entries included).
+    let again = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+    assert_eq!(again.id, rec.id);
+}
+
+#[test]
+fn restore_deletes_created_untouched_file() {
+    let live = tempdir().unwrap();
+    let present = live.path().join("settings.json");
+    let created = live.path().join("auth.json");
+    write_file(&present, b"keep");
+    // No auth.json yet: the snapshot marks it absent_before.
+    let (_root, db, svc, _) =
+        make_svc_with_db(AgentId::Claude, vec![present.clone(), created.clone()]);
+    let rec = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+
+    // Takeover: AgentHub creates the file and fingerprints that write only.
+    write_file(&created, b"agenthub-bytes");
+    crate::services::live_fingerprint::record_written(&db, AgentId::Claude, &[created.clone()]);
+
+    let result = svc.restore(&rec.id).unwrap();
+    assert_eq!(std::fs::read(&present).unwrap(), b"keep");
+    assert!(!created.exists(), "created file should be removed again");
+    assert!(result.skipped_deletions.is_empty());
+}
+
+#[test]
+fn restore_keeps_created_then_edited_or_foreign_file() {
+    let live = tempdir().unwrap();
+    let present = live.path().join("settings.json");
+    let edited = live.path().join("auth.json");
+    let foreign = live.path().join("extra.json");
+    write_file(&present, b"keep");
+    // Neither auth.json nor extra.json existed at snapshot time.
+    let (_root, db, svc, _) = make_svc_with_db(
+        AgentId::Claude,
+        vec![present.clone(), edited.clone(), foreign.clone()],
+    );
+    let rec = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+
+    // AgentHub created auth.json, then the user hand-edited it.
+    write_file(&edited, b"agenthub-bytes");
+    crate::services::live_fingerprint::record_written(&db, AgentId::Claude, &[edited.clone()]);
+    write_file(&edited, b"hand edit");
+    // extra.json was created outside any managed write: no fingerprint.
+    write_file(&foreign, b"user-made");
+
+    let result = svc.restore(&rec.id).unwrap();
+    assert_eq!(std::fs::read(&present).unwrap(), b"keep");
+    assert_eq!(std::fs::read(&edited).unwrap(), b"hand edit");
+    assert_eq!(std::fs::read(&foreign).unwrap(), b"user-made");
+    assert_eq!(result.skipped_deletions.len(), 2);
+    let reasons: Vec<(&PathBuf, &str)> = result
+        .skipped_deletions
+        .iter()
+        .map(|s| (&s.path, s.reason.as_str()))
+        .collect();
+    assert!(reasons.contains(&(&edited, "edited")));
+    assert!(reasons.contains(&(&foreign, "unknown")));
+}
+
+#[test]
+fn restore_keeps_user_file_unchanged_by_later_switch_write() {
+    let live = tempdir().unwrap();
+    let present = live.path().join("settings.json");
+    let user_file = live.path().join("auth.json");
+    write_file(&present, b"keep");
+    let (_root, db, svc, _) =
+        make_svc_with_db(AgentId::Claude, vec![present.clone(), user_file.clone()]);
+    let rec = svc
+        .snapshot(AgentId::Claude, BackupKind::Manual, None)
+        .unwrap();
+
+    // User (or the vendor CLI) created the sibling after the snapshot.
+    write_file(&user_file, b"user-login");
+    let before =
+        crate::services::live_fingerprint::hash_existing(&[present.clone(), user_file.clone()]);
+    // Provider write touches only settings.json; auth.json bytes stay the same.
+    write_file(&present, b"after-switch");
+    crate::services::live_fingerprint::record_changed(
+        &db,
+        AgentId::Claude,
+        &before,
+        &[present.clone(), user_file.clone()],
+    );
+
+    let _result = svc.restore(&rec.id).unwrap();
+    assert_eq!(std::fs::read(&present).unwrap(), b"keep");
+    assert_eq!(std::fs::read(&user_file).unwrap(), b"user-login");
 }

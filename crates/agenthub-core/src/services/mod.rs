@@ -17,6 +17,7 @@ pub mod doctor_snapshot;
 pub mod env_service;
 pub mod install_progress;
 pub mod install_service;
+pub mod live_fingerprint;
 pub mod live_write_authority;
 pub mod mcp_inventory;
 pub mod plugin_apply;
