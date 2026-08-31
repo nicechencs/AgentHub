@@ -115,6 +115,28 @@ describe('official login session façade', () => {
     expect(session.userCode).toBe('WXYZ-1234');
   });
 
+  it('passes pool ownership through Grok device-code login', async () => {
+    startDeviceOAuth.mockResolvedValue({
+      state: 'dev-grok-pool',
+      agentId: 'grok',
+      providerKey: 'xai',
+      userCode: 'POOL-1234',
+      verificationUri: 'https://auth.x.ai/device',
+      intervalSecs: 5,
+      expiresInSecs: 900,
+    });
+
+    const session = await startOfficialLogin(
+      'grok',
+      { id: 'xai', flow: 'deviceCode' },
+      true,
+      true,
+    );
+    expect(startDeviceOAuth).toHaveBeenCalledWith('grok', 'xai', true);
+    expect(session.flow).toBe('deviceCode');
+    expect(session.sessionId).toBe('dev-grok-pool');
+  });
+
   it('keeps waiting after a poll-chunk timeout and fails when another login starts', async () => {
     waitOAuth
       .mockResolvedValueOnce({

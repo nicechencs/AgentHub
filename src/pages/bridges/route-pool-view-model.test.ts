@@ -11,6 +11,7 @@ import {
   matchDefaultPoolForProfile,
   mergeOwnedAuthorizationsIntoRows,
   nativeEnrollCtaVisible,
+  poolAuthorizationStatusView,
   poolSurfaceForAgent,
   routePoolMemberLabels,
   routePoolMembersSectionVisible,
@@ -198,6 +199,7 @@ describe('route pool v2 view-model', () => {
       title: 'Codex login',
       agentId: 'codex' as const,
       kind: 'oauth' as const,
+      authHealth: 'renewable' as const,
       account: { home: 'route_pool' as const },
     } as ConnectionEntry;
     const api = {
@@ -206,6 +208,7 @@ describe('route pool v2 view-model', () => {
       title: 'Codex API',
       agentId: 'codex' as const,
       kind: 'apikey' as const,
+      authHealth: 'configured' as const,
     } as ConnectionEntry;
     const items = collectPoolAuthorizations([
       pool({
@@ -215,10 +218,46 @@ describe('route pool v2 view-model', () => {
         ],
       }),
     ], [oauth, api]);
-    expect(items.map((item) => [item.kind, item.title, item.addedHere])).toEqual([
-      ['oauth', 'Codex login', true],
-      ['apikey', 'Codex API', false],
+    expect(items.map((item) => [item.kind, item.title, item.addedHere, item.authHealth])).toEqual([
+      ['oauth', 'Codex login', true, 'renewable'],
+      ['apikey', 'Codex API', false, 'configured'],
     ]);
+  });
+
+  it('keeps one row when the same authorization is in two pools', () => {
+    const oauth = {
+      source: 'account' as const,
+      id: 'grok-1',
+      title: 'Grok login',
+      agentId: 'grok' as const,
+      kind: 'oauth' as const,
+    } as ConnectionEntry;
+    const items = collectPoolAuthorizations([
+      pool({
+        id: 'grok-responses',
+        targetAgentId: 'grok',
+        surface: 'responses',
+        dialect: 'grok',
+        members: [{ sourceKind: 'account', sourceId: 'grok-1', enabled: true }],
+      }),
+      pool({
+        id: 'grok-chat',
+        targetAgentId: 'grok',
+        surface: 'chat_completions',
+        dialect: 'grok',
+        members: [{ sourceKind: 'account', sourceId: 'grok-1', enabled: true }],
+      }),
+    ], [oauth]);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe('Grok login');
+  });
+
+  it('maps stored auth health to a status chip', () => {
+    expect(poolAuthorizationStatusView({ authHealth: 'verified' }).label).toBe('已验证');
+    expect(poolAuthorizationStatusView({ authHealth: 'verified' }).tone).toBe('success');
+    expect(poolAuthorizationStatusView({ authStatus: 'expired' }).label).toBe('需要重新登录');
+    expect(poolAuthorizationStatusView({ authStatus: 'expired' }).tone).toBe('danger');
+    expect(poolAuthorizationStatusView({}).label).toBe('状态未知');
   });
 
   it('folds a pool-owned authorization into a workbench card', () => {

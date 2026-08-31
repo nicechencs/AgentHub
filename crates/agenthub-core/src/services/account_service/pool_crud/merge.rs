@@ -3,7 +3,9 @@ use serde_json::Value;
 
 use crate::adapters::AgentAdapter;
 use crate::error::{AppError, Result};
-use crate::models::{Account, AccountKind, AgentId, Provider};
+use crate::models::{
+    authorization_is_route_pool_home, Account, AccountKind, AgentId, Provider,
+};
 use crate::services::ConnectionService;
 use crate::storage::{
     account_get_by_id_conn, account_list_for_agent_conn, provider_get_by_id_conn,
@@ -156,6 +158,55 @@ impl AccountService {
         extra: Value,
         mark_current: bool,
     ) -> std::result::Result<AccountCommittedMutation, AccountMutationError> {
+        self.commit_authorization_merge_scoped(
+            adapter,
+            incoming,
+            kind,
+            label,
+            credentials,
+            extra,
+            mark_current,
+            false,
+        )
+    }
+
+    /// Merge a Routes-owned authorization only with another non-current
+    /// Routes-owned row.  A matching current Connections row must remain
+    /// untouched, while repeated pool logins should refresh one stable pool
+    /// row instead of creating an unbounded series of duplicates.
+    pub(in crate::services::account_service) fn commit_pool_owned_authorization_merge(
+        &self,
+        adapter: &dyn AgentAdapter,
+        incoming: &Account,
+        kind: AccountKind,
+        label: String,
+        credentials: Value,
+        extra: Value,
+        mark_current: bool,
+    ) -> std::result::Result<AccountCommittedMutation, AccountMutationError> {
+        self.commit_authorization_merge_scoped(
+            adapter,
+            incoming,
+            kind,
+            label,
+            credentials,
+            extra,
+            mark_current,
+            true,
+        )
+    }
+
+    fn commit_authorization_merge_scoped(
+        &self,
+        adapter: &dyn AgentAdapter,
+        incoming: &Account,
+        kind: AccountKind,
+        label: String,
+        credentials: Value,
+        extra: Value,
+        mark_current: bool,
+        pool_owned_only: bool,
+    ) -> std::result::Result<AccountCommittedMutation, AccountMutationError> {
         self.db
             .with_conn(|conn| {
                 let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
@@ -166,8 +217,14 @@ impl AccountService {
                 let binding = get_binding_row(&tx, agent)?;
                 let trash = list_trash_conn(&tx, agent)?;
 
-                let duplicates =
-                    authorization_duplicates(adapter, agent, kind, &credentials, &accounts);
+                let duplicates = authorization_duplicates(adapter, agent, kind, &credentials, &accounts)
+                    .into_iter()
+                    .filter(|candidate| {
+                        !pool_owned_only
+                            || (!candidate.is_current
+                                && authorization_is_route_pool_home(&candidate.extra))
+                    })
+                    .collect::<Vec<_>>();
                 let committed = if let Some(target_existing) =
                     pick_primary_authorization_match(duplicates.clone())
                 {

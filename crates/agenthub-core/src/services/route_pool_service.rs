@@ -13,6 +13,7 @@ use super::AdapterRouteService;
 use crate::bridge::BridgeRuntimeHost;
 use crate::error::{AppError, Result};
 use crate::integrations::agents::codex::leftover;
+use crate::logging::targets;
 use crate::models::{
     authorization_is_route_pool_home, choose_default_pool_id, enroll_native_plan_is_open,
     feature_flag_enabled, generate_hub_token, list_local_bridge_models, product_flag_enabled,
@@ -242,16 +243,36 @@ impl RoutePoolService {
         self.require_enabled()?;
         let pool = self.ensure_default_pool(target_agent_id, surface)?;
         let members = self.pools.list_members(&pool.id)?;
-        if !members.iter().any(|member| {
+        let added_member = if !members.iter().any(|member| {
             member.source_kind == source_kind && member.source_id == source_id
         }) {
-            self.add_member(&pool.id, source_kind, source_id)?;
+            Some(self.add_member(&pool.id, source_kind, source_id)?)
+        } else {
+            None
+        };
+        let attached = (|| -> Result<DefaultRoutePoolOverview> {
+            self.stamp_route_pool_home(target_agent_id, source_kind, source_id)?;
+            let pool = self.pools.get_pool(&pool.id)?.ok_or_else(|| {
+                AppError::message("db.route_pool", "pool missing after attach")
+            })?;
+            self.overview_from_pool(&pool)
+        })();
+        if let Err(error) = attached {
+            if let Some(member) = added_member {
+                if let Err(cleanup) = self.pools.remove_member(&member.id) {
+                    tracing::warn!(
+                        module = targets::ADAPTER,
+                        op = "attach_rollback",
+                        member_id = %member.id,
+                        error_code = cleanup.code(),
+                        "failed to roll back route pool member after attach failure"
+                    );
+                }
+                let _ = self.sync_lead_projection(&member.route_pool_id);
+            }
+            return Err(error);
         }
-        self.stamp_route_pool_home(target_agent_id, source_kind, source_id)?;
-        let pool = self.pools.get_pool(&pool.id)?.ok_or_else(|| {
-            AppError::message("db.route_pool", "pool missing after attach")
-        })?;
-        self.overview_from_pool(&pool)
+        attached
     }
 
     /// Enroll existing Connections authorizations into the matching default
@@ -393,7 +414,18 @@ impl RoutePoolService {
             created_at: now.clone(),
             updated_at: now,
         })?;
-        self.sync_lead_projection(pool_id)?;
+        if let Err(error) = self.sync_lead_projection(pool_id) {
+            if let Err(cleanup) = self.pools.remove_member(&member.id) {
+                tracing::warn!(
+                    module = targets::ADAPTER,
+                    op = "member_rollback",
+                    member_id = %member.id,
+                    error_code = cleanup.code(),
+                    "failed to roll back route pool member after projection failure"
+                );
+            }
+            return Err(error);
+        }
         Ok(member)
     }
 

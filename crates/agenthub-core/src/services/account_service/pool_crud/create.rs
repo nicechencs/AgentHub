@@ -3,7 +3,7 @@ use std::time::Instant;
 use uuid::Uuid;
 
 use crate::error::Result;
-use crate::models::{Account, AccountInput};
+use crate::models::{authorization_is_route_pool_home, Account, AccountInput};
 
 use super::super::surface::*;
 use super::super::{AccountService, MAX_ACCOUNT_LABEL_LEN};
@@ -54,6 +54,33 @@ impl AccountService {
         };
         row = self.prepare_account_surface(row);
         let _ = crate::services::account_identity_heal::heal_account_identity(&mut row);
+
+        // A login started from Routes is intentionally a separate pool-owned
+        // authorization. It must not be collapsed into an existing current
+        // row when OAuth identity dedupe finds the same person. The marker is
+        // stamped by the device-code flow before this service is called.
+        if authorization_is_route_pool_home(&row.extra) {
+            if row.is_current {
+                return Err(crate::error::AppError::InvalidArg(
+                    "route-pool-owned accounts cannot be current".into(),
+                ));
+            }
+            if let Some(ref ad) = adapter {
+                return self
+                    .commit_pool_owned_authorization_merge(
+                        ad.as_ref(),
+                        &row,
+                        input.kind,
+                        row.label.clone(),
+                        row.credentials.clone(),
+                        row.extra.clone(),
+                        false,
+                    )
+                    .map(|committed| committed.stored)
+                    .map_err(AccountMutationError::into_error);
+            }
+            return self.repo.create(&row);
+        }
         if let Some(ref ad) = adapter {
             return self
                 .commit_authorization_merge(

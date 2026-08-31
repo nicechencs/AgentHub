@@ -155,17 +155,23 @@ export function createTauriAccountPort(): AccountPort {
       await invoke('oauth_cancel', { oauthState: state });
     },
 
-    async startDeviceOAuth(agentId, providerKey) {
-      return invoke('oauth_device_start', { agentId, providerKey });
+    async startDeviceOAuth(agentId, providerKey, poolOwned = false) {
+      const args: { agentId: AgentId; providerKey: string; poolOwned?: boolean } = {
+        agentId,
+        providerKey,
+      };
+      if (poolOwned) args.poolOwned = true;
+      return invoke('oauth_device_start', args);
     },
 
     async pollDeviceOAuth(state) {
       return invoke('oauth_device_poll', { oauthState: state });
     },
 
-    async finishDeviceOAuth(state) {
+    async finishDeviceOAuth(state, poolOwned = false) {
       const row = await invoke<CoreAccount>('oauth_device_complete', {
         oauthState: state,
+        ...(poolOwned ? { poolOwned: true } : {}),
       });
       return mapCoreAccountView(row).account;
     },

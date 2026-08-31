@@ -10,9 +10,10 @@ import type {
   RoutePoolDialect,
   RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
+import { authHealthLabel, type AuthHealth } from '@/lib/backend/contracts/auth-state';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { ConnectionKind } from '@/lib/connection-kind';
-import type { AgentId } from '@/lib/types';
+import type { AgentId, AuthStatus } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import { groupLocalBridgeProfiles } from './adapter-view-model';
 
@@ -149,7 +150,57 @@ export type PoolAuthorizationItem = {
   kind: ConnectionKind;
   surface: RoutePoolSurface | null;
   addedHere: boolean;
+  authHealth?: AuthHealth;
+  authStatus?: AuthStatus;
 };
+
+function poolAuthorizationItem(
+  key: string,
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+  match: ConnectionEntry | undefined,
+  fallback: {
+    agentId: AgentId;
+    kind: ConnectionKind;
+    title: string;
+    surface: RoutePoolSurface | null;
+    addedHere: boolean;
+  },
+): PoolAuthorizationItem {
+  return {
+    key,
+    sourceKind,
+    sourceId,
+    agentId: match?.agentId ?? fallback.agentId,
+    title: match?.title?.trim() || fallback.title,
+    kind: match?.kind ?? fallback.kind,
+    surface: fallback.surface,
+    addedHere: fallback.addedHere,
+    authHealth: match?.authHealth,
+    authStatus: match?.authStatus,
+  };
+}
+
+/** Login-status chip for one authorization row. */
+export function poolAuthorizationStatusView(
+  item: Pick<PoolAuthorizationItem, 'authHealth' | 'authStatus'>,
+  t?: TranslateFn,
+): { label: string; tone: 'success' | 'warning' | 'danger' | 'info' | 'muted' } {
+  const health: AuthHealth = item.authHealth
+    ?? (item.authStatus === 'expired'
+      ? 'needs_login'
+      : item.authStatus === 'none'
+        ? 'missing'
+        : item.authStatus === 'expiring'
+          ? 'unknown'
+          : 'unknown');
+  const tone = health === 'needs_login'
+    ? 'danger'
+    : health === 'missing' || health === 'unknown'
+      ? 'muted'
+      : 'success';
+  return { label: authHealthLabel(health, t), tone };
+}
 
 /** Every OAuth / API authorization visible on the auth-pool page. */
 export function collectPoolAuthorizations(
@@ -157,39 +208,45 @@ export function collectPoolAuthorizations(
   entries: readonly ConnectionEntry[],
 ): PoolAuthorizationItem[] {
   const items = new Map<string, PoolAuthorizationItem>();
-  const entryBySource = new Map(
-    entries.map((entry) => [`${entry.source}:${entry.id}`, entry] as const),
+  const entryBySource = new Map<string, ConnectionEntry>(
+    entries.map((entry) => [`${entry.source}:${entry.id}`, entry]),
   );
   for (const pool of pools) {
     for (const member of pool.members) {
       const key = `${member.sourceKind}:${member.sourceId}`;
       const match = entryBySource.get(key);
-      items.set(key, {
+      items.set(key, poolAuthorizationItem(
         key,
-        sourceKind: member.sourceKind,
-        sourceId: member.sourceId,
-        agentId: match?.agentId ?? pool.targetAgentId,
-        title: match?.title?.trim() || member.sourceId,
-        kind: match?.kind ?? (member.sourceKind === 'account' ? 'oauth' : 'apikey'),
-        surface: pool.surface,
-        addedHere: match ? entryHome(match) === 'route_pool' : false,
-      });
+        member.sourceKind,
+        member.sourceId,
+        match,
+        {
+          agentId: pool.targetAgentId,
+          kind: member.sourceKind === 'account' ? 'oauth' : 'apikey',
+          title: member.sourceId,
+          surface: pool.surface,
+          addedHere: match ? entryHome(match) === 'route_pool' : false,
+        },
+      ));
     }
   }
   for (const entry of entries) {
     if (entryHome(entry) !== 'route_pool') continue;
     const key = `${entry.source}:${entry.id}`;
     if (items.has(key)) continue;
-    items.set(key, {
+    items.set(key, poolAuthorizationItem(
       key,
-      sourceKind: entry.source,
-      sourceId: entry.id,
-      agentId: entry.agentId,
-      title: entry.title.trim() || entry.id,
-      kind: entry.kind,
-      surface: poolSurfaceForAgent(entry.agentId),
-      addedHere: true,
-    });
+      entry.source,
+      entry.id,
+      entry,
+      {
+        agentId: entry.agentId,
+        kind: entry.kind,
+        title: entry.id,
+        surface: poolSurfaceForAgent(entry.agentId),
+        addedHere: true,
+      },
+    ));
   }
   return [...items.values()].sort((left, right) => {
     const agent = left.agentId.localeCompare(right.agentId);
