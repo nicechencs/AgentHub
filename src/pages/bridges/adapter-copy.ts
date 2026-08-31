@@ -53,12 +53,12 @@ export const BRIDGES_PAGE_DESCRIPTION_TIP =
   '登录信息在连接页，不展示不复制。客户端填本机地址：/v1/messages Claude 对话、/v1/responses Codex / Grok 对话、/v1/chat/completions Kimi 等补全、GET /models 模型名单。需保持托盘运行。';
 export const BRIDGES_EMPTY_TITLE = '没有本机路由';
 export const BRIDGES_EMPTY_DESCRIPTION =
-  '点「新建路由」，填供应商登录并勾选客户端。多数连接不需要这一步。';
+  '多数连接不需要这一步。需要时在连接页把登录接到工具。';
 export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = '登录列表里有本机路由，但找不到正在运行的转发';
 export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = '点重试。不是「没有本机路由」。';
 export { BRIDGES_NAV_LABEL, BRIDGES_PATH, bridgesHrefForProfile, legacyBridgesRedirectTo };
 
-/** Unknown or missing `?profile=` stays on the list; do not toast. */
+/** Unknown or missing `?profile=` stays on the auth-pool workbench; do not toast. */
 export function resolveBridgesProfileQuery(
   profileId: string | null | undefined,
   profiles: readonly { id: string }[],

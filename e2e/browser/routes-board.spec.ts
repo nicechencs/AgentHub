@@ -4,7 +4,7 @@ import { goPath, openApp } from './helpers';
 test('routes board grouping stays independent of filters unless a dimension is already narrowed', async ({ page }) => {
   await openApp(page);
   await goPath(page, '/routes/board');
-  await expect(page.getByRole('heading', { name: '看板' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '路由看板' })).toBeVisible();
   await expect(page.getByText('用量统计')).toBeVisible();
   await expect(page.getByLabel('按本机入口筛选用量')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByLabel('用量分组')).toBeVisible();

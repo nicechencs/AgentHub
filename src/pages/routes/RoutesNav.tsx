@@ -48,7 +48,6 @@ function RoutesNavLink({
   return (
     <NavLink
       to={item.to}
-      end={item.end === true}
       aria-label={compact || inDevelopment ? a11yLabel : undefined}
       className="block rounded-btn focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/30"
     >

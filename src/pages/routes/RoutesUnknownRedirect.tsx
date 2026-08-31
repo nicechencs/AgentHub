@@ -1,8 +1,12 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { BRIDGES_PATH } from '@/lib/bridges-path';
+import { routesIndexRedirectTo } from '@/lib/bridges-path';
 
-/** Unknown `/routes/*` → list; preserve safe query (e.g. ?profile=). */
-export function RoutesUnknownRedirect() {
+/** `/routes` index and unknown `/routes/*` → board, or auth pool when `?profile=`. */
+export function RoutesIndexRedirect() {
   const { search } = useLocation();
-  return <Navigate to={`${BRIDGES_PATH}${search}`} replace />;
+  return <Navigate to={routesIndexRedirectTo(search)} replace />;
+}
+
+export function RoutesUnknownRedirect() {
+  return <RoutesIndexRedirect />;
 }

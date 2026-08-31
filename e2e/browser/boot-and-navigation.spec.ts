@@ -146,14 +146,14 @@ test('page title sits in the top bar with notifications; Chat has neither', asyn
   const mcpTop = (await mcpTabs.boundingBox())!.y;
   expect(Math.abs(mcpTop - connectionsTop)).toBeLessThanOrEqual(4);
 
-  await goPath(page, '/routes');
-  const createRoute = page.getByRole('button', { name: '新建路由' });
-  const importRoute = page.getByRole('button', { name: '导入', exact: true });
-  const routesLead = page.getByText(/个本机路由|孤立本机路由/);
-  await expect(createRoute).toBeVisible();
-  await expect(importRoute).toBeVisible();
+  await goPath(page, '/routes/pool');
+  const addOauth = page.getByRole('button', { name: 'OAuth 接入' });
+  const addApi = page.getByRole('button', { name: 'API 接入' });
+  const routesLead = page.getByText(/个本机路由|孤立本机路由|登录的增删在连接页/);
+  await expect(addOauth).toBeVisible();
+  await expect(addApi).toBeVisible();
   await expect(routesLead).toBeVisible();
-  const createBox = await createRoute.boundingBox();
+  const createBox = await addOauth.boundingBox();
   const leadBox = await routesLead.boundingBox();
   expect(createBox).toBeTruthy();
   expect(leadBox).toBeTruthy();
@@ -190,10 +190,10 @@ test('new install hides Routes and Plugins until enabled in Settings', async ({ 
   await expect(nav.getByRole('link', { name: /^插件 — / })).toBeVisible();
 
   await goNav(page, '路由');
-  await expect(page).toHaveURL(/#\/routes/);
-  await expect(page.getByRole('heading', { name: '路由' })).toBeVisible();
-  await expect(page.locator('header').getByText('开发中')).toBeVisible();
-  await expect(page.getByRole('button', { name: '折叠侧栏' })).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/routes\/board/);
+  await expect(page.getByRole('heading', { name: '路由看板' })).toBeVisible();
+  await expect(page.getByText('用量统计')).toBeVisible();
+  await expect(page.getByRole('button', { name: '收起侧栏' })).toHaveCount(0);
 
   await goNav(page, '插件');
   await expect(page).toHaveURL(/#\/plugins/);
@@ -209,21 +209,24 @@ test('new install hides Routes and Plugins until enabled in Settings', async ({ 
 test('Routes secondary nav appears under /routes*; URL entry does not auto-collapse', async ({ page }) => {
   await openApp(page);
   await goPath(page, '/routes');
-  await expect(page).toHaveURL(/#\/routes/);
+  await expect(page).toHaveURL(/#\/routes\/board/);
   const secondary = page.locator('[data-routes-nav]');
   await expect(secondary).toBeVisible();
-  await expect(secondary.getByRole('link', { name: /^路由列表/ })).toBeVisible();
-  await expect(secondary.getByRole('link', { name: /^看板/ })).toBeVisible();
+  await expect(secondary.getByRole('link', { name: /^路由列表/ })).toHaveCount(0);
+  await expect(secondary.getByRole('link', { name: /^路由看板/ })).toBeVisible();
+  await expect(secondary.getByRole('link', { name: /^授权池/ })).toBeVisible();
   await expect(secondary.getByRole('button', { name: '展开侧栏' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '折叠侧栏' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '收起侧栏' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '路由看板' })).toBeVisible();
+  await expect(page.getByText('用量统计')).toBeVisible();
 
-  await secondary.getByRole('link', { name: /^看板/ }).click();
-  await expect(page).toHaveURL(/#\/routes\/board/);
-  await expect(page.getByRole('heading', { name: '看板' })).toBeVisible();
+  await secondary.getByRole('link', { name: /^授权池/ }).click();
+  await expect(page).toHaveURL(/#\/routes\/pool/);
+  await expect(page.getByRole('heading', { name: '授权池' })).toBeVisible();
 
-  await secondary.getByRole('link', { name: /^活动/ }).click();
+  await secondary.getByRole('link', { name: /^监控日志/ }).click();
   await expect(page).toHaveURL(/#\/routes\/activity/);
-  await expect(page.getByRole('heading', { name: '活动' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '监控日志' })).toBeVisible();
 
   await goPath(page, '/');
   await expect(page).toHaveURL(/#\/$/);
