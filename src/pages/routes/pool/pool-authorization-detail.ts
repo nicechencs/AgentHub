@@ -26,22 +26,65 @@ export function formatPoolTimestamp(raw?: string | null): string | null {
   return `${y}-${m}-${d} ${hh}:${mm}`;
 }
 
-export function poolAuthorizationListChips(
-  item: PoolAuthorizationItem,
-  t: TranslateFn,
+export type PoolAuthorizationColumnKey =
+  | 'enabled'
+  | 'login'
+  | 'kind'
+  | 'status'
+  | 'bindings'
+  | 'quota'
+  | 'lastUsed'
+  | 'priority';
+
+export const POOL_AUTHORIZATION_ALWAYS_COLUMNS: readonly PoolAuthorizationColumnKey[] = [
+  'login',
+  'kind',
+  'status',
+];
+
+export function poolAuthorizationQuotaParts(
+  item: Pick<PoolAuthorizationItem, 'quota5hPct' | 'quota7dPct'>,
 ): string[] {
-  const chips: string[] = [];
-  const lastUsed = formatPoolTimestamp(item.lastUsedAt);
-  if (lastUsed) chips.push(lastUsed);
-  if (item.bindingCount && item.bindingCount > 0) {
-    chips.push(t('routes.pool.detail.bindingCount', { count: item.bindingCount }));
+  const parts: string[] = [];
+  if (hasQuotaWindow(item.quota7dPct)) parts.push(`7d ${item.quota7dPct}%`);
+  if (hasQuotaWindow(item.quota5hPct)) parts.push(`5h ${item.quota5hPct}%`);
+  return parts;
+}
+
+export function poolAuthorizationVisibleColumns(
+  items: readonly PoolAuthorizationItem[],
+): PoolAuthorizationColumnKey[] {
+  const columns: PoolAuthorizationColumnKey[] = [...POOL_AUTHORIZATION_ALWAYS_COLUMNS];
+  if (items.some((item) => (item.bindingCount ?? 0) > 0)) columns.push('bindings');
+  if (items.some((item) => poolAuthorizationQuotaParts(item).length > 0)) columns.push('quota');
+  if (items.some((item) => Boolean(item.lastUsedAt?.trim()))) columns.push('lastUsed');
+  if (items.some((item) => item.priority != null)) columns.push('priority');
+  columns.push('enabled');
+  return columns;
+}
+
+export function poolAuthorizationColumnLabel(
+  key: PoolAuthorizationColumnKey,
+  t: TranslateFn,
+): string {
+  switch (key) {
+    case 'enabled':
+      return t('routes.pool.detail.enabled');
+    case 'login':
+      return t('routes.pool.table.login');
+    case 'kind':
+      return t('routes.pool.table.kind');
+    case 'status':
+      return t('routes.pool.table.status');
+    case 'bindings':
+      return t('routes.pool.detail.bindings');
+    case 'quota':
+      return t('routes.pool.detail.quota');
+    case 'lastUsed':
+      return t('connections.list.lastUsedAt');
+    case 'priority':
+      return t('routes.pool.detail.priority');
   }
-  if (hasQuotaWindow(item.quota7dPct)) chips.push(`7d ${item.quota7dPct}%`);
-  if (hasQuotaWindow(item.quota5hPct)) chips.push(`5h ${item.quota5hPct}%`);
-  if (item.canToggle && item.priority != null) {
-    chips.push(t('routes.pool.detail.priorityValue', { n: item.priority }));
-  }
-  return chips;
 }
 
 export function poolAuthorizationDetailRows(

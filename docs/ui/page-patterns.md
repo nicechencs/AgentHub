@@ -127,7 +127,7 @@ Routes nested paths use a shell-level secondary nav. The **board** (`/routes/boa
 
 ### 6.1 Connection pool
 
-The connection pool lists official logins and API keys used for local forwarding, one row each, with status and a detail panel like Connections. A route row can still be opened through `?profile=<id>`.
+The connection pool lists official logins and API keys used for local forwarding in a field-aligned table: login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Selecting a row opens a detail panel. A route row can still be opened through `?profile=<id>`.
 
 The page treats the following states separately:
 

@@ -32,7 +32,7 @@ export const tableStyles = {
   footer:
     'flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2 text-meta text-muted',
   resizeHandle:
-    'absolute right-0 top-0 z-10 h-full w-1.5 cursor-col-resize touch-none hover:bg-accent/40 active:bg-accent/60',
+    'absolute -right-1 top-0 z-10 h-full w-3 cursor-col-resize touch-none hover:bg-accent/40 active:bg-accent/60',
 } as const;
 
 export type TableShellVariant = 'default' | 'workbench' | 'flush';
