@@ -14,6 +14,7 @@ function item(partial: Partial<PoolAuthorizationItem> = {}): PoolAuthorizationIt
     title: 'Grok · OAuth',
     kind: 'oauth',
     surface: 'responses',
+    endpointKinds: ['responses_grok'],
     addedHere: true,
     authHealth: 'renewable',
     ...partial,

@@ -316,6 +316,7 @@ describe('route pool v2 view-model', () => {
     ], [oauth]);
     expect(items).toHaveLength(1);
     expect(items[0]?.title).toBe('Grok login');
+    expect(items[0]?.endpointKinds).toEqual(['responses_grok', 'chat_completions']);
   });
 
   it('maps stored auth health to a status chip', () => {
