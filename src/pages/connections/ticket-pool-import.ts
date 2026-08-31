@@ -1,16 +1,31 @@
 /**
  * Connections row: enroll this login into the default connection pool.
- * Matches RouteDownstreamSurface::for_agent and poolSyncCandidates.
+ * API keys are eligible regardless of owning Agent; official Chinese logins are not.
+ * Claude / Codex / Grok official logins stay eligible. Matches poolSyncCandidates.
  */
 import type { DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import type { TicketView } from '@/lib/backend/contracts/ticket';
+import type { ConnectionKind } from '@/lib/connection-kind';
 import type { TranslateFn } from '@/lib/i18n';
 import type { AgentId } from '@/lib/types';
 import type { TicketBindAction } from './ticket-bind-action';
 
 export type { TicketBindAction };
 
-export const POOL_IMPORTABLE_AGENTS = new Set<AgentId>(['claude', 'codex', 'grok', 'kimi', 'dsh']);
+const POOL_SHAREABLE_OAUTH_AGENTS = new Set<AgentId>(['claude', 'codex', 'grok']);
+
+/** True when this login can appear in「从连接同步」/「分享至连接池」. */
+export function isPoolShareableLogin(input: {
+  agentId: AgentId;
+  credentialClass?: string;
+  kind?: ConnectionKind;
+}): boolean {
+  const credentialClass = input.credentialClass
+    ?? (input.kind === 'apikey' ? 'api_key' : input.kind === 'oauth' ? 'oauth' : undefined);
+  if (credentialClass === 'api_key') return true;
+  if (credentialClass === 'oauth') return POOL_SHAREABLE_OAUTH_AGENTS.has(input.agentId);
+  return false;
+}
 
 export function ticketPoolImportKey(
   ticket: Pick<TicketView, 'sourceKind' | 'sourceId'>,
@@ -29,7 +44,7 @@ export function importedSourceKeys(
 }
 
 export function resolveTicketPoolImportAction(
-  ticket: Pick<TicketView, 'agentId'>,
+  ticket: Pick<TicketView, 'agentId' | 'credentialClass'>,
   state: { poolEnabled: boolean; alreadyImported: boolean },
   t?: TranslateFn,
 ): TicketBindAction {
@@ -39,7 +54,7 @@ export function resolveTicketPoolImportAction(
       reason: t ? t('routes.pool.page.disabledTitle') : '连接池还没开启',
     };
   }
-  if (!POOL_IMPORTABLE_AGENTS.has(ticket.agentId)) {
+  if (!isPoolShareableLogin(ticket)) {
     return {
       disabled: true,
       reason: t

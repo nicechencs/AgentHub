@@ -18,13 +18,14 @@ use crate::models::{
     authorization_is_route_pool_home, choose_default_pool_id, enroll_native_plan_is_open,
     feature_flag_enabled, generate_hub_token, list_local_bridge_models, product_flag_enabled,
     set_authorization_route_pool_home, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter,
-    AccountKind, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId, DefaultRoutePoolList,
-    DefaultRoutePoolOverview, ModelRouteRule, RouteDownstreamDialect, RouteDownstreamSurface,
-    RouteMember, RouteMemberOverview, RoutePool, RouteSchedulePolicy,
-    SyncConnectionAuthorizationsResult, SyncConnectionSource, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
-    FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
-    FEATURE_ROUTE_POOL_V2,
+    AccountKind, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct,
+    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, ModelRouteRule, RouteDownstreamDialect,
+    RouteDownstreamSurface, RouteMember, RouteMemberOverview, RoutePool, RouteSchedulePolicy,
+    SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol, TicketSurface,
+    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
+use serde_json::Value;
 use crate::storage::{
     binding_get_conn, AccountRepo, AdapterProfileRepo, Database, ProviderRepo, RoutePoolRepo,
 };
@@ -314,6 +315,12 @@ impl RoutePoolService {
                         skipped = skipped.saturating_add(1);
                         return Ok(());
                     };
+                    if account.kind == AccountKind::Oauth
+                        && !oauth_login_is_pool_shareable(account.agent_id)
+                    {
+                        skipped = skipped.saturating_add(1);
+                        return Ok(());
+                    }
                     if authorization_is_route_pool_home(&account.extra)
                         || classify_account_live(
                             account.agent_id,
@@ -328,8 +335,15 @@ impl RoutePoolService {
                         skipped = skipped.saturating_add(1);
                         return Ok(());
                     }
-                    match self.enroll_connection_source(
+                    let product =
+                        AdapterRouteService::classify_account_source_product(account);
+                    let targets = pool_targets_for_source(
                         account.agent_id,
+                        product,
+                        &[&account.credentials, &account.extra],
+                    );
+                    match self.enroll_connection_source(
+                        &targets,
                         AdapterSourceKind::Account,
                         &account.id,
                     )? {
@@ -350,8 +364,15 @@ impl RoutePoolService {
                         skipped = skipped.saturating_add(1);
                         return Ok(());
                     }
-                    match self.enroll_connection_source(
+                    let product =
+                        AdapterRouteService::classify_provider_source_product(provider);
+                    let targets = pool_targets_for_source(
                         provider.agent_id,
+                        product,
+                        &[&provider.settings_config, &provider.meta],
+                    );
+                    match self.enroll_connection_source(
+                        &targets,
                         AdapterSourceKind::Provider,
                         &provider.id,
                     )? {
@@ -380,23 +401,27 @@ impl RoutePoolService {
 
     fn enroll_connection_source(
         &self,
-        agent_id: AgentId,
+        targets: &[(AgentId, RouteDownstreamSurface)],
         source_kind: AdapterSourceKind,
         source_id: &str,
     ) -> Result<bool> {
-        let Some(surface) = RouteDownstreamSurface::for_agent(agent_id) else {
-            return Ok(false);
-        };
-        let pool = self.ensure_default_pool(agent_id, surface)?;
-        let members = self.pools.list_members(&pool.id)?;
-        if members
-            .iter()
-            .any(|member| member.source_kind == source_kind && member.source_id == source_id)
-        {
+        if targets.is_empty() {
             return Ok(false);
         }
-        self.add_member(&pool.id, source_kind, source_id)?;
-        Ok(true)
+        let mut added_any = false;
+        for (agent_id, surface) in targets {
+            let pool = self.ensure_default_pool(*agent_id, *surface)?;
+            let members = self.pools.list_members(&pool.id)?;
+            if members
+                .iter()
+                .any(|member| member.source_kind == source_kind && member.source_id == source_id)
+            {
+                continue;
+            }
+            self.add_member(&pool.id, source_kind, source_id)?;
+            added_any = true;
+        }
+        Ok(added_any)
     }
 
     pub fn ensure_default_pool(
@@ -1023,4 +1048,129 @@ fn now() -> String {
 fn non_empty_label(value: &str) -> Option<&str> {
     let value = value.trim();
     (!value.is_empty()).then_some(value)
+}
+
+fn oauth_login_is_pool_shareable(agent: AgentId) -> bool {
+    matches!(agent, AgentId::Claude | AgentId::Codex | AgentId::Grok)
+}
+
+fn pool_targets_for_source(
+    agent_id: AgentId,
+    product: AdapterSourceProduct,
+    blobs: &[&Value],
+) -> Vec<(AgentId, RouteDownstreamSurface)> {
+    if let Some(surface) = RouteDownstreamSurface::for_agent(agent_id) {
+        return vec![(agent_id, surface)];
+    }
+    let mut surfaces = surfaces_from_ticket_product(product);
+    if surfaces.is_empty() {
+        surfaces = surfaces_from_endpoint_blobs(blobs);
+    }
+    if surfaces.is_empty() {
+        surfaces = fallback_surfaces_for_source_agent(agent_id);
+    }
+    writer_pool_targets_for_surfaces(&surfaces)
+}
+
+fn writer_pool_targets_for_surfaces(
+    surfaces: &[RouteDownstreamSurface],
+) -> Vec<(AgentId, RouteDownstreamSurface)> {
+    AgentId::ALL
+        .into_iter()
+        .filter_map(|agent| {
+            let surface = RouteDownstreamSurface::for_agent(agent)?;
+            surfaces.contains(&surface).then_some((agent, surface))
+        })
+        .collect()
+}
+
+fn surfaces_from_ticket_product(product: AdapterSourceProduct) -> Vec<RouteDownstreamSurface> {
+    surfaces_from_protocols(TicketSurface::from_product(product).speaks())
+}
+
+fn surfaces_from_protocols(speaks: &[TicketProtocol]) -> Vec<RouteDownstreamSurface> {
+    let mut out = Vec::new();
+    for protocol in speaks {
+        let Some(surface) = protocol_surface(*protocol) else {
+            continue;
+        };
+        push_unique_surface(&mut out, surface);
+    }
+    out
+}
+
+fn protocol_surface(protocol: TicketProtocol) -> Option<RouteDownstreamSurface> {
+    match protocol {
+        TicketProtocol::AnthropicMessages => Some(RouteDownstreamSurface::Messages),
+        TicketProtocol::OpenaiResponses => Some(RouteDownstreamSurface::Responses),
+        TicketProtocol::OpenaiChat => Some(RouteDownstreamSurface::ChatCompletions),
+        TicketProtocol::AnthropicPkce
+        | TicketProtocol::OpenaiCodexPkce
+        | TicketProtocol::XaiDeviceCode => None,
+    }
+}
+
+fn surfaces_from_endpoint_blobs(blobs: &[&Value]) -> Vec<RouteDownstreamSurface> {
+    let mut out = Vec::new();
+    for blob in blobs {
+        visit_endpoint_strings(blob, 0, &mut |value| {
+            let lower = value.to_ascii_lowercase();
+            if lower.contains("/v1/messages") || lower.contains("/anthropic") {
+                push_unique_surface(&mut out, RouteDownstreamSurface::Messages);
+            }
+            if lower.contains("/v1/responses") {
+                push_unique_surface(&mut out, RouteDownstreamSurface::Responses);
+            }
+            if lower.contains("chat/completions")
+                || lower.contains("compatible-mode")
+                || lower.contains("/v1/chat")
+            {
+                push_unique_surface(&mut out, RouteDownstreamSurface::ChatCompletions);
+            }
+        });
+    }
+    out
+}
+
+fn visit_endpoint_strings(value: &Value, depth: usize, visit: &mut impl FnMut(&str)) {
+    if depth > 4 {
+        return;
+    }
+    match value {
+        Value::String(text) => {
+            if text.contains("://") || text.trim_start().starts_with("/v1/") {
+                visit(text);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                visit_endpoint_strings(item, depth + 1, visit);
+            }
+        }
+        Value::Object(map) => {
+            for child in map.values() {
+                visit_endpoint_strings(child, depth + 1, visit);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn fallback_surfaces_for_source_agent(agent: AgentId) -> Vec<RouteDownstreamSurface> {
+    match agent {
+        AgentId::WorkBuddy => vec![RouteDownstreamSurface::ChatCompletions],
+        AgentId::Zcode | AgentId::Pi => vec![
+            RouteDownstreamSurface::Messages,
+            RouteDownstreamSurface::Responses,
+            RouteDownstreamSurface::ChatCompletions,
+        ],
+        AgentId::Cursor => Vec::new(),
+        other => RouteDownstreamSurface::for_agent(other).into_iter().collect(),
+    }
+}
+
+fn push_unique_surface(out: &mut Vec<RouteDownstreamSurface>, surface: RouteDownstreamSurface) {
+    if !out.contains(&surface) {
+        out.push(surface);
+    }
 }

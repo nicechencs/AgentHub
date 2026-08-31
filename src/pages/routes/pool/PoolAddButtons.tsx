@@ -34,6 +34,7 @@ import type {
 } from '@/lib/backend/contracts';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import { sourceKindLabel } from '@/pages/bridges/adapter-create-flow';
+import { isPoolShareableLogin } from '@/pages/connections/ticket-pool-import';
 import { cn } from '@/lib/utils';
 
 export type PoolAccessAgent = 'claude' | 'codex' | 'grok';
@@ -172,8 +173,6 @@ export function poolSurfaceForApiChoice(
   return 'responses';
 }
 
-const SYNCABLE_POOL_AGENTS = new Set<AgentId>(['claude', 'codex', 'grok', 'kimi', 'dsh']);
-
 export type PoolSyncCandidate = SyncConnectionSource & {
   key: string;
   agentId: AgentId;
@@ -190,7 +189,7 @@ export function poolSyncCandidates(
     pools.flatMap((pool) => pool.members.map((member) => `${member.sourceKind}:${member.sourceId}`)),
   );
   return entries
-    .filter((entry) => SYNCABLE_POOL_AGENTS.has(entry.agentId))
+    .filter((entry) => isPoolShareableLogin({ agentId: entry.agentId, kind: entry.kind }))
     .filter((entry) => entry.account?.home !== 'route_pool' && entry.provider?.home !== 'route_pool')
     .map((entry) => {
       const sourceKind = entry.source;

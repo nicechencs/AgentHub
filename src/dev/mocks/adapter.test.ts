@@ -12,7 +12,7 @@ import {
   setMockRoutePoolV2,
 } from './adapter';
 import type { MockAdapterApplyPlan } from './adapter/plan';
-import { getMockAccountById } from './account';
+import { getMockAccountById, upsertMockAccount } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
   seedConnectFlowAdapterFixtures,
@@ -224,6 +224,38 @@ describe('mock adapter projection', () => {
     expect(getMockProviderById(sourceId)?.home).not.toBe('route_pool');
     const second = await adapter.syncConnectionAuthorizations();
     expect(second.added).toBe(0);
+  });
+
+  it('syncs WorkBuddy and ZCode API keys instead of skipping them by Agent', async () => {
+    const wbId = `wb-conn-${Date.now()}-${Math.random()}`;
+    const zcodeId = `zcode-conn-${Date.now()}-${Math.random()}`;
+    upsertMockAccount({
+      id: wbId,
+      agentId: 'workbuddy',
+      kind: 'apikey',
+      label: 'WorkBuddy custom',
+      isCurrent: false,
+      tokenValid: true,
+    });
+    upsertMockAccount({
+      id: zcodeId,
+      agentId: 'zcode',
+      kind: 'apikey',
+      label: 'ZCode API Key',
+      isCurrent: false,
+      tokenValid: true,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    const result = await adapter.syncConnectionAuthorizations({
+      sources: [
+        { sourceKind: 'account', sourceId: wbId },
+        { sourceKind: 'account', sourceId: zcodeId },
+      ],
+    });
+    expect(result.added).toBe(2);
+    const listed = await adapter.listDefaultRoutePools();
+    const sourceIds = listed.pools.flatMap((pool) => pool.members.map((member) => member.sourceId));
+    expect(sourceIds).toEqual(expect.arrayContaining([wbId, zcodeId]));
   });
 
   it('removes the active generated Connection and its provider', async () => {
