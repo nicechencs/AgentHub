@@ -312,6 +312,27 @@ pub async fn set_route_authorization_enabled(
     .map_err(adapter_error_from_string)
 }
 
+/// Remove every default-pool membership of one login.
+///
+/// This only removes the route-pool authorization reference. The underlying
+/// account/provider deletion commands keep their existing behavior.
+#[tauri::command]
+pub async fn remove_route_authorization(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+) -> Result<u32, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .remove_route_authorization(source_kind, &source_id)
+            .map_err(|err| map_err_string("remove_route_authorization", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
 /// Enroll existing Connections authorizations into default auth pools.
 /// Does not remove them from Connections.
 #[tauri::command]

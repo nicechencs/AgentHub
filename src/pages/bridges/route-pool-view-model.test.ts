@@ -11,6 +11,7 @@ import {
   matchDefaultPoolForProfile,
   mergeOwnedAuthorizationsIntoRows,
   nativeEnrollCtaVisible,
+  poolAuthorizationDeleteSteps,
   poolAuthorizationStatusView,
   poolAuthorizationTicketView,
   poolSurfaceForAgent,
@@ -264,6 +265,29 @@ describe('route pool v2 view-model', () => {
     });
     expect(items[1]?.enabled).toBe(false);
     expect(items[1]?.bindingCount).toBeUndefined();
+  });
+
+  it('still lists a pool member after the Connections source row is gone', () => {
+    const items = collectPoolAuthorizations([
+      pool({
+        members: [{ sourceKind: 'account', sourceId: 'oauth-1', enabled: true }],
+      }),
+    ], []);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.key).toBe('account:oauth-1');
+  });
+
+  it('drops the list row only after both the pool member and the source entry are gone', () => {
+    expect(collectPoolAuthorizations([pool({ members: [] })], [])).toEqual([]);
+  });
+
+  it('removes pool membership and the source on the first delete click', () => {
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: true, sourceMissing: false }))
+      .toEqual(['removeMembership', 'deleteSource']);
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: true, sourceMissing: true }))
+      .toEqual(['removeMembership']);
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: false, sourceMissing: false }))
+      .toEqual(['deleteSource']);
   });
 
   it('keeps one row when the same authorization is in two pools', () => {

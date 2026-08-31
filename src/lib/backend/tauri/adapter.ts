@@ -109,9 +109,15 @@ export function createTauriAdapterPort(): AdapterPort {
         enabled,
       });
     },
+    async removeRouteAuthorization(sourceKind, sourceId) {
+      return invokeAdapter<number>('remove_route_authorization', {
+        sourceKind,
+        sourceId,
+      });
+    },
     async syncConnectionAuthorizations(request?: SyncConnectionAuthorizationsRequest) {
       return invokeAdapter<SyncConnectionAuthorizationsResult>('sync_connection_authorizations', request
-        ? { sources: request.sources.map((source) => ({ ...source })) }
+        ? { request: { sources: request.sources.map((source) => ({ ...source })) } }
         : {});
     },
     async enrollNativeToGateway(profileId) {

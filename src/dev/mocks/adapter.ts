@@ -334,6 +334,25 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       }
       return changed;
     },
+    async removeRouteAuthorization(sourceKind, sourceId) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      let removed = 0;
+      for (const pool of state.defaultPools) {
+        const before = pool.members.length;
+        pool.members = pool.members.filter((member) => (
+          member.sourceKind !== sourceKind || member.sourceId !== sourceId
+        ));
+        removed += before - pool.members.length;
+      }
+      return removed;
+    },
     async syncConnectionAuthorizations(request) {
       await delay(20);
       if (!state.routePoolV2) {

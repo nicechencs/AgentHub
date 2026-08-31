@@ -257,6 +257,22 @@ export function poolAuthorizationStatusView(
   return { label: authHealthLabel(health, t), tone };
 }
 
+export type PoolAuthorizationDeleteStep = 'removeMembership' | 'deleteSource';
+
+/**
+ * Pool list rows come from default-pool members *and* source rows.
+ * Deleting only the Account/Provider leaves an unavailable residual.
+ */
+export function poolAuthorizationDeleteSteps(input: {
+  routePoolV2: boolean;
+  sourceMissing: boolean;
+}): PoolAuthorizationDeleteStep[] {
+  const steps: PoolAuthorizationDeleteStep[] = [];
+  if (input.routePoolV2) steps.push('removeMembership');
+  if (!input.sourceMissing) steps.push('deleteSource');
+  return steps;
+}
+
 /** Ticket-shaped row for the shared login detail panel. */
 export function poolAuthorizationTicketView(
   item: Pick<PoolAuthorizationItem, 'key' | 'sourceKind' | 'sourceId' | 'agentId' | 'title' | 'kind'>,

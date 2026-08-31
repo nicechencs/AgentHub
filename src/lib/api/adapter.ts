@@ -82,6 +82,14 @@ export async function setRouteAuthorizationEnabled(
   return getBackend().adapter.setRouteAuthorizationEnabled(sourceKind, sourceId, enabled);
 }
 
+/** Remove a login reference that is still present in one or more default pools. */
+export async function removeRouteAuthorization(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+): Promise<number> {
+  return getBackend().adapter.removeRouteAuthorization(sourceKind, sourceId);
+}
+
 /** Enroll Connections authorizations into the auth pool without removing them from Connections. */
 export async function syncConnectionAuthorizations(
   request?: SyncConnectionAuthorizationsRequest,

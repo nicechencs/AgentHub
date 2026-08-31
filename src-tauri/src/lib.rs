@@ -106,6 +106,7 @@ pub fn run() {
             commands::adapter::list_default_route_pools,
             commands::adapter::attach_pool_owned_authorization,
             commands::adapter::set_route_authorization_enabled,
+            commands::adapter::remove_route_authorization,
             commands::adapter::sync_connection_authorizations,
             commands::adapter::enroll_native_to_gateway,
             commands::adapter::apply_adapter,
