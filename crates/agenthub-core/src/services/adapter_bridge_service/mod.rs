@@ -22,6 +22,7 @@ use std::time::Duration;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chrono::Utc;
+use futures_util::StreamExt;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -77,6 +78,7 @@ const OPENAI_PROVIDER_SLUG: &str = "agenthub_openai_bridge";
 const CODEX_CLAUDE_PROVIDER_SLUG: &str = "claude-codex-adapter-bridge";
 const GENERATED_BY: &str = "adapter";
 const BRIDGE_HEALTH_TIMEOUT: Duration = Duration::from_secs(4);
+const MAX_UPSTREAM_MODELS_BODY_BYTES: usize = 1_048_576;
 const RETRYABLE_ERROR_PREFIX: &str = "retryable:";
 
 #[derive(Clone, Copy)]
@@ -702,6 +704,9 @@ impl AdapterBridgeRuntimeMaterial {
     pub async fn verify_bound_health(&mut self, port: u16) -> Result<()> {
         validate_bound_port(port)?;
         let client = reqwest::Client::builder()
+            // Health probes can carry an upstream `x-api-key`; never forward it to
+            // a redirect target owned by another service or origin.
+            .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(BRIDGE_HEALTH_TIMEOUT)
             .timeout(BRIDGE_HEALTH_TIMEOUT)
             .build()
@@ -765,10 +770,9 @@ impl AdapterBridgeRuntimeMaterial {
             )
         })?;
         if upstream.status().is_success() {
-            if let Ok(bytes) = upstream.bytes().await {
-                if let Some(ids) = parse_openai_models_json(&bytes) {
-                    self.configured_listed_models = ids;
-                }
+            let bytes = read_bounded_models_response(upstream).await?;
+            if let Some(ids) = parse_openai_models_json(&bytes) {
+                self.configured_listed_models = ids;
             }
             return Ok(());
         }
@@ -794,6 +798,43 @@ impl AdapterBridgeRuntimeMaterial {
             "upstream health probe was not successful",
         ))
     }
+}
+
+async fn read_bounded_models_response(response: reqwest::Response) -> Result<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_UPSTREAM_MODELS_BODY_BYTES as u64)
+    {
+        return Err(AppError::message(
+            "adapter.bridge_health_upstream_too_large",
+            "upstream /models response exceeds the 1 MiB limit",
+        ));
+    }
+
+    let mut body = Vec::with_capacity(
+        response
+            .content_length()
+            .map(|length| length as usize)
+            .unwrap_or_default()
+            .min(MAX_UPSTREAM_MODELS_BODY_BYTES),
+    );
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| {
+            AppError::message(
+                "adapter.bridge_health_upstream",
+                "upstream health probe response could not be read",
+            )
+        })?;
+        if chunk.len() > MAX_UPSTREAM_MODELS_BODY_BYTES.saturating_sub(body.len()) {
+            return Err(AppError::message(
+                "adapter.bridge_health_upstream_too_large",
+                "upstream /models response exceeds the 1 MiB limit",
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 pub(crate) fn parse_openai_models_json(bytes: &[u8]) -> Option<Vec<String>> {

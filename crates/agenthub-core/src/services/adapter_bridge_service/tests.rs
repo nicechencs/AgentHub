@@ -8,9 +8,14 @@ use crate::models::{
 };
 use crate::services::{ProviderService, RoutePoolService};
 use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo, RoutePoolRepo};
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::extract::State;
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
+use futures_util::stream;
+use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 
 async fn health_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()>) {
@@ -23,6 +28,64 @@ async fn health_upstream(status: StatusCode) -> (u16, tokio::task::JoinHandle<()
         axum::serve(listener, app).await.unwrap();
     });
     (port, task)
+}
+
+async fn redirecting_health_upstream(
+) -> (
+    u16,
+    Arc<Mutex<Option<String>>>,
+    tokio::task::JoinHandle<()>,
+    tokio::task::JoinHandle<()>,
+) {
+    let forwarded_key = Arc::new(Mutex::new(None));
+    let target_listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let target_port = target_listener.local_addr().unwrap().port();
+    let target_state = forwarded_key.clone();
+    let target_task = tokio::spawn(async move {
+        async fn target(
+            State(forwarded_key): State<Arc<Mutex<Option<String>>>>,
+            headers: HeaderMap,
+        ) -> StatusCode {
+            let key = headers
+                .get("x-api-key")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
+            *forwarded_key.lock().unwrap() = key;
+            StatusCode::OK
+        }
+
+        axum::serve(
+            target_listener,
+            Router::new()
+                .route("/models", get(target))
+                .with_state(target_state),
+        )
+        .await
+        .unwrap();
+    });
+
+    let redirect_listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let redirect_port = redirect_listener.local_addr().unwrap().port();
+    let location = format!("http://127.0.0.1:{target_port}/models");
+    let redirect_task = tokio::spawn(async move {
+        let app = Router::new().route("/models", get(move || {
+            let location = location.clone();
+            async move {
+                Response::builder()
+                    .status(StatusCode::FOUND)
+                    .header(header::LOCATION, location)
+                    .body(Body::empty())
+                    .unwrap()
+            }
+        }));
+        axum::serve(redirect_listener, app).await.unwrap();
+    });
+
+    (redirect_port, forwarded_key, redirect_task, target_task)
 }
 
 fn test_db() -> (tempfile::TempDir, Database) {
@@ -975,6 +1038,137 @@ async fn bound_health_rejects_upstream_auth_before_a_provider_switch() {
 
     host.shutdown().await.unwrap();
     upstream_task.abort();
+}
+
+#[tokio::test]
+async fn bound_health_does_not_forward_anthropic_key_across_redirect() {
+    let (upstream_port, forwarded_key, redirect_task, target_task) =
+        redirecting_health_upstream().await;
+    let mut material = AdapterBridgeRuntimeMaterial {
+        profile_id: "redirect-health-profile".into(),
+        source_connection_id: "anthropic-source".into(),
+        preferred_port: None,
+        upstream_base_url: format!("http://127.0.0.1:{upstream_port}"),
+        upstream_model: "claude-test".into(),
+        configured_listed_models: Vec::new(),
+        context_window_tokens: None,
+        protocol: BridgeUpstreamProtocol::AnthropicMessages,
+        local_surface: BridgeLocalSurface::Messages,
+        source: AdapterSourceProduct::AnthropicApi,
+        target_agent: AgentId::Claude,
+        downstream_dialect: RouteDownstreamDialect::Claude,
+        upstream_auth: ResolvedAuth::bearer("anthropic-upstream-secret"),
+        local_bearer: "local-secret".into(),
+        route_index: None,
+        index_enabled: false,
+        codex_ingress_grok_upstream: false,
+        grok_ingress_codex_upstream: false,
+        schedule_policy: Default::default(),
+    };
+    let host = crate::bridge::BridgeRuntimeHost::new();
+    let runtime = host.start(material.start_spec(Some(0))).await.unwrap();
+
+    let error = material
+        .verify_bound_health(runtime.port)
+        .await
+        .expect_err("a cross-origin redirect must not be followed");
+    assert_eq!(error.code(), "adapter.bridge_health_upstream");
+    assert_eq!(
+        forwarded_key.lock().unwrap().as_deref(),
+        None,
+        "the redirect target must never receive the Anthropic API key"
+    );
+
+    host.shutdown().await.unwrap();
+    redirect_task.abort();
+    target_task.abort();
+}
+
+async fn models_response_server(
+    chunks: Vec<axum::body::Bytes>,
+    content_length: Option<usize>,
+) -> (u16, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let chunks = Arc::new(chunks);
+    let app = Router::new().route("/models", get(move || {
+        let chunks = chunks.clone();
+        async move {
+            let chunks: Vec<_> = chunks.iter().cloned().collect();
+            let body = Body::from_stream(stream::iter(
+                chunks
+                    .into_iter()
+                    .map(Ok::<_, std::convert::Infallible>),
+            ));
+            let mut response = Response::new(body);
+            if let Some(length) = content_length {
+                response.headers_mut().insert(
+                    header::CONTENT_LENGTH,
+                    length.to_string().parse().unwrap(),
+                );
+            }
+            response
+        }
+    }));
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    (port, task)
+}
+
+#[tokio::test]
+async fn models_health_rejects_response_over_one_mib_from_content_length() {
+    let oversized = axum::body::Bytes::from(vec![
+        b'x';
+        MAX_UPSTREAM_MODELS_BODY_BYTES + 1
+    ]);
+    let (port, task) = models_response_server(
+        vec![oversized],
+        Some(MAX_UPSTREAM_MODELS_BODY_BYTES + 1),
+    )
+    .await;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let response = client
+        .get(format!("http://127.0.0.1:{port}/models"))
+        .send()
+        .await
+        .unwrap();
+    let error = read_bounded_models_response(response).await.unwrap_err();
+    assert_eq!(error.code(), "adapter.bridge_health_upstream_too_large");
+    task.abort();
+}
+
+#[tokio::test]
+async fn models_health_rejects_chunked_response_over_one_mib() {
+    let chunks = vec![
+        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![
+            b'x';
+            700 * 1024
+        ])),
+        Ok::<_, std::convert::Infallible>(axum::body::Bytes::from(vec![
+            b'x';
+            400 * 1024
+        ])),
+    ];
+    let chunks = chunks.into_iter().map(|chunk| chunk.unwrap()).collect();
+    let (port, task) = models_response_server(chunks, None).await;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let response = client
+        .get(format!("http://127.0.0.1:{port}/models"))
+        .send()
+        .await
+        .unwrap();
+    let error = read_bounded_models_response(response).await.unwrap_err();
+    assert_eq!(error.code(), "adapter.bridge_health_upstream_too_large");
+    task.abort();
 }
 
 #[tokio::test]
