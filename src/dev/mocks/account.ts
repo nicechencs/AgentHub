@@ -252,7 +252,18 @@ export function createMockAccountPort(): AccountPort {
           },
         ];
       }
-      if (agentId === 'claude' || agentId === 'codex' || agentId === 'grok') {
+      if (agentId === 'grok') {
+        return [
+          {
+            id: 'xai',
+            agentId: 'grok',
+            label: 'Grok / xAI',
+            description: '用设备码登录 Grok 订阅',
+            flow: 'deviceCode' as const,
+          },
+        ];
+      }
+      if (agentId === 'claude' || agentId === 'codex') {
         return [
           {
             id: agentId,

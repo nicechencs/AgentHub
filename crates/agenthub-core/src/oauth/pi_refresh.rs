@@ -160,12 +160,11 @@ fn refresh_openai_codex(refresh_token: &str) -> Result<Value> {
 }
 
 fn refresh_xai(refresh_token: &str) -> Result<Value> {
-    // Pi uses auth.x.ai device-code client (not accounts.x.ai grok-cli).
     post_form(
-        "https://auth.x.ai/oauth2/token",
+        super::providers::XAI_DEVICE_TOKEN_URL,
         &[
             ("grant_type", "refresh_token"),
-            ("client_id", "b1a00492-073a-47ea-816f-4c329264a828"),
+            ("client_id", super::providers::XAI_DEVICE_CLIENT_ID),
             ("refresh_token", refresh_token),
         ],
     )

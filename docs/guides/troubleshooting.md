@@ -4,7 +4,7 @@ description: 按启动、环境、登录、Routes、日志和测试症状定位�
 type: guide
 audience: user-and-contributor
 status: current
-updated: 2026-08-29
+updated: 2026-08-31
 ---
 
 # 排障指南
@@ -72,7 +72,7 @@ AgentHub 一键 npm 安装写到 `~/.npm-global`（Windows 为 `%APPDATA%\npm`�
 - 「使用官方服务」勾选后仍可粘贴做智能识别。高级编辑器不回显明文钥匙。本机正在用官方登录时，不要用「添加 API Key」去导入；反过来也一样，改用对应入口。
 - Windows 上子进程统一无窗启动，不应再弹出 cmd 闪窗。
 - CLI 使用 `account add-apikey --key -` 从 stdin 读取 key，避免把 key 放进 shell history。
-- OAuth 浏览器流程以 GUI 为主；CLI 的 `account oauth-url` 只打印授权 URL，不能替代完整本机回调流程。
+- 官方登录以 GUI 为主。Claude / Codex 走浏览器回调；Grok 走设备码（打开验证页并输入代码）。CLI 的 `account oauth-url` 只打印授权地址或设备码，不能替代完整本机登录。
 - 当前项目沿用既有凭据存储方案，不规划额外加密或国产 OAuth 转 API。
 
 ## Routes 返回错误

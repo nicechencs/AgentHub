@@ -1870,7 +1870,7 @@ export const en = {
       option: {
         claude: { label: "Claude Pro/Max", description: "Sign in to a Claude subscription in the browser" },
         codex: { label: "ChatGPT Plus/Pro", description: "Sign in to a ChatGPT subscription in the browser" },
-        grok: { label: "Grok / xAI", description: "Sign in to a Grok subscription in the browser" },
+        grok: { label: "Grok / xAI", description: "Sign in to a Grok subscription with a device code" },
         piAnthropic: { label: "Claude Pro/Max", description: "Browser login, saved to Pi's login list" },
         piCodex: { label: "ChatGPT Plus/Pro (Codex)", description: "Browser login, saved to Pi's login list" },
         piXai: { label: "xAI (Grok subscription)", description: "Device-code login, saved to Pi's login list" },

@@ -1,4 +1,4 @@
-//! Per-agent OAuth public-client configuration (PKCE + loopback).
+//! Per-agent OAuth public-client configuration (PKCE loopback + xAI device-code).
 //!
 //! Values live only in this module — do not copy client IDs / endpoints into
 //! public docs or issues. Do not invent client secrets.
@@ -108,17 +108,26 @@ pub static CODEX: OAuthProvider = OAuthProvider {
     token_includes_state: false,
 };
 
-/// xAI / Grok OAuth (fixed loopback port required by provider).
+/// Official Grok CLI / Pi xAI device-code client. Login is RFC 8628; this
+/// descriptor is the token-refresh client (not a loopback PKCE start).
+pub(crate) const XAI_DEVICE_CLIENT_ID: &str = "b1a00492-073a-47ea-816f-4c329264a828";
+pub(crate) const XAI_DEVICE_ISSUER: &str = "https://auth.x.ai";
+pub(crate) const XAI_DEVICE_TOKEN_URL: &str = "https://auth.x.ai/oauth2/token";
+pub(crate) const XAI_DEVICE_CODE_URL: &str = "https://auth.x.ai/oauth2/device/code";
+pub(crate) const XAI_DEVICE_SCOPE: &str =
+    "openid profile email offline_access grok-cli:access api:access";
+
+/// xAI / Grok token client (device-code grant). `authorize_url` is unused.
 pub static XAI: OAuthProvider = OAuthProvider {
     id: "xai",
     agent: AgentId::Grok,
-    authorize_url: "https://accounts.x.ai/oauth/authorize",
-    token_url: "https://accounts.x.ai/oauth/token",
-    client_id: "grok-cli",
+    authorize_url: "https://auth.x.ai/oauth2/authorize",
+    token_url: XAI_DEVICE_TOKEN_URL,
+    client_id: XAI_DEVICE_CLIENT_ID,
     redirect_port: Some(56121),
     redirect_host: "127.0.0.1",
     redirect_path: "/callback",
-    scopes: "openid offline_access",
+    scopes: XAI_DEVICE_SCOPE,
     body_style: TokenBodyStyle::Form,
     authorize_extra: "",
     token_includes_state: false,
@@ -311,7 +320,7 @@ impl OAuthProvider {
         AppError::message("oauth.token", format!("{msg} (HTTP {status})"))
     }
 
-    fn bundle_from_token_json(&self, body: Value) -> Result<TokenBundle> {
+    pub(crate) fn bundle_from_token_json(&self, body: Value) -> Result<TokenBundle> {
         let access = body
             .get("access_token")
             .and_then(|v| v.as_str())
