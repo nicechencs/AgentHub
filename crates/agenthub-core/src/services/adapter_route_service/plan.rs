@@ -11,6 +11,10 @@ use crate::services::adapter_route_constants::{
 
 use super::actions::*;
 use super::AdapterRouteService;
+use crate::models::AdapterSourceKind;
+use crate::services::adapter_route_constants::{
+    is_unknown_custom_relay_provider, UNKNOWN_CUSTOM_RELAY_REASON,
+};
 
 impl AdapterRouteService {
     pub fn analyze(&self, request: &AdapterRouteRequest) -> Result<AdapterRouteAnalysis> {
@@ -29,7 +33,18 @@ impl AdapterRouteService {
     /// `can_apply` means bind would succeed now for this ticket `source_kind`.
     pub fn plan(&self, request: &AdapterRouteRequest) -> Result<AdapterApplyPlan> {
         let classified = self.classify(request)?;
-        let analysis = analysis_from_decision(&classified.decision, &classified.source, request);
+        let unknown_custom_relay = if request.source_kind == AdapterSourceKind::Provider {
+            self.providers
+                .get_by_id(request.source_id.trim())?
+                .is_some_and(|provider| is_unknown_custom_relay_provider(&provider))
+        } else {
+            false
+        };
+        let mut analysis =
+            analysis_from_decision(&classified.decision, &classified.source, request);
+        if unknown_custom_relay {
+            analysis.reason = UNKNOWN_CUSTOM_RELAY_REASON.to_owned();
+        }
         let (service_impact, changes) = match analysis.route {
             AdapterRoute::NativeEndpoint if request.target_agent_id == AgentId::Claude => {
                 let base_url = claude_native_base_url(analysis.rule_id.as_deref().unwrap_or(""))
@@ -202,12 +217,13 @@ impl AdapterRouteService {
             }
         };
 
-        let can_apply = write_gate(
-            &self.accounts,
-            classified.decision.can_apply,
-            request,
-            &analysis,
-        );
+        let can_apply = !unknown_custom_relay
+            && write_gate(
+                &self.accounts,
+                classified.decision.can_apply,
+                request,
+                &analysis,
+            );
         let maturity = adapter_maturity_from_decision(&classified.decision);
         let reason = analysis.reason.clone();
         let reuse_path = reuse_path_for(classified.decision.route, classified.credential);

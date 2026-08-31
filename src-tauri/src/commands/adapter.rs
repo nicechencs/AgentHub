@@ -3,7 +3,7 @@
 //! Mutation / local_bridge lifecycle goes through
 //! [`agenthub_core::adapter_control::AdapterControl`] (desktop host impl).
 
-use agenthub_core::adapter_control::AdapterControl;
+use agenthub_core::adapter_control::{resolve_bind_action, AdapterControl, BindAction};
 use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
@@ -179,13 +179,26 @@ pub async fn apply_adapter(
 ) -> Result<AdapterApplyResult, GuiError> {
     let source_kind_parsed = parse_source_kind(&source_kind).map_err(adapter_error_from_string)?;
     let ticket = ticket_id(source_kind_parsed, &source_id);
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    let preflight_ticket = ticket.clone();
+    let preflight_target = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
+    let action = with_hub_blocking(hub.clone(), move |hub| {
+        resolve_bind_action(hub, &preflight_ticket, preflight_target)
+            .map_err(|error| map_err_string("apply_adapter", error))
+    })
+    .await
+    .map_err(adapter_error_from_string)?;
+    if matches!(action, BindAction::NativeSelf(_)) {
+        return Err(adapter_error_from_string(
+            "这类登录由 Agent 自己管理，不能生成本机路由配置 [adapter.native_self]".into(),
+        ));
+    }
     let control = state.adapter_control().map_err(adapter_error_from_string)?;
-    let target_agent_id = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
+    let target_agent_id = preflight_target;
     let binding = control
         .bind(ticket, target_agent_id)
         .await
         .map_err(adapter_error_from_string)?;
-    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| apply_result_from_binding(hub, &binding))
         .await
         .map_err(adapter_error_from_string)
