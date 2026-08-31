@@ -317,11 +317,17 @@ pub async fn set_route_authorization_enabled(
 #[tauri::command]
 pub async fn sync_connection_authorizations(
     state: State<'_, AppState>,
+    request: Option<agenthub_core::models::SyncConnectionAuthorizationsRequest>,
 ) -> Result<SyncConnectionAuthorizationsResult, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| {
-        hub.route_pools()
-            .sync_connection_authorizations()
+        let result = match request.as_ref() {
+            Some(request) => hub
+                .route_pools()
+                .sync_connection_authorizations_selected(Some(&request.sources)),
+            None => hub.route_pools().sync_connection_authorizations(),
+        };
+        result
             .map_err(|err| map_err_string("sync_connection_authorizations", err))
     })
     .await

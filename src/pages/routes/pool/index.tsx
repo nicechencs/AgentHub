@@ -466,6 +466,8 @@ export default function RoutesPoolPage() {
             <PoolAddButtons
               agents={allowedAgents}
               oauthAgents={oauthLoginAgents}
+              entries={entries}
+              defaultPools={defaultPools}
               onChanged={reloadAll}
             />
             <Button

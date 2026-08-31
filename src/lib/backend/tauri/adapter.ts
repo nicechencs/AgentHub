@@ -2,6 +2,7 @@ import {
   adapterCommandError,
   isAdapterErrorCodeRetryable,
   type AdapterPort,
+  type SyncConnectionAuthorizationsRequest,
   type SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
 import {
@@ -108,8 +109,10 @@ export function createTauriAdapterPort(): AdapterPort {
         enabled,
       });
     },
-    async syncConnectionAuthorizations() {
-      return invokeAdapter<SyncConnectionAuthorizationsResult>('sync_connection_authorizations', {});
+    async syncConnectionAuthorizations(request?: SyncConnectionAuthorizationsRequest) {
+      return invokeAdapter<SyncConnectionAuthorizationsResult>('sync_connection_authorizations', request
+        ? { sources: request.sources.map((source) => ({ ...source })) }
+        : {});
     },
     async enrollNativeToGateway(profileId) {
       const wire = await invokeAdapter<DefaultRoutePoolOverviewWire>('enroll_native_to_gateway', {

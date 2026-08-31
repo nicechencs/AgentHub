@@ -279,7 +279,19 @@ impl RoutePoolService {
 
     /// Enroll existing Connections authorizations into the matching default
     /// pools. Does not hide them from Connections and does not copy secrets.
+    ///
+    /// The no-argument form is retained for the existing bulk-sync behavior.
     pub fn sync_connection_authorizations(&self) -> Result<SyncConnectionAuthorizationsResult> {
+        self.sync_connection_authorizations_selected(None)
+    }
+
+    /// Enroll only the selected Connections source rows. The source's Agent is
+    /// always read from the stored row, so a client cannot redirect a source to
+    /// another Agent or surface by changing the request.
+    pub fn sync_connection_authorizations_selected(
+        &self,
+        selected: Option<&[SyncConnectionSource]>,
+    ) -> Result<SyncConnectionAuthorizationsResult> {
         self.require_enabled()?;
         let profiles = self.profiles.list_filtered(&Default::default())?;
         let providers = self.providers.list(None)?;
@@ -291,46 +303,72 @@ impl RoutePoolService {
         let mut added = 0_u32;
         let mut skipped = 0_u32;
 
-        for account in &accounts {
-            if authorization_is_route_pool_home(&account.extra)
-                || classify_account_live(
-                    account.agent_id,
-                    account.kind,
-                    &account.credentials,
-                    &profiles,
-                    &providers,
-                    false,
-                )
-                .is_projection()
-            {
-                skipped = skipped.saturating_add(1);
-                continue;
+        let mut enroll_source = |source_kind: AdapterSourceKind, source_id: &str| -> Result<()> {
+            match source_kind {
+                AdapterSourceKind::Account => {
+                    let Some(account) = accounts.iter().find(|row| row.id == source_id) else {
+                        skipped = skipped.saturating_add(1);
+                        return Ok(());
+                    };
+                    if authorization_is_route_pool_home(&account.extra)
+                        || classify_account_live(
+                            account.agent_id,
+                            account.kind,
+                            &account.credentials,
+                            &profiles,
+                            &providers,
+                            false,
+                        )
+                        .is_projection()
+                    {
+                        skipped = skipped.saturating_add(1);
+                        return Ok(());
+                    }
+                    match self.enroll_connection_source(
+                        account.agent_id,
+                        AdapterSourceKind::Account,
+                        &account.id,
+                    )? {
+                        true => added = added.saturating_add(1),
+                        false => skipped = skipped.saturating_add(1),
+                    }
+                }
+                AdapterSourceKind::Provider => {
+                    let Some(provider) = providers.iter().find(|row| row.id == source_id) else {
+                        skipped = skipped.saturating_add(1);
+                        return Ok(());
+                    };
+                    if authorization_is_route_pool_home(&provider.meta)
+                        || generated_ids.contains(&provider.id)
+                        || generated_provider_is_adapter_owned(provider)
+                        || leftover::provider_is_bridge_leftover(provider)
+                    {
+                        skipped = skipped.saturating_add(1);
+                        return Ok(());
+                    }
+                    match self.enroll_connection_source(
+                        provider.agent_id,
+                        AdapterSourceKind::Provider,
+                        &provider.id,
+                    )? {
+                        true => added = added.saturating_add(1),
+                        false => skipped = skipped.saturating_add(1),
+                    }
+                }
             }
-            match self.enroll_connection_source(
-                account.agent_id,
-                AdapterSourceKind::Account,
-                &account.id,
-            )? {
-                true => added = added.saturating_add(1),
-                false => skipped = skipped.saturating_add(1),
+            Ok(())
+        };
+
+        if let Some(selected) = selected {
+            for source in selected {
+                enroll_source(source.source_kind, &source.source_id)?;
             }
-        }
-        for provider in &providers {
-            if authorization_is_route_pool_home(&provider.meta)
-                || generated_ids.contains(&provider.id)
-                || generated_provider_is_adapter_owned(provider)
-                || leftover::provider_is_bridge_leftover(provider)
-            {
-                skipped = skipped.saturating_add(1);
-                continue;
+        } else {
+            for account in &accounts {
+                enroll_source(AdapterSourceKind::Account, &account.id)?;
             }
-            match self.enroll_connection_source(
-                provider.agent_id,
-                AdapterSourceKind::Provider,
-                &provider.id,
-            )? {
-                true => added = added.saturating_add(1),
-                false => skipped = skipped.saturating_add(1),
+            for provider in &providers {
+                enroll_source(AdapterSourceKind::Provider, &provider.id)?;
             }
         }
         Ok(SyncConnectionAuthorizationsResult { added, skipped })

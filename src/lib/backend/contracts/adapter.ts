@@ -286,6 +286,17 @@ export interface AttachPoolOwnedAuthorizationRequest {
   surface: RoutePoolSurface;
 }
 
+/** One credential-free Connections row selected for route-pool enrollment. */
+export interface SyncConnectionSource {
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+}
+
+/** Optional selection for route-pool enrollment; omitted means all eligible rows. */
+export interface SyncConnectionAuthorizationsRequest {
+  sources: SyncConnectionSource[];
+}
+
 export interface SyncConnectionAuthorizationsResult {
   added: number;
   skipped: number;
@@ -304,7 +315,9 @@ export interface AdapterPort {
     sourceId: string,
     enabled: boolean,
   ): Promise<number>;
-  syncConnectionAuthorizations(): Promise<SyncConnectionAuthorizationsResult>;
+  syncConnectionAuthorizations(
+    request?: SyncConnectionAuthorizationsRequest,
+  ): Promise<SyncConnectionAuthorizationsResult>;
   enrollNativeToGateway(profileId: string): Promise<DefaultRoutePoolOverview>;
   apply(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
   remove(profileId: string): Promise<void>;
