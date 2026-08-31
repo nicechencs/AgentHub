@@ -5,14 +5,20 @@ import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
+import {
+  isLocalEndpointKind,
+  localEndpointBrandAgentId,
+  localEndpointSurface,
+  type LocalEndpointKind,
+} from '@/lib/route-endpoints';
+import { agentCssVar } from '@/styles/tokens';
 import { cn } from '@/lib/utils';
-import { routePoolSurfaceLabel } from '@/pages/bridges/route-pool-view-model';
+import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
@@ -29,6 +35,16 @@ import {
 } from '@/pages/routes/board/board-usage-model';
 import { BoardUsageSection } from '@/pages/routes/board/board-usage-section';
 
+function rememberKind(raw: string): LocalEndpointKind | 'all' {
+  if (raw === 'all' || !raw) return 'all';
+  if (isLocalEndpointKind(raw)) return raw;
+  const surface = usageSurfaceToPoolSurface(raw);
+  if (surface === 'messages') return 'messages';
+  if (surface === 'chat_completions') return 'chat_completions';
+  if (surface === 'responses') return 'responses_codex';
+  return 'all';
+}
+
 function BoardEndpointCard({
   row,
   selected,
@@ -39,11 +55,12 @@ function BoardEndpointCard({
   onSelect: () => void;
 }) {
   const { t } = useI18n();
-  const label = routePoolSurfaceLabel(row.surface, t);
+  const label = localEndpointKindLabel(row.kind, t);
   const logins = t('routes.board.endpointLogins', {
     oauth: row.oauthCount,
     apikey: row.apikeyCount,
   });
+  const color = agentCssVar(localEndpointBrandAgentId(row.kind));
 
   return (
     <Card
@@ -65,9 +82,10 @@ function BoardEndpointCard({
       )}
     >
       <Tip className="block min-w-0 truncate font-mono text-sm font-medium" label={row.path}>
-        <RouteEndpointTypeText endpointId={row.surface}>{row.path}</RouteEndpointTypeText>
+        <span style={{ color }}>{row.path}</span>
       </Tip>
-      <p className="mt-1.5 text-xs text-secondary">{logins}</p>
+      <p className="mt-1 text-xs text-secondary">{label}</p>
+      <p className="mt-1 text-xs text-muted">{logins}</p>
     </Card>
   );
 }
@@ -103,15 +121,21 @@ export default function RoutesBoardPage() {
     detailTarget: null,
     reloadKey: usageRefreshKey,
   });
-  const [surface, setSurface] = useState(() => rememberedBoardUsageFilters().surface);
+  const [endpointKind, setEndpointKind] = useState<LocalEndpointKind | 'all'>(() => (
+    rememberKind(rememberedBoardUsageFilters().surface)
+  ));
 
   const endpointRows = useMemo(
     () => buildBoardEndpointTypeRows(defaultPools, hiddenTargetIds),
     [defaultPools, hiddenTargetIds],
   );
   const totals = boardEndpointLoginTotals(endpointRows);
-  const selectedSurface = usageSurfaceToPoolSurface(surface);
-  const selectedRow = endpointRows.find((row) => row.surface === selectedSurface) ?? null;
+  const usageSurface = endpointKind === 'all'
+    ? 'all'
+    : poolSurfaceToUsageSurface(localEndpointSurface(endpointKind));
+  const selectedRow = endpointKind === 'all'
+    ? null
+    : endpointRows.find((row) => row.kind === endpointKind) ?? null;
   const fleetLabel = totals.oauth + totals.apikey > 0
     ? t('routes.board.fleetLogins', { oauth: totals.oauth, apikey: totals.apikey })
     : t('routes.board.description');
@@ -148,20 +172,16 @@ export default function RoutesBoardPage() {
         <div className={pageRhythm.blocks}>
           <PageSection first aria-label={t('routes.board.statusSection')}>
             {showStatusSkeleton ? (
-              <BoardRouteSkeleton count={3} />
+              <BoardRouteSkeleton count={4} />
             ) : (
               <div className={BOARD_ROUTE_GRID}>
                 {endpointRows.map((row) => (
                   <BoardEndpointCard
-                    key={row.surface}
+                    key={row.kind}
                     row={row}
-                    selected={selectedSurface === row.surface}
+                    selected={endpointKind === row.kind}
                     onSelect={() => {
-                      setSurface((current) => (
-                        usageSurfaceToPoolSurface(current) === row.surface
-                          ? 'all'
-                          : poolSurfaceToUsageSurface(row.surface)
-                      ));
+                      setEndpointKind((current) => (current === row.kind ? 'all' : row.kind));
                     }}
                   />
                 ))}
@@ -191,7 +211,7 @@ export default function RoutesBoardPage() {
             hiddenTargetIds={hiddenTargetIds}
             pools={defaultPools}
             refreshKey={usageRefreshKey}
-            surface={surface}
+            surface={usageSurface}
           />
         </div>
       )}

@@ -46,12 +46,13 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
 }
 
 describe('buildBoardEndpointTypeRows', () => {
-  it('lists the three endpoint types and counts unique usable logins', () => {
+  it('lists four endpoint kinds and splits Responses by Codex / Grok', () => {
     const rows = buildBoardEndpointTypeRows([
       pool({
         id: 'codex-responses',
         targetAgentId: 'codex',
         surface: 'responses',
+        dialect: 'codex',
         members: [
           { sourceKind: 'account', sourceId: 'oauth-1', enabled: true },
           { sourceKind: 'provider', sourceId: 'key-1', enabled: true },
@@ -62,6 +63,7 @@ describe('buildBoardEndpointTypeRows', () => {
         id: 'grok-responses',
         targetAgentId: 'grok',
         surface: 'responses',
+        dialect: 'grok',
         members: [
           { sourceKind: 'account', sourceId: 'oauth-1', enabled: true },
           { sourceKind: 'account', sourceId: 'oauth-2', enabled: true, availability: 'isolated' },
@@ -71,28 +73,39 @@ describe('buildBoardEndpointTypeRows', () => {
         id: 'claude-messages',
         targetAgentId: 'claude',
         surface: 'messages',
+        dialect: 'claude',
         members: [{ sourceKind: 'account', sourceId: 'claude-oauth', enabled: true }],
       }),
     ]);
-    expect(rows.map((row) => row.surface)).toEqual(['messages', 'responses', 'chat_completions']);
+    expect(rows.map((row) => row.kind)).toEqual([
+      'messages',
+      'responses_codex',
+      'responses_grok',
+      'chat_completions',
+    ]);
     expect(rows.map((row) => row.path)).toEqual([
       '/v1/messages',
       '/v1/responses',
+      '/v1/responses',
       '/v1/chat/completions',
     ]);
-    expect(rows.find((row) => row.surface === 'messages')).toMatchObject({
+    expect(rows.find((row) => row.kind === 'messages')).toMatchObject({
       oauthCount: 1,
       apikeyCount: 0,
     });
-    expect(rows.find((row) => row.surface === 'responses')).toMatchObject({
+    expect(rows.find((row) => row.kind === 'responses_codex')).toMatchObject({
       oauthCount: 1,
       apikeyCount: 1,
     });
-    expect(rows.find((row) => row.surface === 'chat_completions')).toMatchObject({
+    expect(rows.find((row) => row.kind === 'responses_grok')).toMatchObject({
+      oauthCount: 1,
+      apikeyCount: 0,
+    });
+    expect(rows.find((row) => row.kind === 'chat_completions')).toMatchObject({
       oauthCount: 0,
       apikeyCount: 0,
     });
-    expect(boardEndpointLoginTotals(rows)).toEqual({ oauth: 2, apikey: 1 });
+    expect(boardEndpointLoginTotals(rows)).toEqual({ oauth: 3, apikey: 1 });
   });
 
   it('omits hidden target agents from endpoint-type counts', () => {
@@ -105,7 +118,7 @@ describe('buildBoardEndpointTypeRows', () => {
       })],
       new Set(['cursor']),
     );
-    expect(rows.find((row) => row.surface === 'chat_completions')).toMatchObject({
+    expect(rows.find((row) => row.kind === 'chat_completions')).toMatchObject({
       oauthCount: 0,
       apikeyCount: 0,
     });
