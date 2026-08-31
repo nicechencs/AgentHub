@@ -61,7 +61,7 @@ describe('board-view-model', () => {
     expect(rows[0].endpoint).toBeNull();
   });
 
-  it('groups multiple profiles that share a source into one row', () => {
+  it('keeps one status card per local listener', () => {
     const rows = buildRouteBoardStatusRows(
       [
         profile({ id: 'p1', name: 'A', sourceId: 'same', targetAgentId: 'claude' }),
@@ -72,7 +72,18 @@ describe('board-view-model', () => {
         p2: { profileId: 'p2', state: 'stopped', upstreamStatus: 'stopped' },
       },
     );
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.profileId).sort()).toEqual(['p1', 'p2']);
+  });
+
+  it('omits hidden target agents from the board', () => {
+    const rows = buildRouteBoardStatusRows(
+      [profile({ id: 'p1', name: 'Cursor', targetAgentId: 'cursor' })],
+      { p1: { profileId: 'p1', state: 'running', port: 1, upstreamStatus: 'connected' } },
+      {},
+      new Set(['cursor']),
+    );
+    expect(rows).toEqual([]);
   });
 
   it('partitions attention vs rest', () => {

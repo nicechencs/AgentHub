@@ -1,18 +1,18 @@
 /**
  * Pure view-model for board usage stats. No React, no IO.
  *
- * Board charts use local-gateway request rows (what went through a local
- * entry), not Agent session logs. Grouping is by local entry / model /
- * endpoint surface.
+ * Charts use local-gateway request rows (what went through a local route),
+ * not Agent session logs. Layout mirrors 总览: overlay by local route when
+ * all entries are selected, distribution by model after picking one route.
  */
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import type { UsageTrendPoint } from '@/lib/types';
 import { denseTrendBuckets, localTrendBucket, trendGrain } from '@/lib/usage-trend';
-import { localBridgeSourceKey } from '@/pages/bridges/adapter-view-model';
 
 export type BoardUsageRange = 'today' | '24h' | '7d' | '30d';
 export type BoardGroupBy = 'entry' | 'model' | 'surface';
+/** Wire values from gateway capture (`DownstreamSurface::op`). */
 export type BoardUsageSurface = 'messages' | 'responses' | 'chat';
 
 export const BOARD_SURFACES: readonly BoardUsageSurface[] = [
@@ -26,7 +26,6 @@ export interface BoardUsageFilters {
   entryId: string;
   surface: string;
   modelFilter: string;
-  groupBy: BoardGroupBy;
 }
 
 export const DEFAULT_BOARD_USAGE_FILTERS: BoardUsageFilters = {
@@ -34,37 +33,12 @@ export const DEFAULT_BOARD_USAGE_FILTERS: BoardUsageFilters = {
   entryId: 'all',
   surface: 'all',
   modelFilter: 'all',
-  groupBy: 'surface',
 };
 
-const GROUP_FALLBACK: readonly BoardGroupBy[] = ['surface', 'entry', 'model'];
-
-/** Grouping axes still open after the dropdown filters. A picked-one filter is not a second group-by. */
-export function availableBoardGroupBy(input: {
-  entryId: string;
-  surface: string;
-  modelFilter: string;
-  entryCount: number;
-}): BoardGroupBy[] {
-  const available: BoardGroupBy[] = [];
-  const allEntries = input.entryId === 'all' || input.entryId === '';
-  const allSurfaces = input.surface === 'all' || input.surface === '';
-  const allModels = input.modelFilter === 'all' || input.modelFilter === '';
-  if (allEntries && input.entryCount > 1) available.push('entry');
-  if (allModels) available.push('model');
-  if (allSurfaces) available.push('surface');
-  return available;
-}
-
-export function coerceBoardGroupBy(
-  selected: BoardGroupBy,
-  available: readonly BoardGroupBy[],
-): BoardGroupBy {
-  if (available.includes(selected)) return selected;
-  for (const fallback of GROUP_FALLBACK) {
-    if (available.includes(fallback)) return fallback;
-  }
-  return selected;
+/** Same rule as 总览: all local routes → by route; one route → by model. */
+export function deriveBoardGroupBy(entryId: string): 'entry' | 'model' {
+  if (entryId === 'all' || entryId === '') return 'entry';
+  return 'model';
 }
 
 let rememberedFilters: BoardUsageFilters = { ...DEFAULT_BOARD_USAGE_FILTERS };
@@ -103,24 +77,18 @@ export function buildBoardUsageEntries(
   >[],
   hiddenTargetIds: ReadonlySet<string> = new Set(),
 ): BoardUsageEntry[] {
-  const groups = new Map<string, BoardUsageEntry>();
+  const entries: BoardUsageEntry[] = [];
   for (const profile of profiles) {
     if (profile.route !== 'local_bridge') continue;
     if (hiddenTargetIds.has(profile.targetAgentId)) continue;
-    const source = localBridgeSourceKey(profile);
-    const existing = groups.get(source);
-    if (existing) {
-      existing.profileIds.push(profile.id);
-      continue;
-    }
-    groups.set(source, {
+    entries.push({
       id: profile.id,
       name: profile.name.trim() || profile.targetAgentId,
       profileIds: [profile.id],
       targetAgentId: profile.targetAgentId,
     });
   }
-  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return entries.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
 
 export function gatewayRowTokens(row: Pick<

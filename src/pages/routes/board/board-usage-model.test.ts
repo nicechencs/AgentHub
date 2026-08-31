@@ -12,8 +12,7 @@ import {
   gatewayRowTokens,
   profileToEntryIdMap,
   rememberBoardUsageFilters,
-  availableBoardGroupBy,
-  coerceBoardGroupBy,
+  deriveBoardGroupBy,
   seriesKeyForRow,
   summarizeGatewayUsage,
 } from './board-usage-model';
@@ -43,34 +42,11 @@ afterEach(() => {
   rememberBoardUsageFilters({ ...DEFAULT_BOARD_USAGE_FILTERS });
 });
 
-describe('availableBoardGroupBy', () => {
-  it('keeps every grouping while filters are all-open and there are several entries', () => {
-    expect(availableBoardGroupBy({
-      entryId: 'all',
-      surface: 'all',
-      modelFilter: 'all',
-      entryCount: 3,
-    })).toEqual(['entry', 'model', 'surface']);
-  });
-
-  it('drops a grouping when that dropdown already picked one value', () => {
-    expect(availableBoardGroupBy({
-      entryId: 'p1',
-      surface: 'all',
-      modelFilter: 'all',
-      entryCount: 3,
-    })).toEqual(['model', 'surface']);
-    expect(availableBoardGroupBy({
-      entryId: 'all',
-      surface: 'messages',
-      modelFilter: 'all',
-      entryCount: 1,
-    })).toEqual(['model']);
-  });
-
-  it('coerces the selected grouping onto a still-open axis', () => {
-    expect(coerceBoardGroupBy('entry', ['model', 'surface'])).toBe('surface');
-    expect(coerceBoardGroupBy('model', ['model', 'surface'])).toBe('model');
+describe('deriveBoardGroupBy', () => {
+  it('groups by local route when all entries are selected, otherwise by model', () => {
+    expect(deriveBoardGroupBy('all')).toBe('entry');
+    expect(deriveBoardGroupBy('')).toBe('entry');
+    expect(deriveBoardGroupBy('p1')).toBe('model');
   });
 });
 
@@ -88,15 +64,14 @@ describe('boardUsageWindow', () => {
 });
 
 describe('buildBoardUsageEntries', () => {
-  it('groups profiles that share a source into one local entry', () => {
+  it('keeps one local entry per listener, even when they share a login', () => {
     const entries = buildBoardUsageEntries([
       profile('p1', 'src', 'claude', 'Kimi'),
       profile('p2', 'src', 'codex', 'Kimi Codex'),
       profile('p3', 'other', 'grok', 'Grok'),
     ]);
-    expect(entries).toHaveLength(2);
-    expect(entries.find((entry) => entry.profileIds.includes('p1'))?.profileIds).toEqual(['p1', 'p2']);
-    expect(entries.map((entry) => entry.name).sort()).toEqual(['Grok', 'Kimi']);
+    expect(entries).toHaveLength(3);
+    expect(entries.map((entry) => entry.id).sort()).toEqual(['p1', 'p2', 'p3']);
   });
 
   it('drops hidden target agents', () => {
@@ -192,15 +167,18 @@ describe('gateway trend and distribution', () => {
       row({ requestId: 'a', ts: 't', profileId: 'p1', inputTokens: 30, outputTokens: 0 }),
       row({ requestId: 'b', ts: 't', profileId: 'p2', inputTokens: 20, outputTokens: 0 }),
     ];
-    expect(seriesKeyForRow(rows[0], 'entry', map)).toBe(entries[0].id);
+    expect(seriesKeyForRow(rows[0], 'entry', map)).toBe('p1');
     const dist = buildGatewayDistribution(
       rows,
       'entry',
       map,
-      { [entries[0].id]: { label: 'Kimi', color: '#c' } },
+      {
+        p1: { label: 'Kimi', color: '#c' },
+        p2: { label: 'Kimi Codex', color: '#d' },
+      },
     );
-    expect(dist).toHaveLength(1);
-    expect(dist[0]).toMatchObject({ label: 'Kimi', tokens: 50, requests: 2 });
+    expect(dist.map((item) => item.key)).toEqual(['p1', 'p2']);
+    expect(dist[0]).toMatchObject({ label: 'Kimi', tokens: 30, requests: 1 });
   });
 
   it('groups distribution by model and surface', () => {
