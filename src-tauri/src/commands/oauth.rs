@@ -99,11 +99,13 @@ pub async fn oauth_device_start(
     state: State<'_, AppState>,
     agent_id: String,
     provider_key: String,
+    pool_owned: Option<bool>,
 ) -> Result<DeviceOAuthStart, String> {
     let hub = state.hub_arc()?;
+    let pool_owned = pool_owned.unwrap_or(false);
     with_hub_blocking(hub, move |_hub| {
         let agent = parse_agent(&agent_id)?;
-        oauth::start_device_oauth(agent, &provider_key)
+        oauth::start_device_oauth_with_pool(agent, &provider_key, pool_owned)
             .map_err(|e| map_err_string("oauth_device_start", e))
     })
     .await
@@ -127,11 +129,13 @@ pub async fn oauth_device_poll(
 pub async fn oauth_device_complete(
     state: State<'_, AppState>,
     oauth_state: String,
+    pool_owned: Option<bool>,
 ) -> Result<Account, String> {
     let hub = state.hub_arc()?;
     let target = oauth::device_oauth_agent(&oauth_state)
         .map_err(|e| map_err_string("oauth_device_complete", e))?;
     let _target_guard = state.bridge_saga_coordinator().lock_target(target).await;
+    let pool_owned = pool_owned.unwrap_or(false);
     with_hub_blocking(hub, move |hub| {
         let current = oauth::device_oauth_agent(&oauth_state)
             .map_err(|e| map_err_string("oauth_device_complete", e))?;
@@ -140,7 +144,19 @@ pub async fn oauth_device_complete(
                 "oauth device target changed before completion [oauth.target_changed]".into(),
             );
         }
-        oauth::complete_device_oauth(hub.accounts(), &oauth_state)
+        let result = if pool_owned {
+            let surface = agenthub_core::models::RouteDownstreamSurface::for_agent(current)
+                .ok_or_else(|| "device OAuth target has no default route pool surface".to_string())?;
+            oauth::complete_device_oauth_and_attach_pool(
+                hub.accounts(),
+                hub.route_pools(),
+                &oauth_state,
+                surface,
+            )
+        } else {
+            oauth::complete_device_oauth(hub.accounts(), &oauth_state)
+        };
+        result
             .map(|a| a.redacted())
             .map_err(|e| map_err_string("oauth_device_complete", e))
     })

@@ -355,7 +355,7 @@ function ApiDetectDialog({
                   endpoint={choice.endpoint}
                   label={t(apiLabelKeys[choice.type])}
                   unavailableLabel=""
-                  onClick={() => onSelect(choice, { baseUrl, apiKey })}
+                  onClick={() => onSelect({ ...choice, available: true }, { baseUrl, apiKey })}
                 />
               ))}
             </div>
@@ -586,6 +586,7 @@ export function PoolAddButtons({
           agentId={oauthAgentId}
           open
           offerSwitch={false}
+          poolOwned
           successDescription={t('routes.pool.page.oauthSaved')}
           onOpenChange={(open) => {
             if (open) return;
@@ -593,6 +594,13 @@ export function PoolAddButtons({
           }}
           onStored={(account) => {
             const agentId = oauthAgentId;
+            // Grok device-code completion attaches to the authorization pool
+            // inside the backend operation, so a second async attach would
+            // only create a misleading failure after a successful login.
+            if (agentId === 'grok') {
+              onChanged?.();
+              return;
+            }
             void attachAuthorization(
               'account',
               account.id,

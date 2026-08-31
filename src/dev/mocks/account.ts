@@ -20,6 +20,7 @@ type MockOAuthSession = {
   agentId: AgentId;
   providerKey: string | null;
   flow: 'pkce' | 'device';
+  poolOwned?: boolean;
   devicePolls?: number;
 };
 
@@ -317,13 +318,14 @@ export function createMockAccountPort(): AccountPort {
       oauthSessions.delete(state);
     },
 
-    async startDeviceOAuth(agentId, providerKey) {
+    async startDeviceOAuth(agentId, providerKey, poolOwned = false) {
       await delay(50);
       const state = `mock-dev-${Date.now()}`;
       oauthSessions.set(state, {
         agentId,
         providerKey,
         flow: 'device',
+        poolOwned,
       });
       return {
         state,
@@ -347,7 +349,7 @@ export function createMockAccountPort(): AccountPort {
       return { state, status: 'complete' as const, error: null };
     },
 
-    async finishDeviceOAuth(state) {
+    async finishDeviceOAuth(state, _poolOwned = false) {
       const session = requireOAuthSession(state);
       return this.completeOAuth(session.agentId, session.providerKey);
     },

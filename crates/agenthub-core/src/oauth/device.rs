@@ -12,8 +12,11 @@ use serde_json::{json, Value};
 use crate::catalog::limits::{OAUTH_REFRESH_SKEW_MS, OAUTH_SESSION_TTL};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
-use crate::models::{Account, AccountInput, AccountKind, AgentId};
-use crate::services::AccountService;
+use crate::models::{
+    authorization_is_route_pool_home, set_authorization_route_pool_home, Account, AccountInput,
+    AccountKind, AdapterSourceKind, AgentId, RouteDownstreamSurface,
+};
+use crate::services::{AccountService, RoutePoolService};
 
 use super::catalog::is_device_code_option;
 use super::providers::{
@@ -60,6 +63,10 @@ pub enum DeviceOAuthStatus {
 struct DeviceSession {
     agent: AgentId,
     provider_key: String,
+    /// Whether this login was started from the Routes authorization pool.
+    /// Pool-originated logins must remain a distinct, non-current row even
+    /// when the same OAuth identity is already the live login.
+    pool_owned: bool,
     device_code: String,
     interval: Duration,
     expires_at: Instant,
@@ -208,6 +215,19 @@ fn resolve_device_oauth_target(agent: AgentId, provider_key: &str) -> Result<Dev
 
 /// Start xAI device-code login for Grok or Pi.
 pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOAuthStart> {
+    start_device_oauth_with_pool(agent, provider_key, false)
+}
+
+/// Start device-code login with an explicit ownership context.
+///
+/// The default [`start_device_oauth`] path is used by normal Connections/CLI
+/// logins and keeps their existing identity-dedupe behavior. Routes passes
+/// `pool_owned = true` so completion creates a separate pool-only row.
+pub fn start_device_oauth_with_pool(
+    agent: AgentId,
+    provider_key: &str,
+    pool_owned: bool,
+) -> Result<DeviceOAuthStart> {
     let target = resolve_device_oauth_target(agent, provider_key)?;
 
     let body = post_form(
@@ -243,6 +263,7 @@ pub fn start_device_oauth(agent: AgentId, provider_key: &str) -> Result<DeviceOA
     let session = DeviceSession {
         agent,
         provider_key: target.provider_key.to_string(),
+        pool_owned,
         device_code,
         interval: Duration::from_secs(interval),
         expires_at: Instant::now() + Duration::from_secs(expires_in),
@@ -512,7 +533,83 @@ where
 }
 
 /// Persist completed device-code tokens into the account pool (+ Pi auth.json merge via apply).
+///
+/// A Routes-owned session must use
+/// [`complete_device_oauth_and_attach_pool`]. Keeping the plain completion
+/// path closed to pool-owned sessions prevents a caller that forgot the
+/// attach context from leaving a hidden account behind.
 pub fn complete_device_oauth(accounts: &AccountService, state: &str) -> Result<Account> {
+    complete_device_oauth_inner(accounts, state, false)
+}
+
+/// Complete a Routes-owned device login and attach it to the selected default
+/// pool as one backend operation. If attachment fails, only a newly-created
+/// pool-owned account is compensated; an existing pool row that was refreshed
+/// remains available for a later attach retry.
+pub fn complete_device_oauth_and_attach_pool(
+    accounts: &AccountService,
+    route_pools: &RoutePoolService,
+    state: &str,
+    surface: RouteDownstreamSurface,
+) -> Result<Account> {
+    let (agent, pool_owned) = device_oauth_context(state)?;
+    if !pool_owned {
+        return Err(AppError::InvalidArg(
+            "device OAuth session is not owned by the Routes authorization pool".into(),
+        ));
+    }
+
+    // Check the feature gate and materialize the default pool before writing
+    // the account. This makes a disabled pool fail without any persisted
+    // OAuth row, while the later attach path handles remaining DB failures.
+    route_pools.ensure_default_pool(agent, surface)?;
+    let existing_ids = accounts.account_ids(agent)?;
+    let account = complete_device_oauth_inner(accounts, state, true)?;
+
+    match route_pools.attach_pool_owned_authorization(
+        agent,
+        surface,
+        AdapterSourceKind::Account,
+        &account.id,
+    ) {
+        Ok(_) => Ok(account),
+        Err(error) => {
+            if !existing_ids.iter().any(|id| id == &account.id)
+                && !account.is_current
+                && authorization_is_route_pool_home(&account.extra)
+            {
+                if let Err(cleanup) = accounts.delete(&account.id, agent) {
+                    tracing::warn!(
+                        module = targets::OAUTH,
+                        op = "device_pool_compensate",
+                        agent = agent.as_str(),
+                        account_id = %account.id,
+                        error_code = cleanup.code(),
+                        "failed to remove newly-created pool-owned account after attach failure"
+                    );
+                }
+            }
+            Err(error)
+        }
+    }
+}
+
+fn device_oauth_context(state: &str) -> Result<(AgentId, bool)> {
+    let mut guard = store()
+        .lock()
+        .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?;
+    purge_locked(&mut guard, Some(state));
+    let session = guard
+        .get(state)
+        .ok_or_else(|| AppError::NotFound("device oauth session not found".into()))?;
+    Ok((session.agent, session.pool_owned))
+}
+
+fn complete_device_oauth_inner(
+    accounts: &AccountService,
+    state: &str,
+    allow_pool_owned: bool,
+) -> Result<Account> {
     let mut guard = store()
         .lock()
         .map_err(|_| AppError::message("oauth.device", "device store poisoned"))?;
@@ -530,6 +627,11 @@ pub fn complete_device_oauth(accounts: &AccountService, state: &str) -> Result<A
         ));
     }
     let snapshot = session.clone();
+    if snapshot.pool_owned && !allow_pool_owned {
+        return Err(AppError::InvalidArg(
+            "pool-owned device OAuth requires Routes authorization-pool completion".into(),
+        ));
+    }
     session.completing = true;
     session.status = DeviceOAuthStatus::Completing;
     drop(guard);
@@ -636,12 +738,16 @@ fn grok_device_account_input(snapshot: &DeviceSession) -> Result<AccountInput> {
         obj.insert("auth_mode".into(), json!("oidc"));
     }
     let label = bundle.label_hint.unwrap_or_else(|| "Grok · OAuth".into());
+    let mut extra = bundle.extra;
+    if snapshot.pool_owned {
+        set_authorization_route_pool_home(&mut extra);
+    }
     Ok(AccountInput {
         agent_id: AgentId::Grok,
         kind: AccountKind::Oauth,
         label,
         credentials,
-        extra: bundle.extra,
+        extra,
         is_current: false,
     })
 }

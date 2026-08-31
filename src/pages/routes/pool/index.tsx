@@ -30,16 +30,13 @@ import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { AdapterErrorLines, AdapterProfiles } from '@/pages/bridges/adapter-components';
 import {
-  adapterBridgeHostPort,
   resolveBridgesProfileQuery,
   resourceFailureMessage,
 } from '@/pages/bridges/adapter-model';
 import {
-  adapterBridgeFleetSummary,
   adapterProfileFlowLabel,
   bridgesPageViewState,
   groupLocalBridgeProfiles,
-  isLocalBridgeCardActive,
   partitionLocalBridgeRuntimes,
 } from '@/pages/bridges/adapter-view-model';
 import { EditRouteDialog } from '@/pages/bridges/EditRouteDialog';
@@ -53,11 +50,9 @@ import {
   type RouteInspect,
 } from '@/pages/bridges/route-inspect';
 import {
-  buildPoolWorkbenchRows,
   collectPoolAuthorizations,
   directProfilesForRoutePoolV2,
   matchDefaultPoolForProfile,
-  mergeOwnedAuthorizationsIntoRows,
 } from '@/pages/bridges/route-pool-view-model';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useBridgeRuntimeActions } from '@/pages/bridges/use-bridge-runtime-actions';
@@ -65,11 +60,10 @@ import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { useOAuthLoginAgents } from '@/pages/connections/use-oauth-login-agents';
 import { PoolAddButtons } from './PoolAddButtons';
 import { PoolAuthorizationList } from './PoolAuthorizationList';
-import { PoolCard } from './PoolCard';
 
 /**
- * 授权池工作台：本机入口、这里接入的 OAuth/API、写进客户端、解绑。
- * 连接页的登录只有同步或接到工具后才会出现在这里。
+ * 授权池：每一份官方登录 / API Key 一行，只展示登录状态。
+ * 看板深链仍可在此打开路由详情。
  */
 export default function RoutesPoolPage() {
   const { t } = useI18n();
@@ -159,32 +153,9 @@ export default function RoutesPoolPage() {
     () => groupLocalBridgeProfiles(orphan, bridgeStatuses),
     [orphan, bridgeStatuses],
   );
-  const rows = useMemo(
-    () => mergeOwnedAuthorizationsIntoRows(
-      buildPoolWorkbenchRows({
-        flagOn: routePoolV2,
-        pools: defaultPools,
-        profiles: bound,
-        statuses: bridgeStatuses,
-      }),
-      entries,
-    ),
-    [bound, bridgeStatuses, defaultPools, entries, routePoolV2],
-  );
   const authorizations = useMemo(
     () => collectPoolAuthorizations(defaultPools, entries),
     [defaultPools, entries],
-  );
-  const orphanIds = useMemo(
-    () => new Set(groupedOrphan.map((profile) => profile.id)),
-    [groupedOrphan],
-  );
-  const visibleRows = useMemo(
-    () => rows.filter((row) => {
-      if (!row.profile) return true;
-      return !orphanIds.has(row.profile.id);
-    }),
-    [orphanIds, rows],
   );
   const directProfiles = useMemo(
     () => directProfilesForRoutePoolV2(routePoolV2, profiles, bridgeStatuses),
@@ -207,19 +178,13 @@ export default function RoutesPoolPage() {
   const removeConfirmIsOrphan = Boolean(
     removeConfirm && orphan.some((profile) => profile.id === removeConfirm.id),
   );
-  const fleetSummary = adapterBridgeFleetSummary(
-    [...bound, ...orphan],
-    bridgeStatuses,
-    t,
-  );
-  const orphanOnly = visibleRows.length === 0 && groupedOrphan.length > 0 && authorizations.length === 0;
-  const hasContent = visibleRows.length > 0
-    || groupedOrphan.length > 0
+  const orphanOnly = groupedOrphan.length > 0 && authorizations.length === 0;
+  const hasContent = groupedOrphan.length > 0
     || directProfiles.length > 0
     || authorizations.length > 0;
   const pageView = bridgesPageViewState({
     profileState: loading && profileState !== 'error' ? 'loading' : profileState,
-    bound: visibleRows,
+    bound,
     orphan: groupedOrphan,
     wallet: {
       settled: wallet.settled,
@@ -254,19 +219,6 @@ export default function RoutesPoolPage() {
     onRetry: reloadAll,
     hiddenTargetIds,
     siblingProfiles: profiles,
-  };
-
-  const openWrite = (profile: AdapterProfile) => {
-    const status = profile.route === 'local_bridge' ? bridgeStatuses[profile.id] : undefined;
-    const endpointParts = adapterBridgeHostPort(profile, status);
-    const graph = buildRouteGraph({
-      profile,
-      entries,
-      siblingProfiles: profiles,
-      host: endpointParts?.host,
-      port: endpointParts?.port,
-    });
-    inspect.open({ kind: 'write', target: { profile, graph } });
   };
 
   const inspectPanel =
@@ -344,8 +296,6 @@ export default function RoutesPoolPage() {
             <Tip className="min-w-0 truncate text-meta text-secondary" label={t('routes.orphan.description')}>
               {t('routes.orphan.title')}
             </Tip>
-          ) : fleetSummary ? (
-            <p className="min-w-0 truncate text-meta text-secondary">{fleetSummary.label}</p>
           ) : (
             <p className="min-w-0 truncate text-meta text-muted">
               {t('routes.pool.page.chromeHint')}
@@ -401,50 +351,9 @@ export default function RoutesPoolPage() {
           {pageView === 'list' || (hasContent && pageView !== 'loading' && pageView !== 'list_error') ? (
             <>
               {authorizations.length > 0 ? (
-                <PageSection
-                  first
-                  title={t('routes.pool.page.authorizationsTitle')}
-                >
+                <PageSection first>
                   <PoolAuthorizationList items={authorizations} />
                 </PageSection>
-              ) : null}
-              {visibleRows.length > 0 ? (
-                <div className="space-y-2">
-                  {visibleRows.map((row) => {
-                    const profile = row.profile;
-                    return (
-                      <PoolCard
-                        key={row.key}
-                        row={row}
-                        entries={entries}
-                        bridgeStatus={
-                          profile?.route === 'local_bridge'
-                            ? bridgeStatuses[profile.id]
-                            : undefined
-                        }
-                        statusUnavailable={Boolean(
-                          profile && resourceErrors.bridgeStatuses[profile.id],
-                        )}
-                        busy={Boolean(
-                          profile
-                          && (busyProfileIds[profile.id] === true || removingProfileId === profile.id),
-                        )}
-                        error={profile ? profileErrors[profile.id] : undefined}
-                        active={Boolean(
-                          profile
-                          && isLocalBridgeCardActive(profile, activeProfileId, profiles),
-                        )}
-                        targetHidden={Boolean(
-                          profile && hiddenTargetIds.has(profile.targetAgentId),
-                        )}
-                        onStart={(item) => void handleStartBridge(item)}
-                        onStop={setStopConfirm}
-                        onWrite={openWrite}
-                        onShowDetail={(item) => inspect.open({ kind: 'detail', profile: item })}
-                      />
-                    );
-                  })}
-                </div>
               ) : null}
               {groupedOrphan.length > 0 ? (
                 <PageSection
@@ -462,7 +371,7 @@ export default function RoutesPoolPage() {
               ) : null}
               {directProfiles.length > 0 ? (
                 <PageSection
-                  first={visibleRows.length === 0 && groupedOrphan.length === 0 && authorizations.length === 0}
+                  first={authorizations.length === 0 && groupedOrphan.length === 0}
                   title={t('routes.direct.title')}
                   description={t('routes.direct.description')}
                 >

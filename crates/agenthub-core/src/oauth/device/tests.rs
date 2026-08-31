@@ -11,6 +11,7 @@ fn session(state: &str, status: DeviceOAuthStatus, expires_at: Instant) -> (Stri
         DeviceSession {
             agent: AgentId::Pi,
             provider_key: "xai".into(),
+            pool_owned: false,
             device_code: "device-secret".into(),
             interval: Duration::from_secs(1),
             expires_at,
@@ -368,6 +369,26 @@ fn grok_device_account_input_uses_official_cli_client() {
     assert_eq!(
         input.extra.get("source").and_then(|v| v.as_str()),
         Some("oauth_pkce")
+    );
+    assert!(!crate::models::authorization_is_route_pool_home(&input.extra));
+    assert!(!input.is_current);
+}
+
+#[test]
+fn pool_owned_grok_device_account_input_marks_route_pool_home() {
+    let (_, mut value) = session(
+        "grok-pool-input",
+        DeviceOAuthStatus::Complete,
+        Instant::now() + Duration::from_secs(60),
+    );
+    value.agent = AgentId::Grok;
+    value.provider_key = "xai".into();
+    value.pool_owned = true;
+
+    let input = grok_device_account_input(&value).expect("grok pool input");
+    assert_eq!(
+        input.extra.get("home").and_then(|v| v.as_str()),
+        Some("route_pool")
     );
     assert!(!input.is_current);
 }

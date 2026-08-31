@@ -17,8 +17,9 @@ pub use catalog::{
     resolve_pkce_provider, OAuthFlowKind, OAuthLoginOption, PiQuotaBackend,
 };
 pub use device::{
-    complete_device_oauth, device_oauth_agent, poll_device_oauth, start_device_oauth,
-    DeviceOAuthPoll, DeviceOAuthStart, DeviceOAuthStatus,
+    complete_device_oauth, complete_device_oauth_and_attach_pool, device_oauth_agent,
+    poll_device_oauth, start_device_oauth, start_device_oauth_with_pool, DeviceOAuthPoll,
+    DeviceOAuthStart, DeviceOAuthStatus,
 };
 pub use identity::{
     apply_identity_to_credentials, decode_jwt_payload, extract_oauth_identity, identity_extra,
