@@ -50,7 +50,7 @@ function LegacyUsageRedirect() {
   return <Navigate to="/?section=usage" replace />;
 }
 
-/** 旧 /adapter、/router、/bridges 深链兼容 → 看板，或带 profile 时到授权池 */
+/** 旧 /adapter、/router、/bridges 深链兼容 → 看板，或带 profile 时到连接池 */
 function LegacyBridgesRedirect() {
   const { search } = useLocation();
   return <Navigate to={legacyBridgesRedirectTo(search)} replace />;

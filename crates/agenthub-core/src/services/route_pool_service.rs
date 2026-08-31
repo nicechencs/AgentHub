@@ -158,9 +158,11 @@ impl RoutePoolService {
             members: members
                 .into_iter()
                 .map(|member| RouteMemberOverview {
+                    id: member.id,
                     source_kind: member.source_kind,
                     source_id: member.source_id,
                     enabled: member.enabled,
+                    priority: member.priority,
                     availability: Some(if member.enabled {
                         crate::models::MemberAvailability::Ready
                     } else {
@@ -437,6 +439,33 @@ impl RoutePoolService {
         let saved = self.pools.update_member(&member)?;
         self.sync_lead_projection(&saved.route_pool_id)?;
         Ok(saved)
+    }
+
+    /// Enable or disable every default-pool membership of one login.
+    pub fn set_authorization_enabled(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+        enabled: bool,
+    ) -> Result<u32> {
+        self.require_enabled()?;
+        let mut changed = 0_u32;
+        for pool in self.pools.list_pools(None, None)? {
+            if !pool.is_default {
+                continue;
+            }
+            for member in self.pools.list_members(&pool.id)? {
+                if member.source_kind != source_kind || member.source_id != source_id {
+                    continue;
+                }
+                if member.enabled == enabled {
+                    continue;
+                }
+                self.set_member_enabled(&member.id, enabled)?;
+                changed = changed.saturating_add(1);
+            }
+        }
+        Ok(changed)
     }
 
     pub fn set_member_priority(&self, member_id: &str, priority: i64) -> Result<RouteMember> {

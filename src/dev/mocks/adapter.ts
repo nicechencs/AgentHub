@@ -314,6 +314,26 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         listedModels: [...(pool.listedModels ?? [])],
       };
     },
+    async setRouteAuthorizationEnabled(sourceKind, sourceId, enabled) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      let changed = 0;
+      for (const pool of state.defaultPools) {
+        for (const member of pool.members) {
+          if (member.sourceKind !== sourceKind || member.sourceId !== sourceId) continue;
+          if (member.enabled === enabled) continue;
+          member.enabled = enabled;
+          changed += 1;
+        }
+      }
+      return changed;
+    },
     async syncConnectionAuthorizations() {
       await delay(20);
       if (!state.routePoolV2) {

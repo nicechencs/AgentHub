@@ -223,6 +223,17 @@ describe('Tauri adapter route port', () => {
     expect(JSON.stringify(attached)).not.toContain('hubToken');
   });
 
+  it('forwards set_route_authorization_enabled', async () => {
+    invokeMock.mockResolvedValueOnce(1);
+    const port = createTauriAdapterPort();
+    await expect(port.setRouteAuthorizationEnabled('account', 'oauth-1', false)).resolves.toBe(1);
+    expect(invokeMock).toHaveBeenCalledWith('set_route_authorization_enabled', {
+      sourceKind: 'account',
+      sourceId: 'oauth-1',
+      enabled: false,
+    });
+  });
+
   it('forwards sync_connection_authorizations', async () => {
     invokeMock.mockResolvedValueOnce({ added: 2, skipped: 1 });
     const port = createTauriAdapterPort();

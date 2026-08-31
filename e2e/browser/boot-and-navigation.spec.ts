@@ -214,15 +214,15 @@ test('Routes secondary nav appears under /routes*; URL entry does not auto-colla
   await expect(secondary).toBeVisible();
   await expect(secondary.getByRole('link', { name: /^路由列表/ })).toHaveCount(0);
   await expect(secondary.getByRole('link', { name: /^路由看板/ })).toBeVisible();
-  await expect(secondary.getByRole('link', { name: /^授权池/ })).toBeVisible();
+  await expect(secondary.getByRole('link', { name: /^连接池/ })).toBeVisible();
   await expect(secondary.getByRole('button', { name: '展开侧栏' })).toBeVisible();
   await expect(page.getByRole('button', { name: '收起侧栏' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '路由看板' })).toBeVisible();
   await expect(page.getByText('用量统计')).toBeVisible();
 
-  await secondary.getByRole('link', { name: /^授权池/ }).click();
+  await secondary.getByRole('link', { name: /^连接池/ }).click();
   await expect(page).toHaveURL(/#\/routes\/pool/);
-  await expect(page.getByRole('heading', { name: '授权池' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '连接池' })).toBeVisible();
 
   await secondary.getByRole('link', { name: /^监控日志/ }).click();
   await expect(page).toHaveURL(/#\/routes\/activity/);

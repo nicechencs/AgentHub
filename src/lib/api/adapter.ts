@@ -9,6 +9,7 @@ import type {
   AdapterProfileFilter,
   AdapterRouteAnalysis,
   AdapterRouteRequest,
+  AdapterSourceKind,
   AttachPoolOwnedAuthorizationRequest,
   DefaultRoutePoolList,
   DefaultRoutePoolOverview,
@@ -68,6 +69,15 @@ export async function attachPoolOwnedAuthorization(
     // Write succeeded; the pool store keeps previous rows if refresh fails.
   }
   return result;
+}
+
+/** Enable or disable this login in every default pool it belongs to. */
+export async function setRouteAuthorizationEnabled(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+  enabled: boolean,
+): Promise<number> {
+  return getBackend().adapter.setRouteAuthorizationEnabled(sourceKind, sourceId, enabled);
 }
 
 /** Enroll Connections authorizations into the auth pool without removing them from Connections. */

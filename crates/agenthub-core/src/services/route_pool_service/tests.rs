@@ -139,6 +139,15 @@ fn member_crud_sort_enabled_priority_and_lead_projection() {
     service.set_member_enabled(&extra.id, false).unwrap();
     let projected = profiles.get("profile-a").unwrap().unwrap();
     assert_eq!(projected.source_id, "acc-a");
+    let flipped = service
+        .set_authorization_enabled(AdapterSourceKind::Account, "acc-b", true)
+        .unwrap();
+    assert_eq!(flipped, 1);
+    assert!(service
+        .list_members("profile-a")
+        .unwrap()
+        .iter()
+        .any(|member| member.source_id == "acc-b" && member.enabled));
     service.remove_member(&extra.id).unwrap();
     assert_eq!(service.list_members("profile-a").unwrap().len(), 1);
 }

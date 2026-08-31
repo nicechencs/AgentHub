@@ -101,6 +101,13 @@ export function createTauriAdapterPort(): AdapterPort {
       });
       return mapDefaultRoutePoolOverview(wire);
     },
+    async setRouteAuthorizationEnabled(sourceKind, sourceId, enabled) {
+      return invokeAdapter<number>('set_route_authorization_enabled', {
+        sourceKind,
+        sourceId,
+        enabled,
+      });
+    },
     async syncConnectionAuthorizations() {
       return invokeAdapter<SyncConnectionAuthorizationsResult>('sync_connection_authorizations', {});
     },

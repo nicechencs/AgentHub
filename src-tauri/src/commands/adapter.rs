@@ -293,6 +293,25 @@ pub async fn attach_pool_owned_authorization(
     .map_err(adapter_error_from_string)
 }
 
+/// Enable or disable every default-pool membership of one login.
+#[tauri::command]
+pub async fn set_route_authorization_enabled(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+    enabled: bool,
+) -> Result<u32, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .set_authorization_enabled(source_kind, &source_id, enabled)
+            .map_err(|err| map_err_string("set_route_authorization_enabled", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
 /// Enroll existing Connections authorizations into default auth pools.
 /// Does not remove them from Connections.
 #[tauri::command]

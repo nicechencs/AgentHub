@@ -476,9 +476,11 @@ export function mapAdapterBridgeStatusDto(
 }
 
 export interface RouteMemberOverviewWire {
+  id?: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
   enabled: boolean;
+  priority?: number;
   availability?: string;
 }
 
@@ -527,10 +529,15 @@ function mapAvailability(value: string | undefined): RouteMemberOverview['availa
 }
 
 function mapMemberOverview(wire: RouteMemberOverviewWire): RouteMemberOverview {
+  const priority = typeof wire.priority === 'number' && Number.isFinite(wire.priority)
+    ? wire.priority
+    : 0;
   return {
+    id: typeof wire.id === 'string' && wire.id.trim() ? wire.id : undefined,
     sourceKind: mapSourceKind(wire.sourceKind),
     sourceId: wire.sourceId,
     enabled: wire.enabled === true,
+    priority,
     availability: mapAvailability(wire.availability),
   };
 }
