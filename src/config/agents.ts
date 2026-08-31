@@ -17,6 +17,15 @@ import {
 } from '@/lib/backend/contracts/agent-catalog-types';
 import type { AgentId, RuntimeId } from '@/lib/types';
 import { agentCssVar, type TokenAgentId } from '@/styles/tokens';
+import claudeLogo from '@/assets/agent-logos/claude.png';
+import codexLogo from '@/assets/agent-logos/codex.png';
+import cursorLogo from '@/assets/agent-logos/cursor.png';
+import deepseekLogo from '@/assets/agent-logos/deepseek.png';
+import grokLogo from '@/assets/agent-logos/grok.png';
+import kimiLogo from '@/assets/agent-logos/kimi.png';
+import piLogo from '@/assets/agent-logos/pi.png';
+import workbuddyLogo from '@/assets/agent-logos/workbuddy.png';
+import zcodeLogo from '@/assets/agent-logos/zcode.png';
 
 export interface InstallChannelMeta {
   id: string;
@@ -31,8 +40,10 @@ export interface AgentMeta {
   name: string;
   /** 品牌色 CSS 变量；未知 agent 为 muted fallback */
   color: string;
-  /** logo 用字母圆标代替 */
+  /** 首字母回退显示 */
   letter: string;
+  /** 对应 agent 的本地 logo 图片；未知 agent 没有图片 */
+  logoSrc?: string;
   /**
    * Install channels from backend catalog.
    * Empty until `applyAgentCatalog` / hydrate runs.
@@ -46,17 +57,20 @@ export interface AgentMeta {
 
 /** Pure display decoration for known agents — not the product set. */
 export const AGENT_DISPLAY: Readonly<
-  Record<string, { readonly letter: string; readonly colorKey: TokenAgentId }>
+  Record<
+    string,
+    { readonly letter: string; readonly colorKey: TokenAgentId; readonly logoSrc?: string }
+  >
 > = Object.freeze({
-  claude: { letter: 'C', colorKey: 'claude' },
-  codex: { letter: 'X', colorKey: 'codex' },
-  kimi: { letter: 'K', colorKey: 'kimi' },
-  grok: { letter: 'G', colorKey: 'grok' },
-  pi: { letter: 'P', colorKey: 'pi' },
-  workbuddy: { letter: 'W', colorKey: 'workbuddy' },
-  cursor: { letter: 'R', colorKey: 'cursor' },
-  dsh: { letter: 'D', colorKey: 'dsh' },
-  zcode: { letter: 'Z', colorKey: 'zcode' },
+  claude: { letter: 'C', colorKey: 'claude', logoSrc: claudeLogo },
+  codex: { letter: 'X', colorKey: 'codex', logoSrc: codexLogo },
+  kimi: { letter: 'K', colorKey: 'kimi', logoSrc: kimiLogo },
+  grok: { letter: 'G', colorKey: 'grok', logoSrc: grokLogo },
+  pi: { letter: 'P', colorKey: 'pi', logoSrc: piLogo },
+  workbuddy: { letter: 'W', colorKey: 'workbuddy', logoSrc: workbuddyLogo },
+  cursor: { letter: 'R', colorKey: 'cursor', logoSrc: cursorLogo },
+  dsh: { letter: 'D', colorKey: 'dsh', logoSrc: deepseekLogo },
+  zcode: { letter: 'Z', colorKey: 'zcode', logoSrc: zcodeLogo },
 });
 
 const FALLBACK_COLOR = 'var(--text-muted)';
@@ -80,6 +94,7 @@ export function agentMetaFromCatalogEntry(entry: AgentCatalogEntryDto): AgentMet
     name: entry.displayName,
     color: colorFor(entry.key),
     letter: letterFor(entry.key, entry.displayName),
+    logoSrc: AGENT_DISPLAY[entry.key]?.logoSrc,
     installChannels: entry.installChannels.map((ch) => ({
       id: ch.id,
       label: ch.label,
@@ -134,6 +149,7 @@ export function resolveAgentMeta(agentId: AgentId): AgentMeta {
     name: agentId,
     color: colorFor(agentId),
     letter: letterFor(agentId, agentId),
+    logoSrc: AGENT_DISPLAY[agentId]?.logoSrc,
     installChannels: [],
     occupancy: 'exclusive',
   };
