@@ -38,6 +38,7 @@ export function PoolAuthorizationDetail({
   const { t } = useI18n();
   const status = poolAuthorizationStatusView(item, t);
   const rows = poolAuthorizationDetailRows(item, t);
+  const displayTitle = item.identityLabel ?? item.title;
   const hasQuota = hasQuotaWindow(item.quota7dPct) || hasQuotaWindow(item.quota5hPct);
   const editLabel = onEdit
     ? (item.kind === 'apikey' ? t('connections.list.editKey') : null)
@@ -46,7 +47,7 @@ export function PoolAuthorizationDetail({
   return (
     <SideInspectPanel
       title={t('routes.pool.detail.title')}
-      description={item.title}
+      description={displayTitle}
       onClose={onClose}
       width={width}
       headerActions={(
@@ -65,7 +66,7 @@ export function PoolAuthorizationDetail({
       <div className="flex flex-col gap-3 text-xs" data-pool-authorization-detail={item.key}>
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
           <AgentDot agentId={item.agentId} size="sm" title={null} />
-          <span className="truncate font-medium text-primary">{item.title}</span>
+          <span className="truncate font-medium text-primary">{displayTitle}</span>
           <span className="text-meta text-muted">{connectionKindLabel(item.kind, t)}</span>
           <span className={adapterStatusTextClass(status.tone)}>{status.label}</span>
         </div>

@@ -330,6 +330,15 @@ pub struct RouteMemberOverview {
     pub id: String,
     pub source_kind: AdapterSourceKind,
     pub source_id: String,
+    /// Safe user-facing label resolved from the source account/provider.
+    /// OAuth uses its exposed identity when available; API rows use the
+    /// configured account/provider label. Never falls back to a credential.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_label: Option<String>,
+    /// Masked tail of an OAuth refresh token, when the source exposes one.
+    /// This is never the raw refresh token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token_tail: Option<String>,
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "is_default_priority")]
     pub priority: i64,

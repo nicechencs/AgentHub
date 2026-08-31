@@ -180,8 +180,13 @@ export default function RoutesPoolPage() {
     return counts;
   }, [ticketWallet.wallet]);
   const authorizations = useMemo(
-    () => collectPoolAuthorizations(defaultPools, entries, bindingCounts),
-    [bindingCounts, defaultPools, entries],
+    () => collectPoolAuthorizations(
+      defaultPools,
+      entries,
+      bindingCounts,
+      t('routes.pool.detail.identityUnavailable'),
+    ),
+    [bindingCounts, defaultPools, entries, t],
   );
   const authorizationItem = inspectTarget?.kind === 'authorization'
     ? authorizations.find((item) => item.key === inspectTarget.key) ?? null

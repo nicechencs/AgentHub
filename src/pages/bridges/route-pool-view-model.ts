@@ -94,7 +94,10 @@ export function groupRouteProfilesBySource<T extends AdapterProfile>(
 
 export function routePoolMemberLabels(
   members: readonly RouteMemberOverview[],
-  entries: readonly Pick<ConnectionEntry, 'source' | 'id' | 'title' | 'kind'>[],
+  entries: readonly (Pick<ConnectionEntry, 'source' | 'id' | 'title' | 'kind'> & {
+    identityLabel?: string;
+  })[],
+  unavailableLabel = '未提供账号',
 ): {
   title: string;
   enabled: boolean;
@@ -107,8 +110,11 @@ export function routePoolMemberLabels(
     const match = entries.find(
       (entry) => entry.source === member.sourceKind && entry.id === member.sourceId,
     );
+    const entryLabel = match?.kind === 'oauth'
+      ? match.identityLabel?.trim() || match.title?.trim()
+      : match?.title?.trim();
     return {
-      title: match?.title?.trim() || member.sourceId,
+      title: entryLabel || member.displayLabel?.trim() || unavailableLabel,
       enabled: member.enabled,
       availability: member.availability,
       sourceKind: member.sourceKind,
@@ -148,6 +154,8 @@ export type PoolAuthorizationItem = {
   sourceId: string;
   agentId: AgentId;
   title: string;
+  /** OAuth displays the authorized account when the provider exposed one. */
+  identityLabel?: string;
   kind: ConnectionKind;
   surface: RoutePoolSurface | null;
   addedHere: boolean;
@@ -165,6 +173,7 @@ export type PoolAuthorizationItem = {
   subscription?: string;
   endpointHost?: string;
   secretTail?: string;
+  refreshTokenTail?: string;
 };
 
 function poolAuthorizationItem(
@@ -178,18 +187,32 @@ function poolAuthorizationItem(
     title: string;
     surface: RoutePoolSurface | null;
     addedHere: boolean;
+    displayLabel?: string;
+    refreshTokenTail?: string;
     enabled?: boolean;
     canToggle?: boolean;
     priority?: number;
   },
 ): PoolAuthorizationItem {
+  const kind = match?.kind ?? fallback.kind;
+  const displayLabel = match?.kind === 'oauth'
+    ? match.identityLabel?.trim() || fallback.displayLabel?.trim()
+    : fallback.displayLabel?.trim();
+  const identityLabel = kind === 'oauth'
+    ? match?.identityLabel?.trim() || displayLabel || undefined
+    : undefined;
+  const fallbackTitle = fallback.title?.trim() || '未提供账号';
+  const title = kind === 'oauth'
+    ? identityLabel || match?.title?.trim() || displayLabel || fallbackTitle
+    : match?.title?.trim() || displayLabel || fallbackTitle;
   return {
     key,
     sourceKind,
     sourceId,
     agentId: match?.agentId ?? fallback.agentId,
-    title: match?.title?.trim() || fallback.title,
-    kind: match?.kind ?? fallback.kind,
+    title: title || fallbackTitle,
+    identityLabel,
+    kind,
     surface: fallback.surface,
     addedHere: fallback.addedHere,
     authHealth: match?.authHealth,
@@ -204,7 +227,12 @@ function poolAuthorizationItem(
     quota7dResetIn: match?.quota7dResetIn,
     subscription: match?.subscription ?? match?.account?.subscription,
     endpointHost: match?.endpointHost,
-    secretTail: match?.account?.secretTail ?? match?.provider?.secretTail,
+    secretTail: kind === 'apikey'
+      ? match?.account?.secretTail ?? match?.provider?.secretTail
+      : undefined,
+    refreshTokenTail: kind === 'oauth'
+      ? match?.account?.secretTail ?? fallback.refreshTokenTail
+      : undefined,
   };
 }
 
@@ -253,6 +281,7 @@ export function collectPoolAuthorizations(
   pools: readonly DefaultRoutePoolOverview[],
   entries: readonly ConnectionEntry[],
   bindingCounts: ReadonlyMap<string, number> = new Map(),
+  unavailableLabel = '未提供账号',
 ): PoolAuthorizationItem[] {
   const items = new Map<string, PoolAuthorizationItem>();
   const entryBySource = new Map<string, ConnectionEntry>(
@@ -277,9 +306,11 @@ export function collectPoolAuthorizations(
         {
           agentId: pool.targetAgentId,
           kind: member.sourceKind === 'account' ? 'oauth' : 'apikey',
-          title: member.sourceId,
+          title: member.displayLabel?.trim() || unavailableLabel,
           surface: pool.surface,
           addedHere: match ? entryHome(match) === 'route_pool' : false,
+          displayLabel: member.displayLabel,
+          refreshTokenTail: member.refreshTokenTail,
           enabled,
           canToggle: true,
           priority,
@@ -332,10 +363,16 @@ export function mergeOwnedAuthorizationsIntoRows(
     if (entryHome(entry) !== 'route_pool') continue;
     const surface = poolSurfaceForAgent(entry.agentId);
     if (!surface) continue;
+    const displayLabel = entry.kind === 'oauth'
+      ? entry.identityLabel?.trim() || entry.title?.trim() || undefined
+      : entry.title?.trim() || undefined;
+    const refreshTokenTail = entry.kind === 'oauth' ? entry.account?.secretTail : undefined;
     const member: RouteMemberOverview = {
       sourceKind: entry.source,
       sourceId: entry.id,
       enabled: true,
+      ...(displayLabel ? { displayLabel } : {}),
+      ...(refreshTokenTail ? { refreshTokenTail } : {}),
     };
     const existing = next.find((row) => (
       row.targetAgentId === entry.agentId && row.surface === surface

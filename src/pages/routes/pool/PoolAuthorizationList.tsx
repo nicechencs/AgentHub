@@ -91,8 +91,11 @@ export function PoolAuthorizationList({
   };
 
   return (
-    <TableShell>
-      <Table className="table-fixed" style={{ width: totalWidth, minWidth: totalWidth }}>
+    <TableShell className="min-w-0 [&>div]:min-w-0 [&>div]:!overflow-x-scroll">
+      <Table
+        className="table-fixed"
+        style={{ width: `max(100%, ${totalWidth}px)`, minWidth: totalWidth }}
+      >
         <colgroup>
           {specs.map((spec) => (
             <col key={spec.key} style={{ width: widths[spec.key] }} />
@@ -189,7 +192,9 @@ function renderColumn(
         <div className="flex min-w-0 items-center gap-2">
           <AgentDot agentId={item.agentId} size="sm" title={null} />
           <div className="min-w-0">
-            <p className="truncate font-medium" title={item.title}>{item.title}</p>
+            <p className="truncate font-medium" title={item.identityLabel ?? item.title}>
+              {item.identityLabel ?? item.title}
+            </p>
             <p className="truncate text-meta text-muted">{agentDisplayName(item.agentId)}</p>
           </div>
         </div>
