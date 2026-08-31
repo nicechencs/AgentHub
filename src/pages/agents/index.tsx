@@ -15,6 +15,7 @@ import { Tip } from '@/components/ui/tooltip';
 import { SortHandle } from '@/components/shared/SortHandle';
 import { useSortableDrag } from '@/components/shared/use-sortable-drag';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
+import { resolveAgentMeta } from '@/config/agents';
 import { applyStoredAgentOrder, sortAgentsForManagePage } from '@/lib/agent-visibility';
 import { applyAgentUpdates, checkAgentUpdates } from '@/lib/api/agent';
 import { StorageKey } from '@/lib/ui-preferences';
@@ -317,6 +318,7 @@ export default function AgentsPage() {
                   sortHandle={canReorder ? (
                     <SortHandle
                       id={a.agentId}
+                      color={resolveAgentMeta(a.agentId).color}
                       onDragStartId={onDragStartId}
                       onMoveNeighbor={moveNeighbor}
                     />
