@@ -19,7 +19,6 @@ import {
   ticketIdFor,
   type TicketView,
 } from '@/lib/api/tickets';
-import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import { OAuthFlowDialog } from '@/components/connect/OAuthFlowDialog';
 import {
   buildResumeConnectUrl,
@@ -28,11 +27,8 @@ import {
   readConnectGuide,
   type ConnectGuide,
 } from '@/lib/connect-flow/connect-intent';
-import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
-import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import {
   accountsForAgent,
-  getConnectionPoolSnapshot,
   getTicketWalletSnapshot,
   providersForAgent,
   useConnectionPool,
@@ -61,11 +57,10 @@ import {
   ticketDetailEditLabel,
   type TicketAddKind,
 } from './ticket-wallet-model';
-import { useTicketBindActions } from './use-ticket-route-actions';
 import { useOAuthLoginAgents } from './use-oauth-login-agents';
 import { useConnectionImportProbe } from './use-connection-import-probe';
 import { useConnectionPageActions } from './use-connection-page-actions';
-import { useConnectionShareRoute } from './use-connection-share-route';
+import { useTicketPoolImport } from './use-ticket-pool-import';
 import {
   deleteConnectionDialogDescription,
   liveAuthCoexistenceNotice,
@@ -103,15 +98,11 @@ import type { Account, Provider } from '@/lib/types';
 type ConnectionInspect =
   | { kind: 'provider'; agentId: AgentId; mode: 'add' | 'edit'; provider: Provider | null }
   | { kind: 'account'; agentId: AgentId; account: Account | null }
-  | { kind: 'detail'; ticketId: string }
-  | { kind: 'connect'; entry: Extract<ConnectFlowEntry, { mode: 'for-source' }> };
+  | { kind: 'detail'; ticketId: string };
 
 function inspectActiveTicketId(target: ConnectionInspect | null): string | null {
   if (!target) return null;
   if (target.kind === 'detail') return target.ticketId;
-  if (target.kind === 'connect') {
-    return ticketIdFor(target.entry.source.kind, target.entry.source.id);
-  }
   if (target.kind === 'provider' && target.mode === 'edit' && target.provider) {
     return ticketIdFor('provider', target.provider.id);
   }
@@ -166,7 +157,6 @@ export default function ConnectionsPage() {
   } = useTicketWallet();
   const walletLoading =
     (walletState === 'idle' || walletState === 'loading') && wallet == null;
-  const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
 
   /** Agent context for add/import dialogs (deep-link or picker). */
   const [addAgentId, setAddAgentId] = useState<AgentId>(
@@ -272,25 +262,6 @@ export default function ConnectionsPage() {
 
   const poolReload = pool.reload;
 
-  const handleConnectionChanged = useCallback(async () => {
-    const walletOk = await loadWallet();
-    const [, statusesOk] = await Promise.all([
-      poolReload().catch(() => {}),
-      Promise.resolve(reload()).then(
-        () => true,
-        () => false,
-      ),
-    ]);
-    const poolSnapshot = getConnectionPoolSnapshot();
-    const poolOk =
-      poolSnapshot.state === 'ready'
-      && !poolSnapshot.errors.accounts
-      && !poolSnapshot.errors.providers;
-    if (!walletOk || !poolOk || !statusesOk) {
-      throw new Error(t('connections.page.refreshFailed'));
-    }
-  }, [loadWallet, poolReload, reload, t]);
-
   useEffect(() => {
     const allowed = installedIds.length > 0 || !loading ? installedIds : visibleIds;
     const guide = readConnectGuide(searchParams, allowed);
@@ -340,11 +311,7 @@ export default function ConnectionsPage() {
     if (resume) navigate(buildResumeConnectUrl(resume));
   }, [navigate, pendingGuide, resumeAgentId]);
 
-  const { handleShareTicket, handleRouteTicket } = useConnectionShareRoute({
-    inspectTarget: inspect.target,
-    inspectOpen: inspect.open,
-    setLoginImportOpen,
-  });
+  const { importActionForTicket, handleImportToPool, importingTicketId } = useTicketPoolImport({ t });
 
   const handleRefreshTicket = useCallback(async (ticket: TicketView) => {
     if (refreshInFlightRef.current) return;
@@ -433,16 +400,6 @@ export default function ConnectionsPage() {
       if (refreshGen.current === generation) setRefreshingTicketId(null);
     }
   }, [loadWallet, pool.accounts, pool.providers, poolReload, t, toast]);
-
-  const { shareActionForTicket, routeActionForTicket } = useTicketBindActions({
-    tickets: visibleWallet?.tickets ?? [],
-    accounts: pool.accounts,
-    providers: pool.providers,
-    hiddenIds: omittedIds,
-    poolReady: pool.state === 'ready' || pool.state === 'partial',
-    deps: connectDeps,
-    t,
-  });
 
   const extrasForTicket = useCallback(
     (ticket: TicketView) => {
@@ -694,16 +651,6 @@ export default function ConnectionsPage() {
           : undefined}
         onOpenChange={(next) => { if (!next) inspect.close(); }}
       />
-    ) : inspectTarget?.kind === 'connect' ? (
-      <ConnectFlowDialog
-        asPanel
-        width={inspect.paneWidth}
-        entry={inspectTarget.entry}
-        deps={connectDeps}
-        onClose={() => inspect.close()}
-        onConnectionChanged={handleConnectionChanged}
-        onNavigate={(to) => navigate(to)}
-      />
     ) : null;
 
   const trashDock = (
@@ -873,12 +820,11 @@ export default function ConnectionsPage() {
             loading={walletLoading}
             highlightAgentId={highlightAgentId}
             agentFilterId={filterAgent === 'all' ? null : filterAgent}
-            onShareTicket={handleShareTicket}
-            onRouteTicket={handleRouteTicket}
-            shareActionForTicket={shareActionForTicket}
-            routeActionForTicket={routeActionForTicket}
+            onImportToPool={(ticket) => void handleImportToPool(ticket)}
+            importActionForTicket={importActionForTicket}
             onSwitchTicket={handleSwitchTicket}
             switchingTicketId={switchingTicketId}
+            importingTicketId={importingTicketId}
             extrasForTicket={extrasForTicket}
             onEditTicket={handleEditTicket}
             onDeleteTicket={setDeleteTicket}

@@ -1,12 +1,11 @@
 /**
  * Global ticket wallet list UI (Connections).
- * Data from listTicketWallet; per-row 用到其他工具 / 本机转发 for true tickets.
+ * Data from listTicketWallet; per-row 分享至连接池 for true tickets.
  * Click the card to open details in the workbench inspect pane; edit stays a button.
  */
 import * as React from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Cable,
   ChevronDown,
   ChevronRight,
   CircleUser,
@@ -465,10 +464,9 @@ function TicketRow({
   extras,
   switchingId,
   nativeSwitch,
-  onShare,
-  onRoute,
-  shareAction,
-  routeAction,
+  onImportToPool,
+  importAction,
+  importingId,
   onSwitch,
   onEdit,
   onShowDetail,
@@ -480,10 +478,9 @@ function TicketRow({
   extras: TicketDetailExtras | null;
   switchingId: string | null;
   nativeSwitch: boolean;
-  onShare: (ticket: TicketView) => void;
-  onRoute: (ticket: TicketView) => void;
-  shareAction: TicketBindAction;
-  routeAction: TicketBindAction;
+  onImportToPool: (ticket: TicketView) => void;
+  importAction: TicketBindAction;
+  importingId: string | null;
   onSwitch?: (ticket: TicketView) => void;
   onEdit: (ticket: TicketView) => void;
   onShowDetail?: (ticket: TicketView) => void;
@@ -502,6 +499,16 @@ function TicketRow({
   });
   const switching = switchingId === ticket.id;
   const switchBusy = switchingId !== null;
+  const importing = importingId === ticket.id;
+  const importBusy = importingId !== null;
+  const importDisabled = importAction.disabled || importBusy;
+  const importReason = importing
+    ? t('connections.list.importingToPool')
+    : importBusy
+      ? t('connections.list.importToPoolBusy')
+      : importAction.disabled
+        ? importAction.reason
+        : undefined;
   const title = ticketCardTitle(ticket, extras);
 
   return (
@@ -572,20 +579,13 @@ function TicketRow({
               </DisabledReasonButton>
             ) : null}
             <DisabledReasonButton
-              disabled={shareAction.disabled}
-              reason={shareAction.disabled ? shareAction.reason : undefined}
-              ariaLabel={t('connections.list.share')}
-              onClick={() => onShare(ticket)}
+              disabled={importDisabled}
+              reason={importReason}
+              ariaLabel={t('connections.list.importToPool')}
+              onClick={() => onImportToPool(ticket)}
             >
-              <Share2 className="h-3.5 w-3.5" /> {t('connections.list.share')}
-            </DisabledReasonButton>
-            <DisabledReasonButton
-              disabled={routeAction.disabled}
-              reason={routeAction.disabled ? routeAction.reason : undefined}
-              ariaLabel={t('connections.list.route')}
-              onClick={() => onRoute(ticket)}
-            >
-              <Cable className="h-3.5 w-3.5" /> {t('connections.list.route')}
+              <Share2 className="h-3.5 w-3.5" />
+              {importing ? t('connections.list.importingToPool') : t('connections.list.importToPool')}
             </DisabledReasonButton>
             {editLabel ? (
               <Button size="sm" variant="outline" onClick={() => onEdit(ticket)}>
@@ -742,12 +742,11 @@ export function TicketWalletList({
   loading,
   highlightAgentId,
   agentFilterId = null,
-  onShareTicket,
-  onRouteTicket,
-  shareActionForTicket,
-  routeActionForTicket,
+  onImportToPool,
+  importActionForTicket,
   onSwitchTicket,
   switchingTicketId,
+  importingTicketId,
   extrasForTicket,
   onEditTicket,
   onShowDetail,
@@ -763,12 +762,11 @@ export function TicketWalletList({
   loading?: boolean;
   highlightAgentId?: AgentId | null;
   agentFilterId?: AgentId | null;
-  onShareTicket: (ticket: TicketView) => void;
-  onRouteTicket: (ticket: TicketView) => void;
-  shareActionForTicket?: (ticket: TicketView) => TicketBindAction;
-  routeActionForTicket?: (ticket: TicketView) => TicketBindAction;
+  onImportToPool: (ticket: TicketView) => void;
+  importActionForTicket?: (ticket: TicketView) => TicketBindAction;
   onSwitchTicket?: (ticket: TicketView) => void;
   switchingTicketId?: string | null;
+  importingTicketId?: string | null;
   extrasForTicket?: (ticket: TicketView) => TicketDetailExtras | null;
   onEditTicket: (ticket: TicketView) => void;
   onDeleteTicket: (ticket: TicketView) => void;
@@ -876,10 +874,9 @@ export function TicketWalletList({
                   extras={extrasForTicket?.(row.ticket) ?? null}
                   switchingId={switchingTicketId ?? null}
                   nativeSwitch={showsNativeSwitch(row.ticket.agentId, agentFilterId)}
-                  onShare={onShareTicket}
-                  onRoute={onRouteTicket}
-                  shareAction={shareActionForTicket?.(row.ticket) ?? { disabled: false }}
-                  routeAction={routeActionForTicket?.(row.ticket) ?? { disabled: false }}
+                  onImportToPool={onImportToPool}
+                  importAction={importActionForTicket?.(row.ticket) ?? { disabled: false }}
+                  importingId={importingTicketId ?? null}
                   onSwitch={onSwitchTicket}
                   onEdit={onEditTicket}
                   onShowDetail={onShowDetail}
