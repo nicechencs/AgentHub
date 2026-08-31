@@ -85,26 +85,23 @@ describe('connections layout wiring', () => {
     expect(page).toContain('inspectActiveTicketId');
   });
 
-  it('opens 用到其他工具 / 本机转发 in the same right-hand inspect pane', () => {
+  it('imports a login to the connection pool from the row action', () => {
     const page = source('index.tsx');
-    const shareRoute = source('use-connection-share-route.ts');
-    expect(page).toContain("{ kind: 'connect'");
-    expect(shareRoute).toContain("{ kind: 'connect'");
-    expect(shareRoute).toContain("openConnectForTicket(ticket, 'share')");
-    expect(shareRoute).toContain("openConnectForTicket(ticket, 'route')");
-    expect(page).toContain('asPanel');
-    expect(page).toContain('<ConnectFlowDialog');
-    expect(page).not.toContain('const [connectEntry');
-    expect(page).toContain("inspectTarget?.kind === 'connect'");
-    expect(page).toContain('useConnectionShareRoute');
-    expect(page).toContain('onShareTicket={handleShareTicket}');
-    expect(page).toContain('onRouteTicket={handleRouteTicket}');
-    const openerStart = shareRoute.indexOf('const openConnectForTicket');
-    const openerEnd = shareRoute.indexOf('const handleShareTicket', openerStart);
-    expect(openerStart).toBeGreaterThanOrEqual(0);
-    expect(openerEnd).toBeGreaterThan(openerStart);
-    expect(shareRoute.slice(openerStart, openerEnd)).not.toContain('inspect.close()');
-    expect(shareRoute).not.toContain('inspect.close()');
+    const list = source('TicketWalletList.tsx');
+    expect(page).toContain('useTicketPoolImport');
+    expect(page).toContain('onImportToPool=');
+    expect(page).toContain('importActionForTicket={importActionForTicket}');
+    expect(page).toContain('importingTicketId={importingTicketId}');
+    expect(page).not.toContain('useConnectionShareRoute');
+    expect(page).not.toContain('onShareTicket');
+    expect(page).not.toContain('onRouteTicket');
+    expect(page).not.toContain('<ConnectFlowDialog');
+    expect(page).not.toContain("{ kind: 'connect'");
+    expect(list).toContain("t('connections.list.importToPool')");
+    expect(list).toContain('<Share2');
+    expect(list).not.toContain('<Import');
+    expect(list).not.toContain("t('connections.list.share')");
+    expect(list).not.toContain("t('connections.list.route')");
   });
 
   it('opens ticket detail without toggling closed on a second click of the same card', () => {
