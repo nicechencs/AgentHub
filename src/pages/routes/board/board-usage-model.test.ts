@@ -13,8 +13,10 @@ import {
   profileToEntryIdMap,
   rememberBoardUsageFilters,
   deriveBoardGroupBy,
+  poolSurfaceToUsageSurface,
   seriesKeyForRow,
   summarizeGatewayUsage,
+  usageSurfaceToPoolSurface,
 } from './board-usage-model';
 
 function row(partial: Partial<GatewayUsageRow> & Pick<GatewayUsageRow, 'requestId' | 'ts' | 'profileId'>): GatewayUsageRow {
@@ -43,10 +45,22 @@ afterEach(() => {
 });
 
 describe('deriveBoardGroupBy', () => {
-  it('groups by local route when all entries are selected, otherwise by model', () => {
-    expect(deriveBoardGroupBy('all')).toBe('entry');
-    expect(deriveBoardGroupBy('')).toBe('entry');
+  it('groups by endpoint type when all types are selected, otherwise by model', () => {
+    expect(deriveBoardGroupBy('all')).toBe('surface');
+    expect(deriveBoardGroupBy('')).toBe('surface');
+    expect(deriveBoardGroupBy('all', 'responses')).toBe('model');
     expect(deriveBoardGroupBy('p1')).toBe('model');
+  });
+});
+
+describe('pool / usage surface mapping', () => {
+  it('maps chat_completions to the gateway capture op', () => {
+    expect(poolSurfaceToUsageSurface('all')).toBe('all');
+    expect(poolSurfaceToUsageSurface('messages')).toBe('messages');
+    expect(poolSurfaceToUsageSurface('responses')).toBe('responses');
+    expect(poolSurfaceToUsageSurface('chat_completions')).toBe('chat');
+    expect(usageSurfaceToPoolSurface('chat')).toBe('chat_completions');
+    expect(usageSurfaceToPoolSurface('all')).toBe('all');
   });
 });
 
@@ -80,6 +94,30 @@ describe('buildBoardUsageEntries', () => {
       new Set(['cursor']),
     );
     expect(entries).toEqual([]);
+  });
+
+  it('groups usage onto connection-pool entries and keeps leftover listeners', () => {
+    const entries = buildBoardUsageEntries(
+      [
+        profile('bridge-1', 'acc-1', 'codex', 'Codex bridge'),
+        profile('orphan', 'other', 'grok', 'Grok'),
+      ],
+      new Set(),
+      [{
+        id: 'pool-codex',
+        targetAgentId: 'codex',
+        surface: 'responses',
+        dialect: 'codex',
+        v2Enrolled: false,
+        members: [{ sourceKind: 'provider', sourceId: 'acc-1', enabled: true }],
+        listedModels: [],
+      }],
+    );
+    expect(entries.map((entry) => entry.id).sort()).toEqual(['orphan', 'pool-codex']);
+    expect(entries.find((entry) => entry.id === 'pool-codex')?.profileIds.sort()).toEqual([
+      'bridge-1',
+      'pool-codex',
+    ]);
   });
 });
 

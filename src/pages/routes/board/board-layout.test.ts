@@ -16,9 +16,15 @@ describe('routes board layout wiring', () => {
   it('keeps fleet health on the page and usage charts in the usage section', () => {
     const page = source('index.tsx');
     expect(page).toContain('BoardUsageSection');
-    expect(page).toContain('boardFleetSummary');
-    expect(page).toContain('BoardRouteCard');
+    expect(page).toContain('buildBoardEndpointTypeRows');
+    expect(page).toContain('BoardEndpointCard');
+    expect(page).toContain('useRoutePoolState');
+    expect(page).toContain('defaultPools');
+    expect(page).toContain('endpointLoginsHint');
+    expect(page).not.toContain('AgentLogo');
     expect(page).not.toContain('recharts');
+    expect(page).toContain('routes.board.refresh');
+    expect(source('board-usage-section.tsx')).not.toContain('routes.board.refresh');
   });
 
   it('plots overlay usage series in resolved hex, not a stacked CSS-var area', () => {
@@ -33,25 +39,35 @@ describe('routes board layout wiring', () => {
     expect(section).not.toContain('stopColor={meta.color}');
   });
 
-  it('groups local-forwarding usage like 总览: overlay by local route, then by model', () => {
+  it('uses shared endpoint colors: messages=Claude, OpenAI-family=Codex, never Grok black', () => {
+    const section = source('board-usage-section.tsx');
+    expect(section).toContain('routeEndpointTypeColor');
+    expect(section).not.toContain('--agent-grok');
+    expect(source('index.tsx')).toContain('RouteEndpointTypeText');
+  });
+
+  it('groups local-forwarding usage like 总览: overlay by endpoint type, then by model', () => {
     const section = source('board-usage-section.tsx');
     expect(source('use-board-usage.ts')).toContain('gatewayUsageQuery');
     expect(section).toContain('routes.board.allEntries');
-    expect(section).toContain('routes.board.allSurfaces');
     expect(section).toContain('dashboard.page.allModels');
     expect(section).toContain('deriveBoardGroupBy');
+    expect(section).toContain('distBySurface');
+    expect(section).toContain('pools');
     expect(section).not.toContain('SegmentedControl');
     expect(section).not.toContain('dashboard.page.allAgents');
     expect(section).not.toContain('dashboard.page.distByAgent');
+    expect(section).not.toContain('routes.board.allSurfaces');
     expect(section).toContain('rememberedBoardUsageFilters');
     expect(section).toContain('rememberBoardUsageFilters');
   });
 
-  it('does not drop route start/stop while adding charts', () => {
+  it('does not list writer agents as the top cards', () => {
     const page = source('index.tsx');
-    expect(page).toContain('handleStartBridge');
-    expect(page).toContain('setStopConfirm');
-    expect(page).toContain('BoardRouteCard');
+    expect(page).toContain('BoardEndpointCard');
+    expect(page).not.toContain('handleStartBridge');
+    expect(page).not.toContain('BoardRouteCard');
+    expect(page).not.toContain('targetAgentId');
   });
 });
 
