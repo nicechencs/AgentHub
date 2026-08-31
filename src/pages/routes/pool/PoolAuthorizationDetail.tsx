@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react';
+import { RefreshCw, Trash2 } from 'lucide-react';
 import { agentDisplayName } from '@/config/agents';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
@@ -7,7 +7,9 @@ import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import type { AccountAction } from '@/lib/backend/contracts/account-actions';
 import { connectionKindLabel } from '@/lib/connection-kind';
+import { cn } from '@/lib/utils';
 import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
 import {
   poolAuthorizationStatusView,
@@ -17,12 +19,16 @@ import {
   hasQuotaWindow,
   poolAuthorizationDetailRows,
 } from './pool-authorization-detail';
+import { poolAuthorizationRefreshLabels } from './pool-authorization-refresh';
 
 export function PoolAuthorizationDetail({
   item,
   width,
   toggling,
+  refreshing,
+  oauthAction,
   onEnabledChange,
+  onRefresh,
   onDelete,
   onEdit,
   onClose,
@@ -30,7 +36,10 @@ export function PoolAuthorizationDetail({
   item: PoolAuthorizationItem;
   width?: number;
   toggling?: boolean;
+  refreshing?: boolean;
+  oauthAction?: AccountAction;
   onEnabledChange?: (enabled: boolean) => void;
+  onRefresh?: () => void;
   onDelete: () => void;
   onEdit?: () => void;
   onClose: () => void;
@@ -43,6 +52,7 @@ export function PoolAuthorizationDetail({
   const editLabel = onEdit
     ? (item.kind === 'apikey' ? t('connections.list.editKey') : null)
     : null;
+  const refreshLabels = oauthAction ? poolAuthorizationRefreshLabels(oauthAction, t) : null;
 
   return (
     <SideInspectPanel
@@ -52,6 +62,19 @@ export function PoolAuthorizationDetail({
       width={width}
       headerActions={(
         <>
+          {refreshLabels && onRefresh ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={refreshing}
+              aria-label={refreshLabels.idle}
+              onClick={onRefresh}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+              {refreshing ? refreshLabels.busy : refreshLabels.idle}
+            </Button>
+          ) : null}
           <Button size="sm" variant="dangerOutline" onClick={onDelete}>
             <Trash2 className="h-3.5 w-3.5" /> {t('connections.list.moveToTrash')}
           </Button>
