@@ -11,6 +11,7 @@ import type {
   AdapterProfile,
 } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
+import { connectionKindLabel } from '@/lib/connection-kind';
 import { cn } from '@/lib/utils';
 import { AdapterErrorLines } from '@/pages/bridges/adapter-components';
 import { adapterFailurePresentation } from '@/pages/bridges/adapter-model';
@@ -144,6 +145,9 @@ export function PoolCard({
                   className="flex min-w-0 flex-wrap items-center gap-x-2 text-sm"
                 >
                   <span className="truncate">{member.title}</span>
+                  {member.kind ? (
+                    <span className="text-meta text-muted">{connectionKindLabel(member.kind, t)}</span>
+                  ) : null}
                   <span className="text-meta text-muted">
                     {memberAvailabilityLabel(member.availability, member.enabled, t)}
                   </span>

@@ -54,19 +54,22 @@ import {
 } from '@/pages/bridges/route-inspect';
 import {
   buildPoolWorkbenchRows,
+  collectPoolAuthorizations,
   directProfilesForRoutePoolV2,
   matchDefaultPoolForProfile,
+  mergeOwnedAuthorizationsIntoRows,
 } from '@/pages/bridges/route-pool-view-model';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useBridgeRuntimeActions } from '@/pages/bridges/use-bridge-runtime-actions';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { useOAuthLoginAgents } from '@/pages/connections/use-oauth-login-agents';
 import { PoolAddButtons } from './PoolAddButtons';
+import { PoolAuthorizationList } from './PoolAuthorizationList';
 import { PoolCard } from './PoolCard';
 
 /**
- * 授权池工作台：本机入口、已接入登录、写进客户端、解绑。
- * 登录增删走连接页。
+ * 授权池工作台：本机入口、这里接入的 OAuth/API、写进客户端、解绑。
+ * 连接页的登录只有同步或接到工具后才会出现在这里。
  */
 export default function RoutesPoolPage() {
   const { t } = useI18n();
@@ -157,13 +160,20 @@ export default function RoutesPoolPage() {
     [orphan, bridgeStatuses],
   );
   const rows = useMemo(
-    () => buildPoolWorkbenchRows({
-      flagOn: routePoolV2,
-      pools: defaultPools,
-      profiles: bound,
-      statuses: bridgeStatuses,
-    }),
-    [bound, bridgeStatuses, defaultPools, routePoolV2],
+    () => mergeOwnedAuthorizationsIntoRows(
+      buildPoolWorkbenchRows({
+        flagOn: routePoolV2,
+        pools: defaultPools,
+        profiles: bound,
+        statuses: bridgeStatuses,
+      }),
+      entries,
+    ),
+    [bound, bridgeStatuses, defaultPools, entries, routePoolV2],
+  );
+  const authorizations = useMemo(
+    () => collectPoolAuthorizations(defaultPools, entries),
+    [defaultPools, entries],
   );
   const orphanIds = useMemo(
     () => new Set(groupedOrphan.map((profile) => profile.id)),
@@ -202,8 +212,11 @@ export default function RoutesPoolPage() {
     bridgeStatuses,
     t,
   );
-  const orphanOnly = visibleRows.length === 0 && groupedOrphan.length > 0;
-  const hasContent = visibleRows.length > 0 || groupedOrphan.length > 0 || directProfiles.length > 0;
+  const orphanOnly = visibleRows.length === 0 && groupedOrphan.length > 0 && authorizations.length === 0;
+  const hasContent = visibleRows.length > 0
+    || groupedOrphan.length > 0
+    || directProfiles.length > 0
+    || authorizations.length > 0;
   const pageView = bridgesPageViewState({
     profileState: loading && profileState !== 'error' ? 'loading' : profileState,
     bound: visibleRows,
@@ -238,7 +251,7 @@ export default function RoutesPoolPage() {
       inspect.open({ kind: 'detail', profile });
     },
     activeProfileId,
-    onRetry: () => { void reload(); },
+    onRetry: reloadAll,
     hiddenTargetIds,
     siblingProfiles: profiles,
   };
@@ -273,7 +286,7 @@ export default function RoutesPoolPage() {
         localToken={bridgeStatuses[writeTarget.profile.id]?.localToken}
         siblingProfiles={profiles}
         hiddenTargetIds={hiddenTargetIds}
-        onWritten={() => { void reload(); }}
+        onWritten={reloadAll}
       />
     ) : inspectTarget?.kind === 'edit' && editTarget ? (
       <EditRouteDialog
@@ -284,7 +297,7 @@ export default function RoutesPoolPage() {
         profile={editTarget}
         entries={entries}
         busy={busyProfileIds[editTarget.id] === true}
-        onSaved={() => { void reload(); }}
+        onSaved={reloadAll}
         onRequestDelete={setRemoveConfirm}
       />
     ) : inspectTarget?.kind === 'detail' && detailTarget ? (
@@ -368,14 +381,14 @@ export default function RoutesPoolPage() {
             <ErrorState
               title={t('routes.loadError')}
               error={resourceErrors.profiles ?? new Error(t('routes.loadError'))}
-              onRetry={() => { void reload(); }}
+              onRetry={reloadAll}
             />
           ) : null}
-          {pageView === 'wallet_without_runtime' ? (
+          {pageView === 'wallet_without_runtime' && !hasContent ? (
             <ErrorState
               title={t('routes.walletWithoutRuntime.title')}
               error={new Error(t('routes.walletWithoutRuntime.description'))}
-              onRetry={() => { void reload(); }}
+              onRetry={reloadAll}
             />
           ) : null}
           {pageView === 'healthy_empty' && !hasContent ? (
@@ -385,8 +398,16 @@ export default function RoutesPoolPage() {
               description={t('routes.pool.page.emptyDescription')}
             />
           ) : null}
-          {pageView === 'list' || (pageView === 'healthy_empty' && hasContent) ? (
+          {pageView === 'list' || (hasContent && pageView !== 'loading' && pageView !== 'list_error') ? (
             <>
+              {authorizations.length > 0 ? (
+                <PageSection
+                  first
+                  title={t('routes.pool.page.authorizationsTitle')}
+                >
+                  <PoolAuthorizationList items={authorizations} />
+                </PageSection>
+              ) : null}
               {visibleRows.length > 0 ? (
                 <div className="space-y-2">
                   {visibleRows.map((row) => {
@@ -441,7 +462,7 @@ export default function RoutesPoolPage() {
               ) : null}
               {directProfiles.length > 0 ? (
                 <PageSection
-                  first={visibleRows.length === 0 && groupedOrphan.length === 0}
+                  first={visibleRows.length === 0 && groupedOrphan.length === 0 && authorizations.length === 0}
                   title={t('routes.direct.title')}
                   description={t('routes.direct.description')}
                 >

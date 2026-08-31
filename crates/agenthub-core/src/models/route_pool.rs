@@ -350,6 +350,14 @@ pub struct DefaultRoutePoolOverview {
     pub listed_models: Vec<String>,
 }
 
+/// How many connection-page authorizations were enrolled into default pools.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConnectionAuthorizationsResult {
+    pub added: u32,
+    pub skipped: u32,
+}
+
 /// Flag-gated list of default pools. Flag off → `enabled=false` and no pools.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

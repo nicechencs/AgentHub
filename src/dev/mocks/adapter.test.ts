@@ -168,6 +168,56 @@ describe('mock adapter projection', () => {
     expect(JSON.stringify(enrolled)).not.toContain('ahb_');
   });
 
+  it('attaches a provider to the default auth pool without listing it as a connection ticket', async () => {
+    const sourceId = `codex-pool-${Date.now()}-${Math.random()}`;
+    await createMockProviderPort().upsertProvider({
+      id: sourceId,
+      agentId: 'codex',
+      name: 'Codex API',
+      preset: 'custom',
+      configText: 'api_key = "must-not-leak"',
+      configFormat: 'toml',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    const overview = await adapter.attachPoolOwnedAuthorization({
+      sourceKind: 'provider',
+      sourceId,
+      targetAgentId: 'codex',
+      surface: 'responses',
+    });
+    expect(overview.targetAgentId).toBe('codex');
+    expect(overview.surface).toBe('responses');
+    expect(overview.members).toEqual([
+      expect.objectContaining({ sourceKind: 'provider', sourceId, enabled: true }),
+    ]);
+    expect(getMockProviderById(sourceId)?.home).toBe('route_pool');
+    expect(JSON.stringify(overview)).not.toContain('must-not-leak');
+  });
+
+  it('syncs Connections authorizations into the default pool without hiding them', async () => {
+    const sourceId = `codex-conn-${Date.now()}-${Math.random()}`;
+    await createMockProviderPort().upsertProvider({
+      id: sourceId,
+      agentId: 'codex',
+      name: 'Connection API',
+      preset: 'custom',
+      configText: 'api_key = "must-not-leak"',
+      configFormat: 'toml',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    const first = await adapter.syncConnectionAuthorizations();
+    expect(first.added).toBeGreaterThan(0);
+    const listed = await adapter.listDefaultRoutePools();
+    expect(listed.pools.some((pool) => (
+      pool.members.some((member) => member.sourceId === sourceId)
+    ))).toBe(true);
+    expect(getMockProviderById(sourceId)?.home).not.toBe('route_pool');
+    const second = await adapter.syncConnectionAuthorizations();
+    expect(second.added).toBe(0);
+  });
+
   it('removes the active generated Connection and its provider', async () => {
     const sourceId = `kimi-remove-${Date.now()}-${Math.random()}`;
     await createMockProviderPort().upsertProvider({

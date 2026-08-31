@@ -3,12 +3,15 @@ import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/con
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import {
   buildPoolWorkbenchRows,
+  collectPoolAuthorizations,
   defaultPoolEntryUrl,
   directProfilesForRoutePoolV2,
   leadProfileForPool,
   localBridgesNotInPools,
   matchDefaultPoolForProfile,
+  mergeOwnedAuthorizationsIntoRows,
   nativeEnrollCtaVisible,
+  poolSurfaceForAgent,
   routePoolMemberLabels,
   routePoolMembersSectionVisible,
   routePoolSurfaceLabel,
@@ -80,6 +83,7 @@ describe('route pool v2 view-model', () => {
         availability: undefined,
         sourceKind: 'provider',
         sourceId: 'kimi-1',
+        kind: undefined,
       },
     ]);
     expect(JSON.stringify(overview)).not.toContain('hubToken');
@@ -185,5 +189,60 @@ describe('route pool v2 view-model', () => {
       [pool()],
       profile({ id: 'other', sourceId: 'other-src', targetAgentId: 'claude' }),
     )).toBeNull();
+  });
+
+  it('lists oauth and api authorizations from pool members and pool-owned entries', () => {
+    const oauth = {
+      source: 'account' as const,
+      id: 'oauth-1',
+      title: 'Codex login',
+      agentId: 'codex' as const,
+      kind: 'oauth' as const,
+      account: { home: 'route_pool' as const },
+    } as ConnectionEntry;
+    const api = {
+      source: 'provider' as const,
+      id: 'api-1',
+      title: 'Codex API',
+      agentId: 'codex' as const,
+      kind: 'apikey' as const,
+    } as ConnectionEntry;
+    const items = collectPoolAuthorizations([
+      pool({
+        members: [
+          { sourceKind: 'account', sourceId: 'oauth-1', enabled: true },
+          { sourceKind: 'provider', sourceId: 'api-1', enabled: true },
+        ],
+      }),
+    ], [oauth, api]);
+    expect(items.map((item) => [item.kind, item.title, item.addedHere])).toEqual([
+      ['oauth', 'Codex login', true],
+      ['apikey', 'Codex API', false],
+    ]);
+  });
+
+  it('folds a pool-owned authorization into a workbench card', () => {
+    const owned = {
+      source: 'provider' as const,
+      id: 'pool-api',
+      title: 'Pool API',
+      agentId: 'codex' as const,
+      kind: 'apikey' as const,
+      provider: { home: 'route_pool' as const },
+    } as ConnectionEntry;
+    const merged = mergeOwnedAuthorizationsIntoRows(
+      buildPoolWorkbenchRows({ flagOn: true, pools: [pool({ members: [] })], profiles: [] }),
+      [owned],
+    );
+    expect(merged[0]?.pool?.members).toEqual([
+      { sourceKind: 'provider', sourceId: 'pool-api', enabled: true },
+    ]);
+  });
+
+  it('maps each Agent to its default local entry surface', () => {
+    expect(poolSurfaceForAgent('claude')).toBe('messages');
+    expect(poolSurfaceForAgent('codex')).toBe('responses');
+    expect(poolSurfaceForAgent('kimi')).toBe('chat_completions');
+    expect(poolSurfaceForAgent('pi')).toBeNull();
   });
 });

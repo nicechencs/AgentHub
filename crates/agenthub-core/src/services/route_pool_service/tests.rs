@@ -1,13 +1,13 @@
 use crate::models::{
-    authorization_is_route_pool_home, enroll_native_plan_is_open, AdapterApplyPlan, AdapterGateKind,
-    AdapterMaturity, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath,
-    AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport,
-    AgentId, Provider, RouteDownstreamSurface, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
-    FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
-    FEATURE_ROUTE_POOL_V2,
+    authorization_is_route_pool_home, enroll_native_plan_is_open, Account, AccountKind,
+    AdapterApplyPlan, AdapterGateKind, AdapterMaturity, AdapterProfile, AdapterProfileMode,
+    AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
+    AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId, Provider,
+    RouteDownstreamSurface, FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 use crate::services::RoutePoolService;
-use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
+use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 use serde_json::json;
 
 fn tmp() -> (
@@ -619,6 +619,65 @@ fn attach_pool_owned_authorization_reuses_existing_default_pool() {
         .members
         .iter()
         .any(|member| member.source_id == "codex-api"));
+}
+
+#[test]
+fn sync_connection_authorizations_enrolls_connection_logins_without_hiding_them() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "conn-codex".into(),
+            agent_id: AgentId::Codex,
+            name: "Connection API".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "conn-oauth".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::Oauth,
+            label: "Claude login".into(),
+            credentials: json!({"format": "auth_json", "tokens": {"access_token": "x"}}),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "pool-only".into(),
+            agent_id: AgentId::Grok,
+            name: "Pool API".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom", "home": "route_pool"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let result = service.sync_connection_authorizations().unwrap();
+    assert_eq!(result.added, 2);
+    assert!(result.skipped >= 1);
+    let listed = service.list_default_overviews().unwrap();
+    let members: Vec<_> = listed
+        .pools
+        .iter()
+        .flat_map(|pool| pool.members.iter().map(|member| member.source_id.as_str()))
+        .collect();
+    assert!(members.contains(&"conn-codex"));
+    assert!(members.contains(&"conn-oauth"));
+    assert!(!members.contains(&"pool-only"));
+    let stored = ProviderRepo::new(db).get_by_id("conn-codex").unwrap().unwrap();
+    assert!(!authorization_is_route_pool_home(&stored.meta));
+    let again = service.sync_connection_authorizations().unwrap();
+    assert_eq!(again.added, 0);
 }
 
 #[test]

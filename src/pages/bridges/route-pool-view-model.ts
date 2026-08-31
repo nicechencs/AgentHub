@@ -4,11 +4,15 @@
 import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
+  AdapterSourceKind,
   DefaultRoutePoolOverview,
   RouteMemberOverview,
+  RoutePoolDialect,
   RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
+import type { ConnectionKind } from '@/lib/connection-kind';
+import type { AgentId } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import { groupLocalBridgeProfiles } from './adapter-view-model';
 
@@ -88,13 +92,14 @@ export function groupRouteProfilesBySource<T extends AdapterProfile>(
 
 export function routePoolMemberLabels(
   members: readonly RouteMemberOverview[],
-  entries: readonly Pick<ConnectionEntry, 'source' | 'id' | 'title'>[],
+  entries: readonly Pick<ConnectionEntry, 'source' | 'id' | 'title' | 'kind'>[],
 ): {
   title: string;
   enabled: boolean;
   availability?: RouteMemberOverview['availability'];
   sourceKind: RouteMemberOverview['sourceKind'];
   sourceId: string;
+  kind?: ConnectionKind;
 }[] {
   return members.map((member) => {
     const match = entries.find(
@@ -106,8 +111,143 @@ export function routePoolMemberLabels(
       availability: member.availability,
       sourceKind: member.sourceKind,
       sourceId: member.sourceId,
+      kind: match?.kind,
     };
   });
+}
+
+export function poolSurfaceForAgent(agentId: AgentId): RoutePoolSurface | null {
+  if (agentId === 'claude') return 'messages';
+  if (agentId === 'codex' || agentId === 'grok') return 'responses';
+  if (agentId === 'kimi' || agentId === 'dsh') return 'chat_completions';
+  return null;
+}
+
+function poolDialectForAgent(agentId: AgentId): RoutePoolDialect {
+  if (
+    agentId === 'claude'
+    || agentId === 'codex'
+    || agentId === 'grok'
+    || agentId === 'kimi'
+    || agentId === 'dsh'
+  ) {
+    return agentId;
+  }
+  return 'generic';
+}
+
+function entryHome(entry: Pick<ConnectionEntry, 'account' | 'provider'>): 'route_pool' | undefined {
+  return entry.account?.home ?? entry.provider?.home;
+}
+
+export type PoolAuthorizationItem = {
+  key: string;
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+  agentId: AgentId;
+  title: string;
+  kind: ConnectionKind;
+  surface: RoutePoolSurface | null;
+  addedHere: boolean;
+};
+
+/** Every OAuth / API authorization visible on the auth-pool page. */
+export function collectPoolAuthorizations(
+  pools: readonly DefaultRoutePoolOverview[],
+  entries: readonly ConnectionEntry[],
+): PoolAuthorizationItem[] {
+  const items = new Map<string, PoolAuthorizationItem>();
+  const entryBySource = new Map(
+    entries.map((entry) => [`${entry.source}:${entry.id}`, entry] as const),
+  );
+  for (const pool of pools) {
+    for (const member of pool.members) {
+      const key = `${member.sourceKind}:${member.sourceId}`;
+      const match = entryBySource.get(key);
+      items.set(key, {
+        key,
+        sourceKind: member.sourceKind,
+        sourceId: member.sourceId,
+        agentId: match?.agentId ?? pool.targetAgentId,
+        title: match?.title?.trim() || member.sourceId,
+        kind: match?.kind ?? (member.sourceKind === 'account' ? 'oauth' : 'apikey'),
+        surface: pool.surface,
+        addedHere: match ? entryHome(match) === 'route_pool' : false,
+      });
+    }
+  }
+  for (const entry of entries) {
+    if (entryHome(entry) !== 'route_pool') continue;
+    const key = `${entry.source}:${entry.id}`;
+    if (items.has(key)) continue;
+    items.set(key, {
+      key,
+      sourceKind: entry.source,
+      sourceId: entry.id,
+      agentId: entry.agentId,
+      title: entry.title.trim() || entry.id,
+      kind: entry.kind,
+      surface: poolSurfaceForAgent(entry.agentId),
+      addedHere: true,
+    });
+  }
+  return [...items.values()].sort((left, right) => {
+    const agent = left.agentId.localeCompare(right.agentId);
+    if (agent !== 0) return agent;
+    if (left.kind !== right.kind) return left.kind === 'oauth' ? -1 : 1;
+    return left.title.localeCompare(right.title) || left.key.localeCompare(right.key);
+  });
+}
+
+/** Fold pool-owned authorizations into workbench cards so they always appear. */
+export function mergeOwnedAuthorizationsIntoRows(
+  rows: PoolWorkbenchRow[],
+  entries: readonly ConnectionEntry[],
+): PoolWorkbenchRow[] {
+  const next = rows.map((row) => (
+    row.pool
+      ? { ...row, pool: { ...row.pool, members: [...row.pool.members] } }
+      : row
+  ));
+  for (const entry of entries) {
+    if (entryHome(entry) !== 'route_pool') continue;
+    const surface = poolSurfaceForAgent(entry.agentId);
+    if (!surface) continue;
+    const member: RouteMemberOverview = {
+      sourceKind: entry.source,
+      sourceId: entry.id,
+      enabled: true,
+    };
+    const existing = next.find((row) => (
+      row.targetAgentId === entry.agentId && row.surface === surface
+    ));
+    if (existing?.pool) {
+      if (!existing.pool.members.some((item) => (
+        item.sourceKind === member.sourceKind && item.sourceId === member.sourceId
+      ))) {
+        existing.pool.members.push(member);
+      }
+      continue;
+    }
+    if (existing) continue;
+    next.push({
+      key: `owned:${entry.agentId}:${surface}`,
+      pool: {
+        id: `owned:${entry.agentId}:${surface}`,
+        targetAgentId: entry.agentId,
+        surface,
+        dialect: poolDialectForAgent(entry.agentId),
+        v2Enrolled: false,
+        members: [member],
+        listedModels: [],
+      },
+      profile: null,
+      targetAgentId: entry.agentId,
+      surface,
+      gatewayPort: null,
+    });
+  }
+  return next;
 }
 
 export function routePoolSurfaceLabel(surface: RoutePoolSurface, t?: TranslateFn): string {

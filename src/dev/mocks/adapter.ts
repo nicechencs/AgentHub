@@ -19,8 +19,8 @@ import { analyze } from './adapter/analyze';
 import { materializeApply } from './adapter/apply';
 import { buildPlan } from './adapter/plan';
 import type { MockAdapterSourceResolver, MockAdapterState } from './adapter/types';
-import { getMockAccountById, upsertMockAccount } from './account';
-import { getMockProviderById, upsertMockProvider } from './provider';
+import { getMockAccountById, listMockAccounts, upsertMockAccount } from './account';
+import { getMockProviderById, listMockProviders, upsertMockProvider } from './provider';
 
 const adapterStates = new Set<MockAdapterState>();
 
@@ -313,6 +313,82 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         members: pool.members.map((member) => ({ ...member })),
         listedModels: [...(pool.listedModels ?? [])],
       };
+    },
+    async syncConnectionAuthorizations() {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      let added = 0;
+      let skipped = 0;
+      const enroll = (
+        agentId: DefaultRoutePoolOverview['targetAgentId'],
+        sourceKind: 'account' | 'provider',
+        sourceId: string,
+        home?: 'route_pool',
+      ) => {
+        if (home === 'route_pool') {
+          skipped += 1;
+          return;
+        }
+        const surface: RoutePoolSurface | null = agentId === 'claude'
+          ? 'messages'
+          : agentId === 'kimi' || agentId === 'dsh'
+            ? 'chat_completions'
+            : agentId === 'codex' || agentId === 'grok'
+              ? 'responses'
+              : null;
+        if (!surface) {
+          skipped += 1;
+          return;
+        }
+        const dialect: RoutePoolDialect =
+          agentId === 'claude'
+          || agentId === 'codex'
+          || agentId === 'grok'
+          || agentId === 'kimi'
+          || agentId === 'dsh'
+            ? agentId
+            : 'generic';
+        let pool = state.defaultPools.find((item) => (
+          item.targetAgentId === agentId && item.surface === surface
+        ));
+        if (!pool) {
+          pool = {
+            id: `pool-${agentId}-${surface}`,
+            targetAgentId: agentId,
+            surface,
+            dialect,
+            v2Enrolled: false,
+            members: [],
+            listedModels: [],
+          };
+          state.defaultPools.push(pool);
+        }
+        if (pool.members.some((member) => (
+          member.sourceKind === sourceKind && member.sourceId === sourceId
+        ))) {
+          skipped += 1;
+          return;
+        }
+        pool.members.push({ sourceKind, sourceId, enabled: true });
+        added += 1;
+      };
+      for (const account of listMockAccounts()) {
+        enroll(account.agentId, 'account', account.id, account.home);
+      }
+      for (const provider of listMockProviders()) {
+        if (state.generatedProviders.has(provider.id)) {
+          skipped += 1;
+          continue;
+        }
+        enroll(provider.agentId, 'provider', provider.id, provider.home);
+      }
+      return { added, skipped };
     },
     async enrollNativeToGateway(profileId) {
       await delay(20);

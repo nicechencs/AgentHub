@@ -190,6 +190,7 @@ export function mapCoreAccount(a: CoreAccount): Account {
     refreshTokenPreview: a.kind === 'oauth' ? pickString(extra.refreshTokenPreview) : undefined,
     secretTail: recoveredSecretTail,
     secretHash: pickString(extra.secretHash),
+    home: extra.home === 'route_pool' ? 'route_pool' : undefined,
     endpoint:
       pickString(extra.endpoint)
       ?? pickString(extra.baseUrl)

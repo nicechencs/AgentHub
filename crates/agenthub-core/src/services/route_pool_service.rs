@@ -3,14 +3,16 @@
 //! start (also default on). Mixed-provider and pair-adapter flags stay
 //! fail-closed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use uuid::Uuid;
 
+use super::adapter_projection::{classify_account_live, generated_provider_is_adapter_owned};
 use super::AdapterRouteService;
 use crate::bridge::BridgeRuntimeHost;
 use crate::error::{AppError, Result};
+use crate::integrations::agents::codex::leftover;
 use crate::models::{
     authorization_is_route_pool_home, choose_default_pool_id, enroll_native_plan_is_open,
     feature_flag_enabled, generate_hub_token, list_local_bridge_models, product_flag_enabled,
@@ -18,8 +20,9 @@ use crate::models::{
     AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId, DefaultRoutePoolList,
     DefaultRoutePoolOverview, ModelRouteRule, RouteDownstreamDialect, RouteDownstreamSurface,
     RouteMember, RouteMemberOverview, RoutePool, RouteSchedulePolicy,
-    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
-    FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    SyncConnectionAuthorizationsResult, FEATURE_CODEX_INGRESS_GROK_UPSTREAM,
+    FEATURE_GROK_INGRESS_CODEX_UPSTREAM, FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2,
+    FEATURE_ROUTE_POOL_V2,
 };
 use crate::storage::{
     binding_get_conn, AccountRepo, AdapterProfileRepo, Database, ProviderRepo, RoutePoolRepo,
@@ -237,7 +240,6 @@ impl RoutePoolService {
         source_id: &str,
     ) -> Result<DefaultRoutePoolOverview> {
         self.require_enabled()?;
-        self.stamp_route_pool_home(target_agent_id, source_kind, source_id)?;
         let pool = self.ensure_default_pool(target_agent_id, surface)?;
         let members = self.pools.list_members(&pool.id)?;
         if !members.iter().any(|member| {
@@ -245,10 +247,91 @@ impl RoutePoolService {
         }) {
             self.add_member(&pool.id, source_kind, source_id)?;
         }
+        self.stamp_route_pool_home(target_agent_id, source_kind, source_id)?;
         let pool = self.pools.get_pool(&pool.id)?.ok_or_else(|| {
             AppError::message("db.route_pool", "pool missing after attach")
         })?;
         self.overview_from_pool(&pool)
+    }
+
+    /// Enroll existing Connections authorizations into the matching default
+    /// pools. Does not hide them from Connections and does not copy secrets.
+    pub fn sync_connection_authorizations(&self) -> Result<SyncConnectionAuthorizationsResult> {
+        self.require_enabled()?;
+        let profiles = self.profiles.list_filtered(&Default::default())?;
+        let providers = self.providers.list(None)?;
+        let accounts = self.accounts.list(None)?;
+        let generated_ids: HashSet<String> = profiles
+            .iter()
+            .filter_map(|profile| profile.generated_provider_id.clone())
+            .collect();
+        let mut added = 0_u32;
+        let mut skipped = 0_u32;
+
+        for account in &accounts {
+            if authorization_is_route_pool_home(&account.extra)
+                || classify_account_live(
+                    account.agent_id,
+                    account.kind,
+                    &account.credentials,
+                    &profiles,
+                    &providers,
+                    false,
+                )
+                .is_projection()
+            {
+                skipped = skipped.saturating_add(1);
+                continue;
+            }
+            match self.enroll_connection_source(
+                account.agent_id,
+                AdapterSourceKind::Account,
+                &account.id,
+            )? {
+                true => added = added.saturating_add(1),
+                false => skipped = skipped.saturating_add(1),
+            }
+        }
+        for provider in &providers {
+            if authorization_is_route_pool_home(&provider.meta)
+                || generated_ids.contains(&provider.id)
+                || generated_provider_is_adapter_owned(provider)
+                || leftover::provider_is_bridge_leftover(provider)
+            {
+                skipped = skipped.saturating_add(1);
+                continue;
+            }
+            match self.enroll_connection_source(
+                provider.agent_id,
+                AdapterSourceKind::Provider,
+                &provider.id,
+            )? {
+                true => added = added.saturating_add(1),
+                false => skipped = skipped.saturating_add(1),
+            }
+        }
+        Ok(SyncConnectionAuthorizationsResult { added, skipped })
+    }
+
+    fn enroll_connection_source(
+        &self,
+        agent_id: AgentId,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<bool> {
+        let Some(surface) = RouteDownstreamSurface::for_agent(agent_id) else {
+            return Ok(false);
+        };
+        let pool = self.ensure_default_pool(agent_id, surface)?;
+        let members = self.pools.list_members(&pool.id)?;
+        if members
+            .iter()
+            .any(|member| member.source_kind == source_kind && member.source_id == source_id)
+        {
+            return Ok(false);
+        }
+        self.add_member(&pool.id, source_kind, source_id)?;
+        Ok(true)
     }
 
     pub fn ensure_default_pool(
