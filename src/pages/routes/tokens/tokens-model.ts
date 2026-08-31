@@ -5,11 +5,23 @@ import type {
   AdapterBridgeRuntimeState,
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
+  DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
+import {
+  localEndpointKindForTargetAgent,
+  localEndpointKindFromPool,
+  localEndpointPath,
+  type LocalEndpointKind,
+} from '@/lib/route-endpoints';
+import { profilesForPool } from '@/pages/routes/board/board-view-model';
 
 export interface LocalTokenRow {
-  profileId: string;
+  /** Stable list key: pool id or profile id. */
+  id: string;
+  profileId: string | null;
   name: string;
+  kind: LocalEndpointKind;
+  path: string;
   endpoint: string | null;
   state: AdapterBridgeRuntimeState | undefined;
   /** Loopback bearer (`ahb_…`); null until the listener has started. */
@@ -18,6 +30,8 @@ export interface LocalTokenRow {
   maskedToken: string | null;
   /** The runtime status read failed, so no token action is safe. */
   unavailable: boolean;
+  /** Writer Agent this token configures. */
+  targetAgentId: string;
 }
 
 export function maskLocalToken(token: string): string {
@@ -27,28 +41,101 @@ export function maskLocalToken(token: string): string {
   return trimmed.startsWith('ahb_') ? `ahb_••••${tail}` : `••••${tail}`;
 }
 
-/** One row per local-bridge route (per upstream source, same grouping as the board). */
+function pickRuntimeProfile(
+  matches: readonly AdapterProfile[],
+  statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
+): AdapterProfile | null {
+  if (matches.length === 0) return null;
+  return matches.find((profile) => {
+    const state = statuses[profile.id]?.state;
+    return state === 'running' || state === 'degraded';
+  }) ?? matches[0] ?? null;
+}
+
+function rowFromRuntime(input: {
+  id: string;
+  name: string;
+  kind: LocalEndpointKind;
+  targetAgentId: string;
+  profile: AdapterProfile | null;
+  portHint: number | null | undefined;
+  status: AdapterBridgeRuntimeStatus | undefined;
+  unavailable: boolean;
+}): LocalTokenRow {
+  const port = input.unavailable
+    ? null
+    : (input.status?.port ?? input.portHint ?? input.profile?.localPort);
+  const token = input.unavailable ? null : input.status?.localToken?.trim() || null;
+  return {
+    id: input.id,
+    profileId: input.profile?.id ?? null,
+    name: input.name,
+    kind: input.kind,
+    path: localEndpointPath(input.kind),
+    endpoint: typeof port === 'number' && port > 0 ? `127.0.0.1:${port}` : null,
+    state: input.status?.state,
+    token,
+    maskedToken: token ? maskLocalToken(token) : null,
+    unavailable: input.unavailable,
+    targetAgentId: input.targetAgentId,
+  };
+}
+
+/**
+ * One row per default-pool endpoint (Responses split into Codex / Grok),
+ * plus leftover local-bridge listeners not covered by a pool.
+ */
 export function buildLocalTokenRows(
   profiles: readonly AdapterProfile[],
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
   statusErrors: Readonly<Record<string, unknown>> = {},
+  pools: readonly DefaultRoutePoolOverview[] = [],
 ): LocalTokenRow[] {
+  const covered = new Set<string>();
   const rows: LocalTokenRow[] = [];
+
+  for (const pool of pools) {
+    if (pool.members.length === 0) continue;
+    const kind = localEndpointKindFromPool(pool);
+    if (!kind) continue;
+    const matches = profilesForPool(pool, profiles);
+    for (const match of matches) covered.add(match.id);
+    const profile = pickRuntimeProfile(matches, bridgeStatuses);
+    const statusId = profile?.id ?? pool.id;
+    rows.push(rowFromRuntime({
+      id: pool.id,
+      name: `${pool.targetAgentId} · ${localEndpointPath(kind)}`,
+      kind,
+      targetAgentId: pool.targetAgentId,
+      profile,
+      portHint: pool.gatewayPort,
+      status: bridgeStatuses[statusId],
+      unavailable: Boolean(statusErrors[statusId]),
+    }));
+  }
+
   for (const profile of profiles) {
     if (profile.route !== 'local_bridge') continue;
+    if (covered.has(profile.id)) continue;
+    const kind = localEndpointKindForTargetAgent(profile.targetAgentId);
     const status = bridgeStatuses[profile.id];
-    const unavailable = Boolean(statusErrors[profile.id]) || status?.upstreamStatus === 'unavailable';
-    const port = status?.port ?? profile.localPort;
-    const token = unavailable ? null : status?.localToken?.trim() || null;
-    rows.push({
-      profileId: profile.id,
+    const unavailable = Boolean(statusErrors[profile.id])
+      || status?.upstreamStatus === 'unavailable';
+    rows.push(rowFromRuntime({
+      id: profile.id,
       name: profile.name.trim() || profile.targetAgentId,
-      endpoint: typeof port === 'number' && port > 0 ? `127.0.0.1:${port}` : null,
-      state: status?.state,
-      token,
-      maskedToken: token ? maskLocalToken(token) : null,
+      kind,
+      targetAgentId: profile.targetAgentId,
+      profile,
+      portHint: profile.localPort,
+      status,
       unavailable,
-    });
+    }));
   }
-  return rows.sort((a, b) => a.name.localeCompare(b.name));
+
+  return rows.sort((a, b) => {
+    const kindOrder = a.kind.localeCompare(b.kind);
+    if (kindOrder !== 0) return kindOrder;
+    return a.name.localeCompare(b.name);
+  });
 }
