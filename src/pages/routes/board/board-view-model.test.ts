@@ -1,17 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import {
   activityHref,
   boardAttentionReason,
+  boardEndpointLoginTotals,
   boardFleetSummary,
   boardLifetimeSummaryLabel,
   boardRecentSummaryLabel,
+  buildBoardEndpointTypeRows,
   buildRouteBoardStatusRows,
   mergeRecentInbound,
   parseActivityFilter,
   partitionBoardRows,
   sumRouteRequestTotals,
 } from './board-view-model';
+
+function pool(partial: Partial<DefaultRoutePoolOverview> & Pick<DefaultRoutePoolOverview, 'id'>): DefaultRoutePoolOverview {
+  return {
+    targetAgentId: 'codex',
+    surface: 'responses',
+    dialect: 'codex',
+    v2Enrolled: false,
+    members: [{ sourceKind: 'account', sourceId: 'acc-1', enabled: true }],
+    listedModels: [],
+    ...partial,
+  };
+}
 
 function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>): AdapterProfile {
   return {
@@ -30,6 +44,73 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
     ...partial,
   };
 }
+
+describe('buildBoardEndpointTypeRows', () => {
+  it('lists the three endpoint types and counts unique usable logins', () => {
+    const rows = buildBoardEndpointTypeRows([
+      pool({
+        id: 'codex-responses',
+        targetAgentId: 'codex',
+        surface: 'responses',
+        members: [
+          { sourceKind: 'account', sourceId: 'oauth-1', enabled: true },
+          { sourceKind: 'provider', sourceId: 'key-1', enabled: true },
+          { sourceKind: 'provider', sourceId: 'key-off', enabled: false },
+        ],
+      }),
+      pool({
+        id: 'grok-responses',
+        targetAgentId: 'grok',
+        surface: 'responses',
+        members: [
+          { sourceKind: 'account', sourceId: 'oauth-1', enabled: true },
+          { sourceKind: 'account', sourceId: 'oauth-2', enabled: true, availability: 'isolated' },
+        ],
+      }),
+      pool({
+        id: 'claude-messages',
+        targetAgentId: 'claude',
+        surface: 'messages',
+        members: [{ sourceKind: 'account', sourceId: 'claude-oauth', enabled: true }],
+      }),
+    ]);
+    expect(rows.map((row) => row.surface)).toEqual(['messages', 'responses', 'chat_completions']);
+    expect(rows.map((row) => row.path)).toEqual([
+      '/v1/messages',
+      '/v1/responses',
+      '/v1/chat/completions',
+    ]);
+    expect(rows.find((row) => row.surface === 'messages')).toMatchObject({
+      oauthCount: 1,
+      apikeyCount: 0,
+    });
+    expect(rows.find((row) => row.surface === 'responses')).toMatchObject({
+      oauthCount: 1,
+      apikeyCount: 1,
+    });
+    expect(rows.find((row) => row.surface === 'chat_completions')).toMatchObject({
+      oauthCount: 0,
+      apikeyCount: 0,
+    });
+    expect(boardEndpointLoginTotals(rows)).toEqual({ oauth: 2, apikey: 1 });
+  });
+
+  it('omits hidden target agents from endpoint-type counts', () => {
+    const rows = buildBoardEndpointTypeRows(
+      [pool({
+        id: 'cursor-chat',
+        targetAgentId: 'cursor',
+        surface: 'chat_completions',
+        members: [{ sourceKind: 'provider', sourceId: 'key-1', enabled: true }],
+      })],
+      new Set(['cursor']),
+    );
+    expect(rows.find((row) => row.surface === 'chat_completions')).toMatchObject({
+      oauthCount: 0,
+      apikeyCount: 0,
+    });
+  });
+});
 
 describe('board-view-model', () => {
   it('orders status rows with attention and errors first', () => {
@@ -74,6 +155,39 @@ describe('board-view-model', () => {
     );
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.profileId).sort()).toEqual(['p1', 'p2']);
+  });
+
+  it('shows a connection-pool entry even without a local listener', () => {
+    const rows = buildRouteBoardStatusRows(
+      [],
+      {},
+      {},
+      new Set(),
+      [pool({ id: 'pool-codex', targetAgentId: 'codex' })],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].profileId).toBe('pool-codex');
+    expect(rows[0].profile).toBeNull();
+    expect(rows[0].memberCount).toBe(1);
+    expect(rows[0].name).toMatch(/Codex/);
+  });
+
+  it('binds a running listener onto its connection-pool card', () => {
+    const rows = buildRouteBoardStatusRows(
+      [profile({ id: 'bridge-1', sourceId: 'acc-1', targetAgentId: 'codex', localPort: 9 })],
+      { 'bridge-1': { profileId: 'bridge-1', state: 'running', port: 9, upstreamStatus: 'connected' } },
+      {},
+      new Set(),
+      [pool({
+        id: 'pool-codex',
+        targetAgentId: 'codex',
+        members: [{ sourceKind: 'provider', sourceId: 'acc-1', enabled: true }],
+      })],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].profile?.id).toBe('bridge-1');
+    expect(rows[0].state).toBe('running');
+    expect(rows[0].endpoint).toBe('127.0.0.1:9');
   });
 
   it('omits hidden target agents from the board', () => {

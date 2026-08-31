@@ -14,6 +14,7 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { routeEndpointTypeColor } from '@/components/shared/RouteEndpointUrl';
 import { useTheme } from '@/components/shared/ThemeProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -26,7 +27,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { tooltipSurfaceStyle } from '@/components/ui/tooltip';
 import { resolveAgentMeta } from '@/config/agents';
-import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import type { MessageKey } from '@/lib/i18n';
 import { resolveTheme } from '@/lib/theme';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
@@ -51,6 +52,7 @@ import {
   rememberedBoardUsageFilters,
   seriesKeyForRow,
   summarizeGatewayUsage,
+  usageSurfaceToPoolSurface,
   type BoardUsageRange,
   type BoardUsageSurface,
 } from './board-usage-model';
@@ -76,22 +78,26 @@ const SURFACE_LABEL_KEYS: Record<BoardUsageSurface, MessageKey> = {
   chat: 'routes.pool.surface.chatCompletions',
 };
 
-const SURFACE_COLORS: Record<BoardUsageSurface, string> = {
-  messages: 'var(--agent-claude)',
-  responses: 'var(--agent-codex)',
-  chat: 'var(--agent-grok)',
-};
-
 const FALLBACK_COLOR = 'var(--text-muted)';
+
+/** Same endpoint colors as the rest of Routes: messages=Claude, OpenAI-family=Codex. */
+function surfaceColor(surface: BoardUsageSurface): string {
+  const endpoint = usageSurfaceToPoolSurface(surface);
+  return endpoint === 'all' ? FALLBACK_COLOR : routeEndpointTypeColor(endpoint);
+}
 
 export function BoardUsageSection({
   profiles,
   hiddenTargetIds,
+  pools = [],
   refreshKey = 0,
+  surface,
 }: {
   profiles: readonly AdapterProfile[];
   hiddenTargetIds: ReadonlySet<string>;
+  pools?: readonly DefaultRoutePoolOverview[];
   refreshKey?: number;
+  surface: string;
 }) {
   const { t } = useI18n();
   const { theme } = useTheme();
@@ -100,7 +106,6 @@ export function BoardUsageSection({
     () => rememberedBoardUsageFilters().dateRange,
   );
   const [entryId, setEntryId] = useState(() => rememberedBoardUsageFilters().entryId);
-  const [surface, setSurface] = useState(() => rememberedBoardUsageFilters().surface);
   const [modelFilter, setModelFilter] = useState(
     () => rememberedBoardUsageFilters().modelFilter,
   );
@@ -114,8 +119,8 @@ export function BoardUsageSection({
   }, []);
 
   const entries = useMemo(
-    () => buildBoardUsageEntries(profiles, hiddenTargetIds),
-    [profiles, hiddenTargetIds],
+    () => buildBoardUsageEntries(profiles, hiddenTargetIds, pools),
+    [profiles, hiddenTargetIds, pools],
   );
   const entryMap = useMemo(() => profileToEntryIdMap(entries), [entries]);
 
@@ -126,7 +131,7 @@ export function BoardUsageSection({
 
   const { days, since } = useMemo(() => boardUsageWindow(dateRange), [dateRange]);
   const usage = useBoardUsageStats({
-    enabled: entries.length > 0,
+    enabled: true,
     since,
     refreshKey: refreshKey + retryKey + collectKey,
   });
@@ -161,7 +166,7 @@ export function BoardUsageSection({
     modelsReady,
   );
   const modelSelectOptions = usageModelSelectOptions(effectiveModelFilter, modelOptions);
-  const effectiveGroupBy = deriveBoardGroupBy(entryId);
+  const effectiveGroupBy = deriveBoardGroupBy(entryId, surface);
 
   useEffect(() => {
     if (!modelsReady) return;
@@ -187,7 +192,7 @@ export function BoardUsageSection({
       };
     }
     for (const item of BOARD_SURFACES) {
-      labels[item] = { label: t(SURFACE_LABEL_KEYS[item]), color: SURFACE_COLORS[item] };
+      labels[item] = { label: t(SURFACE_LABEL_KEYS[item]), color: surfaceColor(item) };
     }
     for (const model of totals.modelNames) {
       labels[model] = {
@@ -201,13 +206,27 @@ export function BoardUsageSection({
   }, [entries, totals.modelNames, selectedEntry, t]);
 
   const trendSeries = useMemo(() => {
+    if (effectiveGroupBy === 'surface') {
+      return BOARD_SURFACES.map((item) => ({
+        key: item,
+        label: t(SURFACE_LABEL_KEYS[item]),
+        color: surfaceColor(item),
+      }));
+    }
+    if (effectiveGroupBy === 'model') {
+      return totals.modelNames.map((model) => ({
+        key: model,
+        label: seriesMeta[model]?.label ?? model,
+        color: seriesMeta[model]?.color ?? FALLBACK_COLOR,
+      }));
+    }
     const list = selectedEntry ? [selectedEntry] : entries;
     return list.map((item) => ({
       key: item.id,
       label: item.name,
       color: seriesMeta[item.id]?.color ?? FALLBACK_COLOR,
     }));
-  }, [selectedEntry, entries, seriesMeta]);
+  }, [effectiveGroupBy, totals.modelNames, selectedEntry, entries, seriesMeta, t]);
 
   const rangedTrend = useMemo(() => {
     if (usage.status !== 'ready') return [];
@@ -216,9 +235,9 @@ export function BoardUsageSection({
       days,
       since,
       trendSeries.map((item) => item.key),
-      (item) => seriesKeyForRow(item, 'entry', entryMap),
+      (item) => seriesKeyForRow(item, effectiveGroupBy, entryMap),
     );
-  }, [usage, scopedRows, days, since, trendSeries, entryMap]);
+  }, [usage, scopedRows, days, since, trendSeries, effectiveGroupBy, entryMap]);
 
   const distribution = useMemo(
     () => buildGatewayDistribution(scopedRows, effectiveGroupBy, entryMap, seriesMeta),
@@ -226,9 +245,11 @@ export function BoardUsageSection({
   );
   const maxTokens = distribution[0]?.tokens ?? 0;
   const distTitle =
-    effectiveGroupBy === 'entry'
-      ? t('routes.board.distByEntry')
-      : t('routes.board.distByModel');
+    effectiveGroupBy === 'surface'
+      ? t('routes.board.distBySurface')
+      : effectiveGroupBy === 'model'
+        ? t('routes.board.distByModel')
+        : t('routes.board.distByEntry');
 
   return (
     <PageSection title={t('routes.board.usageSection')}>
@@ -242,19 +263,6 @@ export function BoardUsageSection({
             {entries.map((entry) => (
               <SelectItem key={entry.id} value={entry.id}>
                 {entry.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={surface} onValueChange={setSurface}>
-          <SelectTrigger className="w-36" aria-label={t('routes.board.surfaceFilterAria')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('routes.board.allSurfaces')}</SelectItem>
-            {BOARD_SURFACES.map((item) => (
-              <SelectItem key={item} value={item}>
-                {t(SURFACE_LABEL_KEYS[item])}
               </SelectItem>
             ))}
           </SelectContent>

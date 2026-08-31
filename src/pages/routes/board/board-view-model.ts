@@ -1,14 +1,21 @@
 /**
  * Pure view-model for Routes board. No React, no IO.
  */
+import { agentDisplayName } from '@/config/agents';
 import type {
   AdapterBridgeInboundRequest,
   AdapterBridgeRuntimeState,
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
   AdapterProfileStatus,
+  DefaultRoutePoolOverview,
+  RouteMemberOverview,
+  RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
+import { ROUTE_ENDPOINTS } from '@/lib/route-endpoints';
+import type { AgentId } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
+import { routePoolSurfaceLabel } from '@/pages/bridges/route-pool-view-model';
 
 export const BOARD_INBOUND_SNAPSHOT_LIMIT = 8;
 export const BOARD_INBOUND_WINDOW = 20;
@@ -34,6 +41,8 @@ export type RouteBoardRecentSummary = {
 export type RouteBoardStatusRow = {
   profileId: string;
   name: string;
+  targetAgentId: AgentId;
+  memberCount: number;
   state: AdapterBridgeRuntimeState | undefined;
   endpoint: string | null;
   upstreamStatus: AdapterBridgeRuntimeStatus['upstreamStatus'];
@@ -41,8 +50,8 @@ export type RouteBoardStatusRow = {
   startedAt: string | null;
   statusUnavailable: boolean;
   profileStatus: AdapterProfileStatus;
-  /** Full profile for start/stop mutations (group semantics use source). */
-  profile: AdapterProfile;
+  /** Present when this local entry already has a listener to start/stop. */
+  profile: AdapterProfile | null;
   recent: RouteBoardRecentSummary;
   needsAttention: boolean;
   attentionReason: RouteBoardAttentionReason | null;
@@ -59,6 +68,72 @@ export type BoardFleetSummary = {
   needsAttention: number;
   label: string;
 };
+
+/** One card per downstream endpoint type, independent of writer Agent. */
+export type BoardEndpointTypeRow = {
+  surface: RoutePoolSurface;
+  path: string;
+  oauthCount: number;
+  apikeyCount: number;
+};
+
+export type BoardEndpointLoginTotals = {
+  oauth: number;
+  apikey: number;
+};
+
+function memberUsable(
+  member: Pick<RouteMemberOverview, 'enabled' | 'availability'>,
+): boolean {
+  if (member.enabled !== true) return false;
+  return member.availability == null || member.availability === 'ready';
+}
+
+/** Unique official-login / API Key counts for one endpoint type. */
+export function buildBoardEndpointTypeRows(
+  pools: readonly DefaultRoutePoolOverview[],
+  hiddenTargetIds: ReadonlySet<string> = new Set(),
+): BoardEndpointTypeRow[] {
+  return ROUTE_ENDPOINTS.map((endpoint) => {
+    const usable = new Map<string, boolean>();
+    const kindByKey = new Map<string, 'oauth' | 'apikey'>();
+    for (const pool of pools) {
+      if (pool.surface !== endpoint.id) continue;
+      if (hiddenTargetIds.has(pool.targetAgentId)) continue;
+      for (const member of pool.members) {
+        const key = `${member.sourceKind}:${member.sourceId}`;
+        kindByKey.set(key, member.sourceKind === 'account' ? 'oauth' : 'apikey');
+        if (memberUsable(member)) usable.set(key, true);
+        else if (!usable.has(key)) usable.set(key, false);
+      }
+    }
+    let oauthCount = 0;
+    let apikeyCount = 0;
+    for (const [key, ready] of usable) {
+      if (!ready) continue;
+      if (kindByKey.get(key) === 'oauth') oauthCount += 1;
+      else apikeyCount += 1;
+    }
+    return {
+      surface: endpoint.id,
+      path: endpoint.path,
+      oauthCount,
+      apikeyCount,
+    };
+  });
+}
+
+export function boardEndpointLoginTotals(
+  rows: readonly BoardEndpointTypeRow[],
+): BoardEndpointLoginTotals {
+  return rows.reduce<BoardEndpointLoginTotals>(
+    (sum, row) => ({
+      oauth: sum.oauth + row.oauthCount,
+      apikey: sum.apikey + row.apikeyCount,
+    }),
+    { oauth: 0, apikey: 0 },
+  );
+}
 
 const STATE_RANK: Record<string, number> = {
   error: 0,
@@ -117,46 +192,79 @@ export function boardAttentionReasonLabel(
   return t ? t('routes.board.reasonError') : '启动失败';
 }
 
-/** One card per local listener (same unit as default-pool / 本机入口). */
-export function buildRouteBoardStatusRows(
-  profiles: readonly AdapterProfile[],
-  bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
-  statusErrors: Record<string, unknown> = {},
-  hiddenTargetIds: ReadonlySet<string> = new Set(),
-): RouteBoardStatusRow[] {
-  const local = profiles.filter((profile) => {
+export function boardPoolLabel(
+  pool: Pick<DefaultRoutePoolOverview, 'targetAgentId' | 'surface'>,
+  t?: TranslateFn,
+): string {
+  return `${agentDisplayName(pool.targetAgentId)} · ${routePoolSurfaceLabel(pool.surface, t)}`;
+}
+
+/** Local listeners that belong to this connection-pool entry. */
+export function profilesForPool<
+  T extends Pick<AdapterProfile, 'id' | 'route' | 'sourceKind' | 'sourceId' | 'targetAgentId'>,
+>(
+  pool: Pick<DefaultRoutePoolOverview, 'id' | 'targetAgentId' | 'members'>,
+  profiles: readonly T[],
+): T[] {
+  return profiles.filter((profile) => {
     if (profile.route !== 'local_bridge') return false;
-    if (hiddenTargetIds.has(profile.targetAgentId)) return false;
-    return true;
+    if (profile.id === pool.id) return true;
+    if (profile.targetAgentId !== pool.targetAgentId) return false;
+    return pool.members.some((member) => (
+      member.sourceKind === profile.sourceKind && member.sourceId === profile.sourceId
+    ));
   });
-  const rows = local.map((profile) => {
-    const status = bridgeStatuses[profile.id];
-    const statusUnavailable = Boolean(statusErrors[profile.id]);
-    const port = statusUnavailable ? null : (status?.port ?? profile.localPort);
-    const endpoint =
-      typeof port === 'number' && port > 0 ? `127.0.0.1:${port}` : null;
-    const state = status?.state;
-    const attentionReason = boardAttentionReason({
-      statusUnavailable,
-      state,
-      profileStatus: profile.status,
-    });
-    return {
-      profileId: profile.id,
-      name: profile.name.trim() || profile.targetAgentId,
-      state,
-      endpoint,
-      upstreamStatus: status?.upstreamStatus ?? null,
-      lastErrorCode: profile.lastErrorCode?.trim() || null,
-      startedAt: status?.startedAt?.trim() || null,
-      statusUnavailable,
-      profileStatus: profile.status,
-      profile,
-      recent: summarizeRecent(status),
-      needsAttention: attentionReason != null,
-      attentionReason,
-    };
+}
+
+function pickRuntimeProfile(
+  matches: readonly AdapterProfile[],
+  statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
+): AdapterProfile | null {
+  if (matches.length === 0) return null;
+  return matches.find((profile) => {
+    const state = statuses[profile.id]?.state;
+    return state === 'running' || state === 'degraded';
+  }) ?? matches[0] ?? null;
+}
+
+function statusRowFromRuntime(input: {
+  id: string;
+  name: string;
+  targetAgentId: AgentId;
+  memberCount: number;
+  profile: AdapterProfile | null;
+  portHint: number | null | undefined;
+  status: AdapterBridgeRuntimeStatus | undefined;
+  statusUnavailable: boolean;
+}): RouteBoardStatusRow {
+  const { profile, status, statusUnavailable } = input;
+  const port = statusUnavailable ? null : (status?.port ?? input.portHint ?? profile?.localPort);
+  const state = status?.state;
+  const attentionReason = boardAttentionReason({
+    statusUnavailable,
+    state,
+    profileStatus: profile?.status ?? 'active',
   });
+  return {
+    profileId: input.id,
+    name: input.name,
+    targetAgentId: input.targetAgentId,
+    memberCount: input.memberCount,
+    state,
+    endpoint: typeof port === 'number' && port > 0 ? `127.0.0.1:${port}` : null,
+    upstreamStatus: status?.upstreamStatus ?? null,
+    lastErrorCode: profile?.lastErrorCode?.trim() || null,
+    startedAt: status?.startedAt?.trim() || null,
+    statusUnavailable,
+    profileStatus: profile?.status ?? 'active',
+    profile,
+    recent: summarizeRecent(status),
+    needsAttention: attentionReason != null,
+    attentionReason,
+  };
+}
+
+function sortBoardRows(rows: RouteBoardStatusRow[]): RouteBoardStatusRow[] {
   return rows.sort((a, b) => {
     if (a.needsAttention !== b.needsAttention) return a.needsAttention ? -1 : 1;
     const ra = a.statusUnavailable ? -1 : (STATE_RANK[a.state ?? 'stopped'] ?? 9);
@@ -164,6 +272,54 @@ export function buildRouteBoardStatusRows(
     if (ra !== rb) return ra - rb;
     return a.name.localeCompare(b.name);
   });
+}
+
+/** One card per connection-pool local entry, plus leftover listeners. */
+export function buildRouteBoardStatusRows(
+  profiles: readonly AdapterProfile[],
+  bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
+  statusErrors: Record<string, unknown> = {},
+  hiddenTargetIds: ReadonlySet<string> = new Set(),
+  pools: readonly DefaultRoutePoolOverview[] = [],
+  t?: TranslateFn,
+): RouteBoardStatusRow[] {
+  const covered = new Set<string>();
+  const rows: RouteBoardStatusRow[] = [];
+  for (const pool of pools) {
+    if (hiddenTargetIds.has(pool.targetAgentId)) continue;
+    if (pool.members.length === 0) continue;
+    const matches = profilesForPool(pool, profiles);
+    for (const match of matches) covered.add(match.id);
+    const profile = pickRuntimeProfile(matches, bridgeStatuses);
+    const statusId = profile?.id ?? pool.id;
+    rows.push(statusRowFromRuntime({
+      id: pool.id,
+      name: boardPoolLabel(pool, t),
+      targetAgentId: pool.targetAgentId,
+      memberCount: pool.members.length,
+      profile,
+      portHint: pool.gatewayPort,
+      status: bridgeStatuses[statusId],
+      statusUnavailable: Boolean(statusErrors[statusId]),
+    }));
+  }
+  for (const profile of profiles) {
+    if (profile.route !== 'local_bridge') continue;
+    if (hiddenTargetIds.has(profile.targetAgentId)) continue;
+    if (covered.has(profile.id)) continue;
+    const status = bridgeStatuses[profile.id];
+    rows.push(statusRowFromRuntime({
+      id: profile.id,
+      name: profile.name.trim() || profile.targetAgentId,
+      targetAgentId: profile.targetAgentId,
+      memberCount: 0,
+      profile,
+      portHint: profile.localPort,
+      status,
+      statusUnavailable: Boolean(statusErrors[profile.id]),
+    }));
+  }
+  return sortBoardRows(rows);
 }
 
 export function partitionBoardRows(rows: readonly RouteBoardStatusRow[]): {

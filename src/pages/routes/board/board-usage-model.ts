@@ -2,13 +2,18 @@
  * Pure view-model for board usage stats. No React, no IO.
  *
  * Charts use local-gateway request rows (what went through a local route),
- * not Agent session logs. Layout mirrors 总览: overlay by local route when
- * all entries are selected, distribution by model after picking one route.
+ * not Agent session logs. Layout mirrors 总览: overlay by endpoint type when
+ * all types are selected, distribution by model after picking one type.
  */
-import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import type {
+  AdapterProfile,
+  DefaultRoutePoolOverview,
+  RoutePoolSurface,
+} from '@/lib/backend/contracts/adapter';
 import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import type { UsageTrendPoint } from '@/lib/types';
 import { denseTrendBuckets, localTrendBucket, trendGrain } from '@/lib/usage-trend';
+import { boardPoolLabel, profilesForPool } from '@/pages/routes/board/board-view-model';
 
 export type BoardUsageRange = 'today' | '24h' | '7d' | '30d';
 export type BoardGroupBy = 'entry' | 'model' | 'surface';
@@ -35,10 +40,31 @@ export const DEFAULT_BOARD_USAGE_FILTERS: BoardUsageFilters = {
   modelFilter: 'all',
 };
 
-/** Same rule as 总览: all local routes → by route; one route → by model. */
-export function deriveBoardGroupBy(entryId: string): 'entry' | 'model' {
-  if (entryId === 'all' || entryId === '') return 'entry';
-  return 'model';
+/**
+ * Same rule as 总览: all endpoint types → by type; one type or one local
+ * entry → by model.
+ */
+export function deriveBoardGroupBy(entryId: string, surface = 'all'): BoardGroupBy {
+  if (entryId !== 'all' && entryId !== '') return 'model';
+  if (surface !== 'all' && surface !== '') return 'model';
+  return 'surface';
+}
+
+/** Pool surface (`chat_completions`) → gateway capture op (`chat`). */
+export function poolSurfaceToUsageSurface(
+  surface: RoutePoolSurface | 'all',
+): string {
+  if (surface === 'all') return 'all';
+  if (surface === 'chat_completions') return 'chat';
+  return surface;
+}
+
+export function usageSurfaceToPoolSurface(
+  surface: string,
+): RoutePoolSurface | 'all' {
+  if (surface === 'chat' || surface === 'chat_completions') return 'chat_completions';
+  if (surface === 'messages' || surface === 'responses') return surface;
+  return 'all';
 }
 
 let rememberedFilters: BoardUsageFilters = { ...DEFAULT_BOARD_USAGE_FILTERS };
@@ -76,11 +102,27 @@ export function buildBoardUsageEntries(
     'id' | 'name' | 'route' | 'sourceKind' | 'sourceId' | 'targetAgentId'
   >[],
   hiddenTargetIds: ReadonlySet<string> = new Set(),
+  pools: readonly DefaultRoutePoolOverview[] = [],
 ): BoardUsageEntry[] {
   const entries: BoardUsageEntry[] = [];
+  const covered = new Set<string>();
+  for (const pool of pools) {
+    if (hiddenTargetIds.has(pool.targetAgentId)) continue;
+    if (pool.members.length === 0) continue;
+    const matches = profilesForPool(pool, profiles);
+    const profileIds = [...new Set([pool.id, ...matches.map((item) => item.id)])];
+    for (const id of profileIds) covered.add(id);
+    entries.push({
+      id: pool.id,
+      name: boardPoolLabel(pool),
+      profileIds,
+      targetAgentId: pool.targetAgentId,
+    });
+  }
   for (const profile of profiles) {
     if (profile.route !== 'local_bridge') continue;
     if (hiddenTargetIds.has(profile.targetAgentId)) continue;
+    if (covered.has(profile.id)) continue;
     entries.push({
       id: profile.id,
       name: profile.name.trim() || profile.targetAgentId,

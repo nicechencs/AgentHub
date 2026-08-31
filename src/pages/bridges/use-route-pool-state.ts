@@ -14,10 +14,12 @@ export function useRoutePoolState(input: {
   const { profiles, detailTarget, reloadKey = 0 } = input;
   const [routePoolV2, setRoutePoolV2] = useState(false);
   const [defaultPools, setDefaultPools] = useState<DefaultRoutePoolOverview[]>([]);
+  const [loading, setLoading] = useState(true);
   const [nativeCanApplyById, setNativeCanApplyById] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     void listDefaultRoutePools()
       .then((listed) => {
         if (cancelled) return;
@@ -28,6 +30,9 @@ export function useRoutePoolState(input: {
         if (cancelled) return;
         setRoutePoolV2(false);
         setDefaultPools([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -62,6 +67,7 @@ export function useRoutePoolState(input: {
   return {
     routePoolV2,
     defaultPools,
+    loading,
     nativeCanApplyById,
   };
 }
