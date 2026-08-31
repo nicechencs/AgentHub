@@ -403,13 +403,30 @@ impl UsageService {
         }
     }
 
+    /// Pull new JSONL spool lines into `gateway_usage` before a board read.
+    /// Ingest failure is logged; the query still returns whatever is already stored.
+    fn refresh_gateway_usage(&self) {
+        if let Err(e) = self.collect_gateway_spool() {
+            let err_msg = redact_text(&e.to_string());
+            tracing::warn!(
+                module = targets::USAGE,
+                code = e.code(),
+                op = "refresh_gateway_usage",
+                error = %err_msg,
+                "gateway usage spool ingest failed"
+            );
+        }
+    }
+
     /// Query per-request gateway usage rows (local bridge runtime).
     pub fn gateway_usage_query(&self, q: GatewayUsageQuery) -> Result<Vec<GatewayUsageRow>> {
+        self.refresh_gateway_usage();
         self.gateway_repo.query(&q)
     }
 
     /// Aggregated gateway usage overview for a time window.
     pub fn gateway_usage_overview(&self, q: GatewayUsageQuery) -> Result<GatewayUsageOverview> {
+        self.refresh_gateway_usage();
         self.gateway_repo.overview(&q)
     }
 
