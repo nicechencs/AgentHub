@@ -32,7 +32,7 @@ use serde::Serialize;
 
 use crate::adapters::AdapterRegistry;
 use crate::error::Result;
-use crate::models::AgentId;
+use crate::models::{AgentId, BackupRecord};
 use crate::services::{LiveWriteAuthority, LiveWriteGuard};
 use crate::storage::{BackupRepo, Database};
 
@@ -40,7 +40,7 @@ use crate::storage::{BackupRepo, Database};
 #[allow(unused_imports)]
 use crate::error::AppError;
 #[allow(unused_imports)]
-use crate::models::{BackupKind, BackupRecord};
+use crate::models::BackupKind;
 #[allow(unused_imports)]
 use std::collections::{HashMap, HashSet};
 
@@ -70,12 +70,32 @@ pub struct RestoreResult {
     pub pre_restore: Option<BackupRecord>,
     /// Live destinations that received a restored file.
     pub restored_paths: Vec<PathBuf>,
+    /// Absent-file cleanup that restore declined. Not part of the public JSON.
+    #[serde(skip)]
+    pub(crate) skipped_deletions: Vec<restore::SkippedDeletion>,
+}
+
+impl RestoreResult {
+    pub fn new(
+        restored: BackupRecord,
+        pre_restore: Option<BackupRecord>,
+        restored_paths: Vec<PathBuf>,
+    ) -> Self {
+        Self {
+            restored,
+            pre_restore,
+            restored_paths,
+            skipped_deletions: Vec::new(),
+        }
+    }
 }
 
 /// Orchestrates live file snapshots + backup index rows + restore/delete.
 #[derive(Clone)]
 pub struct BackupService {
     pub(super) repo: BackupRepo,
+    /// Shared handle for managed-write fingerprint lookups during restore.
+    pub(super) db: Database,
     pub(super) registry: AdapterRegistry,
     pub(super) backups_root: PathBuf,
     pub(super) authority: LiveWriteAuthority,
@@ -86,6 +106,7 @@ impl BackupService {
     pub fn new(db: Database, registry: AdapterRegistry, backups_root: PathBuf) -> Self {
         Self {
             repo: BackupRepo::new(db.clone()),
+            db: db.clone(),
             registry,
             backups_root,
             authority: LiveWriteAuthority::from_database(&db),
