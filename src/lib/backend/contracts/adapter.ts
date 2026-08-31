@@ -319,6 +319,10 @@ export interface AdapterPort {
     sourceId: string,
     enabled: boolean,
   ): Promise<number>;
+  removeRouteAuthorization(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+  ): Promise<number>;
   syncConnectionAuthorizations(
     request?: SyncConnectionAuthorizationsRequest,
   ): Promise<SyncConnectionAuthorizationsResult>;

@@ -1388,6 +1388,10 @@ export const zh = {
       dialogOther: "会移入回收站；不会修改本机配置文件。",
       toastCurrent: "已移入回收站；本机配置未清除，当前连接可能仍继续生效。",
       toastOther: "已移入回收站；本机配置未修改。",
+      dialogMissing: "这份登录已不在列表中，会从连接池移除。",
+      confirmMissing: "从连接池移除",
+      toastMissing: "已从连接池移除",
+      toastMissingDescription: "这份登录原本已不在列表中。",
     },
     list: {
       filterAria: "登录类型筛选",

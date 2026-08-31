@@ -234,7 +234,31 @@ describe('Tauri adapter route port', () => {
     });
   });
 
-  it('forwards sync_connection_authorizations', async () => {
+  it('forwards remove_route_authorization', async () => {
+    invokeMock.mockResolvedValueOnce(2);
+    const port = createTauriAdapterPort();
+    await expect(port.removeRouteAuthorization('account', 'missing-connection')).resolves.toBe(2);
+    expect(invokeMock).toHaveBeenCalledWith('remove_route_authorization', {
+      sourceKind: 'account',
+      sourceId: 'missing-connection',
+    });
+  });
+
+  it('forwards selected sync_connection_authorizations sources in the request envelope', async () => {
+    invokeMock.mockResolvedValueOnce({ added: 1, skipped: 0 });
+    const port = createTauriAdapterPort();
+
+    await expect(port.syncConnectionAuthorizations({
+      sources: [{ sourceKind: 'provider', sourceId: 'kimi-1' }],
+    })).resolves.toEqual({ added: 1, skipped: 0 });
+    expect(invokeMock).toHaveBeenCalledWith('sync_connection_authorizations', {
+      request: {
+        sources: [{ sourceKind: 'provider', sourceId: 'kimi-1' }],
+      },
+    });
+  });
+
+  it('forwards an empty argument object when syncing all connections', async () => {
     invokeMock.mockResolvedValueOnce({ added: 2, skipped: 1 });
     const port = createTauriAdapterPort();
     await expect(port.syncConnectionAuthorizations()).resolves.toEqual({ added: 2, skipped: 1 });

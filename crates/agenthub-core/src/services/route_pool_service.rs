@@ -510,6 +510,35 @@ impl RoutePoolService {
         Ok(changed)
     }
 
+    /// Remove every default-pool membership of one authorization.
+    ///
+    /// This is intentionally separate from deleting an Account or Provider:
+    /// a pool member may outlive its source row (and is then shown as
+    /// unavailable by the Routes page). Removing the membership is still a
+    /// durable route-pool write and must cover every default pool.
+    pub fn remove_route_authorization(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<u32> {
+        self.require_enabled()?;
+        let mut removed = 0_u32;
+        for pool in self.pools.list_pools(None, None)? {
+            if !pool.is_default {
+                continue;
+            }
+            for member in self.pools.list_members(&pool.id)? {
+                if member.source_kind != source_kind || member.source_id != source_id {
+                    continue;
+                }
+                self.pools.remove_member(&member.id)?;
+                self.sync_lead_projection(&member.route_pool_id)?;
+                removed = removed.saturating_add(1);
+            }
+        }
+        Ok(removed)
+    }
+
     pub fn set_member_priority(&self, member_id: &str, priority: i64) -> Result<RouteMember> {
         self.require_enabled()?;
         let mut member = self.require_member(member_id)?;

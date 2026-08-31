@@ -153,6 +153,86 @@ fn member_crud_sort_enabled_priority_and_lead_projection() {
 }
 
 #[test]
+fn remove_route_authorization_drops_membership_while_source_still_exists() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "codex-api".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex API".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-api",
+        )
+        .unwrap();
+
+    let removed = service
+        .remove_route_authorization(AdapterSourceKind::Provider, "codex-api")
+        .unwrap();
+    assert_eq!(removed, 1);
+    assert!(service
+        .list_default_overviews()
+        .unwrap()
+        .pools
+        .iter()
+        .all(|pool| pool.members.is_empty()));
+    assert!(ProviderRepo::new(db)
+        .get_by_id("codex-api")
+        .unwrap()
+        .is_some());
+}
+
+#[test]
+fn remove_route_authorization_removes_missing_source_from_all_default_pools() {
+    let (_dir, db, service, _profiles) = tmp();
+    let stale_source = "missing-connection";
+    let codex_pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    let claude_pool = service
+        .ensure_default_pool(AgentId::Claude, RouteDownstreamSurface::Messages)
+        .unwrap();
+    service
+        .add_member(&codex_pool.id, AdapterSourceKind::Account, stale_source)
+        .unwrap();
+    service
+        .add_member(&claude_pool.id, AdapterSourceKind::Account, stale_source)
+        .unwrap();
+
+    let removed = service
+        .remove_route_authorization(AdapterSourceKind::Account, stale_source)
+        .unwrap();
+    assert_eq!(removed, 2);
+    assert!(service
+        .list_default_overviews()
+        .unwrap()
+        .pools
+        .iter()
+        .all(|pool| pool.members.is_empty()));
+
+    // The membership removal is persisted, so a fresh service cannot
+    // resurrect the unavailable authorization on the next load.
+    drop(service);
+    let reopened = RoutePoolService::new(db);
+    assert!(reopened
+        .list_default_overviews()
+        .unwrap()
+        .pools
+        .iter()
+        .all(|pool| pool.members.is_empty()));
+}
+
+#[test]
 fn duplicate_fingerprint_is_rejected() {
     let (_dir, _db, service, profiles) = tmp();
     let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);

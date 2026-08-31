@@ -1398,6 +1398,10 @@ export const en = {
       dialogOther: "Moves to trash. Local config files are not changed.",
       toastCurrent: "Moved to trash. Local config was not cleared; the current connection may still apply.",
       toastOther: "Moved to trash. Local config was not changed.",
+      dialogMissing: "This login is no longer in the list and will be removed from the connection pool.",
+      confirmMissing: "Remove from connection pool",
+      toastMissing: "Removed from connection pool",
+      toastMissingDescription: "This login was already absent from the list.",
     },
     list: {
       filterAria: "Login type filter",

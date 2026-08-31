@@ -193,6 +193,14 @@ describe('mock adapter projection', () => {
     ]);
     expect(getMockProviderById(sourceId)?.home).toBe('route_pool');
     expect(JSON.stringify(overview)).not.toContain('must-not-leak');
+
+    const removed = await adapter.removeRouteAuthorization('provider', sourceId);
+    expect(removed).toBe(1);
+    const listed = await adapter.listDefaultRoutePools();
+    expect(listed.pools.every((pool) => (
+      pool.members.every((member) => member.sourceId !== sourceId)
+    ))).toBe(true);
+    expect(getMockProviderById(sourceId)).toBeTruthy();
   });
 
   it('syncs Connections authorizations into the default pool without hiding them', async () => {
