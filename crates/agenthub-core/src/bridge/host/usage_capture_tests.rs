@@ -10,9 +10,10 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
+use std::sync::{Arc, Mutex};
 
 use crate::bridge::usage_capture::GatewayUsageEvent;
 use crate::bridge::{
@@ -319,4 +320,115 @@ async fn capture_records_failed_streams_without_touching_the_error_frame() {
 
     host.stop("capture-failed").await.expect("stop");
     upstream_task.abort();
+}
+
+#[tokio::test]
+async fn runtime_does_not_forward_anthropic_key_across_redirect() {
+    async fn redirected_target(
+        State(forwarded_key): State<Arc<Mutex<Option<String>>>>,
+        headers: axum::http::HeaderMap,
+    ) -> StatusCode {
+        let key = headers
+            .get("x-api-key")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        *forwarded_key.lock().unwrap() = key;
+        StatusCode::OK
+    }
+
+    let forwarded_key = Arc::new(Mutex::new(None));
+    let target_listener = tokio::net::TcpListener::bind(SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        0,
+    ))
+    .await
+    .expect("bind redirect target");
+    let target_port = target_listener.local_addr().expect("target addr").port();
+    let target_task = tokio::spawn({
+        let forwarded_key = forwarded_key.clone();
+        async move {
+            axum::serve(
+                target_listener,
+                Router::new()
+                    .route("/messages", get(redirected_target).post(redirected_target))
+                    .with_state(forwarded_key),
+            )
+            .await
+            .expect("serve redirect target");
+        }
+    });
+
+    let redirect_listener = tokio::net::TcpListener::bind(SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        0,
+    ))
+    .await
+    .expect("bind redirect source");
+    let redirect_port = redirect_listener
+        .local_addr()
+        .expect("redirect addr")
+        .port();
+    let location = format!("http://127.0.0.1:{target_port}/messages");
+    let redirect_task = tokio::spawn(async move {
+        let app = Router::new().route("/messages", post(move || {
+            let location = location.clone();
+            async move {
+                Response::builder()
+                    .status(StatusCode::FOUND)
+                    .header(axum::http::header::LOCATION, location)
+                    .body(axum::body::Body::empty())
+                    .unwrap()
+            }
+        }));
+        axum::serve(redirect_listener, app)
+            .await
+            .expect("serve redirect source");
+    });
+
+    let host = BridgeRuntimeHost::new();
+    let runtime = host
+        .start(BridgeStartSpec::new(
+            "redirect-runtime",
+            0,
+            "local-redirect-token",
+            BridgeUpstreamConfig {
+                base_url: format!("http://127.0.0.1:{redirect_port}"),
+                model: Some("claude-test".to_owned()),
+                source_connection_id: Some("anthropic-source".to_owned()),
+                auth: ResolvedAuth::bearer("anthropic-upstream-secret"),
+                protocol: BridgeUpstreamProtocol::AnthropicMessages,
+                local_surface: BridgeLocalSurface::Messages,
+            },
+        ))
+        .await
+        .expect("start redirect runtime");
+
+    let response = client()
+        .await
+        .post(format!(
+            "http://127.0.0.1:{}/v1/messages",
+            runtime.port
+        ))
+        .header(
+            header::AUTHORIZATION,
+            "Bearer local-redirect-token",
+        )
+        .json(&json!({
+            "model": "claude-test",
+            "max_tokens": 16,
+            "messages": [{"role": "user", "content": "hello"}]
+        }))
+        .send()
+        .await
+        .expect("runtime request");
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        forwarded_key.lock().unwrap().as_deref(),
+        None,
+        "the redirect target must never receive the Anthropic API key"
+    );
+
+    host.shutdown().await.expect("shutdown redirect runtime");
+    redirect_task.abort();
+    target_task.abort();
 }

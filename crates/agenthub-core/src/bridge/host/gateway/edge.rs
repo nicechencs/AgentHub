@@ -79,6 +79,9 @@ impl EdgeState {
             client: reqwest::Client::builder()
                 // Streaming requests deliberately have no reqwest-wide total timeout: a healthy
                 // long-running SSE response is bounded by per-chunk idle time instead.
+                // Never follow an upstream redirect: the transport may attach an API key
+                // header, and reqwest must not carry that secret to a different origin.
+                .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(UPSTREAM_CONNECT_TIMEOUT)
                 .build()
                 .expect("reqwest client builder uses static valid settings"),
