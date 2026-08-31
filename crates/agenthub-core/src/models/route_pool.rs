@@ -358,6 +358,22 @@ pub struct DefaultRoutePoolOverview {
     pub listed_models: Vec<String>,
 }
 
+/// One credential-free Connections source row selected for pool enrollment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConnectionSource {
+    pub source_kind: AdapterSourceKind,
+    pub source_id: String,
+}
+
+/// Optional source selection for connection-page authorization enrollment.
+/// An omitted request keeps the legacy all-eligible behavior.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConnectionAuthorizationsRequest {
+    pub sources: Vec<SyncConnectionSource>,
+}
+
 /// How many connection-page authorizations were enrolled into default pools.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

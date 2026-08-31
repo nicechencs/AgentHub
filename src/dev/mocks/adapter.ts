@@ -334,7 +334,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       }
       return changed;
     },
-    async syncConnectionAuthorizations() {
+    async syncConnectionAuthorizations(request) {
       await delay(20);
       if (!state.routePoolV2) {
         throw adapterCommandError({
@@ -398,15 +398,38 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         pool.members.push({ sourceKind, sourceId, enabled: true });
         added += 1;
       };
-      for (const account of listMockAccounts()) {
-        enroll(account.agentId, 'account', account.id, account.home);
-      }
-      for (const provider of listMockProviders()) {
-        if (state.generatedProviders.has(provider.id)) {
-          skipped += 1;
-          continue;
+      const accounts = listMockAccounts();
+      const providers = listMockProviders();
+      if (request) {
+        for (const source of request.sources) {
+          if (source.sourceKind === 'account') {
+            const account = accounts.find((item) => item.id === source.sourceId);
+            if (account) enroll(account.agentId, 'account', account.id, account.home);
+            else skipped += 1;
+            continue;
+          }
+          const provider = providers.find((item) => item.id === source.sourceId);
+          if (!provider) {
+            skipped += 1;
+            continue;
+          }
+          if (state.generatedProviders.has(provider.id)) {
+            skipped += 1;
+            continue;
+          }
+          enroll(provider.agentId, 'provider', provider.id, provider.home);
         }
-        enroll(provider.agentId, 'provider', provider.id, provider.home);
+      } else {
+        for (const account of accounts) {
+          enroll(account.agentId, 'account', account.id, account.home);
+        }
+        for (const provider of providers) {
+          if (state.generatedProviders.has(provider.id)) {
+            skipped += 1;
+            continue;
+          }
+          enroll(provider.agentId, 'provider', provider.id, provider.home);
+        }
       }
       return { added, skipped };
     },

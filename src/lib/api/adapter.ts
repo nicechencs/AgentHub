@@ -13,6 +13,7 @@ import type {
   AttachPoolOwnedAuthorizationRequest,
   DefaultRoutePoolList,
   DefaultRoutePoolOverview,
+  SyncConnectionAuthorizationsRequest,
   SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
 
@@ -36,6 +37,7 @@ export type {
   AdapterSourceKind,
   AdapterSupport,
   AttachPoolOwnedAuthorizationRequest,
+  SyncConnectionAuthorizationsRequest,
   SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
 
@@ -81,8 +83,10 @@ export async function setRouteAuthorizationEnabled(
 }
 
 /** Enroll Connections authorizations into the auth pool without removing them from Connections. */
-export async function syncConnectionAuthorizations(): Promise<SyncConnectionAuthorizationsResult> {
-  const result = await getBackend().adapter.syncConnectionAuthorizations();
+export async function syncConnectionAuthorizations(
+  request?: SyncConnectionAuthorizationsRequest,
+): Promise<SyncConnectionAuthorizationsResult> {
+  const result = await getBackend().adapter.syncConnectionAuthorizations(request);
   try {
     await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
   } catch {

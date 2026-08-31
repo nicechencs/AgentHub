@@ -4,6 +4,7 @@
  * 这里接入的登录只给连接池用，不会出现在连接页。
  */
 import { useMemo, useState, type ReactNode } from 'react';
+import { agentDisplayName } from '@/config/agents';
 import { AgentLogo } from '@/components/shared/AgentLogo';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { OAuthFlowDialog } from '@/components/connect/OAuthFlowDialog';
@@ -24,7 +25,15 @@ import {
 import type { AgentId } from '@/lib/types';
 import { attachPoolOwnedAuthorization, syncConnectionAuthorizations } from '@/lib/api/adapter';
 import { detectApiEndpointTypes } from '@/lib/api/provider';
-import type { AdapterSourceKind, DetectedApiEndpointType, RoutePoolSurface } from '@/lib/backend/contracts';
+import type {
+  AdapterSourceKind,
+  DefaultRoutePoolOverview,
+  DetectedApiEndpointType,
+  RoutePoolSurface,
+  SyncConnectionSource,
+} from '@/lib/backend/contracts';
+import type { ConnectionEntry } from '@/lib/connection-entry';
+import { sourceKindLabel } from '@/pages/bridges/adapter-create-flow';
 import { cn } from '@/lib/utils';
 
 export type PoolAccessAgent = 'claude' | 'codex' | 'grok';
@@ -161,6 +170,41 @@ export function poolSurfaceForApiChoice(
   if (choice.endpoint === '/v1/messages') return 'messages';
   if (choice.endpoint === '/v1/chat/completions') return 'chat_completions';
   return 'responses';
+}
+
+const SYNCABLE_POOL_AGENTS = new Set<AgentId>(['claude', 'codex', 'grok', 'kimi', 'dsh']);
+
+export type PoolSyncCandidate = SyncConnectionSource & {
+  key: string;
+  agentId: AgentId;
+  title: string;
+  alreadySynced: boolean;
+};
+
+/** Build a credential-free source list from the shared Connections/read-model rows. */
+export function poolSyncCandidates(
+  entries: readonly ConnectionEntry[],
+  pools: readonly DefaultRoutePoolOverview[],
+): PoolSyncCandidate[] {
+  const synced = new Set(
+    pools.flatMap((pool) => pool.members.map((member) => `${member.sourceKind}:${member.sourceId}`)),
+  );
+  return entries
+    .filter((entry) => SYNCABLE_POOL_AGENTS.has(entry.agentId))
+    .filter((entry) => entry.account?.home !== 'route_pool' && entry.provider?.home !== 'route_pool')
+    .map((entry) => {
+      const sourceKind = entry.source;
+      const sourceId = entry.id;
+      const key = `${sourceKind}:${sourceId}`;
+      return {
+        key,
+        sourceKind,
+        sourceId,
+        agentId: entry.agentId,
+        title: entry.title,
+        alreadySynced: synced.has(key),
+      };
+    });
 }
 
 type ChoiceDialogProps = {
@@ -384,10 +428,14 @@ const apiLabelKeys = {
 export function PoolAddButtons({
   agents,
   oauthAgents,
+  entries = [],
+  defaultPools = [],
   onChanged,
 }: {
   agents: readonly AgentId[];
   oauthAgents: readonly AgentId[];
+  entries?: readonly ConnectionEntry[];
+  defaultPools?: readonly DefaultRoutePoolOverview[];
   /** Called after an OAuth flow or API provider is saved. */
   onChanged?: () => void;
 }) {
@@ -400,11 +448,16 @@ export function PoolAddButtons({
   const [apiCredentials, setApiCredentials] = useState<{ baseUrl: string; apiKey: string } | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [selectedSyncKeys, setSelectedSyncKeys] = useState<Set<string>>(new Set());
   const oauthChoices = useMemo(
     () => poolOAuthChoices(agents, oauthAgents),
     [agents, oauthAgents],
   );
   const apiChoices = useMemo(() => poolApiChoices(agents), [agents]);
+  const syncCandidates = useMemo(
+    () => poolSyncCandidates(entries, defaultPools),
+    [defaultPools, entries],
+  );
   const attachAuthorization = async (
     sourceKind: AdapterSourceKind,
     sourceId: string,
@@ -432,7 +485,10 @@ export function PoolAddButtons({
   const syncFromConnections = async () => {
     setSyncing(true);
     try {
-      const result = await syncConnectionAuthorizations();
+      const sources: SyncConnectionSource[] = syncCandidates
+        .filter((candidate) => !candidate.alreadySynced && selectedSyncKeys.has(candidate.key))
+        .map(({ sourceKind, sourceId }) => ({ sourceKind, sourceId }));
+      const result = await syncConnectionAuthorizations({ sources });
       setSyncOpen(false);
       toast({
         title: result.added > 0
@@ -450,6 +506,15 @@ export function PoolAddButtons({
     } finally {
       setSyncing(false);
     }
+  };
+
+  const openSyncDialog = () => {
+    setSelectedSyncKeys(new Set(
+      syncCandidates
+        .filter((candidate) => !candidate.alreadySynced)
+        .map((candidate) => candidate.key),
+    ));
+    setSyncOpen(true);
   };
 
   const compactEndpointPresets = apiChoice
@@ -500,7 +565,7 @@ export function PoolAddButtons({
         type="button"
         size="sm"
         variant="secondary"
-        onClick={() => setSyncOpen(true)}
+        onClick={openSyncDialog}
       >
         {t('routes.pool.page.syncFromConnections')}
       </Button>
@@ -511,6 +576,43 @@ export function PoolAddButtons({
             <DialogTitle>{t('routes.pool.page.syncTitle')}</DialogTitle>
             <DialogDescription>{t('routes.pool.page.syncDescription')}</DialogDescription>
           </DialogHeader>
+          <div className="max-h-80 space-y-2 overflow-y-auto">
+            {syncCandidates.length > 0 ? syncCandidates.map((candidate) => {
+              const disabled = candidate.alreadySynced;
+              return (
+                <label
+                  key={candidate.key}
+                  className={cn(
+                    'flex items-center gap-3 rounded-card border border-border bg-panel p-3',
+                    disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-hover/50',
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!disabled && selectedSyncKeys.has(candidate.key)}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      setSelectedSyncKeys((current) => {
+                        const next = new Set(current);
+                        if (event.target.checked) next.add(candidate.key);
+                        else next.delete(candidate.key);
+                        return next;
+                      });
+                    }}
+                  />
+                  <AgentLogo agentId={candidate.agentId} size="sm" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{candidate.title}</span>
+                    <span className="block truncate text-xs text-muted">
+                      {agentDisplayName(candidate.agentId)} · {sourceKindLabel(candidate.sourceKind, t)}
+                    </span>
+                  </span>
+                </label>
+              );
+            }) : (
+              <p className="text-sm text-muted">{t('routes.pool.page.syncNone')}</p>
+            )}
+          </div>
           <DialogFooter>
             <Button
               type="button"
@@ -520,7 +622,11 @@ export function PoolAddButtons({
             >
               {t('common.cancel')}
             </Button>
-            <Button type="button" onClick={() => void syncFromConnections()} disabled={syncing}>
+            <Button
+              type="button"
+              onClick={() => void syncFromConnections()}
+              disabled={syncing || selectedSyncKeys.size === 0}
+            >
               {syncing ? t('routes.pool.page.syncing') : t('routes.pool.page.syncConfirm')}
             </Button>
           </DialogFooter>
