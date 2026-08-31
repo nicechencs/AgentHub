@@ -31,11 +31,16 @@ describe('settings layout wiring', () => {
     );
   });
 
-  it('exposes a plugins nav toggle next to the routes toggle', () => {
+  it('exposes auto-collapse then routes and plugins nav toggles', () => {
     const prefs = source('PreferencesPanel.tsx');
+    expect(prefs).toContain("t('settings.general.autoCollapseOnRoutesLabel')");
     expect(prefs).toContain("t('settings.general.routesNavVisibleLabel')");
     expect(prefs).toContain("t('settings.general.pluginsNavVisibleLabel')");
+    expect(prefs).toContain('setAutoCollapseOnRoutes');
     expect(prefs).toContain('setPluginsNavVisible');
+    expect(prefs.indexOf("t('settings.general.autoCollapseOnRoutesLabel')")).toBeLessThan(
+      prefs.indexOf("t('settings.general.routesNavVisibleLabel')"),
+    );
     expect(prefs.indexOf("t('settings.general.routesNavVisibleLabel')")).toBeLessThan(
       prefs.indexOf("t('settings.general.pluginsNavVisibleLabel')"),
     );
@@ -46,6 +51,7 @@ describe('settings layout wiring', () => {
     expect(prefs).toContain("t('common.inDevelopment')");
     expect(prefs).toContain('badge={<Badge');
     expect((prefs.match(/t\('common\.inDevelopment'\)/g) ?? []).length).toBe(2);
+    expect(prefs).toContain("aria-label={t('settings.general.autoCollapseOnRoutesLabel')}");
     expect(prefs).toContain("aria-label={t('settings.general.routesNavVisibleLabel')}");
     expect(prefs).toContain("aria-label={t('settings.general.pluginsNavVisibleLabel')}");
   });

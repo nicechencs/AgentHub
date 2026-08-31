@@ -2,29 +2,21 @@ import * as React from 'react';
 import {
   DEFAULT_PLUGINS_NAV_VISIBLE,
   DEFAULT_ROUTES_NAV_VISIBLE,
+  DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES,
   loadBool,
   saveBool,
   StorageKey,
 } from '@/lib/ui-preferences';
-import {
-  effectiveCollapsed,
-  onEnterRoutesArea,
-  onExpandPrimaryFromRoutes,
-  onLeaveRoutesArea,
-  onToggleInRoutesArea,
-} from '@/components/layout/sidebar-collapse-override';
 
 interface SidebarContextValue {
-  /** Effective collapsed (session override wins over stored preference). */
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
   toggle: () => void;
-  /** True while a `/routes*` page is mounted. */
-  routesAreaActive: boolean;
-  enterRoutesArea: () => void;
-  leaveRoutesArea: () => void;
-  /** Secondary-nav control: expand primary sidebar for this session only. */
+  /** Secondary-nav control: expand the primary sidebar (persisted). */
   expandPrimarySidebar: () => void;
+  /** When on, clicking Routes in the primary nav collapses it. */
+  autoCollapseOnRoutes: boolean;
+  setAutoCollapseOnRoutes: (v: boolean) => void;
   routesNavVisible: boolean;
   setRoutesNavVisible: (v: boolean) => void;
   pluginsNavVisible: boolean;
@@ -41,13 +33,15 @@ export function useSidebar() {
   return value;
 }
 
-/** 侧栏 UI 偏好（折叠、路由/插件入口可见性；持久化到 localStorage） */
+/** 侧栏 UI 偏好（折叠、路由点击自动折叠、路由/插件入口可见性；持久化到 localStorage） */
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
-  const [storedCollapsed, setStoredCollapsed] = React.useState(
+  const [collapsed, setCollapsedState] = React.useState(
     () => loadBool(StorageKey.sidebarCollapsed, false),
   );
-  const [sessionCollapsed, setSessionCollapsed] = React.useState<boolean | null>(null);
-  const [routesAreaActive, setRoutesAreaActive] = React.useState(false);
+  const [autoCollapseOnRoutes, setAutoCollapseOnRoutesState] = React.useState(
+    () =>
+      loadBool(StorageKey.sidebarAutoCollapseOnRoutes, DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES),
+  );
   const [routesNavVisible, setRoutesNavVisibleState] = React.useState(
     () => loadBool(StorageKey.routesNavVisible, DEFAULT_ROUTES_NAV_VISIBLE),
   );
@@ -55,19 +49,15 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     () => loadBool(StorageKey.pluginsNavVisible, DEFAULT_PLUGINS_NAV_VISIBLE),
   );
 
-  const collapsed = effectiveCollapsed({
-    stored: storedCollapsed,
-    session: sessionCollapsed,
-  });
-
   const setCollapsed = React.useCallback((v: boolean) => {
-    if (sessionCollapsed !== null) {
-      setSessionCollapsed(v);
-      return;
-    }
-    setStoredCollapsed(v);
+    setCollapsedState(v);
     saveBool(StorageKey.sidebarCollapsed, v);
-  }, [sessionCollapsed]);
+  }, []);
+
+  const setAutoCollapseOnRoutes = React.useCallback((v: boolean) => {
+    setAutoCollapseOnRoutesState(v);
+    saveBool(StorageKey.sidebarAutoCollapseOnRoutes, v);
+  }, []);
 
   const setRoutesNavVisible = React.useCallback((v: boolean) => {
     setRoutesNavVisibleState(v);
@@ -80,48 +70,25 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggle = React.useCallback(() => {
-    setSessionCollapsed((session) => {
-      if (session === null) {
-        setStoredCollapsed((prev) => {
-          const next = !prev;
-          saveBool(StorageKey.sidebarCollapsed, next);
-          return next;
-        });
-        return null;
-      }
-      const next = onToggleInRoutesArea({ stored: storedCollapsed, session });
-      return next.session;
+    setCollapsedState((prev) => {
+      const next = !prev;
+      saveBool(StorageKey.sidebarCollapsed, next);
+      return next;
     });
-  }, [storedCollapsed]);
-
-  const enterRoutesArea = React.useCallback(() => {
-    setRoutesAreaActive(true);
-    setSessionCollapsed((session) => {
-      const next = onEnterRoutesArea({ stored: storedCollapsed, session });
-      return next.session;
-    });
-  }, [storedCollapsed]);
-
-  const leaveRoutesArea = React.useCallback(() => {
-    setRoutesAreaActive(false);
-    setSessionCollapsed((session) => onLeaveRoutesArea({ stored: storedCollapsed, session }).session);
-  }, [storedCollapsed]);
+  }, []);
 
   const expandPrimarySidebar = React.useCallback(() => {
-    setSessionCollapsed((session) =>
-      onExpandPrimaryFromRoutes({ stored: storedCollapsed, session }).session,
-    );
-  }, [storedCollapsed]);
+    setCollapsed(false);
+  }, [setCollapsed]);
 
   const value = React.useMemo(
     () => ({
       collapsed,
       setCollapsed,
       toggle,
-      routesAreaActive,
-      enterRoutesArea,
-      leaveRoutesArea,
       expandPrimarySidebar,
+      autoCollapseOnRoutes,
+      setAutoCollapseOnRoutes,
       routesNavVisible,
       setRoutesNavVisible,
       pluginsNavVisible,
@@ -131,10 +98,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       collapsed,
       setCollapsed,
       toggle,
-      routesAreaActive,
-      enterRoutesArea,
-      leaveRoutesArea,
       expandPrimarySidebar,
+      autoCollapseOnRoutes,
+      setAutoCollapseOnRoutes,
       routesNavVisible,
       setRoutesNavVisible,
       pluginsNavVisible,

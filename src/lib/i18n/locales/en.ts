@@ -98,6 +98,11 @@ export const en = {
       closeToTrayDescription: 'Hide instead of quit',
       closeToTrayTip:
         'The close button hides the window to the system tray and keeps the process running. You can quit from the tray. Restore from the tray icon on Windows, or the menu-bar tray / Dock icon on macOS.',
+      autoCollapseOnRoutesLabel: 'Collapse sidebar on Routes',
+      autoCollapseOnRoutesDescription:
+        'Clicking Routes in the left nav collapses it. Turn off to stop automatic expand or collapse.',
+      autoCollapseOnRoutesTip:
+        'Only the Routes item auto-collapses the sidebar. Other pages, refresh, and moving inside Routes leave it as you left it. The collapse control always works.',
       routesNavVisibleLabel: 'Show Routes in sidebar',
       routesNavVisibleDescription:
         'In development. Show the Routes entry in the left nav. Hiding it does not disable the page.',

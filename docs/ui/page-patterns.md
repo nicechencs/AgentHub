@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-30
+updated: 2026-08-31
 ---
 
 # UI Page Patterns
@@ -43,7 +43,7 @@ Routes nested paths (secondary nav):
 | Local tokens | `/routes/tokens` | Entry-key management (in development placeholder) |
 | Activity | `/routes/activity` | Cross-route recent request feed |
 
-Entering any `/routes*` path shows a shell-level secondary nav panel and applies a **session-only** primary-sidebar collapse (does not write `agenthub:sidebar-collapsed`). The secondary nav top-left control expands the primary sidebar for the session. Leaving the routes area clears the override. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if the preference is off, so the active item remains visible; the preference itself is unchanged.
+Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Preferences → Sidebar. The secondary nav top-left control expands the primary sidebar. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
 
 ## 2. Application shell
 
@@ -71,7 +71,7 @@ Settings uses the workbench header and four page tabs; the tab row stays at the 
 
 | Tab | Query | Contents |
 |---|---|---|
-| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (Routes / Plugins visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
+| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (auto-collapse on Routes; Routes / Plugins visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
 | This computer | `?tab=local` | Data directory, log level, retention, log directory |
 | Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
