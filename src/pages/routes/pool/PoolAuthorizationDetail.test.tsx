@@ -14,6 +14,7 @@ function item(partial: Partial<PoolAuthorizationItem> = {}): PoolAuthorizationIt
     title: 'user@x.ai',
     kind: 'oauth',
     surface: 'responses',
+    endpointKinds: ['responses_grok'],
     addedHere: true,
     canToggle: true,
     enabled: true,

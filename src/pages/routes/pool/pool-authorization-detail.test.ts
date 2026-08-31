@@ -14,6 +14,7 @@ const t = (key: string, params?: Record<string, string | number>) => {
   if (key === 'routes.pool.detail.priority') return '优先级';
   if (key === 'routes.pool.detail.bindings') return '连接数量';
   if (key === 'routes.pool.detail.source') return '来源';
+  if (key === 'routes.pool.detail.endpointTypes') return '端点类型';
   if (key === 'routes.pool.page.addedHere') return '本页添加';
   if (key === 'routes.pool.table.login') return '登录';
   if (key === 'routes.pool.table.kind') return '类型';
@@ -22,6 +23,10 @@ const t = (key: string, params?: Record<string, string | number>) => {
   if (key === 'routes.pool.detail.quota') return '调用窗口';
   if (key === 'connections.list.lastUsedAt') return '最近使用';
   if (key === 'routes.pool.detail.refreshTokenTail') return 'Refresh Token tail';
+  if (key === 'routes.pool.surface.responsesGrok') return '回复接口 · Grok';
+  if (key === 'routes.pool.surface.responsesCodex') return '回复接口 · Codex';
+  if (key === 'routes.pool.surface.messages') return '对话接口';
+  if (key === 'routes.pool.surface.chatCompletions') return '对话补全';
   return key;
 };
 
@@ -34,6 +39,7 @@ function item(partial: Partial<PoolAuthorizationItem> = {}): PoolAuthorizationIt
     title: 'Grok · OAuth',
     kind: 'oauth',
     surface: 'responses',
+    endpointKinds: ['responses_grok'],
     addedHere: true,
     ...partial,
   };
@@ -42,7 +48,8 @@ function item(partial: Partial<PoolAuthorizationItem> = {}): PoolAuthorizationIt
 describe('pool authorization detail fields', () => {
   it('hides empty quota, last used, bindings, and priority', () => {
     const rows = poolAuthorizationDetailRows(item(), t);
-    expect(rows.map((row) => row.id)).toEqual(['source']);
+    expect(rows.map((row) => row.id)).toEqual(['endpointTypes', 'source']);
+    expect(rows.find((row) => row.id === 'endpointTypes')?.value).toContain('/v1/responses');
     expect(poolAuthorizationVisibleColumns([item()])).toEqual([
       'login',
       'kind',
@@ -50,6 +57,16 @@ describe('pool authorization detail fields', () => {
       'enabled',
     ]);
     expect(poolAuthorizationQuotaParts(item())).toEqual([]);
+  });
+
+  it('lists multiple endpoint kinds for one API key', () => {
+    const rows = poolAuthorizationDetailRows(item({
+      kind: 'apikey',
+      agentId: 'codex',
+      endpointKinds: ['responses_codex', 'chat_completions'],
+    }), t);
+    expect(rows.find((row) => row.id === 'endpointTypes')?.value).toContain('/v1/responses');
+    expect(rows.find((row) => row.id === 'endpointTypes')?.value).toContain('/v1/chat/completions');
   });
 
   it('shows only the masked refresh-token tail for OAuth', () => {
@@ -90,6 +107,7 @@ describe('pool authorization detail fields', () => {
     expect(poolAuthorizationColumnLabel('lastUsed', t)).toBe('最近使用');
     expect(poolAuthorizationColumnLabel('priority', t)).toBe('优先级');
     expect(poolAuthorizationDetailRows(row, t).map((entry) => entry.id)).toEqual([
+      'endpointTypes',
       'lastUsed',
       'bindings',
       'priority',
