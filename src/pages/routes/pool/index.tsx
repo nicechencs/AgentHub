@@ -76,6 +76,10 @@ import { useOAuthLoginAgents } from '@/pages/connections/use-oauth-login-agents'
 import { PoolAddButtons } from './PoolAddButtons';
 import { PoolAuthorizationDetail } from './PoolAuthorizationDetail';
 import { PoolAuthorizationList } from './PoolAuthorizationList';
+import {
+  poolAuthorizationRefreshAction,
+  runPoolAuthorizationRefresh,
+} from './pool-authorization-refresh';
 
 /**
  * 连接池：每一份官方登录 / API Key 一行，只展示登录状态。
@@ -110,6 +114,7 @@ export default function RoutesPoolPage() {
   const [deleteTicket, setDeleteTicket] = useState<TicketView | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
+  const [refreshingKey, setRefreshingKey] = useState<string | null>(null);
   const reloadAll = () => {
     void reload();
     setPoolReloadKey((value) => value + 1);
@@ -195,6 +200,8 @@ export default function RoutesPoolPage() {
   const authorizationEntry = authorizationItem
     ? entries.find((entry) => entry.key === authorizationItem.key) ?? null
     : null;
+  const authorizationAccount = authorizationEntry?.account ?? null;
+  const authorizationRefreshAction = poolAuthorizationRefreshAction(authorizationAccount);
   const authorizationTicket = authorizationItem
     ? poolAuthorizationTicketView(
       authorizationItem,
@@ -288,6 +295,23 @@ export default function RoutesPoolPage() {
     }
   };
 
+  const handleAuthorizationRefresh = async () => {
+    if (!authorizationItem || !authorizationAccount || !authorizationRefreshAction) return;
+    if (refreshingKey) return;
+    setRefreshingKey(authorizationItem.key);
+    try {
+      const result = await runPoolAuthorizationRefresh(authorizationAccount, t);
+      toast({
+        title: result.toast.title,
+        description: result.toast.description,
+        variant: result.toast.variant,
+      });
+      if (result.reload) reloadAll();
+    } finally {
+      setRefreshingKey(null);
+    }
+  };
+
   const openAuthorizationEdit = () => {
     if (authorizationEntry?.provider) {
       inspect.open({
@@ -357,9 +381,14 @@ export default function RoutesPoolPage() {
         item={authorizationItem}
         width={inspect.paneWidth}
         toggling={togglingKey === authorizationItem.key}
+        refreshing={refreshingKey === authorizationItem.key}
+        oauthAction={authorizationRefreshAction}
         onEnabledChange={(enabled) => {
           void handleAuthorizationEnabled(authorizationItem, enabled);
         }}
+        onRefresh={authorizationRefreshAction ? () => {
+          void handleAuthorizationRefresh();
+        } : undefined}
         onDelete={() => {
           if (authorizationTicket) setDeleteTicket(authorizationTicket);
         }}
