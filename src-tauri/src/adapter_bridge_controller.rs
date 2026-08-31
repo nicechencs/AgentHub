@@ -12,7 +12,7 @@
 //! in [`agenthub_core::adapter_control`] so commands stay Tauri-neutral.
 
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use agenthub_core::adapter_control::{surface_unbind_and_restart, AdapterBridgeStatus};
 use agenthub_core::bridge::{
@@ -118,7 +118,7 @@ async fn apply_local_bridge_locked(
             } else {
                 CODE_BRIDGE_START
             };
-            mark_retryable(hub, &profile_id, code).await;
+            let state_write = mark_retryable(hub, &profile_id, code).await;
             tracing::error!(
                 target: "core.adapter",
                 op = "start",
@@ -126,7 +126,10 @@ async fn apply_local_bridge_locked(
                 code,
                 "本机转发启动失败"
             );
-            return Err(map_bridge_host_error(error));
+            return Err(combine_state_write_error(
+                map_bridge_host_error(error),
+                state_write,
+            ));
         }
     };
     // Own any listener this saga started or replaced. An idempotent reuse of an
@@ -138,12 +141,15 @@ async fn apply_local_bridge_locked(
         let code = error.code().to_owned();
         let listener_compensated =
             compensate_started_bridge(&host, &profile_id, owns_listener).await;
-        if listener_compensated {
-            mark_retryable(hub, &profile_id, &code).await;
+        let state_write = if listener_compensated {
+            mark_retryable(hub, &profile_id, &code).await
         } else {
-            mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await;
-        }
-        return Err(map_err_string("verify_adapter_bridge_health", error));
+            mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await
+        };
+        return Err(combine_state_write_error(
+            map_err_string("verify_adapter_bridge_health", error),
+            state_write,
+        ));
     }
     let _ = host.record_upstream_outcome(&profile_id, BridgeUpstreamStatus::Connected);
 
@@ -164,12 +170,12 @@ async fn apply_local_bridge_locked(
         Err(error) => {
             let listener_compensated =
                 compensate_started_bridge(&host, &profile_id, owns_listener).await;
-            if listener_compensated {
-                mark_retryable(hub, &profile_id, CODE_BRIDGE_START).await;
+            let state_write = if listener_compensated {
+                mark_retryable(hub, &profile_id, CODE_BRIDGE_START).await
             } else {
-                mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await;
-            }
-            return Err(error);
+                mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await
+            };
+            return Err(combine_state_write_error(error, state_write));
         }
     }
 
@@ -220,12 +226,15 @@ async fn apply_local_bridge_locked(
             // A reversible failure remains retryable. NeedsAttention is
             // reserved for a failed rollback/listener compensation, where the
             // stored profile can no longer truthfully describe runtime state.
-            if listener_compensated && !error.contains("adapter.bridge_rollback") {
-                mark_retryable(hub, &profile_id, code).await;
+            let state_write = if listener_compensated && !error.contains("adapter.bridge_rollback") {
+                mark_retryable(hub, &profile_id, code).await
             } else {
-                mark_needs_attention(hub, &profile_id, "adapter.bridge_rollback").await;
-            }
-            Err(map_bridge_apply_error(&error, target_agent_id))
+                mark_needs_attention(hub, &profile_id, "adapter.bridge_rollback").await
+            };
+            Err(combine_state_write_error(
+                map_bridge_apply_error(&error, target_agent_id),
+                state_write,
+            ))
         }
     }
 }
@@ -388,9 +397,13 @@ fn status_dto(
 /// desktop startup restoration only; it does not start or stop a listener.
 pub(crate) async fn set_local_bridge_auto_start(
     hub: Arc<AgentHub>,
+    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
     auto_start: bool,
 ) -> Result<AdapterProfile, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _profile_guard = coordinator.lock_profile(&profile_id).await;
     with_hub_blocking(hub, move |hub| {
         hub.adapter_bridge()
             .set_auto_start(&profile_id, auto_start)
@@ -497,7 +510,7 @@ pub(crate) fn restore_adapter_bridges(
             {
                 Ok(material) => material,
                 Err(_) => {
-                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_SOURCE).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_SOURCE).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code = CODE_BRIDGE_RESTORE_SOURCE, "adapter bridge source could not be restored");
                     continue;
                 }
@@ -513,7 +526,7 @@ pub(crate) fn restore_adapter_bridges(
             {
                 Ok(runtime_material) => runtime_material,
                 Err(error) => {
-                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge restore could not attach live index");
                     continue;
                 }
@@ -547,7 +560,7 @@ pub(crate) fn restore_adapter_bridges(
                     } else {
                         CODE_BRIDGE_RESTORE_START
                     };
-                    mark_retryable(hub.clone(), &profile.id, code).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, code).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code, "adapter bridge listener could not be restored");
                     continue;
                 }
@@ -561,9 +574,9 @@ pub(crate) fn restore_adapter_bridges(
                 let listener_compensated =
                     compensate_started_bridge(&host, &profile.id, owns_listener).await;
                 if listener_compensated {
-                    mark_retryable(hub.clone(), &profile.id, &code).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, &code).await;
                 } else {
-                    mark_needs_attention(hub.clone(), &profile.id, "adapter.bridge_stop").await;
+                    let _ = mark_needs_attention(hub.clone(), &profile.id, "adapter.bridge_stop").await;
                 }
                 tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code = %code, "adapter bridge health check failed after restore");
                 continue;
@@ -586,7 +599,7 @@ pub(crate) fn restore_adapter_bridges(
                 }
                 Err(error) => {
                     let _ = compensate_started_bridge(&host, &profile.id, owns_listener).await;
-                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge v2 enroll after restore failed");
                     continue;
                 }
@@ -603,7 +616,7 @@ pub(crate) fn restore_adapter_bridges(
                 .await
                 {
                     let _ = compensate_started_bridge(&host, &profile.id, owns_listener).await;
-                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_PROJECTION).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_PROJECTION).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "bridge rebound to a new port but provider projection could not be realigned");
                     continue;
                 }
@@ -714,40 +727,53 @@ async fn load_bridge_profile(
     Ok(profile)
 }
 
-async fn mark_needs_attention(hub: Arc<AgentHub>, profile_id: &str, code: &str) {
+fn combine_state_write_error(primary: String, state_write: Result<(), String>) -> String {
+    match state_write {
+        Ok(()) => primary,
+        Err(state_error) => {
+            format!("{primary}; 失败状态写回失败：{state_error} [adapter.bridge_state]")
+        }
+    }
+}
+
+async fn mark_needs_attention(
+    hub: Arc<AgentHub>,
+    profile_id: &str,
+    code: &str,
+) -> Result<(), String> {
     let profile_id = profile_id.to_owned();
     let code = code.to_owned();
     let operation_profile_id = profile_id.clone();
     let operation_code = code.clone();
-    if with_hub_blocking(hub, move |hub| {
+    let result = with_hub_blocking(hub, move |hub| {
         hub.adapter_bridge()
             .mark_needs_attention(&operation_profile_id, &operation_code)
             .map(|_| ())
             .map_err(|error| map_err_string("mark_adapter_bridge_needs_attention", error))
     })
-    .await
-    .is_err()
-    {
-        tracing::warn!(target: "gui", op = "adapter_bridge_attention", profile_id = %profile_id, code = %code, "adapter bridge profile failure could not be persisted");
+    .await;
+    if let Err(error) = &result {
+        tracing::warn!(target: "gui", op = "adapter_bridge_attention", profile_id = %profile_id, code = %code, error = %error, "adapter bridge profile failure could not be persisted");
     }
+    result
 }
 
-async fn mark_retryable(hub: Arc<AgentHub>, profile_id: &str, code: &str) {
+async fn mark_retryable(hub: Arc<AgentHub>, profile_id: &str, code: &str) -> Result<(), String> {
     let profile_id = profile_id.to_owned();
     let code = code.to_owned();
     let operation_profile_id = profile_id.clone();
     let operation_code = code.clone();
-    if with_hub_blocking(hub, move |hub| {
+    let result = with_hub_blocking(hub, move |hub| {
         hub.adapter_bridge()
             .mark_retryable(&operation_profile_id, &operation_code)
             .map(|_| ())
             .map_err(|error| map_err_string("mark_adapter_bridge_retryable", error))
     })
-    .await
-    .is_err()
-    {
-        tracing::warn!(target: "gui", op = "adapter_bridge_retryable", profile_id = %profile_id, code = %code, "adapter bridge transient failure could not be persisted");
+    .await;
+    if let Err(error) = &result {
+        tracing::warn!(target: "gui", op = "adapter_bridge_retryable", profile_id = %profile_id, code = %code, error = %error, "adapter bridge transient failure could not be persisted");
     }
+    result
 }
 
 async fn compensate_started_bridge(
@@ -1248,10 +1274,34 @@ async fn stop_bridge_runtime(
     match host.stop(&profile.id).await {
         Ok(status) => Ok(status),
         Err(BridgeHostError::NotRunning) => Ok(stopped_runtime_status(profile)),
-        Err(BridgeHostError::Stopping) => Ok(host
-            .status(&profile.id)
-            .map_err(map_bridge_host_error)?
-            .unwrap_or_else(|| stopped_runtime_status(profile))),
+        Err(BridgeHostError::Stopping) => {
+            // Another lifecycle operation already owns the host stop.  The
+            // `Stopping` status is not a successful stop: wait until the
+            // runtime is removed, or surface a bounded failure rather than
+            // allowing a DB mutation while the old listener can still serve.
+            const STOPPING_WATCHDOG: Duration = Duration::from_secs(12);
+            let deadline = Instant::now() + STOPPING_WATCHDOG;
+            loop {
+                match host.status(&profile.id).map_err(map_bridge_host_error)? {
+                    None => return Ok(stopped_runtime_status(profile)),
+                    Some(status) if status.state == BridgeRuntimeState::Stopped => {
+                        return Ok(status);
+                    }
+                    Some(status) if status.state == BridgeRuntimeState::Error => {
+                        return Err(format!(
+                            "本机转发停止失败，运行状态异常 [adapter.bridge_stop]"
+                        ));
+                    }
+                    Some(_) if Instant::now() >= deadline => {
+                        return Err(
+                            "本机转发仍在停止，未执行路由数据变更 [adapter.bridge_stop]"
+                                .into(),
+                        );
+                    }
+                    Some(_) => tokio::time::sleep(Duration::from_millis(25)).await,
+                }
+            }
+        }
         Err(error) => Err(map_bridge_host_error(error)),
     }
 }

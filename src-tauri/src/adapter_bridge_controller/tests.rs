@@ -149,6 +149,21 @@ fn invalid_secret_reference_is_shown_in_chinese_for_claude_target() {
 }
 
 #[test]
+fn foreground_failure_reports_state_write_failure() {
+    let primary = "本机转发无法启动 [adapter.bridge_start]".to_owned();
+    assert_eq!(combine_state_write_error(primary.clone(), Ok(())), primary);
+
+    let combined = combine_state_write_error(
+        primary,
+        Err("db adapter profile update failed [db.write]".to_owned()),
+    );
+    assert!(combined.contains("本机转发无法启动 [adapter.bridge_start]"));
+    assert!(combined.contains("失败状态写回失败"));
+    assert!(combined.contains("db adapter profile update failed [db.write]"));
+    assert!(combined.contains("[adapter.bridge_state]"));
+}
+
+#[test]
 fn started_listener_is_compensated_after_apply_stage_failure() {
     tauri::async_runtime::block_on(async {
         let host = BridgeRuntimeHost::new();
