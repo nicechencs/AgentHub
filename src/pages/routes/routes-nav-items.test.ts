@@ -23,13 +23,7 @@ describe('routes-nav-items', () => {
     ]);
   });
 
-  it('flags only tokens as in development', () => {
-    const byKey = Object.fromEntries(
-      ROUTES_NAV_ITEMS.map((item) => [item.labelKey, routesNavItemInDevelopment(item)]),
-    );
-    expect(byKey['routes.nav.board']).toBe(false);
-    expect(byKey['routes.nav.pool']).toBe(false);
-    expect(byKey['routes.nav.tokens']).toBe(true);
-    expect(byKey['routes.nav.activity']).toBe(false);
+  it('does not mark any routes sub-nav item as in development', () => {
+    expect(ROUTES_NAV_ITEMS.every((item) => !routesNavItemInDevelopment(item))).toBe(true);
   });
 });

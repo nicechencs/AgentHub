@@ -25,7 +25,7 @@ export type RoutesNavItem = {
 export const ROUTES_NAV_ITEMS: readonly RoutesNavItem[] = [
   { to: ROUTES_BOARD_PATH, labelKey: 'routes.nav.board', icon: LayoutDashboard },
   { to: ROUTES_POOL_PATH, labelKey: 'routes.nav.pool', icon: Users },
-  { to: ROUTES_TOKENS_PATH, labelKey: 'routes.nav.tokens', icon: KeyRound, inDevelopment: true },
+  { to: ROUTES_TOKENS_PATH, labelKey: 'routes.nav.tokens', icon: KeyRound },
   { to: ROUTES_ACTIVITY_PATH, labelKey: 'routes.nav.activity', icon: Activity },
 ] as const;
 
