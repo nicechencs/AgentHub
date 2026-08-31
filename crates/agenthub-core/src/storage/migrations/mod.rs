@@ -76,6 +76,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00022_route_duplicate_settings",
         include_str!("00022_route_duplicate_settings.sql"),
     ),
+    (
+        "00023_live_write_fingerprints",
+        include_str!("00023_live_write_fingerprints.sql"),
+    ),
+    (
+        "00024_gateway_usage",
+        include_str!("00024_gateway_usage.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

@@ -162,4 +162,4 @@ Day-to-day development and PRs use the `dev` branch. For a formal release, bump 
 
 ## License
 
-This project is under the [MIT License](LICENSE). Usage parsing and config switching borrow from [ccusage](https://github.com/ccusage/ccusage) and [cc-switch](https://github.com/farion1231/cc-switch).
+This project is under the [MIT License](LICENSE). Usage parsing and config switching borrow from [ccusage](https://github.com/ccusage/ccusage) and [cc-switch](https://github.com/farion1231/cc-switch); local routing borrows from [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).

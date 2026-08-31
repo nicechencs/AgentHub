@@ -1,5 +1,5 @@
 /**
- * Pure view-model for Routes pool v2 (flag-gated). No React, no IO.
+ * Pure view-model for the Routes auth-pool workbench. No React, no IO.
  */
 import type {
   AdapterBridgeRuntimeStatus,
@@ -11,6 +11,16 @@ import type {
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { TranslateFn } from '@/lib/i18n';
 import { groupLocalBridgeProfiles } from './adapter-view-model';
+
+/** One workbench card: a default pool, or a local route not yet in a pool. */
+export type PoolWorkbenchRow = {
+  key: string;
+  pool: DefaultRoutePoolOverview | null;
+  profile: AdapterProfile | null;
+  targetAgentId: AdapterProfile['targetAgentId'];
+  surface: RoutePoolSurface | null;
+  gatewayPort: number | null;
+};
 
 export function defaultPoolEntryUrl(port?: number | null): { url: string | null; pending: boolean } {
   if (typeof port === 'number' && port > 0) {
@@ -108,4 +118,92 @@ export function routePoolSurfaceLabel(surface: RoutePoolSurface, t?: TranslateFn
     return t ? t('routes.pool.surface.responses') : '回复接口';
   }
   return t ? t('routes.pool.surface.chatCompletions') : '对话补全';
+}
+
+function pickLeadProfile<T extends AdapterProfile>(
+  members: readonly T[],
+  statuses: Record<string, AdapterBridgeRuntimeStatus>,
+): T {
+  const running = members.find((member) => {
+    const state = statuses[member.id]?.state;
+    return state === 'running' || state === 'degraded';
+  });
+  if (running) return running;
+  return [...members].sort((left, right) => {
+    const created = left.createdAt.localeCompare(right.createdAt);
+    return created !== 0 ? created : left.id.localeCompare(right.id);
+  })[0]!;
+}
+
+export function leadProfileForPool(
+  pool: Pick<DefaultRoutePoolOverview, 'id' | 'targetAgentId' | 'members'>,
+  profiles: readonly AdapterProfile[],
+  statuses: Record<string, AdapterBridgeRuntimeStatus> = {},
+): AdapterProfile | null {
+  const byId = profiles.find((profile) => profile.id === pool.id);
+  if (byId) return byId;
+  const matches = profiles.filter((profile) => (
+    profile.route === 'local_bridge'
+    && profile.targetAgentId === pool.targetAgentId
+    && pool.members.some((member) => (
+      member.sourceKind === profile.sourceKind && member.sourceId === profile.sourceId
+    ))
+  ));
+  if (matches.length === 0) return null;
+  return pickLeadProfile(matches, statuses);
+}
+
+export function localBridgesNotInPools(
+  pools: readonly DefaultRoutePoolOverview[],
+  profiles: readonly AdapterProfile[],
+): AdapterProfile[] {
+  return profiles.filter((profile) => (
+    profile.route === 'local_bridge'
+    && matchDefaultPoolForProfile(pools, profile) == null
+  ));
+}
+
+function rowFromProfile(
+  profile: AdapterProfile,
+  statuses: Record<string, AdapterBridgeRuntimeStatus>,
+): PoolWorkbenchRow {
+  const statusPort = statuses[profile.id]?.port;
+  const port = profile.localPort ?? (typeof statusPort === 'number' ? statusPort : null);
+  return {
+    key: profile.id,
+    pool: null,
+    profile,
+    targetAgentId: profile.targetAgentId,
+    surface: null,
+    gatewayPort: typeof port === 'number' && port > 0 ? port : null,
+  };
+}
+
+/** Cards for the auth-pool workbench. One row per Agent/surface pool, plus unmatched local routes. */
+export function buildPoolWorkbenchRows(input: {
+  flagOn: boolean;
+  pools: readonly DefaultRoutePoolOverview[];
+  profiles: readonly AdapterProfile[];
+  statuses?: Record<string, AdapterBridgeRuntimeStatus>;
+}): PoolWorkbenchRow[] {
+  const statuses = input.statuses ?? {};
+  if (!input.flagOn) {
+    return input.profiles
+      .filter((profile) => profile.route === 'local_bridge')
+      .map((profile) => rowFromProfile(profile, statuses));
+  }
+  const fromPools = input.pools.map((pool) => {
+    const profile = leadProfileForPool(pool, input.profiles, statuses);
+    return {
+      key: pool.id,
+      pool,
+      profile,
+      targetAgentId: pool.targetAgentId,
+      surface: pool.surface,
+      gatewayPort: pool.gatewayPort ?? null,
+    };
+  });
+  const extras = localBridgesNotInPools(input.pools, input.profiles)
+    .map((profile) => rowFromProfile(profile, statuses));
+  return [...fromPools, ...extras];
 }

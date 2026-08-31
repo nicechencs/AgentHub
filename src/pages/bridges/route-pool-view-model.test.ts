@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import {
+  buildPoolWorkbenchRows,
   defaultPoolEntryUrl,
   directProfilesForRoutePoolV2,
+  leadProfileForPool,
+  localBridgesNotInPools,
   matchDefaultPoolForProfile,
   nativeEnrollCtaVisible,
   routePoolMemberLabels,
@@ -117,6 +120,44 @@ describe('route pool v2 view-model', () => {
     const sibling = profile({ id: 'bridge-2', sourceId: 'acc-2', route: 'local_bridge' });
     expect(directProfilesForRoutePoolV2(true, [native, converted, sibling]).map((item) => item.id))
       .toEqual(['native-1']);
+  });
+
+  it('picks the pool lead by id, then by matching member', () => {
+    const overview = pool();
+    expect(leadProfileForPool(overview, [profile()])?.id).toBe('bridge-1');
+    const memberOnly = profile({ id: 'other', sourceId: 'kimi-1', targetAgentId: 'codex' });
+    expect(leadProfileForPool({ ...overview, id: 'pool-x' }, [memberOnly])?.id).toBe('other');
+    expect(leadProfileForPool(overview, [profile({ id: 'miss', sourceId: 'other' })])).toBeNull();
+  });
+
+  it('builds workbench rows from default pools plus unmatched local routes', () => {
+    const enrolled = profile();
+    const extra = profile({
+      id: 'bridge-extra',
+      sourceId: 'openai-1',
+      targetAgentId: 'claude',
+      localPort: 43122,
+    });
+    const rows = buildPoolWorkbenchRows({
+      flagOn: true,
+      pools: [pool()],
+      profiles: [enrolled, extra],
+    });
+    expect(rows.map((row) => row.key)).toEqual(['bridge-1', 'bridge-extra']);
+    expect(rows[0]?.pool?.id).toBe('bridge-1');
+    expect(rows[1]?.pool).toBeNull();
+    expect(localBridgesNotInPools([pool()], [enrolled, extra]).map((item) => item.id))
+      .toEqual(['bridge-extra']);
+  });
+
+  it('falls back to one card per local route when the pool flag is off', () => {
+    const rows = buildPoolWorkbenchRows({
+      flagOn: false,
+      pools: [pool()],
+      profiles: [profile(), profile({ id: 'native-1', route: 'native_endpoint' })],
+    });
+    expect(rows.map((row) => row.key)).toEqual(['bridge-1']);
+    expect(rows[0]?.pool).toBeNull();
   });
 
   it('collapses multiple native profiles from one source into one direct row', () => {

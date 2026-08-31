@@ -40,13 +40,19 @@ pub struct BackupManifest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ManifestEntry {
-    /// Basename stored inside the snapshot directory.
+    /// Basename stored inside the snapshot directory. For an absent entry
+    /// this is an identifier only — no payload file exists for it.
     pub stored: String,
     /// Absolute live path that was copied (identity only; must match adapter).
     pub source: String,
     /// SHA-256 hex of file bytes at snapshot time. Absent on legacy manifests.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
+    /// True when the live file did not exist at snapshot time (no stored
+    /// payload). Additive field; legacy manifests without it read as `false`
+    /// and keep restoring exactly as before.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub absent_before: bool,
 }
 
 /// One live file about to be snapshotted (allocated dest name + content hash).
@@ -64,7 +70,8 @@ impl BackupService {
     /// - Zero existing files → [`AppError::NotFound`], no DB row.
     /// - Identical content reuses the newest matching historical snapshot.
     /// - Writes `manifest.json` mapping stored basenames → live sources
-    ///   (and SHA-256 when available).
+    ///   (and SHA-256 when available). Live files that did not exist at
+    ///   snapshot time are recorded as `absent_before` entries.
     /// - DB index is written only after every copy/hardlink succeeds.
     /// - On failure: no DB row; best-effort removal of the incomplete snapshot
     ///   directory when it is exactly under `backups_root`.
@@ -113,6 +120,7 @@ impl BackupService {
 
             let candidates = adapter.live_backup_paths();
             let mut sources: Vec<PathBuf> = Vec::new();
+            let mut absent_sources: Vec<PathBuf> = Vec::new();
             for path in candidates {
                 if !is_safe_path(&path) {
                     return Err(AppError::InvalidArg(format!(
@@ -123,10 +131,11 @@ impl BackupService {
                 // Only regular files that currently exist (skip dirs/symlinks).
                 match classify_path(&path)? {
                     PathClass::RegularFile => sources.push(path),
-                    PathClass::Missing
-                    | PathClass::Directory
-                    | PathClass::Symlink
-                    | PathClass::Other => {}
+                    // A missing candidate is still recorded: the manifest
+                    // marks it `absent_before` so restore can later clean up
+                    // the file if AgentHub creates and later owns it.
+                    PathClass::Missing => absent_sources.push(path),
+                    PathClass::Directory | PathClass::Symlink | PathClass::Other => {}
                 }
             }
 
@@ -167,13 +176,19 @@ impl BackupService {
             }
 
             let copy_result = self.materialize_sources(&planned, &snapshot_dir, &mut hash_index);
-            let (files, size, manifest) = match copy_result {
+            let (files, size, mut manifest) = match copy_result {
                 Ok(v) => v,
                 Err(e) => {
                     self.best_effort_remove_snapshot(&snapshot_dir);
                     return Err(e);
                 }
             };
+
+            if let Err(e) = append_absent_manifest_entries(&mut manifest, &planned, &absent_sources)
+            {
+                self.best_effort_remove_snapshot(&snapshot_dir);
+                return Err(e);
+            }
 
             if let Err(e) = write_manifest(&snapshot_dir, &manifest) {
                 self.best_effort_remove_snapshot(&snapshot_dir);
@@ -258,6 +273,7 @@ impl BackupService {
                 stored: entry.stored.clone(),
                 source: entry.source.display().to_string(),
                 sha256: Some(entry.sha256.clone()),
+                absent_before: false,
             });
             hash_index.entry(hash_key).or_insert(dest);
         }
@@ -303,15 +319,45 @@ fn plan_snapshot_entries(sources: &[PathBuf]) -> Result<(Vec<PlannedEntry>, u64)
     Ok((planned, total_size))
 }
 
+/// Record live files that did not exist at snapshot time as `absent_before`
+/// manifest entries (no stored payload). Stored names are allocated against
+/// the present entries' names so every entry stays unique. The backup index
+/// row keeps listing present payload files only.
+fn append_absent_manifest_entries(
+    manifest: &mut BackupManifest,
+    planned: &[PlannedEntry],
+    absent_sources: &[PathBuf],
+) -> Result<()> {
+    let mut occupied: HashSet<String> = planned.iter().map(|e| e.stored.clone()).collect();
+    for source in absent_sources {
+        let stored = allocate_dest_name(source, &mut occupied)?;
+        manifest.entries.push(ManifestEntry {
+            stored,
+            source: source.display().to_string(),
+            sha256: None,
+            absent_before: true,
+        });
+    }
+    Ok(())
+}
+
 pub(super) fn planned_matches_manifest(
     planned: &[PlannedEntry],
     manifest: &BackupManifest,
     dir: &Path,
 ) -> bool {
-    if planned.len() != manifest.entries.len() {
+    // Absent entries carry no payload, so identical-content reuse compares
+    // against the manifest's present files only; a formerly absent file that
+    // now exists changes `planned` and forces a fresh snapshot.
+    let present: Vec<&ManifestEntry> = manifest
+        .entries
+        .iter()
+        .filter(|entry| !entry.absent_before)
+        .collect();
+    if planned.len() != present.len() {
         return false;
     }
-    for (p, e) in planned.iter().zip(&manifest.entries) {
+    for (p, e) in planned.iter().zip(present) {
         if p.stored != e.stored {
             return false;
         }

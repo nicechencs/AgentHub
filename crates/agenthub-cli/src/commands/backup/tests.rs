@@ -39,13 +39,14 @@ fn emit_list_quiet_is_ok() {
 #[test]
 fn restore_result_has_json_shape() {
     let restored = record();
-    let result = RestoreResult {
-        restored: restored.clone(),
-        pre_restore: Some(restored),
-        restored_paths: vec![r"D:\live\auth.json".into()],
-    };
+    let result = RestoreResult::new(
+        restored.clone(),
+        Some(restored),
+        vec![r"D:\live\auth.json".into()],
+    );
     let value = serde_json::to_value(result).unwrap();
     assert_eq!(value["restored"]["id"], "backup-1");
     assert_eq!(value["preRestore"]["id"], "backup-1");
     assert_eq!(value["restoredPaths"][0], r"D:\live\auth.json");
+    assert!(value.get("skippedDeletions").is_none());
 }

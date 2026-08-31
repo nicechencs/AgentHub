@@ -59,6 +59,8 @@ pub(in crate::bridge::host) struct EdgeState {
     /// marked unsupported. Availability only; next `/models` omits the id when
     /// no other candidate remains.
     pub(in crate::bridge::host) member_model_denials: Arc<Mutex<HashSet<(String, String)>>>,
+    /// Host-level optional gateway usage spool (clone of the shared slot).
+    pub(in crate::bridge::host) usage_spool: crate::bridge::usage_capture::UsageSpoolSlot,
 }
 
 impl EdgeState {
@@ -67,6 +69,7 @@ impl EdgeState {
         upstream_url: Url,
         force_shutdown: CancellationToken,
         auth_reload: AuthReloadCoordinator,
+        usage_spool: crate::bridge::usage_capture::UsageSpoolSlot,
     ) -> Self {
         let state = Self {
             profile_id: Arc::from(spec.profile_id.clone()),
@@ -99,6 +102,7 @@ impl EdgeState {
                 super::super::continuation::ContinuationBindings::new(),
             ),
             member_model_denials: Arc::new(Mutex::new(HashSet::new())),
+            usage_spool,
         };
         // stop+start is how production rotates a login; host-wide 401
         // isolation must not outlive the old picker.

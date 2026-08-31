@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use crate::bridge::host::InboundRequestRecord;
+use crate::bridge::host::{InboundRequestRecord, InboundRequestStats};
 use crate::bridge::{BridgeRuntimeState, BridgeRuntimeStatus, BridgeUpstreamStatus};
 use crate::models::AdapterProfile;
 
@@ -28,10 +28,22 @@ pub struct AdapterBridgeStatus {
     /// Newest first. Empty when no tool has connected since this process started.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recent_inbound: Vec<InboundRequestRecord>,
+    /// Authenticated inbound requests since this process started (not ring-capped).
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub total_request_count: u64,
+    /// Failed authenticated inbound requests since this process started.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub failed_request_count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_request_at_unix_ms: Option<u128>,
     /// Loopback bearer the listener accepts (`ahb_…`). Shown so the user can copy
     /// the token that actually authenticates; never the unused pool hub token.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_token: Option<String>,
+}
+
+fn is_zero_u64(value: &u64) -> bool {
+    *value == 0
 }
 
 impl AdapterBridgeStatus {
@@ -45,6 +57,9 @@ impl AdapterBridgeStatus {
             source_connection_id: Some(profile.source_id.clone()),
             started_at_unix_ms: None,
             recent_inbound: Vec::new(),
+            total_request_count: 0,
+            failed_request_count: 0,
+            last_request_at_unix_ms: None,
             local_token: None,
         }
     }
@@ -59,6 +74,9 @@ impl AdapterBridgeStatus {
             source_connection_id: status.source_connection_id,
             started_at_unix_ms: system_time_millis(status.started_at),
             recent_inbound: Vec::new(),
+            total_request_count: 0,
+            failed_request_count: 0,
+            last_request_at_unix_ms: None,
             local_token: None,
         }
     }
@@ -78,6 +96,13 @@ impl AdapterBridgeStatus {
 
     pub fn with_recent_inbound(mut self, recent_inbound: Vec<InboundRequestRecord>) -> Self {
         self.recent_inbound = recent_inbound;
+        self
+    }
+
+    pub fn with_inbound_stats(mut self, stats: InboundRequestStats) -> Self {
+        self.total_request_count = stats.total_request_count;
+        self.failed_request_count = stats.failed_request_count;
+        self.last_request_at_unix_ms = stats.last_request_at_unix_ms;
         self
     }
 }

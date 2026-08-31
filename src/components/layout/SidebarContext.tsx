@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
   DEFAULT_PLUGINS_NAV_VISIBLE,
   DEFAULT_ROUTES_NAV_VISIBLE,
+  DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES,
   loadBool,
   saveBool,
   StorageKey,
@@ -11,6 +12,11 @@ interface SidebarContextValue {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
   toggle: () => void;
+  /** Secondary-nav control: expand the primary sidebar (persisted). */
+  expandPrimarySidebar: () => void;
+  /** When on, clicking Routes in the primary nav collapses it. */
+  autoCollapseOnRoutes: boolean;
+  setAutoCollapseOnRoutes: (v: boolean) => void;
   routesNavVisible: boolean;
   setRoutesNavVisible: (v: boolean) => void;
   pluginsNavVisible: boolean;
@@ -27,10 +33,14 @@ export function useSidebar() {
   return value;
 }
 
-/** 侧栏 UI 偏好（折叠、路由/插件入口可见性；持久化到 localStorage） */
+/** 侧栏 UI 偏好（折叠、路由点击自动折叠、路由/插件入口可见性；持久化到 localStorage） */
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsedState] = React.useState(
     () => loadBool(StorageKey.sidebarCollapsed, false),
+  );
+  const [autoCollapseOnRoutes, setAutoCollapseOnRoutesState] = React.useState(
+    () =>
+      loadBool(StorageKey.sidebarAutoCollapseOnRoutes, DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES),
   );
   const [routesNavVisible, setRoutesNavVisibleState] = React.useState(
     () => loadBool(StorageKey.routesNavVisible, DEFAULT_ROUTES_NAV_VISIBLE),
@@ -42,6 +52,11 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const setCollapsed = React.useCallback((v: boolean) => {
     setCollapsedState(v);
     saveBool(StorageKey.sidebarCollapsed, v);
+  }, []);
+
+  const setAutoCollapseOnRoutes = React.useCallback((v: boolean) => {
+    setAutoCollapseOnRoutesState(v);
+    saveBool(StorageKey.sidebarAutoCollapseOnRoutes, v);
   }, []);
 
   const setRoutesNavVisible = React.useCallback((v: boolean) => {
@@ -62,11 +77,18 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const expandPrimarySidebar = React.useCallback(() => {
+    setCollapsed(false);
+  }, [setCollapsed]);
+
   const value = React.useMemo(
     () => ({
       collapsed,
       setCollapsed,
       toggle,
+      expandPrimarySidebar,
+      autoCollapseOnRoutes,
+      setAutoCollapseOnRoutes,
       routesNavVisible,
       setRoutesNavVisible,
       pluginsNavVisible,
@@ -76,6 +98,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       collapsed,
       setCollapsed,
       toggle,
+      expandPrimarySidebar,
+      autoCollapseOnRoutes,
+      setAutoCollapseOnRoutes,
       routesNavVisible,
       setRoutesNavVisible,
       pluginsNavVisible,

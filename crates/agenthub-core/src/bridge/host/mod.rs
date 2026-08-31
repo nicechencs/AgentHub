@@ -16,11 +16,15 @@ mod surface;
 mod transport;
 mod upstream;
 
+#[cfg(test)]
+mod usage_capture_tests;
+
 pub use gateway::BridgeHostError;
 // Re-exported for bridge tests.
 #[allow(unused_imports)]
 pub(super) use gateway::CleanupCompletion;
 pub use inbound::InboundRequestRecord;
+pub use inbound::InboundRequestStats;
 pub use lifecycle::BridgeRuntimeHost;
 
 #[cfg(test)]

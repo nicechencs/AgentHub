@@ -1,10 +1,17 @@
 import type { UsagePort } from '@/lib/backend/contracts';
-import type { UsageOverview, UsageQuery } from '@/lib/backend/contracts/usage-types';
+import type {
+  GatewayUsageOverview,
+  GatewayUsageQuery,
+  GatewayUsageRow,
+  UsageOverview,
+  UsageQuery,
+} from '@/lib/backend/contracts/usage-types';
 import { delay } from '@/dev/mocks/delay';
 import { isCapabilityUsable } from '@/lib/capability';
 import type { AgentId, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { denseTrendBuckets, localTrendBucket, trendGrain } from '@/lib/usage-trend';
 import { usageTokenParts } from '@/lib/usage-tokens';
+import { listMockAdapterProfiles } from './adapter';
 import { MOCK_CAPABILITIES } from './capabilities';
 
 /**
@@ -238,5 +245,123 @@ export function createMockUsagePort(): UsagePort {
         missingPricingModels: [],
       };
     },
+
+    async gatewayUsageQuery(q = {}) {
+      await delay(30 + Math.random() * 50);
+      return filterMockGatewayRows(q);
+    },
+
+    async gatewayUsageOverview(q = {}) {
+      await delay(30 + Math.random() * 50);
+      return summarizeMockGatewayRows(filterMockGatewayRows(q));
+    },
+  };
+}
+
+const GATEWAY_SURFACES = ['messages', 'responses', 'chat'] as const;
+
+function defaultSurfaceForAgent(agentId: string): (typeof GATEWAY_SURFACES)[number] {
+  if (agentId === 'claude') return 'messages';
+  if (agentId === 'grok') return 'chat';
+  return 'responses';
+}
+
+function buildMockGatewayRows(nowMs: number): GatewayUsageRow[] {
+  const profiles = listMockAdapterProfiles().filter((profile) => profile.route === 'local_bridge');
+  if (profiles.length === 0) return [];
+  const rand = seededRandom(20260831);
+  const out: GatewayUsageRow[] = [];
+  let n = 0;
+  for (let d = 29; d >= 0; d--) {
+    const day = new Date(nowMs - d * 24 * 3600 * 1000);
+    for (const profile of profiles) {
+      const models = MODELS[profile.targetAgentId] ?? ['gpt-4.1'];
+      const hits = Math.floor(rand() * 5) + (d < 7 ? 2 : 1);
+      for (let i = 0; i < hits; i++) {
+        const ts = new Date(day);
+        ts.setHours(Math.floor(rand() * 14) + 8, Math.floor(rand() * 60), 0, 0);
+        const failed = rand() < 0.08;
+        const surface =
+          rand() < 0.55 ? defaultSurfaceForAgent(profile.targetAgentId) : GATEWAY_SURFACES[Math.floor(rand() * 3)];
+        const input = Math.floor(rand() * 40000) + 800;
+        const output = Math.floor(rand() * 12000) + 200;
+        const cached = Math.floor(input * rand() * 0.4);
+        out.push({
+          requestId: `g-${n++}`,
+          ts: ts.toISOString(),
+          profileId: profile.id,
+          surface,
+          model: models[Math.floor(rand() * models.length)],
+          inputTokens: input,
+          outputTokens: failed ? 0 : output,
+          cachedInputTokens: cached,
+          status: failed ? 'failed' : 'ok',
+          latencyMs: Math.floor(rand() * 1800) + 80,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function filterMockGatewayRows(q: GatewayUsageQuery): GatewayUsageRow[] {
+  const rows = buildMockGatewayRows(Date.now());
+  const since = q.since ?? null;
+  const until = q.until ?? null;
+  const profileId = q.profileId ?? null;
+  const filtered = rows.filter((row) => {
+    if (since && row.ts < since) return false;
+    if (until && row.ts > until) return false;
+    if (profileId && row.profileId !== profileId) return false;
+    return true;
+  });
+  filtered.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+  return q.limit != null ? filtered.slice(0, q.limit) : filtered;
+}
+
+function summarizeMockGatewayRows(rows: readonly GatewayUsageRow[]): GatewayUsageOverview {
+  let okCount = 0;
+  let failedCount = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cachedInputTokens = 0;
+  let reasoningTokens = 0;
+  let latencySum = 0;
+  let latencyN = 0;
+  let ttftSum = 0;
+  let ttftN = 0;
+  const latencies: number[] = [];
+  for (const row of rows) {
+    if (row.status === 'ok') okCount += 1;
+    else failedCount += 1;
+    inputTokens += row.inputTokens;
+    outputTokens += row.outputTokens;
+    cachedInputTokens += row.cachedInputTokens ?? 0;
+    reasoningTokens += row.reasoningTokens ?? 0;
+    if (typeof row.latencyMs === 'number') {
+      latencySum += row.latencyMs;
+      latencyN += 1;
+      latencies.push(row.latencyMs);
+    }
+    if (typeof row.ttftMs === 'number') {
+      ttftSum += row.ttftMs;
+      ttftN += 1;
+    }
+  }
+  latencies.sort((a, b) => a - b);
+  const p95 = latencies.length === 0
+    ? undefined
+    : latencies[Math.max(0, Math.ceil(0.95 * latencies.length) - 1)];
+  return {
+    requestCount: rows.length,
+    okCount,
+    failedCount,
+    inputTokens,
+    outputTokens,
+    cachedInputTokens,
+    reasoningTokens,
+    avgLatencyMs: latencyN > 0 ? latencySum / latencyN : undefined,
+    p95LatencyMs: p95,
+    avgTtftMs: ttftN > 0 ? ttftSum / ttftN : undefined,
   };
 }

@@ -1,5 +1,12 @@
 import type { AgentId, ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
-import type { UsageAvailability, UsageOverview, UsageQuery } from './usage-types';
+import type {
+  GatewayUsageOverview,
+  GatewayUsageQuery,
+  GatewayUsageRow,
+  UsageAvailability,
+  UsageOverview,
+  UsageQuery,
+} from './usage-types';
 
 /** Result of a usage collect pass (mirrors core CollectResult). */
 export interface UsageCollectResult {
@@ -33,4 +40,7 @@ export interface UsagePort {
   /** Models lacking embedded pricing in recent usage_records */
   missingPricingModels?(days?: number): Promise<string[]>;
   collectUsage(onProgress?: (pct: number) => void): Promise<UsageCollectResult | void>;
+  /** Per-request usage observed by the local gateway; never mixed into usage_records. */
+  gatewayUsageQuery(q?: GatewayUsageQuery): Promise<GatewayUsageRow[]>;
+  gatewayUsageOverview(q?: GatewayUsageQuery): Promise<GatewayUsageOverview>;
 }

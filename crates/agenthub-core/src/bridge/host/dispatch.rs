@@ -24,6 +24,7 @@ use super::upstream::{join_upstream, pool_exhausted_response};
 use super::UPSTREAM_NON_STREAM_TIMEOUT;
 use crate::bridge::account::PickedMember;
 use crate::bridge::route_index::DispatchCandidate;
+use crate::bridge::usage_capture::CaptureContext;
 
 pub(super) async fn handle_conversation(
     surface: DownstreamSurface,
@@ -244,6 +245,15 @@ pub(super) async fn handle_conversation(
     };
     let continuation_locked = pair_active && required_member.is_some();
     admitted.member = Some(member);
+    // Gateway usage capture identity: only fields the dispatch path already
+    // knows. The session id reuses the affinity extractor, so capture adds no
+    // new body parsing.
+    let capture = CaptureContext {
+        surface: surface.op(),
+        model: model.clone(),
+        session_id: super::continuation::session_identifier(&admitted.body, &admitted.headers),
+        channel: None,
+    };
     if admitted.state.route_index.is_some() {
         return forward_upstream_v2(
             surface,
@@ -251,6 +261,7 @@ pub(super) async fn handle_conversation(
             resolver_candidates,
             model,
             continuation_locked,
+            capture,
         )
         .await;
     }
@@ -267,7 +278,7 @@ pub(super) async fn handle_conversation(
         to = prepared.path,
         "downstream surface converted to upstream path"
     );
-    forward_upstream(surface, admitted, channel, prepared, continuation_locked).await
+    forward_upstream(surface, admitted, channel, prepared, continuation_locked, capture).await
 }
 
 fn pair_adapter_rejected_response(
@@ -393,6 +404,7 @@ async fn forward_upstream_v2(
     candidates: Option<Vec<DispatchCandidate>>,
     public_model: String,
     continuation_locked: bool,
+    mut capture: CaptureContext,
 ) -> Response {
     let AdmittedRequest {
         state,
@@ -429,8 +441,10 @@ async fn forward_upstream_v2(
         Ok(outcome) => outcome,
         Err(response) => return response,
     };
+    capture.channel = Some(channel.name());
     finish_upstream(
         surface, channel, state, response, request_id, started, permit, cache_seed, member, stream,
+        capture,
     )
     .await
 }
@@ -441,6 +455,7 @@ async fn forward_upstream(
     channel: UpstreamChannel,
     prepared: UpstreamPrepare,
     continuation_locked: bool,
+    mut capture: CaptureContext,
 ) -> Response {
     let AdmittedRequest {
         state,
@@ -483,6 +498,7 @@ async fn forward_upstream(
         Ok(outcome) => outcome,
         Err(response) => return response,
     };
+    capture.channel = Some(channel.name());
     finish_upstream(
         surface,
         channel,
@@ -494,10 +510,12 @@ async fn forward_upstream(
         cache_seed,
         member,
         stream_requested,
+        capture,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn finish_upstream(
     surface: DownstreamSurface,
     channel: UpstreamChannel,
@@ -509,10 +527,12 @@ async fn finish_upstream(
     cache_seed: Option<String>,
     member: PickedMember,
     stream_requested: bool,
+    capture: CaptureContext,
 ) -> Response {
     if stream_requested {
         return forward_stream(
             surface, channel, state, response, request_id, started, permit, cache_seed, member,
+            capture,
         );
     }
     let force_shutdown = state.force_shutdown.clone();
@@ -520,7 +540,7 @@ async fn finish_upstream(
         _ = force_shutdown.cancelled() => stopping_response(),
         result = tokio::time::timeout(
             UPSTREAM_NON_STREAM_TIMEOUT,
-            forward_non_stream(surface, channel, state.clone(), response, request_id, started, permit, cache_seed, member),
+            forward_non_stream(surface, channel, state.clone(), response, request_id, started, permit, cache_seed, member, capture),
         ) => match result {
             Ok(response) => response,
             Err(_) => {
@@ -536,6 +556,7 @@ async fn finish_upstream(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn forward_stream(
     surface: DownstreamSurface,
     channel: UpstreamChannel,
@@ -546,10 +567,12 @@ fn forward_stream(
     permit: OwnedSemaphorePermit,
     cache_seed: Option<String>,
     member: PickedMember,
+    capture: CaptureContext,
 ) -> Response {
     if identity_relay(channel, surface, &state) {
         return passthrough_sse_response(
             state, response, request_id, started, permit, cache_seed, member, surface, None,
+            capture,
         );
     }
     if surface == DownstreamSurface::Responses {
@@ -565,19 +588,20 @@ fn forward_stream(
                     member,
                     surface,
                     Some(direction),
+                    capture,
                 );
             }
         }
     }
     match surface {
         DownstreamSurface::Responses => {
-            stream_response(state, response, request_id, started, permit, member)
+            stream_response(state, response, request_id, started, permit, member, capture)
         }
         DownstreamSurface::Messages => messages_stream_response(
-            state, response, request_id, started, permit, cache_seed, member,
+            state, response, request_id, started, permit, cache_seed, member, capture,
         ),
         DownstreamSurface::ChatCompletions => chat_stream_response(
-            state, response, request_id, started, permit, cache_seed, member,
+            state, response, request_id, started, permit, cache_seed, member, capture,
         ),
         DownstreamSurface::Models => {
             unreachable!("models are synthesized by list_models, not handle_conversation")
@@ -585,6 +609,7 @@ fn forward_stream(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn forward_non_stream(
     surface: DownstreamSurface,
     channel: UpstreamChannel,
@@ -595,10 +620,11 @@ async fn forward_non_stream(
     permit: OwnedSemaphorePermit,
     cache_seed: Option<String>,
     member: PickedMember,
+    capture: CaptureContext,
 ) -> Response {
     if identity_relay(channel, surface, &state) {
         return passthrough_json_response(
-            state, response, request_id, started, permit, cache_seed, member, None,
+            state, response, request_id, started, permit, cache_seed, member, None, capture,
         )
         .await;
     }
@@ -614,6 +640,7 @@ async fn forward_non_stream(
                     cache_seed,
                     member,
                     Some(direction),
+                    capture,
                 )
                 .await;
             }
@@ -622,19 +649,19 @@ async fn forward_non_stream(
     match surface {
         DownstreamSurface::Responses => {
             non_stream_response(
-                state, response, request_id, started, permit, cache_seed, member,
+                state, response, request_id, started, permit, cache_seed, member, capture,
             )
             .await
         }
         DownstreamSurface::Messages => {
             messages_non_stream_response(
-                state, response, request_id, started, permit, cache_seed, member,
+                state, response, request_id, started, permit, cache_seed, member, capture,
             )
             .await
         }
         DownstreamSurface::ChatCompletions => {
             chat_non_stream_response(
-                state, response, request_id, started, permit, cache_seed, member,
+                state, response, request_id, started, permit, cache_seed, member, capture,
             )
             .await
         }

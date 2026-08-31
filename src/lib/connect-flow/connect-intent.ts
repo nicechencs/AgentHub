@@ -10,22 +10,23 @@
  * - resume 可保留到成功回跳或用户明确放弃
  *
  * URL 约定：
- * - intent 查询键：`intent`（`import-login` | `add-key`）
- * - resume 查询键：`resume`（AgentId，成功后回 Dashboard 重开 ConnectFlow）
+ * - intent 查询键：`intent`（`import-login` | `add-key` | `oauth`）
+ * - resume 查询键：`resume`（AgentId，成功后回 Dashboard 重开 ConnectFlow；可省略）
  * - ① 导入：`/connections?agent=X&intent=import-login&resume=X`
  * - ② 新 Key：`/connections?agent=X&mode=providers&intent=add-key&resume=X`
+ * - ③ 官方登录：`/connections?agent=X&intent=oauth`（无 resume，成功后留在连接页）
  * - 回跳：`/?connect=X`
  */
 import type { AgentId } from '@/lib/types';
 
-export type ConnectGuideIntent = 'import-login' | 'add-key';
+export type ConnectGuideIntent = 'import-login' | 'add-key' | 'oauth';
 
 export type ConnectGuide = {
   intent: ConnectGuideIntent;
   resumeAgentId: AgentId | null;
 };
 
-const GUIDE_INTENTS = new Set<string>(['import-login', 'add-key']);
+const GUIDE_INTENTS = new Set<string>(['import-login', 'add-key', 'oauth']);
 
 export function parseConnectGuideIntent(raw: string | null | undefined): ConnectGuideIntent | null {
   if (raw == null || !GUIDE_INTENTS.has(raw)) return null;
@@ -51,7 +52,7 @@ export function parseConnectResumeParam(
 export function buildConnectionsGuideUrl(input: {
   agentId: AgentId;
   intent: ConnectGuideIntent;
-  resumeAgentId: AgentId;
+  resumeAgentId?: AgentId | null;
 }): string {
   const params = new URLSearchParams();
   params.set('agent', input.agentId);
@@ -59,7 +60,9 @@ export function buildConnectionsGuideUrl(input: {
     params.set('mode', 'providers');
   }
   params.set('intent', input.intent);
-  params.set('resume', input.resumeAgentId);
+  if (input.resumeAgentId) {
+    params.set('resume', input.resumeAgentId);
+  }
   return `/connections?${params.toString()}`;
 }
 

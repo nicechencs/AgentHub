@@ -1,6 +1,7 @@
 //! Live config import, capture/restore, and current-row live apply.
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use uuid::Uuid;
@@ -50,12 +51,28 @@ pub(super) fn require_live_config_write(
     }
 }
 
+/// Hash of each live backup path that can be read. Call immediately before
+/// `write_config` so [`log_live_switch_paths`] can skip unchanged siblings.
+pub(super) fn hash_live_paths(
+    adapter: &dyn crate::adapters::AgentAdapter,
+) -> HashMap<PathBuf, String> {
+    crate::services::live_fingerprint::hash_existing(&adapter.live_backup_paths())
+}
+
+/// After a successful live write: log paths and hash only files this write
+/// created or changed. The only funnel for provider live writes (switch /
+/// current-apply / sync); bind and unbind flow through the same switch saga.
 pub(super) fn log_live_switch_paths(
+    db: &crate::storage::Database,
     agent: AgentId,
     adapter: &dyn crate::adapters::AgentAdapter,
     last4: &str,
+    before: &HashMap<PathBuf, String>,
 ) {
-    for path in adapter.live_backup_paths() {
+    let paths = adapter.live_backup_paths();
+    // Best-effort bookkeeping: never fails the write that already succeeded.
+    crate::services::live_fingerprint::record_changed(db, agent, before, &paths);
+    for path in paths {
         log_switch_write(agent, &display_home_path(&path), last4);
     }
 }
@@ -490,6 +507,7 @@ impl ProviderService {
         if live_before.raw == target_config.raw {
             return Ok(());
         }
+        let before = hash_live_paths(adapter.as_ref());
         if let Err(error) = adapter.write_config(&target_config) {
             let live_rollback = adapter.write_config(&live_before).err();
             let db_rollback = self
@@ -502,9 +520,11 @@ impl ProviderService {
             ));
         }
         log_live_switch_paths(
+            &self.db,
             stored.agent_id,
             adapter.as_ref(),
             &super::switch_write_last4(stored),
+            &before,
         );
         Ok(())
     }
@@ -553,14 +573,17 @@ impl ProviderService {
                 return Err(error);
             }
         }
+        let before = hash_live_paths(adapter.as_ref());
         if let Err(error) = adapter.write_config(&target_config) {
             let live_rollback = adapter.write_config(&live_before).err();
             return Err(compensated_current_apply_error(error, live_rollback));
         }
         log_live_switch_paths(
+            &self.db,
             stored.agent_id,
             adapter.as_ref(),
             &super::switch_write_last4(stored),
+            &before,
         );
         Ok(())
     }
