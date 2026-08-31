@@ -113,8 +113,27 @@ describe('Adapter Rust wire mappers', () => {
       startedAt: '2026-08-12T00:00:00.123Z',
       upstreamStatus: 'unknown',
       recentInbound: [],
+      totalRequestCount: 0,
+      failedRequestCount: 0,
+      lastRequestAt: null,
       localToken: null,
     });
+  });
+
+  it('maps process-lifetime inbound counters from the bridge status DTO', () => {
+    const status = mapAdapterBridgeStatusDto({
+      profileId: 'adapter-kimi-codex-1',
+      port: 43123,
+      running: true,
+      state: 'running',
+      upstreamStatus: 'connected',
+      totalRequestCount: 25,
+      failedRequestCount: 5,
+      lastRequestAtUnixMs: 1_786_492_800_500,
+    });
+    expect(status.totalRequestCount).toBe(25);
+    expect(status.failedRequestCount).toBe(5);
+    expect(status.lastRequestAt).toBe('2026-08-12T00:00:00.500Z');
   });
 
   it('inbound log struct never carries secrets, query, or extra wire fields', () => {

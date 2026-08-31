@@ -74,6 +74,7 @@ pub fn ensure_data_layout(data_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(data_dir.join("exports"))?;
     std::fs::create_dir_all(data_dir.join("logs"))?;
     std::fs::create_dir_all(data_dir.join("cache"))?;
+    std::fs::create_dir_all(data_dir.join("usage-gateway"))?;
     Ok(())
 }
 
@@ -87,6 +88,13 @@ pub fn backups_dir(data_dir: &Path) -> PathBuf {
 
 pub fn logs_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("logs")
+}
+
+/// Spool directory for per-request gateway usage events (`gateway-*.jsonl`),
+/// written by the local bridge and ingested into the `gateway_usage` table by
+/// the usage collect pipeline.
+pub fn usage_gateway_dir() -> Result<PathBuf> {
+    Ok(resolve_data_dir(None)?.join("usage-gateway"))
 }
 
 /// Typical live config roots per agent (may not exist yet).

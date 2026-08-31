@@ -5,7 +5,13 @@ import {
   type CoreParserHealth,
   type CoreUsageRecord,
 } from '@/lib/backend/contracts/usage-map';
-import type { UsageAvailability, UsageOverview } from '@/lib/backend/contracts/usage-types';
+import type {
+  GatewayUsageOverview,
+  GatewayUsageQuery,
+  GatewayUsageRow,
+  UsageAvailability,
+  UsageOverview,
+} from '@/lib/backend/contracts/usage-types';
 import type { ParserHealth, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { invoke } from './invoke';
 
@@ -80,5 +86,48 @@ export function createTauriUsagePort(): UsagePort {
       onProgress?.(100);
       return result;
     },
+
+    async gatewayUsageQuery(args = {}): Promise<GatewayUsageRow[]> {
+      return gatewayUsageQuery(args);
+    },
+
+    async gatewayUsageOverview(args = {}): Promise<GatewayUsageOverview> {
+      return gatewayUsageOverview(args);
+    },
   };
+}
+
+export type {
+  GatewayUsageOverview,
+  GatewayUsageQuery,
+  GatewayUsageRow,
+} from '@/lib/backend/contracts/usage-types';
+
+/** @deprecated Prefer {@link GatewayUsageQuery}. */
+export type GatewayUsageQueryArgs = GatewayUsageQuery;
+
+/**
+ * Per-request usage observed by the local gateway (bridge), stored in its own
+ * table (separate from the agent-log-derived usage records).
+ */
+export async function gatewayUsageQuery(
+  args: GatewayUsageQuery = {},
+): Promise<GatewayUsageRow[]> {
+  return invoke<GatewayUsageRow[]>('gateway_usage_query', {
+    since: args.since ?? null,
+    until: args.until ?? null,
+    profileId: args.profileId ?? null,
+    limit: args.limit ?? null,
+  });
+}
+
+/** Aggregated local gateway usage overview for a time window. */
+export async function gatewayUsageOverview(
+  args: GatewayUsageQuery = {},
+): Promise<GatewayUsageOverview> {
+  return invoke<GatewayUsageOverview>('gateway_usage_overview', {
+    since: args.since ?? null,
+    until: args.until ?? null,
+    profileId: args.profileId ?? null,
+  });
 }

@@ -212,6 +212,8 @@ pub fn run() {
             commands::usage::usage_list_models,
             commands::usage::usage_parser_health,
             commands::usage::usage_missing_pricing,
+            commands::usage::gateway_usage_query,
+            commands::usage::gateway_usage_overview,
             // Chat
             commands::chat::list_conversations,
             commands::chat::create_conversation,

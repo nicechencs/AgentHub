@@ -58,6 +58,7 @@ fn listener_state(
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         continuations: std::sync::Arc::new(super::super::continuation::ContinuationBindings::new()),
+        usage_spool: Default::default(),
         member_model_denials: std::sync::Arc::new(std::sync::Mutex::new(
             std::collections::HashSet::new(),
         )),
@@ -138,6 +139,7 @@ fn edge_state_carries_explicit_downstream_responses_profile_from_start_spec() {
         reqwest::Url::parse("http://127.0.0.1/v1/").expect("test url"),
         CancellationToken::new(),
         crate::bridge::auth_reload::AuthReloadCoordinator::new(),
+        Default::default(),
     );
     assert_eq!(
         edge.downstream_responses_profile,

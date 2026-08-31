@@ -233,7 +233,7 @@ describe('TicketWalletList details', () => {
         onDeleteTicket() {},
       }),
     );
-    expect(markup).toContain('href="/routes?profile=bridge-1"');
+    expect(markup).toContain('href="/routes/pool?profile=bridge-1"');
     expect(markup).toContain('本机路由');
     expect(markup).toContain('用到其他工具');
     expect(markup).toContain('本机转发');

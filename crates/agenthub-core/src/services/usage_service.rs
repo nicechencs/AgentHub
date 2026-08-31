@@ -16,14 +16,15 @@ use uuid::Uuid;
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    AgentId, CollectResult, DetectResult, DetectStatus, ParserHealth, UsageOverview, UsageQuery,
-    UsageRecord, UsageTrendPoint,
+    AgentId, CollectResult, DetectResult, DetectStatus, GatewayUsageOverview, GatewayUsageQuery,
+    GatewayUsageRow, ParserHealth, UsageOverview, UsageQuery, UsageRecord, UsageTrendPoint,
 };
 use crate::platform::usage::{
-    builtin_usage_registry, collect_with_source, collect_with_source_for_agent_id, TokenAccounting,
-    UsageSourceRegistry,
+    builtin_usage_registry, collect_with_source, collect_with_source_for_agent_id,
+    ingest_spool_dir, GatewaySpoolOutcome, TokenAccounting, UsageSourceRegistry,
 };
 use crate::platform::AgentKey;
+use crate::storage::gateway_usage_repo::GatewayUsageRepo;
 use crate::storage::{Database, UsageRepo};
 use crate::usage::session_jsonl::CollectStats;
 use crate::usage::{
@@ -39,8 +40,13 @@ type CollectTargetResolver = Arc<dyn Fn() -> Result<HashSet<AgentId>> + Send + S
 
 pub struct UsageService {
     repo: UsageRepo,
+    gateway_repo: GatewayUsageRepo,
     registry: UsageSourceRegistry,
     collect_targets: Option<CollectTargetResolver>,
+    /// Test-only spool dir override so unit tests never touch the real data
+    /// dir. `None` in tests disables the gateway ingest step entirely.
+    #[cfg(test)]
+    gateway_spool_dir: Option<std::path::PathBuf>,
 }
 
 impl UsageService {
@@ -71,10 +77,21 @@ impl UsageService {
         collect_targets: Option<CollectTargetResolver>,
     ) -> Self {
         Self {
-            repo: UsageRepo::new(db),
+            repo: UsageRepo::new(db.clone()),
+            gateway_repo: GatewayUsageRepo::new(db),
             registry,
             collect_targets,
+            #[cfg(test)]
+            gateway_spool_dir: None,
         }
+    }
+
+    /// Test helper: ingest gateway usage from this spool dir instead of the
+    /// resolved data dir (unit tests must not touch the real data dir).
+    #[cfg(test)]
+    pub(crate) fn with_gateway_spool_dir(mut self, dir: std::path::PathBuf) -> Self {
+        self.gateway_spool_dir = Some(dir);
+        self
     }
 
     /// Test helper: only these installed && !hidden agents are collect/health targets.
@@ -279,6 +296,34 @@ impl UsageService {
             }
         }
 
+        // Gateway (local bridge) requests spool into per-day JSONL files;
+        // ingest them into the separate `gateway_usage` table. Never merged
+        // into `usage_records` (log collection already records that spend).
+        match self.collect_gateway_spool() {
+            Ok(outcome) if outcome.inserted > 0 || outcome.malformed > 0 => {
+                tracing::info!(
+                    module = targets::USAGE,
+                    op = "collect_gateway_spool",
+                    files = outcome.files,
+                    inserted = outcome.inserted,
+                    malformed = outcome.malformed,
+                    deleted_files = outcome.deleted_files,
+                    "gateway usage spool ingested"
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                let err_msg = redact_text(&e.to_string());
+                tracing::warn!(
+                    module = targets::USAGE,
+                    code = e.code(),
+                    op = "collect_gateway_spool",
+                    error = %err_msg,
+                    "gateway usage spool ingest failed"
+                );
+            }
+        }
+
         // Repair historical rows once per collect:
         // - Codex: refresh cost from the latest table (tokens stay non-cached)
         // - Unknown models: keep insert-time cost (log USD / Grok ticks / $0)
@@ -336,6 +381,36 @@ impl UsageService {
 
     pub fn query(&self, q: UsageQuery) -> Result<Vec<UsageRecord>> {
         self.repo.query(&q)
+    }
+
+    /// Ingest the gateway usage spool dir into the `gateway_usage` table.
+    fn collect_gateway_spool(&self) -> Result<GatewaySpoolOutcome> {
+        #[cfg(test)]
+        {
+            // Unit tests never touch the real data dir: an injected dir is
+            // ingested, otherwise the gateway step is a no-op.
+            let Some(dir) = self.gateway_spool_dir.clone() else {
+                return Ok(GatewaySpoolOutcome::default());
+            };
+            std::fs::create_dir_all(&dir)?;
+            return ingest_spool_dir(&self.gateway_repo, &dir);
+        }
+        #[allow(unreachable_code)]
+        {
+            let dir = crate::utils::paths::usage_gateway_dir()?;
+            std::fs::create_dir_all(&dir)?;
+            ingest_spool_dir(&self.gateway_repo, &dir)
+        }
+    }
+
+    /// Query per-request gateway usage rows (local bridge runtime).
+    pub fn gateway_usage_query(&self, q: GatewayUsageQuery) -> Result<Vec<GatewayUsageRow>> {
+        self.gateway_repo.query(&q)
+    }
+
+    /// Aggregated gateway usage overview for a time window.
+    pub fn gateway_usage_overview(&self, q: GatewayUsageQuery) -> Result<GatewayUsageOverview> {
+        self.gateway_repo.overview(&q)
     }
 
     pub fn trend(

@@ -335,6 +335,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         startedAt: current?.startedAt ?? null,
         upstreamStatus: 'stopped',
         recentInbound: current?.recentInbound ?? [],
+        totalRequestCount: current?.totalRequestCount ?? 0,
+        failedRequestCount: current?.failedRequestCount ?? 0,
+        lastRequestAt: current?.lastRequestAt ?? null,
       };
       state.bridgeStatuses.set(profileId, status);
       return { ...status };
@@ -350,6 +353,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         startedAt: null,
         upstreamStatus: 'stopped',
         recentInbound: [],
+        totalRequestCount: 0,
+        failedRequestCount: 0,
+        lastRequestAt: null,
       };
       return { ...status, recentInbound: [...(status.recentInbound ?? [])] };
     },
@@ -403,6 +409,7 @@ function mockInboundRows(): AdapterBridgeRuntimeStatus['recentInbound'] {
 
 function runningBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeStatus {
   const port = profile.localPort ?? 32123;
+  const recentInbound = mockInboundRows() ?? [];
   return {
     profileId: profile.id,
     state: 'running',
@@ -410,7 +417,10 @@ function runningBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeStatu
     endpoint: `http://127.0.0.1:${port}/v1`,
     startedAt: new Date().toISOString(),
     upstreamStatus: 'unknown',
-    recentInbound: mockInboundRows(),
+    recentInbound,
+    totalRequestCount: 42,
+    failedRequestCount: 3,
+    lastRequestAt: recentInbound[0]?.at ?? null,
   };
 }
 

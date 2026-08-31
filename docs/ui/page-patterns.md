@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-30
+updated: 2026-08-31
 ---
 
 # UI Page Patterns
@@ -26,12 +26,23 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Plugins | `/plugins` | Read-only vendor plugin / extension pack inventory |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
 | Manage | Connections | `/connections` | Global login list and connection actions |
-| Manage | Routes | `/routes` | Local route runtime list and details |
+| Manage | Routes | `/routes` | Local route runtime. `/routes` opens the board; secondary nav: board / pool / tokens / activity |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
 `Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes and Plugins sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows those entries; the pages stay reachable at `/routes` and `/plugins`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
+
+Routes nested paths (secondary nav):
+
+| Label | Path | Role |
+|---|---|---|
+| Board | `/routes/board` | Health overview, usage, and start/stop. Bare `/routes` redirects here. |
+| Auth pool | `/routes/pool` | Local-entry workbench (replaces the old list): members, write to client, unbind, enroll. `?profile=` opens detail. |
+| Local tokens | `/routes/tokens` | Entry-key copy (in development) |
+| Activity | `/routes/activity` | Cross-route recent request feed |
+
+Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Preferences → Sidebar. The secondary nav top-left control expands the primary sidebar. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
 
 ## 2. Application shell
 
@@ -59,7 +70,7 @@ Settings uses the workbench header and four page tabs; the tab row stays at the 
 
 | Tab | Query | Contents |
 |---|---|---|
-| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (Routes / Plugins visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
+| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (auto-collapse on Routes; Routes / Plugins visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
 | This computer | `?tab=local` | Data directory, log level, retention, log directory |
 | Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
@@ -110,9 +121,13 @@ Connections is a global login list in a full-height workbench split. It is not a
 
 Routes is the runtime management page for local loopback forwarding. It is not a general connection-binding editor.
 
-### 6.1 List
+### 6.0 Secondary nav and board
 
-The list is an edge-column management table with stable rows. Each row shows the route target, runtime state, loopback address (`127.0.0.1` and port when available), upstream summary, and the permitted actions. A row can be opened through `?profile=<id>`.
+Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: usage charts, a one-line fleet summary, an optional “needs attention” block, remaining route rows with start/stop, and a short recent-request snapshot that deep-links to Activity (`?filter=` / `?route=`). Configuration edits stay on the auth pool (`/routes/pool`); request filtering stays on Activity. `/routes?profile=` opens pool detail. `/adapter`, `/router`, and `/bridges` redirect into this area.
+
+### 6.1 Auth pool
+
+The auth pool is an edge-column workbench. Each card is one local entry (target Agent × surface): loopback address (`127.0.0.1` and port when available), enrolled logins, runtime state, and the permitted actions. A row can be opened through `?profile=<id>`. Adding logins goes to Connections; this page does not host a second credential editor.
 
 The page treats the following states separately:
 
@@ -129,7 +144,7 @@ Do not infer “running” from a durable database row when the runtime host is 
 
 ### 6.2 Detail
 
-The detail panel is a focused dialog or side surface opened from the list. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
+The detail panel is a focused dialog or side surface opened from the auth pool. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
 
 Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Connections remains the login list; Routes does not become a second place to add credentials.
 

@@ -1024,6 +1024,13 @@ impl ResponsesStreamToIr {
         std::mem::take(&mut self.pending)
     }
 
+    /// Retained upstream usage (for gateway usage capture); `None` until the
+    /// upstream sent a usage object. Retention only — output frames are
+    /// byte-identical whether or not the caller reads this.
+    pub fn captured_usage(&self) -> Option<Usage> {
+        self.usage.clone()
+    }
+
     fn ensure_message_start(&mut self) {
         if !self.started {
             self.started = true;

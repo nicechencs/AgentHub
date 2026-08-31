@@ -198,6 +198,13 @@ impl ChatStreamToIr {
         events
     }
 
+    /// Retained upstream usage (for gateway usage capture); `None` until the
+    /// upstream sent a usage object. Retention only — output frames are
+    /// byte-identical whether or not the caller reads this.
+    pub fn captured_usage(&self) -> Option<Usage> {
+        self.usage.clone()
+    }
+
     fn push_tool_delta(
         &mut self,
         raw_tool: &Value,
@@ -355,6 +362,13 @@ impl ResponsesSseTranslator {
             events.extend(self.complete());
             events
         }
+    }
+
+    /// Retained upstream usage (for gateway usage capture); `None` until the
+    /// upstream sent a usage object. Retention only — output frames are
+    /// byte-identical whether or not the caller reads this.
+    pub fn captured_usage(&self) -> Option<Usage> {
+        self.usage.clone()
     }
 
     fn ensure_started(&mut self) -> Vec<BridgeEvent> {

@@ -11,12 +11,19 @@ import DashboardPage from '@/pages/dashboard';
 import ChatPage from '@/pages/chat';
 import AgentsPage from '@/pages/agents';
 import ConnectionsPage from '@/pages/connections';
-import BridgesPage from '@/pages/bridges';
 import SkillsPage from '@/pages/skills';
 import McpPage from '@/pages/mcp';
 import PluginsPage from '@/pages/plugins';
 import ProjectsPage from '@/pages/projects';
 import SettingsPage from '@/pages/settings';
+import { RoutesLayout } from '@/pages/routes/RoutesLayout';
+import { RoutesNav } from '@/pages/routes/RoutesNav';
+import { RoutesIndexRedirect, RoutesUnknownRedirect } from '@/pages/routes/RoutesUnknownRedirect';
+import RoutesBoardPage from '@/pages/routes/board';
+import RoutesPoolPage from '@/pages/routes/pool';
+import RoutesTokensPage from '@/pages/routes/tokens';
+import RoutesActivityPage from '@/pages/routes/activity';
+import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
 import { onTrayNavigate } from '@/lib/backend/tauri/tray-events';
 import { legacyBridgesRedirectTo } from '@/lib/bridges-path';
 import {
@@ -43,7 +50,7 @@ function LegacyUsageRedirect() {
   return <Navigate to="/?section=usage" replace />;
 }
 
-/** 旧 /adapter、/router、/bridges 深链兼容 → /routes；丢弃遗留 ?tab= */
+/** 旧 /adapter、/router、/bridges 深链兼容 → 看板，或带 profile 时到授权池 */
 function LegacyBridgesRedirect() {
   const { search } = useLocation();
   return <Navigate to={legacyBridgesRedirectTo(search)} replace />;
@@ -59,12 +66,13 @@ export default function App() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isChat = pathname === '/chat';
+  const isRoutesArea = isRoutesAreaPath(pathname);
   /** Skills / Projects / Connections / Routes / Agents / Plugins / Settings 左右分栏需要全高 overflow-hidden，不套 pageShell 内边距 */
   const isWorkbenchSplit =
     pathname === '/skills' ||
     pathname === '/projects' ||
     pathname === '/connections' ||
-    pathname === '/routes' ||
+    isRoutesArea ||
     pathname === '/agents' ||
     pathname === '/plugins' ||
     pathname === '/settings';
@@ -115,6 +123,7 @@ export default function App() {
     <SidebarProvider>
       <div className={pageRhythm.shell}>
         <Sidebar />
+        {isRoutesArea ? <RoutesNav /> : null}
         <PageChromeProvider>
           <div className={pageRhythm.shellMain}>
             {!isChat && <TopBar />}
@@ -131,7 +140,14 @@ export default function App() {
                   <Route path="/chat" element={<ChatPage />} />
                   <Route path="/agents" element={<AgentsPage />} />
                   <Route path="/connections" element={<ConnectionsPage />} />
-                  <Route path="/routes" element={<BridgesPage />} />
+                  <Route path="/routes" element={<RoutesLayout />}>
+                    <Route index element={<RoutesIndexRedirect />} />
+                    <Route path="board" element={<RoutesBoardPage />} />
+                    <Route path="pool" element={<RoutesPoolPage />} />
+                    <Route path="tokens" element={<RoutesTokensPage />} />
+                    <Route path="activity" element={<RoutesActivityPage />} />
+                    <Route path="*" element={<RoutesUnknownRedirect />} />
+                  </Route>
                   <Route path="/bridges" element={<LegacyBridgesRedirect />} />
                   <Route path="/adapter" element={<LegacyBridgesRedirect />} />
                   <Route path="/router" element={<LegacyBridgesRedirect />} />

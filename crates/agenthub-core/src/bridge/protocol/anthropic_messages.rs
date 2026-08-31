@@ -675,6 +675,13 @@ impl AnthropicStreamToIr {
         self.completed
     }
 
+    /// Retained upstream usage (for gateway usage capture); `None` until the
+    /// upstream sent a usage object. Retention only — output frames are
+    /// byte-identical whether or not the caller reads this.
+    pub fn captured_usage(&self) -> Option<Usage> {
+        self.usage.clone()
+    }
+
     pub fn push_event(&mut self, value: &Value) -> ProtocolResult<Vec<IrEvent>> {
         if self.completed {
             return Ok(Vec::new());
