@@ -19,7 +19,6 @@ import type { AgentId, RuntimeId } from '@/lib/types';
 import { agentCssVar, type TokenAgentId } from '@/styles/tokens';
 import claudeLogo from '@/assets/agent-logos/claude.png';
 import claudeLogoSvg from '@/assets/agent-logos/claude.svg';
-import codexLogo from '@/assets/agent-logos/codex.png';
 import codexLogoSvg from '@/assets/agent-logos/codex.svg';
 import cursorLogo from '@/assets/agent-logos/cursor.png';
 import cursorLogoSvg from '@/assets/agent-logos/cursor.svg';
@@ -27,11 +26,10 @@ import deepseekLogo from '@/assets/agent-logos/deepseek.png';
 import deepseekLogoSvg from '@/assets/agent-logos/deepseek.svg';
 import grokLogo from '@/assets/agent-logos/grok.png';
 import grokLogoSvg from '@/assets/agent-logos/grok.svg';
-import kimiLogo from '@/assets/agent-logos/kimi.png';
 import kimiLogoSvg from '@/assets/agent-logos/kimi.svg';
 import piLogo from '@/assets/agent-logos/pi.png';
 import piLogoSvg from '@/assets/agent-logos/pi.svg';
-import workbuddyLogo from '@/assets/agent-logos/workbuddy.png';
+import workbuddyLogoSvg from '@/assets/agent-logos/workbuddy.svg';
 import zcodeLogo from '@/assets/agent-logos/zcode.png';
 
 export interface InstallChannelMeta {
@@ -89,16 +87,14 @@ export const AGENT_DISPLAY: Readonly<
   codex: {
     letter: 'X',
     colorKey: 'codex',
-    logoSrc: codexLogo,
     logoSvgSrc: codexLogoSvg,
-    logoBackground: '#111827',
+    logoBackground: '#ffffff',
   },
   kimi: {
     letter: 'K',
     colorKey: 'kimi',
-    logoSrc: kimiLogo,
     logoSvgSrc: kimiLogoSvg,
-    logoBackground: '#7c6cff',
+    logoBackground: '#ffffff',
   },
   grok: {
     letter: 'G',
@@ -117,7 +113,7 @@ export const AGENT_DISPLAY: Readonly<
   workbuddy: {
     letter: 'W',
     colorKey: 'workbuddy',
-    logoSrc: workbuddyLogo,
+    logoSvgSrc: workbuddyLogoSvg,
     logoBackground: '#ffffff',
   },
   cursor: {
