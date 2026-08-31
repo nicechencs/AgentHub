@@ -2,10 +2,12 @@ import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AgentId } from '@/lib/types';
+import type { ConnectionEntry } from '@/lib/connection-entry';
 import {
   PoolAddButtons,
   poolApiChoices,
   poolOAuthChoices,
+  poolSyncCandidates,
   poolSurfaceForApiChoice,
   poolSurfaceForOAuth,
 } from './PoolAddButtons';
@@ -59,6 +61,48 @@ describe('poolSurfaceForApiChoice', () => {
     expect(poolSurfaceForApiChoice({ endpoint: '/v1/messages' })).toBe('messages');
     expect(poolSurfaceForApiChoice({ endpoint: '/v1/responses' })).toBe('responses');
     expect(poolSurfaceForApiChoice({ endpoint: '/v1/chat/completions' })).toBe('chat_completions');
+  });
+});
+
+describe('poolSyncCandidates', () => {
+  it('marks existing source memberships disabled and keeps account/provider identity', () => {
+    const entry = (source: 'account' | 'provider', id: string, agentId: AgentId, home?: 'route_pool') => ({
+      key: `${source}:${id}`,
+      source,
+      kind: source === 'account' ? 'oauth' : 'apikey',
+      id,
+      agentId,
+      title: id,
+      subtitle: '',
+      isCurrent: false,
+      authStatus: 'none',
+      sortKey: '',
+      ...(source === 'account' ? { account: { home } } : { provider: { home } }),
+    } as ConnectionEntry);
+
+    const candidates = poolSyncCandidates(
+      [
+        entry('account', 'account-synced', 'codex'),
+        entry('provider', 'provider-new', 'grok'),
+        entry('account', 'pool-owned', 'claude', 'route_pool'),
+        entry('provider', 'unsupported', 'pi'),
+      ],
+      [{
+        id: 'pool-codex',
+        targetAgentId: 'codex',
+        surface: 'responses',
+        dialect: 'codex',
+        v2Enrolled: false,
+        members: [{ sourceKind: 'account', sourceId: 'account-synced', enabled: true }],
+      }],
+    );
+
+    expect(candidates.map((candidate) => [candidate.sourceKind, candidate.sourceId])).toEqual([
+      ['account', 'account-synced'],
+      ['provider', 'provider-new'],
+    ]);
+    expect(candidates[0]?.alreadySynced).toBe(true);
+    expect(candidates[1]?.alreadySynced).toBe(false);
   });
 });
 
