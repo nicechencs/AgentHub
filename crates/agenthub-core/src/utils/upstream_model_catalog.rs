@@ -57,27 +57,14 @@ impl SourceModelCatalog {
     }
 }
 
-/// Keep a live catalog and store only the ids the user added.
+/// The saved list is the routing list. Users may add, remove, or rewrite ids.
 pub fn with_wanted_models(stored: StoredModelCatalog, wanted: Vec<String>) -> StoredModelCatalog {
-    let wanted = merge_model_ids([wanted]);
-    if stored.source == "live" && !stored.models.is_empty() {
-        let live: std::collections::HashSet<_> = stored.models.iter().cloned().collect();
-        let extra_models = wanted
-            .into_iter()
-            .filter(|id| !live.contains(id))
-            .collect();
-        StoredModelCatalog {
-            extra_models,
-            ..stored
-        }
-    } else {
-        StoredModelCatalog {
-            source: "custom".into(),
-            models: wanted,
-            extra_models: Vec::new(),
-            attempted: true,
-            ..stored
-        }
+    StoredModelCatalog {
+        source: "custom".into(),
+        models: merge_model_ids([wanted]),
+        extra_models: Vec::new(),
+        attempted: true,
+        ..stored
     }
 }
 
