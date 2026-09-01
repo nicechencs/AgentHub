@@ -1123,6 +1123,12 @@ export const en = {
       testRejected: "Local entry is temporarily unavailable",
       testInvalid: "Couldn't run the test",
       testFailed: "Test failed",
+      testWindowTitle: "Test",
+      testInput: "Request",
+      testOutput: "Response",
+      testDuration: "Duration",
+      testDurationMs: "{ms}ms",
+      testNoOutput: "No response",
     },
     pool: {
       entry: "Local entry",

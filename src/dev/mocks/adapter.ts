@@ -414,6 +414,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         httpStatus: 200,
         latencyMs: 4,
         upstreamStatus: 'unknown',
+        requestUrl: 'http://127.0.0.1:1/health',
+        responseBody: '{"ok":true,"service":"agenthub-bridge","listener_status":"running","upstream_status":"unknown"}',
+        errorMessage: null,
       };
     },
     async setLocalToken(poolId, token) {

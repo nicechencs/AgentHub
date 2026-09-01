@@ -205,6 +205,9 @@ describe('Tauri adapter route port', () => {
       httpStatus: 200,
       latencyMs: 12,
       upstreamStatus: 'unknown',
+      requestUrl: 'http://127.0.0.1:8123/health',
+      responseBody: '{"ok":true}',
+      errorMessage: null,
     });
     const port = createTauriAdapterPort();
     await expect(port.testLocalToken('127.0.0.1:8123', 'ahb_secret')).resolves.toEqual({
@@ -212,6 +215,9 @@ describe('Tauri adapter route port', () => {
       httpStatus: 200,
       latencyMs: 12,
       upstreamStatus: 'unknown',
+      requestUrl: 'http://127.0.0.1:8123/health',
+      responseBody: '{"ok":true}',
+      errorMessage: null,
     });
     expect(invokeMock).toHaveBeenCalledWith('test_local_token', {
       endpoint: '127.0.0.1:8123',

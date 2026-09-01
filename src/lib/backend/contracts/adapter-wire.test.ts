@@ -502,11 +502,17 @@ describe('Adapter Rust wire mappers', () => {
       httpStatus: 401,
       latencyMs: 9.4,
       upstreamStatus: '  ',
+      requestUrl: 'http://127.0.0.1:8123/health',
+      responseBody: '{"error":"invalid_api_key"}',
+      errorMessage: '  ',
     })).toEqual({
       outcome: 'unauthorized',
       httpStatus: 401,
       latencyMs: 9,
       upstreamStatus: null,
+      requestUrl: 'http://127.0.0.1:8123/health',
+      responseBody: '{"error":"invalid_api_key"}',
+      errorMessage: null,
     });
     expect(mapLocalTokenProbeResult({}).outcome).toBe('unreachable');
   });

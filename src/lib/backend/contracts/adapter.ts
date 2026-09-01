@@ -334,6 +334,9 @@ export type LocalTokenProbeResult = {
   httpStatus: number | null;
   latencyMs: number;
   upstreamStatus: string | null;
+  requestUrl: string | null;
+  responseBody: string | null;
+  errorMessage: string | null;
 };
 
 export interface AdapterPort {

@@ -1113,6 +1113,12 @@ export const zh = {
       testRejected: "本机入口暂时不可用",
       testInvalid: "没法测试",
       testFailed: "测试失败",
+      testWindowTitle: "测试",
+      testInput: "输入",
+      testOutput: "输出",
+      testDuration: "耗时",
+      testDurationMs: "{ms}ms",
+      testNoOutput: "没有返回",
     },
     pool: {
       entry: "本机入口",

@@ -520,6 +520,13 @@ export interface LocalTokenProbeResultWire {
   httpStatus?: unknown;
   latencyMs?: unknown;
   upstreamStatus?: unknown;
+  requestUrl?: unknown;
+  responseBody?: unknown;
+  errorMessage?: unknown;
+}
+
+function optionalTrimmedString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 export function mapLocalTokenProbeResult(wire: LocalTokenProbeResultWire): LocalTokenProbeResult {
@@ -532,10 +539,15 @@ export function mapLocalTokenProbeResult(wire: LocalTokenProbeResultWire): Local
   const latencyMs = typeof wire.latencyMs === 'number' && Number.isFinite(wire.latencyMs)
     ? Math.max(0, Math.round(wire.latencyMs))
     : 0;
-  const upstreamStatus = typeof wire.upstreamStatus === 'string' && wire.upstreamStatus.trim()
-    ? wire.upstreamStatus.trim()
-    : null;
-  return { outcome, httpStatus, latencyMs, upstreamStatus };
+  return {
+    outcome,
+    httpStatus,
+    latencyMs,
+    upstreamStatus: optionalTrimmedString(wire.upstreamStatus),
+    requestUrl: optionalTrimmedString(wire.requestUrl),
+    responseBody: optionalTrimmedString(wire.responseBody),
+    errorMessage: optionalTrimmedString(wire.errorMessage),
+  };
 }
 
 export interface RouteMemberOverviewWire {
