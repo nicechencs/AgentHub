@@ -21,7 +21,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
-import { listLocalTokenModels, setLocalTokenCustomModels, testLocalToken } from '@/lib/api/adapter';
+import {
+  listLocalTokenModels,
+  refreshLocalTokenModels,
+  setLocalTokenCustomModels,
+  testLocalToken,
+} from '@/lib/api/adapter';
 import type { LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
 import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
 import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
@@ -66,6 +71,7 @@ export function TokenDetailPanel({
   const [testResult, setTestResult] = useState<LocalTokenProbeResult | null>(null);
   const [modelDraft, setModelDraft] = useState('');
   const [savingModels, setSavingModels] = useState(false);
+  const [refreshingModels, setRefreshingModels] = useState(false);
   const dropdownModels = testModel.trim() && !models.includes(testModel)
     ? [testModel.trim(), ...models]
     : models;
@@ -84,10 +90,23 @@ export function TokenDetailPanel({
     setTesting(false);
     setTestOpen(false);
     setTestResult(null);
+    setRefreshingModels(false);
+    const fallback = localTokenTestModels(row);
     setLiveModels([]);
-    setTestModel(localTokenTestModels(row)[0] ?? '');
-    setModelDraft(localTokenTestModels(row).join('\n'));
-  }, [row.id]);
+    setTestModel(fallback[0] ?? '');
+    setModelDraft(fallback.join('\n'));
+    const token = row.token?.trim();
+    if (!token) return;
+    const requestId = row.id;
+    void listLocalTokenModels(token).then((ids) => {
+      if (rowIdRef.current !== requestId) return;
+      const listed = ids.map((item) => item.trim()).filter(Boolean);
+      if (listed.length === 0) return;
+      setLiveModels(listed);
+      setModelDraft(listed.join('\n'));
+      setTestModel((current) => current.trim() || listed[0] || '');
+    }).catch(() => {});
+  }, [row.id, row.token]);
 
   useEffect(() => {
     if (testModel.trim()) return;
@@ -103,21 +122,16 @@ export function TokenDetailPanel({
     );
   };
 
+  const applyListedModels = (listed: string[]) => {
+    setLiveModels(listed);
+    setModelDraft(listed.join('\n'));
+    setTestModel((current) => current.trim() || listed[0] || '');
+  };
+
   const openTest = () => {
     if (!testGate.enabled || testing) return;
     setTestResult(null);
     setTestOpen(true);
-    const token = row.token?.trim();
-    if (!token) return;
-    const requestId = row.id;
-    void listLocalTokenModels(token).then((ids) => {
-      if (rowIdRef.current !== requestId) return;
-      const listed = ids.map((item) => item.trim()).filter(Boolean);
-      if (listed.length === 0) return;
-      setLiveModels(listed);
-      setModelDraft(listed.join('\n'));
-      setTestModel((current) => current.trim() || listed[0] || '');
-    }).catch(() => {});
   };
 
   const saveCustomModels = async () => {
@@ -126,10 +140,7 @@ export function TokenDetailPanel({
     const listed = parseCustomModelList(modelDraft);
     setSavingModels(true);
     try {
-      const next = await setLocalTokenCustomModels(token, listed);
-      setLiveModels(next);
-      setModelDraft(next.join('\n'));
-      setTestModel((current) => current.trim() || next[0] || '');
+      applyListedModels(await setLocalTokenCustomModels(token, listed));
       toast({ title: t('common.save'), variant: 'success' });
     } catch {
       toast({ title: t('common.saveFailed'), variant: 'danger' });
@@ -137,6 +148,29 @@ export function TokenDetailPanel({
       setSavingModels(false);
     }
   };
+
+  const refreshPoolModels = async () => {
+    const token = row.token?.trim();
+    if (!token) return;
+    const requestId = row.id;
+    setRefreshingModels(true);
+    try {
+      const listed = (await refreshLocalTokenModels(token))
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (rowIdRef.current !== requestId) return;
+      applyListedModels(listed);
+      toast({ title: t('routes.tokens.testModelsRefreshed'), variant: 'success' });
+    } catch {
+      if (rowIdRef.current !== requestId) return;
+      toast({ title: t('routes.tokens.testModelsRefreshFailed'), variant: 'danger' });
+    } finally {
+      if (rowIdRef.current === requestId) setRefreshingModels(false);
+    }
+  };
+
+  const modelsBusy = testing || savingModels || refreshingModels;
+  const canEditModels = Boolean(row.token?.trim()) && !modelsBusy;
 
   const runTest = async () => {
     if (!canRunTest) return;
@@ -261,6 +295,50 @@ export function TokenDetailPanel({
             <p className="text-meta text-muted">{testGate.reason}</p>
           ) : null}
         </div>
+        <div className="space-y-1" data-token-models="">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldModels')}</p>
+          {models.length > 0 ? (
+            <p className="text-sm text-primary">{models.join(', ')}</p>
+          ) : (
+            <p className="text-meta text-secondary">{t('routes.tokens.testNoModels')}</p>
+          )}
+          <p className="text-meta text-secondary">{t('routes.tokens.testModelsHint')}</p>
+          <textarea
+            value={modelDraft}
+            onChange={(event) => setModelDraft(event.target.value)}
+            disabled={!canEditModels}
+            placeholder={t('routes.tokens.testModelsPlaceholder')}
+            rows={4}
+            className="min-h-[5.5rem] w-full resize-y rounded-card border border-border bg-transparent px-3 py-2 font-mono text-xs text-primary"
+            data-token-models-draft=""
+          />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!canEditModels}
+              data-token-models-refresh=""
+              onClick={() => { void refreshPoolModels(); }}
+            >
+              {refreshingModels ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : null}
+              {refreshingModels
+                ? t('routes.tokens.testModelsRefreshing')
+                : t('routes.tokens.testModelsRefresh')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!canEditModels}
+              onClick={() => { void saveCustomModels(); }}
+            >
+              {savingModels ? t('common.saving') : t('routes.tokens.testModelsSave')}
+            </Button>
+          </div>
+        </div>
       </div>
       <Dialog open={testOpen} onOpenChange={(open) => { if (!testing) setTestOpen(open); }}>
         <DialogContent data-token-test-window="">
@@ -307,25 +385,6 @@ export function TokenDetailPanel({
                 data-token-test-model-custom=""
                 aria-label={t('routes.tokens.testModelCustom')}
               />
-              <p className="text-meta text-secondary">{t('routes.tokens.testModelsHint')}</p>
-              <textarea
-                value={modelDraft}
-                onChange={(event) => setModelDraft(event.target.value)}
-                disabled={testing || savingModels}
-                placeholder={t('routes.tokens.testModelsPlaceholder')}
-                rows={4}
-                className="min-h-[5.5rem] w-full resize-y rounded-card border border-border bg-transparent px-3 py-2 font-mono text-xs text-primary"
-                data-token-test-models-draft=""
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={testing || savingModels || !row.token?.trim()}
-                onClick={() => { void saveCustomModels(); }}
-              >
-                {savingModels ? t('common.saving') : t('routes.tokens.testModelsSave')}
-              </Button>
             </div>
             <div className="space-y-1">
               <p className="text-meta text-muted">{t('routes.tokens.testInput')}</p>

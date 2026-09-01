@@ -1189,3 +1189,73 @@ fn custom_model_catalog_is_used_for_routing_and_not_refetched() {
         .unwrap();
     assert_eq!(again.models, vec!["grok-4.5", "grok-4.6"]);
 }
+
+fn grok_apikey(id: &str, models: &[&str]) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: id.into(),
+        credentials: json!({
+            "api_key": "sk-test",
+            "listedModels": models,
+        }),
+        extra: json!({}),
+        status: "ok".into(),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+#[test]
+fn refresh_local_token_models_unions_pool_logins_and_bypasses_live_cache() {
+    let (_dir, db, service, _) = tmp();
+    let accounts = AccountRepo::new(db);
+    accounts.create(&grok_apikey("grok-a", &["model-a"])).unwrap();
+    accounts.create(&grok_apikey("grok-b", &["model-b"])).unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Grok, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "grok-a")
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "grok-b")
+        .unwrap();
+    let first = service.list_upstream_models_for_pool(&pool.id).unwrap();
+    assert_eq!(first, vec!["model-a", "model-b"]);
+
+    let mut account = accounts.get_by_id("grok-a").unwrap().unwrap();
+    account.credentials = json!({
+        "api_key": "sk-test",
+        "listedModels": ["model-a2"],
+    });
+    accounts.update(&account).unwrap();
+    assert_eq!(
+        service.list_upstream_models_for_pool(&pool.id).unwrap(),
+        vec!["model-a", "model-b"]
+    );
+
+    service
+        .set_source_custom_models(
+            AdapterSourceKind::Account,
+            "grok-b",
+            vec!["model-b-custom".into()],
+        )
+        .unwrap();
+    let token = service
+        .list_local_tokens()
+        .unwrap()
+        .into_iter()
+        .find(|record| record.pool_id == pool.id)
+        .unwrap()
+        .token;
+    let listed = service.refresh_local_token_models(&token).unwrap();
+    assert_eq!(listed, vec!["model-a2", "model-b-custom"]);
+    let custom = service
+        .ensure_source_model_catalog(AdapterSourceKind::Account, "grok-b")
+        .unwrap();
+    assert_eq!(custom.source, "custom");
+    assert_eq!(custom.models, vec!["model-b-custom"]);
+}

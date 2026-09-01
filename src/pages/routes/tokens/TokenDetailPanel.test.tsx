@@ -47,6 +47,9 @@ describe('TokenDetailPanel', () => {
     expect(markup).toContain('测试');
     expect(markup).not.toMatch(/data-token-test=""[^>]*\bdisabled\b/);
     expect(markup).not.toContain('ahb_secret');
+    expect(markup).toContain('data-token-models');
+    expect(markup).toContain('按连接池更新');
+    expect(markup).toContain('kimi-k2');
   });
 
   it('disables the test button when the entry is not ready', () => {

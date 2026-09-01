@@ -488,6 +488,22 @@ pub async fn list_local_token_models(
         .map_err(adapter_error_from_string)
 }
 
+/// Re-read models supported by the token's pool logins.
+#[tauri::command]
+pub async fn refresh_local_token_models(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<Vec<String>, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .refresh_local_token_models(&token)
+            .map_err(|err| map_err_string("refresh_local_token_models", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
 /// Replace one default-pool loopback bearer. Restarts that edge if it is live.
 #[tauri::command]
 pub async fn set_local_token(
