@@ -13,6 +13,7 @@ export function useRoutePoolState(input: {
 }) {
   const { profiles, detailTarget, reloadKey = 0 } = input;
   const [routePoolV2, setRoutePoolV2] = useState(false);
+  const [chatCompletionsShared, setChatCompletionsShared] = useState(false);
   const [defaultPools, setDefaultPools] = useState<DefaultRoutePoolOverview[]>([]);
   const [loading, setLoading] = useState(true);
   const [nativeCanApplyById, setNativeCanApplyById] = useState<Record<string, boolean>>({});
@@ -24,11 +25,13 @@ export function useRoutePoolState(input: {
       .then((listed) => {
         if (cancelled) return;
         setRoutePoolV2(listed.enabled);
+        setChatCompletionsShared(listed.chatCompletionsShared === true);
         setDefaultPools(listed.pools);
       })
       .catch(() => {
         if (cancelled) return;
         setRoutePoolV2(false);
+        setChatCompletionsShared(false);
         setDefaultPools([]);
       })
       .finally(() => {
@@ -66,6 +69,7 @@ export function useRoutePoolState(input: {
 
   return {
     routePoolV2,
+    chatCompletionsShared,
     defaultPools,
     loading,
     nativeCanApplyById,

@@ -25,6 +25,7 @@ use crate::models::{
     SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol, TicketSurface,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    SHARE_CHAT_COMPLETIONS,
 };
 use serde_json::Value;
 use crate::storage::{
@@ -133,6 +134,7 @@ impl RoutePoolService {
             return Ok(DefaultRoutePoolList {
                 enabled: false,
                 pools: Vec::new(),
+                chat_completions_shared: false,
             });
         }
         let mut overviews = Vec::new();
@@ -145,7 +147,32 @@ impl RoutePoolService {
         Ok(DefaultRoutePoolList {
             enabled: true,
             pools: overviews,
+            chat_completions_shared: self.chat_completions_shared()?,
         })
+    }
+
+    pub fn chat_completions_shared(&self) -> Result<bool> {
+        Ok(feature_flag_enabled(
+            self.db.get_setting(SHARE_CHAT_COMPLETIONS)?.as_deref(),
+        ))
+    }
+
+    /// Kimi and DSH share one chat-completions token, or keep separate keys.
+    pub fn set_chat_completions_shared(&self, shared: bool) -> Result<DefaultRoutePoolList> {
+        self.require_enabled()?;
+        let current = self.chat_completions_shared()?;
+        if current != shared {
+            self.db.set_setting(
+                SHARE_CHAT_COMPLETIONS,
+                if shared { "true" } else { "false" },
+            )?;
+            if shared {
+                self.merge_chat_completions_pools()?;
+            } else {
+                self.split_chat_completions_pools()?;
+            }
+        }
+        self.list_default_overviews()
     }
 
     pub fn overview_from_pool(&self, pool: &RoutePool) -> Result<DefaultRoutePoolOverview> {
@@ -250,7 +277,8 @@ impl RoutePoolService {
         source_id: &str,
     ) -> Result<DefaultRoutePoolOverview> {
         self.require_enabled()?;
-        let pool = self.ensure_default_pool(target_agent_id, surface)?;
+        let pool_agent = self.writer_agent_for_pool(target_agent_id, surface)?;
+        let pool = self.ensure_default_pool(pool_agent, surface)?;
         let members = self.pools.list_members(&pool.id)?;
         let added_member = if !members.iter().any(|member| {
             member.source_kind == source_kind && member.source_id == source_id
@@ -410,8 +438,10 @@ impl RoutePoolService {
         if targets.is_empty() {
             return Ok(false);
         }
+        let shared = self.chat_completions_shared()?;
+        let targets = collapse_chat_targets(targets, shared);
         let mut added_any = false;
-        for (agent_id, surface) in targets {
+        for (agent_id, surface) in &targets {
             let pool = self.ensure_default_pool(*agent_id, *surface)?;
             let members = self.pools.list_members(&pool.id)?;
             if members
@@ -1162,6 +1192,90 @@ impl RoutePoolService {
             .ok_or_else(|| AppError::NotFound(format!("model route rule not found: {rule_id}")))
     }
 
+    fn writer_agent_for_pool(
+        &self,
+        target_agent_id: AgentId,
+        surface: RouteDownstreamSurface,
+    ) -> Result<AgentId> {
+        Ok(if self.chat_completions_shared()? {
+            shared_chat_writer(target_agent_id, surface)
+        } else {
+            target_agent_id
+        })
+    }
+
+    fn merge_chat_completions_pools(&self) -> Result<()> {
+        let dsh = self
+            .pools
+            .list_pools(Some(AgentId::Dsh), Some(RouteDownstreamSurface::ChatCompletions))?
+            .into_iter()
+            .find(|pool| pool.is_default);
+        let Some(dsh) = dsh else {
+            return Ok(());
+        };
+        let kimi = self.ensure_default_pool(AgentId::Kimi, RouteDownstreamSurface::ChatCompletions)?;
+        if kimi.id == dsh.id {
+            return Ok(());
+        }
+        let kimi_members = self.pools.list_members(&kimi.id)?;
+        let dsh_members = self.pools.list_members(&dsh.id)?;
+        for member in dsh_members {
+            let exists = kimi_members.iter().any(|row| {
+                row.source_kind == member.source_kind && row.source_id == member.source_id
+            });
+            if !exists {
+                self.add_member(&kimi.id, member.source_kind, &member.source_id)?;
+            }
+            self.remove_member(&member.id)?;
+        }
+        Ok(())
+    }
+
+    fn split_chat_completions_pools(&self) -> Result<()> {
+        let kimi = self
+            .pools
+            .list_pools(Some(AgentId::Kimi), Some(RouteDownstreamSurface::ChatCompletions))?
+            .into_iter()
+            .find(|pool| pool.is_default);
+        let Some(kimi) = kimi else {
+            return Ok(());
+        };
+        let dsh = self.ensure_default_pool(AgentId::Dsh, RouteDownstreamSurface::ChatCompletions)?;
+        if kimi.id == dsh.id {
+            return Ok(());
+        }
+        let kimi_members = self.pools.list_members(&kimi.id)?;
+        let dsh_members = self.pools.list_members(&dsh.id)?;
+        for member in kimi_members {
+            let home = self.member_source_agent(&member)?;
+            let already_on_dsh = dsh_members.iter().any(|row| {
+                row.source_kind == member.source_kind && row.source_id == member.source_id
+            });
+            if home == Some(AgentId::Dsh) {
+                if !already_on_dsh {
+                    self.add_member(&dsh.id, member.source_kind, &member.source_id)?;
+                }
+                self.remove_member(&member.id)?;
+            } else if home != Some(AgentId::Kimi) && !already_on_dsh {
+                self.add_member(&dsh.id, member.source_kind, &member.source_id)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn member_source_agent(&self, member: &RouteMember) -> Result<Option<AgentId>> {
+        Ok(match member.source_kind {
+            AdapterSourceKind::Account => self
+                .accounts
+                .get_by_id(&member.source_id)?
+                .map(|account| account.agent_id),
+            AdapterSourceKind::Provider => self
+                .providers
+                .get_by_id(&member.source_id)?
+                .map(|provider| provider.agent_id),
+        })
+    }
+
     fn require_enabled(&self) -> Result<()> {
         if self.enabled()? {
             Ok(())
@@ -1182,6 +1296,34 @@ fn non_empty_label(value: &str) -> Option<&str> {
 
 fn oauth_login_is_pool_shareable(agent: AgentId) -> bool {
     matches!(agent, AgentId::Claude | AgentId::Codex | AgentId::Grok)
+}
+
+fn shared_chat_writer(agent: AgentId, surface: RouteDownstreamSurface) -> AgentId {
+    if surface == RouteDownstreamSurface::ChatCompletions
+        && matches!(agent, AgentId::Kimi | AgentId::Dsh)
+    {
+        AgentId::Kimi
+    } else {
+        agent
+    }
+}
+
+fn collapse_chat_targets(
+    targets: &[(AgentId, RouteDownstreamSurface)],
+    shared: bool,
+) -> Vec<(AgentId, RouteDownstreamSurface)> {
+    if !shared {
+        return targets.to_vec();
+    }
+    let mut out = Vec::new();
+    for (agent, surface) in targets {
+        let agent = shared_chat_writer(*agent, *surface);
+        let item = (agent, *surface);
+        if !out.contains(&item) {
+            out.push(item);
+        }
+    }
+    out
 }
 
 fn pool_targets_for_source(

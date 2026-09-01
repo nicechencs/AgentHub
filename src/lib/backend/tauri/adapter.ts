@@ -96,6 +96,10 @@ export function createTauriAdapterPort(): AdapterPort {
       const wire = await invokeAdapter<DefaultRoutePoolListWire>('list_default_route_pools', {});
       return mapDefaultRoutePoolList(wire);
     },
+    async setChatCompletionsShared(shared: boolean) {
+      const wire = await invokeAdapter<DefaultRoutePoolListWire>('set_chat_completions_shared', { shared });
+      return mapDefaultRoutePoolList(wire);
+    },
     async attachPoolOwnedAuthorization(request) {
       const wire = await invokeAdapter<DefaultRoutePoolOverviewWire>('attach_pool_owned_authorization', {
         ...request,

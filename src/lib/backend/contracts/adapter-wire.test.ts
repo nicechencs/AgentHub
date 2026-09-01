@@ -477,6 +477,7 @@ describe('Adapter Rust wire mappers', () => {
       }],
     });
     expect(listed.enabled).toBe(true);
+    expect(listed.chatCompletionsShared).toBe(false);
     expect(listed.pools[0]?.gatewayPort).toBe(43121);
     expect(listed.pools[0]?.members[0]).toMatchObject({
       sourceId: 'oauth-1',

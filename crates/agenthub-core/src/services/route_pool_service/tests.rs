@@ -1035,3 +1035,96 @@ fn pool_member_overview_exposes_safe_source_label_and_oauth_refresh_tail() {
     assert!(!encoded.contains("access-secret"));
     assert!(!encoded.contains("api-secret"));
 }
+
+fn chat_api_account(id: &str, agent: AgentId, label: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: agent,
+        kind: AccountKind::ApiKey,
+        label: label.into(),
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "sk-test",
+            "url": "https://api.example.com/v1/chat/completions"
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+fn chat_member_ids(listed: &crate::models::DefaultRoutePoolList, agent: AgentId) -> Vec<&str> {
+    listed
+        .pools
+        .iter()
+        .filter(|pool| {
+            pool.target_agent_id == agent
+                && pool.surface == RouteDownstreamSurface::ChatCompletions
+        })
+        .flat_map(|pool| pool.members.iter().map(|member| member.source_id.as_str()))
+        .collect()
+}
+
+#[test]
+fn chat_completions_share_defaults_off_and_merges_kimi_dsh() {
+    let (_dir, db, service, _profiles) = tmp();
+    AccountRepo::new(db.clone())
+        .create(&chat_api_account("kimi-key", AgentId::Kimi, "Kimi key"))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&chat_api_account("dsh-key", AgentId::Dsh, "DSH key"))
+        .unwrap();
+    AccountRepo::new(db)
+        .create(&chat_api_account("wb-key", AgentId::WorkBuddy, "WorkBuddy key"))
+        .unwrap();
+
+    service.sync_connection_authorizations().unwrap();
+    let listed = service.list_default_overviews().unwrap();
+    assert!(!listed.chat_completions_shared);
+    assert!(chat_member_ids(&listed, AgentId::Kimi).contains(&"kimi-key"));
+    assert!(chat_member_ids(&listed, AgentId::Dsh).contains(&"dsh-key"));
+    assert!(chat_member_ids(&listed, AgentId::Kimi).contains(&"wb-key"));
+    assert!(chat_member_ids(&listed, AgentId::Dsh).contains(&"wb-key"));
+
+    let shared = service.set_chat_completions_shared(true).unwrap();
+    assert!(shared.chat_completions_shared);
+    let kimi_ids = chat_member_ids(&shared, AgentId::Kimi);
+    let dsh_ids = chat_member_ids(&shared, AgentId::Dsh);
+    assert!(kimi_ids.contains(&"kimi-key"));
+    assert!(kimi_ids.contains(&"dsh-key"));
+    assert!(kimi_ids.contains(&"wb-key"));
+    assert!(dsh_ids.is_empty());
+
+    let split = service.set_chat_completions_shared(false).unwrap();
+    assert!(!split.chat_completions_shared);
+    let kimi_ids = chat_member_ids(&split, AgentId::Kimi);
+    let dsh_ids = chat_member_ids(&split, AgentId::Dsh);
+    assert!(kimi_ids.contains(&"kimi-key"));
+    assert!(!kimi_ids.contains(&"dsh-key"));
+    assert!(dsh_ids.contains(&"dsh-key"));
+    assert!(kimi_ids.contains(&"wb-key"));
+    assert!(dsh_ids.contains(&"wb-key"));
+}
+
+#[test]
+fn shared_chat_enrolls_workbuddy_and_dsh_into_kimi_pool() {
+    let (_dir, db, service, _profiles) = tmp();
+    service.set_chat_completions_shared(true).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&chat_api_account("dsh-key", AgentId::Dsh, "DSH key"))
+        .unwrap();
+    AccountRepo::new(db)
+        .create(&chat_api_account("wb-key", AgentId::WorkBuddy, "WorkBuddy key"))
+        .unwrap();
+
+    service.sync_connection_authorizations().unwrap();
+    let listed = service.list_default_overviews().unwrap();
+    assert!(listed.chat_completions_shared);
+    let kimi_ids = chat_member_ids(&listed, AgentId::Kimi);
+    let dsh_ids = chat_member_ids(&listed, AgentId::Dsh);
+    assert!(kimi_ids.contains(&"dsh-key"));
+    assert!(kimi_ids.contains(&"wb-key"));
+    assert!(dsh_ids.is_empty());
+}

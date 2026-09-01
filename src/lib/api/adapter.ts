@@ -60,6 +60,11 @@ export async function listDefaultRoutePools(): Promise<DefaultRoutePoolList> {
   return getBackend().adapter.listDefaultRoutePools();
 }
 
+/** Kimi and DSH share one chat-completions token, or keep separate keys. */
+export async function setChatCompletionsShared(shared: boolean): Promise<DefaultRoutePoolList> {
+  return getBackend().adapter.setChatCompletionsShared(shared);
+}
+
 /** Enroll an authorization into the default auth pool and keep it off Connections. */
 export async function attachPoolOwnedAuthorization(
   request: AttachPoolOwnedAuthorizationRequest,

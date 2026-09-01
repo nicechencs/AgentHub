@@ -500,6 +500,7 @@ export interface DefaultRoutePoolOverviewWire {
 export interface DefaultRoutePoolListWire {
   enabled: boolean;
   pools?: DefaultRoutePoolOverviewWire[];
+  chatCompletionsShared?: boolean;
 }
 
 function mapPoolSurface(value: string): RoutePoolSurface {
@@ -574,5 +575,6 @@ export function mapDefaultRoutePoolList(wire: DefaultRoutePoolListWire): Default
   return {
     enabled: wire.enabled,
     pools: (wire.pools ?? []).map(mapDefaultRoutePoolOverview),
+    chatCompletionsShared: wire.chatCompletionsShared === true,
   };
 }

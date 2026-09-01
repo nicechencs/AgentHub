@@ -41,6 +41,7 @@ export interface MockAdapterState {
   resolver: MockAdapterSourceResolver;
   removeGeneratedProvider?: (provider: Provider) => void;
   routePoolV2: boolean;
+  shareChatCompletions: boolean;
   defaultPools: DefaultRoutePoolOverview[];
 }
 
