@@ -25,7 +25,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
-import { getLocalEntryStatus } from '@/lib/api/adapter';
+import { getLocalEntryStatus, listLocalTokens } from '@/lib/api/adapter';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   isLocalEndpointKind,
@@ -43,12 +43,13 @@ import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import {
   BOARD_ROUTE_GRID,
-  boardEndpointLoginTotals,
+  boardEndpointKeyTotals,
   buildBoardEndpointTypeRows,
   buildLocalEntryControl,
   type BoardEndpointTypeRow,
   type LocalEntryControl,
 } from '@/pages/routes/board/board-view-model';
+import { buildLocalTokenRows, visibleTokenKinds } from '@/pages/routes/tokens/tokens-model';
 import {
   poolSurfaceToUsageSurface,
   rememberedBoardUsageFilters,
@@ -85,9 +86,8 @@ function BoardEndpointCard({
 }) {
   const { t } = useI18n();
   const label = localEndpointKindLabel(row.kind, t);
-  const logins = t('routes.board.endpointLogins', {
-    oauth: row.oauthCount,
-    apikey: row.apikeyCount,
+  const keyLabel = t('routes.board.endpointLogins', {
+    count: row.keyCount,
   });
   const color = agentCssVar(localEndpointBrandAgentId(row.kind));
 
@@ -107,14 +107,14 @@ function BoardEndpointCard({
       className={cn(
         'cursor-pointer p-3 transition-colors hover:border-accent/40 hover:bg-hover/40',
         selected && 'border-accent bg-hover/40',
-        row.oauthCount + row.apikeyCount === 0 && 'opacity-70',
+        row.keyCount === 0 && 'opacity-70',
       )}
     >
       <Tip className="block min-w-0 truncate font-mono text-sm font-medium" label={row.path}>
         <span style={{ color }}>{row.path}</span>
       </Tip>
       <p className="mt-1 text-xs text-secondary">{label}</p>
-      <p className="mt-1 text-xs text-muted">{logins}</p>
+      <p className="mt-1 text-xs text-muted">{keyLabel}</p>
     </Card>
   );
 }
@@ -152,11 +152,16 @@ export default function RoutesBoardPage() {
   const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const [stopOpen, setStopOpen] = useState(false);
   const [gatewayRunning, setGatewayRunning] = useState(false);
-  const { defaultPools, loading: poolsLoading } = useRoutePoolState({
+  const {
+    chatCompletionsShared,
+    defaultPools,
+    loading: poolsLoading,
+  } = useRoutePoolState({
     profiles,
     detailTarget: null,
     reloadKey: usageRefreshKey,
   });
+  const [tokensByPoolId, setTokensByPoolId] = useState<Record<string, string>>({});
   const {
     profileErrors,
     busyProfileIds,
@@ -182,6 +187,22 @@ export default function RoutesBoardPage() {
       })
       .catch(() => undefined);
   }, [updateBridgeStatus, usageRefreshKey]);
+  useEffect(() => {
+    let cancelled = false;
+    void listLocalTokens()
+      .then((records) => {
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        for (const record of records) next[record.poolId] = record.token;
+        setTokensByPoolId(next);
+      })
+      .catch(() => {
+        if (!cancelled) setTokensByPoolId({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [defaultPools, usageRefreshKey]);
   const localEntry = useMemo(
     () => buildLocalEntryControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
     [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
@@ -192,29 +213,41 @@ export default function RoutesBoardPage() {
     ?? localEntry.profileIds.map((id) => profileErrors[id]).find((error) => error != null)
     ?? null;
 
-  const endpointRows = useMemo(
-    () => buildBoardEndpointTypeRows(defaultPools, hiddenTargetIds),
-    [defaultPools, hiddenTargetIds],
+  const tokenRows = useMemo(
+    () => buildLocalTokenRows(
+      profiles,
+      bridgeStatuses,
+      errors.bridgeStatuses,
+      defaultPools,
+      chatCompletionsShared,
+      tokensByPoolId,
+    ),
+    [
+      bridgeStatuses,
+      chatCompletionsShared,
+      defaultPools,
+      errors.bridgeStatuses,
+      profiles,
+      tokensByPoolId,
+    ],
   );
-  const totals = boardEndpointLoginTotals(endpointRows);
+  const endpointRows = useMemo(
+    () => buildBoardEndpointTypeRows(visibleTokenKinds(tokenRows, hiddenTargetIds)),
+    [hiddenTargetIds, tokenRows],
+  );
+  const totals = boardEndpointKeyTotals(endpointRows);
   const usageSurface = endpointKind === 'all'
     ? 'all'
     : poolSurfaceToUsageSurface(localEndpointSurface(endpointKind));
   const selectedRow = endpointKind === 'all'
     ? null
     : endpointRows.find((row) => row.kind === endpointKind) ?? null;
-  const fleetLabel = totals.oauth + totals.apikey > 0
-    ? t('routes.board.fleetLogins', { oauth: totals.oauth, apikey: totals.apikey })
+  const fleetLabel = totals.keys > 0
+    ? t('routes.board.fleetLogins', { count: totals.keys })
     : t('routes.board.description');
-  const loginHint = selectedRow
-    ? t('routes.board.endpointLoginsHint', {
-      oauth: selectedRow.oauthCount,
-      apikey: selectedRow.apikeyCount,
-    })
-    : t('routes.board.endpointLoginsHintAll', {
-      oauth: totals.oauth,
-      apikey: totals.apikey,
-    });
+  const keyHint = selectedRow
+    ? t('routes.board.endpointLoginsHint', { count: selectedRow.keyCount })
+    : t('routes.board.endpointLoginsHintAll', { count: totals.keys });
   const pageLoading = loading || poolsLoading;
   const showStatusSkeleton = pageLoading && defaultPools.length === 0;
   const entryRunning = localEntry.running || gatewayRunning;
@@ -276,7 +309,7 @@ export default function RoutesBoardPage() {
               </div>
             )}
             <div className="mt-3 flex items-center gap-2">
-              <p className="min-w-0 flex-1 text-sm text-secondary">{loginHint}</p>
+              <p className="min-w-0 flex-1 text-sm text-secondary">{keyHint}</p>
               <PageRefreshButton
                 className="ml-auto shrink-0"
                 loading={pageLoading}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
-import { buildLocalTokenRows, maskLocalToken, tokenTypeLabel } from './tokens-model';
+import { buildLocalTokenRows, maskLocalToken, tokenTypeLabel, visibleTokenKinds } from './tokens-model';
 
 function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>): AdapterProfile {
   return {
@@ -129,6 +129,16 @@ describe('tokens-model', () => {
     expect(tokenTypeLabel({ kind: 'responses_codex' })).toBe('Responses · Codex');
     expect(tokenTypeLabel({ kind: 'responses_grok' })).toBe('Responses · Grok');
     expect(tokenTypeLabel({ kind: 'chat_completions' })).toBe('Chat Completions');
+  });
+
+  it('omits hidden Agents from board entry-key kinds', () => {
+    expect(visibleTokenKinds(
+      [
+        { kind: 'messages', targetAgentId: 'claude' },
+        { kind: 'chat_completions', targetAgentId: 'cursor' },
+      ],
+      new Set(['cursor']),
+    )).toEqual(['messages']);
   });
 
   it('shows the pool entry key when the local entry is stopped', () => {

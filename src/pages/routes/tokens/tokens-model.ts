@@ -59,6 +59,16 @@ export function tokenTypeLabel(
   return localEndpointKindLabel(row.kind, t);
 }
 
+/** Outbound entry-key kinds visible on the board; hidden Agents are omitted. */
+export function visibleTokenKinds(
+  rows: readonly Pick<LocalTokenRow, 'kind' | 'targetAgentId'>[],
+  hiddenAgentIds: ReadonlySet<string> = new Set(),
+): LocalEndpointKind[] {
+  return rows
+    .filter((row) => !hiddenAgentIds.has(row.targetAgentId))
+    .map((row) => row.kind);
+}
+
 function pickRuntimeProfile(
   matches: readonly AdapterProfile[],
   statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,

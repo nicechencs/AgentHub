@@ -9,7 +9,6 @@ import type {
   AdapterProfile,
   AdapterProfileStatus,
   DefaultRoutePoolOverview,
-  RouteMemberOverview,
   RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
 import {
@@ -151,68 +150,37 @@ export type BoardEndpointTypeRow = {
   kind: LocalEndpointKind;
   surface: RoutePoolSurface;
   path: string;
-  oauthCount: number;
-  apikeyCount: number;
+  /** Created local entry keys for this type; not upstream logins. */
+  keyCount: number;
 };
 
-export type BoardEndpointLoginTotals = {
-  oauth: number;
-  apikey: number;
+export type BoardEndpointKeyTotals = {
+  keys: number;
 };
 
-function memberUsable(
-  member: Pick<RouteMemberOverview, 'enabled' | 'availability'>,
-): boolean {
-  if (member.enabled !== true) return false;
-  return member.availability == null || member.availability === 'ready';
-}
-
-/** Unique official-login / API Key counts for one endpoint kind. */
+/** Four endpoint cards; counts are outbound entry keys already created. */
 export function buildBoardEndpointTypeRows(
-  pools: readonly DefaultRoutePoolOverview[],
-  hiddenTargetIds: ReadonlySet<string> = new Set(),
+  createdKeyKinds: readonly LocalEndpointKind[] = [],
 ): BoardEndpointTypeRow[] {
-  return LOCAL_ENDPOINT_KINDS.map((endpoint) => {
-    const usable = new Map<string, boolean>();
-    const kindByKey = new Map<string, 'oauth' | 'apikey'>();
-    for (const pool of pools) {
-      if (hiddenTargetIds.has(pool.targetAgentId)) continue;
-      const poolKind = localEndpointKindFromPool(pool);
-      if (poolKind !== endpoint.kind) continue;
-      for (const member of pool.members) {
-        const key = `${member.sourceKind}:${member.sourceId}`;
-        kindByKey.set(key, member.sourceKind === 'account' ? 'oauth' : 'apikey');
-        if (memberUsable(member)) usable.set(key, true);
-        else if (!usable.has(key)) usable.set(key, false);
-      }
-    }
-    let oauthCount = 0;
-    let apikeyCount = 0;
-    for (const [key, ready] of usable) {
-      if (!ready) continue;
-      if (kindByKey.get(key) === 'oauth') oauthCount += 1;
-      else apikeyCount += 1;
-    }
-    return {
-      kind: endpoint.kind,
-      surface: endpoint.surface,
-      path: endpoint.path,
-      oauthCount,
-      apikeyCount,
-    };
-  });
+  const counts: Record<LocalEndpointKind, number> = {
+    messages: 0,
+    responses_codex: 0,
+    responses_grok: 0,
+    chat_completions: 0,
+  };
+  for (const kind of createdKeyKinds) counts[kind] += 1;
+  return LOCAL_ENDPOINT_KINDS.map((endpoint) => ({
+    kind: endpoint.kind,
+    surface: endpoint.surface,
+    path: endpoint.path,
+    keyCount: counts[endpoint.kind],
+  }));
 }
 
-export function boardEndpointLoginTotals(
+export function boardEndpointKeyTotals(
   rows: readonly BoardEndpointTypeRow[],
-): BoardEndpointLoginTotals {
-  return rows.reduce<BoardEndpointLoginTotals>(
-    (sum, row) => ({
-      oauth: sum.oauth + row.oauthCount,
-      apikey: sum.apikey + row.apikeyCount,
-    }),
-    { oauth: 0, apikey: 0 },
-  );
+): BoardEndpointKeyTotals {
+  return { keys: rows.reduce((sum, row) => sum + row.keyCount, 0) };
 }
 
 const STATE_RANK: Record<string, number> = {
