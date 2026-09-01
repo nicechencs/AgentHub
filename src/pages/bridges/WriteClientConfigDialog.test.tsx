@@ -57,6 +57,7 @@ function row(agent: CreateRouteTarget, overrides: Partial<RouteGraphRow> = {}): 
     link: 'dashed',
     enabled: true,
     applied: false,
+    writeNote: null,
     ...overrides,
   };
 }

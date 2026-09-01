@@ -164,7 +164,7 @@ pub async fn send_upstream_v2(
                 state,
                 builder,
                 request_id,
-                upstream_header_timeout(stream),
+                upstream_header_timeout(stream || attempt_channel.forces_upstream_stream()),
             )
             .await
             {
@@ -204,7 +204,9 @@ pub async fn send_upstream_v2(
                 match read_bounded_upstream_error(response, &state.force_shutdown).await {
                     Ok(body) => body,
                     Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
-                    Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
+                    Err(UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream) => {
+                        Vec::new()
+                    }
                 };
             let detail = extract_upstream_error_detail(&error_body);
             let err_text = String::from_utf8_lossy(&error_body);

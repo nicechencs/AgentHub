@@ -874,6 +874,8 @@ export const zh = {
       upstreamUnknown: "上游端点未知",
       notEnabled: "未开放",
       applied: "已写入",
+      appliedStopped: "本机配置还指向这里，但本机入口已停止",
+      appliedRewritten: "已改写到其他本机入口",
       empty: "这条路由还没有可用的客户端端点。",
     },
     write: {

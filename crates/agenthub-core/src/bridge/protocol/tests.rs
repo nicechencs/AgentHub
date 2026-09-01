@@ -16,10 +16,12 @@ use super::{
     },
     fixture_loader::fixture,
     responses::{
-        apply_official_codex_model, encode_responses_from_ir, parse_responses_request,
-        prepare_official_codex_request, responses_output_to_ir, to_grok_chat_request,
-        to_grok_responses_request, to_kimi_chat_request, to_responses_request,
-        translate_responses_request, IrToResponsesSse, ResponsesStreamToIr,
+        aggregate_responses_sse_to_json, apply_official_codex_model,
+        client_message_for_upstream_detail, encode_responses_from_ir, looks_like_sse_body,
+        parse_responses_request, prepare_official_codex_request, responses_output_to_ir,
+        to_grok_chat_request, to_grok_responses_request, to_kimi_chat_request, to_responses_request,
+        translate_responses_request, upstream_detail_requires_stream, IrToResponsesSse,
+        ResponsesStreamToIr,
     },
 };
 
@@ -593,11 +595,13 @@ fn prepare_official_codex_request_forces_store_false_without_changing_model_poli
         Some("gpt-5.4"),
     );
     assert_eq!(missing_store["store"], false);
+    assert_eq!(missing_store["stream"], true);
     assert_eq!(missing_store["model"], "gpt-5.4");
 
-    let mut true_store = json!({"model": "gpt-5.4", "store": true});
+    let mut true_store = json!({"model": "gpt-5.4", "store": true, "stream": false});
     prepare_official_codex_request(&mut true_store, "gpt-5.4", None);
     assert_eq!(true_store["store"], false);
+    assert_eq!(true_store["stream"], true);
     assert_eq!(true_store["model"], "gpt-5.4");
 
     let mut leftover_model = json!({"model": "claude-sonnet-4-20250514"});
@@ -1768,4 +1772,75 @@ fn completed_responses_usage_includes_reasoning_tokens_even_when_unknown() {
     assert_eq!(encoded["reasoning_tokens"], 7);
     assert_eq!(encoded["output_tokens_details"]["reasoning_tokens"], 7);
     assert_codex_completed_usage(&encoded);
+}
+
+#[test]
+fn official_codex_non_stream_request_still_sends_upstream_stream_true() {
+    let request = parse_messages_request(&json!({
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 32,
+        "stream": false,
+        "messages": [{ "role": "user", "content": "ping" }]
+    }))
+    .expect("parse");
+    assert!(!request.stream);
+    let mut body = to_responses_request(&request);
+    assert_eq!(body["stream"], false);
+    prepare_official_codex_request(&mut body, &request.model, Some("gpt-5.4"));
+    assert_eq!(body["stream"], true);
+    assert_eq!(body["store"], false);
+}
+
+#[test]
+fn aggregate_responses_sse_keeps_usage_and_request_id() {
+    let sse = concat!(
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_agg\",\"model\":\"gpt-5.4\",\"status\":\"in_progress\"}}\n\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"pong\"}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_agg\",\"model\":\"gpt-5.4\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"pong\"}]}],\"usage\":{\"input_tokens\":14,\"output_tokens\":6}}}\n\n",
+    );
+    assert!(looks_like_sse_body(sse.as_bytes()));
+    let body = aggregate_responses_sse_to_json(sse.as_bytes()).expect("aggregate");
+    assert_eq!(body["id"], "resp_agg");
+    assert_eq!(body["usage"]["input_tokens"], 14);
+    assert_eq!(body["usage"]["output_tokens"], 6);
+    assert_eq!(body["output"][0]["content"][0]["text"], "pong");
+    let ir = responses_output_to_ir(&body).expect("ir");
+    let message = encode_anthropic_message(&ir).expect("anthropic");
+    assert_eq!(message["content"][0]["text"], "pong");
+    assert_eq!(message["usage"]["input_tokens"], 14);
+}
+
+#[test]
+fn aggregate_responses_sse_folds_deltas_when_completed_output_is_empty() {
+    let sse = concat!(
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_stream\",\"model\":\"gpt-5\",\"status\":\"in_progress\"}}\n\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"pong\"}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_stream\",\"model\":\"gpt-5\",\"status\":\"completed\",\"output\":[]}}\n\n",
+    );
+    let body = aggregate_responses_sse_to_json(sse.as_bytes()).expect("aggregate");
+    assert_eq!(body["id"], "resp_stream");
+    let ir = responses_output_to_ir(&body).expect("ir");
+    let message = encode_anthropic_message(&ir).expect("anthropic");
+    assert_eq!(message["content"][0]["text"], "pong");
+}
+
+#[test]
+fn aggregate_responses_sse_incomplete_is_chinese() {
+    let sse = "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_half\",\"model\":\"gpt-5.4\"}}\n\n";
+    let error = aggregate_responses_sse_to_json(sse.as_bytes()).expect_err("incomplete");
+    assert_eq!(error.code, "upstream_error");
+    assert!(error.message.contains("不完整"), "{}", error.message);
+    assert!(error.message.contains("重试"), "{}", error.message);
+}
+
+#[test]
+fn upstream_stream_required_error_is_chinese() {
+    assert!(upstream_detail_requires_stream("Stream must be set to true"));
+    assert!(upstream_detail_requires_stream("stream is required"));
+    assert!(!upstream_detail_requires_stream("model not found"));
+    let message = client_message_for_upstream_detail(Some("Stream must be set to true"))
+        .expect("mapped");
+    assert!(message.contains("流式"), "{message}");
+    assert!(message.contains("重试"), "{message}");
+    assert!(client_message_for_upstream_detail(Some("unrelated 400")).is_none());
 }

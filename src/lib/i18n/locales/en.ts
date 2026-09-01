@@ -884,6 +884,8 @@ export const en = {
       upstreamUnknown: "Upstream endpoint unknown",
       notEnabled: "Not enabled",
       applied: "Written",
+      appliedStopped: "Local config still points here, but the local entry is stopped",
+      appliedRewritten: "Now written to another local entry",
       empty: "This route has no client endpoint yet.",
     },
     write: {

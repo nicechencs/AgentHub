@@ -429,6 +429,7 @@ export default function RoutesPoolPage() {
         bridgeStatus={detailTarget.route === 'local_bridge' ? bridgeStatuses[detailTarget.id] : undefined}
         entries={entries}
         siblingProfiles={profiles}
+        bridgeStatuses={bridgeStatuses}
         busy={busyProfileIds[detailTarget.id] === true || removingProfileId === detailTarget.id}
         error={profileErrors[detailTarget.id]}
         onRequestRemove={setRemoveConfirm}

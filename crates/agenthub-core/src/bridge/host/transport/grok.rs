@@ -17,6 +17,8 @@ use super::{
     UpstreamTransport,
 };
 
+/// Grok / xAI Responses has no official `stream: true` hard contract.
+/// Follow the downstream request; do not force SSE the way Codex does.
 pub(super) struct GrokTransport;
 
 impl UpstreamTransport for GrokTransport {

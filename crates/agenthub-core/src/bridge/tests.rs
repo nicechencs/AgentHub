@@ -1760,6 +1760,91 @@ async fn codex_responses_oauth_messages_stream_sends_store_false_and_stream_true
 }
 
 #[tokio::test]
+async fn codex_responses_oauth_messages_non_stream_aggregates_forced_sse() {
+    let (upstream_port, captured, upstream_task) = capturing_codex_responses_sse_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_spec("codex-messages-aggregate", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 32,
+            "stream": false,
+            "messages": [{ "role": "user", "content": "ping" }]
+        }))
+        .send()
+        .await
+        .expect("non-stream messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .json::<Value>()
+        .await
+        .expect("aggregated Anthropic JSON");
+    assert_eq!(body["type"], "message");
+    assert_eq!(body["content"][0]["text"], "pong");
+    let upstream = captured.lock().expect("lock captured Codex bodies").clone();
+    assert_eq!(upstream.len(), 1);
+    assert_eq!(upstream[0]["store"], false);
+    assert_eq!(upstream[0]["stream"], true);
+    host.stop("codex-messages-aggregate").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn codex_responses_oauth_non_stream_stream_required_error_is_chinese() {
+    async fn reject_stream(Json(body): Json<Value>) -> Response {
+        if body.get("stream").and_then(Value::as_bool) == Some(true) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Stream must be set to true"})),
+            )
+                .into_response();
+        }
+        Json(json!({"id": "resp_ok"})).into_response()
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind stream-required Codex upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(listener, Router::new().route("/v1/responses", post(reject_stream)))
+            .await
+            .expect("serve stream-required Codex upstream");
+    });
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_spec("codex-stream-required", 0, port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 32,
+            "stream": false,
+            "messages": [{ "role": "user", "content": "ping" }]
+        }))
+        .send()
+        .await
+        .expect("rejected request");
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body = response.text().await.expect("error body");
+    assert!(body.contains("流式"), "{body}");
+    assert!(body.contains("重试"), "{body}");
+    assert!(!body.contains("Stream must be set to true"), "{body}");
+    host.stop("codex-stream-required").await.expect("stop");
+    task.abort();
+}
+
+#[tokio::test]
 async fn anthropic_protocol_uses_messages_and_x_api_key() {
     let (upstream_port, upstream_task) = anthropic_upstream().await;
     let host = BridgeRuntimeHost::new();

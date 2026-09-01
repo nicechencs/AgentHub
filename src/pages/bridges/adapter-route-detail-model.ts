@@ -99,19 +99,94 @@ function isEdgeTarget(value: string): value is RouteDetailEdgeTarget {
   return APPLIED_TARGETS.has(value);
 }
 
-/** Per-target applied set from sibling local_bridge profiles sharing sourceKind+sourceId with generatedProviderId. */
+export type RouteWriteTruth = {
+  /** Target agent → the provider id that is currently live (`isCurrent`). */
+  currentProviderByAgent: Readonly<Partial<Record<string, string>>>;
+  /** Local-bridge profile ids whose local entry is running. */
+  runningProfileIds: ReadonlySet<string>;
+};
+
+export type RouteWriteNote = 'stopped' | 'rewritten' | null;
+
+/** Current provider id per agent. Only provider rows — generated local writes live there. */
+export function currentProviderIdsFromEntries(
+  entries: readonly { source: string; agentId: string; isCurrent: boolean; id: string }[],
+): Partial<Record<string, string>> {
+  const out: Partial<Record<string, string>> = {};
+  for (const entry of entries) {
+    if (entry.source !== 'provider' || !entry.isCurrent) continue;
+    const id = entry.id.trim();
+    if (!id) continue;
+    out[entry.agentId] = id;
+  }
+  return out;
+}
+
+/** Profile ids whose local entry is actually running. */
+export function runningAdapterProfileIds(
+  statuses: Readonly<Record<string, { state?: string | null } | undefined>>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const [id, status] of Object.entries(statuses)) {
+    if (status?.state === 'running') ids.add(id);
+  }
+  return ids;
+}
+
+export function routeWriteTruthFrom(
+  entries: readonly { source: string; agentId: string; isCurrent: boolean; id: string }[],
+  statuses: Readonly<Record<string, { state?: string | null } | undefined>>,
+): RouteWriteTruth {
+  return {
+    currentProviderByAgent: currentProviderIdsFromEntries(entries),
+    runningProfileIds: runningAdapterProfileIds(statuses),
+  };
+}
+
+/**
+ * 「已写入」= this route's generated provider is the agent's current provider
+ * **and** that local entry is running. A leftover stamp on a stopped or
+ * rewritten route is not applied.
+ */
 export function appliedTargetsFromProfiles(
-  profiles: readonly Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'targetAgentId' | 'generatedProviderId' | 'route'>[],
+  profiles: readonly Pick<AdapterProfile, 'id' | 'sourceKind' | 'sourceId' | 'targetAgentId' | 'generatedProviderId' | 'route'>[],
   source: Pick<AdapterProfile, 'sourceKind' | 'sourceId'>,
+  writeTruth?: RouteWriteTruth,
 ): ReadonlySet<RouteDetailEdgeTarget> {
   const applied = new Set<RouteDetailEdgeTarget>();
   for (const profile of profiles) {
-    if (profile.route !== 'local_bridge') continue;
-    if (profile.sourceKind !== source.sourceKind || profile.sourceId !== source.sourceId) continue;
-    if (!profile.generatedProviderId?.trim()) continue;
-    if (isEdgeTarget(profile.targetAgentId)) applied.add(profile.targetAgentId);
+    if (writeStateForProfile(profile, source, writeTruth).applied && isEdgeTarget(profile.targetAgentId)) {
+      applied.add(profile.targetAgentId);
+    }
   }
   return applied;
+}
+
+export function writeStateForProfile(
+  profile: Pick<AdapterProfile, 'id' | 'sourceKind' | 'sourceId' | 'targetAgentId' | 'generatedProviderId' | 'route'>,
+  source: Pick<AdapterProfile, 'sourceKind' | 'sourceId'>,
+  writeTruth?: RouteWriteTruth,
+): { applied: boolean; writeNote: RouteWriteNote } {
+  if (profile.route !== 'local_bridge') return { applied: false, writeNote: null };
+  if (profile.sourceKind !== source.sourceKind || profile.sourceId !== source.sourceId) {
+    return { applied: false, writeNote: null };
+  }
+  const generated = profile.generatedProviderId?.trim() ?? '';
+  if (!generated) return { applied: false, writeNote: null };
+  if (!isEdgeTarget(profile.targetAgentId)) return { applied: false, writeNote: null };
+  if (!writeTruth) return { applied: false, writeNote: null };
+  const currentId = writeTruth.currentProviderByAgent[profile.targetAgentId]?.trim() ?? '';
+  const running = writeTruth.runningProfileIds.has(profile.id);
+  if (currentId && currentId === generated && running) {
+    return { applied: true, writeNote: null };
+  }
+  if (currentId && currentId === generated && !running) {
+    return { applied: false, writeNote: 'stopped' };
+  }
+  if (generated && currentId && currentId !== generated) {
+    return { applied: false, writeNote: 'rewritten' };
+  }
+  return { applied: false, writeNote: null };
 }
 
 function readSourceBaseUrl(configText: string | undefined): string {

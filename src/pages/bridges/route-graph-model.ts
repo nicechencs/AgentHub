@@ -9,8 +9,11 @@ import {
   buildRouteDetailSourceView,
   detectUpstreamChannelFromUrl,
   hopForTestable,
+  writeStateForProfile,
   type RouteDetailSourceView,
   type RouteHopKind,
+  type RouteWriteNote,
+  type RouteWriteTruth,
   type UpstreamChannel,
 } from './adapter-route-detail-model';
 import {
@@ -45,8 +48,10 @@ export type RouteGraphRow = {
   link: RouteGraphLinkStyle;
   /** Declared/enabled on the source connection. */
   enabled: boolean;
-  /** A sibling local_bridge profile already wrote this agent's config. */
+  /** Current live write for this agent points at this running local entry. */
   applied: boolean;
+  /** Stamp leftover after stop or rewrite — never shown as 已写入. */
+  writeNote: RouteWriteNote;
 };
 
 export type RouteGraphView = {
@@ -148,9 +153,10 @@ function upstreamBaseFor(input: {
 export function buildRouteGraph(input: {
   profile: Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'name' | 'mode' | 'targetAgentId' | 'ruleId' | 'route'>;
   entries: readonly ConnectionEntry[];
-  siblingProfiles: readonly Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'targetAgentId' | 'generatedProviderId' | 'route' | 'localPort'>[];
+  siblingProfiles: readonly Pick<AdapterProfile, 'id' | 'sourceKind' | 'sourceId' | 'targetAgentId' | 'generatedProviderId' | 'route' | 'localPort'>[];
   host?: string;
   port?: number | null;
+  writeTruth?: RouteWriteTruth;
 }): RouteGraphView {
   const source = buildRouteDetailSourceView({ profile: input.profile, entries: input.entries });
   const entry = input.entries.find(
@@ -162,7 +168,7 @@ export function buildRouteGraph(input: {
     targetAgentId: input.profile.targetAgentId,
     ruleId: input.profile.ruleId,
   });
-  const applied = appliedTargetsFromProfiles(input.siblingProfiles, input.profile);
+  const applied = appliedTargetsFromProfiles(input.siblingProfiles, input.profile, input.writeTruth);
   const enabledTargets = new Set(caps.endpoints.map((row) => row.target));
   const hasDeclaredEndpoints = caps.endpoints.length > 0;
   const host = input.host?.trim() || ROUTE_ENDPOINT_HOST;
@@ -208,6 +214,9 @@ export function buildRouteGraph(input: {
       link: routeGraphLinkStyle(hop),
       enabled: hasDeclaredEndpoints ? enabledTargets.has(agent) : true,
       applied: applied.has(agent),
+      writeNote: sibling
+        ? writeStateForProfile(sibling, input.profile, input.writeTruth).writeNote
+        : null,
     };
   });
 
