@@ -1811,6 +1811,20 @@ fn aggregate_responses_sse_keeps_usage_and_request_id() {
 }
 
 #[test]
+fn aggregate_responses_sse_folds_deltas_when_completed_output_is_empty() {
+    let sse = concat!(
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_stream\",\"model\":\"gpt-5\",\"status\":\"in_progress\"}}\n\n",
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"pong\"}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_stream\",\"model\":\"gpt-5\",\"status\":\"completed\",\"output\":[]}}\n\n",
+    );
+    let body = aggregate_responses_sse_to_json(sse.as_bytes()).expect("aggregate");
+    assert_eq!(body["id"], "resp_stream");
+    let ir = responses_output_to_ir(&body).expect("ir");
+    let message = encode_anthropic_message(&ir).expect("anthropic");
+    assert_eq!(message["content"][0]["text"], "pong");
+}
+
+#[test]
 fn aggregate_responses_sse_incomplete_is_chinese() {
     let sse = "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_half\",\"model\":\"gpt-5.4\"}}\n\n";
     let error = aggregate_responses_sse_to_json(sse.as_bytes()).expect_err("incomplete");

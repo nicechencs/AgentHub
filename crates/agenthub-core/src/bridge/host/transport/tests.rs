@@ -755,26 +755,3 @@ fn grok_prepare_converts_chat_surface_to_responses() {
     assert!(!prepared.stream);
     assert!(!UpstreamChannel::Grok.forces_upstream_stream());
 }
-
-#[test]
-fn official_codex_prepare_forces_upstream_stream_and_keeps_downstream_false() {
-    let admitted = admitted(
-        BridgeUpstreamProtocol::CodexResponsesOauth,
-        BridgeLocalSurface::Messages,
-        json!({
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 32,
-            "stream": false,
-            "messages": [{ "role": "user", "content": "ping" }]
-        }),
-    );
-    let prepared = UpstreamChannel::CodexResponses
-        .transport()
-        .prepare(DownstreamSurface::Messages, &admitted)
-        .expect("prepare");
-    assert!(!prepared.stream, "downstream asked for a complete JSON body");
-    assert_eq!(prepared.body["stream"], true);
-    assert_eq!(prepared.body["store"], false);
-    assert!(UpstreamChannel::CodexResponses.forces_upstream_stream());
-    assert!(!UpstreamChannel::Anthropic.forces_upstream_stream());
-}

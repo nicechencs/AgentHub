@@ -59,14 +59,39 @@ pub fn aggregate_responses_sse_to_json(body: &[u8]) -> ProtocolResult<Value> {
     if saw_error && completed_response.is_none() {
         return Err(ProtocolError::upstream());
     }
-    if let Some(response) = completed_response {
-        return Ok(response);
-    }
-    if !saw_terminal {
+    if !saw_terminal && completed_response.is_none() {
         return Err(ProtocolError::upstream_stream_incomplete());
     }
     events.extend(translator.finish());
+    if let Some(response) = completed_response {
+        if response_has_output(&response) {
+            return Ok(response);
+        }
+        // Official streams often send `output: []` on completed and put text
+        // only in deltas. Fold IR, then keep the upstream id / usage.
+        let mut encoded = encode_responses_from_ir(
+            &events,
+            response.get("id").and_then(Value::as_str),
+        )?;
+        if let Some(id) = response.get("id") {
+            encoded["id"] = id.clone();
+        }
+        if let Some(model) = response.get("model") {
+            encoded["model"] = model.clone();
+        }
+        if let Some(usage) = response.get("usage") {
+            encoded["usage"] = usage.clone();
+        }
+        return Ok(encoded);
+    }
     encode_responses_from_ir(&events, None)
+}
+
+fn response_has_output(response: &Value) -> bool {
+    response
+        .get("output")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
 }
 
 /// Client-facing message when a redacted upstream detail is the stream-only contract.
