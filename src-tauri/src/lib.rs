@@ -105,6 +105,8 @@ pub fn run() {
             commands::adapter::list_adapter_profiles,
             commands::adapter::list_default_route_pools,
             commands::adapter::list_local_tokens,
+            commands::adapter::ensure_source_model_catalog,
+            commands::adapter::set_source_custom_models,
             commands::adapter::list_local_token_models,
             commands::adapter::test_local_token,
             commands::adapter::set_local_token,

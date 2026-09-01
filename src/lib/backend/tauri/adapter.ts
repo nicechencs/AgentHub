@@ -2,6 +2,8 @@ import {
   adapterCommandError,
   isAdapterErrorCodeRetryable,
   type AdapterPort,
+  type SourceModelCatalog,
+  type SourceModelCatalogSource,
   type SyncConnectionAuthorizationsRequest,
   type SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
@@ -31,6 +33,29 @@ import { invoke } from './invoke';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+type SourceModelCatalogWire = {
+  models?: unknown;
+  source?: unknown;
+  canCustomize?: unknown;
+};
+
+function mapSourceModelCatalog(wire: SourceModelCatalogWire | null | undefined): SourceModelCatalog {
+  const models = Array.isArray(wire?.models)
+    ? wire.models.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+  const source: SourceModelCatalogSource =
+    wire?.source === 'live' || wire?.source === 'custom' || wire?.source === 'empty'
+      ? wire.source
+      : models.length > 0
+        ? 'live'
+        : 'empty';
+  return {
+    models,
+    source,
+    canCustomize: wire?.canCustomize === true || source !== 'live',
+  };
 }
 
 function payloadFromUnknown(error: unknown): unknown {
@@ -111,6 +136,23 @@ export function createTauriAdapterPort(): AdapterPort {
       return Array.isArray(wire)
         ? wire.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
         : [];
+    },
+    async ensureSourceModelCatalog(sourceKind, sourceId) {
+      return mapSourceModelCatalog(
+        await invokeAdapter<SourceModelCatalogWire>('ensure_source_model_catalog', {
+          sourceKind,
+          sourceId,
+        }),
+      );
+    },
+    async setSourceCustomModels(sourceKind, sourceId, models) {
+      return mapSourceModelCatalog(
+        await invokeAdapter<SourceModelCatalogWire>('set_source_custom_models', {
+          sourceKind,
+          sourceId,
+          models,
+        }),
+      );
     },
     async testLocalToken(endpoint, token, path, model) {
       const trimmedModel = model?.trim();

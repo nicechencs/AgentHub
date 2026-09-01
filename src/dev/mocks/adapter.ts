@@ -349,6 +349,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     localTokens: new Map(),
     localEntryRunning: false,
     localEntryPort: null,
+    sourceModelCatalogs: new Map(),
   };
   adapterStates.add(state);
 
@@ -395,6 +396,29 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         if (!existing) state.localTokens.set(pool.id, token);
         return { poolId: pool.id, token };
       });
+    },
+    async ensureSourceModelCatalog(_sourceKind, sourceId) {
+      await delay(20);
+      const cached = state.sourceModelCatalogs.get(sourceId);
+      if (cached) return cached;
+      const models = state.defaultPools.flatMap((pool) => pool.listedModels ?? []);
+      const unique = [...new Set(models.map((item) => item.trim()).filter(Boolean))];
+      return {
+        models: unique,
+        source: unique.length > 0 ? 'live' as const : 'empty' as const,
+        canCustomize: unique.length === 0,
+      };
+    },
+    async setSourceCustomModels(_sourceKind, sourceId, models) {
+      await delay(20);
+      const unique = [...new Set(models.map((item) => item.trim()).filter(Boolean))];
+      const catalog = {
+        models: unique,
+        source: 'custom' as const,
+        canCustomize: true,
+      };
+      state.sourceModelCatalogs.set(sourceId, catalog);
+      return catalog;
     },
     async listLocalTokenModels(token) {
       await delay(20);

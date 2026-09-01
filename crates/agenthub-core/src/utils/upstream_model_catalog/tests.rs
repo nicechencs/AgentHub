@@ -1,6 +1,9 @@
 use serde_json::json;
 
-use super::{catalog_endpoint, embedded_listed_models};
+use super::{
+    cache_is_current, catalog_endpoint, embedded_listed_models, fingerprint_apikey,
+    fingerprint_oauth, read_stored_catalog, write_stored_catalog, StoredModelCatalog,
+};
 
 #[test]
 fn catalog_endpoint_reads_workbuddy_url_and_key() {
@@ -64,4 +67,41 @@ fn embedded_listed_models_reads_zcode_and_listed() {
         embedded_listed_models(&blob),
         vec!["keep-me", "grok-4.6", "deepseek-v4-flash"]
     );
+}
+
+#[test]
+fn oauth_fingerprint_ignores_access_token() {
+    let a = fingerprint_oauth("codex", "acct-1");
+    let b = fingerprint_oauth("codex", "acct-1");
+    let c = fingerprint_oauth("codex", "acct-2");
+    assert_eq!(a, b);
+    assert_ne!(a, c);
+}
+
+#[test]
+fn apikey_fingerprint_changes_with_url_or_key() {
+    let one = json!({"api_key": "sk-a", "base_url": "https://api.example.com/v1"});
+    let url = json!({"api_key": "sk-a", "base_url": "https://other.example.com/v1"});
+    let key = json!({"api_key": "sk-b", "base_url": "https://api.example.com/v1"});
+    assert_ne!(fingerprint_apikey("claude", &one), fingerprint_apikey("claude", &url));
+    assert_ne!(fingerprint_apikey("claude", &one), fingerprint_apikey("claude", &key));
+    assert_eq!(fingerprint_apikey("claude", &one), fingerprint_apikey("claude", &one));
+}
+
+#[test]
+fn stored_catalog_roundtrip_and_cache_hit() {
+    let mut extra = json!({"quota7dPct": 12});
+    let stored = StoredModelCatalog {
+        fingerprint: "fp-1".into(),
+        source: "live".into(),
+        models: vec!["gpt-5.4".into()],
+        attempted: true,
+        updated_at: "t0".into(),
+    };
+    write_stored_catalog(&mut extra, &stored);
+    assert_eq!(extra["quota7dPct"], 12);
+    let read = read_stored_catalog(&extra).expect("catalog");
+    assert_eq!(read.models, vec!["gpt-5.4"]);
+    assert!(cache_is_current(&read, "fp-1"));
+    assert!(!cache_is_current(&read, "fp-2"));
 }

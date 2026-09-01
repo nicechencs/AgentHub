@@ -1,14 +1,94 @@
-//! Where a login's model list comes from. URLs stay hardcoded; live ids are
-//! fetched at use time and not written to the DB.
+//! Where a login's model list comes from. Catalog URLs stay hardcoded.
+//! Live ids are fetched once, then cached on the login row (`extra` /
+//! `meta.modelCatalog`) until the URL, key, or official login identity changes.
 //!
 //! Official login catalogs:
 //! - Codex ChatGPT: `GET https://chatgpt.com/backend-api/codex/models`
 //! - Grok / Claude / Pi official: no public catalog we can call with that login
 //! API Key / connection-pool settings: `{base}/v1/models` then `/models`.
 
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use crate::utils::loopback::is_loopback_base_url;
+use crate::utils::redact::{api_key_secret_hash, secret_sha256_hex};
+
+pub const MODEL_CATALOG_KEY: &str = "modelCatalog";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredModelCatalog {
+    pub fingerprint: String,
+    pub source: String,
+    #[serde(default)]
+    pub models: Vec<String>,
+    #[serde(default)]
+    pub attempted: bool,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceModelCatalog {
+    pub models: Vec<String>,
+    pub source: String,
+    pub can_customize: bool,
+}
+
+impl SourceModelCatalog {
+    pub fn from_stored(stored: &StoredModelCatalog) -> Self {
+        let source = if stored.source == "custom" {
+            "custom"
+        } else if stored.models.is_empty() {
+            "empty"
+        } else {
+            "live"
+        };
+        Self {
+            models: stored.models.clone(),
+            source: source.to_owned(),
+            can_customize: source != "live",
+        }
+    }
+}
+
+pub fn read_stored_catalog(blob: &Value) -> Option<StoredModelCatalog> {
+    let value = blob.get(MODEL_CATALOG_KEY)?;
+    serde_json::from_value(value.clone()).ok()
+}
+
+pub fn write_stored_catalog(blob: &mut Value, catalog: &StoredModelCatalog) {
+    if !blob.is_object() {
+        *blob = json!({});
+    }
+    if let Some(map) = blob.as_object_mut() {
+        if let Ok(value) = serde_json::to_value(catalog) {
+            map.insert(MODEL_CATALOG_KEY.into(), value);
+        }
+    }
+}
+
+pub fn fingerprint_oauth(agent: &str, identity: &str) -> String {
+    secret_sha256_hex(&format!("oauth|{}|{}", agent.trim(), identity.trim()))
+}
+
+pub fn fingerprint_apikey(agent: &str, settings: &Value) -> String {
+    let base = catalog_endpoint(settings)
+        .map(|(base, _)| base)
+        .unwrap_or_default();
+    let hash = api_key_secret_hash(settings).unwrap_or_default();
+    secret_sha256_hex(&format!(
+        "apikey|{}|{}|{}",
+        agent.trim(),
+        base.trim(),
+        hash
+    ))
+}
+
+pub fn cache_is_current(stored: &StoredModelCatalog, fingerprint: &str) -> bool {
+    stored.attempted && stored.fingerprint == fingerprint
+}
 
 const BASE_POINTERS: &[&str] = &[
     "/url",

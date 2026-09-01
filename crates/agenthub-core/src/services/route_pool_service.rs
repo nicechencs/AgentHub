@@ -1215,18 +1215,150 @@ impl RoutePoolService {
     }
 
     fn live_models_for_member(&self, member: &RouteMember) -> Vec<String> {
-        match member.source_kind {
-            AdapterSourceKind::Account => self.live_models_for_account(&member.source_id),
-            AdapterSourceKind::Provider => self.live_models_for_provider(&member.source_id),
+        self.ensure_source_model_catalog(member.source_kind, &member.source_id)
+            .map(|catalog| catalog.models)
+            .unwrap_or_default()
+    }
+
+    /// Fetch once per URL/key/login identity, then reuse the cached list.
+    pub fn ensure_source_model_catalog(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<crate::utils::upstream_model_catalog::SourceModelCatalog> {
+        use crate::utils::upstream_model_catalog::{
+            cache_is_current, read_stored_catalog, write_stored_catalog, SourceModelCatalog,
+            StoredModelCatalog,
+        };
+        match source_kind {
+            AdapterSourceKind::Account => {
+                let mut account = self.accounts.get_by_id(source_id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("account not found: {source_id}"))
+                })?;
+                let fingerprint = self.catalog_fingerprint_for_account(&account);
+                if let Some(stored) = read_stored_catalog(&account.extra) {
+                    if cache_is_current(&stored, &fingerprint) {
+                        return Ok(SourceModelCatalog::from_stored(&stored));
+                    }
+                }
+                let models = self.fetch_live_models_for_account(&account);
+                let stored = StoredModelCatalog {
+                    fingerprint,
+                    source: if models.is_empty() {
+                        "empty".into()
+                    } else {
+                        "live".into()
+                    },
+                    models,
+                    attempted: true,
+                    updated_at: now(),
+                };
+                write_stored_catalog(&mut account.extra, &stored);
+                self.accounts.update(&account)?;
+                Ok(SourceModelCatalog::from_stored(&stored))
+            }
+            AdapterSourceKind::Provider => {
+                let mut provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("provider not found: {source_id}"))
+                })?;
+                let fingerprint = crate::utils::upstream_model_catalog::fingerprint_apikey(
+                    provider.agent_id.as_str(),
+                    &provider.settings_config,
+                );
+                if let Some(stored) = read_stored_catalog(&provider.meta) {
+                    if cache_is_current(&stored, &fingerprint) {
+                        return Ok(SourceModelCatalog::from_stored(&stored));
+                    }
+                }
+                let models = self.live_models_from_settings(&provider.settings_config);
+                let stored = StoredModelCatalog {
+                    fingerprint,
+                    source: if models.is_empty() {
+                        "empty".into()
+                    } else {
+                        "live".into()
+                    },
+                    models,
+                    attempted: true,
+                    updated_at: now(),
+                };
+                write_stored_catalog(&mut provider.meta, &stored);
+                self.providers.update(&provider)?;
+                Ok(SourceModelCatalog::from_stored(&stored))
+            }
         }
     }
 
-    fn live_models_for_account(&self, source_id: &str) -> Vec<String> {
-        let Ok(Some(account)) = self.accounts.get_by_id(source_id) else {
-            return Vec::new();
+    pub fn set_source_custom_models(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+        models: Vec<String>,
+    ) -> Result<crate::utils::upstream_model_catalog::SourceModelCatalog> {
+        use crate::utils::upstream_model_catalog::{
+            merge_model_ids, write_stored_catalog, SourceModelCatalog, StoredModelCatalog,
         };
+        let models = merge_model_ids([models]);
+        match source_kind {
+            AdapterSourceKind::Account => {
+                let mut account = self.accounts.get_by_id(source_id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("account not found: {source_id}"))
+                })?;
+                let stored = StoredModelCatalog {
+                    fingerprint: self.catalog_fingerprint_for_account(&account),
+                    source: "custom".into(),
+                    models,
+                    attempted: true,
+                    updated_at: now(),
+                };
+                write_stored_catalog(&mut account.extra, &stored);
+                self.accounts.update(&account)?;
+                Ok(SourceModelCatalog::from_stored(&stored))
+            }
+            AdapterSourceKind::Provider => {
+                let mut provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
+                    AppError::NotFound(format!("provider not found: {source_id}"))
+                })?;
+                let stored = StoredModelCatalog {
+                    fingerprint: crate::utils::upstream_model_catalog::fingerprint_apikey(
+                        provider.agent_id.as_str(),
+                        &provider.settings_config,
+                    ),
+                    source: "custom".into(),
+                    models,
+                    attempted: true,
+                    updated_at: now(),
+                };
+                write_stored_catalog(&mut provider.meta, &stored);
+                self.providers.update(&provider)?;
+                Ok(SourceModelCatalog::from_stored(&stored))
+            }
+        }
+    }
+
+    fn catalog_fingerprint_for_account(&self, account: &crate::models::Account) -> String {
         if account.kind == AccountKind::Oauth {
-            return self.live_models_for_official_login(&account);
+            let identity = crate::services::account_quota::extract_chatgpt_account_id(account)
+                .or_else(|| nonempty_json_str(&account.extra, "accountId"))
+                .or_else(|| nonempty_json_str(&account.extra, "sub"))
+                .or_else(|| nonempty_json_str(&account.credentials, "account_id"))
+                .or_else(|| nonempty_json_str(&account.credentials, "sub"))
+                .unwrap_or_else(|| account.id.clone());
+            crate::utils::upstream_model_catalog::fingerprint_oauth(
+                account.agent_id.as_str(),
+                &identity,
+            )
+        } else {
+            crate::utils::upstream_model_catalog::fingerprint_apikey(
+                account.agent_id.as_str(),
+                &account.credentials,
+            )
+        }
+    }
+
+    fn fetch_live_models_for_account(&self, account: &crate::models::Account) -> Vec<String> {
+        if account.kind == AccountKind::Oauth {
+            return self.live_models_for_official_login(account);
         }
         self.live_models_from_settings(&account.credentials)
     }
@@ -1249,17 +1381,8 @@ impl RoutePoolService {
                 )
                 .unwrap_or_default()
             }
-            // Grok / Claude / Pi official logins have no public model list that
-            // accepts this login. Keep the mapping-table fallback.
             _ => Vec::new(),
         }
-    }
-
-    fn live_models_for_provider(&self, source_id: &str) -> Vec<String> {
-        let Ok(Some(provider)) = self.providers.get_by_id(source_id) else {
-            return Vec::new();
-        };
-        self.live_models_from_settings(&provider.settings_config)
     }
 
     fn live_models_from_settings(&self, blob: &Value) -> Vec<String> {
@@ -1416,6 +1539,14 @@ impl RoutePoolService {
 
 fn now() -> String {
     Utc::now().to_rfc3339()
+}
+
+fn nonempty_json_str(blob: &Value, key: &str) -> Option<String> {
+    blob.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 fn non_empty_label(value: &str) -> Option<&str> {

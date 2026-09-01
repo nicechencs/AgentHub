@@ -3,6 +3,7 @@ import type { PoolAuthorizationItem } from '@/pages/bridges/route-pool-view-mode
 import {
   formatPoolTimestamp,
   hasQuotaWindow,
+  parseCustomModelList,
   poolAuthorizationColumnLabel,
   poolAuthorizationDetailRows,
   poolAuthorizationQuotaParts,
@@ -112,6 +113,13 @@ describe('pool authorization detail fields', () => {
       'bindings',
       'priority',
       'source',
+    ]);
+  });
+
+  it('parses a custom model list', () => {
+    expect(parseCustomModelList(' grok-4.5 \ngrok-4.5, grok-4.6\n')).toEqual([
+      'grok-4.5',
+      'grok-4.6',
     ]);
   });
 });
