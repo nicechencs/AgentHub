@@ -8,6 +8,7 @@ import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
   AdapterProfileStatus,
+  AdapterSourceKind,
   DefaultRoutePoolOverview,
   RouteMemberOverview,
   RoutePoolSurface,
@@ -75,10 +76,17 @@ export type BoardFleetSummary = {
 };
 
 /** Shared local-entry master switch (not per-login, not per-endpoint). */
+export type LocalEntryBindTarget = {
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+  targetAgentId: string;
+};
+
 export type LocalEntryControl = {
   profileIds: string[];
   startIds: string[];
   stopIds: string[];
+  bindTargets: LocalEntryBindTarget[];
   action: 'start' | 'stop' | null;
   retry: boolean;
   running: boolean;
@@ -96,7 +104,8 @@ export function buildLocalEntryControl(
   pools: readonly Pick<DefaultRoutePoolOverview, 'id' | 'targetAgentId' | 'members'>[] = [],
 ): LocalEntryControl {
   const hasEnrolledLogins = pools.some((pool) => (
-    pool.members.length > 0 && !hiddenTargetIds.has(pool.targetAgentId)
+    !hiddenTargetIds.has(pool.targetAgentId)
+    && pool.members.some((member) => member.enabled !== false)
   ));
   const byId = new Map<string, (typeof profiles)[number]>();
   for (const profile of profiles) {
@@ -115,6 +124,18 @@ export function buildLocalEntryControl(
   const profileIds = local.map((profile) => profile.id);
   const stopIds: string[] = [];
   const startIds: string[] = [];
+  const bindTargets: LocalEntryBindTarget[] = [];
+  for (const pool of pools) {
+    if (hiddenTargetIds.has(pool.targetAgentId)) continue;
+    const lead = pool.members.find((member) => member.enabled !== false);
+    if (!lead) continue;
+    if (profilesForPool(pool, profiles).length > 0) continue;
+    bindTargets.push({
+      sourceKind: lead.sourceKind,
+      sourceId: lead.sourceId,
+      targetAgentId: pool.targetAgentId,
+    });
+  }
   let retry = false;
   let starting = false;
   let stopping = false;
@@ -130,11 +151,13 @@ export function buildLocalEntryControl(
     if (state === 'error' || Boolean(profile.lastErrorCode?.trim())) retry = true;
   }
   const running = stopIds.length > 0;
+  const canStart = startIds.length > 0 || bindTargets.length > 0;
   return {
     profileIds,
     startIds,
     stopIds,
-    action: profileIds.length === 0 ? null : (running ? 'stop' : 'start'),
+    bindTargets,
+    action: !canStart && !running ? null : (running ? 'stop' : 'start'),
     retry: retry && !running,
     running,
     starting,
