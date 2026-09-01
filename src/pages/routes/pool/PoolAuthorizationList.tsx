@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Switch } from '@/components/ui/switch';
+import { Tip } from '@/components/ui/tooltip';
 import {
   ColumnResizeHandle,
   Table,
@@ -167,9 +168,9 @@ function renderColumn(
         <div className="flex min-w-0 items-center gap-2">
           <PoolLoginMark item={item} />
           <div className="min-w-0">
-            <p className="truncate font-medium" title={loginLabel}>
+            <Tip className="truncate font-medium" label={loginLabel}>
               {loginLabel}
-            </p>
+            </Tip>
           </div>
         </div>
       );

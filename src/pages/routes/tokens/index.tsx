@@ -248,7 +248,7 @@ export default function RoutesTokensPage() {
             </Button>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditRow(null)} disabled={editBusy}>
+            <Button variant="secondary" onClick={() => setEditRow(null)} disabled={editBusy}>
               {t('common.cancel')}
             </Button>
             <Button onClick={() => { void saveEdit(); }} disabled={editBusy}>

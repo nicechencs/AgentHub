@@ -4,9 +4,10 @@ import { goPath, openApp } from './helpers';
 test('routes board follows dashboard layout and local-route usage', async ({ page }) => {
   await openApp(page);
   await goPath(page, '/routes/board');
-  await expect(page.getByRole('heading', { name: '路由看板' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '看板' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Messages' })).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole('button', { name: 'Responses' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Responses · Codex' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Responses · Grok' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Chat Completions' })).toBeVisible();
   await expect(page.getByText(/共有 \d+ 个入口 Key/)).toBeVisible();
   await expect(page.getByText('用量统计')).toBeVisible();
@@ -18,7 +19,7 @@ test('routes board follows dashboard layout and local-route usage', async ({ pag
   await expect(page.locator('.recharts-surface')).toBeVisible();
   await expect(page.getByRole('tab', { name: '模型' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Responses' }).click();
+  await page.getByRole('button', { name: 'Responses · Codex' }).click();
   await expect(page.getByText(/当前端点类型有 \d+ 个入口 Key/)).toBeVisible();
   await expect(page.getByRole('heading', { name: '按模型' })).toBeVisible({ timeout: 15_000 });
 
@@ -26,6 +27,6 @@ test('routes board follows dashboard layout and local-route usage', async ({ pag
   await page.getByRole('option', { name: '今天' }).click();
   await expect(page.getByText('输入(今天)')).toBeVisible({ timeout: 15_000 });
 
-  await page.getByRole('link', { name: '打开监控日志' }).click();
+  await page.getByRole('link', { name: '打开监控' }).click();
   await expect(page).toHaveURL(/#\/routes\/activity/);
 });

@@ -374,12 +374,12 @@ export function AgentCard({
               />
             ) : null}
             {upgradeControl.show ? (
-              <span title={upgradeTooltip} className="inline-flex">
                 <Button
                   size="icon"
                   variant={upgradeControl.muted ? 'outline' : 'secondary'}
                   className={upgradeControl.muted ? 'text-muted' : undefined}
                   disabled={busy || checkingUpdate || upgradeControl.kind === 'hint_only'}
+                  title={upgradeTooltip}
                   aria-label={
                     upgradeControl.kind === 'open_setup'
                       ? t('agents.card.openOfficialUpdate')
@@ -406,7 +406,6 @@ export function AgentCard({
                     )}
                   />
                 </Button>
-              </span>
             ) : null}
             <Button
               size="icon"
