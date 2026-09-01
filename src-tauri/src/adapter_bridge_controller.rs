@@ -25,7 +25,7 @@ use agenthub_core::bridge::{
 use agenthub_core::models::{
     local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile,
     AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSourceProduct, AgentId,
-    LocalTokenRecord, RouteDownstreamSurface, RoutePool,
+    LocalTokenRecord, RouteDownstreamSurface,
 };
 use agenthub_core::services::{
     oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
@@ -1380,7 +1380,12 @@ pub(crate) async fn start_local_entry(
     }
     let mut started = Vec::new();
     for pool in pools {
-        let spec = pool_entry_spec(&pool, flags);
+        let flags = flags;
+        let pool_for_spec = pool.clone();
+        let spec = with_hub_blocking(hub.clone(), move |hub| {
+            Ok(hub.adapter_bridge().pool_listener_spec(&pool_for_spec, flags))
+        })
+        .await?;
         let status = host.start(spec).await.map_err(map_bridge_host_error)?;
         let port = status.port;
         started.push(status.profile_id.clone());
@@ -1436,8 +1441,13 @@ pub(crate) async fn set_local_entry_token(
         Err(BridgeHostError::NotRunning) => {}
         Err(error) => return Err(map_bridge_host_error(error)),
     }
-    let flags = with_hub_blocking(hub, move |hub| Ok(hub.route_pools().pair_adapter_flags())).await?;
-    host.start(pool_entry_spec(&pool, flags))
+    let spec = with_hub_blocking(hub, move |hub| {
+        Ok(hub
+            .adapter_bridge()
+            .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags()))
+    })
+    .await?;
+    host.start(spec)
         .await
         .map_err(map_bridge_host_error)?;
     Ok(record)
@@ -1487,16 +1497,6 @@ fn local_entry_status_from_host(
         port,
         statuses,
     })
-}
-
-fn pool_entry_spec(pool: &RoutePool, flags: (bool, bool)) -> BridgeStartSpec {
-    placeholder_entry_spec(
-        &pool.id,
-        pool.gateway_port.or(Some(0)),
-        &pool.hub_token,
-        pool.target_agent_id,
-        flags,
-    )
 }
 
 fn placeholder_entry_spec(

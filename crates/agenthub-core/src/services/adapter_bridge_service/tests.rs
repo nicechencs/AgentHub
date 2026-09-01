@@ -3027,3 +3027,29 @@ fn attach_keeps_last_successful_sibling_when_prior_index_is_present() {
         vec!["openai-b"]
     );
 }
+
+#[test]
+fn pool_listener_spec_lists_models_from_enabled_member() {
+    let (_dir, db) = test_db();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&kimi_source(
+            "kimi-membership",
+            "upstream-membership-secret",
+        ))
+        .unwrap();
+    let pools = RoutePoolService::new(db.clone());
+    let pool = pools
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    let empty = AdapterBridgeService::new(db.clone()).pool_listener_spec(&pool, (false, false));
+    assert!(empty.listed_models.is_empty());
+
+    pools
+        .add_member(&pool.id, AdapterSourceKind::Provider, "kimi-membership")
+        .unwrap();
+    let spec = AdapterBridgeService::new(db).pool_listener_spec(&pool, (false, false));
+    assert!(!spec.listed_models.is_empty());
+    assert!(spec.upstream.auth.has_token());
+    assert_ne!(spec.upstream.base_url, "http://127.0.0.1/");
+}

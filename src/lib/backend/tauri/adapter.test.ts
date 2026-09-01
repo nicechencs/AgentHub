@@ -205,23 +205,34 @@ describe('Tauri adapter route port', () => {
       httpStatus: 200,
       latencyMs: 12,
       upstreamStatus: 'unknown',
-      requestUrl: 'http://127.0.0.1:8123/health',
-      responseBody: '{"ok":true}',
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: '{"model":"kimi"}',
+      responseBody: '{"choices":[{"message":{"content":"ok"}}]}',
       errorMessage: null,
     });
     const port = createTauriAdapterPort();
-    await expect(port.testLocalToken('127.0.0.1:8123', 'ahb_secret')).resolves.toEqual({
+    await expect(port.testLocalToken(
+      '127.0.0.1:8123',
+      'ahb_secret',
+      '/v1/chat/completions',
+      'kimi-k2',
+    )).resolves.toEqual({
       outcome: 'ok',
       httpStatus: 200,
       latencyMs: 12,
       upstreamStatus: 'unknown',
-      requestUrl: 'http://127.0.0.1:8123/health',
-      responseBody: '{"ok":true}',
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: '{"model":"kimi"}',
+      responseBody: '{"choices":[{"message":{"content":"ok"}}]}',
       errorMessage: null,
     });
     expect(invokeMock).toHaveBeenCalledWith('test_local_token', {
       endpoint: '127.0.0.1:8123',
       token: 'ahb_secret',
+      path: '/v1/chat/completions',
+      model: 'kimi-k2',
     });
   });
 

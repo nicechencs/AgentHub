@@ -346,17 +346,74 @@ pub async fn list_local_tokens(
     .map_err(adapter_error_from_string)
 }
 
-/// `GET /health` on a loopback entry with the displayed key. No model request.
+/// Ensure the local entry is up, then `POST` a tiny request on the row path.
 #[tauri::command]
 pub async fn test_local_token(
+    state: State<'_, AppState>,
     endpoint: String,
     token: String,
+    path: String,
+    model: Option<String>,
 ) -> Result<agenthub_core::utils::local_token_probe::LocalTokenProbeResult, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    let host = state.bridge_host();
+    let status = match read_local_entry_status(&host) {
+        Ok(status) if status.running => status,
+        _ => start_shared_local_entry(
+            hub.clone(),
+            host.clone(),
+            state.bridge_saga_coordinator(),
+            state.lifecycle_shutdown_barrier(),
+        )
+        .await
+        .map_err(adapter_error_from_string)?,
+    };
+    let live_endpoint = status
+        .port
+        .map(|port| format!("127.0.0.1:{port}"))
+        .unwrap_or(endpoint);
+    let chosen = model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let lookup_token = token.clone();
+    let model = if chosen.is_some() {
+        chosen
+    } else {
+        with_hub_blocking(hub, move |hub| {
+            Ok(lookup_local_token_test_model(hub, &lookup_token))
+        })
+        .await
+        .unwrap_or(None)
+    };
     tauri::async_runtime::spawn_blocking(move || {
-        agenthub_core::utils::local_token_probe::probe_local_token(&endpoint, &token)
+        agenthub_core::utils::local_token_probe::probe_local_token(
+            &live_endpoint,
+            &token,
+            &path,
+            model.as_deref(),
+        )
     })
     .await
     .map_err(|err| adapter_error_from_string(format!("command join error: {err}")))
+}
+
+fn lookup_local_token_test_model(hub: &AgentHub, token: &str) -> Option<String> {
+    let records = hub.route_pools().list_local_tokens().ok()?;
+    let pool_id = records
+        .into_iter()
+        .find(|record| record.token == token)
+        .map(|record| record.pool_id)?;
+    let listed = hub.route_pools().list_default_overviews().ok()?;
+    listed
+        .pools
+        .into_iter()
+        .find(|pool| pool.id == pool_id)?
+        .listed_models
+        .into_iter()
+        .map(|model| model.trim().to_owned())
+        .find(|model| !model.is_empty())
 }
 
 /// Replace one default-pool loopback bearer. Restarts that edge if it is live.

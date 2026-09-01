@@ -106,8 +106,14 @@ export function createTauriAdapterPort(): AdapterPort {
       const wire = await invokeAdapter<LocalTokenRecordWire[]>('list_local_tokens', {});
       return Array.isArray(wire) ? wire.map(mapLocalTokenRecord) : [];
     },
-    async testLocalToken(endpoint, token) {
-      const wire = await invokeAdapter<LocalTokenProbeResultWire>('test_local_token', { endpoint, token });
+    async testLocalToken(endpoint, token, path, model) {
+      const trimmedModel = model?.trim();
+      const wire = await invokeAdapter<LocalTokenProbeResultWire>('test_local_token', {
+        endpoint,
+        token,
+        path,
+        ...(trimmedModel ? { model: trimmedModel } : {}),
+      });
       return mapLocalTokenProbeResult(wire ?? {});
     },
     async setLocalToken(poolId, token) {

@@ -356,6 +356,34 @@ describe('tokens-model', () => {
     expect(rows[0]).toMatchObject({ id: 'pool-kimi', path: '/v1/chat/completions' });
   });
 
+  it('copies listed models onto the token row and merges shared chat models', () => {
+    const rows = buildLocalTokenRows(
+      [],
+      {},
+      {},
+      [
+        pool({
+          id: 'pool-dsh',
+          targetAgentId: 'dsh',
+          surface: 'chat_completions',
+          dialect: 'dsh',
+          members: [{ sourceKind: 'provider', sourceId: 'dsh-1', enabled: true }],
+          listedModels: ['gpt-4o', 'kimi-k2'],
+        }),
+        pool({
+          id: 'pool-kimi',
+          targetAgentId: 'kimi',
+          surface: 'chat_completions',
+          dialect: 'kimi',
+          members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
+          listedModels: ['kimi-k2', 'kimi-k2.5'],
+        }),
+      ],
+      true,
+    );
+    expect(rows[0].listedModels).toEqual(['kimi-k2', 'kimi-k2.5', 'gpt-4o']);
+  });
+
   it('marks failed status reads unavailable and withholds the token', () => {
     const rows = buildLocalTokenRows(
       [profile({ id: 'bridge' })],

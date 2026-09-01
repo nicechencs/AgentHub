@@ -36,11 +36,11 @@ use crate::bridge::{
 };
 use crate::error::{AppError, Result};
 use crate::models::{
-    list_local_bridge_models, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
+    list_local_bridge_models, ticket_id, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
     LocalBridgeEdge, Provider, ProviderInput, RouteDownstreamDialect, RouteDownstreamSurface,
-    RouteMember, RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE,
+    RouteMember, RoutePool, RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE,
     CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE,
     KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
 };
@@ -1097,6 +1097,136 @@ impl AdapterBridgeService {
         Ok(true)
     }
 
+    /// Listener spec for the board switch. Does not bind logins to Agents.
+    /// Enabled pool members supply listed models and upstream auth so a token
+    /// test can reach a model; missing members stay a placeholder.
+    pub fn pool_listener_spec(
+        &self,
+        pool: &RoutePool,
+        flags: (bool, bool),
+    ) -> BridgeStartSpec {
+        let surface = match pool.downstream_surface {
+            RouteDownstreamSurface::Messages => BridgeLocalSurface::Messages,
+            RouteDownstreamSurface::ChatCompletions => BridgeLocalSurface::ChatCompletions,
+            RouteDownstreamSurface::Responses => BridgeLocalSurface::Responses,
+        };
+        let token = if pool.hub_token.trim().is_empty() {
+            format!("ahb_{}", pool.id)
+        } else {
+            pool.hub_token.trim().to_owned()
+        };
+        let port = pool.gateway_port.unwrap_or(0);
+        let members = self
+            .route_pools
+            .list_members(&pool.id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|member| member.enabled)
+            .collect::<Vec<_>>();
+        let Some(lead) = members.first() else {
+            return placeholder_pool_spec(pool, surface, token, port, flags);
+        };
+        let product = self
+            .routes
+            .classify_source_product(lead.source_kind, &lead.source_id)
+            .unwrap_or(AdapterSourceProduct::Other);
+        let rule = rule_for_member_product(product, pool.target_agent_id);
+        let (url, model, configured, protocol, _) = match rule {
+            Some(rule) => {
+                prepare::openai_source_upstream(self, &rule, lead.source_kind, &lead.source_id)
+            }
+            None => (
+                "http://127.0.0.1/".into(),
+                String::new(),
+                Vec::new(),
+                match surface {
+                    BridgeLocalSurface::Messages => BridgeUpstreamProtocol::AnthropicMessages,
+                    _ => BridgeUpstreamProtocol::OpenAiChatCompletions,
+                },
+                None,
+            ),
+        };
+        let auth = rule
+            .and_then(|rule| {
+                self.resolve_member_auth(rule.rule_id, lead.source_kind, &lead.source_id)
+                    .ok()
+            })
+            .filter(|auth| auth.has_token())
+            .unwrap_or_else(|| ResolvedAuth::bearer("pending"));
+        let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(&url);
+        let listed = listed_models_for_bridge(
+            product,
+            pool.target_agent_id,
+            &model,
+            custom,
+            &configured,
+        );
+        let mut spec = BridgeStartSpec::new(
+            pool.id.clone(),
+            port,
+            token,
+            BridgeUpstreamConfig {
+                base_url: url,
+                model: {
+                    let model = model.trim();
+                    if model.is_empty() {
+                        None
+                    } else {
+                        Some(model.to_owned())
+                    }
+                },
+                source_connection_id: Some(lead.source_id.clone()),
+                auth: auth.clone(),
+                protocol,
+                local_surface: surface,
+            },
+        )
+        .with_listed_models(listed)
+        .with_mapping(product, pool.target_agent_id, custom)
+        .with_downstream_responses_profile(
+            crate::bridge::DownstreamResponsesProfile::from_surface_and_route_dialect(
+                surface,
+                pool.downstream_dialect,
+            ),
+        )
+        .with_pair_adapter_flags(flags.0, flags.1);
+        let member_specs = members
+            .iter()
+            .map(|member| {
+                let is_lead =
+                    member.source_kind == lead.source_kind && member.source_id == lead.source_id;
+                let member_auth = if is_lead {
+                    auth.clone()
+                } else {
+                    rule.and_then(|rule| {
+                        self.resolve_member_auth(rule.rule_id, member.source_kind, &member.source_id)
+                            .ok()
+                    })
+                    .filter(|item| item.has_token())
+                    .unwrap_or_else(|| ResolvedAuth::bearer(""))
+                };
+                let health = if member_auth.has_token() {
+                    MemberHealth::Renewable
+                } else {
+                    MemberHealth::NeedsLogin
+                };
+                BridgeMemberSpec {
+                    ticket_id: ticket_id(member.source_kind, &member.source_id),
+                    source_kind: member.source_kind.as_str().to_owned(),
+                    source_id: member.source_id.clone(),
+                    label: member.source_id.clone(),
+                    auth: member_auth,
+                    reload: None,
+                    health,
+                    priority: member.priority,
+                    position: member.position,
+                }
+            })
+            .collect();
+        spec = spec.with_members(member_specs);
+        spec
+    }
+
     fn route_index_for_material(
         &self,
         material: &AdapterBridgeRuntimeMaterial,
@@ -1257,6 +1387,40 @@ fn validate_route_pool_profile(
         ));
     }
     Ok(())
+}
+
+fn placeholder_pool_spec(
+    pool: &RoutePool,
+    surface: BridgeLocalSurface,
+    token: String,
+    port: u16,
+    flags: (bool, bool),
+) -> BridgeStartSpec {
+    let protocol = match surface {
+        BridgeLocalSurface::Messages => BridgeUpstreamProtocol::AnthropicMessages,
+        _ => BridgeUpstreamProtocol::OpenAiChatCompletions,
+    };
+    BridgeStartSpec::new(
+        pool.id.clone(),
+        port,
+        token,
+        BridgeUpstreamConfig {
+            base_url: "http://127.0.0.1/".into(),
+            model: None,
+            source_connection_id: None,
+            auth: ResolvedAuth::bearer("pending"),
+            protocol,
+            local_surface: surface,
+        },
+    )
+    .with_mapping(AdapterSourceProduct::Other, pool.target_agent_id, false)
+    .with_downstream_responses_profile(
+        crate::bridge::DownstreamResponsesProfile::from_surface_and_route_dialect(
+            surface,
+            pool.downstream_dialect,
+        ),
+    )
+    .with_pair_adapter_flags(flags.0, flags.1)
 }
 
 fn rule_for_member_product(

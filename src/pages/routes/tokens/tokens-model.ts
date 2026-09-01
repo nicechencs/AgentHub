@@ -54,6 +54,22 @@ export interface LocalTokenRow {
   lastRequestAt: string | null;
   /** Optional 7-day gateway usage; omitted until the query is ready. */
   usage?: LocalTokenUsage;
+  /** Models this entry key can send; first item is the default test pick. */
+  listedModels: string[];
+}
+
+export function uniqueListedModels(
+  values: readonly (string | null | undefined)[],
+): string[] {
+  const seen = new Set<string>();
+  const listed: string[] = [];
+  for (const value of values) {
+    const model = value?.trim();
+    if (!model || seen.has(model)) continue;
+    seen.add(model);
+    listed.push(model);
+  }
+  return listed;
 }
 
 export function maskLocalToken(token: string): string {
@@ -186,6 +202,7 @@ function rowFromRuntime(input: {
   status: AdapterBridgeRuntimeStatus | undefined;
   unavailable: boolean;
   storedToken?: string | null;
+  listedModels?: readonly string[];
   statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>;
 }): LocalTokenRow {
   const port = input.unavailable
@@ -209,6 +226,7 @@ function rowFromRuntime(input: {
     targetAgentId: input.targetAgentId,
     lastPath: visit.lastPath,
     lastRequestAt: visit.lastRequestAt,
+    listedModels: uniqueListedModels(input.listedModels ?? []),
   };
 }
 
@@ -233,6 +251,7 @@ export function buildLocalTokenRows(
   ));
   let sharedChatRow = false;
   const extraChatIds: string[] = [];
+  const extraChatModels: string[] = [];
 
   for (const pool of pools) {
     if (pool.members.length === 0) continue;
@@ -247,6 +266,7 @@ export function buildLocalTokenRows(
       const matches = profilesForPool(pool, profiles);
       for (const match of matches) covered.add(match.id);
       extraChatIds.push(...profileIds);
+      extraChatModels.push(...(pool.listedModels ?? []));
       continue;
     }
     const matches = profilesForPool(pool, profiles);
@@ -264,6 +284,7 @@ export function buildLocalTokenRows(
       status: bridgeStatuses[statusId],
       unavailable: Boolean(statusErrors[statusId]),
       storedToken: tokensByPoolId[pool.id] ?? tokensByPoolId[statusId],
+      listedModels: pool.listedModels,
       statuses: bridgeStatuses,
     }));
     if (kind === 'chat_completions') sharedChatRow = true;
@@ -300,6 +321,10 @@ export function buildLocalTokenRows(
     for (const row of rows) {
       if (row.kind !== 'chat_completions') continue;
       row.profileIds = [...new Set([...row.profileIds, ...extraChatIds])];
+      row.listedModels = uniqueListedModels([
+        ...row.listedModels,
+        ...extraChatModels,
+      ]);
       const visit = lastVisitFromStatuses(row.profileIds, bridgeStatuses);
       row.lastPath = visit.lastPath;
       row.lastRequestAt = visit.lastRequestAt;
