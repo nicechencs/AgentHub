@@ -135,9 +135,37 @@ pub(crate) fn open_in_file_manager(path: &std::path::Path) -> Result<(), String>
     }
 }
 
+fn looks_like_unix_shebang(path: &std::path::Path) -> bool {
+    use std::io::Read;
+    let mut buf = [0u8; 2];
+    std::fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .map(|_| buf == *b"#!")
+        .unwrap_or(false)
+}
+
+fn windows_spawnable_cli_ext(path: &std::path::Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .as_deref(),
+        Some("cmd" | "bat" | "exe" | "com")
+    )
+}
+
 /// Prefer `claude.cmd` / `claude.exe` when detect stored an extensionless npm shim.
+///
+/// On Windows the extensionless npm file is a `#!/bin/sh` stub. CreateProcess
+/// cannot run it; PowerShell also should not be pointed at it when a `.cmd`
+/// sibling exists.
 pub(crate) fn resolve_cli_launch_path(path: &std::path::Path) -> std::path::PathBuf {
-    if path.is_file() {
+    let skip_shebang = cfg!(windows)
+        && path.extension().is_none()
+        && path.is_file()
+        && !windows_spawnable_cli_ext(path)
+        && looks_like_unix_shebang(path);
+    if path.is_file() && !skip_shebang {
         return path.to_path_buf();
     }
     if path.extension().is_none() {
@@ -149,6 +177,26 @@ pub(crate) fn resolve_cli_launch_path(path: &std::path::Path) -> std::path::Path
         }
     }
     path.to_path_buf()
+}
+
+/// Walk up to `Foo.app` so macOS `open` launches the bundle, not Contents/MacOS.
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+pub(crate) fn enclosing_app_bundle(path: &std::path::Path) -> Option<&std::path::Path> {
+    path.ancestors().find(|p| {
+        p.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("app"))
+    })
+}
+
+/// AppleScript that runs `path` in Terminal, shell-quoted via `quoted form of`.
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+pub(crate) fn applescript_terminal_do_script(path: &std::path::Path) -> String {
+    let escaped = path
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    format!("tell application \"Terminal\" to do script (quoted form of \"{escaped}\")")
 }
 
 #[cfg(windows)]
@@ -164,15 +212,12 @@ pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         let invoke = powershell_invoke_command(&path);
         if std::process::Command::new("wt")
-            .args([
-                "powershell",
-                "-NoLogo",
-                "-NoExit",
-                "-Command",
-                &invoke,
-            ])
+            .args(["powershell", "-NoLogo", "-NoExit", "-Command", &invoke])
+            .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
             .spawn()
             .is_ok()
         {
@@ -191,12 +236,7 @@ pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        let escaped = path
-            .display()
-            .to_string()
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"");
-        let script = format!("tell application \"Terminal\" to do script \"{escaped}\"");
+        let script = applescript_terminal_do_script(&path);
         std::process::Command::new("osascript")
             .args(["-e", &script])
             .spawn()
@@ -251,25 +291,25 @@ pub(crate) fn launch_app(path: &std::path::Path) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg(path)
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("launch app failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
-                msg
-            })?;
+        let spawned = if let Some(bundle) = enclosing_app_bundle(path) {
+            std::process::Command::new("open").arg(bundle).spawn()
+        } else {
+            std::process::Command::new(path).spawn()
+        };
+        spawned.map_err(|e| {
+            let msg = format!("launch app failed: {e}");
+            tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
+            msg
+        })?;
         Ok(())
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        std::process::Command::new(path)
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("launch app failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
-                msg
-            })?;
+        std::process::Command::new(path).spawn().map_err(|e| {
+            let msg = format!("launch app failed: {e}");
+            tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
+            msg
+        })?;
         Ok(())
     }
     #[cfg(not(any(windows, unix)))]

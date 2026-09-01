@@ -339,8 +339,8 @@ function launchKindForInstall(
   if (row.source === 'desktop') return 'app';
   if (row.source === 'npm') return 'cli';
   if (row.source === 'native') {
-    // WorkBuddy native Setup is the Electron app, not a CLI.
-    if (agentId === 'workbuddy') return 'app';
+    // WorkBuddy / ZCode native Setup is the Electron app, not a CLI.
+    if (installLifecycle('native', agentId).updateVia === 'official') return 'app';
     return 'cli';
   }
   return null;

@@ -1,7 +1,7 @@
 use super::*;
 use crate::file_manager::{
-    explorer_select_arg, file_manager_action, normalize_open_path_input, resolve_cli_launch_path,
-    FileManagerAction,
+    applescript_terminal_do_script, enclosing_app_bundle, explorer_select_arg, file_manager_action,
+    normalize_open_path_input, resolve_cli_launch_path, FileManagerAction,
 };
 
 #[test]
@@ -31,10 +31,7 @@ fn explorer_select_arg_quotes_paths_with_spaces() {
     let arg = explorer_select_arg(std::path::Path::new(
         r"C:\Users\Nice Chen\.claude\settings.json",
     ));
-    assert_eq!(
-        arg,
-        r#"/select,"C:\Users\Nice Chen\.claude\settings.json""#
-    );
+    assert_eq!(arg, r#"/select,"C:\Users\Nice Chen\.claude\settings.json""#);
 }
 
 #[test]
@@ -64,4 +61,43 @@ fn resolve_cli_launch_path_picks_cmd_shim() {
     let cmd = dir.path().join("claude.cmd");
     std::fs::write(&cmd, "@echo off\n").unwrap();
     assert_eq!(resolve_cli_launch_path(&shim), cmd);
+}
+
+#[test]
+fn resolve_cli_launch_path_skips_windows_shebang_for_cmd() {
+    let dir = tempfile::tempdir().unwrap();
+    let shim = dir.path().join("claude");
+    let cmd = dir.path().join("claude.cmd");
+    std::fs::write(&shim, "#!/bin/sh\n").unwrap();
+    std::fs::write(&cmd, "@echo off\n").unwrap();
+    let got = resolve_cli_launch_path(&shim);
+    #[cfg(windows)]
+    assert_eq!(got, cmd);
+    #[cfg(not(windows))]
+    assert_eq!(got, shim);
+}
+
+#[test]
+fn enclosing_app_bundle_walks_up_from_macos_binary() {
+    let inner = std::path::PathBuf::from("Applications")
+        .join("WorkBuddy.app")
+        .join("Contents")
+        .join("MacOS")
+        .join("WorkBuddy");
+    let got = enclosing_app_bundle(&inner).expect("bundle");
+    assert_eq!(got.file_name().unwrap(), "WorkBuddy.app");
+}
+
+#[test]
+fn enclosing_app_bundle_none_for_plain_cli() {
+    assert!(enclosing_app_bundle(std::path::Path::new("/usr/local/bin/claude")).is_none());
+}
+
+#[test]
+fn applescript_terminal_do_script_uses_quoted_form() {
+    let path = std::path::Path::new("/Users/Nice Chen/.local/bin/claude");
+    let script = applescript_terminal_do_script(path);
+    assert!(script.contains("quoted form of"));
+    assert!(script.contains("claude"));
+    assert!(script.contains("Nice Chen"));
 }
