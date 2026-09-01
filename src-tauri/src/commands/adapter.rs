@@ -346,6 +346,25 @@ pub async fn remove_route_authorization(
     .map_err(adapter_error_from_string)
 }
 
+/// Move a Connections-managed pool member into the pool recycle bin.
+/// Leaves the Connections login in place.
+#[tauri::command]
+pub async fn recycle_route_membership(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+) -> Result<u32, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .recycle_route_membership(source_kind, &source_id)
+            .map_err(|err| map_err_string("recycle_route_membership", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
 /// Enroll existing Connections authorizations into default auth pools.
 /// Does not remove them from Connections.
 #[tauri::command]

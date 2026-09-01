@@ -323,6 +323,10 @@ export interface AdapterPort {
     sourceKind: AdapterSourceKind,
     sourceId: string,
   ): Promise<number>;
+  recycleRouteMembership(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+  ): Promise<number>;
   syncConnectionAuthorizations(
     request?: SyncConnectionAuthorizationsRequest,
   ): Promise<SyncConnectionAuthorizationsResult>;

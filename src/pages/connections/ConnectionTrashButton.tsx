@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
-import type { ConnectionTrashItem } from '@/lib/backend/contracts';
+import type { ConnectionTrashHome, ConnectionTrashItem } from '@/lib/backend/contracts';
 import {
   listConnectionTrash,
   permanentlyDeleteConnectionTrash,
@@ -40,11 +40,26 @@ function dateLabel(value: string): string {
 
 export function ConnectionTrashButton({
   agentId,
+  home = 'connections',
   onChanged,
 }: {
   agentId?: AgentId;
+  home?: ConnectionTrashHome;
   onChanged?: () => void;
 }) {
+  const copy = home === 'route_pool'
+    ? {
+      title: 'routes.pool.trash.title',
+      description: 'routes.pool.trash.description',
+      restored: 'routes.pool.trash.restored',
+      restoredDesc: 'routes.pool.trash.restoredDesc',
+    } as const
+    : {
+      title: 'connections.trash.title',
+      description: 'connections.trash.description',
+      restored: 'connections.trash.restored',
+      restoredDesc: 'connections.trash.restoredDesc',
+    } as const;
   const { t } = useI18n();
   const { toast } = useToast();
   const [open, setOpen] = React.useState(false);
@@ -64,7 +79,7 @@ export function ConnectionTrashButton({
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      setItems(dedupTrashItems(await listConnectionTrash(agentId)));
+      setItems(dedupTrashItems(await listConnectionTrash(agentId, home)));
     } catch (error) {
       toast({
         title: t('connections.trash.loadFailed'),
@@ -74,7 +89,7 @@ export function ConnectionTrashButton({
     } finally {
       setLoading(false);
     }
-  }, [agentId, toast, t]);
+  }, [agentId, home, toast, t]);
 
   const restore = async (item: ConnectionTrashItem) => {
     if (!claimConnectionTrashBusy(item.id)) return;
@@ -82,8 +97,8 @@ export function ConnectionTrashButton({
       await restoreConnectionTrash(item.id);
       setItems((current) => current.filter((row) => row.id !== item.id));
       toast({
-        title: t('connections.trash.restored'),
-        description: t('connections.trash.restoredDesc'),
+        title: t(copy.restored),
+        description: t(copy.restoredDesc),
       });
       onChanged?.();
     } catch (error) {
@@ -150,9 +165,9 @@ export function ConnectionTrashButton({
           onInteractOutside={(event) => preventBusyConfirmationDismissal(trashLocked, event)}
         >
           <DialogHeader>
-            <DialogTitle>{t('connections.trash.title')}</DialogTitle>
+            <DialogTitle>{t(copy.title)}</DialogTitle>
             <DialogDescription>
-              {t('connections.trash.description')}
+              {t(copy.description)}
             </DialogDescription>
           </DialogHeader>
 
@@ -167,10 +182,11 @@ export function ConnectionTrashButton({
             ) : (
               items.map((item) => {
                 const agentName = agentDisplayName(item.agentId);
+                const sourceKind = item.membership?.sourceKind ?? item.kind;
                 const kindLabel =
-                  item.kind === 'account' && item.account?.kind === 'oauth'
-                    ? t('kind.oauth')
-                    : t('kind.apikey');
+                  item.account?.kind === 'apikey' || sourceKind === 'provider'
+                    ? t('kind.apikey')
+                    : t('kind.oauth');
                 const title = humanizeTrashLabel(item, t);
                 return (
                   <div

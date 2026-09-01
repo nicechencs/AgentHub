@@ -282,12 +282,14 @@ describe('route pool v2 view-model', () => {
   });
 
   it('removes pool membership and the source on the first delete click', () => {
-    expect(poolAuthorizationDeleteSteps({ routePoolV2: true, sourceMissing: false }))
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: true, sourceMissing: false, addedHere: true }))
       .toEqual(['removeMembership', 'deleteSource']);
-    expect(poolAuthorizationDeleteSteps({ routePoolV2: true, sourceMissing: true }))
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: true, sourceMissing: true, addedHere: true }))
       .toEqual(['removeMembership']);
-    expect(poolAuthorizationDeleteSteps({ routePoolV2: false, sourceMissing: false }))
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: false, sourceMissing: false, addedHere: true }))
       .toEqual(['deleteSource']);
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: true, sourceMissing: false, addedHere: false }))
+      .toEqual(['recycleMembership']);
   });
 
   it('keeps one row when the same authorization is in two pools', () => {

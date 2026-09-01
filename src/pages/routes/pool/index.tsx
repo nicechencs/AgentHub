@@ -33,7 +33,7 @@ import { ProviderEditDialog } from '@/components/connections/ProviderEditDialog'
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { TicketView } from '@/lib/api/tickets';
 import { deleteAccount } from '@/lib/api/account';
-import { removeRouteAuthorization, setRouteAuthorizationEnabled } from '@/lib/api/adapter';
+import { recycleRouteMembership, removeRouteAuthorization, setRouteAuthorizationEnabled } from '@/lib/api/adapter';
 import { deleteProvider } from '@/lib/api/provider';
 import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
@@ -70,9 +70,9 @@ import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useBridgeRuntimeActions } from '@/pages/bridges/use-bridge-runtime-actions';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import {
-  deleteConnectionDialogDescription,
   deleteConnectionToastDescription,
 } from '@/pages/connections/connection-model';
+import { ConnectionTrashButton } from '@/pages/connections/ConnectionTrashButton';
 import { useOAuthLoginAgents } from '@/pages/connections/use-oauth-login-agents';
 import { PoolAddButtons } from './PoolAddButtons';
 import { PoolAuthorizationDetail } from './PoolAuthorizationDetail';
@@ -337,7 +337,12 @@ export default function RoutesPoolPage() {
     setDeleteBusy(true);
     try {
       const sourceMissing = !entries.some((entry) => entry.key === deleteTicket.id);
-      for (const step of poolAuthorizationDeleteSteps({ routePoolV2, sourceMissing })) {
+      const addedHere = authorizations.find((item) => item.key === deleteTicket.id)?.addedHere === true;
+      for (const step of poolAuthorizationDeleteSteps({ routePoolV2, sourceMissing, addedHere })) {
+        if (step === 'recycleMembership') {
+          await recycleRouteMembership(deleteTicket.sourceKind, deleteTicket.sourceId);
+          continue;
+        }
         if (step === 'removeMembership') {
           await removeRouteAuthorization(deleteTicket.sourceKind, deleteTicket.sourceId);
           continue;
@@ -357,7 +362,9 @@ export default function RoutesPoolPage() {
         title: t(sourceMissing ? 'connections.delete.toastMissing' : 'connections.delete.toastOk'),
         description: sourceMissing
           ? t('connections.delete.toastMissingDescription')
-          : deleteConnectionToastDescription({ isCurrent: deletedCurrent }, t),
+          : addedHere
+            ? deleteConnectionToastDescription({ isCurrent: deletedCurrent }, t)
+            : t('routes.pool.trash.toastFromConnections'),
         variant: 'success',
       });
       reloadAll();
@@ -482,12 +489,17 @@ export default function RoutesPoolPage() {
       />
     ) : null;
 
+  const trashDock = (
+    <ConnectionTrashButton home="route_pool" onChanged={reloadAll} />
+  );
+
   return (
     <>
       <WorkbenchSplitPage
         split={inspect}
         resizeAria={t('common.resizeSidePanel')}
         panel={inspectPanel}
+        listFooter={trashDock}
       >
         <PageHeader
           title={t('routes.pool.page.title')}
@@ -620,9 +632,9 @@ export default function RoutesPoolPage() {
               {deleteTicket
                 ? `${deleteTicket.label} · ${!entries.some((entry) => entry.key === deleteTicket.id)
                   ? t('connections.delete.dialogMissing')
-                  : deleteConnectionDialogDescription({
-                    isCurrent: entries.some((entry) => entry.key === deleteTicket.id && entry.isCurrent),
-                  }, t)}`
+                  : authorizations.find((item) => item.key === deleteTicket.id)?.addedHere
+                    ? t('routes.pool.trash.dialogOwned')
+                    : t('routes.pool.trash.dialogFromConnections')}`
                 : ''}
             </DialogDescription>
           </DialogHeader>

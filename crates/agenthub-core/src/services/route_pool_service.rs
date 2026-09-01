@@ -19,15 +19,17 @@ use crate::models::{
     feature_flag_enabled, generate_hub_token, list_local_bridge_models, product_flag_enabled,
     set_authorization_route_pool_home, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter,
     AccountKind, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct,
-    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, ModelRouteRule, RouteDownstreamDialect,
-    RouteDownstreamSurface, RouteMember, RouteMemberOverview, RoutePool, RouteSchedulePolicy,
+    AgentId, ConnectionTrashKind, DefaultRoutePoolList, DefaultRoutePoolOverview, ModelRouteRule,
+    RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RouteMemberOverview, RoutePool,
+    RouteMembershipTrashMember, RouteMembershipTrashPayload, RouteSchedulePolicy,
     SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol, TicketSurface,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 use serde_json::Value;
 use crate::storage::{
-    binding_get_conn, AccountRepo, AdapterProfileRepo, Database, ProviderRepo, RoutePoolRepo,
+    binding_get_conn, AccountRepo, AdapterProfileRepo, ConnectionTrashRepo, Database, ProviderRepo,
+    RoutePoolRepo,
 };
 
 #[cfg(test)]
@@ -562,6 +564,134 @@ impl RoutePoolService {
             }
         }
         Ok(removed)
+    }
+
+    /// Move a Connections-managed pool member into the pool recycle bin.
+    /// Does not delete the Connections login.
+    pub fn recycle_route_membership(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<u32> {
+        self.require_enabled()?;
+        let mut members = Vec::new();
+        for pool in self.pools.list_pools(None, None)? {
+            if !pool.is_default {
+                continue;
+            }
+            for member in self.pools.list_members(&pool.id)? {
+                if member.source_kind == source_kind && member.source_id == source_id {
+                    members.push(member);
+                }
+            }
+        }
+        let (agent_id, label) = self.membership_trash_identity(source_kind, source_id, &members)?;
+        let payload = RouteMembershipTrashPayload {
+            source_kind,
+            source_id: source_id.to_owned(),
+            members: members
+                .iter()
+                .map(|member| RouteMembershipTrashMember {
+                    route_pool_id: member.route_pool_id.clone(),
+                    enabled: member.enabled,
+                    priority: member.priority,
+                    position: member.position,
+                })
+                .collect(),
+        };
+        let now = now();
+        self.db.with_conn(|conn| {
+            ConnectionTrashRepo::insert_conn(
+                conn,
+                source_id,
+                agent_id,
+                ConnectionTrashKind::Membership,
+                &label,
+                false,
+                &payload,
+                &now,
+            )
+        })?;
+        self.remove_route_authorization(source_kind, source_id)
+    }
+
+    fn membership_trash_identity(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+        members: &[RouteMember],
+    ) -> Result<(AgentId, String)> {
+        match source_kind {
+            AdapterSourceKind::Account => {
+                if let Some(account) = self.accounts.get_by_id(source_id)? {
+                    return Ok((account.agent_id, account.label));
+                }
+            }
+            AdapterSourceKind::Provider => {
+                if let Some(provider) = self.providers.get_by_id(source_id)? {
+                    return Ok((provider.agent_id, provider.name));
+                }
+            }
+        }
+        if let Some(member) = members.first() {
+            if let Some(pool) = self.pools.get_pool(&member.route_pool_id)? {
+                return Ok((pool.target_agent_id, source_id.to_owned()));
+            }
+        }
+        Err(AppError::NotFound(format!(
+            "route authorization not found: {source_id}"
+        )))
+    }
+
+    pub fn restore_membership_trash(&self, payload: &RouteMembershipTrashPayload) -> Result<()> {
+        self.require_enabled()?;
+        for snapshot in &payload.members {
+            let Some(pool) = self.pools.get_pool(&snapshot.route_pool_id)? else {
+                continue;
+            };
+            let existing = self.pools.list_members(&pool.id)?;
+            if existing.iter().any(|member| {
+                member.source_kind == payload.source_kind && member.source_id == payload.source_id
+            }) {
+                continue;
+            }
+            let now = now();
+            let position = existing
+                .iter()
+                .map(|member| member.position)
+                .max()
+                .map(|value| value + 1)
+                .unwrap_or(snapshot.position);
+            let member = self.pools.add_member(&RouteMember {
+                id: Uuid::new_v4().to_string(),
+                route_pool_id: pool.id.clone(),
+                source_kind: payload.source_kind,
+                source_id: payload.source_id.clone(),
+                enabled: snapshot.enabled,
+                priority: snapshot.priority,
+                position,
+                created_at: now.clone(),
+                updated_at: now,
+            })?;
+            if let Err(error) = self.sync_lead_projection(&member.route_pool_id) {
+                let _ = self.pools.remove_member(&member.id);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn reattach_restored_pool_owned(
+        &self,
+        agent_id: AgentId,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+    ) -> Result<()> {
+        let Some(surface) = RouteDownstreamSurface::for_agent(agent_id) else {
+            return Ok(());
+        };
+        self.attach_pool_owned_authorization(agent_id, surface, source_kind, source_id)?;
+        Ok(())
     }
 
     pub fn set_member_priority(&self, member_id: &str, priority: i64) -> Result<RouteMember> {

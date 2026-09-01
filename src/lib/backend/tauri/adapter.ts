@@ -115,6 +115,12 @@ export function createTauriAdapterPort(): AdapterPort {
         sourceId,
       });
     },
+    async recycleRouteMembership(sourceKind, sourceId) {
+      return invokeAdapter<number>('recycle_route_membership', {
+        sourceKind,
+        sourceId,
+      });
+    },
     async syncConnectionAuthorizations(request?: SyncConnectionAuthorizationsRequest) {
       return invokeAdapter<SyncConnectionAuthorizationsResult>('sync_connection_authorizations', request
         ? { request: { sources: request.sources.map((source) => ({ ...source })) } }

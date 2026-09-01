@@ -257,16 +257,18 @@ export function poolAuthorizationStatusView(
   return { label: authHealthLabel(health, t), tone };
 }
 
-export type PoolAuthorizationDeleteStep = 'removeMembership' | 'deleteSource';
+export type PoolAuthorizationDeleteStep = 'removeMembership' | 'deleteSource' | 'recycleMembership';
 
 /**
- * Pool list rows come from default-pool members *and* source rows.
- * Deleting only the Account/Provider leaves an unavailable residual.
+ * Pool-owned rows are deleted into the pool recycle bin.
+ * Connections-managed rows only leave the pool (membership recycle bin).
  */
 export function poolAuthorizationDeleteSteps(input: {
   routePoolV2: boolean;
   sourceMissing: boolean;
+  addedHere: boolean;
 }): PoolAuthorizationDeleteStep[] {
+  if (!input.addedHere) return ['recycleMembership'];
   const steps: PoolAuthorizationDeleteStep[] = [];
   if (input.routePoolV2) steps.push('removeMembership');
   if (!input.sourceMissing) steps.push('deleteSource');

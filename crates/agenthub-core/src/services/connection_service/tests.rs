@@ -1513,3 +1513,30 @@ fn ticket_connection_pointer_stays_when_account_repo_flips_is_current() {
     let drifted = ActiveBindingRepo::new(db).get("claude").unwrap().unwrap();
     assert_eq!(drifted.account_id.as_deref(), Some("acc-a"));
 }
+
+#[test]
+fn list_trash_filtered_keeps_connections_and_pool_homes_apart() {
+    let (_d, db) = tmp();
+    let accounts = AccountRepo::new(db.clone());
+    let conn = ConnectionService::new(db.clone());
+    let mut pool_owned = account("pool-acc", AgentId::Claude, false, "t1");
+    pool_owned.extra = json!({ "home": "route_pool" });
+    accounts.create(&account("conn-acc", AgentId::Claude, false, "t1")).unwrap();
+    accounts.create(&pool_owned).unwrap();
+
+    conn.delete_account("conn-acc", AgentId::Claude).unwrap();
+    conn.delete_account("pool-acc", AgentId::Claude).unwrap();
+
+    let connections = conn
+        .list_trash_filtered(Some(AgentId::Claude), Some("connections"))
+        .unwrap();
+    let pool = conn
+        .list_trash_filtered(Some(AgentId::Claude), Some("route_pool"))
+        .unwrap();
+    assert_eq!(connections.len(), 1);
+    assert_eq!(connections[0].source_id, "conn-acc");
+    assert_eq!(connections[0].home, "connections");
+    assert_eq!(pool.len(), 1);
+    assert_eq!(pool[0].source_id, "pool-acc");
+    assert_eq!(pool[0].home, "route_pool");
+}
