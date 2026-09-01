@@ -216,7 +216,7 @@ pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
             ("xterm", ["-e"].as_slice()),
         ] {
             let mut cmd = std::process::Command::new(bin);
-            cmd.args(prefix).arg(path);
+            cmd.args(prefix).arg(&path);
             if cmd.spawn().is_ok() {
                 return Ok(());
             }
