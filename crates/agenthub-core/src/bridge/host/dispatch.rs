@@ -6,11 +6,13 @@ use axum::response::Response;
 use tokio::sync::OwnedSemaphorePermit;
 
 use super::admission::{admit_conversation, AdmittedRequest};
+use super::dispatch_trace::trace_response;
 use super::gateway::{Gateway, GatewayAuthError, ModelSwitchOutcome};
 use super::http::{error_response, reject_invalid_local_auth, stopping_response, EdgeState};
 use super::pair_policy::{
     identity_relay, pair_adapter_active, pair_adapter_rejected, pair_direction, pair_model_servable,
 };
+use super::route_trace::{RouteTraceBuilder, RouteTraceLog};
 use super::stream::{
     chat_non_stream_response, chat_stream_response, messages_non_stream_response,
     messages_stream_response, non_stream_response, passthrough_json_response,
@@ -33,19 +35,35 @@ pub(super) async fn handle_conversation(
 ) -> Response {
     let request_id = uuid::Uuid::new_v4().to_string();
     let started = Instant::now();
+    let method = request.method().as_str().to_owned();
+    let path = request.uri().path().to_owned();
+    let trace_log = gateway.route_traces.clone();
+    let mut trace = RouteTraceBuilder::begin(&request_id, method, path);
     // Bearer is the only middleware: invalid/missing token is always 401, even
     // when this path would later 404 for the bound edge.
     let state = match gateway.authenticate(request.headers()) {
         Ok(state) => state,
         Err(GatewayAuthError::Unauthorized) => {
-            return reject_invalid_local_auth(surface.op(), Some((&request_id, started)));
+            trace.local_auth_failed("invalid_api_key", "Invalid local bearer token.");
+            return trace_response(
+                &mut trace,
+                &trace_log,
+                reject_invalid_local_auth(surface.op(), Some((&request_id, started))),
+            );
         }
         Err(GatewayAuthError::Stopping | GatewayAuthError::Poisoned) => {
             return stopping_response();
         }
     };
+    trace.local_auth_ok(&state.profile_id, None);
     if let Some(response) = surface.reject_if_unserved(&state, &request_id) {
-        return response;
+        trace.local_path_failed(
+            &state.profile_id,
+            None,
+            "surface_mismatch",
+            "Local surface does not serve this path.",
+        );
+        return trace_response(&mut trace, &trace_log, response);
     }
     tracing::debug!(
         target: "core.adapter",
@@ -57,16 +75,24 @@ pub(super) async fn handle_conversation(
     let mut admitted = match admit_conversation(state, request, surface, request_id, started).await
     {
         Ok(admitted) => admitted,
-        Err(response) => return response,
+        Err(response) => return trace_response(&mut trace, &trace_log, response),
     };
     let initial_channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
     if surface == DownstreamSurface::Responses
         && pair_adapter_rejected(&admitted.state, initial_channel)
     {
-        return pair_adapter_rejected_response(
-            &admitted.state,
-            &admitted.request_id,
-            admitted.started,
+        trace.pool_failed(
+            "route_unavailable",
+            "This route cannot serve the requested Responses format.",
+        );
+        return trace_response(
+            &mut trace,
+            &trace_log,
+            pair_adapter_rejected_response(
+                &admitted.state,
+                &admitted.request_id,
+                admitted.started,
+            ),
         );
     }
     if let Some(serde_json::Value::String(model)) = admitted.body.get_mut("model") {
@@ -81,6 +107,7 @@ pub(super) async fn handle_conversation(
         .and_then(|value| value.as_str())
         .unwrap_or("")
         .to_owned();
+    trace.set_model(if model.is_empty() { None } else { Some(model.clone()) });
     let mut resolver_candidates = None;
     if let Some(index) = &admitted.state.route_index {
         let endpoint = DownstreamSurface::endpoint_key(admitted.state.upstream.local_surface);
@@ -99,11 +126,19 @@ pub(super) async fn handle_conversation(
                     status = 400_u16,
                     "v2 route index failed closed before any upstream attempt"
                 );
-                return error_response(
-                    StatusCode::BAD_REQUEST,
+                trace.pool_failed(
                     "model_unavailable",
                     "No running route can serve this model.",
-                    None,
+                );
+                return trace_response(
+                    &mut trace,
+                    &trace_log,
+                    error_response(
+                        StatusCode::BAD_REQUEST,
+                        "model_unavailable",
+                        "No running route can serve this model.",
+                        None,
+                    ),
                 );
             }
         }
@@ -153,21 +188,34 @@ pub(super) async fn handle_conversation(
                     status = 400_u16,
                     "lead mapping missed and no running alternate can serve this model"
                 );
-                return error_response(
-                    StatusCode::BAD_REQUEST,
-                    code,
-                    "No running route can serve this model.",
-                    None,
+                trace.pool_failed(code, "No running route can serve this model.");
+                return trace_response(
+                    &mut trace,
+                    &trace_log,
+                    error_response(
+                        StatusCode::BAD_REQUEST,
+                        code,
+                        "No running route can serve this model.",
+                        None,
+                    ),
                 );
             }
         }
     }
     let channel = UpstreamChannel::from_protocol(admitted.state.upstream.protocol);
     if surface == DownstreamSurface::Responses && pair_adapter_rejected(&admitted.state, channel) {
-        return pair_adapter_rejected_response(
-            &admitted.state,
-            &admitted.request_id,
-            admitted.started,
+        trace.pool_failed(
+            "route_unavailable",
+            "This route cannot serve the requested Responses format.",
+        );
+        return trace_response(
+            &mut trace,
+            &trace_log,
+            pair_adapter_rejected_response(
+                &admitted.state,
+                &admitted.request_id,
+                admitted.started,
+            ),
         );
     }
     if pair_adapter_active(&admitted.state, channel)
@@ -183,11 +231,19 @@ pub(super) async fn handle_conversation(
             status = 400_u16,
             "pair adapter has no upstream mapping for this model"
         );
-        return error_response(
-            StatusCode::BAD_REQUEST,
+        trace.pool_failed(
             "model_unavailable",
             "No running route can serve this model.",
-            None,
+        );
+        return trace_response(
+            &mut trace,
+            &trace_log,
+            error_response(
+                StatusCode::BAD_REQUEST,
+                "model_unavailable",
+                "No running route can serve this model.",
+                None,
+            ),
         );
     }
     let pair_active = pair_adapter_active(&admitted.state, channel);
@@ -206,9 +262,17 @@ pub(super) async fn handle_conversation(
         && crate::bridge::protocol::pair::previous_response_id(&admitted.body).is_some()
         && required_member.is_none()
     {
-        return continuation_unavailable(&admitted.state, &admitted.request_id, admitted.started);
+        trace.pool_failed(
+            "continuation_unavailable",
+            "Original login is no longer available.",
+        );
+        return trace_response(
+            &mut trace,
+            &trace_log,
+            continuation_unavailable(&admitted.state, &admitted.request_id, admitted.started),
+        );
     }
-    let Some(member) = (if let Some(required_id) = required_member.as_deref() {
+    let picked_member = if let Some(required_id) = required_member.as_deref() {
         match pick_bound_member(
             &admitted.state,
             resolver_candidates.as_deref(),
@@ -217,10 +281,18 @@ pub(super) async fn handle_conversation(
         ) {
             Some(member) => Some(member),
             None => {
-                return continuation_unavailable(
-                    &admitted.state,
-                    &admitted.request_id,
-                    admitted.started,
+                trace.pool_failed(
+                    "continuation_unavailable",
+                    "Original login is no longer available.",
+                );
+                return trace_response(
+                    &mut trace,
+                    &trace_log,
+                    continuation_unavailable(
+                        &admitted.state,
+                        &admitted.request_id,
+                        admitted.started,
+                    ),
                 );
             }
         }
@@ -228,21 +300,34 @@ pub(super) async fn handle_conversation(
         match &resolver_candidates {
             // v2: never fall back to pick_new() — that ignores cooldown,
             // auth isolation, and the resolver candidate set.
-            Some(candidates) => {
-                admitted
-                    .state
-                    .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref())
-            }
+            Some(candidates) => admitted
+                .state
+                .pick_v2(candidates, &model, &[], admitted.affinity_key.as_deref()),
             None => admitted.state.account_picker.pick_new(),
         }
-    }) else {
-        return no_eligible_member(
-            &admitted.state,
-            &admitted.request_id,
-            admitted.started,
-            &model,
+    };
+    let Some(member) = picked_member else {
+        trace.pool_failed(
+            if admitted.state.route_index.is_some() {
+                "pool_exhausted"
+            } else {
+                "upstream_unavailable"
+            },
+            "No eligible connection in the pool.",
+        );
+        return trace_response(
+            &mut trace,
+            &trace_log,
+            no_eligible_member(
+                &admitted.state,
+                &admitted.request_id,
+                admitted.started,
+                &model,
+            ),
         );
     };
+    let candidate = candidate_for_member(resolver_candidates.as_deref(), &member);
+    trace.pool_selected(&member, candidate);
     let continuation_locked = pair_active && required_member.is_some();
     admitted.member = Some(member);
     // Gateway usage capture identity: only fields the dispatch path already
@@ -262,14 +347,21 @@ pub(super) async fn handle_conversation(
             model,
             continuation_locked,
             capture,
+            &mut trace,
+            &trace_log,
         )
         .await;
     }
     let transport = channel.transport();
     let prepared = match transport.prepare(surface, &admitted) {
         Ok(prepared) => prepared,
-        Err(response) => return response,
+        Err(response) => return trace_response(&mut trace, &trace_log, response),
     };
+    trace.conversion_prepared(
+        surface,
+        channel,
+        identity_relay(channel, surface, &admitted.state),
+    );
     tracing::debug!(
         target: "core.adapter.protocol",
         request_id = %admitted.request_id,
@@ -278,7 +370,30 @@ pub(super) async fn handle_conversation(
         to = prepared.path,
         "downstream surface converted to upstream path"
     );
-    forward_upstream(surface, admitted, channel, prepared, continuation_locked, capture).await
+    forward_upstream(
+        surface,
+        admitted,
+        channel,
+        prepared,
+        continuation_locked,
+        capture,
+        &mut trace,
+        &trace_log,
+    )
+    .await
+}
+
+fn candidate_for_member<'a>(
+    candidates: Option<&'a [DispatchCandidate]>,
+    member: &PickedMember,
+) -> Option<&'a DispatchCandidate> {
+    candidates.and_then(|rows| {
+        rows.iter().find(|candidate| {
+            member.source_id == candidate.member_id
+                || member.ticket_id == candidate.member_id
+                || member.label == candidate.member_id
+        })
+    })
 }
 
 fn pair_adapter_rejected_response(
@@ -405,6 +520,8 @@ async fn forward_upstream_v2(
     public_model: String,
     continuation_locked: bool,
     mut capture: CaptureContext,
+    trace: &mut RouteTraceBuilder,
+    trace_log: &RouteTraceLog,
 ) -> Response {
     let AdmittedRequest {
         state,
@@ -435,18 +552,20 @@ async fn forward_upstream_v2(
         &public_model,
         continuation_locked,
         affinity_key.as_deref(),
+        Some(trace),
     )
     .await
     {
         Ok(outcome) => outcome,
-        Err(response) => return response,
+        Err(response) => return trace_response(trace, trace_log, response),
     };
     capture.channel = Some(channel.name());
-    finish_upstream(
+    let response = finish_upstream(
         surface, channel, state, response, request_id, started, permit, cache_seed, member, stream,
         capture,
     )
-    .await
+    .await;
+    trace_response(trace, trace_log, response)
 }
 
 async fn forward_upstream(
@@ -456,6 +575,8 @@ async fn forward_upstream(
     prepared: UpstreamPrepare,
     continuation_locked: bool,
     mut capture: CaptureContext,
+    trace: &mut RouteTraceBuilder,
+    trace_log: &RouteTraceLog,
 ) -> Response {
     let AdmittedRequest {
         state,
@@ -477,8 +598,9 @@ async fn forward_upstream(
     } = prepared;
     let url = match join_upstream(&state, path) {
         Ok(url) => url,
-        Err(response) => return response,
+        Err(response) => return trace_response(trace, trace_log, response),
     };
+    let url_for_trace = url.to_string();
     let UpstreamSendOutcome {
         response, member, ..
     } = match send_upstream(
@@ -492,14 +614,16 @@ async fn forward_upstream(
         cache_seed.as_deref(),
         member,
         continuation_locked,
+        Some(trace),
+        url_for_trace.as_str(),
     )
     .await
     {
         Ok(outcome) => outcome,
-        Err(response) => return response,
+        Err(response) => return trace_response(trace, trace_log, response),
     };
     capture.channel = Some(channel.name());
-    finish_upstream(
+    let response = finish_upstream(
         surface,
         channel,
         state,
@@ -512,7 +636,8 @@ async fn forward_upstream(
         stream_requested,
         capture,
     )
-    .await
+    .await;
+    trace_response(trace, trace_log, response)
 }
 
 #[allow(clippy::too_many_arguments)]

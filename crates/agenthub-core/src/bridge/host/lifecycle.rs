@@ -194,6 +194,14 @@ impl BridgeRuntimeHost {
         self.gateway.inbound.recent(profile_id)
     }
 
+    /// Last route request traces for this profile (newest first). Credential-free.
+    pub fn recent_route_traces(
+        &self,
+        profile_id: &str,
+    ) -> Vec<super::route_trace::RouteRequestTrace> {
+        self.gateway.route_traces.recent(profile_id)
+    }
+
     /// Process-lifetime inbound counters for this profile (not capped by the ring).
     pub fn inbound_stats(&self, profile_id: &str) -> InboundRequestStats {
         self.gateway.inbound.stats(profile_id)
