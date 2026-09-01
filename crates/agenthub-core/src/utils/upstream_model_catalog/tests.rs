@@ -109,19 +109,19 @@ fn stored_catalog_roundtrip_and_cache_hit() {
 }
 
 #[test]
-fn wanted_models_keep_live_and_store_extras() {
+fn wanted_models_replace_live_including_deletes() {
     let live = StoredModelCatalog {
         fingerprint: "fp".into(),
         source: "live".into(),
-        models: vec!["gpt-5.4".into()],
+        models: vec!["gpt-5.4".into(), "gpt-5.6-sol".into()],
         extra_models: Vec::new(),
         attempted: true,
         updated_at: "t0".into(),
     };
     let next = with_wanted_models(live, vec!["gpt-5.4".into(), "my-model".into()]);
-    assert_eq!(next.source, "live");
-    assert_eq!(next.models, vec!["gpt-5.4"]);
-    assert_eq!(next.extra_models, vec!["my-model"]);
+    assert_eq!(next.source, "custom");
+    assert_eq!(next.models, vec!["gpt-5.4", "my-model"]);
+    assert!(next.extra_models.is_empty());
     assert_eq!(
         SourceModelCatalog::from_stored(&next).models,
         vec!["gpt-5.4", "my-model"]

@@ -1242,9 +1242,6 @@ impl RoutePoolService {
                     }
                 }
                 let models = self.fetch_live_models_for_account(&account);
-                let extra_models = read_stored_catalog(&account.extra)
-                    .map(|prior| prior.extra_models)
-                    .unwrap_or_default();
                 let stored = StoredModelCatalog {
                     fingerprint,
                     source: if models.is_empty() {
@@ -1253,7 +1250,7 @@ impl RoutePoolService {
                         "live".into()
                     },
                     models,
-                    extra_models,
+                    extra_models: Vec::new(),
                     attempted: true,
                     updated_at: now(),
                 };
@@ -1275,9 +1272,6 @@ impl RoutePoolService {
                     }
                 }
                 let models = self.live_models_from_settings(&provider.settings_config);
-                let extra_models = read_stored_catalog(&provider.meta)
-                    .map(|prior| prior.extra_models)
-                    .unwrap_or_default();
                 let stored = StoredModelCatalog {
                     fingerprint,
                     source: if models.is_empty() {
@@ -1286,7 +1280,7 @@ impl RoutePoolService {
                         "live".into()
                     },
                     models,
-                    extra_models,
+                    extra_models: Vec::new(),
                     attempted: true,
                     updated_at: now(),
                 };
