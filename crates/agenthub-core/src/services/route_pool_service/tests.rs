@@ -1143,3 +1143,49 @@ fn shared_chat_enrolls_workbuddy_and_dsh_into_kimi_pool() {
     assert!(kimi_ids.contains(&"wb-key"));
     assert!(dsh_ids.is_empty());
 }
+
+#[test]
+fn custom_model_catalog_is_used_for_routing_and_not_refetched() {
+    let (_dir, db, service, _) = tmp();
+    let accounts = AccountRepo::new(db);
+    accounts
+        .create(&Account {
+            id: "grok-oauth-1".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "grok".into(),
+            credentials: json!({ "access_token": "at" }),
+            extra: json!({ "accountId": "acct-1" }),
+            status: "ok".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Grok, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "grok-oauth-1")
+        .unwrap();
+    let first = service
+        .ensure_source_model_catalog(AdapterSourceKind::Account, "grok-oauth-1")
+        .unwrap();
+    assert!(first.can_customize);
+    assert!(first.models.is_empty());
+    let saved = service
+        .set_source_custom_models(
+            AdapterSourceKind::Account,
+            "grok-oauth-1",
+            vec![" grok-4.5 ".into(), "grok-4.5".into(), "grok-4.6".into()],
+        )
+        .unwrap();
+    assert_eq!(saved.source, "custom");
+    assert_eq!(saved.models, vec!["grok-4.5", "grok-4.6"]);
+    let listed = service.list_upstream_models_for_pool(&pool.id).unwrap();
+    assert_eq!(listed, vec!["grok-4.5", "grok-4.6"]);
+    let again = service
+        .ensure_source_model_catalog(AdapterSourceKind::Account, "grok-oauth-1")
+        .unwrap();
+    assert_eq!(again.models, vec!["grok-4.5", "grok-4.6"]);
+}

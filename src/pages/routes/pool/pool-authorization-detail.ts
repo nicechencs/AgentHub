@@ -17,6 +17,19 @@ export function hasQuotaWindow(pct?: number): boolean {
   return typeof pct === 'number' && Number.isFinite(pct);
 }
 
+/** One model id per line or comma. Empty lines dropped. */
+export function parseCustomModelList(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[\n,]/)) {
+    const id = part.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 export function formatPoolTimestamp(raw?: string | null): string | null {
   if (!raw?.trim()) return null;
   const value = raw.trim();

@@ -329,6 +329,14 @@ export type LocalTokenProbeOutcome =
   | 'rejected'
   | 'invalid';
 
+export type SourceModelCatalogSource = 'live' | 'custom' | 'empty';
+
+export type SourceModelCatalog = {
+  models: string[];
+  source: SourceModelCatalogSource;
+  canCustomize: boolean;
+};
+
 export type LocalTokenProbeResult = {
   outcome: LocalTokenProbeOutcome;
   httpStatus: number | null;
@@ -348,6 +356,15 @@ export interface AdapterPort {
   listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
   listLocalTokens(): Promise<LocalTokenRecord[]>;
   listLocalTokenModels(token: string): Promise<string[]>;
+  ensureSourceModelCatalog(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+  ): Promise<SourceModelCatalog>;
+  setSourceCustomModels(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+    models: string[],
+  ): Promise<SourceModelCatalog>;
   testLocalToken(
     endpoint: string,
     token: string,

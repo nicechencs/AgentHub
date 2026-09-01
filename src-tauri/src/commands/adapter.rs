@@ -12,6 +12,7 @@ use agenthub_core::models::{
     SyncConnectionAuthorizationsResult, TicketBinding, TicketBindingRoute, TicketPlanRequest,
     TicketWallet,
 };
+use agenthub_core::utils::upstream_model_catalog::SourceModelCatalog;
 use agenthub_core::AgentHub;
 use tauri::State;
 
@@ -419,6 +420,43 @@ fn list_models_for_local_token(hub: &AgentHub, token: &str) -> Vec<String> {
     hub.route_pools()
         .list_upstream_models_for_pool(&pool_id)
         .unwrap_or_default()
+}
+
+/// Cached model list for one connection-pool login. Fetches once until URL/key/login changes.
+#[tauri::command]
+pub async fn ensure_source_model_catalog(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+) -> Result<SourceModelCatalog, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .ensure_source_model_catalog(kind, &source_id)
+            .map_err(|err| map_err_string("ensure_source_model_catalog", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Replace the cached list with a user-supplied model list for routing.
+#[tauri::command]
+pub async fn set_source_custom_models(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+    models: Vec<String>,
+) -> Result<SourceModelCatalog, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .set_source_custom_models(kind, &source_id, models)
+            .map_err(|err| map_err_string("set_source_custom_models", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
 }
 
 /// Live model ids for the tokens-page test dropdown. Not persisted.
