@@ -1,18 +1,21 @@
 /**
  * Pure view-model for the local-tokens page. No React, no IO.
  */
+import { agentDisplayName } from '@/config/agents';
 import type {
   AdapterBridgeRuntimeState,
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
   DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
+import type { TranslateFn } from '@/lib/i18n';
 import {
   localEndpointKindForTargetAgent,
   localEndpointKindFromPool,
   localEndpointPath,
   type LocalEndpointKind,
 } from '@/lib/route-endpoints';
+import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
 import { profilesForPool } from '@/pages/routes/board/board-view-model';
 
 export interface LocalTokenRow {
@@ -39,6 +42,25 @@ export function maskLocalToken(token: string): string {
   if (!trimmed) return '';
   const tail = trimmed.slice(-4);
   return trimmed.startsWith('ahb_') ? `ahb_••••${tail}` : `••••${tail}`;
+}
+
+export function tokenListenPort(endpoint: string | null): number | null {
+  if (!endpoint) return null;
+  const colon = endpoint.lastIndexOf(':');
+  if (colon < 0) return null;
+  const port = Number(endpoint.slice(colon + 1));
+  return Number.isInteger(port) && port > 0 ? port : null;
+}
+
+/** List/detail title. Unshared chat completions keep the Agent name. */
+export function tokenRowTitle(
+  row: Pick<LocalTokenRow, 'kind' | 'targetAgentId'>,
+  chatCompletionsShared: boolean,
+  t?: TranslateFn,
+): string {
+  const kindLabel = localEndpointKindLabel(row.kind, t);
+  if (row.kind !== 'chat_completions' || chatCompletionsShared) return kindLabel;
+  return `${kindLabel} · ${agentDisplayName(row.targetAgentId)}`;
 }
 
 function pickRuntimeProfile(
@@ -90,14 +112,30 @@ export function buildLocalTokenRows(
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
   statusErrors: Readonly<Record<string, unknown>> = {},
   pools: readonly DefaultRoutePoolOverview[] = [],
+  chatCompletionsShared = false,
 ): LocalTokenRow[] {
   const covered = new Set<string>();
   const rows: LocalTokenRow[] = [];
+  const sharedKimiChat = chatCompletionsShared && pools.some((pool) => (
+    pool.targetAgentId === 'kimi'
+    && pool.surface === 'chat_completions'
+    && pool.members.length > 0
+  ));
+  let sharedChatRow = false;
 
   for (const pool of pools) {
     if (pool.members.length === 0) continue;
     const kind = localEndpointKindFromPool(pool);
     if (!kind) continue;
+    if (
+      chatCompletionsShared
+      && kind === 'chat_completions'
+      && (sharedChatRow || (sharedKimiChat && pool.targetAgentId === 'dsh'))
+    ) {
+      const matches = profilesForPool(pool, profiles);
+      for (const match of matches) covered.add(match.id);
+      continue;
+    }
     const matches = profilesForPool(pool, profiles);
     for (const match of matches) covered.add(match.id);
     const profile = pickRuntimeProfile(matches, bridgeStatuses);
@@ -112,12 +150,14 @@ export function buildLocalTokenRows(
       status: bridgeStatuses[statusId],
       unavailable: Boolean(statusErrors[statusId]),
     }));
+    if (kind === 'chat_completions') sharedChatRow = true;
   }
 
   for (const profile of profiles) {
     if (profile.route !== 'local_bridge') continue;
     if (covered.has(profile.id)) continue;
     const kind = localEndpointKindForTargetAgent(profile.targetAgentId);
+    if (chatCompletionsShared && kind === 'chat_completions' && sharedChatRow) continue;
     const status = bridgeStatuses[profile.id];
     const unavailable = Boolean(statusErrors[profile.id])
       || status?.upstreamStatus === 'unavailable';
@@ -131,6 +171,7 @@ export function buildLocalTokenRows(
       status,
       unavailable,
     }));
+    if (kind === 'chat_completions') sharedChatRow = true;
   }
 
   return rows.sort((a, b) => {

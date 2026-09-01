@@ -261,6 +261,22 @@ pub async fn set_adapter_bridge_auto_start(
         .map_err(adapter_error_from_string)
 }
 
+/// Kimi and DSH share one chat-completions token, or keep separate keys.
+#[tauri::command]
+pub async fn set_chat_completions_shared(
+    state: State<'_, AppState>,
+    shared: bool,
+) -> Result<DefaultRoutePoolList, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .set_chat_completions_shared(shared)
+            .map_err(|err| map_err_string("set_chat_completions_shared", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
 /// Default RoutePool overview for the Routes page. Hub token is never serialized.
 #[tauri::command]
 pub async fn list_default_route_pools(

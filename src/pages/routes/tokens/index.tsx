@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KeyRound } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -11,9 +11,19 @@ import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { ListRow, ListRowBody, LIST_ROW_PAD } from '@/components/shared/ListRow';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/toast';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { ROUTES_POOL_PATH } from '@/lib/bridges-path';
+import { setChatCompletionsShared } from '@/lib/api/adapter';
 import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
 import { agentCssVar } from '@/styles/tokens';
 import { WriteClientConfigDialog } from '@/pages/bridges/WriteClientConfigDialog';
@@ -22,14 +32,16 @@ import {
   ROUTES_INSPECT_WIDTH_KEY,
   type WriteTarget,
 } from '@/pages/bridges/route-inspect';
-import {
-  localEndpointKindLabel,
-} from '@/pages/bridges/route-pool-view-model';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { buildLocalEntryControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
-import { buildLocalTokenRows } from './tokens-model';
+import { TokenDetailPanel } from './TokenDetailPanel';
+import { buildLocalTokenRows, tokenRowTitle, type LocalTokenRow } from './tokens-model';
+
+type TokensInspect =
+  | { kind: 'detail'; rowId: string }
+  | { kind: 'write'; target: WriteTarget };
 
 export default function RoutesTokensPage() {
   const { t } = useI18n();
@@ -46,12 +58,20 @@ export default function RoutesTokensPage() {
     loading,
     reload,
   } = useAdapterResources();
-  const { defaultPools, loading: poolsLoading } = useRoutePoolState({
+  const [poolTick, setPoolTick] = useState(0);
+  const {
+    routePoolV2,
+    chatCompletionsShared,
+    defaultPools,
+    loading: poolsLoading,
+  } = useRoutePoolState({
     profiles,
     detailTarget: null,
+    reloadKey: poolTick,
   });
-  const inspect = useSideSplit<WriteTarget>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
-  const [revealedTokenId, setRevealedTokenId] = useState<string | null>(null);
+  const inspect = useSideSplit<TokensInspect>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareConfirm, setShareConfirm] = useState<boolean | null>(null);
   const localEntry = useMemo(
     () => buildLocalEntryControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
     [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
@@ -63,6 +83,7 @@ export default function RoutesTokensPage() {
         bridgeStatuses,
         errors.bridgeStatuses,
         defaultPools,
+        chatCompletionsShared,
       );
       if (profileState !== 'error') return next;
       return next.map((row) => ({
@@ -72,23 +93,17 @@ export default function RoutesTokensPage() {
         unavailable: true,
       }));
     },
-    [bridgeStatuses, defaultPools, errors.bridgeStatuses, profileState, profiles],
+    [
+      bridgeStatuses,
+      chatCompletionsShared,
+      defaultPools,
+      errors.bridgeStatuses,
+      profileState,
+      profiles,
+    ],
   );
 
-  useEffect(() => {
-    if (!revealedTokenId) return undefined;
-    const timer = window.setTimeout(() => setRevealedTokenId(null), 8_000);
-    return () => window.clearTimeout(timer);
-  }, [revealedTokenId]);
-
-  const copyToken = (token: string) => {
-    void navigator.clipboard.writeText(token).then(
-      () => toast({ title: t('routes.tokens.copied'), variant: 'success' }),
-      () => toast({ title: t('routes.tokens.copyFailed'), variant: 'danger' }),
-    );
-  };
-
-  const openWrite = (row: (typeof rows)[number]) => {
+  const openWrite = (row: LocalTokenRow) => {
     if (!row.profileId) return;
     const profile = profiles.find((item) => item.id === row.profileId);
     if (!profile) return;
@@ -99,10 +114,29 @@ export default function RoutesTokensPage() {
       siblingProfiles: profiles,
       port: status?.port ?? profile.localPort,
     });
-    inspect.open({ profile, graph });
+    inspect.open({ kind: 'write', target: { profile, graph } });
   };
 
-  const writeTarget = inspect.target;
+  const applyShare = async (shared: boolean) => {
+    if (shareBusy) return;
+    setShareBusy(true);
+    try {
+      await setChatCompletionsShared(shared);
+      setShareConfirm(null);
+      setPoolTick((tick) => tick + 1);
+      void reload();
+    } catch {
+      toast({ title: t('routes.tokens.shareFailed'), variant: 'danger' });
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const inspectTarget = inspect.target;
+  const detailRow = inspectTarget?.kind === 'detail'
+    ? rows.find((row) => row.id === inspectTarget.rowId) ?? null
+    : null;
+  const writeTarget = inspectTarget?.kind === 'write' ? inspectTarget.target : null;
   const pageLoading = loading || poolsLoading;
 
   const list = (
@@ -115,9 +149,11 @@ export default function RoutesTokensPage() {
         <p className="min-w-0 truncate text-meta text-muted">{
           localEntry.running
             ? t('routes.tokens.scopeNote')
-            : localEntry.action === 'start'
-              ? t('routes.tokens.entryStoppedHint')
-              : t('routes.tokens.scopeNote')
+            : localEntry.profileIds.length === 0 && localEntry.hasEnrolledLogins
+              ? t('routes.board.entryNeedRoute')
+              : localEntry.profileIds.length === 0
+                ? t('routes.tokens.scopeNote')
+                : t('routes.tokens.entryStoppedHint')
         }</p>
         <div className={pageRhythm.chromeActions}>
           <PageRefreshButton
@@ -127,6 +163,18 @@ export default function RoutesTokensPage() {
           />
         </div>
       </div>
+
+      {routePoolV2 ? (
+        <label className="flex min-w-0 items-center justify-between gap-3 rounded-card border border-border px-3 py-2">
+          <span className="min-w-0 text-sm text-primary">{t('routes.tokens.shareChat')}</span>
+          <Switch
+            checked={chatCompletionsShared}
+            disabled={shareBusy}
+            onCheckedChange={(next) => setShareConfirm(next)}
+            aria-label={t('routes.tokens.shareChat')}
+          />
+        </label>
+      ) : null}
 
       {profileState === 'error' && rows.length === 0 && !pageLoading ? (
         <ErrorState
@@ -153,18 +201,21 @@ export default function RoutesTokensPage() {
       ) : (
         <div className={pageRhythm.stackDense}>
           {rows.map((row) => {
-            const token = row.token;
-            const displayedToken = token
-              ? revealedTokenId === row.id ? token : row.maskedToken
-              : null;
             const kindColor = agentCssVar(localEndpointBrandAgentId(row.kind));
+            const title = tokenRowTitle(row, chatCompletionsShared, t);
             return (
-              <ListRow key={row.id} className={LIST_ROW_PAD}>
+              <ListRow
+                key={row.id}
+                className={LIST_ROW_PAD}
+                active={inspectTarget?.kind === 'detail' && inspectTarget.rowId === row.id}
+                onOpen={() => inspect.open({ kind: 'detail', rowId: row.id })}
+                aria-label={t('routes.tokens.openDetailAria', { name: title })}
+              >
                 <ListRowBody
                   main={
                     <>
                       <span className="min-w-0 truncate text-sm font-medium text-primary">
-                        {localEndpointKindLabel(row.kind, t)}
+                        {title}
                       </span>
                       <span className="font-mono text-meta" style={{ color: kindColor }}>
                         {row.path}
@@ -174,46 +225,14 @@ export default function RoutesTokensPage() {
                       </span>
                       {row.unavailable ? (
                         <span className="text-meta text-muted">{t('routes.runtime.unavailable')}</span>
-                      ) : displayedToken ? (
+                      ) : row.maskedToken ? (
                         <span className="min-w-0 truncate font-mono text-meta text-secondary">
-                          {displayedToken}
+                          {row.maskedToken}
                         </span>
                       ) : (
                         <span className="text-meta text-muted">{t('routes.tokens.noToken')}</span>
                       )}
                     </>
-                  }
-                  actions={
-                    <div className="flex items-center gap-1.5">
-                      {token && !row.unavailable ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setRevealedTokenId((current) => (
-                              current === row.id ? null : row.id
-                            ))}
-                          >
-                            {revealedTokenId === row.id
-                              ? t('common.hideSecret')
-                              : t('common.showSecret')}
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => copyToken(token)}>
-                            {t('routes.tokens.copy')}
-                          </Button>
-                        </>
-                      ) : null}
-                      {row.profileId ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!token || row.unavailable}
-                          onClick={() => openWrite(row)}
-                        >
-                          {t('routes.tokens.writeClient')}
-                        </Button>
-                      ) : null}
-                    </div>
                   }
                 />
               </ListRow>
@@ -221,6 +240,32 @@ export default function RoutesTokensPage() {
           })}
         </div>
       )}
+
+      <Dialog open={shareConfirm != null} onOpenChange={(open) => { if (!open) setShareConfirm(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('routes.tokens.shareChat')}</DialogTitle>
+            <DialogDescription>
+              {shareConfirm
+                ? t('routes.tokens.shareChatOn')
+                : t('routes.tokens.shareChatOff')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShareConfirm(null)} disabled={shareBusy}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={() => { if (shareConfirm != null) void applyShare(shareConfirm); }}
+              disabled={shareBusy || shareConfirm == null}
+            >
+              {shareConfirm
+                ? t('routes.tokens.shareChatConfirmOn')
+                : t('routes.tokens.shareChatConfirmOff')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </RoutesPane>
   );
 
@@ -248,6 +293,14 @@ export default function RoutesTokensPage() {
             inspect.close();
             void reload();
           }}
+        />
+      ) : detailRow ? (
+        <TokenDetailPanel
+          row={detailRow}
+          chatCompletionsShared={chatCompletionsShared}
+          width={inspect.paneWidth}
+          onWrite={detailRow.profileId ? () => openWrite(detailRow) : undefined}
+          onClose={() => inspect.close()}
         />
       ) : null}
     >

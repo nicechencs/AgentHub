@@ -48,9 +48,87 @@ function mockWriterDialect(agentId: DefaultRoutePoolOverview['targetAgentId']): 
   return 'generic';
 }
 
+function mockChatWriter(
+  agentId: DefaultRoutePoolOverview['targetAgentId'],
+  surface: RoutePoolSurface,
+  shared: boolean,
+): DefaultRoutePoolOverview['targetAgentId'] {
+  if (shared && surface === 'chat_completions' && (agentId === 'kimi' || agentId === 'dsh')) {
+    return 'kimi';
+  }
+  return agentId;
+}
+
+function mockChatPool(
+  state: MockAdapterState,
+  agentId: 'kimi' | 'dsh',
+): DefaultRoutePoolOverview {
+  const existing = state.defaultPools.find((item) => (
+    item.targetAgentId === agentId && item.surface === 'chat_completions'
+  ));
+  if (existing) return existing;
+  const pool: DefaultRoutePoolOverview = {
+    id: `pool-${agentId}-chat_completions`,
+    targetAgentId: agentId,
+    surface: 'chat_completions',
+    dialect: agentId,
+    v2Enrolled: false,
+    members: [],
+    listedModels: [],
+  };
+  state.defaultPools.push(pool);
+  return pool;
+}
+
+function mockMemberSourceAgent(sourceKind: 'account' | 'provider', sourceId: string): string | undefined {
+  return sourceKind === 'account'
+    ? getMockAccountById(sourceId)?.agentId
+    : getMockProviderById(sourceId)?.agentId;
+}
+
+function mockMergeChatPools(state: MockAdapterState): void {
+  const dsh = state.defaultPools.find((item) => (
+    item.targetAgentId === 'dsh' && item.surface === 'chat_completions'
+  ));
+  if (!dsh) return;
+  const kimi = mockChatPool(state, 'kimi');
+  for (const member of dsh.members) {
+    if (kimi.members.some((row) => (
+      row.sourceKind === member.sourceKind && row.sourceId === member.sourceId
+    ))) {
+      continue;
+    }
+    kimi.members.push({ ...member });
+  }
+  dsh.members = [];
+}
+
+function mockSplitChatPools(state: MockAdapterState): void {
+  const kimi = state.defaultPools.find((item) => (
+    item.targetAgentId === 'kimi' && item.surface === 'chat_completions'
+  ));
+  if (!kimi) return;
+  const dsh = mockChatPool(state, 'dsh');
+  const keep: typeof kimi.members = [];
+  for (const member of kimi.members) {
+    const home = mockMemberSourceAgent(member.sourceKind, member.sourceId);
+    const onDsh = dsh.members.some((row) => (
+      row.sourceKind === member.sourceKind && row.sourceId === member.sourceId
+    ));
+    if (home === 'dsh') {
+      if (!onDsh) dsh.members.push({ ...member });
+      continue;
+    }
+    keep.push(member);
+    if (home !== 'kimi' && !onDsh) dsh.members.push({ ...member });
+  }
+  kimi.members = keep;
+}
+
 function mockPoolTargetsForSync(
   agentId: string,
   kind: 'oauth' | 'apikey',
+  shared: boolean,
 ): Array<{
   agentId: DefaultRoutePoolOverview['targetAgentId'];
   surface: RoutePoolSurface;
@@ -61,7 +139,11 @@ function mockPoolTargetsForSync(
   }
   const native = mockWriterSurface(agentId);
   if (native) {
-    const target = agentId as DefaultRoutePoolOverview['targetAgentId'];
+    const target = mockChatWriter(
+      agentId as DefaultRoutePoolOverview['targetAgentId'],
+      native,
+      shared,
+    );
     return [{ agentId: target, surface: native, dialect: mockWriterDialect(target) }];
   }
   if (kind === 'oauth') return [];
@@ -73,7 +155,9 @@ function mockPoolTargetsForSync(
   return MOCK_POOL_WRITERS
     .filter((writer) => {
       const surface = mockWriterSurface(writer);
-      return surface != null && surfaces.includes(surface);
+      if (surface == null || !surfaces.includes(surface)) return false;
+      if (shared && surface === 'chat_completions') return writer === 'kimi';
+      return true;
     })
     .map((writer) => ({
       agentId: writer,
@@ -109,6 +193,7 @@ export function resetMockAdapters(): void {
     state.bridgeStatuses.clear();
     state.generatedProviders.clear();
     state.routePoolV2 = true;
+    state.shareChatCompletions = false;
     state.defaultPools.length = 0;
   });
 }
@@ -258,6 +343,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     resolver,
     removeGeneratedProvider: resolver.removeGeneratedProvider,
     routePoolV2: true,
+    shareChatCompletions: false,
     defaultPools: [],
   };
   adapterStates.add(state);
@@ -285,15 +371,32 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     },
     async listDefaultRoutePools() {
       await delay(20);
-      if (!state.routePoolV2) return { enabled: false, pools: [] };
+      if (!state.routePoolV2) return { enabled: false, pools: [], chatCompletionsShared: false };
       return {
         enabled: true,
+        chatCompletionsShared: state.shareChatCompletions,
         pools: state.defaultPools.map((pool) => ({
           ...pool,
           members: pool.members.map((member) => ({ ...member })),
           listedModels: [...(pool.listedModels ?? [])],
         })),
       };
+    },
+    async setChatCompletionsShared(shared: boolean) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      if (state.shareChatCompletions !== shared) {
+        state.shareChatCompletions = shared;
+        if (shared) mockMergeChatPools(state);
+        else mockSplitChatPools(state);
+      }
+      return this.listDefaultRoutePools();
     },
     async attachPoolOwnedAuthorization(request) {
       await delay(20);
@@ -353,22 +456,23 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         }
         upsertMockAccount({ ...account, home: 'route_pool' });
       }
-      const dialect: RoutePoolDialect =
-        request.targetAgentId === 'claude'
-        || request.targetAgentId === 'codex'
-        || request.targetAgentId === 'grok'
-        || request.targetAgentId === 'kimi'
-        || request.targetAgentId === 'dsh'
-          ? request.targetAgentId
-          : 'generic';
       const surface: RoutePoolSurface = request.surface;
+      const poolAgent = mockChatWriter(request.targetAgentId, surface, state.shareChatCompletions);
+      const dialect: RoutePoolDialect =
+        poolAgent === 'claude'
+        || poolAgent === 'codex'
+        || poolAgent === 'grok'
+        || poolAgent === 'kimi'
+        || poolAgent === 'dsh'
+          ? poolAgent
+          : 'generic';
       let pool = state.defaultPools.find((item) => (
-        item.targetAgentId === request.targetAgentId && item.surface === surface
+        item.targetAgentId === poolAgent && item.surface === surface
       ));
       if (!pool) {
         pool = {
-          id: `pool-${request.targetAgentId}-${surface}`,
-          targetAgentId: request.targetAgentId,
+          id: `pool-${poolAgent}-${surface}`,
+          targetAgentId: poolAgent,
           surface,
           dialect,
           v2Enrolled: false,
@@ -491,7 +595,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           skipped += 1;
           return;
         }
-        const targets = mockPoolTargetsForSync(agentId, kind);
+        const targets = mockPoolTargetsForSync(agentId, kind, state.shareChatCompletions);
         if (targets.length === 0) {
           skipped += 1;
           return;

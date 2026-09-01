@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
-import { buildLocalTokenRows, maskLocalToken } from './tokens-model';
+import { buildLocalTokenRows, maskLocalToken, tokenRowTitle } from './tokens-model';
 
 function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>): AdapterProfile {
   return {
@@ -122,6 +122,44 @@ describe('tokens-model', () => {
       {},
     );
     expect(rows.map((row) => row.kind)).toEqual(['messages', 'responses_codex']);
+  });
+
+  it('labels unshared chat completions with the writer Agent', () => {
+    expect(tokenRowTitle(
+      { kind: 'chat_completions', targetAgentId: 'kimi' },
+      false,
+    )).toBe('对话补全 · Kimi');
+    expect(tokenRowTitle(
+      { kind: 'chat_completions', targetAgentId: 'kimi' },
+      true,
+    )).toBe('对话补全');
+  });
+
+  it('keeps one chat-completions row when Kimi and DSH share', () => {
+    const rows = buildLocalTokenRows(
+      [],
+      {},
+      {},
+      [
+        pool({
+          id: 'pool-dsh',
+          targetAgentId: 'dsh',
+          surface: 'chat_completions',
+          dialect: 'dsh',
+          members: [{ sourceKind: 'provider', sourceId: 'dsh-1', enabled: true }],
+        }),
+        pool({
+          id: 'pool-kimi',
+          targetAgentId: 'kimi',
+          surface: 'chat_completions',
+          dialect: 'kimi',
+          members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
+        }),
+      ],
+      true,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: 'pool-kimi', path: '/v1/chat/completions' });
   });
 
   it('marks failed status reads unavailable and withholds the token', () => {

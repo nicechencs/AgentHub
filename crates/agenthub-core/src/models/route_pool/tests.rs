@@ -4,6 +4,7 @@ use crate::models::{
     RouteDownstreamDialect, RouteDownstreamSurface, RouteSchedulePolicy,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
+    SHARE_CHAT_COMPLETIONS,
 };
 
 #[test]
@@ -26,6 +27,7 @@ fn feature_flags_are_fail_closed() {
         "feature.grok_ingress_codex_upstream"
     );
     assert_eq!(FEATURE_MIXED_PROVIDER_POOL, "feature.mixed_provider_pool");
+    assert_eq!(SHARE_CHAT_COMPLETIONS, "share_chat_completions");
     assert!(feature_flag_enabled(Some("yes")));
 }
 

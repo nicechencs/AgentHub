@@ -170,6 +170,7 @@ describe('Tauri adapter route port', () => {
     const listed = await port.listDefaultRoutePools();
     expect(invokeMock).toHaveBeenCalledWith('list_default_route_pools', {});
     expect(listed.enabled).toBe(true);
+    expect(listed.chatCompletionsShared).toBe(false);
     expect(listed.pools[0]).toMatchObject({
       id: 'pool-1',
       surface: 'responses',

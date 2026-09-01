@@ -104,6 +104,7 @@ pub fn run() {
             commands::adapter::unbind_ticket,
             commands::adapter::list_adapter_profiles,
             commands::adapter::list_default_route_pools,
+            commands::adapter::set_chat_completions_shared,
             commands::adapter::attach_pool_owned_authorization,
             commands::adapter::set_route_authorization_enabled,
             commands::adapter::remove_route_authorization,

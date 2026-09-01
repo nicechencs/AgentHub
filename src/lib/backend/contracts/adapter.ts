@@ -281,6 +281,8 @@ export interface DefaultRoutePoolOverview {
 export interface DefaultRoutePoolList {
   enabled: boolean;
   pools: DefaultRoutePoolOverview[];
+  /** Kimi and DSH share one chat-completions local token when true. */
+  chatCompletionsShared?: boolean;
 }
 
 export interface AttachPoolOwnedAuthorizationRequest {
@@ -311,6 +313,7 @@ export interface AdapterPort {
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
   listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
   listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
+  setChatCompletionsShared(shared: boolean): Promise<DefaultRoutePoolList>;
   attachPoolOwnedAuthorization(
     request: AttachPoolOwnedAuthorizationRequest,
   ): Promise<DefaultRoutePoolOverview>;

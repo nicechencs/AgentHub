@@ -36,6 +36,9 @@ pub const FEATURE_GROK_INGRESS_CODEX_UPSTREAM: &str = "feature.grok_ingress_code
 /// candidates span more than one upstream provider. UI hidden.
 pub const FEATURE_MIXED_PROVIDER_POOL: &str = "feature.mixed_provider_pool";
 
+/// User choice: Kimi and DSH share one chat-completions token. Default off.
+pub const SHARE_CHAT_COMPLETIONS: &str = "share_chat_completions";
+
 /// Fail-closed experimental flags. Absent / anything other than an explicit
 /// on-value is off. Used by mixed-provider and pair-adapter flags.
 pub fn feature_flag_enabled(raw: Option<&str>) -> bool {
@@ -397,6 +400,9 @@ pub struct SyncConnectionAuthorizationsResult {
 pub struct DefaultRoutePoolList {
     pub enabled: bool,
     pub pools: Vec<DefaultRoutePoolOverview>,
+    /// Kimi and DSH share one chat-completions local token when true.
+    #[serde(default)]
+    pub chat_completions_shared: bool,
 }
 
 /// Pick the unique default pool among candidates for one Agent / surface.
