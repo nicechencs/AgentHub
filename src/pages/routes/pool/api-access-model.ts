@@ -316,3 +316,85 @@ export function poolApiRecordName(baseUrl: string, endpoint: PoolApiChoice['endp
     return endpoint;
   }
 }
+
+/** One API key per line. Empty lines dropped; first occurrence wins. */
+export function parseApiKeyLines(raw: string): string[] {
+  const seen = new Set<string>();
+  const keys: string[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const key = line.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
+  }
+  return keys;
+}
+
+/** Digits only. Empty input is unset. */
+export function parsePriorityInput(raw: string): number | null {
+  const text = raw.trim();
+  if (!text) return null;
+  if (!/^\d+$/.test(text)) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** One exclusion rule per line or comma. Wildcards stay as written. */
+export function parseExcludedModelRules(raw: string): string[] {
+  const seen = new Set<string>();
+  const rules: string[] = [];
+  for (const part of raw.split(/[\n,]/)) {
+    const rule = part.trim();
+    const key = rule.toLowerCase();
+    if (!rule || seen.has(key)) continue;
+    seen.add(key);
+    rules.push(rule);
+  }
+  return rules;
+}
+
+function wildcardPattern(rule: string): RegExp {
+  return new RegExp(
+    `^${rule.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`,
+    'i',
+  );
+}
+
+export function modelMatchesRule(modelId: string, rule: string): boolean {
+  const normalized = rule.trim();
+  if (!normalized) return false;
+  return wildcardPattern(normalized).test(modelId.trim());
+}
+
+export function filterModelsByExclusions(
+  models: readonly string[],
+  rules: readonly string[],
+): string[] {
+  if (rules.length === 0) {
+    return [...new Set(models.map((model) => model.trim()).filter(Boolean))];
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const model of models) {
+    const id = model.trim();
+    if (!id || seen.has(id)) continue;
+    if (rules.some((rule) => modelMatchesRule(id, rule))) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** Keep custom names, then append fetched names that are not excluded. */
+export function mergeFetchedModels(
+  current: readonly string[],
+  fetched: readonly string[],
+  excludedRules: readonly string[],
+): string[] {
+  const fetchedSet = new Set(fetched.map((model) => model.trim()).filter(Boolean));
+  const custom = current.filter((model) => {
+    const id = model.trim();
+    return id.length > 0 && !fetchedSet.has(id);
+  });
+  return [...custom, ...filterModelsByExclusions(fetched, excludedRules)];
+}

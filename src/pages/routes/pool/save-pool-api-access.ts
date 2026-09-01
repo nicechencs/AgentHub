@@ -35,6 +35,16 @@ export type SavePoolApiAccessDeps = {
     targetAgentId: PoolAccessAgent,
     surface: RoutePoolSurface,
   ) => Promise<void>;
+  setSourceCustomModels?: (
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+    models: string[],
+  ) => Promise<unknown>;
+  setAuthorizationPriority?: (
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+    priority: number,
+  ) => Promise<number>;
 };
 
 export type SavePoolApiAccessResult = {
@@ -52,63 +62,82 @@ function formVarsForItem(item: PoolApiSaveItem, apiKey: string): ProviderFormVar
   };
 }
 
-/** Save one pool login per selected API type, then attach each to the default pool. */
+/** Save one pool login per API key and selected type, then attach each to the default pool. */
 export async function savePoolApiAccess(
-  input: { items: readonly PoolApiSaveItem[]; apiKey: string },
+  input: {
+    items: readonly PoolApiSaveItem[];
+    apiKeys: readonly string[];
+    models?: readonly string[];
+    priority?: number | null;
+  },
   deps: SavePoolApiAccessDeps,
 ): Promise<SavePoolApiAccessResult> {
   const errors: string[] = [];
   let saved = 0;
+  const models = [...new Set((input.models ?? []).map((model) => model.trim()).filter(Boolean))];
+  const priority = input.priority ?? null;
+  let sequence = 0;
 
-  for (const item of input.items) {
-    const scaffold = defaultConfigScaffold(item.choice.agentId);
-    const vars = formVarsForItem(item, input.apiKey);
-    let configSchema: AgentConfigSchemaDto | null = null;
-    let schemaStatus: 'ready' | 'unsupported' = 'unsupported';
-    try {
-      configSchema = await deps.getAgentConfigSchema(item.choice.agentId);
-      schemaStatus = 'ready';
-    } catch {
-      schemaStatus = 'unsupported';
-    }
-
-    try {
-      const result = await runProviderSaveFlow(
-        {
-          agentId: item.choice.agentId,
-          schemaStatus,
-          configSchema,
-          isEdit: false,
-          id: `p-${Date.now()}-${item.choice.type}`,
-          name: poolApiRecordName(item.baseUrl, item.choice.endpoint),
-          useOfficial: false,
-          configText: scaffold.text,
-          configFormat: scaffold.format,
-          vars,
-          saveVars: vars,
-          finalFormat: scaffold.format,
-          baseText: scaffold.text,
-        },
-        {
-          validateAgentConfig: deps.validateAgentConfig,
-          materializeAgentConfig: deps.materializeAgentConfig,
-          applyFormVars: deps.applyFormVars,
-          upsertProvider: deps.upsertProvider,
-        },
-      );
-      if (!result.ok) {
-        errors.push(result.message);
-        continue;
+  for (const apiKey of input.apiKeys) {
+    if (!apiKey.trim()) continue;
+    for (const item of input.items) {
+      const scaffold = defaultConfigScaffold(item.choice.agentId);
+      const vars = formVarsForItem(item, apiKey);
+      let configSchema: AgentConfigSchemaDto | null = null;
+      let schemaStatus: 'ready' | 'unsupported' = 'unsupported';
+      try {
+        configSchema = await deps.getAgentConfigSchema(item.choice.agentId);
+        schemaStatus = 'ready';
+      } catch {
+        schemaStatus = 'unsupported';
       }
-      await deps.attachAuthorization(
-        'provider',
-        result.provider.id,
-        item.choice.agentId,
-        poolSurfaceForApiChoice(item.choice),
-      );
-      saved += 1;
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
+
+      const id = `p-${Date.now()}-${item.choice.type}-${sequence}`;
+      sequence += 1;
+      try {
+        const result = await runProviderSaveFlow(
+          {
+            agentId: item.choice.agentId,
+            schemaStatus,
+            configSchema,
+            isEdit: false,
+            id,
+            name: poolApiRecordName(item.baseUrl, item.choice.endpoint),
+            useOfficial: false,
+            configText: scaffold.text,
+            configFormat: scaffold.format,
+            vars,
+            saveVars: vars,
+            finalFormat: scaffold.format,
+            baseText: scaffold.text,
+          },
+          {
+            validateAgentConfig: deps.validateAgentConfig,
+            materializeAgentConfig: deps.materializeAgentConfig,
+            applyFormVars: deps.applyFormVars,
+            upsertProvider: deps.upsertProvider,
+          },
+        );
+        if (!result.ok) {
+          errors.push(result.message);
+          continue;
+        }
+        await deps.attachAuthorization(
+          'provider',
+          result.provider.id,
+          item.choice.agentId,
+          poolSurfaceForApiChoice(item.choice),
+        );
+        if (models.length > 0 && deps.setSourceCustomModels) {
+          await deps.setSourceCustomModels('provider', result.provider.id, models);
+        }
+        if (priority !== null && deps.setAuthorizationPriority) {
+          await deps.setAuthorizationPriority('provider', result.provider.id, priority);
+        }
+        saved += 1;
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      }
     }
   }
 

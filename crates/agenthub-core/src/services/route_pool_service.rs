@@ -615,6 +615,33 @@ impl RoutePoolService {
         Ok(changed)
     }
 
+    /// Set priority on every default-pool membership of one login.
+    pub fn set_authorization_priority(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+        priority: i64,
+    ) -> Result<u32> {
+        self.require_enabled()?;
+        let mut changed = 0_u32;
+        for pool in self.pools.list_pools(None, None)? {
+            if !pool.is_default {
+                continue;
+            }
+            for member in self.pools.list_members(&pool.id)? {
+                if member.source_kind != source_kind || member.source_id != source_id {
+                    continue;
+                }
+                if member.priority == priority {
+                    continue;
+                }
+                self.set_member_priority(&member.id, priority)?;
+                changed = changed.saturating_add(1);
+            }
+        }
+        Ok(changed)
+    }
+
     /// Remove every default-pool membership of one authorization.
     ///
     /// This is intentionally separate from deleting an Account or Provider:

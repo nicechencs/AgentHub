@@ -8,8 +8,7 @@ import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { useToast } from '@/components/ui/toast';
-import { ensureSourceModelCatalog, setSourceCustomModels } from '@/lib/api/adapter';
+import { ensureSourceModelCatalog } from '@/lib/api/adapter';
 import type { AccountAction } from '@/lib/backend/contracts/account-actions';
 import type { SourceModelCatalog } from '@/lib/backend/contracts/adapter';
 import { connectionKindLabel } from '@/lib/connection-kind';
@@ -21,7 +20,6 @@ import {
 } from '@/pages/bridges/route-pool-view-model';
 import {
   hasQuotaWindow,
-  parseCustomModelList,
   poolAuthorizationDetailRows,
 } from './pool-authorization-detail';
 import { poolAuthorizationRefreshLabels } from './pool-authorization-refresh';
@@ -50,7 +48,6 @@ export function PoolAuthorizationDetail({
   onClose: () => void;
 }) {
   const { t } = useI18n();
-  const { toast } = useToast();
   const status = poolAuthorizationStatusView(item, t);
   const rows = poolAuthorizationDetailRows(item, t);
   const displayTitle = item.identityLabel ?? item.title;
@@ -62,20 +59,16 @@ export function PoolAuthorizationDetail({
   const [catalog, setCatalog] = useState<SourceModelCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogFailed, setCatalogFailed] = useState(false);
-  const [draft, setDraft] = useState('');
-  const [savingModels, setSavingModels] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setCatalog(null);
     setCatalogFailed(false);
-    setDraft('');
     setCatalogLoading(true);
     void ensureSourceModelCatalog(item.sourceKind, item.sourceId)
       .then((next) => {
         if (cancelled) return;
         setCatalog(next);
-        setDraft(next.models.join('\n'));
       })
       .catch(() => {
         if (!cancelled) setCatalogFailed(true);
@@ -87,21 +80,6 @@ export function PoolAuthorizationDetail({
       cancelled = true;
     };
   }, [item.sourceKind, item.sourceId]);
-
-  const saveCustomModels = async () => {
-    const models = parseCustomModelList(draft);
-    setSavingModels(true);
-    try {
-      const next = await setSourceCustomModels(item.sourceKind, item.sourceId, models);
-      setCatalog(next);
-      setDraft(next.models.join('\n'));
-      toast({ title: t('common.save'), variant: 'success' });
-    } catch {
-      toast({ title: t('common.saveFailed'), variant: 'danger' });
-    } finally {
-      setSavingModels(false);
-    }
-  };
 
   return (
     <SideInspectPanel
@@ -202,27 +180,6 @@ export function PoolAuthorizationDetail({
           ) : (
             <p className="text-meta text-secondary">{t('routes.pool.detail.modelsEmpty')}</p>
           )}
-          {catalog?.canCustomize ? (
-            <>
-              <p className="text-meta text-secondary">{t('routes.pool.detail.modelsHint')}</p>
-              <textarea
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder={t('routes.pool.detail.modelsPlaceholder')}
-                rows={4}
-                className="min-h-[5.5rem] w-full resize-y rounded-card border border-border bg-transparent px-3 py-2 font-mono text-xs text-primary"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={savingModels}
-                onClick={() => void saveCustomModels()}
-              >
-                {savingModels ? t('common.saving') : t('routes.pool.detail.modelsSave')}
-              </Button>
-            </>
-          ) : null}
         </div>
       </div>
     </SideInspectPanel>

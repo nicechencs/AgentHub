@@ -4,7 +4,12 @@ import {
   buildPoolApiSaveItems,
   defaultSelectedApiTypes,
   detectedApiChoiceTypes,
+  filterModelsByExclusions,
   matchApiVendor,
+  mergeFetchedModels,
+  parseApiKeyLines,
+  parseExcludedModelRules,
+  parsePriorityInput,
   poolApiChoices,
   poolApiRecordName,
   poolSurfaceForApiChoice,
@@ -134,5 +139,28 @@ describe('poolApiRecordName', () => {
     expect(poolApiRecordName('https://api.deepseek.com/anthropic', '/v1/messages')).toBe(
       'api.deepseek.com /v1/messages',
     );
+  });
+});
+
+describe('API access draft helpers', () => {
+  it('parses API keys one per line', () => {
+    expect(parseApiKeyLines(' sk-a \n\nsk-b\nsk-a\n')).toEqual(['sk-a', 'sk-b']);
+  });
+
+  it('parses optional integer priority', () => {
+    expect(parsePriorityInput('')).toBeNull();
+    expect(parsePriorityInput('08')).toBe(8);
+    expect(parsePriorityInput('-1')).toBeNull();
+  });
+
+  it('filters fetched models with wildcard exclusions and keeps custom names', () => {
+    expect(parseExcludedModelRules('gpt-*\npreview, gpt-*')).toEqual(['gpt-*', 'preview']);
+    expect(filterModelsByExclusions(['gpt-4o', 'claude-3', 'preview'], ['gpt-*', 'preview'])).toEqual([
+      'claude-3',
+    ]);
+    expect(mergeFetchedModels(['mine', 'gpt-4o'], ['gpt-4o', 'claude-3'], ['gpt-*'])).toEqual([
+      'mine',
+      'claude-3',
+    ]);
   });
 });
