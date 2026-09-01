@@ -44,6 +44,15 @@ describe('routes board layout wiring', () => {
     expect(section).not.toContain('stopColor={meta.color}');
   });
 
+  it('reuses the overview hover list that sorts by tokens and can scroll', () => {
+    const section = source('board-usage-section.tsx');
+    expect(section).toContain('USAGE_TREND_Y_AXIS_WIDTH');
+    expect(section).toContain('UsageTrendTooltipCard');
+    expect(section).toContain('useUsageTrendHover');
+    expect(section).not.toContain('width={48}');
+    expect(section).not.toContain('contentStyle={tooltipSurfaceStyle()}');
+  });
+
   it('colors Responses by dialect: Codex green and Grok brand, Messages Claude', () => {
     const page = source('index.tsx');
     expect(page).toContain('localEndpointBrandAgentId');

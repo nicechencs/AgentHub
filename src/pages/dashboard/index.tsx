@@ -28,7 +28,7 @@ import { useUsageSync } from '@/components/shared/UsageSyncProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Tip, tooltipSurfaceStyle } from '@/components/ui/tooltip';
+import { Tip } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -82,13 +82,14 @@ import { resolveTheme } from '@/lib/theme';
 import type { AgentId, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { resolveChartColor, typeScalePx } from '@/styles/tokens';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
-import {
-  formatTrendTick,
-  formatTrendTooltipLabel,
-  zeroFillTrendSeries,
-} from '@/lib/usage-trend';
+import { formatTrendTick, zeroFillTrendSeries } from '@/lib/usage-trend';
 import { cn, fmtTokens } from '@/lib/utils';
 import { AgentOverview, AgentOverviewSkeleton } from './AgentOverview';
+import {
+  USAGE_TREND_Y_AXIS_WIDTH,
+  UsageTrendTooltipCard,
+  useUsageTrendHover,
+} from './UsageTrendTooltip';
 import {
   dashboardOverviewSkeletonCount,
   dashboardPageDescription,
@@ -594,6 +595,11 @@ export default function DashboardPage() {
     }
     return installedAgents;
   }, [agentFilter, installedAgents]);
+  const resolveTrendName = useCallback(
+    (key: string) => agentDisplayName(key as AgentId),
+    [],
+  );
+  const trendHover = useUsageTrendHover(resolveTrendName);
   const maxTokens = distribution[0]?.tokens ?? 0;
   const installedCount = agents?.filter((a) => a.installed && !a.hidden).length ?? 0;
   const overviewSkeletonCount = dashboardOverviewSkeletonCount(
@@ -799,9 +805,14 @@ export default function DashboardPage() {
                 </p>
               </CardHeader>
               <CardContent>
-                <div className="h-56">
+                <div className="relative h-56">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={rangedTrend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                      <AreaChart
+                        data={rangedTrend}
+                        margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
+                        onMouseMove={trendHover.onChartMouseMove}
+                        onMouseLeave={trendHover.onChartMouseLeave}
+                      >
                         <defs>
                           {trendAgents.map((meta) => {
                             const color = resolveChartColor(meta.color, chartScheme);
@@ -835,23 +846,11 @@ export default function DashboardPage() {
                           tickLine={false}
                           axisLine={false}
                           tickFormatter={(v: number) => fmtTokens(v)}
-                          width={48}
+                          width={USAGE_TREND_Y_AXIS_WIDTH}
                         />
                         <Tooltip
-                          contentStyle={tooltipSurfaceStyle()}
-                          labelStyle={{
-                            color: 'var(--text-secondary)',
-                            fontSize: 'var(--font-meta-size)',
-                          }}
-                          itemStyle={{
-                            fontSize: 'var(--font-meta-size)',
-                          }}
-                          labelFormatter={(label) => formatTrendTooltipLabel(String(label))}
-                          formatter={(value, name) => {
-                            const tokens = Number(value);
-                            if (!tokens) return null;
-                            return [fmtTokens(tokens), agentDisplayName(name as AgentId)];
-                          }}
+                          cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
+                          content={() => null}
                         />
                         {trendAgents.map((meta) => (
                           <Area
@@ -867,6 +866,14 @@ export default function DashboardPage() {
                         ))}
                       </AreaChart>
                     </ResponsiveContainer>
+                    {trendHover.tip ? (
+                      <UsageTrendTooltipCard
+                        label={trendHover.tip.label}
+                        items={trendHover.tip.items}
+                        onMouseEnter={trendHover.onTipMouseEnter}
+                        onMouseLeave={trendHover.onTipMouseLeave}
+                      />
+                    ) : null}
                   </div>
               </CardContent>
             </Card>
