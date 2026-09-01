@@ -8,7 +8,7 @@ test('routes board follows dashboard layout and local-route usage', async ({ pag
   await expect(page.getByRole('button', { name: 'Messages' })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('button', { name: 'Responses' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Chat Completions' })).toBeVisible();
-  await expect(page.getByText(/共有 \d+ 个官方登录、\d+ 个 API Key 可用/)).toBeVisible();
+  await expect(page.getByText(/共有 \d+ 个入口 Key/)).toBeVisible();
   await expect(page.getByText('用量统计')).toBeVisible();
   await expect(page.getByLabel('按本机入口筛选用量')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('请求次数')).toBeVisible();
@@ -19,7 +19,7 @@ test('routes board follows dashboard layout and local-route usage', async ({ pag
   await expect(page.getByRole('tab', { name: '模型' })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Responses' }).click();
-  await expect(page.getByText(/当前端点类型有 \d+ 个官方登录、\d+ 个 API Key 可用/)).toBeVisible();
+  await expect(page.getByText(/当前端点类型有 \d+ 个入口 Key/)).toBeVisible();
   await expect(page.getByRole('heading', { name: '按模型' })).toBeVisible({ timeout: 15_000 });
 
   await page.getByLabel('统计时间范围').click();
