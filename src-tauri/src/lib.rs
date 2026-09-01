@@ -108,6 +108,7 @@ pub fn run() {
             commands::adapter::ensure_source_model_catalog,
             commands::adapter::set_source_custom_models,
             commands::adapter::list_local_token_models,
+            commands::adapter::set_local_token_custom_models,
             commands::adapter::test_local_token,
             commands::adapter::set_local_token,
             commands::adapter::set_chat_completions_shared,

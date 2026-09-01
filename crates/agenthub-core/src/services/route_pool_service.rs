@@ -1242,6 +1242,9 @@ impl RoutePoolService {
                     }
                 }
                 let models = self.fetch_live_models_for_account(&account);
+                let extra_models = read_stored_catalog(&account.extra)
+                    .map(|prior| prior.extra_models)
+                    .unwrap_or_default();
                 let stored = StoredModelCatalog {
                     fingerprint,
                     source: if models.is_empty() {
@@ -1250,6 +1253,7 @@ impl RoutePoolService {
                         "live".into()
                     },
                     models,
+                    extra_models,
                     attempted: true,
                     updated_at: now(),
                 };
@@ -1271,6 +1275,9 @@ impl RoutePoolService {
                     }
                 }
                 let models = self.live_models_from_settings(&provider.settings_config);
+                let extra_models = read_stored_catalog(&provider.meta)
+                    .map(|prior| prior.extra_models)
+                    .unwrap_or_default();
                 let stored = StoredModelCatalog {
                     fingerprint,
                     source: if models.is_empty() {
@@ -1279,6 +1286,7 @@ impl RoutePoolService {
                         "live".into()
                     },
                     models,
+                    extra_models,
                     attempted: true,
                     updated_at: now(),
                 };
@@ -1296,21 +1304,32 @@ impl RoutePoolService {
         models: Vec<String>,
     ) -> Result<crate::utils::upstream_model_catalog::SourceModelCatalog> {
         use crate::utils::upstream_model_catalog::{
-            merge_model_ids, write_stored_catalog, SourceModelCatalog, StoredModelCatalog,
+            read_stored_catalog, with_wanted_models, write_stored_catalog, SourceModelCatalog,
+            StoredModelCatalog,
         };
-        let models = merge_model_ids([models]);
         match source_kind {
             AdapterSourceKind::Account => {
                 let mut account = self.accounts.get_by_id(source_id)?.ok_or_else(|| {
                     AppError::NotFound(format!("account not found: {source_id}"))
                 })?;
-                let stored = StoredModelCatalog {
-                    fingerprint: self.catalog_fingerprint_for_account(&account),
-                    source: "custom".into(),
-                    models,
+                let fingerprint = self.catalog_fingerprint_for_account(&account);
+                let prior = read_stored_catalog(&account.extra).unwrap_or(StoredModelCatalog {
+                    fingerprint: fingerprint.clone(),
+                    source: "empty".into(),
+                    models: Vec::new(),
+                    extra_models: Vec::new(),
                     attempted: true,
                     updated_at: now(),
-                };
+                });
+                let stored = with_wanted_models(
+                    StoredModelCatalog {
+                        fingerprint,
+                        updated_at: now(),
+                        attempted: true,
+                        ..prior
+                    },
+                    models,
+                );
                 write_stored_catalog(&mut account.extra, &stored);
                 self.accounts.update(&account)?;
                 Ok(SourceModelCatalog::from_stored(&stored))
@@ -1319,21 +1338,56 @@ impl RoutePoolService {
                 let mut provider = self.providers.get_by_id(source_id)?.ok_or_else(|| {
                     AppError::NotFound(format!("provider not found: {source_id}"))
                 })?;
-                let stored = StoredModelCatalog {
-                    fingerprint: crate::utils::upstream_model_catalog::fingerprint_apikey(
-                        provider.agent_id.as_str(),
-                        &provider.settings_config,
-                    ),
-                    source: "custom".into(),
-                    models,
+                let fingerprint = crate::utils::upstream_model_catalog::fingerprint_apikey(
+                    provider.agent_id.as_str(),
+                    &provider.settings_config,
+                );
+                let prior = read_stored_catalog(&provider.meta).unwrap_or(StoredModelCatalog {
+                    fingerprint: fingerprint.clone(),
+                    source: "empty".into(),
+                    models: Vec::new(),
+                    extra_models: Vec::new(),
                     attempted: true,
                     updated_at: now(),
-                };
+                });
+                let stored = with_wanted_models(
+                    StoredModelCatalog {
+                        fingerprint,
+                        updated_at: now(),
+                        attempted: true,
+                        ..prior
+                    },
+                    models,
+                );
                 write_stored_catalog(&mut provider.meta, &stored);
                 self.providers.update(&provider)?;
                 Ok(SourceModelCatalog::from_stored(&stored))
             }
         }
+    }
+
+    pub fn set_local_token_custom_models(
+        &self,
+        token: &str,
+        models: Vec<String>,
+    ) -> Result<Vec<String>> {
+        let records = self.list_local_tokens()?;
+        let Some(pool_id) = records
+            .into_iter()
+            .find(|record| record.token == token)
+            .map(|record| record.pool_id)
+        else {
+            return Ok(Vec::new());
+        };
+        let members = self.pools.list_members(&pool_id)?;
+        for member in members.iter().filter(|member| member.enabled) {
+            let _ = self.set_source_custom_models(
+                member.source_kind,
+                &member.source_id,
+                models.clone(),
+            );
+        }
+        self.list_upstream_models_for_pool(&pool_id)
     }
 
     fn catalog_fingerprint_for_account(&self, account: &crate::models::Account) -> String {

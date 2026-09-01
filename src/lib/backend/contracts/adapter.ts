@@ -356,6 +356,7 @@ export interface AdapterPort {
   listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
   listLocalTokens(): Promise<LocalTokenRecord[]>;
   listLocalTokenModels(token: string): Promise<string[]>;
+  setLocalTokenCustomModels(token: string, models: string[]): Promise<string[]>;
   ensureSourceModelCatalog(
     sourceKind: AdapterSourceKind,
     sourceId: string,

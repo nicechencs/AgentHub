@@ -2,7 +2,8 @@ use serde_json::json;
 
 use super::{
     cache_is_current, catalog_endpoint, embedded_listed_models, fingerprint_apikey,
-    fingerprint_oauth, read_stored_catalog, write_stored_catalog, StoredModelCatalog,
+    fingerprint_oauth, read_stored_catalog, with_wanted_models, write_stored_catalog,
+    SourceModelCatalog, StoredModelCatalog,
 };
 
 #[test]
@@ -95,6 +96,7 @@ fn stored_catalog_roundtrip_and_cache_hit() {
         fingerprint: "fp-1".into(),
         source: "live".into(),
         models: vec!["gpt-5.4".into()],
+        extra_models: Vec::new(),
         attempted: true,
         updated_at: "t0".into(),
     };
@@ -104,4 +106,24 @@ fn stored_catalog_roundtrip_and_cache_hit() {
     assert_eq!(read.models, vec!["gpt-5.4"]);
     assert!(cache_is_current(&read, "fp-1"));
     assert!(!cache_is_current(&read, "fp-2"));
+}
+
+#[test]
+fn wanted_models_keep_live_and_store_extras() {
+    let live = StoredModelCatalog {
+        fingerprint: "fp".into(),
+        source: "live".into(),
+        models: vec!["gpt-5.4".into()],
+        extra_models: Vec::new(),
+        attempted: true,
+        updated_at: "t0".into(),
+    };
+    let next = with_wanted_models(live, vec!["gpt-5.4".into(), "my-model".into()]);
+    assert_eq!(next.source, "live");
+    assert_eq!(next.models, vec!["gpt-5.4"]);
+    assert_eq!(next.extra_models, vec!["my-model"]);
+    assert_eq!(
+        SourceModelCatalog::from_stored(&next).models,
+        vec!["gpt-5.4", "my-model"]
+    );
 }

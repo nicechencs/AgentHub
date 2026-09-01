@@ -420,6 +420,16 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       state.sourceModelCatalogs.set(sourceId, catalog);
       return catalog;
     },
+    async setLocalTokenCustomModels(token, models) {
+      await delay(20);
+      const unique = [...new Set(models.map((item) => item.trim()).filter(Boolean))];
+      if (token.trim()) state.sourceModelCatalogs.set(token, {
+        models: unique,
+        source: 'custom',
+        canCustomize: true,
+      });
+      return unique;
+    },
     async listLocalTokenModels(token) {
       await delay(20);
       if (!token.trim()) return [];
