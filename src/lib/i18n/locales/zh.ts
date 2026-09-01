@@ -1099,6 +1099,15 @@ export const zh = {
       enrolling: "接入中…",
       enrollFailed: "无法交给本机网关",
       enrollSuccess: "已交给本机网关。",
+      trash: {
+        title: "连接池回收站",
+        description: "从连接池移出的登录会保留 30 天。连接页的回收站是另一份。恢复只回到连接池，不会自动写入本机配置。",
+        restored: "已恢复到连接池",
+        restoredDesc: "已恢复到连接池，未自动写入本机配置。",
+        dialogOwned: "会移入连接池回收站；本机配置不会被清除。",
+        dialogFromConnections: "会从连接池拿掉，放进连接池回收站。连接页的登录还在。",
+        toastFromConnections: "已移入连接池回收站。连接页的登录还在。",
+      },
       page: {
         title: "连接池",
         description: "查看官方登录和 API Key 是否可用",
@@ -1558,7 +1567,7 @@ export const zh = {
     trash: {
       button: "回收站",
       title: "登录回收站",
-      description: "删除的官方登录与 API Key 会保留 30 天。恢复只回到 AgentHub 列表，不会自动写入本机配置。",
+      description: "删除的官方登录与 API Key 会保留 30 天。连接池的回收站是另一份。恢复只回到连接列表，不会自动写入本机配置。",
       loading: "正在读取回收站…",
       empty: "回收站为空",
       deletedAt: "{agent} · {kind} · 删除于 {when}",

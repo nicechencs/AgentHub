@@ -90,6 +90,20 @@ export async function removeRouteAuthorization(
   return getBackend().adapter.removeRouteAuthorization(sourceKind, sourceId);
 }
 
+/** Move a Connections-managed pool member into the pool recycle bin. */
+export async function recycleRouteMembership(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+): Promise<number> {
+  const result = await getBackend().adapter.recycleRouteMembership(sourceKind, sourceId);
+  try {
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+  } catch {
+    // Write succeeded; the pool store keeps previous rows if refresh fails.
+  }
+  return result;
+}
+
 /** Enroll Connections authorizations into the auth pool without removing them from Connections. */
 export async function syncConnectionAuthorizations(
   request?: SyncConnectionAuthorizationsRequest,

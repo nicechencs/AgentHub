@@ -1109,6 +1109,15 @@ export const en = {
       enrolling: "Connecting…",
       enrollFailed: "Couldn't switch this login to local forwarding",
       enrollSuccess: "Now using local forwarding.",
+      trash: {
+        title: "Connection pool trash",
+        description: "Logins removed from the connection pool are kept for 30 days. Connections has a separate trash. Restore returns them to the pool only and does not write local config.",
+        restored: "Restored to the connection pool",
+        restoredDesc: "Restored to the connection pool. Local config was not written.",
+        dialogOwned: "Moves to the connection pool trash. Local config is not cleared.",
+        dialogFromConnections: "Removes it from the connection pool and moves that membership to the pool trash. The Connections login stays.",
+        toastFromConnections: "Moved to the connection pool trash. The Connections login is unchanged.",
+      },
       page: {
         title: "Connection pool",
         description: "Check whether official logins and API keys are usable",
@@ -1568,7 +1577,7 @@ export const en = {
     trash: {
       button: "Trash",
       title: "Login trash",
-      description: "Deleted official logins and API Keys are kept for 30 days. Restore returns them to the AgentHub list only; it does not write local config.",
+      description: "Deleted official logins and API Keys are kept for 30 days. The connection pool has a separate trash. Restore returns them to Connections only; it does not write local config.",
       loading: "Reading trash…",
       empty: "Trash is empty",
       deletedAt: "{agent} · {kind} · deleted {when}",

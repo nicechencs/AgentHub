@@ -3,7 +3,8 @@ use rusqlite::{Transaction, TransactionBehavior};
 use crate::error::{AppError, Result};
 use crate::logging::targets;
 use crate::models::{
-    Account, AccountKind, AgentId, ConnectionTrashItem, ConnectionTrashKind, Provider,
+    trash_home_from_authorization_blob, Account, AccountKind, AgentId, ConnectionTrashItem,
+    ConnectionTrashKind, Provider, TRASH_HOME_CONNECTIONS, TRASH_HOME_ROUTE_POOL,
 };
 use crate::services::account_split::{
     accounts_share_authorization, is_mixed_live_bundle, new_split_account_id, split_mixed_account,
@@ -139,7 +140,15 @@ impl ConnectionService {
     /// `identityLabel` / the snapshot secret. Recover that into `extra.secretTail`
     /// so the recycle list can name them without inventing a key.
     pub fn list_trash(&self, agent: Option<AgentId>) -> Result<Vec<ConnectionTrashItem>> {
-        let mut items = self.trash.list(agent, &Self::now())?;
+        self.list_trash_filtered(agent, None)
+    }
+
+    pub fn list_trash_filtered(
+        &self,
+        agent: Option<AgentId>,
+        home: Option<&str>,
+    ) -> Result<Vec<ConnectionTrashItem>> {
+        let mut items = self.trash.list(agent, home, &Self::now())?;
         for item in &mut items {
             let persist = if let Some(account) = item.account.as_mut() {
                 recover_account_trash_identity(account).then_some(serde_json::to_value(&*account))
@@ -175,7 +184,28 @@ impl ConnectionService {
                 );
             }
         }
+        for item in &mut items {
+            let expected = expected_trash_home(item);
+            if item.home == expected {
+                continue;
+            }
+            item.home = expected.to_string();
+            if let Err(err) = self.trash.update_home(&item.id, expected) {
+                tracing::warn!(
+                    module = targets::PROVIDER,
+                    op = "recycle_home_heal",
+                    id = item.id.as_str(),
+                    error = %err,
+                    "failed to persist recovered recycle home"
+                );
+            }
+        }
         Ok(items)
+    }
+
+    pub(crate) fn load_trash_payload(&self, id: &str) -> Result<crate::storage::TrashPayloadRow> {
+        self.db
+            .with_conn(|conn| ConnectionTrashRepo::load_payload_conn(conn, id))
     }
 
     /// Restore a row to the AgentHub pool without applying it to the agent.
@@ -204,6 +234,11 @@ impl ConnectionService {
                     }
                     provider.is_current = false;
                     provider_create_conn(&tx, &provider)?;
+                }
+                ConnectionTrashKind::Membership => {
+                    return Err(AppError::InvalidArg(
+                        "membership trash is restored by the connection pool".into(),
+                    ));
                 }
             }
             ConnectionTrashRepo::delete_conn(&tx, id)?;
@@ -443,6 +478,23 @@ fn enrich_provider_trash_identity(provider: &mut Provider) {
     };
     if persist_live_grok_identity_extra(&mut meta) {
         provider.meta = meta;
+    }
+}
+
+fn expected_trash_home(item: &ConnectionTrashItem) -> &'static str {
+    if item.kind == ConnectionTrashKind::Membership {
+        return TRASH_HOME_ROUTE_POOL;
+    }
+    if let Some(account) = item.account.as_ref() {
+        return trash_home_from_authorization_blob(&account.extra);
+    }
+    if let Some(provider) = item.provider.as_ref() {
+        return trash_home_from_authorization_blob(&provider.meta);
+    }
+    if item.home == TRASH_HOME_ROUTE_POOL {
+        TRASH_HOME_ROUTE_POOL
+    } else {
+        TRASH_HOME_CONNECTIONS
     }
 }
 

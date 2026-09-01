@@ -14,7 +14,7 @@ updated: 2026-08-31
 
 - 桌面端由 Tauri v2 承载，前端使用 React，核心业务和 CLI 使用 Rust。
 - 当前界面包含 Dashboard、Agents、Connections、Routes、Skills、MCP、Chat、Projects、Plugins 和 Settings。
-- Connections 是跨工具的登录列表。接到某个工具从 Dashboard「连接/切换」；连接页行入口是「分享至连接池」，登录仍留在连接页。**产品决策：所有 API Key 都可以分享（含 WorkBuddy / ZCode 等上配置的）；国产官方登录不能分享**，见 [产品边界](decisions/product-boundaries.md)。Routes 管理本机路由运行时，连接池也可以添加官方登录 / API Key，并可用「从连接同步」一次加入多份登录。产品上这些登录与 Connections 是同一套，不得从 Connections 隐藏。登录按登录方式分行保存（官方登录与 API Key 分开），记下关键词和整份配置；详情列出记下的配置文件（可复制、打开所在目录），并补充套餐、有效期、时间线与完整端点。WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入；WorkBuddy 写入只认 `/v1/chat/completions`。
+- Connections 是跨工具的登录列表。接到某个工具从 Dashboard「连接/切换」；连接页行入口是「分享至连接池」，登录仍留在连接页。**产品决策：所有 API Key 都可以分享（含 WorkBuddy / ZCode 等上配置的）；国产官方登录不能分享**，见 [产品边界](decisions/product-boundaries.md)。Routes 管理本机路由运行时，连接池也可以添加官方登录 / API Key（仅用于连接池，可不出现在连接页），并可用「从连接同步」一次加入多份登录。连接页与连接池相互独立，回收站也分开。登录按登录方式分行保存（官方登录与 API Key 分开），记下关键词和整份配置；详情列出记下的配置文件（可复制、打开所在目录），并补充套餐、有效期、时间线与完整端点。WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入；WorkBuddy 写入只认 `/v1/chat/completions`。
 - 当前内置适配包括 Claude Code、Codex、Kimi、Grok、Pi、WorkBuddy、ZCode 和 DeepSeek Harness。**Cursor Agent 适配器仍在代码中，但 dev 线通过 store-stamp 默认软隐藏**（Agents 管理页可取消隐藏）；待登录写入、路由目标与结构化输出等兼容问题修复后再重新开放。
 - CLI 提供 doctor、env、agent、provider、account、skill、usage、backup、run、config 等命令；参数以 CLI 帮助和源码为准。
 

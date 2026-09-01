@@ -110,6 +110,17 @@ describe('routes layout wiring', () => {
     expect(panel).toContain('flex h-10');
   });
 
+  it('docks the recycle-bin button in the list column, left of the split', () => {
+    const page = source('pages/routes/pool/index.tsx');
+    const button = source('pages/connections/ConnectionTrashButton.tsx');
+    const split = source('components/layout/SideSplit.tsx');
+    expect(page).toContain('listFooter={trashDock}');
+    expect(page).toContain('<ConnectionTrashButton');
+    expect(button).not.toContain('fixed bottom-4 right-4');
+    expect(split).toContain('listFooter');
+    expect(split).toContain('flex shrink-0 justify-end');
+  });
+
   it('keeps the healthy empty state informational without a second create CTA', () => {
     const page = source('pages/routes/pool/index.tsx');
     const emptyBlock = page.slice(

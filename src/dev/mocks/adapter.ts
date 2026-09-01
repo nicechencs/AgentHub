@@ -14,7 +14,9 @@ import {
   type RoutePoolDialect,
   type RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
+import type { RouteMembershipTrashPayload } from '@/lib/backend/contracts';
 import { delay } from './delay';
+import { moveMockMembershipToTrash } from './trash';
 import { analyze } from './adapter/analyze';
 import { materializeApply } from './adapter/apply';
 import { buildPlan } from './adapter/plan';
@@ -78,6 +80,26 @@ function mockPoolTargetsForSync(
       surface: mockWriterSurface(writer)!,
       dialect: writer,
     }));
+}
+
+export function restoreMockRouteMembership(payload: RouteMembershipTrashPayload): void {
+  for (const state of adapterStates) {
+    for (const snapshot of payload.members) {
+      const pool = state.defaultPools.find((item) => item.id === snapshot.routePoolId);
+      if (!pool) continue;
+      if (pool.members.some((member) => (
+        member.sourceKind === payload.sourceKind && member.sourceId === payload.sourceId
+      ))) {
+        continue;
+      }
+      pool.members.push({
+        sourceKind: payload.sourceKind,
+        sourceId: payload.sourceId,
+        enabled: snapshot.enabled,
+        priority: snapshot.priority,
+      });
+    }
+  }
 }
 
 export function resetMockAdapters(): void {
@@ -389,6 +411,44 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         }
       }
       return changed;
+    },
+    async recycleRouteMembership(sourceKind, sourceId) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      const members: RouteMembershipTrashPayload['members'] = [];
+      for (const pool of state.defaultPools) {
+        for (const member of pool.members) {
+          if (member.sourceKind !== sourceKind || member.sourceId !== sourceId) continue;
+          members.push({
+            routePoolId: pool.id,
+            enabled: member.enabled,
+            priority: member.priority ?? 0,
+            position: 0,
+          });
+        }
+      }
+      const account = sourceKind === 'account' ? getMockAccountById(sourceId) : undefined;
+      const provider = sourceKind === 'provider' ? getMockProviderById(sourceId) : undefined;
+      const agentId = account?.agentId ?? provider?.agentId ?? state.defaultPools[0]?.targetAgentId;
+      if (!agentId) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `route authorization not found: ${sourceId}`,
+          retryable: false,
+        });
+      }
+      moveMockMembershipToTrash(agentId, account?.label ?? provider?.name ?? sourceId, {
+        sourceKind,
+        sourceId,
+        members,
+      });
+      return this.removeRouteAuthorization(sourceKind, sourceId);
     },
     async removeRouteAuthorization(sourceKind, sourceId) {
       await delay(20);

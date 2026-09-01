@@ -25,6 +25,7 @@ pub(crate) use binding_repo::ActiveBindingRepo;
 pub use binding_repo::ActiveBindingRow;
 pub use chat_repo::ChatRepo;
 pub use connection_trash_repo::ConnectionTrashRepo;
+pub(crate) use connection_trash_repo::TrashPayloadRow;
 pub use operation_repo::OperationRepo;
 pub use provider_repo::ProviderRepo;
 pub use route_pool_repo::RoutePoolRepo;

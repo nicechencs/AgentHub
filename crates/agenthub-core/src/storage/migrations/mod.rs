@@ -84,6 +84,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "00024_gateway_usage",
         include_str!("00024_gateway_usage.sql"),
     ),
+    (
+        "00025_connection_trash_home",
+        include_str!("00025_connection_trash_home.sql"),
+    ),
 ];
 
 pub fn run(conn: &Connection) -> Result<()> {

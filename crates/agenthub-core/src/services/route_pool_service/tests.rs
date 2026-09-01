@@ -193,6 +193,45 @@ fn remove_route_authorization_drops_membership_while_source_still_exists() {
 }
 
 #[test]
+fn recycle_route_membership_keeps_connections_login_and_uses_pool_trash() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "codex-shared".into(),
+            agent_id: AgentId::Codex,
+            name: "Shared key".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Provider, "codex-shared")
+        .unwrap();
+
+    let removed = service
+        .recycle_route_membership(AdapterSourceKind::Provider, "codex-shared")
+        .unwrap();
+    assert_eq!(removed, 1);
+    assert!(ProviderRepo::new(db.clone())
+        .get_by_id("codex-shared")
+        .unwrap()
+        .is_some());
+    let conn = crate::services::ConnectionService::new(db);
+    let pool_trash = conn
+        .list_trash_filtered(None, Some("route_pool"))
+        .unwrap();
+    assert_eq!(pool_trash.len(), 1);
+    assert_eq!(pool_trash[0].kind, crate::models::ConnectionTrashKind::Membership);
+    assert!(conn.list_trash_filtered(None, Some("connections")).unwrap().is_empty());
+}
+
+#[test]
 fn remove_route_authorization_removes_missing_source_from_all_default_pools() {
     let (_dir, db, service, _profiles) = tmp();
     let stale_source = "missing-connection";
