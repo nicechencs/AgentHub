@@ -635,7 +635,7 @@ function ChannelUpgradeButton({
           control.kind === 'open_setup'
             ? t('agents.card.openOfficialUpdate')
             : control.muted
-              ? t('agents.card.unsupportedUpdate')
+              ? tooltip || t('agents.card.unsupportedUpdate')
               : upgradable
                 ? t('agents.card.update')
                 : t('agents.card.forceUpgrade')

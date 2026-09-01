@@ -43,8 +43,8 @@ describe('routes layout wiring', () => {
     expect(chrome).toContain('orphanOnly');
     expect(chrome).toContain('routes.pool.page.chromeHint');
     expect(chrome).toContain('PoolAddButtons');
-    expect(chrome).toContain('size="sm"');
     expect(chrome).toContain('pageRhythm.chromeActions');
+    expect(source('pages/routes/pool/PoolAddButtons.tsx')).toContain('size="sm"');
     const list = page.slice(listStart);
     expect(list).not.toContain('routes.pool.page.chromeHint');
     expect(list).toContain('first={orphanOnly}');
