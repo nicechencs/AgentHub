@@ -1070,7 +1070,7 @@ export const zh = {
       filterAria: "监控筛选",
       filterAll: "全部",
       filterFailed: "失败",
-      scopeNote: "只包含本机转发本次运行期间的最近请求，含鉴权、连接池、转换与上游各步结果。",
+      scopeNote: "每条请求显示五段状态（本机鉴权、连接池、转换、上游鉴权、上游）。展开可看详情；需桌面端运行并发请求后才有数据。",
       emptyTitle: "还没有请求记录",
       emptyDescription: "客户端经本机路由发出请求后会出现在这里。",
       emptyFilteredTitle: "没有符合筛选的请求",
@@ -1100,6 +1100,8 @@ export const zh = {
       upstreamModel: "上游模型",
       attempt: "第 {n} 次",
       latencyMs: "{ms}ms",
+      pipelineAria: "请求五段状态",
+      legacySummary: "仅基础记录（请更新桌面端并发请求）",
     },
     tokens: {
       title: "令牌",
