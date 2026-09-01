@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
-import { buildLocalTokenRows, maskLocalToken, tokenTypeLabel, visibleTokenKinds } from './tokens-model';
+import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
+import {
+  attachTokenUsage,
+  buildLocalTokenRows,
+  generateLocalToken,
+  lastVisitFromStatuses,
+  maskLocalToken,
+  tokenTypeLabel,
+  visibleTokenKinds,
+} from './tokens-model';
 
 function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>): AdapterProfile {
   return {
@@ -16,6 +25,19 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
     autoStart: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    ...partial,
+  };
+}
+
+function usageRow(
+  partial: Partial<GatewayUsageRow> & Pick<GatewayUsageRow, 'requestId' | 'profileId'>,
+): GatewayUsageRow {
+  return {
+    ts: '2026-08-31T09:00:00.000Z',
+    surface: 'responses',
+    inputTokens: 0,
+    outputTokens: 0,
+    status: 'ok',
     ...partial,
   };
 }
@@ -38,6 +60,17 @@ describe('tokens-model', () => {
   it('masks complete local keys while preserving the prefix and tail', () => {
     expect(maskLocalToken('ahb_0123456789')).toBe('ahb_••••6789');
     expect(maskLocalToken('')).toBe('');
+  });
+
+  it('generates ahb_ keys with unpadded base64url payload', () => {
+    const first = generateLocalToken(() => new Uint8Array(32).fill(1));
+    const second = generateLocalToken(() => new Uint8Array(32).fill(2));
+    expect(first).toMatch(/^ahb_[A-Za-z0-9_-]+$/);
+    expect(first).not.toContain('+');
+    expect(first).not.toContain('/');
+    expect(first).not.toContain('=');
+    expect(first).not.toBe(second);
+    expect(generateLocalToken()).toMatch(/^ahb_/);
   });
 
   it('lists pool endpoints with Codex / Grok Responses split', () => {
@@ -162,6 +195,137 @@ describe('tokens-model', () => {
     expect(rows[0]).toMatchObject({
       token: 'ahb_secretkey12',
       maskedToken: 'ahb_••••ey12',
+    });
+  });
+
+  it('records last visited page from the newest inbound request', () => {
+    expect(lastVisitFromStatuses(
+      ['a', 'b'],
+      {
+        a: {
+          profileId: 'a',
+          state: 'running',
+          lastRequestAt: '2026-08-31T10:00:00.000Z',
+          recentInbound: [{
+            at: '2026-08-31T10:00:00.000Z',
+            method: 'POST',
+            path: '/v1/messages',
+            status: 200,
+            ok: true,
+          }],
+        },
+        b: {
+          profileId: 'b',
+          state: 'running',
+          lastRequestAt: '2026-08-31T12:00:00.000Z',
+          recentInbound: [{
+            at: '2026-08-31T12:00:00.000Z',
+            method: 'GET',
+            path: '/v1/models',
+            status: 200,
+            ok: true,
+          }],
+        },
+      },
+    )).toEqual({
+      lastPath: '/v1/models',
+      lastRequestAt: '2026-08-31T12:00:00.000Z',
+    });
+  });
+
+  it('keeps last visit on pool rows from runtime status', () => {
+    const rows = buildLocalTokenRows(
+      [profile({
+        id: 'codex-bridge',
+        name: 'Codex',
+        targetAgentId: 'codex',
+        sourceId: 'src-codex',
+        localPort: 8101,
+      })],
+      {
+        'codex-bridge': {
+          profileId: 'codex-bridge',
+          state: 'running',
+          port: 8101,
+          upstreamStatus: 'connected',
+          localToken: 'ahb_secret',
+          lastRequestAt: '2026-08-31T09:00:00.000Z',
+          recentInbound: [{
+            at: '2026-08-31T09:00:00.000Z',
+            method: 'POST',
+            path: '/v1/responses',
+            status: 200,
+            ok: true,
+          }],
+        },
+      },
+      {},
+      [
+        pool({
+          id: 'pool-codex',
+          targetAgentId: 'codex',
+          dialect: 'codex',
+          members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
+          gatewayPort: 8101,
+        }),
+      ],
+    );
+    expect(rows[0]).toMatchObject({
+      profileIds: ['pool-codex', 'codex-bridge'],
+      lastPath: '/v1/responses',
+      lastRequestAt: '2026-08-31T09:00:00.000Z',
+    });
+  });
+
+  it('sums token usage for the matching profiles and surface', () => {
+    const rows = attachTokenUsage(
+      buildLocalTokenRows(
+        [profile({
+          id: 'codex-bridge',
+          name: 'Codex',
+          targetAgentId: 'codex',
+          sourceId: 'src-codex',
+        })],
+        {},
+        {},
+        [
+          pool({
+            id: 'pool-codex',
+            targetAgentId: 'codex',
+            dialect: 'codex',
+            members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
+          }),
+        ],
+      ),
+      [
+        usageRow({
+          requestId: 'keep',
+          profileId: 'codex-bridge',
+          surface: 'responses',
+          inputTokens: 100,
+          outputTokens: 40,
+        }),
+        usageRow({
+          requestId: 'other-surface',
+          profileId: 'codex-bridge',
+          surface: 'chat',
+          inputTokens: 999,
+          outputTokens: 999,
+        }),
+        usageRow({
+          requestId: 'other-profile',
+          profileId: 'other',
+          surface: 'responses',
+          inputTokens: 50,
+          outputTokens: 50,
+        }),
+      ],
+    );
+    expect(rows[0].usage).toEqual({
+      requestCount: 1,
+      inputTokens: 100,
+      outputTokens: 40,
+      cachedInputTokens: 0,
     });
   });
 
