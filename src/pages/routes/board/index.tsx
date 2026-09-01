@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -25,6 +25,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
+import { getLocalEntryStatus } from '@/lib/api/adapter';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   isLocalEndpointKind,
@@ -150,6 +151,7 @@ export default function RoutesBoardPage() {
   const hiddenTargetIds = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const [stopOpen, setStopOpen] = useState(false);
+  const [gatewayRunning, setGatewayRunning] = useState(false);
   const { defaultPools, loading: poolsLoading } = useRoutePoolState({
     profiles,
     detailTarget: null,
@@ -172,18 +174,23 @@ export default function RoutesBoardPage() {
   const [endpointKind, setEndpointKind] = useState<LocalEndpointKind | 'all'>(() => (
     rememberKind(rememberedBoardUsageFilters().surface)
   ));
+  useEffect(() => {
+    void getLocalEntryStatus()
+      .then((status) => {
+        setGatewayRunning(status.running);
+        for (const row of status.statuses) updateBridgeStatus(row);
+      })
+      .catch(() => undefined);
+  }, [updateBridgeStatus, usageRefreshKey]);
   const localEntry = useMemo(
     () => buildLocalEntryControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
     [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
   );
   const localEntryBusy = localEntry.profileIds.some((id) => busyProfileIds[id])
     || Boolean(busyProfileIds.__local_entry__);
-  const localEntryError = [
-    ...localEntry.profileIds,
-    ...localEntry.bindTargets.map((target) => target.sourceId),
-  ]
-    .map((id) => profileErrors[id])
-    .find((error) => error != null) ?? null;
+  const localEntryError = profileErrors.__local_entry__
+    ?? localEntry.profileIds.map((id) => profileErrors[id]).find((error) => error != null)
+    ?? null;
 
   const endpointRows = useMemo(
     () => buildBoardEndpointTypeRows(defaultPools, hiddenTargetIds),
@@ -210,11 +217,15 @@ export default function RoutesBoardPage() {
     });
   const pageLoading = loading || poolsLoading;
   const showStatusSkeleton = pageLoading && defaultPools.length === 0;
-  const entryLabel = localEntryStatusLabel(localEntry, t);
+  const entryRunning = localEntry.running || gatewayRunning;
+  const entryLabel = localEntryStatusLabel(
+    { ...localEntry, running: entryRunning, action: entryRunning ? 'stop' : localEntry.action },
+    t,
+  );
   const entryBadge = localEntry.profileIds.length === 0
     ? null
     : (
-      <Badge variant={localEntry.running ? 'success' : 'default'}>
+      <Badge variant={entryRunning ? 'success' : 'default'}>
         {entryLabel}
       </Badge>
     );
@@ -283,15 +294,11 @@ export default function RoutesBoardPage() {
                 }
               >
                 <Switch
-                  checked={localEntry.running}
-                  disabled={
-                    localEntryBusy
-                    || localEntry.transitioning
-                    || localEntry.action == null
-                  }
+                  checked={entryRunning}
+                  disabled={localEntryBusy || localEntry.transitioning}
                   onCheckedChange={(on) => {
                     if (on) {
-                      void handleStartLocalEntry(localEntry.startIds, localEntry.bindTargets);
+                      void handleStartLocalEntry().then((ok) => setGatewayRunning(ok));
                     } else {
                       setStopOpen(true);
                     }
@@ -339,8 +346,11 @@ export default function RoutesBoardPage() {
               variant="danger"
               disabled={localEntryBusy}
               onClick={() => {
-                void handleStopLocalEntry(localEntry.stopIds).then((ok) => {
-                  if (ok) setStopOpen(false);
+                void handleStopLocalEntry().then((ok) => {
+                  if (ok) {
+                    setGatewayRunning(false);
+                    setStopOpen(false);
+                  }
                 });
               }}
             >

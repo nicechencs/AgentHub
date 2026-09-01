@@ -164,6 +164,21 @@ export async function startAdapterBridge(profileId: string): Promise<AdapterBrid
   return getBackend().adapter.startBridge(profileId);
 }
 
+/** Start the shared local relay. Does not bind logins to Agents. */
+export async function startLocalEntry() {
+  return getBackend().adapter.startLocalEntry();
+}
+
+/** Stop the shared local relay. */
+export async function stopLocalEntry() {
+  return getBackend().adapter.stopLocalEntry();
+}
+
+/** Read whether the shared local relay is listening. */
+export async function getLocalEntryStatus() {
+  return getBackend().adapter.getLocalEntryStatus();
+}
+
 /** Stops the bridge listener without deleting its generated Connection. */
 export async function stopAdapterBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus> {
   return getBackend().adapter.stopBridge(profileId);

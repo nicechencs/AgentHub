@@ -14,14 +14,18 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use agenthub_core::adapter_control::{surface_unbind_and_restart, AdapterBridgeStatus};
+use agenthub_core::adapter_control::{
+    surface_unbind_and_restart, AdapterBridgeStatus, LocalEntryStatus,
+};
 use agenthub_core::bridge::{
-    BridgeHostError, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
-    BridgeUpstreamStatus, MemberHealth, UpstreamAuthReload,
+    BridgeHostError, BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState,
+    BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol,
+    BridgeUpstreamStatus, DownstreamResponsesProfile, MemberHealth, ResolvedAuth, UpstreamAuthReload,
 };
 use agenthub_core::models::{
     local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile,
-    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AgentId,
+    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSourceProduct, AgentId,
+    RouteDownstreamSurface, RoutePool,
 };
 use agenthub_core::services::{
     oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
@@ -1339,6 +1343,154 @@ async fn bridge_profile_id_for_request(
             .map_err(|error| map_err_string("adapter_bridge_profile_id", error))
     })
     .await
+}
+
+/// Start the shared local relay. Pool logins are not planned or bound here;
+/// unusable accounts/keys surface later on requests.
+pub(crate) async fn start_local_entry(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+) -> Result<LocalEntryStatus, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-entry").await;
+    let pools = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .list_default_pools()
+            .map_err(|error| map_err_string("list_default_pools", error))
+    })
+    .await?;
+    let flags = with_hub_blocking(hub.clone(), move |hub| {
+        Ok(hub.route_pools().pair_adapter_flags())
+    })
+    .await?;
+    if pools.is_empty() {
+        let status = host
+            .start(placeholder_entry_spec(
+                "local-entry",
+                None,
+                "ahb_local_entry",
+                AgentId::Codex,
+                flags,
+            ))
+            .await
+            .map_err(map_bridge_host_error)?;
+        return local_entry_status_from_host(&host, vec![status.profile_id]);
+    }
+    let mut started = Vec::new();
+    for pool in pools {
+        let spec = pool_entry_spec(&pool, flags);
+        let status = host.start(spec).await.map_err(map_bridge_host_error)?;
+        let port = status.port;
+        started.push(status.profile_id.clone());
+        let pool_id = pool.id.clone();
+        let _ = with_hub_blocking(hub.clone(), move |hub| {
+            hub.route_pools()
+                .enroll_v2(&pool_id, port)
+                .map_err(|error| map_err_string("enroll_local_entry", error))
+        })
+        .await;
+    }
+    local_entry_status_from_host(&host, started)
+}
+
+/// Stop every live relay edge. Does not use host shutdown (that blocks restart).
+pub(crate) async fn stop_local_entry(
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+) -> Result<LocalEntryStatus, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-entry").await;
+    let ids = host.running_ids().map_err(map_bridge_host_error)?;
+    for id in ids {
+        match host.stop(&id).await {
+            Ok(_) => {}
+            Err(BridgeHostError::NotRunning) => {}
+            Err(error) => return Err(map_bridge_host_error(error)),
+        }
+    }
+    local_entry_status_from_host(&host, Vec::new())
+}
+
+pub(crate) fn local_entry_status(host: &BridgeRuntimeHost) -> Result<LocalEntryStatus, String> {
+    let ids = host.running_ids().map_err(map_bridge_host_error)?;
+    local_entry_status_from_host(host, ids)
+}
+
+fn local_entry_status_from_host(
+    host: &BridgeRuntimeHost,
+    ids: Vec<String>,
+) -> Result<LocalEntryStatus, String> {
+    let port = host.gateway_port().map_err(map_bridge_host_error)?;
+    let mut statuses = Vec::new();
+    for id in ids {
+        if let Some(runtime) = host.status(&id).map_err(map_bridge_host_error)? {
+            statuses.push(status_dto(
+                host,
+                &id,
+                AdapterBridgeStatusDto::from_runtime(runtime),
+            ));
+        }
+    }
+    Ok(LocalEntryStatus {
+        running: port.is_some() && !statuses.is_empty(),
+        port,
+        statuses,
+    })
+}
+
+fn pool_entry_spec(pool: &RoutePool, flags: (bool, bool)) -> BridgeStartSpec {
+    placeholder_entry_spec(
+        &pool.id,
+        pool.gateway_port.or(Some(0)),
+        &pool.hub_token,
+        pool.target_agent_id,
+        flags,
+    )
+}
+
+fn placeholder_entry_spec(
+    id: &str,
+    port: Option<u16>,
+    local_token: &str,
+    target: AgentId,
+    flags: (bool, bool),
+) -> BridgeStartSpec {
+    let surface = match RouteDownstreamSurface::for_agent(target) {
+        Some(RouteDownstreamSurface::Messages) => BridgeLocalSurface::Messages,
+        Some(RouteDownstreamSurface::ChatCompletions) => BridgeLocalSurface::ChatCompletions,
+        _ => BridgeLocalSurface::Responses,
+    };
+    let protocol = match surface {
+        BridgeLocalSurface::Messages => BridgeUpstreamProtocol::AnthropicMessages,
+        _ => BridgeUpstreamProtocol::OpenAiChatCompletions,
+    };
+    let dialect = agenthub_core::models::RouteDownstreamDialect::for_agent(target);
+    let token = if local_token.trim().is_empty() {
+        format!("ahb_{id}")
+    } else {
+        local_token.trim().to_owned()
+    };
+    BridgeStartSpec::new(
+        id.to_owned(),
+        port.unwrap_or(0),
+        token,
+        BridgeUpstreamConfig {
+            base_url: "http://127.0.0.1/".into(),
+            model: None,
+            source_connection_id: None,
+            auth: ResolvedAuth::bearer("pending"),
+            protocol,
+            local_surface: surface,
+        },
+    )
+    .with_mapping(AdapterSourceProduct::Other, target, false)
+    .with_downstream_responses_profile(
+        DownstreamResponsesProfile::from_surface_and_route_dialect(surface, dialect),
+    )
+    .with_pair_adapter_flags(flags.0, flags.1)
 }
 
 fn map_bridge_host_error(error: BridgeHostError) -> String {

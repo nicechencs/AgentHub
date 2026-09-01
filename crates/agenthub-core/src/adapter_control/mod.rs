@@ -21,7 +21,7 @@ pub use coordinator::AdapterSagaCoordinator;
 /// Historical desktop name for the same process-local saga gate.
 pub type AdapterBridgeSagaCoordinator = AdapterSagaCoordinator;
 pub use crate::bridge::host::InboundRequestRecord;
-pub use status::AdapterBridgeStatus;
+pub use status::{AdapterBridgeStatus, LocalEntryStatus};
 
 /// Unbind already failed. A failed restart must not disappear into `let _ =`.
 /// Never returns Ok — the caller always surfaces a failure.

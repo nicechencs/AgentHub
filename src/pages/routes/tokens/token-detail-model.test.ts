@@ -23,6 +23,10 @@ describe('token-detail-model', () => {
   it('exposes a copyable endpoint URL and a masked token until revealed', () => {
     const masked = buildTokenDetailCopyRows(row(), false);
     expect(tokenEndpointParts(row()).href).toBe('http://127.0.0.1:8123/v1/chat/completions');
+    expect(masked.find((item) => item.id === 'type')).toMatchObject({
+      display: '对话补全',
+      copyValue: null,
+    });
     expect(masked.find((item) => item.id === 'endpoint')).toMatchObject({
       copyValue: 'http://127.0.0.1:8123/v1/chat/completions',
       pending: false,

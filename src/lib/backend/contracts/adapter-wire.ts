@@ -475,6 +475,21 @@ export function mapAdapterBridgeStatusDto(
   };
 }
 
+export interface LocalEntryStatusWire {
+  running: boolean;
+  port?: number | null;
+  statuses?: AdapterBridgeStatusDtoWire[];
+}
+
+export function mapLocalEntryStatus(wire: LocalEntryStatusWire): import('./adapter').LocalEntryStatus {
+  const port = isLoopbackPort(wire.port ?? null) ? wire.port ?? null : null;
+  return {
+    running: wire.running === true && port != null,
+    port,
+    statuses: Array.isArray(wire.statuses) ? wire.statuses.map(mapAdapterBridgeStatusDto) : [],
+  };
+}
+
 export interface RouteMemberOverviewWire {
   id?: string;
   sourceKind: AdapterSourceKind;

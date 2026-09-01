@@ -151,6 +151,19 @@ impl RoutePoolService {
         })
     }
 
+    /// Default pools including Hub tokens, for starting the shared local entry.
+    pub fn list_default_pools(&self) -> Result<Vec<RoutePool>> {
+        if !self.enabled()? {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .pools
+            .list_pools(None, None)?
+            .into_iter()
+            .filter(|pool| pool.is_default)
+            .collect())
+    }
+
     pub fn chat_completions_shared(&self) -> Result<bool> {
         Ok(feature_flag_enabled(
             self.db.get_setting(SHARE_CHAT_COMPLETIONS)?.as_deref(),

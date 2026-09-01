@@ -8,7 +8,6 @@ import type {
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
   AdapterProfileStatus,
-  AdapterSourceKind,
   DefaultRoutePoolOverview,
   RouteMemberOverview,
   RoutePoolSurface,
@@ -76,24 +75,17 @@ export type BoardFleetSummary = {
 };
 
 /** Shared local-entry master switch (not per-login, not per-endpoint). */
-export type LocalEntryBindTarget = {
-  sourceKind: AdapterSourceKind;
-  sourceId: string;
-  targetAgentId: string;
-};
-
 export type LocalEntryControl = {
   profileIds: string[];
   startIds: string[];
   stopIds: string[];
-  bindTargets: LocalEntryBindTarget[];
   action: 'start' | 'stop' | null;
   retry: boolean;
   running: boolean;
   starting: boolean;
   stopping: boolean;
   transitioning: boolean;
-  /** Connection-pool logins exist, even if no local-bridge listener is startable yet. */
+  /** Connection-pool logins exist; the switch still operates if they later fail. */
   hasEnrolledLogins: boolean;
 };
 
@@ -124,18 +116,6 @@ export function buildLocalEntryControl(
   const profileIds = local.map((profile) => profile.id);
   const stopIds: string[] = [];
   const startIds: string[] = [];
-  const bindTargets: LocalEntryBindTarget[] = [];
-  for (const pool of pools) {
-    if (hiddenTargetIds.has(pool.targetAgentId)) continue;
-    const lead = pool.members.find((member) => member.enabled !== false);
-    if (!lead) continue;
-    if (profilesForPool(pool, profiles).length > 0) continue;
-    bindTargets.push({
-      sourceKind: lead.sourceKind,
-      sourceId: lead.sourceId,
-      targetAgentId: pool.targetAgentId,
-    });
-  }
   let retry = false;
   let starting = false;
   let stopping = false;
@@ -151,13 +131,12 @@ export function buildLocalEntryControl(
     if (state === 'error' || Boolean(profile.lastErrorCode?.trim())) retry = true;
   }
   const running = stopIds.length > 0;
-  const canStart = startIds.length > 0 || bindTargets.length > 0;
+  const canToggle = running || startIds.length > 0 || hasEnrolledLogins;
   return {
     profileIds,
     startIds,
     stopIds,
-    bindTargets,
-    action: !canStart && !running ? null : (running ? 'stop' : 'start'),
+    action: !canToggle ? null : (running ? 'stop' : 'start'),
     retry: retry && !running,
     running,
     starting,

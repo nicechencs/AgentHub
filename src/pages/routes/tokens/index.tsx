@@ -26,22 +26,13 @@ import { ROUTES_POOL_PATH } from '@/lib/bridges-path';
 import { setChatCompletionsShared } from '@/lib/api/adapter';
 import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
 import { agentCssVar } from '@/styles/tokens';
-import { WriteClientConfigDialog } from '@/pages/bridges/WriteClientConfigDialog';
-import { buildRouteGraph } from '@/pages/bridges/route-graph-model';
-import {
-  ROUTES_INSPECT_WIDTH_KEY,
-  type WriteTarget,
-} from '@/pages/bridges/route-inspect';
+import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/bridges/route-inspect';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { buildLocalEntryControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { TokenDetailPanel } from './TokenDetailPanel';
-import { buildLocalTokenRows, tokenRowTitle, type LocalTokenRow } from './tokens-model';
-
-type TokensInspect =
-  | { kind: 'detail'; rowId: string }
-  | { kind: 'write'; target: WriteTarget };
+import { buildLocalTokenRows, tokenTypeLabel } from './tokens-model';
 
 export default function RoutesTokensPage() {
   const { t } = useI18n();
@@ -52,7 +43,6 @@ export default function RoutesTokensPage() {
   const {
     profiles,
     bridgeStatuses,
-    entries,
     errors,
     profileState,
     loading,
@@ -69,7 +59,7 @@ export default function RoutesTokensPage() {
     detailTarget: null,
     reloadKey: poolTick,
   });
-  const inspect = useSideSplit<TokensInspect>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
+  const inspect = useSideSplit<string>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
   const [shareBusy, setShareBusy] = useState(false);
   const [shareConfirm, setShareConfirm] = useState<boolean | null>(null);
   const localEntry = useMemo(
@@ -103,20 +93,6 @@ export default function RoutesTokensPage() {
     ],
   );
 
-  const openWrite = (row: LocalTokenRow) => {
-    if (!row.profileId) return;
-    const profile = profiles.find((item) => item.id === row.profileId);
-    if (!profile) return;
-    const status = bridgeStatuses[profile.id];
-    const graph = buildRouteGraph({
-      profile,
-      entries,
-      siblingProfiles: profiles,
-      port: status?.port ?? profile.localPort,
-    });
-    inspect.open({ kind: 'write', target: { profile, graph } });
-  };
-
   const applyShare = async (shared: boolean) => {
     if (shareBusy) return;
     setShareBusy(true);
@@ -132,11 +108,9 @@ export default function RoutesTokensPage() {
     }
   };
 
-  const inspectTarget = inspect.target;
-  const detailRow = inspectTarget?.kind === 'detail'
-    ? rows.find((row) => row.id === inspectTarget.rowId) ?? null
+  const detailRow = inspect.target
+    ? rows.find((row) => row.id === inspect.target) ?? null
     : null;
-  const writeTarget = inspectTarget?.kind === 'write' ? inspectTarget.target : null;
   const pageLoading = loading || poolsLoading;
 
   const list = (
@@ -202,20 +176,20 @@ export default function RoutesTokensPage() {
         <div className={pageRhythm.stackDense}>
           {rows.map((row) => {
             const kindColor = agentCssVar(localEndpointBrandAgentId(row.kind));
-            const title = tokenRowTitle(row, chatCompletionsShared, t);
+            const typeLabel = tokenTypeLabel(row, t);
             return (
               <ListRow
                 key={row.id}
                 className={LIST_ROW_PAD}
-                active={inspectTarget?.kind === 'detail' && inspectTarget.rowId === row.id}
-                onOpen={() => inspect.open({ kind: 'detail', rowId: row.id })}
-                aria-label={t('routes.tokens.openDetailAria', { name: title })}
+                active={inspect.target === row.id}
+                onOpen={() => inspect.open(row.id)}
+                aria-label={t('routes.tokens.openDetailAria', { name: typeLabel })}
               >
                 <ListRowBody
                   main={
                     <>
                       <span className="min-w-0 truncate text-sm font-medium text-primary">
-                        {title}
+                        {typeLabel}
                       </span>
                       <span className="font-mono text-meta" style={{ color: kindColor }}>
                         {row.path}
@@ -273,33 +247,10 @@ export default function RoutesTokensPage() {
     <WorkbenchSplitPage
       split={inspect}
       resizeAria={t('common.resizeSidePanel')}
-      panel={writeTarget ? (
-        <WriteClientConfigDialog
-          asPanel
-          open
-          width={inspect.paneWidth}
-          onOpenChange={(open) => { if (!open) inspect.close(); }}
-          profile={writeTarget.profile}
-          rows={writeTarget.graph.rows}
-          host={writeTarget.graph.local.host}
-          port={writeTarget.graph.local.port ?? null}
-          sourceMissing={writeTarget.graph.source.missing}
-          listedModels={writeTarget.graph.listedModels}
-          contextWindowTokens={writeTarget.graph.contextWindowTokens}
-          localToken={bridgeStatuses[writeTarget.profile.id]?.localToken}
-          siblingProfiles={profiles}
-          hiddenTargetIds={hiddenTargetIds}
-          onWritten={() => {
-            inspect.close();
-            void reload();
-          }}
-        />
-      ) : detailRow ? (
+      panel={detailRow ? (
         <TokenDetailPanel
           row={detailRow}
-          chatCompletionsShared={chatCompletionsShared}
           width={inspect.paneWidth}
-          onWrite={detailRow.profileId ? () => openWrite(detailRow) : undefined}
           onClose={() => inspect.close()}
         />
       ) : null}

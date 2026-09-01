@@ -356,6 +356,15 @@ impl BridgeRuntimeHost {
             .filter(|port| registry.sockets.contains_key(port)))
     }
 
+    /// Live edge ids citing the unified gateway. Empty when the relay is down.
+    pub fn running_ids(&self) -> Result<Vec<String>, BridgeHostError> {
+        let registry = self.gateway.lock()?;
+        if !registry.sockets_live() {
+            return Ok(Vec::new());
+        }
+        Ok(registry.runtimes.keys().cloned().collect())
+    }
+
     /// Move the unified gateway socket to `port`.
     ///
     /// Occupancy or bind failure leaves existing sockets, citers, and client-facing

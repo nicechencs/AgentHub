@@ -345,6 +345,8 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     routePoolV2: true,
     shareChatCompletions: false,
     defaultPools: [],
+    localEntryRunning: false,
+    localEntryPort: null,
   };
   adapterStates.add(state);
 
@@ -817,6 +819,47 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       profile.updatedAt = new Date().toISOString();
       return { ...profile };
     },
+    async startLocalEntry() {
+      await delay(20);
+      state.localEntryRunning = true;
+      state.localEntryPort = 43121;
+      for (const pool of state.defaultPools) {
+        pool.gatewayPort = 43121;
+      }
+      return mockLocalEntryStatus(state);
+    },
+    async stopLocalEntry() {
+      await delay(20);
+      state.localEntryRunning = false;
+      state.localEntryPort = null;
+      return mockLocalEntryStatus(state);
+    },
+    async getLocalEntryStatus() {
+      await delay(20);
+      return mockLocalEntryStatus(state);
+    },
+  };
+}
+
+function mockLocalEntryStatus(state: MockAdapterState) {
+  return {
+    running: state.localEntryRunning,
+    port: state.localEntryPort,
+    statuses: state.localEntryRunning
+      ? state.defaultPools.map((pool) => ({
+        profileId: pool.id,
+        state: 'running' as const,
+        port: 43121,
+        endpoint: 'http://127.0.0.1:43121/v1',
+        startedAt: '2026-08-12T00:00:00.000Z',
+        upstreamStatus: 'connected' as const,
+        recentInbound: [],
+        totalRequestCount: 0,
+        failedRequestCount: 0,
+        lastRequestAt: null,
+        localToken: `ahb_${pool.id.slice(0, 8)}`,
+      }))
+      : [],
   };
 }
 

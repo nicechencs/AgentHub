@@ -1,7 +1,6 @@
 /**
  * Pure view-model for the local-tokens page. No React, no IO.
  */
-import { agentDisplayName } from '@/config/agents';
 import type {
   AdapterBridgeRuntimeState,
   AdapterBridgeRuntimeStatus,
@@ -33,7 +32,7 @@ export interface LocalTokenRow {
   maskedToken: string | null;
   /** The runtime status read failed, so no token action is safe. */
   unavailable: boolean;
-  /** Writer Agent this token configures. */
+  /** Pool/runtime writer this key belongs to; not a client-write target. */
   targetAgentId: string;
 }
 
@@ -52,15 +51,12 @@ export function tokenListenPort(endpoint: string | null): number | null {
   return Number.isInteger(port) && port > 0 ? port : null;
 }
 
-/** List/detail title. Unshared chat completions keep the Agent name. */
-export function tokenRowTitle(
-  row: Pick<LocalTokenRow, 'kind' | 'targetAgentId'>,
-  chatCompletionsShared: boolean,
+/** Token type shown on the list and in details. Not a writer Agent. */
+export function tokenTypeLabel(
+  row: Pick<LocalTokenRow, 'kind'>,
   t?: TranslateFn,
 ): string {
-  const kindLabel = localEndpointKindLabel(row.kind, t);
-  if (row.kind !== 'chat_completions' || chatCompletionsShared) return kindLabel;
-  return `${kindLabel} · ${agentDisplayName(row.targetAgentId)}`;
+  return localEndpointKindLabel(row.kind, t);
 }
 
 function pickRuntimeProfile(
