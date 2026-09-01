@@ -346,6 +346,19 @@ pub async fn list_local_tokens(
     .map_err(adapter_error_from_string)
 }
 
+/// `GET /health` on a loopback entry with the displayed key. No model request.
+#[tauri::command]
+pub async fn test_local_token(
+    endpoint: String,
+    token: String,
+) -> Result<agenthub_core::utils::local_token_probe::LocalTokenProbeResult, GuiError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        agenthub_core::utils::local_token_probe::probe_local_token(&endpoint, &token)
+    })
+    .await
+    .map_err(|err| adapter_error_from_string(format!("command join error: {err}")))
+}
+
 /// Replace one default-pool loopback bearer. Restarts that edge if it is live.
 #[tauri::command]
 pub async fn set_local_token(

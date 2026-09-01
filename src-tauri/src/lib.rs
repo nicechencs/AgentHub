@@ -105,6 +105,7 @@ pub fn run() {
             commands::adapter::list_adapter_profiles,
             commands::adapter::list_default_route_pools,
             commands::adapter::list_local_tokens,
+            commands::adapter::test_local_token,
             commands::adapter::set_local_token,
             commands::adapter::set_chat_completions_shared,
             commands::adapter::attach_pool_owned_authorization,

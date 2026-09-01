@@ -25,6 +25,8 @@ import type {
   AdapterSupport,
   DefaultRoutePoolList,
   DefaultRoutePoolOverview,
+  LocalTokenProbeOutcome,
+  LocalTokenProbeResult,
   LocalTokenRecord,
   RouteMemberOverview,
   RoutePoolDialect,
@@ -503,6 +505,37 @@ export function mapLocalTokenRecord(wire: LocalTokenRecordWire): LocalTokenRecor
     return invalidWireValue('localToken', wire);
   }
   return { poolId, token };
+}
+
+const LOCAL_TOKEN_PROBE_OUTCOMES = new Set<LocalTokenProbeOutcome>([
+  'ok',
+  'unauthorized',
+  'unreachable',
+  'rejected',
+  'invalid',
+]);
+
+export interface LocalTokenProbeResultWire {
+  outcome?: unknown;
+  httpStatus?: unknown;
+  latencyMs?: unknown;
+  upstreamStatus?: unknown;
+}
+
+export function mapLocalTokenProbeResult(wire: LocalTokenProbeResultWire): LocalTokenProbeResult {
+  const outcome = typeof wire.outcome === 'string' && LOCAL_TOKEN_PROBE_OUTCOMES.has(wire.outcome as LocalTokenProbeOutcome)
+    ? wire.outcome as LocalTokenProbeOutcome
+    : 'unreachable';
+  const httpStatus = typeof wire.httpStatus === 'number' && Number.isInteger(wire.httpStatus)
+    ? wire.httpStatus
+    : null;
+  const latencyMs = typeof wire.latencyMs === 'number' && Number.isFinite(wire.latencyMs)
+    ? Math.max(0, Math.round(wire.latencyMs))
+    : 0;
+  const upstreamStatus = typeof wire.upstreamStatus === 'string' && wire.upstreamStatus.trim()
+    ? wire.upstreamStatus.trim()
+    : null;
+  return { outcome, httpStatus, latencyMs, upstreamStatus };
 }
 
 export interface RouteMemberOverviewWire {

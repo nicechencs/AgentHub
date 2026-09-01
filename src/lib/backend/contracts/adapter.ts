@@ -321,12 +321,28 @@ export type LocalTokenRecord = {
   token: string;
 };
 
+/** Result of `GET /health` with a tokens-page entry key. */
+export type LocalTokenProbeOutcome =
+  | 'ok'
+  | 'unauthorized'
+  | 'unreachable'
+  | 'rejected'
+  | 'invalid';
+
+export type LocalTokenProbeResult = {
+  outcome: LocalTokenProbeOutcome;
+  httpStatus: number | null;
+  latencyMs: number;
+  upstreamStatus: string | null;
+};
+
 export interface AdapterPort {
   analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
   listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
   listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
   listLocalTokens(): Promise<LocalTokenRecord[]>;
+  testLocalToken(endpoint: string, token: string): Promise<LocalTokenProbeResult>;
   setLocalToken(poolId: string, token: string): Promise<LocalTokenRecord>;
   setChatCompletionsShared(shared: boolean): Promise<DefaultRoutePoolList>;
   attachPoolOwnedAuthorization(

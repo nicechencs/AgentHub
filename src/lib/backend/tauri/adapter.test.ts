@@ -199,6 +199,26 @@ describe('Tauri adapter route port', () => {
     });
   });
 
+  it('forwards test_local_token and maps the probe result', async () => {
+    invokeMock.mockResolvedValueOnce({
+      outcome: 'ok',
+      httpStatus: 200,
+      latencyMs: 12,
+      upstreamStatus: 'unknown',
+    });
+    const port = createTauriAdapterPort();
+    await expect(port.testLocalToken('127.0.0.1:8123', 'ahb_secret')).resolves.toEqual({
+      outcome: 'ok',
+      httpStatus: 200,
+      latencyMs: 12,
+      upstreamStatus: 'unknown',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('test_local_token', {
+      endpoint: '127.0.0.1:8123',
+      token: 'ahb_secret',
+    });
+  });
+
   it('forwards enroll_native_to_gateway by profile id and drops any token field', async () => {
     invokeMock.mockResolvedValueOnce({
       id: 'pool-1',

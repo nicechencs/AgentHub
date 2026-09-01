@@ -4,6 +4,7 @@
 import { ROUTE_ENDPOINT_HOST, routeEndpointHttpParts } from '@/lib/route-endpoints';
 import type { TranslateFn } from '@/lib/i18n';
 import { fmtTokens } from '@/lib/utils';
+import type { LocalTokenProbeOutcome, LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
 import {
   tokenListenPort,
   tokenTypeLabel,
@@ -101,4 +102,65 @@ export function tokenUsageDisplay(
   return t
     ? t('routes.tokens.usageSummary', { in: input, out: output })
     : `${input} in / ${output} out`;
+}
+
+export type LocalTokenTestGate = {
+  enabled: boolean;
+  reason: string | null;
+};
+
+export function localTokenTestGate(
+  row: Pick<LocalTokenRow, 'token' | 'endpoint' | 'unavailable'>,
+  t?: TranslateFn,
+): LocalTokenTestGate {
+  if (row.unavailable) {
+    return {
+      enabled: false,
+      reason: t ? t('routes.runtime.unavailable') : '状态不可用',
+    };
+  }
+  if (!row.token?.trim()) {
+    return {
+      enabled: false,
+      reason: t ? t('routes.tokens.testNeedKey') : '先填写入口 Key',
+    };
+  }
+  if (tokenListenPort(row.endpoint) == null) {
+    return {
+      enabled: false,
+      reason: t ? t('routes.tokens.testNeedEndpoint') : '本机入口还没启动',
+    };
+  }
+  return { enabled: true, reason: null };
+}
+
+export function localTokenTestResultLabel(
+  result: Pick<LocalTokenProbeResult, 'outcome' | 'latencyMs'>,
+  t?: TranslateFn,
+): string {
+  const outcome: LocalTokenProbeOutcome = result.outcome;
+  if (outcome === 'ok') {
+    const ms = Math.max(0, Math.round(result.latencyMs));
+    return t
+      ? t('routes.tokens.testOkMs', { ms: String(ms) })
+      : `入口 Key 可用 · ${ms}ms`;
+  }
+  if (outcome === 'unauthorized') {
+    return t ? t('routes.tokens.testUnauthorized') : '入口 Key 无效';
+  }
+  if (outcome === 'unreachable') {
+    return t ? t('routes.tokens.testUnreachable') : '端点连不上';
+  }
+  if (outcome === 'rejected') {
+    return t ? t('routes.tokens.testRejected') : '本机入口暂时不可用';
+  }
+  return t ? t('routes.tokens.testInvalid') : '没法测试';
+}
+
+export function localTokenTestResultTone(
+  outcome: LocalTokenProbeOutcome,
+): 'success' | 'danger' | 'muted' {
+  if (outcome === 'ok') return 'success';
+  if (outcome === 'invalid') return 'muted';
+  return 'danger';
 }

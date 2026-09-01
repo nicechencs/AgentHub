@@ -64,6 +64,10 @@ export async function listLocalTokens() {
   return getBackend().adapter.listLocalTokens();
 }
 
+export async function testLocalToken(endpoint: string, token: string) {
+  return getBackend().adapter.testLocalToken(endpoint, token);
+}
+
 export async function setLocalToken(poolId: string, token: string) {
   return getBackend().adapter.setLocalToken(poolId, token);
 }

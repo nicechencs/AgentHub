@@ -14,12 +14,14 @@ import {
   mapDefaultRoutePoolList,
   mapDefaultRoutePoolOverview,
   mapLocalEntryStatus,
+  mapLocalTokenProbeResult,
   mapLocalTokenRecord,
   type AdapterApplyPlanWire,
   type AdapterApplyResultWireInput,
   type AdapterBridgeStatusDtoWire,
   type AdapterProfileWire,
   type LocalEntryStatusWire,
+  type LocalTokenProbeResultWire,
   type LocalTokenRecordWire,
   type AdapterRouteAnalysisWire,
   type DefaultRoutePoolListWire,
@@ -103,6 +105,10 @@ export function createTauriAdapterPort(): AdapterPort {
     async listLocalTokens() {
       const wire = await invokeAdapter<LocalTokenRecordWire[]>('list_local_tokens', {});
       return Array.isArray(wire) ? wire.map(mapLocalTokenRecord) : [];
+    },
+    async testLocalToken(endpoint, token) {
+      const wire = await invokeAdapter<LocalTokenProbeResultWire>('test_local_token', { endpoint, token });
+      return mapLocalTokenProbeResult(wire ?? {});
     },
     async setLocalToken(poolId, token) {
       const wire = await invokeAdapter<LocalTokenRecordWire>('set_local_token', { poolId, token });
