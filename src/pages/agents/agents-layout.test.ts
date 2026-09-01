@@ -48,8 +48,12 @@ describe('agents layout wiring', () => {
     expect(detail).toContain("t('agents.card.uninstallProgram')");
     expect(detail).toContain("t('agents.card.uninstallConfig')");
     expect(detail).toContain('listAgentInstalls');
+    expect(detail).toContain('missingCatalogChannels');
+    expect(detail).toContain('MissingChannelRow');
+    expect(detail).toContain('installAgentDetailed');
     expect(detail).toContain('openPathInFileManager');
     expect(detail).toContain('openAgentConfig');
+    expect(page).toContain('runtimes={runtimes}');
     expect(card).toContain('onSelect?:');
     expect(card).toContain('selected?:');
     expect(card).toContain('onOpen={onSelect}');

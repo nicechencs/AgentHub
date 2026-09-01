@@ -16,8 +16,9 @@ import {
   routeEndpointPath,
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
+import type { AgentStatus } from '@/lib/types';
 import type { TokenAgentId } from '@/styles/tokens';
-import { extraCopyKindLabel, extraCopyKindLabelKey } from './agent-card-model';
+import { extraCopyKindLabel, extraCopyKindLabelKey, listAgentInstalls } from './agent-card-model';
 
 export type AgentConversationSurface = RouteEndpointId;
 
@@ -133,6 +134,19 @@ export function installLocationSourceLabel(
   const catalog = catalogChannelLabel(agentId, id, catalogChannels);
   if (catalog) return catalog;
   return installChannelKindLabel(agentId, id, t, catalogChannels);
+}
+
+/** Catalog channels that are not on disk yet — list command + Install, never a path. */
+export function missingCatalogChannels(
+  agent: Pick<
+    AgentStatus,
+    'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'
+  >,
+  catalogChannels?: readonly InstallChannelMeta[],
+): InstallChannelMeta[] {
+  const channels = catalogChannels ?? AGENT_MAP[agent.agentId]?.installChannels ?? [];
+  const present = new Set<string>(listAgentInstalls(agent).map((row) => row.source));
+  return channels.filter((channel) => channel.id.trim() && !present.has(channel.id));
 }
 
 

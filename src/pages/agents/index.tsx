@@ -233,6 +233,7 @@ export default function AgentsPage() {
   const inspectPanel = inspectAgent ? (
     <AgentDetailPanel
       agent={inspectAgent}
+      runtimes={runtimes}
       width={inspect.paneWidth}
       onClose={() => inspect.close()}
       onChanged={refreshAgents}

@@ -18,6 +18,7 @@ import {
   installLocationSourceLabel,
   isNpmPackageCatalogLabel,
   isRawInstallChannelLabel,
+  missingCatalogChannels,
 } from './agent-detail-model';
 import type { AgentStatus } from '@/lib/types';
 
@@ -177,6 +178,29 @@ describe('install channel labels', () => {
   });
 });
 
+describe('missing catalog channels', () => {
+  it('lists Codex npm when that copy is not on disk', () => {
+    const missing = missingCatalogChannels({
+      agentId: 'codex',
+      installed: false,
+    });
+    expect(missing.some((row) => row.id === 'npm')).toBe(true);
+    expect(missing.find((row) => row.id === 'npm')?.command).toBe('npm i -g @openai/codex');
+  });
+
+  it('omits Codex npm after that copy is installed, even if leftover remains', () => {
+    expect(
+      missingCatalogChannels(installed('codex', 'npm')).every((row) => row.id !== 'npm'),
+    ).toBe(true);
+    expect(
+      missingCatalogChannels({
+        ...installed('codex', 'native'),
+        extraCopies: [],
+      }).some((row) => row.id === 'npm'),
+    ).toBe(true);
+  });
+});
+
 describe('config directory display', () => {
   it('shows dest known paths and omits heading-only or home-only fallbacks', () => {
     expect(displayAgentConfigDir('claude')).toBe('~/.claude');
@@ -247,6 +271,30 @@ describe('AgentDetailPanel markup', () => {
     expect(html).toContain('npm @openai/codex');
     expect(html).not.toMatch(/>npm</);
     expect(html).not.toContain('渠道</dt><dd class="min-w-0 break-all text-secondary">npm @');
+  });
+
+  it('lists missing Codex npm with the install command and an Install button, without a path', () => {
+    const html = renderPanel({
+      agentId: 'codex',
+      installed: false,
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+    });
+    expect(html).toContain('npm @openai/codex');
+    expect(html).toContain('npm i -g @openai/codex');
+    expect(html).toContain('安装');
+    expect(html).not.toContain('/home/box');
+    expect(html).not.toContain('AppData');
+    expect(html).not.toContain('打开安装目录');
+  });
+
+  it('keeps the installed native path and still offers missing npm install', () => {
+    const html = renderPanel(installed('codex', 'native'));
+    expect(html).toContain('/home/box/.local/bin/codex');
+    expect(html).toContain('打开安装目录');
+    expect(html).toContain('npm i -g @openai/codex');
+    expect(html).toContain('安装');
   });
 
   it('opens an empty detail for an uninstalled agent', () => {
