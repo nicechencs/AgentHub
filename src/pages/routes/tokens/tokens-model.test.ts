@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import { buildLocalTokenRows, maskLocalToken } from './tokens-model';
 
 function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>): AdapterProfile {
@@ -20,53 +20,108 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
   };
 }
 
+function pool(
+  partial: Partial<DefaultRoutePoolOverview> & Pick<DefaultRoutePoolOverview, 'id'>,
+): DefaultRoutePoolOverview {
+  return {
+    targetAgentId: 'codex',
+    surface: 'responses',
+    dialect: 'codex',
+    v2Enrolled: true,
+    members: [{ sourceKind: 'provider', sourceId: 'src-1', enabled: true }],
+    listedModels: [],
+    ...partial,
+  };
+}
+
 describe('tokens-model', () => {
   it('masks complete local keys while preserving the prefix and tail', () => {
     expect(maskLocalToken('ahb_0123456789')).toBe('ahb_••••6789');
     expect(maskLocalToken('')).toBe('');
   });
-  it('lists only local_bridge routes with token and endpoint', () => {
+
+  it('lists pool endpoints with Codex / Grok Responses split', () => {
     const rows = buildLocalTokenRows(
       [
-        profile({ id: 'bridge', name: 'Claude', localPort: 8101 }),
+        profile({
+          id: 'codex-bridge',
+          name: 'Codex',
+          targetAgentId: 'codex',
+          sourceId: 'src-codex',
+          localPort: 8101,
+        }),
+        profile({
+          id: 'grok-bridge',
+          name: 'Grok',
+          targetAgentId: 'grok',
+          sourceId: 'src-grok',
+          localPort: 8102,
+        }),
         profile({ id: 'direct', name: 'Direct', route: 'native_endpoint' }),
       ],
       {
-        bridge: {
-          profileId: 'bridge',
+        'codex-bridge': {
+          profileId: 'codex-bridge',
           state: 'running',
           port: 8101,
           upstreamStatus: 'connected',
           localToken: 'ahb_secret',
         },
+        'grok-bridge': {
+          profileId: 'grok-bridge',
+          state: 'running',
+          port: 8102,
+          upstreamStatus: 'connected',
+          localToken: 'ahb_grok',
+        },
       },
+      {},
+      [
+        pool({
+          id: 'pool-codex',
+          targetAgentId: 'codex',
+          dialect: 'codex',
+          members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
+          gatewayPort: 8101,
+        }),
+        pool({
+          id: 'pool-grok',
+          targetAgentId: 'grok',
+          dialect: 'grok',
+          members: [{ sourceKind: 'provider', sourceId: 'src-grok', enabled: true }],
+          gatewayPort: 8102,
+        }),
+      ],
     );
-    expect(rows).toHaveLength(1);
+    expect(rows.map((row) => row.kind)).toEqual(['responses_codex', 'responses_grok']);
+    expect(rows.map((row) => row.path)).toEqual(['/v1/responses', '/v1/responses']);
     expect(rows[0]).toMatchObject({
-      profileId: 'bridge',
-      name: 'Claude',
+      profileId: 'codex-bridge',
       endpoint: '127.0.0.1:8101',
-      state: 'running',
       token: 'ahb_secret',
     });
   });
 
-  it('falls back to target agent name and profile port when status is missing', () => {
+  it('falls back to leftover local-bridge profiles when no pool matches', () => {
     const rows = buildLocalTokenRows(
       [profile({ id: 'p1', name: '   ', targetAgentId: 'codex', localPort: 0 })],
       {},
     );
     expect(rows[0].name).toBe('codex');
+    expect(rows[0].kind).toBe('responses_codex');
     expect(rows[0].endpoint).toBeNull();
     expect(rows[0].token).toBeNull();
   });
 
-  it('sorts rows by name', () => {
+  it('sorts rows by endpoint kind then name', () => {
     const rows = buildLocalTokenRows(
-      [profile({ id: 'b', name: 'Bravo' }), profile({ id: 'a', name: 'Alpha' })],
+      [
+        profile({ id: 'b', name: 'Bravo', targetAgentId: 'codex' }),
+        profile({ id: 'a', name: 'Alpha', targetAgentId: 'claude' }),
+      ],
       {},
     );
-    expect(rows.map((row) => row.name)).toEqual(['Alpha', 'Bravo']);
+    expect(rows.map((row) => row.kind)).toEqual(['messages', 'responses_codex']);
   });
 
   it('marks failed status reads unavailable and withholds the token', () => {
