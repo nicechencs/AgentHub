@@ -191,6 +191,23 @@ export const API_VENDORS: readonly ApiVendorPreset[] = [
   },
 ];
 
+/** Dropdown id for unknown / custom vendors. Always listed first. */
+export const CUSTOM_VENDOR_ID = 'custom';
+
+/** Known vendors sorted by the label shown in the picker. */
+export function sortApiVendorsForPicker<T>(
+  vendors: readonly T[],
+  labelOf: (vendor: T) => string,
+  locale?: string,
+): T[] {
+  return [...vendors].sort((left, right) =>
+    labelOf(left).localeCompare(labelOf(right), locale, {
+      numeric: true,
+      sensitivity: 'base',
+    }),
+  );
+}
+
 export function poolApiChoices(agents: readonly AgentId[]): PoolApiChoice[] {
   return API_CHOICES.map((choice) => ({
     ...choice,

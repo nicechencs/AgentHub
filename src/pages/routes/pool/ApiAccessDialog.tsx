@@ -40,6 +40,7 @@ import {
 import { cn } from '@/lib/utils';
 import {
   API_VENDORS,
+  CUSTOM_VENDOR_ID,
   buildPoolApiSaveItems,
   defaultSelectedApiTypes,
   detectedApiChoiceTypes,
@@ -51,6 +52,7 @@ import {
   poolApiChoices,
   primaryVendorUrl,
   resolveEndpointUrl,
+  sortApiVendorsForPicker,
   vendorServiceUrls,
   type PoolApiChoice,
   type PoolApiChoiceType,
@@ -58,7 +60,6 @@ import {
 import { parseCustomModelList } from './pool-authorization-detail';
 import { savePoolApiAccess } from './save-pool-api-access';
 
-const CUSTOM_VENDOR = 'custom';
 const DETECT_DEBOUNCE_MS = 400;
 
 const apiLabelKeys = {
@@ -111,7 +112,7 @@ function ApiAccessForm({
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { toast } = useToast();
   const [vendorId, setVendorId] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -133,7 +134,11 @@ function ApiAccessForm({
     [vendorId],
   );
   const vendorUrls = selectedVendor ? vendorServiceUrls(selectedVendor) : [];
-  const isUnknownVendor = vendorId === CUSTOM_VENDOR;
+  const isUnknownVendor = vendorId === CUSTOM_VENDOR_ID;
+  const pickerVendors = useMemo(
+    () => sortApiVendorsForPicker(API_VENDORS, (vendor) => t(vendor.labelKey), lang),
+    [lang, t],
+  );
   const detectSeq = useRef(0);
   const choicesRef = useRef(choices);
   choicesRef.current = choices;
@@ -142,7 +147,7 @@ function ApiAccessForm({
     setVendorId(nextVendorId);
     setError(null);
     setDetectNone(false);
-    if (nextVendorId === CUSTOM_VENDOR) {
+    if (nextVendorId === CUSTOM_VENDOR_ID) {
       setSelectedTypes(new Set());
       return;
     }
@@ -321,12 +326,12 @@ function ApiAccessForm({
                 <SelectValue placeholder={t('routes.pool.page.apiVendorsPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
-                {API_VENDORS.map((vendor) => (
+                <SelectItem value={CUSTOM_VENDOR_ID}>{t('routes.pool.page.apiVendorCustom')}</SelectItem>
+                {pickerVendors.map((vendor) => (
                   <SelectItem key={vendor.id} value={vendor.id}>
                     {t(vendor.labelKey)}
                   </SelectItem>
                 ))}
-                <SelectItem value={CUSTOM_VENDOR}>{t('routes.pool.page.apiVendorCustom')}</SelectItem>
               </SelectContent>
             </Select>
           </label>
