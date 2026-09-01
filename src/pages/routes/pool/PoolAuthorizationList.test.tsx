@@ -44,6 +44,7 @@ describe('PoolAuthorizationList', () => {
     expect(markup).not.toContain('data-col="lastUsed"');
     expect(markup).not.toContain('data-col="priority"');
     expect(markup).toContain('data-table-shell="default"');
+    expect(markup).toContain('data-table-layout="split"');
     expect(markup).toContain('role="separator"');
     expect(markup).toContain('调整登录列宽');
     expect(markup).not.toContain('回复接口');

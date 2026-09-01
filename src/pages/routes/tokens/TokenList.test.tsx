@@ -56,6 +56,7 @@ describe('TokenList', () => {
     expect(markup).not.toContain('ahb_secret');
     expect(markup).not.toContain('修改');
     expect(markup).toContain('data-table-shell="default"');
+    expect(markup).toContain('data-table-layout="split"');
     expect(markup).toContain('role="separator"');
     expect(markup).toContain('调整类型列宽');
   });

@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { agentDisplayName } from '@/config/agents';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { StatusPin } from '@/components/shared/StatusPin';
@@ -9,6 +9,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmptyCell,
   TableHead,
   TableHeader,
   TableHeaderRow,
@@ -48,19 +49,8 @@ const WIDTH_BY_KEY = Object.fromEntries(
 
 const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.routes.pool.columnWidths';
 
-function isInteractiveTableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return Boolean(
-    target.closest('button, a, input, textarea, [role="button"], [role="switch"], [role="menuitem"]'),
-  );
-}
-
-function EmptyCell() {
-  return <span className="text-muted">—</span>;
-}
-
 function cellValue(value: ReactNode): ReactNode {
-  if (value == null || value === '') return <EmptyCell />;
+  if (value == null || value === '') return <TableEmptyCell />;
   return value;
 }
 
@@ -86,16 +76,9 @@ export function PoolAuthorizationList({
   );
   const totalWidth = specs.reduce((sum, spec) => sum + widths[spec.key], 0);
 
-  const openItem = (item: PoolAuthorizationItem) => {
-    onShowDetail?.(item);
-  };
-
   return (
-    <TableShell className="min-w-0 [&>div]:min-w-0 [&>div]:!overflow-x-scroll">
-      <Table
-        className="table-fixed"
-        style={{ width: `max(100%, ${totalWidth}px)`, minWidth: totalWidth }}
-      >
+    <TableShell layout="split">
+      <Table className="table-fixed" style={{ minWidth: totalWidth }}>
         <colgroup>
           {specs.map((spec) => (
             <col key={spec.key} style={{ width: widths[spec.key] }} />
@@ -126,19 +109,7 @@ export function PoolAuthorizationList({
                 key={item.key}
                 data-pool-authorization={item.key}
                 active={activeKey === item.key}
-                tabIndex={onShowDetail ? 0 : undefined}
-                className={onShowDetail ? 'cursor-pointer' : undefined}
-                onClick={onShowDetail ? (event: MouseEvent<HTMLTableRowElement>) => {
-                  if (event.defaultPrevented) return;
-                  if (isInteractiveTableTarget(event.target)) return;
-                  openItem(item);
-                } : undefined}
-                onKeyDown={onShowDetail ? (event: KeyboardEvent<HTMLTableRowElement>) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                  if (isInteractiveTableTarget(event.target)) return;
-                  event.preventDefault();
-                  openItem(item);
-                } : undefined}
+                onOpen={onShowDetail ? () => onShowDetail(item) : undefined}
               >
                 {columns.map((key) => (
                   <TableCell
@@ -185,7 +156,7 @@ function renderColumn(
           aria-label={ctx.t('routes.pool.detail.enabled')}
         />
       ) : (
-        <EmptyCell />
+        <TableEmptyCell />
       );
     case 'login':
       return (
@@ -214,7 +185,7 @@ function renderColumn(
       );
     case 'quota': {
       const parts = poolAuthorizationQuotaParts(item);
-      if (parts.length === 0) return <EmptyCell />;
+      if (parts.length === 0) return <TableEmptyCell />;
       return (
         <div className="flex flex-col gap-0.5 text-meta text-secondary">
           {parts.map((part) => (

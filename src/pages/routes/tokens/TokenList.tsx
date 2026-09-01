@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Copy } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { CopyableRouteEndpointUrl, RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
@@ -9,6 +9,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmptyCell,
   TableHead,
   TableHeader,
   TableHeaderRow,
@@ -38,17 +39,6 @@ const WIDTH_SPECS: ColumnWidthSpec<TokenColumnKey>[] = [
 
 const COLUMN_WIDTHS_STORAGE_KEY = 'agenthub.routes.tokens.columnWidths';
 
-function isInteractiveTableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return Boolean(
-    target.closest('button, a, input, textarea, [role="button"], [role="switch"], [role="menuitem"]'),
-  );
-}
-
-function EmptyCell() {
-  return <span className="text-muted">—</span>;
-}
-
 function columnLabel(key: TokenColumnKey, t: ReturnType<typeof useI18n>['t']): string {
   if (key === 'type') return t('routes.tokens.fieldType');
   if (key === 'endpoint') return t('routes.tokens.fieldEndpoint');
@@ -68,15 +58,14 @@ export function TokenList({
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const { widths, onResizeStart } = useColumnWidths(WIDTH_SPECS, COLUMN_WIDTHS_STORAGE_KEY);
-  const totalWidth = WIDTH_SPECS.reduce((sum, spec) => sum + widths[spec.key], 0);
+  const { widths, onResizeStart, totalWidth } = useColumnWidths(
+    WIDTH_SPECS,
+    COLUMN_WIDTHS_STORAGE_KEY,
+  );
 
   return (
-    <TableShell className="min-w-0 [&>div]:min-w-0 [&>div]:!overflow-x-scroll">
-      <Table
-        className="table-fixed"
-        style={{ width: `max(100%, ${totalWidth}px)`, minWidth: totalWidth }}
-      >
+    <TableShell layout="split">
+      <Table className="table-fixed" style={{ minWidth: totalWidth }}>
         <colgroup>
           {WIDTH_SPECS.map((spec) => (
             <col key={spec.key} style={{ width: widths[spec.key] }} />
@@ -105,19 +94,7 @@ export function TokenList({
               key={row.id}
               data-token-row={row.id}
               active={activeId === row.id}
-              tabIndex={onShowDetail ? 0 : undefined}
-              className={onShowDetail ? 'cursor-pointer' : undefined}
-              onClick={onShowDetail ? (event: MouseEvent<HTMLTableRowElement>) => {
-                if (event.defaultPrevented) return;
-                if (isInteractiveTableTarget(event.target)) return;
-                onShowDetail(row);
-              } : undefined}
-              onKeyDown={onShowDetail ? (event: KeyboardEvent<HTMLTableRowElement>) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                if (isInteractiveTableTarget(event.target)) return;
-                event.preventDefault();
-                onShowDetail(row);
-              } : undefined}
+              onOpen={onShowDetail ? () => onShowDetail(row) : undefined}
             >
               {WIDTH_SPECS.map((spec) => (
                 <TableCell
@@ -154,7 +131,7 @@ function renderColumn(
   if (key === 'lastPage') {
     const page = tokenLastPageDisplay(row);
     const at = formatTokenRelative(row.lastRequestAt, t);
-    if (!page && !at) return <EmptyCell />;
+    if (!page && !at) return <TableEmptyCell />;
     return (
       <div className="min-w-0">
         <p className="truncate font-mono text-meta text-secondary">{page || '—'}</p>
@@ -163,7 +140,7 @@ function renderColumn(
     );
   }
   if (key === 'usage') {
-    return tokenUsageDisplay(row.usage, t) || <EmptyCell />;
+    return tokenUsageDisplay(row.usage, t) || <TableEmptyCell />;
   }
   if (key === 'endpoint') {
     const endpoint = tokenEndpointParts(row);
@@ -210,7 +187,7 @@ function renderColumn(
           {row.maskedToken}
         </span>
       ) : (
-        <EmptyCell />
+        <TableEmptyCell />
       )}
       {row.token ? (
         <Button
