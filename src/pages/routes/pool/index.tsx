@@ -28,8 +28,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ApiKeyAccountDialog } from '@/components/connections/ApiKeyAccountDialog';
-import { ProviderEditDialog } from '@/components/connections/ProviderEditDialog';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { TicketView } from '@/lib/api/tickets';
 import { deleteAccount } from '@/lib/api/account';
@@ -74,6 +72,8 @@ import {
 } from '@/pages/connections/connection-model';
 import { ConnectionTrashButton } from '@/pages/connections/ConnectionTrashButton';
 import { useOAuthLoginAgents } from '@/pages/connections/use-oauth-login-agents';
+import { ApiAccessDialog } from './ApiAccessDialog';
+import type { PoolApiEditTarget } from './api-access-model';
 import { PoolAddButtons } from './PoolAddButtons';
 import { PoolAuthorizationDetail } from './PoolAuthorizationDetail';
 import { PoolAuthorizationList } from './PoolAuthorizationList';
@@ -116,6 +116,7 @@ export default function RoutesPoolPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
   const [refreshingKey, setRefreshingKey] = useState<string | null>(null);
+  const [apiEdit, setApiEdit] = useState<PoolApiEditTarget | null>(null);
   const reloadAll = () => {
     void reload();
     setPoolReloadKey((value) => value + 1);
@@ -314,22 +315,12 @@ export default function RoutesPoolPage() {
   };
 
   const openAuthorizationEdit = () => {
-    if (authorizationEntry?.provider) {
-      inspect.open({
-        kind: 'provider',
-        mode: 'edit',
-        agentId: authorizationEntry.provider.agentId,
-        provider: authorizationEntry.provider,
-      });
-      return;
-    }
-    if (authorizationEntry?.account?.kind === 'apikey') {
-      inspect.open({
-        kind: 'account',
-        agentId: authorizationEntry.account.agentId,
-        account: authorizationEntry.account,
-      });
-    }
+    if (!authorizationEntry?.provider || !authorizationItem) return;
+    setApiEdit({
+      provider: authorizationEntry.provider,
+      endpointKinds: authorizationItem.endpointKinds,
+      priority: authorizationItem.priority,
+    });
   };
 
   const confirmDeleteAuthorization = async () => {
@@ -400,40 +391,8 @@ export default function RoutesPoolPage() {
         onDelete={() => {
           if (authorizationTicket) setDeleteTicket(authorizationTicket);
         }}
-        onEdit={
-          authorizationEntry?.provider || authorizationEntry?.account?.kind === 'apikey'
-            ? openAuthorizationEdit
-            : undefined
-        }
+        onEdit={authorizationEntry?.provider ? openAuthorizationEdit : undefined}
         onClose={() => inspect.close()}
-      />
-    ) : inspectTarget?.kind === 'account' ? (
-      <ApiKeyAccountDialog
-        asPanel
-        open
-        width={inspect.paneWidth}
-        agentId={inspectTarget.agentId}
-        mode={inspectTarget.account ? 'edit' : 'add'}
-        account={inspectTarget.account}
-        onOpenChange={(open) => { if (!open) inspect.close(); }}
-        onSaved={() => {
-          inspect.close();
-          reloadAll();
-        }}
-      />
-    ) : inspectTarget?.kind === 'provider' ? (
-      <ProviderEditDialog
-        asPanel
-        open
-        width={inspect.paneWidth}
-        agentId={inspectTarget.agentId}
-        mode={inspectTarget.mode}
-        provider={inspectTarget.provider}
-        onOpenChange={(open) => { if (!open) inspect.close(); }}
-        onSaved={() => {
-          inspect.close();
-          reloadAll();
-        }}
       />
     ) : inspectTarget?.kind === 'write' && writeTarget ? (
       <WriteClientConfigDialog
@@ -714,6 +673,19 @@ export default function RoutesPoolPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ApiAccessDialog
+        open={Boolean(apiEdit)}
+        agents={allowedAgents}
+        edit={apiEdit}
+        onOpenChange={(open) => {
+          if (!open) setApiEdit(null);
+        }}
+        onSaved={() => {
+          setApiEdit(null);
+          reloadAll();
+        }}
+      />
     </>
   );
 }

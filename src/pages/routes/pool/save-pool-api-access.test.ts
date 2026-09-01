@@ -126,4 +126,35 @@ describe('savePoolApiAccess', () => {
     expect(catalogs[0]?.[1]).toEqual(['gpt-4o', 'custom-1']);
     expect(priorities.map((item) => item[1])).toEqual([3, 3]);
   });
+
+  it('updates the existing provider on edit and does not attach again', async () => {
+    const attached = vi.fn(async () => {});
+    const upserted: string[] = [];
+    const deps: SavePoolApiAccessDeps = {
+      getAgentConfigSchema: vi.fn(async () => {
+        throw new Error('schema unavailable');
+      }),
+      validateAgentConfig: vi.fn(async () => ({ ok: true, issues: [] })),
+      materializeAgentConfig: vi.fn(async () => ({})),
+      applyFormVars: vi.fn((_agentId, text) => text),
+      upsertProvider: vi.fn(async (draft) => {
+        upserted.push(draft.id);
+        return draft;
+      }),
+      attachAuthorization: attached,
+    };
+    const [messages] = poolApiChoices(['claude', 'codex', 'grok']);
+    const existing = provider('prov-1', 'claude');
+    const result = await savePoolApiAccess(
+      {
+        apiKeys: [''],
+        edit: { provider: existing },
+        items: [{ choice: messages!, baseUrl: 'https://api.anthropic.com' }],
+      },
+      deps,
+    );
+    expect(result).toEqual({ saved: 1, errors: [] });
+    expect(upserted).toEqual(['prov-1']);
+    expect(attached).not.toHaveBeenCalled();
+  });
 });
