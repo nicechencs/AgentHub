@@ -321,6 +321,7 @@ describe('AgentDetailPanel markup', () => {
     const html = renderPanel(installed('codex', 'native'));
     expect(html).toContain('/home/box/.local/bin/codex');
     expect(html).toContain('打开安装目录');
+    expect(html).toContain('仅卸载程序');
     expect(html).toContain('npm i -g @openai/codex');
     expect(html).toContain('复制命令');
     expect(html).toContain('安装');

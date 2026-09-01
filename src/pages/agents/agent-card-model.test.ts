@@ -8,6 +8,7 @@ import {
   extraCopyKindLabel,
   extraCopyKindLabelKey,
   extraCopyUpdateHint,
+  agentUninstallControl,
   canInstallAlongsideSpecial,
   canUninstallProgramInApp,
   installLifecycle,
@@ -46,7 +47,8 @@ describe('agent-card menu wiring', () => {
     expect(card).not.toContain("t('agents.card.uninstallConfig')");
     expect(card).not.toContain('openBinDir');
     expect(card).not.toContain('DropdownMenu');
-    expect(detail).toContain('canUninstallProgramInApp');
+    expect(detail).toContain('agentUninstallControl');
+    expect(detail).toContain('ChannelUninstallButton');
     expect(detail).toContain("setConfirmDialog('program')");
     expect(detail).toContain("setConfirmDialog('config')");
     expect(detail).toContain('openPathInFileManager');
@@ -299,6 +301,12 @@ describe('extra copy labels', () => {
         binPath: '/ide/codex',
       }),
     ).toBe(false);
+    expect(agentUninstallControl('in_app')).toEqual({ show: true, muted: false });
+    expect(agentUninstallControl('ide')).toEqual({ show: true, muted: true });
+    expect(agentUninstallControl('desktop')).toEqual({ show: true, muted: true });
+    expect(agentUninstallControl('official')).toEqual({ show: true, muted: true });
+    expect(agentUninstallControl('leftover')).toEqual({ show: false, muted: false });
+    expect(agentUninstallControl('none')).toEqual({ show: false, muted: false });
     expect(
       canInstallAlongsideSpecial({
         agentId: 'codex',
@@ -388,6 +396,12 @@ describe('agent launch targets', () => {
       channel: 'native',
       binPath: '/opt/WorkBuddy.exe',
     })).toEqual({ appPath: '/opt/WorkBuddy.exe' });
+    expect(agentLaunchTargets({
+      agentId: 'zcode',
+      installed: true,
+      channel: 'native',
+      binPath: '/Applications/ZCode.app/Contents/MacOS/ZCode',
+    })).toEqual({ appPath: '/Applications/ZCode.app/Contents/MacOS/ZCode' });
     expect(agentLaunchTargets({
       agentId: 'codex',
       installed: true,
