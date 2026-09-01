@@ -5,7 +5,14 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
-import { buildTokenDetailCopyRows, tokenEndpointParts, tokenDetailTitle } from './token-detail-model';
+import {
+  buildTokenDetailCopyRows,
+  formatTokenRelative,
+  tokenDetailTitle,
+  tokenEndpointParts,
+  tokenLastPageDisplay,
+  tokenUsageDisplay,
+} from './token-detail-model';
 import type { LocalTokenRow } from './tokens-model';
 
 export function TokenDetailPanel({
@@ -62,6 +69,19 @@ export function TokenDetailPanel({
               className="text-sm"
             />
           )}
+        </div>
+        <div className="space-y-1">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldLastPage')}</p>
+          <p className="font-mono text-secondary">{tokenLastPageDisplay(row) || '—'}</p>
+          {row.lastRequestAt ? (
+            <p className="text-meta text-muted">
+              {t('routes.tokens.fieldLastAt')} · {formatTokenRelative(row.lastRequestAt, t)}
+            </p>
+          ) : null}
+        </div>
+        <div className="space-y-1">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldUsage')}</p>
+          <p className="text-secondary">{tokenUsageDisplay(row.usage, t) || '—'}</p>
         </div>
         <div className="space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldToken')}</p>

@@ -18,30 +18,42 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
     maskedToken: 'ahb_••••cret',
     unavailable: false,
     targetAgentId: 'kimi',
+    profileIds: ['bridge-1'],
+    lastPath: '/v1/chat/completions',
+    lastRequestAt: '2026-08-31T12:00:00.000Z',
+    usage: {
+      requestCount: 4,
+      inputTokens: 1200,
+      outputTokens: 800,
+      cachedInputTokens: 0,
+    },
     ...partial,
   };
 }
 
 describe('TokenList', () => {
-  it('renders a field table with type, endpoint, and token', () => {
+  it('renders a field table with type, endpoint, token, last page, and usage', () => {
     const markup = renderToStaticMarkup(
       createElement(
         TooltipProvider,
         null,
-        createElement(TokenList, { rows: [row()], onEditKey: () => {} }),
+        createElement(TokenList, { rows: [row()] }),
       ),
     );
     expect(markup).toContain('<table');
     expect(markup).toContain('data-col="type"');
     expect(markup).toContain('data-col="endpoint"');
     expect(markup).toContain('data-col="token"');
+    expect(markup).toContain('data-col="lastPage"');
+    expect(markup).toContain('data-col="usage"');
     expect(markup).toContain('data-token-row="pool-kimi"');
     expect(markup).toContain('Chat Completions');
     expect(markup).toContain('http://127.0.0.1:8123');
     expect(markup).toContain('/v1/chat/completions');
     expect(markup).toContain('ahb_••••cret');
+    expect(markup).toContain('1.2K in / 800 out');
     expect(markup).not.toContain('ahb_secret');
-    expect(markup).toContain('修改');
+    expect(markup).not.toContain('修改');
     expect(markup).toContain('data-table-shell="default"');
     expect(markup).toContain('role="separator"');
     expect(markup).toContain('调整类型列宽');
@@ -59,5 +71,24 @@ describe('TokenList', () => {
     );
     expect(markup).toContain('—');
     expect(markup).not.toContain('ahb_');
+  });
+
+  it('shows dashes when last page and usage are empty', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(TokenList, {
+          rows: [row({
+            lastPath: null,
+            lastRequestAt: null,
+            usage: { requestCount: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 },
+          })],
+        }),
+      ),
+    );
+    expect(markup).toContain('data-col="lastPage"');
+    expect(markup).toContain('data-col="usage"');
+    expect(markup).not.toContain('in /');
   });
 });

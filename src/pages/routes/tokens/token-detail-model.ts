@@ -3,10 +3,12 @@
  */
 import { ROUTE_ENDPOINT_HOST, routeEndpointHttpParts } from '@/lib/route-endpoints';
 import type { TranslateFn } from '@/lib/i18n';
+import { fmtTokens } from '@/lib/utils';
 import {
   tokenListenPort,
   tokenTypeLabel,
   type LocalTokenRow,
+  type LocalTokenUsage,
 } from './tokens-model';
 
 export type TokenDetailCopyRow = {
@@ -69,4 +71,34 @@ export function buildTokenDetailCopyRows(
 
 export function tokenDetailTitle(row: LocalTokenRow, t?: TranslateFn): string {
   return tokenTypeLabel(row, t);
+}
+
+export function formatTokenRelative(iso: string | null | undefined, t?: TranslateFn): string {
+  if (!iso) return '';
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return '';
+  const diff = Date.now() - parsed;
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return t ? t('common.relativeJustNow') : '刚刚';
+  if (m < 60) return t ? t('common.relativeMinutes', { n: m }) : `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return t ? t('common.relativeHours', { n: h }) : `${h} 小时前`;
+  const d = Math.floor(h / 24);
+  return t ? t('common.relativeDays', { n: d }) : `${d} 天前`;
+}
+
+export function tokenLastPageDisplay(row: Pick<LocalTokenRow, 'lastPath'>): string {
+  return row.lastPath?.trim() || '';
+}
+
+export function tokenUsageDisplay(
+  usage: LocalTokenUsage | undefined,
+  t?: TranslateFn,
+): string {
+  if (!usage || usage.requestCount <= 0) return '';
+  const input = fmtTokens(usage.inputTokens);
+  const output = fmtTokens(usage.outputTokens);
+  return t
+    ? t('routes.tokens.usageSummary', { in: input, out: output })
+    : `${input} in / ${output} out`;
 }

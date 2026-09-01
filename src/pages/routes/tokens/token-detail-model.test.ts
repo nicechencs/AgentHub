@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildTokenDetailCopyRows, tokenEndpointParts } from './token-detail-model';
+import {
+  buildTokenDetailCopyRows,
+  formatTokenRelative,
+  tokenEndpointParts,
+  tokenLastPageDisplay,
+  tokenUsageDisplay,
+} from './token-detail-model';
 import type { LocalTokenRow } from './tokens-model';
 
 function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
@@ -15,6 +21,15 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
     maskedToken: 'ahb_••••cret',
     unavailable: false,
     targetAgentId: 'kimi',
+    profileIds: ['bridge-1'],
+    lastPath: '/v1/models',
+    lastRequestAt: new Date().toISOString(),
+    usage: {
+      requestCount: 3,
+      inputTokens: 1500,
+      outputTokens: 200,
+      cachedInputTokens: 0,
+    },
     ...partial,
   };
 }
@@ -59,4 +74,18 @@ describe('token-detail-model', () => {
     }), true);
     expect(copies.find((item) => item.id === 'token')?.copyValue).toBeNull();
   });
+
+  it('shows last visited page and token usage',
+    () => {
+      expect(tokenLastPageDisplay(row())).toBe('/v1/models');
+      expect(tokenLastPageDisplay(row({ lastPath: null }))).toBe('');
+      expect(tokenUsageDisplay(row().usage)).toBe('1.5K in / 200 out');
+      expect(tokenUsageDisplay({
+        requestCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedInputTokens: 0,
+      })).toBe('');
+      expect(formatTokenRelative(new Date().toISOString())).toBe('刚刚');
+    });
 });

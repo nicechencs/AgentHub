@@ -7,6 +7,7 @@ import type {
   AdapterProfile,
   DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
+import type { GatewayUsageRow } from '@/lib/backend/contracts/usage-types';
 import type { TranslateFn } from '@/lib/i18n';
 import {
   localEndpointKindForTargetAgent,
@@ -15,12 +16,25 @@ import {
   type LocalEndpointKind,
 } from '@/lib/route-endpoints';
 import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
+import {
+  filterGatewayUsageRows,
+  summarizeGatewayUsage,
+} from '@/pages/routes/board/board-usage-model';
 import { profilesForPool } from '@/pages/routes/board/board-view-model';
+
+export interface LocalTokenUsage {
+  requestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+}
 
 export interface LocalTokenRow {
   /** Stable list key: pool id or profile id. */
   id: string;
   profileId: string | null;
+  /** Profiles whose gateway usage belongs to this entry key. */
+  profileIds: string[];
   name: string;
   kind: LocalEndpointKind;
   path: string;
@@ -34,6 +48,12 @@ export interface LocalTokenRow {
   unavailable: boolean;
   /** Pool/runtime writer this key belongs to; not a client-write target. */
   targetAgentId: string;
+  /** Last inbound path seen for this key. */
+  lastPath: string | null;
+  /** ISO time of the latest inbound request. */
+  lastRequestAt: string | null;
+  /** Optional 7-day gateway usage; omitted until the query is ready. */
+  usage?: LocalTokenUsage;
 }
 
 export function maskLocalToken(token: string): string {
@@ -41,6 +61,23 @@ export function maskLocalToken(token: string): string {
   if (!trimmed) return '';
   const tail = trimmed.slice(-4);
   return trimmed.startsWith('ahb_') ? `ahb_••••${tail}` : `••••${tail}`;
+}
+
+/** Same shape as core `generate_hub_token`: `ahb_` + 32 random bytes, base64url, no pad. */
+export function generateLocalToken(
+  randomBytes: (size: number) => Uint8Array = defaultRandomBytes,
+): string {
+  const bytes = randomBytes(32);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const encoded = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `ahb_${encoded}`;
+}
+
+function defaultRandomBytes(size: number): Uint8Array {
+  const bytes = new Uint8Array(size);
+  crypto.getRandomValues(bytes);
+  return bytes;
 }
 
 export function tokenListenPort(endpoint: string | null): number | null {
@@ -69,6 +106,56 @@ export function visibleTokenKinds(
     .map((row) => row.kind);
 }
 
+export function tokenUsageSurface(kind: LocalEndpointKind): 'messages' | 'responses' | 'chat' {
+  if (kind === 'messages') return 'messages';
+  if (kind === 'chat_completions') return 'chat';
+  return 'responses';
+}
+
+export function lastVisitFromStatuses(
+  profileIds: readonly string[],
+  statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
+): { lastPath: string | null; lastRequestAt: string | null } {
+  let bestAt = '';
+  let bestPath: string | null = null;
+  for (const id of profileIds) {
+    const status = statuses[id];
+    const inbound = status?.recentInbound ?? [];
+    const at = status?.lastRequestAt?.trim() || inbound[0]?.at || '';
+    const path = inbound[0]?.path?.trim() || null;
+    if (!at && !path) continue;
+    if (!bestAt || at >= bestAt) {
+      bestAt = at;
+      bestPath = path;
+    }
+  }
+  return {
+    lastPath: bestPath,
+    lastRequestAt: bestAt || null,
+  };
+}
+
+export function attachTokenUsage(
+  rows: readonly LocalTokenRow[],
+  gatewayRows: readonly GatewayUsageRow[],
+): LocalTokenRow[] {
+  return rows.map((row) => {
+    const totals = summarizeGatewayUsage(filterGatewayUsageRows(gatewayRows, {
+      profileIds: row.profileIds,
+      surface: tokenUsageSurface(row.kind),
+    }));
+    return {
+      ...row,
+      usage: {
+        requestCount: totals.requestCount,
+        inputTokens: totals.inputTokens,
+        outputTokens: totals.outputTokens,
+        cachedInputTokens: totals.cachedInputTokens,
+      },
+    };
+  });
+}
+
 function pickRuntimeProfile(
   matches: readonly AdapterProfile[],
   statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
@@ -80,25 +167,37 @@ function pickRuntimeProfile(
   }) ?? matches[0] ?? null;
 }
 
+function profileIdsForPool(
+  pool: Pick<DefaultRoutePoolOverview, 'id' | 'targetAgentId' | 'members'>,
+  profiles: readonly AdapterProfile[],
+): string[] {
+  const matches = profilesForPool(pool, profiles);
+  return [...new Set([pool.id, ...matches.map((item) => item.id)])];
+}
+
 function rowFromRuntime(input: {
   id: string;
   name: string;
   kind: LocalEndpointKind;
   targetAgentId: string;
   profile: AdapterProfile | null;
+  profileIds: readonly string[];
   portHint: number | null | undefined;
   status: AdapterBridgeRuntimeStatus | undefined;
   unavailable: boolean;
   storedToken?: string | null;
+  statuses: Record<string, AdapterBridgeRuntimeStatus | undefined>;
 }): LocalTokenRow {
   const port = input.unavailable
     ? null
     : (input.status?.port ?? input.portHint ?? input.profile?.localPort);
   const token = input.storedToken?.trim()
     || (input.unavailable ? null : input.status?.localToken?.trim() || null);
+  const visit = lastVisitFromStatuses(input.profileIds, input.statuses);
   return {
     id: input.id,
     profileId: input.profile?.id ?? null,
+    profileIds: [...input.profileIds],
     name: input.name,
     kind: input.kind,
     path: localEndpointPath(input.kind),
@@ -108,6 +207,8 @@ function rowFromRuntime(input: {
     maskedToken: token ? maskLocalToken(token) : null,
     unavailable: input.unavailable,
     targetAgentId: input.targetAgentId,
+    lastPath: visit.lastPath,
+    lastRequestAt: visit.lastRequestAt,
   };
 }
 
@@ -131,11 +232,13 @@ export function buildLocalTokenRows(
     && pool.members.length > 0
   ));
   let sharedChatRow = false;
+  const extraChatIds: string[] = [];
 
   for (const pool of pools) {
     if (pool.members.length === 0) continue;
     const kind = localEndpointKindFromPool(pool);
     if (!kind) continue;
+    const profileIds = profileIdsForPool(pool, profiles);
     if (
       chatCompletionsShared
       && kind === 'chat_completions'
@@ -143,6 +246,7 @@ export function buildLocalTokenRows(
     ) {
       const matches = profilesForPool(pool, profiles);
       for (const match of matches) covered.add(match.id);
+      extraChatIds.push(...profileIds);
       continue;
     }
     const matches = profilesForPool(pool, profiles);
@@ -155,10 +259,12 @@ export function buildLocalTokenRows(
       kind,
       targetAgentId: pool.targetAgentId,
       profile,
+      profileIds,
       portHint: pool.gatewayPort,
       status: bridgeStatuses[statusId],
       unavailable: Boolean(statusErrors[statusId]),
       storedToken: tokensByPoolId[pool.id] ?? tokensByPoolId[statusId],
+      statuses: bridgeStatuses,
     }));
     if (kind === 'chat_completions') sharedChatRow = true;
   }
@@ -167,7 +273,10 @@ export function buildLocalTokenRows(
     if (profile.route !== 'local_bridge') continue;
     if (covered.has(profile.id)) continue;
     const kind = localEndpointKindForTargetAgent(profile.targetAgentId);
-    if (chatCompletionsShared && kind === 'chat_completions' && sharedChatRow) continue;
+    if (chatCompletionsShared && kind === 'chat_completions' && sharedChatRow) {
+      extraChatIds.push(profile.id);
+      continue;
+    }
     const status = bridgeStatuses[profile.id];
     const unavailable = Boolean(statusErrors[profile.id])
       || status?.upstreamStatus === 'unavailable';
@@ -177,12 +286,24 @@ export function buildLocalTokenRows(
       kind,
       targetAgentId: profile.targetAgentId,
       profile,
+      profileIds: [profile.id],
       portHint: profile.localPort,
       status,
       unavailable,
       storedToken: tokensByPoolId[profile.id],
+      statuses: bridgeStatuses,
     }));
     if (kind === 'chat_completions') sharedChatRow = true;
+  }
+
+  if (chatCompletionsShared && extraChatIds.length > 0) {
+    for (const row of rows) {
+      if (row.kind !== 'chat_completions') continue;
+      row.profileIds = [...new Set([...row.profileIds, ...extraChatIds])];
+      const visit = lastVisitFromStatuses(row.profileIds, bridgeStatuses);
+      row.lastPath = visit.lastPath;
+      row.lastRequestAt = visit.lastRequestAt;
+    }
   }
 
   return rows.sort((a, b) => {

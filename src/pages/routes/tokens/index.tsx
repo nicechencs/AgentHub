@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, Sparkles } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageSection } from '@/components/layout/PageSection';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
@@ -24,14 +24,23 @@ import { useToast } from '@/components/ui/toast';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { ROUTES_POOL_PATH } from '@/lib/bridges-path';
 import { listLocalTokens, setLocalToken } from '@/lib/api/adapter';
+import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/bridges/route-inspect';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
+import { boardUsageWindow } from '@/pages/routes/board/board-usage-model';
+import { useBoardUsageStats } from '@/pages/routes/board/use-board-usage';
 import { buildLocalEntryControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { TokenDetailPanel } from './TokenDetailPanel';
 import { TokenList } from './TokenList';
-import { buildLocalTokenRows, tokenTypeLabel, type LocalTokenRow } from './tokens-model';
+import {
+  attachTokenUsage,
+  buildLocalTokenRows,
+  generateLocalToken,
+  tokenTypeLabel,
+  type LocalTokenRow,
+} from './tokens-model';
 
 export default function RoutesTokensPage() {
   const { t } = useI18n();
@@ -48,6 +57,7 @@ export default function RoutesTokensPage() {
     reload,
   } = useAdapterResources();
   const [tokenTick, setTokenTick] = useState(0);
+  const [collectKey, setCollectKey] = useState(0);
   const [tokensByPoolId, setTokensByPoolId] = useState<Record<string, string>>({});
   const [editRow, setEditRow] = useState<LocalTokenRow | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -102,6 +112,22 @@ export default function RoutesTokensPage() {
       tokensByPoolId,
     ],
   );
+  const usageWindow = useMemo(() => boardUsageWindow('7d'), []);
+  const usageState = useBoardUsageStats({
+    enabled: rows.length > 0,
+    since: usageWindow.since,
+    refreshKey: tokenTick + collectKey,
+  });
+  const listRows = useMemo(
+    () => (usageState.status === 'ready' ? attachTokenUsage(rows, usageState.rows) : rows),
+    [rows, usageState],
+  );
+
+  useEffect(() => {
+    const onCollected = () => setCollectKey((key) => key + 1);
+    window.addEventListener(USAGE_COLLECTED_EVENT, onCollected);
+    return () => window.removeEventListener(USAGE_COLLECTED_EVENT, onCollected);
+  }, []);
 
   const openEdit = (row: LocalTokenRow) => {
     setEditRow(row);
@@ -129,7 +155,7 @@ export default function RoutesTokensPage() {
   };
 
   const detailRow = inspect.target
-    ? rows.find((row) => row.id === inspect.target) ?? null
+    ? listRows.find((row) => row.id === inspect.target) ?? null
     : null;
   const pageLoading = loading || poolsLoading;
 
@@ -159,13 +185,13 @@ export default function RoutesTokensPage() {
         </div>
       </div>
 
-      {profileState === 'error' && rows.length === 0 && !pageLoading ? (
+      {profileState === 'error' && listRows.length === 0 && !pageLoading ? (
         <ErrorState
           title={t('routes.runtime.unavailable')}
           error={errors.profiles ?? new Error(t('routes.runtime.unavailable'))}
           onRetry={() => void reload()}
         />
-      ) : rows.length === 0 && !pageLoading ? (
+      ) : listRows.length === 0 && !pageLoading ? (
         <EmptyState
           icon={KeyRound}
           title={t('routes.tokens.emptyTitle')}
@@ -184,10 +210,9 @@ export default function RoutesTokensPage() {
       ) : (
         <PageSection first>
           <TokenList
-            rows={rows}
+            rows={listRows}
             activeId={inspect.target}
             onShowDetail={(row) => inspect.open(row.id)}
-            onEditKey={openEdit}
           />
         </PageSection>
       )}
@@ -200,14 +225,28 @@ export default function RoutesTokensPage() {
               {editRow ? tokenTypeLabel(editRow, t) : null}
             </DialogDescription>
           </DialogHeader>
-          <Input
-            value={editValue}
-            onChange={(event) => setEditValue(event.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-            disabled={editBusy}
-            aria-label={t('routes.tokens.fieldToken')}
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              className="min-w-0 flex-1"
+              value={editValue}
+              onChange={(event) => setEditValue(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              disabled={editBusy}
+              aria-label={t('routes.tokens.fieldToken')}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              disabled={editBusy}
+              title={t('routes.tokens.generateKey')}
+              aria-label={t('routes.tokens.generateKey')}
+              onClick={() => setEditValue(generateLocalToken())}
+            >
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+            </Button>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditRow(null)} disabled={editBusy}>
               {t('common.cancel')}
