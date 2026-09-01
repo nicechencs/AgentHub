@@ -5,7 +5,9 @@ import {
   formatTrendTick,
   formatTrendTooltipLabel,
   localTrendBucket,
+  sortUsageTrendTooltipItems,
   trendGrain,
+  usageTrendTooltipItemsFromPayload,
   zeroFillTrendSeries,
 } from './usage-trend';
 
@@ -76,5 +78,31 @@ describe('zeroFillTrendSeries', () => {
       'codex',
     ]);
     expect(filled).toEqual([{ date: '2026-08-26 10:00', claude: 4, codex: 0 }]);
+  });
+});
+
+describe('usage trend tooltip items', () => {
+  it('drops empty series and sorts by token usage desc', () => {
+    const items = sortUsageTrendTooltipItems([
+      { key: 'b', name: 'Codex', tokens: 80 },
+      { key: 'a', name: 'Claude', tokens: 120 },
+      { key: 'c', name: 'Empty', tokens: 0 },
+    ]);
+    expect(items.map((item) => item.key)).toEqual(['a', 'b']);
+  });
+
+  it('maps chart payload names and ignores zero values', () => {
+    const items = usageTrendTooltipItemsFromPayload(
+      [
+        { dataKey: 'codex', name: 'codex', value: 80, color: '#111' },
+        { dataKey: 'claude', name: 'claude', value: 240, color: '#222' },
+        { dataKey: 'gemini', name: 'gemini', value: 0, color: '#333' },
+      ],
+      (key) => key.toUpperCase(),
+    );
+    expect(items).toEqual([
+      { key: 'claude', name: 'CLAUDE', tokens: 240, color: '#222' },
+      { key: 'codex', name: 'CODEX', tokens: 80, color: '#111' },
+    ]);
   });
 });

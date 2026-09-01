@@ -60,6 +60,19 @@ describe('dashboard layout wiring', () => {
     expect(page).not.toContain('stopColor={meta.color}');
   });
 
+  it('keeps trend y-axis labels in view and sorts the hover list by tokens', () => {
+    const page = source('index.tsx');
+    const tooltip = source('UsageTrendTooltip.tsx');
+    expect(page).toContain('USAGE_TREND_Y_AXIS_WIDTH');
+    expect(page).toContain('UsageTrendTooltipCard');
+    expect(page).toContain('useUsageTrendHover');
+    expect(page).not.toContain('width={48}');
+    expect(page).not.toContain('contentStyle={tooltipSurfaceStyle()}');
+    expect(tooltip).toContain('USAGE_TREND_Y_AXIS_WIDTH = 64');
+    expect(tooltip).toContain('tooltipSurfaceStyle()');
+    expect(tooltip).toContain("pointerEvents: 'auto'");
+  });
+
   it('does not open a connect popup from overview cards or show quick actions', () => {
     const page = source('index.tsx');
     expect(page).not.toContain('onConnectRequest');

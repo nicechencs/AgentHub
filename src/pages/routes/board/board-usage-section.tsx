@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Area,
@@ -25,14 +25,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { tooltipSurfaceStyle } from '@/components/ui/tooltip';
+
 import { resolveAgentMeta } from '@/config/agents';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import type { MessageKey } from '@/lib/i18n';
 import { resolveTheme } from '@/lib/theme';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
-import { formatTrendTick, formatTrendTooltipLabel } from '@/lib/usage-trend';
+import { formatTrendTick } from '@/lib/usage-trend';
 import { cn, fmtTokens } from '@/lib/utils';
+import {
+  USAGE_TREND_Y_AXIS_WIDTH,
+  UsageTrendTooltipCard,
+  useUsageTrendHover,
+} from '@/pages/dashboard/UsageTrendTooltip';
 import {
   resolveUsageModelFilter,
   usageModelSelectOptions,
@@ -227,6 +232,11 @@ export function BoardUsageSection({
       color: seriesMeta[item.id]?.color ?? FALLBACK_COLOR,
     }));
   }, [effectiveGroupBy, totals.modelNames, selectedEntry, entries, seriesMeta, t]);
+  const resolveTrendName = useCallback(
+    (key: string) => trendSeries.find((item) => item.key === key)?.label ?? key,
+    [trendSeries],
+  );
+  const trendHover = useUsageTrendHover(resolveTrendName);
 
   const rangedTrend = useMemo(() => {
     if (usage.status !== 'ready') return [];
@@ -365,9 +375,14 @@ export function BoardUsageSection({
               </p>
             </CardHeader>
             <CardContent>
-              <div className="h-56">
+              <div className="relative h-56">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={rangedTrend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                  <AreaChart
+                    data={rangedTrend}
+                    margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
+                    onMouseMove={trendHover.onChartMouseMove}
+                    onMouseLeave={trendHover.onChartMouseLeave}
+                  >
                     <defs>
                       {trendSeries.map((series) => {
                         const color = resolveChartColor(series.color, chartScheme);
@@ -406,24 +421,11 @@ export function BoardUsageSection({
                       tickLine={false}
                       axisLine={false}
                       tickFormatter={(v: number) => fmtTokens(v)}
-                      width={48}
+                      width={USAGE_TREND_Y_AXIS_WIDTH}
                     />
                     <Tooltip
-                      contentStyle={tooltipSurfaceStyle()}
-                      labelStyle={{
-                        color: 'var(--text-secondary)',
-                        fontSize: 'var(--font-meta-size)',
-                      }}
-                      itemStyle={{
-                        fontSize: 'var(--font-meta-size)',
-                      }}
-                      labelFormatter={(label) => formatTrendTooltipLabel(String(label))}
-                      formatter={(value, name) => {
-                        const tokens = Number(value);
-                        if (!tokens) return null;
-                        const series = trendSeries.find((item) => item.key === name);
-                        return [fmtTokens(tokens), series?.label ?? String(name)];
-                      }}
+                      cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
+                      content={() => null}
                     />
                     {trendSeries.map((series) => (
                       <Area
@@ -439,6 +441,14 @@ export function BoardUsageSection({
                     ))}
                   </AreaChart>
                 </ResponsiveContainer>
+                {trendHover.tip ? (
+                  <UsageTrendTooltipCard
+                    label={trendHover.tip.label}
+                    items={trendHover.tip.items}
+                    onMouseEnter={trendHover.onTipMouseEnter}
+                    onMouseLeave={trendHover.onTipMouseLeave}
+                  />
+                ) : null}
               </div>
             </CardContent>
           </Card>
