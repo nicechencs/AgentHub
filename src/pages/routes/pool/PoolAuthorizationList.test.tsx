@@ -37,8 +37,10 @@ describe('PoolAuthorizationList', () => {
     expect(markup).toContain('data-col="endpointTypes"');
     expect(markup).toContain('data-col="status"');
     expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('var(--agent-grok)');
     expect(markup).toContain('data-pool-authorization="account:grok-1"');
     expect(markup).toContain('Grok · OAuth');
+    expect(markup).toContain('data-pool-login-mark="oauth"');
     expect(markup).toContain('官方登录');
     expect(markup).toContain('可续期');
     expect(markup).not.toContain('data-col="bindings"');
@@ -123,6 +125,11 @@ describe('PoolAuthorizationList', () => {
     );
     expect(markup).toContain('openrouter.ai');
     expect(markup).not.toContain('OpenRouter · openrouter.ai/api/v1');
+    expect(markup).not.toContain('Claude Code');
+    expect(markup).toContain('data-pool-login-mark="url"');
+    expect(markup).toContain('linearGradient');
+    expect(markup).toContain('var(--agent-claude)');
+    expect(markup).toContain('var(--agent-codex)');
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('/v1/chat/completions');
     expect(markup).toContain('flex-col');

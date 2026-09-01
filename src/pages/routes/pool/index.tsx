@@ -72,8 +72,6 @@ import {
 } from '@/pages/connections/connection-model';
 import { ConnectionTrashButton } from '@/pages/connections/ConnectionTrashButton';
 import { useOAuthLoginAgents } from '@/pages/connections/use-oauth-login-agents';
-import { ApiAccessDialog } from './ApiAccessDialog';
-import type { PoolApiEditTarget } from './api-access-model';
 import { PoolAddButtons } from './PoolAddButtons';
 import { PoolAuthorizationDetail } from './PoolAuthorizationDetail';
 import { PoolAuthorizationList } from './PoolAuthorizationList';
@@ -116,7 +114,6 @@ export default function RoutesPoolPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
   const [refreshingKey, setRefreshingKey] = useState<string | null>(null);
-  const [apiEdit, setApiEdit] = useState<PoolApiEditTarget | null>(null);
   const reloadAll = () => {
     void reload();
     setPoolReloadKey((value) => value + 1);
@@ -314,15 +311,6 @@ export default function RoutesPoolPage() {
     }
   };
 
-  const openAuthorizationEdit = () => {
-    if (!authorizationEntry?.provider || !authorizationItem) return;
-    setApiEdit({
-      provider: authorizationEntry.provider,
-      endpointKinds: authorizationItem.endpointKinds,
-      priority: authorizationItem.priority,
-    });
-  };
-
   const confirmDeleteAuthorization = async () => {
     if (!deleteTicket) return;
     setDeleteBusy(true);
@@ -391,7 +379,13 @@ export default function RoutesPoolPage() {
         onDelete={() => {
           if (authorizationTicket) setDeleteTicket(authorizationTicket);
         }}
-        onEdit={authorizationEntry?.provider ? openAuthorizationEdit : undefined}
+        agents={allowedAgents}
+        editTarget={authorizationEntry?.provider && authorizationItem ? {
+          provider: authorizationEntry.provider,
+          endpointKinds: authorizationItem.endpointKinds,
+          priority: authorizationItem.priority,
+        } : null}
+        onSaved={reloadAll}
         onClose={() => inspect.close()}
       />
     ) : inspectTarget?.kind === 'write' && writeTarget ? (
@@ -673,19 +667,6 @@ export default function RoutesPoolPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <ApiAccessDialog
-        open={Boolean(apiEdit)}
-        agents={allowedAgents}
-        edit={apiEdit}
-        onOpenChange={(open) => {
-          if (!open) setApiEdit(null);
-        }}
-        onSaved={() => {
-          setApiEdit(null);
-          reloadAll();
-        }}
-      />
     </>
   );
 }

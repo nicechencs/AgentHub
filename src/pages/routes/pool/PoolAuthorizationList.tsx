@@ -1,6 +1,4 @@
 import type { ReactNode } from 'react';
-import { agentDisplayName } from '@/config/agents';
-import { AgentDot } from '@/components/shared/AgentDot';
 import { StatusPin } from '@/components/shared/StatusPin';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Switch } from '@/components/ui/switch';
@@ -24,10 +22,12 @@ import {
   poolAuthorizationStatusView,
   type PoolAuthorizationItem,
 } from '@/pages/bridges/route-pool-view-model';
+import { PoolEndpointTypeLine } from './PoolEndpointTypeLine';
+import { PoolLoginMark } from './PoolLoginMark';
 import {
   formatPoolTimestamp,
   poolAuthorizationColumnLabel,
-  poolAuthorizationEndpointTypeLabels,
+  poolAuthorizationEndpointKinds,
   poolAuthorizationLoginLabel,
   poolAuthorizationQuotaParts,
   poolAuthorizationVisibleColumns,
@@ -165,12 +165,11 @@ function renderColumn(
       const loginLabel = poolAuthorizationLoginLabel(item);
       return (
         <div className="flex min-w-0 items-center gap-2">
-          <AgentDot agentId={item.agentId} size="sm" title={null} />
+          <PoolLoginMark item={item} />
           <div className="min-w-0">
             <p className="truncate font-medium" title={loginLabel}>
               {loginLabel}
             </p>
-            <p className="truncate text-meta text-muted">{agentDisplayName(item.agentId)}</p>
           </div>
         </div>
       );
@@ -178,12 +177,12 @@ function renderColumn(
     case 'kind':
       return <span className="text-meta text-secondary">{connectionKindLabel(item.kind, ctx.t)}</span>;
     case 'endpointTypes': {
-      const labels = poolAuthorizationEndpointTypeLabels(item, ctx.t);
-      if (labels.length === 0) return <TableEmptyCell />;
+      const kinds = poolAuthorizationEndpointKinds(item);
+      if (kinds.length === 0) return <TableEmptyCell />;
       return (
-        <div className="flex flex-col gap-0.5 text-meta text-secondary">
-          {labels.map((label) => (
-            <span key={label} className="whitespace-normal break-all">{label}</span>
+        <div className="flex flex-col gap-0.5 text-meta">
+          {kinds.map((kind) => (
+            <PoolEndpointTypeLine key={kind} kind={kind} />
           ))}
         </div>
       );

@@ -10,6 +10,7 @@ import {
   poolAuthorizationColumnLabel,
   poolAuthorizationDetailRows,
   poolAuthorizationDomain,
+  poolAuthorizationLinkIconColors,
   poolAuthorizationLoginLabel,
   poolAuthorizationQuotaParts,
   poolAuthorizationVisibleColumns,
@@ -22,6 +23,7 @@ const t = (key: string, params?: Record<string, string | number>) => {
   if (key === 'routes.pool.detail.source') return '来源';
   if (key === 'routes.pool.detail.endpointTypes') return '端点类型';
   if (key === 'routes.pool.page.addedHere') return '本页添加';
+  if (key === 'routes.pool.page.fromConnections') return '来自连接';
   if (key === 'routes.pool.table.login') return '登录';
   if (key === 'routes.pool.table.kind') return '类型';
   if (key === 'routes.pool.table.status') return '状态';
@@ -66,6 +68,24 @@ describe('pool authorization detail fields', () => {
     expect(poolAuthorizationQuotaParts(item())).toEqual([]);
   });
 
+  it('mixes endpoint-type colors for a URL login link icon', () => {
+    expect(poolAuthorizationLinkIconColors(item({
+      kind: 'apikey',
+      agentId: 'claude',
+      endpointKinds: ['messages'],
+    }))).toEqual(['var(--agent-claude)']);
+    expect(poolAuthorizationLinkIconColors(item({
+      kind: 'apikey',
+      agentId: 'claude',
+      endpointKinds: ['messages', 'chat_completions'],
+    }))).toEqual(['var(--agent-claude)', 'var(--agent-codex)']);
+    expect(poolAuthorizationLinkIconColors(item({
+      kind: 'apikey',
+      agentId: 'codex',
+      endpointKinds: ['responses_codex', 'chat_completions'],
+    }))).toEqual(['var(--agent-codex)']);
+  });
+
   it('lists multiple endpoint kinds for one API key', () => {
     const rows = poolAuthorizationDetailRows(item({
       kind: 'apikey',
@@ -77,6 +97,15 @@ describe('pool authorization detail fields', () => {
     expect(endpointTypes?.lines).toEqual([
       expect.stringContaining('/v1/chat/completions'),
     ]);
+  });
+
+  it('names the Agent in source only when the login came from 连接', () => {
+    expect(poolAuthorizationDetailRows(item({ addedHere: true }), t).find((row) => row.id === 'source')?.value)
+      .toBe('本页添加');
+    expect(poolAuthorizationDetailRows(item({
+      addedHere: false,
+      agentId: 'claude',
+    }), t).find((row) => row.id === 'source')?.value).toBe('来自连接 · Claude Code');
   });
 
   it('shows only the domain for a custom API Key login', () => {

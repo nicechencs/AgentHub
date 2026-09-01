@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw, Trash2 } from 'lucide-react';
-import { agentDisplayName } from '@/config/agents';
-import { AgentDot } from '@/components/shared/AgentDot';
 import { DetailRow } from '@/components/shared/DetailRow';
 import { QuotaBar } from '@/components/shared/QuotaBar';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
@@ -12,15 +10,21 @@ import { ensureSourceModelCatalog } from '@/lib/api/adapter';
 import type { AccountAction } from '@/lib/backend/contracts/account-actions';
 import type { SourceModelCatalog } from '@/lib/backend/contracts/adapter';
 import { connectionKindLabel } from '@/lib/connection-kind';
+import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
 import {
   poolAuthorizationStatusView,
   type PoolAuthorizationItem,
 } from '@/pages/bridges/route-pool-view-model';
+import { ApiAccessForm } from './ApiAccessDialog';
+import type { PoolApiEditTarget } from './api-access-model';
+import { PoolEndpointTypeLine } from './PoolEndpointTypeLine';
+import { PoolLoginMark } from './PoolLoginMark';
 import {
   hasQuotaWindow,
   poolAuthorizationDetailRows,
+  poolAuthorizationEndpointKinds,
   poolAuthorizationLoginLabel,
 } from './pool-authorization-detail';
 import { poolAuthorizationRefreshLabels } from './pool-authorization-refresh';
@@ -31,10 +35,12 @@ export function PoolAuthorizationDetail({
   toggling,
   refreshing,
   oauthAction,
+  agents = [],
+  editTarget,
   onEnabledChange,
   onRefresh,
   onDelete,
-  onEdit,
+  onSaved,
   onClose,
 }: {
   item: PoolAuthorizationItem;
@@ -42,24 +48,32 @@ export function PoolAuthorizationDetail({
   toggling?: boolean;
   refreshing?: boolean;
   oauthAction?: AccountAction;
+  agents?: readonly AgentId[];
+  editTarget?: PoolApiEditTarget | null;
   onEnabledChange?: (enabled: boolean) => void;
   onRefresh?: () => void;
   onDelete: () => void;
-  onEdit?: () => void;
+  onSaved?: () => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
   const status = poolAuthorizationStatusView(item, t);
   const rows = poolAuthorizationDetailRows(item, t);
+  const endpointKinds = poolAuthorizationEndpointKinds(item);
+  const fieldRows = rows.filter((row) => row.id !== 'endpointTypes');
   const displayTitle = poolAuthorizationLoginLabel(item);
   const hasQuota = hasQuotaWindow(item.quota7dPct) || hasQuotaWindow(item.quota5hPct);
-  const editLabel = onEdit
-    ? (item.kind === 'apikey' ? t('connections.list.editKey') : null)
-    : null;
+  const canEditKey = Boolean(editTarget?.provider.id) && item.kind === 'apikey';
+  const editLabel = canEditKey ? t('connections.list.editKey') : null;
   const refreshLabels = oauthAction ? poolAuthorizationRefreshLabels(oauthAction, t) : null;
+  const [editing, setEditing] = useState(false);
   const [catalog, setCatalog] = useState<SourceModelCatalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogFailed, setCatalogFailed] = useState(false);
+
+  useEffect(() => {
+    setEditing(false);
+  }, [item.key]);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,11 +98,11 @@ export function PoolAuthorizationDetail({
 
   return (
     <SideInspectPanel
-      title={t('routes.pool.detail.title')}
+      title={editing ? t('routes.pool.page.apiDialogEditTitle') : t('routes.pool.detail.title')}
       description={displayTitle}
       onClose={onClose}
       width={width}
-      headerActions={(
+      headerActions={editing ? undefined : (
         <>
           {refreshLabels && onRefresh ? (
             <Button
@@ -107,21 +121,32 @@ export function PoolAuthorizationDetail({
             <Trash2 className="h-3.5 w-3.5" /> {t('connections.list.moveToTrash')}
           </Button>
           {editLabel ? (
-            <Button type="button" size="sm" variant="outline" onClick={onEdit}>
+            <Button type="button" size="sm" variant="outline" onClick={() => setEditing(true)}>
               {editLabel}
             </Button>
           ) : null}
         </>
       )}
     >
+      {editing && editTarget ? (
+        <ApiAccessForm
+          layout="inline"
+          agents={agents}
+          edit={editTarget}
+          onCancel={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            onSaved?.();
+          }}
+        />
+      ) : (
       <div className="flex flex-col gap-3 text-xs" data-pool-authorization-detail={item.key}>
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-          <AgentDot agentId={item.agentId} size="sm" title={null} />
+          <PoolLoginMark item={item} />
           <span className="truncate font-medium text-primary">{displayTitle}</span>
           <span className="text-meta text-muted">{connectionKindLabel(item.kind, t)}</span>
           <span className={adapterStatusTextClass(status.tone)}>{status.label}</span>
         </div>
-        <p className="text-meta text-secondary">{agentDisplayName(item.agentId)}</p>
 
         {item.canToggle ? (
           <label className="flex items-center justify-between gap-3 rounded-card border border-border px-3 py-2">
@@ -149,9 +174,21 @@ export function PoolAuthorizationDetail({
           </div>
         ) : null}
 
-        {rows.length > 0 ? (
+        {endpointKinds.length > 0 || fieldRows.length > 0 ? (
           <div className="grid gap-1.5 text-secondary sm:grid-cols-1">
-            {rows.map((row) => (
+            {endpointKinds.length > 0 ? (
+              <span className="flex min-w-0 items-start gap-1.5">
+                <span className="min-w-0 flex-1">
+                  <span className="text-muted">{t('routes.pool.detail.endpointTypes')} </span>
+                  <span className="inline-flex flex-col gap-0.5 align-top">
+                    {endpointKinds.map((kind) => (
+                      <PoolEndpointTypeLine key={kind} kind={kind} />
+                    ))}
+                  </span>
+                </span>
+              </span>
+            ) : null}
+            {fieldRows.map((row) => (
               <DetailRow
                 key={row.id}
                 label={row.label}
@@ -184,6 +221,7 @@ export function PoolAuthorizationDetail({
           )}
         </div>
       </div>
+      )}
     </SideInspectPanel>
   );
 }

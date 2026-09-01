@@ -1,5 +1,11 @@
+import { agentDisplayName } from '@/config/agents';
 import type { TranslateFn } from '@/lib/i18n';
-import { localEndpointPath } from '@/lib/route-endpoints';
+import {
+  localEndpointBrandAgentId,
+  localEndpointPath,
+  type LocalEndpointKind,
+} from '@/lib/route-endpoints';
+import { agentCssVar } from '@/styles/tokens';
 import {
   localEndpointKindLabel,
   type PoolAuthorizationItem,
@@ -110,27 +116,41 @@ export function poolAuthorizationColumnLabel(
   }
 }
 
+export function poolAuthorizationEndpointKinds(
+  item: Pick<PoolAuthorizationItem, 'endpointKinds' | 'surface' | 'agentId'>,
+): LocalEndpointKind[] {
+  if (item.endpointKinds.length > 0) return [...item.endpointKinds];
+  if (!item.surface) return [];
+  if (item.surface === 'messages') return ['messages'];
+  if (item.surface === 'chat_completions') return ['chat_completions'];
+  return [item.agentId === 'grok' ? 'responses_grok' : 'responses_codex'];
+}
+
 /** Human-readable endpoint types for one pool login (paths + dialect labels). */
 export function poolAuthorizationEndpointTypeLabels(
   item: Pick<PoolAuthorizationItem, 'endpointKinds' | 'surface' | 'agentId'>,
   t: TranslateFn,
 ): string[] {
-  const kinds = item.endpointKinds.length > 0
-    ? item.endpointKinds
-    : item.surface
-      ? [item.surface === 'messages'
-        ? 'messages' as const
-        : item.surface === 'chat_completions'
-          ? 'chat_completions' as const
-          : item.agentId === 'grok'
-            ? 'responses_grok' as const
-            : 'responses_codex' as const]
-      : [];
-  return kinds.map((kind) => {
+  return poolAuthorizationEndpointKinds(item).map((kind) => {
     const path = localEndpointPath(kind);
     const label = localEndpointKindLabel(kind, t);
     return `${path}（${label}）`;
   });
+}
+
+/** Endpoint-type brand colors for a URL login link icon (deduped, CSS vars). */
+export function poolAuthorizationLinkIconColors(
+  item: Pick<PoolAuthorizationItem, 'endpointKinds' | 'surface' | 'agentId'>,
+): string[] {
+  const seen = new Set<string>();
+  const colors: string[] = [];
+  for (const kind of poolAuthorizationEndpointKinds(item)) {
+    const color = agentCssVar(localEndpointBrandAgentId(kind));
+    if (seen.has(color)) continue;
+    seen.add(color);
+    colors.push(color);
+  }
+  return colors;
 }
 
 /** Hostname only; custom logins do not need the path. */
@@ -228,7 +248,7 @@ export function poolAuthorizationDetailRows(
     label: t('routes.pool.detail.source'),
     value: item.addedHere
       ? t('routes.pool.page.addedHere')
-      : t('routes.pool.page.fromConnections'),
+      : `${t('routes.pool.page.fromConnections')} · ${agentDisplayName(item.agentId)}`,
   });
   return rows;
 }
