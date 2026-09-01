@@ -7,6 +7,10 @@ import {
   persistColumnWidths,
   readStoredColumnWidths,
 } from './table-column-model';
+import {
+  shouldOpenTableRowFromClick,
+  shouldOpenTableRowFromKey,
+} from './table-row-model';
 
 /**
  * 全站表格视觉协议。
@@ -15,6 +19,7 @@ import {
  * - **workbench** / **flush**：无 Card 的贴边特例（目前业务侧不用；保留 API）
  *
  * 业务表只选 `TableShell variant`；表头/行/单元格密度由 Context 自动套用。
+ * 左右分栏里的字段表再设 `layout="split"`（窄栏强制横向滚动）；点行打开详情用 `TableRow onOpen`。
  */
 export const tableStyles = {
   table: 'w-full border-collapse text-body',
@@ -37,6 +42,8 @@ export const tableStyles = {
 
 export type TableShellVariant = 'default' | 'workbench' | 'flush';
 export type TableDensity = 'default' | 'workbench';
+/** page：全站管理表默认滚动；split：左右分栏里强制横向滚动，避免窄栏拖列宽滑不动。 */
+export type TableShellLayout = 'page' | 'split';
 
 export function createIdempotentCleanup<T extends unknown[]>(cleanup: (...args: T) => void) {
   let completed = false;
@@ -245,30 +252,41 @@ export function TableShell({
   footer,
   className,
   variant = 'default',
+  layout = 'page',
 }: {
   children: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
   variant?: TableShellVariant;
+  layout?: TableShellLayout;
 }) {
   const density = densityOf(variant);
   const ctx = React.useMemo(() => ({ variant, density }), [variant, density]);
+  const split = layout === 'split';
+  const shellClass = split ? 'min-w-0 overflow-hidden' : 'overflow-hidden';
+  const scrollerClass = split ? 'min-w-0 overflow-x-scroll' : 'overflow-x-auto';
 
   const body =
     variant === 'default' ? (
-      <Card className={cn('overflow-hidden', className)} data-table-shell={variant}>
-        <div className="overflow-x-auto">{children}</div>
+      <Card
+        className={cn(shellClass, className)}
+        data-table-shell={variant}
+        data-table-layout={layout}
+      >
+        <div className={scrollerClass}>{children}</div>
         {footer}
       </Card>
     ) : (
       <div
         className={cn(
-          'overflow-hidden rounded-none border-0 bg-transparent shadow-none',
+          shellClass,
+          'rounded-none border-0 bg-transparent shadow-none',
           className,
         )}
         data-table-shell={variant}
+        data-table-layout={layout}
       >
-        <div className="overflow-x-auto">{children}</div>
+        <div className={scrollerClass}>{children}</div>
         {footer}
       </div>
     );
@@ -326,24 +344,45 @@ export const TableRow = React.forwardRef<
   React.HTMLAttributes<HTMLTableRowElement> & {
     selected?: boolean;
     active?: boolean;
+    /** Click empty area / Enter / Space to open details; ignores buttons, switches, links. */
+    onOpen?: () => void;
   }
->(({ className, selected, active, ...props }, ref) => {
+>(({ className, selected, active, onOpen, onClick, onKeyDown, tabIndex, ...props }, ref) => {
   const { density } = useTableShell();
+  const handleClick = (event: React.MouseEvent<HTMLTableRowElement>) => {
+    onClick?.(event);
+    if (!onOpen || !shouldOpenTableRowFromClick(event)) return;
+    onOpen();
+  };
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTableRowElement>) => {
+    onKeyDown?.(event);
+    if (!onOpen || !shouldOpenTableRowFromKey(event)) return;
+    event.preventDefault();
+    onOpen();
+  };
   return (
     <tr
       ref={ref}
+      {...props}
       data-active={active ? 'true' : undefined}
+      tabIndex={onOpen ? (tabIndex ?? 0) : tabIndex}
       className={cn(
         density === 'workbench' ? tableStyles.trWorkbench : tableStyles.tr,
         selected && tableStyles.trSelected,
         active && tableStyles.trActive,
+        onOpen && 'cursor-pointer',
         className,
       )}
-      {...props}
+      onClick={onOpen || onClick ? handleClick : undefined}
+      onKeyDown={onOpen || onKeyDown ? handleKeyDown : undefined}
     />
   );
 });
 TableRow.displayName = 'TableRow';
+
+export function TableEmptyCell() {
+  return <span className="text-muted">—</span>;
+}
 
 export const TableHead = React.forwardRef<
   HTMLTableCellElement,
