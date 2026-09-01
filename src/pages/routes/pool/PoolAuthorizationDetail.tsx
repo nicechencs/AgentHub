@@ -10,6 +10,7 @@ import { ensureSourceModelCatalog } from '@/lib/api/adapter';
 import type { AccountAction } from '@/lib/backend/contracts/account-actions';
 import type { SourceModelCatalog } from '@/lib/backend/contracts/adapter';
 import { connectionKindLabel } from '@/lib/connection-kind';
+import { localEndpointPath } from '@/lib/route-endpoints';
 import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
@@ -26,6 +27,7 @@ import {
   poolAuthorizationDetailRows,
   poolAuthorizationEndpointKinds,
   poolAuthorizationLoginLabel,
+  poolAuthorizationTypeHref,
 } from './pool-authorization-detail';
 import { poolAuthorizationRefreshLabels } from './pool-authorization-refresh';
 
@@ -182,7 +184,11 @@ export function PoolAuthorizationDetail({
                   <span className="text-muted">{t('routes.pool.detail.endpointTypes')} </span>
                   <span className="inline-flex flex-col gap-0.5 align-top">
                     {endpointKinds.map((kind) => (
-                      <PoolEndpointTypeLine key={kind} kind={kind} />
+                      <PoolEndpointTypeLine
+                        key={kind}
+                        kind={kind}
+                        href={poolAuthorizationTypeHref(item.endpointHost, localEndpointPath(kind)) ?? undefined}
+                      />
                     ))}
                   </span>
                 </span>
@@ -194,6 +200,7 @@ export function PoolAuthorizationDetail({
                 label={row.label}
                 value={row.value}
                 lines={row.lines}
+                href={row.href}
                 mono={row.mono}
                 copyable={row.copyable}
               />
