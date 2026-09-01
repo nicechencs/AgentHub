@@ -8,6 +8,7 @@ import {
   boardLifetimeSummaryLabel,
   boardRecentSummaryLabel,
   buildBoardEndpointTypeRows,
+  buildLocalEntryControl,
   buildRouteBoardStatusRows,
   mergeRecentInbound,
   parseActivityFilter,
@@ -44,6 +45,67 @@ function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>):
     ...partial,
   };
 }
+
+describe('buildLocalEntryControl', () => {
+  it('has no master action when there is no local entry', () => {
+    expect(buildLocalEntryControl([], {})).toMatchObject({
+      action: null,
+      running: false,
+      profileIds: [],
+      hasEnrolledLogins: false,
+    });
+  });
+
+  it('notes pool logins even when no local-bridge listener exists yet', () => {
+    expect(buildLocalEntryControl([], {}, new Set(), [pool({ id: 'pool-1' })])).toMatchObject({
+      action: null,
+      running: false,
+      startIds: [],
+      hasEnrolledLogins: true,
+    });
+  });
+
+  it('starts all stopped listeners and stops when any listener is up', () => {
+    const stopped = buildLocalEntryControl(
+      [profile({ id: 'a' }), profile({ id: 'b', targetAgentId: 'codex' })],
+      {
+        a: { profileId: 'a', state: 'stopped' },
+        b: { profileId: 'b', state: 'error' },
+      },
+    );
+    expect(stopped).toMatchObject({
+      action: 'start',
+      retry: true,
+      running: false,
+      startIds: ['a', 'b'],
+      stopIds: [],
+    });
+    const mixed = buildLocalEntryControl(
+      [profile({ id: 'a' }), profile({ id: 'b', targetAgentId: 'codex' })],
+      {
+        a: { profileId: 'a', state: 'running' },
+        b: { profileId: 'b', state: 'stopped' },
+      },
+    );
+    expect(mixed).toMatchObject({
+      action: 'stop',
+      running: true,
+      retry: false,
+      stopIds: ['a'],
+      startIds: ['b'],
+    });
+  });
+
+  it('omits hidden target agents', () => {
+    const control = buildLocalEntryControl(
+      [profile({ id: 'cursor', targetAgentId: 'cursor' })],
+      { cursor: { profileId: 'cursor', state: 'stopped' } },
+      new Set(['cursor']),
+    );
+    expect(control.action).toBeNull();
+    expect(control.profileIds).toEqual([]);
+  });
+});
 
 describe('buildBoardEndpointTypeRows', () => {
   it('lists four endpoint kinds and splits Responses by Codex / Grok', () => {

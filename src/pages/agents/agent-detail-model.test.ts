@@ -72,7 +72,7 @@ describe('agent conversation surfaces', () => {
     expect(agentConversationEndpoints('codex')[0]?.path).toBe('/v1/responses');
     expect(agentConversationEndpoints('grok')[0]).toMatchObject({
       path: '/v1/responses',
-      brandAgentId: 'codex',
+      brandAgentId: 'grok',
     });
     expect(agentConversationEndpoints('kimi').map((row) => row.path)).toEqual([
       '/v1/messages',

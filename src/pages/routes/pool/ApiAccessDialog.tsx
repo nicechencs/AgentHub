@@ -29,6 +29,10 @@ import { detectApiEndpointTypes, upsertProvider } from '@/lib/api/provider';
 import { applyFormVars } from '@/lib/provider-detect/fields';
 import type { AgentId } from '@/lib/types';
 import { attachPoolOwnedAuthorization } from '@/lib/api/adapter';
+import {
+  localEndpointBrandAgentId,
+  localEndpointKindFromPool,
+} from '@/lib/route-endpoints';
 import { cn } from '@/lib/utils';
 import {
   API_VENDORS,
@@ -58,6 +62,14 @@ function endpointIdOf(endpoint: PoolApiChoice['endpoint']) {
   if (endpoint === '/v1/messages') return 'messages' as const;
   if (endpoint === '/v1/chat/completions') return 'chat_completions' as const;
   return 'responses' as const;
+}
+
+function brandAgentIdOf(choice: PoolApiChoice) {
+  const kind = localEndpointKindFromPool({
+    surface: endpointIdOf(choice.endpoint),
+    targetAgentId: choice.agentId,
+  });
+  return kind ? localEndpointBrandAgentId(kind) : undefined;
 }
 
 export function ApiAccessDialog({
@@ -320,7 +332,10 @@ function ApiAccessForm({
                       <span className="min-w-0 flex-1">
                         <span className="block font-mono text-sm font-medium text-primary">{choice.endpoint}</span>
                         <span className="block text-xs">
-                          <RouteEndpointTypeText endpointId={endpointIdOf(choice.endpoint)}>
+                          <RouteEndpointTypeText
+                            endpointId={endpointIdOf(choice.endpoint)}
+                            brandAgentId={brandAgentIdOf(choice)}
+                          >
                             {t(apiLabelKeys[choice.type])}
                           </RouteEndpointTypeText>
                         </span>

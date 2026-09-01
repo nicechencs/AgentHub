@@ -21,6 +21,11 @@ describe('routes board layout wiring', () => {
     expect(page).toContain('useRoutePoolState');
     expect(page).toContain('defaultPools');
     expect(page).toContain('endpointLoginsHint');
+    expect(page).toContain('buildLocalEntryControl');
+    expect(page).toContain('handleStartLocalEntry');
+    expect(page).toContain('handleStopLocalEntry');
+    expect(page).toContain('<Switch');
+    expect(page).toContain('routes.pool.entry');
     expect(page).not.toContain('AgentLogo');
     expect(page).not.toContain('recharts');
     expect(page).toContain('routes.board.refresh');

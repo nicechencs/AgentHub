@@ -42,15 +42,20 @@ import {
 } from './adapter-view-model';
 import {
   defaultPoolEntryUrl,
+  localEndpointKindLabel,
   nativeEnrollCtaVisible,
   routePoolMemberLabels,
   routePoolMembersSectionVisible,
   routePoolSurfaceLabel,
 } from './route-pool-view-model';
+import {
+  localEndpointBrandAgentId,
+  localEndpointKindForTargetAgent,
+  localEndpointKindFromPool,
+} from '@/lib/route-endpoints';
 import { InboundRequestList } from '@/components/shared/InboundRequestList';
 import {
   ROUTE_LOCAL_ADDRESS_LEGEND,
-  routeEndpointCopyKey,
 } from './route-endpoint-copy';
 
 /**
@@ -409,6 +414,7 @@ function RoutePoolOverviewSection({
 }) {
   const { t } = useI18n();
   const entry = defaultPoolEntryUrl(pool.gatewayPort);
+  const endpointKind = localEndpointKindFromPool(pool);
   const members = routePoolMemberLabels(
     pool.members,
     entries,
@@ -436,7 +442,11 @@ function RoutePoolOverviewSection({
           </div>
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
             <dt className="w-12 shrink-0 text-muted">{t('routes.pool.surfaceLabel')}</dt>
-            <dd className="min-w-0 text-sm">{routePoolSurfaceLabel(pool.surface, t)}</dd>
+            <dd className="min-w-0 text-sm">{
+              endpointKind
+                ? localEndpointKindLabel(endpointKind, t)
+                : routePoolSurfaceLabel(pool.surface, t)
+            }</dd>
           </div>
           {pool.listedModels && pool.listedModels.length > 0 ? (
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -498,6 +508,8 @@ function ClientRow({ row }: { row: RouteGraphRow }) {
   const { t } = useI18n();
   const label = routeDetailTargetLabel(row.agent, t);
   const url = row.localUrl ?? '';
+  const endpointKind = localEndpointKindForTargetAgent(row.agent);
+  const brandAgentId = localEndpointBrandAgentId(endpointKind);
   return (
     <li
       className={cn(
@@ -522,8 +534,12 @@ function ClientRow({ row }: { row: RouteGraphRow }) {
           url={url}
           ariaLabel={t('routes.graph.copyLocal', { endpoint: url || row.localPath })}
         />
-        <RouteEndpointTypeText endpointId={row.localEndpointId} className="ml-1 text-meta">
-          {t(routeEndpointCopyKey(row.localEndpointId))}
+        <RouteEndpointTypeText
+          endpointId={row.localEndpointId}
+          brandAgentId={brandAgentId}
+          className="ml-1 text-meta"
+        >
+          {localEndpointKindLabel(endpointKind, t)}
         </RouteEndpointTypeText>
       </span>
     </li>

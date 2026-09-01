@@ -57,7 +57,7 @@ function EndpointTypesField({ agentId }: { agentId: string }) {
         ) : (
           <span className="flex flex-col gap-0.5 font-mono">
             {rows.map((row) => (
-              <RouteEndpointTypeText key={row.id} endpointId={row.id}>
+              <RouteEndpointTypeText key={row.id} endpointId={row.id} brandAgentId={row.brandAgentId}>
                 {row.path}
               </RouteEndpointTypeText>
             ))}

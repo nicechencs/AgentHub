@@ -65,7 +65,7 @@ describe('routes layout wiring', () => {
     expect(create).toContain('localAddressCopyForTarget');
     expect(create).toContain("t('routes.endpoint.modelsLine')");
     const write = source('pages/bridges/WriteClientConfigDialog.tsx');
-    expect(write).toContain('routeEndpointCopyKey');
+    expect(write).toContain('localEndpointKindLabel');
     expect(write).toContain("t('routes.endpoint.modelsLine')");
     expect(list).toContain("t('routes.edit.action')");
     expect(list).toContain('variant="outline"');

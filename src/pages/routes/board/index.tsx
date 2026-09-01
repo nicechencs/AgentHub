@@ -4,10 +4,27 @@ import { PageSection } from '@/components/layout/PageSection';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import type { TranslateFn } from '@/lib/i18n';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
+import {
+  closeConfirmationOnOpenChange,
+  preventBusyConfirmationDismissal,
+} from '@/components/shared/busy-confirmation';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tip } from '@/components/ui/tooltip';
+import { Hint, Tip } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/toast';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   isLocalEndpointKind,
@@ -17,15 +34,19 @@ import {
 } from '@/lib/route-endpoints';
 import { agentCssVar } from '@/styles/tokens';
 import { cn } from '@/lib/utils';
+import { AdapterErrorLines } from '@/pages/bridges/adapter-components';
 import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
+import { useBridgeRuntimeActions } from '@/pages/bridges/use-bridge-runtime-actions';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import {
   BOARD_ROUTE_GRID,
   boardEndpointLoginTotals,
   buildBoardEndpointTypeRows,
+  buildLocalEntryControl,
   type BoardEndpointTypeRow,
+  type LocalEntryControl,
 } from '@/pages/routes/board/board-view-model';
 import {
   poolSurfaceToUsageSurface,
@@ -33,6 +54,17 @@ import {
   usageSurfaceToPoolSurface,
 } from '@/pages/routes/board/board-usage-model';
 import { BoardUsageSection } from '@/pages/routes/board/board-usage-section';
+
+function localEntryStatusLabel(control: LocalEntryControl, t: TranslateFn): string {
+  if (control.profileIds.length === 0) {
+    return control.hasEnrolledLogins
+      ? t('routes.board.entryNeedRoute')
+      : t('routes.board.entryEmpty');
+  }
+  if (control.stopping) return t('routes.board.entryStopping');
+  if (control.starting) return t('routes.board.entryStarting');
+  return control.running ? t('routes.board.entryRunning') : t('routes.board.entryStopped');
+}
 
 function rememberKind(raw: string): LocalEndpointKind | 'all' {
   if (raw === 'all' || !raw) return 'all';
@@ -105,24 +137,52 @@ function BoardRouteSkeleton({ count }: { count: number }) {
 
 export default function RoutesBoardPage() {
   const { t } = useI18n();
+  const { toast } = useToast();
   const {
     profiles,
     profileState,
     errors,
     loading,
     reload,
+    reloadProfiles,
+    updateBridgeStatus,
+    removeProfile,
+    bridgeStatuses,
   } = useAdapterResources();
   const { hiddenIds } = useInstalledAgents();
   const hiddenTargetIds = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const [usageRefreshKey, setUsageRefreshKey] = useState(0);
+  const [stopOpen, setStopOpen] = useState(false);
   const { defaultPools, loading: poolsLoading } = useRoutePoolState({
     profiles,
     detailTarget: null,
     reloadKey: usageRefreshKey,
   });
+  const {
+    profileErrors,
+    busyProfileIds,
+    handleStartLocalEntry,
+    handleStopLocalEntry,
+  } = useBridgeRuntimeActions({
+    profiles,
+    hiddenTargetIds,
+    reloadProfiles,
+    updateBridgeStatus,
+    removeProfile,
+    t,
+    toast,
+  });
   const [endpointKind, setEndpointKind] = useState<LocalEndpointKind | 'all'>(() => (
     rememberKind(rememberedBoardUsageFilters().surface)
   ));
+  const localEntry = useMemo(
+    () => buildLocalEntryControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
+    [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
+  );
+  const localEntryBusy = localEntry.profileIds.some((id) => busyProfileIds[id]);
+  const localEntryError = localEntry.profileIds
+    .map((id) => profileErrors[id])
+    .find((error) => error != null) ?? null;
 
   const endpointRows = useMemo(
     () => buildBoardEndpointTypeRows(defaultPools, hiddenTargetIds),
@@ -149,11 +209,20 @@ export default function RoutesBoardPage() {
     });
   const pageLoading = loading || poolsLoading;
   const showStatusSkeleton = pageLoading && defaultPools.length === 0;
+  const entryLabel = localEntryStatusLabel(localEntry, t);
+  const entryBadge = localEntry.profileIds.length === 0
+    ? null
+    : (
+      <Badge variant={localEntry.running ? 'success' : 'default'}>
+        {entryLabel}
+      </Badge>
+    );
 
   return (
     <RoutesPane>
       <PageHeader
         title={t('routes.board.title')}
+        badge={entryBadge}
         description={fleetLabel}
         descriptionTip={t('routes.board.descriptionTip')}
       />
@@ -169,6 +238,40 @@ export default function RoutesBoardPage() {
         />
       ) : (
         <div className={pageRhythm.blocks}>
+          <div className={pageRhythm.chromeRow}>
+            <p className="min-w-0 truncate text-meta text-muted">{entryLabel}</p>
+            <div className={pageRhythm.chromeActions}>
+              <Hint
+                label={
+                  localEntry.running || localEntry.startIds.length > 0
+                    ? undefined
+                    : entryLabel
+                }
+              >
+                <Switch
+                  checked={localEntry.running}
+                  disabled={
+                    localEntryBusy
+                    || localEntry.transitioning
+                    || (!localEntry.running && localEntry.startIds.length === 0)
+                  }
+                  onCheckedChange={(on) => {
+                    if (on) void handleStartLocalEntry(localEntry.startIds);
+                    else setStopOpen(true);
+                  }}
+                  aria-label={t('routes.pool.entry')}
+                />
+              </Hint>
+            </div>
+          </div>
+          {localEntryError ? (
+            <AdapterErrorLines
+              error={localEntryError}
+              fallback={localEntry.action === 'stop'
+                ? t('routes.board.entryStopFailed')
+                : t('routes.board.entryStartFailed')}
+            />
+          ) : null}
           <PageSection first aria-label={t('routes.board.statusSection')}>
             {showStatusSkeleton ? (
               <BoardRouteSkeleton count={4} />
@@ -209,6 +312,44 @@ export default function RoutesBoardPage() {
           />
         </div>
       )}
+
+      <Dialog
+        open={stopOpen}
+        onOpenChange={(open) => closeConfirmationOnOpenChange(open, localEntryBusy, () => setStopOpen(false))}
+      >
+        <DialogContent
+          className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden"
+          hideClose={localEntryBusy}
+          onEscapeKeyDown={(event) => preventBusyConfirmationDismissal(localEntryBusy, event)}
+          onPointerDownOutside={(event) => preventBusyConfirmationDismissal(localEntryBusy, event)}
+          onInteractOutside={(event) => preventBusyConfirmationDismissal(localEntryBusy, event)}
+        >
+          <DialogHeader className="shrink-0">
+            <DialogTitle>{t('routes.board.entryStopTitle')}</DialogTitle>
+            <DialogDescription>{t('routes.board.entryStopDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 shrink-0 border-t border-border pt-4">
+            <Button
+              variant="secondary"
+              onClick={() => setStopOpen(false)}
+              disabled={localEntryBusy}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              disabled={localEntryBusy}
+              onClick={() => {
+                void handleStopLocalEntry(localEntry.stopIds).then((ok) => {
+                  if (ok) setStopOpen(false);
+                });
+              }}
+            >
+              {localEntryBusy ? t('routes.stop.confirming') : t('routes.stop.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </RoutesPane>
   );
 }

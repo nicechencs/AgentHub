@@ -201,6 +201,104 @@ export function useBridgeRuntimeActions(input: {
     reloadThenClearProfileErrors,
   ]);
 
+  const handleStartLocalEntry = useCallback(async (profileIds: readonly string[]) => {
+    const members = profiles.filter((profile) => (
+      profileIds.includes(profile.id)
+      && profile.route === 'local_bridge'
+      && !hiddenTargetIds.has(profile.targetAgentId)
+    ));
+    if (members.length === 0) return false;
+    for (const member of members) {
+      setProfileBusy(member.id, true);
+      clearProfileError(member.id);
+    }
+    const started: string[] = [];
+    try {
+      for (const member of members) {
+        updateBridgeStatus(await startAdapterBridge(member.id));
+        started.push(member.id);
+        void logGuiEvent('bridge_start', {
+          agent: member.targetAgentId,
+          profileId: member.id,
+          route: member.route,
+        });
+      }
+      reloadThenClearProfileErrors(members.map((member) => member.id));
+      return true;
+    } catch (error) {
+      const compensationFailures: unknown[] = [];
+      for (const id of [...started].reverse()) {
+        try {
+          updateBridgeStatus(await stopAdapterBridge(id));
+        } catch (cause) {
+          compensationFailures.push(cause);
+        }
+      }
+      const lead = members[0]!;
+      void logGuiEvent('bridge_start_fail', {
+        agent: lead.targetAgentId,
+        profileId: lead.id,
+        route: lead.route,
+        code: guiErrorCode(error),
+      });
+      setProfileErrors((current) => ({
+        ...current,
+        [lead.id]: surfaceAfterCompensation(error, compensationFailures),
+      }));
+      return false;
+    } finally {
+      for (const member of members) setProfileBusy(member.id, false);
+    }
+  }, [
+    profiles,
+    hiddenTargetIds,
+    setProfileBusy,
+    clearProfileError,
+    updateBridgeStatus,
+    reloadThenClearProfileErrors,
+  ]);
+
+  const handleStopLocalEntry = useCallback(async (profileIds: readonly string[]) => {
+    const members = profiles.filter((profile) => (
+      profileIds.includes(profile.id) && profile.route === 'local_bridge'
+    ));
+    if (members.length === 0) return false;
+    for (const member of members) {
+      setProfileBusy(member.id, true);
+      clearProfileError(member.id);
+    }
+    try {
+      for (const member of members) {
+        updateBridgeStatus(await stopAdapterBridge(member.id));
+        void logGuiEvent('bridge_stop', {
+          agent: member.targetAgentId,
+          profileId: member.id,
+          route: member.route,
+        });
+      }
+      reloadThenClearProfileErrors(members.map((member) => member.id));
+      return true;
+    } catch (error) {
+      const lead = members[0]!;
+      void logGuiEvent('bridge_stop_fail', {
+        agent: lead.targetAgentId,
+        profileId: lead.id,
+        route: lead.route,
+        code: guiErrorCode(error),
+      });
+      setProfileErrors((current) => ({ ...current, [lead.id]: error }));
+      return false;
+    } finally {
+      for (const member of members) setProfileBusy(member.id, false);
+    }
+  }, [
+    profiles,
+    setProfileBusy,
+    clearProfileError,
+    updateBridgeStatus,
+    reloadThenClearProfileErrors,
+  ]);
+
   const handleEnrollNative = useCallback(async (profile: AdapterProfile) => {
     setEnrollingProfileId(profile.id);
     clearProfileError(profile.id);
@@ -237,6 +335,8 @@ export function useBridgeRuntimeActions(input: {
     busyProfileIds,
     enrollingProfileId,
     handleStartBridge,
+    handleStartLocalEntry,
+    handleStopLocalEntry,
     confirmStopBridge,
     confirmRemove,
     handleEnrollNative,
