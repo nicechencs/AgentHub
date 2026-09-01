@@ -75,7 +75,7 @@ describe('route pool v2 view-model', () => {
       url: 'http://127.0.0.1:43121',
       pending: false,
     });
-    expect(routePoolSurfaceLabel(overview.surface)).toBe('回复接口');
+    expect(routePoolSurfaceLabel(overview.surface)).toBe('Responses');
     const entries: Pick<ConnectionEntry, 'source' | 'id' | 'title'>[] = [
       { source: 'provider', id: 'kimi-1', title: 'Kimi 会员' },
     ];

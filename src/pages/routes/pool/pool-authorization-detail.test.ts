@@ -23,10 +23,10 @@ const t = (key: string, params?: Record<string, string | number>) => {
   if (key === 'routes.pool.detail.quota') return '调用窗口';
   if (key === 'connections.list.lastUsedAt') return '最近使用';
   if (key === 'routes.pool.detail.refreshTokenTail') return 'Refresh Token tail';
-  if (key === 'routes.pool.surface.responsesGrok') return '回复接口 · Grok';
-  if (key === 'routes.pool.surface.responsesCodex') return '回复接口 · Codex';
-  if (key === 'routes.pool.surface.messages') return '对话接口';
-  if (key === 'routes.pool.surface.chatCompletions') return '对话补全';
+  if (key === 'routes.pool.surface.responsesGrok') return 'Responses · Grok';
+  if (key === 'routes.pool.surface.responsesCodex') return 'Responses · Codex';
+  if (key === 'routes.pool.surface.messages') return 'Messages';
+  if (key === 'routes.pool.surface.chatCompletions') return 'Chat Completions';
   return key;
 };
 

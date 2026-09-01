@@ -24,7 +24,7 @@ describe('token-detail-model', () => {
     const masked = buildTokenDetailCopyRows(row(), false);
     expect(tokenEndpointParts(row()).href).toBe('http://127.0.0.1:8123/v1/chat/completions');
     expect(masked.find((item) => item.id === 'type')).toMatchObject({
-      display: '对话补全',
+      display: 'Chat Completions',
       copyValue: null,
     });
     expect(masked.find((item) => item.id === 'endpoint')).toMatchObject({
@@ -37,6 +37,18 @@ describe('token-detail-model', () => {
     });
     const revealed = buildTokenDetailCopyRows(row(), true);
     expect(revealed.find((item) => item.id === 'token')?.display).toBe('ahb_secret');
+  });
+
+  it('leaves the token field empty when no key exists yet', () => {
+    const copies = buildTokenDetailCopyRows(row({
+      token: null,
+      maskedToken: null,
+    }), false);
+    expect(copies.find((item) => item.id === 'token')).toMatchObject({
+      display: '',
+      copyValue: null,
+      pending: true,
+    });
   });
 
   it('withholds the token when the runtime is unavailable', () => {

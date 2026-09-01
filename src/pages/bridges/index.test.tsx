@@ -441,7 +441,7 @@ describe('Bridges page', () => {
       defaultPool: pool,
     });
     expect(on).toContain('http://127.0.0.1:43121');
-    expect(on).toContain('回复接口');
+    expect(on).toContain('Responses');
     expect(on).toContain('已接入的登录');
     expect(on).toContain('OpenRouter');
     expect(on).toContain('令牌已保存');

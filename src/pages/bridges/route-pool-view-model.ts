@@ -461,26 +461,26 @@ export function mergeOwnedAuthorizationsIntoRows(
 
 export function routePoolSurfaceLabel(surface: RoutePoolSurface, t?: TranslateFn): string {
   if (surface === 'messages') {
-    return t ? t('routes.pool.surface.messages') : '对话接口';
+    return t ? t('routes.pool.surface.messages') : 'Messages';
   }
   if (surface === 'responses') {
-    return t ? t('routes.pool.surface.responses') : '回复接口';
+    return t ? t('routes.pool.surface.responses') : 'Responses';
   }
-  return t ? t('routes.pool.surface.chatCompletions') : '对话补全';
+  return t ? t('routes.pool.surface.chatCompletions') : 'Chat Completions';
 }
 
 /** UI label for a local endpoint kind (Responses split into Codex / Grok). */
 export function localEndpointKindLabel(kind: LocalEndpointKind, t?: TranslateFn): string {
   if (kind === 'messages') {
-    return t ? t('routes.pool.surface.messages') : '对话接口';
+    return t ? t('routes.pool.surface.messages') : 'Messages';
   }
   if (kind === 'responses_codex') {
-    return t ? t('routes.pool.surface.responsesCodex') : '回复接口 · Codex';
+    return t ? t('routes.pool.surface.responsesCodex') : 'Responses · Codex';
   }
   if (kind === 'responses_grok') {
-    return t ? t('routes.pool.surface.responsesGrok') : '回复接口 · Grok';
+    return t ? t('routes.pool.surface.responsesGrok') : 'Responses · Grok';
   }
-  return t ? t('routes.pool.surface.chatCompletions') : '对话补全';
+  return t ? t('routes.pool.surface.chatCompletions') : 'Chat Completions';
 }
 
 function pickLeadProfile<T extends AdapterProfile>(

@@ -39,8 +39,8 @@ export function buildTokenDetailCopyRows(
   const tokenDisplay = row.unavailable
     ? (t ? t('routes.runtime.unavailable') : '状态不可用')
     : revealed
-      ? (row.token ?? (t ? t('routes.tokens.noToken') : '启动本机入口后才会生成 Key'))
-      : (row.maskedToken ?? (t ? t('routes.tokens.noToken') : '启动本机入口后才会生成 Key'));
+      ? (row.token ?? '')
+      : (row.maskedToken ?? '');
   const typeLabel = tokenTypeLabel(row, t);
   return [
     {
