@@ -11,31 +11,34 @@ export function AgentInstallButton({
   status,
   busy,
   channelId,
+  iconOnly = false,
   onClick,
 }: {
   status?: AgentCardTaskStatus;
   busy?: boolean;
   channelId?: string;
+  iconOnly?: boolean;
   onClick: () => void;
 }) {
   const { t } = useI18n();
   const failed = status === 'failed';
+  const label = failed ? t('agents.card.retry') : t('agents.card.install');
+  const title = failed
+    ? t('agents.card.retry')
+    : channelId
+      ? t('agents.card.installWithChannel', { id: channelId })
+      : t('agents.card.install');
   return (
     <Button
-      size="sm"
+      size={iconOnly ? 'icon' : 'sm'}
       variant={installRetryButtonVariant(status)}
       onClick={onClick}
       disabled={busy}
-      title={
-        failed
-          ? t('agents.card.retry')
-          : channelId
-            ? t('agents.card.installWithChannel', { id: channelId })
-            : t('agents.card.install')
-      }
+      title={title}
+      aria-label={iconOnly ? label : undefined}
     >
       <Zap className="h-3.5 w-3.5" />
-      {failed ? t('agents.card.retry') : t('agents.card.install')}
+      {iconOnly ? null : label}
     </Button>
   );
 }

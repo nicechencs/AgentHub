@@ -178,6 +178,22 @@ export function uninstallViaLabel(
   }
 }
 
+export type AgentUninstallControl = {
+  show: boolean;
+  /** Not an in-app uninstall — gray the button. */
+  muted: boolean;
+};
+
+/** IDE / desktop / official: gray. Leftover / none: hide. */
+export function agentUninstallControl(uninstallVia?: string | null): AgentUninstallControl {
+  const via = asUninstallVia(uninstallVia);
+  if (via === 'in_app') return { show: true, muted: false };
+  if (via === 'ide' || via === 'desktop' || via === 'official') {
+    return { show: true, muted: true };
+  }
+  return { show: false, muted: false };
+}
+
 /**
  * Compare one extra copy against the shared remote latest.
  * Leftover data-dir npm is not an upgrade target — skip the hint.

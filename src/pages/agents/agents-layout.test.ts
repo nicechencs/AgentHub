@@ -41,7 +41,7 @@ describe('agents layout wiring', () => {
     expect(detail).toContain("t('agents.card.openInstallDir')");
     expect(detail).toContain('flex items-center justify-between gap-2');
     expect(detail).toContain('<OpenDirButton');
-    expect(detail).toContain('labeled');
+    expect(detail).toContain('ChannelUninstallButton');
     expect(detail).toContain("title={t('agents.card.openConfigDirTitle')}");
     expect(detail).toContain("title={t('agents.card.openInstallDir')}");
     expect(card).toContain('agentListDetailsHint');
@@ -54,6 +54,7 @@ describe('agents layout wiring', () => {
     expect(detail).toContain('missingCatalogChannels');
     expect(detail).toContain('MissingChannelRow');
     expect(detail).toContain('CopyableCommand');
+    expect(detail).toContain('<Badge variant="success">{t(\'agents.card.spawnCopy\')}</Badge>');
     expect(detail).toContain('CopyableChannelName');
     expect(detail).toContain('copyableChannelCommand');
     expect(detail).toContain('agents.card.copyCommand');

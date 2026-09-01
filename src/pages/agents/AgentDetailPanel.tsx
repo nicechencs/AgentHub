@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ArrowUpCircle, Copy } from 'lucide-react';
+import { ArrowUpCircle, Copy, Trash2 } from 'lucide-react';
 import { InspectSurface } from '@/components/layout/InspectSurface';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
@@ -26,9 +26,9 @@ import { cn } from '@/lib/utils';
 import { AgentCardDialogs, type AgentCardConfirmKind } from './AgentCardDialogs';
 import { AgentInstallButton } from './AgentInstallButton';
 import {
+  agentUninstallControl,
   agentUpgradeControl,
   agentUpgradeHint,
-  canUninstallProgramInApp,
   extraCopyUpdateHint,
   formatAgentVersion,
   isSpecialInstallChannel,
@@ -37,6 +37,7 @@ import {
   spawnInstall,
   uninstallViaLabel,
   type AgentInstall,
+  type AgentUninstallControl,
   type AgentUpgradeControl,
 } from './agent-card-model';
 import {
@@ -141,7 +142,6 @@ export function AgentDetailPanel({
   const installs = listAgentInstalls(agent);
   const missingChannels = missingCatalogChannels(agent);
   const spawn = spawnInstall(agent);
-  const canUninstallProgram = canUninstallProgramInApp(agent);
   const versionLabel = agent.installed
     ? formatAgentVersion(agent.version)
     : t('agents.card.notInstalled');
@@ -403,6 +403,7 @@ export function AgentDetailPanel({
                 busy={rowBusy}
                 opening={opening === inst.location}
                 onOpen={() => openFolder(inst.location)}
+                onUninstall={() => setConfirmDialog('program')}
                 onUpgrade={() => {
                   const upgradable =
                     extraCopyUpdateHint(inst.source, inst.version, latestVersion) === 'update_available'
@@ -450,7 +451,6 @@ export function AgentDetailPanel({
           <div className="flex items-center justify-between gap-2 rounded-card border border-border bg-subtle/60 px-3 py-2">
             <CopyableFileName path={configDir} wrap="break" className="min-w-0 flex-1" />
             <OpenDirButton
-              labeled
               disabled={rowBusy}
               title={t('agents.card.openConfigDirTitle')}
               onClick={openConfigDir}
@@ -461,39 +461,19 @@ export function AgentDetailPanel({
 
       <section className="mt-4">
         <h3 className="mb-2 text-body font-medium">{t('agents.detail.uninstall')}</h3>
-        <div className="flex flex-col items-start gap-2">
-          {canUninstallProgram ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-danger hover:text-danger"
-              disabled={rowBusy}
-              title={t('agents.dialog.uninstallDesc')}
-              onClick={() => setConfirmDialog('program')}
-            >
-              {t('agents.card.uninstallProgram')}
-            </Button>
-          ) : agent.installed ? (
-            <p className="text-meta text-muted">
-              {spawn
-                ? uninstallViaLabel(spawn.uninstallVia, t)
-                : t('agents.card.uninstallViaDesktop')}
-            </p>
-          ) : null}
-          <Button
-            size="sm"
-            variant="danger"
-            disabled={rowBusy}
-            title={
-              isSpecialInstallChannel(agent.channel)
-                ? t('agents.dialog.uninstallConfigKeepsApp')
-                : t('agents.dialog.uninstallConfigDesc')
-            }
-            onClick={() => setConfirmDialog('config')}
-          >
-            {t('agents.card.uninstallConfig')}
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          variant="danger"
+          disabled={rowBusy}
+          title={
+            isSpecialInstallChannel(agent.channel)
+              ? t('agents.dialog.uninstallConfigKeepsApp')
+              : t('agents.dialog.uninstallConfigDesc')
+          }
+          onClick={() => setConfirmDialog('config')}
+        >
+          {t('agents.card.uninstallConfig')}
+        </Button>
       </section>
 
       <AgentCardDialogs
@@ -533,6 +513,7 @@ function InstallLocationRow({
   busy,
   opening,
   onOpen,
+  onUninstall,
   onUpgrade,
   onOpenSetup,
 }: {
@@ -546,6 +527,7 @@ function InstallLocationRow({
   busy: boolean;
   opening: boolean;
   onOpen: () => void;
+  onUninstall: () => void;
   onUpgrade: () => void;
   onOpenSetup: () => void;
 }) {
@@ -570,11 +552,15 @@ function InstallLocationRow({
     : upgradable
       ? t('agents.update.available')
       : t('agents.update.forceLatest');
+  const uninstallControl = agentUninstallControl(inst.uninstallVia);
+  const uninstallTooltip = uninstallControl.muted
+    ? uninstallViaLabel(inst.uninstallVia, t)
+    : t('agents.dialog.uninstallDesc');
   return (
     <li className="rounded-card border border-border bg-subtle/60 px-3 py-2">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {inst.spawn ? <Badge>{t('agents.card.spawnCopy')}</Badge> : null}
+          {inst.spawn ? <Badge variant="success">{t('agents.card.spawnCopy')}</Badge> : null}
           {sourceLabel ? (
             <CopyableChannelName
               label={sourceLabel}
@@ -597,10 +583,15 @@ function InstallLocationRow({
             onOpenSetup={onOpenSetup}
           />
           <OpenDirButton
-            labeled
             disabled={!openable || opening || busy}
             title={t('agents.card.openInstallDir')}
             onClick={onOpen}
+          />
+          <ChannelUninstallButton
+            control={uninstallControl}
+            busy={busy}
+            tooltip={uninstallTooltip}
+            onUninstall={onUninstall}
           />
         </div>
       </div>
@@ -667,6 +658,35 @@ function ChannelUpgradeButton({
   );
 }
 
+function ChannelUninstallButton({
+  control,
+  busy,
+  tooltip,
+  onUninstall,
+}: {
+  control: AgentUninstallControl;
+  busy: boolean;
+  tooltip: string;
+  onUninstall: () => void;
+}) {
+  const { t } = useI18n();
+  if (!control.show) return null;
+  return (
+    <span title={tooltip} className="inline-flex">
+      <Button
+        size="icon"
+        variant="outline"
+        className={control.muted ? 'text-muted' : 'text-danger hover:text-danger'}
+        disabled={busy || control.muted}
+        aria-label={t('agents.card.uninstallProgram')}
+        onClick={control.muted ? undefined : onUninstall}
+      >
+        <Trash2 className={cn('h-3.5 w-3.5', control.muted && 'text-muted')} />
+      </Button>
+    </span>
+  );
+}
+
 function CopyableCommand({ command }: { command: string }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -717,7 +737,7 @@ function MissingChannelRow({
           ) : null}
           <span className="text-meta text-muted">{t('agents.card.notInstalled')}</span>
         </div>
-        <AgentInstallButton busy={busy} channelId={channel.id} onClick={onInstall} />
+        <AgentInstallButton iconOnly busy={busy} channelId={channel.id} onClick={onInstall} />
       </div>
       {command ? (
         nameCommand ? (
