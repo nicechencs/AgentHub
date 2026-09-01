@@ -197,6 +197,13 @@ export function createTauriAdapterPort(): AdapterPort {
         enabled,
       });
     },
+    async setRouteAuthorizationPriority(sourceKind, sourceId, priority) {
+      return invokeAdapter<number>('set_route_authorization_priority', {
+        sourceKind,
+        sourceId,
+        priority,
+      });
+    },
     async removeRouteAuthorization(sourceKind, sourceId) {
       return invokeAdapter<number>('remove_route_authorization', {
         sourceKind,

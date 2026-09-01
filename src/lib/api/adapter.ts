@@ -131,6 +131,15 @@ export async function setRouteAuthorizationEnabled(
   return getBackend().adapter.setRouteAuthorizationEnabled(sourceKind, sourceId, enabled);
 }
 
+/** Set this login's priority in every default pool it belongs to. */
+export async function setRouteAuthorizationPriority(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+  priority: number,
+): Promise<number> {
+  return getBackend().adapter.setRouteAuthorizationPriority(sourceKind, sourceId, priority);
+}
+
 /** Remove a login reference that is still present in one or more default pools. */
 export async function removeRouteAuthorization(
   sourceKind: AdapterSourceKind,

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { PoolAuthorizationItem } from '@/pages/bridges/route-pool-view-model';
 import {
@@ -121,5 +124,16 @@ describe('pool authorization detail fields', () => {
       'grok-4.5',
       'grok-4.6',
     ]);
+  });
+
+  it('keeps the detail panel as a model display, not a fetch or edit form', () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'PoolAuthorizationDetail.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('ensureSourceModelCatalog');
+    expect(source).not.toContain('setSourceCustomModels');
+    expect(source).not.toContain('routes.pool.detail.modelsSave');
+    expect(source).not.toContain('routes.pool.page.apiModelsFetch');
   });
 });

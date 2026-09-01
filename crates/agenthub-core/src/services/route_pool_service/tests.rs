@@ -163,6 +163,15 @@ fn member_crud_sort_enabled_priority_and_lead_projection() {
         .unwrap()
         .iter()
         .any(|member| member.source_id == "acc-b" && member.enabled));
+    let priority_changed = service
+        .set_authorization_priority(AdapterSourceKind::Account, "acc-b", 8)
+        .unwrap();
+    assert_eq!(priority_changed, 1);
+    assert!(service
+        .list_members("profile-a")
+        .unwrap()
+        .iter()
+        .any(|member| member.source_id == "acc-b" && member.priority == 8));
     service.remove_member(&extra.id).unwrap();
     assert_eq!(service.list_members("profile-a").unwrap().len(), 1);
 }

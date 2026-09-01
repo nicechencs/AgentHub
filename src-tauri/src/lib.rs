@@ -115,6 +115,7 @@ pub fn run() {
             commands::adapter::set_chat_completions_shared,
             commands::adapter::attach_pool_owned_authorization,
             commands::adapter::set_route_authorization_enabled,
+            commands::adapter::set_route_authorization_priority,
             commands::adapter::remove_route_authorization,
             commands::adapter::recycle_route_membership,
             commands::adapter::sync_connection_authorizations,

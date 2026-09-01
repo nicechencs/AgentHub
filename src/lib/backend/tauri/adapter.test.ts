@@ -306,6 +306,17 @@ describe('Tauri adapter route port', () => {
     });
   });
 
+  it('forwards set_route_authorization_priority', async () => {
+    invokeMock.mockResolvedValueOnce(1);
+    const port = createTauriAdapterPort();
+    await expect(port.setRouteAuthorizationPriority('provider', 'codex-api', 8)).resolves.toBe(1);
+    expect(invokeMock).toHaveBeenCalledWith('set_route_authorization_priority', {
+      sourceKind: 'provider',
+      sourceId: 'codex-api',
+      priority: 8,
+    });
+  });
+
   it('forwards remove_route_authorization', async () => {
     invokeMock.mockResolvedValueOnce(2);
     const port = createTauriAdapterPort();

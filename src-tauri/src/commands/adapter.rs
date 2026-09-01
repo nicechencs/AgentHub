@@ -572,6 +572,25 @@ pub async fn set_route_authorization_enabled(
     .map_err(adapter_error_from_string)
 }
 
+/// Set priority on every default-pool membership of one login.
+#[tauri::command]
+pub async fn set_route_authorization_priority(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+    priority: i64,
+) -> Result<u32, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .set_authorization_priority(source_kind, &source_id, priority)
+            .map_err(|err| map_err_string("set_route_authorization_priority", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
 /// Remove every default-pool membership of one login.
 ///
 /// This only removes the route-pool authorization reference. The underlying

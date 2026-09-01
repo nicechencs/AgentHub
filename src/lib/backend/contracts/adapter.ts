@@ -383,6 +383,11 @@ export interface AdapterPort {
     sourceId: string,
     enabled: boolean,
   ): Promise<number>;
+  setRouteAuthorizationPriority(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+    priority: number,
+  ): Promise<number>;
   removeRouteAuthorization(
     sourceKind: AdapterSourceKind,
     sourceId: string,
