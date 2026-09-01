@@ -21,6 +21,7 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
     profileIds: ['bridge-1'],
     lastPath: '/v1/models',
     lastRequestAt: null,
+    listedModels: ['kimi-k2'],
     ...partial,
   };
 }

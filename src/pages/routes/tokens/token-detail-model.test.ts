@@ -5,9 +5,11 @@ import {
   localTokenEntryRunning,
   localTokenTestGate,
   localTokenTestInputText,
+  localTokenTestModels,
   localTokenTestOutputText,
   localTokenTestResultLabel,
   localTokenTestResultTone,
+  localTokenTestWindowSummary,
   tokenEndpointParts,
   tokenLastPageDisplay,
   tokenUsageDisplay,
@@ -36,6 +38,7 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
       outputTokens: 200,
       cachedInputTokens: 0,
     },
+    listedModels: ['kimi-k2', 'gpt-4o'],
     ...partial,
   };
 }
@@ -103,9 +106,10 @@ describe('token-detail-model', () => {
   });
 
   it('labels probe outcomes without exposing the key', () => {
-    expect(localTokenTestResultLabel({ outcome: 'ok', latencyMs: 12 })).toBe('入口 Key 可用 · 12ms');
+    expect(localTokenTestResultLabel({ outcome: 'ok', latencyMs: 12 })).toBe('连上模型了 · 12ms');
     expect(localTokenTestResultLabel({ outcome: 'unauthorized', latencyMs: 8 })).toBe('入口 Key 无效');
     expect(localTokenTestResultLabel({ outcome: 'unreachable', latencyMs: 30 })).toBe('端点连不上');
+    expect(localTokenTestResultLabel({ outcome: 'rejected', latencyMs: 40 })).toBe('模型没通');
     expect(localTokenTestResultTone('ok')).toBe('success');
     expect(localTokenTestResultTone('unauthorized')).toBe('danger');
   });
@@ -113,17 +117,44 @@ describe('token-detail-model', () => {
   it('shows request input and connection errors in the test window', () => {
     expect(localTokenEntryRunning(row())).toBe(true);
     expect(localTokenEntryRunning(row({ state: 'stopped' }))).toBe(false);
-    expect(localTokenTestInputText(row())).toContain('GET http://127.0.0.1:8123/health');
+    expect(localTokenTestInputText(row())).toContain('POST http://127.0.0.1:8123/v1/chat/completions');
     expect(localTokenTestInputText(row())).toContain('ahb_••••cret');
     expect(localTokenTestInputText(row())).not.toContain('ahb_secret');
+    expect(localTokenTestInputText(row(), {
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: '{"model":"kimi-k2","messages":[{"role":"user","content":"ping"}]}',
+    })).toContain('"content":"ping"');
     expect(localTokenTestOutputText({
       outcome: 'unreachable',
       httpStatus: null,
       latencyMs: 8,
       upstreamStatus: null,
-      requestUrl: 'http://127.0.0.1:8123/health',
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: null,
       responseBody: null,
       errorMessage: 'Connection refused',
     }, { running: false, testing: false })).toBe('本机入口还没启动\nConnection refused');
+    expect(localTokenTestOutputText({
+      outcome: 'ok',
+      httpStatus: 200,
+      latencyMs: 1,
+      upstreamStatus: null,
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: '{}',
+      responseBody: '{"choices":[{"message":{"content":"ok"}}]}',
+      errorMessage: null,
+    }, { running: false, testing: false })).toBe('HTTP 200\n{"choices":[{"message":{"content":"ok"}}]}');
+    expect(localTokenTestWindowSummary({ outcome: 'ok', latencyMs: 1 }, false)).toBe('连上模型了 · 1ms');
+    expect(localTokenTestWindowSummary({ outcome: 'unreachable', latencyMs: 2030 }, false))
+      .toBe('端点连不上 · 耗时 2030ms');
   });
+
+  it('lists models for the test dropdown',
+    () => {
+      expect(localTokenTestModels(row())).toEqual(['kimi-k2', 'gpt-4o']);
+      expect(localTokenTestModels(row({ listedModels: [' ', 'kimi-k2', ''] }))).toEqual(['kimi-k2']);
+    });
 });

@@ -321,7 +321,7 @@ export type LocalTokenRecord = {
   token: string;
 };
 
-/** Result of `GET /health` with a tokens-page entry key. */
+/** Result of a tokens-page model-path probe with an entry key. */
 export type LocalTokenProbeOutcome =
   | 'ok'
   | 'unauthorized'
@@ -335,6 +335,8 @@ export type LocalTokenProbeResult = {
   latencyMs: number;
   upstreamStatus: string | null;
   requestUrl: string | null;
+  requestMethod: string | null;
+  requestBody: string | null;
   responseBody: string | null;
   errorMessage: string | null;
 };
@@ -345,7 +347,12 @@ export interface AdapterPort {
   listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
   listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
   listLocalTokens(): Promise<LocalTokenRecord[]>;
-  testLocalToken(endpoint: string, token: string): Promise<LocalTokenProbeResult>;
+  testLocalToken(
+    endpoint: string,
+    token: string,
+    path: string,
+    model?: string | null,
+  ): Promise<LocalTokenProbeResult>;
   setLocalToken(poolId: string, token: string): Promise<LocalTokenRecord>;
   setChatCompletionsShared(shared: boolean): Promise<DefaultRoutePoolList>;
   attachPoolOwnedAuthorization(

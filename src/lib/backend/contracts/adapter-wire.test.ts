@@ -502,7 +502,9 @@ describe('Adapter Rust wire mappers', () => {
       httpStatus: 401,
       latencyMs: 9.4,
       upstreamStatus: '  ',
-      requestUrl: 'http://127.0.0.1:8123/health',
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: '{"model":"kimi"}',
       responseBody: '{"error":"invalid_api_key"}',
       errorMessage: '  ',
     })).toEqual({
@@ -510,7 +512,9 @@ describe('Adapter Rust wire mappers', () => {
       httpStatus: 401,
       latencyMs: 9,
       upstreamStatus: null,
-      requestUrl: 'http://127.0.0.1:8123/health',
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: '{"model":"kimi"}',
       responseBody: '{"error":"invalid_api_key"}',
       errorMessage: null,
     });

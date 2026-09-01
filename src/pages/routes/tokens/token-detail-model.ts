@@ -110,6 +110,12 @@ export type LocalTokenTestGate = {
   reason: string | null;
 };
 
+export function localTokenTestModels(
+  row: Pick<LocalTokenRow, 'listedModels'>,
+): string[] {
+  return row.listedModels.filter((model) => model.trim().length > 0);
+}
+
 export function localTokenTestGate(
   row: Pick<LocalTokenRow, 'token' | 'endpoint' | 'unavailable'>,
   t?: TranslateFn,
@@ -144,7 +150,7 @@ export function localTokenTestResultLabel(
     const ms = Math.max(0, Math.round(result.latencyMs));
     return t
       ? t('routes.tokens.testOkMs', { ms: String(ms) })
-      : `入口 Key 可用 · ${ms}ms`;
+      : `连上模型了 · ${ms}ms`;
   }
   if (outcome === 'unauthorized') {
     return t ? t('routes.tokens.testUnauthorized') : '入口 Key 无效';
@@ -153,7 +159,7 @@ export function localTokenTestResultLabel(
     return t ? t('routes.tokens.testUnreachable') : '端点连不上';
   }
   if (outcome === 'rejected') {
-    return t ? t('routes.tokens.testRejected') : '本机入口暂时不可用';
+    return t ? t('routes.tokens.testRejected') : '模型没通';
   }
   return t ? t('routes.tokens.testInvalid') : '没法测试';
 }
@@ -173,22 +179,26 @@ export function localTokenEntryRunning(
 }
 
 export function localTokenTestRequestUrl(
-  row: Pick<LocalTokenRow, 'endpoint'>,
+  row: Pick<LocalTokenRow, 'endpoint' | 'path'>,
   result?: Pick<LocalTokenProbeResult, 'requestUrl'> | null,
 ): string {
   if (result?.requestUrl?.trim()) return result.requestUrl.trim();
   const port = tokenListenPort(row.endpoint);
-  return port ? `http://127.0.0.1:${port}/health` : '';
+  const path = row.path?.startsWith('/') ? row.path : '/v1/chat/completions';
+  return port ? `http://127.0.0.1:${port}${path}` : '';
 }
 
 export function localTokenTestInputText(
-  row: Pick<LocalTokenRow, 'token' | 'maskedToken' | 'endpoint'>,
-  result?: Pick<LocalTokenProbeResult, 'requestUrl'> | null,
+  row: Pick<LocalTokenRow, 'token' | 'maskedToken' | 'endpoint' | 'path'>,
+  result?: Pick<LocalTokenProbeResult, 'requestUrl' | 'requestMethod' | 'requestBody'> | null,
 ): string {
   const url = localTokenTestRequestUrl(row, result) || '—';
+  const method = result?.requestMethod?.trim() || 'POST';
   const key = row.maskedToken?.trim()
     || (row.token ? maskLocalToken(row.token) : '—');
-  return `GET ${url}\nAuthorization: Bearer ${key}`;
+  const header = `${method} ${url}\nAuthorization: Bearer ${key}`;
+  const body = result?.requestBody?.trim();
+  return body ? `${header}\n\n${body}` : header;
 }
 
 export function localTokenTestOutputText(
@@ -203,7 +213,7 @@ export function localTokenTestOutputText(
     return t ? t('routes.tokens.testNoOutput') : '没有返回';
   }
   const lines: string[] = [];
-  if (!options.running) {
+  if (!options.running && result.outcome === 'unreachable') {
     lines.push(t ? t('routes.tokens.testNeedEndpoint') : '本机入口还没启动');
   }
   if (result.httpStatus != null) {
@@ -219,6 +229,25 @@ export function localTokenTestOutputText(
     return t ? t('routes.tokens.testNoOutput') : '没有返回';
   }
   return lines.join('\n');
+}
+
+export function localTokenTestWindowSummary(
+  result: Pick<LocalTokenProbeResult, 'outcome' | 'latencyMs'> | null,
+  testing: boolean,
+  t?: TranslateFn,
+): string {
+  if (testing) {
+    return t ? t('routes.tokens.testing') : '测试中…';
+  }
+  if (!result) {
+    return t ? t('routes.tokens.testNoOutput') : '没有返回';
+  }
+  const label = localTokenTestResultLabel(result, t);
+  if (result.outcome === 'ok') return label;
+  const duration = localTokenTestDurationLabel(result.latencyMs, t);
+  if (!duration) return label;
+  const durationLabel = t ? t('routes.tokens.testDuration') : '耗时';
+  return `${label} · ${durationLabel} ${duration}`;
 }
 
 export function localTokenTestDurationLabel(

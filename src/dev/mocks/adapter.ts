@@ -396,26 +396,57 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         return { poolId: pool.id, token };
       });
     },
-    async testLocalToken(endpoint, token) {
+    async testLocalToken(endpoint, token, path, model) {
       await delay(20);
       const trimmedToken = token.trim();
       const trimmedEndpoint = endpoint.trim();
+      const trimmedPath = path.trim() || '/v1/chat/completions';
       if (!trimmedToken || !trimmedEndpoint) {
-        return { outcome: 'invalid', httpStatus: null, latencyMs: 0, upstreamStatus: null };
+        return {
+          outcome: 'invalid',
+          httpStatus: null,
+          latencyMs: 0,
+          upstreamStatus: null,
+          requestUrl: null,
+          requestMethod: null,
+          requestBody: null,
+          responseBody: null,
+          errorMessage: null,
+        };
       }
       const loopback = trimmedEndpoint.includes('127.0.0.1')
         || trimmedEndpoint.includes('localhost')
         || trimmedEndpoint.includes('[::1]');
       if (!loopback) {
-        return { outcome: 'invalid', httpStatus: null, latencyMs: 0, upstreamStatus: null };
+        return {
+          outcome: 'invalid',
+          httpStatus: null,
+          latencyMs: 0,
+          upstreamStatus: null,
+          requestUrl: null,
+          requestMethod: null,
+          requestBody: null,
+          responseBody: null,
+          errorMessage: null,
+        };
       }
+      const requestUrl = trimmedEndpoint.includes('://')
+        ? trimmedEndpoint.replace(/\/[^/]*$/, trimmedPath)
+        : `http://${trimmedEndpoint}${trimmedPath}`;
       return {
         outcome: 'ok',
         httpStatus: 200,
         latencyMs: 4,
-        upstreamStatus: 'unknown',
-        requestUrl: 'http://127.0.0.1:1/health',
-        responseBody: '{"ok":true,"service":"agenthub-bridge","listener_status":"running","upstream_status":"unknown"}',
+        upstreamStatus: null,
+        requestUrl,
+        requestMethod: 'POST',
+        requestBody: JSON.stringify({
+          model: model?.trim() || 'mock',
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 8,
+          stream: false,
+        }),
+        responseBody: '{"choices":[{"message":{"content":"ok"}}]}',
         errorMessage: null,
       };
     },

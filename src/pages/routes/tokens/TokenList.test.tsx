@@ -27,6 +27,7 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
       outputTokens: 800,
       cachedInputTokens: 0,
     },
+    listedModels: [],
     ...partial,
   };
 }

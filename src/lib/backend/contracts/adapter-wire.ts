@@ -521,6 +521,8 @@ export interface LocalTokenProbeResultWire {
   latencyMs?: unknown;
   upstreamStatus?: unknown;
   requestUrl?: unknown;
+  requestMethod?: unknown;
+  requestBody?: unknown;
   responseBody?: unknown;
   errorMessage?: unknown;
 }
@@ -545,6 +547,8 @@ export function mapLocalTokenProbeResult(wire: LocalTokenProbeResultWire): Local
     latencyMs,
     upstreamStatus: optionalTrimmedString(wire.upstreamStatus),
     requestUrl: optionalTrimmedString(wire.requestUrl),
+    requestMethod: optionalTrimmedString(wire.requestMethod),
+    requestBody: optionalTrimmedString(wire.requestBody),
     responseBody: optionalTrimmedString(wire.responseBody),
     errorMessage: optionalTrimmedString(wire.errorMessage),
   };
