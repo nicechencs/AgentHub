@@ -1,5 +1,9 @@
 import type { TranslateFn } from '@/lib/i18n';
-import type { PoolAuthorizationItem } from '@/pages/bridges/route-pool-view-model';
+import { localEndpointPath } from '@/lib/route-endpoints';
+import {
+  localEndpointKindLabel,
+  type PoolAuthorizationItem,
+} from '@/pages/bridges/route-pool-view-model';
 
 export type PoolAuthorizationDetailRow = {
   id: string;
@@ -87,6 +91,29 @@ export function poolAuthorizationColumnLabel(
   }
 }
 
+/** Human-readable endpoint types for one pool login (paths + dialect labels). */
+export function poolAuthorizationEndpointTypeLabels(
+  item: Pick<PoolAuthorizationItem, 'endpointKinds' | 'surface' | 'agentId'>,
+  t: TranslateFn,
+): string[] {
+  const kinds = item.endpointKinds.length > 0
+    ? item.endpointKinds
+    : item.surface
+      ? [item.surface === 'messages'
+        ? 'messages' as const
+        : item.surface === 'chat_completions'
+          ? 'chat_completions' as const
+          : item.agentId === 'grok'
+            ? 'responses_grok' as const
+            : 'responses_codex' as const]
+      : [];
+  return kinds.map((kind) => {
+    const path = localEndpointPath(kind);
+    const label = localEndpointKindLabel(kind, t);
+    return `${path}（${label}）`;
+  });
+}
+
 export function poolAuthorizationDetailRows(
   item: PoolAuthorizationItem,
   t: TranslateFn,
@@ -106,6 +133,14 @@ export function poolAuthorizationDetailRows(
       value: item.endpointHost.trim(),
       mono: true,
       copyable: true,
+    });
+  }
+  const endpointTypes = poolAuthorizationEndpointTypeLabels(item, t);
+  if (endpointTypes.length > 0) {
+    rows.push({
+      id: 'endpointTypes',
+      label: t('routes.pool.detail.endpointTypes'),
+      value: endpointTypes.join(' · '),
     });
   }
   const secretTail = item.kind === 'oauth' ? item.refreshTokenTail : item.secretTail;

@@ -39,11 +39,14 @@ describe('routes board layout wiring', () => {
     expect(section).not.toContain('stopColor={meta.color}');
   });
 
-  it('uses shared endpoint colors: messages=Claude, OpenAI-family=Codex, never Grok black', () => {
-    const section = source('board-usage-section.tsx');
-    expect(section).toContain('routeEndpointTypeColor');
-    expect(section).not.toContain('--agent-grok');
-    expect(source('index.tsx')).toContain('RouteEndpointTypeText');
+  it('colors Responses by dialect: Codex green and Grok brand, Messages Claude', () => {
+    const page = source('index.tsx');
+    expect(page).toContain('localEndpointBrandAgentId');
+    expect(page).toContain('agentCssVar');
+    expect(page).toContain('localEndpointKindLabel');
+    expect(page).toContain('isLocalEndpointKind');
+    expect(source('board-usage-section.tsx')).toContain('routeEndpointTypeColor');
+    expect(source('../board/board-view-model.ts')).toContain('LOCAL_ENDPOINT_KINDS');
   });
 
   it('groups local-forwarding usage like 总览: overlay by endpoint type, then by model', () => {

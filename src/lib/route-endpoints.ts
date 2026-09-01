@@ -1,15 +1,34 @@
 /**
  * Unified local-route downstream surfaces. Bind still targets a writer Agent
- * internally; UI for purpose=route shows these three endpoints instead.
+ * internally; UI for purpose=route shows these endpoints instead.
+ *
+ * Wire surfaces stay `messages | responses | chat_completions`. The UI further
+ * splits `/v1/responses` into Codex (generic OpenAI Responses) vs Grok
+ * (Grok-native Responses) via {@link LocalEndpointKind}.
  */
 import type { AgentId } from '@/lib/types';
 import type { TokenAgentId } from '@/styles/tokens';
 
 export type RouteEndpointId = 'messages' | 'responses' | 'chat_completions';
 
+/** UI endpoint kind; Responses is split by dialect. */
+export type LocalEndpointKind =
+  | 'messages'
+  | 'responses_codex'
+  | 'responses_grok'
+  | 'chat_completions';
+
 export interface RouteEndpoint {
   id: RouteEndpointId;
   path: string;
+}
+
+export interface LocalEndpointSpec {
+  kind: LocalEndpointKind;
+  path: string;
+  /** Wire / gateway surface. */
+  surface: RouteEndpointId;
+  brandAgentId: TokenAgentId;
 }
 
 export const ROUTE_ENDPOINTS: readonly RouteEndpoint[] = [
@@ -18,10 +37,40 @@ export const ROUTE_ENDPOINTS: readonly RouteEndpoint[] = [
   { id: 'chat_completions', path: '/v1/chat/completions' },
 ];
 
+/** Board / tokens / pool-detail rows: four kinds, two sharing `/v1/responses`. */
+export const LOCAL_ENDPOINT_KINDS: readonly LocalEndpointSpec[] = [
+  { kind: 'messages', path: '/v1/messages', surface: 'messages', brandAgentId: 'claude' },
+  {
+    kind: 'responses_codex',
+    path: '/v1/responses',
+    surface: 'responses',
+    brandAgentId: 'codex',
+  },
+  {
+    kind: 'responses_grok',
+    path: '/v1/responses',
+    surface: 'responses',
+    brandAgentId: 'grok',
+  },
+  {
+    kind: 'chat_completions',
+    path: '/v1/chat/completions',
+    surface: 'chat_completions',
+    brandAgentId: 'codex',
+  },
+];
+
 const ENDPOINT_BY_ID: Record<RouteEndpointId, RouteEndpoint> = {
   messages: ROUTE_ENDPOINTS[0]!,
   responses: ROUTE_ENDPOINTS[1]!,
   chat_completions: ROUTE_ENDPOINTS[2]!,
+};
+
+const LOCAL_BY_KIND: Record<LocalEndpointKind, LocalEndpointSpec> = {
+  messages: LOCAL_ENDPOINT_KINDS[0]!,
+  responses_codex: LOCAL_ENDPOINT_KINDS[1]!,
+  responses_grok: LOCAL_ENDPOINT_KINDS[2]!,
+  chat_completions: LOCAL_ENDPOINT_KINDS[3]!,
 };
 
 /** Writer Agent → the loopback path that agent consumes. */
@@ -29,6 +78,48 @@ export function routeEndpointIdForTargetAgent(agentId: AgentId | string): RouteE
   if (agentId === 'claude') return 'messages';
   if (agentId === 'codex' || agentId === 'grok') return 'responses';
   return 'chat_completions';
+}
+
+/** Writer Agent → UI endpoint kind (Codex vs Grok Responses split). */
+export function localEndpointKindForTargetAgent(agentId: AgentId | string): LocalEndpointKind {
+  if (agentId === 'claude') return 'messages';
+  if (agentId === 'codex') return 'responses_codex';
+  if (agentId === 'grok') return 'responses_grok';
+  return 'chat_completions';
+}
+
+/** Pool surface + dialect → UI endpoint kind. */
+export function localEndpointKindFromPool(input: {
+  surface: RouteEndpointId | string;
+  dialect?: string | null;
+  targetAgentId?: string | null;
+}): LocalEndpointKind | null {
+  if (input.surface === 'messages') return 'messages';
+  if (input.surface === 'chat_completions') return 'chat_completions';
+  if (input.surface !== 'responses') return null;
+  const dialect = input.dialect?.trim() || input.targetAgentId?.trim() || '';
+  if (dialect === 'grok') return 'responses_grok';
+  return 'responses_codex';
+}
+
+export function localEndpointSpec(kind: LocalEndpointKind): LocalEndpointSpec {
+  return LOCAL_BY_KIND[kind];
+}
+
+export function localEndpointPath(kind: LocalEndpointKind): string {
+  return LOCAL_BY_KIND[kind].path;
+}
+
+export function localEndpointSurface(kind: LocalEndpointKind): RouteEndpointId {
+  return LOCAL_BY_KIND[kind].surface;
+}
+
+export function localEndpointBrandAgentId(kind: LocalEndpointKind): TokenAgentId {
+  return LOCAL_BY_KIND[kind].brandAgentId;
+}
+
+export function isLocalEndpointKind(value: string): value is LocalEndpointKind {
+  return Object.prototype.hasOwnProperty.call(LOCAL_BY_KIND, value);
 }
 
 /**

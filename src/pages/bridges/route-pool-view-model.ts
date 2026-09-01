@@ -16,6 +16,12 @@ import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { ConnectionKind } from '@/lib/connection-kind';
 import type { AgentId, AuthStatus } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
+import type { LocalEndpointKind } from '@/lib/route-endpoints';
+import {
+  localEndpointKindForTargetAgent,
+  localEndpointKindFromPool,
+  localEndpointSurface,
+} from '@/lib/route-endpoints';
 import { groupLocalBridgeProfiles } from './adapter-view-model';
 
 /** One workbench card: a default pool, or a local route not yet in a pool. */
@@ -157,7 +163,10 @@ export type PoolAuthorizationItem = {
   /** OAuth displays the authorized account when the provider exposed one. */
   identityLabel?: string;
   kind: ConnectionKind;
+  /** @deprecated Prefer `endpointKinds`; kept for single-surface callers. */
   surface: RoutePoolSurface | null;
+  /** Endpoint kinds this login supports / is enrolled for (one or more). */
+  endpointKinds: LocalEndpointKind[];
   addedHere: boolean;
   authHealth?: AuthHealth;
   authStatus?: AuthStatus;
@@ -176,6 +185,21 @@ export type PoolAuthorizationItem = {
   refreshTokenTail?: string;
 };
 
+function mergeEndpointKinds(
+  current: readonly LocalEndpointKind[] | undefined,
+  next: LocalEndpointKind | null,
+): LocalEndpointKind[] {
+  const kinds = [...(current ?? [])];
+  if (next && !kinds.includes(next)) kinds.push(next);
+  const order: LocalEndpointKind[] = [
+    'messages',
+    'responses_codex',
+    'responses_grok',
+    'chat_completions',
+  ];
+  return order.filter((kind) => kinds.includes(kind));
+}
+
 function poolAuthorizationItem(
   key: string,
   sourceKind: AdapterSourceKind,
@@ -186,12 +210,14 @@ function poolAuthorizationItem(
     kind: ConnectionKind;
     title: string;
     surface: RoutePoolSurface | null;
+    endpointKind: LocalEndpointKind | null;
     addedHere: boolean;
     displayLabel?: string;
     refreshTokenTail?: string;
     enabled?: boolean;
     canToggle?: boolean;
     priority?: number;
+    endpointKinds?: readonly LocalEndpointKind[];
   },
 ): PoolAuthorizationItem {
   const kind = match?.kind ?? fallback.kind;
@@ -205,6 +231,7 @@ function poolAuthorizationItem(
   const title = kind === 'oauth'
     ? identityLabel || match?.title?.trim() || displayLabel || fallbackTitle
     : match?.title?.trim() || displayLabel || fallbackTitle;
+  const endpointKinds = mergeEndpointKinds(fallback.endpointKinds, fallback.endpointKind);
   return {
     key,
     sourceKind,
@@ -213,7 +240,10 @@ function poolAuthorizationItem(
     title: title || fallbackTitle,
     identityLabel,
     kind,
-    surface: fallback.surface,
+    surface: fallback.surface ?? (endpointKinds[0]
+      ? localEndpointSurface(endpointKinds[0])
+      : null),
+    endpointKinds,
     addedHere: fallback.addedHere,
     authHealth: match?.authHealth,
     authStatus: match?.authStatus,
@@ -306,6 +336,7 @@ export function collectPoolAuthorizations(
     entries.map((entry) => [`${entry.source}:${entry.id}`, entry]),
   );
   for (const pool of pools) {
+    const endpointKind = localEndpointKindFromPool(pool);
     for (const member of pool.members) {
       const key = `${member.sourceKind}:${member.sourceId}`;
       const match = entryBySource.get(key);
@@ -326,6 +357,8 @@ export function collectPoolAuthorizations(
           kind: member.sourceKind === 'account' ? 'oauth' : 'apikey',
           title: member.displayLabel?.trim() || unavailableLabel,
           surface: pool.surface,
+          endpointKind,
+          endpointKinds: existing?.endpointKinds,
           addedHere: match ? entryHome(match) === 'route_pool' : false,
           displayLabel: member.displayLabel,
           refreshTokenTail: member.refreshTokenTail,
@@ -340,6 +373,7 @@ export function collectPoolAuthorizations(
     if (entryHome(entry) !== 'route_pool') continue;
     const key = `${entry.source}:${entry.id}`;
     if (items.has(key)) continue;
+    const endpointKind = localEndpointKindForTargetAgent(entry.agentId);
     items.set(key, poolAuthorizationItem(
       key,
       entry.source,
@@ -350,6 +384,7 @@ export function collectPoolAuthorizations(
         kind: entry.kind,
         title: entry.id,
         surface: poolSurfaceForAgent(entry.agentId),
+        endpointKind,
         addedHere: true,
       },
     ));
@@ -430,6 +465,20 @@ export function routePoolSurfaceLabel(surface: RoutePoolSurface, t?: TranslateFn
   }
   if (surface === 'responses') {
     return t ? t('routes.pool.surface.responses') : '回复接口';
+  }
+  return t ? t('routes.pool.surface.chatCompletions') : '对话补全';
+}
+
+/** UI label for a local endpoint kind (Responses split into Codex / Grok). */
+export function localEndpointKindLabel(kind: LocalEndpointKind, t?: TranslateFn): string {
+  if (kind === 'messages') {
+    return t ? t('routes.pool.surface.messages') : '对话接口';
+  }
+  if (kind === 'responses_codex') {
+    return t ? t('routes.pool.surface.responsesCodex') : '回复接口 · Codex';
+  }
+  if (kind === 'responses_grok') {
+    return t ? t('routes.pool.surface.responsesGrok') : '回复接口 · Grok';
   }
   return t ? t('routes.pool.surface.chatCompletions') : '对话补全';
 }
