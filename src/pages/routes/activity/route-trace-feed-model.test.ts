@@ -36,6 +36,27 @@ describe('route-trace-feed-model', () => {
     expect(rows[0]?.sourceLabel).toBe('Route A');
   });
 
+  it('falls back to legacy inbound rows when traces are missing', () => {
+    const statuses: Record<string, AdapterBridgeRuntimeStatus> = {
+      'route-a': {
+        profileId: 'route-a',
+        state: 'running',
+        recentInbound: [
+          {
+            at: '2026-01-01T00:00:00.000Z',
+            method: 'POST',
+            path: '/v1/messages',
+            status: 200,
+            ok: true,
+          },
+        ],
+      },
+    };
+    const rows = mergeRecentRouteTraces(profiles, statuses, 10);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.legacySummary).toBe(true);
+  });
+
   it('filters failed traces', () => {
     const okTrace = { ...trace, requestId: 'req-2', ok: true, httpStatus: 200, failureStage: null };
     const statuses: Record<string, AdapterBridgeRuntimeStatus> = {

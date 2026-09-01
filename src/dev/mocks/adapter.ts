@@ -1069,9 +1069,64 @@ function mockInboundRows(): AdapterBridgeRuntimeStatus['recentInbound'] {
   ];
 }
 
+function mockRouteTraces(): AdapterBridgeRuntimeStatus['recentRouteTraces'] {
+  return [
+    {
+      requestId: 'mock-req-ok',
+      at: '2026-08-12T00:00:02.000Z',
+      method: 'POST',
+      path: '/v1/responses',
+      httpStatus: 200,
+      ok: true,
+      model: 'gpt-5',
+      latencyMs: 842,
+      localAuth: { status: 'ok', profileId: 'mock-profile', port: 32123 },
+      pool: {
+        status: 'ok',
+        selectedMember: { label: 'pool-acct-1', sourceKind: 'account', sourceId: 'acct-1' },
+      },
+      conversion: { status: 'ok', path: 'responses_to_codex_responses', result: 'converted' },
+      upstreamAuth: { status: 'ok', httpStatus: 200 },
+      upstream: {
+        status: 'ok',
+        url: 'https://api.openai.com/v1/responses',
+        member: { label: 'pool-acct-1', sourceKind: 'account', sourceId: 'acct-1' },
+        upstreamModel: 'gpt-5',
+        httpStatus: 200,
+      },
+    },
+    {
+      requestId: 'mock-req-fail',
+      at: '2026-08-12T00:00:01.000Z',
+      method: 'POST',
+      path: '/v1/messages',
+      httpStatus: 401,
+      ok: false,
+      model: 'claude-sonnet',
+      latencyMs: 12,
+      localAuth: { status: 'ok', profileId: 'mock-profile', port: 32123 },
+      pool: {
+        status: 'ok',
+        selectedMember: { label: 'pool-acct-2', sourceKind: 'account', sourceId: 'acct-2' },
+      },
+      conversion: { status: 'ok', path: 'messages_to_anthropic', result: 'converted' },
+      upstreamAuth: { status: 'failed', httpStatus: 401, code: 'unauthorized' },
+      upstream: {
+        status: 'failed',
+        url: 'https://api.anthropic.com/v1/messages',
+        member: { label: 'pool-acct-2', sourceKind: 'account', sourceId: 'acct-2' },
+        httpStatus: 401,
+        code: 'unauthorized',
+      },
+      failureStage: 'upstream_auth',
+    },
+  ];
+}
+
 function runningBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeStatus {
   const port = profile.localPort ?? 32123;
   const recentInbound = mockInboundRows() ?? [];
+  const recentRouteTraces = mockRouteTraces() ?? [];
   return {
     profileId: profile.id,
     state: 'running',
@@ -1080,6 +1135,7 @@ function runningBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeStatu
     startedAt: new Date().toISOString(),
     upstreamStatus: 'unknown',
     recentInbound,
+    recentRouteTraces,
     totalRequestCount: 42,
     failedRequestCount: 3,
     lastRequestAt: recentInbound[0]?.at ?? null,

@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 
 export type RouteTraceListItem = AdapterBridgeRouteTrace & {
   sourceLabel?: string;
+  legacySummary?: boolean;
 };
 
 function stageTone(status: RouteTraceStageStatus): string {
@@ -36,6 +37,27 @@ function StageBadge({
     <span className={cn('rounded px-1.5 py-0.5 text-meta', stageTone(status))}>
       {label}
     </span>
+  );
+}
+
+function StageStrip({ row }: { row: RouteTraceListItem }) {
+  const { t } = useI18n();
+  const stages = [
+    { key: 'localAuth', label: t('routes.trace.stageLocalAuth'), status: row.localAuth.status },
+    { key: 'pool', label: t('routes.trace.stagePool'), status: row.pool.status },
+    { key: 'conversion', label: t('routes.trace.stageConversion'), status: row.conversion.status },
+    { key: 'upstreamAuth', label: t('routes.trace.stageUpstreamAuth'), status: row.upstreamAuth.status },
+    { key: 'upstream', label: t('routes.trace.stageUpstream'), status: row.upstream.status },
+  ];
+  return (
+    <div className="mt-1 flex w-full flex-wrap gap-1" aria-label={t('routes.trace.pipelineAria')}>
+      {stages.map((stage) => (
+        <StageBadge key={stage.key} label={stage.label} status={stage.status} />
+      ))}
+      {row.legacySummary ? (
+        <span className="text-meta text-muted">{t('routes.trace.legacySummary')}</span>
+      ) : null}
+    </div>
   );
 }
 
@@ -182,7 +204,8 @@ export function RouteTraceList({
       {rows.map((row) => (
         <li key={row.requestId}>
           <details className="group">
-            <summary className="flex min-w-0 cursor-pointer list-none flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-meta marker:content-none [&::-webkit-details-marker]:hidden">
+            <summary className="block cursor-pointer list-none marker:content-none [&::-webkit-details-marker]:hidden">
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-meta">
               <span className="text-muted">{formatInboundAt(row.at)}</span>
               <span>{row.method}</span>
               <Tip label={row.path}>
@@ -206,8 +229,10 @@ export function RouteTraceList({
               {row.sourceLabel ? (
                 <span className="truncate text-muted">{row.sourceLabel}</span>
               ) : null}
+              </div>
+              <StageStrip row={row} />
             </summary>
-            <TraceDetail row={row} />
+            {!row.legacySummary ? <TraceDetail row={row} /> : null}
           </details>
         </li>
       ))}

@@ -1080,7 +1080,7 @@ export const en = {
       filterAria: "Monitoring filter",
       filterAll: "All",
       filterFailed: "Failed",
-      scopeNote: "Shows recent requests from this local-forwarding session, including auth, pool, conversion, and upstream steps.",
+      scopeNote: "Each request shows five stages (local auth, pool, conversion, upstream auth, upstream). Expand for details; data appears after requests through the desktop app.",
       emptyTitle: "No request history yet",
       emptyDescription: "Requests appear here after a client calls through a local route.",
       emptyFilteredTitle: "No requests match this filter",
@@ -1110,6 +1110,8 @@ export const en = {
       upstreamModel: "Upstream model",
       attempt: "Attempt {n}",
       latencyMs: "{ms}ms",
+      pipelineAria: "Request five-stage status",
+      legacySummary: "Basic log only (update desktop app and send requests)",
     },
     tokens: {
       title: "Tokens",
