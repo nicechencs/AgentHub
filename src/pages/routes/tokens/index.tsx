@@ -27,6 +27,7 @@ import {
 } from '@/pages/bridges/route-pool-view-model';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
+import { buildLocalEntryControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { buildLocalTokenRows } from './tokens-model';
 
@@ -51,6 +52,10 @@ export default function RoutesTokensPage() {
   });
   const inspect = useSideSplit<WriteTarget>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
   const [revealedTokenId, setRevealedTokenId] = useState<string | null>(null);
+  const localEntry = useMemo(
+    () => buildLocalEntryControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
+    [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
+  );
   const rows = useMemo(
     () => {
       const next = buildLocalTokenRows(
@@ -107,7 +112,15 @@ export default function RoutesTokensPage() {
         description={t('routes.tokens.description')}
       />
       <div className={pageRhythm.chromeRow}>
-        <p className="min-w-0 truncate text-meta text-muted">{t('routes.tokens.scopeNote')}</p>
+        <p className="min-w-0 truncate text-meta text-muted">{
+          localEntry.running
+            ? t('routes.tokens.scopeNote')
+            : localEntry.profileIds.length === 0 && localEntry.hasEnrolledLogins
+              ? t('routes.board.entryNeedRoute')
+              : localEntry.profileIds.length === 0
+                ? t('routes.tokens.scopeNote')
+                : t('routes.tokens.entryStoppedHint')
+        }</p>
         <div className={pageRhythm.chromeActions}>
           <PageRefreshButton
             loading={pageLoading}

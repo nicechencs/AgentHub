@@ -37,9 +37,9 @@ Routes nested paths (secondary nav):
 
 | Label | Path | Role |
 |---|---|---|
-| Board | `/routes/board` | Health overview, usage, and start/stop. Bare `/routes` redirects here. |
-| Connection pool | `/routes/pool` | Login list with status and detail; `?profile=` opens route detail. |
-| Local tokens | `/routes/tokens` | Entry-key copy (in development) |
+| Board | `/routes/board` | Endpoint-type overview, usage, and the one local-entry start/stop switch. Bare `/routes` redirects here. |
+| Connection pool | `/routes/pool` | Login list with status and detail; `?profile=` opens route detail. Logins do not start or stop the local entry. |
+| Local tokens | `/routes/tokens` | Entry keys per endpoint; copy or write into the matching Agent. Keys appear after the local entry starts. |
 | Activity | `/routes/activity` | Cross-route recent request feed |
 
 Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Preferences → Sidebar. The secondary nav top-left control expands the primary sidebar. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
@@ -122,7 +122,7 @@ Routes is the runtime management page for local loopback forwarding. It is not a
 
 ### 6.0 Secondary nav and board
 
-Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: usage charts, a one-line fleet summary, an optional “needs attention” block, remaining route rows with start/stop, and a short recent-request snapshot that deep-links to Activity (`?filter=` / `?route=`). Logins for local forwarding are listed on the connection pool (`/routes/pool`); request filtering stays on Activity. `/routes?profile=` opens pool detail. `/adapter`, `/router`, and `/bridges` redirect into this area.
+Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: four endpoint-kind cards (Messages, Responses · Codex, Responses · Grok, Chat completions), usage charts, and **one start/stop control for the shared local entry**. Codex and Grok share the `/v1/responses` path on the wire; the cards split them in the UI and filter usage. They are not per-endpoint switches. Logins for local forwarding are listed on the connection pool (`/routes/pool`); request filtering stays on Activity. `/routes?profile=` opens pool detail. `/adapter`, `/router`, and `/bridges` redirect into this area.
 
 ### 6.1 Connection pool
 
@@ -132,10 +132,10 @@ The page treats the following states separately:
 
 | State | Meaning | UI |
 |---|---|---|
-| Running | Listener and route are available | Address, port, health, and stop action |
+| Running | Listener and route are available | Address, port, health. Start/stop of the shared local entry is on the board |
 | Starting / stopping | Lifecycle mutation is in progress | Busy state, stable row, dismissal guarded |
 | Degraded | Listener exists but the last upstream check failed | Warning state plus retry/diagnostics |
-| Stopped | Durable route exists but is not running | Start action |
+| Stopped | Durable route exists but is not running | Board shows start; leftover route cards may still expose start |
 | Host unavailable | The current runtime host cannot be reached | Explicit unavailable error; never “running” and never silent mock |
 | Healthy empty | No local route is configured | Informational empty state without a conversion CTA |
 
@@ -147,7 +147,7 @@ The detail panel is a focused dialog or side surface opened from the connection 
 
 Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Routes may directly add and manage an official login or API Key marked “仅用于本机路由”; it uses `home=route_pool`, may not appear in Connections, and its lifecycle stays in Routes. A login selected from Connections remains Connections-managed even while its pool membership and runtime are shown here.
 
-The primary runtime actions are start, stop, retry, and remove/unbind where the product flow permits them. A stop or unbind confirmation explains listener impact and whether the current local configuration will be restored. A failed unbind remains retryable; it must not fall back to force deletion.
+The primary start/stop control for the shared local entry is on the board, not on each pool login. Detail may still enroll a native row with **交给本机网关**, and leftover route cards may still expose start/stop. A stop or unbind confirmation explains listener impact and whether the current local configuration will be restored. A failed unbind remains retryable; it must not fall back to force deletion.
 
 ### 6.3 Runtime boundary
 

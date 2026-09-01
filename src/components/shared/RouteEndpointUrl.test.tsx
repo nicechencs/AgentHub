@@ -48,4 +48,15 @@ describe('RouteEndpointUrl', () => {
     expect(html).toContain('Claude 对话');
     expect(html).toContain('var(--agent-claude)');
   });
+
+  it('lets Grok Responses reuse the Grok brand instead of Codex', () => {
+    const html = renderToStaticMarkup(createElement(RouteEndpointUrl, {
+      path: '/v1/responses',
+      port: 1,
+      endpointId: 'responses',
+      brandAgentId: 'grok',
+    }));
+    expect(html).toContain('var(--agent-grok)');
+    expect(html).not.toContain('var(--agent-codex)');
+  });
 });

@@ -19,6 +19,7 @@ import {
 } from '@/lib/route-endpoints';
 import type { AgentId } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
+import { isBridgeStopCapable } from '@/pages/bridges/adapter-view-model';
 import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
 
 export const BOARD_INBOUND_SNAPSHOT_LIMIT = 8;
@@ -72,6 +73,76 @@ export type BoardFleetSummary = {
   needsAttention: number;
   label: string;
 };
+
+/** Shared local-entry master switch (not per-login, not per-endpoint). */
+export type LocalEntryControl = {
+  profileIds: string[];
+  startIds: string[];
+  stopIds: string[];
+  action: 'start' | 'stop' | null;
+  retry: boolean;
+  running: boolean;
+  starting: boolean;
+  stopping: boolean;
+  transitioning: boolean;
+  /** Connection-pool logins exist, even if no local-bridge listener is startable yet. */
+  hasEnrolledLogins: boolean;
+};
+
+export function buildLocalEntryControl(
+  profiles: readonly Pick<AdapterProfile, 'id' | 'route' | 'sourceKind' | 'sourceId' | 'targetAgentId' | 'lastErrorCode'>[],
+  bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
+  hiddenTargetIds: ReadonlySet<string> = new Set(),
+  pools: readonly Pick<DefaultRoutePoolOverview, 'id' | 'targetAgentId' | 'members'>[] = [],
+): LocalEntryControl {
+  const hasEnrolledLogins = pools.some((pool) => (
+    pool.members.length > 0 && !hiddenTargetIds.has(pool.targetAgentId)
+  ));
+  const byId = new Map<string, (typeof profiles)[number]>();
+  for (const profile of profiles) {
+    if (profile.route !== 'local_bridge') continue;
+    if (hiddenTargetIds.has(profile.targetAgentId)) continue;
+    byId.set(profile.id, profile);
+  }
+  for (const pool of pools) {
+    if (hiddenTargetIds.has(pool.targetAgentId)) continue;
+    if (pool.members.length === 0) continue;
+    for (const match of profilesForPool(pool, profiles)) {
+      byId.set(match.id, match);
+    }
+  }
+  const local = [...byId.values()];
+  const profileIds = local.map((profile) => profile.id);
+  const stopIds: string[] = [];
+  const startIds: string[] = [];
+  let retry = false;
+  let starting = false;
+  let stopping = false;
+  for (const profile of local) {
+    const state = bridgeStatuses[profile.id]?.state;
+    if (state === 'starting') starting = true;
+    if (state === 'stopping') stopping = true;
+    if (isBridgeStopCapable(state)) {
+      stopIds.push(profile.id);
+      continue;
+    }
+    startIds.push(profile.id);
+    if (state === 'error' || Boolean(profile.lastErrorCode?.trim())) retry = true;
+  }
+  const running = stopIds.length > 0;
+  return {
+    profileIds,
+    startIds,
+    stopIds,
+    action: profileIds.length === 0 ? null : (running ? 'stop' : 'start'),
+    retry: retry && !running,
+    running,
+    starting,
+    stopping,
+    transitioning: starting || stopping,
+    hasEnrolledLogins,
+  };
+}
 
 /** One card per UI endpoint kind (Responses split into Codex / Grok). */
 export type BoardEndpointTypeRow = {

@@ -43,14 +43,14 @@ const GROK_CONFIG_PATH = '~/.grok/config.toml';
 
 const WRITE_COPY = {
   portPending: '端口分配中，写入后生效',
-  localToken: '本机令牌（自动生成）',
+  localToken: '令牌（自动生成）',
   statusApplied: '已写入 {name} 配置',
   statusReady: '可写入',
   statusNoUpstream: '这条路由未开放 {name} 端点',
   statusHidden: '{name} 已在设置中隐藏',
   statusSourceMissing: '来源登录已删除，无法写入',
   fieldLocalAddress: '本机地址',
-  fieldLocalToken: '本机令牌',
+  fieldLocalToken: '令牌',
   fieldModel: '主模型',
   fieldContextWindow: '上下文窗口',
   wireNoteClaude: '改 Claude 本机配置',

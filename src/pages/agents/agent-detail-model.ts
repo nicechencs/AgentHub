@@ -10,6 +10,8 @@ import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
 import type { TranslateFn } from '@/lib/i18n';
 import { isLiveFilePath, liveConfigPaths } from '@/lib/provider-detect';
 import {
+  localEndpointBrandAgentId,
+  localEndpointKindForTargetAgent,
   routeEndpointBrandAgentId,
   routeEndpointPath,
   type RouteEndpointId,
@@ -61,7 +63,9 @@ export function agentConversationEndpoints(
   return agentConversationSurfaces(agentId).map((id) => ({
     id,
     path: routeEndpointPath(id),
-    brandAgentId: routeEndpointBrandAgentId(id),
+    brandAgentId: id === 'responses' && agentId === 'grok'
+      ? localEndpointBrandAgentId(localEndpointKindForTargetAgent(agentId))
+      : routeEndpointBrandAgentId(id),
   }));
 }
 
