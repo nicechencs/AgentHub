@@ -102,6 +102,53 @@ function brandAgentIdOf(choice: PoolApiChoice) {
   return kind ? localEndpointBrandAgentId(kind) : undefined;
 }
 
+function ApiChoiceEndpointCopy({
+  choice,
+  actualUrl,
+}: {
+  choice: PoolApiChoice;
+  actualUrl: string | null;
+}) {
+  const { t } = useI18n();
+  const endpointId = endpointIdOf(choice.endpoint);
+  const brandAgentId = brandAgentIdOf(choice);
+  const pathStart = actualUrl && choice.endpoint && actualUrl.endsWith(choice.endpoint)
+    ? actualUrl.length - choice.endpoint.length
+    : -1;
+  return (
+    <>
+      <RouteEndpointTypeText
+        endpointId={endpointId}
+        brandAgentId={brandAgentId}
+        className="block font-mono text-sm font-medium"
+      >
+        {choice.endpoint}
+      </RouteEndpointTypeText>
+      <span className="block text-xs">
+        <RouteEndpointTypeText endpointId={endpointId} brandAgentId={brandAgentId}>
+          {t(apiLabelKeys[choice.type])}
+        </RouteEndpointTypeText>
+      </span>
+      {actualUrl ? (
+        <span className="mt-1 block truncate font-mono text-meta" title={actualUrl}>
+          {pathStart >= 0 ? (
+            <>
+              <span className="text-muted">{actualUrl.slice(0, pathStart)}</span>
+              <RouteEndpointTypeText endpointId={endpointId} brandAgentId={brandAgentId}>
+                {choice.endpoint}
+              </RouteEndpointTypeText>
+            </>
+          ) : (
+            <RouteEndpointTypeText endpointId={endpointId} brandAgentId={brandAgentId}>
+              {actualUrl}
+            </RouteEndpointTypeText>
+          )}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 export function ApiAccessDialog({
   open,
   agents,
@@ -118,7 +165,12 @@ export function ApiAccessDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open ? (
-        <ApiAccessForm agents={agents} edit={edit} onOpenChange={onOpenChange} onSaved={onSaved} />
+        <ApiAccessForm
+          agents={agents}
+          edit={edit}
+          onCancel={() => onOpenChange(false)}
+          onSaved={onSaved}
+        />
       ) : null}
     </Dialog>
   );
@@ -141,15 +193,17 @@ function initialEditDraft(edit?: PoolApiEditTarget | null) {
   });
 }
 
-function ApiAccessForm({
+export function ApiAccessForm({
   agents,
   edit,
-  onOpenChange,
+  layout = 'dialog',
+  onCancel,
   onSaved,
 }: {
   agents: readonly AgentId[];
   edit?: PoolApiEditTarget | null;
-  onOpenChange: (open: boolean) => void;
+  layout?: 'dialog' | 'inline';
+  onCancel: () => void;
   onSaved?: () => void;
 }) {
   const { t, lang } = useI18n();
@@ -371,7 +425,7 @@ function ApiAccessForm({
         variant: 'success',
       });
       onSaved?.();
-      onOpenChange(false);
+      onCancel();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       setError(message);
@@ -391,18 +445,7 @@ function ApiAccessForm({
     && !detecting
     && !fetchingModels;
 
-  return (
-    <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {editing ? t('routes.pool.page.apiDialogEditTitle') : t('routes.pool.page.apiDialogTitle')}
-          </DialogTitle>
-          <DialogDescription>
-            {editing
-              ? t('routes.pool.page.apiDialogEditDescription')
-              : t('routes.pool.page.apiDialogDescription')}
-          </DialogDescription>
-        </DialogHeader>
+  const fields = (
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
             <span className="text-xs text-muted">{t('routes.pool.page.apiVendors')}</span>
@@ -477,7 +520,20 @@ function ApiAccessForm({
           <div className="flex flex-col gap-1.5">
             <span className="text-xs text-muted">{t('routes.pool.page.apiTypesLabel')}</span>
             {editing ? (
-              <p className="text-meta text-muted">{t('routes.pool.page.apiTypesLockedHint')}</p>
+              <>
+                {choices.filter((choice) => selectedTypes.has(choice.type)).map((choice) => {
+                  const actualUrl = resolveEndpointUrl(selectedVendor, choice.type, baseUrl);
+                  return (
+                    <div
+                      key={`${choice.agentId}-${choice.endpoint}-${choice.type}`}
+                      className="rounded-card border border-border bg-panel p-3"
+                    >
+                      <ApiChoiceEndpointCopy choice={choice} actualUrl={actualUrl} />
+                    </div>
+                  );
+                })}
+                <p className="text-meta text-muted">{t('routes.pool.page.apiTypesLockedHint')}</p>
+              </>
             ) : (
               <div className="grid grid-cols-1 gap-2">
                 {choices.map((choice) => {
@@ -500,20 +556,7 @@ function ApiAccessForm({
                           onChange={() => toggleType(choice.type, choice.available)}
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="block font-mono text-sm font-medium text-primary">{choice.endpoint}</span>
-                          <span className="block text-xs">
-                            <RouteEndpointTypeText
-                              endpointId={endpointIdOf(choice.endpoint)}
-                              brandAgentId={brandAgentIdOf(choice)}
-                            >
-                              {t(apiLabelKeys[choice.type])}
-                            </RouteEndpointTypeText>
-                          </span>
-                          {actualUrl ? (
-                            <span className="mt-1 block truncate font-mono text-meta text-muted" title={actualUrl}>
-                              {actualUrl}
-                            </span>
-                          ) : null}
+                          <ApiChoiceEndpointCopy choice={choice} actualUrl={actualUrl} />
                           {!choice.available ? (
                             <span className="mt-1 block text-xs text-muted">
                               {t('routes.pool.page.choiceUnavailable')}
@@ -617,14 +660,40 @@ function ApiAccessForm({
             />
           </label>
         </div>
-        <DialogFooter>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="button" onClick={() => void save()} disabled={!canSave}>
-            {saving ? t('common.saving') : t('common.save')}
-          </Button>
-        </DialogFooter>
+  );
+  const actions = (
+    <>
+      <Button type="button" variant="secondary" onClick={onCancel} disabled={saving}>
+        {t('common.cancel')}
+      </Button>
+      <Button type="button" onClick={() => void save()} disabled={!canSave}>
+        {saving ? t('common.saving') : t('common.save')}
+      </Button>
+    </>
+  );
+  if (layout === 'inline') {
+    return (
+      <div className="flex flex-col gap-3">
+        <p className="text-meta text-muted">{t('routes.pool.page.apiDialogEditDescription')}</p>
+        {fields}
+        <div className="flex justify-end gap-2">{actions}</div>
+      </div>
+    );
+  }
+  return (
+    <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+      <DialogHeader>
+        <DialogTitle>
+          {editing ? t('routes.pool.page.apiDialogEditTitle') : t('routes.pool.page.apiDialogTitle')}
+        </DialogTitle>
+        <DialogDescription>
+          {editing
+            ? t('routes.pool.page.apiDialogEditDescription')
+            : t('routes.pool.page.apiDialogDescription')}
+        </DialogDescription>
+      </DialogHeader>
+      {fields}
+      <DialogFooter>{actions}</DialogFooter>
     </DialogContent>
   );
 }

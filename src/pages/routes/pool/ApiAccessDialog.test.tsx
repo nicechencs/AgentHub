@@ -2,7 +2,7 @@ import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { Provider } from '@/lib/types';
-import { ApiAccessDialog } from './ApiAccessDialog';
+import { ApiAccessDialog, ApiAccessForm } from './ApiAccessDialog';
 
 vi.mock('@/components/ui/dialog', () => {
   const passthrough = ({ children }: { children?: ReactNode }) => children ?? null;
@@ -46,19 +46,34 @@ describe('ApiAccessDialog', () => {
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('/v1/responses');
     expect(markup).toContain('/v1/chat/completions');
+    expect(markup).toContain('var(--agent-claude)');
+    expect(markup).toContain('var(--agent-codex)');
+    expect(markup).toContain('var(--agent-grok)');
     expect(markup).toContain('type="checkbox"');
     expect(markup).not.toContain('接入时已定好，编辑时不能改');
   });
 
-  it('explains locked API types instead of listing them when editing', () => {
-    const markup = render({
-      provider: PROVIDER,
-      endpointKinds: ['responses_codex'],
-    });
-    expect(markup).toContain('编辑密钥');
+  it('shows the current API type above the locked hint when editing', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ApiAccessForm, {
+        layout: 'inline',
+        agents: ['claude', 'codex', 'grok'],
+        edit: {
+          provider: PROVIDER,
+          endpointKinds: ['responses_codex'],
+        },
+        onCancel() {},
+      }),
+    );
     expect(markup).toContain('接口类型');
+    expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('OpenAI');
     expect(markup).toContain('接入时已定好，编辑时不能改。要换类型请再接入一次。');
+    expect(markup).toContain('/v1/responses');
+    expect(markup).toContain('var(--agent-codex)');
     expect(markup).not.toContain('type="checkbox"');
+    expect(markup).not.toContain('/v1/messages');
+    expect(markup).not.toContain('/v1/chat/completions');
     expect(markup).not.toContain('填完服务地址和 API Key 后，会自动侦测可用接口类型');
   });
 });

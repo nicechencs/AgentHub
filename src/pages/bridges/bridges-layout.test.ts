@@ -21,10 +21,14 @@ describe('routes layout wiring', () => {
     expect(page).not.toContain('flex items-start gap-3');
   });
 
-  it('edits pool API keys with the same API access dialog as add', () => {
+  it('edits pool API keys in the login detail pane', () => {
     const page = source('pages/routes/pool/index.tsx');
-    expect(page).toContain('ApiAccessDialog');
-    expect(page).toContain('setApiEdit');
+    const detail = source('pages/routes/pool/PoolAuthorizationDetail.tsx');
+    expect(page).toContain('editTarget');
+    expect(page).not.toContain('setApiEdit');
+    expect(page).not.toContain('ApiAccessDialog');
+    expect(detail).toContain('ApiAccessForm');
+    expect(detail).toContain('layout="inline"');
     expect(page).not.toContain('ProviderEditDialog');
     expect(page).not.toContain('ApiKeyAccountDialog');
   });
