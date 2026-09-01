@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ArrowUpCircle, Copy } from 'lucide-react';
 import { InspectSurface } from '@/components/layout/InspectSurface';
 import { CopyableFileName } from '@/components/shared/CopyableFileName';
 import { OpenDirButton } from '@/components/shared/OpenDirButton';
@@ -13,24 +14,34 @@ import {
   installAgentDetailed,
   openAgentConfig,
   uninstallAgentDetailed,
+  upgradeAgentDetailed,
 } from '@/lib/api/agent';
 import { getAgentLivePaths } from '@/lib/api/install';
 import { checkChannelEnv, formatMissingList } from '@/lib/env';
 import { openPathInFileManager } from '@/lib/api/skill';
+import { openExternalLink } from '@/lib/open-external';
 import { normalizeOpenPath } from '@/lib/path-open';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
+import { cn } from '@/lib/utils';
 import { AgentCardDialogs, type AgentCardConfirmKind } from './AgentCardDialogs';
+import { AgentInstallButton } from './AgentInstallButton';
 import {
+  agentUpgradeControl,
+  agentUpgradeHint,
   canUninstallProgramInApp,
+  extraCopyUpdateHint,
   formatAgentVersion,
   isSpecialInstallChannel,
   listAgentInstalls,
+  resolveOfficialSetupUrl,
   spawnInstall,
   uninstallViaLabel,
   type AgentInstall,
+  type AgentUpgradeControl,
 } from './agent-card-model';
 import {
   agentConversationEndpoints,
+  copyableChannelCommand,
   displayAgentConfigDir,
   installChannelKindLabel,
   installLocationSourceLabel,
@@ -38,12 +49,51 @@ import {
 } from './agent-detail-model';
 import { localizeInstallCopy } from './install-labels';
 
-function Field({ label, value }: { label: string; value?: string | null }) {
+function CopyableChannelName({
+  label,
+  command,
+  className,
+}: {
+  label: string;
+  command?: string;
+  className?: string;
+}) {
+  const { t } = useI18n();
+  const { toast } = useToast();
+  if (!command) return <span className={className}>{label}</span>;
+  return (
+    <button
+      type="button"
+      className={cn(className, 'hover:text-accent')}
+      title={t('agents.card.copyCommand')}
+      aria-label={t('agents.card.copyCommand')}
+      onClick={() => {
+        void navigator.clipboard.writeText(command).then(() => {
+          toast({ title: t('agents.env.commandCopied'), variant: 'success' });
+        }).catch(() => {});
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function Field({
+  label,
+  value,
+  copyText,
+}: {
+  label: string;
+  value?: string | null;
+  copyText?: string;
+}) {
   if (!value) return null;
   return (
     <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-meta">
       <dt className="text-muted">{label}</dt>
-      <dd className="min-w-0 break-all text-secondary">{value}</dd>
+      <dd className="min-w-0 break-all text-secondary">
+        <CopyableChannelName label={value} command={copyText} />
+      </dd>
     </div>
   );
 }
@@ -98,9 +148,18 @@ export function AgentDetailPanel({
   const [confirmDialog, setConfirmDialog] = React.useState<AgentCardConfirmKind>(null);
   const [confirmName, setConfirmName] = React.useState('');
   const [pendingChannel, setPendingChannel] = React.useState<InstallChannelMeta | null>(null);
+  const [pendingUpgrade, setPendingUpgrade] = React.useState<'spawn' | InstallChannelMeta | null>(null);
   const [uninstalling, setUninstalling] = React.useState(false);
   const [installing, setInstalling] = React.useState(false);
+  const [upgrading, setUpgrading] = React.useState(false);
   const [opening, setOpening] = React.useState<string | null>(null);
+  const officialSetupUrl = resolveOfficialSetupUrl(
+    agent.update?.setupUrl,
+    meta?.installChannels ?? [],
+  );
+  const latestVersion = agent.update?.latestVersion ?? agent.latestVersion;
+  const checkingUpdate = agent.update?.state === 'checking';
+  const rowBusy = installing || uninstalling || upgrading || opening !== null;
   const [resolvedConfigDir, setResolvedConfigDir] = React.useState<string | null>(null);
   const channelLabel = installChannelKindLabel(
     agent.agentId,
@@ -244,6 +303,64 @@ export function AgentDetailPanel({
     }
   };
 
+  const openOfficialSetup = () => {
+    if (!officialSetupUrl) {
+      toast({
+        title: t('agents.update.noOfficialUrl'),
+        description: agent.update?.note ?? t('agents.update.manualOfficial'),
+        variant: 'danger',
+      });
+      return;
+    }
+    void (async () => {
+      try {
+        await openExternalLink(officialSetupUrl);
+      } catch (e) {
+        toast({
+          title: t('agents.update.cannotOpenOfficial'),
+          description: e instanceof Error ? e.message : String(e),
+          variant: 'danger',
+        });
+      }
+    })();
+  };
+
+  const doUpgrade = async (target: 'spawn' | InstallChannelMeta) => {
+    setUpgrading(true);
+    try {
+      const outcome =
+        target === 'spawn'
+          ? await upgradeAgentDetailed(agent.agentId)
+          : await installAgentDetailed(agent.agentId, target.id, { installDeps: false });
+      if (!outcome.ok) {
+        toast({
+          title: t('agents.lifecycle.upgradeFailed'),
+          description: localizeInstallCopy(outcome.message, t),
+          variant: 'danger',
+        });
+        return;
+      }
+      setPendingUpgrade(null);
+      onChanged();
+      toast({
+        title: t('agents.lifecycle.upgraded', { name: agentName }),
+        variant: 'success',
+      });
+    } catch (e) {
+      const msg = e instanceof InstallFailedError ? e.message : String(e);
+      toast({
+        title: t('agents.lifecycle.upgradeFailed'),
+        description: localizeInstallCopy(msg, t),
+        variant: 'danger',
+      });
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
+  const catalogChannel = (source: string) =>
+    meta?.installChannels.find((channel) => channel.id === source);
+
   return (
     <InspectSurface
       asPanel
@@ -257,7 +374,11 @@ export function AgentDetailPanel({
       width={width}
     >
       <dl className="flex flex-col gap-2">
-        <Field label={t('agents.card.channel')} value={channelLabel} />
+        <Field
+          label={t('agents.card.channel')}
+          value={channelLabel}
+          copyText={copyableChannelCommand(agent.agentId, spawn?.source ?? agent.channel, t)}
+        />
         <EndpointTypesField agentId={agent.agentId} />
       </dl>
 
@@ -274,8 +395,37 @@ export function AgentDetailPanel({
                 key={`${inst.source}:${inst.location}`}
                 agentId={agent.agentId}
                 inst={inst}
-                busy={opening === inst.location}
+                latestVersion={latestVersion}
+                updateState={inst.spawn ? agent.update?.state : undefined}
+                setupUrl={officialSetupUrl}
+                note={localizeInstallCopy(agent.update?.note ?? '', t)}
+                checking={checkingUpdate}
+                busy={rowBusy}
+                opening={opening === inst.location}
                 onOpen={() => openFolder(inst.location)}
+                onUpgrade={() => {
+                  const upgradable =
+                    extraCopyUpdateHint(inst.source, inst.version, latestVersion) === 'update_available'
+                    || (inst.spawn && agent.update?.state === 'update_available');
+                  if (inst.spawn) {
+                    if (upgradable) {
+                      void doUpgrade('spawn');
+                      return;
+                    }
+                    setPendingUpgrade('spawn');
+                    setConfirmDialog('force-upgrade');
+                    return;
+                  }
+                  const channel = catalogChannel(inst.source);
+                  if (!channel) return;
+                  if (upgradable) {
+                    void doUpgrade(channel);
+                    return;
+                  }
+                  setPendingUpgrade(channel);
+                  setConfirmDialog('force-upgrade');
+                }}
+                onOpenSetup={openOfficialSetup}
               />
             ))}
             {missingChannels.map((channel) => (
@@ -283,8 +433,7 @@ export function AgentDetailPanel({
                 key={`missing:${channel.id}`}
                 agentId={agent.agentId}
                 channel={channel}
-                busy={installing || uninstalling || opening !== null}
-                installing={installing && pendingChannel?.id === channel.id}
+                busy={rowBusy}
                 onInstall={() => {
                   setPendingChannel(channel);
                   setConfirmDialog('install');
@@ -302,7 +451,7 @@ export function AgentDetailPanel({
             <CopyableFileName path={configDir} wrap="break" className="min-w-0 flex-1" />
             <OpenDirButton
               labeled
-              disabled={opening !== null || uninstalling || installing}
+              disabled={rowBusy}
               title={t('agents.card.openConfigDirTitle')}
               onClick={openConfigDir}
             />
@@ -318,7 +467,7 @@ export function AgentDetailPanel({
               size="sm"
               variant="outline"
               className="text-danger hover:text-danger"
-              disabled={uninstalling || installing || opening !== null}
+              disabled={rowBusy}
               title={t('agents.dialog.uninstallDesc')}
               onClick={() => setConfirmDialog('program')}
             >
@@ -334,7 +483,7 @@ export function AgentDetailPanel({
           <Button
             size="sm"
             variant="danger"
-            disabled={uninstalling || installing || opening !== null}
+            disabled={rowBusy}
             title={
               isSpecialInstallChannel(agent.channel)
                 ? t('agents.dialog.uninstallConfigKeepsApp')
@@ -353,14 +502,16 @@ export function AgentDetailPanel({
         confirmName={confirmName}
         onConfirmNameChange={setConfirmName}
         uninstalling={uninstalling}
-        busy={uninstalling || installing}
+        busy={rowBusy}
         updateState={agent.update?.state}
         onClose={() => {
           setConfirmDialog(null);
           setConfirmName('');
         }}
         onUninstall={(deleteConfig) => void doUninstall(deleteConfig)}
-        onConfirmForceUpgrade={() => undefined}
+        onConfirmForceUpgrade={() => {
+          if (pendingUpgrade) void doUpgrade(pendingUpgrade);
+        }}
         onConfirmInstall={() => {
           if (pendingChannel) void doInstall(pendingChannel);
         }}
@@ -374,36 +525,84 @@ export function AgentDetailPanel({
 function InstallLocationRow({
   agentId,
   inst,
+  latestVersion,
+  updateState,
+  setupUrl,
+  note,
+  checking,
   busy,
+  opening,
   onOpen,
+  onUpgrade,
+  onOpenSetup,
 }: {
   agentId: string;
   inst: AgentInstall;
+  latestVersion?: string;
+  updateState?: string;
+  setupUrl?: string;
+  note?: string;
+  checking: boolean;
   busy: boolean;
+  opening: boolean;
   onOpen: () => void;
+  onUpgrade: () => void;
+  onOpenSetup: () => void;
 }) {
   const { t } = useI18n();
   const versionText = formatAgentVersion(inst.version);
   const openable = Boolean(normalizeOpenPath(inst.location));
   const sourceLabel = installLocationSourceLabel(agentId, inst.source, t);
+  const upgradeControl = agentUpgradeControl({
+    installed: true,
+    updateVia: inst.updateVia,
+    updateState,
+    setupUrl,
+  });
+  const upgradable =
+    upgradeControl.kind === 'in_app'
+    && (
+      extraCopyUpdateHint(inst.source, inst.version, latestVersion) === 'update_available'
+      || updateState === 'update_available'
+    );
+  const upgradeTooltip = upgradeControl.muted
+    ? agentUpgradeHint(upgradeControl, { updateVia: inst.updateVia, note, t })
+    : upgradable
+      ? t('agents.update.available')
+      : t('agents.update.forceLatest');
   return (
     <li className="rounded-card border border-border bg-subtle/60 px-3 py-2">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           {inst.spawn ? <Badge>{t('agents.card.spawnCopy')}</Badge> : null}
           {sourceLabel ? (
-            <span className="text-meta font-medium text-secondary">{sourceLabel}</span>
+            <CopyableChannelName
+              label={sourceLabel}
+              command={copyableChannelCommand(agentId, inst.source, t)}
+              className="text-meta font-medium text-secondary"
+            />
           ) : null}
           {versionText ? (
             <span className="font-mono text-meta text-muted">{versionText}</span>
           ) : null}
         </div>
-        <OpenDirButton
-          labeled
-          disabled={!openable || busy}
-          title={t('agents.card.openInstallDir')}
-          onClick={onOpen}
-        />
+        <div className="flex shrink-0 items-center gap-1">
+          <ChannelUpgradeButton
+            control={upgradeControl}
+            upgradable={upgradable}
+            checking={checking}
+            busy={busy}
+            tooltip={upgradeTooltip}
+            onUpgrade={onUpgrade}
+            onOpenSetup={onOpenSetup}
+          />
+          <OpenDirButton
+            labeled
+            disabled={!openable || opening || busy}
+            title={t('agents.card.openInstallDir')}
+            onClick={onOpen}
+          />
+        </div>
       </div>
       <div className="mt-1">
         <CopyableFileName path={inst.location} wrap="break" />
@@ -412,42 +611,120 @@ function InstallLocationRow({
   );
 }
 
+function ChannelUpgradeButton({
+  control,
+  upgradable,
+  checking,
+  busy,
+  tooltip,
+  onUpgrade,
+  onOpenSetup,
+}: {
+  control: AgentUpgradeControl;
+  upgradable: boolean;
+  checking: boolean;
+  busy: boolean;
+  tooltip: string;
+  onUpgrade: () => void;
+  onOpenSetup: () => void;
+}) {
+  const { t } = useI18n();
+  if (!control.show) return null;
+  return (
+    <span title={tooltip} className="inline-flex">
+      <Button
+        size="icon"
+        variant={control.muted ? 'outline' : 'secondary'}
+        className={control.muted ? 'text-muted' : undefined}
+        disabled={busy || checking || control.kind === 'hint_only'}
+        aria-label={
+          control.kind === 'open_setup'
+            ? t('agents.card.openOfficialUpdate')
+            : control.muted
+              ? t('agents.card.unsupportedUpdate')
+              : upgradable
+                ? t('agents.card.update')
+                : t('agents.card.forceUpgrade')
+        }
+        onClick={
+          control.kind === 'open_setup'
+            ? onOpenSetup
+            : control.kind === 'in_app'
+              ? onUpgrade
+              : undefined
+        }
+      >
+        <ArrowUpCircle
+          className={cn(
+            'h-3.5 w-3.5',
+            !control.muted && upgradable && 'text-success',
+            control.muted && 'text-muted',
+            checking && 'animate-pulse opacity-70',
+          )}
+        />
+      </Button>
+    </span>
+  );
+}
+
+function CopyableCommand({ command }: { command: string }) {
+  const { t } = useI18n();
+  const { toast } = useToast();
+  const copy = () => {
+    void navigator.clipboard.writeText(command).then(() => {
+      toast({ title: t('agents.env.commandCopied'), variant: 'success' });
+    }).catch(() => {});
+  };
+  return (
+    <button
+      type="button"
+      className="mt-1 flex w-full min-w-0 items-start gap-1.5 text-left text-meta text-muted hover:text-accent"
+      title={t('agents.card.copyCommand')}
+      aria-label={t('agents.card.copyCommand')}
+      onClick={copy}
+    >
+      <span className="min-w-0 flex-1 break-all font-mono">{command}</span>
+      <Copy className="mt-0.5 h-3 w-3 shrink-0" />
+    </button>
+  );
+}
+
 function MissingChannelRow({
   agentId,
   channel,
   busy,
-  installing,
   onInstall,
 }: {
   agentId: string;
   channel: InstallChannelMeta;
   busy: boolean;
-  installing: boolean;
   onInstall: () => void;
 }) {
   const { t } = useI18n();
   const sourceLabel = installLocationSourceLabel(agentId, channel.id, t);
   const command = channel.command.trim();
+  const nameCommand = copyableChannelCommand(agentId, channel.id, t);
   return (
     <li className="rounded-card border border-border bg-subtle/60 px-3 py-2">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           {sourceLabel ? (
-            <span className="text-meta font-medium text-secondary">{sourceLabel}</span>
+            <CopyableChannelName
+              label={sourceLabel}
+              command={nameCommand}
+              className="text-meta font-medium text-secondary"
+            />
           ) : null}
           <span className="text-meta text-muted">{t('agents.card.notInstalled')}</span>
         </div>
-        <Button
-          size="sm"
-          disabled={busy}
-          title={t('agents.card.installWithChannel', { id: channel.id })}
-          onClick={onInstall}
-        >
-          {installing ? t('agents.card.installing') : t('agents.card.install')}
-        </Button>
+        <AgentInstallButton busy={busy} channelId={channel.id} onClick={onInstall} />
       </div>
       {command ? (
-        <p className="mt-1 font-mono text-meta text-muted break-all">{command}</p>
+        nameCommand ? (
+          <p className="mt-1 break-all font-mono text-meta text-muted">{command}</p>
+        ) : (
+          <CopyableCommand command={command} />
+        )
       ) : null}
     </li>
   );

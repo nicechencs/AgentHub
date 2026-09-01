@@ -11,8 +11,8 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::{map_err_string, parse_agent, with_hub_blocking};
 use crate::file_manager::{
-    file_manager_action, normalize_open_path_input, open_in_file_manager, reveal_in_file_manager,
-    FileManagerAction,
+    file_manager_action, launch_app, launch_cli, normalize_open_path_input, open_in_file_manager,
+    resolve_cli_launch_path, reveal_in_file_manager, FileManagerAction,
 };
 use crate::state::AppState;
 
@@ -297,6 +297,27 @@ pub async fn open_path_in_file_manager(path: String) -> Result<String, String> {
     let msg = format!("path does not exist: {path}");
     tracing::warn!(target: targets::GUI, op = "open_path_in_file_manager", "{msg}");
     Err(msg)
+}
+
+/// Invoke: `launch_agent_program` — start a CLI in a terminal, or a desktop app.
+#[tauri::command]
+pub async fn launch_agent_program(kind: String, path: String) -> Result<(), String> {
+    let p = normalize_open_path_input(&path);
+    let target = if kind == "cli" {
+        resolve_cli_launch_path(&p)
+    } else {
+        p
+    };
+    if !target.exists() {
+        let msg = format!("path does not exist: {path}");
+        tracing::warn!(target: targets::GUI, op = "launch_agent_program", "{msg}");
+        return Err(msg);
+    }
+    match kind.as_str() {
+        "cli" => launch_cli(&target),
+        "app" => launch_app(&target),
+        other => Err(format!("unknown launch kind: {other}")),
+    }
 }
 
 #[cfg(test)]

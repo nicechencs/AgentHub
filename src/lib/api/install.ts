@@ -43,6 +43,13 @@ export async function openAgentConfigDir(agentId: AgentId): Promise<string> {
   return getBackend().install.openAgentConfigDir(agentId);
 }
 
+export async function launchAgentProgram(
+  kind: 'cli' | 'app',
+  path: string,
+): Promise<void> {
+  return getBackend().install.launchAgentProgram(kind, path);
+}
+
 export async function getAgentLivePaths(agentId: AgentId): Promise<{
   config: string;
   auth?: string | null;

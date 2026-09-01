@@ -11,7 +11,9 @@ import {
   agentConversationEndpoints,
   agentConversationSurface,
   agentConversationSurfaces,
+  catalogChannelCommand,
   catalogChannelLabel,
+  copyableChannelCommand,
   displayAgentConfigDir,
   formatAgentConversationEndpoints,
   installChannelKindLabel,
@@ -175,6 +177,12 @@ describe('install channel labels', () => {
     expect(extraCopyKindLabel('native', tZh)).toBe('官方脚本');
     expect(extraCopyKindLabel('npm', tZh)).toBe('npm 包');
     expect(zh.agents.card.channelNpm).toBe('npm 包');
+    expect(catalogChannelCommand('claude', 'native')).toMatch(/install\.(ps1|sh)/);
+    expect(catalogChannelCommand('dsh', 'npm')).toBe('npm i -g @deepseek-ai/dsh');
+    expect(copyableChannelCommand('claude', 'native', tZh)).toBe(catalogChannelCommand('claude', 'native'));
+    expect(copyableChannelCommand('dsh', 'npm', tZh)).toBe('npm i -g @deepseek-ai/dsh');
+    expect(copyableChannelCommand('workbuddy', 'native', tZh)).toBeUndefined();
+    expect(copyableChannelCommand('claude', 'ide', tZh)).toBeUndefined();
   });
 });
 
@@ -222,7 +230,7 @@ describe('AgentDetailPanel markup', () => {
     expect(html).toContain('/v1/messages');
     expect(html).not.toContain('Claude 对话');
     expect(html).toContain('var(--agent-claude)');
-    expect(html).toContain('官方脚本');
+    expect(html).toContain('>官方脚本</button>');
     expect(html).not.toMatch(/>native</);
     expect(html).toContain('~/.claude');
     expect(html).not.toMatch(/配置目录<\/span>/);
@@ -267,10 +275,28 @@ describe('AgentDetailPanel markup', () => {
 
   it('shows npm 包 as 渠道 and keeps the package id on 安装位置', () => {
     const html = renderPanel(installed('codex', 'npm'));
-    expect(html).toContain('npm 包');
-    expect(html).toContain('npm @openai/codex');
+    expect(html).toContain('>npm 包</button>');
+    expect(html).toContain('>npm @openai/codex</button>');
     expect(html).not.toMatch(/>npm</);
     expect(html).not.toContain('渠道</dt><dd class="min-w-0 break-all text-secondary">npm @');
+  });
+
+  it('lets a click on the npm package name copy that channel\'s install command', () => {
+    const html = renderPanel(installed('dsh', 'npm'));
+    expect(html).toContain('>npm @deepseek-ai/dsh</button>');
+    expect(html).toContain('复制命令');
+  });
+
+  it('puts an upgrade button on the installed channel', () => {
+    const html = renderPanel(installed('codex', 'npm'));
+    expect(html).toContain('强制升级');
+    expect(html).toContain('打开安装目录');
+  });
+
+  it('grays the upgrade on a desktop copy and hints to update there', () => {
+    const html = renderPanel(installed('codex', 'desktop'));
+    expect(html).toContain('请到桌面应用更新');
+    expect(html).not.toContain('强制升级');
   });
 
   it('lists missing Codex npm with the install command and an Install button, without a path', () => {
@@ -283,6 +309,8 @@ describe('AgentDetailPanel markup', () => {
     });
     expect(html).toContain('npm @openai/codex');
     expect(html).toContain('npm i -g @openai/codex');
+    expect(html).toContain('>npm @openai/codex</button>');
+    expect(html).toContain('复制命令');
     expect(html).toContain('安装');
     expect(html).not.toContain('/home/box');
     expect(html).not.toContain('AppData');
@@ -294,6 +322,7 @@ describe('AgentDetailPanel markup', () => {
     expect(html).toContain('/home/box/.local/bin/codex');
     expect(html).toContain('打开安装目录');
     expect(html).toContain('npm i -g @openai/codex');
+    expect(html).toContain('复制命令');
     expect(html).toContain('安装');
   });
 
