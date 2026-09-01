@@ -96,7 +96,6 @@ type ChoiceDialogProps = {
   title: string;
   description: string;
   children: ReactNode;
-  choicesClassName?: string;
   onOpenChange: (open: boolean) => void;
 };
 
@@ -105,7 +104,6 @@ function ChoiceDialog({
   title,
   description,
   children,
-  choicesClassName,
   onOpenChange,
 }: ChoiceDialogProps) {
   return (
@@ -115,7 +113,7 @@ function ChoiceDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <div className={cn('grid grid-cols-1 gap-2', choicesClassName)}>{children}</div>
+        <div className="grid grid-cols-1 gap-3">{children}</div>
       </DialogContent>
     </Dialog>
   );
@@ -150,16 +148,18 @@ function OAuthChoiceCard({
         }
       }}
       className={cn(
-        'rounded-card border border-border bg-panel p-3 text-left transition-colors',
-        available && 'hover:bg-hover/50',
+        'rounded-card border border-border bg-panel p-4 text-left transition-colors',
+        available && 'cursor-pointer hover:bg-hover/50',
         !available && 'opacity-60',
       )}
     >
-      <div className="flex items-center gap-2">
-        <AgentLogo agentId={agentId} size="sm" />
-        <span className="text-sm font-medium">{label}</span>
+      <div className="flex items-center gap-3">
+        <AgentLogo agentId={agentId} size="md" />
+        <div className="min-w-0 flex-1">
+          <span className="text-body font-medium">{label}</span>
+          {!available ? <p className="mt-1 text-xs text-muted">{unavailableLabel}</p> : null}
+        </div>
       </div>
-      {!available ? <p className="mt-1 text-xs text-muted">{unavailableLabel}</p> : null}
     </div>
   );
 }
@@ -359,7 +359,6 @@ export function PoolAddButtons({
         onOpenChange={(open) => setPicker(open ? 'oauth' : null)}
         title={t('routes.pool.page.oauthDialogTitle')}
         description={t('routes.pool.page.oauthDialogDescription')}
-        choicesClassName="grid-cols-2"
       >
         {oauthChoices.map((choice) => (
           <OAuthChoiceCard

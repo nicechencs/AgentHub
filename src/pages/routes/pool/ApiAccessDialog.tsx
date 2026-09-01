@@ -420,7 +420,7 @@ function ApiAccessForm({
               </SelectContent>
             </Select>
           </label>
-          {selectedVendor ? (
+          {selectedVendor && !editing ? (
             <p className="text-meta text-muted">{t('routes.pool.page.apiMatchedVendor')}</p>
           ) : null}
           <label className="flex flex-col gap-1.5">
@@ -467,61 +467,65 @@ function ApiAccessForm({
               className="min-h-[4.5rem] w-full resize-y rounded-btn border border-border-strong bg-panel px-2.5 py-2 font-mono text-body text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60 disabled:opacity-50"
             />
           </label>
-          {isUnknownVendor ? (
+          {isUnknownVendor && !editing ? (
             <p className="text-meta text-muted">
               {detecting ? t('routes.pool.page.apiDetecting') : t('routes.pool.page.apiDetectHint')}
             </p>
           ) : null}
-          {detectNone ? <p className="text-meta text-muted">{t('routes.pool.page.apiDetectNone')}</p> : null}
+          {detectNone && !editing ? <p className="text-meta text-muted">{t('routes.pool.page.apiDetectNone')}</p> : null}
           {error ? <p className="text-meta text-danger">{error}</p> : null}
           <div className="flex flex-col gap-1.5">
             <span className="text-xs text-muted">{t('routes.pool.page.apiTypesLabel')}</span>
-            <div className="grid grid-cols-1 gap-2">
-              {choices.map((choice) => {
-                const checked = selectedTypes.has(choice.type);
-                const actualUrl = resolveEndpointUrl(selectedVendor, choice.type, baseUrl);
-                return (
-                  <label
-                    key={`${choice.agentId}-${choice.endpoint}-${choice.type}`}
-                    className={cn(
-                      'rounded-card border border-border bg-panel p-3',
-                      choice.available ? 'cursor-pointer hover:bg-hover/50' : 'cursor-not-allowed opacity-60',
-                    )}
-                  >
-                    <span className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={checked}
-                        disabled={!choice.available || saving || editing}
-                        onChange={() => toggleType(choice.type, choice.available)}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-mono text-sm font-medium text-primary">{choice.endpoint}</span>
-                        <span className="block text-xs">
-                          <RouteEndpointTypeText
-                            endpointId={endpointIdOf(choice.endpoint)}
-                            brandAgentId={brandAgentIdOf(choice)}
-                          >
-                            {t(apiLabelKeys[choice.type])}
-                          </RouteEndpointTypeText>
+            {editing ? (
+              <p className="text-meta text-muted">{t('routes.pool.page.apiTypesLockedHint')}</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2">
+                {choices.map((choice) => {
+                  const checked = selectedTypes.has(choice.type);
+                  const actualUrl = resolveEndpointUrl(selectedVendor, choice.type, baseUrl);
+                  return (
+                    <label
+                      key={`${choice.agentId}-${choice.endpoint}-${choice.type}`}
+                      className={cn(
+                        'rounded-card border border-border bg-panel p-3',
+                        choice.available ? 'cursor-pointer hover:bg-hover/50' : 'cursor-not-allowed opacity-60',
+                      )}
+                    >
+                      <span className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={checked}
+                          disabled={!choice.available || saving}
+                          onChange={() => toggleType(choice.type, choice.available)}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-mono text-sm font-medium text-primary">{choice.endpoint}</span>
+                          <span className="block text-xs">
+                            <RouteEndpointTypeText
+                              endpointId={endpointIdOf(choice.endpoint)}
+                              brandAgentId={brandAgentIdOf(choice)}
+                            >
+                              {t(apiLabelKeys[choice.type])}
+                            </RouteEndpointTypeText>
+                          </span>
+                          {actualUrl ? (
+                            <span className="mt-1 block truncate font-mono text-meta text-muted" title={actualUrl}>
+                              {actualUrl}
+                            </span>
+                          ) : null}
+                          {!choice.available ? (
+                            <span className="mt-1 block text-xs text-muted">
+                              {t('routes.pool.page.choiceUnavailable')}
+                            </span>
+                          ) : null}
                         </span>
-                        {actualUrl ? (
-                          <span className="mt-1 block truncate font-mono text-meta text-muted" title={actualUrl}>
-                            {actualUrl}
-                          </span>
-                        ) : null}
-                        {!choice.available ? (
-                          <span className="mt-1 block text-xs text-muted">
-                            {t('routes.pool.page.choiceUnavailable')}
-                          </span>
-                        ) : null}
                       </span>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2">
