@@ -69,6 +69,7 @@ export async function savePoolApiAccess(
     apiKeys: readonly string[];
     models?: readonly string[];
     priority?: number | null;
+    edit?: { provider: Provider };
   },
   deps: SavePoolApiAccessDeps,
 ): Promise<SavePoolApiAccessResult> {
@@ -76,11 +77,16 @@ export async function savePoolApiAccess(
   let saved = 0;
   const models = [...new Set((input.models ?? []).map((model) => model.trim()).filter(Boolean))];
   const priority = input.priority ?? null;
+  const editProvider = input.edit?.provider;
+  const items = editProvider ? input.items.slice(0, 1) : input.items;
+  const apiKeys = editProvider
+    ? [input.apiKeys[0] ?? '']
+    : input.apiKeys.filter((key) => key.trim());
   let sequence = 0;
 
-  for (const apiKey of input.apiKeys) {
-    if (!apiKey.trim()) continue;
-    for (const item of input.items) {
+  for (const apiKey of apiKeys) {
+    if (!editProvider && !apiKey.trim()) continue;
+    for (const item of items) {
       const scaffold = defaultConfigScaffold(item.choice.agentId);
       const vars = formVarsForItem(item, apiKey);
       let configSchema: AgentConfigSchemaDto | null = null;
@@ -92,7 +98,7 @@ export async function savePoolApiAccess(
         schemaStatus = 'unsupported';
       }
 
-      const id = `p-${Date.now()}-${item.choice.type}-${sequence}`;
+      const id = editProvider?.id ?? `p-${Date.now()}-${item.choice.type}-${sequence}`;
       sequence += 1;
       try {
         const result = await runProviderSaveFlow(
@@ -100,16 +106,17 @@ export async function savePoolApiAccess(
             agentId: item.choice.agentId,
             schemaStatus,
             configSchema,
-            isEdit: false,
+            isEdit: Boolean(editProvider),
+            existing: editProvider,
             id,
-            name: poolApiRecordName(item.baseUrl, item.choice.endpoint),
+            name: editProvider?.name || poolApiRecordName(item.baseUrl, item.choice.endpoint),
             useOfficial: false,
-            configText: scaffold.text,
-            configFormat: scaffold.format,
+            configText: editProvider?.configText || scaffold.text,
+            configFormat: editProvider?.configFormat || scaffold.format,
             vars,
             saveVars: vars,
-            finalFormat: scaffold.format,
-            baseText: scaffold.text,
+            finalFormat: editProvider?.configFormat || scaffold.format,
+            baseText: editProvider?.configText || scaffold.text,
           },
           {
             validateAgentConfig: deps.validateAgentConfig,
@@ -122,12 +129,14 @@ export async function savePoolApiAccess(
           errors.push(result.message);
           continue;
         }
-        await deps.attachAuthorization(
-          'provider',
-          result.provider.id,
-          item.choice.agentId,
-          poolSurfaceForApiChoice(item.choice),
-        );
+        if (!editProvider) {
+          await deps.attachAuthorization(
+            'provider',
+            result.provider.id,
+            item.choice.agentId,
+            poolSurfaceForApiChoice(item.choice),
+          );
+        }
         if (models.length > 0 && deps.setSourceCustomModels) {
           await deps.setSourceCustomModels('provider', result.provider.id, models);
         }

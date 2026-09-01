@@ -1,5 +1,13 @@
+import claudeLogo from '@/assets/agent-logos/claude.svg';
+import openaiLogo from '@/assets/agent-logos/codex.svg';
+import deepseekLogo from '@/assets/agent-logos/deepseek.svg';
+import geminiLogo from '@/assets/agent-logos/gemini.svg';
+import grokLogo from '@/assets/agent-logos/grok.svg';
+import kimiLogo from '@/assets/agent-logos/kimi.svg';
+import zhipuLogo from '@/assets/agent-logos/zcode.png';
 import type { DetectedApiEndpointType, RoutePoolSurface } from '@/lib/backend/contracts';
-import type { AgentId } from '@/lib/types';
+import type { LocalEndpointKind } from '@/lib/route-endpoints';
+import type { AgentId, Provider } from '@/lib/types';
 
 export type PoolAccessAgent = 'claude' | 'codex' | 'grok';
 
@@ -62,6 +70,7 @@ export type ApiVendorPreset = {
   id: string;
   labelKey: ApiVendorLabelKey;
   endpoints: Partial<Record<PoolApiChoiceType, string>>;
+  logoSrc?: string;
 };
 
 const PRIMARY_ENDPOINT_ORDER = [
@@ -76,11 +85,13 @@ export const API_VENDORS: readonly ApiVendorPreset[] = [
   {
     id: 'anthropic',
     labelKey: 'routes.pool.page.apiVendorAnthropic',
+    logoSrc: claudeLogo,
     endpoints: { claudeMessages: 'https://api.anthropic.com' },
   },
   {
     id: 'openai',
     labelKey: 'routes.pool.page.apiVendorOpenai',
+    logoSrc: openaiLogo,
     endpoints: {
       openaiResponses: 'https://api.openai.com/v1',
       openaiChatCompletions: 'https://api.openai.com/v1',
@@ -89,6 +100,7 @@ export const API_VENDORS: readonly ApiVendorPreset[] = [
   {
     id: 'xai',
     labelKey: 'routes.pool.page.apiVendorXai',
+    logoSrc: grokLogo,
     endpoints: {
       grokResponses: 'https://api.x.ai/v1',
       openaiChatCompletions: 'https://api.x.ai/v1',
@@ -97,6 +109,7 @@ export const API_VENDORS: readonly ApiVendorPreset[] = [
   {
     id: 'deepseek',
     labelKey: 'routes.pool.page.apiVendorDeepseek',
+    logoSrc: deepseekLogo,
     endpoints: {
       claudeMessages: 'https://api.deepseek.com/anthropic',
       openaiResponses: 'https://api.deepseek.com',
@@ -130,6 +143,7 @@ export const API_VENDORS: readonly ApiVendorPreset[] = [
   {
     id: 'zhipu-bigmodel',
     labelKey: 'routes.pool.page.apiVendorZhipuBigModel',
+    logoSrc: zhipuLogo,
     endpoints: {
       claudeMessages: 'https://open.bigmodel.cn/api/anthropic',
       openaiChatCompletions: 'https://open.bigmodel.cn/api/paas/v4',
@@ -138,6 +152,7 @@ export const API_VENDORS: readonly ApiVendorPreset[] = [
   {
     id: 'zhipu-zai',
     labelKey: 'routes.pool.page.apiVendorZhipuZai',
+    logoSrc: zhipuLogo,
     endpoints: {
       claudeMessages: 'https://api.z.ai/api/anthropic',
       openaiChatCompletions: 'https://api.z.ai/api/paas/v4',
@@ -146,6 +161,7 @@ export const API_VENDORS: readonly ApiVendorPreset[] = [
   {
     id: 'kimi-cn',
     labelKey: 'routes.pool.page.apiVendorKimiCn',
+    logoSrc: kimiLogo,
     endpoints: {
       claudeMessages: 'https://api.moonshot.cn/anthropic',
       openaiChatCompletions: 'https://api.moonshot.cn/v1',
@@ -154,6 +170,7 @@ export const API_VENDORS: readonly ApiVendorPreset[] = [
   {
     id: 'kimi-global',
     labelKey: 'routes.pool.page.apiVendorKimiGlobal',
+    logoSrc: kimiLogo,
     endpoints: {
       claudeMessages: 'https://api.moonshot.ai/anthropic',
       openaiChatCompletions: 'https://api.moonshot.ai/v1',
@@ -182,6 +199,7 @@ export const API_VENDORS: readonly ApiVendorPreset[] = [
   {
     id: 'gemini',
     labelKey: 'routes.pool.page.apiVendorGemini',
+    logoSrc: geminiLogo,
     endpoints: { openaiChatCompletions: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
   },
   {
@@ -193,6 +211,11 @@ export const API_VENDORS: readonly ApiVendorPreset[] = [
 
 /** Dropdown id for unknown / custom vendors. Always listed first. */
 export const CUSTOM_VENDOR_ID = 'custom';
+
+export function vendorLogoLetter(label: string): string {
+  const trimmed = label.trim();
+  return trimmed ? trimmed[0]! : '?';
+}
 
 /** Known vendors sorted by the label shown in the picker. */
 export function sortApiVendorsForPicker<T>(
@@ -332,6 +355,62 @@ export function poolApiRecordName(baseUrl: string, endpoint: PoolApiChoice['endp
   } catch {
     return endpoint;
   }
+}
+
+export function poolApiChoiceTypesFromEndpointKinds(
+  kinds: readonly LocalEndpointKind[],
+  agentId?: AgentId,
+): PoolApiChoiceType[] {
+  const types: PoolApiChoiceType[] = [];
+  const seen = new Set<PoolApiChoiceType>();
+  const add = (type: PoolApiChoiceType) => {
+    if (seen.has(type)) return;
+    seen.add(type);
+    types.push(type);
+  };
+  for (const kind of kinds) {
+    if (kind === 'messages') add('claudeMessages');
+    else if (kind === 'chat_completions') add('openaiChatCompletions');
+    else if (kind === 'responses_grok') add('grokResponses');
+    else if (kind === 'responses_codex') add('openaiResponses');
+  }
+  if (types.length === 0 && agentId === 'claude') add('claudeMessages');
+  if (types.length === 0 && agentId === 'grok') add('grokResponses');
+  if (types.length === 0 && agentId === 'codex') add('openaiResponses');
+  return types;
+}
+
+export type PoolApiEditTarget = {
+  provider: Provider;
+  endpointKinds: readonly LocalEndpointKind[];
+  priority?: number | null;
+};
+
+export type PoolApiEditDraft = {
+  vendorId: string;
+  baseUrl: string;
+  apiKey: string;
+  selectedTypes: PoolApiChoiceType[];
+  priority: string;
+};
+
+/** Prefill the shared API form from an existing pool login. */
+export function poolApiEditDraft(input: {
+  baseUrl: string;
+  apiKey: string;
+  endpointKinds: readonly LocalEndpointKind[];
+  agentId: AgentId;
+  priority?: number | null;
+}): PoolApiEditDraft {
+  const baseUrl = normalizeApiBaseUrl(input.baseUrl);
+  const vendor = matchApiVendor(baseUrl);
+  return {
+    vendorId: vendor?.id ?? CUSTOM_VENDOR_ID,
+    baseUrl,
+    apiKey: input.apiKey.trim(),
+    selectedTypes: poolApiChoiceTypesFromEndpointKinds(input.endpointKinds, input.agentId),
+    priority: input.priority == null || input.priority === 0 ? '' : String(input.priority),
+  };
 }
 
 /** One API key per line. Empty lines dropped; first occurrence wins. */

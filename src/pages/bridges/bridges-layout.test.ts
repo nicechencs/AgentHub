@@ -21,6 +21,14 @@ describe('routes layout wiring', () => {
     expect(page).not.toContain('flex items-start gap-3');
   });
 
+  it('edits pool API keys with the same API access dialog as add', () => {
+    const page = source('pages/routes/pool/index.tsx');
+    expect(page).toContain('ApiAccessDialog');
+    expect(page).toContain('setApiEdit');
+    expect(page).not.toContain('ProviderEditDialog');
+    expect(page).not.toContain('ApiKeyAccountDialog');
+  });
+
   it('puts fleet summary or orphan lead on the same chrome row as pool add actions', () => {
     const page = source('pages/routes/pool/index.tsx');
     const chromeStart = page.indexOf('pageRhythm.chromeRow');

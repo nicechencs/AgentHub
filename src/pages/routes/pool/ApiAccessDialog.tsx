@@ -25,11 +25,18 @@ import {
   materializeAgentConfig,
   validateAgentConfig,
 } from '@/lib/api/config';
-import { detectApiEndpointTypes, listRemoteOpenAiModels, upsertProvider } from '@/lib/api/provider';
-import { applyFormVars } from '@/lib/provider-detect/fields';
+import {
+  detectApiEndpointTypes,
+  listRemoteOpenAiModels,
+  listRemoteOpenAiModelsForProvider,
+  upsertProvider,
+} from '@/lib/api/provider';
+import { initFormFromConfig } from '@/lib/provider-detect/apply';
+import { applyFormVars, writableSecret } from '@/lib/provider-detect/fields';
 import type { AgentId } from '@/lib/types';
 import {
   attachPoolOwnedAuthorization,
+  ensureSourceModelCatalog,
   setRouteAuthorizationPriority,
   setSourceCustomModels,
 } from '@/lib/api/adapter';
@@ -50,12 +57,14 @@ import {
   parseExcludedModelRules,
   parsePriorityInput,
   poolApiChoices,
+  poolApiEditDraft,
   primaryVendorUrl,
   resolveEndpointUrl,
   sortApiVendorsForPicker,
   vendorServiceUrls,
   type PoolApiChoice,
   type PoolApiChoiceType,
+  type PoolApiEditTarget,
 } from './api-access-model';
 import { parseCustomModelList } from './pool-authorization-detail';
 import { savePoolApiAccess } from './save-pool-api-access';
@@ -86,42 +95,66 @@ function brandAgentIdOf(choice: PoolApiChoice) {
 export function ApiAccessDialog({
   open,
   agents,
+  edit,
   onOpenChange,
   onSaved,
 }: {
   open: boolean;
   agents: readonly AgentId[];
+  edit?: PoolApiEditTarget | null;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open ? (
-        <ApiAccessForm agents={agents} onOpenChange={onOpenChange} onSaved={onSaved} />
+        <ApiAccessForm agents={agents} edit={edit} onOpenChange={onOpenChange} onSaved={onSaved} />
       ) : null}
     </Dialog>
   );
 }
 
+function initialEditDraft(edit?: PoolApiEditTarget | null) {
+  if (!edit) return null;
+  const vars = initFormFromConfig(
+    edit.provider.agentId,
+    edit.provider.configText,
+    edit.provider.configFormat,
+    edit.provider.authApiKey,
+  );
+  return poolApiEditDraft({
+    baseUrl: vars.baseUrl,
+    apiKey: writableSecret(vars.apiKey),
+    endpointKinds: edit.endpointKinds,
+    agentId: edit.provider.agentId,
+    priority: edit.priority,
+  });
+}
+
 function ApiAccessForm({
   agents,
+  edit,
   onOpenChange,
   onSaved,
 }: {
   agents: readonly AgentId[];
+  edit?: PoolApiEditTarget | null;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
 }) {
   const { t, lang } = useI18n();
   const { toast } = useToast();
-  const [vendorId, setVendorId] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [selectedTypes, setSelectedTypes] = useState<Set<PoolApiChoiceType>>(new Set());
+  const initial = useMemo(() => initialEditDraft(edit), [edit]);
+  const [vendorId, setVendorId] = useState(initial?.vendorId ?? '');
+  const [baseUrl, setBaseUrl] = useState(initial?.baseUrl ?? '');
+  const [apiKey, setApiKey] = useState(initial?.apiKey ?? '');
+  const [selectedTypes, setSelectedTypes] = useState<Set<PoolApiChoiceType>>(
+    () => new Set(initial?.selectedTypes ?? []),
+  );
   const [models, setModels] = useState<string[]>([]);
   const [customModel, setCustomModel] = useState('');
   const [excludedModels, setExcludedModels] = useState('');
-  const [priority, setPriority] = useState('');
+  const [priority, setPriority] = useState(initial?.priority ?? '');
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [detecting, setDetecting] = useState(false);
@@ -142,23 +175,24 @@ function ApiAccessForm({
   const detectSeq = useRef(0);
   const choicesRef = useRef(choices);
   choicesRef.current = choices;
+  const editing = Boolean(edit?.provider.id);
 
   const selectVendor = (nextVendorId: string) => {
     setVendorId(nextVendorId);
     setError(null);
     setDetectNone(false);
     if (nextVendorId === CUSTOM_VENDOR_ID) {
-      setSelectedTypes(new Set());
+      if (!editing) setSelectedTypes(new Set());
       return;
     }
     const vendor = API_VENDORS.find((item) => item.id === nextVendorId);
     if (!vendor) return;
     setBaseUrl(primaryVendorUrl(vendor));
-    setSelectedTypes(defaultSelectedApiTypes(vendor, choices));
+    if (!editing) setSelectedTypes(defaultSelectedApiTypes(vendor, choices));
   };
 
   const toggleType = (type: PoolApiChoiceType, available: boolean) => {
-    if (!available) return;
+    if (!available || editing) return;
     setSelectedTypes((current) => {
       const next = new Set(current);
       if (next.has(type)) next.delete(type);
@@ -168,7 +202,20 @@ function ApiAccessForm({
   };
 
   useEffect(() => {
-    if (!isUnknownVendor || saving) return;
+    if (!edit?.provider.id) return;
+    let cancelled = false;
+    void ensureSourceModelCatalog('provider', edit.provider.id)
+      .then((catalog) => {
+        if (!cancelled) setModels(catalog.models);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [edit?.provider.id]);
+
+  useEffect(() => {
+    if (editing || !isUnknownVendor || saving) return;
     const url = baseUrl.trim();
     const key = parseApiKeyLines(apiKey)[0] ?? '';
     if (!url || !key) return;
@@ -202,7 +249,7 @@ function ApiAccessForm({
       detectSeq.current += 1;
       setDetecting(false);
     };
-  }, [isUnknownVendor, baseUrl, apiKey, saving]);
+  }, [editing, isUnknownVendor, baseUrl, apiKey, saving]);
 
   const apiKeys = parseApiKeyLines(apiKey);
   const firstApiKey = apiKeys[0] ?? '';
@@ -225,14 +272,16 @@ function ApiAccessForm({
 
   const fetchModels = async () => {
     const url = baseUrl.trim();
-    if (!url || !firstApiKey) {
+    if (!url || (!firstApiKey && !edit?.provider.id)) {
       setModelError(t('routes.pool.page.apiModelsNeedKey'));
       return;
     }
     setFetchingModels(true);
     setModelError(null);
     try {
-      const fetched = await listRemoteOpenAiModels(url, firstApiKey);
+      const fetched = firstApiKey
+        ? await listRemoteOpenAiModels(url, firstApiKey)
+        : await listRemoteOpenAiModelsForProvider(edit!.provider.id, url);
       setModels((current) => mergeFetchedModels(
         current,
         fetched,
@@ -248,7 +297,7 @@ function ApiAccessForm({
 
   const save = async () => {
     const items = buildPoolApiSaveItems(choices, selectedTypes, selectedVendor, baseUrl);
-    if (items.length === 0 || apiKeys.length === 0) return;
+    if (items.length === 0 || (!editing && apiKeys.length === 0)) return;
     setSaving(true);
     setError(null);
     try {
@@ -258,6 +307,7 @@ function ApiAccessForm({
           apiKeys,
           models: filterModelsByExclusions(models, parseExcludedModelRules(excludedModels)),
           priority: parsePriorityInput(priority),
+          ...(edit ? { edit: { provider: edit.provider } } : {}),
         },
         {
           getAgentConfigSchema,
@@ -307,7 +357,7 @@ function ApiAccessForm({
   };
 
   const canSave =
-    Boolean(vendorId && baseUrl.trim() && apiKeys.length > 0 && selectedTypes.size > 0)
+    Boolean(vendorId && baseUrl.trim() && selectedTypes.size > 0 && (editing || apiKeys.length > 0))
     && !saving
     && !detecting
     && !fetchingModels;
@@ -315,8 +365,14 @@ function ApiAccessForm({
   return (
     <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{t('routes.pool.page.apiDialogTitle')}</DialogTitle>
-          <DialogDescription>{t('routes.pool.page.apiDialogDescription')}</DialogDescription>
+          <DialogTitle>
+            {editing ? t('routes.pool.page.apiDialogEditTitle') : t('routes.pool.page.apiDialogTitle')}
+          </DialogTitle>
+          <DialogDescription>
+            {editing
+              ? t('routes.pool.page.apiDialogEditDescription')
+              : t('routes.pool.page.apiDialogDescription')}
+          </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
@@ -372,7 +428,9 @@ function ApiAccessForm({
             <textarea
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}
-              placeholder={t('routes.pool.page.apiKeysPlaceholder')}
+              placeholder={editing
+                ? t('routes.pool.page.apiKeysPlaceholderEdit')
+                : t('routes.pool.page.apiKeysPlaceholder')}
               rows={3}
               autoComplete="off"
               spellCheck={false}
@@ -406,7 +464,7 @@ function ApiAccessForm({
                         type="checkbox"
                         className="mt-1"
                         checked={checked}
-                        disabled={!choice.available || saving}
+                        disabled={!choice.available || saving || editing}
                         onChange={() => toggleType(choice.type, choice.available)}
                       />
                       <span className="min-w-0 flex-1">

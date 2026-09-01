@@ -11,6 +11,8 @@ import {
   parseExcludedModelRules,
   parsePriorityInput,
   poolApiChoices,
+  poolApiChoiceTypesFromEndpointKinds,
+  poolApiEditDraft,
   poolApiRecordName,
   poolSurfaceForApiChoice,
   primaryVendorUrl,
@@ -163,6 +165,29 @@ describe('API access draft helpers', () => {
       'mine',
       'claude-3',
     ]);
+  });
+});
+
+describe('poolApiEditDraft', () => {
+  it('prefills vendor, URL, type, and priority from an existing login', () => {
+    expect(poolApiChoiceTypesFromEndpointKinds(['responses_codex', 'chat_completions'])).toEqual([
+      'openaiResponses',
+      'openaiChatCompletions',
+    ]);
+    const draft = poolApiEditDraft({
+      baseUrl: 'https://api.deepseek.com/',
+      apiKey: 'sk-keep',
+      endpointKinds: ['chat_completions'],
+      agentId: 'grok',
+      priority: 4,
+    });
+    expect(draft).toEqual({
+      vendorId: 'deepseek',
+      baseUrl: 'https://api.deepseek.com',
+      apiKey: 'sk-keep',
+      selectedTypes: ['openaiChatCompletions'],
+      priority: '4',
+    });
   });
 });
 
