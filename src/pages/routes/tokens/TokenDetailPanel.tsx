@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
-import { testLocalToken } from '@/lib/api/adapter';
+import { listLocalTokenModels, testLocalToken } from '@/lib/api/adapter';
 import type { LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
 import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
 import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
@@ -55,7 +55,8 @@ export function TokenDetailPanel({
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const models = localTokenTestModels(row);
+  const [liveModels, setLiveModels] = useState<string[]>([]);
+  const models = liveModels.length > 0 ? liveModels : localTokenTestModels(row);
   const [revealed, setRevealed] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testOpen, setTestOpen] = useState(false);
@@ -76,6 +77,7 @@ export function TokenDetailPanel({
     setTesting(false);
     setTestOpen(false);
     setTestResult(null);
+    setLiveModels([]);
     setTestModel(localTokenTestModels(row)[0] ?? '');
   }, [row.id]);
 
@@ -97,6 +99,15 @@ export function TokenDetailPanel({
     if (!testGate.enabled || testing) return;
     setTestResult(null);
     setTestOpen(true);
+    const token = row.token?.trim();
+    if (!token) return;
+    const requestId = row.id;
+    void listLocalTokenModels(token).then((ids) => {
+      if (rowIdRef.current !== requestId) return;
+      const listed = ids.map((item) => item.trim()).filter(Boolean);
+      if (listed.length === 0) return;
+      setLiveModels(listed);
+    }).catch(() => {});
   };
 
   const runTest = async () => {

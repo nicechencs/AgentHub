@@ -1,12 +1,16 @@
 //! Upstream subscription quota windows (5h / 7d) for OAuth accounts.
 //!
-//! Codex (aligned with sub2api):
-//! 1. Preferred: `POST https://chatgpt.com/backend-api/codex/responses` with
-//!    `codex-auto-review` + `stream: true`; 5h/7d come from `x-codex-*` headers.
-//! 2. Fallback: `GET https://chatgpt.com/backend-api/wham/usage` (Codex Desktop
-//!    identity). Top-level `rate_limit` is the shared ChatGPT/Codex pool;
-//!    `additional_rate_limits` (e.g. Spark `codex_bengalfox`) is used only when
-//!    that pool has no windows.
+//! Codex (aligned with sub2api). These URLs stay hardcoded; live catalogs are
+//! not stored in the DB or a config file:
+//! - conversation: `POST https://chatgpt.com/backend-api/codex/responses`
+//! - quota: that same `POST` (`x-codex-*` headers), then
+//!   `GET https://chatgpt.com/backend-api/wham/usage`
+//! - models: `GET https://chatgpt.com/backend-api/codex/models`
+//!   (see [`crate::utils::chatgpt_codex_models`]). Never `api.openai.com/v1/models`
+//!   for ChatGPT OAuth.
+//! Quota details: 5h/7d come from `x-codex-*` headers. `/wham/usage` top-level
+//! `rate_limit` is the shared ChatGPT/Codex pool; `additional_rate_limits`
+//! (e.g. Spark `codex_bengalfox`) is used only when that pool has no windows.
 //!
 //! Claude OAuth: `GET https://api.anthropic.com/api/oauth/usage`.
 //!
@@ -1118,7 +1122,7 @@ fn extract_grok_profile_token(credentials: &Value) -> Option<String> {
     None
 }
 
-fn extract_chatgpt_account_id(account: &Account) -> Option<String> {
+pub(crate) fn extract_chatgpt_account_id(account: &Account) -> Option<String> {
     let c = &account.credentials;
     let extra = &account.extra;
     [

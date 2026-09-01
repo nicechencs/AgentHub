@@ -188,6 +188,14 @@ describe('Tauri adapter route port', () => {
       { poolId: 'pool-1', token: 'ahb_secret' },
     ]);
     expect(invokeMock).toHaveBeenCalledWith('list_local_tokens', {});
+    invokeMock.mockResolvedValueOnce(['gpt-5.6-sol', 'gpt-5.4']);
+    await expect(port.listLocalTokenModels('ahb_secret')).resolves.toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.4',
+    ]);
+    expect(invokeMock).toHaveBeenCalledWith('list_local_token_models', {
+      token: 'ahb_secret',
+    });
     invokeMock.mockResolvedValueOnce({ poolId: 'pool-1', token: 'ahb_next' });
     await expect(port.setLocalToken('pool-1', 'ahb_next')).resolves.toEqual({
       poolId: 'pool-1',

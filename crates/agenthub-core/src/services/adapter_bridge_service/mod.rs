@@ -1154,13 +1154,20 @@ impl AdapterBridgeService {
             .filter(|auth| auth.has_token())
             .unwrap_or_else(|| ResolvedAuth::bearer("pending"));
         let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(&url);
-        let listed = listed_models_for_bridge(
-            product,
-            pool.target_agent_id,
-            &model,
-            custom,
-            &configured,
-        );
+        let listed = self
+            .route_pools
+            .list_upstream_models_for_pool(&pool.id)
+            .ok()
+            .filter(|models| !models.is_empty())
+            .unwrap_or_else(|| {
+                listed_models_for_bridge(
+                    product,
+                    pool.target_agent_id,
+                    &model,
+                    custom,
+                    &configured,
+                )
+            });
         let mut spec = BridgeStartSpec::new(
             pool.id.clone(),
             port,

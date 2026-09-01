@@ -400,20 +400,37 @@ pub async fn test_local_token(
 }
 
 fn lookup_local_token_test_model(hub: &AgentHub, token: &str) -> Option<String> {
-    let records = hub.route_pools().list_local_tokens().ok()?;
-    let pool_id = records
+    list_models_for_local_token(hub, token)
+        .into_iter()
+        .find(|model| !model.trim().is_empty())
+}
+
+fn list_models_for_local_token(hub: &AgentHub, token: &str) -> Vec<String> {
+    let Ok(records) = hub.route_pools().list_local_tokens() else {
+        return Vec::new();
+    };
+    let Some(pool_id) = records
         .into_iter()
         .find(|record| record.token == token)
-        .map(|record| record.pool_id)?;
-    let listed = hub.route_pools().list_default_overviews().ok()?;
-    listed
-        .pools
-        .into_iter()
-        .find(|pool| pool.id == pool_id)?
-        .listed_models
-        .into_iter()
-        .map(|model| model.trim().to_owned())
-        .find(|model| !model.is_empty())
+        .map(|record| record.pool_id)
+    else {
+        return Vec::new();
+    };
+    hub.route_pools()
+        .list_upstream_models_for_pool(&pool_id)
+        .unwrap_or_default()
+}
+
+/// Live model ids for the tokens-page test dropdown. Not persisted.
+#[tauri::command]
+pub async fn list_local_token_models(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<Vec<String>, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| Ok(list_models_for_local_token(hub, &token)))
+        .await
+        .map_err(adapter_error_from_string)
 }
 
 /// Replace one default-pool loopback bearer. Restarts that edge if it is live.

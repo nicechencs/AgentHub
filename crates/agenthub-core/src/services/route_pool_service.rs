@@ -1192,6 +1192,87 @@ impl RoutePoolService {
         list_local_bridge_models(product, pool.target_agent_id, None)
     }
 
+    /// Live catalog for a pool's enabled logins. Empty live lists fall back to
+    /// the mapping table. Results are not written to the DB.
+    pub fn list_upstream_models_for_pool(&self, pool_id: &str) -> Result<Vec<String>> {
+        let pool = self.pools.get_pool(pool_id)?.ok_or_else(|| {
+            AppError::NotFound(format!("route pool not found: {pool_id}"))
+        })?;
+        let members = self.pools.list_members(pool_id)?;
+        let mut listed = Vec::new();
+        let mut seen = HashSet::new();
+        for member in members.iter().filter(|member| member.enabled) {
+            for model in self.live_models_for_member(member) {
+                if seen.insert(model.clone()) {
+                    listed.push(model);
+                }
+            }
+        }
+        if listed.is_empty() {
+            return Ok(self.listed_models_for_pool(&pool, &members));
+        }
+        Ok(listed)
+    }
+
+    fn live_models_for_member(&self, member: &RouteMember) -> Vec<String> {
+        match member.source_kind {
+            AdapterSourceKind::Account => self.live_models_for_account(&member.source_id),
+            AdapterSourceKind::Provider => self.live_models_for_provider(&member.source_id),
+        }
+    }
+
+    fn live_models_for_account(&self, source_id: &str) -> Vec<String> {
+        let Ok(Some(account)) = self.accounts.get_by_id(source_id) else {
+            return Vec::new();
+        };
+        if account.kind == AccountKind::Oauth {
+            return self.live_models_for_official_login(&account);
+        }
+        self.live_models_from_settings(&account.credentials)
+    }
+
+    fn live_models_for_official_login(&self, account: &crate::models::Account) -> Vec<String> {
+        match account.agent_id {
+            AgentId::Codex => {
+                let Some(access) =
+                    crate::services::account_quota::extract_access_token(account)
+                else {
+                    return Vec::new();
+                };
+                let Some(account_id) =
+                    crate::services::account_quota::extract_chatgpt_account_id(account)
+                else {
+                    return Vec::new();
+                };
+                crate::utils::chatgpt_codex_models::list_chatgpt_codex_models(
+                    &access, &account_id,
+                )
+                .unwrap_or_default()
+            }
+            // Grok / Claude / Pi official logins have no public model list that
+            // accepts this login. Keep the mapping-table fallback.
+            _ => Vec::new(),
+        }
+    }
+
+    fn live_models_for_provider(&self, source_id: &str) -> Vec<String> {
+        let Ok(Some(provider)) = self.providers.get_by_id(source_id) else {
+            return Vec::new();
+        };
+        self.live_models_from_settings(&provider.settings_config)
+    }
+
+    fn live_models_from_settings(&self, blob: &Value) -> Vec<String> {
+        let embedded =
+            crate::utils::upstream_model_catalog::embedded_listed_models(blob);
+        let remote = crate::utils::upstream_model_catalog::catalog_endpoint(blob)
+            .and_then(|(base, key)| {
+                crate::utils::remote_openai_models::list_remote_openai_models(&base, &key).ok()
+            })
+            .unwrap_or_default();
+        crate::utils::upstream_model_catalog::merge_model_ids([remote, embedded])
+    }
+
     fn member_display_fields(
         &self,
         member: &RouteMember,
