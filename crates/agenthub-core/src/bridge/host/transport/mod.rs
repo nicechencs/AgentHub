@@ -147,6 +147,12 @@ impl UpstreamChannel {
         }
     }
 
+    /// Official ChatGPT / Codex Responses requires `stream: true`.
+    /// Grok and other channels follow the downstream request.
+    pub(super) fn forces_upstream_stream(self) -> bool {
+        matches!(self, Self::CodexResponses)
+    }
+
     /// Resolve the transport implementation once. Callers must not match on
     /// this enum for path / auth / prepare / decode / recovery.
     pub(super) fn transport(self) -> &'static dyn UpstreamTransport {
@@ -303,7 +309,9 @@ pub(super) async fn send_upstream(
                 match read_bounded_upstream_error(response, &state.force_shutdown).await {
                     Ok(body) => body,
                     Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
-                    Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
+                    Err(UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream) => {
+                        Vec::new()
+                    }
                 };
             if !can_recover {
                 let detail = extract_upstream_error_detail(&error_body);
@@ -481,7 +489,9 @@ async fn read_error_detail(
     let error_body = match read_bounded_upstream_error(response, force_shutdown).await {
         Ok(body) => body,
         Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
-        Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
+        Err(UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream) => {
+            Vec::new()
+        }
     };
     Ok(extract_upstream_error_detail(&error_body))
 }

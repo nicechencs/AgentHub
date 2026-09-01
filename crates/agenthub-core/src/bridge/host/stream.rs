@@ -20,8 +20,10 @@ use crate::bridge::protocol::pair::{
     sanitize_pair_response, sanitize_pair_sse_event, PairDirection,
 };
 use crate::bridge::protocol::responses::{
-    encode_responses_from_ir, responses_output_to_ir, IrToResponsesSse, ResponsesStreamToIr,
+    aggregate_responses_sse_to_json, encode_responses_from_ir, looks_like_sse_body,
+    responses_output_to_ir, IrToResponsesSse, ResponsesStreamToIr,
 };
+use crate::bridge::types::UPSTREAM_STREAM_INCOMPLETE_ZH;
 use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError, Usage};
 use crate::bridge::usage_capture::{
     emit, CaptureContext, GatewayUsageEvent, StreamCaptureGuard,
@@ -120,6 +122,16 @@ pub(super) async fn messages_non_stream_response(
                 None,
             );
         }
+        Err(UpstreamBodyError::IncompleteStream) => {
+            return incomplete_stream_response(
+                &state,
+                &request_id,
+                started,
+                &member,
+                &capture,
+                status_code,
+            );
+        }
     };
     capture_grok_completed(
         &state,
@@ -200,6 +212,16 @@ pub(super) async fn chat_non_stream_response(
                 None,
             );
         }
+        Err(UpstreamBodyError::IncompleteStream) => {
+            return incomplete_stream_response(
+                &state,
+                &request_id,
+                started,
+                &member,
+                &capture,
+                status_code,
+            );
+        }
     };
     capture_grok_completed(
         &state,
@@ -275,6 +297,16 @@ pub(super) async fn non_stream_response(
                 None,
             );
         }
+        Err(UpstreamBodyError::IncompleteStream) => {
+            return incomplete_stream_response(
+                &state,
+                &request_id,
+                started,
+                &member,
+                &capture,
+                status_code,
+            );
+        }
     };
     capture_grok_completed(
         &state,
@@ -320,6 +352,8 @@ pub(super) async fn non_stream_response(
 pub(super) enum UpstreamBodyError {
     Stopping,
     InvalidOrTooLarge,
+    /// Forced-stream upstream closed before a terminal SSE event.
+    IncompleteStream,
 }
 
 async fn read_bounded_upstream_json(
@@ -338,16 +372,61 @@ async fn read_bounded_upstream_json(
         _ = force_shutdown.cancelled() => return Err(UpstreamBodyError::Stopping),
         next = tokio::time::timeout(UPSTREAM_BODY_IDLE_TIMEOUT, stream.next()) => match next {
             Ok(next) => next,
-            Err(_) => return Err(UpstreamBodyError::InvalidOrTooLarge),
+            Err(_) => {
+                return Err(if looks_like_sse_body(&body) {
+                    UpstreamBodyError::IncompleteStream
+                } else {
+                    UpstreamBodyError::InvalidOrTooLarge
+                });
+            }
         },
     } {
         let chunk = chunk.map_err(|_| UpstreamBodyError::InvalidOrTooLarge)?;
         if body.len().saturating_add(chunk.len()) > BODY_LIMIT_BYTES {
-            return Err(UpstreamBodyError::InvalidOrTooLarge);
+            return Err(if looks_like_sse_body(&body) {
+                UpstreamBodyError::IncompleteStream
+            } else {
+                UpstreamBodyError::InvalidOrTooLarge
+            });
         }
         body.extend_from_slice(&chunk);
     }
-    serde_json::from_slice(&body).map_err(|_| UpstreamBodyError::InvalidOrTooLarge)
+    decode_upstream_json_or_sse(&body)
+}
+
+fn decode_upstream_json_or_sse(body: &[u8]) -> Result<Value, UpstreamBodyError> {
+    if looks_like_sse_body(body) {
+        return match aggregate_responses_sse_to_json(body) {
+            Ok(value) => Ok(value),
+            Err(error) if error.message == UPSTREAM_STREAM_INCOMPLETE_ZH => {
+                Err(UpstreamBodyError::IncompleteStream)
+            }
+            Err(_) => Err(UpstreamBodyError::InvalidOrTooLarge),
+        };
+    }
+    serde_json::from_slice(body).map_err(|_| UpstreamBodyError::InvalidOrTooLarge)
+}
+
+fn incomplete_stream_response(
+    state: &EdgeState,
+    request_id: &str,
+    started: Instant,
+    member: &PickedMember,
+    capture: &CaptureContext,
+    status_code: u16,
+) -> Response {
+    state.record_upstream_failure();
+    emit(
+        &state.usage_spool,
+        usage_event(state, request_id, started, member, capture)
+            .failed(Some(status_code), "upstream_incomplete_stream"),
+    );
+    error_response(
+        StatusCode::BAD_GATEWAY,
+        "upstream_error",
+        UPSTREAM_STREAM_INCOMPLETE_ZH,
+        None,
+    )
 }
 
 async fn read_bounded_upstream_body(
@@ -420,9 +499,29 @@ pub(super) async fn passthrough_json_response(
                 None,
             );
         }
+        Err(UpstreamBodyError::IncompleteStream) => {
+            return incomplete_stream_response(
+                &state,
+                &request_id,
+                started,
+                &member,
+                &capture,
+                status.as_u16(),
+            );
+        }
     };
-    let mut value = match serde_json::from_slice::<Value>(&body) {
+    let mut value = match decode_upstream_json_or_sse(&body) {
         Ok(value) => value,
+        Err(UpstreamBodyError::IncompleteStream) => {
+            return incomplete_stream_response(
+                &state,
+                &request_id,
+                started,
+                &member,
+                &capture,
+                status.as_u16(),
+            );
+        }
         Err(_) => {
             state.record_upstream_failure();
             emit(

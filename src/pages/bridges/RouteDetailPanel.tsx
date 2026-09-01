@@ -32,6 +32,7 @@ import {
   routeDetailTargetLabel,
   routeModelsSummary,
   routeSourceDeletedHint,
+  routeWriteTruthFrom,
 } from './adapter-route-detail-model';
 import {
   buildRouteGraph,
@@ -68,6 +69,7 @@ export function RouteDetailPanel({
   bridgeStatus,
   entries,
   siblingProfiles = [],
+  bridgeStatuses = {},
   busy,
   error,
   onRequestRemove,
@@ -88,6 +90,7 @@ export function RouteDetailPanel({
   bridgeStatus?: AdapterBridgeRuntimeStatus;
   entries: ConnectionEntry[];
   siblingProfiles?: readonly AdapterProfile[];
+  bridgeStatuses?: Readonly<Record<string, AdapterBridgeRuntimeStatus | undefined>>;
   busy: boolean;
   error: unknown;
   onRequestRemove: (profile: AdapterProfile) => void;
@@ -127,6 +130,7 @@ export function RouteDetailPanel({
       bridgeStatus={bridgeStatus}
       entries={entries}
       siblingProfiles={siblingProfiles}
+      bridgeStatuses={bridgeStatuses}
       error={error}
       routePoolV2={routePoolV2}
       defaultPool={defaultPool}
@@ -183,6 +187,7 @@ function RouteDetailBody({
   bridgeStatus,
   entries,
   siblingProfiles,
+  bridgeStatuses = {},
   error,
   routePoolV2 = false,
   defaultPool = null,
@@ -195,6 +200,7 @@ function RouteDetailBody({
   bridgeStatus?: AdapterBridgeRuntimeStatus;
   entries: ConnectionEntry[];
   siblingProfiles: readonly AdapterProfile[];
+  bridgeStatuses?: Readonly<Record<string, AdapterBridgeRuntimeStatus | undefined>>;
   error: unknown;
   routePoolV2?: boolean;
   defaultPool?: DefaultRoutePoolOverview | null;
@@ -207,12 +213,17 @@ function RouteDetailBody({
   const { t, lang } = useI18n();
   const isBridge = profile.route === 'local_bridge';
   const endpointParts = isBridge ? adapterBridgeHostPort(profile, bridgeStatus) : null;
+  const statuses = {
+    ...bridgeStatuses,
+    ...(bridgeStatus ? { [profile.id]: bridgeStatus } : {}),
+  };
   const graph = buildRouteGraph({
     profile,
     entries,
     siblingProfiles,
     host: endpointParts?.host,
     port: endpointParts?.port,
+    writeTruth: routeWriteTruthFrom(entries, statuses),
   });
   const source = graph.source;
   const recovery = adapterProfileRecoveryGuide(profile, t);
@@ -523,6 +534,10 @@ function ClientRow({ row }: { row: RouteGraphRow }) {
       </span>
       {row.applied ? (
         <span className="shrink-0 text-meta text-success">{t('routes.graph.applied')}</span>
+      ) : row.writeNote === 'stopped' ? (
+        <span className="shrink-0 text-meta text-warning">{t('routes.graph.appliedStopped')}</span>
+      ) : row.writeNote === 'rewritten' ? (
+        <span className="shrink-0 text-meta text-warning">{t('routes.graph.appliedRewritten')}</span>
       ) : !row.enabled ? (
         <span className="shrink-0 text-meta text-muted">{t('routes.graph.notEnabled')}</span>
       ) : (
