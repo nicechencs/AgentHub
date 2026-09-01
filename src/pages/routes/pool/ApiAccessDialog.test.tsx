@@ -65,12 +65,12 @@ describe('ApiAccessDialog', () => {
         onCancel() {},
       }),
     );
-    expect(markup).toContain('接口类型');
-    expect(markup).toContain('/v1/responses');
-    expect(markup).toContain('OpenAI');
-    expect(markup).toContain('接入时已定好，编辑时不能改。要换类型请再接入一次。');
+    expect(markup).toContain('端点类型');
+    expect(markup).not.toContain('接口类型');
     expect(markup).toContain('/v1/responses');
     expect(markup).toContain('var(--agent-codex)');
+    expect(markup).not.toContain('OpenAI');
+    expect(markup).toContain('接入时已定好，编辑时不能改。要换类型请再接入一次。');
     expect(markup).not.toContain('type="checkbox"');
     expect(markup).not.toContain('/v1/messages');
     expect(markup).not.toContain('/v1/chat/completions');

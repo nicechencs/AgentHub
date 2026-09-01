@@ -43,6 +43,8 @@ import {
 import {
   localEndpointBrandAgentId,
   localEndpointKindFromPool,
+  localEndpointPath,
+  localEndpointSurface,
 } from '@/lib/route-endpoints';
 import { cn } from '@/lib/utils';
 import {
@@ -518,20 +520,23 @@ export function ApiAccessForm({
           {detectNone && !editing ? <p className="text-meta text-muted">{t('routes.pool.page.apiDetectNone')}</p> : null}
           {error ? <p className="text-meta text-danger">{error}</p> : null}
           <div className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted">{t('routes.pool.page.apiTypesLabel')}</span>
+            <span className="text-xs text-muted">
+              {editing ? t('routes.pool.detail.endpointTypes') : t('routes.pool.page.apiTypesLabel')}
+            </span>
             {editing ? (
               <>
-                {choices.filter((choice) => selectedTypes.has(choice.type)).map((choice) => {
-                  const actualUrl = resolveEndpointUrl(selectedVendor, choice.type, baseUrl);
-                  return (
-                    <div
-                      key={`${choice.agentId}-${choice.endpoint}-${choice.type}`}
-                      className="rounded-card border border-border bg-panel p-3"
+                <div className="flex flex-col gap-0.5">
+                  {(edit?.endpointKinds ?? []).map((kind) => (
+                    <RouteEndpointTypeText
+                      key={kind}
+                      endpointId={localEndpointSurface(kind)}
+                      brandAgentId={localEndpointBrandAgentId(kind)}
+                      className="font-mono text-sm font-medium"
                     >
-                      <ApiChoiceEndpointCopy choice={choice} actualUrl={actualUrl} />
-                    </div>
-                  );
-                })}
+                      {localEndpointPath(kind)}
+                    </RouteEndpointTypeText>
+                  ))}
+                </div>
                 <p className="text-meta text-muted">{t('routes.pool.page.apiTypesLockedHint')}</p>
               </>
             ) : (
