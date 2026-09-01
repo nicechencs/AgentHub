@@ -8,6 +8,7 @@ import {
   mapInboundRequest,
   mapLocalTokenProbeResult,
   mapLocalTokenRecord,
+  mapRouteTrace,
 } from './adapter-wire';
 
 describe('Adapter Rust wire mappers', () => {
@@ -115,6 +116,7 @@ describe('Adapter Rust wire mappers', () => {
       startedAt: '2026-08-12T00:00:00.123Z',
       upstreamStatus: 'unknown',
       recentInbound: [],
+      recentRouteTraces: [],
       totalRequestCount: 0,
       failedRequestCount: 0,
       lastRequestAt: null,
@@ -519,5 +521,58 @@ describe('Adapter Rust wire mappers', () => {
       errorMessage: null,
     });
     expect(mapLocalTokenProbeResult({}).outcome).toBe('unreachable');
+  });
+
+  it('maps route trace stages without secrets', () => {
+    const trace = mapRouteTrace({
+      requestId: 'req-trace-1',
+      atUnixMs: 1_786_492_800_000,
+      method: 'POST',
+      path: '/v1/messages',
+      httpStatus: 200,
+      ok: true,
+      model: 'claude-sonnet',
+      latencyMs: 42,
+      localAuth: { status: 'ok', profileId: 'profile-1', port: 8787 },
+      pool: {
+        status: 'ok',
+        selectedMember: { label: 'acct-1', sourceKind: 'account', sourceId: 'acct-1' },
+      },
+      conversion: { status: 'ok', path: 'messages_to_openai_chat', result: 'converted' },
+      upstreamAuth: { status: 'ok', httpStatus: 200 },
+      upstream: {
+        status: 'ok',
+        url: 'https://api.example.com/v1/chat/completions',
+        httpStatus: 200,
+      },
+    });
+    expect(trace?.requestId).toBe('req-trace-1');
+    expect(trace?.localAuth.status).toBe('ok');
+    expect(trace?.conversion.path).toBe('messages_to_openai_chat');
+    expect(JSON.stringify(trace)).not.toMatch(/sk-|ahb_|Bearer/i);
+    expect(
+      mapAdapterBridgeStatusDto({
+        profileId: 'profile-1',
+        port: 8787,
+        running: true,
+        state: 'running',
+        upstreamStatus: 'connected',
+        recentRouteTraces: [
+          {
+            requestId: 'req-trace-1',
+            atUnixMs: 1_786_492_800_000,
+            method: 'POST',
+            path: '/v1/messages',
+            httpStatus: 200,
+            ok: true,
+            localAuth: { status: 'ok' },
+            pool: { status: 'ok' },
+            conversion: { status: 'ok', path: 'passthrough' },
+            upstreamAuth: { status: 'ok' },
+            upstream: { status: 'ok' },
+          },
+        ],
+      }).recentRouteTraces,
+    ).toHaveLength(1);
   });
 });

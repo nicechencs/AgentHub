@@ -167,6 +167,83 @@ export interface AdapterBridgeInboundRequest {
   ok: boolean;
 }
 
+export type RouteTraceStageStatus = 'pending' | 'ok' | 'failed' | 'skipped';
+
+export interface RouteTraceMember {
+  label: string;
+  sourceKind: string;
+  sourceId: string;
+  ticketId?: string | null;
+}
+
+export interface RouteTracePoolAttempt {
+  member: RouteTraceMember;
+  status: RouteTraceStageStatus;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTraceLocalAuth {
+  status: RouteTraceStageStatus;
+  profileId?: string | null;
+  port?: number | null;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTracePool {
+  status: RouteTraceStageStatus;
+  selectedMember?: RouteTraceMember | null;
+  attempts?: RouteTracePoolAttempt[];
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTraceConversion {
+  status: RouteTraceStageStatus;
+  path: string;
+  result?: string | null;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTraceUpstreamAuth {
+  status: RouteTraceStageStatus;
+  httpStatus?: number | null;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTraceUpstream {
+  status: RouteTraceStageStatus;
+  url?: string | null;
+  member?: RouteTraceMember | null;
+  model?: string | null;
+  upstreamModel?: string | null;
+  httpStatus?: number | null;
+  code?: string | null;
+  message?: string | null;
+}
+
+/** One completed local-route request trace for monitoring. Credential-free. */
+export interface AdapterBridgeRouteTrace {
+  requestId: string;
+  at: string;
+  profileId?: string | null;
+  method: string;
+  path: string;
+  httpStatus: number;
+  ok: boolean;
+  model?: string | null;
+  latencyMs?: number | null;
+  localAuth: RouteTraceLocalAuth;
+  pool: RouteTracePool;
+  conversion: RouteTraceConversion;
+  upstreamAuth: RouteTraceUpstreamAuth;
+  upstream: RouteTraceUpstream;
+  failureStage?: string | null;
+}
+
 /** Loopback listener status. `localToken` is the bearer that actually authenticates. */
 export interface AdapterBridgeRuntimeStatus {
   profileId: string;
@@ -177,6 +254,8 @@ export interface AdapterBridgeRuntimeStatus {
   upstreamStatus?: AdapterBridgeUpstreamStatus | string | null;
   /** Newest first. Empty when no tool has connected yet. */
   recentInbound?: AdapterBridgeInboundRequest[];
+  /** Newest first. Per-request route traces for monitoring. */
+  recentRouteTraces?: AdapterBridgeRouteTrace[];
   /** Authenticated inbound requests since this process started (not ring-capped). */
   totalRequestCount?: number;
   /** Failed authenticated inbound requests since this process started. */

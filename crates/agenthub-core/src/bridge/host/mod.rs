@@ -6,10 +6,12 @@
 mod admission;
 mod continuation;
 mod dispatch;
+mod dispatch_trace;
 mod gateway;
 mod http;
 pub(crate) mod inbound;
 mod lifecycle;
+mod route_trace;
 mod pair_policy;
 mod stream;
 mod surface;
@@ -26,6 +28,8 @@ pub(super) use gateway::CleanupCompletion;
 pub use inbound::InboundRequestRecord;
 pub use inbound::InboundRequestStats;
 pub use lifecycle::BridgeRuntimeHost;
+pub use route_trace::RouteRequestTrace;
+pub use route_trace::RouteTraceLog;
 
 #[cfg(test)]
 pub(super) use http::sse_frame_end;

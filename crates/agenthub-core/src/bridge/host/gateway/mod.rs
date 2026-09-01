@@ -19,6 +19,7 @@ use tokio::sync::watch;
 
 use crate::bridge::auth_reload::AuthReloadCoordinator;
 use crate::bridge::host::inbound::InboundRequestLog;
+use crate::bridge::host::route_trace::RouteTraceLog;
 use crate::bridge::usage_capture::UsageSpoolSlot;
 
 pub(super) use edge::EdgeState;
@@ -95,6 +96,7 @@ pub(super) struct Gateway {
     pub(super) registry: Arc<Mutex<GatewayRegistry>>,
     pub(super) auth_reload: AuthReloadCoordinator,
     pub(super) inbound: InboundRequestLog,
+    pub(super) route_traces: RouteTraceLog,
     /// Host-level optional gateway usage spool. The shell installs it once
     /// before edges start; edges clone the slot so capture stays a no-op
     /// (never an error) when unset.
@@ -113,6 +115,7 @@ impl Gateway {
             registry: Arc::new(Mutex::new(GatewayRegistry::new())),
             auth_reload: AuthReloadCoordinator::new(),
             inbound: InboundRequestLog::new(),
+            route_traces: RouteTraceLog::new(),
             usage_spool: UsageSpoolSlot::default(),
         }
     }
