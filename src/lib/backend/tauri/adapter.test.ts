@@ -181,6 +181,24 @@ describe('Tauri adapter route port', () => {
     expect(JSON.stringify(listed)).not.toContain('ahb_');
   });
 
+  it('forwards list_local_tokens and set_local_token', async () => {
+    invokeMock.mockResolvedValueOnce([{ poolId: 'pool-1', token: 'ahb_secret' }]);
+    const port = createTauriAdapterPort();
+    await expect(port.listLocalTokens()).resolves.toEqual([
+      { poolId: 'pool-1', token: 'ahb_secret' },
+    ]);
+    expect(invokeMock).toHaveBeenCalledWith('list_local_tokens', {});
+    invokeMock.mockResolvedValueOnce({ poolId: 'pool-1', token: 'ahb_next' });
+    await expect(port.setLocalToken('pool-1', 'ahb_next')).resolves.toEqual({
+      poolId: 'pool-1',
+      token: 'ahb_next',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('set_local_token', {
+      poolId: 'pool-1',
+      token: 'ahb_next',
+    });
+  });
+
   it('forwards enroll_native_to_gateway by profile id and drops any token field', async () => {
     invokeMock.mockResolvedValueOnce({
       id: 'pool-1',

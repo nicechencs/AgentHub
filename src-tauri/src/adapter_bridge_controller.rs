@@ -25,7 +25,7 @@ use agenthub_core::bridge::{
 use agenthub_core::models::{
     local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile,
     AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSourceProduct, AgentId,
-    RouteDownstreamSurface, RoutePool,
+    LocalTokenRecord, RouteDownstreamSurface, RoutePool,
 };
 use agenthub_core::services::{
     oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
@@ -1393,6 +1393,54 @@ pub(crate) async fn start_local_entry(
         .await;
     }
     local_entry_status_from_host(&host, started)
+}
+
+/// Persist a pool loopback bearer and restart that edge if it is live.
+pub(crate) async fn set_local_entry_token(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    pool_id: String,
+    token: String,
+) -> Result<LocalTokenRecord, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-entry").await;
+    let record = {
+        let pool_id = pool_id.clone();
+        with_hub_blocking(hub.clone(), move |hub| {
+            hub.route_pools()
+                .set_local_token(&pool_id, &token)
+                .map_err(|error| map_err_string("set_local_token", error))
+        })
+        .await?
+    };
+    let pools = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .list_default_pools()
+            .map_err(|error| map_err_string("list_default_pools", error))
+    })
+    .await?;
+    let Some(pool) = pools.into_iter().find(|pool| pool.id == record.pool_id) else {
+        return Ok(record);
+    };
+    let running = host
+        .status(&pool.id)
+        .map_err(map_bridge_host_error)?
+        .is_some();
+    if !running {
+        return Ok(record);
+    }
+    match host.stop(&pool.id).await {
+        Ok(_) => {}
+        Err(BridgeHostError::NotRunning) => {}
+        Err(error) => return Err(map_bridge_host_error(error)),
+    }
+    let flags = with_hub_blocking(hub, move |hub| Ok(hub.route_pools().pair_adapter_flags())).await?;
+    host.start(pool_entry_spec(&pool, flags))
+        .await
+        .map_err(map_bridge_host_error)?;
+    Ok(record)
 }
 
 /// Stop every live relay edge. Does not use host shutdown (that blocks restart).

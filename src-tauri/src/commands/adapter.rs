@@ -8,7 +8,7 @@ use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
-    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, RouteDownstreamSurface,
+    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenRecord, RouteDownstreamSurface,
     SyncConnectionAuthorizationsResult, TicketBinding, TicketBindingRoute, TicketPlanRequest,
     TicketWallet,
 };
@@ -327,6 +327,40 @@ pub async fn list_default_route_pools(
             .list_default_overviews()
             .map_err(|err| map_err_string("list_default_route_pools", err))
     })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Loopback bearers for the tokens page.
+#[tauri::command]
+pub async fn list_local_tokens(
+    state: State<'_, AppState>,
+) -> Result<Vec<LocalTokenRecord>, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .list_local_tokens()
+            .map_err(|err| map_err_string("list_local_tokens", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Replace one default-pool loopback bearer. Restarts that edge if it is live.
+#[tauri::command]
+pub async fn set_local_token(
+    state: State<'_, AppState>,
+    pool_id: String,
+    token: String,
+) -> Result<LocalTokenRecord, GuiError> {
+    crate::adapter_bridge_controller::set_local_entry_token(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+        pool_id,
+        token,
+    )
     .await
     .map_err(adapter_error_from_string)
 }

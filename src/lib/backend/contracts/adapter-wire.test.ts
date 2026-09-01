@@ -6,6 +6,7 @@ import {
   mapAdapterRouteAnalysis,
   mapDefaultRoutePoolList,
   mapInboundRequest,
+  mapLocalTokenRecord,
 } from './adapter-wire';
 
 describe('Adapter Rust wire mappers', () => {
@@ -485,5 +486,12 @@ describe('Adapter Rust wire mappers', () => {
       refreshTokenTail: '**5678',
     });
     expect(JSON.stringify(listed)).not.toContain('hubToken');
+  });
+
+  it('maps loopback entry keys for the tokens page', () => {
+    expect(mapLocalTokenRecord({ poolId: 'pool-1', token: 'ahb_secret' })).toEqual({
+      poolId: 'pool-1',
+      token: 'ahb_secret',
+    });
   });
 });

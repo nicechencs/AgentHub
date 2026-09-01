@@ -195,6 +195,7 @@ export function resetMockAdapters(): void {
     state.routePoolV2 = true;
     state.shareChatCompletions = false;
     state.defaultPools.length = 0;
+    state.localTokens.clear();
   });
 }
 
@@ -345,6 +346,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     routePoolV2: true,
     shareChatCompletions: false,
     defaultPools: [],
+    localTokens: new Map(),
     localEntryRunning: false,
     localEntryPort: null,
   };
@@ -383,6 +385,43 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           listedModels: [...(pool.listedModels ?? [])],
         })),
       };
+    },
+    async listLocalTokens() {
+      await delay(20);
+      if (!state.routePoolV2) return [];
+      return state.defaultPools.map((pool) => {
+        const existing = state.localTokens.get(pool.id);
+        const token = existing?.trim() || `ahb_${pool.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) || 'token'}`;
+        if (!existing) state.localTokens.set(pool.id, token);
+        return { poolId: pool.id, token };
+      });
+    },
+    async setLocalToken(poolId, token) {
+      await delay(20);
+      const trimmed = token.trim();
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      if (!trimmed) {
+        throw adapterCommandError({
+          code: 'invalid_arg',
+          message: 'entry key must not be empty',
+          retryable: false,
+        });
+      }
+      if (!state.defaultPools.some((pool) => pool.id === poolId)) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `route pool not found: ${poolId}`,
+          retryable: false,
+        });
+      }
+      state.localTokens.set(poolId, trimmed);
+      return { poolId, token: trimmed };
     },
     async setChatCompletionsShared(shared: boolean) {
       await delay(20);

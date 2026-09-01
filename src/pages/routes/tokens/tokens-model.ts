@@ -26,7 +26,7 @@ export interface LocalTokenRow {
   path: string;
   endpoint: string | null;
   state: AdapterBridgeRuntimeState | undefined;
-  /** Loopback bearer (`ahb_…`); null until the listener has started. */
+  /** Loopback bearer (`ahb_…`); null until the pool has an entry key. */
   token: string | null;
   /** Safe default display; the raw token remains available only for copy/reveal. */
   maskedToken: string | null;
@@ -79,11 +79,13 @@ function rowFromRuntime(input: {
   portHint: number | null | undefined;
   status: AdapterBridgeRuntimeStatus | undefined;
   unavailable: boolean;
+  storedToken?: string | null;
 }): LocalTokenRow {
   const port = input.unavailable
     ? null
     : (input.status?.port ?? input.portHint ?? input.profile?.localPort);
-  const token = input.unavailable ? null : input.status?.localToken?.trim() || null;
+  const token = input.storedToken?.trim()
+    || (input.unavailable ? null : input.status?.localToken?.trim() || null);
   return {
     id: input.id,
     profileId: input.profile?.id ?? null,
@@ -109,6 +111,7 @@ export function buildLocalTokenRows(
   statusErrors: Readonly<Record<string, unknown>> = {},
   pools: readonly DefaultRoutePoolOverview[] = [],
   chatCompletionsShared = false,
+  tokensByPoolId: Readonly<Record<string, string>> = {},
 ): LocalTokenRow[] {
   const covered = new Set<string>();
   const rows: LocalTokenRow[] = [];
@@ -145,6 +148,7 @@ export function buildLocalTokenRows(
       portHint: pool.gatewayPort,
       status: bridgeStatuses[statusId],
       unavailable: Boolean(statusErrors[statusId]),
+      storedToken: tokensByPoolId[pool.id] ?? tokensByPoolId[statusId],
     }));
     if (kind === 'chat_completions') sharedChatRow = true;
   }
@@ -166,6 +170,7 @@ export function buildLocalTokenRows(
       portHint: profile.localPort,
       status,
       unavailable,
+      storedToken: tokensByPoolId[profile.id],
     }));
     if (kind === 'chat_completions') sharedChatRow = true;
   }

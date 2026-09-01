@@ -25,6 +25,7 @@ import type {
   AdapterSupport,
   DefaultRoutePoolList,
   DefaultRoutePoolOverview,
+  LocalTokenRecord,
   RouteMemberOverview,
   RoutePoolDialect,
   RoutePoolSurface,
@@ -488,6 +489,20 @@ export function mapLocalEntryStatus(wire: LocalEntryStatusWire): import('./adapt
     port,
     statuses: Array.isArray(wire.statuses) ? wire.statuses.map(mapAdapterBridgeStatusDto) : [],
   };
+}
+
+export interface LocalTokenRecordWire {
+  poolId: string;
+  token: string;
+}
+
+export function mapLocalTokenRecord(wire: LocalTokenRecordWire): LocalTokenRecord {
+  const poolId = typeof wire.poolId === 'string' ? wire.poolId.trim() : '';
+  const token = typeof wire.token === 'string' ? wire.token.trim() : '';
+  if (!poolId || !token) {
+    return invalidWireValue('localToken', wire);
+  }
+  return { poolId, token };
 }
 
 export interface RouteMemberOverviewWire {

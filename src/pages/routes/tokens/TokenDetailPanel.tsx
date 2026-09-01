@@ -12,10 +12,12 @@ export function TokenDetailPanel({
   row,
   width,
   onClose,
+  onEditKey,
 }: {
   row: LocalTokenRow;
   width?: number;
   onClose: () => void;
+  onEditKey?: () => void;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -80,6 +82,11 @@ export function TokenDetailPanel({
                   {t('routes.tokens.copy')}
                 </Button>
               </>
+            ) : null}
+            {onEditKey ? (
+              <Button variant="outline" size="sm" onClick={onEditKey}>
+                {t('routes.tokens.editKey')}
+              </Button>
             ) : null}
           </div>
         </div>

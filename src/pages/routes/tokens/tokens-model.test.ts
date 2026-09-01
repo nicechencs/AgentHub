@@ -131,6 +131,30 @@ describe('tokens-model', () => {
     expect(tokenTypeLabel({ kind: 'chat_completions' })).toBe('Chat Completions');
   });
 
+  it('shows the pool entry key when the local entry is stopped', () => {
+    const rows = buildLocalTokenRows(
+      [],
+      {},
+      {},
+      [
+        pool({
+          id: 'pool-kimi',
+          targetAgentId: 'kimi',
+          surface: 'chat_completions',
+          dialect: 'kimi',
+          members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
+        }),
+      ],
+      false,
+      { 'pool-kimi': 'ahb_secretkey12' },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      token: 'ahb_secretkey12',
+      maskedToken: 'ahb_••••ey12',
+    });
+  });
+
   it('keeps one chat-completions row when Kimi and DSH share', () => {
     const rows = buildLocalTokenRows(
       [],

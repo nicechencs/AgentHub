@@ -103,6 +103,39 @@ impl RoutePoolRepo {
         })
     }
 
+    /// Replace the loopback bearer. `update_pool` never rotates this field.
+    pub fn set_hub_token(
+        &self,
+        pool_id: &str,
+        hub_token: &str,
+        updated_at: &str,
+    ) -> Result<RoutePool> {
+        let hub_token = hub_token.trim();
+        if hub_token.is_empty() {
+            return Err(AppError::InvalidArg(
+                "route pool hub token must not be empty".into(),
+            ));
+        }
+        if updated_at.trim().is_empty() {
+            return Err(AppError::InvalidArg(
+                "route pool timestamps must not be empty".into(),
+            ));
+        }
+        self.mutate(|conn| {
+            let _existing = get_pool_conn(conn, pool_id)?.ok_or_else(|| {
+                AppError::NotFound(format!("route pool not found: {pool_id}"))
+            })?;
+            conn.execute(
+                "UPDATE route_pools SET hub_token = ?2, updated_at = ?3 WHERE id = ?1",
+                params![pool_id, hub_token, updated_at],
+            )
+            .map_err(map_pool_constraint)?;
+            get_pool_conn(conn, pool_id)?.ok_or_else(|| {
+                AppError::message("db.route_pool", "pool missing after token update")
+            })
+        })
+    }
+
     /// Mark this pool as the unique default for its Agent / surface.
     pub fn set_default(&self, pool_id: &str) -> Result<RoutePool> {
         self.mutate(|conn| {

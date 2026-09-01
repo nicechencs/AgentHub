@@ -1103,6 +1103,11 @@ export const en = {
       fieldEndpoint: "Endpoint",
       fieldToken: "Entry key",
       openDetailAria: "View details for {name}",
+      editKey: "Edit",
+      editKeyTitle: "Edit entry key",
+      saveKey: "Save",
+      keyRequired: "Enter an entry key",
+      editKeyFailed: "Couldn't change the entry key",
     },
     pool: {
       entry: "Local entry",

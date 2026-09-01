@@ -1,32 +1,42 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KeyRound } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { PageSection } from '@/components/layout/PageSection';
 import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
 import { useSideSplit } from '@/components/layout/use-side-split';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
-import { ListRow, ListRowBody, LIST_ROW_PAD } from '@/components/shared/ListRow';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { CopyableRouteEndpointUrl, RouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/ui/toast';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { ROUTES_POOL_PATH } from '@/lib/bridges-path';
-import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
+import { listLocalTokens, setLocalToken } from '@/lib/api/adapter';
 import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/bridges/route-inspect';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { buildLocalEntryControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { TokenDetailPanel } from './TokenDetailPanel';
-import { tokenEndpointParts } from './token-detail-model';
-import { buildLocalTokenRows, tokenTypeLabel } from './tokens-model';
+import { TokenList } from './TokenList';
+import { buildLocalTokenRows, tokenTypeLabel, type LocalTokenRow } from './tokens-model';
 
 export default function RoutesTokensPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const { hiddenIds } = useInstalledAgents();
   const hiddenTargetIds = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const {
@@ -37,6 +47,11 @@ export default function RoutesTokensPage() {
     loading,
     reload,
   } = useAdapterResources();
+  const [tokenTick, setTokenTick] = useState(0);
+  const [tokensByPoolId, setTokensByPoolId] = useState<Record<string, string>>({});
+  const [editRow, setEditRow] = useState<LocalTokenRow | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
   const {
     chatCompletionsShared,
     defaultPools,
@@ -44,38 +59,74 @@ export default function RoutesTokensPage() {
   } = useRoutePoolState({
     profiles,
     detailTarget: null,
+    reloadKey: tokenTick,
   });
   const inspect = useSideSplit<string>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
   const localEntry = useMemo(
     () => buildLocalEntryControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
     [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    void listLocalTokens()
+      .then((records) => {
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        for (const record of records) next[record.poolId] = record.token;
+        setTokensByPoolId(next);
+      })
+      .catch(() => {
+        if (!cancelled) setTokensByPoolId({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [defaultPools, tokenTick]);
+
   const rows = useMemo(
-    () => {
-      const next = buildLocalTokenRows(
-        profiles,
-        bridgeStatuses,
-        errors.bridgeStatuses,
-        defaultPools,
-        chatCompletionsShared,
-      );
-      if (profileState !== 'error') return next;
-      return next.map((row) => ({
-        ...row,
-        token: null,
-        maskedToken: null,
-        unavailable: true,
-      }));
-    },
+    () => buildLocalTokenRows(
+      profiles,
+      bridgeStatuses,
+      errors.bridgeStatuses,
+      defaultPools,
+      chatCompletionsShared,
+      tokensByPoolId,
+    ),
     [
       bridgeStatuses,
       chatCompletionsShared,
       defaultPools,
       errors.bridgeStatuses,
-      profileState,
       profiles,
+      tokensByPoolId,
     ],
   );
+
+  const openEdit = (row: LocalTokenRow) => {
+    setEditRow(row);
+    setEditValue(row.token ?? '');
+  };
+
+  const saveEdit = async () => {
+    if (!editRow || editBusy) return;
+    const token = editValue.trim();
+    if (!token) {
+      toast({ title: t('routes.tokens.keyRequired'), variant: 'danger' });
+      return;
+    }
+    setEditBusy(true);
+    try {
+      await setLocalToken(editRow.id, token);
+      setEditRow(null);
+      setTokenTick((tick) => tick + 1);
+      void reload();
+    } catch {
+      toast({ title: t('routes.tokens.editKeyFailed'), variant: 'danger' });
+    } finally {
+      setEditBusy(false);
+    }
+  };
 
   const detailRow = inspect.target
     ? rows.find((row) => row.id === inspect.target) ?? null
@@ -99,7 +150,10 @@ export default function RoutesTokensPage() {
         <div className={pageRhythm.chromeActions}>
           <PageRefreshButton
             loading={pageLoading}
-            onClick={() => void reload()}
+            onClick={() => {
+              setTokenTick((tick) => tick + 1);
+              void reload();
+            }}
             label={t('routes.board.refresh')}
           />
         </div>
@@ -128,59 +182,42 @@ export default function RoutesTokensPage() {
           }
         />
       ) : (
-        <div className={pageRhythm.stackDense}>
-          {rows.map((row) => {
-            const typeLabel = tokenTypeLabel(row, t);
-            const endpoint = tokenEndpointParts(row);
-            const brandAgentId = localEndpointBrandAgentId(row.kind);
-            return (
-              <ListRow
-                key={row.id}
-                className={LIST_ROW_PAD}
-                active={inspect.target === row.id}
-                onOpen={() => inspect.open(row.id)}
-                aria-label={t('routes.tokens.openDetailAria', { name: typeLabel })}
-              >
-                <ListRowBody
-                  main={
-                    <>
-                      <span className="min-w-0 truncate text-sm font-medium text-primary">
-                        {typeLabel}
-                      </span>
-                      {endpoint.portPending ? (
-                        <RouteEndpointUrl
-                          path={row.path}
-                          port={null}
-                          host={endpoint.host}
-                          endpointId={endpoint.endpointId}
-                          brandAgentId={brandAgentId}
-                          className="text-meta"
-                        />
-                      ) : (
-                        <CopyableRouteEndpointUrl
-                          path={row.path}
-                          port={Number(endpoint.portLabel)}
-                          host={endpoint.host}
-                          endpointId={endpoint.endpointId}
-                          brandAgentId={brandAgentId}
-                          className="text-meta"
-                        />
-                      )}
-                      {row.unavailable ? (
-                        <span className="text-meta text-muted">{t('routes.runtime.unavailable')}</span>
-                      ) : row.maskedToken ? (
-                        <span className="min-w-0 truncate font-mono text-meta text-secondary">
-                          {row.maskedToken}
-                        </span>
-                      ) : null}
-                    </>
-                  }
-                />
-              </ListRow>
-            );
-          })}
-        </div>
+        <PageSection first>
+          <TokenList
+            rows={rows}
+            activeId={inspect.target}
+            onShowDetail={(row) => inspect.open(row.id)}
+            onEditKey={openEdit}
+          />
+        </PageSection>
       )}
+
+      <Dialog open={editRow != null} onOpenChange={(open) => { if (!open && !editBusy) setEditRow(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('routes.tokens.editKeyTitle')}</DialogTitle>
+            <DialogDescription>
+              {editRow ? tokenTypeLabel(editRow, t) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={editValue}
+            onChange={(event) => setEditValue(event.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            disabled={editBusy}
+            aria-label={t('routes.tokens.fieldToken')}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditRow(null)} disabled={editBusy}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={() => { void saveEdit(); }} disabled={editBusy}>
+              {t('routes.tokens.saveKey')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </RoutesPane>
   );
 
@@ -193,6 +230,7 @@ export default function RoutesTokensPage() {
           row={detailRow}
           width={inspect.paneWidth}
           onClose={() => inspect.close()}
+          onEditKey={() => openEdit(detailRow)}
         />
       ) : null}
     >

@@ -19,7 +19,8 @@ use crate::models::{
     feature_flag_enabled, generate_hub_token, list_local_bridge_models, product_flag_enabled,
     set_authorization_route_pool_home, AdapterApplyPlan, AdapterProfile, AdapterProfileFilter,
     AccountKind, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AdapterSourceProduct,
-    AgentId, ConnectionTrashKind, DefaultRoutePoolList, DefaultRoutePoolOverview, ModelRouteRule,
+    AgentId, ConnectionTrashKind, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenRecord,
+    ModelRouteRule,
     RouteDownstreamDialect, RouteDownstreamSurface, RouteMember, RouteMemberOverview, RoutePool,
     RouteMembershipTrashMember, RouteMembershipTrashPayload, RouteSchedulePolicy,
     SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol, TicketSurface,
@@ -162,6 +163,40 @@ impl RoutePoolService {
             .into_iter()
             .filter(|pool| pool.is_default)
             .collect())
+    }
+
+    /// Loopback bearers for the tokens page. Empty when the pool flag is off.
+    pub fn list_local_tokens(&self) -> Result<Vec<LocalTokenRecord>> {
+        Ok(self
+            .list_default_pools()?
+            .into_iter()
+            .map(|pool| LocalTokenRecord {
+                pool_id: pool.id,
+                token: pool.hub_token,
+            })
+            .collect())
+    }
+
+    /// Replace one default-pool loopback bearer.
+    pub fn set_local_token(&self, pool_id: &str, token: &str) -> Result<LocalTokenRecord> {
+        self.require_enabled()?;
+        let token = token.trim();
+        if token.is_empty() {
+            return Err(AppError::InvalidArg("entry key must not be empty".into()));
+        }
+        let pool = self.pools.get_pool(pool_id)?.ok_or_else(|| {
+            AppError::NotFound(format!("route pool not found: {pool_id}"))
+        })?;
+        if !pool.is_default {
+            return Err(AppError::InvalidArg(
+                "only default pool entry keys can be changed".into(),
+            ));
+        }
+        let saved = self.pools.set_hub_token(pool_id, token, &now())?;
+        Ok(LocalTokenRecord {
+            pool_id: saved.id,
+            token: saved.hub_token,
+        })
     }
 
     pub fn chat_completions_shared(&self) -> Result<bool> {

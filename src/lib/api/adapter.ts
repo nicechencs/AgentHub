@@ -60,6 +60,14 @@ export async function listDefaultRoutePools(): Promise<DefaultRoutePoolList> {
   return getBackend().adapter.listDefaultRoutePools();
 }
 
+export async function listLocalTokens() {
+  return getBackend().adapter.listLocalTokens();
+}
+
+export async function setLocalToken(poolId: string, token: string) {
+  return getBackend().adapter.setLocalToken(poolId, token);
+}
+
 /** Kimi and DSH share one chat-completions token, or keep separate keys. */
 export async function setChatCompletionsShared(shared: boolean): Promise<DefaultRoutePoolList> {
   return getBackend().adapter.setChatCompletionsShared(shared);
