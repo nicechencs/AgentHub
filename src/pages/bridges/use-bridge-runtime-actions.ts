@@ -5,16 +5,16 @@ import { useCallback, useState } from 'react';
 import {
   enrollNativeToGateway,
   startAdapterBridge,
+  startLocalEntry,
   stopAdapterBridge,
+  stopLocalEntry,
 } from '@/lib/api/adapter';
 import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
-import { bindTicket, listTicketWallet, planTicket, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
+import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
-import type { AgentId } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import { localBridgeProfilesForSource } from './adapter-view-model';
 import { surfaceAfterCompensation } from './create-route-flow';
-import type { LocalEntryBindTarget } from '@/pages/routes/board/board-view-model';
 
 type ToastFn = (input: { title: string; variant?: 'success' | 'danger' | 'default' }) => void;
 
@@ -203,156 +203,56 @@ export function useBridgeRuntimeActions(input: {
     reloadThenClearProfileErrors,
   ]);
 
-  const handleStartLocalEntry = useCallback(async (
-    profileIds: readonly string[],
-    bindTargets: readonly LocalEntryBindTarget[] = [],
-  ) => {
-    const members = profiles.filter((profile) => (
-      profileIds.includes(profile.id)
-      && profile.route === 'local_bridge'
-      && !hiddenTargetIds.has(profile.targetAgentId)
-    ));
-    if (members.length === 0 && bindTargets.length === 0) return false;
+  const handleStartLocalEntry = useCallback(async () => {
     setProfileBusy('__local_entry__', true);
+    clearProfileError('__local_entry__');
     try {
-    if (bindTargets.length > 0) {
-      let bound = 0;
-      try {
-        for (const target of bindTargets) {
-          if (hiddenTargetIds.has(target.targetAgentId)) continue;
-          const ticketId = ticketIdFor(target.sourceKind, target.sourceId);
-          const plan = await planTicket(ticketId, target.targetAgentId as AgentId);
-          if (!plan.canApply) {
-            setProfileErrors((current) => ({
-              ...current,
-              [target.sourceId]: new Error(plan.reason ?? plan.analysis.reason),
-            }));
-            return false;
-          }
-          if (plan.analysis.route !== 'local_bridge') continue;
-          await bindTicket(ticketId, target.targetAgentId as AgentId);
-          bound += 1;
-          void logGuiEvent('bridge_start', {
-            agent: target.targetAgentId,
-            profileId: ticketId,
-            route: 'local_bridge',
-          });
-        }
-        if (members.length === 0 && bound === 0) {
-          setProfileErrors((current) => ({
-            ...current,
-            [bindTargets[0]!.sourceId]: new Error(t('routes.board.entryCannotStart')),
-          }));
-          return false;
-        }
-      } catch (error) {
-        const lead = bindTargets[0]!;
-        void logGuiEvent('bridge_start_fail', {
-          agent: lead.targetAgentId,
-          profileId: lead.sourceId,
-          route: 'local_bridge',
-          code: guiErrorCode(error),
-        });
-        setProfileErrors((current) => ({
-          ...current,
-          [lead.sourceId]: error,
-        }));
-        return false;
-      }
-    }
-    if (members.length === 0) {
-      reloadThenClearProfileErrors([]);
-      return true;
-    }
-    for (const member of members) {
-      setProfileBusy(member.id, true);
-      clearProfileError(member.id);
-    }
-    const started: string[] = [];
-    try {
-      for (const member of members) {
-        updateBridgeStatus(await startAdapterBridge(member.id));
-        started.push(member.id);
-        void logGuiEvent('bridge_start', {
-          agent: member.targetAgentId,
-          profileId: member.id,
-          route: member.route,
-        });
-      }
-      reloadThenClearProfileErrors(members.map((member) => member.id));
-      return true;
+      const status = await startLocalEntry();
+      for (const row of status.statuses) updateBridgeStatus(row);
+      void logGuiEvent('bridge_start', { profileId: 'local-entry', route: 'local_bridge' });
+      reloadThenClearProfileErrors(['__local_entry__']);
+      return status.running;
     } catch (error) {
-      const compensationFailures: unknown[] = [];
-      for (const id of [...started].reverse()) {
-        try {
-          updateBridgeStatus(await stopAdapterBridge(id));
-        } catch (cause) {
-          compensationFailures.push(cause);
-        }
-      }
-      const lead = members[0]!;
       void logGuiEvent('bridge_start_fail', {
-        agent: lead.targetAgentId,
-        profileId: lead.id,
-        route: lead.route,
+        profileId: 'local-entry',
+        route: 'local_bridge',
         code: guiErrorCode(error),
       });
       setProfileErrors((current) => ({
         ...current,
-        [lead.id]: surfaceAfterCompensation(error, compensationFailures),
+        __local_entry__: surfaceAfterCompensation(error, []),
       }));
       return false;
-    } finally {
-      for (const member of members) setProfileBusy(member.id, false);
-    }
     } finally {
       setProfileBusy('__local_entry__', false);
     }
   }, [
-    profiles,
-    hiddenTargetIds,
-    t,
-    setProfileBusy,
     clearProfileError,
     updateBridgeStatus,
     reloadThenClearProfileErrors,
   ]);
 
-  const handleStopLocalEntry = useCallback(async (profileIds: readonly string[]) => {
-    const members = profiles.filter((profile) => (
-      profileIds.includes(profile.id) && profile.route === 'local_bridge'
-    ));
-    if (members.length === 0) return false;
-    for (const member of members) {
-      setProfileBusy(member.id, true);
-      clearProfileError(member.id);
-    }
+  const handleStopLocalEntry = useCallback(async () => {
+    setProfileBusy('__local_entry__', true);
+    clearProfileError('__local_entry__');
     try {
-      for (const member of members) {
-        updateBridgeStatus(await stopAdapterBridge(member.id));
-        void logGuiEvent('bridge_stop', {
-          agent: member.targetAgentId,
-          profileId: member.id,
-          route: member.route,
-        });
-      }
-      reloadThenClearProfileErrors(members.map((member) => member.id));
-      return true;
+      const status = await stopLocalEntry();
+      for (const row of status.statuses) updateBridgeStatus(row);
+      void logGuiEvent('bridge_stop', { profileId: 'local-entry', route: 'local_bridge' });
+      reloadThenClearProfileErrors(['__local_entry__']);
+      return !status.running;
     } catch (error) {
-      const lead = members[0]!;
       void logGuiEvent('bridge_stop_fail', {
-        agent: lead.targetAgentId,
-        profileId: lead.id,
-        route: lead.route,
+        profileId: 'local-entry',
+        route: 'local_bridge',
         code: guiErrorCode(error),
       });
-      setProfileErrors((current) => ({ ...current, [lead.id]: error }));
+      setProfileErrors((current) => ({ ...current, __local_entry__: error }));
       return false;
     } finally {
-      for (const member of members) setProfileBusy(member.id, false);
+      setProfileBusy('__local_entry__', false);
     }
   }, [
-    profiles,
     setProfileBusy,
     clearProfileError,
     updateBridgeStatus,

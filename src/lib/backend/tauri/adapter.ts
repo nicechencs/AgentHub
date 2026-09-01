@@ -13,10 +13,12 @@ import {
   mapAdapterRouteAnalysis,
   mapDefaultRoutePoolList,
   mapDefaultRoutePoolOverview,
+  mapLocalEntryStatus,
   type AdapterApplyPlanWire,
   type AdapterApplyResultWireInput,
   type AdapterBridgeStatusDtoWire,
   type AdapterProfileWire,
+  type LocalEntryStatusWire,
   type AdapterRouteAnalysisWire,
   type DefaultRoutePoolListWire,
   type DefaultRoutePoolOverviewWire,
@@ -163,6 +165,18 @@ export function createTauriAdapterPort(): AdapterPort {
         autoStart,
       });
       return mapAdapterProfile(wire);
+    },
+    async startLocalEntry() {
+      const wire = await invokeAdapter<LocalEntryStatusWire>('start_local_entry', {});
+      return mapLocalEntryStatus(wire);
+    },
+    async stopLocalEntry() {
+      const wire = await invokeAdapter<LocalEntryStatusWire>('stop_local_entry', {});
+      return mapLocalEntryStatus(wire);
+    },
+    async getLocalEntryStatus() {
+      const wire = await invokeAdapter<LocalEntryStatusWire>('get_local_entry_status', {});
+      return mapLocalEntryStatus(wire);
     },
   };
 }

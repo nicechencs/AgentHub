@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
-import { buildLocalTokenRows, maskLocalToken, tokenRowTitle } from './tokens-model';
+import { buildLocalTokenRows, maskLocalToken, tokenTypeLabel } from './tokens-model';
 
 function profile(partial: Partial<AdapterProfile> & Pick<AdapterProfile, 'id'>): AdapterProfile {
   return {
@@ -124,15 +124,11 @@ describe('tokens-model', () => {
     expect(rows.map((row) => row.kind)).toEqual(['messages', 'responses_codex']);
   });
 
-  it('labels unshared chat completions with the writer Agent', () => {
-    expect(tokenRowTitle(
-      { kind: 'chat_completions', targetAgentId: 'kimi' },
-      false,
-    )).toBe('对话补全 · Kimi');
-    expect(tokenRowTitle(
-      { kind: 'chat_completions', targetAgentId: 'kimi' },
-      true,
-    )).toBe('对话补全');
+  it('names rows by token type, not writer Agent', () => {
+    expect(tokenTypeLabel({ kind: 'messages' })).toBe('对话接口');
+    expect(tokenTypeLabel({ kind: 'responses_codex' })).toBe('回复接口 · Codex');
+    expect(tokenTypeLabel({ kind: 'responses_grok' })).toBe('回复接口 · Grok');
+    expect(tokenTypeLabel({ kind: 'chat_completions' })).toBe('对话补全');
   });
 
   it('keeps one chat-completions row when Kimi and DSH share', () => {

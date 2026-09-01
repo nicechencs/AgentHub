@@ -308,6 +308,13 @@ export interface SyncConnectionAuthorizationsResult {
   skipped: number;
 }
 
+/** Shared local-relay status for the board switch. */
+export type LocalEntryStatus = {
+  running: boolean;
+  port: number | null;
+  statuses: AdapterBridgeRuntimeStatus[];
+};
+
 export interface AdapterPort {
   analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
@@ -340,4 +347,7 @@ export interface AdapterPort {
   stopBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
   getBridgeStatus(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
   setBridgeAutoStart(profileId: string, autoStart: boolean): Promise<AdapterProfile>;
+  startLocalEntry(): Promise<LocalEntryStatus>;
+  stopLocalEntry(): Promise<LocalEntryStatus>;
+  getLocalEntryStatus(): Promise<LocalEntryStatus>;
 }

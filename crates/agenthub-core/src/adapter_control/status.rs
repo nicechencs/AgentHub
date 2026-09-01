@@ -81,6 +81,18 @@ impl AdapterBridgeStatus {
         }
     }
 
+}
+
+/// Shared local-entry (relay) status for the board switch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalEntryStatus {
+    pub running: bool,
+    pub port: Option<u16>,
+    pub statuses: Vec<AdapterBridgeStatus>,
+}
+
+impl AdapterBridgeStatus {
     pub fn with_local_token(mut self, local_token: Option<String>) -> Self {
         let token = local_token.and_then(|value| {
             let trimmed = value.trim().to_owned();

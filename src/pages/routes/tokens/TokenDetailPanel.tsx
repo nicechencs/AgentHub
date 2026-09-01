@@ -10,15 +10,11 @@ import type { LocalTokenRow } from './tokens-model';
 
 export function TokenDetailPanel({
   row,
-  chatCompletionsShared,
   width,
-  onWrite,
   onClose,
 }: {
   row: LocalTokenRow;
-  chatCompletionsShared: boolean;
   width?: number;
-  onWrite?: () => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -26,6 +22,7 @@ export function TokenDetailPanel({
   const [revealed, setRevealed] = useState(false);
   const copies = buildTokenDetailCopyRows(row, revealed, t);
   const endpoint = tokenEndpointParts(row);
+  const typeRow = copies.find((item) => item.id === 'type');
   const tokenRow = copies.find((item) => item.id === 'token');
   const canCopyToken = Boolean(tokenRow?.copyValue);
   const copyToken = () => {
@@ -40,23 +37,15 @@ export function TokenDetailPanel({
   return (
     <SideInspectPanel
       title={t('routes.tokens.detailTitle')}
-      description={tokenDetailTitle(row, chatCompletionsShared, t)}
+      description={tokenDetailTitle(row, t)}
       onClose={onClose}
       width={width}
-      headerActions={
-        onWrite ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!row.profileId || !row.token || row.unavailable}
-            onClick={onWrite}
-          >
-            {t('routes.tokens.writeClient')}
-          </Button>
-        ) : null
-      }
     >
       <div className="flex flex-col gap-3 text-sm" data-token-detail={row.id}>
+        <div className="space-y-1">
+          <p className="text-meta text-muted">{t('routes.tokens.fieldType')}</p>
+          <p className="text-primary">{typeRow?.display}</p>
+        </div>
         <div className="space-y-1">
           <p className="text-meta text-muted">{t('routes.tokens.fieldEndpoint')}</p>
           {endpoint.portPending ? (

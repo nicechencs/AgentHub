@@ -15,7 +15,13 @@ use agenthub_core::models::{
 use agenthub_core::AgentHub;
 use tauri::State;
 
-use crate::adapter_bridge_controller::AdapterBridgeStatusDto;
+use crate::adapter_bridge_controller::{
+    local_entry_status as read_local_entry_status,
+    start_local_entry as start_shared_local_entry,
+    stop_local_entry as stop_shared_local_entry,
+    AdapterBridgeStatusDto,
+};
+use agenthub_core::adapter_control::LocalEntryStatus;
 use crate::adapter_control_host::apply_result_from_binding;
 use crate::commands::{
     adapter_error_from_string, map_err_string, parse_agent, with_hub_blocking, GuiError,
@@ -244,6 +250,39 @@ pub async fn get_adapter_bridge_status(
         .bridge_status(profile_id)
         .await
         .map_err(adapter_error_from_string)
+}
+
+/// Start the shared local relay (loopback listener). Does not bind logins to Agents.
+#[tauri::command]
+pub async fn start_local_entry(state: State<'_, AppState>) -> Result<LocalEntryStatus, GuiError> {
+    start_shared_local_entry(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+    )
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Stop the shared local relay.
+#[tauri::command]
+pub async fn stop_local_entry(state: State<'_, AppState>) -> Result<LocalEntryStatus, GuiError> {
+    stop_shared_local_entry(
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+    )
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Credential-free relay status for the board switch.
+#[tauri::command]
+pub async fn get_local_entry_status(
+    state: State<'_, AppState>,
+) -> Result<LocalEntryStatus, GuiError> {
+    read_local_entry_status(&state.bridge_host()).map_err(adapter_error_from_string)
 }
 
 /// Enable or disable background restore for an existing local bridge.

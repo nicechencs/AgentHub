@@ -5,12 +5,12 @@ import { ROUTE_ENDPOINT_HOST, routeEndpointHttpParts } from '@/lib/route-endpoin
 import type { TranslateFn } from '@/lib/i18n';
 import {
   tokenListenPort,
-  tokenRowTitle,
+  tokenTypeLabel,
   type LocalTokenRow,
 } from './tokens-model';
 
 export type TokenDetailCopyRow = {
-  id: 'endpoint' | 'token';
+  id: 'type' | 'endpoint' | 'token';
   label: string;
   display: string;
   copyValue: string | null;
@@ -41,7 +41,15 @@ export function buildTokenDetailCopyRows(
     : revealed
       ? (row.token ?? (t ? t('routes.tokens.noToken') : '启动本机入口后才会生成 Key'))
       : (row.maskedToken ?? (t ? t('routes.tokens.noToken') : '启动本机入口后才会生成 Key'));
+  const typeLabel = tokenTypeLabel(row, t);
   return [
+    {
+      id: 'type',
+      label: t ? t('routes.tokens.fieldType') : '类型',
+      display: typeLabel,
+      copyValue: null,
+      pending: false,
+    },
     {
       id: 'endpoint',
       label: t ? t('routes.tokens.fieldEndpoint') : '端点',
@@ -59,10 +67,6 @@ export function buildTokenDetailCopyRows(
   ];
 }
 
-export function tokenDetailTitle(
-  row: LocalTokenRow,
-  chatCompletionsShared: boolean,
-  t?: TranslateFn,
-): string {
-  return tokenRowTitle(row, chatCompletionsShared, t);
+export function tokenDetailTitle(row: LocalTokenRow, t?: TranslateFn): string {
+  return tokenTypeLabel(row, t);
 }
