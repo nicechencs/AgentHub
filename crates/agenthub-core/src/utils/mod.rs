@@ -1,4 +1,6 @@
 pub mod agent_lock;
+pub mod chatgpt_codex_models;
+pub mod upstream_model_catalog;
 pub mod atomic;
 pub mod command_exec;
 pub mod expiry;

@@ -66,6 +66,40 @@ pub fn openai_models_url(base_url: &str) -> String {
     }
 }
 
+fn origin_of(base_url: &str) -> Option<String> {
+    let url = reqwest::Url::parse(base_url.trim()).ok()?;
+    let host = url.host_str()?;
+    let origin = match url.port() {
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
+    };
+    Some(origin)
+}
+
+fn push_models_url(urls: &mut Vec<String>, url: String) {
+    if url.is_empty() {
+        return;
+    }
+    if urls
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&url))
+    {
+        return;
+    }
+    urls.push(url);
+}
+
+/// Candidate model-list URLs: `{base}/v1/models`, then host `/v1/models` and `/models`.
+pub fn openai_models_urls(base_url: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    push_models_url(&mut urls, openai_models_url(base_url));
+    if let Some(origin) = origin_of(base_url) {
+        push_models_url(&mut urls, format!("{origin}/v1/models"));
+        push_models_url(&mut urls, format!("{origin}/models"));
+    }
+    urls
+}
+
 fn api_endpoint_url(base_url: &str, endpoint: ApiEndpointType) -> String {
     let trimmed = base_url.trim().trim_end_matches('/');
     let has_v1 = trimmed
@@ -173,7 +207,28 @@ pub fn detect_api_endpoint_types(base_url: &str, api_key: &str) -> Result<Vec<St
     .collect())
 }
 
-/// GET `{base}/v1/models` with `Authorization: Bearer`. No saved provider id.
+fn fetch_openai_model_list(url: &str, api_key: &str) -> Result<Vec<String>> {
+    let response = ureq::get(url)
+        .set("Authorization", &format!("Bearer {api_key}"))
+        .set("Accept", "application/json")
+        .timeout(HTTP_TIMEOUT)
+        .call()
+        .map_err(|err| {
+            AppError::message(
+                "remote_openai_models.http",
+                redact_text(&format!("GET {url} failed: {err}")),
+            )
+        })?;
+    let body: Value = response.into_json().map_err(|err| {
+        AppError::message(
+            "remote_openai_models.json",
+            redact_text(&format!("invalid JSON from {url}: {err}")),
+        )
+    })?;
+    Ok(parse_openai_model_list(&body))
+}
+
+/// GET `{base}/v1/models`, then host `/v1/models` and `/models`. No saved provider id.
 pub fn list_remote_openai_models(base_url: &str, api_key: &str) -> Result<Vec<String>> {
     let base = base_url.trim();
     if base.is_empty() {
@@ -187,30 +242,23 @@ pub fn list_remote_openai_models(base_url: &str, api_key: &str) -> Result<Vec<St
         return Err(AppError::InvalidArg("API key is required".into()));
     }
 
-    let url = openai_models_url(base);
-    if url.is_empty() {
+    let urls = openai_models_urls(base);
+    if urls.is_empty() {
         return Err(AppError::InvalidArg("base URL is required".into()));
     }
-
-    let response = ureq::get(&url)
-        .set("Authorization", &format!("Bearer {key}"))
-        .set("Accept", "application/json")
-        .timeout(HTTP_TIMEOUT)
-        .call()
-        .map_err(|err| {
-            AppError::message(
-                "remote_openai_models.http",
-                redact_text(&format!("GET {url} failed: {err}")),
-            )
-        })?;
-
-    let body: Value = response.into_json().map_err(|err| {
-        AppError::message(
-            "remote_openai_models.json",
-            redact_text(&format!("invalid JSON from {url}: {err}")),
-        )
-    })?;
-    Ok(parse_openai_model_list(&body))
+    let mut last_error = None;
+    let mut empty = Vec::new();
+    for url in urls {
+        match fetch_openai_model_list(&url, key) {
+            Ok(ids) if ids.is_empty() => empty = ids,
+            Ok(ids) => return Ok(ids),
+            Err(err) => last_error = Some(err),
+        }
+    }
+    match last_error {
+        Some(err) if empty.is_empty() => Err(err),
+        _ => Ok(empty),
+    }
 }
 
 #[cfg(test)]

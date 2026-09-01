@@ -347,6 +347,7 @@ export interface AdapterPort {
   listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
   listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
   listLocalTokens(): Promise<LocalTokenRecord[]>;
+  listLocalTokenModels(token: string): Promise<string[]>;
   testLocalToken(
     endpoint: string,
     token: string,

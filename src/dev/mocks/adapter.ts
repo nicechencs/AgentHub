@@ -396,6 +396,13 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         return { poolId: pool.id, token };
       });
     },
+    async listLocalTokenModels(token) {
+      await delay(20);
+      if (!token.trim()) return [];
+      const models = state.defaultPools.flatMap((pool) => pool.listedModels ?? []);
+      const unique = [...new Set(models.map((item) => item.trim()).filter(Boolean))];
+      return unique.length > 0 ? unique : ['gpt-5.4'];
+    },
     async testLocalToken(endpoint, token, path, model) {
       await delay(20);
       const trimmedToken = token.trim();

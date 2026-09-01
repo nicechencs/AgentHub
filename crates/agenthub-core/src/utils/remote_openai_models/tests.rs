@@ -1,7 +1,8 @@
 use serde_json::json;
 
 use super::{
-    api_endpoint_url, list_remote_openai_models, openai_models_url, parse_openai_model_list,
+    api_endpoint_url, list_remote_openai_models, openai_models_url, openai_models_urls,
+    parse_openai_model_list,
     ApiEndpointType,
 };
 use crate::error::AppError;
@@ -42,6 +43,33 @@ fn openai_models_url_normalizes_trailing_slash_and_v1() {
         openai_models_url("https://api.deepseek.com/anthropic"),
         "https://api.deepseek.com/models"
     );
+}
+
+#[test]
+fn openai_models_urls_adds_host_v1_and_root_models() {
+    assert_eq!(
+        openai_models_urls("https://mytokens.cc"),
+        vec![
+            "https://mytokens.cc/v1/models",
+            "https://mytokens.cc/models",
+        ]
+    );
+    assert_eq!(
+        openai_models_urls("https://api.qooo.io/v1/chat/completions"),
+        vec![
+            "https://api.qooo.io/v1/chat/completions/v1/models",
+            "https://api.qooo.io/v1/models",
+            "https://api.qooo.io/models",
+        ]
+    );
+    assert_eq!(
+        openai_models_urls("https://api.deepseek.com"),
+        vec![
+            "https://api.deepseek.com/models",
+            "https://api.deepseek.com/v1/models",
+        ]
+    );
+    assert!(openai_models_urls("").is_empty());
 }
 
 #[test]
