@@ -1226,6 +1226,15 @@ impl RoutePoolService {
         source_kind: AdapterSourceKind,
         source_id: &str,
     ) -> Result<crate::utils::upstream_model_catalog::SourceModelCatalog> {
+        self.load_source_model_catalog(source_kind, source_id, false)
+    }
+
+    fn load_source_model_catalog(
+        &self,
+        source_kind: AdapterSourceKind,
+        source_id: &str,
+        force: bool,
+    ) -> Result<crate::utils::upstream_model_catalog::SourceModelCatalog> {
         use crate::utils::upstream_model_catalog::{
             cache_is_current, read_stored_catalog, write_stored_catalog, SourceModelCatalog,
             StoredModelCatalog,
@@ -1237,7 +1246,9 @@ impl RoutePoolService {
                 })?;
                 let fingerprint = self.catalog_fingerprint_for_account(&account);
                 if let Some(stored) = read_stored_catalog(&account.extra) {
-                    if cache_is_current(&stored, &fingerprint) {
+                    if cache_is_current(&stored, &fingerprint)
+                        && (!force || stored.source == "custom")
+                    {
                         return Ok(SourceModelCatalog::from_stored(&stored));
                     }
                 }
@@ -1267,7 +1278,9 @@ impl RoutePoolService {
                     &provider.settings_config,
                 );
                 if let Some(stored) = read_stored_catalog(&provider.meta) {
-                    if cache_is_current(&stored, &fingerprint) {
+                    if cache_is_current(&stored, &fingerprint)
+                        && (!force || stored.source == "custom")
+                    {
                         return Ok(SourceModelCatalog::from_stored(&stored));
                     }
                 }
@@ -1365,12 +1378,7 @@ impl RoutePoolService {
         token: &str,
         models: Vec<String>,
     ) -> Result<Vec<String>> {
-        let records = self.list_local_tokens()?;
-        let Some(pool_id) = records
-            .into_iter()
-            .find(|record| record.token == token)
-            .map(|record| record.pool_id)
-        else {
+        let Some(pool_id) = self.pool_id_for_token(token)? else {
             return Ok(Vec::new());
         };
         let members = self.pools.list_members(&pool_id)?;
@@ -1382,6 +1390,31 @@ impl RoutePoolService {
             );
         }
         self.list_upstream_models_for_pool(&pool_id)
+    }
+
+    /// Re-read each enabled login's supported models, then return the union
+    /// for this entry key. Custom lists on a login are kept.
+    pub fn refresh_local_token_models(&self, token: &str) -> Result<Vec<String>> {
+        let Some(pool_id) = self.pool_id_for_token(token)? else {
+            return Ok(Vec::new());
+        };
+        let members = self.pools.list_members(&pool_id)?;
+        for member in members.iter().filter(|member| member.enabled) {
+            let _ = self.load_source_model_catalog(
+                member.source_kind,
+                &member.source_id,
+                true,
+            );
+        }
+        self.list_upstream_models_for_pool(&pool_id)
+    }
+
+    fn pool_id_for_token(&self, token: &str) -> Result<Option<String>> {
+        Ok(self
+            .list_local_tokens()?
+            .into_iter()
+            .find(|record| record.token == token)
+            .map(|record| record.pool_id))
     }
 
     fn catalog_fingerprint_for_account(&self, account: &crate::models::Account) -> String {
