@@ -44,8 +44,13 @@ fn loopback_health_url_rewrites_origin_and_rejects_remote() {
 fn probe_rejects_empty_token_and_remote_hosts() {
     let empty = probe_local_token("127.0.0.1:1", "  ");
     assert_eq!(empty.outcome, LocalTokenProbeOutcome::Invalid);
+    assert_eq!(
+        empty.request_url.as_deref(),
+        Some("http://127.0.0.1:1/health")
+    );
     let remote = probe_local_token("https://example.com", "ahb_secret");
     assert_eq!(remote.outcome, LocalTokenProbeOutcome::Invalid);
+    assert!(remote.request_url.is_none());
 }
 
 #[test]
@@ -55,6 +60,10 @@ fn probe_reports_ok_unauthorized_and_unreachable() {
     assert_eq!(ok.outcome, LocalTokenProbeOutcome::Ok);
     assert_eq!(ok.http_status, Some(200));
     assert_eq!(ok.upstream_status.as_deref(), Some("unknown"));
+    let expected_url = format!("http://127.0.0.1:{ok_port}/health");
+    assert_eq!(ok.request_url.as_deref(), Some(expected_url.as_str()));
+    assert!(ok.response_body.as_deref().unwrap_or("").contains("unknown"));
+    assert!(ok.error_message.is_none());
 
     let unauth_port = spawn_http(
         "401 Unauthorized",
@@ -63,6 +72,11 @@ fn probe_reports_ok_unauthorized_and_unreachable() {
     let unauth = probe_local_token(&format!("127.0.0.1:{unauth_port}"), "ahb_wrong");
     assert_eq!(unauth.outcome, LocalTokenProbeOutcome::Unauthorized);
     assert_eq!(unauth.http_status, Some(401));
+    assert!(unauth
+        .response_body
+        .as_deref()
+        .unwrap_or("")
+        .contains("invalid_api_key"));
 
     let closed = TcpListener::bind("127.0.0.1:0").expect("bind closed");
     let closed_port = closed.local_addr().expect("addr").port();
@@ -70,4 +84,10 @@ fn probe_reports_ok_unauthorized_and_unreachable() {
     let unreachable = probe_local_token(&format!("127.0.0.1:{closed_port}"), "ahb_secret");
     assert_eq!(unreachable.outcome, LocalTokenProbeOutcome::Unreachable);
     assert_eq!(unreachable.http_status, None);
+    assert!(unreachable.error_message.is_some());
+    assert!(!unreachable
+        .error_message
+        .as_deref()
+        .unwrap_or("")
+        .contains("ahb_secret"));
 }

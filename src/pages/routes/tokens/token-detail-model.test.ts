@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   buildTokenDetailCopyRows,
   formatTokenRelative,
+  localTokenEntryRunning,
   localTokenTestGate,
+  localTokenTestInputText,
+  localTokenTestOutputText,
   localTokenTestResultLabel,
   localTokenTestResultTone,
   tokenEndpointParts,
@@ -105,5 +108,22 @@ describe('token-detail-model', () => {
     expect(localTokenTestResultLabel({ outcome: 'unreachable', latencyMs: 30 })).toBe('端点连不上');
     expect(localTokenTestResultTone('ok')).toBe('success');
     expect(localTokenTestResultTone('unauthorized')).toBe('danger');
+  });
+
+  it('shows request input and connection errors in the test window', () => {
+    expect(localTokenEntryRunning(row())).toBe(true);
+    expect(localTokenEntryRunning(row({ state: 'stopped' }))).toBe(false);
+    expect(localTokenTestInputText(row())).toContain('GET http://127.0.0.1:8123/health');
+    expect(localTokenTestInputText(row())).toContain('ahb_••••cret');
+    expect(localTokenTestInputText(row())).not.toContain('ahb_secret');
+    expect(localTokenTestOutputText({
+      outcome: 'unreachable',
+      httpStatus: null,
+      latencyMs: 8,
+      upstreamStatus: null,
+      requestUrl: 'http://127.0.0.1:8123/health',
+      responseBody: null,
+      errorMessage: 'Connection refused',
+    }, { running: false, testing: false })).toBe('本机入口还没启动\nConnection refused');
   });
 });

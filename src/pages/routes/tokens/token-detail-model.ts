@@ -6,6 +6,7 @@ import type { TranslateFn } from '@/lib/i18n';
 import { fmtTokens } from '@/lib/utils';
 import type { LocalTokenProbeOutcome, LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
 import {
+  maskLocalToken,
   tokenListenPort,
   tokenTypeLabel,
   type LocalTokenRow,
@@ -163,4 +164,68 @@ export function localTokenTestResultTone(
   if (outcome === 'ok') return 'success';
   if (outcome === 'invalid') return 'muted';
   return 'danger';
+}
+
+export function localTokenEntryRunning(
+  row: Pick<LocalTokenRow, 'state'>,
+): boolean {
+  return row.state === 'running' || row.state === 'degraded';
+}
+
+export function localTokenTestRequestUrl(
+  row: Pick<LocalTokenRow, 'endpoint'>,
+  result?: Pick<LocalTokenProbeResult, 'requestUrl'> | null,
+): string {
+  if (result?.requestUrl?.trim()) return result.requestUrl.trim();
+  const port = tokenListenPort(row.endpoint);
+  return port ? `http://127.0.0.1:${port}/health` : '';
+}
+
+export function localTokenTestInputText(
+  row: Pick<LocalTokenRow, 'token' | 'maskedToken' | 'endpoint'>,
+  result?: Pick<LocalTokenProbeResult, 'requestUrl'> | null,
+): string {
+  const url = localTokenTestRequestUrl(row, result) || '—';
+  const key = row.maskedToken?.trim()
+    || (row.token ? maskLocalToken(row.token) : '—');
+  return `GET ${url}\nAuthorization: Bearer ${key}`;
+}
+
+export function localTokenTestOutputText(
+  result: LocalTokenProbeResult | null,
+  options: { running: boolean; testing: boolean },
+  t?: TranslateFn,
+): string {
+  if (options.testing) {
+    return t ? t('routes.tokens.testing') : '测试中…';
+  }
+  if (!result) {
+    return t ? t('routes.tokens.testNoOutput') : '没有返回';
+  }
+  const lines: string[] = [];
+  if (!options.running) {
+    lines.push(t ? t('routes.tokens.testNeedEndpoint') : '本机入口还没启动');
+  }
+  if (result.httpStatus != null) {
+    lines.push(`HTTP ${result.httpStatus}`);
+  }
+  if (result.errorMessage?.trim()) {
+    lines.push(result.errorMessage.trim());
+  }
+  if (result.responseBody?.trim()) {
+    lines.push(result.responseBody.trim());
+  }
+  if (lines.length === 0) {
+    return t ? t('routes.tokens.testNoOutput') : '没有返回';
+  }
+  return lines.join('\n');
+}
+
+export function localTokenTestDurationLabel(
+  latencyMs: number | null | undefined,
+  t?: TranslateFn,
+): string {
+  if (latencyMs == null) return '';
+  const ms = Math.max(0, Math.round(latencyMs));
+  return t ? t('routes.tokens.testDurationMs', { ms: String(ms) }) : `${ms}ms`;
 }

@@ -4,6 +4,13 @@ import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/toast';
 import { testLocalToken } from '@/lib/api/adapter';
 import type { LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
@@ -12,7 +19,11 @@ import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
 import {
   buildTokenDetailCopyRows,
   formatTokenRelative,
+  localTokenEntryRunning,
+  localTokenTestDurationLabel,
   localTokenTestGate,
+  localTokenTestInputText,
+  localTokenTestOutputText,
   localTokenTestResultLabel,
   localTokenTestResultTone,
   tokenDetailTitle,
@@ -37,6 +48,7 @@ export function TokenDetailPanel({
   const { toast } = useToast();
   const [revealed, setRevealed] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testOpen, setTestOpen] = useState(false);
   const [testResult, setTestResult] = useState<LocalTokenProbeResult | null>(null);
   const rowIdRef = useRef(row.id);
   rowIdRef.current = row.id;
@@ -50,6 +62,7 @@ export function TokenDetailPanel({
   useEffect(() => {
     setRevealed(false);
     setTesting(false);
+    setTestOpen(false);
     setTestResult(null);
   }, [row.id]);
 
@@ -68,19 +81,24 @@ export function TokenDetailPanel({
     const endpointValue = row.endpoint?.trim();
     if (!token || !endpointValue) return;
     const requestId = row.id;
+    setTestOpen(true);
+    setTestResult(null);
     setTesting(true);
     try {
       const result = await testLocalToken(endpointValue, token);
       if (rowIdRef.current !== requestId) return;
       setTestResult(result);
-      toast({
-        title: localTokenTestResultLabel(result, t),
-        variant: result.outcome === 'ok' ? 'success' : 'danger',
-      });
     } catch {
       if (rowIdRef.current !== requestId) return;
-      setTestResult(null);
-      toast({ title: t('routes.tokens.testFailed'), variant: 'danger' });
+      setTestResult({
+        outcome: 'unreachable',
+        httpStatus: null,
+        latencyMs: 0,
+        upstreamStatus: null,
+        requestUrl: null,
+        responseBody: null,
+        errorMessage: t('routes.tokens.testFailed'),
+      });
     } finally {
       if (rowIdRef.current === requestId) setTesting(false);
     }
@@ -178,6 +196,40 @@ export function TokenDetailPanel({
           ) : null}
         </div>
       </div>
+      <Dialog open={testOpen} onOpenChange={(open) => { if (!testing) setTestOpen(open); }}>
+        <DialogContent data-token-test-window="">
+          <DialogHeader>
+            <DialogTitle>{t('routes.tokens.testWindowTitle')}</DialogTitle>
+            <DialogDescription>
+              {testing
+                ? t('routes.tokens.testing')
+                : testResult
+                  ? localTokenTestResultLabel(testResult, t)
+                  : t('routes.tokens.testNoOutput')}
+              {!testing && testResult
+                ? ` · ${t('routes.tokens.testDuration')} ${localTokenTestDurationLabel(testResult.latencyMs, t)}`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="space-y-1">
+              <p className="text-meta text-muted">{t('routes.tokens.testInput')}</p>
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-card border border-border bg-hover px-3 py-2 font-mono text-meta text-secondary">
+                {localTokenTestInputText(row, testResult)}
+              </pre>
+            </div>
+            <div className="space-y-1">
+              <p className="text-meta text-muted">{t('routes.tokens.testOutput')}</p>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-card border border-border bg-hover px-3 py-2 font-mono text-meta text-secondary">
+                {localTokenTestOutputText(testResult, {
+                  running: localTokenEntryRunning(row),
+                  testing,
+                }, t)}
+              </pre>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </SideInspectPanel>
   );
 }
