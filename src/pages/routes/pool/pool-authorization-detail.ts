@@ -9,6 +9,8 @@ export type PoolAuthorizationDetailRow = {
   id: string;
   label: string;
   value: string;
+  /** Extra lines under `value` (e.g. more endpoint types). */
+  lines?: string[];
   mono?: boolean;
   copyable?: boolean;
 };
@@ -47,6 +49,7 @@ export type PoolAuthorizationColumnKey =
   | 'enabled'
   | 'login'
   | 'kind'
+  | 'endpointTypes'
   | 'status'
   | 'bindings'
   | 'quota'
@@ -56,6 +59,7 @@ export type PoolAuthorizationColumnKey =
 export const POOL_AUTHORIZATION_ALWAYS_COLUMNS: readonly PoolAuthorizationColumnKey[] = [
   'login',
   'kind',
+  'endpointTypes',
   'status',
 ];
 
@@ -91,6 +95,8 @@ export function poolAuthorizationColumnLabel(
       return t('routes.pool.table.login');
     case 'kind':
       return t('routes.pool.table.kind');
+    case 'endpointTypes':
+      return t('routes.pool.detail.endpointTypes');
     case 'status':
       return t('routes.pool.table.status');
     case 'bindings':
@@ -127,6 +133,29 @@ export function poolAuthorizationEndpointTypeLabels(
   });
 }
 
+/** Hostname only; custom logins do not need the path. */
+export function poolAuthorizationDomain(host?: string | null): string | null {
+  const raw = host?.trim();
+  if (!raw) return null;
+  try {
+    const url = /^https?:\/\//i.test(raw) ? new URL(raw) : new URL(`https://${raw}`);
+    if (url.hostname) return url.hostname;
+  } catch {
+    /* fall through */
+  }
+  return raw.split('/')[0] || raw;
+}
+
+/** List / detail title: custom API Key rows show the domain only. */
+export function poolAuthorizationLoginLabel(
+  item: Pick<PoolAuthorizationItem, 'identityLabel' | 'title' | 'kind' | 'endpointMode' | 'endpointHost'>,
+): string {
+  if (item.kind === 'apikey' && item.endpointMode === 'custom') {
+    return poolAuthorizationDomain(item.endpointHost) || item.identityLabel || item.title;
+  }
+  return item.identityLabel ?? item.title;
+}
+
 export function poolAuthorizationDetailRows(
   item: PoolAuthorizationItem,
   t: TranslateFn,
@@ -140,10 +169,14 @@ export function poolAuthorizationDetailRows(
     });
   }
   if (item.endpointHost?.trim()) {
+    const host = item.endpointHost.trim();
+    const value = item.endpointMode === 'custom'
+      ? (poolAuthorizationDomain(host) ?? host)
+      : host;
     rows.push({
       id: 'endpoint',
       label: t('connections.list.endpoint'),
-      value: item.endpointHost.trim(),
+      value,
       mono: true,
       copyable: true,
     });
@@ -153,7 +186,8 @@ export function poolAuthorizationDetailRows(
     rows.push({
       id: 'endpointTypes',
       label: t('routes.pool.detail.endpointTypes'),
-      value: endpointTypes.join(' · '),
+      value: endpointTypes[0]!,
+      lines: endpointTypes.slice(1),
     });
   }
   const secretTail = item.kind === 'oauth' ? item.refreshTokenTail : item.secretTail;

@@ -242,6 +242,8 @@ describe('route pool v2 view-model', () => {
       agentId: 'codex' as const,
       kind: 'apikey' as const,
       authHealth: 'configured' as const,
+      endpointHost: 'openrouter.ai/api/v1',
+      endpointMode: 'custom' as const,
     } as ConnectionEntry;
     const items = collectPoolAuthorizations([
       pool({
@@ -265,6 +267,10 @@ describe('route pool v2 view-model', () => {
     });
     expect(items[1]?.enabled).toBe(false);
     expect(items[1]?.bindingCount).toBeUndefined();
+    expect(items[1]).toMatchObject({
+      endpointHost: 'openrouter.ai/api/v1',
+      endpointMode: 'custom',
+    });
   });
 
   it('still lists a pool member after the Connections source row is gone', () => {

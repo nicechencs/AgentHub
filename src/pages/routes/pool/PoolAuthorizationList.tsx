@@ -27,6 +27,8 @@ import {
 import {
   formatPoolTimestamp,
   poolAuthorizationColumnLabel,
+  poolAuthorizationEndpointTypeLabels,
+  poolAuthorizationLoginLabel,
   poolAuthorizationQuotaParts,
   poolAuthorizationVisibleColumns,
   type PoolAuthorizationColumnKey,
@@ -35,6 +37,7 @@ import {
 const WIDTH_SPECS: ColumnWidthSpec<PoolAuthorizationColumnKey>[] = [
   { key: 'login', defaultWidth: 220, minWidth: 140 },
   { key: 'kind', defaultWidth: 104, minWidth: 80 },
+  { key: 'endpointTypes', defaultWidth: 200, minWidth: 140 },
   { key: 'status', defaultWidth: 104, minWidth: 80 },
   { key: 'bindings', defaultWidth: 96, minWidth: 72 },
   { key: 'quota', defaultWidth: 128, minWidth: 96 },
@@ -115,7 +118,7 @@ export function PoolAuthorizationList({
                   <TableCell
                     key={key}
                     data-col={key}
-                    className={key === 'login' ? 'min-w-0' : 'whitespace-nowrap'}
+                    className={key === 'login' || key === 'endpointTypes' ? 'min-w-0' : 'whitespace-nowrap'}
                     onClick={key === 'enabled' ? (event) => event.stopPropagation() : undefined}
                     onPointerDown={key === 'enabled' ? (event) => event.stopPropagation() : undefined}
                   >
@@ -158,20 +161,33 @@ function renderColumn(
       ) : (
         <TableEmptyCell />
       );
-    case 'login':
+    case 'login': {
+      const loginLabel = poolAuthorizationLoginLabel(item);
       return (
         <div className="flex min-w-0 items-center gap-2">
           <AgentDot agentId={item.agentId} size="sm" title={null} />
           <div className="min-w-0">
-            <p className="truncate font-medium" title={item.identityLabel ?? item.title}>
-              {item.identityLabel ?? item.title}
+            <p className="truncate font-medium" title={loginLabel}>
+              {loginLabel}
             </p>
             <p className="truncate text-meta text-muted">{agentDisplayName(item.agentId)}</p>
           </div>
         </div>
       );
+    }
     case 'kind':
       return <span className="text-meta text-secondary">{connectionKindLabel(item.kind, ctx.t)}</span>;
+    case 'endpointTypes': {
+      const labels = poolAuthorizationEndpointTypeLabels(item, ctx.t);
+      if (labels.length === 0) return <TableEmptyCell />;
+      return (
+        <div className="flex flex-col gap-0.5 text-meta text-secondary">
+          {labels.map((label) => (
+            <span key={label} className="whitespace-normal break-all">{label}</span>
+          ))}
+        </div>
+      );
+    }
     case 'status':
       return (
         <div className="flex items-center gap-1.5">

@@ -21,6 +21,7 @@ import {
 import {
   hasQuotaWindow,
   poolAuthorizationDetailRows,
+  poolAuthorizationLoginLabel,
 } from './pool-authorization-detail';
 import { poolAuthorizationRefreshLabels } from './pool-authorization-refresh';
 
@@ -50,7 +51,7 @@ export function PoolAuthorizationDetail({
   const { t } = useI18n();
   const status = poolAuthorizationStatusView(item, t);
   const rows = poolAuthorizationDetailRows(item, t);
-  const displayTitle = item.identityLabel ?? item.title;
+  const displayTitle = poolAuthorizationLoginLabel(item);
   const hasQuota = hasQuotaWindow(item.quota7dPct) || hasQuotaWindow(item.quota5hPct);
   const editLabel = onEdit
     ? (item.kind === 'apikey' ? t('connections.list.editKey') : null)
@@ -155,6 +156,7 @@ export function PoolAuthorizationDetail({
                 key={row.id}
                 label={row.label}
                 value={row.value}
+                lines={row.lines}
                 mono={row.mono}
                 copyable={row.copyable}
               />

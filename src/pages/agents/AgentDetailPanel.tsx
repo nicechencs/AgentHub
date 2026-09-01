@@ -7,16 +7,18 @@ import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
-import { AGENT_MAP } from '@/config/agents';
+import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
 import {
   InstallFailedError,
+  installAgentDetailed,
   openAgentConfig,
   uninstallAgentDetailed,
 } from '@/lib/api/agent';
 import { getAgentLivePaths } from '@/lib/api/install';
+import { checkChannelEnv, formatMissingList } from '@/lib/env';
 import { openPathInFileManager } from '@/lib/api/skill';
 import { normalizeOpenPath } from '@/lib/path-open';
-import type { AgentStatus } from '@/lib/types';
+import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import { AgentCardDialogs, type AgentCardConfirmKind } from './AgentCardDialogs';
 import {
   canUninstallProgramInApp,
@@ -32,6 +34,7 @@ import {
   displayAgentConfigDir,
   installChannelKindLabel,
   installLocationSourceLabel,
+  missingCatalogChannels,
 } from './agent-detail-model';
 import { localizeInstallCopy } from './install-labels';
 
@@ -70,11 +73,13 @@ function EndpointTypesField({ agentId }: { agentId: string }) {
 
 export function AgentDetailPanel({
   agent,
+  runtimes = [],
   width,
   onClose,
   onChanged,
 }: {
   agent: AgentStatus;
+  runtimes?: RuntimeDetect[];
   width: number;
   onClose: () => void;
   onChanged: () => void;
@@ -84,6 +89,7 @@ export function AgentDetailPanel({
   const meta = AGENT_MAP[agent.agentId];
   const agentName = meta?.name ?? agent.agentId;
   const installs = listAgentInstalls(agent);
+  const missingChannels = missingCatalogChannels(agent);
   const spawn = spawnInstall(agent);
   const canUninstallProgram = canUninstallProgramInApp(agent);
   const versionLabel = agent.installed
@@ -91,7 +97,9 @@ export function AgentDetailPanel({
     : t('agents.card.notInstalled');
   const [confirmDialog, setConfirmDialog] = React.useState<AgentCardConfirmKind>(null);
   const [confirmName, setConfirmName] = React.useState('');
+  const [pendingChannel, setPendingChannel] = React.useState<InstallChannelMeta | null>(null);
   const [uninstalling, setUninstalling] = React.useState(false);
+  const [installing, setInstalling] = React.useState(false);
   const [opening, setOpening] = React.useState<string | null>(null);
   const [resolvedConfigDir, setResolvedConfigDir] = React.useState<string | null>(null);
   const channelLabel = installChannelKindLabel(
@@ -195,6 +203,47 @@ export function AgentDetailPanel({
     }
   };
 
+  const doInstall = async (channel: InstallChannelMeta) => {
+    const check = checkChannelEnv(channel, runtimes);
+    if (!check.ready) {
+      toast({
+        title: t('agents.lifecycle.envNotReady'),
+        description: t('agents.lifecycle.handleFirst', {
+          list: formatMissingList([...check.missing, ...check.outdated, ...check.broken]),
+        }),
+        variant: 'danger',
+      });
+      return;
+    }
+    setInstalling(true);
+    try {
+      const outcome = await installAgentDetailed(agent.agentId, channel.id, { installDeps: false });
+      if (!outcome.ok) {
+        toast({
+          title: t('agents.lifecycle.installFailed'),
+          description: localizeInstallCopy(outcome.message, t),
+          variant: 'danger',
+        });
+        return;
+      }
+      setPendingChannel(null);
+      onChanged();
+      toast({
+        title: t('agents.lifecycle.installDone', { name: agentName }),
+        variant: 'success',
+      });
+    } catch (e) {
+      const msg = e instanceof InstallFailedError ? e.message : String(e);
+      toast({
+        title: t('agents.lifecycle.installFailed'),
+        description: localizeInstallCopy(msg, t),
+        variant: 'danger',
+      });
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   return (
     <InspectSurface
       asPanel
@@ -214,7 +263,7 @@ export function AgentDetailPanel({
 
       <section className="mt-4">
         <h3 className="mb-2 text-body font-medium">{t('agents.detail.installLocations')}</h3>
-        {installs.length === 0 ? (
+        {installs.length === 0 && missingChannels.length === 0 ? (
           <p className="text-meta text-muted">
             {agent.installed ? t('agents.env.noInstallPath') : t('agents.card.notInstalled')}
           </p>
@@ -229,6 +278,19 @@ export function AgentDetailPanel({
                 onOpen={() => openFolder(inst.location)}
               />
             ))}
+            {missingChannels.map((channel) => (
+              <MissingChannelRow
+                key={`missing:${channel.id}`}
+                agentId={agent.agentId}
+                channel={channel}
+                busy={installing || uninstalling || opening !== null}
+                installing={installing && pendingChannel?.id === channel.id}
+                onInstall={() => {
+                  setPendingChannel(channel);
+                  setConfirmDialog('install');
+                }}
+              />
+            ))}
           </ul>
         )}
       </section>
@@ -240,7 +302,7 @@ export function AgentDetailPanel({
             <CopyableFileName path={configDir} wrap="break" className="min-w-0 flex-1" />
             <OpenDirButton
               labeled
-              disabled={opening !== null || uninstalling}
+              disabled={opening !== null || uninstalling || installing}
               title={t('agents.card.openConfigDirTitle')}
               onClick={openConfigDir}
             />
@@ -256,7 +318,7 @@ export function AgentDetailPanel({
               size="sm"
               variant="outline"
               className="text-danger hover:text-danger"
-              disabled={uninstalling || opening !== null}
+              disabled={uninstalling || installing || opening !== null}
               title={t('agents.dialog.uninstallDesc')}
               onClick={() => setConfirmDialog('program')}
             >
@@ -272,7 +334,7 @@ export function AgentDetailPanel({
           <Button
             size="sm"
             variant="danger"
-            disabled={uninstalling || opening !== null}
+            disabled={uninstalling || installing || opening !== null}
             title={
               isSpecialInstallChannel(agent.channel)
                 ? t('agents.dialog.uninstallConfigKeepsApp')
@@ -291,7 +353,7 @@ export function AgentDetailPanel({
         confirmName={confirmName}
         onConfirmNameChange={setConfirmName}
         uninstalling={uninstalling}
-        busy={uninstalling}
+        busy={uninstalling || installing}
         updateState={agent.update?.state}
         onClose={() => {
           setConfirmDialog(null);
@@ -299,7 +361,9 @@ export function AgentDetailPanel({
         }}
         onUninstall={(deleteConfig) => void doUninstall(deleteConfig)}
         onConfirmForceUpgrade={() => undefined}
-        onConfirmInstall={() => undefined}
+        onConfirmInstall={() => {
+          if (pendingChannel) void doInstall(pendingChannel);
+        }}
         onConfirmOneClick={() => undefined}
         specialInstall={isSpecialInstallChannel(agent.channel)}
       />
@@ -344,6 +408,47 @@ function InstallLocationRow({
       <div className="mt-1">
         <CopyableFileName path={inst.location} wrap="break" />
       </div>
+    </li>
+  );
+}
+
+function MissingChannelRow({
+  agentId,
+  channel,
+  busy,
+  installing,
+  onInstall,
+}: {
+  agentId: string;
+  channel: InstallChannelMeta;
+  busy: boolean;
+  installing: boolean;
+  onInstall: () => void;
+}) {
+  const { t } = useI18n();
+  const sourceLabel = installLocationSourceLabel(agentId, channel.id, t);
+  const command = channel.command.trim();
+  return (
+    <li className="rounded-card border border-border bg-subtle/60 px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {sourceLabel ? (
+            <span className="text-meta font-medium text-secondary">{sourceLabel}</span>
+          ) : null}
+          <span className="text-meta text-muted">{t('agents.card.notInstalled')}</span>
+        </div>
+        <Button
+          size="sm"
+          disabled={busy}
+          title={t('agents.card.installWithChannel', { id: channel.id })}
+          onClick={onInstall}
+        >
+          {installing ? t('agents.card.installing') : t('agents.card.install')}
+        </Button>
+      </div>
+      {command ? (
+        <p className="mt-1 font-mono text-meta text-muted break-all">{command}</p>
+      ) : null}
     </li>
   );
 }

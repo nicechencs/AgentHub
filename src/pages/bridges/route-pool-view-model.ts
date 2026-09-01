@@ -181,6 +181,7 @@ export type PoolAuthorizationItem = {
   bindingCount?: number;
   subscription?: string;
   endpointHost?: string;
+  endpointMode?: 'official' | 'custom';
   secretTail?: string;
   refreshTokenTail?: string;
 };
@@ -257,6 +258,7 @@ function poolAuthorizationItem(
     quota7dResetIn: match?.quota7dResetIn,
     subscription: match?.subscription ?? match?.account?.subscription,
     endpointHost: match?.endpointHost,
+    endpointMode: match?.endpointMode,
     secretTail: kind === 'apikey'
       ? match?.account?.secretTail ?? match?.provider?.secretTail
       : undefined,

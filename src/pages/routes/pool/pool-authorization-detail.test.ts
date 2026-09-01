@@ -9,6 +9,8 @@ import {
   parseCustomModelList,
   poolAuthorizationColumnLabel,
   poolAuthorizationDetailRows,
+  poolAuthorizationDomain,
+  poolAuthorizationLoginLabel,
   poolAuthorizationQuotaParts,
   poolAuthorizationVisibleColumns,
 } from './pool-authorization-detail';
@@ -57,6 +59,7 @@ describe('pool authorization detail fields', () => {
     expect(poolAuthorizationVisibleColumns([item()])).toEqual([
       'login',
       'kind',
+      'endpointTypes',
       'status',
       'enabled',
     ]);
@@ -69,8 +72,24 @@ describe('pool authorization detail fields', () => {
       agentId: 'codex',
       endpointKinds: ['responses_codex', 'chat_completions'],
     }), t);
-    expect(rows.find((row) => row.id === 'endpointTypes')?.value).toContain('/v1/responses');
-    expect(rows.find((row) => row.id === 'endpointTypes')?.value).toContain('/v1/chat/completions');
+    const endpointTypes = rows.find((row) => row.id === 'endpointTypes');
+    expect(endpointTypes?.value).toContain('/v1/responses');
+    expect(endpointTypes?.lines).toEqual([
+      expect.stringContaining('/v1/chat/completions'),
+    ]);
+  });
+
+  it('shows only the domain for a custom API Key login', () => {
+    const custom = item({
+      kind: 'apikey',
+      title: 'OpenRouter · openrouter.ai/api/v1',
+      endpointMode: 'custom',
+      endpointHost: 'https://openrouter.ai/api/v1',
+    });
+    expect(poolAuthorizationDomain(custom.endpointHost)).toBe('openrouter.ai');
+    expect(poolAuthorizationLoginLabel(custom)).toBe('openrouter.ai');
+    expect(poolAuthorizationDetailRows(custom, t).find((row) => row.id === 'endpoint')?.value)
+      .toBe('openrouter.ai');
   });
 
   it('shows only the masked refresh-token tail for OAuth', () => {
@@ -99,6 +118,7 @@ describe('pool authorization detail fields', () => {
     expect(poolAuthorizationVisibleColumns([row])).toEqual([
       'login',
       'kind',
+      'endpointTypes',
       'status',
       'bindings',
       'quota',

@@ -34,7 +34,9 @@ describe('PoolAuthorizationList', () => {
     expect(markup).toContain('data-col="enabled"');
     expect(markup).toContain('data-col="login"');
     expect(markup).toContain('data-col="kind"');
+    expect(markup).toContain('data-col="endpointTypes"');
     expect(markup).toContain('data-col="status"');
+    expect(markup).toContain('/v1/responses');
     expect(markup).toContain('data-pool-authorization="account:grok-1"');
     expect(markup).toContain('Grok · OAuth');
     expect(markup).toContain('官方登录');
@@ -97,5 +99,32 @@ describe('PoolAuthorizationList', () => {
     expect(markup).toContain('data-active="true"');
     expect(markup).toContain('tabindex="0"');
     expect(markup).toContain('cursor-pointer');
+  });
+
+  it('shows a custom login as domain and wraps extra endpoint types', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(PoolAuthorizationList, {
+          items: [item({
+            key: 'provider:or-1',
+            sourceKind: 'provider',
+            sourceId: 'or-1',
+            agentId: 'claude',
+            title: 'OpenRouter · openrouter.ai/api/v1',
+            kind: 'apikey',
+            endpointMode: 'custom',
+            endpointHost: 'openrouter.ai/api/v1',
+            endpointKinds: ['messages', 'chat_completions'],
+          })],
+        }),
+      ),
+    );
+    expect(markup).toContain('openrouter.ai');
+    expect(markup).not.toContain('OpenRouter · openrouter.ai/api/v1');
+    expect(markup).toContain('/v1/messages');
+    expect(markup).toContain('/v1/chat/completions');
+    expect(markup).toContain('flex-col');
   });
 });

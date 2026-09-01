@@ -6,34 +6,48 @@ import { cn } from '@/lib/utils';
 export function DetailRow({
   label,
   value,
+  lines,
   mono,
   copyable,
   className,
 }: {
   label: string;
   value: string;
+  /** Extra values shown on following lines (same field). */
+  lines?: readonly string[];
   mono?: boolean;
   copyable?: boolean;
   className?: string;
 }) {
   const [copied, setCopied] = React.useState(false);
+  const extra = lines?.filter((line) => line.trim()) ?? [];
+  const copyText = extra.length > 0 ? [value, ...extra].join('\n') : value;
 
   const onCopy = React.useCallback(() => {
-    void navigator.clipboard.writeText(value).then(() => {
+    void navigator.clipboard.writeText(copyText).then(() => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     }).catch(() => {});
-  }, [value]);
+  }, [copyText]);
+
+  const renderValue = (text: string) => (mono ? (
+    <code className="break-all font-mono text-secondary">{text}</code>
+  ) : (
+    <span className="break-all text-secondary">{text}</span>
+  ));
 
   return (
     <span className={cn('flex min-w-0 items-start gap-1.5', className)}>
       <span className="min-w-0 flex-1">
         <span className="text-muted">{label} </span>
-        {mono ? (
-          <code className="break-all font-mono text-secondary">{value}</code>
-        ) : (
-          <span className="break-all text-secondary">{value}</span>
-        )}
+        {extra.length > 0 ? (
+          <span className="inline-flex flex-col gap-0.5 align-top">
+            {renderValue(value)}
+            {extra.map((line) => (
+              <span key={line}>{renderValue(line)}</span>
+            ))}
+          </span>
+        ) : renderValue(value)}
       </span>
       {copyable ? (
         <button
