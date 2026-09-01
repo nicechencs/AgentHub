@@ -76,8 +76,8 @@ describe('route pool v2 view-model', () => {
       pending: false,
     });
     expect(routePoolSurfaceLabel(overview.surface)).toBe('Responses');
-    const entries: Pick<ConnectionEntry, 'source' | 'id' | 'title'>[] = [
-      { source: 'provider', id: 'kimi-1', title: 'Kimi 会员' },
+    const entries: Pick<ConnectionEntry, 'source' | 'id' | 'title' | 'kind'>[] = [
+      { source: 'provider', id: 'kimi-1', title: 'Kimi 会员', kind: 'apikey' },
     ];
     expect(routePoolMemberLabels(overview.members, entries)).toEqual([
       {
@@ -86,7 +86,7 @@ describe('route pool v2 view-model', () => {
         availability: undefined,
         sourceKind: 'provider',
         sourceId: 'kimi-1',
-        kind: undefined,
+        kind: 'apikey',
       },
     ]);
     expect(JSON.stringify(overview)).not.toContain('hubToken');

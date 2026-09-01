@@ -149,7 +149,7 @@ test('page title sits in the top bar with notifications; Chat has neither', asyn
   await goPath(page, '/routes/pool');
   const addOauth = page.getByRole('button', { name: 'OAuth 接入' });
   const addApi = page.getByRole('button', { name: 'API 接入' });
-  const routesLead = page.getByText(/个本机路由|孤立本机路由|登录的增删在连接页/);
+  const routesLead = page.getByText(/oauth 及 API 信息|孤立本机路由/);
   await expect(addOauth).toBeVisible();
   await expect(addApi).toBeVisible();
   await expect(routesLead).toBeVisible();
@@ -191,7 +191,7 @@ test('new install hides Routes and Plugins until enabled in Settings', async ({ 
 
   await goNav(page, '路由');
   await expect(page).toHaveURL(/#\/routes\/board/);
-  await expect(page.getByRole('heading', { name: '路由看板' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '看板' })).toBeVisible();
   await expect(page.getByText('用量统计')).toBeVisible();
   await expect(page.getByRole('button', { name: '收起侧栏' })).toHaveCount(0);
 
@@ -213,20 +213,21 @@ test('Routes secondary nav appears under /routes*; URL entry does not auto-colla
   const secondary = page.locator('[data-routes-nav]');
   await expect(secondary).toBeVisible();
   await expect(secondary.getByRole('link', { name: /^路由列表/ })).toHaveCount(0);
-  await expect(secondary.getByRole('link', { name: /^路由看板/ })).toBeVisible();
+  await expect(secondary.getByRole('link', { name: /^看板/ })).toBeVisible();
   await expect(secondary.getByRole('link', { name: /^连接池/ })).toBeVisible();
+  await expect(secondary.getByRole('link', { name: /^令牌/ })).toBeVisible();
   await expect(secondary.getByRole('button', { name: '展开侧栏' })).toBeVisible();
   await expect(page.getByRole('button', { name: '收起侧栏' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '路由看板' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '看板' })).toBeVisible();
   await expect(page.getByText('用量统计')).toBeVisible();
 
   await secondary.getByRole('link', { name: /^连接池/ }).click();
   await expect(page).toHaveURL(/#\/routes\/pool/);
   await expect(page.getByRole('heading', { name: '连接池' })).toBeVisible();
 
-  await secondary.getByRole('link', { name: /^监控日志/ }).click();
+  await secondary.getByRole('link', { name: /^监控$/ }).click();
   await expect(page).toHaveURL(/#\/routes\/activity/);
-  await expect(page.getByRole('heading', { name: '监控日志' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '监控' })).toBeVisible();
 
   await goPath(page, '/');
   await expect(page).toHaveURL(/#\/$/);
