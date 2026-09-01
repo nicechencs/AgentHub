@@ -52,7 +52,6 @@ import {
   defaultSelectedApiTypes,
   detectedApiChoiceTypes,
   filterModelsByExclusions,
-  mergeFetchedModels,
   parseApiKeyLines,
   parseExcludedModelRules,
   parsePriorityInput,
@@ -66,8 +65,19 @@ import {
   type PoolApiChoiceType,
   type PoolApiEditTarget,
 } from './api-access-model';
+import { requestRemoteModels } from '@/pages/providers/remote-models-request';
 import { parseCustomModelList } from './pool-authorization-detail';
 import { savePoolApiAccess } from './save-pool-api-access';
+
+function requestErrorMessage(error: unknown): string {
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String((error as { message?: unknown }).message ?? '').trim();
+    if (message) return message;
+  }
+  return String(error);
+}
 
 const DETECT_DEBOUNCE_MS = 400;
 
@@ -157,6 +167,7 @@ function ApiAccessForm({
   const [priority, setPriority] = useState(initial?.priority ?? '');
   const [fetchingModels, setFetchingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -273,23 +284,41 @@ function ApiAccessForm({
   const fetchModels = async () => {
     const url = baseUrl.trim();
     if (!url || (!firstApiKey && !edit?.provider.id)) {
-      setModelError(t('routes.pool.page.apiModelsNeedKey'));
+      const message = t('routes.pool.page.apiModelsNeedKey');
+      setModelNotice(null);
+      setModelError(message);
       return;
     }
     setFetchingModels(true);
     setModelError(null);
+    setModelNotice(null);
     try {
-      const fetched = firstApiKey
-        ? await listRemoteOpenAiModels(url, firstApiKey)
-        : await listRemoteOpenAiModelsForProvider(edit!.provider.id, url);
-      setModels((current) => mergeFetchedModels(
-        current,
-        fetched,
-        parseExcludedModelRules(excludedModels),
-      ));
-      if (fetched.length === 0) setModelError(t('routes.pool.page.apiModelsEmpty'));
+      const fetched = await requestRemoteModels(
+        {
+          baseUrl: url,
+          apiKey: firstApiKey,
+          providerId: edit?.provider.id,
+        },
+        {
+          listRemoteOpenAiModels,
+          listRemoteOpenAiModelsForProvider,
+        },
+      );
+      const next = filterModelsByExclusions(fetched, parseExcludedModelRules(excludedModels));
+      setModels(next);
+      const notice = next.length === 0
+        ? t('routes.pool.page.apiModelsEmpty')
+        : t('routes.pool.page.apiModelsFetched', { count: next.length });
+      setModelNotice(notice);
+      toast({ title: notice, variant: 'success' });
     } catch (cause) {
-      setModelError(cause instanceof Error ? cause.message : String(cause));
+      const message = requestErrorMessage(cause);
+      setModelError(message);
+      toast({
+        title: t('routes.pool.page.apiModelsFetchFailed'),
+        description: message,
+        variant: 'danger',
+      });
     } finally {
       setFetchingModels(false);
     }
@@ -510,6 +539,8 @@ function ApiAccessForm({
                   : t('routes.pool.page.apiModelsFetch')}
               </Button>
             </div>
+            {modelError ? <p className="text-meta text-danger">{modelError}</p> : null}
+            {!modelError && modelNotice ? <p className="text-meta text-secondary">{modelNotice}</p> : null}
             {models.length > 0 ? (
               <div className="flex flex-col gap-1.5">
                 {models.map((model) => (
@@ -557,7 +588,6 @@ function ApiAccessForm({
                 {t('routes.pool.page.apiModelsAdd')}
               </Button>
             </div>
-            {modelError ? <p className="text-meta text-danger">{modelError}</p> : null}
           </div>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs text-muted">{t('routes.pool.detail.priority')}</span>
