@@ -17,6 +17,8 @@ export type PoolAuthorizationDetailRow = {
   value: string;
   /** Extra lines under `value` (e.g. more endpoint types). */
   lines?: string[];
+  /** http(s) URL opened in the system browser. */
+  href?: string;
   mono?: boolean;
   copyable?: boolean;
 };
@@ -166,6 +168,35 @@ export function poolAuthorizationDomain(host?: string | null): string | null {
   return raw.split('/')[0] || raw;
 }
 
+/** Full http(s) URL for the stored endpoint host. */
+export function poolAuthorizationEndpointHref(host?: string | null): string | null {
+  const raw = host?.trim();
+  if (!raw) return null;
+  try {
+    const url = /^https?:\/\//i.test(raw) ? new URL(raw) : new URL(`https://${raw}`);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    if (!url.hostname) return null;
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+
+/** Origin of the stored endpoint + a local endpoint path. */
+export function poolAuthorizationTypeHref(
+  host: string | null | undefined,
+  path: string,
+): string | null {
+  const base = poolAuthorizationEndpointHref(host);
+  if (!base) return null;
+  const suffix = path.startsWith('/') ? path : `/${path}`;
+  try {
+    return `${new URL(base).origin}${suffix}`;
+  } catch {
+    return null;
+  }
+}
+
 /** List / detail title: custom API Key rows show the domain only. */
 export function poolAuthorizationLoginLabel(
   item: Pick<PoolAuthorizationItem, 'identityLabel' | 'title' | 'kind' | 'endpointMode' | 'endpointHost'>,
@@ -193,10 +224,12 @@ export function poolAuthorizationDetailRows(
     const value = item.endpointMode === 'custom'
       ? (poolAuthorizationDomain(host) ?? host)
       : host;
+    const href = poolAuthorizationEndpointHref(host);
     rows.push({
       id: 'endpoint',
       label: t('connections.list.endpoint'),
       value,
+      href: href ?? undefined,
       mono: true,
       copyable: true,
     });

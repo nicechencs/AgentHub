@@ -93,6 +93,29 @@ describe('PoolAuthorizationDetail', () => {
     expect(markup).toContain('刷新中…');
   });
 
+  it('opens custom endpoint URLs in the browser from detail', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(PoolAuthorizationDetail, {
+          item: item({
+            kind: 'apikey',
+            agentId: 'claude',
+            title: 'OpenRouter',
+            endpointMode: 'custom',
+            endpointHost: 'https://openrouter.ai/api/v1',
+            endpointKinds: ['messages'],
+          }),
+          onDelete() {},
+          onClose() {},
+        }),
+      ),
+    );
+    expect(markup).toContain('href="https://openrouter.ai/api/v1"');
+    expect(markup).toContain('href="https://openrouter.ai/v1/messages"');
+  });
+
   it('shows the Agent in 来源 when the login came from 连接', () => {
     const markup = renderToStaticMarkup(
       createElement(

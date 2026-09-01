@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Check, Copy } from 'lucide-react';
+import { handleExternalLinkClick } from '@/lib/open-external';
 import { cn } from '@/lib/utils';
 
 /** Label + value pair used in expandable connection/account detail grids. */
@@ -7,6 +8,7 @@ export function DetailRow({
   label,
   value,
   lines,
+  href,
   mono,
   copyable,
   className,
@@ -15,6 +17,8 @@ export function DetailRow({
   value: string;
   /** Extra values shown on following lines (same field). */
   lines?: readonly string[];
+  /** http(s) URL; opens in the system browser. */
+  href?: string;
   mono?: boolean;
   copyable?: boolean;
   className?: string;
@@ -30,11 +34,23 @@ export function DetailRow({
     }).catch(() => {});
   }, [copyText]);
 
-  const renderValue = (text: string) => (mono ? (
-    <code className="break-all font-mono text-secondary">{text}</code>
-  ) : (
-    <span className="break-all text-secondary">{text}</span>
-  ));
+  const renderValue = (text: string) => {
+    const body = mono ? (
+      <code className="break-all font-mono text-secondary">{text}</code>
+    ) : (
+      <span className="break-all text-secondary">{text}</span>
+    );
+    if (!href) return body;
+    return (
+      <a
+        href={href}
+        className="break-all font-mono text-accent underline-offset-2 hover:underline"
+        onClick={(event) => handleExternalLinkClick(href, event)}
+      >
+        {text}
+      </a>
+    );
+  };
 
   return (
     <span className={cn('flex min-w-0 items-start gap-1.5', className)}>

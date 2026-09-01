@@ -10,8 +10,10 @@ import {
   poolAuthorizationColumnLabel,
   poolAuthorizationDetailRows,
   poolAuthorizationDomain,
+  poolAuthorizationEndpointHref,
   poolAuthorizationLinkIconColors,
   poolAuthorizationLoginLabel,
+  poolAuthorizationTypeHref,
   poolAuthorizationQuotaParts,
   poolAuthorizationVisibleColumns,
 } from './pool-authorization-detail';
@@ -119,6 +121,11 @@ describe('pool authorization detail fields', () => {
     expect(poolAuthorizationLoginLabel(custom)).toBe('openrouter.ai');
     expect(poolAuthorizationDetailRows(custom, t).find((row) => row.id === 'endpoint')?.value)
       .toBe('openrouter.ai');
+    expect(poolAuthorizationEndpointHref(custom.endpointHost)).toBe('https://openrouter.ai/api/v1');
+    expect(poolAuthorizationTypeHref(custom.endpointHost, '/v1/messages'))
+      .toBe('https://openrouter.ai/v1/messages');
+    expect(poolAuthorizationDetailRows(custom, t).find((row) => row.id === 'endpoint')?.href)
+      .toBe('https://openrouter.ai/api/v1');
   });
 
   it('shows only the masked refresh-token tail for OAuth', () => {
