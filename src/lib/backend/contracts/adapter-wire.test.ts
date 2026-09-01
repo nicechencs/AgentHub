@@ -6,6 +6,7 @@ import {
   mapAdapterRouteAnalysis,
   mapDefaultRoutePoolList,
   mapInboundRequest,
+  mapLocalTokenProbeResult,
   mapLocalTokenRecord,
 } from './adapter-wire';
 
@@ -493,5 +494,20 @@ describe('Adapter Rust wire mappers', () => {
       poolId: 'pool-1',
       token: 'ahb_secret',
     });
+  });
+
+  it('maps a loopback entry-key probe result', () => {
+    expect(mapLocalTokenProbeResult({
+      outcome: 'unauthorized',
+      httpStatus: 401,
+      latencyMs: 9.4,
+      upstreamStatus: '  ',
+    })).toEqual({
+      outcome: 'unauthorized',
+      httpStatus: 401,
+      latencyMs: 9,
+      upstreamStatus: null,
+    });
+    expect(mapLocalTokenProbeResult({}).outcome).toBe('unreachable');
   });
 });

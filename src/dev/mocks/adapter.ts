@@ -396,6 +396,26 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         return { poolId: pool.id, token };
       });
     },
+    async testLocalToken(endpoint, token) {
+      await delay(20);
+      const trimmedToken = token.trim();
+      const trimmedEndpoint = endpoint.trim();
+      if (!trimmedToken || !trimmedEndpoint) {
+        return { outcome: 'invalid', httpStatus: null, latencyMs: 0, upstreamStatus: null };
+      }
+      const loopback = trimmedEndpoint.includes('127.0.0.1')
+        || trimmedEndpoint.includes('localhost')
+        || trimmedEndpoint.includes('[::1]');
+      if (!loopback) {
+        return { outcome: 'invalid', httpStatus: null, latencyMs: 0, upstreamStatus: null };
+      }
+      return {
+        outcome: 'ok',
+        httpStatus: 200,
+        latencyMs: 4,
+        upstreamStatus: 'unknown',
+      };
+    },
     async setLocalToken(poolId, token) {
       await delay(20);
       const trimmed = token.trim();

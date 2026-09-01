@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildTokenDetailCopyRows,
   formatTokenRelative,
+  localTokenTestGate,
+  localTokenTestResultLabel,
+  localTokenTestResultTone,
   tokenEndpointParts,
   tokenLastPageDisplay,
   tokenUsageDisplay,
@@ -88,4 +91,19 @@ describe('token-detail-model', () => {
       })).toBe('');
       expect(formatTokenRelative(new Date().toISOString())).toBe('刚刚');
     });
+
+  it('enables the one-click test only when the entry key and port are ready', () => {
+    expect(localTokenTestGate(row()).enabled).toBe(true);
+    expect(localTokenTestGate(row({ token: null })).enabled).toBe(false);
+    expect(localTokenTestGate(row({ endpoint: null })).reason).toBe('本机入口还没启动');
+    expect(localTokenTestGate(row({ unavailable: true })).reason).toBe('状态不可用');
+  });
+
+  it('labels probe outcomes without exposing the key', () => {
+    expect(localTokenTestResultLabel({ outcome: 'ok', latencyMs: 12 })).toBe('入口 Key 可用 · 12ms');
+    expect(localTokenTestResultLabel({ outcome: 'unauthorized', latencyMs: 8 })).toBe('入口 Key 无效');
+    expect(localTokenTestResultLabel({ outcome: 'unreachable', latencyMs: 30 })).toBe('端点连不上');
+    expect(localTokenTestResultTone('ok')).toBe('success');
+    expect(localTokenTestResultTone('unauthorized')).toBe('danger');
+  });
 });
