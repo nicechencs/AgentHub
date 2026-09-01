@@ -15,6 +15,7 @@ import {
   poolSurfaceForApiChoice,
   primaryVendorUrl,
   resolveEndpointUrl,
+  sortApiVendorsForPicker,
   vendorServiceUrls,
 } from './api-access-model';
 
@@ -162,5 +163,18 @@ describe('API access draft helpers', () => {
       'mine',
       'claude-3',
     ]);
+  });
+});
+
+describe('sortApiVendorsForPicker', () => {
+  it('sorts known vendors by the visible label', () => {
+    const vendors = [
+      { id: 'openai', label: 'OpenAI' },
+      { id: 'deepseek', label: 'DeepSeek' },
+      { id: 'anthropic', label: 'Anthropic' },
+    ];
+    expect(
+      sortApiVendorsForPicker(vendors, (vendor) => vendor.label, 'en').map((vendor) => vendor.id),
+    ).toEqual(['anthropic', 'deepseek', 'openai']);
   });
 });
