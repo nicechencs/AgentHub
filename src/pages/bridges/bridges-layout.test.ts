@@ -41,12 +41,12 @@ describe('routes layout wiring', () => {
     expect(listStart).toBeGreaterThan(chromeStart);
     const chrome = page.slice(chromeStart, listStart);
     expect(chrome).toContain('orphanOnly');
-    expect(chrome).toContain('fleetSummary.label');
+    expect(chrome).toContain('routes.pool.page.chromeHint');
     expect(chrome).toContain('PoolAddButtons');
-    expect(chrome).toContain('size="sm"');
     expect(chrome).toContain('pageRhythm.chromeActions');
+    expect(source('pages/routes/pool/PoolAddButtons.tsx')).toContain('size="sm"');
     const list = page.slice(listStart);
-    expect(list).not.toContain('fleetSummary.label');
+    expect(list).not.toContain('routes.pool.page.chromeHint');
     expect(list).toContain('first={orphanOnly}');
     expect(list).toContain('title={orphanOnly ? undefined');
   });

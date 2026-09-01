@@ -367,7 +367,8 @@
     "grok": [
       "model",
       "baseUrl",
-      "apiKey"
+      "apiKey",
+      "apiBackend"
     ],
     "dsh": [
       "provider",

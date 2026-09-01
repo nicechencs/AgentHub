@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
 import { Button } from '@/components/ui/button';
+import { Tip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -132,7 +133,7 @@ function ApiChoiceEndpointCopy({
         </RouteEndpointTypeText>
       </span>
       {actualUrl ? (
-        <span className="mt-1 block truncate font-mono text-meta" title={actualUrl}>
+        <Tip className="mt-1 block truncate font-mono text-meta" label={actualUrl}>
           {pathStart >= 0 ? (
             <>
               <span className="text-muted">{actualUrl.slice(0, pathStart)}</span>
@@ -145,7 +146,7 @@ function ApiChoiceEndpointCopy({
               {actualUrl}
             </RouteEndpointTypeText>
           )}
-        </span>
+        </Tip>
       ) : null}
     </>
   );
@@ -597,9 +598,11 @@ export function ApiAccessForm({
               <div className="flex flex-col gap-1.5">
                 {models.map((model) => (
                   <div key={model} className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-primary" title={model}>
-                      {model}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      <Tip className="block truncate font-mono text-xs text-primary" label={model}>
+                        {model}
+                      </Tip>
+                    </div>
                     <Button
                       type="button"
                       size="sm"

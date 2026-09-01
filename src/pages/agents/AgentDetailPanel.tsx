@@ -7,6 +7,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
 import {
@@ -63,19 +64,20 @@ function CopyableChannelName({
   const { toast } = useToast();
   if (!command) return <span className={className}>{label}</span>;
   return (
-    <button
-      type="button"
-      className={cn(className, 'hover:text-accent')}
-      title={t('agents.card.copyCommand')}
-      aria-label={t('agents.card.copyCommand')}
-      onClick={() => {
-        void navigator.clipboard.writeText(command).then(() => {
-          toast({ title: t('agents.env.commandCopied'), variant: 'success' });
-        }).catch(() => {});
-      }}
-    >
-      {label}
-    </button>
+    <Hint label={t('agents.card.copyCommand')}>
+      <button
+        type="button"
+        className={cn(className, 'hover:text-accent')}
+        aria-label={t('agents.card.copyCommand')}
+        onClick={() => {
+          void navigator.clipboard.writeText(command).then(() => {
+            toast({ title: t('agents.env.commandCopied'), variant: 'success' });
+          }).catch(() => {});
+        }}
+      >
+        {label}
+      </button>
+    </Hint>
   );
 }
 
@@ -451,6 +453,7 @@ export function AgentDetailPanel({
           <div className="flex items-center justify-between gap-2 rounded-card border border-border bg-subtle/60 px-3 py-2">
             <CopyableFileName path={configDir} wrap="break" className="min-w-0 flex-1" />
             <OpenDirButton
+              labeled
               disabled={rowBusy}
               title={t('agents.card.openConfigDirTitle')}
               onClick={openConfigDir}
@@ -622,17 +625,17 @@ function ChannelUpgradeButton({
   const { t } = useI18n();
   if (!control.show) return null;
   return (
-    <span title={tooltip} className="inline-flex">
-      <Button
+    <Button
         size="icon"
         variant={control.muted ? 'outline' : 'secondary'}
         className={control.muted ? 'text-muted' : undefined}
         disabled={busy || checking || control.kind === 'hint_only'}
+        title={tooltip}
         aria-label={
           control.kind === 'open_setup'
             ? t('agents.card.openOfficialUpdate')
             : control.muted
-              ? t('agents.card.unsupportedUpdate')
+              ? tooltip || t('agents.card.unsupportedUpdate')
               : upgradable
                 ? t('agents.card.update')
                 : t('agents.card.forceUpgrade')
@@ -654,7 +657,6 @@ function ChannelUpgradeButton({
           )}
         />
       </Button>
-    </span>
   );
 }
 
@@ -672,18 +674,17 @@ function ChannelUninstallButton({
   const { t } = useI18n();
   if (!control.show) return null;
   return (
-    <span title={tooltip} className="inline-flex">
-      <Button
+    <Button
         size="icon"
         variant="outline"
         className={control.muted ? 'text-muted' : 'text-danger hover:text-danger'}
         disabled={busy || control.muted}
+        title={tooltip}
         aria-label={t('agents.card.uninstallProgram')}
         onClick={control.muted ? undefined : onUninstall}
       >
         <Trash2 className={cn('h-3.5 w-3.5', control.muted && 'text-muted')} />
       </Button>
-    </span>
   );
 }
 
@@ -696,16 +697,17 @@ function CopyableCommand({ command }: { command: string }) {
     }).catch(() => {});
   };
   return (
-    <button
-      type="button"
-      className="mt-1 flex w-full min-w-0 items-start gap-1.5 text-left text-meta text-muted hover:text-accent"
-      title={t('agents.card.copyCommand')}
-      aria-label={t('agents.card.copyCommand')}
-      onClick={copy}
-    >
-      <span className="min-w-0 flex-1 break-all font-mono">{command}</span>
-      <Copy className="mt-0.5 h-3 w-3 shrink-0" />
-    </button>
+    <Hint label={t('agents.card.copyCommand')}>
+      <button
+        type="button"
+        className="mt-1 flex w-full min-w-0 items-start gap-1.5 text-left text-meta text-muted hover:text-accent"
+        aria-label={t('agents.card.copyCommand')}
+        onClick={copy}
+      >
+        <span className="min-w-0 flex-1 break-all font-mono">{command}</span>
+        <Copy className="mt-0.5 h-3 w-3 shrink-0" />
+      </button>
+    </Hint>
   );
 }
 

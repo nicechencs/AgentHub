@@ -544,7 +544,7 @@ fn projector_schema_versions_are_stable() {
         AgentId::Dsh,
     ] {
         let p = reg.get_agent_id(agent).unwrap();
-        let expected = if agent == AgentId::Grok { 2 } else { 1 };
+        let expected = if agent == AgentId::Grok { 3 } else { 1 };
         assert_eq!(p.schema().schema_version, expected);
         assert!(!p.schema().fields.is_empty());
     }
