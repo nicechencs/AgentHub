@@ -125,10 +125,10 @@ describe('tokens-model', () => {
   });
 
   it('names rows by token type, not writer Agent', () => {
-    expect(tokenTypeLabel({ kind: 'messages' })).toBe('对话接口');
-    expect(tokenTypeLabel({ kind: 'responses_codex' })).toBe('回复接口 · Codex');
-    expect(tokenTypeLabel({ kind: 'responses_grok' })).toBe('回复接口 · Grok');
-    expect(tokenTypeLabel({ kind: 'chat_completions' })).toBe('对话补全');
+    expect(tokenTypeLabel({ kind: 'messages' })).toBe('Messages');
+    expect(tokenTypeLabel({ kind: 'responses_codex' })).toBe('Responses · Codex');
+    expect(tokenTypeLabel({ kind: 'responses_grok' })).toBe('Responses · Grok');
+    expect(tokenTypeLabel({ kind: 'chat_completions' })).toBe('Chat Completions');
   });
 
   it('keeps one chat-completions row when Kimi and DSH share', () => {
