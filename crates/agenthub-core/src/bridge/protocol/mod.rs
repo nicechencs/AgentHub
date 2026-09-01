@@ -13,10 +13,12 @@ pub mod pair;
 pub mod responses;
 
 pub use responses::{
-    apply_official_codex_model, encode_responses_from_ir, is_leftover_bridge_model,
-    parse_responses_request, prepare_official_codex_request, responses_output_to_ir,
-    to_grok_chat_request, to_grok_responses_request, to_kimi_chat_request, to_responses_request,
-    translate_responses_request, IrToResponsesSse, ResponsesStreamToIr,
+    aggregate_responses_sse_to_json, apply_official_codex_model,
+    client_message_for_upstream_detail, encode_responses_from_ir, is_leftover_bridge_model,
+    looks_like_sse_body, parse_responses_request, prepare_official_codex_request,
+    responses_output_to_ir, to_grok_chat_request, to_grok_responses_request, to_kimi_chat_request,
+    to_responses_request, translate_responses_request, upstream_detail_requires_stream,
+    IrToResponsesSse, ResponsesStreamToIr,
 };
 
 /// Claude subscription → Codex kernel fixtures.

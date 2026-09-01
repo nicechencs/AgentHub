@@ -3,6 +3,7 @@
 mod codex;
 mod kimi;
 mod parse;
+mod sse_aggregate;
 
 use serde_json::{json, Map, Value};
 
@@ -16,6 +17,10 @@ pub use codex::{
 };
 pub use kimi::{to_grok_chat_request, to_grok_responses_request, to_kimi_chat_request};
 pub use parse::parse_responses_request;
+pub use sse_aggregate::{
+    aggregate_responses_sse_to_json, client_message_for_upstream_detail, looks_like_sse_body,
+    upstream_detail_requires_stream,
+};
 
 pub(crate) use codex::fold_official_codex_system_items;
 pub(crate) use parse::grok_reasoning_effort_from_thinking;
