@@ -315,11 +315,19 @@ export type LocalEntryStatus = {
   statuses: AdapterBridgeRuntimeStatus[];
 };
 
+/** Loopback bearer for the tokens page. */
+export type LocalTokenRecord = {
+  poolId: string;
+  token: string;
+};
+
 export interface AdapterPort {
   analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
   listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
   listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
+  listLocalTokens(): Promise<LocalTokenRecord[]>;
+  setLocalToken(poolId: string, token: string): Promise<LocalTokenRecord>;
   setChatCompletionsShared(shared: boolean): Promise<DefaultRoutePoolList>;
   attachPoolOwnedAuthorization(
     request: AttachPoolOwnedAuthorizationRequest,

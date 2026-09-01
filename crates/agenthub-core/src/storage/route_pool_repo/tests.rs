@@ -152,6 +152,18 @@ fn hub_token_is_unique_and_not_rotated_on_update() {
 }
 
 #[test]
+fn set_hub_token_replaces_the_loopback_bearer() {
+    let (_dir, _db, repo) = tmp();
+    repo.create_pool(&pool("pool-a", AgentId::Codex, true, "ahb_token-a"))
+        .unwrap();
+    let saved = repo
+        .set_hub_token("pool-a", "ahb_token-b", "t1")
+        .unwrap();
+    assert_eq!(saved.hub_token, "ahb_token-b");
+    assert_eq!(saved.updated_at, "t1");
+}
+
+#[test]
 fn duplicate_authorization_fingerprint_is_rejected() {
     let (_dir, _db, repo) = tmp();
     repo.create_pool(&pool("pool-a", AgentId::Codex, true, "ahb_token-a"))

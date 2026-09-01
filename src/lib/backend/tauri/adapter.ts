@@ -14,11 +14,13 @@ import {
   mapDefaultRoutePoolList,
   mapDefaultRoutePoolOverview,
   mapLocalEntryStatus,
+  mapLocalTokenRecord,
   type AdapterApplyPlanWire,
   type AdapterApplyResultWireInput,
   type AdapterBridgeStatusDtoWire,
   type AdapterProfileWire,
   type LocalEntryStatusWire,
+  type LocalTokenRecordWire,
   type AdapterRouteAnalysisWire,
   type DefaultRoutePoolListWire,
   type DefaultRoutePoolOverviewWire,
@@ -97,6 +99,14 @@ export function createTauriAdapterPort(): AdapterPort {
     async listDefaultRoutePools() {
       const wire = await invokeAdapter<DefaultRoutePoolListWire>('list_default_route_pools', {});
       return mapDefaultRoutePoolList(wire);
+    },
+    async listLocalTokens() {
+      const wire = await invokeAdapter<LocalTokenRecordWire[]>('list_local_tokens', {});
+      return Array.isArray(wire) ? wire.map(mapLocalTokenRecord) : [];
+    },
+    async setLocalToken(poolId, token) {
+      const wire = await invokeAdapter<LocalTokenRecordWire>('set_local_token', { poolId, token });
+      return mapLocalTokenRecord(wire);
     },
     async setChatCompletionsShared(shared: boolean) {
       const wire = await invokeAdapter<DefaultRoutePoolListWire>('set_chat_completions_shared', { shared });

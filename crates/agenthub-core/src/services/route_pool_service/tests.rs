@@ -63,6 +63,21 @@ fn flag_off_is_fail_closed() {
 }
 
 #[test]
+fn lists_and_sets_default_pool_entry_keys() {
+    let (_dir, _db, service, _) = tmp();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    let listed = service.list_local_tokens().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].pool_id, pool.id);
+    assert!(listed[0].token.starts_with("ahb_"));
+    let updated = service.set_local_token(&pool.id, "ahb_custom-key").unwrap();
+    assert_eq!(updated.token, "ahb_custom-key");
+    assert_eq!(service.list_local_tokens().unwrap()[0].token, "ahb_custom-key");
+}
+
+#[test]
 fn product_flags_default_on() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("flag-default-on.db")).unwrap();

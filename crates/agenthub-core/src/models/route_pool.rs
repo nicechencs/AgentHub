@@ -405,6 +405,14 @@ pub struct DefaultRoutePoolList {
     pub chat_completions_shared: bool,
 }
 
+/// Loopback bearer for the tokens page. Not included in pool overview.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalTokenRecord {
+    pub pool_id: String,
+    pub token: String,
+}
+
 /// Pick the unique default pool among candidates for one Agent / surface.
 ///
 /// Active binding wins; otherwise the stable id order is used. Never guesses

@@ -1093,6 +1093,11 @@ export const zh = {
       fieldEndpoint: "端点",
       fieldToken: "入口 Key",
       openDetailAria: "查看 {name} 详情",
+      editKey: "修改",
+      editKeyTitle: "修改入口 Key",
+      saveKey: "保存",
+      keyRequired: "请填写入口 Key",
+      editKeyFailed: "没法改入口 Key",
     },
     pool: {
       entry: "本机入口",
