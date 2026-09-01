@@ -4,6 +4,7 @@ import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
 import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -20,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
-import { listLocalTokenModels, testLocalToken } from '@/lib/api/adapter';
+import { listLocalTokenModels, setLocalTokenCustomModels, testLocalToken } from '@/lib/api/adapter';
 import type { LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
 import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
 import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
@@ -41,6 +42,7 @@ import {
   tokenUsageDisplay,
 } from './token-detail-model';
 import type { LocalTokenRow } from './tokens-model';
+import { parseCustomModelList } from '@/pages/routes/pool/pool-authorization-detail';
 
 export function TokenDetailPanel({
   row,
@@ -62,6 +64,11 @@ export function TokenDetailPanel({
   const [testOpen, setTestOpen] = useState(false);
   const [testModel, setTestModel] = useState(models[0] ?? '');
   const [testResult, setTestResult] = useState<LocalTokenProbeResult | null>(null);
+  const [modelDraft, setModelDraft] = useState('');
+  const [savingModels, setSavingModels] = useState(false);
+  const dropdownModels = testModel.trim() && !models.includes(testModel)
+    ? [testModel.trim(), ...models]
+    : models;
   const rowIdRef = useRef(row.id);
   rowIdRef.current = row.id;
   const copies = buildTokenDetailCopyRows(row, revealed, t);
@@ -79,10 +86,11 @@ export function TokenDetailPanel({
     setTestResult(null);
     setLiveModels([]);
     setTestModel(localTokenTestModels(row)[0] ?? '');
+    setModelDraft(localTokenTestModels(row).join('\n'));
   }, [row.id]);
 
   useEffect(() => {
-    if (testModel && models.includes(testModel)) return;
+    if (testModel.trim()) return;
     setTestModel(models[0] ?? '');
   }, [models, testModel]);
 
@@ -107,7 +115,27 @@ export function TokenDetailPanel({
       const listed = ids.map((item) => item.trim()).filter(Boolean);
       if (listed.length === 0) return;
       setLiveModels(listed);
+      setModelDraft(listed.join('\n'));
+      setTestModel((current) => current.trim() || listed[0] || '');
     }).catch(() => {});
+  };
+
+  const saveCustomModels = async () => {
+    const token = row.token?.trim();
+    if (!token) return;
+    const listed = parseCustomModelList(modelDraft);
+    setSavingModels(true);
+    try {
+      const next = await setLocalTokenCustomModels(token, listed);
+      setLiveModels(next);
+      setModelDraft(next.join('\n'));
+      setTestModel((current) => current.trim() || next[0] || '');
+      toast({ title: t('common.save'), variant: 'success' });
+    } catch {
+      toast({ title: t('common.saveFailed'), variant: 'danger' });
+    } finally {
+      setSavingModels(false);
+    }
   };
 
   const runTest = async () => {
@@ -245,9 +273,9 @@ export function TokenDetailPanel({
           <div className="space-y-3 text-sm">
             <div className="space-y-1">
               <p className="text-meta text-muted">{t('routes.tokens.testModel')}</p>
-              {models.length > 0 ? (
+              {dropdownModels.length > 0 ? (
                 <Select
-                  value={testModel}
+                  value={testModel.trim() ? testModel : undefined}
                   onValueChange={setTestModel}
                   disabled={testing}
                 >
@@ -259,7 +287,7 @@ export function TokenDetailPanel({
                     <SelectValue placeholder={t('routes.tokens.testNeedModel')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {models.map((model) => (
+                    {dropdownModels.map((model) => (
                       <SelectItem key={model} value={model}>
                         {model}
                       </SelectItem>
@@ -271,6 +299,33 @@ export function TokenDetailPanel({
                   {t('routes.tokens.testNoModels')}
                 </p>
               )}
+              <Input
+                value={testModel}
+                onChange={(event) => setTestModel(event.target.value)}
+                disabled={testing}
+                placeholder={t('routes.tokens.testModelCustom')}
+                data-token-test-model-custom=""
+                aria-label={t('routes.tokens.testModelCustom')}
+              />
+              <p className="text-meta text-secondary">{t('routes.tokens.testModelsHint')}</p>
+              <textarea
+                value={modelDraft}
+                onChange={(event) => setModelDraft(event.target.value)}
+                disabled={testing || savingModels}
+                placeholder={t('routes.tokens.testModelsPlaceholder')}
+                rows={4}
+                className="min-h-[5.5rem] w-full resize-y rounded-card border border-border bg-transparent px-3 py-2 font-mono text-xs text-primary"
+                data-token-test-models-draft=""
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={testing || savingModels || !row.token?.trim()}
+                onClick={() => { void saveCustomModels(); }}
+              >
+                {savingModels ? t('common.saving') : t('routes.tokens.testModelsSave')}
+              </Button>
             </div>
             <div className="space-y-1">
               <p className="text-meta text-muted">{t('routes.tokens.testInput')}</p>

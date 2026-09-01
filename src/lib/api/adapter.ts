@@ -68,6 +68,10 @@ export async function listLocalTokenModels(token: string) {
   return getBackend().adapter.listLocalTokenModels(token);
 }
 
+export async function setLocalTokenCustomModels(token: string, models: string[]) {
+  return getBackend().adapter.setLocalTokenCustomModels(token, models);
+}
+
 export async function ensureSourceModelCatalog(
   sourceKind: AdapterSourceKind,
   sourceId: string,

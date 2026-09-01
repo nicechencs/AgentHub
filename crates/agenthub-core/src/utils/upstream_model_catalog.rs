@@ -23,6 +23,8 @@ pub struct StoredModelCatalog {
     #[serde(default)]
     pub models: Vec<String>,
     #[serde(default)]
+    pub extra_models: Vec<String>,
+    #[serde(default)]
     pub attempted: bool,
     #[serde(default)]
     pub updated_at: String,
@@ -40,15 +42,41 @@ impl SourceModelCatalog {
     pub fn from_stored(stored: &StoredModelCatalog) -> Self {
         let source = if stored.source == "custom" {
             "custom"
-        } else if stored.models.is_empty() {
+        } else if stored.models.is_empty() && stored.extra_models.is_empty() {
             "empty"
-        } else {
+        } else if stored.source == "live" {
             "live"
+        } else {
+            "empty"
         };
         Self {
-            models: stored.models.clone(),
+            models: merge_model_ids([stored.models.clone(), stored.extra_models.clone()]),
             source: source.to_owned(),
-            can_customize: source != "live",
+            can_customize: true,
+        }
+    }
+}
+
+/// Keep a live catalog and store only the ids the user added.
+pub fn with_wanted_models(stored: StoredModelCatalog, wanted: Vec<String>) -> StoredModelCatalog {
+    let wanted = merge_model_ids([wanted]);
+    if stored.source == "live" && !stored.models.is_empty() {
+        let live: std::collections::HashSet<_> = stored.models.iter().cloned().collect();
+        let extra_models = wanted
+            .into_iter()
+            .filter(|id| !live.contains(id))
+            .collect();
+        StoredModelCatalog {
+            extra_models,
+            ..stored
+        }
+    } else {
+        StoredModelCatalog {
+            source: "custom".into(),
+            models: wanted,
+            extra_models: Vec::new(),
+            attempted: true,
+            ..stored
         }
     }
 }

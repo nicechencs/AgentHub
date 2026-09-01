@@ -459,7 +459,24 @@ pub async fn set_source_custom_models(
     .map_err(adapter_error_from_string)
 }
 
-/// Live model ids for the tokens-page test dropdown. Not persisted.
+/// Save a custom model list for the token's pool logins.
+#[tauri::command]
+pub async fn set_local_token_custom_models(
+    state: State<'_, AppState>,
+    token: String,
+    models: Vec<String>,
+) -> Result<Vec<String>, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .set_local_token_custom_models(&token, models)
+            .map_err(|err| map_err_string("set_local_token_custom_models", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Live model ids for the tokens-page test dropdown.
 #[tauri::command]
 pub async fn list_local_token_models(
     state: State<'_, AppState>,
