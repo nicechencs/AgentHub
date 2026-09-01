@@ -6,7 +6,7 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
-import { InboundRequestList } from '@/components/shared/InboundRequestList';
+import { RouteTraceList } from '@/components/shared/RouteTraceList';
 import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
@@ -15,10 +15,12 @@ import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import {
   activityRouteOptions,
-  buildInboundFeed,
   parseActivityFilter,
   type InboundFeedFilter,
 } from '@/pages/routes/activity/inbound-feed-model';
+import {
+  buildRouteTraceFeed,
+} from '@/pages/routes/activity/route-trace-feed-model';
 import { activityHref } from '@/pages/routes/board/board-view-model';
 
 export default function RoutesActivityPage() {
@@ -42,15 +44,15 @@ export default function RoutesActivityPage() {
   );
   const routeOptions = useMemo(() => activityRouteOptions(bridges), [bridges]);
   const feed = useMemo(
-    () => buildInboundFeed(profiles, bridgeStatuses, filter, 20, routeId),
+    () => buildRouteTraceFeed(profiles, bridgeStatuses, filter, 20, routeId),
     [profiles, bridgeStatuses, filter, routeId],
   );
   const allCount = useMemo(
-    () => buildInboundFeed(profiles, bridgeStatuses, 'all', 100, routeId).length,
+    () => buildRouteTraceFeed(profiles, bridgeStatuses, 'all', 100, routeId).length,
     [profiles, bridgeStatuses, routeId],
   );
   const failedCount = useMemo(
-    () => buildInboundFeed(profiles, bridgeStatuses, 'failed', 100, routeId).length,
+    () => buildRouteTraceFeed(profiles, bridgeStatuses, 'failed', 100, routeId).length,
     [profiles, bridgeStatuses, routeId],
   );
 
@@ -175,7 +177,7 @@ export default function RoutesActivityPage() {
           }
         />
       ) : (
-        <InboundRequestList rows={feed} />
+        <RouteTraceList rows={feed} />
       )}
     </RoutesPane>
   );

@@ -28,6 +28,7 @@ use super::admission::AdmittedRequest;
 use super::http::{
     error_response, log_protocol_error, protocol_error_response, stopping_response, EdgeState,
 };
+use super::route_trace::RouteTraceBuilder;
 use super::stream::UpstreamBodyError;
 use super::surface::DownstreamSurface;
 use super::upstream::{
@@ -205,6 +206,8 @@ pub(super) async fn send_upstream(
     cache_seed: Option<&str>,
     member: PickedMember,
     continuation_locked: bool,
+    mut trace: Option<&mut RouteTraceBuilder>,
+    url_for_trace: &str,
 ) -> Result<UpstreamSendOutcome, Response> {
     let transport = channel.transport();
     let recovery = transport.recovery();
@@ -251,6 +254,15 @@ pub(super) async fn send_upstream(
                     failover_from.is_some(),
                     failover_from.as_deref(),
                 );
+                if let Some(trace) = trace.as_deref_mut() {
+                    trace.upstream_auth_result(true, Some(response.status().as_u16()), None, None);
+                    trace.upstream_success(
+                        url_for_trace,
+                        &member,
+                        response.status().as_u16(),
+                        state.upstream.model.as_deref(),
+                    );
+                }
                 return Ok(UpstreamSendOutcome {
                     response,
                     member,
@@ -262,6 +274,9 @@ pub(super) async fn send_upstream(
             let status = response.status();
             let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
             if status == StatusCode::UNAUTHORIZED {
+                if let Some(trace) = trace.as_deref_mut() {
+                    trace.upstream_auth_result(false, Some(status.as_u16()), Some("unauthorized"), None);
+                }
                 match switch_or_reload(
                     state,
                     request_id,
@@ -274,6 +289,15 @@ pub(super) async fn send_upstream(
                     AuthFollowup::Reload => continue,
                     AuthFollowup::Switch if continuation_locked => {
                         let detail = read_error_detail(response, &state.force_shutdown).await?;
+                        if let Some(trace) = trace.as_deref_mut() {
+                            trace.upstream_failed(
+                                url_for_trace,
+                                &member,
+                                Some(status.as_u16()),
+                                "unauthorized",
+                                detail.as_deref().unwrap_or("Upstream authorization failed."),
+                            );
+                        }
                         return Err(map_upstream_http_error(
                             state,
                             request_id,
@@ -288,6 +312,15 @@ pub(super) async fn send_upstream(
                     AuthFollowup::Switch => break,
                     AuthFollowup::Fail => {
                         let detail = read_error_detail(response, &state.force_shutdown).await?;
+                        if let Some(trace) = trace.as_deref_mut() {
+                            trace.upstream_failed(
+                                url_for_trace,
+                                &member,
+                                Some(status.as_u16()),
+                                "unauthorized",
+                                detail.as_deref().unwrap_or("Upstream authorization failed."),
+                            );
+                        }
                         return Err(map_upstream_http_error(
                             state,
                             request_id,
@@ -315,6 +348,15 @@ pub(super) async fn send_upstream(
                 };
             if !can_recover {
                 let detail = extract_upstream_error_detail(&error_body);
+                if let Some(trace) = trace.as_deref_mut() {
+                    trace.upstream_failed(
+                        url_for_trace,
+                        &member,
+                        Some(status.as_u16()),
+                        "upstream_error",
+                        detail.as_deref().unwrap_or("Upstream rejected the request."),
+                    );
+                }
                 return Err(map_upstream_http_error(
                     state,
                     request_id,

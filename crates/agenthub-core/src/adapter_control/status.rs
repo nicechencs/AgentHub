@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use crate::bridge::host::{InboundRequestRecord, InboundRequestStats};
+use crate::bridge::host::{InboundRequestRecord, InboundRequestStats, RouteRequestTrace};
 use crate::bridge::{BridgeRuntimeState, BridgeRuntimeStatus, BridgeUpstreamStatus};
 use crate::models::AdapterProfile;
 
@@ -28,6 +28,9 @@ pub struct AdapterBridgeStatus {
     /// Newest first. Empty when no tool has connected since this process started.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recent_inbound: Vec<InboundRequestRecord>,
+    /// Newest first. Per-request route traces for monitoring (credential-free).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_route_traces: Vec<RouteRequestTrace>,
     /// Authenticated inbound requests since this process started (not ring-capped).
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub total_request_count: u64,
@@ -57,6 +60,7 @@ impl AdapterBridgeStatus {
             source_connection_id: Some(profile.source_id.clone()),
             started_at_unix_ms: None,
             recent_inbound: Vec::new(),
+            recent_route_traces: Vec::new(),
             total_request_count: 0,
             failed_request_count: 0,
             last_request_at_unix_ms: None,
@@ -74,6 +78,7 @@ impl AdapterBridgeStatus {
             source_connection_id: status.source_connection_id,
             started_at_unix_ms: system_time_millis(status.started_at),
             recent_inbound: Vec::new(),
+            recent_route_traces: Vec::new(),
             total_request_count: 0,
             failed_request_count: 0,
             last_request_at_unix_ms: None,
@@ -108,6 +113,11 @@ impl AdapterBridgeStatus {
 
     pub fn with_recent_inbound(mut self, recent_inbound: Vec<InboundRequestRecord>) -> Self {
         self.recent_inbound = recent_inbound;
+        self
+    }
+
+    pub fn with_recent_route_traces(mut self, recent_route_traces: Vec<RouteRequestTrace>) -> Self {
+        self.recent_route_traces = recent_route_traces;
         self
     }
 

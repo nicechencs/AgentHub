@@ -393,6 +393,7 @@ fn status_dto(
 ) -> AdapterBridgeStatusDto {
     let token = host.local_token(profile_id).ok().flatten();
     dto.with_recent_inbound(host.recent_inbound(profile_id))
+        .with_recent_route_traces(host.recent_route_traces(profile_id))
         .with_inbound_stats(host.inbound_stats(profile_id))
         .with_local_token(token)
 }
