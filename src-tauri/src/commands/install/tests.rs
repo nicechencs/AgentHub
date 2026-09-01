@@ -1,6 +1,7 @@
 use super::*;
 use crate::file_manager::{
-    explorer_select_arg, file_manager_action, normalize_open_path_input, FileManagerAction,
+    explorer_select_arg, file_manager_action, normalize_open_path_input, resolve_cli_launch_path,
+    FileManagerAction,
 };
 
 #[test]
@@ -54,4 +55,13 @@ fn lifecycle_key_parser_accepts_open_keys_and_legacy_case() {
         "claude"
     );
     assert!(parse_lifecycle_agent_key("Future-Agent").is_err());
+}
+
+#[test]
+fn resolve_cli_launch_path_picks_cmd_shim() {
+    let dir = tempfile::tempdir().unwrap();
+    let shim = dir.path().join("claude");
+    let cmd = dir.path().join("claude.cmd");
+    std::fs::write(&cmd, "@echo off\n").unwrap();
+    assert_eq!(resolve_cli_launch_path(&shim), cmd);
 }

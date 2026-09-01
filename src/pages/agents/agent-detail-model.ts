@@ -103,6 +103,45 @@ export function catalogChannelLabel(
   return hit.label.trim();
 }
 
+/** Catalog install command / script for a channel. */
+export function catalogChannelCommand(
+  agentId: string,
+  channel: string | null | undefined,
+  catalogChannels?: readonly Pick<InstallChannelMeta, 'id' | 'command'>[],
+): string | undefined {
+  const id = channel?.trim();
+  if (!id) return undefined;
+  const channels = catalogChannels ?? AGENT_MAP[agentId]?.installChannels ?? [];
+  const command = channels.find((row) => row.id === id)?.command?.trim();
+  return command || undefined;
+}
+
+/** True when the product label is 官方脚本 / Official script. */
+export function isOfficialScriptChannel(
+  agentId: string,
+  channel: string | null | undefined,
+  t: TranslateFn,
+  catalogChannels?: readonly Pick<InstallChannelMeta, 'id' | 'label'>[],
+): boolean {
+  const id = channel?.trim();
+  if (id !== 'native') return false;
+  return installChannelKindLabel(agentId, id, t, catalogChannels)
+    === extraCopyKindLabel('native', t);
+}
+
+/** Command copied when the user clicks 官方脚本 or an npm package name. */
+export function copyableChannelCommand(
+  agentId: string,
+  channel: string | null | undefined,
+  t: TranslateFn,
+  catalogChannels?: readonly Pick<InstallChannelMeta, 'id' | 'label' | 'command'>[],
+): string | undefined {
+  const id = channel?.trim();
+  if (!id) return undefined;
+  if (id !== 'npm' && !isOfficialScriptChannel(agentId, id, t, catalogChannels)) return undefined;
+  return catalogChannelCommand(agentId, id, catalogChannels);
+}
+
 /**
  * 渠道: dest human kind only (官方脚本 / npm 包 / 官网 Setup / IDE / 桌面).
  * Package ids stay off this field.

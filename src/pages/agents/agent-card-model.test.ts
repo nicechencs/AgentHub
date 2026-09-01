@@ -19,6 +19,9 @@ import {
   specialChannelUpdateTargets,
   uniqueInstallVersions,
   agentListDetailsHint,
+  agentLaunchTargets,
+  agentUpgradeControl,
+  agentUpgradeHint,
   programInstalls,
 } from './agent-card-model';
 
@@ -33,6 +36,11 @@ describe('agent-card menu wiring', () => {
     expect(card).toContain('canInstallAlongsideSpecial');
     expect(card).toContain('uniqueInstallVersions');
     expect(card).toContain('agentListDetailsHint');
+    expect(card).toContain('agentUpgradeControl');
+    expect(card).toContain('agentLaunchTargets');
+    expect(card).toContain("t('agents.card.startCli')");
+    expect(card).toContain("t('agents.card.startApp')");
+    expect(card).toContain('text-muted');
     expect(card).not.toContain('openAgentCardUninstallConfirm');
     expect(card).not.toContain("t('agents.card.uninstallProgram')");
     expect(card).not.toContain("t('agents.card.uninstallConfig')");
@@ -353,6 +361,92 @@ describe('extra copy labels', () => {
   });
 });
 
+describe('agent launch targets', () => {
+  it('shows CLI for npm/native and App for desktop, and hides the rest', () => {
+    expect(agentLaunchTargets({
+      agentId: 'codex',
+      installed: true,
+      channel: 'npm',
+      binPath: '/npm/codex',
+    })).toEqual({ cliPath: '/npm/codex' });
+    expect(agentLaunchTargets({
+      agentId: 'codex',
+      installed: true,
+      channel: 'desktop',
+      binPath: 'C:\\Store\\codex.exe',
+    })).toEqual({ appPath: 'C:\\Store\\codex.exe' });
+    expect(agentLaunchTargets({
+      agentId: 'codex',
+      installed: true,
+      channel: 'npm',
+      binPath: '/npm/codex',
+      extraCopies: [{ path: '/store/codex', kind: 'desktop', source: 'desktop' }],
+    })).toEqual({ cliPath: '/npm/codex', appPath: '/store/codex' });
+    expect(agentLaunchTargets({
+      agentId: 'workbuddy',
+      installed: true,
+      channel: 'native',
+      binPath: '/opt/WorkBuddy.exe',
+    })).toEqual({ appPath: '/opt/WorkBuddy.exe' });
+    expect(agentLaunchTargets({
+      agentId: 'codex',
+      installed: true,
+      channel: 'ide',
+      binPath: '/ide/codex',
+    })).toEqual({});
+  });
+});
+
+describe('agent upgrade control', () => {
+  const t = (key: string) => key;
+
+  it('keeps in-app upgrades bright and force-upgradable', () => {
+    expect(
+      agentUpgradeControl({
+        installed: true,
+        updateVia: 'in_app',
+        updateState: 'up_to_date',
+      }),
+    ).toEqual({ show: true, muted: false, kind: 'in_app' });
+  });
+
+  it('grays unsupported upgrades and opens the setup page when one exists', () => {
+    expect(
+      agentUpgradeControl({
+        installed: true,
+        updateVia: 'official',
+        updateState: 'unsupported',
+        setupUrl: 'https://zcode.z.ai/',
+      }),
+    ).toEqual({ show: true, muted: true, kind: 'open_setup' });
+    expect(
+      agentUpgradeControl({
+        installed: true,
+        updateVia: 'ide',
+        updateState: 'unsupported',
+      }),
+    ).toEqual({ show: true, muted: true, kind: 'hint_only' });
+    expect(
+      agentUpgradeHint(
+        { muted: true, kind: 'hint_only' },
+        { updateVia: 'ide', t },
+      ),
+    ).toBe('agents.card.updateViaIde');
+    expect(
+      agentUpgradeHint(
+        { muted: true, kind: 'open_setup' },
+        { updateVia: 'official', t },
+      ),
+    ).toBe('agents.update.clickOfficial');
+    expect(
+      agentUpgradeHint(
+        { muted: true, kind: 'hint_only' },
+        { updateVia: 'desktop', t },
+      ),
+    ).toBe('agents.card.updateViaDesktop');
+  });
+});
+
 describe('agent-card install confirm', () => {
   it('opens confirm instead of starting install immediately', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
@@ -372,10 +466,14 @@ describe('agent-card install confirm', () => {
     expect(installRetryButtonVariant('done')).toBe('secondary');
     expect(installRetryButtonVariant(undefined)).toBe('secondary');
     expect(card).toContain('installFailed');
-    expect(card).toContain('installRetryButtonVariant(task?.status)');
+    expect(card).toContain('<AgentInstallButton');
+    expect(card).toContain('status={task?.status}');
     expect(card).toContain('variant="default"');
     expect(card).toContain('agents.card.retry');
     expect(card).toContain('retryAction');
+    const installButton = readFileSync(path.join(dir, 'AgentInstallButton.tsx'), 'utf8');
+    expect(installButton).toContain('installRetryButtonVariant(status)');
+    expect(installButton).toContain('agents.card.install');
     expect(card).toContain('{task.diagnosis ? (');
     expect(card.lastIndexOf('{task.diagnosis ? (')).toBeLessThan(
       card.lastIndexOf('<InlineTerminal'),

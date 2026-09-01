@@ -100,6 +100,64 @@ export function updateViaLabel(
   }
 }
 
+export type AgentUpgradeKind = 'in_app' | 'open_setup' | 'hint_only';
+
+export type AgentUpgradeControl = {
+  show: boolean;
+  /** Not an in-app upgrade — gray the button. */
+  muted: boolean;
+  kind: AgentUpgradeKind;
+};
+
+/** IDE / desktop / official / unsupported: gray button + hint, or open the setup page. */
+export function agentUpgradeControl(input: {
+  installed: boolean;
+  updateVia?: string | null;
+  updateState?: string;
+  setupUrl?: string | null;
+}): AgentUpgradeControl {
+  if (!input.installed) {
+    return { show: false, muted: false, kind: 'in_app' };
+  }
+  const via = asUpdateVia(input.updateVia);
+  const unsupported = input.updateState === 'unsupported';
+  if (via === 'in_app' && !unsupported) {
+    return { show: true, muted: false, kind: 'in_app' };
+  }
+  const show =
+    unsupported || via === 'official' || via === 'ide' || via === 'desktop';
+  if (!show) {
+    return { show: false, muted: false, kind: 'hint_only' };
+  }
+  const url = input.setupUrl?.trim();
+  const hasUrl = Boolean(url && /^https:\/\//i.test(url));
+  return {
+    show: true,
+    muted: true,
+    kind: hasUrl ? 'open_setup' : 'hint_only',
+  };
+}
+
+export function agentUpgradeHint(
+  control: Pick<AgentUpgradeControl, 'kind' | 'muted'>,
+  input: {
+    updateVia?: string | null;
+    note?: string | null;
+    t: (key: MessageKey, params?: Record<string, string>) => string;
+  },
+): string {
+  const via = asUpdateVia(input.updateVia);
+  const where =
+    via && via !== 'in_app' && via !== 'none'
+      ? updateViaLabel(via, input.t)
+      : input.t('agents.card.unsupportedUpdate');
+  const hint = input.note?.trim() || where;
+  if (control.kind === 'open_setup') {
+    return input.t('agents.update.clickOfficial', { note: hint });
+  }
+  return hint;
+}
+
 export function uninstallViaLabel(
   via: UninstallVia,
   t: (key: MessageKey) => string,
@@ -267,6 +325,40 @@ export function spawnInstall(
   agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
 ): AgentInstall | undefined {
   return listAgentInstalls(agent).find((row) => row.spawn);
+}
+
+export type AgentLaunchTargets = {
+  cliPath?: string;
+  appPath?: string;
+};
+
+function launchKindForInstall(
+  agentId: string,
+  row: Pick<AgentInstall, 'source'>,
+): 'cli' | 'app' | null {
+  if (row.source === 'desktop') return 'app';
+  if (row.source === 'npm') return 'cli';
+  if (row.source === 'native') {
+    // WorkBuddy native Setup is the Electron app, not a CLI.
+    if (agentId === 'workbuddy') return 'app';
+    return 'cli';
+  }
+  return null;
+}
+
+/** Outer card: show 启动 CLI / 启动 App only when that program exists. */
+export function agentLaunchTargets(
+  agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
+): AgentLaunchTargets {
+  const out: AgentLaunchTargets = {};
+  for (const row of listAgentInstalls(agent)) {
+    const location = row.location.trim();
+    if (!location) continue;
+    const kind = launchKindForInstall(agent.agentId, row);
+    if (kind === 'cli' && !out.cliPath) out.cliPath = location;
+    if (kind === 'app' && !out.appPath) out.appPath = location;
+  }
+  return out;
 }
 
 /** Program uninstall only covers copies whose uninstall method is in-app. */

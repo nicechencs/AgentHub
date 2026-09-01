@@ -1,9 +1,11 @@
 import * as React from 'react';
 import {
+  AppWindow,
   ArrowUpCircle,
   Copy,
   Eye,
   EyeOff,
+  Terminal,
   X,
   Zap,
 } from 'lucide-react';
@@ -18,6 +20,7 @@ import { Card } from '@/components/ui/card';
 import { Tip } from '@/components/ui/tooltip';
 import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
 import { setAgentHidden } from '@/lib/api/agent';
+import { launchAgentProgram } from '@/lib/api/install';
 import { openExternalLink } from '@/lib/open-external';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -25,10 +28,12 @@ import {
   agentTaskLogTitleKey,
   canInstallAlongsideSpecial,
   formatAgentVersion,
-  installRetryButtonVariant,
   isNodeTooOldUpdateNote,
   isSpecialInstallChannel,
+  agentLaunchTargets,
   agentListDetailsHint,
+  agentUpgradeControl,
+  agentUpgradeHint,
   listAgentInstalls,
   programInstalls,
   spawnInstall,
@@ -36,6 +41,7 @@ import {
   uniqueInstallVersions,
 } from './agent-card-model';
 import { AgentCardDialogs } from './AgentCardDialogs';
+import { AgentInstallButton } from './AgentInstallButton';
 import { localizeInstallCopy } from './install-labels';
 import { useAgentCardLifecycle } from './use-agent-card-lifecycle';
 
@@ -111,6 +117,7 @@ export function AgentCard({
   } = life;
 
   const [hiding, setHiding] = React.useState(false);
+  const [launching, setLaunching] = React.useState<'cli' | 'app' | null>(null);
   const hidden = Boolean(agent.hidden);
   const actionsBusy = busy || hiding;
 
@@ -170,15 +177,31 @@ export function AgentCard({
         !!agent.latestVersion &&
         !!agent.version &&
         agent.latestVersion !== agent.version));
-  const updateUnsupported = updateState === 'unsupported';
   const officialSetupUrl = resolveOfficialSetupUrl(
     agent.update?.setupUrl,
     meta.installChannels,
   );
-  const canForceUpgrade = agent.installed && inAppChannel && !updateUnsupported;
-  const showInAppUpgrade =
-    agent.installed &&
-    (inAppChannel || spawn?.updateVia === 'official' || updateUnsupported);
+  const upgradeControl = agentUpgradeControl({
+    installed: agent.installed,
+    updateVia: spawn?.updateVia,
+    updateState,
+    setupUrl: officialSetupUrl,
+  });
+  const launch = agentLaunchTargets(agent);
+  const startProgram = async (kind: 'cli' | 'app', path: string) => {
+    setLaunching(kind);
+    try {
+      await launchAgentProgram(kind, path);
+    } catch (error) {
+      toast({
+        title: kind === 'cli' ? t('agents.card.startCliFailed') : t('agents.card.startAppFailed'),
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'danger',
+      });
+    } finally {
+      setLaunching(null);
+    }
+  };
   const installAlongside = canInstallAlongsideSpecial(agent);
   const latestLabel =
     agent.update?.latestVersion ?? agent.latestVersion ?? undefined;
@@ -234,12 +257,12 @@ export function AgentCard({
 
   const upgradeTooltip = (() => {
     if (checkingUpdate) return t('agents.update.checking');
-    if (updateUnsupported) {
-      const note = localizeInstallCopy(agent.update?.note ?? '', t)
-        || t('agents.card.unsupportedUpdate');
-      return officialSetupUrl
-        ? t('agents.update.clickOfficial', { note })
-        : note;
+    if (upgradeControl.muted) {
+      return agentUpgradeHint(upgradeControl, {
+        updateVia: spawn?.updateVia,
+        note: localizeInstallCopy(agent.update?.note ?? '', t),
+        t,
+      });
     }
     if (upgradable) {
       return latestVersionLabel
@@ -318,53 +341,72 @@ export function AgentCard({
           </Button>
         ) : agent.installed ? (
           <>
-            {installAlongside ? (
+            {launch.cliPath ? (
               <Button
                 size="sm"
-                variant={installRetryButtonVariant(task?.status)}
+                variant="outline"
+                disabled={actionsBusy || launching != null}
+                onClick={() => void startProgram('cli', launch.cliPath!)}
+              >
+                <Terminal className="h-3.5 w-3.5" />
+                {t('agents.card.startCli')}
+              </Button>
+            ) : null}
+            {launch.appPath ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={actionsBusy || launching != null}
+                onClick={() => void startProgram('app', launch.appPath!)}
+              >
+                <AppWindow className="h-3.5 w-3.5" />
+                {t('agents.card.startApp')}
+              </Button>
+            ) : null}
+            {installAlongside ? (
+              <AgentInstallButton
+                status={task?.status}
+                busy={busy}
+                channelId={selectedChannel.id}
                 onClick={() =>
                   installFailed ? retryAction() : openConfirm('install')
                 }
-                disabled={busy}
-                title={
-                  installFailed
-                    ? t('agents.card.retry')
-                    : t('agents.card.installWithChannel', { id: selectedChannel.id })
-                }
-              >
-                <Zap className="h-3.5 w-3.5" />
-                {installFailed ? t('agents.card.retry') : t('agents.card.install')}
-              </Button>
+              />
             ) : null}
-            {showInAppUpgrade ? (
-              <Button
-                size="icon"
-                variant="secondary"
-                disabled={
-                  busy ||
-                  checkingUpdate ||
-                  (updateUnsupported
-                    ? !officialSetupUrl
-                    : !upgradable && !canForceUpgrade)
-                }
-                aria-label={
-                  updateUnsupported
-                    ? t('agents.card.openOfficialUpdate')
-                    : upgradable
-                      ? t('agents.card.update')
-                      : t('agents.card.forceUpgrade')
-                }
-                title={upgradeTooltip}
-                onClick={updateUnsupported ? openOfficialSetup : onUpgradeClick}
-              >
-                <ArrowUpCircle
-                  className={cn(
-                    'h-3.5 w-3.5',
-                    upgradable && 'text-success',
-                    checkingUpdate && 'animate-pulse opacity-70',
-                  )}
-                />
-              </Button>
+            {upgradeControl.show ? (
+              <span title={upgradeTooltip} className="inline-flex">
+                <Button
+                  size="icon"
+                  variant={upgradeControl.muted ? 'outline' : 'secondary'}
+                  className={upgradeControl.muted ? 'text-muted' : undefined}
+                  disabled={busy || checkingUpdate || upgradeControl.kind === 'hint_only'}
+                  aria-label={
+                    upgradeControl.kind === 'open_setup'
+                      ? t('agents.card.openOfficialUpdate')
+                      : upgradeControl.muted
+                        ? t('agents.card.unsupportedUpdate')
+                        : upgradable
+                          ? t('agents.card.update')
+                          : t('agents.card.forceUpgrade')
+                  }
+                  onClick={
+                    upgradeControl.kind === 'open_setup'
+                      ? openOfficialSetup
+                      : upgradeControl.kind === 'in_app'
+                        ? onUpgradeClick
+                        : undefined
+                  }
+                >
+                  <ArrowUpCircle
+                    className={cn(
+                      'h-3.5 w-3.5',
+                      !upgradeControl.muted && upgradable && 'text-success',
+                      upgradeControl.muted && 'text-muted',
+                      checkingUpdate && 'animate-pulse opacity-70',
+                    )}
+                  />
+                </Button>
+              </span>
             ) : null}
             <Button
               size="icon"
@@ -406,16 +448,12 @@ export function AgentCard({
           </>
         ) : (
           <>
-            <Button
-              size="sm"
-              variant={installRetryButtonVariant(task?.status)}
+            <AgentInstallButton
+              status={task?.status}
+              busy={busy}
+              channelId={selectedChannel.id}
               onClick={() => (installFailed ? retryAction() : openConfirm('install'))}
-              disabled={busy}
-              title={installFailed ? t('agents.card.retry') : t('agents.card.installWithChannel', { id: selectedChannel.id })}
-            >
-              <Zap className="h-3.5 w-3.5" />
-              {installFailed ? t('agents.card.retry') : t('agents.card.install')}
-            </Button>
+            />
             <Button
               size="icon"
               variant="outline"

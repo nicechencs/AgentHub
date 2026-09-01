@@ -17,6 +17,7 @@ export function createMockInstallPort(): InstallPort {
     upgradeAgentCmd: async () => deny('upgradeAgentCmd'),
     uninstallAgentCmd: async () => deny('uninstallAgentCmd'),
     openAgentConfigDir: async () => deny('openAgentConfigDir'),
+    launchAgentProgram: async () => deny('launchAgentProgram'),
     getAgentLivePaths: async () => deny('getAgentLivePaths'),
     onProgress: () => () => {},
   };
