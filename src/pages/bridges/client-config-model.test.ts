@@ -59,6 +59,7 @@ const RESPONSES_ROW: Omit<RouteGraphRow, 'agent'> = {
   link: 'solid',
   enabled: true,
   applied: false,
+  writeNote: null,
 };
 
 const MESSAGES_ROW: Omit<RouteGraphRow, 'agent'> = {

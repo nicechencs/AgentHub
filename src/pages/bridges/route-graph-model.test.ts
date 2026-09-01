@@ -273,7 +273,7 @@ describe('buildRouteGraph', () => {
     }
   });
 
-  it('flags applied from a sibling local_bridge profile on the same source', () => {
+  it('flags applied only from the current running write, not a leftover stamp', () => {
     const graph = buildRouteGraph({
       profile: profile(),
       entries: [openRouterEntry()],
@@ -288,11 +288,40 @@ describe('buildRouteGraph', () => {
         }),
       ],
       port: 26275,
+      writeTruth: {
+        currentProviderByAgent: { grok: 'g-grok' },
+        runningProfileIds: new Set(['g1']),
+      },
     });
     const rows = byAgent(graph.rows);
     expect(rows.grok?.applied).toBe(true);
+    expect(rows.grok?.writeNote).toBeNull();
     expect(rows.claude?.applied).toBe(false);
     expect(rows.codex?.applied).toBe(false);
+  });
+
+  it('does not show 已写入 on a stopped port after the current write moved', () => {
+    const graph = buildRouteGraph({
+      profile: profile({ id: 'stale-40661', localPort: 40661 }),
+      entries: [openRouterEntry()],
+      siblingProfiles: [
+        profile({
+          id: 'stale-40661',
+          targetAgentId: 'claude',
+          generatedProviderId: 'g-old-40661',
+          localPort: 40661,
+        }),
+      ],
+      port: 40661,
+      writeTruth: {
+        currentProviderByAgent: { claude: 'g-live-44227' },
+        runningProfileIds: new Set(['live-44227']),
+      },
+    });
+    const rows = byAgent(graph.rows);
+    expect(rows.claude?.applied).toBe(false);
+    expect(rows.claude?.writeNote).toBe('rewritten');
+    expect(rows.claude?.localUrl).toContain(':40661/');
   });
 
   it('does not take a listen port from another login targeting the same client', () => {
