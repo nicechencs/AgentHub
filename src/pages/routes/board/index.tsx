@@ -56,14 +56,11 @@ import {
 import { BoardUsageSection } from '@/pages/routes/board/board-usage-section';
 
 function localEntryStatusLabel(control: LocalEntryControl, t: TranslateFn): string {
-  if (control.profileIds.length === 0) {
-    return control.hasEnrolledLogins
-      ? t('routes.board.entryNeedRoute')
-      : t('routes.board.entryEmpty');
-  }
   if (control.stopping) return t('routes.board.entryStopping');
   if (control.starting) return t('routes.board.entryStarting');
-  return control.running ? t('routes.board.entryRunning') : t('routes.board.entryStopped');
+  if (control.running) return t('routes.board.entryRunning');
+  if (control.action === 'start') return t('routes.board.entryStopped');
+  return t('routes.board.entryEmpty');
 }
 
 function rememberKind(raw: string): LocalEndpointKind | 'all' {
@@ -179,8 +176,12 @@ export default function RoutesBoardPage() {
     () => buildLocalEntryControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
     [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
   );
-  const localEntryBusy = localEntry.profileIds.some((id) => busyProfileIds[id]);
-  const localEntryError = localEntry.profileIds
+  const localEntryBusy = localEntry.profileIds.some((id) => busyProfileIds[id])
+    || Boolean(busyProfileIds.__local_entry__);
+  const localEntryError = [
+    ...localEntry.profileIds,
+    ...localEntry.bindTargets.map((target) => target.sourceId),
+  ]
     .map((id) => profileErrors[id])
     .find((error) => error != null) ?? null;
 
@@ -238,32 +239,6 @@ export default function RoutesBoardPage() {
         />
       ) : (
         <div className={pageRhythm.blocks}>
-          <div className={pageRhythm.chromeRow}>
-            <p className="min-w-0 truncate text-meta text-muted">{entryLabel}</p>
-            <div className={pageRhythm.chromeActions}>
-              <Hint
-                label={
-                  localEntry.running || localEntry.startIds.length > 0
-                    ? undefined
-                    : entryLabel
-                }
-              >
-                <Switch
-                  checked={localEntry.running}
-                  disabled={
-                    localEntryBusy
-                    || localEntry.transitioning
-                    || (!localEntry.running && localEntry.startIds.length === 0)
-                  }
-                  onCheckedChange={(on) => {
-                    if (on) void handleStartLocalEntry(localEntry.startIds);
-                    else setStopOpen(true);
-                  }}
-                  aria-label={t('routes.pool.entry')}
-                />
-              </Hint>
-            </div>
-          </div>
           {localEntryError ? (
             <AdapterErrorLines
               error={localEntryError}
@@ -300,6 +275,30 @@ export default function RoutesBoardPage() {
                 }}
                 label={t('routes.board.refresh')}
               />
+              <Hint
+                label={
+                  localEntry.running || localEntry.action === 'start'
+                    ? undefined
+                    : entryLabel
+                }
+              >
+                <Switch
+                  checked={localEntry.running}
+                  disabled={
+                    localEntryBusy
+                    || localEntry.transitioning
+                    || localEntry.action == null
+                  }
+                  onCheckedChange={(on) => {
+                    if (on) {
+                      void handleStartLocalEntry(localEntry.startIds, localEntry.bindTargets);
+                    } else {
+                      setStopOpen(true);
+                    }
+                  }}
+                  aria-label={t('routes.pool.entry')}
+                />
+              </Hint>
             </div>
           </PageSection>
 

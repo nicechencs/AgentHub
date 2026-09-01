@@ -115,11 +115,9 @@ export default function RoutesTokensPage() {
         <p className="min-w-0 truncate text-meta text-muted">{
           localEntry.running
             ? t('routes.tokens.scopeNote')
-            : localEntry.profileIds.length === 0 && localEntry.hasEnrolledLogins
-              ? t('routes.board.entryNeedRoute')
-              : localEntry.profileIds.length === 0
-                ? t('routes.tokens.scopeNote')
-                : t('routes.tokens.entryStoppedHint')
+            : localEntry.action === 'start'
+              ? t('routes.tokens.entryStoppedHint')
+              : t('routes.tokens.scopeNote')
         }</p>
         <div className={pageRhythm.chromeActions}>
           <PageRefreshButton

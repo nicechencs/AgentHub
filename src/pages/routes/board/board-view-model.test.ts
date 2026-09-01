@@ -56,12 +56,17 @@ describe('buildLocalEntryControl', () => {
     });
   });
 
-  it('notes pool logins even when no local-bridge listener exists yet', () => {
+  it('starts from pool logins even when no local-bridge listener exists yet', () => {
     expect(buildLocalEntryControl([], {}, new Set(), [pool({ id: 'pool-1' })])).toMatchObject({
-      action: null,
+      action: 'start',
       running: false,
       startIds: [],
       hasEnrolledLogins: true,
+      bindTargets: [{
+        sourceKind: 'account',
+        sourceId: 'acc-1',
+        targetAgentId: 'codex',
+      }],
     });
   });
 
