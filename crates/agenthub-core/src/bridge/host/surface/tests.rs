@@ -43,3 +43,57 @@ fn op_strings_match_existing_log_contract() {
     assert_eq!(DownstreamSurface::ChatCompletions.op(), "chat");
     assert_eq!(DownstreamSurface::Models.op(), "models");
 }
+
+#[test]
+fn surface_mismatch_message_names_served_and_requested_paths() {
+    let msg = super::surface_mismatch_message(
+        DownstreamSurface::ChatCompletions,
+        BridgeLocalSurface::Responses,
+    );
+    assert!(msg.contains("/v1/responses"), "{msg}");
+    assert!(msg.contains("/v1/chat/completions"), "{msg}");
+    assert!(msg.contains("This route only serves"), "{msg}");
+    assert!(msg.contains("本机路由只提供"), "{msg}");
+}
+
+#[test]
+fn surface_mismatch_response_is_not_found_with_json_content_type() {
+    let response = super::surface_mismatch_response(
+        DownstreamSurface::Messages,
+        BridgeLocalSurface::ChatCompletions,
+    );
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    let ctype = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        ctype.starts_with("application/json"),
+        "expected JSON content-type, got {ctype:?}"
+    );
+}
+
+#[test]
+fn surface_mismatch_error_json_shape_matches_bridge_contract() {
+    let message = super::surface_mismatch_message(
+        DownstreamSurface::Messages,
+        BridgeLocalSurface::ChatCompletions,
+    );
+    let value = serde_json::json!({
+        "error": {
+            "code": "surface_mismatch",
+            "message": message,
+            "type": "invalid_request_error",
+        }
+    });
+    let error = value.get("error").expect("error object");
+    assert_eq!(error.get("code").and_then(|v| v.as_str()), Some("surface_mismatch"));
+    assert_eq!(
+        error.get("type").and_then(|v| v.as_str()),
+        Some("invalid_request_error")
+    );
+    let message = error.get("message").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(message.contains("/v1/chat/completions"), "{message}");
+    assert!(message.contains("/v1/messages"), "{message}");
+}

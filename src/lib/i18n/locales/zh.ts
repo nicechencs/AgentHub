@@ -2289,6 +2289,8 @@ export const zh = {
       needsOfficial: "需官网更新",
       openOfficialDownload: "打开官网下载",
       unsupportedUpdate: "该 Agent 不支持自动更新检测",
+      linuxUnsupported: "暂不支持 Linux",
+      linuxUnsupportedHint: "WorkBuddy / ZCode 仅提供 Windows / macOS 安装包，当前 Linux 暂不支持。",
       notInstalled: "未安装",
       seeDetails: "多个版本，点开看详情",
       seeDetailsCopies: "另有 {count} 份，点开看详情",
