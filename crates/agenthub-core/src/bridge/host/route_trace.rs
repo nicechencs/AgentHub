@@ -400,17 +400,25 @@ impl RouteTraceBuilder {
         self.skip_after_local_auth();
     }
 
+    /// Token was accepted; this listener does not serve the requested path.
+    /// Keep local auth Ok and fail the inbound endpoint, not the login step.
     pub fn local_path_failed(&mut self, profile_id: &str, port: Option<u16>, code: &str, message: &str) {
         self.trace.profile_id = Some(profile_id.to_owned());
-        self.trace.local_auth = RouteTraceLocalAuth {
-            status: TraceStageStatus::Failed,
-            profile_id: Some(profile_id.to_owned()),
-            port,
-            code: Some(code.to_owned()),
-            message: Some(message.to_owned()),
-        };
-        self.mark_failure("local_auth");
+        if self.trace.local_auth.status != TraceStageStatus::Ok {
+            self.trace.local_auth = RouteTraceLocalAuth {
+                status: TraceStageStatus::Ok,
+                profile_id: Some(profile_id.to_owned()),
+                port,
+                code: None,
+                message: None,
+            };
+        } else if self.trace.local_auth.port.is_none() {
+            self.trace.local_auth.port = port;
+        }
+        self.mark_failure("local_endpoint");
         self.skip_after_local_auth();
+        self.trace.conversion.code = Some(code.to_owned());
+        self.trace.conversion.message = Some(message.to_owned());
     }
 
     pub fn pool_failed(&mut self, code: &str, message: &str) {

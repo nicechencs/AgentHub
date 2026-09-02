@@ -384,14 +384,27 @@ describe('agent launch targets', () => {
       installed: true,
       channel: 'desktop',
       binPath: 'C:\\Store\\codex.exe',
-    })).toEqual({ appPath: 'C:\\Store\\codex.exe' });
+    }, 'windows')).toEqual({ appPath: 'C:\\Store\\codex.exe' });
     expect(agentLaunchTargets({
       agentId: 'codex',
       installed: true,
       channel: 'npm',
       binPath: '/npm/codex',
       extraCopies: [{ path: '/store/codex', kind: 'desktop', source: 'desktop' }],
-    })).toEqual({ cliPath: '/npm/codex', appPath: '/store/codex' });
+    }, 'macos')).toEqual({ cliPath: '/npm/codex', appPath: '/store/codex' });
+    expect(agentLaunchTargets({
+      agentId: 'codex',
+      installed: true,
+      channel: 'desktop',
+      binPath: '/opt/codex',
+    }, 'linux')).toEqual({});
+    expect(agentLaunchTargets({
+      agentId: 'codex',
+      installed: true,
+      channel: 'npm',
+      binPath: '/npm/codex',
+      extraCopies: [{ path: '/store/codex', kind: 'desktop', source: 'desktop' }],
+    }, 'linux')).toEqual({ cliPath: '/npm/codex' });
     expect(agentLaunchTargets({
       agentId: 'workbuddy',
       installed: true,

@@ -1112,6 +1112,7 @@ export const zh = {
       stageUpstreamAuth: "上游鉴权",
       stageUpstream: "上游",
       stageId: {
+        local_endpoint: "本地调用端点",
         local_auth: "本机鉴权",
         pool: "连接池",
         conversion: "转换",
