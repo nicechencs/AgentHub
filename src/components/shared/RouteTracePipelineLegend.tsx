@@ -32,14 +32,10 @@ export function RouteTracePipelineLegend({
 }) {
   const { t } = useI18n();
   return (
-    <div
-      className={cn(
-        'rounded-card border border-border bg-panel p-3',
-        className,
-      )}
-      data-route-trace-legend
-    >
-      <p className="mb-2 text-meta font-medium text-primary">{t('routes.trace.legendTitle')}</p>
+    <div className={cn(className)} data-route-trace-legend>
+      <h2 className="mb-3 text-body font-semibold tracking-tight text-primary">
+        {t('routes.trace.legendTitle')}
+      </h2>
       <RouteTraceFlowDiagram
         row={row ?? LEGEND_TRACE}
         compact

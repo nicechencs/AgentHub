@@ -41,6 +41,7 @@ describe('RouteTracePipelineLegend', () => {
     expect(markup).toContain('data-stage-box="upstream"');
     expect(markup).not.toContain('data-stage-box="local_endpoint"');
     expect(markup).not.toContain('data-stage-catalog');
+    expect(markup).toContain('data-card="default"');
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('/v1/responses');
     expect(markup).toContain('/v1/chat/completions');
@@ -48,7 +49,6 @@ describe('RouteTracePipelineLegend', () => {
     expect(markup).toContain('Acct B');
     expect(markup).toContain('https://api.anthropic.com/v1/messages');
     expect(markup).not.toContain('127.0.0.1');
-    expect(markup).not.toContain('data-matrix-cell');
     expect(markup).not.toContain('data-auth-ok');
   });
 
@@ -70,7 +70,6 @@ describe('RouteTracePipelineLegend', () => {
     expect(markup).toContain('Acct A');
     expect(markup).toContain('Messages');
     expect(markup).toContain('Anthropic');
-    expect(markup).not.toContain('messages_to_anthropic');
     expect(markup).toContain('https://api.anthropic.com/v1/messages');
   });
 });

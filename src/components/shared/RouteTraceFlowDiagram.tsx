@@ -1,7 +1,7 @@
 import { Check, Minus, X } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
-import { Tip } from '@/components/ui/tooltip';
+import { Hint, Tip } from '@/components/ui/tooltip';
 import { Card } from '@/components/ui/card';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { TranslateFn } from '@/lib/i18n';
@@ -115,17 +115,26 @@ function StageCard({
   support?: readonly string[];
   children?: ReactNode;
 }) {
+  const card = (
+    <Card
+      className={cn(
+        'flex h-full min-h-[5.5rem] min-w-0 flex-col p-3 transition-colors hover:border-accent/40 hover:bg-hover/40',
+        state === 'failed' && 'border-danger/50',
+        state === 'active' && 'border-accent bg-hover/40',
+        state === 'ok' && 'border-success/40',
+      )}
+      data-stage-box={stageId}
+      data-stage-support={support && support.length > 0 ? support.join('\n') : undefined}
+    >
+      <p className="text-xs font-medium text-primary">{title}</p>
+      <div className="mt-1 min-w-0 flex-1">{children}</div>
+    </Card>
+  );
+  if (tip == null || tip === false || tip === '') return card;
   return (
-    <Tip label={tip} className="block h-full w-full min-w-0" delayDuration={0}>
-      <Card
-        className={cn('flex h-full min-h-[5.5rem] min-w-0 flex-col p-3', stageBorder(state), stageBg(state))}
-        data-stage-box={stageId}
-        data-stage-support={support && support.length > 0 ? support.join('\n') : undefined}
-      >
-        <p className="text-xs font-medium text-primary">{title}</p>
-        <div className="mt-1 min-w-0 flex-1">{children}</div>
-      </Card>
-    </Tip>
+    <Hint label={tip} delayDuration={0}>
+      <div className="h-full min-w-0">{card}</div>
+    </Hint>
   );
 }
 
@@ -487,7 +496,14 @@ function CompactPipeline({
         title={t('routes.trace.stageConversion')}
         state={view.conversion.state}
         stageId="conversion"
-        tip={t('routes.trace.flow.supportConversion')}
+        tip={
+          <div>
+            <p>{t('routes.trace.flow.supportConversion')}</p>
+            <div className="mt-1.5">
+              <ConversionMatrixTable view={view} />
+            </div>
+          </div>
+        }
       >
         {conversionHit ? (
           <p className="truncate text-sm font-medium text-success">{conversionHit}</p>
