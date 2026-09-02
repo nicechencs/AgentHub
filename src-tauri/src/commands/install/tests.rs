@@ -1,7 +1,9 @@
 use super::*;
 use crate::file_manager::{
-    applescript_terminal_do_script, enclosing_app_bundle, explorer_select_arg, file_manager_action,
-    normalize_open_path_input, resolve_cli_launch_path, FileManagerAction,
+    applescript_terminal_do_script, codex_app_launch_kind, enclosing_app_bundle, explorer_select_arg,
+    file_manager_action, looks_like_codex_bundled_cli, macos_codex_app_bundle_names,
+    normalize_open_path_input, parse_windows_codex_app_id_from_registry, resolve_cli_launch_path,
+    windows_codex_app_id_from_package_full_name, CodexAppLaunchKind, FileManagerAction,
 };
 
 #[test]
@@ -100,4 +102,79 @@ fn applescript_terminal_do_script_uses_quoted_form() {
     assert!(script.contains("quoted form of"));
     assert!(script.contains("claude"));
     assert!(script.contains("Nice Chen"));
+}
+
+#[test]
+fn looks_like_codex_bundled_cli_skips_gui_and_matches_hashed_bin() {
+    assert!(looks_like_codex_bundled_cli(std::path::Path::new(
+        r"C:\Users\demo\AppData\Local\OpenAI\Codex\bin\b99306303521e97e\codex.exe",
+    )));
+    assert!(looks_like_codex_bundled_cli(std::path::Path::new(
+        r"C:\Program Files\WindowsApps\OpenAI.Codex_1.0.0_x64__2p2nqsd0c76g0\app\resources\codex.exe",
+    )));
+    assert!(!looks_like_codex_bundled_cli(std::path::Path::new(
+        r"C:\Users\demo\AppData\Local\Programs\OpenAI\Codex\Codex.exe",
+    )));
+    assert!(!looks_like_codex_bundled_cli(std::path::Path::new(
+        r"C:\Users\demo\AppData\Local\Programs\WorkBuddy\WorkBuddy.exe",
+    )));
+    assert!(looks_like_codex_bundled_cli(std::path::Path::new(
+        "/Applications/Codex.app/Contents/MacOS/codex",
+    )));
+    assert!(looks_like_codex_bundled_cli(std::path::Path::new(
+        "/Applications/ChatGPT.app/Contents/Resources/codex",
+    )));
+    assert!(!looks_like_codex_bundled_cli(std::path::Path::new(
+        "/usr/local/bin/codex",
+    )));
+}
+
+#[test]
+fn windows_codex_store_app_id_from_package_and_registry() {
+    assert_eq!(
+        windows_codex_app_id_from_package_full_name(
+            "OpenAI.Codex_26.831.1445.0_x64__2p2nqsd0c76g0"
+        )
+        .as_deref(),
+        Some("OpenAI.Codex_2p2nqsd0c76g0!App")
+    );
+    assert_eq!(
+        windows_codex_app_id_from_package_full_name(
+            "OpenAI.ChatGPT_1.2.3.4_arm64__2p2nqsd0c76g0"
+        )
+        .as_deref(),
+        Some("OpenAI.ChatGPT_2p2nqsd0c76g0!App")
+    );
+    assert!(windows_codex_app_id_from_package_full_name("Contoso.Other_1.0.0_x64__pub").is_none());
+
+    let registry = r"HKEY_CURRENT_USER\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages\OpenAI.Codex_26.715.4045.0_x64__2p2nqsd0c76g0";
+    assert_eq!(
+        parse_windows_codex_app_id_from_registry(registry).as_deref(),
+        Some("OpenAI.Codex_2p2nqsd0c76g0!App")
+    );
+}
+
+#[test]
+fn codex_app_launch_kind_is_platform_specific() {
+    let hashed = std::path::Path::new(
+        r"C:\Users\demo\AppData\Local\OpenAI\Codex\bin\b99306303521e97e\codex.exe",
+    );
+    let expected = if cfg!(windows) {
+        CodexAppLaunchKind::WindowsStoreOrGui
+    } else if cfg!(target_os = "macos") {
+        CodexAppLaunchKind::MacosBundle
+    } else if cfg!(target_os = "linux") {
+        CodexAppLaunchKind::UnsupportedOnLinux
+    } else {
+        CodexAppLaunchKind::Direct
+    };
+    assert_eq!(codex_app_launch_kind(hashed), expected);
+    assert_eq!(
+        codex_app_launch_kind(std::path::Path::new(
+            r"C:\Users\demo\AppData\Local\Programs\WorkBuddy\WorkBuddy.exe",
+        )),
+        CodexAppLaunchKind::Direct
+    );
+    assert!(macos_codex_app_bundle_names().contains(&"ChatGPT.app"));
+    assert!(macos_codex_app_bundle_names().contains(&"Codex.app"));
 }
