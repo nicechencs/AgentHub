@@ -26,7 +26,7 @@ use crate::models::{
     SyncConnectionAuthorizationsResult, SyncConnectionSource, TicketProtocol, TicketSurface,
     FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
-    SHARE_CHAT_COMPLETIONS,
+    LOCAL_ENTRY_DESIRED_RUNNING, SHARE_CHAT_COMPLETIONS,
 };
 use serde_json::Value;
 use crate::storage::{
@@ -203,6 +203,21 @@ impl RoutePoolService {
         Ok(feature_flag_enabled(
             self.db.get_setting(SHARE_CHAT_COMPLETIONS)?.as_deref(),
         ))
+    }
+
+    /// Last local-entry switch. Unset stays on so existing auto-restore keeps working.
+    pub fn local_entry_desired_running(&self) -> Result<bool> {
+        Ok(product_flag_enabled(
+            self.db.get_setting(LOCAL_ENTRY_DESIRED_RUNNING)?.as_deref(),
+        ))
+    }
+
+    /// Remember the shared local-entry switch for the next process start.
+    pub fn set_local_entry_desired_running(&self, running: bool) -> Result<()> {
+        self.db.set_setting(
+            LOCAL_ENTRY_DESIRED_RUNNING,
+            if running { "true" } else { "false" },
+        )
     }
 
     /// Kimi and DSH share one chat-completions token, or keep separate keys.
