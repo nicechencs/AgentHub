@@ -415,7 +415,7 @@ describe('Bridges page', () => {
       targetAgentId: 'codex' as const,
       surface: 'responses' as const,
       dialect: 'codex' as const,
-      v2Enrolled: true,
+      unifiedGatewayEnrolled: true,
       gatewayPort: 43121,
       members: [{ sourceKind: 'provider' as const, sourceId: 'kimi-1', enabled: true }],
       listedModels: ['kimi-k2.5'],

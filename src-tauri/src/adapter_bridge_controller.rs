@@ -235,7 +235,7 @@ async fn apply_local_bridge_locked(
     }
     let _ = host.record_upstream_outcome(&profile_id, BridgeUpstreamStatus::Connected);
 
-    match enroll_v2_and_refresh_index(
+    match enroll_unified_gateway_and_refresh_index(
         hub.clone(),
         host.as_ref(),
         prepared.profile().clone(),
@@ -692,7 +692,7 @@ pub(crate) fn restore_adapter_bridges(
             }
             let _ = host.record_upstream_outcome(&profile.id, BridgeUpstreamStatus::Connected);
 
-            match enroll_v2_and_refresh_index(
+            match enroll_unified_gateway_and_refresh_index(
                 hub.clone(),
                 host.as_ref(),
                 material.profile().clone(),
@@ -961,15 +961,15 @@ fn resolve_start_members(
     material: &AdapterBridgeRuntimeMaterial,
     lead_reload: Option<UpstreamAuthReload>,
 ) -> Vec<BridgeMemberSpec> {
-    if let Some(members) = resolve_v2_pool_members(hub, profile, material, lead_reload.clone()) {
+    if let Some(members) = resolve_unified_gateway_pool_members(hub, profile, material, lead_reload.clone()) {
         return members;
     }
     resolve_pool_members(hub, profile, material, lead_reload)
 }
 
-/// Enrolled v2 pool members. Does not open `multi_account`; the start spec
-/// keeps every member only because a route index is attached.
-fn resolve_v2_pool_members(
+/// Enrolled unified-gateway pool members. Does not open `multi_account`; the
+/// start spec keeps every member only because a route index is attached.
+fn resolve_unified_gateway_pool_members(
     hub: &AgentHub,
     profile: &AdapterProfile,
     material: &AdapterBridgeRuntimeMaterial,
@@ -1031,7 +1031,7 @@ fn resolve_v2_pool_members(
                     op = "adapter_bridge_member_isolated",
                     profile_id = %profile.id,
                     account_id = %member.source_id,
-                    "isolating v2 pool member whose secret could not be resolved"
+                    "isolating unified-gateway pool member whose secret could not be resolved"
                 );
                 resolved.push(BridgeMemberSpec {
                     ticket_id: ticket_id(member.source_kind, &member.source_id),
@@ -1209,10 +1209,10 @@ fn seed_prior_from_host(
 }
 
 /// After a healthy bind, enroll the local-bridge pool and refresh the live
-/// start spec with the v2 index. Bind / health failures must not call this.
+/// start spec with the unified-gateway index. Bind / health failures must not call this.
 /// Refresh uses the enrolled port and never falls back to port 0.
 /// A replacement listener is returned so later compensation can stop it.
-pub(crate) async fn enroll_v2_and_refresh_index(
+pub(crate) async fn enroll_unified_gateway_and_refresh_index(
     hub: Arc<AgentHub>,
     host: &BridgeRuntimeHost,
     profile: AdapterProfile,
@@ -1224,8 +1224,8 @@ pub(crate) async fn enroll_v2_and_refresh_index(
     let profile_for_enroll = profile.clone();
     let did_enroll = with_hub_blocking(hub.clone(), move |hub| {
         hub.adapter_bridge()
-            .enroll_v2_after_bind(&profile_for_enroll, port)
-            .map_err(|error| map_err_string("enroll_adapter_bridge_v2", error))
+            .enroll_unified_gateway_after_bind(&profile_for_enroll, port)
+            .map_err(|error| map_err_string("enroll_adapter_bridge_unified_gateway", error))
     })
     .await?;
     if !did_enroll {
@@ -1508,7 +1508,7 @@ pub(crate) async fn start_local_entry(
             let pool_id = pool.id.clone();
             let _ = with_hub_blocking(hub.clone(), move |hub| {
                 hub.route_pools()
-                    .enroll_v2(&pool_id, port)
+                    .enroll_unified_gateway(&pool_id, port)
                     .map_err(|error| map_err_string("enroll_local_entry", error))
             })
             .await;

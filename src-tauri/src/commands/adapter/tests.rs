@@ -183,7 +183,7 @@ fn persist_enroll_native_if_bound_skips_enroll_on_bind_error() {
         persist_enroll_native_if_bound(&hub, &host, Err("adapter.port_in_use".into())).unwrap_err();
     assert!(error.contains("adapter.port_in_use"));
     let pool = hub.route_pools().get("bound-skip").unwrap().unwrap();
-    assert!(!pool.v2_enrolled);
+    assert!(!pool.unified_gateway_enrolled);
     assert_eq!(pool.gateway_port, None);
     assert_eq!(pool.hub_token, "ahb_secret-token");
 }
@@ -211,7 +211,7 @@ fn persist_enroll_native_if_bound_success_omits_hub_token() {
         }),
     };
     let overview = persist_enroll_native_if_bound(&hub, &host, Ok(binding)).unwrap();
-    assert!(overview.v2_enrolled);
+    assert!(overview.unified_gateway_enrolled);
     assert_eq!(overview.gateway_port, Some(43155));
     let json = serde_json::to_string(&overview).unwrap();
     assert!(!json.contains("hubToken"));

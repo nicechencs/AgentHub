@@ -47,7 +47,7 @@ function pool(partial: Partial<DefaultRoutePoolOverview> = {}): DefaultRoutePool
     targetAgentId: 'codex',
     surface: 'responses',
     dialect: 'codex',
-    v2Enrolled: true,
+    unifiedGatewayEnrolled: true,
     gatewayPort: 43121,
     members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
     listedModels: ['kimi-k2.5'],

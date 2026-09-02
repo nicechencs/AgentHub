@@ -448,7 +448,7 @@ export function mergeOwnedAuthorizationsIntoRows(
         targetAgentId: entry.agentId,
         surface,
         dialect: poolDialectForAgent(entry.agentId),
-        v2Enrolled: false,
+        unifiedGatewayEnrolled: false,
         members: [member],
         listedModels: [],
       },

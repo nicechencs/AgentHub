@@ -127,7 +127,7 @@ fn default_overview_json_never_includes_hub_token() {
         target_agent_id: AgentId::Codex,
         surface: RouteDownstreamSurface::Responses,
         dialect: RouteDownstreamDialect::Codex,
-        v2_enrolled: true,
+        unified_gateway_enrolled: true,
         gateway_port: Some(43121),
         members: vec![crate::models::RouteMemberOverview {
             id: "member-1".into(),
@@ -145,9 +145,15 @@ fn default_overview_json_never_includes_hub_token() {
     assert!(!json.contains("hubToken"));
     assert!(!json.contains("hub_token"));
     assert!(!json.contains("ahb_"));
-    assert!(json.contains("v2Enrolled"));
+    assert!(json.contains("unifiedGatewayEnrolled"));
+    assert!(!json.contains("v2Enrolled"));
     assert!(json.contains("gatewayPort"));
     assert!(!json.contains("127.0.0.1"));
+    let from_legacy = serde_json::from_str::<crate::models::DefaultRoutePoolOverview>(
+        r#"{"id":"pool-1","targetAgentId":"codex","surface":"responses","dialect":"codex","v2Enrolled":true,"members":[]}"#,
+    )
+    .expect("legacy wire");
+    assert!(from_legacy.unified_gateway_enrolled);
 }
 
 #[test]
@@ -160,7 +166,7 @@ fn debug_redacts_hub_token() {
         hub_token: "ahb_secret-token-value".into(),
         schedule_policy: RouteSchedulePolicy::PriorityFailover,
         is_default: true,
-        v2_enrolled: false,
+        unified_gateway_enrolled: false,
         policy_revision: 1,
         auto_start: true,
         gateway_port: None,
