@@ -4,6 +4,8 @@ import {
   conversionPathId,
   inferLocalEndpointKind,
   parseConversionPath,
+  uniquePoolDisplayLabels,
+  uniqueTraceUpstreamUrls,
 } from './route-trace-visual-model';
 import type { AdapterBridgeRouteTrace } from '@/lib/backend/contracts/adapter';
 
@@ -71,5 +73,33 @@ describe('route-trace-visual-model', () => {
     expect(view.legacySummary).toBe(true);
     expect(view.localAuth.state).toBe('skipped');
     expect(view.endpoints.every((node) => node.state === 'skipped')).toBe(true);
+  });
+
+  it('exposes four local endpoints and unique pool / upstream preview values', () => {
+    const view = buildTraceFlowView(baseTrace);
+    expect(view.endpoints.map((node) => node.kind)).toEqual([
+      'messages',
+      'responses_codex',
+      'responses_grok',
+      'chat_completions',
+    ]);
+    expect(uniquePoolDisplayLabels([
+      {
+        members: [
+          { displayLabel: 'Acct A' },
+          { displayLabel: 'Acct A' },
+          { displayLabel: '  ' },
+          { displayLabel: 'Acct B' },
+        ],
+      },
+    ])).toEqual(['Acct A', 'Acct B']);
+    expect(uniqueTraceUpstreamUrls([
+      { upstream: { url: 'https://api.anthropic.com/v1/messages' } },
+      { upstream: { url: 'https://api.anthropic.com/v1/messages' } },
+      { upstream: { url: ' https://api.x.ai/v1/responses ' } },
+    ])).toEqual([
+      'https://api.anthropic.com/v1/messages',
+      'https://api.x.ai/v1/responses',
+    ]);
   });
 });

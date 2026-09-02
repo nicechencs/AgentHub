@@ -7,20 +7,26 @@ import { TableSkeleton } from '@/components/ui/skeleton';
 import { ROUTES_POOL_PATH } from '@/lib/bridges-path';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { uniquePoolDisplayLabels, uniqueTraceUpstreamUrls } from '@/components/shared/route-trace-visual-model';
 import { ActivityTraceList } from './ActivityTraceList';
 import type { ActivityPageSnapshot } from './activity-view-model';
 
 export function ActivityMonitoringPanel({
   snapshot,
+  pools = [],
 }: {
   snapshot: ActivityPageSnapshot;
+  pools?: readonly { members: readonly { displayLabel?: string }[] }[];
 }) {
   const { t } = useI18n();
 
   return (
     <div className="space-y-4" data-activity-monitoring>
       <p className="text-meta text-muted">{t('routes.activity.scopeNote')}</p>
-      <RouteTracePipelineLegend />
+      <RouteTracePipelineLegend
+        poolLabels={uniquePoolDisplayLabels(pools)}
+        upstreamUrls={uniqueTraceUpstreamUrls(snapshot.feed)}
+      />
       <ActivityStatusBanner snapshot={snapshot} />
       {snapshot.kind === 'loading' ? (
         <TableSkeleton rows={6} cols={6} />

@@ -325,5 +325,35 @@ export function traceFlowEndpointSurface(kind: LocalEndpointKind) {
   return localEndpointSurface(kind);
 }
 
+export function uniquePoolDisplayLabels(
+  pools: readonly { members: readonly { displayLabel?: string }[] }[],
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const pool of pools) {
+    for (const member of pool.members) {
+      const label = member.displayLabel?.trim();
+      if (!label || seen.has(label)) continue;
+      seen.add(label);
+      out.push(label);
+    }
+  }
+  return out;
+}
+
+export function uniqueTraceUpstreamUrls(
+  rows: readonly { upstream?: { url?: string | null } }[],
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const row of rows) {
+    const url = row.upstream?.url?.trim();
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
+}
+
 export const TRACE_FLOW_MATRIX_ROWS = MATRIX_ROWS;
 export const TRACE_FLOW_MATRIX_COLS = MATRIX_COLS;
