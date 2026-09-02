@@ -386,17 +386,24 @@ function launchKindForInstall(
   return null;
 }
 
+/** Linux has no official Codex window; desktop copies are still the CLI. */
+function hideCodexAppLaunch(agentId: string, platform: HostPlatform): boolean {
+  return agentId === 'codex' && platform === 'linux';
+}
+
 /** Outer card: show 启动 CLI / 启动 App only when that program exists. */
 export function agentLaunchTargets(
   agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
+  platform: HostPlatform = detectHostPlatform(),
 ): AgentLaunchTargets {
   const out: AgentLaunchTargets = {};
+  const hideApp = hideCodexAppLaunch(agent.agentId, platform);
   for (const row of listAgentInstalls(agent)) {
     const location = row.location.trim();
     if (!location) continue;
     const kind = launchKindForInstall(agent.agentId, row);
     if (kind === 'cli' && !out.cliPath) out.cliPath = location;
-    if (kind === 'app' && !out.appPath) out.appPath = location;
+    if (kind === 'app' && !out.appPath && !hideApp) out.appPath = location;
   }
   return out;
 }

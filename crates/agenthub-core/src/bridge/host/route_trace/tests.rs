@@ -59,6 +59,50 @@ fn failure_stage_records_first_failed_node() {
 }
 
 #[test]
+fn conversion_failed_skips_upstream_stages() {
+    let log = RouteTraceLog::new();
+    let mut builder = RouteTraceBuilder::begin("req-conv", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", Some(8787));
+    builder.conversion_failed("conversion_failed", "Could not convert this request for the upstream.");
+    builder.finalize(400, &log);
+    let trace = log.get("req-conv").expect("trace stored");
+    assert_eq!(trace.failure_stage.as_deref(), Some("conversion"));
+    assert_eq!(trace.conversion.status, TraceStageStatus::Failed);
+    assert_eq!(trace.conversion.code.as_deref(), Some("conversion_failed"));
+    assert_eq!(trace.upstream_auth.status, TraceStageStatus::Skipped);
+    assert_eq!(trace.upstream.status, TraceStageStatus::Skipped);
+    assert_eq!(trace.local_auth.status, TraceStageStatus::Ok);
+}
+
+#[test]
+fn surface_mismatch_keeps_local_auth_ok() {
+    let log = RouteTraceLog::new();
+    let mut builder = RouteTraceBuilder::begin("req-surface", "POST", "/v1/responses");
+    builder.local_auth_ok("profile-a", Some(8787));
+    builder.local_path_failed(
+        "profile-a",
+        Some(8787),
+        "surface_mismatch",
+        "This route only serves /v1/messages",
+    );
+    builder.finalize(404, &log);
+    let trace = log.get("req-surface").expect("trace stored");
+    assert_eq!(trace.local_auth.status, TraceStageStatus::Ok);
+    assert_eq!(trace.local_auth.port, Some(8787));
+    assert_eq!(trace.failure_stage.as_deref(), Some("local_endpoint"));
+    assert_eq!(trace.pool.status, TraceStageStatus::Skipped);
+    assert_eq!(trace.conversion.status, TraceStageStatus::Skipped);
+    assert_eq!(trace.conversion.code.as_deref(), Some("surface_mismatch"));
+    assert!(trace
+        .conversion
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("/v1/messages"));
+    assert_eq!(trace.upstream.status, TraceStageStatus::Skipped);
+}
+
+#[test]
 fn pool_attempts_record_failover() {
     let log = RouteTraceLog::new();
     let member = PickedMember::new(

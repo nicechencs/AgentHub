@@ -560,7 +560,7 @@ pub(crate) fn launch_app(path: &std::path::Path) -> Result<(), String> {
             }
         }
         CodexAppLaunchKind::UnsupportedOnLinux => {
-            let msg = "codex app is not available on Linux".to_string();
+            let msg = "Linux 上没有 Codex 窗口，请用启动 CLI".to_string();
             tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
             return Err(msg);
         }

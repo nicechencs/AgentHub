@@ -360,7 +360,13 @@ pub(super) async fn handle_conversation(
     let transport = channel.transport();
     let prepared = match transport.prepare(surface, &admitted) {
         Ok(prepared) => prepared,
-        Err(response) => return trace_response(&mut trace, &trace_log, response),
+        Err(response) => {
+            trace.conversion_failed(
+                "conversion_failed",
+                "Could not convert this request for the upstream.",
+            );
+            return trace_response(&mut trace, &trace_log, response);
+        }
     };
     trace.conversion_prepared(
         surface,
