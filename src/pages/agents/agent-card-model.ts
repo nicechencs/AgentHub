@@ -45,11 +45,23 @@ export function agentTaskLogTitleKey(
   return 'agents.card.upgrading';
 }
 
-/** Real failures use the page CTA. Opening an official setup page is not a failure. */
+/**
+ * Failed install → primary 重试.
+ * Guided official-setup (agent still missing) → primary 重新检测 (not 安装).
+ */
 export function installRetryButtonVariant(
   status: AgentCardTaskStatus | undefined,
 ): 'default' | 'secondary' {
-  return status === 'failed' ? 'default' : 'secondary';
+  return status === 'failed' || status === 'guided' ? 'default' : 'secondary';
+}
+
+/** Label for the list/detail install CTA after terminal install outcomes. */
+export function installPrimaryLabelKey(
+  status: AgentCardTaskStatus | undefined,
+): MessageKey {
+  if (status === 'failed') return 'agents.card.retry';
+  if (status === 'guided') return 'agents.card.redetect';
+  return 'agents.card.install';
 }
 
 /** Update chip: Node-too-old (Pi) is not a generic "update unknown". */
