@@ -196,6 +196,11 @@ export function dashboardBindingMetaText(
   ticketLabel: string,
   route: BindingRoute,
   t?: TranslateFn,
+  localUrl?: string | null,
 ): string {
+  if (route === 'bridge') {
+    const url = localUrl?.trim();
+    return url ? `${ticketLabel} · ${url}` : ticketLabel;
+  }
   return `${ticketLabel} · ${bindingDashboardRouteLabel(route, t)}`;
 }

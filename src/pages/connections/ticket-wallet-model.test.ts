@@ -267,7 +267,13 @@ describe('binding usage text', () => {
 
   it('maps dashboard meta text', () => {
     expect(dashboardBindingMetaText('Kimi 会员', 'reshape')).toBe('Kimi 会员 · Rewrite config');
-    expect(dashboardBindingMetaText('Kimi 会员', 'bridge')).toBe('Kimi 会员 · Local route');
+    expect(dashboardBindingMetaText('Kimi 会员', 'bridge')).toBe('Kimi 会员');
+    expect(dashboardBindingMetaText(
+      'Kimi 会员',
+      'bridge',
+      undefined,
+      'http://127.0.0.1:43121/v1/messages',
+    )).toBe('Kimi 会员 · http://127.0.0.1:43121/v1/messages');
     expect(dashboardBindingMetaText('me@…', 'native')).toBe('me@… · Direct');
   });
 });

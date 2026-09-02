@@ -43,12 +43,6 @@ import {
   filterVisibleTrend,
   visibleInstalledIds,
 } from '@/lib/agent-visibility';
-import {
-  getAdapterBridgeStatus,
-  listAdapterProfiles,
-  type AdapterBridgeRuntimeState,
-  type AdapterProfile,
-} from '@/lib/api/adapter';
 import { listRuntimes } from '@/lib/api/env';
 import {
   getUsageAvailability,
@@ -61,7 +55,6 @@ import {
 
 import type { MessageKey } from '@/lib/i18n';
 import { activeBindingForAgent } from '@/lib/ticket-wallet';
-import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
 import { ConnectFlowDialog } from '@/components/connect/ConnectFlowDialog';
 import { consumeConnectResume, parseConnectResumeParam } from '@/lib/connect-flow/connect-intent';
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
@@ -69,7 +62,6 @@ import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import {
   getConnectionPoolSnapshot,
   getTicketWalletSnapshot,
-  providersForAgent,
   useAgentCatalog,
   useConnectionPool,
   useTicketWallet,
@@ -91,12 +83,12 @@ import {
   useUsageTrendHover,
 } from './UsageTrendTooltip';
 import {
+  dashboardBindingMeta,
   dashboardOverviewSkeletonCount,
   dashboardPageDescription,
   installedOverviewScope,
   summarizeAgentOverview,
   type AgentCardBadgeInput,
-  type AgentCardBridgeState,
 } from './agentOverviewModel';
 import { UsageDetailsTable } from './UsageDetailsTable';
 import { isLatestUsageRequest } from './usage-request';
@@ -129,16 +121,6 @@ const DATE_RANGE_LABEL_KEYS: Record<DateRange, MessageKey> = {
   '7d': 'dashboard.range.last7d',
   '30d': 'dashboard.range.last30d',
 };
-
-/** 桥运行态 → 卡片徽标四态：starting 乐观归 running，error 归 degraded（可见异常） */
-function mapBridgeState(state: AdapterBridgeRuntimeState): AgentCardBridgeState {
-  if (state === 'running' || state === 'starting') return 'running';
-  if (state === 'degraded' || state === 'error') return 'degraded';
-  return 'stopped';
-}
-
-/** 桥状态轮询间隔，与 Adapter 页 use-adapter-resources 一致 */
-const BRIDGE_POLL_MS = 4_000;
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -221,7 +203,7 @@ export default function DashboardPage() {
     }
   }, [loadRuntimes, reloadAgentStatuses]);
 
-  // —— 连接流程：卡片徽标数据 + `/?connect=` 回跳打开 ConnectFlowDialog ——
+  // —— 连接流程：当前授权 + `/?connect=` 回跳打开 ConnectFlowDialog ——
   const pool = useConnectionPool();
   const {
     wallet,
@@ -230,28 +212,11 @@ export default function DashboardPage() {
     reload: walletReload,
     ensureLoaded: walletEnsureLoaded,
   } = useTicketWallet();
-  const [profiles, setProfiles] = useState<AdapterProfile[]>([]);
   const [connectEntry, setConnectEntry] = useState<ConnectFlowEntry | null>(null);
-  const [bridgeStates, setBridgeStates] = useState<Record<string, AgentCardBridgeState>>({});
   const connectDeps = useMemo(() => createDefaultConnectFlowDeps(), []);
   const poolReload = pool.reload;
   const poolEnsureLoaded = pool.ensureLoaded;
   const poolState = pool.state;
-
-  /** generation 防竞态：并发加载只让最新一次落盘；返回是否成功。 */
-  const profilesGeneration = useRef(0);
-  const loadProfiles = useCallback(async (): Promise<boolean> => {
-    const generation = ++profilesGeneration.current;
-    try {
-      const list = await listAdapterProfiles();
-      if (profilesGeneration.current === generation) setProfiles(list);
-      return true;
-    } catch {
-      // 徽标是增强信息：读取失败降级为不显示，不阻塞总览
-      if (profilesGeneration.current === generation) setProfiles([]);
-      return false;
-    }
-  }, []);
 
   const loadWallet = useCallback(async (): Promise<boolean> => {
     try {
@@ -272,88 +237,25 @@ export default function DashboardPage() {
   }, [walletEnsureLoaded, walletState]);
 
   useEffect(() => {
-    void loadProfiles();
-  }, [loadProfiles]);
-
-  useEffect(() => {
     void loadRuntimes();
   }, [loadRuntimes]);
-
-  /** 生效 provider 命中 adapter 生成投影 → 「本机路由」徽标（profile 联结，不读 provider.meta） */
-  const adapterBadgeHits = useMemo(() => {
-    const hits = new Map<AgentId, { profile: AdapterProfile; sourceLabel?: string }>();
-    if (profiles.length === 0) return hits;
-    for (const meta of AGENTS) {
-      const current = providersForAgent(pool.providers, meta.id).find((p) => p.isCurrent);
-      if (!current) continue;
-      const profile = profiles.find((p) => p.generatedProviderId === current.id);
-      if (!profile) continue;
-      const sourceLabel =
-        profile.sourceKind === 'account'
-          ? pool.accounts.find((a) => a.id === profile.sourceId)?.label
-          : pool.providers.find((p) => p.id === profile.sourceId)?.name;
-      hits.set(meta.id, { profile, sourceLabel });
-    }
-    return hits;
-  }, [pool.accounts, pool.providers, profiles]);
-
-  // 桥状态：仅对生效 provider 命中的 bridge 型 profile 轮询；查询失败显示「状态不可用」而非隐藏
-  useEffect(() => {
-    const bridgeProfiles = [...adapterBadgeHits.values()]
-      .map((hit) => hit.profile)
-      .filter((profile) => profile.route === 'local_bridge');
-    if (bridgeProfiles.length === 0) {
-      setBridgeStates({});
-      return;
-    }
-    let cancelled = false;
-    let timer: number | undefined;
-    // 链式轮询：上一轮完成后再排下一轮，慢请求不产生重叠与陈旧覆盖
-    const poll = async () => {
-      const next: Record<string, AgentCardBridgeState> = {};
-      await Promise.all(
-        bridgeProfiles.map(async (profile) => {
-          try {
-            const status = await getAdapterBridgeStatus(profile.id);
-            next[profile.id] = mapBridgeState(status.state);
-          } catch {
-            next[profile.id] = 'unavailable';
-          }
-        }),
-      );
-      if (cancelled) return;
-      setBridgeStates(next);
-      timer = window.setTimeout(() => void poll(), BRIDGE_POLL_MS);
-    };
-    void poll();
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [adapterBadgeHits]);
 
   const badgeInputs = useMemo(() => {
     const inputs: Partial<Record<AgentId, AgentCardBadgeInput>> = {};
     for (const meta of AGENTS) {
-      const hit = adapterBadgeHits.get(meta.id);
-      const bridgeState =
-        hit?.profile.route === 'local_bridge' ? bridgeStates[hit.profile.id] : undefined;
       const active = wallet ? activeBindingForAgent(wallet, meta.id) : null;
-      const binding = active
-        ? {
-            ticketLabel: active.ticket.label,
-            routeLabel: connectionStateRouteLabel(active.binding.route, t),
-          }
-        : null;
-      if (!hit && !binding) continue;
+      if (!active) continue;
       inputs[meta.id] = {
-        ...(hit ? { viaAdapter: { sourceLabel: hit.sourceLabel } } : {}),
-        ...(bridgeState ? { bridge: { state: bridgeState, profileId: hit?.profile.id ?? null } } : {}),
-        ...(binding ? { binding } : {}),
+        binding: dashboardBindingMeta({
+          ticketLabel: active.ticket.label,
+          route: active.binding.route,
+          agentId: meta.id,
+          port: active.binding.bridge?.port ?? null,
+        }, t),
       };
     }
     return inputs;
-  }, [adapterBadgeHits, bridgeStates, wallet, t]);
+  }, [wallet, t]);
 
   /** 回跳 `/?connect=`：agents 就绪后打开对应 ConnectFlow，并 replace 掉 query，避免关窗后重开。 */
   const consumedConnectRef = useRef<string | null>(null);
@@ -378,13 +280,12 @@ export default function DashboardPage() {
 
   /**
    * 连接变更后重载页面数据；任一失败则抛出，由对话框呈现「已应用/已切换，但列表刷新失败」。
-   * 注意：loadAgents/loadProfiles 内部消化异常（返回 boolean），pool.reload 对
+   * 注意：loadAgents 内部消化异常（返回 boolean），pool.reload 对
    * partial/error 也正常 resolve——必须查返回值与 store 快照，不能依赖 reject。
    */
   const handleConnectionChanged = useCallback(async () => {
-    const [agentsOk, profilesOk, walletOk] = await Promise.all([
+    const [agentsOk, walletOk] = await Promise.all([
       loadAgents(),
-      loadProfiles(),
       loadWallet(),
     ]);
     await poolReload().catch(() => {});
@@ -392,10 +293,10 @@ export default function DashboardPage() {
     const poolSnapshot = getConnectionPoolSnapshot();
     const poolOk =
       poolSnapshot.state === 'ready' && !poolSnapshot.errors.accounts && !poolSnapshot.errors.providers;
-    if (!agentsOk || !profilesOk || !walletOk || !poolOk) {
+    if (!agentsOk || !walletOk || !poolOk) {
       throw new Error(t('dashboard.page.refreshFailed'));
     }
-  }, [loadAgents, poolReload, loadProfiles, loadWallet, t]);
+  }, [loadAgents, poolReload, loadWallet, t]);
 
   /** overview+trend 先画图；明细表另拉 capped 页。筛选变化走后端。 */
   const loadUsage = useCallback(

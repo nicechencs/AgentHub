@@ -7,8 +7,6 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { StatusDot } from '@/components/shared/StatusDot';
-import { StatusPin } from '@/components/shared/StatusPin';
-import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tip } from '@/components/ui/tooltip';
@@ -17,7 +15,6 @@ import { applyStoredAgentOrder } from '@/lib/agent-visibility';
 import type { AgentId, AgentStatus } from '@/lib/types';
 import { StorageKey } from '@/lib/ui-preferences';
 import { cn } from '@/lib/utils';
-import { bridgesHrefForProfile } from '@/lib/bridges-path';
 
 import {
   AGENT_OVERVIEW_GRID,
@@ -25,7 +22,6 @@ import {
   mergeAgentsInOrder,
   resolveAgentCardInteraction,
   type AgentCardBadgeInput,
-  type AgentCardBridgeState,
 } from './agentOverviewModel';
 
 export type { AgentCardBadgeInput };
@@ -34,22 +30,8 @@ export interface AgentOverviewProps {
   agents: AgentStatus[];
   /** 未传时 connect 退化为 /connections?agent=X，不再打开总览弹窗 */
   onConnectRequest?: (agentId: AgentId) => void;
-  /** 调用方提供的 profile 联结 / 桥状态；不传则不渲染徽标 */
+  /** 当前正在用的授权；不传则只显示本机状态文案 */
   badgeInputs?: Readonly<Partial<Record<AgentId, AgentCardBadgeInput>>>;
-}
-
-function bridgePinTone(state: AgentCardBridgeState): 'success' | 'warning' | 'muted' {
-  if (state === 'running') return 'success';
-  if (state === 'degraded') return 'warning';
-  return 'muted';
-}
-
-function bridgeBadgeVariant(
-  state: AgentCardBridgeState,
-): 'success' | 'warning' | 'default' {
-  if (state === 'running') return 'success';
-  if (state === 'degraded') return 'warning';
-  return 'default';
 }
 
 export function AgentOverview({
@@ -93,16 +75,6 @@ export function AgentOverview({
               }
               navigate(next.to);
             };
-            const viaTipLabel = view.viaAdapter
-              ? view.viaAdapter.sourceLabel
-                ? t('dashboard.overview.viaCompatibleWithSource', {
-                    source: view.viaAdapter.sourceLabel,
-                  })
-                : t('dashboard.overview.viaCompatible')
-              : null;
-            const viaBadgeLabel = view.viaAdapter
-              ? t('dashboard.overview.viaCompatible')
-              : null;
             return (
               <Card
                 key={meta.id}
@@ -149,28 +121,6 @@ export function AgentOverview({
                   >
                     {view.metaText}
                   </Tip>
-                  {viaBadgeLabel && viaTipLabel ? (
-                    <Tip className="shrink-0" label={viaTipLabel}>
-                      <Badge variant="info" className="h-5 shrink-0 px-1.5 text-meta">
-                        {viaBadgeLabel}
-                      </Badge>
-                    </Tip>
-                  ) : null}
-                  {view.bridge ? (
-                    <Tip className="shrink-0" label={t('dashboard.overview.manageLocalRoute')}>
-                      <Badge
-                        variant={bridgeBadgeVariant(view.bridge.state)}
-                        className="h-5 cursor-pointer px-1.5 text-meta"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          navigate(bridgesHrefForProfile(view.bridge?.profileId));
-                        }}
-                      >
-                        <StatusPin tone={bridgePinTone(view.bridge.state)} />
-                        {view.bridge.label}
-                      </Badge>
-                    </Tip>
-                  ) : null}
                 </div>
               </Card>
             );
