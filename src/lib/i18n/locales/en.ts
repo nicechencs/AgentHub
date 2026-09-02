@@ -2363,6 +2363,7 @@ export const en = {
       startAppFailed: "Couldn't start the app",
       install: "Install",
       retry: "Retry",
+      redetect: "Detect again",
       installWithChannel: "Install with channel {id}",
       needFixEnv: " · fix runtime first",
       oneclickProgress: "Runtime → Agent",

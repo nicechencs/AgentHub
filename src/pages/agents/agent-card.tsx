@@ -241,10 +241,15 @@ export function AgentCard({
   };
 
   const installFailed = task?.status === 'failed';
+  const installGuided = task?.status === 'guided';
   const retryAction = () => {
     if (task?.action === 'upgrade') startUpgrade();
     else if (task?.action === 'oneclick') startOneClickFull();
     else startAgentInstall(selectedChannel);
+  };
+  /** After official-setup guide, re-run agent detect instead of looking like Install. */
+  const redetectAfterGuide = () => {
+    onChanged();
   };
   const cardState: 'installed' | 'ready_to_install' | 'env_missing' = agent.installed
     ? 'installed'
@@ -381,7 +386,11 @@ export function AgentCard({
                 busy={busy}
                 channelId={selectedChannel.id}
                 onClick={() =>
-                  installFailed ? retryAction() : openConfirm('install')
+                  installFailed
+                    ? retryAction()
+                    : installGuided
+                      ? redetectAfterGuide()
+                      : openConfirm('install')
                 }
               />
             ) : null}
@@ -474,6 +483,7 @@ export function AgentCard({
                   return;
                 }
                 if (installFailed) retryAction();
+                else if (installGuided) redetectAfterGuide();
                 else openConfirm('install');
               }}
             />
@@ -523,6 +533,11 @@ export function AgentCard({
               {task.status === 'failed' && (
                 <Button size="sm" variant="default" onClick={retryAction}>
                   {t('agents.card.retry')}
+                </Button>
+              )}
+              {task.status === 'guided' && (
+                <Button size="sm" variant="default" onClick={redetectAfterGuide}>
+                  {t('agents.card.redetect')}
                 </Button>
               )}
               {task.status !== 'running' && (
