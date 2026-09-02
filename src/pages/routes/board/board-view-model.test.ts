@@ -21,7 +21,7 @@ function pool(partial: Partial<DefaultRoutePoolOverview> & Pick<DefaultRoutePool
     targetAgentId: 'codex',
     surface: 'responses',
     dialect: 'codex',
-    v2Enrolled: false,
+    unifiedGatewayEnrolled: false,
     members: [{ sourceKind: 'account', sourceId: 'acc-1', enabled: true }],
     listedModels: [],
     ...partial,

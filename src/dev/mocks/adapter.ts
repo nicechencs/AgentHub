@@ -73,7 +73,7 @@ function mockChatPool(
     targetAgentId: agentId,
     surface: 'chat_completions',
     dialect: agentId,
-    v2Enrolled: false,
+    unifiedGatewayEnrolled: false,
     members: [],
     listedModels: [],
   };
@@ -626,7 +626,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
           targetAgentId: poolAgent,
           surface,
           dialect,
-          v2Enrolled: false,
+          unifiedGatewayEnrolled: false,
           members: [],
           listedModels: [],
         };
@@ -782,7 +782,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
               targetAgentId: target.agentId,
               surface: target.surface,
               dialect: target.dialect,
-              v2Enrolled: false,
+              unifiedGatewayEnrolled: false,
               members: [],
               listedModels: [],
             };
@@ -893,7 +893,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         targetAgentId: profile.targetAgentId,
         surface,
         dialect,
-        v2Enrolled: true,
+        unifiedGatewayEnrolled: true,
         gatewayPort: profile.localPort ?? 43121,
         members: [{
           sourceKind: profile.sourceKind,

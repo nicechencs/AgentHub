@@ -2558,7 +2558,7 @@ fn production_start_spec_attaches_index_when_flags_on_and_pool_enrolled() {
         "unenrolled pool must not attach an index"
     );
     RoutePoolService::new(db.clone())
-        .enroll_v2(&prepared.profile().id, 43155)
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
         .unwrap();
     let prepared = service.prepare(&request("kimi-membership")).unwrap();
     let spec = prepared.runtime_material().start_spec(Some(0));
@@ -2583,7 +2583,7 @@ fn production_start_spec_attaches_pool_schedule_policy() {
     let service = AdapterBridgeService::new(db.clone());
     let prepared = service.prepare(&request("kimi-membership")).unwrap();
     RoutePoolService::new(db.clone())
-        .enroll_v2(&prepared.profile().id, 43155)
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
         .unwrap();
     let mut pool = RoutePoolService::new(db.clone())
         .get(&prepared.profile().id)
@@ -2752,7 +2752,7 @@ fn production_start_spec_skips_index_when_route_index_flag_is_off() {
     let service = AdapterBridgeService::new(db.clone());
     let prepared = service.prepare(&request("kimi-membership")).unwrap();
     RoutePoolService::new(db.clone())
-        .enroll_v2(&prepared.profile().id, 43155)
+        .enroll_unified_gateway(&prepared.profile().id, 43155)
         .unwrap();
     let prepared = service.prepare(&request("kimi-membership")).unwrap();
     assert!(
@@ -2823,7 +2823,7 @@ fn production_index_uses_each_member_listed_models_not_the_lead_catalog() {
             "openai-b",
         )
         .unwrap();
-    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();
@@ -2903,7 +2903,7 @@ fn production_index_labels_members_by_their_own_provider() {
             Some("shared"),
         )
         .unwrap();
-    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
     let prepared = service
         .prepare(&grok_codex_account_request("grok-subscription"))
         .unwrap();
@@ -2955,7 +2955,7 @@ fn production_index_omits_sibling_when_member_snapshot_fails() {
             "openai-missing",
         )
         .unwrap();
-    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();
@@ -3000,7 +3000,7 @@ fn attach_keeps_last_successful_sibling_when_prior_index_is_present() {
             "openai-b",
         )
         .unwrap();
-    pools.enroll_v2(&prepared.profile().id, 43155).unwrap();
+    pools.enroll_unified_gateway(&prepared.profile().id, 43155).unwrap();
     let prepared = service
         .prepare(&openai_request(AdapterSourceKind::Provider, "openai-a"))
         .unwrap();

@@ -196,7 +196,9 @@ pub struct RoutePool {
     pub is_default: bool,
     /// Explicit switch onto the unified gateway. Unenrolled pools keep any
     /// historical `profile.local_port` until this becomes true.
-    pub v2_enrolled: bool,
+    /// Wire alias `v2Enrolled` stays readable for one compatibility window.
+    #[serde(alias = "v2Enrolled")]
+    pub unified_gateway_enrolled: bool,
     pub policy_revision: i64,
     pub auto_start: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -216,7 +218,7 @@ impl fmt::Debug for RoutePool {
             .field("hub_token", &"REDACTED")
             .field("schedule_policy", &self.schedule_policy)
             .field("is_default", &self.is_default)
-            .field("v2_enrolled", &self.v2_enrolled)
+            .field("unified_gateway_enrolled", &self.unified_gateway_enrolled)
             .field("policy_revision", &self.policy_revision)
             .field("auto_start", &self.auto_start)
             .field("gateway_port", &self.gateway_port)
@@ -365,7 +367,9 @@ pub struct DefaultRoutePoolOverview {
     pub target_agent_id: AgentId,
     pub surface: RouteDownstreamSurface,
     pub dialect: RouteDownstreamDialect,
-    pub v2_enrolled: bool,
+    /// Wire alias `v2Enrolled` stays readable for one compatibility window.
+    #[serde(alias = "v2Enrolled")]
+    pub unified_gateway_enrolled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gateway_port: Option<u16>,
     pub members: Vec<RouteMemberOverview>,

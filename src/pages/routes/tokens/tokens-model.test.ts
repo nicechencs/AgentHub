@@ -50,7 +50,7 @@ function pool(
     targetAgentId: 'codex',
     surface: 'responses',
     dialect: 'codex',
-    v2Enrolled: true,
+    unifiedGatewayEnrolled: true,
     members: [{ sourceKind: 'provider', sourceId: 'src-1', enabled: true }],
     listedModels: [],
     ...partial,

@@ -101,7 +101,7 @@ describe('poolSyncCandidates', () => {
         targetAgentId: 'codex',
         surface: 'responses',
         dialect: 'codex',
-        v2Enrolled: false,
+        unifiedGatewayEnrolled: false,
         members: [{ sourceKind: 'account', sourceId: 'account-synced', enabled: true }],
       }],
     );

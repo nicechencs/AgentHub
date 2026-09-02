@@ -160,7 +160,7 @@ describe('Tauri adapter route port', () => {
         targetAgentId: 'codex',
         surface: 'responses',
         dialect: 'codex',
-        v2Enrolled: true,
+        unifiedGatewayEnrolled: true,
         gatewayPort: 43121,
         members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
         listedModels: ['kimi-k2.5'],
@@ -258,14 +258,14 @@ describe('Tauri adapter route port', () => {
       targetAgentId: 'codex',
       surface: 'responses',
       dialect: 'codex',
-      v2Enrolled: true,
+      unifiedGatewayEnrolled: true,
       gatewayPort: 43121,
       members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
     });
     const port = createTauriAdapterPort();
     const enrolled = await port.enrollNativeToGateway('native-1');
     expect(invokeMock).toHaveBeenCalledWith('enroll_native_to_gateway', { profileId: 'native-1' });
-    expect(enrolled.v2Enrolled).toBe(true);
+    expect(enrolled.unifiedGatewayEnrolled).toBe(true);
     expect(JSON.stringify(enrolled)).not.toContain('hubToken');
   });
 
@@ -275,7 +275,7 @@ describe('Tauri adapter route port', () => {
       targetAgentId: 'codex',
       surface: 'responses',
       dialect: 'codex',
-      v2Enrolled: false,
+      unifiedGatewayEnrolled: false,
       members: [{ sourceKind: 'provider', sourceId: 'codex-api', enabled: true }],
     });
     const port = createTauriAdapterPort();

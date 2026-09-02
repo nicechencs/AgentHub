@@ -354,7 +354,7 @@ export interface DefaultRoutePoolOverview {
   targetAgentId: AgentId;
   surface: RoutePoolSurface;
   dialect: RoutePoolDialect;
-  v2Enrolled: boolean;
+  unifiedGatewayEnrolled: boolean;
   gatewayPort?: number | null;
   members: RouteMemberOverview[];
   listedModels?: string[];

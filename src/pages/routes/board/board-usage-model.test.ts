@@ -108,7 +108,7 @@ describe('buildBoardUsageEntries', () => {
         targetAgentId: 'codex',
         surface: 'responses',
         dialect: 'codex',
-        v2Enrolled: false,
+        unifiedGatewayEnrolled: false,
         members: [{ sourceKind: 'provider', sourceId: 'acc-1', enabled: true }],
         listedModels: [],
       }],

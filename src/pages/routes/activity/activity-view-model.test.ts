@@ -40,7 +40,7 @@ describe('resolveActivityPageSnapshot', () => {
         targetAgentId: 'claude',
         surface: 'messages',
         dialect: 'claude',
-        v2Enrolled: true,
+        unifiedGatewayEnrolled: true,
         members: [{
           sourceKind: 'account',
           sourceId: 'acc-1',

@@ -839,7 +839,9 @@ export interface DefaultRoutePoolOverviewWire {
   targetAgentId: AgentId;
   surface: string;
   dialect: string;
-  v2Enrolled: boolean;
+  unifiedGatewayEnrolled?: boolean;
+  /** Historical wire name; dual-read during the compatibility window. */
+  v2Enrolled?: boolean;
   gatewayPort?: number | null;
   members?: RouteMemberOverviewWire[];
   listedModels?: string[];
@@ -909,7 +911,7 @@ export function mapDefaultRoutePoolOverview(wire: DefaultRoutePoolOverviewWire):
     targetAgentId: wire.targetAgentId,
     surface: mapPoolSurface(wire.surface),
     dialect: mapPoolDialect(wire.dialect),
-    v2Enrolled: wire.v2Enrolled === true,
+    unifiedGatewayEnrolled: wire.unifiedGatewayEnrolled === true || wire.v2Enrolled === true,
     gatewayPort: port,
     members: (wire.members ?? []).map(mapMemberOverview),
     listedModels: listed,

@@ -1083,9 +1083,13 @@ impl AdapterBridgeService {
         Ok(material)
     }
 
-    /// Persist v2 enrollment only after the listener is already bound and
-    /// healthy. Occupancy / bind / health failures must not call this.
-    pub fn enroll_v2_after_bind(&self, profile: &AdapterProfile, port: u16) -> Result<bool> {
+    /// Persist unified-gateway enrollment only after the listener is already
+    /// bound and healthy. Occupancy / bind / health failures must not call this.
+    pub fn enroll_unified_gateway_after_bind(
+        &self,
+        profile: &AdapterProfile,
+        port: u16,
+    ) -> Result<bool> {
         if profile.route != AdapterRoute::LocalBridge {
             return Ok(false);
         }
@@ -1093,8 +1097,14 @@ impl AdapterBridgeService {
             return Ok(false);
         }
         self.route_pools.ensure_legacy_pool(profile)?;
-        self.route_pools.enroll_v2_as_default(&profile.id, port)?;
+        self.route_pools
+            .enroll_unified_gateway_as_default(&profile.id, port)?;
         Ok(true)
+    }
+
+    #[deprecated(note = "use enroll_unified_gateway_after_bind")]
+    pub fn enroll_v2_after_bind(&self, profile: &AdapterProfile, port: u16) -> Result<bool> {
+        self.enroll_unified_gateway_after_bind(profile, port)
     }
 
     /// Listener spec for the board switch. Does not bind logins to Agents.
@@ -1246,7 +1256,7 @@ impl AdapterBridgeService {
         let Some(pool) = pool else {
             return Ok(None);
         };
-        if !pool.v2_enrolled {
+        if !pool.unified_gateway_enrolled {
             return Ok(None);
         }
         let members = self.route_pools.list_members(&pool.id)?;

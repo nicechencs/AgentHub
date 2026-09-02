@@ -360,7 +360,7 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
                 .get(&profile.id)
                 .unwrap()
                 .unwrap()
-                .v2_enrolled
+                .unified_gateway_enrolled
                 == false
         );
 
@@ -373,7 +373,7 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
             .await
             .is_err());
         let pool = hub.route_pools().get(&profile.id).unwrap().unwrap();
-        assert!(!pool.v2_enrolled);
+        assert!(!pool.unified_gateway_enrolled);
         assert_eq!(pool.gateway_port, None);
         drop(blocker);
 
@@ -384,11 +384,11 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
         assert!(ensured.status.running);
         let still = hub.route_pools().get(&profile.id).unwrap().unwrap();
         assert!(
-            !still.v2_enrolled,
+            !still.unified_gateway_enrolled,
             "bind success without enroll helper must not enroll"
         );
 
-        let refreshed = enroll_v2_and_refresh_index(
+        let refreshed = enroll_unified_gateway_and_refresh_index(
             hub.clone(),
             &host,
             profile.clone(),
@@ -400,7 +400,7 @@ fn occupancy_does_not_enroll_and_healthy_bind_attaches_index() {
         .await
         .unwrap();
         let enrolled = hub.route_pools().get(&profile.id).unwrap().unwrap();
-        assert!(enrolled.v2_enrolled);
+        assert!(enrolled.unified_gateway_enrolled);
         assert_eq!(enrolled.gateway_port, Some(ensured.status.port));
         assert!(
             refreshed.material.start_spec(None).route_index.is_some(),
@@ -455,7 +455,7 @@ fn enroll_refresh_replace_of_reused_listener_is_compensated() {
             "second ensure of the unenrolled spec must be a reuse"
         );
 
-        let refresh = enroll_v2_and_refresh_index(
+        let refresh = enroll_unified_gateway_and_refresh_index(
             hub.clone(),
             &host,
             profile.clone(),
@@ -519,7 +519,7 @@ fn enroll_refresh_reuse_of_indexed_spec_is_not_compensated() {
         let first = ensure_bridge_listener(&host, &material, None, Vec::new(), false)
             .await
             .unwrap();
-        let first_refresh = enroll_v2_and_refresh_index(
+        let first_refresh = enroll_unified_gateway_and_refresh_index(
             hub.clone(),
             &host,
             profile.clone(),
@@ -532,7 +532,7 @@ fn enroll_refresh_reuse_of_indexed_spec_is_not_compensated() {
         .unwrap();
         assert!(first_refresh.listener.as_ref().unwrap().owned_by_saga);
 
-        let again = enroll_v2_and_refresh_index(
+        let again = enroll_unified_gateway_and_refresh_index(
             hub.clone(),
             &host,
             profile.clone(),
