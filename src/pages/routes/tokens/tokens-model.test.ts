@@ -400,4 +400,42 @@ describe('tokens-model', () => {
     );
     expect(rows[0]).toMatchObject({ unavailable: true, token: null, maskedToken: null });
   });
+
+  it('prefers the running listener bearer over the stored pool hub token', () => {
+    const rows = buildLocalTokenRows(
+      [
+        profile({
+          id: 'adapter-codex-kimi-bridge',
+          targetAgentId: 'kimi',
+          localPort: 44227,
+        }),
+      ],
+      {
+        'adapter-codex-kimi-bridge': {
+          profileId: 'adapter-codex-kimi-bridge',
+          state: 'running',
+          port: 44227,
+          localToken: 'ahb_listener_ok_Y5RM',
+          upstreamStatus: 'connected',
+        },
+      },
+      {},
+      [
+        pool({
+          id: 'adapter-codex-kimi-bridge',
+          targetAgentId: 'kimi',
+          surface: 'chat_completions',
+          dialect: 'kimi',
+          gatewayPort: 44227,
+          members: [{ sourceKind: 'account', sourceId: 'codex-1', enabled: true }],
+        }),
+      ],
+      false,
+      { 'adapter-codex-kimi-bridge': 'ahb_hub_token_2zpU' },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.token).toBe('ahb_listener_ok_Y5RM');
+    expect(rows[0]?.maskedToken).toBe('ahb_••••Y5RM');
+  });
+
 });
