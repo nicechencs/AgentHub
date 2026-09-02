@@ -811,7 +811,7 @@ export const zh = {
       fallback: "无法新建路由",
       success: "已接到路由页。",
       route: {
-        nativeEndpoint: "直连",
+        nativeEndpoint: "直接写入",
         localBridge: "本机路由",
         configSync: "用这份登录",
         unsupported: "当前不支持",
@@ -1355,7 +1355,7 @@ export const zh = {
       },
     },
     direct: {
-      title: "直连",
+      title: "还没接到本机入口",
       description: "当前规则允许本机转发、但还没接到本机入口的登录。",
     },
   },

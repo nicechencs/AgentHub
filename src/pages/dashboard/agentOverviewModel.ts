@@ -34,7 +34,7 @@ export type AgentCardAction =
 export interface AgentCardBadgeInput {
   /**
    * 当前绑定的登录。有值时卡片主文案优先展示
-   * 「登录 · 直连/改配置」或「登录 · 127.0.0.1:端口/路径」。
+   * 「登录」或「登录 · 改配置」或「登录 · 127.0.0.1:端口/路径」。
    */
   binding?: { ticketLabel: string; routeLabel: string } | null;
 }

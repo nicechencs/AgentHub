@@ -204,7 +204,9 @@ describe('TicketWalletList details', () => {
     expect(markup).not.toContain('aria-label="刷新"');
     expect(markup).toContain('var(--agent-codex)');
     expect(markup).toMatch(/color:\s*var\(--agent-codex\)/);
-    expect(markup).toContain('Codex（直连）');
+    expect(markup).toContain('Codex');
+    expect(markup).not.toContain('（直连）');
+    expect(markup).not.toContain('(直连)');
     expect(markup).not.toContain('正用于：');
     expect(markup).not.toContain('mt-1 pl-5');
   });
@@ -780,6 +782,34 @@ describe('TicketDetailPanel', () => {
     expect(markup).not.toContain('尚未验证');
     expect(markup).not.toContain('未验证');
     expect(markup).not.toContain('可续期·未验证');
+  });
+
+  it('omits 直连 from 接到 rows', () => {
+    const ticket = sampleWallet().tickets[0]!;
+    const markup = renderWithTooltip(
+      createElement(TicketDetailPanel, {
+        id: 'native-clients',
+        asPanel: true,
+        open: true,
+        ticket,
+        extras: {},
+        bindings: [{
+          ticketId: ticket.id,
+          agentId: 'claude',
+          route: 'native',
+          active: true,
+          profileId: null,
+          bridge: null,
+        }],
+        onDelete() {},
+        onOpenChange() {},
+      }),
+    );
+    expect(markup).toContain('接到');
+    expect(markup).toContain('Claude');
+    expect(markup).toContain('当前使用');
+    expect(markup).not.toContain('直连');
+    expect(markup).not.toContain('Direct');
   });
 
   it('opens as a right-hand inspect pane with clients, protocol, and diagnostics', () => {

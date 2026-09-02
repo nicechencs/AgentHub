@@ -102,7 +102,7 @@ describe('planToEligibility', () => {
     expect(ready).toMatchObject({
       kind: 'ready',
       canApply: true,
-      routeSummary: '直连',
+      routeSummary: '',
     });
     expect(ready.kind === 'ready' && ready.reason).toBeUndefined();
   });
@@ -148,7 +148,7 @@ describe('planToEligibility', () => {
     expect(eligibility).toMatchObject({
       kind: 'ready',
       canApply: true,
-      routeSummary: '直连',
+      routeSummary: '',
     });
     expect(eligibility.kind === 'ready' && eligibility.reason).toBeUndefined();
   });
@@ -177,7 +177,7 @@ describe('planToEligibility', () => {
     expect(bridge.kind).toBe('ready');
     expect(sync.kind).toBe('ready');
     if (bridge.kind === 'ready') expect(bridge.routeSummary).toBe('本机路由');
-    if (sync.kind === 'ready') expect(sync.routeSummary).toBe('直连');
+    if (sync.kind === 'ready') expect(sync.routeSummary).toBe('');
   });
 
   it('prefers native subscription reusePath over config_sync route', () => {
@@ -366,5 +366,7 @@ describe('eligibility labels with translator', () => {
     expect(planRouteSummary(bridge, t)).toBe('Local route');
     const reuse = plan({ reusePath: 'native_subscription', analysis: analysis({ route: 'config_sync' }) });
     expect(planRouteSummary(reuse, t)).toBe('Use this login');
+    const direct = plan({ analysis: analysis({ route: 'native_endpoint' }) });
+    expect(planRouteSummary(direct, t)).toBe('');
   });
 });

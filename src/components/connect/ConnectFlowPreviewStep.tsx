@@ -161,10 +161,14 @@ export function ConnectFlowPreviewStep({
   return (
     <div className="space-y-3 text-sm">
       <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-medium">{view.title}</h3>
-        </div>
-        {view.reason ? <p className="mt-1 text-secondary">{view.reason}</p> : null}
+        {view.title ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-medium">{view.title}</h3>
+          </div>
+        ) : null}
+        {view.reason ? (
+          <p className={view.title ? 'mt-1 text-secondary' : 'text-secondary'}>{view.reason}</p>
+        ) : null}
       </div>
       {view.notes.length > 0 ? (
         <ul className="list-disc space-y-0.5 pl-5 text-secondary">

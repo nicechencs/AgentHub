@@ -821,7 +821,7 @@ export const en = {
       fallback: "Could not create the route",
       success: "Routed on the Routes page.",
       route: {
-        nativeEndpoint: "Direct",
+        nativeEndpoint: "Write directly",
         localBridge: "Local route",
         configSync: "Use this login",
         unsupported: "Not supported now",
@@ -1365,7 +1365,7 @@ export const en = {
       },
     },
     direct: {
-      title: "Direct",
+      title: "Not on the local entry yet",
       description: "Logins that current rules can send through local forwarding, but that are not on the local entry yet.",
     },
   },

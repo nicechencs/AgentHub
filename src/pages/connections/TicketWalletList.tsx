@@ -389,14 +389,16 @@ function TicketDetailBody({
             <ul className="space-y-1">
               {bindingRows.map((row) => (
                 <li
-                  key={`${row.agentId}:${row.routeLabel}:${row.localUrl ?? ''}`}
+                  key={`${row.agentId}:${row.routeLabel ?? ''}:${row.localUrl ?? ''}`}
                   className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 py-1"
                 >
                   <span className="flex min-w-[5.5rem] items-center gap-1.5 text-sm font-medium">
                     <AgentDot agentId={row.agentId} size="sm" title={null} />
                     <span className="truncate">{row.agentLabel}</span>
                   </span>
-                  <span className="shrink-0 text-meta text-muted">{row.routeLabel}</span>
+                  {row.routeLabel ? (
+                    <span className="shrink-0 text-meta text-muted">{row.routeLabel}</span>
+                  ) : null}
                   <span className="shrink-0 text-meta text-secondary">{row.status}</span>
                   {row.localUrl ? (
                     <span className="min-w-0 flex-1 truncate font-mono text-xs text-secondary">{row.localUrl}</span>

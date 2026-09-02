@@ -527,10 +527,10 @@ describe('Ticket Rust wire mappers', () => {
 
 describe('ticket / binding display labels', () => {
   it('maps route labels for usage and dashboard (English fallback with no t)', () => {
-    expect(bindingRouteUsageLabel('native')).toBe('Direct');
+    expect(bindingRouteUsageLabel('native')).toBe('');
     expect(bindingRouteUsageLabel('reshape')).toBe('Rewrite config');
     expect(bindingRouteUsageLabel('bridge')).toBe('Local route');
-    expect(bindingRouteDashboardLabel('native')).toBe('Direct');
+    expect(bindingRouteDashboardLabel('native')).toBe('');
     expect(bindingRouteDashboardLabel('reshape')).toBe('Rewrite config');
     expect(bindingRouteDashboardLabel('bridge')).toBe('Local route');
   });
@@ -554,10 +554,10 @@ describe('ticket / binding display labels', () => {
   it('maps route labels via t for zh and en', () => {
     const zh = createTranslator('zh');
     const en = createTranslator('en');
-    expect(bindingRouteUsageLabel('native', zh)).toBe('直连');
+    expect(bindingRouteUsageLabel('native', zh)).toBe('');
     expect(bindingRouteUsageLabel('reshape', zh)).toBe('改配置');
     expect(bindingRouteUsageLabel('bridge', zh)).toBe('本机路由');
-    expect(bindingRouteUsageLabel('native', en)).toBe('Direct');
+    expect(bindingRouteUsageLabel('native', en)).toBe('');
     expect(bindingRouteUsageLabel('reshape', en)).toBe('Rewrite config');
     expect(bindingRouteUsageLabel('bridge', en)).toBe('Local route');
   });
