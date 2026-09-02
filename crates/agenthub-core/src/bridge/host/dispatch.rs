@@ -55,11 +55,12 @@ pub(super) async fn handle_conversation(
             return stopping_response();
         }
     };
-    trace.local_auth_ok(&state.profile_id, None);
+    let listen_port = gateway.cited_port_for_profile(&state.profile_id);
+    trace.local_auth_ok(&state.profile_id, listen_port);
     if let Some(response) = surface.reject_if_unserved(&state, &request_id) {
         trace.local_path_failed(
             &state.profile_id,
-            None,
+            listen_port,
             "surface_mismatch",
             "Local surface does not serve this path.",
         );
