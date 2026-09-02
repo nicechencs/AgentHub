@@ -4,8 +4,14 @@ import {
   authDisplayForAgentStatus,
   authHealthLabel,
 } from '@/lib/backend/contracts/auth-state';
+import type { BindingRoute } from '@/lib/backend/contracts/ticket';
 import type { TranslateFn } from '@/lib/i18n';
 import { localizeStoredUiCopy } from '@/lib/i18n/stored-copy';
+import {
+  formatRouteEndpointHttpUrl,
+  routeEndpointPathForBinding,
+} from '@/lib/route-endpoints';
+import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
 import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
 
 /** Backend/store rows keep Chinese literals. Remap at display time when `t` is set. */
@@ -22,40 +28,61 @@ export type AgentCardAction =
   | { kind: 'connect' }
   | { kind: 'navigate'; to: string };
 
-/** 卡片桥徽标态（调用方已把查询失败收敛为 unavailable） */
-export type AgentCardBridgeState = 'running' | 'stopped' | 'degraded' | 'unavailable';
-
 /**
- * 徽标输入：由调用方完成 profile 联结与桥状态查询后传入。
- * 模型层只做映射，不读 provider.meta、不发请求。
+ * 当前正在用的授权。模型层只做映射，不读 provider.meta、不发请求。
  */
 export interface AgentCardBadgeInput {
-  /** 当前生效 provider.id 命中 AdapterProfile.generatedProviderId 时传入 */
-  viaAdapter?: { sourceLabel?: string } | null;
-  /** 命中的 profile 为 bridge 型时传入；查询失败传 unavailable，不得省略 */
-  bridge?: { state: AgentCardBridgeState; profileId?: string | null } | null;
   /**
-   * 当前绑定的票（钱包读模型）。有值时卡片主文案优先展示
-   * 「票 label · 直连/改配置/本机路由」，不再只显示 Provider 行名。
+   * 当前绑定的登录。有值时卡片主文案优先展示
+   * 「登录 · 直连/改配置」或「登录 · 127.0.0.1:端口/路径」。
    */
   binding?: { ticketLabel: string; routeLabel: string } | null;
 }
 
-export const AGENT_CARD_BRIDGE_LABEL: Record<AgentCardBridgeState, string> = {
-  running: '运行中',
-  stopped: '已停止',
-  degraded: '已降级',
-  unavailable: '状态不可用',
-};
+const LOCAL_ROUTE_MARKERS = ['本机路由', 'Local route'] as const;
 
-export function agentCardBridgeLabel(state: AgentCardBridgeState, t?: TranslateFn): string {
-  if (t) {
-    if (state === 'running') return t('routes.runtime.running');
-    if (state === 'stopped') return t('routes.runtime.stopped');
-    if (state === 'degraded') return t('routes.runtime.degraded');
-    return t('routes.runtime.unavailable');
+/** 总览只展示授权本身；落盘里的「本机路由 · …」前缀去掉。 */
+export function dashboardConnectionLabel(raw: string, t?: TranslateFn): string {
+  const localized = localizeStoredDashboardCopy(raw, t);
+  const markers = new Set<string>(LOCAL_ROUTE_MARKERS);
+  if (t) markers.add(t('kind.route.localRoute'));
+  for (const marker of markers) {
+    if (localized === marker) {
+      return t ? t('dashboard.overview.hintConnection') : '当前连接';
+    }
+    const prefix = `${marker} · `;
+    if (localized.startsWith(prefix)) {
+      return localized.slice(prefix.length).trim()
+        || (t ? t('dashboard.overview.hintConnection') : '当前连接');
+    }
   }
-  return AGENT_CARD_BRIDGE_LABEL[state];
+  return localized;
+}
+
+/** 走路由时用 127.0.0.1 地址，不用「本机路由」。 */
+export function dashboardBindingMeta(
+  input: {
+    ticketLabel: string;
+    route: BindingRoute;
+    agentId: AgentId;
+    port?: number | null;
+  },
+  t?: TranslateFn,
+): { ticketLabel: string; routeLabel: string } {
+  const ticketLabel = dashboardConnectionLabel(input.ticketLabel, t);
+  if (input.route === 'bridge') {
+    return {
+      ticketLabel,
+      routeLabel: formatRouteEndpointHttpUrl({
+        path: routeEndpointPathForBinding({ agentId: input.agentId }),
+        port: input.port ?? null,
+      }),
+    };
+  }
+  return {
+    ticketLabel,
+    routeLabel: connectionStateRouteLabel(input.route, t),
+  };
 }
 
 /** 异常 = 未安装 / 环境未就绪 / 认证临期或失效 */
@@ -155,32 +182,8 @@ export interface AgentCardView {
   authHealth: ReturnType<typeof authDisplayForAgentStatus>['health'];
   /** 已装/未装两态均为 true：用于约束等高两行布局 */
   twoLineLayout: true;
-  /** 当前生效连接经 Adapter 投影时非空 */
-  viaAdapter?: { sourceLabel?: string };
-  /** 命中 bridge 型 profile 时非空；查询失败为 unavailable，不得省略 */
-  bridge?: { state: AgentCardBridgeState; label: string; profileId: string | null };
-  /** 钱包读模型：当前绑定的票 */
+  /** 当前正在用的授权 */
   binding?: { ticketLabel: string; routeLabel: string };
-}
-
-function mapViaAdapter(
-  input?: { sourceLabel?: string } | null,
-): { sourceLabel?: string } | undefined {
-  if (!input) return undefined;
-  const sourceLabel = input.sourceLabel?.trim();
-  return sourceLabel ? { sourceLabel } : {};
-}
-
-function mapBridgeBadge(
-  input?: { state: AgentCardBridgeState; profileId?: string | null } | null,
-  t?: TranslateFn,
-): { state: AgentCardBridgeState; label: string; profileId: string | null } | undefined {
-  if (!input) return undefined;
-  return {
-    state: input.state,
-    label: agentCardBridgeLabel(input.state, t),
-    profileId: input.profileId ?? null,
-  };
 }
 
 /** 按 AGENTS 定义顺序生成卡片视图模型（不排序） */
@@ -207,7 +210,7 @@ export function buildAgentCardView(
       : view.effectiveConnection.currentProvider !== 'unset'
         ? view.effectiveConnection.currentProvider
         : unconfigured;
-  const effective = localizeStoredDashboardCopy(rawEffective, t);
+  const effective = dashboardConnectionLabel(rawEffective, t);
   const version = status?.version ?? '—';
   const versionText = missing ? null : `v${version}`;
   const rawAuthLabel =
@@ -226,7 +229,9 @@ export function buildAgentCardView(
       metaText = t ? t('dashboard.overview.notInstalled') : '未安装 · 点击安装';
     }
   } else if (badges?.binding?.ticketLabel) {
-    metaText = `${badges.binding.ticketLabel} · ${badges.binding.routeLabel}`;
+    metaText = badges.binding.routeLabel
+      ? `${badges.binding.ticketLabel} · ${badges.binding.routeLabel}`
+      : badges.binding.ticketLabel;
   } else {
     metaText = effective;
   }
@@ -234,7 +239,9 @@ export function buildAgentCardView(
   const titleFull = missing
     ? metaText
     : badges?.binding?.ticketLabel
-      ? `${badges.binding.ticketLabel} · ${badges.binding.routeLabel} · ${authLabel}`
+      ? badges.binding.routeLabel
+        ? `${badges.binding.ticketLabel} · ${badges.binding.routeLabel} · ${authLabel}`
+        : `${badges.binding.ticketLabel} · ${authLabel}`
       : `${effective} · ${authLabel}`;
 
   const connectionHint =
@@ -267,37 +274,25 @@ export function buildAgentCardView(
         })
       : `${meta.name}，${versionText}，${authLabel}，${connectionHint} ${effective}，点击管理连接`;
 
-  const viaAdapter = mapViaAdapter(badges?.viaAdapter);
-  const bridge = mapBridgeBadge(badges?.bridge, t);
-  let authStatus = cardAuthStatus(status, missing);
-  if (!missing && bridge?.state === 'stopped' && authStatus === 'valid') {
-    authStatus = 'none';
-  }
+  const authStatus = cardAuthStatus(status, missing);
   const binding = badges?.binding?.ticketLabel
     ? {
-        ticketLabel: localizeStoredDashboardCopy(badges.binding.ticketLabel, t),
-        routeLabel: localizeStoredDashboardCopy(badges.binding.routeLabel, t),
+        ticketLabel: dashboardConnectionLabel(badges.binding.ticketLabel, t),
+        routeLabel: dashboardConnectionLabel(badges.binding.routeLabel, t),
       }
     : undefined;
-  if (viaAdapter) {
-    ariaLabel += viaAdapter.sourceLabel
-      ? t
-        ? t('dashboard.overview.ariaViaSource', { source: viaAdapter.sourceLabel })
-        : `，本机路由 · ${viaAdapter.sourceLabel}`
-      : t
-        ? t('dashboard.overview.ariaVia')
-        : '，本机路由';
-  }
   if (binding) {
     ariaLabel += t
-      ? t('dashboard.overview.ariaBinding', { label: binding.ticketLabel, route: binding.routeLabel })
-      : `，当前使用 ${binding.ticketLabel}（${binding.routeLabel}）`;
-  }
-  if (bridge) {
-    ariaLabel += t ? t('dashboard.overview.ariaBridge', { label: bridge.label }) : `，${bridge.label}`;
+      ? t('dashboard.overview.ariaBinding', {
+          label: binding.ticketLabel,
+          route: binding.routeLabel || binding.ticketLabel,
+        })
+      : binding.routeLabel
+        ? `，当前使用 ${binding.ticketLabel}（${binding.routeLabel}）`
+        : `，当前使用 ${binding.ticketLabel}`;
   }
 
-  let statusDotTitle = missing
+  const statusDotTitle = missing
     ? envMissing
       ? t
         ? t('dashboard.overview.envNotReadyShort')
@@ -306,9 +301,6 @@ export function buildAgentCardView(
         ? t('dashboard.overview.notInstalledShort')
         : '未安装'
     : authLabel;
-  if (!missing && bridge?.state === 'stopped') {
-    statusDotTitle = agentCardBridgeLabel('stopped', t);
-  }
 
   return {
     missing,
@@ -323,9 +315,7 @@ export function buildAgentCardView(
     authStatus,
     authHealth: view.liveAuth.health === 'unset' ? 'unknown' : view.liveAuth.health,
     twoLineLayout: true,
-    ...(viaAdapter ? { viaAdapter } : {}),
     ...(binding ? { binding } : {}),
-    ...(bridge ? { bridge } : {}),
   };
 }
 
