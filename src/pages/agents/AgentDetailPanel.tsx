@@ -33,6 +33,7 @@ import {
   agentUpgradeHint,
   extraCopyUpdateHint,
   formatAgentVersion,
+  isLeftoverInstallSource,
   isSpecialInstallChannel,
   listAgentInstalls,
   resolveOfficialSetupUrl,
@@ -575,24 +576,45 @@ function InstallLocationRow({
     : upgradable
       ? t('agents.update.available')
       : t('agents.update.forceLatest');
+  const leftover = isLeftoverInstallSource(inst.source);
   const uninstallControl = agentUninstallControl(inst.uninstallVia);
-  const uninstallTooltip = uninstallControl.muted
+  const uninstallTooltip = uninstallControl.muted || leftover
     ? uninstallViaLabel(inst.uninstallVia, t)
     : t('agents.dialog.uninstallDesc');
   return (
-    <li className="rounded-card border border-border bg-subtle/60 px-3 py-2">
+    <li
+      className={cn(
+        'rounded-card border px-3 py-2',
+        leftover
+          ? 'border-warning/45 bg-warning/5'
+          : 'border-border bg-subtle/60',
+      )}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           {inst.spawn ? <Badge variant="success">{t('agents.card.spawnCopy')}</Badge> : null}
+          {leftover ? (
+            <Badge variant="warning">{t('agents.card.leftoverDoNotLaunch')}</Badge>
+          ) : null}
           {sourceLabel ? (
             <CopyableChannelName
               label={sourceLabel}
               command={copyableChannelCommand(agentId, inst.source, t)}
-              className="text-meta font-medium text-secondary"
+              className={cn(
+                'text-meta font-medium',
+                leftover ? 'text-warning' : 'text-secondary',
+              )}
             />
           ) : null}
           {versionText ? (
-            <span className="font-mono text-meta text-muted">{versionText}</span>
+            <span
+              className={cn(
+                'font-mono text-meta',
+                leftover ? 'text-warning' : 'text-muted',
+              )}
+            >
+              {versionText}
+            </span>
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -614,6 +636,11 @@ function InstallLocationRow({
             control={uninstallControl}
             busy={busy}
             tooltip={uninstallTooltip}
+            ariaLabel={
+              leftover
+                ? t('agents.card.viaLeftover')
+                : t('agents.card.uninstallProgram')
+            }
             onUninstall={onUninstall}
           />
         </div>
@@ -621,6 +648,9 @@ function InstallLocationRow({
       <div className="mt-1">
         <CopyableFileName path={inst.location} wrap="break" />
       </div>
+      {leftover ? (
+        <p className="mt-1 text-meta text-warning">{t('agents.card.leftoverDoNotLaunch')}</p>
+      ) : null}
     </li>
   );
 }
@@ -684,11 +714,13 @@ function ChannelUninstallButton({
   control,
   busy,
   tooltip,
+  ariaLabel,
   onUninstall,
 }: {
   control: AgentUninstallControl;
   busy: boolean;
   tooltip: string;
+  ariaLabel?: string;
   onUninstall: () => void;
 }) {
   const { t } = useI18n();
@@ -700,7 +732,7 @@ function ChannelUninstallButton({
         className={control.muted ? 'text-muted' : 'text-danger hover:text-danger'}
         disabled={busy || control.muted}
         title={tooltip}
-        aria-label={t('agents.card.uninstallProgram')}
+        aria-label={ariaLabel ?? t('agents.card.uninstallProgram')}
         onClick={control.muted ? undefined : onUninstall}
       >
         <Trash2 className={cn('h-3.5 w-3.5', control.muted && 'text-muted')} />

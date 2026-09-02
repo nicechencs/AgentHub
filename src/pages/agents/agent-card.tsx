@@ -33,6 +33,7 @@ import {
   isSpecialInstallChannel,
   agentLaunchTargets,
   agentListDetailsHint,
+  isLeftoverDetailsHint,
   agentUpgradeControl,
   agentUpgradeHint,
   listAgentInstalls,
@@ -338,7 +339,13 @@ export function AgentCard({
               <span className="text-meta text-muted">{t('agents.card.notInstalled')}</span>
             )}
             {detailsHint ? (
-              <span className="text-meta text-muted">
+              <span
+                className={
+                  isLeftoverDetailsHint(detailsHint)
+                    ? 'text-meta text-warning'
+                    : 'text-meta text-muted'
+                }
+              >
                 {t(detailsHint.key, detailsHint.params)}
               </span>
             ) : null}
