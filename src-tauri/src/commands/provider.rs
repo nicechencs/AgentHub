@@ -7,7 +7,8 @@
 use agenthub_core::error::AppError;
 use agenthub_core::logging::{self, targets};
 use agenthub_core::models::{
-    Provider, ProviderInput, ProviderPreset, ProviderSwitchResult, SwitchConfirmPreview,
+    AdapterBindingHealNotice, Provider, ProviderInput, ProviderPreset, ProviderSwitchResult,
+    SwitchConfirmPreview,
 };
 use agenthub_core::presets;
 use agenthub_core::services::provider_identity::{normalize_base_url, normalize_provider_base_url};
@@ -15,12 +16,13 @@ use agenthub_core::utils::redact::{api_key_secret, is_secret_key, mask_secret_ta
 use agenthub_core::AgentHub;
 use serde::Serialize;
 use serde_json::{Map, Value};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::{map_err_string, parse_agent, parse_agent_opt, with_hub_blocking};
 use crate::state::AppState;
 
 const REDACTED_MARKER: &str = "***";
+pub const PROVIDER_BINDING_HEAL_EVENT: &str = "provider-binding-heal";
 
 /// Switch confirmation payload for the GUI dialog (no live writes).
 #[derive(Debug, Clone, Serialize)]
@@ -41,14 +43,30 @@ pub fn list_provider_presets(agent_id: Option<String>) -> Result<Vec<ProviderPre
 /// Invoke: `list_providers` — redacted rows.
 #[tauri::command]
 pub async fn list_providers(
+    app: AppHandle,
     state: State<'_, AppState>,
     agent_id: Option<String>,
 ) -> Result<Vec<Provider>, String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, move |hub| {
+    let items = with_hub_blocking(hub.clone(), move |hub| {
         list_providers_inner(hub, agent_id.as_deref())
     })
-    .await
+    .await?;
+    emit_provider_binding_heals(&app, hub.providers().drain_adapter_binding_heals());
+    Ok(items)
+}
+
+fn emit_provider_binding_heals(app: &AppHandle, notices: Vec<AdapterBindingHealNotice>) {
+    for notice in notices {
+        if let Err(e) = app.emit(PROVIDER_BINDING_HEAL_EVENT, &notice) {
+            tracing::debug!(
+                target: targets::GUI,
+                op = "provider_binding_heal",
+                error = %e,
+                "emit provider-binding-heal failed"
+            );
+        }
+    }
 }
 
 /// Invoke: `get_provider` — redacted single row.

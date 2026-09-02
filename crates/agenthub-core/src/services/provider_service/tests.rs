@@ -2231,3 +2231,206 @@ fn switch_write_last4_never_returns_the_full_key() {
     });
     assert_eq!(empty, "");
 }
+
+fn generated_claude(
+    id: &str,
+    name: &str,
+    current: bool,
+    url: &str,
+    token: &str,
+) -> crate::models::Provider {
+    crate::models::Provider {
+        id: id.into(),
+        agent_id: AgentId::Claude,
+        name: name.into(),
+        settings_config: json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": url,
+                "ANTHROPIC_AUTH_TOKEN": token
+            }
+        }),
+        meta: json!({ "generatedBy": "adapter" }),
+        is_current: current,
+        created_at: "2026-03-01 10:00:00".into(),
+        updated_at: "2026-03-02 11:00:00".into(),
+    }
+}
+
+fn claude_live(url: &str, token: &str) -> AgentConfig {
+    AgentConfig {
+        agent: AgentId::Claude,
+        raw: json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": url,
+                "ANTHROPIC_AUTH_TOKEN": token
+            }
+        }),
+    }
+}
+
+#[test]
+fn heal_adapter_binding_from_live_returns_notice_when_current_mismatches() {
+    use crate::models::AdapterBindingHealKind;
+
+    let (_root, _db, svc, _adapter, _backups) = live_svc(
+        AgentId::Claude,
+        claude_live("http://127.0.0.1:44227", "ahb_codex_token_xxxxxIDv8"),
+    );
+    svc.repo()
+        .upsert(&generated_claude(
+            "claude-openai",
+            "OpenAI Bridge",
+            true,
+            "http://127.0.0.1:40661",
+            "ahb_openai_token_xxxxdosM",
+        ))
+        .unwrap();
+    svc.repo()
+        .upsert(&generated_claude(
+            "claude-codex",
+            "Codex Subscription Bridge",
+            false,
+            "http://127.0.0.1:44227",
+            "ahb_codex_token_xxxxxIDv8",
+        ))
+        .unwrap();
+
+    let notice = svc
+        .heal_adapter_binding_from_live(AgentId::Claude)
+        .unwrap()
+        .expect("heal should return a notice");
+    assert_eq!(notice.kind, AdapterBindingHealKind::Healed);
+    assert_eq!(notice.agent, AgentId::Claude);
+    assert_eq!(notice.from_id.as_deref(), Some("claude-openai"));
+    assert_eq!(notice.from_name.as_deref(), Some("OpenAI Bridge"));
+    assert_eq!(notice.to_id.as_deref(), Some("claude-codex"));
+    assert_eq!(notice.to_name.as_deref(), Some("Codex Subscription Bridge"));
+    assert_eq!(
+        svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id,
+        "claude-codex"
+    );
+}
+
+#[test]
+fn drain_adapter_binding_heals_empties_after_list_and_get_current() {
+    use crate::models::AdapterBindingHealKind;
+
+    let (_root, _db, svc, _adapter, _backups) = live_svc(
+        AgentId::Claude,
+        claude_live("http://127.0.0.1:44227", "ahb_codex_token_xxxxxIDv8"),
+    );
+    svc.repo()
+        .upsert(&generated_claude(
+            "claude-openai",
+            "OpenAI Bridge",
+            true,
+            "http://127.0.0.1:40661",
+            "ahb_openai_token_xxxxdosM",
+        ))
+        .unwrap();
+    svc.repo()
+        .upsert(&generated_claude(
+            "claude-codex",
+            "Codex Subscription Bridge",
+            false,
+            "http://127.0.0.1:44227",
+            "ahb_codex_token_xxxxxIDv8",
+        ))
+        .unwrap();
+
+    let listed = svc.list(Some(AgentId::Claude)).unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .find(|row| row.is_current)
+            .map(|row| row.id.as_str()),
+        Some("claude-codex")
+    );
+    let first = svc.drain_adapter_binding_heals();
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].kind, AdapterBindingHealKind::Healed);
+    assert!(svc.drain_adapter_binding_heals().is_empty());
+
+    let current = svc.get_current(AgentId::Claude).unwrap().unwrap();
+    assert_eq!(current.id, "claude-codex");
+    assert!(
+        svc.drain_adapter_binding_heals().is_empty(),
+        "already aligned current should not enqueue again"
+    );
+}
+
+#[test]
+fn heal_adapter_binding_from_live_skips_user_grant_and_cursor() {
+    let (_root, _db, svc, _adapter, _backups) = live_svc(
+        AgentId::Claude,
+        claude_live("http://127.0.0.1:44227", "ahb_codex_token_xxxxxIDv8"),
+    );
+    let mut grant = generated_claude(
+        "claude-manual",
+        "Manual login",
+        true,
+        "http://127.0.0.1:40661",
+        "ahb_openai_token_xxxxdosM",
+    );
+    grant.meta = json!({});
+    svc.repo().upsert(&grant).unwrap();
+    svc.repo()
+        .upsert(&generated_claude(
+            "claude-codex",
+            "Codex Subscription Bridge",
+            false,
+            "http://127.0.0.1:44227",
+            "ahb_codex_token_xxxxxIDv8",
+        ))
+        .unwrap();
+
+    assert!(svc
+        .heal_adapter_binding_from_live(AgentId::Claude)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id,
+        "claude-manual"
+    );
+    assert!(svc
+        .heal_adapter_binding_from_live(AgentId::Cursor)
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn heal_adapter_binding_from_live_conflict_when_live_matches_no_generated() {
+    use crate::models::AdapterBindingHealKind;
+
+    let (_root, _db, svc, _adapter, _backups) = live_svc(
+        AgentId::Claude,
+        claude_live("https://api.anthropic.com", "sk-user-not-generated"),
+    );
+    svc.repo()
+        .upsert(&generated_claude(
+            "claude-codex",
+            "Codex Subscription Bridge",
+            true,
+            "http://127.0.0.1:44227",
+            "ahb_codex_token_xxxxxIDv8",
+        ))
+        .unwrap();
+
+    let notice = svc
+        .heal_adapter_binding_from_live(AgentId::Claude)
+        .unwrap()
+        .expect("conflict notice");
+    assert_eq!(notice.kind, AdapterBindingHealKind::Conflict);
+    assert_eq!(notice.agent, AgentId::Claude);
+    assert_eq!(
+        notice.live_hint.as_deref(),
+        Some("https://api.anthropic.com")
+    );
+    let hint = notice.live_hint.as_deref().unwrap_or("");
+    assert!(!hint.contains("sk-") && !hint.contains("ahb_"));
+    assert_eq!(
+        svc.repo().get_current(AgentId::Claude).unwrap().unwrap().id,
+        "claude-codex",
+        "conflict must not rewrite current or live"
+    );
+}

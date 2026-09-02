@@ -6,8 +6,8 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBe
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    attach_persisted_surface, Account, AgentId, Capability, PersistedTicketSurface, Provider,
-    ProviderInput, TicketSurface,
+    attach_persisted_surface, Account, AdapterBindingHealNotice, AgentId, Capability,
+    PersistedTicketSurface, Provider, ProviderInput, TicketSurface,
 };
 use crate::services::adapter_projection::{
     exact_generated_provider_for_live, generated_provider_is_adapter_owned,
@@ -59,11 +59,11 @@ impl ProviderService {
     pub fn list(&self, agent: Option<AgentId>) -> Result<Vec<Provider>> {
         self.connections.reconcile_known_agents(agent);
         if let Some(agent) = agent {
-            let _ = self.heal_adapter_binding_from_live(agent);
+            self.push_adapter_binding_heal(agent);
             let _ = self.heal_secret_url_duplicates(agent);
         } else {
             for agent in AgentId::ALL {
-                let _ = self.heal_adapter_binding_from_live(agent);
+                self.push_adapter_binding_heal(agent);
                 let _ = self.heal_secret_url_duplicates(agent);
             }
         }
@@ -115,8 +115,32 @@ impl ProviderService {
     /// The unique current provider for `agent`, if any.
     pub fn get_current(&self, agent: AgentId) -> Result<Option<Provider>> {
         self.connections.reconcile_known_agents(Some(agent));
-        let _ = self.heal_adapter_binding_from_live(agent);
+        self.push_adapter_binding_heal(agent);
         self.repo.get_current(agent)
+    }
+
+    /// Take queued live-binding heal/conflict notices. Empty after the call.
+    pub fn drain_adapter_binding_heals(&self) -> Vec<AdapterBindingHealNotice> {
+        std::mem::take(
+            &mut *self
+                .adapter_binding_heals
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()),
+        )
+    }
+
+    fn enqueue_adapter_binding_heal(&self, notice: AdapterBindingHealNotice) {
+        self.adapter_binding_heals
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(notice);
+    }
+
+    fn push_adapter_binding_heal(&self, agent: AgentId) {
+        match self.heal_adapter_binding_from_live(agent) {
+            Ok(Some(notice)) => self.enqueue_adapter_binding_heal(notice),
+            Ok(None) | Err(_) => {}
+        }
     }
 
     /// Create a new provider. Core owns timestamps.
@@ -484,47 +508,70 @@ impl ProviderService {
     ///
     /// Skips when the current provider is a user grant, when live does not
     /// uniquely identify one generated provider, or when Cursor is the agent.
-    pub(super) fn heal_adapter_binding_from_live(&self, agent: AgentId) -> Result<()> {
+    /// When live uniquely fails to match any generated adapter-owned provider
+    /// and the current row is adapter-owned, returns a conflict notice
+    /// (still no live rewrite).
+    pub(super) fn heal_adapter_binding_from_live(
+        &self,
+        agent: AgentId,
+    ) -> Result<Option<AdapterBindingHealNotice>> {
         if agent == AgentId::Cursor {
-            return Ok(());
+            return Ok(None);
         }
         let Ok(adapter) = self.adapter(agent) else {
-            return Ok(());
+            return Ok(None);
         };
         if !adapter.capability(Capability::ConfigWrite).is_usable() {
-            return Ok(());
+            return Ok(None);
         }
         let Ok(live) = adapter.read_config() else {
-            return Ok(());
+            return Ok(None);
         };
         let providers = self.repo.list(Some(agent))?;
+        let current = providers.iter().find(|row| row.is_current);
         let Some(matched) = exact_generated_provider_for_live(agent, &live.raw, &providers) else {
-            return Ok(());
+            let Some(current) = current else {
+                return Ok(None);
+            };
+            if !generated_provider_is_adapter_owned(current) {
+                return Ok(None);
+            }
+            let live_hint = extract_probe_url(&live.raw);
+            tracing::info!(
+                module = crate::logging::targets::PROVIDER,
+                op = "heal_adapter_binding_from_live",
+                agent = agent.as_str(),
+                live_hint = live_hint.as_deref().unwrap_or("-"),
+                "live settings do not uniquely match a generated login"
+            );
+            return Ok(Some(AdapterBindingHealNotice::conflict(agent, live_hint)));
         };
         if matched.is_current {
-            return Ok(());
+            return Ok(None);
         }
-        if let Some(current) = providers.iter().find(|row| row.is_current) {
+        if let Some(current) = current {
             if !generated_provider_is_adapter_owned(current) {
-                return Ok(());
+                return Ok(None);
             }
         }
+        let from_id = current.map(|row| row.id.clone());
+        let from_name = current.map(|row| row.name.clone());
+        let to_id = matched.id.clone();
+        let to_name = matched.name.clone();
         let now = now_ts();
         tracing::info!(
             module = crate::logging::targets::PROVIDER,
             op = "heal_adapter_binding_from_live",
             agent = agent.as_str(),
-            from = providers
-                .iter()
-                .find(|row| row.is_current)
-                .map(|row| row.id.as_str())
-                .unwrap_or("-"),
-            to = matched.id.as_str(),
+            from = from_id.as_deref().unwrap_or("-"),
+            to = to_id.as_str(),
             "aligning active binding to live adapter projection"
         );
         self.connections
             .activate_provider(agent, &matched.id, &matched.updated_at, &now)?;
-        Ok(())
+        Ok(Some(AdapterBindingHealNotice::healed(
+            agent, from_id, from_name, to_id, to_name,
+        )))
     }
 
     /// Merge same-agent rows that share secret hash + base URL into one keeper.
