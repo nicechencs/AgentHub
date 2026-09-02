@@ -313,6 +313,13 @@ pub async fn launch_agent_program(kind: String, path: String) -> Result<(), Stri
         tracing::warn!(target: targets::GUI, op = "launch_agent_program", "{msg}");
         return Err(msg);
     }
+    tracing::info!(
+        target: targets::GUI,
+        op = "launch_agent_program",
+        kind = kind.as_str(),
+        path = %target.display(),
+        "launch requested"
+    );
     match kind.as_str() {
         "cli" => launch_cli(&target),
         "app" => launch_app(&target),

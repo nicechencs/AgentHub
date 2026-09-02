@@ -125,7 +125,7 @@ pub async fn send_upstream_v2(
             member = next;
             continue;
         };
-        let (attempt_channel, attempt_url, prepared) = prepare_candidate_attempt(
+        let (attempt_channel, attempt_url, prepared) = match prepare_candidate_attempt(
             state,
             surface,
             headers,
@@ -135,7 +135,18 @@ pub async fn send_upstream_v2(
             &member,
             candidate,
             public_model,
-        )?;
+        ) {
+            Ok(prepared) => prepared,
+            Err(response) => {
+                if let Some(trace) = trace.as_deref_mut() {
+                    trace.conversion_failed(
+                        "conversion_failed",
+                        "Could not convert this request for the upstream.",
+                    );
+                }
+                return Err(response);
+            }
+        };
         if let Some(trace) = trace.as_deref_mut() {
             trace.conversion_prepared(
                 surface,
