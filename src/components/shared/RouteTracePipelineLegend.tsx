@@ -1,19 +1,19 @@
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { RouteTraceFlowDiagram } from '@/components/shared/RouteTraceFlowDiagram';
+import { RouteTraceFlowDiagram, type RouteTraceFlowRow } from '@/components/shared/RouteTraceFlowDiagram';
 import { cn } from '@/lib/utils';
 
-const LEGEND_TRACE = {
+const LEGEND_TRACE: RouteTraceFlowRow = {
   requestId: 'legend',
   at: '',
   method: 'POST',
   path: '/v1/messages',
   httpStatus: 200,
   ok: true,
-  localAuth: { status: 'skipped' as const },
-  pool: { status: 'skipped' as const },
-  conversion: { status: 'skipped' as const, path: '' },
-  upstreamAuth: { status: 'skipped' as const },
-  upstream: { status: 'skipped' as const },
+  localAuth: { status: 'skipped' },
+  pool: { status: 'skipped' },
+  conversion: { status: 'skipped', path: '' },
+  upstreamAuth: { status: 'skipped' },
+  upstream: { status: 'skipped' },
 };
 
 /**
@@ -21,10 +21,12 @@ const LEGEND_TRACE = {
  */
 export function RouteTracePipelineLegend({
   className,
+  row,
   poolLabels,
   upstreamUrls,
 }: {
   className?: string;
+  row?: RouteTraceFlowRow;
   poolLabels?: readonly string[];
   upstreamUrls?: readonly string[];
 }) {
@@ -39,7 +41,7 @@ export function RouteTracePipelineLegend({
     >
       <p className="mb-2 text-meta font-medium text-primary">{t('routes.trace.legendTitle')}</p>
       <RouteTraceFlowDiagram
-        row={LEGEND_TRACE}
+        row={row ?? LEGEND_TRACE}
         compact
         previewPoolLabels={poolLabels}
         previewUpstreamUrls={upstreamUrls}

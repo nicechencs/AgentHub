@@ -56,6 +56,7 @@ export type TraceFlowView = {
   conversion: {
     state: TraceFlowStageState;
     pathId: string | null;
+    result: string | null;
     passthrough: boolean;
     matrix: TraceFlowMatrixCell[];
     activeRow: LocalDownstreamRow | null;
@@ -295,6 +296,7 @@ export function buildTraceFlowView(
     conversion: {
       state: conversionState,
       pathId,
+      result: trace.conversion.result?.trim() || null,
       passthrough,
       matrix: buildMatrix(pathId, passthrough, conversionState, activeEndpoint),
       activeRow: parsed.row,

@@ -1,8 +1,10 @@
 import { Check, Minus, X } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { RouteEndpointTypeText } from '@/components/shared/RouteEndpointUrl';
 import { Tip } from '@/components/ui/tooltip';
+import { Card } from '@/components/ui/card';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import type { TranslateFn } from '@/lib/i18n';
 import {
   buildTraceFlowView,
   TRACE_FLOW_MATRIX_COLS,
@@ -60,11 +62,70 @@ function StatusIcon({ state }: { state: TraceFlowStageState }) {
 
 function FlowArrow() {
   return (
-    <div className="flex shrink-0 items-center justify-center px-1 text-muted" aria-hidden>
+    <div
+      className="flex shrink-0 items-center justify-center px-1 text-muted"
+      aria-hidden
+    >
       <svg width="20" height="12" viewBox="0 0 20 12" className="overflow-visible">
         <path d="M0 6 H14 M10 2 L14 6 L10 10" fill="none" stroke="currentColor" strokeWidth="1.5" />
       </svg>
     </div>
+  );
+}
+
+function AuthOkMark({ state }: { state: TraceFlowStageState }) {
+  const { t } = useI18n();
+  if (state === 'ok') {
+    return (
+      <span className="text-body font-medium text-success" data-auth-ok="true">
+        {t('routes.trace.flow.authOk')}
+      </span>
+    );
+  }
+  if (state === 'failed') return <X className="h-4 w-4 text-danger" aria-hidden />;
+  return null;
+}
+
+function supportTip(intro: string, items: readonly string[]): ReactNode {
+  if (items.length === 0) return intro;
+  return (
+    <div>
+      <p>{intro}</p>
+      <ul className="mt-1 space-y-0.5">
+        {items.map((item) => (
+          <li key={item} className="font-mono text-meta">{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function StageCard({
+  title,
+  state,
+  stageId,
+  tip,
+  support,
+  children,
+}: {
+  title: string;
+  state: TraceFlowStageState;
+  stageId: string;
+  tip?: ReactNode;
+  support?: readonly string[];
+  children?: ReactNode;
+}) {
+  return (
+    <Tip label={tip} className="block h-full min-w-0">
+      <Card
+        className={cn('flex h-full min-h-[5.5rem] min-w-0 flex-col p-3', stageBorder(state), stageBg(state))}
+        data-stage-box={stageId}
+        data-stage-support={support && support.length > 0 ? support.join('\n') : undefined}
+      >
+        <p className="text-xs font-medium text-primary">{title}</p>
+        <div className="mt-1 min-w-0 flex-1">{children}</div>
+      </Card>
+    </Tip>
   );
 }
 
@@ -323,6 +384,135 @@ function UpstreamStage({
   );
 }
 
+function conversionOptionLabel(view: TraceFlowView, t: TranslateFn): string | null {
+  if (view.conversion.passthrough) return t('routes.trace.flow.passthrough');
+  if (view.conversion.activeRow && view.conversion.activeCol) {
+    return t('routes.trace.flow.conversionOption', {
+      from: t(MATRIX_ROW_LABEL_KEYS[view.conversion.activeRow] as Parameters<TranslateFn>[0]),
+      to: t(MATRIX_COL_LABEL_KEYS[view.conversion.activeCol] as Parameters<TranslateFn>[0]),
+    });
+  }
+  return view.conversion.pathId;
+}
+
+function conversionResultLabel(result: string | null, t: TranslateFn): string | null {
+  if (!result) return null;
+  if (result === 'converted') return t('routes.trace.flow.converted');
+  if (result === 'passthrough') return t('routes.trace.flow.passthrough');
+  if (result === 'failed') return t('routes.inbound.fail');
+  return result;
+}
+
+function CompactPipeline({
+  view,
+  className,
+  poolLabels,
+  upstreamUrls,
+}: {
+  view: TraceFlowView;
+  className?: string;
+  poolLabels?: readonly string[];
+  upstreamUrls?: readonly string[];
+}) {
+  const { t } = useI18n();
+  const preview = view.localAuth.state === 'skipped'
+    && view.pool.state === 'skipped'
+    && view.conversion.state === 'skipped';
+  const activeEndpoint = preview
+    ? null
+    : view.endpoints.find((node) => node.kind === view.activeEndpoint) ?? null;
+  const endpointSupport = view.endpoints.map((node) => (
+    `${node.path} · ${t(node.labelKey as Parameters<TranslateFn>[0])}`
+  ));
+  const poolSupport = poolLabels ?? [];
+  const upstreamSupport = upstreamUrls ?? [];
+  const poolHit = preview ? null : view.pool.selectedLabel;
+  const conversionHit = preview ? null : conversionOptionLabel(view, t);
+  const conversionResult = preview
+    ? null
+    : conversionResultLabel(
+      view.conversion.passthrough ? null : view.conversion.result,
+      t,
+    );
+
+  return (
+    <div
+      className={cn(
+        'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5',
+        className,
+      )}
+      data-route-trace-flow-legend
+    >
+      <StageCard
+        title={t('routes.trace.stageLocalAuth')}
+        state={view.localAuth.state}
+        stageId="local_auth"
+        support={endpointSupport}
+        tip={supportTip(t('routes.trace.flow.supportLocalAuth'), endpointSupport)}
+      >
+        {activeEndpoint ? (
+          <p className="truncate font-mono text-sm font-medium text-success" data-endpoint={activeEndpoint.kind}>
+            {activeEndpoint.path}
+          </p>
+        ) : null}
+        <AuthOkMark state={view.localAuth.state} />
+      </StageCard>
+      <StageCard
+        title={t('routes.trace.stagePool')}
+        state={view.pool.state}
+        stageId="pool"
+        support={poolSupport}
+        tip={supportTip(t('routes.trace.flow.supportPool'), poolSupport)}
+      >
+        {poolHit ? (
+          <p className="truncate text-sm font-medium text-success">{poolHit}</p>
+        ) : (
+          <AuthOkMark state={view.pool.state} />
+        )}
+      </StageCard>
+      <StageCard
+        title={t('routes.trace.stageConversion')}
+        state={view.conversion.state}
+        stageId="conversion"
+        tip={t('routes.trace.flow.supportConversion')}
+      >
+        {conversionHit ? (
+          <p className="truncate text-sm font-medium text-success">{conversionHit}</p>
+        ) : (
+          <AuthOkMark state={view.conversion.state} />
+        )}
+        {conversionResult && conversionResult !== conversionHit ? (
+          <p className="mt-1 truncate text-xs text-muted">{conversionResult}</p>
+        ) : null}
+      </StageCard>
+      <StageCard
+        title={t('routes.trace.stageUpstreamAuth')}
+        state={view.upstreamAuth.state}
+        stageId="upstream_auth"
+        tip={t('routes.trace.flow.supportUpstreamAuth')}
+      >
+        <AuthOkMark state={view.upstreamAuth.state} />
+        {view.upstreamAuth.httpStatus != null ? (
+          <p className="mt-1 font-mono text-xs text-secondary">{view.upstreamAuth.httpStatus}</p>
+        ) : null}
+      </StageCard>
+      <StageCard
+        title={t('routes.trace.stageUpstream')}
+        state={view.upstream.state}
+        stageId="upstream"
+        support={upstreamSupport}
+        tip={supportTip(t('routes.trace.flow.supportUpstream'), upstreamSupport)}
+      >
+        {view.upstream.url ? (
+          <p className="break-all font-mono text-sm font-medium text-success">{view.upstream.url}</p>
+        ) : (
+          <AuthOkMark state={view.upstream.state} />
+        )}
+      </StageCard>
+    </div>
+  );
+}
+
 /**
  * Visual request-flow diagram for route monitoring (endpoints → auth → pool → matrix → upstream).
  */
@@ -335,71 +525,22 @@ export function RouteTraceFlowDiagram({
 }: {
   row: RouteTraceFlowRow;
   className?: string;
-  /** Static legend preview without trace-specific highlights. */
+  /** Five stage cards for the monitoring legend. */
   compact?: boolean;
   previewPoolLabels?: readonly string[];
   previewUpstreamUrls?: readonly string[];
 }) {
   const { t } = useI18n();
   const view = useMemo(() => buildTraceFlowView(row), [row]);
-  const previewMembers = (previewPoolLabels ?? []).map((label) => ({
-    label,
-    state: 'idle' as const,
-    selected: false,
-  }));
 
   if (compact) {
     return (
-      <div
-        className={cn(
-          'flex flex-wrap items-stretch gap-1.5 rounded-card border border-border bg-panel/50 p-2',
-          className,
-        )}
-        data-route-trace-flow-legend
-      >
-        <LocalEndpointHub view={{
-          ...view,
-          activeEndpoint: null,
-          endpoints: view.endpoints.map((node) => ({ ...node, state: 'idle' as const })),
-        }}
-        />
-        <FlowArrow />
-        <LocalAuthStage view={{ ...view, localAuth: { state: 'idle' } }} />
-        <FlowArrow />
-        <PoolStage view={{
-          ...view,
-          pool: {
-            ...view.pool,
-            state: 'idle',
-            members: previewMembers,
-          },
-        }}
-        />
-        <FlowArrow />
-        <ConversionMatrix
-          compact
-          view={{
-            ...view,
-            conversion: {
-              ...view.conversion,
-              state: 'idle',
-              pathId: null,
-              passthrough: false,
-              matrix: view.conversion.matrix.map((cell) => ({ ...cell, state: 'idle' as const })),
-            },
-          }}
-        />
-        <FlowArrow />
-        <UpstreamAuthStage view={{ ...view, upstreamAuth: { state: 'idle' } }} />
-        <FlowArrow />
-        <UpstreamStage
-          urls={previewUpstreamUrls}
-          view={{
-            ...view,
-            upstream: { state: 'idle', url: null, accountLabel: null, upstreamModel: null },
-          }}
-        />
-      </div>
+      <CompactPipeline
+        view={view}
+        className={className}
+        poolLabels={previewPoolLabels}
+        upstreamUrls={previewUpstreamUrls}
+      />
     );
   }
 

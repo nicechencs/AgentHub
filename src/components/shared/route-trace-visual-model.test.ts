@@ -62,6 +62,7 @@ describe('route-trace-visual-model', () => {
     expect(view.endpoints.find((node) => node.kind === 'messages')?.state).toBe('active');
     expect(view.conversion.activeRow).toBe('messages');
     expect(view.conversion.activeCol).toBe('anthropic');
+    expect(view.conversion.result).toBe('converted');
     const activeCell = view.conversion.matrix.find(
       (cell) => cell.row === 'messages' && cell.col === 'anthropic',
     );
