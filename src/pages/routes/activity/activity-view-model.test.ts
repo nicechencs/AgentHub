@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveActivityPageSnapshot } from './activity-view-model';
-import type { AdapterBridgeRuntimeStatus, AdapterProfile } from '@/lib/backend/contracts/adapter';
+import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 
 const profile: AdapterProfile = {
   id: 'route-a',
@@ -39,7 +39,7 @@ describe('resolveActivityPageSnapshot', () => {
         id: 'pool-1',
         targetAgentId: 'claude',
         surface: 'messages',
-        dialect: 'anthropic',
+        dialect: 'claude',
         v2Enrolled: true,
         members: [{
           sourceKind: 'account',
