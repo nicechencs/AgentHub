@@ -717,6 +717,64 @@ fn local_bridge_matrix_cells_are_exactly_the_catalog() {
     );
 }
 
+
+#[test]
+fn local_bridge_edges_declare_expected_downstream_surfaces() {
+    // Keep support-matrix target protocols aligned with the local wire surfaces
+    // transport prepare knows how to serve (Claude→Messages, Codex/Grok→Responses,
+    // Kimi/Dsh→ChatCompletions). App Server stays a closed non-writer.
+    fn expected_surface(protocol: AdapterTargetProtocol) -> Option<&'static str> {
+        match protocol {
+            AdapterTargetProtocol::AnthropicMessages => Some("messages"),
+            AdapterTargetProtocol::OpenAiResponses => Some("responses"),
+            AdapterTargetProtocol::OpenAiChatCompletions => Some("chat_completions"),
+            AdapterTargetProtocol::PiProviderConfig | AdapterTargetProtocol::DshProviderConfig => {
+                None
+            }
+        }
+    }
+
+    fn expected_for_target(target: AgentId) -> &'static str {
+        match target {
+            AgentId::Claude => "messages",
+            AgentId::Codex | AgentId::Grok => "responses",
+            AgentId::Kimi | AgentId::Dsh => "chat_completions",
+            other => panic!("unexpected local-bridge target {other:?}"),
+        }
+    }
+
+    assert!(
+        !LOCAL_BRIDGE_EDGES.is_empty(),
+        "catalog must list local-bridge edges"
+    );
+    for edge in LOCAL_BRIDGE_EDGES {
+        let surface = expected_surface(edge.protocol).unwrap_or_else(|| {
+            panic!(
+                "{}: unexpected non-wire protocol {:?}",
+                edge.rule_id, edge.protocol
+            )
+        });
+        assert_eq!(
+            surface,
+            expected_for_target(edge.target),
+            "{}: protocol {:?} must match target {:?} surface",
+            edge.rule_id,
+            edge.protocol,
+            edge.target
+        );
+        if edge.rule_id == "codex-subscription-to-claude-app-server-v0" {
+            assert!(!edge.can_apply, "App Server edge must stay closed");
+            assert_eq!(edge.transport, AdapterUpstreamTransport::CodexAppServer);
+        }
+        if edge.rule_id == CLAUDE_SUBSCRIPTION_TO_CODEX_RULE_ID {
+            assert!(
+                !edge.can_apply,
+                "Claude→Codex preview must stay can_apply=false"
+            );
+        }
+    }
+}
+
 #[test]
 fn claude_subscription_to_codex_is_preview_local_bridge_from_catalog() {
     let cell = lookup_adapter_capability(&CLAUDE_CODEX_EDGE.to_cell().key).expect("cell");
