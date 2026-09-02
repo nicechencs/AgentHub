@@ -129,8 +129,8 @@ export interface AgentStatus {
   authSource?: string;
   authRevision?: string;
   /**
-   * 兼容字段：当前生效连接的短展示（账号 label，或 供应商名 · URL）。
-   * 新代码优先读 effectiveLabel。
+   * @deprecated Compat display of the effective connection (account label or
+   * provider name · URL). Prefer {@link effectiveLabel} / {@link effectiveKind}.
    */
   currentProvider?: string;
   /** 当前生效鉴权类型 */

@@ -1,7 +1,10 @@
 /**
- * Shared connection-pool state (accounts + providers).
+ * Shared connection-inventory state (accounts + providers).
  * Adapter, Connections, and badges subscribe here so route changes do not
  * turn one listAccounts/listProviders pass into several competing requests.
+ *
+ * This is NOT the product「连接池」(RoutePool). It caches all saved logins
+ * and providers for UI reads.
  */
 import type { AccountAuthView } from '@/lib/backend/contracts/account-map';
 import { unwrapAccounts, wrapBareAccount } from '@/lib/backend/contracts/account-map';
@@ -9,12 +12,12 @@ import type { Account, AgentId, Provider } from '@/lib/types';
 import type { Backend } from '@/lib/backend/contracts';
 import { logger } from '@/lib/logger';
 
-const log = logger.scope('runtime:connection-pool');
+const log = logger.scope('runtime:connection-inventory');
 
-export type ConnectionPoolLoadState = 'idle' | 'loading' | 'ready' | 'partial' | 'error';
+export type ConnectionInventoryLoadState = 'idle' | 'loading' | 'ready' | 'partial' | 'error';
 
-export type ConnectionPoolSnapshot = {
-  state: ConnectionPoolLoadState;
+export type ConnectionInventorySnapshot = {
+  state: ConnectionInventoryLoadState;
   accounts: Account[];
   accountViews: AccountAuthView[];
   providers: Provider[];
@@ -27,7 +30,7 @@ export type ConnectionPoolSnapshot = {
 
 type Listener = () => void;
 
-let snapshot: ConnectionPoolSnapshot = {
+let snapshot: ConnectionInventorySnapshot = {
   state: 'idle',
   accounts: [],
   accountViews: [],
@@ -38,8 +41,8 @@ let snapshot: ConnectionPoolSnapshot = {
 
 function snapshotWithViews(
   views: AccountAuthView[],
-  rest: Omit<ConnectionPoolSnapshot, 'accounts' | 'accountViews'>,
-): ConnectionPoolSnapshot {
+  rest: Omit<ConnectionInventorySnapshot, 'accounts' | 'accountViews'>,
+): ConnectionInventorySnapshot {
   return {
     ...rest,
     accountViews: views,
@@ -53,7 +56,7 @@ function normalizeAccountViews(rows: readonly AccountAuthView[] | readonly Accou
   );
 }
 
-let inflight: Promise<ConnectionPoolSnapshot> | null = null;
+let inflight: Promise<ConnectionInventorySnapshot> | null = null;
 let epoch = 0;
 let mutationDepth = 0;
 let notifyPending = false;
@@ -63,7 +66,7 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
-function setSnapshot(next: ConnectionPoolSnapshot): void {
+function setSnapshot(next: ConnectionInventorySnapshot): void {
   snapshot = next;
   emit();
 }
@@ -80,22 +83,22 @@ function errorCode(error: unknown): string {
   return 'unknown';
 }
 
-function hasCompletedPoolData(state: ConnectionPoolLoadState): boolean {
+function hasCompletedInventoryData(state: ConnectionInventoryLoadState): boolean {
   return state === 'ready' || state === 'partial';
 }
 
-export function getConnectionPoolSnapshot(): ConnectionPoolSnapshot {
+export function getConnectionInventorySnapshot(): ConnectionInventorySnapshot {
   return snapshot;
 }
 
-export function subscribeConnectionPool(listener: Listener): () => void {
+export function subscribeConnectionInventory(listener: Listener): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
   };
 }
 
-export function resetConnectionPoolStore(): void {
+export function resetConnectionInventoryStore(): void {
   epoch += 1;
   inflight = null;
   mutationDepth = 0;
@@ -145,18 +148,18 @@ export function markConnectionCurrent(
 }
 
 /** Collapse N façade notifies (e.g. delete-all) into one refresh. */
-export function beginConnectionPoolMutation(): void {
+export function beginConnectionInventoryMutation(): void {
   mutationDepth += 1;
 }
 
-export function endConnectionPoolMutation(
+export function endConnectionInventoryMutation(
   backend: Backend,
-): Promise<ConnectionPoolSnapshot> {
+): Promise<ConnectionInventorySnapshot> {
   mutationDepth = Math.max(0, mutationDepth - 1);
   if (mutationDepth > 0) return Promise.resolve(snapshot);
   if (!notifyPending) return Promise.resolve(snapshot);
   notifyPending = false;
-  return loadConnectionPool(backend, { force: true });
+  return loadConnectionInventory(backend, { force: true });
 }
 
 export function accountsForAgent(accounts: Account[], agentId: AgentId): Account[] {
@@ -183,11 +186,11 @@ export function connectionCountsByAgent(
 /**
  * 全量拉取 listAccounts() + listProviders()（不带 agentId）。
  */
-export async function loadConnectionPool(
+export async function loadConnectionInventory(
   backend: Backend,
   opts: { force?: boolean } = {},
-): Promise<ConnectionPoolSnapshot> {
-  if (!opts.force && hasCompletedPoolData(snapshot.state)) return snapshot;
+): Promise<ConnectionInventorySnapshot> {
+  if (!opts.force && hasCompletedInventoryData(snapshot.state)) return snapshot;
   if (inflight) {
     const active = inflight;
     const waitEpoch = epoch;
@@ -198,7 +201,7 @@ export async function loadConnectionPool(
     }
     if (waitEpoch !== epoch) {
       if (!opts.force) return snapshot;
-      return loadConnectionPool(backend, { force: true });
+      return loadConnectionInventory(backend, { force: true });
     }
     if (!opts.force) return snapshot;
     // A force request that arrived during an older fetch must not be lost.
@@ -207,12 +210,12 @@ export async function loadConnectionPool(
       await inflight;
       return snapshot;
     }
-    return loadConnectionPool(backend, { force: true });
+    return loadConnectionInventory(backend, { force: true });
   }
 
   const previousSnapshot = snapshot;
   const startedEpoch = epoch;
-  const isBackgroundRefresh = opts.force === true && hasCompletedPoolData(previousSnapshot.state);
+  const isBackgroundRefresh = opts.force === true && hasCompletedInventoryData(previousSnapshot.state);
 
   if (isBackgroundRefresh) {
     setSnapshot({
@@ -231,7 +234,7 @@ export async function loadConnectionPool(
     });
   }
 
-  let request!: Promise<ConnectionPoolSnapshot>;
+  let request!: Promise<ConnectionInventorySnapshot>;
   request = (async () => {
     try {
       const [accountsResult, providersResult] = await Promise.allSettled([
@@ -247,19 +250,19 @@ export async function loadConnectionPool(
       const providersError = providersOk ? undefined : providersResult.reason;
 
       if (!accountsOk) {
-        log.warn('connection pool accounts load failed', { errorCode: errorCode(accountsError) });
+        log.warn('connection inventory accounts load failed', { errorCode: errorCode(accountsError) });
       }
       if (!providersOk) {
-        log.warn('connection pool providers load failed', { errorCode: errorCode(providersError) });
+        log.warn('connection inventory providers load failed', { errorCode: errorCode(providersError) });
       }
 
       if (!accountsOk && !providersOk) {
-        log.error('connection pool load failed', {
+        log.error('connection inventory load failed', {
           accounts: errorCode(accountsError),
           providers: errorCode(providersError),
         });
-        const failed: ConnectionPoolSnapshot = {
-          state: hasCompletedPoolData(previousSnapshot.state) ? previousSnapshot.state : 'error',
+        const failed: ConnectionInventorySnapshot = {
+          state: hasCompletedInventoryData(previousSnapshot.state) ? previousSnapshot.state : 'error',
           accounts: previousSnapshot.accounts,
           accountViews: previousSnapshot.accountViews,
           providers: previousSnapshot.providers,
@@ -297,12 +300,43 @@ export async function loadConnectionPool(
 }
 
 /** 失效并强制刷新。Adapter apply/remove、Connections switch/delete/import 之后调用。 */
-export function notifyConnectionPoolChanged(
+export function notifyConnectionInventoryChanged(
   backend: Backend,
-): Promise<ConnectionPoolSnapshot> {
+): Promise<ConnectionInventorySnapshot> {
   if (mutationDepth > 0) {
     notifyPending = true;
     return Promise.resolve(snapshot);
   }
-  return loadConnectionPool(backend, { force: true });
+  return loadConnectionInventory(backend, { force: true });
 }
+
+// ---------------------------------------------------------------------------
+// Deprecated aliases (N-03) — prefer ConnectionInventory* names above.
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use ConnectionInventoryLoadState */
+export type ConnectionPoolLoadState = ConnectionInventoryLoadState;
+
+/** @deprecated Use ConnectionInventorySnapshot */
+export type ConnectionPoolSnapshot = ConnectionInventorySnapshot;
+
+/** @deprecated Use getConnectionInventorySnapshot */
+export const getConnectionPoolSnapshot = getConnectionInventorySnapshot;
+
+/** @deprecated Use subscribeConnectionInventory */
+export const subscribeConnectionPool = subscribeConnectionInventory;
+
+/** @deprecated Use resetConnectionInventoryStore */
+export const resetConnectionPoolStore = resetConnectionInventoryStore;
+
+/** @deprecated Use beginConnectionInventoryMutation */
+export const beginConnectionPoolMutation = beginConnectionInventoryMutation;
+
+/** @deprecated Use endConnectionInventoryMutation */
+export const endConnectionPoolMutation = endConnectionInventoryMutation;
+
+/** @deprecated Use loadConnectionInventory */
+export const loadConnectionPool = loadConnectionInventory;
+
+/** @deprecated Use notifyConnectionInventoryChanged */
+export const notifyConnectionPoolChanged = notifyConnectionInventoryChanged;

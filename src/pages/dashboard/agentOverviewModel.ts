@@ -207,9 +207,7 @@ export function buildAgentCardView(
   const rawEffective =
     view.effectiveConnection.label !== 'unset'
       ? view.effectiveConnection.label
-      : view.effectiveConnection.currentProvider !== 'unset'
-        ? view.effectiveConnection.currentProvider
-        : unconfigured;
+      : unconfigured;
   const effective = dashboardConnectionLabel(rawEffective, t);
   const version = status?.version ?? '—';
   const versionText = missing ? null : `v${version}`;

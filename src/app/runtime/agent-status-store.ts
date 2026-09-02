@@ -18,9 +18,9 @@ import type { LiveAuthProbe } from '@/lib/backend/contracts/ports';
 import { enrichStatusesWithConnections } from '@/lib/backend/contracts/agent-connection';
 import { logger } from '@/lib/logger';
 import {
-  getConnectionPoolSnapshot,
-  loadConnectionPool,
-} from './connection-pool-store';
+  getConnectionInventorySnapshot,
+  loadConnectionInventory,
+} from './connection-inventory-store';
 
 const log = logger.scope('runtime:agent-status');
 
@@ -256,26 +256,26 @@ async function enrichWithLiveAuth(
   return { statuses: enriched, liveAuthProbes };
 }
 
-function canLoadConnectionPool(backend: Backend): boolean {
+function canLoadConnectionInventory(backend: Backend): boolean {
   return (
     typeof backend.account?.listAccounts === 'function' &&
     typeof backend.provider?.listProviders === 'function'
   );
 }
 
-async function mergeConnectionPool(
+async function mergeConnectionInventory(
   backend: Backend,
   statuses: AgentStatus[],
 ): Promise<AgentStatus[]> {
-  if (!canLoadConnectionPool(backend)) return statuses;
+  if (!canLoadConnectionInventory(backend)) return statuses;
   try {
-    const pool = await loadConnectionPool(backend);
+    const pool = await loadConnectionInventory(backend);
     return enrichStatusesWithConnections(statuses, pool.accounts, pool.providers);
   } catch (error) {
-    log.warn('connection pool merge failed; showing detect-only status', {
+    log.warn('connection inventory merge failed; showing detect-only status', {
       errorCode: errorCode(error),
     });
-    const pool = getConnectionPoolSnapshot();
+    const pool = getConnectionInventorySnapshot();
     return enrichStatusesWithConnections(statuses, pool.accounts, pool.providers);
   }
 }
@@ -345,7 +345,7 @@ export async function loadAgentStatuses(
         error: null,
       });
 
-      const withPool = await mergeConnectionPool(backend, statuses);
+      const withPool = await mergeConnectionInventory(backend, statuses);
       if (startedEpoch !== epoch) return snapshot.statuses;
       setSnapshot({
         state: 'ready',

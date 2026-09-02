@@ -29,7 +29,7 @@ function isUsefulConnectionLabel(value: string | undefined): boolean {
 /** Pool/route already configured — do not treat live probe authStatus none as empty. */
 function hasConfiguredConnection(a: AgentStatus): boolean {
   if (a.effectiveKind === 'account' || a.effectiveKind === 'api') return true;
-  if (isUsefulConnectionLabel(a.effectiveLabel) || isUsefulConnectionLabel(a.currentProvider)) {
+  if (isUsefulConnectionLabel(a.effectiveLabel)) {
     return true;
   }
   return a.authHealth === 'configured' || a.authHealth === 'renewable' || a.authHealth === 'verified';

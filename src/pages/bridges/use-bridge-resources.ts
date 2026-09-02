@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConnectionPool, useTicketWallet } from '@/app/runtime';
+import { useConnectionInventory, useTicketWallet } from '@/app/runtime';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { getAdapterBridgeStatus, listAdapterProfiles } from '@/lib/api/adapter';
 import { bridgeWalletSnapshotFromWallet } from '@/lib/bridge-wallet-snapshot';
@@ -84,7 +84,7 @@ export function startAdapterBridgeStatusPoll(host: AdapterBridgeStatusPollHost):
 }
 
 function connectionStateFromPool(
-  state: ReturnType<typeof useConnectionPool>['state'],
+  state: ReturnType<typeof useConnectionInventory>['state'],
 ): AdapterPageResources['connectionState'] {
   if (state === 'error') return 'error';
   if (state === 'partial') return 'partial';
@@ -95,7 +95,7 @@ function connectionStateFromPool(
 /** Owns independent resource refreshes and rejects stale responses. */
 export function useAdapterResources() {
   const { t } = useI18n();
-  const pool = useConnectionPool();
+  const pool = useConnectionInventory();
   const ticketWallet = useTicketWallet();
   const [resources, setResources] = useState<AdapterPageResources>(initialResources);
   const [profilesLoading, setProfilesLoading] = useState(true);

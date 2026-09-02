@@ -5,13 +5,13 @@
 import { resetAgentCatalogStore } from './agent-catalog-store';
 import { resetAgentStatusStore } from './agent-status-store';
 import { resetAppUpdateStore } from './app-update-store';
-import { resetConnectionPoolStore } from './connection-pool-store';
+import { resetConnectionInventoryStore } from './connection-inventory-store';
 import { resetTicketWalletStore } from './ticket-wallet-store';
 
 export const RUNTIME_STORE_RESETS = [
   resetAgentCatalogStore,
   resetAgentStatusStore,
-  resetConnectionPoolStore,
+  resetConnectionInventoryStore,
   resetTicketWalletStore,
   resetAppUpdateStore,
 ] as const;

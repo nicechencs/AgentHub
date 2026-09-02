@@ -268,7 +268,8 @@ export function applyEffectiveConnection(
     ...status,
     effectiveKind: eff.kind,
     effectiveLabel: eff.label,
-    // 兼容旧字段名：Dashboard 等曾用 currentProvider 表示副标题左侧
+    // Compat only: mirrors effectiveLabel so old AgentStatus.currentProvider
+    // readers keep working. New readers must use effectiveLabel / effectiveKind.
     currentProvider: eff.kind === 'none' ? undefined : eff.label,
     authStatus: liveDisplay?.legacyStatus ?? eff.authStatus,
     authLabel: liveDisplay?.label ?? eff.authLabel,

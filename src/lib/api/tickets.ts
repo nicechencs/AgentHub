@@ -38,7 +38,7 @@ async function refreshAfterTicketMutation(): Promise<void> {
   // Write success is returned to the caller even when a follow-up read fails.
   // Refresh errors stay on the shared pool / wallet snapshots.
   await refreshRuntimeReadModels(getBackend(), {
-    models: ['connectionPool', 'ticketWallet'],
+    models: ['connectionInventory', 'ticketWallet'],
   });
 }
 

@@ -49,7 +49,7 @@ export async function reconcileAccountPool(agentId?: AgentId): Promise<void> {
   const backend = getBackend();
   if (!backend.account.reconcileAccounts) return;
   await backend.account.reconcileAccounts(agentId);
-  await refreshRuntimeReadModels(backend, { models: ['connectionPool'] });
+  await refreshRuntimeReadModels(backend, { models: ['connectionInventory'] });
 }
 
 /**
@@ -207,6 +207,6 @@ export async function refreshQuota(
   const port = getBackend().account;
   if (!port.refreshQuota) return undefined;
   const account = await port.refreshQuota(agentId, accountId);
-  void refreshRuntimeReadModels(getBackend(), { models: ['connectionPool'] });
+  void refreshRuntimeReadModels(getBackend(), { models: ['connectionInventory'] });
   return account;
 }

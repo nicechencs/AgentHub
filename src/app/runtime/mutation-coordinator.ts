@@ -6,14 +6,14 @@ import type { Backend } from '@/lib/backend/contracts';
 import { clearLiveAuthProbeCache } from '@/lib/backend/contracts/live-auth-probe-cache';
 import type { AgentId } from '@/lib/types';
 import { loadAgentStatuses } from './agent-status-store';
-import { notifyConnectionPoolChanged } from './connection-pool-store';
+import { notifyConnectionInventoryChanged } from './connection-inventory-store';
 import { notifyTicketWalletChanged } from './ticket-wallet-store';
 
-export type RuntimeReadModel = 'agentStatus' | 'connectionPool' | 'ticketWallet';
+export type RuntimeReadModel = 'agentStatus' | 'connectionInventory' | 'ticketWallet';
 
 const ALL_READ_MODELS: readonly RuntimeReadModel[] = [
   'agentStatus',
-  'connectionPool',
+  'connectionInventory',
   'ticketWallet',
 ];
 
@@ -33,8 +33,8 @@ export async function refreshRuntimeReadModels(
   if (models.includes('agentStatus')) {
     jobs.push(loadAgentStatuses(backend, { force: true }));
   }
-  if (models.includes('connectionPool')) {
-    jobs.push(notifyConnectionPoolChanged(backend));
+  if (models.includes('connectionInventory')) {
+    jobs.push(notifyConnectionInventoryChanged(backend));
   }
   if (models.includes('ticketWallet')) {
     jobs.push(notifyTicketWalletChanged(backend));

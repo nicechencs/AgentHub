@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Backend } from '@/lib/backend/contracts';
 import { getAgentStatusSnapshot, resetAgentStatusStore } from './agent-status-store';
-import { getConnectionPoolSnapshot, resetConnectionPoolStore } from './connection-pool-store';
+import { getConnectionInventorySnapshot, resetConnectionInventoryStore } from './connection-inventory-store';
 import { refreshRuntimeReadModels } from './mutation-coordinator';
 import { getTicketWalletSnapshot, resetTicketWalletStore } from './ticket-wallet-store';
 
@@ -33,7 +33,7 @@ function failingBackend(): Backend {
 describe('refreshRuntimeReadModels', () => {
   beforeEach(() => {
     resetAgentStatusStore();
-    resetConnectionPoolStore();
+    resetConnectionInventoryStore();
     resetTicketWalletStore();
   });
 
@@ -45,8 +45,8 @@ describe('refreshRuntimeReadModels', () => {
     await refreshRuntimeReadModels(failingBackend());
 
     expect(getAgentStatusSnapshot().error).toBeInstanceOf(Error);
-    expect(getConnectionPoolSnapshot().errors.accounts).toBeInstanceOf(Error);
-    expect(getConnectionPoolSnapshot().errors.providers).toBeInstanceOf(Error);
+    expect(getConnectionInventorySnapshot().errors.accounts).toBeInstanceOf(Error);
+    expect(getConnectionInventorySnapshot().errors.providers).toBeInstanceOf(Error);
     expect(getTicketWalletSnapshot().error).toBeInstanceOf(Error);
   });
 

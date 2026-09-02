@@ -8,7 +8,7 @@ import {
   resetAgentStatusStore,
   revertAgentHidden,
 } from './agent-status-store';
-import { resetConnectionPoolStore } from './connection-pool-store';
+import { resetConnectionInventoryStore } from './connection-inventory-store';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -22,7 +22,7 @@ describe('agent-status-store', () => {
   beforeEach(() => {
     vi.useRealTimers();
     resetAgentStatusStore();
-    resetConnectionPoolStore();
+    resetConnectionInventoryStore();
   });
 
   it('deduplicates concurrent detection and exposes ready state', async () => {
