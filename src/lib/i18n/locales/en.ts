@@ -1122,6 +1122,7 @@ export const en = {
       stageUpstreamAuth: "Upstream auth",
       stageUpstream: "Upstream",
       stageId: {
+        local_endpoint: "Local endpoint",
         local_auth: "Local auth",
         pool: "Connection pool",
         conversion: "Conversion",

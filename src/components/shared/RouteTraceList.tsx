@@ -21,6 +21,8 @@ function failureStageLabel(
 ): string | null {
   if (!stage) return null;
   switch (stage) {
+    case 'local_endpoint':
+      return t('routes.trace.stageId.local_endpoint');
     case 'local_auth':
       return t('routes.trace.stageId.local_auth');
     case 'pool':

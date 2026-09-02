@@ -69,6 +69,30 @@ describe('route-trace-visual-model', () => {
     expect(activeCell?.state).toBe('ok');
   });
 
+  it('fails the inbound endpoint when the path is not served', () => {
+    const view = buildTraceFlowView({
+      ...baseTrace,
+      path: '/v1/responses',
+      httpStatus: 404,
+      ok: false,
+      localAuth: { status: 'ok', profileId: 'p1', port: 43121 },
+      pool: { status: 'skipped' },
+      conversion: {
+        status: 'skipped',
+        path: '',
+        code: 'surface_mismatch',
+        message: 'This route only serves /v1/messages',
+      },
+      upstreamAuth: { status: 'skipped' },
+      upstream: { status: 'skipped' },
+      failureStage: 'local_endpoint',
+    });
+    expect(view.localAuth.state).toBe('ok');
+    expect(view.failureStage).toBe('local_endpoint');
+    expect(view.endpoints.find((node) => node.kind === 'responses_codex')?.state).toBe('failed');
+    expect(view.endpoints.find((node) => node.kind === 'messages')?.state).toBe('idle');
+  });
+
   it('marks legacy traces as skipped stages', () => {
     const view = buildTraceFlowView({ ...baseTrace, legacySummary: true });
     expect(view.legacySummary).toBe(true);
