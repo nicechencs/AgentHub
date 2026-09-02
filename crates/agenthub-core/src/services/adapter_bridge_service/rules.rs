@@ -229,6 +229,28 @@ pub(super) fn kimi_bridge_toml(rule: &CodexBridgeRule, port: u16, local_bearer: 
     )
 }
 
+/// Pre-type-field Kimi TOML: same as [`kimi_bridge_toml`] without `type = …`.
+/// Older projections omitted the type line; restore must still accept them so
+/// `needs_reprojection` can rewrite to the current template.
+pub(super) fn legacy_kimi_bridge_toml(
+    rule: &CodexBridgeRule,
+    port: u16,
+    local_bearer: &str,
+) -> String {
+    let base = match rule.local_surface {
+        BridgeLocalSurface::Messages => format!("http://127.0.0.1:{port}"),
+        BridgeLocalSurface::Responses | BridgeLocalSurface::ChatCompletions => {
+            format!("http://127.0.0.1:{port}/v1")
+        }
+    };
+    format!(
+        "default_provider = \"{slug}\"\n\n[providers.{slug}]\nname = \"{name}\"\nbase_url = \"{base}\"\napi_key = \"{token}\"\n",
+        slug = rule.provider_slug,
+        name = rule.toml_name,
+        token = local_bearer,
+    )
+}
+
 pub(super) fn validate_generated_provider(
     provider: &Provider,
     profile: &AdapterProfile,
@@ -310,6 +332,7 @@ pub(super) fn validate_generated_provider(
                     || content == legacy_grok_bridge_toml(&rule, port, &local_bearer)
             } else {
                 content == kimi_bridge_toml(&rule, port, &local_bearer)
+                    || content == legacy_kimi_bridge_toml(&rule, port, &local_bearer)
             };
             if !matches_current {
                 return Err(AppError::message(
