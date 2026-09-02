@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { AgentDot } from '@/components/shared/AgentDot';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
@@ -11,80 +10,53 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
-import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
+import { connectApiKeyDraftState } from '@/lib/connect-flow/connect-intent';
 import type { AgentId } from '@/lib/types';
 import { agentDisplayName } from '@/config/agents';
 import {
-  resolveTokenImportProfile,
+  tokenImportAgentChoice,
+  tokenImportApiKeyDraft,
+  tokenImportConnectionsUrl,
   tokenImportGate,
   type TokenImportAgentRef,
 } from './token-import-model';
-import { importLocalTokenToAgent } from './token-import-action';
 import type { LocalTokenRow } from './tokens-model';
 
 export function TokenImportToAgentButton({
   row,
-  profile,
-  siblingProfiles,
   installedAgents,
-  onImported,
   size = 'sm',
   className,
 }: {
   row: LocalTokenRow;
-  profile: AdapterProfile | null | undefined;
-  siblingProfiles?: readonly AdapterProfile[];
   installedAgents: readonly TokenImportAgentRef[];
-  onImported?: () => void;
   size?: 'sm' | 'default';
   className?: string;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
-  const [busyId, setBusyId] = useState<AgentId | null>(null);
-  const resolvedProfile = resolveTokenImportProfile(profile, row.profileId, siblingProfiles);
+  const navigate = useNavigate();
   const gate = tokenImportGate(row, installedAgents, t);
-  const busy = busyId != null;
 
-  const runImport = async (agentId: AgentId) => {
-    if (busy) return;
-    if (!resolvedProfile) {
+  const runImport = (agentId: AgentId) => {
+    const choice = tokenImportAgentChoice(row.kind, { id: agentId, name: agentId }, t);
+    if (!choice.enabled) return;
+    const draft = tokenImportApiKeyDraft(row, agentId);
+    if (!draft) {
       toast({
         title: t('routes.tokens.importFailed'),
-        description: t('routes.tokens.importNeedEntry'),
+        description: t('routes.tokens.importNeedKey'),
         variant: 'danger',
       });
       return;
     }
-    setBusyId(agentId);
-    try {
-      await importLocalTokenToAgent({
-        profile: resolvedProfile,
-        agentId,
-        localToken: row.token,
-        siblingProfiles,
-      });
-      toast({
-        title: t('routes.tokens.importSuccess', { name: agentDisplayName(agentId) }),
-        variant: 'success',
-      });
-      onImported?.();
-    } catch (error) {
-      toast({
-        title: t('routes.tokens.importFailed'),
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'danger',
-      });
-    } finally {
-      setBusyId(null);
-    }
+    navigate(tokenImportConnectionsUrl(agentId), {
+      state: connectApiKeyDraftState(draft),
+    });
   };
 
   const label = t('routes.tokens.importToAgent');
-  const profileReady = resolvedProfile != null;
-  const blockedReason = !gate.enabled
-    ? (gate.reason ?? label)
-    : (!profileReady ? t('routes.tokens.importNeedEntry') : null);
+  const blockedReason = !gate.enabled ? (gate.reason ?? label) : null;
 
   if (blockedReason) {
     return (
@@ -119,13 +91,11 @@ export function TokenImportToAgentButton({
           variant="outline"
           size={size}
           className={className}
-          disabled={busy}
           aria-label={label}
           onClick={stopRow}
           onPointerDown={stopRow}
         >
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-          {busy ? t('routes.tokens.importing') : label}
+          {label}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -135,22 +105,19 @@ export function TokenImportToAgentButton({
       >
         {gate.agents.map((agent) => {
           const name = agent.name || agentDisplayName(agent.id);
-          const itemDisabled = busy || !agent.enabled;
           return (
             <DropdownMenuItem
               key={agent.id}
-              disabled={itemDisabled}
+              disabled={!agent.enabled}
               onSelect={() => {
                 if (!agent.enabled) return;
-                void runImport(agent.id);
+                runImport(agent.id);
               }}
             >
               <AgentDot agentId={agent.id} size="md" title={null} />
               <span>{name}</span>
               {agent.reason ? (
                 <span className="ml-auto text-meta text-muted">{agent.reason}</span>
-              ) : busyId === agent.id ? (
-                <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin" aria-hidden />
               ) : null}
             </DropdownMenuItem>
           );

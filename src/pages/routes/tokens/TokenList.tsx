@@ -28,7 +28,6 @@ import {
 import { tokenTypeLabel, type LocalTokenRow } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
 import type { TokenImportAgentRef } from './token-import-model';
-import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 
 type TokenColumnKey = 'type' | 'endpoint' | 'token' | 'lastPage' | 'usage';
 
@@ -54,18 +53,12 @@ export function TokenList({
   rows,
   activeId,
   onShowDetail,
-  profileForRow,
-  siblingProfiles,
   installedAgents,
-  onImported,
 }: {
   rows: readonly LocalTokenRow[];
   activeId?: string | null;
   onShowDetail?: (row: LocalTokenRow) => void;
-  profileForRow?: (row: LocalTokenRow) => AdapterProfile | null | undefined;
-  siblingProfiles?: readonly AdapterProfile[];
   installedAgents?: readonly TokenImportAgentRef[];
-  onImported?: () => void;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -116,10 +109,7 @@ export function TokenList({
                   {renderColumn(spec.key, row, {
                     t,
                     toast,
-                    profileForRow,
-                    siblingProfiles,
                     installedAgents,
-                    onImported,
                   })}
                 </TableCell>
               ))}
@@ -137,10 +127,7 @@ function renderColumn(
   ctx: {
     t: ReturnType<typeof useI18n>['t'];
     toast: ReturnType<typeof useToast>['toast'];
-    profileForRow?: (row: LocalTokenRow) => AdapterProfile | null | undefined;
-    siblingProfiles?: readonly AdapterProfile[];
     installedAgents?: readonly TokenImportAgentRef[];
-    onImported?: () => void;
   },
 ): ReactNode {
   const { t } = ctx;
@@ -223,10 +210,7 @@ function renderColumn(
       {ctx.installedAgents ? (
         <TokenImportToAgentButton
           row={row}
-          profile={ctx.profileForRow?.(row)}
-          siblingProfiles={ctx.siblingProfiles}
           installedAgents={ctx.installedAgents}
-          onImported={ctx.onImported}
           className="shrink-0"
         />
       ) : null}
