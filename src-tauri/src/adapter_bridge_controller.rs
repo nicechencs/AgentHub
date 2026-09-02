@@ -12,16 +12,20 @@
 //! in [`agenthub_core::adapter_control`] so commands stay Tauri-neutral.
 
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
-use agenthub_core::adapter_control::{surface_unbind_and_restart, AdapterBridgeStatus};
+use agenthub_core::adapter_control::{
+    surface_unbind_and_restart, AdapterBridgeStatus, LocalEntryStatus,
+};
 use agenthub_core::bridge::{
-    BridgeHostError, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState, BridgeRuntimeStatus,
-    BridgeUpstreamStatus, MemberHealth, UpstreamAuthReload,
+    BridgeHostError, BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState,
+    BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol,
+    BridgeUpstreamStatus, DownstreamResponsesProfile, MemberHealth, ResolvedAuth, UpstreamAuthReload,
 };
 use agenthub_core::models::{
     local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile,
-    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AgentId,
+    AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSourceProduct, AgentId,
+    LocalTokenRecord, RouteDownstreamSurface,
 };
 use agenthub_core::services::{
     oauth_bridge_reload_callback, AdapterBridgePrepareRequest, AdapterBridgePrepared,
@@ -118,7 +122,7 @@ async fn apply_local_bridge_locked(
             } else {
                 CODE_BRIDGE_START
             };
-            mark_retryable(hub, &profile_id, code).await;
+            let state_write = mark_retryable(hub, &profile_id, code).await;
             tracing::error!(
                 target: "core.adapter",
                 op = "start",
@@ -126,7 +130,10 @@ async fn apply_local_bridge_locked(
                 code,
                 "本机转发启动失败"
             );
-            return Err(map_bridge_host_error(error));
+            return Err(combine_state_write_error(
+                map_bridge_host_error(error),
+                state_write,
+            ));
         }
     };
     // Own any listener this saga started or replaced. An idempotent reuse of an
@@ -138,12 +145,15 @@ async fn apply_local_bridge_locked(
         let code = error.code().to_owned();
         let listener_compensated =
             compensate_started_bridge(&host, &profile_id, owns_listener).await;
-        if listener_compensated {
-            mark_retryable(hub, &profile_id, &code).await;
+        let state_write = if listener_compensated {
+            mark_retryable(hub, &profile_id, &code).await
         } else {
-            mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await;
-        }
-        return Err(map_err_string("verify_adapter_bridge_health", error));
+            mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await
+        };
+        return Err(combine_state_write_error(
+            map_err_string("verify_adapter_bridge_health", error),
+            state_write,
+        ));
     }
     let _ = host.record_upstream_outcome(&profile_id, BridgeUpstreamStatus::Connected);
 
@@ -164,12 +174,12 @@ async fn apply_local_bridge_locked(
         Err(error) => {
             let listener_compensated =
                 compensate_started_bridge(&host, &profile_id, owns_listener).await;
-            if listener_compensated {
-                mark_retryable(hub, &profile_id, CODE_BRIDGE_START).await;
+            let state_write = if listener_compensated {
+                mark_retryable(hub, &profile_id, CODE_BRIDGE_START).await
             } else {
-                mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await;
-            }
-            return Err(error);
+                mark_needs_attention(hub, &profile_id, "adapter.bridge_stop").await
+            };
+            return Err(combine_state_write_error(error, state_write));
         }
     }
 
@@ -220,12 +230,15 @@ async fn apply_local_bridge_locked(
             // A reversible failure remains retryable. NeedsAttention is
             // reserved for a failed rollback/listener compensation, where the
             // stored profile can no longer truthfully describe runtime state.
-            if listener_compensated && !error.contains("adapter.bridge_rollback") {
-                mark_retryable(hub, &profile_id, code).await;
+            let state_write = if listener_compensated && !error.contains("adapter.bridge_rollback") {
+                mark_retryable(hub, &profile_id, code).await
             } else {
-                mark_needs_attention(hub, &profile_id, "adapter.bridge_rollback").await;
-            }
-            Err(map_bridge_apply_error(&error, target_agent_id))
+                mark_needs_attention(hub, &profile_id, "adapter.bridge_rollback").await
+            };
+            Err(combine_state_write_error(
+                map_bridge_apply_error(&error, target_agent_id),
+                state_write,
+            ))
         }
     }
 }
@@ -380,6 +393,8 @@ fn status_dto(
 ) -> AdapterBridgeStatusDto {
     let token = host.local_token(profile_id).ok().flatten();
     dto.with_recent_inbound(host.recent_inbound(profile_id))
+        .with_recent_route_traces(host.recent_route_traces(profile_id))
+        .with_inbound_stats(host.inbound_stats(profile_id))
         .with_local_token(token)
 }
 
@@ -387,9 +402,13 @@ fn status_dto(
 /// desktop startup restoration only; it does not start or stop a listener.
 pub(crate) async fn set_local_bridge_auto_start(
     hub: Arc<AgentHub>,
+    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     profile_id: String,
     auto_start: bool,
 ) -> Result<AdapterProfile, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _profile_guard = coordinator.lock_profile(&profile_id).await;
     with_hub_blocking(hub, move |hub| {
         hub.adapter_bridge()
             .set_auto_start(&profile_id, auto_start)
@@ -466,6 +485,24 @@ pub(crate) fn restore_adapter_bridges(
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
 ) {
     tauri::async_runtime::spawn(async move {
+        let desired_running = match with_hub_blocking(hub.clone(), |hub| {
+            hub.route_pools()
+                .local_entry_desired_running()
+                .map_err(|error| map_err_string("local_entry_desired_running", error))
+        })
+        .await
+        {
+            Ok(desired_running) => desired_running,
+            Err(_) => {
+                tracing::warn!(target: "gui", op = "adapter_bridge_restore", code = "adapter.bridge_restore_desired", "adapter bridge restore could not read the local entry switch");
+                true
+            }
+        };
+        if !desired_running {
+            tracing::info!(target: "gui", op = "adapter_bridge_restore", "local entry left off; skip restore");
+            return;
+        }
+
         let profiles = match with_hub_blocking(hub.clone(), |hub| {
             hub.adapter_bridge()
                 .list_auto_start_profiles()
@@ -496,7 +533,7 @@ pub(crate) fn restore_adapter_bridges(
             {
                 Ok(material) => material,
                 Err(_) => {
-                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_SOURCE).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_SOURCE).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code = CODE_BRIDGE_RESTORE_SOURCE, "adapter bridge source could not be restored");
                     continue;
                 }
@@ -512,7 +549,7 @@ pub(crate) fn restore_adapter_bridges(
             {
                 Ok(runtime_material) => runtime_material,
                 Err(error) => {
-                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge restore could not attach live index");
                     continue;
                 }
@@ -546,7 +583,7 @@ pub(crate) fn restore_adapter_bridges(
                     } else {
                         CODE_BRIDGE_RESTORE_START
                     };
-                    mark_retryable(hub.clone(), &profile.id, code).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, code).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code, "adapter bridge listener could not be restored");
                     continue;
                 }
@@ -560,9 +597,9 @@ pub(crate) fn restore_adapter_bridges(
                 let listener_compensated =
                     compensate_started_bridge(&host, &profile.id, owns_listener).await;
                 if listener_compensated {
-                    mark_retryable(hub.clone(), &profile.id, &code).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, &code).await;
                 } else {
-                    mark_needs_attention(hub.clone(), &profile.id, "adapter.bridge_stop").await;
+                    let _ = mark_needs_attention(hub.clone(), &profile.id, "adapter.bridge_stop").await;
                 }
                 tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code = %code, "adapter bridge health check failed after restore");
                 continue;
@@ -585,7 +622,7 @@ pub(crate) fn restore_adapter_bridges(
                 }
                 Err(error) => {
                     let _ = compensate_started_bridge(&host, &profile.id, owns_listener).await;
-                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge v2 enroll after restore failed");
                     continue;
                 }
@@ -602,7 +639,7 @@ pub(crate) fn restore_adapter_bridges(
                 .await
                 {
                     let _ = compensate_started_bridge(&host, &profile.id, owns_listener).await;
-                    mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_PROJECTION).await;
+                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_PROJECTION).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "bridge rebound to a new port but provider projection could not be realigned");
                     continue;
                 }
@@ -713,40 +750,53 @@ async fn load_bridge_profile(
     Ok(profile)
 }
 
-async fn mark_needs_attention(hub: Arc<AgentHub>, profile_id: &str, code: &str) {
+fn combine_state_write_error(primary: String, state_write: Result<(), String>) -> String {
+    match state_write {
+        Ok(()) => primary,
+        Err(state_error) => {
+            format!("{primary}; 失败状态写回失败：{state_error} [adapter.bridge_state]")
+        }
+    }
+}
+
+async fn mark_needs_attention(
+    hub: Arc<AgentHub>,
+    profile_id: &str,
+    code: &str,
+) -> Result<(), String> {
     let profile_id = profile_id.to_owned();
     let code = code.to_owned();
     let operation_profile_id = profile_id.clone();
     let operation_code = code.clone();
-    if with_hub_blocking(hub, move |hub| {
+    let result = with_hub_blocking(hub, move |hub| {
         hub.adapter_bridge()
             .mark_needs_attention(&operation_profile_id, &operation_code)
             .map(|_| ())
             .map_err(|error| map_err_string("mark_adapter_bridge_needs_attention", error))
     })
-    .await
-    .is_err()
-    {
-        tracing::warn!(target: "gui", op = "adapter_bridge_attention", profile_id = %profile_id, code = %code, "adapter bridge profile failure could not be persisted");
+    .await;
+    if let Err(error) = &result {
+        tracing::warn!(target: "gui", op = "adapter_bridge_attention", profile_id = %profile_id, code = %code, error = %error, "adapter bridge profile failure could not be persisted");
     }
+    result
 }
 
-async fn mark_retryable(hub: Arc<AgentHub>, profile_id: &str, code: &str) {
+async fn mark_retryable(hub: Arc<AgentHub>, profile_id: &str, code: &str) -> Result<(), String> {
     let profile_id = profile_id.to_owned();
     let code = code.to_owned();
     let operation_profile_id = profile_id.clone();
     let operation_code = code.clone();
-    if with_hub_blocking(hub, move |hub| {
+    let result = with_hub_blocking(hub, move |hub| {
         hub.adapter_bridge()
             .mark_retryable(&operation_profile_id, &operation_code)
             .map(|_| ())
             .map_err(|error| map_err_string("mark_adapter_bridge_retryable", error))
     })
-    .await
-    .is_err()
-    {
-        tracing::warn!(target: "gui", op = "adapter_bridge_retryable", profile_id = %profile_id, code = %code, "adapter bridge transient failure could not be persisted");
+    .await;
+    if let Err(error) = &result {
+        tracing::warn!(target: "gui", op = "adapter_bridge_retryable", profile_id = %profile_id, code = %code, error = %error, "adapter bridge transient failure could not be persisted");
     }
+    result
 }
 
 async fn compensate_started_bridge(
@@ -1247,10 +1297,34 @@ async fn stop_bridge_runtime(
     match host.stop(&profile.id).await {
         Ok(status) => Ok(status),
         Err(BridgeHostError::NotRunning) => Ok(stopped_runtime_status(profile)),
-        Err(BridgeHostError::Stopping) => Ok(host
-            .status(&profile.id)
-            .map_err(map_bridge_host_error)?
-            .unwrap_or_else(|| stopped_runtime_status(profile))),
+        Err(BridgeHostError::Stopping) => {
+            // Another lifecycle operation already owns the host stop.  The
+            // `Stopping` status is not a successful stop: wait until the
+            // runtime is removed, or surface a bounded failure rather than
+            // allowing a DB mutation while the old listener can still serve.
+            const STOPPING_WATCHDOG: Duration = Duration::from_secs(12);
+            let deadline = Instant::now() + STOPPING_WATCHDOG;
+            loop {
+                match host.status(&profile.id).map_err(map_bridge_host_error)? {
+                    None => return Ok(stopped_runtime_status(profile)),
+                    Some(status) if status.state == BridgeRuntimeState::Stopped => {
+                        return Ok(status);
+                    }
+                    Some(status) if status.state == BridgeRuntimeState::Error => {
+                        return Err(format!(
+                            "本机转发停止失败，运行状态异常 [adapter.bridge_stop]"
+                        ));
+                    }
+                    Some(_) if Instant::now() >= deadline => {
+                        return Err(
+                            "本机转发仍在停止，未执行路由数据变更 [adapter.bridge_stop]"
+                                .into(),
+                        );
+                    }
+                    Some(_) => tokio::time::sleep(Duration::from_millis(25)).await,
+                }
+            }
+        }
         Err(error) => Err(map_bridge_host_error(error)),
     }
 }
@@ -1288,6 +1362,231 @@ async fn bridge_profile_id_for_request(
             .map_err(|error| map_err_string("adapter_bridge_profile_id", error))
     })
     .await
+}
+
+/// Start the shared local relay. Pool logins are not planned or bound here;
+/// unusable accounts/keys surface later on requests.
+/// `remember` writes the board switch for the next process start.
+pub(crate) async fn start_local_entry(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    remember: bool,
+) -> Result<LocalEntryStatus, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-entry").await;
+    let pools = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .list_default_pools()
+            .map_err(|error| map_err_string("list_default_pools", error))
+    })
+    .await?;
+    let flags = with_hub_blocking(hub.clone(), move |hub| {
+        Ok(hub.route_pools().pair_adapter_flags())
+    })
+    .await?;
+    let status = if pools.is_empty() {
+        let started = host
+            .start(placeholder_entry_spec(
+                "local-entry",
+                None,
+                "ahb_local_entry",
+                AgentId::Codex,
+                flags,
+            ))
+            .await
+            .map_err(map_bridge_host_error)?;
+        local_entry_status_from_host(&host, vec![started.profile_id])?
+    } else {
+        let mut started = Vec::new();
+        for pool in pools {
+            let flags = flags;
+            let pool_for_spec = pool.clone();
+            let spec = with_hub_blocking(hub.clone(), move |hub| {
+                Ok(hub.adapter_bridge().pool_listener_spec(&pool_for_spec, flags))
+            })
+            .await?;
+            let runtime = host.start(spec).await.map_err(map_bridge_host_error)?;
+            let port = runtime.port;
+            started.push(runtime.profile_id.clone());
+            let pool_id = pool.id.clone();
+            let _ = with_hub_blocking(hub.clone(), move |hub| {
+                hub.route_pools()
+                    .enroll_v2(&pool_id, port)
+                    .map_err(|error| map_err_string("enroll_local_entry", error))
+            })
+            .await;
+        }
+        local_entry_status_from_host(&host, started)?
+    };
+    if remember {
+        write_local_entry_desired_running(hub, true).await;
+    }
+    Ok(status)
+}
+
+/// Persist a pool loopback bearer and restart that edge if it is live.
+pub(crate) async fn set_local_entry_token(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    pool_id: String,
+    token: String,
+) -> Result<LocalTokenRecord, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-entry").await;
+    let record = {
+        let pool_id = pool_id.clone();
+        with_hub_blocking(hub.clone(), move |hub| {
+            hub.route_pools()
+                .set_local_token(&pool_id, &token)
+                .map_err(|error| map_err_string("set_local_token", error))
+        })
+        .await?
+    };
+    let pools = with_hub_blocking(hub.clone(), move |hub| {
+        hub.route_pools()
+            .list_default_pools()
+            .map_err(|error| map_err_string("list_default_pools", error))
+    })
+    .await?;
+    let Some(pool) = pools.into_iter().find(|pool| pool.id == record.pool_id) else {
+        return Ok(record);
+    };
+    let running = host
+        .status(&pool.id)
+        .map_err(map_bridge_host_error)?
+        .is_some();
+    if !running {
+        return Ok(record);
+    }
+    match host.stop(&pool.id).await {
+        Ok(_) => {}
+        Err(BridgeHostError::NotRunning) => {}
+        Err(error) => return Err(map_bridge_host_error(error)),
+    }
+    let spec = with_hub_blocking(hub, move |hub| {
+        Ok(hub
+            .adapter_bridge()
+            .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags()))
+    })
+    .await?;
+    host.start(spec)
+        .await
+        .map_err(map_bridge_host_error)?;
+    Ok(record)
+}
+
+/// Stop every live relay edge. Does not use host shutdown (that blocks restart).
+pub(crate) async fn stop_local_entry(
+    hub: Arc<AgentHub>,
+    host: Arc<BridgeRuntimeHost>,
+    coordinator: Arc<AdapterBridgeSagaCoordinator>,
+    lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+) -> Result<LocalEntryStatus, String> {
+    let _lifecycle_permit = lifecycle_barrier.enter().await?;
+    let _gate = coordinator.lock_profile("local-entry").await;
+    let ids = host.running_ids().map_err(map_bridge_host_error)?;
+    for id in ids {
+        match host.stop(&id).await {
+            Ok(_) => {}
+            Err(BridgeHostError::NotRunning) => {}
+            Err(error) => return Err(map_bridge_host_error(error)),
+        }
+    }
+    let status = local_entry_status_from_host(&host, Vec::new())?;
+    write_local_entry_desired_running(hub, false).await;
+    Ok(status)
+}
+
+async fn write_local_entry_desired_running(hub: Arc<AgentHub>, running: bool) {
+    if let Err(error) = with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .set_local_entry_desired_running(running)
+            .map_err(|error| map_err_string("set_local_entry_desired_running", error))
+    })
+    .await
+    {
+        tracing::warn!(
+            target: "gui",
+            op = "local_entry_desired_running",
+            running,
+            error = %error,
+            "could not persist local entry switch"
+        );
+    }
+}
+
+pub(crate) fn local_entry_status(host: &BridgeRuntimeHost) -> Result<LocalEntryStatus, String> {
+    let ids = host.running_ids().map_err(map_bridge_host_error)?;
+    local_entry_status_from_host(host, ids)
+}
+
+fn local_entry_status_from_host(
+    host: &BridgeRuntimeHost,
+    ids: Vec<String>,
+) -> Result<LocalEntryStatus, String> {
+    let port = host.gateway_port().map_err(map_bridge_host_error)?;
+    let mut statuses = Vec::new();
+    for id in ids {
+        if let Some(runtime) = host.status(&id).map_err(map_bridge_host_error)? {
+            statuses.push(status_dto(
+                host,
+                &id,
+                AdapterBridgeStatusDto::from_runtime(runtime),
+            ));
+        }
+    }
+    Ok(LocalEntryStatus {
+        running: port.is_some() && !statuses.is_empty(),
+        port,
+        statuses,
+        recent_unauthenticated_traces: host.recent_unauthenticated_route_traces(),
+    })
+}
+
+fn placeholder_entry_spec(
+    id: &str,
+    port: Option<u16>,
+    local_token: &str,
+    target: AgentId,
+    flags: (bool, bool),
+) -> BridgeStartSpec {
+    let surface = match RouteDownstreamSurface::for_agent(target) {
+        Some(RouteDownstreamSurface::Messages) => BridgeLocalSurface::Messages,
+        Some(RouteDownstreamSurface::ChatCompletions) => BridgeLocalSurface::ChatCompletions,
+        _ => BridgeLocalSurface::Responses,
+    };
+    let protocol = match surface {
+        BridgeLocalSurface::Messages => BridgeUpstreamProtocol::AnthropicMessages,
+        _ => BridgeUpstreamProtocol::OpenAiChatCompletions,
+    };
+    let dialect = agenthub_core::models::RouteDownstreamDialect::for_agent(target);
+    let token = if local_token.trim().is_empty() {
+        format!("ahb_{id}")
+    } else {
+        local_token.trim().to_owned()
+    };
+    BridgeStartSpec::new(
+        id.to_owned(),
+        port.unwrap_or(0),
+        token,
+        BridgeUpstreamConfig {
+            base_url: "http://127.0.0.1/".into(),
+            model: None,
+            source_connection_id: None,
+            auth: ResolvedAuth::bearer("pending"),
+            protocol,
+            local_surface: surface,
+        },
+    )
+    .with_mapping(AdapterSourceProduct::Other, target, false)
+    .with_downstream_responses_profile(
+        DownstreamResponsesProfile::from_surface_and_route_dialect(surface, dialect),
+    )
+    .with_pair_adapter_flags(flags.0, flags.1)
 }
 
 fn map_bridge_host_error(error: BridgeHostError) -> String {

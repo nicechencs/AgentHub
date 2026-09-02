@@ -19,6 +19,8 @@ use tokio::sync::watch;
 
 use crate::bridge::auth_reload::AuthReloadCoordinator;
 use crate::bridge::host::inbound::InboundRequestLog;
+use crate::bridge::host::route_trace::RouteTraceLog;
+use crate::bridge::usage_capture::UsageSpoolSlot;
 
 pub(super) use edge::EdgeState;
 pub(super) use registry::{EdgeRuntime, GatewayRegistry, SocketInstance};
@@ -94,6 +96,11 @@ pub(super) struct Gateway {
     pub(super) registry: Arc<Mutex<GatewayRegistry>>,
     pub(super) auth_reload: AuthReloadCoordinator,
     pub(super) inbound: InboundRequestLog,
+    pub(super) route_traces: RouteTraceLog,
+    /// Host-level optional gateway usage spool. The shell installs it once
+    /// before edges start; edges clone the slot so capture stays a no-op
+    /// (never an error) when unset.
+    pub(super) usage_spool: UsageSpoolSlot,
 }
 
 pub(super) enum GatewayAuthError {
@@ -108,6 +115,8 @@ impl Gateway {
             registry: Arc::new(Mutex::new(GatewayRegistry::new())),
             auth_reload: AuthReloadCoordinator::new(),
             inbound: InboundRequestLog::new(),
+            route_traces: RouteTraceLog::new(),
+            usage_spool: UsageSpoolSlot::default(),
         }
     }
 
@@ -143,6 +152,17 @@ impl Gateway {
             return Err(GatewayAuthError::Stopping);
         }
         Ok(edge)
+    }
+
+    /// Bound loopback port currently cited by this profile's edge, if running.
+    pub(super) fn cited_port_for_profile(&self, profile_id: &str) -> Option<u16> {
+        let Ok(registry) = self.lock() else {
+            return None;
+        };
+        registry
+            .runtimes
+            .get(profile_id)
+            .map(|runtime| runtime.cited_port)
     }
 
     /// List models for GET /v1/models. When a running custom OpenAI-compat

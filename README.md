@@ -79,7 +79,7 @@ AgentHub 是一个本地运行的多 Agent 桌面工具。它用一个 GUI 和 C
 
 ### 本机路由
 
-管理本机转发：给客户端填本机地址。登录信息仍在连接页。多数连接用直连或「用这份登录」即可。混合供应商和部分协议转换仍在开发中，不是已经做完的万能路由。
+管理本机转发：给客户端填本机地址。登录信息仍在连接页，需要时「分享至连接池」。接到某个工具从看板「连接/切换」。混合供应商和部分协议转换仍在开发中，不是已经做完的万能路由。
 
 ## 路线图
 
@@ -160,4 +160,4 @@ AgentHub 默认只处理本机数据。常见数据位置是 `~/.agenthub/`（�
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)。用量解析与配置切换部分借鉴了 [ccusage](https://github.com/ccusage/ccusage) 和 [cc-switch](https://github.com/farion1231/cc-switch)。
+本项目采用 [MIT License](LICENSE)。用量解析与配置切换部分借鉴了 [ccusage](https://github.com/ccusage/ccusage) 和 [cc-switch](https://github.com/farion1231/cc-switch)；路由部分借鉴了 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)。

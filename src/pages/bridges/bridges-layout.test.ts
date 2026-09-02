@@ -12,31 +12,41 @@ function source(rel: string): string {
 
 describe('routes layout wiring', () => {
   it('uses the Skills/Projects workbench split for inspect panes', () => {
-    const page = source('pages/bridges/index.tsx');
+    const page = source('pages/routes/pool/index.tsx');
     expect(page).toContain('WorkbenchSplitPage');
     expect(page).toContain('PageHeader');
-    expect(page).toContain("t('common.inDevelopment')");
     expect(page).toContain('pageRhythm.chromeActions');
     expect(page).toContain("t('common.resizeSidePanel')");
     expect(page).toContain('useSideSplit');
     expect(page).not.toContain('flex items-start gap-3');
   });
 
-  it('puts fleet summary or orphan lead on the same chrome row as import/create', () => {
-    const page = source('pages/bridges/index.tsx');
+  it('edits pool API keys in the login detail pane', () => {
+    const page = source('pages/routes/pool/index.tsx');
+    const detail = source('pages/routes/pool/PoolAuthorizationDetail.tsx');
+    expect(page).toContain('editTarget');
+    expect(page).not.toContain('setApiEdit');
+    expect(page).not.toContain('ApiAccessDialog');
+    expect(detail).toContain('ApiAccessForm');
+    expect(detail).toContain('layout="inline"');
+    expect(page).not.toContain('ProviderEditDialog');
+    expect(page).not.toContain('ApiKeyAccountDialog');
+  });
+
+  it('puts fleet summary or orphan lead on the same chrome row as pool add actions', () => {
+    const page = source('pages/routes/pool/index.tsx');
     const chromeStart = page.indexOf('pageRhythm.chromeRow');
     const listStart = page.indexOf('pageRhythm.stackDense');
     expect(chromeStart).toBeGreaterThan(0);
     expect(listStart).toBeGreaterThan(chromeStart);
     const chrome = page.slice(chromeStart, listStart);
     expect(chrome).toContain('orphanOnly');
-    expect(chrome).toContain('fleetSummary.label');
-    expect(chrome).toContain("t('routes.import.action')");
-    expect(chrome).toContain("t('routes.create.action')");
-    expect(chrome).toContain('size="sm"');
+    expect(chrome).toContain('routes.pool.page.chromeHint');
+    expect(chrome).toContain('PoolAddButtons');
     expect(chrome).toContain('pageRhythm.chromeActions');
+    expect(source('pages/routes/pool/PoolAddButtons.tsx')).toContain('size="sm"');
     const list = page.slice(listStart);
-    expect(list).not.toContain('fleetSummary.label');
+    expect(list).not.toContain('routes.pool.page.chromeHint');
     expect(list).toContain('first={orphanOnly}');
     expect(list).toContain('title={orphanOnly ? undefined');
   });
@@ -67,24 +77,23 @@ describe('routes layout wiring', () => {
     expect(create).toContain('localAddressCopyForTarget');
     expect(create).toContain("t('routes.endpoint.modelsLine')");
     const write = source('pages/bridges/WriteClientConfigDialog.tsx');
-    expect(write).toContain('routeEndpointCopyKey');
+    expect(write).toContain('localEndpointKindLabel');
     expect(write).toContain("t('routes.endpoint.modelsLine')");
     expect(list).toContain("t('routes.edit.action')");
     expect(list).toContain('variant="outline"');
   });
 
   it('groups Claude/Codex/Grok profiles that share one source onto one card', () => {
-    const page = source('pages/bridges/index.tsx');
+    const page = source('pages/routes/pool/index.tsx');
     const actions = source('pages/bridges/use-bridge-runtime-actions.ts');
     expect(page).toContain('groupLocalBridgeProfiles');
-    expect(page).toContain('localBridgeSourceKey');
     expect(actions).toContain('localBridgeProfilesForSource');
     const model = source('pages/bridges/adapter-view-model.ts');
     expect(model).toContain('One list card per upstream source');
   });
 
   it('opens edit and detail in the same right-hand inspect pane', () => {
-    const page = source('pages/bridges/index.tsx');
+    const page = source('pages/routes/pool/index.tsx');
     const inspect = source('pages/bridges/route-inspect.ts');
     expect(inspect).toContain("{ kind: 'edit'; profile: AdapterProfile }");
     expect(inspect).toContain("{ kind: 'detail'; profile: AdapterProfile }");
@@ -113,13 +122,24 @@ describe('routes layout wiring', () => {
     expect(panel).toContain('flex h-10');
   });
 
+  it('docks the recycle-bin button in the list column, left of the split', () => {
+    const page = source('pages/routes/pool/index.tsx');
+    const button = source('pages/connections/ConnectionTrashButton.tsx');
+    const split = source('components/layout/SideSplit.tsx');
+    expect(page).toContain('listFooter={trashDock}');
+    expect(page).toContain('<ConnectionTrashButton');
+    expect(button).not.toContain('fixed bottom-4 right-4');
+    expect(split).toContain('listFooter');
+    expect(split).toContain('flex shrink-0 justify-end');
+  });
+
   it('keeps the healthy empty state informational without a second create CTA', () => {
-    const page = source('pages/bridges/index.tsx');
+    const page = source('pages/routes/pool/index.tsx');
     const emptyBlock = page.slice(
       page.indexOf("pageView === 'healthy_empty'"),
       page.indexOf("pageView === 'list'"),
     );
-    expect(emptyBlock).toContain("t('routes.empty.title')");
+    expect(emptyBlock).toContain("t('routes.pool.page.emptyTitle')");
     expect(emptyBlock).not.toContain('actionLabel');
     expect(emptyBlock).not.toContain("t('routes.create.action')");
   });

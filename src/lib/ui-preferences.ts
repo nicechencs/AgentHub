@@ -16,7 +16,9 @@ export const StorageKey = {
   usageGuideDismissed: `${PREFIX}usage-guide-dismissed`,
   dismissedAlertIds: `${PREFIX}dismissed-alert-ids`,
   sidebarCollapsed: `${PREFIX}sidebar-collapsed`,
-  /** 侧栏是否显示「路由」入口；缺省隐藏（功能开发中） */
+  /** 点侧栏「路由」时是否自动折叠最左侧栏 */
+  sidebarAutoCollapseOnRoutes: `${PREFIX}sidebar-auto-collapse-on-routes`,
+  /** 侧栏是否显示「路由」入口；缺省显示（已稳定） */
   routesNavVisible: `${PREFIX}routes-nav-visible`,
   /** 侧栏是否显示「插件」入口；缺省隐藏（功能开发中） */
   pluginsNavVisible: `${PREFIX}plugins-nav-visible`,
@@ -35,8 +37,10 @@ export const StorageKey = {
   skillsProjectWorkspace: `${PREFIX}skills-project-workspace`,
 } as const;
 
-/** 新安装：侧栏不显示路由入口。已保存的偏好优先。 */
-export const DEFAULT_ROUTES_NAV_VISIBLE = false;
+/** 新安装：点「路由」时自动折叠最左侧栏。已保存的偏好优先。 */
+export const DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES = true;
+/** 新安装：侧栏显示路由入口。已保存的偏好优先。 */
+export const DEFAULT_ROUTES_NAV_VISIBLE = true;
 /** 新安装：侧栏不显示插件入口。已保存的偏好优先。 */
 export const DEFAULT_PLUGINS_NAV_VISIBLE = false;
 

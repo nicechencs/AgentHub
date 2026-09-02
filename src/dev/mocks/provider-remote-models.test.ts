@@ -50,3 +50,16 @@ describe('mock listRemoteOpenAiModelsForProvider', () => {
     ).resolves.toEqual(['mock-gpt-4', 'mock-gpt-4o-mini']);
   });
 });
+
+describe('mock detectApiEndpointTypes', () => {
+  it('returns canned supported endpoint types without making a network request', async () => {
+    const port = createMockProviderPort();
+    await expect(port.detectApiEndpointTypes('https://claude.example.com', 'sk-test')).resolves.toEqual([
+      'messages',
+    ]);
+    await expect(port.detectApiEndpointTypes('https://grok.example.com', 'sk-test')).resolves.toEqual([
+      'responses',
+      'chat_completions',
+    ]);
+  });
+});

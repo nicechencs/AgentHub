@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: product, frontend, and core contributors
 source-of-truth: Ticket/Connection services, adapter planner contracts, and product boundary decisions
-updated: 2026-08-29
+updated: 2026-08-31
 ---
 
 # Connections、Routes 与绑定
@@ -63,10 +63,12 @@ unbind(binding)        → 停桥（若有）、恢复上一份 live、保留登
 
 ## 登录列表与 Routes
 
-- Connections 列出真实 accounts/providers；列表不包含 bridge 生成的 local Provider。登录仍由 Connections 管理。官方登录与 API Key 分行保存；添加入口是「导入授权 / 官方登录 / 添加 API Key」。
+- Connections 列出真实登录（accounts/providers）；列表不包含 bridge 生成的 local Provider。官方登录与 API Key 分行保存。Connections 和 Routes 都可以添加官方登录 / API Key；添加入口仍是「导入授权 / 官方登录 / 添加 API Key」。
+- 连接页添加的登录归连接页管理。连接池本页添加的登录只给连接池用，可不出现在连接页。两边各有自己的回收站：连接页删除进连接回收站，连接池移出进连接池回收站。从连接页分享到连接池的登录，从池里拿掉时连接页的登录还在。
 - WorkBuddy 自定义模型和 ZCode 供应商按目录拆成多条登录，桌面套餐登录不导入。
-- 行入口使用“分享 / 路由”，规划器按目的过滤可行目标；不可行项显示原因而不是隐藏。
-- Routes 管理本机转发 runtime：固定 loopback 入口、本机令牌、默认池成员、模型名单、启停、自动恢复、失败详情和解绑。
+- 接到某个工具从 Dashboard「连接/切换」。连接页行入口是「分享至连接池」，把这份登录加入默认连接池；登录仍留在连接页。**API Key 都可以加入**（含 WorkBuddy / ZCode 等上配置的）。国产官方登录不能分享。已经在池里、或这份登录不能加入时，按钮禁用并保留原因。连接页不再提供「用到其他工具 / 本机转发」。
+- 连接池页另有「从连接同步」，可一次加入连接页里可分享的登录（所有 API Key；Claude / Codex / Grok 官方登录仍按已登记的接法）。已经在池里的会跳过。国产官方登录不进入候选。
+- Routes 管理本机转发 runtime：固定 loopback 入口、本机令牌、默认池成员、模型名单、启停、自动恢复、失败详情和解绑。连接池列出这份登录在本机转发里怎么用；从池中移除只改成员，不删登录。
 - 接到本机转发后，目标客户端只认一个 loopback 口和一把本机令牌。默认每个目标 Agent/surface 一个池；往池里增删合格登录不改客户端配置。Codex 与 Grok 共用 `/v1/responses`，具体格式跟路由一起保存，由本机令牌选中，不根据请求正文猜测。接到 Codex 时写入 Responses + 本机 API Key（进 `auth.json`）；接到 Grok 时写入 `api_backend = "responses"` 和本机令牌。这不是 Codex↔Grok 双向转换开关。
 - 调度留在本机网关：先解析模型和协议，再从合格成员里按默认 `priority_failover` 选择；`GET /models` 与实际请求共用同一份 resolver。未声明等价关系时，不会把请求发到另一个供应商。
 - 官方直连（`native_endpoint` / `config_sync`）不自动入池。Routes 对仍可改成本机转发的直连提供「交给本机网关」。

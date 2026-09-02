@@ -117,6 +117,38 @@ fn create_get_update_and_delete_preserve_creation_time() {
 }
 
 #[test]
+fn set_auto_start_updates_only_the_preference_and_timestamp() {
+    let (_dir, db) = tmp_db();
+    let repo = AdapterProfileRepo::new(db);
+    let mut profile = sample_profile("profile-auto-start", "Auto start");
+    profile.route = AdapterRoute::LocalBridge;
+    profile.local_port = Some(43121);
+    profile.status = AdapterProfileStatus::Active;
+    repo.create(&profile).unwrap();
+
+    let saved = repo.set_auto_start(&profile.id, true).unwrap();
+    assert!(saved.auto_start);
+    assert_eq!(saved.local_port, Some(43121));
+    assert_eq!(saved.status, AdapterProfileStatus::Active);
+    assert_eq!(saved.created_at, "t0");
+    assert_ne!(saved.updated_at, "t0");
+
+    assert_eq!(
+        repo.set_auto_start("missing-profile", false)
+            .unwrap_err()
+            .code(),
+        "not_found"
+    );
+
+    let native = sample_profile("profile-native", "Native");
+    repo.create(&native).unwrap();
+    assert_eq!(
+        repo.set_auto_start(&native.id, true).unwrap_err().code(),
+        "invalid_arg"
+    );
+}
+
+#[test]
 fn create_is_idempotent_and_list_is_stable_by_source_and_target() {
     let (_dir, db) = tmp_db();
     let repo = AdapterProfileRepo::new(db);

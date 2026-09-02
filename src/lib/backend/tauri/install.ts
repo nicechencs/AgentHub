@@ -68,6 +68,15 @@ export function createTauriInstallPort(): InstallPort {
       }
     },
 
+    async launchAgentProgram(kind: 'cli' | 'app', path: string) {
+      try {
+        await invoke('launch_agent_program', { kind, path });
+      } catch (e) {
+        log.error('launch_agent_program failed', e);
+        throw e;
+      }
+    },
+
     async openAgentConfigDir(agentId: AgentId) {
       try {
         return await invoke<string>('open_agent_config_dir', { agentId });

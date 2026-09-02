@@ -162,7 +162,9 @@ export async function cancelOAuth(state: string): Promise<void> {
 export async function startDeviceOAuth(
   agentId: AgentId,
   providerKey: string,
+  poolOwned = false,
 ): Promise<DeviceOAuthStartInfo> {
+  if (poolOwned) return getBackend().account.startDeviceOAuth(agentId, providerKey, true);
   return getBackend().account.startDeviceOAuth(agentId, providerKey);
 }
 
@@ -170,8 +172,10 @@ export async function pollDeviceOAuth(state: string): Promise<DeviceOAuthPollInf
   return getBackend().account.pollDeviceOAuth(state);
 }
 
-export async function finishDeviceOAuth(state: string): Promise<Account> {
-  const account = await getBackend().account.finishDeviceOAuth(state);
+export async function finishDeviceOAuth(state: string, poolOwned = false): Promise<Account> {
+  const account = poolOwned
+    ? await getBackend().account.finishDeviceOAuth(state, true)
+    : await getBackend().account.finishDeviceOAuth(state);
   authStateChanged(account.agentId);
   return account;
 }

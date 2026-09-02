@@ -1,6 +1,7 @@
 //! OAuth login options exposed to CLI/GUI.
 //!
-//! Most agents have a single PKCE option. Pi exposes multiple upstream providers
+//! Claude and Codex use a single PKCE option. Grok uses device-code (same xAI
+//! client as the official Grok CLI). Pi exposes multiple upstream providers
 //! (anthropic / openai-codex / xai / …) that all write into `~/.pi/agent/auth.json`.
 //!
 //! Provider aliases, refresh support, and quota backends are table-driven so the
@@ -152,11 +153,11 @@ pub fn list_oauth_options(agent: AgentId) -> Vec<OAuthLoginOption> {
             "ChatGPT Plus/Pro",
             "用浏览器登录 ChatGPT 订阅",
         )],
-        AgentId::Grok => vec![single_pkce(
+        AgentId::Grok => vec![single_device(
             agent,
             "xai",
             "Grok / xAI",
-            "用浏览器登录 Grok 订阅",
+            "用设备码登录 Grok 订阅",
         )],
         AgentId::Pi => pi_options(),
         _ => vec![],
@@ -181,6 +182,7 @@ pub fn resolve_pkce_provider(
                 _ => None,
             }
         }
+        AgentId::Grok => None,
         other => {
             // Single-agent OAuth ignores provider_key (or accepts its own id / aliases).
             if let Some(key) = provider_key {
@@ -208,13 +210,17 @@ fn single_agent_accepts_provider_key(agent: AgentId, key: &str) -> bool {
     }
 }
 
-/// Whether this option uses the implemented device-code flow (Pi xAI only).
+/// Whether this option uses the implemented device-code flow (Grok, or Pi xAI).
 pub fn is_device_code_option(agent: AgentId, provider_key: Option<&str>) -> bool {
     match agent {
         AgentId::Pi => matches!(
             lookup_pi_provider(provider_key.unwrap_or("")).map(|s| s.flow),
             Some(Some(PiProviderFlow::DeviceCode))
         ),
+        AgentId::Grok => match provider_key.map(str::trim).filter(|key| !key.is_empty()) {
+            None => true,
+            Some(key) => single_agent_accepts_provider_key(AgentId::Grok, key),
+        },
         _ => false,
     }
 }
@@ -269,6 +275,17 @@ fn single_pkce(agent: AgentId, id: &str, label: &str, description: &str) -> OAut
         label: label.into(),
         description: description.into(),
         flow: OAuthFlowKind::Pkce,
+        auth_json_key: None,
+    }
+}
+
+fn single_device(agent: AgentId, id: &str, label: &str, description: &str) -> OAuthLoginOption {
+    OAuthLoginOption {
+        id: id.into(),
+        agent_id: agent,
+        label: label.into(),
+        description: description.into(),
+        flow: OAuthFlowKind::DeviceCode,
         auth_json_key: None,
     }
 }
@@ -374,7 +391,15 @@ mod tests {
     fn single_agent_options() {
         assert_eq!(list_oauth_options(AgentId::Claude).len(), 1);
         assert_eq!(list_oauth_options(AgentId::Codex).len(), 1);
-        assert_eq!(list_oauth_options(AgentId::Grok).len(), 1);
+        let grok = list_oauth_options(AgentId::Grok);
+        assert_eq!(grok.len(), 1);
+        assert_eq!(grok[0].id, "xai");
+        assert_eq!(grok[0].flow, OAuthFlowKind::DeviceCode);
+        assert!(is_device_code_option(AgentId::Grok, None));
+        assert!(is_device_code_option(AgentId::Grok, Some("xai")));
+        assert!(is_device_code_option(AgentId::Grok, Some("grok")));
+        assert!(!is_device_code_option(AgentId::Grok, Some("claude")));
+        assert!(resolve_pkce_provider(AgentId::Grok, None).is_none());
         assert!(list_oauth_options(AgentId::Claude)
             .iter()
             .all(|o| !o.description.contains("auth.json") && !o.description.contains("OAuth")));

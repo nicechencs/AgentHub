@@ -32,9 +32,12 @@ export async function startOfficialLogin(
   agentId: AgentId,
   option: Pick<OAuthLoginOption, 'id' | 'flow'>,
   openBrowser = true,
+  poolOwned = false,
 ): Promise<OfficialLoginSession> {
   if (officialLoginAdapter(option.flow) === 'deviceCode') {
-    const start = await startDeviceOAuth(agentId, option.id);
+    const start = poolOwned
+      ? await startDeviceOAuth(agentId, option.id, true)
+      : await startDeviceOAuth(agentId, option.id);
     return sessionFromDeviceStart(start);
   }
   const start = await startOAuth(agentId, openBrowser, option.id);
@@ -85,8 +88,15 @@ export async function waitOfficialLogin(
   return { phase: 'expired' };
 }
 
-export async function finishOfficialLogin(session: OfficialLoginSession): Promise<Account> {
-  if (session.flow === 'deviceCode') return finishDeviceOAuth(session.sessionId);
+export async function finishOfficialLogin(
+  session: OfficialLoginSession,
+  poolOwned = false,
+): Promise<Account> {
+  if (session.flow === 'deviceCode') {
+    return poolOwned
+      ? finishDeviceOAuth(session.sessionId, true)
+      : finishDeviceOAuth(session.sessionId);
+  }
   return finishOAuth(session.sessionId);
 }
 

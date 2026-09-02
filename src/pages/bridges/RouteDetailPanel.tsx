@@ -10,7 +10,6 @@ import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { openLogsDir } from '@/lib/api/settings';
 import type {
-  AdapterBridgeInboundRequest,
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
   DefaultRoutePoolOverview,
@@ -32,6 +31,7 @@ import {
   routeDetailTargetLabel,
   routeModelsSummary,
   routeSourceDeletedHint,
+  routeWriteTruthFrom,
 } from './adapter-route-detail-model';
 import {
   buildRouteGraph,
@@ -42,15 +42,22 @@ import {
 } from './adapter-view-model';
 import {
   defaultPoolEntryUrl,
+  localEndpointKindLabel,
   nativeEnrollCtaVisible,
   routePoolMemberLabels,
   routePoolMembersSectionVisible,
   routePoolSurfaceLabel,
 } from './route-pool-view-model';
 import {
-  formatInboundAt,
+  localEndpointBrandAgentId,
+  localEndpointKindForTargetAgent,
+  localEndpointKindFromPool,
+} from '@/lib/route-endpoints';
+import { RouteTraceList } from '@/components/shared/RouteTraceList';
+import { RouteTracePipelineLegend } from '@/components/shared/RouteTracePipelineLegend';
+import { buildRouteTraceFeed } from '@/pages/routes/activity/route-trace-feed-model';
+import {
   ROUTE_LOCAL_ADDRESS_LEGEND,
-  routeEndpointCopyKey,
 } from './route-endpoint-copy';
 
 /**
@@ -63,6 +70,7 @@ export function RouteDetailPanel({
   bridgeStatus,
   entries,
   siblingProfiles = [],
+  bridgeStatuses = {},
   busy,
   error,
   onRequestRemove,
@@ -83,6 +91,7 @@ export function RouteDetailPanel({
   bridgeStatus?: AdapterBridgeRuntimeStatus;
   entries: ConnectionEntry[];
   siblingProfiles?: readonly AdapterProfile[];
+  bridgeStatuses?: Readonly<Record<string, AdapterBridgeRuntimeStatus | undefined>>;
   busy: boolean;
   error: unknown;
   onRequestRemove: (profile: AdapterProfile) => void;
@@ -122,6 +131,7 @@ export function RouteDetailPanel({
       bridgeStatus={bridgeStatus}
       entries={entries}
       siblingProfiles={siblingProfiles}
+      bridgeStatuses={bridgeStatuses}
       error={error}
       routePoolV2={routePoolV2}
       defaultPool={defaultPool}
@@ -178,6 +188,7 @@ function RouteDetailBody({
   bridgeStatus,
   entries,
   siblingProfiles,
+  bridgeStatuses = {},
   error,
   routePoolV2 = false,
   defaultPool = null,
@@ -190,6 +201,7 @@ function RouteDetailBody({
   bridgeStatus?: AdapterBridgeRuntimeStatus;
   entries: ConnectionEntry[];
   siblingProfiles: readonly AdapterProfile[];
+  bridgeStatuses?: Readonly<Record<string, AdapterBridgeRuntimeStatus | undefined>>;
   error: unknown;
   routePoolV2?: boolean;
   defaultPool?: DefaultRoutePoolOverview | null;
@@ -202,12 +214,17 @@ function RouteDetailBody({
   const { t, lang } = useI18n();
   const isBridge = profile.route === 'local_bridge';
   const endpointParts = isBridge ? adapterBridgeHostPort(profile, bridgeStatus) : null;
+  const statuses = {
+    ...bridgeStatuses,
+    ...(bridgeStatus ? { [profile.id]: bridgeStatus } : {}),
+  };
   const graph = buildRouteGraph({
     profile,
     entries,
     siblingProfiles,
     host: endpointParts?.host,
     port: endpointParts?.port,
+    writeTruth: routeWriteTruthFrom(entries, statuses),
   });
   const source = graph.source;
   const recovery = adapterProfileRecoveryGuide(profile, t);
@@ -315,7 +332,7 @@ function RouteDetailBody({
           <p className="text-meta text-muted">{routeModelsSummary(capabilities.models, t)}</p>
         </section>
 
-        <InboundRequestsSection rows={bridgeStatus?.recentInbound ?? []} />
+        <RouteRequestsSection profile={profile} bridgeStatus={bridgeStatus} />
 
         {routePoolMembersSectionVisible(routePoolV2, defaultPool) && defaultPool ? (
           <RoutePoolOverviewSection
@@ -409,7 +426,12 @@ function RoutePoolOverviewSection({
 }) {
   const { t } = useI18n();
   const entry = defaultPoolEntryUrl(pool.gatewayPort);
-  const members = routePoolMemberLabels(pool.members, entries);
+  const endpointKind = localEndpointKindFromPool(pool);
+  const members = routePoolMemberLabels(
+    pool.members,
+    entries,
+    t('routes.pool.detail.identityUnavailable'),
+  );
   return (
     <section className="space-y-2" data-route-pool={pool.id}>
       <h3 className="text-body font-medium">{t('routes.pool.entry')}</h3>
@@ -432,7 +454,11 @@ function RoutePoolOverviewSection({
           </div>
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
             <dt className="w-12 shrink-0 text-muted">{t('routes.pool.surfaceLabel')}</dt>
-            <dd className="min-w-0 text-sm">{routePoolSurfaceLabel(pool.surface, t)}</dd>
+            <dd className="min-w-0 text-sm">{
+              endpointKind
+                ? localEndpointKindLabel(endpointKind, t)
+                : routePoolSurfaceLabel(pool.surface, t)
+            }</dd>
           </div>
           {pool.listedModels && pool.listedModels.length > 0 ? (
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -494,6 +520,8 @@ function ClientRow({ row }: { row: RouteGraphRow }) {
   const { t } = useI18n();
   const label = routeDetailTargetLabel(row.agent, t);
   const url = row.localUrl ?? '';
+  const endpointKind = localEndpointKindForTargetAgent(row.agent);
+  const brandAgentId = localEndpointBrandAgentId(endpointKind);
   return (
     <li
       className={cn(
@@ -507,6 +535,10 @@ function ClientRow({ row }: { row: RouteGraphRow }) {
       </span>
       {row.applied ? (
         <span className="shrink-0 text-meta text-success">{t('routes.graph.applied')}</span>
+      ) : row.writeNote === 'stopped' ? (
+        <span className="shrink-0 text-meta text-warning">{t('routes.graph.appliedStopped')}</span>
+      ) : row.writeNote === 'rewritten' ? (
+        <span className="shrink-0 text-meta text-warning">{t('routes.graph.appliedRewritten')}</span>
       ) : !row.enabled ? (
         <span className="shrink-0 text-meta text-muted">{t('routes.graph.notEnabled')}</span>
       ) : (
@@ -518,39 +550,37 @@ function ClientRow({ row }: { row: RouteGraphRow }) {
           url={url}
           ariaLabel={t('routes.graph.copyLocal', { endpoint: url || row.localPath })}
         />
-        <RouteEndpointTypeText endpointId={row.localEndpointId} className="ml-1 text-meta">
-          {t(routeEndpointCopyKey(row.localEndpointId))}
+        <RouteEndpointTypeText
+          endpointId={row.localEndpointId}
+          brandAgentId={brandAgentId}
+          className="ml-1 text-meta"
+        >
+          {localEndpointKindLabel(endpointKind, t)}
         </RouteEndpointTypeText>
       </span>
     </li>
   );
 }
 
-function InboundRequestsSection({ rows }: { rows: readonly AdapterBridgeInboundRequest[] }) {
+function RouteRequestsSection({
+  profile,
+  bridgeStatus,
+}: {
+  profile: AdapterProfile;
+  bridgeStatus: AdapterBridgeRuntimeStatus | undefined;
+}) {
   const { t } = useI18n();
+  const rows = buildRouteTraceFeed(
+    [profile],
+    { [profile.id]: bridgeStatus },
+    'all',
+    20,
+  );
   return (
-    <section className="space-y-2" data-route-inbound>
+    <section className="space-y-3" data-route-inbound>
       <h3 className="text-body font-medium">{t('routes.inbound.title')}</h3>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted">{t('routes.inbound.empty')}</p>
-      ) : (
-        <ul className="space-y-1 rounded-card border border-border bg-subtle p-3">
-          {rows.map((row, index) => (
-            <li
-              key={`${row.at}:${row.method}:${row.path}:${row.status}:${index}`}
-              className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-meta"
-            >
-              <span className="text-muted">{formatInboundAt(row.at)}</span>
-              <span>{row.method}</span>
-              <span className="min-w-0 truncate">{row.path}</span>
-              <span>{row.status}</span>
-              <span className={row.ok ? 'text-success' : 'text-danger'}>
-                {row.ok ? t('routes.inbound.ok') : t('routes.inbound.fail')}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <RouteTracePipelineLegend />
+      <RouteTraceList rows={rows} emptyLabel={t('routes.inbound.empty')} />
     </section>
   );
 }

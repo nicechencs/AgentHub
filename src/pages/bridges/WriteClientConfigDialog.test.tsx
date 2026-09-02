@@ -57,6 +57,7 @@ function row(agent: CreateRouteTarget, overrides: Partial<RouteGraphRow> = {}): 
     link: 'dashed',
     enabled: true,
     applied: false,
+    writeNote: null,
     ...overrides,
   };
 }
@@ -106,8 +107,9 @@ describe('WriteClientConfigDialog', () => {
 
     expect(markup).toContain(t('routes.write.title'));
     expect(markup).toContain(t('routes.write.description'));
-    expect(markup).toContain(t('routes.endpoint.messages'));
-    expect(markup).toContain(t('routes.endpoint.responses'));
+    expect(markup).toContain(t('routes.pool.surface.messages'));
+    expect(markup).toContain(t('routes.pool.surface.responsesCodex'));
+    expect(markup).toContain(t('routes.pool.surface.responsesGrok'));
     expect(markup).toContain(t('routes.endpoint.modelsLine'));
     expect(markup).toContain('~/.codex/config.toml');
     expect(markup).toContain('~/.grok/config.toml');

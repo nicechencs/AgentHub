@@ -28,7 +28,7 @@ export type ListRowProps = HTMLAttributes<HTMLDivElement> & {
 
 /**
  * 列表行外壳：统一 active = bg-active + 可选左边条。
- * Connections / 侧栏式列表可复用；表格行请用 TableRow 的 active。
+ * Connections / 侧栏式列表可复用；表格行请用 TableRow 的 active / onOpen。
  */
 export function ListRow({
   active = false,

@@ -1,12 +1,13 @@
 use crate::models::{
-    enroll_native_plan_is_open, AdapterApplyPlan, AdapterGateKind, AdapterMaturity, AdapterProfile,
-    AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
+    authorization_is_route_pool_home, enroll_native_plan_is_open, Account, AccountKind,
+    AdapterApplyPlan, AdapterGateKind, AdapterMaturity, AdapterProfile, AdapterProfileMode,
+    AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis,
     AdapterServiceImpact, AdapterSourceKind, AdapterSupport, AgentId, Provider,
-    FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
+    RouteDownstreamSurface, FEATURE_CODEX_INGRESS_GROK_UPSTREAM, FEATURE_GROK_INGRESS_CODEX_UPSTREAM,
     FEATURE_MIXED_PROVIDER_POOL, FEATURE_ROUTE_INDEX_V2, FEATURE_ROUTE_POOL_V2,
 };
 use crate::services::RoutePoolService;
-use crate::storage::{AdapterProfileRepo, Database, ProviderRepo};
+use crate::storage::{AccountRepo, AdapterProfileRepo, Database, ProviderRepo};
 use serde_json::json;
 
 fn tmp() -> (
@@ -45,6 +46,16 @@ fn bridge_profile(id: &str, source_id: &str, agent: AgentId, auto_start: bool) -
 }
 
 #[test]
+fn local_entry_desired_running_defaults_on_and_remembers_off() {
+    let (_dir, _db, service, _) = tmp();
+    assert!(service.local_entry_desired_running().unwrap());
+    service.set_local_entry_desired_running(false).unwrap();
+    assert!(!service.local_entry_desired_running().unwrap());
+    service.set_local_entry_desired_running(true).unwrap();
+    assert!(service.local_entry_desired_running().unwrap());
+}
+
+#[test]
 fn flag_off_is_fail_closed() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("flag-off.db")).unwrap();
@@ -59,6 +70,21 @@ fn flag_off_is_fail_closed() {
             .code(),
         "unsupported"
     );
+}
+
+#[test]
+fn lists_and_sets_default_pool_entry_keys() {
+    let (_dir, _db, service, _) = tmp();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    let listed = service.list_local_tokens().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].pool_id, pool.id);
+    assert!(listed[0].token.starts_with("ahb_"));
+    let updated = service.set_local_token(&pool.id, "ahb_custom-key").unwrap();
+    assert_eq!(updated.token, "ahb_custom-key");
+    assert_eq!(service.list_local_tokens().unwrap()[0].token, "ahb_custom-key");
 }
 
 #[test]
@@ -138,8 +164,145 @@ fn member_crud_sort_enabled_priority_and_lead_projection() {
     service.set_member_enabled(&extra.id, false).unwrap();
     let projected = profiles.get("profile-a").unwrap().unwrap();
     assert_eq!(projected.source_id, "acc-a");
+    let flipped = service
+        .set_authorization_enabled(AdapterSourceKind::Account, "acc-b", true)
+        .unwrap();
+    assert_eq!(flipped, 1);
+    assert!(service
+        .list_members("profile-a")
+        .unwrap()
+        .iter()
+        .any(|member| member.source_id == "acc-b" && member.enabled));
+    let priority_changed = service
+        .set_authorization_priority(AdapterSourceKind::Account, "acc-b", 8)
+        .unwrap();
+    assert_eq!(priority_changed, 1);
+    assert!(service
+        .list_members("profile-a")
+        .unwrap()
+        .iter()
+        .any(|member| member.source_id == "acc-b" && member.priority == 8));
     service.remove_member(&extra.id).unwrap();
     assert_eq!(service.list_members("profile-a").unwrap().len(), 1);
+}
+
+#[test]
+fn remove_route_authorization_drops_membership_while_source_still_exists() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "codex-api".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex API".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-api",
+        )
+        .unwrap();
+
+    let removed = service
+        .remove_route_authorization(AdapterSourceKind::Provider, "codex-api")
+        .unwrap();
+    assert_eq!(removed, 1);
+    assert!(service
+        .list_default_overviews()
+        .unwrap()
+        .pools
+        .iter()
+        .all(|pool| pool.members.is_empty()));
+    assert!(ProviderRepo::new(db)
+        .get_by_id("codex-api")
+        .unwrap()
+        .is_some());
+}
+
+#[test]
+fn recycle_route_membership_keeps_connections_login_and_uses_pool_trash() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "codex-shared".into(),
+            agent_id: AgentId::Codex,
+            name: "Shared key".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Provider, "codex-shared")
+        .unwrap();
+
+    let removed = service
+        .recycle_route_membership(AdapterSourceKind::Provider, "codex-shared")
+        .unwrap();
+    assert_eq!(removed, 1);
+    assert!(ProviderRepo::new(db.clone())
+        .get_by_id("codex-shared")
+        .unwrap()
+        .is_some());
+    let conn = crate::services::ConnectionService::new(db);
+    let pool_trash = conn
+        .list_trash_filtered(None, Some("route_pool"))
+        .unwrap();
+    assert_eq!(pool_trash.len(), 1);
+    assert_eq!(pool_trash[0].kind, crate::models::ConnectionTrashKind::Membership);
+    assert!(conn.list_trash_filtered(None, Some("connections")).unwrap().is_empty());
+}
+
+#[test]
+fn remove_route_authorization_removes_missing_source_from_all_default_pools() {
+    let (_dir, db, service, _profiles) = tmp();
+    let stale_source = "missing-connection";
+    let codex_pool = service
+        .ensure_default_pool(AgentId::Codex, RouteDownstreamSurface::Responses)
+        .unwrap();
+    let claude_pool = service
+        .ensure_default_pool(AgentId::Claude, RouteDownstreamSurface::Messages)
+        .unwrap();
+    service
+        .add_member(&codex_pool.id, AdapterSourceKind::Account, stale_source)
+        .unwrap();
+    service
+        .add_member(&claude_pool.id, AdapterSourceKind::Account, stale_source)
+        .unwrap();
+
+    let removed = service
+        .remove_route_authorization(AdapterSourceKind::Account, stale_source)
+        .unwrap();
+    assert_eq!(removed, 2);
+    assert!(service
+        .list_default_overviews()
+        .unwrap()
+        .pools
+        .iter()
+        .all(|pool| pool.members.is_empty()));
+
+    // The membership removal is persisted, so a fresh service cannot
+    // resurrect the unavailable authorization on the next load.
+    drop(service);
+    let reopened = RoutePoolService::new(db);
+    assert!(reopened
+        .list_default_overviews()
+        .unwrap()
+        .pools
+        .iter()
+        .all(|pool| pool.members.is_empty()));
 }
 
 #[test]
@@ -536,6 +699,147 @@ fn persist_enroll_after_native_bind_promotes_over_sibling_default() {
     let listed = service.list_default_overviews().unwrap();
     assert_eq!(listed.pools.len(), 1);
     assert_eq!(listed.pools[0].id, "bound-new");
+    assert!(listed.pools[0].members.iter().any(|member| member.source_id == "acc-old"));
+    assert!(listed.pools[0].members.iter().any(|member| member.source_id == "acc-a"));
+}
+
+#[test]
+fn attach_pool_owned_authorization_creates_default_pool_and_hides_from_home_stamp() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "codex-api".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex API".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let overview = service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-api",
+        )
+        .unwrap();
+    assert_eq!(overview.target_agent_id, AgentId::Codex);
+    assert_eq!(overview.surface, RouteDownstreamSurface::Responses);
+    assert_eq!(overview.members.len(), 1);
+    assert_eq!(overview.members[0].source_id, "codex-api");
+    let stored = ProviderRepo::new(db).get_by_id("codex-api").unwrap().unwrap();
+    assert!(authorization_is_route_pool_home(&stored.meta));
+    let again = service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-api",
+        )
+        .unwrap();
+    assert_eq!(again.id, overview.id);
+    assert_eq!(again.members.len(), 1);
+}
+
+#[test]
+fn attach_pool_owned_authorization_reuses_existing_default_pool() {
+    let (_dir, db, service, profiles) = tmp();
+    let profile = bridge_profile("profile-a", "acc-a", AgentId::Codex, true);
+    profiles.create(&profile).unwrap();
+    service
+        .create_legacy_pool(&profile, "ahb_stable-token", true)
+        .unwrap();
+    ProviderRepo::new(db)
+        .create(&Provider {
+            id: "codex-api".into(),
+            agent_id: AgentId::Codex,
+            name: "Codex API".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let overview = service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-api",
+        )
+        .unwrap();
+    assert_eq!(overview.id, "profile-a");
+    assert!(overview
+        .members
+        .iter()
+        .any(|member| member.source_id == "acc-a"));
+    assert!(overview
+        .members
+        .iter()
+        .any(|member| member.source_id == "codex-api"));
+}
+
+#[test]
+fn sync_connection_authorizations_enrolls_connection_logins_without_hiding_them() {
+    let (_dir, db, service, _profiles) = tmp();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "conn-codex".into(),
+            agent_id: AgentId::Codex,
+            name: "Connection API".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "conn-oauth".into(),
+            agent_id: AgentId::Claude,
+            kind: AccountKind::Oauth,
+            label: "Claude login".into(),
+            credentials: json!({"format": "auth_json", "tokens": {"access_token": "x"}}),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "pool-only".into(),
+            agent_id: AgentId::Grok,
+            name: "Pool API".into(),
+            settings_config: json!({"apiKey": "secret"}),
+            meta: json!({"preset": "custom", "home": "route_pool"}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let result = service.sync_connection_authorizations().unwrap();
+    assert_eq!(result.added, 2);
+    assert!(result.skipped >= 1);
+    let listed = service.list_default_overviews().unwrap();
+    let members: Vec<_> = listed
+        .pools
+        .iter()
+        .flat_map(|pool| pool.members.iter().map(|member| member.source_id.as_str()))
+        .collect();
+    assert!(members.contains(&"conn-codex"));
+    assert!(members.contains(&"conn-oauth"));
+    assert!(!members.contains(&"pool-only"));
+    let stored = ProviderRepo::new(db).get_by_id("conn-codex").unwrap().unwrap();
+    assert!(!authorization_is_route_pool_home(&stored.meta));
+    let again = service.sync_connection_authorizations().unwrap();
+    assert_eq!(again.added, 0);
 }
 
 #[test]
@@ -563,4 +867,414 @@ fn occupancy_fail_skips_persist_and_leaves_unenrolled() {
     let stored = service.get("bound-occ").unwrap().unwrap();
     assert!(!stored.v2_enrolled);
     assert_eq!(stored.gateway_port, None);
+}
+#[test]
+fn selected_connection_sync_enrolls_only_requested_sources() {
+    use crate::models::{
+        Account, AccountKind, AdapterSourceKind, AgentId, Provider, SyncConnectionSource,
+        FEATURE_ROUTE_POOL_V2,
+    };
+    use crate::services::RoutePoolService;
+    use crate::storage::{AccountRepo, Database, ProviderRepo};
+    use serde_json::json;
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("route-pool-selected-sync.db")).unwrap();
+    db.set_setting(FEATURE_ROUTE_POOL_V2, "true").unwrap();
+
+    let account = |id: &str| Account {
+        id: id.into(),
+        agent_id: AgentId::Codex,
+        kind: AccountKind::ApiKey,
+        label: id.into(),
+        credentials: json!({"format": "api_key", "api_key": "redacted-test-secret"}),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    };
+    AccountRepo::new(db.clone()).create(&account("account-selected")).unwrap();
+    AccountRepo::new(db.clone()).create(&account("account-unselected")).unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "provider-unselected".into(),
+            agent_id: AgentId::Codex,
+            name: "Provider unselected".into(),
+            settings_config: json!({"api_key": "redacted-test-secret"}),
+            meta: json!({}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let service = RoutePoolService::new(db);
+    let result = service
+        .sync_connection_authorizations_selected(Some(&[SyncConnectionSource {
+            source_kind: AdapterSourceKind::Account,
+            source_id: "account-selected".into(),
+        }]))
+        .unwrap();
+    assert_eq!(result.added, 1);
+    assert_eq!(result.skipped, 0);
+
+    let pools = service.list_default_overviews().unwrap();
+    let members = &pools.pools[0].members;
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].source_kind, AdapterSourceKind::Account);
+    assert_eq!(members[0].source_id, "account-selected");
+}
+
+#[test]
+fn connection_sync_enrolls_api_keys_from_workbuddy_and_zcode() {
+    let (_dir, db, service, _profiles) = tmp();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "wb-key".into(),
+            agent_id: AgentId::WorkBuddy,
+            kind: AccountKind::ApiKey,
+            label: "WorkBuddy custom".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "sk-wb",
+                "url": "https://api.example.com/v1/chat/completions"
+            }),
+            extra: json!({ "provider": "workbuddy" }),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "zcode-key".into(),
+            agent_id: AgentId::Zcode,
+            kind: AccountKind::ApiKey,
+            label: "Z.ai API Key".into(),
+            credentials: json!({
+                "format": "api_key",
+                "api_key": "sk-zcode",
+                "base_url": "https://api.z.ai/api/anthropic"
+            }),
+            extra: json!({ "provider": "zcode", "endpoint": "https://api.z.ai/api/anthropic" }),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    AccountRepo::new(db)
+        .create(&Account {
+            id: "kimi-oauth".into(),
+            agent_id: AgentId::Kimi,
+            kind: AccountKind::Oauth,
+            label: "Kimi login".into(),
+            credentials: json!({"format": "auth_json", "tokens": {"access_token": "x"}}),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let result = service.sync_connection_authorizations().unwrap();
+    assert_eq!(result.added, 2);
+    assert!(result.skipped >= 1);
+
+    let listed = service.list_default_overviews().unwrap();
+    let members: Vec<_> = listed
+        .pools
+        .iter()
+        .flat_map(|pool| {
+            pool.members
+                .iter()
+                .map(|member| (pool.target_agent_id, member.source_id.as_str()))
+        })
+        .collect();
+    assert!(members.iter().any(|(_, id)| *id == "wb-key"));
+    assert!(members.iter().any(|(_, id)| *id == "zcode-key"));
+    assert!(members.iter().any(|(agent, id)| *id == "wb-key"
+        && matches!(*agent, AgentId::Kimi | AgentId::Dsh)));
+    assert!(!members.iter().any(|(_, id)| *id == "kimi-oauth"));
+}
+
+#[test]
+fn pool_member_overview_exposes_safe_source_label_and_oauth_refresh_tail() {
+    let (_dir, db, service, _profiles) = tmp();
+    AccountRepo::new(db.clone())
+        .create(&Account {
+            id: "codex-oauth".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "internal-oauth-row".into(),
+            credentials: json!({
+                "tokens": {"refresh_token": "refresh-token-12345678", "access_token": "access-secret"}
+            }),
+            extra: json!({"identityLabel": "user@example.com"}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "codex-provider".into(),
+            agent_id: AgentId::Codex,
+            name: "Team API".into(),
+            settings_config: json!({"apiKey": "api-secret"}),
+            meta: json!({}),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+
+    let first = service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Account,
+            "codex-oauth",
+        )
+        .unwrap();
+    let overview = service
+        .attach_pool_owned_authorization(
+            AgentId::Codex,
+            RouteDownstreamSurface::Responses,
+            AdapterSourceKind::Provider,
+            "codex-provider",
+        )
+        .unwrap();
+    assert_eq!(overview.id, first.id);
+    let oauth = overview
+        .members
+        .iter()
+        .find(|member| member.source_id == "codex-oauth")
+        .unwrap();
+    assert_eq!(oauth.display_label.as_deref(), Some("user@example.com"));
+    assert_eq!(oauth.refresh_token_tail.as_deref(), Some("**5678"));
+    let api = overview
+        .members
+        .iter()
+        .find(|member| member.source_id == "codex-provider")
+        .unwrap();
+    assert_eq!(api.display_label.as_deref(), Some("Team API"));
+    assert!(api.refresh_token_tail.is_none());
+    let encoded = serde_json::to_string(&overview).unwrap();
+    assert!(!encoded.contains("refresh-token-12345678"));
+    assert!(!encoded.contains("access-secret"));
+    assert!(!encoded.contains("api-secret"));
+}
+
+fn chat_api_account(id: &str, agent: AgentId, label: &str) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: agent,
+        kind: AccountKind::ApiKey,
+        label: label.into(),
+        credentials: json!({
+            "format": "api_key",
+            "api_key": "sk-test",
+            "url": "https://api.example.com/v1/chat/completions"
+        }),
+        extra: json!({}),
+        status: "active".into(),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+fn chat_member_ids(listed: &crate::models::DefaultRoutePoolList, agent: AgentId) -> Vec<&str> {
+    listed
+        .pools
+        .iter()
+        .filter(|pool| {
+            pool.target_agent_id == agent
+                && pool.surface == RouteDownstreamSurface::ChatCompletions
+        })
+        .flat_map(|pool| pool.members.iter().map(|member| member.source_id.as_str()))
+        .collect()
+}
+
+#[test]
+fn chat_completions_share_defaults_off_and_merges_kimi_dsh() {
+    let (_dir, db, service, _profiles) = tmp();
+    AccountRepo::new(db.clone())
+        .create(&chat_api_account("kimi-key", AgentId::Kimi, "Kimi key"))
+        .unwrap();
+    AccountRepo::new(db.clone())
+        .create(&chat_api_account("dsh-key", AgentId::Dsh, "DSH key"))
+        .unwrap();
+    AccountRepo::new(db)
+        .create(&chat_api_account("wb-key", AgentId::WorkBuddy, "WorkBuddy key"))
+        .unwrap();
+
+    service.sync_connection_authorizations().unwrap();
+    let listed = service.list_default_overviews().unwrap();
+    assert!(!listed.chat_completions_shared);
+    assert!(chat_member_ids(&listed, AgentId::Kimi).contains(&"kimi-key"));
+    assert!(chat_member_ids(&listed, AgentId::Dsh).contains(&"dsh-key"));
+    assert!(chat_member_ids(&listed, AgentId::Kimi).contains(&"wb-key"));
+    assert!(chat_member_ids(&listed, AgentId::Dsh).contains(&"wb-key"));
+
+    let shared = service.set_chat_completions_shared(true).unwrap();
+    assert!(shared.chat_completions_shared);
+    let kimi_ids = chat_member_ids(&shared, AgentId::Kimi);
+    let dsh_ids = chat_member_ids(&shared, AgentId::Dsh);
+    assert!(kimi_ids.contains(&"kimi-key"));
+    assert!(kimi_ids.contains(&"dsh-key"));
+    assert!(kimi_ids.contains(&"wb-key"));
+    assert!(dsh_ids.is_empty());
+
+    let split = service.set_chat_completions_shared(false).unwrap();
+    assert!(!split.chat_completions_shared);
+    let kimi_ids = chat_member_ids(&split, AgentId::Kimi);
+    let dsh_ids = chat_member_ids(&split, AgentId::Dsh);
+    assert!(kimi_ids.contains(&"kimi-key"));
+    assert!(!kimi_ids.contains(&"dsh-key"));
+    assert!(dsh_ids.contains(&"dsh-key"));
+    assert!(kimi_ids.contains(&"wb-key"));
+    assert!(dsh_ids.contains(&"wb-key"));
+}
+
+#[test]
+fn shared_chat_enrolls_workbuddy_and_dsh_into_kimi_pool() {
+    let (_dir, db, service, _profiles) = tmp();
+    service.set_chat_completions_shared(true).unwrap();
+    AccountRepo::new(db.clone())
+        .create(&chat_api_account("dsh-key", AgentId::Dsh, "DSH key"))
+        .unwrap();
+    AccountRepo::new(db)
+        .create(&chat_api_account("wb-key", AgentId::WorkBuddy, "WorkBuddy key"))
+        .unwrap();
+
+    service.sync_connection_authorizations().unwrap();
+    let listed = service.list_default_overviews().unwrap();
+    assert!(listed.chat_completions_shared);
+    let kimi_ids = chat_member_ids(&listed, AgentId::Kimi);
+    let dsh_ids = chat_member_ids(&listed, AgentId::Dsh);
+    assert!(kimi_ids.contains(&"dsh-key"));
+    assert!(kimi_ids.contains(&"wb-key"));
+    assert!(dsh_ids.is_empty());
+}
+
+#[test]
+fn custom_model_catalog_is_used_for_routing_and_not_refetched() {
+    let (_dir, db, service, _) = tmp();
+    let accounts = AccountRepo::new(db);
+    accounts
+        .create(&Account {
+            id: "grok-oauth-1".into(),
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "grok".into(),
+            credentials: json!({ "access_token": "at" }),
+            extra: json!({ "accountId": "acct-1" }),
+            status: "ok".into(),
+            is_current: false,
+            created_at: "t0".into(),
+            updated_at: "t0".into(),
+        })
+        .unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Grok, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "grok-oauth-1")
+        .unwrap();
+    let first = service
+        .ensure_source_model_catalog(AdapterSourceKind::Account, "grok-oauth-1")
+        .unwrap();
+    assert!(first.can_customize);
+    assert!(first.models.is_empty());
+    let saved = service
+        .set_source_custom_models(
+            AdapterSourceKind::Account,
+            "grok-oauth-1",
+            vec![" grok-4.5 ".into(), "grok-4.5".into(), "grok-4.6".into()],
+        )
+        .unwrap();
+    assert_eq!(saved.source, "custom");
+    assert_eq!(saved.models, vec!["grok-4.5", "grok-4.6"]);
+    let listed = service.list_upstream_models_for_pool(&pool.id).unwrap();
+    assert_eq!(listed, vec!["grok-4.5", "grok-4.6"]);
+    let again = service
+        .ensure_source_model_catalog(AdapterSourceKind::Account, "grok-oauth-1")
+        .unwrap();
+    assert_eq!(again.models, vec!["grok-4.5", "grok-4.6"]);
+}
+
+fn grok_apikey(id: &str, models: &[&str]) -> Account {
+    Account {
+        id: id.into(),
+        agent_id: AgentId::Grok,
+        kind: AccountKind::ApiKey,
+        label: id.into(),
+        credentials: json!({
+            "api_key": "sk-test",
+            "listedModels": models,
+        }),
+        extra: json!({}),
+        status: "ok".into(),
+        is_current: false,
+        created_at: "t0".into(),
+        updated_at: "t0".into(),
+    }
+}
+
+#[test]
+fn refresh_local_token_models_unions_pool_logins_and_bypasses_live_cache() {
+    let (_dir, db, service, _) = tmp();
+    let accounts = AccountRepo::new(db);
+    accounts.create(&grok_apikey("grok-a", &["model-a"])).unwrap();
+    accounts.create(&grok_apikey("grok-b", &["model-b"])).unwrap();
+    let pool = service
+        .ensure_default_pool(AgentId::Grok, RouteDownstreamSurface::Responses)
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "grok-a")
+        .unwrap();
+    service
+        .add_member(&pool.id, AdapterSourceKind::Account, "grok-b")
+        .unwrap();
+    let first = service.list_upstream_models_for_pool(&pool.id).unwrap();
+    assert_eq!(first, vec!["model-a", "model-b"]);
+
+    let mut account = accounts.get_by_id("grok-a").unwrap().unwrap();
+    account.credentials = json!({
+        "api_key": "sk-test",
+        "listedModels": ["model-a2"],
+    });
+    accounts.update(&account).unwrap();
+    assert_eq!(
+        service.list_upstream_models_for_pool(&pool.id).unwrap(),
+        vec!["model-a", "model-b"]
+    );
+
+    service
+        .set_source_custom_models(
+            AdapterSourceKind::Account,
+            "grok-b",
+            vec!["model-b-custom".into()],
+        )
+        .unwrap();
+    let token = service
+        .list_local_tokens()
+        .unwrap()
+        .into_iter()
+        .find(|record| record.pool_id == pool.id)
+        .unwrap()
+        .token;
+    let listed = service.refresh_local_token_models(&token).unwrap();
+    assert_eq!(listed, vec!["model-a2", "model-b-custom"]);
+    let custom = service
+        .ensure_source_model_catalog(AdapterSourceKind::Account, "grok-b")
+        .unwrap();
+    assert_eq!(custom.source, "custom");
+    assert_eq!(custom.models, vec!["model-b-custom"]);
 }

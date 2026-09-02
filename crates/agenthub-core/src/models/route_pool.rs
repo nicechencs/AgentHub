@@ -8,6 +8,7 @@ use std::fmt;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use super::{AdapterApplyPlan, AdapterProfile, AdapterRoute, AdapterSourceKind, AgentId};
 use crate::error::{AppError, Result};
@@ -34,6 +35,13 @@ pub const FEATURE_GROK_INGRESS_CODEX_UPSTREAM: &str = "feature.grok_ingress_code
 /// Explicit mixed-provider composite routes. Off keeps `AmbiguousModel` when
 /// candidates span more than one upstream provider. UI hidden.
 pub const FEATURE_MIXED_PROVIDER_POOL: &str = "feature.mixed_provider_pool";
+
+/// User choice: Kimi and DSH share one chat-completions token. Default off.
+pub const SHARE_CHAT_COMPLETIONS: &str = "share_chat_completions";
+
+/// Shared local-entry switch. Absent means restore (legacy on). Explicit off
+/// keeps the entry stopped across process restart.
+pub const LOCAL_ENTRY_DESIRED_RUNNING: &str = "local_entry_desired_running";
 
 /// Fail-closed experimental flags. Absent / anything other than an explicit
 /// on-value is off. Used by mixed-provider and pair-adapter flags.
@@ -295,6 +303,22 @@ pub fn generate_hub_token() -> Result<String> {
     Ok(format!("ahb_{}", URL_SAFE_NO_PAD.encode(bytes)))
 }
 
+/// `meta.home` / `extra.home` for authorizations created on the auth-pool page.
+/// Connections tickets omit these rows unless the user later associates them.
+pub const AUTHORIZATION_HOME_ROUTE_POOL: &str = "route_pool";
+
+pub fn authorization_is_route_pool_home(blob: &Value) -> bool {
+    blob.get("home").and_then(Value::as_str) == Some(AUTHORIZATION_HOME_ROUTE_POOL)
+}
+
+pub fn set_authorization_route_pool_home(blob: &mut Value) {
+    if let Value::Object(map) = blob {
+        map.insert("home".into(), json!(AUTHORIZATION_HOME_ROUTE_POOL));
+        return;
+    }
+    *blob = json!({ "home": AUTHORIZATION_HOME_ROUTE_POOL });
+}
+
 /// Temporary availability for Routes. Not a stable capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -309,11 +333,28 @@ pub enum MemberAvailability {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteMemberOverview {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     pub source_kind: AdapterSourceKind,
     pub source_id: String,
+    /// Safe user-facing label resolved from the source account/provider.
+    /// OAuth uses its exposed identity when available; API rows use the
+    /// configured account/provider label. Never falls back to a credential.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_label: Option<String>,
+    /// Masked tail of an OAuth refresh token, when the source exposes one.
+    /// This is never the raw refresh token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token_tail: Option<String>,
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "is_default_priority")]
+    pub priority: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub availability: Option<MemberAvailability>,
+}
+
+fn is_default_priority(value: &i64) -> bool {
+    *value == 0
 }
 
 /// Default-pool overview for Routes. Never includes `hub_token`.
@@ -333,12 +374,47 @@ pub struct DefaultRoutePoolOverview {
     pub listed_models: Vec<String>,
 }
 
+/// One credential-free Connections source row selected for pool enrollment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConnectionSource {
+    pub source_kind: AdapterSourceKind,
+    pub source_id: String,
+}
+
+/// Optional source selection for connection-page authorization enrollment.
+/// An omitted request keeps the legacy all-eligible behavior.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConnectionAuthorizationsRequest {
+    pub sources: Vec<SyncConnectionSource>,
+}
+
+/// How many connection-page authorizations were enrolled into default pools.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncConnectionAuthorizationsResult {
+    pub added: u32,
+    pub skipped: u32,
+}
+
 /// Flag-gated list of default pools. Flag off → `enabled=false` and no pools.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DefaultRoutePoolList {
     pub enabled: bool,
     pub pools: Vec<DefaultRoutePoolOverview>,
+    /// Kimi and DSH share one chat-completions local token when true.
+    #[serde(default)]
+    pub chat_completions_shared: bool,
+}
+
+/// Loopback bearer for the tokens page. Not included in pool overview.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalTokenRecord {
+    pub pool_id: String,
+    pub token: String,
 }
 
 /// Pick the unique default pool among candidates for one Agent / surface.

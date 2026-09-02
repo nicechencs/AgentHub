@@ -24,10 +24,11 @@ function mapTrashItem(item: CoreTrashItem): ConnectionTrashItem {
 
 export function createTauriTrashPort(): TrashPort {
   return {
-    async list(agentId) {
+    async list(agentId, home) {
       try {
         const rows = await invoke<CoreTrashItem[]>('list_connection_trash', {
           agentId: agentId ?? null,
+          home: home ?? null,
         });
         return rows.map(mapTrashItem);
       } catch (e) {

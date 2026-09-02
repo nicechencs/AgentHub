@@ -22,16 +22,16 @@ function splitUrl(url: string): { path: string; search: URLSearchParams } {
 }
 
 describe('parseConnectGuideIntent', () => {
-  it('accepts both guide intents', () => {
+  it('accepts all guide intents', () => {
     expect(parseConnectGuideIntent('import-login')).toBe('import-login');
     expect(parseConnectGuideIntent('add-key')).toBe('add-key');
+    expect(parseConnectGuideIntent('oauth')).toBe('oauth');
   });
 
   it('returns null for illegal, empty, or missing intent', () => {
     expect(parseConnectGuideIntent(null)).toBeNull();
     expect(parseConnectGuideIntent(undefined)).toBeNull();
     expect(parseConnectGuideIntent('')).toBeNull();
-    expect(parseConnectGuideIntent('oauth')).toBeNull();
     expect(parseConnectGuideIntent('import_login')).toBeNull();
   });
 });
@@ -84,6 +84,27 @@ describe('buildConnectionsGuideUrl', () => {
     expect(search.get('resume')).toBe('codex');
     expect(url).toBe('/connections?agent=codex&mode=providers&intent=add-key&resume=codex');
   });
+
+  it('builds oauth without mode and without resume', () => {
+    const url = buildConnectionsGuideUrl({ agentId: 'claude', intent: 'oauth' });
+    const { path, search } = splitUrl(url);
+
+    expect(path).toBe('/connections');
+    expect(search.get('agent')).toBe('claude');
+    expect(search.get('intent')).toBe('oauth');
+    expect(search.has('mode')).toBe(false);
+    expect(search.has('resume')).toBe(false);
+    expect(url).toBe('/connections?agent=claude&intent=oauth');
+  });
+
+  it('omits resume when it is empty', () => {
+    const url = buildConnectionsGuideUrl({
+      agentId: 'codex',
+      intent: 'import-login',
+      resumeAgentId: null,
+    });
+    expect(splitUrl(url).search.has('resume')).toBe(false);
+  });
 });
 
 describe('buildResumeConnectUrl', () => {
@@ -101,9 +122,17 @@ describe('readConnectGuide', () => {
     });
   });
 
+  it('reads a valid oauth guide without resume', () => {
+    const search = new URLSearchParams('agent=claude&intent=oauth');
+    expect(readConnectGuide(search, ALLOWED)).toEqual({
+      intent: 'oauth',
+      resumeAgentId: null,
+    });
+  });
+
   it('returns null when intent is illegal or missing', () => {
     expect(readConnectGuide(new URLSearchParams('resume=claude'), ALLOWED)).toBeNull();
-    expect(readConnectGuide(new URLSearchParams('intent=oauth&resume=claude'), ALLOWED)).toBeNull();
+    expect(readConnectGuide(new URLSearchParams('intent=connect&resume=claude'), ALLOWED)).toBeNull();
     expect(readConnectGuide(new URLSearchParams('intent=&resume=claude'), ALLOWED)).toBeNull();
   });
 

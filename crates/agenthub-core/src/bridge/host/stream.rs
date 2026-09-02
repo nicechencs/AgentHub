@@ -20,9 +20,14 @@ use crate::bridge::protocol::pair::{
     sanitize_pair_response, sanitize_pair_sse_event, PairDirection,
 };
 use crate::bridge::protocol::responses::{
-    encode_responses_from_ir, responses_output_to_ir, IrToResponsesSse, ResponsesStreamToIr,
+    aggregate_responses_sse_to_json, encode_responses_from_ir, looks_like_sse_body,
+    responses_output_to_ir, IrToResponsesSse, ResponsesStreamToIr,
 };
-use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError};
+use crate::bridge::types::UPSTREAM_STREAM_INCOMPLETE_ZH;
+use crate::bridge::types::{BridgeEvent, IrEvent, ProtocolError, Usage};
+use crate::bridge::usage_capture::{
+    emit, CaptureContext, GatewayUsageEvent, StreamCaptureGuard,
+};
 
 use super::http::{
     error_response, log_protocol_error, protocol_error_response, sse_data_payload,
@@ -45,6 +50,79 @@ fn partition_account<'a>(state: &'a EdgeState, member: &'a PickedMember) -> Opti
     state.account_picker.partition_account_id(member)
 }
 
+fn since_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+/// Records the first forwarded non-empty payload instant (stream TTFT).
+fn note_ttft(ttft_ms: &mut Option<u64>, started: Instant) {
+    if ttft_ms.is_none() {
+        *ttft_ms = Some(since_ms(started));
+    }
+}
+
+/// Identity skeleton for gateway usage capture; outcome fields are set at the
+/// completion sites below. Capture is best-effort and never fails a response.
+fn usage_event(
+    state: &EdgeState,
+    request_id: &str,
+    started: Instant,
+    member: &PickedMember,
+    capture: &CaptureContext,
+) -> GatewayUsageEvent {
+    GatewayUsageEvent::base(request_id, started, &state.profile_id)
+        .with_member(member)
+        .with_capture(capture)
+        .with_upstream_model(state.upstream.model.as_deref())
+}
+
+fn record_trace_usage(
+    state: &EdgeState,
+    request_id: &str,
+    ttft_ms: Option<u64>,
+    usage: Option<&Usage>,
+) {
+    state.route_traces.patch_usage(
+        request_id,
+        ttft_ms,
+        usage.map(|row| row.input_tokens),
+        usage.map(|row| row.output_tokens),
+    );
+}
+
+fn emit_ok_usage(state: &EdgeState, event: GatewayUsageEvent) {
+    let has_tokens = event.input_tokens > 0 || event.output_tokens > 0;
+    state.route_traces.patch_usage(
+        &event.request_id,
+        event.ttft_ms,
+        has_tokens.then_some(event.input_tokens),
+        has_tokens.then_some(event.output_tokens),
+    );
+    emit(&state.usage_spool, event);
+}
+
+fn finish_stream_usage(
+    state: &EdgeState,
+    request_id: &str,
+    guard: StreamCaptureGuard,
+    ttft_ms: Option<u64>,
+    usage: Option<&Usage>,
+) {
+    record_trace_usage(state, request_id, ttft_ms, usage);
+    guard.succeed(ttft_ms, usage);
+}
+
+/// Extract usage from a decoded non-stream upstream body, reusing the
+/// protocol Usage IR decode helpers per upstream channel.
+fn non_stream_upstream_usage(decode: UpstreamDecode, body: &Value) -> Option<Usage> {
+    let usage = body.get("usage")?;
+    match decode {
+        UpstreamDecode::ChatCompletions => Usage::from_chat_usage(usage),
+        UpstreamDecode::OpenAiResponses => Usage::from_responses_usage(usage),
+        UpstreamDecode::AnthropicMessages => Usage::from_anthropic_usage(usage),
+    }
+}
+
 pub(super) async fn messages_non_stream_response(
     state: EdgeState,
     response: reqwest::Response,
@@ -53,17 +131,41 @@ pub(super) async fn messages_non_stream_response(
     _permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
     member: PickedMember,
+    capture: CaptureContext,
 ) -> Response {
+    let status_code = response.status().as_u16();
     let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
         Ok(value) => value,
-        Err(UpstreamBodyError::Stopping) => return stopping_response(),
+        Err(UpstreamBodyError::Stopping) => {
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(status_code), "bridge_stopping"),
+            );
+            return stopping_response();
+        }
         Err(UpstreamBodyError::InvalidOrTooLarge) => {
             state.record_upstream_failure();
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(status_code), "upstream_invalid"),
+            );
             return error_response(
                 StatusCode::BAD_GATEWAY,
                 "upstream_error",
                 "The upstream model provider returned an invalid response.",
                 None,
+            );
+        }
+        Err(UpstreamBodyError::IncompleteStream) => {
+            return incomplete_stream_response(
+                &state,
+                &request_id,
+                started,
+                &member,
+                &capture,
+                status_code,
             );
         }
     };
@@ -73,7 +175,8 @@ pub(super) async fn messages_non_stream_response(
         partition_account(&state, &member),
         &upstream_body,
     );
-    let translated = match upstream_decode(&state) {
+    let decoded = upstream_decode(&state);
+    let translated = match decoded {
         UpstreamDecode::ChatCompletions => crate::bridge::protocol::chat::translate_chat_response(
             &upstream_body,
             Some(&request_id),
@@ -83,17 +186,28 @@ pub(super) async fn messages_non_stream_response(
         UpstreamDecode::OpenAiResponses => {
             responses_output_to_ir(&upstream_body).and_then(|ir| encode_anthropic_message(&ir))
         }
-        UpstreamDecode::AnthropicMessages => Ok(upstream_body),
+        UpstreamDecode::AnthropicMessages => Ok(upstream_body.clone()),
     };
     match translated {
         Ok(value) => {
             state.record_upstream_success();
             tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "messages", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+            let mut event = usage_event(&state, &request_id, started, &member, &capture)
+                .ok(Some(status_code), None);
+            if let Some(usage) = non_stream_upstream_usage(decoded, &upstream_body) {
+                event = event.with_usage(&usage);
+            }
+            emit_ok_usage(&state, event);
             Json(value).into_response()
         }
         Err(error) => {
             state.record_upstream_failure();
             log_protocol_error(&state, &request_id, started, &error);
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(400), error.code),
+            );
             protocol_error_response(error)
         }
     }
@@ -107,17 +221,41 @@ pub(super) async fn chat_non_stream_response(
     _permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
     member: PickedMember,
+    capture: CaptureContext,
 ) -> Response {
+    let status_code = response.status().as_u16();
     let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
         Ok(value) => value,
-        Err(UpstreamBodyError::Stopping) => return stopping_response(),
+        Err(UpstreamBodyError::Stopping) => {
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(status_code), "bridge_stopping"),
+            );
+            return stopping_response();
+        }
         Err(UpstreamBodyError::InvalidOrTooLarge) => {
             state.record_upstream_failure();
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(status_code), "upstream_invalid"),
+            );
             return error_response(
                 StatusCode::BAD_GATEWAY,
                 "upstream_error",
                 "The upstream model provider returned an invalid response.",
                 None,
+            );
+        }
+        Err(UpstreamBodyError::IncompleteStream) => {
+            return incomplete_stream_response(
+                &state,
+                &request_id,
+                started,
+                &member,
+                &capture,
+                status_code,
             );
         }
     };
@@ -127,10 +265,11 @@ pub(super) async fn chat_non_stream_response(
         partition_account(&state, &member),
         &upstream_body,
     );
-    let translated = match upstream_decode(&state) {
+    let decoded = upstream_decode(&state);
+    let translated = match decoded {
         UpstreamDecode::OpenAiResponses => responses_output_to_ir(&upstream_body)
             .and_then(|ir| encode_chat_from_ir(&ir, Some(&request_id))),
-        UpstreamDecode::ChatCompletions => Ok(upstream_body),
+        UpstreamDecode::ChatCompletions => Ok(upstream_body.clone()),
         UpstreamDecode::AnthropicMessages => anthropic_message_to_ir(&upstream_body)
             .and_then(|ir| encode_chat_from_ir(&ir, Some(&request_id))),
     };
@@ -138,11 +277,22 @@ pub(super) async fn chat_non_stream_response(
         Ok(value) => {
             state.record_upstream_success();
             tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "chat", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+            let mut event = usage_event(&state, &request_id, started, &member, &capture)
+                .ok(Some(status_code), None);
+            if let Some(usage) = non_stream_upstream_usage(decoded, &upstream_body) {
+                event = event.with_usage(&usage);
+            }
+            emit_ok_usage(&state, event);
             Json(value).into_response()
         }
         Err(error) => {
             state.record_upstream_failure();
             log_protocol_error(&state, &request_id, started, &error);
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(400), error.code),
+            );
             protocol_error_response(error)
         }
     }
@@ -156,17 +306,41 @@ pub(super) async fn non_stream_response(
     _permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
     member: PickedMember,
+    capture: CaptureContext,
 ) -> Response {
+    let status_code = response.status().as_u16();
     let upstream_body = match read_bounded_upstream_json(response, &state.force_shutdown).await {
         Ok(value) => value,
-        Err(UpstreamBodyError::Stopping) => return stopping_response(),
+        Err(UpstreamBodyError::Stopping) => {
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(status_code), "bridge_stopping"),
+            );
+            return stopping_response();
+        }
         Err(UpstreamBodyError::InvalidOrTooLarge) => {
             state.record_upstream_failure();
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(status_code), "upstream_invalid"),
+            );
             return error_response(
                 StatusCode::BAD_GATEWAY,
                 "upstream_error",
                 "The upstream model provider returned an invalid response.",
                 None,
+            );
+        }
+        Err(UpstreamBodyError::IncompleteStream) => {
+            return incomplete_stream_response(
+                &state,
+                &request_id,
+                started,
+                &member,
+                &capture,
+                status_code,
             );
         }
     };
@@ -176,24 +350,36 @@ pub(super) async fn non_stream_response(
         partition_account(&state, &member),
         &upstream_body,
     );
-    let translated = match upstream_decode(&state) {
+    let decoded = upstream_decode(&state);
+    let translated = match decoded {
         UpstreamDecode::ChatCompletions => crate::bridge::protocol::chat::translate_chat_response(
             &upstream_body,
             Some(&request_id),
         ),
         UpstreamDecode::AnthropicMessages => anthropic_message_to_ir(&upstream_body)
             .and_then(|ir| encode_responses_from_ir(&ir, Some(&request_id))),
-        UpstreamDecode::OpenAiResponses => Ok(upstream_body),
+        UpstreamDecode::OpenAiResponses => Ok(upstream_body.clone()),
     };
     match translated {
         Ok(value) => {
             state.record_upstream_success();
             tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "responses", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+            let mut event = usage_event(&state, &request_id, started, &member, &capture)
+                .ok(Some(status_code), None);
+            if let Some(usage) = non_stream_upstream_usage(decoded, &upstream_body) {
+                event = event.with_usage(&usage);
+            }
+            emit_ok_usage(&state, event);
             Json(value).into_response()
         }
         Err(error) => {
             state.record_upstream_failure();
             log_protocol_error(&state, &request_id, started, &error);
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(400), error.code),
+            );
             protocol_error_response(error)
         }
     }
@@ -202,6 +388,8 @@ pub(super) async fn non_stream_response(
 pub(super) enum UpstreamBodyError {
     Stopping,
     InvalidOrTooLarge,
+    /// Forced-stream upstream closed before a terminal SSE event.
+    IncompleteStream,
 }
 
 async fn read_bounded_upstream_json(
@@ -220,16 +408,61 @@ async fn read_bounded_upstream_json(
         _ = force_shutdown.cancelled() => return Err(UpstreamBodyError::Stopping),
         next = tokio::time::timeout(UPSTREAM_BODY_IDLE_TIMEOUT, stream.next()) => match next {
             Ok(next) => next,
-            Err(_) => return Err(UpstreamBodyError::InvalidOrTooLarge),
+            Err(_) => {
+                return Err(if looks_like_sse_body(&body) {
+                    UpstreamBodyError::IncompleteStream
+                } else {
+                    UpstreamBodyError::InvalidOrTooLarge
+                });
+            }
         },
     } {
         let chunk = chunk.map_err(|_| UpstreamBodyError::InvalidOrTooLarge)?;
         if body.len().saturating_add(chunk.len()) > BODY_LIMIT_BYTES {
-            return Err(UpstreamBodyError::InvalidOrTooLarge);
+            return Err(if looks_like_sse_body(&body) {
+                UpstreamBodyError::IncompleteStream
+            } else {
+                UpstreamBodyError::InvalidOrTooLarge
+            });
         }
         body.extend_from_slice(&chunk);
     }
-    serde_json::from_slice(&body).map_err(|_| UpstreamBodyError::InvalidOrTooLarge)
+    decode_upstream_json_or_sse(&body)
+}
+
+fn decode_upstream_json_or_sse(body: &[u8]) -> Result<Value, UpstreamBodyError> {
+    if looks_like_sse_body(body) {
+        return match aggregate_responses_sse_to_json(body) {
+            Ok(value) => Ok(value),
+            Err(error) if error.message == UPSTREAM_STREAM_INCOMPLETE_ZH => {
+                Err(UpstreamBodyError::IncompleteStream)
+            }
+            Err(_) => Err(UpstreamBodyError::InvalidOrTooLarge),
+        };
+    }
+    serde_json::from_slice(body).map_err(|_| UpstreamBodyError::InvalidOrTooLarge)
+}
+
+fn incomplete_stream_response(
+    state: &EdgeState,
+    request_id: &str,
+    started: Instant,
+    member: &PickedMember,
+    capture: &CaptureContext,
+    status_code: u16,
+) -> Response {
+    state.record_upstream_failure();
+    emit(
+        &state.usage_spool,
+        usage_event(state, request_id, started, member, capture)
+            .failed(Some(status_code), "upstream_incomplete_stream"),
+    );
+    error_response(
+        StatusCode::BAD_GATEWAY,
+        "upstream_error",
+        UPSTREAM_STREAM_INCOMPLETE_ZH,
+        None,
+    )
 }
 
 async fn read_bounded_upstream_body(
@@ -269,6 +502,7 @@ pub(super) async fn passthrough_json_response(
     replay_seed: Option<String>,
     member: PickedMember,
     pair: Option<PairDirection>,
+    capture: CaptureContext,
 ) -> Response {
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
     let content_type = response
@@ -279,9 +513,21 @@ pub(super) async fn passthrough_json_response(
         .to_owned();
     let body = match read_bounded_upstream_body(response, &state.force_shutdown).await {
         Ok(body) => body,
-        Err(UpstreamBodyError::Stopping) => return stopping_response(),
+        Err(UpstreamBodyError::Stopping) => {
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(status.as_u16()), "bridge_stopping"),
+            );
+            return stopping_response();
+        }
         Err(UpstreamBodyError::InvalidOrTooLarge) => {
             state.record_upstream_failure();
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(status.as_u16()), "upstream_invalid"),
+            );
             return error_response(
                 StatusCode::BAD_GATEWAY,
                 "upstream_error",
@@ -289,11 +535,36 @@ pub(super) async fn passthrough_json_response(
                 None,
             );
         }
+        Err(UpstreamBodyError::IncompleteStream) => {
+            return incomplete_stream_response(
+                &state,
+                &request_id,
+                started,
+                &member,
+                &capture,
+                status.as_u16(),
+            );
+        }
     };
-    let mut value = match serde_json::from_slice::<Value>(&body) {
+    let mut value = match decode_upstream_json_or_sse(&body) {
         Ok(value) => value,
+        Err(UpstreamBodyError::IncompleteStream) => {
+            return incomplete_stream_response(
+                &state,
+                &request_id,
+                started,
+                &member,
+                &capture,
+                status.as_u16(),
+            );
+        }
         Err(_) => {
             state.record_upstream_failure();
+            emit(
+                &state.usage_spool,
+                usage_event(&state, &request_id, started, &member, &capture)
+                    .failed(Some(status.as_u16()), "upstream_invalid"),
+            );
             return error_response(
                 StatusCode::BAD_GATEWAY,
                 "upstream_error",
@@ -317,6 +588,11 @@ pub(super) async fn passthrough_json_response(
             Ok(bytes) => bytes,
             Err(_) => {
                 state.record_upstream_failure();
+                emit(
+                    &state.usage_spool,
+                    usage_event(&state, &request_id, started, &member, &capture)
+                        .failed(Some(status.as_u16()), "upstream_invalid"),
+                );
                 return error_response(
                     StatusCode::BAD_GATEWAY,
                     "upstream_error",
@@ -330,6 +606,13 @@ pub(super) async fn passthrough_json_response(
     };
     state.record_upstream_success();
     tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "passthrough", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
+    // Bytes are relayed without protocol decoding: capture records identity,
+    // status, and latency only; token fields stay zero/NULL.
+    emit_ok_usage(
+        &state,
+        usage_event(&state, &request_id, started, &member, &capture)
+            .ok(Some(status.as_u16()), None),
+    );
     let content_type = HeaderValue::from_str(&content_type)
         .unwrap_or_else(|_| HeaderValue::from_static("application/json"));
     (
@@ -397,6 +680,16 @@ impl StreamCodec {
         match self {
             Self::Kimi(_) => false,
             Self::Anthropic { ir, .. } => ir.completed(),
+        }
+    }
+
+    /// Retained upstream usage (gateway usage capture); `None` until the
+    /// upstream sent a usage object. Retention only — output frames stay
+    /// byte-identical.
+    fn captured_usage(&self) -> Option<Usage> {
+        match self {
+            Self::Kimi(translator) => translator.captured_usage(),
+            Self::Anthropic { ir, .. } => ir.captured_usage(),
         }
     }
 
@@ -613,6 +906,7 @@ pub(super) fn passthrough_sse_response(
     member: PickedMember,
     surface: DownstreamSurface,
     pair: Option<PairDirection>,
+    capture: CaptureContext,
 ) -> Response {
     let profile_id = state.profile_id.clone();
     let account_id = member.source_id.clone();
@@ -621,6 +915,7 @@ pub(super) fn passthrough_sse_response(
     let partition = partition_account(&state, &member).map(str::to_owned);
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
+    let upstream_status = response.status().as_u16();
     let bytes = response.bytes_stream();
     let op = match surface {
         DownstreamSurface::ChatCompletions => "chat_passthrough_stream",
@@ -629,6 +924,15 @@ pub(super) fn passthrough_sse_response(
     };
     let output = stream! {
         let _permit = permit;
+        // Bytes are relayed without protocol decoding: capture records
+        // identity, status, and latency only; token fields stay zero/NULL.
+        let capture_guard = StreamCaptureGuard::new(
+            &observed.usage_spool,
+            usage_event(&observed, &request_id, started, &member, &capture),
+            started,
+            Some(upstream_status),
+        );
+        let mut ttft_ms: Option<u64> = None;
         let mut upstream_bytes = 0usize;
         let should_capture = grok_upstream(&observed);
         let mut capture = Vec::new();
@@ -676,6 +980,7 @@ pub(super) fn passthrough_sse_response(
                 capture.extend_from_slice(&chunk);
             }
             if !is_responses {
+                note_ttft(&mut ttft_ms, started);
                 yield Ok::<_, Infallible>(chunk);
                 continue;
             }
@@ -754,6 +1059,7 @@ pub(super) fn passthrough_sse_response(
                     }
                 };
                 yield Ok::<_, Infallible>(axum::body::Bytes::from(outbound));
+                note_ttft(&mut ttft_ms, started);
                 if terminal {
                     responses_buffer.clear();
                     if trailing_bytes <= capture.len() {
@@ -779,6 +1085,7 @@ pub(super) fn passthrough_sse_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op, status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, None);
     };
     event_stream_response(output)
 }
@@ -790,6 +1097,7 @@ pub(super) fn stream_response(
     started: Instant,
     permit: OwnedSemaphorePermit,
     member: PickedMember,
+    capture: CaptureContext,
 ) -> Response {
     let model = state.upstream.model.clone().unwrap_or_default();
     let profile_id = state.profile_id.clone();
@@ -798,9 +1106,20 @@ pub(super) fn stream_response(
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
     let decode_kind = upstream_decode(&state);
+    let upstream_status = response.status().as_u16();
     let bytes = response.bytes_stream();
     let output = stream! {
         let mut translator = StreamCodec::new(decode_kind, request_id.clone(), model);
+        // Gateway usage capture: failure outcomes are recorded by the guard's
+        // Drop (including a generator dropped on client disconnect); the
+        // success tail disarms it explicitly.
+        let capture_guard = StreamCaptureGuard::new(
+            &observed.usage_spool,
+            usage_event(&observed, &request_id, started, &member, &capture),
+            started,
+            Some(upstream_status),
+        );
+        let mut ttft_ms: Option<u64> = None;
         // `VecDeque` lets us consume complete SSE frames from the front without repeatedly
         // moving the unread tail. The cap counts all upstream bytes, not merely the current
         // partial frame, and the output cap protects a pathological translator expansion.
@@ -883,6 +1202,7 @@ pub(super) fn stream_response(
                         }
                         output_bytes += frame.len();
                         advance_sequence_number(&mut next_sequence_number, event.sequence_number());
+                        note_ttft(&mut ttft_ms, started);
                         yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
                     },
                     Err(_) => {
@@ -918,6 +1238,7 @@ pub(super) fn stream_response(
                     }
                     output_bytes += frame.len();
                     advance_sequence_number(&mut next_sequence_number, event.sequence_number());
+                    note_ttft(&mut ttft_ms, started);
                     yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
                 }
             }
@@ -930,6 +1251,7 @@ pub(super) fn stream_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, translator.captured_usage().as_ref());
     };
     event_stream_response(output)
 }
@@ -964,6 +1286,17 @@ impl MessagesStreamCodec {
             Self::Responses(translator) => translator.finish(),
         }
     }
+
+    /// Retained upstream usage (gateway usage capture); `None` until the
+    /// upstream sent a usage object. Retention only — output frames stay
+    /// byte-identical.
+    fn captured_usage(&self) -> Option<Usage> {
+        match self {
+            Self::Chat(translator) => translator.captured_usage(),
+            Self::Anthropic(translator) => translator.captured_usage(),
+            Self::Responses(translator) => translator.captured_usage(),
+        }
+    }
 }
 
 pub(super) fn messages_stream_response(
@@ -974,6 +1307,7 @@ pub(super) fn messages_stream_response(
     permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
     member: PickedMember,
+    capture: CaptureContext,
 ) -> Response {
     let profile_id = state.profile_id.clone();
     let account_id = member.source_id.clone();
@@ -981,12 +1315,23 @@ pub(super) fn messages_stream_response(
     let partition = partition_account(&state, &member).map(str::to_owned);
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
+    let upstream_status = response.status().as_u16();
     let bytes = response.bytes_stream();
     let error_frame = stream_fail_frame(DownstreamSurface::Messages, 0);
     let output = stream! {
         let model = state.upstream.model.clone().unwrap_or_default();
         let decode_kind = upstream_decode(&state);
         let mut translator = MessagesStreamCodec::new(decode_kind, request_id.clone(), model);
+        // Gateway usage capture: failure outcomes are recorded by the guard's
+        // Drop (including a generator dropped on client disconnect); the
+        // success tail disarms it explicitly.
+        let capture_guard = StreamCaptureGuard::new(
+            &observed.usage_spool,
+            usage_event(&observed, &request_id, started, &member, &capture),
+            started,
+            Some(upstream_status),
+        );
+        let mut ttft_ms: Option<u64> = None;
         let mut encoder = IrToAnthropicSse::new();
         let mut buffer = std::collections::VecDeque::new();
         let mut upstream_bytes = 0usize;
@@ -1090,6 +1435,7 @@ pub(super) fn messages_stream_response(
                             return;
                         }
                         output_bytes += frame.len();
+                        note_ttft(&mut ttft_ms, started);
                         yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
                     }
                 }
@@ -1123,6 +1469,7 @@ pub(super) fn messages_stream_response(
                     return;
                 }
                 output_bytes += frame.len();
+                note_ttft(&mut ttft_ms, started);
                 yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
             }
         }
@@ -1133,6 +1480,7 @@ pub(super) fn messages_stream_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "messages_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, translator.captured_usage().as_ref());
     };
     event_stream_response(output)
 }
@@ -1145,6 +1493,7 @@ pub(super) fn chat_stream_response(
     permit: OwnedSemaphorePermit,
     replay_seed: Option<String>,
     member: PickedMember,
+    capture: CaptureContext,
 ) -> Response {
     let profile_id = state.profile_id.clone();
     let account_id = member.source_id.clone();
@@ -1152,12 +1501,23 @@ pub(super) fn chat_stream_response(
     let partition = partition_account(&state, &member).map(str::to_owned);
     let force_shutdown = state.force_shutdown.clone();
     let observed = state.clone();
+    let upstream_status = response.status().as_u16();
     let bytes = response.bytes_stream();
     let error_frame = stream_fail_frame(DownstreamSurface::ChatCompletions, 0);
     let output = stream! {
         let model = state.upstream.model.clone().unwrap_or_default();
         let decode_kind = upstream_decode(&state);
         let mut translator = MessagesStreamCodec::new(decode_kind, request_id.clone(), model);
+        // Gateway usage capture: failure outcomes are recorded by the guard's
+        // Drop (including a generator dropped on client disconnect); the
+        // success tail disarms it explicitly.
+        let capture_guard = StreamCaptureGuard::new(
+            &observed.usage_spool,
+            usage_event(&observed, &request_id, started, &member, &capture),
+            started,
+            Some(upstream_status),
+        );
+        let mut ttft_ms: Option<u64> = None;
         let mut encoder = IrToChatSse::new(Some(&request_id));
         let mut buffer = std::collections::VecDeque::new();
         let mut upstream_bytes = 0usize;
@@ -1257,6 +1617,7 @@ pub(super) fn chat_stream_response(
                             return;
                         }
                         output_bytes += frame.len();
+                        note_ttft(&mut ttft_ms, started);
                         yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
                     }
                 }
@@ -1290,6 +1651,7 @@ pub(super) fn chat_stream_response(
                     return;
                 }
                 output_bytes += frame.len();
+                note_ttft(&mut ttft_ms, started);
                 yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
             }
         }
@@ -1310,6 +1672,7 @@ pub(super) fn chat_stream_response(
                 return;
             }
             output_bytes += frame.len();
+            note_ttft(&mut ttft_ms, started);
             yield Ok::<_, Infallible>(axum::body::Bytes::from(frame));
         }
         if should_capture {
@@ -1319,6 +1682,7 @@ pub(super) fn chat_stream_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "chat_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
+        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, translator.captured_usage().as_ref());
     };
     event_stream_response(output)
 }

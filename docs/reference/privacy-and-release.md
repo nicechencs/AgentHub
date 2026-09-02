@@ -4,7 +4,7 @@ description: 开源发布、截图、测试数据、OAuth 配置和漏洞披露�
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-25
+updated: 2026-08-31
 ---
 
 # 隐私与发布边界
@@ -52,7 +52,7 @@ Provider detect fixture 的具体写法见 [Provider Detect Fixtures](../../src/
 
 ## OAuth 常量
 
-`crates/agenthub-core/src/oauth/providers.rs` 是各 CLI 的 public client 运行时真源，使用 PKCE 且没有 `client_secret`。这些值仍属于实现配置：
+`crates/agenthub-core/src/oauth/providers.rs` 是各 CLI 的 public client 运行时真源（PKCE 或设备码），没有 `client_secret`。这些值仍属于实现配置：
 
 - 不要把 `client_id`、回调端口、授权端点、token 端点或完整 OAuth payload 抄到 README、Issue、PR 或对外方案；
 - 不要在日志、截图、fixture 或错误消息中记录 authorization code、access token、refresh token 或 cookie；

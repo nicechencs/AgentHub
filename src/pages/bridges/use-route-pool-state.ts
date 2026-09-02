@@ -9,29 +9,38 @@ import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/con
 export function useRoutePoolState(input: {
   profiles: readonly AdapterProfile[];
   detailTarget: AdapterProfile | null;
+  reloadKey?: number;
 }) {
-  const { profiles, detailTarget } = input;
+  const { profiles, detailTarget, reloadKey = 0 } = input;
   const [routePoolV2, setRoutePoolV2] = useState(false);
+  const [chatCompletionsShared, setChatCompletionsShared] = useState(false);
   const [defaultPools, setDefaultPools] = useState<DefaultRoutePoolOverview[]>([]);
+  const [loading, setLoading] = useState(true);
   const [nativeCanApplyById, setNativeCanApplyById] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     void listDefaultRoutePools()
       .then((listed) => {
         if (cancelled) return;
         setRoutePoolV2(listed.enabled);
+        setChatCompletionsShared(listed.chatCompletionsShared === true);
         setDefaultPools(listed.pools);
       })
       .catch(() => {
         if (cancelled) return;
         setRoutePoolV2(false);
+        setChatCompletionsShared(false);
         setDefaultPools([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [profiles]);
+  }, [profiles, reloadKey]);
 
   useEffect(() => {
     if (!routePoolV2 || !detailTarget) return;
@@ -60,7 +69,9 @@ export function useRoutePoolState(input: {
 
   return {
     routePoolV2,
+    chatCompletionsShared,
     defaultPools,
+    loading,
     nativeCanApplyById,
   };
 }

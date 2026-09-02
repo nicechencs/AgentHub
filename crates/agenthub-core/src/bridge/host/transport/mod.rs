@@ -28,6 +28,7 @@ use super::admission::AdmittedRequest;
 use super::http::{
     error_response, log_protocol_error, protocol_error_response, stopping_response, EdgeState,
 };
+use super::route_trace::RouteTraceBuilder;
 use super::stream::UpstreamBodyError;
 use super::surface::DownstreamSurface;
 use super::upstream::{
@@ -136,6 +137,23 @@ impl UpstreamChannel {
         }
     }
 
+    /// Stable name for the gateway usage spool / `gateway_usage` table.
+    #[allow(dead_code)]
+    pub(super) fn name(self) -> &'static str {
+        match self {
+            Self::OpenAiChat => "openai_chat",
+            Self::Anthropic => "anthropic",
+            Self::CodexResponses => "codex_responses",
+            Self::Grok => "grok",
+        }
+    }
+
+    /// Official ChatGPT / Codex Responses requires `stream: true`.
+    /// Grok and other channels follow the downstream request.
+    pub(super) fn forces_upstream_stream(self) -> bool {
+        matches!(self, Self::CodexResponses)
+    }
+
     /// Resolve the transport implementation once. Callers must not match on
     /// this enum for path / auth / prepare / decode / recovery.
     pub(super) fn transport(self) -> &'static dyn UpstreamTransport {
@@ -188,6 +206,8 @@ pub(super) async fn send_upstream(
     cache_seed: Option<&str>,
     member: PickedMember,
     continuation_locked: bool,
+    mut trace: Option<&mut RouteTraceBuilder>,
+    url_for_trace: &str,
 ) -> Result<UpstreamSendOutcome, Response> {
     let transport = channel.transport();
     let recovery = transport.recovery();
@@ -234,6 +254,15 @@ pub(super) async fn send_upstream(
                     failover_from.is_some(),
                     failover_from.as_deref(),
                 );
+                if let Some(trace) = trace.as_deref_mut() {
+                    trace.upstream_auth_result(true, Some(response.status().as_u16()), None, None);
+                    trace.upstream_success(
+                        url_for_trace,
+                        &member,
+                        response.status().as_u16(),
+                        state.upstream.model.as_deref(),
+                    );
+                }
                 return Ok(UpstreamSendOutcome {
                     response,
                     member,
@@ -245,6 +274,9 @@ pub(super) async fn send_upstream(
             let status = response.status();
             let retry_after = response.headers().get(header::RETRY_AFTER).cloned();
             if status == StatusCode::UNAUTHORIZED {
+                if let Some(trace) = trace.as_deref_mut() {
+                    trace.upstream_auth_result(false, Some(status.as_u16()), Some("unauthorized"), None);
+                }
                 match switch_or_reload(
                     state,
                     request_id,
@@ -257,6 +289,15 @@ pub(super) async fn send_upstream(
                     AuthFollowup::Reload => continue,
                     AuthFollowup::Switch if continuation_locked => {
                         let detail = read_error_detail(response, &state.force_shutdown).await?;
+                        if let Some(trace) = trace.as_deref_mut() {
+                            trace.upstream_failed(
+                                url_for_trace,
+                                &member,
+                                Some(status.as_u16()),
+                                "unauthorized",
+                                detail.as_deref().unwrap_or("Upstream authorization failed."),
+                            );
+                        }
                         return Err(map_upstream_http_error(
                             state,
                             request_id,
@@ -271,6 +312,15 @@ pub(super) async fn send_upstream(
                     AuthFollowup::Switch => break,
                     AuthFollowup::Fail => {
                         let detail = read_error_detail(response, &state.force_shutdown).await?;
+                        if let Some(trace) = trace.as_deref_mut() {
+                            trace.upstream_failed(
+                                url_for_trace,
+                                &member,
+                                Some(status.as_u16()),
+                                "unauthorized",
+                                detail.as_deref().unwrap_or("Upstream authorization failed."),
+                            );
+                        }
                         return Err(map_upstream_http_error(
                             state,
                             request_id,
@@ -292,10 +342,21 @@ pub(super) async fn send_upstream(
                 match read_bounded_upstream_error(response, &state.force_shutdown).await {
                     Ok(body) => body,
                     Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
-                    Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
+                    Err(UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream) => {
+                        Vec::new()
+                    }
                 };
             if !can_recover {
                 let detail = extract_upstream_error_detail(&error_body);
+                if let Some(trace) = trace.as_deref_mut() {
+                    trace.upstream_failed(
+                        url_for_trace,
+                        &member,
+                        Some(status.as_u16()),
+                        "upstream_error",
+                        detail.as_deref().unwrap_or("Upstream rejected the request."),
+                    );
+                }
                 return Err(map_upstream_http_error(
                     state,
                     request_id,
@@ -470,7 +531,9 @@ async fn read_error_detail(
     let error_body = match read_bounded_upstream_error(response, force_shutdown).await {
         Ok(body) => body,
         Err(UpstreamBodyError::Stopping) => return Err(stopping_response()),
-        Err(UpstreamBodyError::InvalidOrTooLarge) => Vec::new(),
+        Err(UpstreamBodyError::InvalidOrTooLarge | UpstreamBodyError::IncompleteStream) => {
+            Vec::new()
+        }
     };
     Ok(extract_upstream_error_detail(&error_body))
 }
@@ -507,6 +570,24 @@ pub(super) fn passthrough_responses_object(body: Value) -> Result<(Value, bool),
     }
     let stream_requested = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
     Ok((body, stream_requested))
+}
+
+/// Responses identity-relay still needs a conversation seed. Without this, Codex/Grok
+/// return opaque 400/422 that we previously collapsed to "The request was rejected."
+/// Not applied to Anthropic/Chat passthrough (they speak `messages`).
+pub(super) fn require_responses_conversation_seed(body: &Value) -> Result<(), Response> {
+    let has_seed = ["input", "previous_response_id", "prompt", "conversation"]
+        .iter()
+        .any(|key| body.get(key).is_some());
+    if has_seed {
+        return Ok(());
+    }
+    Err(error_response(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "One of `input`, `previous_response_id`, `prompt`, or `conversation` is required.",
+        None,
+    ))
 }
 
 fn overwrite_configured_model(body: &mut Value, model: Option<&str>, listed: &[String]) {

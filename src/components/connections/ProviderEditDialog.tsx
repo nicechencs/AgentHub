@@ -194,6 +194,11 @@ export function ProviderEditDialog({
   onSaved,
   asPanel = false,
   width,
+  compact = false,
+  compactGrokApiBackend,
+  compactInitialBaseUrl,
+  compactInitialApiKey,
+  compactEndpointPresets,
 }: {
   agentId: AgentId;
   open: boolean;
@@ -203,6 +208,13 @@ export function ProviderEditDialog({
   onSaved: (p: Provider) => void;
   asPanel?: boolean;
   width?: number;
+  /** A focused API form for entry points that only need endpoint, key, and model. */
+  compact?: boolean;
+  /** Fixed by the selected API type; the compact form does not expose this setting. */
+  compactGrokApiBackend?: 'responses' | 'chat_completions';
+  compactInitialBaseUrl?: string;
+  compactInitialApiKey?: string;
+  compactEndpointPresets?: readonly { id: string; label: string; baseUrl: string }[];
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -348,6 +360,21 @@ export function ProviderEditDialog({
     ]);
   }, [useOfficial]);
 
+  const compactHiddenKeys = React.useMemo(
+    () =>
+      new Set(
+        (configSchema?.fields ?? [])
+          .map((field) => field.key)
+          .filter((key) => !['baseUrl', 'apiKey', 'model'].includes(key)),
+      ),
+    [configSchema],
+  );
+
+  const compactEndpointValue = React.useMemo(() => {
+    const matched = compactEndpointPresets?.find((preset) => preset.baseUrl === vars.baseUrl);
+    return matched?.id ?? 'custom';
+  }, [compactEndpointPresets, vars.baseUrl]);
+
   const applyOfficialDefaults = React.useCallback(
     (keepKey?: string) => {
       const form = officialFormState(agentId, keepKey ?? '');
@@ -417,13 +444,35 @@ export function ProviderEditDialog({
       setShowAdvanced(true);
       return;
     }
-    // 新增：有官方模板才默认官方（Pi 无单一官方 URL）
+    // 新增：有官方模板才默认官方（Pi 无单一官方 URL）。
+    // 精简 API 表单始终使用自定义配置，保证接口地址和模型可以直接填写。
     setName('');
     setConfigError(null);
-    setUseOfficial(agentHasOfficialApiTemplate(agentId));
-    setShowAdvanced(true);
+    setUseOfficial(compact ? false : agentHasOfficialApiTemplate(agentId));
+    setShowAdvanced(!compact);
     applyOfficialDefaults();
-  }, [open, isEdit, provider, agentId, applyOfficialDefaults, t]);
+    if (compactInitialBaseUrl || compactInitialApiKey || (agentId === 'grok' && compactGrokApiBackend)) {
+      setVars((current) => ({
+        ...current,
+        ...(compactInitialBaseUrl ? { baseUrl: compactInitialBaseUrl } : {}),
+        ...(compactInitialApiKey ? { apiKey: compactInitialApiKey } : {}),
+        ...(agentId === 'grok' && compactGrokApiBackend
+          ? { apiBackend: compactGrokApiBackend }
+          : {}),
+      }));
+    }
+  }, [
+    open,
+    isEdit,
+    provider,
+    agentId,
+    applyOfficialDefaults,
+    compact,
+    compactGrokApiBackend,
+    compactInitialBaseUrl,
+    compactInitialApiKey,
+    t,
+  ]);
 
   const onToggleOfficial = (checked: boolean) => {
     const next = officialToggleNext({
@@ -910,32 +959,34 @@ export function ProviderEditDialog({
         return;
       }
 
-      const endpointLabel =
-        agentId === 'pi'
-          ? isPiAuthJsonSlot(saveVars.providerSlug) && !saveVars.baseUrl.trim()
-            ? t('connections.providerDialog.officialVendorSlot')
-            : t('connections.list.customEndpoint')
-          : useOfficial
-            ? t('connections.list.officialEndpoint')
-            : t('connections.list.customEndpoint');
-      toast({
-        title: isEdit ? t('connections.apiKeyDialog.updated') : t('connections.apiKeyDialog.added'),
-        description: result.provider.isCurrent
-          ? t(
-              isCatalogAppendOccupancy(catalogEntry?.occupancy)
-                ? 'connections.providerDialog.wroteCatalog'
-                : 'connections.providerDialog.wroteLocal',
-              {
+      if (!compact) {
+        const endpointLabel =
+          agentId === 'pi'
+            ? isPiAuthJsonSlot(saveVars.providerSlug) && !saveVars.baseUrl.trim()
+              ? t('connections.providerDialog.officialVendorSlot')
+              : t('connections.list.customEndpoint')
+            : useOfficial
+              ? t('connections.list.officialEndpoint')
+              : t('connections.list.customEndpoint');
+        toast({
+          title: isEdit ? t('connections.apiKeyDialog.updated') : t('connections.apiKeyDialog.added'),
+          description: result.provider.isCurrent
+            ? t(
+                isCatalogAppendOccupancy(catalogEntry?.occupancy)
+                  ? 'connections.providerDialog.wroteCatalog'
+                  : 'connections.providerDialog.wroteLocal',
+                {
+                  name: result.provider.name,
+                  endpoint: endpointLabel,
+                },
+              )
+            : t('connections.providerDialog.savedPool', {
                 name: result.provider.name,
                 endpoint: endpointLabel,
-              },
-            )
-          : t('connections.providerDialog.savedPool', {
-              name: result.provider.name,
-              endpoint: endpointLabel,
-            }),
-        variant: 'success',
-      });
+              }),
+          variant: 'success',
+        });
+      }
       onSaved(result.provider);
       onOpenChange(false);
     } catch (e) {
@@ -976,6 +1027,8 @@ export function ProviderEditDialog({
 
   const form = (
         <div className="flex flex-col gap-3">
+          {!compact ? (
+            <>
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-border bg-canvas px-3 py-2 text-meta text-muted">
             <div className="min-w-0 flex-1 space-y-0.5">
               <div className="min-w-0">
@@ -1114,6 +1167,8 @@ export function ProviderEditDialog({
               ? t('connections.providerDialog.tomlOpaque')
               : '\u00a0'}
           </p>
+            </>
+          ) : null}
 
           {configError ? (
             <p
@@ -1122,6 +1177,31 @@ export function ProviderEditDialog({
             >
               {t('connections.providerDialog.configErrorKeep', { error: configError })}
             </p>
+          ) : null}
+
+          {compact && compactEndpointPresets?.length ? (
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted">{t('connections.list.provider')}</span>
+              <Select
+                value={compactEndpointValue}
+                onValueChange={(value) => {
+                  const preset = compactEndpointPresets.find((item) => item.id === value);
+                  if (preset) patchVars({ baseUrl: preset.baseUrl });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {compactEndpointPresets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="custom">{t('connections.list.custom')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
           ) : null}
 
           {schemaStatus === 'loading' || schemaStatus === 'idle' ? (
@@ -1170,13 +1250,14 @@ export function ProviderEditDialog({
                 patchVars(patch);
               }}
               readOnlyKeys={schemaReadOnlyKeys}
+              hiddenKeys={compact ? compactHiddenKeys : undefined}
               disabled={false}
               suggestions={
                 !useOfficial && remoteStatus.showPicker ? { model: remoteModels } : undefined
               }
               fieldStatus={modelFieldStatus ? { model: modelFieldStatus } : undefined}
               fieldActions={
-                testModelsAction
+                !compact && testModelsAction
                   ? agentId === 'codex'
                     ? { apiKey: testModelsAction }
                     : { model: testModelsAction }
@@ -1298,6 +1379,7 @@ export function ProviderEditDialog({
             </>
           ) : null}
 
+          {!compact ? (
           <div className="flex flex-col gap-2">
             <button
               type="button"
@@ -1323,6 +1405,7 @@ export function ProviderEditDialog({
               />
             ) : null}
           </div>
+          ) : null}
         </div>
   );
 

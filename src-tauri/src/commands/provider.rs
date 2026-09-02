@@ -172,6 +172,20 @@ pub async fn list_remote_openai_models(
     .map_err(|e| format!("command join error: {e}"))?
 }
 
+/// Invoke: `detect_api_endpoint_types` — probe the known API paths without a model request.
+#[tauri::command]
+pub async fn detect_api_endpoint_types(
+    base_url: String,
+    api_key: String,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        agenthub_core::utils::remote_openai_models::detect_api_endpoint_types(&base_url, &api_key)
+            .map_err(|e| map_err_string("detect_api_endpoint_types", e))
+    })
+    .await
+    .map_err(|e| format!("command join error: {e}"))?
+}
+
 /// Invoke: `list_remote_openai_models_for_provider` — GET {base}/v1/models
 /// using the unredacted stored secret. Never returns the raw key.
 #[tauri::command]

@@ -11,13 +11,16 @@ import {
   agentConversationEndpoints,
   agentConversationSurface,
   agentConversationSurfaces,
+  catalogChannelCommand,
   catalogChannelLabel,
+  copyableChannelCommand,
   displayAgentConfigDir,
   formatAgentConversationEndpoints,
   installChannelKindLabel,
   installLocationSourceLabel,
   isNpmPackageCatalogLabel,
   isRawInstallChannelLabel,
+  missingCatalogChannels,
 } from './agent-detail-model';
 import type { AgentStatus } from '@/lib/types';
 
@@ -72,7 +75,7 @@ describe('agent conversation surfaces', () => {
     expect(agentConversationEndpoints('codex')[0]?.path).toBe('/v1/responses');
     expect(agentConversationEndpoints('grok')[0]).toMatchObject({
       path: '/v1/responses',
-      brandAgentId: 'codex',
+      brandAgentId: 'grok',
     });
     expect(agentConversationEndpoints('kimi').map((row) => row.path)).toEqual([
       '/v1/messages',
@@ -174,6 +177,35 @@ describe('install channel labels', () => {
     expect(extraCopyKindLabel('native', tZh)).toBe('官方脚本');
     expect(extraCopyKindLabel('npm', tZh)).toBe('npm 包');
     expect(zh.agents.card.channelNpm).toBe('npm 包');
+    expect(catalogChannelCommand('claude', 'native')).toMatch(/install\.(ps1|sh)/);
+    expect(catalogChannelCommand('dsh', 'npm')).toBe('npm i -g @deepseek-ai/dsh');
+    expect(copyableChannelCommand('claude', 'native', tZh)).toBe(catalogChannelCommand('claude', 'native'));
+    expect(copyableChannelCommand('dsh', 'npm', tZh)).toBe('npm i -g @deepseek-ai/dsh');
+    expect(copyableChannelCommand('workbuddy', 'native', tZh)).toBeUndefined();
+    expect(copyableChannelCommand('claude', 'ide', tZh)).toBeUndefined();
+  });
+});
+
+describe('missing catalog channels', () => {
+  it('lists Codex npm when that copy is not on disk', () => {
+    const missing = missingCatalogChannels({
+      agentId: 'codex',
+      installed: false,
+    });
+    expect(missing.some((row) => row.id === 'npm')).toBe(true);
+    expect(missing.find((row) => row.id === 'npm')?.command).toBe('npm i -g @openai/codex');
+  });
+
+  it('omits Codex npm after that copy is installed, even if leftover remains', () => {
+    expect(
+      missingCatalogChannels(installed('codex', 'npm')).every((row) => row.id !== 'npm'),
+    ).toBe(true);
+    expect(
+      missingCatalogChannels({
+        ...installed('codex', 'native'),
+        extraCopies: [],
+      }).some((row) => row.id === 'npm'),
+    ).toBe(true);
   });
 });
 
@@ -198,7 +230,7 @@ describe('AgentDetailPanel markup', () => {
     expect(html).toContain('/v1/messages');
     expect(html).not.toContain('Claude 对话');
     expect(html).toContain('var(--agent-claude)');
-    expect(html).toContain('官方脚本');
+    expect(html).toContain('>官方脚本</button>');
     expect(html).not.toMatch(/>native</);
     expect(html).toContain('~/.claude');
     expect(html).not.toMatch(/配置目录<\/span>/);
@@ -243,10 +275,58 @@ describe('AgentDetailPanel markup', () => {
 
   it('shows npm 包 as 渠道 and keeps the package id on 安装位置', () => {
     const html = renderPanel(installed('codex', 'npm'));
-    expect(html).toContain('npm 包');
-    expect(html).toContain('npm @openai/codex');
+    expect(html).toContain('>npm 包</button>');
+    expect(html).toContain('>npm @openai/codex</button>');
     expect(html).not.toMatch(/>npm</);
     expect(html).not.toContain('渠道</dt><dd class="min-w-0 break-all text-secondary">npm @');
+  });
+
+  it('lets a click on the npm package name copy that channel\'s install command', () => {
+    const html = renderPanel(installed('dsh', 'npm'));
+    expect(html).toContain('>npm @deepseek-ai/dsh</button>');
+    expect(html).toContain('复制命令');
+  });
+
+  it('puts an upgrade button on the installed channel', () => {
+    const html = renderPanel(installed('codex', 'npm'));
+    expect(html).toContain('强制升级');
+    expect(html).toContain('打开安装目录');
+  });
+
+  it('grays the upgrade on a desktop copy and hints to update there', () => {
+    const html = renderPanel(installed('codex', 'desktop'));
+    expect(html).toContain('请到桌面应用更新');
+    expect(html).not.toContain('强制升级');
+  });
+
+  it('lists missing Codex npm with the install command and an Install button, without a path', () => {
+    const html = renderPanel({
+      agentId: 'codex',
+      installed: false,
+      authStatus: 'none',
+      authLabel: '未配置',
+      running: false,
+    });
+    expect(html).toContain('npm @openai/codex');
+    expect(html).toContain('npm i -g @openai/codex');
+    expect(html).toContain('>npm @openai/codex</button>');
+    expect(html).toContain('复制命令');
+    expect(html).toContain('安装');
+    expect(html).not.toContain('/home/box');
+    expect(html).not.toContain('AppData');
+    expect(html).not.toContain('打开安装目录');
+  });
+
+  it('keeps the installed native path and still offers missing npm install', () => {
+    const html = renderPanel(installed('codex', 'native'));
+    expect(html).toContain('/home/box/.local/bin/codex');
+    expect(html).toContain('打开安装目录');
+    expect(html).toContain('仅卸载程序');
+    expect(html).toContain('npm i -g @openai/codex');
+    expect(html).toContain('复制命令');
+    expect(html).toContain('安装');
+    expect(html).toContain(zh.agents.card.channelOptional);
+    expect(html.includes(zh.agents.card.notInstalled)).toBe(false);
   });
 
   it('opens an empty detail for an uninstalled agent', () => {
@@ -283,6 +363,9 @@ describe('AgentDetailPanel markup', () => {
     });
     expect(html).toContain('遗留数据目录 npm');
     expect(html).toContain('/v1/responses');
+    expect(html).toContain('勿从此路径启动');
+    expect(html).toContain('text-warning');
+    expect(html).toContain('border-warning/45');
     expect(html).not.toMatch(/>native</);
     expect(html).not.toMatch(/>npm</);
   });

@@ -12,7 +12,7 @@ import {
   setMockRoutePoolV2,
 } from './adapter';
 import type { MockAdapterApplyPlan } from './adapter/plan';
-import { getMockAccountById } from './account';
+import { getMockAccountById, upsertMockAccount } from './account';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
   seedConnectFlowAdapterFixtures,
@@ -155,7 +155,11 @@ describe('mock adapter projection', () => {
     }]);
     await expect(adapter.listDefaultRoutePools()).resolves.toMatchObject({ enabled: true });
     setMockRoutePoolV2(false);
-    await expect(adapter.listDefaultRoutePools()).resolves.toEqual({ enabled: false, pools: [] });
+    await expect(adapter.listDefaultRoutePools()).resolves.toEqual({
+      enabled: false,
+      pools: [],
+      chatCompletionsShared: false,
+    });
     await expect(adapter.enrollNativeToGateway(nativeId)).rejects.toMatchObject({
       code: 'unsupported',
     });
@@ -166,6 +170,96 @@ describe('mock adapter projection', () => {
     expect(JSON.stringify(enrolled)).not.toContain('must-not-leak');
     expect(JSON.stringify(enrolled)).not.toContain('hubToken');
     expect(JSON.stringify(enrolled)).not.toContain('ahb_');
+  });
+
+  it('attaches a provider to the default auth pool without listing it as a connection ticket', async () => {
+    const sourceId = `codex-pool-${Date.now()}-${Math.random()}`;
+    await createMockProviderPort().upsertProvider({
+      id: sourceId,
+      agentId: 'codex',
+      name: 'Codex API',
+      preset: 'custom',
+      configText: 'api_key = "must-not-leak"',
+      configFormat: 'toml',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    const overview = await adapter.attachPoolOwnedAuthorization({
+      sourceKind: 'provider',
+      sourceId,
+      targetAgentId: 'codex',
+      surface: 'responses',
+    });
+    expect(overview.targetAgentId).toBe('codex');
+    expect(overview.surface).toBe('responses');
+    expect(overview.members).toEqual([
+      expect.objectContaining({ sourceKind: 'provider', sourceId, enabled: true }),
+    ]);
+    expect(getMockProviderById(sourceId)?.home).toBe('route_pool');
+    expect(JSON.stringify(overview)).not.toContain('must-not-leak');
+
+    const removed = await adapter.removeRouteAuthorization('provider', sourceId);
+    expect(removed).toBe(1);
+    const listed = await adapter.listDefaultRoutePools();
+    expect(listed.pools.every((pool) => (
+      pool.members.every((member) => member.sourceId !== sourceId)
+    ))).toBe(true);
+    expect(getMockProviderById(sourceId)).toBeTruthy();
+  });
+
+  it('syncs Connections authorizations into the default pool without hiding them', async () => {
+    const sourceId = `codex-conn-${Date.now()}-${Math.random()}`;
+    await createMockProviderPort().upsertProvider({
+      id: sourceId,
+      agentId: 'codex',
+      name: 'Connection API',
+      preset: 'custom',
+      configText: 'api_key = "must-not-leak"',
+      configFormat: 'toml',
+      isCurrent: false,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    const first = await adapter.syncConnectionAuthorizations();
+    expect(first.added).toBeGreaterThan(0);
+    const listed = await adapter.listDefaultRoutePools();
+    expect(listed.pools.some((pool) => (
+      pool.members.some((member) => member.sourceId === sourceId)
+    ))).toBe(true);
+    expect(getMockProviderById(sourceId)?.home).not.toBe('route_pool');
+    const second = await adapter.syncConnectionAuthorizations();
+    expect(second.added).toBe(0);
+  });
+
+  it('syncs WorkBuddy and ZCode API keys instead of skipping them by Agent', async () => {
+    const wbId = `wb-conn-${Date.now()}-${Math.random()}`;
+    const zcodeId = `zcode-conn-${Date.now()}-${Math.random()}`;
+    upsertMockAccount({
+      id: wbId,
+      agentId: 'workbuddy',
+      kind: 'apikey',
+      label: 'WorkBuddy custom',
+      isCurrent: false,
+      tokenValid: true,
+    });
+    upsertMockAccount({
+      id: zcodeId,
+      agentId: 'zcode',
+      kind: 'apikey',
+      label: 'ZCode API Key',
+      isCurrent: false,
+      tokenValid: true,
+    });
+    const adapter = createMockAdapterPort(resolver);
+    const result = await adapter.syncConnectionAuthorizations({
+      sources: [
+        { sourceKind: 'account', sourceId: wbId },
+        { sourceKind: 'account', sourceId: zcodeId },
+      ],
+    });
+    expect(result.added).toBe(2);
+    const listed = await adapter.listDefaultRoutePools();
+    const sourceIds = listed.pools.flatMap((pool) => pool.members.map((member) => member.sourceId));
+    expect(sourceIds).toEqual(expect.arrayContaining([wbId, zcodeId]));
   });
 
   it('removes the active generated Connection and its provider', async () => {

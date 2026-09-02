@@ -2,6 +2,10 @@ import {
   adapterCommandError,
   isAdapterErrorCodeRetryable,
   type AdapterPort,
+  type SourceModelCatalog,
+  type SourceModelCatalogSource,
+  type SyncConnectionAuthorizationsRequest,
+  type SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
 import {
   mapAdapterApplyPlan,
@@ -11,10 +15,16 @@ import {
   mapAdapterRouteAnalysis,
   mapDefaultRoutePoolList,
   mapDefaultRoutePoolOverview,
+  mapLocalEntryStatus,
+  mapLocalTokenProbeResult,
+  mapLocalTokenRecord,
   type AdapterApplyPlanWire,
   type AdapterApplyResultWireInput,
   type AdapterBridgeStatusDtoWire,
   type AdapterProfileWire,
+  type LocalEntryStatusWire,
+  type LocalTokenProbeResultWire,
+  type LocalTokenRecordWire,
   type AdapterRouteAnalysisWire,
   type DefaultRoutePoolListWire,
   type DefaultRoutePoolOverviewWire,
@@ -23,6 +33,29 @@ import { invoke } from './invoke';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+type SourceModelCatalogWire = {
+  models?: unknown;
+  source?: unknown;
+  canCustomize?: unknown;
+};
+
+function mapSourceModelCatalog(wire: SourceModelCatalogWire | null | undefined): SourceModelCatalog {
+  const models = Array.isArray(wire?.models)
+    ? wire.models.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+  const source: SourceModelCatalogSource =
+    wire?.source === 'live' || wire?.source === 'custom' || wire?.source === 'empty'
+      ? wire.source
+      : models.length > 0
+        ? 'live'
+        : 'empty';
+  return {
+    models,
+    source,
+    canCustomize: wire?.canCustomize === true || source !== 'live',
+  };
 }
 
 function payloadFromUnknown(error: unknown): unknown {
@@ -94,6 +127,100 @@ export function createTauriAdapterPort(): AdapterPort {
       const wire = await invokeAdapter<DefaultRoutePoolListWire>('list_default_route_pools', {});
       return mapDefaultRoutePoolList(wire);
     },
+    async listLocalTokens() {
+      const wire = await invokeAdapter<LocalTokenRecordWire[]>('list_local_tokens', {});
+      return Array.isArray(wire) ? wire.map(mapLocalTokenRecord) : [];
+    },
+    async listLocalTokenModels(token) {
+      const wire = await invokeAdapter<string[]>('list_local_token_models', { token });
+      return Array.isArray(wire)
+        ? wire.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        : [];
+    },
+    async refreshLocalTokenModels(token) {
+      const wire = await invokeAdapter<string[]>('refresh_local_token_models', { token });
+      return Array.isArray(wire)
+        ? wire.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        : [];
+    },
+    async setLocalTokenCustomModels(token, models) {
+      const wire = await invokeAdapter<string[]>('set_local_token_custom_models', { token, models });
+      return Array.isArray(wire)
+        ? wire.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        : [];
+    },
+    async ensureSourceModelCatalog(sourceKind, sourceId) {
+      return mapSourceModelCatalog(
+        await invokeAdapter<SourceModelCatalogWire>('ensure_source_model_catalog', {
+          sourceKind,
+          sourceId,
+        }),
+      );
+    },
+    async setSourceCustomModels(sourceKind, sourceId, models) {
+      return mapSourceModelCatalog(
+        await invokeAdapter<SourceModelCatalogWire>('set_source_custom_models', {
+          sourceKind,
+          sourceId,
+          models,
+        }),
+      );
+    },
+    async testLocalToken(endpoint, token, path, model) {
+      const trimmedModel = model?.trim();
+      const wire = await invokeAdapter<LocalTokenProbeResultWire>('test_local_token', {
+        endpoint,
+        token,
+        path,
+        ...(trimmedModel ? { model: trimmedModel } : {}),
+      });
+      return mapLocalTokenProbeResult(wire ?? {});
+    },
+    async setLocalToken(poolId, token) {
+      const wire = await invokeAdapter<LocalTokenRecordWire>('set_local_token', { poolId, token });
+      return mapLocalTokenRecord(wire);
+    },
+    async setChatCompletionsShared(shared: boolean) {
+      const wire = await invokeAdapter<DefaultRoutePoolListWire>('set_chat_completions_shared', { shared });
+      return mapDefaultRoutePoolList(wire);
+    },
+    async attachPoolOwnedAuthorization(request) {
+      const wire = await invokeAdapter<DefaultRoutePoolOverviewWire>('attach_pool_owned_authorization', {
+        ...request,
+      });
+      return mapDefaultRoutePoolOverview(wire);
+    },
+    async setRouteAuthorizationEnabled(sourceKind, sourceId, enabled) {
+      return invokeAdapter<number>('set_route_authorization_enabled', {
+        sourceKind,
+        sourceId,
+        enabled,
+      });
+    },
+    async setRouteAuthorizationPriority(sourceKind, sourceId, priority) {
+      return invokeAdapter<number>('set_route_authorization_priority', {
+        sourceKind,
+        sourceId,
+        priority,
+      });
+    },
+    async removeRouteAuthorization(sourceKind, sourceId) {
+      return invokeAdapter<number>('remove_route_authorization', {
+        sourceKind,
+        sourceId,
+      });
+    },
+    async recycleRouteMembership(sourceKind, sourceId) {
+      return invokeAdapter<number>('recycle_route_membership', {
+        sourceKind,
+        sourceId,
+      });
+    },
+    async syncConnectionAuthorizations(request?: SyncConnectionAuthorizationsRequest) {
+      return invokeAdapter<SyncConnectionAuthorizationsResult>('sync_connection_authorizations', request
+        ? { request: { sources: request.sources.map((source) => ({ ...source })) } }
+        : {});
+    },
     async enrollNativeToGateway(profileId) {
       const wire = await invokeAdapter<DefaultRoutePoolOverviewWire>('enroll_native_to_gateway', {
         profileId,
@@ -127,6 +254,18 @@ export function createTauriAdapterPort(): AdapterPort {
         autoStart,
       });
       return mapAdapterProfile(wire);
+    },
+    async startLocalEntry() {
+      const wire = await invokeAdapter<LocalEntryStatusWire>('start_local_entry', {});
+      return mapLocalEntryStatus(wire);
+    },
+    async stopLocalEntry() {
+      const wire = await invokeAdapter<LocalEntryStatusWire>('stop_local_entry', {});
+      return mapLocalEntryStatus(wire);
+    },
+    async getLocalEntryStatus() {
+      const wire = await invokeAdapter<LocalEntryStatusWire>('get_local_entry_status', {});
+      return mapLocalEntryStatus(wire);
     },
   };
 }

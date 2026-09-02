@@ -745,7 +745,7 @@ function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
       `model = "${model}"`,
       ...(baseUrl ? [`base_url = "${baseUrl}"`] : []),
       'env_key = "XAI_API_KEY"',
-      'api_backend = "responses"',
+      `api_backend = "${vars.apiBackend?.trim() || 'responses'}"`,
       '',
       extra,
     ]
@@ -768,6 +768,9 @@ function applyGrokFormVars(configText: string, vars: ProviderFormVars): string {
     if (!keepCustom) {
       text = tomlTableSet(text, table, 'base_url', next);
     }
+  }
+  if (vars.apiBackend?.trim()) {
+    text = tomlTableSet(text, table, 'api_backend', vars.apiBackend.trim());
   }
   const hasEnvKey = Boolean(tomlTableGet(text, table, 'env_key'));
   const secret = writableSecret(vars.apiKey);
@@ -902,6 +905,7 @@ export function extractFormVars(
         tomlTableGet(configText, table, 'base_url') ||
         tomlGet(configText, 'base_url'),
       apiKey: sanitizeSecretForForm(rawKey),
+      apiBackend: tomlTableGet(configText, table, 'api_backend') || 'responses',
     };
   }
 
@@ -1044,7 +1048,8 @@ export function applyFormVars(
     vars.apiKey.trim() ||
     vars.model.trim() ||
     vars.reasoningEffort.trim() ||
-    vars.wireApi.trim();
+    vars.wireApi.trim() ||
+    vars.apiBackend?.trim();
   if (isOpaqueRedactedToml(configText) && !touched) {
     return REDACTED_MARKER;
   }
@@ -1162,7 +1167,7 @@ function defaultTomlScaffold(agentId: AgentId, vars: ProviderFormVars): string {
     `model = "${grokModel}"`,
     `base_url = "${vars.baseUrl.trim() || 'https://your-relay.example.com/v1'}"`,
     'env_key = "XAI_API_KEY"',
-    'api_backend = "responses"',
+    `api_backend = "${vars.apiBackend?.trim() || 'responses'}"`,
     '',
   ].join('\n');
 }
@@ -1189,6 +1194,7 @@ export function formFieldVisibility(
     claudeAuthEnv: isClaude,
     reasoningEffort: agentId === 'codex',
     wireApi: agentId === 'codex',
+    apiBackend: agentId === 'grok',
     providerSlug: agentId === 'pi',
   };
 }
@@ -1207,5 +1213,6 @@ export const FORM_FIELD_LABELS: Record<FormFieldKey, string> = {
   claudeAuthEnv: '密钥写入方式',
   reasoningEffort: '思考强度',
   wireApi: '接口格式',
+  apiBackend: '接口格式',
   providerSlug: '服务商',
 };

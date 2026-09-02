@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: adapter, mock, and route contributors
 source-of-truth: crates/agenthub-core AdapterRouteService, src/dev/mocks/adapter, and adapter-capability-contract.json
-updated: 2026-08-29
+updated: 2026-08-31
 ---
 
 # Adapter 路线内核与查表投影
@@ -55,7 +55,7 @@ Tauri command 的 wire 使用 core 的 serde 形状。`src/lib/backend/contracts
 
 ## 验证跟爆炸半径走
 
-继续使用 [测试与验证](../guides/testing-and-validation.md) 与 [AGENTS.md](../../AGENTS.md) 的同一套风险分级，不要另造命令表。
+风险分级以 [AGENTS.md](../../AGENTS.md) 为准；分层命令见 [测试与验证](../guides/testing-and-validation.md)。不要另造命令表。
 
 | 改了什么 | 内环 | 不要默认升级为 |
 |---|---|---|

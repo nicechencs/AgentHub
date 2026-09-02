@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { resolveAgentMeta } from '@/config/agents';
 import type { AgentId } from '@/lib/types';
 import { Hint } from '@/components/ui/tooltip';
@@ -32,7 +33,7 @@ function brandHex(agentId: AgentId): string | undefined {
   return undefined;
 }
 
-/** logo 用字母圆标代替(初版无真实 logo 资源) */
+/** 展示 agent 本地 logo；未知 agent 或 logo 加载失败时回退为首字母圆标。 */
 export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentId; size?: 'sm' | 'md' | 'lg' }) {
   const meta = resolveAgentMeta(agentId);
   const sizeCls = {
@@ -44,19 +45,87 @@ export function AgentLogo({ agentId, size = 'md' }: { agentId: AgentId; size?: '
   const color = meta.color;
   const letter = meta.letter;
   const name = meta.name;
+  const svgLogoSrc = meta.logoSvgSrc;
+  const pngLogoSrc = meta.logoSrc;
+  const logoBackground = meta.logoBackground ?? '#ffffff';
+
+  type LogoLoadState = {
+    agentId: AgentId;
+    svgSrc?: string;
+    pngSrc?: string;
+    svgFailed: boolean;
+    pngFailed: boolean;
+  };
+
+  // Keep failures scoped to the exact agent/source pair. A different
+  // agent—or a refreshed asset URL—must get a fresh chance to render its logo.
+  const [logoState, setLogoState] = useState<LogoLoadState>({
+    agentId,
+    svgSrc: svgLogoSrc,
+    pngSrc: pngLogoSrc,
+    svgFailed: false,
+    pngFailed: false,
+  });
+  const sameAssetSet =
+    logoState.agentId === agentId &&
+    logoState.svgSrc === svgLogoSrc &&
+    logoState.pngSrc === pngLogoSrc;
+  const svgFailed = sameAssetSet && logoState.svgFailed;
+  const pngFailed = sameAssetSet && logoState.pngFailed;
+  const logoSrc = svgLogoSrc && !svgFailed ? svgLogoSrc : !pngFailed ? pngLogoSrc : undefined;
+  const logoKind = logoSrc === svgLogoSrc ? 'svg' : logoSrc === pngLogoSrc ? 'png' : undefined;
+  const showLogo = Boolean(logoSrc);
   const lightBg = relativeLuminance(brandHex(agentId) ?? color) > 0.55;
   return (
     <Hint label={name}>
       <span
         className={cn(
           'inline-flex shrink-0 items-center justify-center rounded-full font-bold',
-          lightBg ? 'text-primary' : 'text-white',
+          showLogo
+            ? 'border border-border p-0.5'
+            : lightBg
+              ? 'text-primary'
+              : 'text-white',
           sizeCls,
         )}
-        style={{ backgroundColor: color }}
+        style={{ backgroundColor: showLogo ? logoBackground : color }}
         aria-label={name}
       >
-        {letter}
+        {logoSrc && showLogo ? (
+          <img
+            src={logoSrc}
+            alt=""
+            aria-hidden="true"
+            className="h-full w-full rounded-full object-contain"
+            onError={() => {
+              setLogoState((previous) => {
+                // Ignore a stale error from an image that belonged to an
+                // earlier agent/source after props changed.
+                const current =
+                  previous.agentId === agentId &&
+                  previous.svgSrc === svgLogoSrc &&
+                  previous.pngSrc === pngLogoSrc;
+                if (!current) {
+                  // Props can change before React has committed a state
+                  // update. Seed the new source pair from this error event so
+                  // its fallback chain still works on the next render.
+                  return {
+                    agentId,
+                    svgSrc: svgLogoSrc,
+                    pngSrc: pngLogoSrc,
+                    svgFailed: logoKind === 'svg',
+                    pngFailed: logoKind === 'png',
+                  };
+                }
+                if (logoKind === 'svg') return { ...previous, svgFailed: true };
+                if (logoKind === 'png') return { ...previous, pngFailed: true };
+                return previous;
+              });
+            }}
+          />
+        ) : (
+          letter
+        )}
       </span>
     </Hint>
   );

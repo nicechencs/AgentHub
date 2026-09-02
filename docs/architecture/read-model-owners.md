@@ -151,7 +151,7 @@ adapterRouteToBinding(route: AdapterRoute): BindingRoute | null
 
 禁止复制 mock 的 `return 'native'`。`native` 只由无 profile 的当前登录/供应商行合成。不改 [`ticket_binding_from_apply`](../../crates/agenthub-core/src/services/ticket_bind_service.rs)（`Unsupported` → `Reshape` 是 bind 回写，不是读模型）。Mock `bindingFromProfile` 遇 `null` 跳过。
 
-**展示标签 owner：** `bindingRouteUsageLabel` / `bindingRouteDashboardLabel`。删除页面平行 map 是 **PR2**。`bindRouteMatchesPurpose` 继续按 plan 枚举分流「分享 / 路由」。
+**展示标签 owner：** `bindingRouteUsageLabel` / `bindingRouteDashboardLabel`。删除页面平行 map 是 **PR2**。`bindRouteMatchesPurpose` 仍按 plan 枚举分流 Dashboard ConnectFlow 的「分享 / 路由」目的；连接页行入口已改为「分享至连接池」，不再走这条分流。
 
 ### O-18 surfaceGroups
 

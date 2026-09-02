@@ -1,4 +1,7 @@
 import { createElement, type ComponentProps, type ReactNode } from 'react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { AdapterBridgeRuntimeStatus } from '@/lib/backend/contracts/adapter';
@@ -140,10 +143,10 @@ describe('Bridges page', () => {
   });
 
   it('rewrites /adapter, /router and /bridges bookmarks onto /routes and drops ?tab=', () => {
-    expect(legacyBridgesRedirectTo('')).toBe('/routes');
-    expect(legacyBridgesRedirectTo('?tab=oauth')).toBe('/routes');
-    expect(legacyBridgesRedirectTo('?tab=api&profile=bridge-1')).toBe('/routes?profile=bridge-1');
-    expect(legacyBridgesRedirectTo('?profile=bridge-1')).toBe('/routes?profile=bridge-1');
+    expect(legacyBridgesRedirectTo('')).toBe('/routes/board');
+    expect(legacyBridgesRedirectTo('?tab=oauth')).toBe('/routes/board');
+    expect(legacyBridgesRedirectTo('?tab=api&profile=bridge-1')).toBe('/routes/pool?profile=bridge-1');
+    expect(legacyBridgesRedirectTo('?profile=bridge-1')).toBe('/routes/pool?profile=bridge-1');
   });
 
   it('keeps the grouped card selected when inspect is on a sibling profile', () => {
@@ -162,6 +165,16 @@ describe('Bridges page', () => {
     expect(resolveBridgesProfileQuery('bridge-1', [{ id: 'bridge-1' }])).toBe('bridge-1');
     expect(resolveBridgesProfileQuery('missing', [{ id: 'bridge-1' }])).toBeNull();
     expect(resolveBridgesProfileQuery(null, [{ id: 'bridge-1' }])).toBeNull();
+  });
+
+  it('auth-pool workbench wires the profile deep-link helper', () => {
+    const source = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '../routes/pool/index.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('resolveBridgesProfileQuery');
+    expect(source).toContain("searchParams.get('profile')");
+    expect(source).toContain("inspect.open({ kind: 'detail', profile })");
   });
 
   it('renders a healthy empty list without leaving-the-page CTAs', () => {
@@ -332,7 +345,9 @@ describe('Bridges page', () => {
     expect(markup).toContain('还没有工具连上');
     expect(markup).toContain('复制本机端点 http://127.0.0.1:43121/v1/messages');
     expect(markup).toContain('仅放行：stealth/ox-alpha（其余模型将被拒绝）');
-    expect(markup).not.toContain('转换');
+    // #217 added a 转换 stage label in the route-trace legend; assert no hop-link conversion TABLE.
+    expect(markup).toContain('转换');
+    expect(markup).toContain('data-stage-box="conversion"');
     expect(markup).not.toContain('data-hop-link');
     expect(markup).not.toContain('OpenAI Responses');
     expect(markup).not.toContain('写 settings.json');
@@ -390,7 +405,7 @@ describe('Bridges page', () => {
     expect(markup).toContain('本机入口');
     expect(markup).not.toContain('交给本机网关');
     expect(markup).not.toContain('已接入的登录');
-    expect(markup).not.toContain('本机令牌已保存');
+    expect(markup).not.toContain('令牌已保存');
   });
 
   it('shows default pool members when flag is on, and hides them when off', () => {
@@ -416,7 +431,7 @@ describe('Bridges page', () => {
       defaultPool: pool,
     });
     expect(off).not.toContain('已接入的登录');
-    expect(off).not.toContain('本机令牌已保存');
+    expect(off).not.toContain('令牌已保存');
     const on = renderDetail({
       profile,
       bridgeStatus: runningStatus(profile.id),
@@ -428,10 +443,10 @@ describe('Bridges page', () => {
       defaultPool: pool,
     });
     expect(on).toContain('http://127.0.0.1:43121');
-    expect(on).toContain('回复接口');
+    expect(on).toContain('Responses');
     expect(on).toContain('已接入的登录');
     expect(on).toContain('OpenRouter');
-    expect(on).toContain('本机令牌已保存');
+    expect(on).toContain('令牌已保存');
     expect(on).toContain('kimi-k2.5');
     expect(on).not.toContain('hubToken');
     expect(on).not.toContain('ahb_');

@@ -675,6 +675,13 @@ impl AnthropicStreamToIr {
         self.completed
     }
 
+    /// Retained upstream usage (for gateway usage capture); `None` until the
+    /// upstream sent a usage object. Retention only — output frames are
+    /// byte-identical whether or not the caller reads this.
+    pub fn captured_usage(&self) -> Option<Usage> {
+        self.usage.clone()
+    }
+
     pub fn push_event(&mut self, value: &Value) -> ProtocolResult<Vec<IrEvent>> {
         if self.completed {
             return Ok(Vec::new());
@@ -1050,6 +1057,11 @@ fn parse_messages(value: &Value) -> ProtocolResult<Vec<BridgeMessage>> {
     let items = value
         .as_array()
         .ok_or_else(|| ProtocolError::invalid_request("`messages` must be an array."))?;
+    if items.is_empty() {
+        return Err(ProtocolError::invalid_request(
+            "`messages` must contain at least one message.",
+        ));
+    }
     let mut messages = Vec::with_capacity(items.len());
     for item in items {
         let object = item.as_object().ok_or_else(|| {

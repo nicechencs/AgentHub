@@ -170,6 +170,7 @@ describe('Tauri adapter route port', () => {
     const listed = await port.listDefaultRoutePools();
     expect(invokeMock).toHaveBeenCalledWith('list_default_route_pools', {});
     expect(listed.enabled).toBe(true);
+    expect(listed.chatCompletionsShared).toBe(false);
     expect(listed.pools[0]).toMatchObject({
       id: 'pool-1',
       surface: 'responses',
@@ -178,6 +179,77 @@ describe('Tauri adapter route port', () => {
     });
     expect(JSON.stringify(listed)).not.toContain('hubToken');
     expect(JSON.stringify(listed)).not.toContain('ahb_');
+  });
+
+  it('forwards list_local_tokens and set_local_token', async () => {
+    invokeMock.mockResolvedValueOnce([{ poolId: 'pool-1', token: 'ahb_secret' }]);
+    const port = createTauriAdapterPort();
+    await expect(port.listLocalTokens()).resolves.toEqual([
+      { poolId: 'pool-1', token: 'ahb_secret' },
+    ]);
+    expect(invokeMock).toHaveBeenCalledWith('list_local_tokens', {});
+    invokeMock.mockResolvedValueOnce(['gpt-5.6-sol', 'gpt-5.4']);
+    await expect(port.listLocalTokenModels('ahb_secret')).resolves.toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.4',
+    ]);
+    expect(invokeMock).toHaveBeenCalledWith('list_local_token_models', {
+      token: 'ahb_secret',
+    });
+    invokeMock.mockResolvedValueOnce(['grok-4.5', 'gpt-4o']);
+    await expect(port.refreshLocalTokenModels('ahb_secret')).resolves.toEqual([
+      'grok-4.5',
+      'gpt-4o',
+    ]);
+    expect(invokeMock).toHaveBeenCalledWith('refresh_local_token_models', {
+      token: 'ahb_secret',
+    });
+    invokeMock.mockResolvedValueOnce({ poolId: 'pool-1', token: 'ahb_next' });
+    await expect(port.setLocalToken('pool-1', 'ahb_next')).resolves.toEqual({
+      poolId: 'pool-1',
+      token: 'ahb_next',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('set_local_token', {
+      poolId: 'pool-1',
+      token: 'ahb_next',
+    });
+  });
+
+  it('forwards test_local_token and maps the probe result', async () => {
+    invokeMock.mockResolvedValueOnce({
+      outcome: 'ok',
+      httpStatus: 200,
+      latencyMs: 12,
+      upstreamStatus: 'unknown',
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: '{"model":"kimi"}',
+      responseBody: '{"choices":[{"message":{"content":"ok"}}]}',
+      errorMessage: null,
+    });
+    const port = createTauriAdapterPort();
+    await expect(port.testLocalToken(
+      '127.0.0.1:8123',
+      'ahb_secret',
+      '/v1/chat/completions',
+      'kimi-k2',
+    )).resolves.toEqual({
+      outcome: 'ok',
+      httpStatus: 200,
+      latencyMs: 12,
+      upstreamStatus: 'unknown',
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: '{"model":"kimi"}',
+      responseBody: '{"choices":[{"message":{"content":"ok"}}]}',
+      errorMessage: null,
+    });
+    expect(invokeMock).toHaveBeenCalledWith('test_local_token', {
+      endpoint: '127.0.0.1:8123',
+      token: 'ahb_secret',
+      path: '/v1/chat/completions',
+      model: 'kimi-k2',
+    });
   });
 
   it('forwards enroll_native_to_gateway by profile id and drops any token field', async () => {
@@ -195,6 +267,85 @@ describe('Tauri adapter route port', () => {
     expect(invokeMock).toHaveBeenCalledWith('enroll_native_to_gateway', { profileId: 'native-1' });
     expect(enrolled.v2Enrolled).toBe(true);
     expect(JSON.stringify(enrolled)).not.toContain('hubToken');
+  });
+
+  it('forwards attach_pool_owned_authorization without a hub token', async () => {
+    invokeMock.mockResolvedValueOnce({
+      id: 'pool-1',
+      targetAgentId: 'codex',
+      surface: 'responses',
+      dialect: 'codex',
+      v2Enrolled: false,
+      members: [{ sourceKind: 'provider', sourceId: 'codex-api', enabled: true }],
+    });
+    const port = createTauriAdapterPort();
+    const attached = await port.attachPoolOwnedAuthorization({
+      sourceKind: 'provider',
+      sourceId: 'codex-api',
+      targetAgentId: 'codex',
+      surface: 'responses',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('attach_pool_owned_authorization', {
+      sourceKind: 'provider',
+      sourceId: 'codex-api',
+      targetAgentId: 'codex',
+      surface: 'responses',
+    });
+    expect(attached.members[0]?.sourceId).toBe('codex-api');
+    expect(JSON.stringify(attached)).not.toContain('hubToken');
+  });
+
+  it('forwards set_route_authorization_enabled', async () => {
+    invokeMock.mockResolvedValueOnce(1);
+    const port = createTauriAdapterPort();
+    await expect(port.setRouteAuthorizationEnabled('account', 'oauth-1', false)).resolves.toBe(1);
+    expect(invokeMock).toHaveBeenCalledWith('set_route_authorization_enabled', {
+      sourceKind: 'account',
+      sourceId: 'oauth-1',
+      enabled: false,
+    });
+  });
+
+  it('forwards set_route_authorization_priority', async () => {
+    invokeMock.mockResolvedValueOnce(1);
+    const port = createTauriAdapterPort();
+    await expect(port.setRouteAuthorizationPriority('provider', 'codex-api', 8)).resolves.toBe(1);
+    expect(invokeMock).toHaveBeenCalledWith('set_route_authorization_priority', {
+      sourceKind: 'provider',
+      sourceId: 'codex-api',
+      priority: 8,
+    });
+  });
+
+  it('forwards remove_route_authorization', async () => {
+    invokeMock.mockResolvedValueOnce(2);
+    const port = createTauriAdapterPort();
+    await expect(port.removeRouteAuthorization('account', 'missing-connection')).resolves.toBe(2);
+    expect(invokeMock).toHaveBeenCalledWith('remove_route_authorization', {
+      sourceKind: 'account',
+      sourceId: 'missing-connection',
+    });
+  });
+
+  it('forwards selected sync_connection_authorizations sources in the request envelope', async () => {
+    invokeMock.mockResolvedValueOnce({ added: 1, skipped: 0 });
+    const port = createTauriAdapterPort();
+
+    await expect(port.syncConnectionAuthorizations({
+      sources: [{ sourceKind: 'provider', sourceId: 'kimi-1' }],
+    })).resolves.toEqual({ added: 1, skipped: 0 });
+    expect(invokeMock).toHaveBeenCalledWith('sync_connection_authorizations', {
+      request: {
+        sources: [{ sourceKind: 'provider', sourceId: 'kimi-1' }],
+      },
+    });
+  });
+
+  it('forwards an empty argument object when syncing all connections', async () => {
+    invokeMock.mockResolvedValueOnce({ added: 2, skipped: 1 });
+    const port = createTauriAdapterPort();
+    await expect(port.syncConnectionAuthorizations()).resolves.toEqual({ added: 2, skipped: 1 });
+    expect(invokeMock).toHaveBeenCalledWith('sync_connection_authorizations', {});
   });
 });
 

@@ -8,6 +8,7 @@ import type {
   AdapterApplyPlan,
   AdapterApplyResult,
   AdapterBridgeInboundRequest,
+  AdapterBridgeRouteTrace,
   AdapterBridgeRuntimeState,
   AdapterBridgeRuntimeStatus,
   AdapterEvidence,
@@ -25,7 +26,18 @@ import type {
   AdapterSupport,
   DefaultRoutePoolList,
   DefaultRoutePoolOverview,
+  LocalTokenProbeOutcome,
+  LocalTokenProbeResult,
+  LocalTokenRecord,
   RouteMemberOverview,
+  RouteTraceConversion,
+  RouteTraceLocalAuth,
+  RouteTraceMember,
+  RouteTracePool,
+  RouteTracePoolAttempt,
+  RouteTraceStageStatus,
+  RouteTraceUpstream,
+  RouteTraceUpstreamAuth,
   RoutePoolDialect,
   RoutePoolSurface,
 } from './adapter';
@@ -77,6 +89,83 @@ export interface AdapterBridgeInboundRequestWire {
   ok?: unknown;
 }
 
+export interface RouteTraceMemberWire {
+  label?: unknown;
+  sourceKind?: unknown;
+  sourceId?: unknown;
+  ticketId?: unknown;
+}
+
+export interface RouteTracePoolAttemptWire {
+  member?: RouteTraceMemberWire;
+  status?: unknown;
+  code?: unknown;
+  message?: unknown;
+}
+
+export interface RouteTraceLocalAuthWire {
+  status?: unknown;
+  profileId?: unknown;
+  port?: unknown;
+  code?: unknown;
+  message?: unknown;
+}
+
+export interface RouteTracePoolWire {
+  status?: unknown;
+  selectedMember?: RouteTraceMemberWire;
+  attempts?: RouteTracePoolAttemptWire[];
+  code?: unknown;
+  message?: unknown;
+}
+
+export interface RouteTraceConversionWire {
+  status?: unknown;
+  path?: unknown;
+  result?: unknown;
+  code?: unknown;
+  message?: unknown;
+}
+
+export interface RouteTraceUpstreamAuthWire {
+  status?: unknown;
+  httpStatus?: unknown;
+  code?: unknown;
+  message?: unknown;
+}
+
+export interface RouteTraceUpstreamWire {
+  status?: unknown;
+  url?: unknown;
+  member?: RouteTraceMemberWire;
+  model?: unknown;
+  upstreamModel?: unknown;
+  httpStatus?: unknown;
+  code?: unknown;
+  message?: unknown;
+}
+
+export interface AdapterBridgeRouteTraceWire {
+  requestId?: unknown;
+  atUnixMs?: unknown;
+  profileId?: unknown;
+  method?: unknown;
+  path?: unknown;
+  httpStatus?: unknown;
+  ok?: unknown;
+  model?: unknown;
+  latencyMs?: unknown;
+  ttftMs?: unknown;
+  inputTokens?: unknown;
+  outputTokens?: unknown;
+  localAuth?: RouteTraceLocalAuthWire;
+  pool?: RouteTracePoolWire;
+  conversion?: RouteTraceConversionWire;
+  upstreamAuth?: RouteTraceUpstreamAuthWire;
+  upstream?: RouteTraceUpstreamWire;
+  failureStage?: unknown;
+}
+
 /** Exact camelCase shape serialized by Tauri's `AdapterBridgeStatusDto`. */
 export interface AdapterBridgeStatusDtoWire {
   profileId: string;
@@ -87,6 +176,10 @@ export interface AdapterBridgeStatusDtoWire {
   sourceConnectionId?: string;
   startedAtUnixMs?: number;
   recentInbound?: AdapterBridgeInboundRequestWire[];
+  recentRouteTraces?: AdapterBridgeRouteTraceWire[];
+  totalRequestCount?: number;
+  failedRequestCount?: number;
+  lastRequestAtUnixMs?: number;
   localToken?: string | null;
 }
 
@@ -306,6 +399,11 @@ function mapStartedAt(value: number | undefined): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function mapRequestCount(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return 0;
+  return value;
+}
+
 export function mapAdapterProfile(wire: AdapterProfileWire): AdapterProfile {
   return {
     id: wire.id,
@@ -446,6 +544,179 @@ function mapInboundRequests(wire: AdapterBridgeInboundRequestWire[] | undefined)
   return rows;
 }
 
+const TRACE_STAGE_STATUSES = new Set<RouteTraceStageStatus>(['pending', 'ok', 'failed', 'skipped']);
+
+function mapTraceStageStatus(raw: unknown): RouteTraceStageStatus {
+  const value = typeof raw === 'string' ? raw.toLowerCase() : '';
+  return TRACE_STAGE_STATUSES.has(value as RouteTraceStageStatus)
+    ? (value as RouteTraceStageStatus)
+    : 'pending';
+}
+
+function mapOptionalString(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseAtUnixMs(raw: unknown): number | undefined {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function parseHttpStatus(raw: unknown): number {
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 100 && raw <= 599) return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    const parsed = Number(raw);
+    if (Number.isInteger(parsed) && parsed >= 100 && parsed <= 599) return parsed;
+  }
+  return NaN;
+}
+
+function mapTraceMember(wire: RouteTraceMemberWire | undefined): RouteTraceMember | null {
+  if (!wire || typeof wire !== 'object') return null;
+  const label = mapOptionalString(wire.label);
+  const sourceKind = mapOptionalString(wire.sourceKind);
+  const sourceId = mapOptionalString(wire.sourceId);
+  if (!label || !sourceKind || !sourceId) return null;
+  return {
+    label,
+    sourceKind,
+    sourceId,
+    ticketId: mapOptionalString(wire.ticketId),
+  };
+}
+
+function mapTracePoolAttempt(wire: RouteTracePoolAttemptWire): RouteTracePoolAttempt | null {
+  const member = mapTraceMember(wire.member);
+  if (!member) return null;
+  return {
+    member,
+    status: mapTraceStageStatus(wire.status),
+    code: mapOptionalString(wire.code),
+    message: mapOptionalString(wire.message),
+  };
+}
+
+function mapTraceLocalAuth(wire: RouteTraceLocalAuthWire | undefined): RouteTraceLocalAuth {
+  return {
+    status: mapTraceStageStatus(wire?.status),
+    profileId: mapOptionalString(wire?.profileId),
+    port: typeof wire?.port === 'number' && Number.isInteger(wire.port) ? wire.port : null,
+    code: mapOptionalString(wire?.code),
+    message: mapOptionalString(wire?.message),
+  };
+}
+
+function mapTracePool(wire: RouteTracePoolWire | undefined): RouteTracePool {
+  const attempts = Array.isArray(wire?.attempts)
+    ? wire.attempts
+        .map((row) => mapTracePoolAttempt(row))
+        .filter((row): row is RouteTracePoolAttempt => row != null)
+    : [];
+  return {
+    status: mapTraceStageStatus(wire?.status),
+    selectedMember: mapTraceMember(wire?.selectedMember),
+    attempts,
+    code: mapOptionalString(wire?.code),
+    message: mapOptionalString(wire?.message),
+  };
+}
+
+function mapTraceConversion(wire: RouteTraceConversionWire | undefined): RouteTraceConversion {
+  return {
+    status: mapTraceStageStatus(wire?.status),
+    path: mapOptionalString(wire?.path) ?? '',
+    result: mapOptionalString(wire?.result),
+    code: mapOptionalString(wire?.code),
+    message: mapOptionalString(wire?.message),
+  };
+}
+
+function mapTraceUpstreamAuth(wire: RouteTraceUpstreamAuthWire | undefined): RouteTraceUpstreamAuth {
+  return {
+    status: mapTraceStageStatus(wire?.status),
+    httpStatus:
+      typeof wire?.httpStatus === 'number' && Number.isInteger(wire.httpStatus)
+        ? wire.httpStatus
+        : null,
+    code: mapOptionalString(wire?.code),
+    message: mapOptionalString(wire?.message),
+  };
+}
+
+function mapTraceUpstream(wire: RouteTraceUpstreamWire | undefined): RouteTraceUpstream {
+  return {
+    status: mapTraceStageStatus(wire?.status),
+    url: mapOptionalString(wire?.url),
+    member: mapTraceMember(wire?.member),
+    model: mapOptionalString(wire?.model),
+    upstreamModel: mapOptionalString(wire?.upstreamModel),
+    httpStatus:
+      typeof wire?.httpStatus === 'number' && Number.isInteger(wire.httpStatus)
+        ? wire.httpStatus
+        : null,
+    code: mapOptionalString(wire?.code),
+    message: mapOptionalString(wire?.message),
+  };
+}
+
+function mapOptionalCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+export function mapRouteTrace(wire: unknown): AdapterBridgeRouteTrace | null {
+  if (!wire || typeof wire !== 'object') return null;
+  const row = wire as AdapterBridgeRouteTraceWire;
+  const atUnixMs = parseAtUnixMs(row.atUnixMs);
+  const httpStatus = parseHttpStatus(row.httpStatus);
+  const mappedInbound = mapInboundRequest({
+    atUnixMs,
+    method: row.method,
+    path: row.path,
+    status: httpStatus,
+    ok: row.ok,
+  });
+  if (!mappedInbound) return null;
+  const requestId = mapOptionalString(row.requestId);
+  if (!requestId) return null;
+  return {
+    requestId,
+    at: mappedInbound.at,
+    profileId: mapOptionalString(row.profileId),
+    method: mappedInbound.method,
+    path: mappedInbound.path,
+    httpStatus: mappedInbound.status,
+    ok: mappedInbound.ok,
+    model: mapOptionalString(row.model),
+    latencyMs: mapOptionalCount(row.latencyMs),
+    ttftMs: mapOptionalCount(row.ttftMs),
+    inputTokens: mapOptionalCount(row.inputTokens),
+    outputTokens: mapOptionalCount(row.outputTokens),
+    localAuth: mapTraceLocalAuth(row.localAuth),
+    pool: mapTracePool(row.pool),
+    conversion: mapTraceConversion(row.conversion),
+    upstreamAuth: mapTraceUpstreamAuth(row.upstreamAuth),
+    upstream: mapTraceUpstream(row.upstream),
+    failureStage: mapOptionalString(row.failureStage),
+  };
+}
+
+function mapRouteTraces(wire: AdapterBridgeRouteTraceWire[] | undefined): AdapterBridgeRouteTrace[] {
+  if (!Array.isArray(wire)) return [];
+  const rows: AdapterBridgeRouteTrace[] = [];
+  for (const item of wire) {
+    const mapped = mapRouteTrace(item);
+    if (mapped) rows.push(mapped);
+    if (rows.length >= 30) break;
+  }
+  return rows;
+}
+
 export function mapAdapterBridgeStatusDto(
   wire: AdapterBridgeStatusDtoWire,
 ): AdapterBridgeRuntimeStatus {
@@ -458,16 +729,102 @@ export function mapAdapterBridgeStatusDto(
     startedAt: mapStartedAt(wire.startedAtUnixMs),
     upstreamStatus: mapUpstreamStatus(wire.upstreamStatus),
     recentInbound: mapInboundRequests(wire.recentInbound),
+    recentRouteTraces: mapRouteTraces(wire.recentRouteTraces),
+    totalRequestCount: mapRequestCount(wire.totalRequestCount),
+    failedRequestCount: mapRequestCount(wire.failedRequestCount),
+    lastRequestAt: mapStartedAt(wire.lastRequestAtUnixMs),
     localToken: typeof wire.localToken === 'string' && wire.localToken.trim()
       ? wire.localToken.trim()
       : null,
   };
 }
 
+export interface LocalEntryStatusWire {
+  running: boolean;
+  port?: number | null;
+  statuses?: AdapterBridgeStatusDtoWire[];
+  recentUnauthenticatedTraces?: AdapterBridgeRouteTraceWire[];
+}
+
+export function mapLocalEntryStatus(wire: LocalEntryStatusWire): import('./adapter').LocalEntryStatus {
+  const port = isLoopbackPort(wire.port ?? null) ? wire.port ?? null : null;
+  return {
+    running: wire.running === true && port != null,
+    port,
+    statuses: Array.isArray(wire.statuses) ? wire.statuses.map(mapAdapterBridgeStatusDto) : [],
+    unauthenticatedTraces: mapRouteTraces(wire.recentUnauthenticatedTraces),
+  };
+}
+
+export interface LocalTokenRecordWire {
+  poolId: string;
+  token: string;
+}
+
+export function mapLocalTokenRecord(wire: LocalTokenRecordWire): LocalTokenRecord {
+  const poolId = typeof wire.poolId === 'string' ? wire.poolId.trim() : '';
+  const token = typeof wire.token === 'string' ? wire.token.trim() : '';
+  if (!poolId || !token) {
+    return invalidWireValue('localToken', wire);
+  }
+  return { poolId, token };
+}
+
+const LOCAL_TOKEN_PROBE_OUTCOMES = new Set<LocalTokenProbeOutcome>([
+  'ok',
+  'unauthorized',
+  'unreachable',
+  'rejected',
+  'invalid',
+]);
+
+export interface LocalTokenProbeResultWire {
+  outcome?: unknown;
+  httpStatus?: unknown;
+  latencyMs?: unknown;
+  upstreamStatus?: unknown;
+  requestUrl?: unknown;
+  requestMethod?: unknown;
+  requestBody?: unknown;
+  responseBody?: unknown;
+  errorMessage?: unknown;
+}
+
+function optionalTrimmedString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function mapLocalTokenProbeResult(wire: LocalTokenProbeResultWire): LocalTokenProbeResult {
+  const outcome = typeof wire.outcome === 'string' && LOCAL_TOKEN_PROBE_OUTCOMES.has(wire.outcome as LocalTokenProbeOutcome)
+    ? wire.outcome as LocalTokenProbeOutcome
+    : 'unreachable';
+  const httpStatus = typeof wire.httpStatus === 'number' && Number.isInteger(wire.httpStatus)
+    ? wire.httpStatus
+    : null;
+  const latencyMs = typeof wire.latencyMs === 'number' && Number.isFinite(wire.latencyMs)
+    ? Math.max(0, Math.round(wire.latencyMs))
+    : 0;
+  return {
+    outcome,
+    httpStatus,
+    latencyMs,
+    upstreamStatus: optionalTrimmedString(wire.upstreamStatus),
+    requestUrl: optionalTrimmedString(wire.requestUrl),
+    requestMethod: optionalTrimmedString(wire.requestMethod),
+    requestBody: optionalTrimmedString(wire.requestBody),
+    responseBody: optionalTrimmedString(wire.responseBody),
+    errorMessage: optionalTrimmedString(wire.errorMessage),
+  };
+}
+
 export interface RouteMemberOverviewWire {
+  id?: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
+  displayLabel?: string | null;
+  refreshTokenTail?: string | null;
   enabled: boolean;
+  priority?: number;
   availability?: string;
 }
 
@@ -485,6 +842,7 @@ export interface DefaultRoutePoolOverviewWire {
 export interface DefaultRoutePoolListWire {
   enabled: boolean;
   pools?: DefaultRoutePoolOverviewWire[];
+  chatCompletionsShared?: boolean;
 }
 
 function mapPoolSurface(value: string): RoutePoolSurface {
@@ -516,10 +874,21 @@ function mapAvailability(value: string | undefined): RouteMemberOverview['availa
 }
 
 function mapMemberOverview(wire: RouteMemberOverviewWire): RouteMemberOverview {
+  const priority = typeof wire.priority === 'number' && Number.isFinite(wire.priority)
+    ? wire.priority
+    : 0;
   return {
+    id: typeof wire.id === 'string' && wire.id.trim() ? wire.id : undefined,
     sourceKind: mapSourceKind(wire.sourceKind),
     sourceId: wire.sourceId,
+    displayLabel: typeof wire.displayLabel === 'string' && wire.displayLabel.trim()
+      ? wire.displayLabel.trim()
+      : undefined,
+    refreshTokenTail: typeof wire.refreshTokenTail === 'string' && wire.refreshTokenTail.trim()
+      ? wire.refreshTokenTail.trim()
+      : undefined,
     enabled: wire.enabled === true,
+    priority,
     availability: mapAvailability(wire.availability),
   };
 }
@@ -548,5 +917,6 @@ export function mapDefaultRoutePoolList(wire: DefaultRoutePoolListWire): Default
   return {
     enabled: wire.enabled,
     pools: (wire.pools ?? []).map(mapDefaultRoutePoolOverview),
+    chatCompletionsShared: wire.chatCompletionsShared === true,
   };
 }

@@ -4,25 +4,14 @@ description: 按 frontend、Tauri contract、Rust core 和生产 build 分层验
 type: guide
 audience: contributor
 status: current
-updated: 2026-08-25
+updated: 2026-08-31
 ---
 
 # 测试与验证
 
 AgentHub 的测试边界与 backend adapter 边界一致：浏览器 mock 用于页面和交互，Tauri contract 验证 IPC 映射，Rust core 验证业务和文件系统。不要用一个端到端测试替代三层契约测试。
 
-日常改动按风险选择最小验证；下面的快速检查属于提交前或 CI，不是每次本地改动的默认门禁。协作流程见 [AGENTS.md](../../AGENTS.md)。
-
-## 风险分级
-
-| 风险级别 | 典型改动 | 默认执行方式 | 最小验证 |
-|---|---|---|---|
-| 局部 | 文案、样式、单页面状态、纯函数、单文件改动，且不改共享 contract | 主 Agent 在同一回合完成实现并运行定向测试 | 对应 Vitest；必要时 `pnpm typecheck` |
-| 模块 | 单个功能目录内的逻辑，不改 Rust / wire / 持久化 | 主 Agent 或一个实现 Agent | 相关测试 + `pnpm typecheck` |
-| 跨层 | backend port、wire DTO、Tauri command、共享 service、契约 JSON | 明确范围后再用实现与独立审查 | contract test + 对应 typecheck / Cargo filter |
-| 高风险 | 数据迁移、写入补偿、锁、安全边界、发布 | 完整 planner / coder / reviewer / tester 流程 | 提交前矩阵和 CI 全量 |
-
-写测试和跑测试拆成两个 Agent，只适合确实可以并行、文件集不重叠且等待时间足以覆盖 Agent 启动成本的任务。局部和单文件改动在同一回合跑过滤测试。
+风险分级、Agent 流程和最小验证以 [AGENTS.md](../../AGENTS.md) 为准，本页不重复那张表。本页只列分层命令和边界。日常改动先跑过滤测试；下面的快速检查属于提交前或 CI。查完整命令表或 CI 矩阵时再打开 [测试参考](../reference/testing.md)。
 
 ## 快速检查
 

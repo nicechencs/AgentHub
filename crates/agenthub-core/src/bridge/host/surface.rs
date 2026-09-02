@@ -1,6 +1,8 @@
+use axum::http::header::{self, HeaderValue};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde_json::Value;
+use axum::Json;
+use serde_json::{json, Value};
 
 use crate::bridge::protocol::anthropic_messages::parse_messages_request;
 use crate::bridge::protocol::chat::parse_chat_request;
@@ -72,7 +74,7 @@ impl DownstreamSurface {
                 status = 404_u16,
                 "local surface does not serve this path"
             );
-            Some(StatusCode::NOT_FOUND.into_response())
+            Some(surface_mismatch_response(self, state.upstream.local_surface))
         }
     }
 
@@ -86,6 +88,78 @@ impl DownstreamSurface {
             }
         }
     }
+}
+
+/// Path clients should call for a bound local conversation surface.
+pub(super) fn served_conversation_path(local: BridgeLocalSurface) -> &'static str {
+    match local {
+        BridgeLocalSurface::Responses => "/v1/responses",
+        BridgeLocalSurface::Messages => "/v1/messages",
+        BridgeLocalSurface::ChatCompletions => "/v1/chat/completions",
+    }
+}
+
+pub(super) fn requested_conversation_path(surface: DownstreamSurface) -> &'static str {
+    match surface {
+        DownstreamSurface::Responses => "/v1/responses",
+        DownstreamSurface::Messages => "/v1/messages",
+        DownstreamSurface::ChatCompletions => "/v1/chat/completions",
+        DownstreamSurface::Models => "/v1/models",
+    }
+}
+
+/// Bilingual UX for surface_mismatch (empty 404 body was unhelpful).
+pub(super) fn surface_mismatch_message(
+    requested: DownstreamSurface,
+    local: BridgeLocalSurface,
+) -> String {
+    let served = served_conversation_path(local);
+    let asked = requested_conversation_path(requested);
+    format!(
+        "This route only serves {served}; try that path instead of {asked}. 本机路由只提供 {served}，请改打该路径，而不是 {asked}。"
+    )
+}
+
+pub(super) fn surface_mismatch_response(
+    requested: DownstreamSurface,
+    local: BridgeLocalSurface,
+) -> Response {
+    let message = surface_mismatch_message(requested, local);
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({
+            "error": {
+                "code": "surface_mismatch",
+                "message": message,
+                "type": "invalid_request_error",
+            }
+        })),
+    )
+        .into_response()
+}
+
+/// Bilingual UX for wrong HTTP method on conversation paths (empty 405 body was unhelpful).
+pub(super) fn method_not_allowed_message(path: &str) -> String {
+    format!("This endpoint only accepts POST {path}. 本机该路径只接受 POST {path}。")
+}
+
+pub(super) fn method_not_allowed_response(path: &str) -> Response {
+    let message = method_not_allowed_message(path);
+    let mut response = (
+        StatusCode::METHOD_NOT_ALLOWED,
+        Json(json!({
+            "error": {
+                "code": "method_not_allowed",
+                "message": message,
+                "type": "invalid_request_error",
+            }
+        })),
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(header::ALLOW, HeaderValue::from_static("POST"));
+    response
 }
 
 #[cfg(test)]

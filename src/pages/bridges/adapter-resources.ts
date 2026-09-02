@@ -78,13 +78,17 @@ function unavailableBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeS
     startedAt: null,
     upstreamStatus: 'unavailable',
     recentInbound: [],
+    recentRouteTraces: [],
+    totalRequestCount: 0,
+    failedRequestCount: 0,
+    lastRequestAt: null,
   };
 }
 
 /**
  * A later poll/read failure must not invent connectivity or erase the last
- * known port / state. `error` is only a placeholder when the runtime was never
- * observed — it is not a start failure.
+ * known port / state / counters. `error` is only a placeholder when the runtime
+ * was never observed — it is not a start failure.
  */
 export function unavailableBridgeStatusForPoll(
   profile: AdapterProfile,
@@ -98,6 +102,11 @@ export function unavailableBridgeStatusForPoll(
     startedAt: previous?.startedAt ?? null,
     upstreamStatus: 'unavailable',
     recentInbound: previous?.recentInbound ?? [],
+    recentRouteTraces: previous?.recentRouteTraces ?? [],
+    totalRequestCount: previous?.totalRequestCount ?? 0,
+    failedRequestCount: previous?.failedRequestCount ?? 0,
+    lastRequestAt: previous?.lastRequestAt ?? null,
+    localToken: previous?.localToken ?? null,
   };
 }
 

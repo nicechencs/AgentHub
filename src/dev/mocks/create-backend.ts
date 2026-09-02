@@ -13,6 +13,7 @@ import {
   listMockAdapterProfiles,
   removeMockAdapterBinding,
   resetMockAdapters,
+  restoreMockRouteMembership,
 } from './adapter';
 import { createMockAgentPort, resetMockAgentStatuses, resetMockAgentVisibility } from './agent';
 import { createMockBackupPort } from './backup';
@@ -128,6 +129,7 @@ export const createBackend: CreateBackend = () => {
     trash: createMockTrashPort({
       restoreAccount: restoreMockAccount,
       restoreProvider: restoreMockProvider,
+      restoreMembership: restoreMockRouteMembership,
     }),
     mcp: createMockMcpPort(),
     plugins: createMockPluginPort(),

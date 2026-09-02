@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterBridgeRuntimeStatus, AdapterProfile } from '@/lib/backend/contracts/adapter';
-import { startAdapterBridgeStatusPoll } from './use-bridge-resources';
+import { isCurrentProfileReload, startAdapterBridgeStatusPoll } from './use-bridge-resources';
 import type { AdapterPageResources } from './adapter-resources';
 
 function deferred<T>() {
@@ -110,5 +110,12 @@ describe('startAdapterBridgeStatusPoll', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(applyCount).toBe(0);
+  });
+});
+
+describe('profile reload generations', () => {
+  it('only lets the newest request settle loading', () => {
+    expect(isCurrentProfileReload(2, 2)).toBe(true);
+    expect(isCurrentProfileReload(1, 2)).toBe(false);
   });
 });

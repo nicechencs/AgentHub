@@ -6,6 +6,9 @@ import {
   mapAdapterRouteAnalysis,
   mapDefaultRoutePoolList,
   mapInboundRequest,
+  mapLocalTokenProbeResult,
+  mapLocalTokenRecord,
+  mapRouteTrace,
 } from './adapter-wire';
 
 describe('Adapter Rust wire mappers', () => {
@@ -113,8 +116,28 @@ describe('Adapter Rust wire mappers', () => {
       startedAt: '2026-08-12T00:00:00.123Z',
       upstreamStatus: 'unknown',
       recentInbound: [],
+      recentRouteTraces: [],
+      totalRequestCount: 0,
+      failedRequestCount: 0,
+      lastRequestAt: null,
       localToken: null,
     });
+  });
+
+  it('maps process-lifetime inbound counters from the bridge status DTO', () => {
+    const status = mapAdapterBridgeStatusDto({
+      profileId: 'adapter-kimi-codex-1',
+      port: 43123,
+      running: true,
+      state: 'running',
+      upstreamStatus: 'connected',
+      totalRequestCount: 25,
+      failedRequestCount: 5,
+      lastRequestAtUnixMs: 1_786_492_800_500,
+    });
+    expect(status.totalRequestCount).toBe(25);
+    expect(status.failedRequestCount).toBe(5);
+    expect(status.lastRequestAt).toBe('2026-08-12T00:00:00.500Z');
   });
 
   it('inbound log struct never carries secrets, query, or extra wire fields', () => {
@@ -447,13 +470,115 @@ describe('Adapter Rust wire mappers', () => {
         dialect: 'codex',
         v2Enrolled: true,
         gatewayPort: 43121,
-        members: [{ sourceKind: 'provider', sourceId: 'kimi-1', enabled: true }],
+        members: [{
+          sourceKind: 'account',
+          sourceId: 'oauth-1',
+          displayLabel: 'user@example.com',
+          refreshTokenTail: '**5678',
+          enabled: true,
+        }],
         listedModels: ['kimi-k2.5'],
       }],
     });
     expect(listed.enabled).toBe(true);
+    expect(listed.chatCompletionsShared).toBe(false);
     expect(listed.pools[0]?.gatewayPort).toBe(43121);
-    expect(listed.pools[0]?.members[0]?.sourceId).toBe('kimi-1');
+    expect(listed.pools[0]?.members[0]).toMatchObject({
+      sourceId: 'oauth-1',
+      displayLabel: 'user@example.com',
+      refreshTokenTail: '**5678',
+    });
     expect(JSON.stringify(listed)).not.toContain('hubToken');
+  });
+
+  it('maps loopback entry keys for the tokens page', () => {
+    expect(mapLocalTokenRecord({ poolId: 'pool-1', token: 'ahb_secret' })).toEqual({
+      poolId: 'pool-1',
+      token: 'ahb_secret',
+    });
+  });
+
+  it('maps a loopback entry-key probe result', () => {
+    expect(mapLocalTokenProbeResult({
+      outcome: 'unauthorized',
+      httpStatus: 401,
+      latencyMs: 9.4,
+      upstreamStatus: '  ',
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: '{"model":"kimi"}',
+      responseBody: '{"error":"invalid_api_key"}',
+      errorMessage: '  ',
+    })).toEqual({
+      outcome: 'unauthorized',
+      httpStatus: 401,
+      latencyMs: 9,
+      upstreamStatus: null,
+      requestUrl: 'http://127.0.0.1:8123/v1/chat/completions',
+      requestMethod: 'POST',
+      requestBody: '{"model":"kimi"}',
+      responseBody: '{"error":"invalid_api_key"}',
+      errorMessage: null,
+    });
+    expect(mapLocalTokenProbeResult({}).outcome).toBe('unreachable');
+  });
+
+  it('maps route trace stages without secrets', () => {
+    const trace = mapRouteTrace({
+      requestId: 'req-trace-1',
+      atUnixMs: 1_786_492_800_000,
+      method: 'POST',
+      path: '/v1/messages',
+      httpStatus: 200,
+      ok: true,
+      model: 'claude-sonnet',
+      latencyMs: 42,
+      ttftMs: 120,
+      inputTokens: 11,
+      outputTokens: 7,
+      localAuth: { status: 'ok', profileId: 'profile-1', port: 8787 },
+      pool: {
+        status: 'ok',
+        selectedMember: { label: 'acct-1', sourceKind: 'account', sourceId: 'acct-1' },
+      },
+      conversion: { status: 'ok', path: 'messages_to_openai_chat', result: 'converted' },
+      upstreamAuth: { status: 'ok', httpStatus: 200 },
+      upstream: {
+        status: 'ok',
+        url: 'https://api.example.com/v1/chat/completions',
+        httpStatus: 200,
+      },
+    });
+    expect(trace?.requestId).toBe('req-trace-1');
+    expect(trace?.ttftMs).toBe(120);
+    expect(trace?.inputTokens).toBe(11);
+    expect(trace?.outputTokens).toBe(7);
+    expect(trace?.localAuth.status).toBe('ok');
+    expect(trace?.conversion.path).toBe('messages_to_openai_chat');
+    expect(JSON.stringify(trace)).not.toMatch(/sk-|ahb_|Bearer/i);
+    expect(
+      mapAdapterBridgeStatusDto({
+        profileId: 'profile-1',
+        port: 8787,
+        running: true,
+        state: 'running',
+        upstreamStatus: 'connected',
+        recentRouteTraces: [
+          {
+            requestId: 'req-trace-1',
+            atUnixMs: 1_786_492_800_000,
+            method: 'POST',
+            path: '/v1/messages',
+            httpStatus: 200,
+            ok: true,
+            localAuth: { status: 'ok' },
+            pool: { status: 'ok' },
+            conversion: { status: 'ok', path: 'passthrough' },
+            upstreamAuth: { status: 'ok' },
+            upstream: { status: 'ok' },
+          },
+        ],
+      }).recentRouteTraces,
+    ).toHaveLength(1);
   });
 });

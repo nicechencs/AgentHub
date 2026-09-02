@@ -817,6 +817,61 @@ async fn responses_rejects_missing_or_invalid_local_token() {
 }
 
 #[tokio::test]
+async fn get_on_conversation_paths_returns_method_not_allowed_json() {
+    // UX-19: GET on POST-only conversation paths must return bilingual JSON + Allow: POST
+    // (axum default was empty 405). Auth is not required for the method rejection.
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(spec("ux19-method", 0, upstream_port))
+        .await
+        .expect("start");
+    let http = client().await;
+    let port = status.port;
+
+    for path in [
+        "/v1/responses",
+        "/v1/messages",
+        "/v1/chat/completions",
+        "/chat/completions",
+    ] {
+        let response = http
+            .get(format!("http://127.0.0.1:{port}{path}"))
+            .send()
+            .await
+            .unwrap_or_else(|err| panic!("GET {path}: {err}"));
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "GET {path}"
+        );
+        let allow = response
+            .headers()
+            .get(header::ALLOW)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
+        assert!(
+            allow.split(',').any(|m| m.trim().eq_ignore_ascii_case("POST")),
+            "GET {path} Allow={allow:?}"
+        );
+        let body: Value = response.json().await.expect("method_not_allowed json");
+        assert_eq!(body["error"]["code"], "method_not_allowed");
+        assert_eq!(body["error"]["type"], "invalid_request_error");
+        let message = body["error"]["message"].as_str().unwrap_or("");
+        assert!(
+            message.contains(&format!("POST {path}"))
+                && message.contains("This endpoint only accepts POST")
+                && message.contains("本机该路径只接受 POST"),
+            "GET {path} message={message}"
+        );
+    }
+
+    host.stop("ux19-method").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
 async fn slow_unauthorized_body_is_rejected_before_json_extraction() {
     let (upstream_port, upstream_task) = upstream().await;
     let host = BridgeRuntimeHost::new();
@@ -1757,6 +1812,91 @@ async fn codex_responses_oauth_messages_stream_sends_store_false_and_stream_true
         .await
         .expect("stop");
     upstream_task.abort();
+}
+
+#[tokio::test]
+async fn codex_responses_oauth_messages_non_stream_aggregates_forced_sse() {
+    let (upstream_port, captured, upstream_task) = capturing_codex_responses_sse_upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_spec("codex-messages-aggregate", 0, upstream_port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 32,
+            "stream": false,
+            "messages": [{ "role": "user", "content": "ping" }]
+        }))
+        .send()
+        .await
+        .expect("non-stream messages request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response
+        .json::<Value>()
+        .await
+        .expect("aggregated Anthropic JSON");
+    assert_eq!(body["type"], "message");
+    assert_eq!(body["content"][0]["text"], "pong");
+    let upstream = captured.lock().expect("lock captured Codex bodies").clone();
+    assert_eq!(upstream.len(), 1);
+    assert_eq!(upstream[0]["store"], false);
+    assert_eq!(upstream[0]["stream"], true);
+    host.stop("codex-messages-aggregate").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
+async fn codex_responses_oauth_non_stream_stream_required_error_is_chinese() {
+    async fn reject_stream(Json(body): Json<Value>) -> Response {
+        if body.get("stream").and_then(Value::as_bool) == Some(true) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"detail": "Stream must be set to true"})),
+            )
+                .into_response();
+        }
+        Json(json!({"id": "resp_ok"})).into_response()
+    }
+    let listener =
+        tokio::net::TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .expect("bind stream-required Codex upstream");
+    let port = listener.local_addr().expect("addr").port();
+    let task = tokio::spawn(async move {
+        axum::serve(listener, Router::new().route("/v1/responses", post(reject_stream)))
+            .await
+            .expect("serve stream-required Codex upstream");
+    });
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(codex_spec("codex-stream-required", 0, port))
+        .await
+        .expect("start");
+    let response = client()
+        .await
+        .post(format!("http://127.0.0.1:{}/v1/messages", status.port))
+        .header(header::AUTHORIZATION, "Bearer local-test-token")
+        .json(&json!({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 32,
+            "stream": false,
+            "messages": [{ "role": "user", "content": "ping" }]
+        }))
+        .send()
+        .await
+        .expect("rejected request");
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body = response.text().await.expect("error body");
+    assert!(body.contains("流式"), "{body}");
+    assert!(body.contains("重试"), "{body}");
+    assert!(!body.contains("Stream must be set to true"), "{body}");
+    host.stop("codex-stream-required").await.expect("stop");
+    task.abort();
 }
 
 #[tokio::test]
@@ -3640,7 +3780,16 @@ async fn two_profiles_two_bearers_two_surfaces_do_not_cross() {
         .await
         .expect("responses for A");
     assert_eq!(cross_responses.status(), StatusCode::NOT_FOUND);
-    assert!(cross_responses.text().await.expect("empty 404").is_empty());
+    let cross_responses_body: Value = cross_responses.json().await.expect("surface_mismatch json");
+    assert_eq!(cross_responses_body["error"]["code"], "surface_mismatch");
+    let cross_responses_msg = cross_responses_body["error"]["message"]
+        .as_str()
+        .unwrap_or("");
+    assert!(
+        cross_responses_msg.contains("/v1/messages")
+            && cross_responses_msg.contains("/v1/responses"),
+        "{cross_responses_msg}"
+    );
 
     let served_responses = http
         .post(format!("http://127.0.0.1:{port}/v1/responses"))
@@ -3663,6 +3812,16 @@ async fn two_profiles_two_bearers_two_surfaces_do_not_cross() {
         .await
         .expect("messages for B");
     assert_eq!(cross_messages.status(), StatusCode::NOT_FOUND);
+    let cross_messages_body: Value = cross_messages.json().await.expect("surface_mismatch json");
+    assert_eq!(cross_messages_body["error"]["code"], "surface_mismatch");
+    let cross_messages_msg = cross_messages_body["error"]["message"]
+        .as_str()
+        .unwrap_or("");
+    assert!(
+        cross_messages_msg.contains("/v1/responses")
+            && cross_messages_msg.contains("/v1/messages"),
+        "{cross_messages_msg}"
+    );
 
     host.shutdown().await.expect("shutdown");
     upstream_task.abort();
@@ -4356,6 +4515,14 @@ async fn v2_index_unknown_model_fails_closed_without_peer_switch() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body: Value = response.json().await.expect("error json");
     assert_eq!(body["error"]["code"], "model_unavailable");
+    assert_eq!(body["error"]["available_models"], json!(["m1"]));
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("当前登录只提供：m1"),
+        "{body}"
+    );
     assert!(captured_a.lock().expect("lock A").is_empty());
     assert!(
         captured_b.lock().expect("lock B").is_empty(),
@@ -5561,6 +5728,14 @@ async fn pair_flag_on_missing_model_does_not_call_upstream() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body: Value = response.json().await.expect("json");
     assert_eq!(body["error"]["code"], "model_unavailable");
+    assert_eq!(body["error"]["available_models"], json!(["grok-4.5"]));
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("当前登录只提供：grok-4.5"),
+        "{body}"
+    );
     assert_eq!(hits.load(Ordering::SeqCst), 0);
 
     host.stop("pair-miss").await.expect("stop");

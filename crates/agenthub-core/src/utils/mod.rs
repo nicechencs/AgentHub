@@ -1,8 +1,11 @@
 pub mod agent_lock;
+pub mod chatgpt_codex_models;
+pub mod upstream_model_catalog;
 pub mod atomic;
 pub mod command_exec;
 pub mod expiry;
 pub mod grok_toml;
+pub mod local_token_probe;
 pub mod loopback;
 pub mod paths;
 pub mod process;

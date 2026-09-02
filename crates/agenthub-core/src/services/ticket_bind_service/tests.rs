@@ -587,6 +587,47 @@ fn bind_openai_provider_and_account_to_codex_is_hosted_local_bridge() {
 }
 
 #[test]
+fn bind_rejects_ambiguous_custom_relay_before_hosted_bridge() {
+    let (dir, db) = test_db();
+    ProviderRepo::new(db.clone())
+        .create(&Provider {
+            id: "ambiguous-relay".into(),
+            agent_id: AgentId::Claude,
+            name: "Ambiguous relay".into(),
+            settings_config: json!({
+                "apiKey": "relay-secret",
+                "baseUrl": "https://api.openai.com/v1",
+                "base_url": "https://relay.example/v1"
+            }),
+            meta: json!({"preset": "openai-compatible"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+    let service = bind_service(
+        db.clone(),
+        dir.path().join("backups"),
+        vec![Arc::new(FakeClaudeAdapter::new_for(AgentId::Codex))],
+    );
+
+    let error = service
+        .bind(&TicketPlanRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "ambiguous-relay"),
+            target_agent_id: AgentId::Codex,
+        })
+        .unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+    assert!(error
+        .to_string()
+        .contains(crate::services::adapter_route_constants::UNKNOWN_CUSTOM_RELAY_REASON));
+    assert!(AdapterProfileRepo::new(db)
+        .list(None, None, None)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn bind_glm_provider_and_deepseek_account_to_pi_then_unbind() {
     let (dir, db) = test_db();
     ProviderRepo::new(db.clone())
@@ -765,6 +806,47 @@ fn bind_projection_ticket_is_rejected() {
         .unwrap_err();
     assert_eq!(error.code(), "invalid_arg");
     assert!(error.to_string().contains(PROJECTION_NOT_A_TICKET));
+}
+
+#[test]
+fn unbind_rejects_duplicate_source_target_profiles() {
+    let (dir, db) = test_db();
+    let profiles = AdapterProfileRepo::new(db.clone());
+    for id in ["duplicate-a", "duplicate-b"] {
+        profiles
+            .create(&crate::models::AdapterProfile {
+                id: id.into(),
+                name: "duplicate".into(),
+                source_kind: AdapterSourceKind::Provider,
+                source_id: "source".into(),
+                target_agent_id: AgentId::Claude,
+                route: AdapterRoute::NativeEndpoint,
+                mode: crate::models::AdapterProfileMode::Api,
+                status: crate::models::AdapterProfileStatus::Active,
+                rule_id: "rule".into(),
+                rule_version: "1".into(),
+                generated_provider_id: None,
+                local_port: None,
+                auto_start: false,
+                last_error_code: None,
+                created_at: "now".into(),
+                updated_at: "now".into(),
+            })
+            .unwrap();
+    }
+    let service = bind_service(
+        db,
+        dir.path().join("backups"),
+        vec![Arc::new(FakeClaudeAdapter::new())],
+    );
+
+    let error = service
+        .unbind(&TicketUnbindRequest {
+            ticket_id: ticket_id(AdapterSourceKind::Provider, "source"),
+            agent_id: AgentId::Claude,
+        })
+        .unwrap_err();
+    assert_eq!(error.code(), "adapter.profile_conflict");
 }
 
 #[test]

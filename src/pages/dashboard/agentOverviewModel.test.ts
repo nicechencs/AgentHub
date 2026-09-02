@@ -5,11 +5,12 @@ import { AGENTS, type AgentMeta } from '@/config/agents';
 import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
 
 import {
-  AGENT_CARD_BRIDGE_LABEL,
   AGENT_OVERVIEW_GRID,
   agentCardConnectFallback,
   buildAgentCardView,
   cardAuthStatus,
+  dashboardBindingMeta,
+  dashboardConnectionLabel,
   dashboardOverviewSkeletonCount,
   dashboardPageDescription,
   installedOverviewScope,
@@ -17,7 +18,6 @@ import {
   mergeAgentsInOrder,
   resolveAgentCardInteraction,
   summarizeAgentOverview,
-  type AgentCardBridgeState,
 } from './agentOverviewModel';
 
 function meta(id: AgentId, name: string = id): AgentMeta {
@@ -307,12 +307,13 @@ describe('buildAgentCardView', () => {
         effectiveLabel: '本机路由 · Kimi 会员',
         authLabel: '已登录',
       }),
-      { viaAdapter: { sourceLabel: 'Kimi 会员' } },
+      null,
       tEn,
     );
-    expect(routed.metaText).toBe('Local route · Kimi 会员');
-    expect(routed.ariaLabel).toContain('Local route · Kimi 会员');
+    expect(routed.metaText).toBe('Kimi 会员');
+    expect(routed.ariaLabel).toContain('Kimi 会员');
     expect(routed.ariaLabel).not.toContain('本机路由');
+    expect(routed.ariaLabel).not.toContain('Local route');
   });
 
   it('not installed: install CTA and navigate /agents', () => {
@@ -362,23 +363,14 @@ describe('buildAgentCardView', () => {
     expect(missing.twoLineLayout).toBe(true);
   });
 
-  it('omits badges when no badge input is provided (equivalent to prior output)', () => {
+  it('omits binding when no badge input is provided', () => {
     const view = buildAgentCardView(claude, status('claude'));
     const withUndefined = buildAgentCardView(claude, status('claude'), undefined);
     const withEmpty = buildAgentCardView(claude, status('claude'), {});
-    expect(view.viaAdapter).toBeUndefined();
-    expect(view.bridge).toBeUndefined();
+    expect(view.binding).toBeUndefined();
     expect(view).toEqual(withUndefined);
     expect(view).toEqual(withEmpty);
     expect(view.action).toEqual({ kind: 'connect' });
-  });
-
-  it('maps viaAdapter hit with sourceLabel', () => {
-    const view = buildAgentCardView(claude, status('claude'), {
-      viaAdapter: { sourceLabel: 'Kimi 会员' },
-    });
-    expect(view.viaAdapter).toEqual({ sourceLabel: 'Kimi 会员' });
-    expect(view.ariaLabel).toContain('本机路由 · Kimi 会员');
   });
 
   it('prefers wallet binding meta text over effectiveLabel', () => {
@@ -392,46 +384,23 @@ describe('buildAgentCardView', () => {
     expect(view.ariaLabel).toContain('当前使用 Kimi 会员（改配置）');
   });
 
-  it('maps viaAdapter hit without sourceLabel', () => {
-    const view = buildAgentCardView(claude, status('claude'), { viaAdapter: {} });
-    expect(view.viaAdapter).toEqual({});
-    expect(view.ariaLabel).toContain('本机路由');
-    expect(view.ariaLabel).not.toContain('本机路由 ·');
+  it('shows 127.0.0.1 for a routed binding instead of 本机路由', () => {
+    const view = buildAgentCardView(
+      claude,
+      status('claude', { effectiveLabel: '本机路由 · Kimi 会员' }),
+      { binding: { ticketLabel: 'Kimi 会员', routeLabel: 'http://127.0.0.1:43121/v1/messages' } },
+    );
+    expect(view.metaText).toBe('Kimi 会员 · http://127.0.0.1:43121/v1/messages');
+    expect(view.ariaLabel).toContain('http://127.0.0.1:43121/v1/messages');
+    expect(view.metaText).not.toContain('本机路由');
+    expect(view.ariaLabel).not.toContain('本机路由');
   });
 
-  it.each([
-    ['running', '运行中'],
-    ['stopped', '已停止'],
-    ['degraded', '已降级'],
-    ['unavailable', '状态不可用'],
-  ] as const)('maps bridge state %s to label %s', (state, label) => {
-    const view = buildAgentCardView(claude, status('claude'), { bridge: { state } });
-    expect(view.bridge).toEqual({ state, label, profileId: null });
-    expect(view.ariaLabel).toContain(label);
-    expect(AGENT_CARD_BRIDGE_LABEL[state]).toBe(label);
-  });
-
-  it('does not hide unavailable bridge status', () => {
+  it('treats null binding as absent', () => {
     const view = buildAgentCardView(claude, status('claude'), {
-      bridge: { state: 'unavailable' },
+      binding: null,
     });
-    expect(view.bridge).toEqual({ state: 'unavailable', label: '状态不可用', profileId: null });
-  });
-
-  it('forwards the current-bridge profileId for /routes deep links', () => {
-    const view = buildAgentCardView(claude, status('claude'), {
-      bridge: { state: 'running', profileId: 'bridge-1' },
-    });
-    expect(view.bridge).toEqual({ state: 'running', label: '运行中', profileId: 'bridge-1' });
-  });
-
-  it('treats null badge fields as absent', () => {
-    const view = buildAgentCardView(claude, status('claude'), {
-      viaAdapter: null,
-      bridge: null,
-    });
-    expect(view.viaAdapter).toBeUndefined();
-    expect(view.bridge).toBeUndefined();
+    expect(view.binding).toBeUndefined();
   });
 });
 
@@ -507,15 +476,15 @@ describe('mergeAgentsInOrder', () => {
   it('passes badge inputs through without reordering', () => {
     const merged = mergeAgentsInOrder(METAS, [status('claude'), status('kimi')], {
       claude: {
-        viaAdapter: { sourceLabel: 'Kimi 会员' },
-        bridge: { state: 'running' satisfies AgentCardBridgeState },
+        binding: { ticketLabel: 'Kimi 会员', routeLabel: 'http://127.0.0.1:43121/v1/messages' },
       },
     });
     expect(merged.map((c) => c.meta.id)).toEqual(METAS.map((m) => m.id));
-    expect(merged[0]!.view.viaAdapter).toEqual({ sourceLabel: 'Kimi 会员' });
-    expect(merged[0]!.view.bridge).toEqual({ state: 'running', label: '运行中', profileId: null });
-    expect(merged[2]!.view.viaAdapter).toBeUndefined();
-    expect(merged[2]!.view.bridge).toBeUndefined();
+    expect(merged[0]!.view.binding).toEqual({
+      ticketLabel: 'Kimi 会员',
+      routeLabel: 'http://127.0.0.1:43121/v1/messages',
+    });
+    expect(merged[2]!.view.binding).toBeUndefined();
   });
 
   it('does not reorder when later agents are healthier', () => {
@@ -526,37 +495,43 @@ describe('mergeAgentsInOrder', () => {
   });
 });
 
-describe('stopped route status dot', () => {
-  const claude = meta('claude', 'Claude Code');
-
-  it('does not use a valid/green status dot when the route is 已停止', () => {
-    const view = buildAgentCardView(claude, status('claude'), { bridge: { state: 'stopped' } });
-    expect(view.bridge?.label).toBe('已停止');
-    expect(view.authStatus).toBe('none');
-    expect(view.statusDotTitle).toBe('已停止');
+describe('dashboardConnectionLabel', () => {
+  it('strips 本机路由 prefixes and keeps the authorization', () => {
+    expect(dashboardConnectionLabel('本机路由 · Kimi 会员')).toBe('Kimi 会员');
+    expect(dashboardConnectionLabel('本机路由')).toBe('当前连接');
+    const tEn = createTranslator('en');
+    expect(dashboardConnectionLabel('本机路由 · Kimi 会员', tEn)).toBe('Kimi 会员');
+    expect(dashboardConnectionLabel('Local route', tEn)).toBe('Current connection');
   });
+});
 
-  it('keeps expired / expiring dots when the route is stopped', () => {
-    const expired = buildAgentCardView(
-      claude,
-      status('claude', { authStatus: 'expired', authLabel: '已失效', effectiveKind: 'account' }),
-      { bridge: { state: 'stopped' } },
-    );
-    expect(expired.authStatus).toBe('expired');
-    expect(expired.bridge?.label).toBe('已停止');
-
-    const expiring = buildAgentCardView(
-      claude,
-      status('claude', { authStatus: 'expiring', authLabel: '即将过期', effectiveKind: 'account' }),
-      { bridge: { state: 'stopped' } },
-    );
-    expect(expiring.authStatus).toBe('expiring');
-  });
-
-  it('keeps a running route green when auth is valid', () => {
-    const view = buildAgentCardView(claude, status('claude'), { bridge: { state: 'running' } });
-    expect(view.authStatus).toBe('valid');
-    expect(view.bridge?.label).toBe('运行中');
+describe('dashboardBindingMeta', () => {
+  it('uses 127.0.0.1 for routed bindings and connection-state words otherwise', () => {
+    expect(dashboardBindingMeta({
+      ticketLabel: 'Kimi 会员',
+      route: 'native',
+      agentId: 'claude',
+    })).toEqual({ ticketLabel: 'Kimi 会员', routeLabel: '' });
+    expect(dashboardBindingMeta({
+      ticketLabel: 'Kimi 会员',
+      route: 'reshape',
+      agentId: 'claude',
+    })).toEqual({ ticketLabel: 'Kimi 会员', routeLabel: 'Rewrite config' });
+    expect(dashboardBindingMeta({
+      ticketLabel: 'Kimi 会员',
+      route: 'bridge',
+      agentId: 'claude',
+      port: 43121,
+    })).toEqual({
+      ticketLabel: 'Kimi 会员',
+      routeLabel: 'http://127.0.0.1:43121/v1/messages',
+    });
+    expect(dashboardBindingMeta({
+      ticketLabel: 'Kimi 会员',
+      route: 'bridge',
+      agentId: 'claude',
+      port: 43121,
+    }).routeLabel).not.toContain('本机路由');
   });
 });
 

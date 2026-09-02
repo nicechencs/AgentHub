@@ -1,7 +1,7 @@
 {
   "name": "agenthub",
   "private": true,
-  "version": "0.3.11",
+  "version": "0.4.0",
   "description": "Multi-agent desktop hub: install runtimes, manage providers/accounts, skills, usage, and chat",
   "license": "MIT",
   "repository": {
@@ -24,7 +24,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:contracts": "vitest run src/dev/mocks/adapter.test.ts src/lib/backend/boundary-imports.test.ts src/lib/api/backend-features.test.ts",
+    "test:contracts": "vitest run src/dev/mocks/adapter.test.ts src/lib/backend/tauri/adapter.test.ts src/lib/backend/boundary-imports.test.ts src/lib/api/backend-features.test.ts",
     "test:e2e:browser": "playwright test",
     "test:bridge": "cargo test -p agenthub-core --locked bridge && cargo test -p agenthub-gui --locked adapter_bridge_controller",
     "test:pr": "pnpm typecheck && pnpm typecheck:test && pnpm test && cargo test -p agenthub-core --locked",

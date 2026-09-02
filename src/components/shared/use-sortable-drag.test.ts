@@ -53,6 +53,22 @@ describe('sortable drag wiring', () => {
     expect(html).not.toContain('draggable="true"');
   });
 
+  it('paints the grip with a brand color when given one', () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(SortHandle, {
+          id: 'row-1',
+          color: 'var(--agent-claude)',
+          onDragStartId() {},
+        }),
+      ),
+    );
+    expect(html).toContain('var(--agent-claude)');
+    expect(html).not.toContain('text-muted');
+  });
+
   it('turns off Tauri HTML5 file-drop interception on the main window', () => {
     const conf = JSON.parse(
       readFileSync(path.join(repoRoot, 'src-tauri/tauri.conf.json'), 'utf8'),

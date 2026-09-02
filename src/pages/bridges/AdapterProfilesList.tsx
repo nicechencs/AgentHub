@@ -23,7 +23,7 @@ import {
   adapterBridgeIsListening,
   adapterFailurePresentation,
 } from './adapter-model';
-import { routeDetailTargetLabel } from './adapter-route-detail-model';
+import { routeDetailTargetLabel, routeWriteTruthFrom, type RouteWriteTruth } from './adapter-route-detail-model';
 import {
   buildRouteGraph,
   routeGraphSupportedAgents,
@@ -93,6 +93,10 @@ export function AdapterProfilesList({
   siblingProfiles,
 }: AdapterProfilesListProps) {
   const { t } = useI18n();
+  const writeTruth = useMemo(
+    () => routeWriteTruthFrom(entries, bridgeStatuses),
+    [bridgeStatuses, entries],
+  );
   const liveIds = useMemo(() => profiles.map((profile) => profile.id), [profiles]);
   const canReorder = Boolean(onMove) && liveIds.length > 1;
   const { onDragStartId, rowProps } = useSortableDrag((fromId, toId) => onMove?.(fromId, toId));
@@ -149,6 +153,7 @@ export function AdapterProfilesList({
               active={isLocalBridgeCardActive(profile, activeProfileId, siblingProfiles ?? profiles)}
               targetHidden={hiddenTargetIds?.has(profile.targetAgentId) === true}
               siblingProfiles={siblingProfiles ?? profiles}
+              writeTruth={writeTruth}
               sortHandle={canReorder ? (
                 <SortHandle
                   id={profile.id}
@@ -179,6 +184,7 @@ function AdapterProfileRow({
   active,
   targetHidden,
   siblingProfiles,
+  writeTruth,
   sortHandle,
 }: {
   profile: AdapterProfile;
@@ -195,6 +201,7 @@ function AdapterProfileRow({
   active: boolean;
   targetHidden: boolean;
   siblingProfiles: readonly AdapterProfile[];
+  writeTruth: RouteWriteTruth;
   sortHandle?: ReactNode;
 }) {
   const { t } = useI18n();
@@ -207,6 +214,7 @@ function AdapterProfileRow({
     siblingProfiles,
     host: endpointParts?.host,
     port: endpointParts?.port,
+    writeTruth,
   });
   const source = graph.source;
   const supportedAgents = routeGraphSupportedAgents(graph.rows);

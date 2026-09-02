@@ -111,15 +111,37 @@ pub fn switch_confirm_prompt(hub: &AgentHub, agent: AgentId, id_or_label: &str) 
     Ok(hub.account_switch_preview(agent, id_or_label)?.cli_prompt())
 }
 
-/// Print OAuth authorize URL for --agent (does not wait for callback).
+/// Print OAuth authorize URL or device-code details for --agent (does not wait).
 pub fn oauth_url(hub: &AgentHub, format: OutputFormat, agent_filter: Option<&str>) -> Result<()> {
     let _ = hub;
     let agent = require_agent(agent_filter, "oauth-url")?;
     if !agenthub_core::oauth::oauth_supported(agent) {
         return Err(AppError::Unsupported(format!(
-            "OAuth PKCE is not configured for {}",
+            "official login is not configured for {}",
             agent.as_str()
         )));
+    }
+    let options = agenthub_core::oauth::list_oauth_options(agent);
+    let only_device =
+        options.len() == 1 && options[0].flow == agenthub_core::oauth::OAuthFlowKind::DeviceCode;
+    if only_device {
+        let start = agenthub_core::oauth::start_device_oauth(agent, &options[0].id)?;
+        return match format {
+            OutputFormat::Quiet => Ok(()),
+            OutputFormat::Json => print_json(&start),
+            OutputFormat::Table => {
+                println!("agent:        {}", agent.as_str());
+                println!("state:        {}", start.state);
+                println!("user_code:    {}", start.user_code);
+                println!("verify_url:   {}", start.verification_uri);
+                if let Some(complete) = start.verification_uri_complete.as_deref() {
+                    println!("verify_link:  {complete}");
+                }
+                println!();
+                println!("This process exits after printing; complete login in the GUI.");
+                Ok(())
+            }
+        };
     }
     // Start without opening browser — still binds loopback so the URL is valid.
     let start = agenthub_core::oauth::start_oauth(agent, false, None)?;

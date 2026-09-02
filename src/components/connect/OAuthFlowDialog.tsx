@@ -89,11 +89,22 @@ export function OAuthFlowDialog({
   open,
   onOpenChange,
   onCompleted,
+  onStored,
+  offerSwitch = true,
+  poolOwned = false,
+  successDescription,
 }: {
   agentId: AgentId;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCompleted: (acc: Account) => void;
+  /** Called as soon as the login is persisted, before the user picks a next step. */
+  onStored?: (acc: Account) => void;
+  /** When false, the success step only closes — it does not switch the live login. */
+  offerSwitch?: boolean;
+  /** Mark device-code OAuth as owned by the Routes authorization pool. */
+  poolOwned?: boolean;
+  successDescription?: string;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -206,7 +217,9 @@ export function OAuthFlowDialog({
     setManualUrl('');
     setCountdown(selected.flow === 'deviceCode' ? 900 : OAUTH_PKCE_LISTEN_TIMEOUT_SECS);
     try {
-      const started = await startOfficialLogin(agentId, selected, true);
+      const started = poolOwned
+        ? await startOfficialLogin(agentId, selected, true, true)
+        : await startOfficialLogin(agentId, selected, true);
       if (!isCurrent()) {
         void cancelOfficialLogin(started).catch(() => {});
         return;
@@ -228,10 +241,11 @@ export function OAuthFlowDialog({
         setStep('error');
         return;
       }
-      const acc = await finishOfficialLogin(started);
+      const acc = await finishOfficialLogin(started, poolOwned);
       if (!isCurrent()) return;
       setAccount(acc);
       setStep('done');
+      onStored?.(acc);
     } catch (e) {
       if (!isCurrent()) return;
       const display = officialLoginErrorDisplay(
@@ -500,13 +514,15 @@ export function OAuthFlowDialog({
               </Card>
             ) : null}
             <p className="text-xs text-muted">
-              {agentId === 'pi' ? t('connect.oauth.writtenPi') : t('connect.oauth.writtenPool')}
+              {successDescription
+                ?? (agentId === 'pi' ? t('connect.oauth.writtenPi') : t('connect.oauth.writtenPool'))}
             </p>
           </div>
         )}
 
         <DialogFooter>
           {footer === 'success' && account ? (
+            offerSwitch ? (
             <>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 {t('connect.oauth.later')}
@@ -520,6 +536,11 @@ export function OAuthFlowDialog({
                 {t('connect.oauth.switchNow')}
               </Button>
             </>
+            ) : (
+              <Button onClick={() => handleOpenChange(false)}>
+                {t('common.done')}
+              </Button>
+            )
           ) : footer === 'retry' ? (
             <>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>

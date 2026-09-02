@@ -1,6 +1,6 @@
 {
   "source": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
-  "fetchedAt": "2026-08-30T11:43:04.927Z",
+  "fetchedAt": "2026-09-01T11:28:49.357Z",
   "modelCount": 322,
   "fromLitellmRows": 193,
   "aliasKeysAdded": 124,

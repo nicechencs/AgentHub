@@ -175,9 +175,13 @@ export interface AccountPort {
   /** Fail an in-flight PKCE or device-code session and release its loopback port. */
   cancelOAuth(state: string): Promise<void>;
   /** Device-code flow (Pi xAI). */
-  startDeviceOAuth(agentId: AgentId, providerKey: string): Promise<DeviceOAuthStartInfo>;
+  startDeviceOAuth(
+    agentId: AgentId,
+    providerKey: string,
+    poolOwned?: boolean,
+  ): Promise<DeviceOAuthStartInfo>;
   pollDeviceOAuth(state: string): Promise<DeviceOAuthPollInfo>;
-  finishDeviceOAuth(state: string): Promise<Account>;
+  finishDeviceOAuth(state: string, poolOwned?: boolean): Promise<Account>;
   /**
    * Convenience: start + wait + finish for agents that support OAuth.
    * Prefer start/wait/finish for UI progress. Mock may implement only this.

@@ -43,13 +43,13 @@ export function providerSwitchBlockedFallback(t?: TranslateFn): string {
 }
 
 const ROUTE_SUMMARY: Record<AdapterRoute, string> = {
-  native_endpoint: '直连',
+  native_endpoint: '',
   local_bridge: '本机路由',
-  config_sync: '直连',
+  config_sync: '',
   unsupported: '当前不支持',
 };
 const REUSE_PATH_SUMMARY: Record<AdapterReusePath, string> = {
-  api_endpoint: '直连',
+  api_endpoint: '',
   native_subscription: '用这份登录',
   local_bridge: '本机路由',
   none: '当前不支持',
@@ -142,7 +142,7 @@ export function planRouteSummary(plan: AdapterApplyPlan, t?: TranslateFn): strin
     if (reusePath === 'local_bridge') return t('kind.route.localRoute');
     if (reusePath === 'native_subscription') return t('kind.route.reuseLogin');
     if (reusePath === 'none') return t('kind.route.unsupported');
-    return t('kind.route.direct');
+    return '';
   }
   return REUSE_PATH_SUMMARY[reusePath] ?? ROUTE_SUMMARY[plan.analysis.route];
 }

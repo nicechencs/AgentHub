@@ -119,12 +119,22 @@ function accountIsProjection(account: Account): boolean {
   return /\bahb_/.test(haystack) || AGENTHUB_BRIDGE_SLUG.test(haystack);
 }
 
+function accountIsRoutePoolHome(account: Account): boolean {
+  if (account.isCurrent) return false;
+  if (account.home === 'route_pool') return true;
+  const extra = (account as ClassifiableAccount).extra;
+  return extra?.home === 'route_pool';
+}
+
 function providerIsNotATicket(
   provider: Provider,
   generatedIds: ReadonlySet<string>,
 ): boolean {
   if (generatedIds.has(provider.id)) return true;
   const meta = (provider as ClassifiableProvider).meta;
+  if (!provider.isCurrent && (provider.home === 'route_pool' || meta?.home === 'route_pool')) {
+    return true;
+  }
   if (meta?.generatedBy === 'adapter') return true;
   const haystack = `${provider.id}\n${provider.name}\n${provider.configText ?? ''}`;
   return AGENTHUB_BRIDGE_SLUG.test(haystack);
@@ -286,7 +296,7 @@ async function buildWallet(resolver: MockTicketWalletRuntime): Promise<TicketWal
   const tickets: TicketView[] = [
     ...await Promise.all(
       accounts
-        .filter((account) => !accountIsProjection(account))
+        .filter((account) => !accountIsProjection(account) && !accountIsRoutePoolHome(account))
         .map((account) => accountToTicket(account, resolver)),
     ),
     ...await Promise.all(

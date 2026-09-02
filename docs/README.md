@@ -3,12 +3,12 @@ title: AgentHub 文档索引
 type: navigation
 status: current
 owner: maintainers
-updated: 2026-08-29
+updated: 2026-08-31
 ---
 
 # AgentHub 文档
 
-这里是开发、架构、产品决策和运维参考的统一入口。当前事实与未来提案分开维护；`archive/` 只保留历史上下文，不作为实现依据或待办来源。
+按任务打开一页。不要把本页当必读清单，也不要把审查稿、提案或 `archive/` 当成当前实现。
 
 ## 第一次阅读
 
@@ -30,6 +30,8 @@ updated: 2026-08-29
 
 ### 理解系统
 
+现行说明，不要和下面的审查稿、提案混读。
+
 - [架构总览](architecture/overview.md)
 - [前端与 Backend 边界](architecture/frontend-backend.md)
 - [Core 与运行时](architecture/core-runtime.md)
@@ -39,19 +41,6 @@ updated: 2026-08-29
 - [账号与授权](concepts/accounts-and-authorization.md)
 - [Chat 与 Agent](concepts/chat-and-agents.md)
 - [插件、MCP 与技能](concepts/plugins-and-mcp.md)
-- [对象化与封装审查](architecture/objectization-encapsulation-audit.md)
-- [Service 内部 owner 拆分](architecture/service-internal-owners.md)（提案）
-- [对象化与封装审查：前端与运行时](architecture/objectization-encapsulation-audit-frontend.md)
-- [对象化与封装审查：Core 剩余分区](architecture/objectization-encapsulation-audit-core.md)
-- [对象化与封装审查：OAuth](architecture/objectization-encapsulation-audit-oauth.md)
-- [对象化与封装审查：CLI、Tauri 与工具链](architecture/objectization-encapsulation-audit-cli-tauri.md)
-- [对象化与封装审查：测试、Mock 与 Fixture](architecture/objectization-encapsulation-audit-tests-fixtures.md)
-- [读模型 owner 与兼容策略（提案）](architecture/read-model-owners.md)
-
-### 状态与审查
-
-- [当前实现状态](STATUS.md)
-- [Codex 安装与连接/路由模块化审查](status/codex-install-modularity-review.md)
 
 ### 查稳定契约
 
@@ -73,15 +62,17 @@ updated: 2026-08-29
 - [UI 设计系统](ui/design-system.md)
 - [页面模式](ui/page-patterns.md)
 
+## 审查与提案
+
+不是现行契约。实现对应条目之前不要当架构说明阅读；完整列表见 [提案索引](proposals/README.md)。
+
+- [对象化与封装审查](architecture/objectization-encapsulation-audit.md)（审查记录；分册从该页链出）
+- [Codex 安装与连接/路由模块化审查](status/codex-install-modularity-review.md)
+
 ## 未来与历史
 
 - [提案索引](proposals/README.md)：尚未承诺实施的候选方向。
-- [Adapter sidecar](proposals/adapter-sidecar.md)
-- [托盘后台模式](proposals/tray-background-modes.md)
-- [模块化改进](proposals/modularity.md)
-- [插件（extension / plugin）管理](proposals/plugin-management.md)
 - [归档索引](archive/README.md)：不可作为当前契约。已落地的同口授权池设计稿在 [本机同口授权池（归档）](archive/unified-loopback-pool.md)。
-- [单一内核与查表投影（历史）](archive/single-kernel-projections.md)
 - [旧文档迁移索引](archive/legacy-document-index.md)：旧路径到新真源的完整映射。
 
 ## 文档治理

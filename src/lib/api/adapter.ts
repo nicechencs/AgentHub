@@ -9,8 +9,12 @@ import type {
   AdapterProfileFilter,
   AdapterRouteAnalysis,
   AdapterRouteRequest,
+  AdapterSourceKind,
+  AttachPoolOwnedAuthorizationRequest,
   DefaultRoutePoolList,
   DefaultRoutePoolOverview,
+  SyncConnectionAuthorizationsRequest,
+  SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
 
 export type {
@@ -32,6 +36,9 @@ export type {
   AdapterServiceImpact,
   AdapterSourceKind,
   AdapterSupport,
+  AttachPoolOwnedAuthorizationRequest,
+  SyncConnectionAuthorizationsRequest,
+  SyncConnectionAuthorizationsResult,
 } from '@/lib/backend/contracts/adapter';
 
 export async function analyzeAdapter(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis> {
@@ -51,6 +58,121 @@ export async function listAdapterProfiles(filter?: AdapterProfileFilter): Promis
 /** Default-pool overview for Routes. Flag off returns `{ enabled: false, pools: [] }`. */
 export async function listDefaultRoutePools(): Promise<DefaultRoutePoolList> {
   return getBackend().adapter.listDefaultRoutePools();
+}
+
+export async function listLocalTokens() {
+  return getBackend().adapter.listLocalTokens();
+}
+
+export async function listLocalTokenModels(token: string) {
+  return getBackend().adapter.listLocalTokenModels(token);
+}
+
+export async function refreshLocalTokenModels(token: string) {
+  return getBackend().adapter.refreshLocalTokenModels(token);
+}
+
+export async function setLocalTokenCustomModels(token: string, models: string[]) {
+  return getBackend().adapter.setLocalTokenCustomModels(token, models);
+}
+
+export async function ensureSourceModelCatalog(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+) {
+  return getBackend().adapter.ensureSourceModelCatalog(sourceKind, sourceId);
+}
+
+export async function setSourceCustomModels(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+  models: string[],
+) {
+  return getBackend().adapter.setSourceCustomModels(sourceKind, sourceId, models);
+}
+
+export async function testLocalToken(
+  endpoint: string,
+  token: string,
+  path: string,
+  model?: string | null,
+) {
+  return getBackend().adapter.testLocalToken(endpoint, token, path, model);
+}
+
+export async function setLocalToken(poolId: string, token: string) {
+  return getBackend().adapter.setLocalToken(poolId, token);
+}
+
+/** Kimi and DSH share one chat-completions token, or keep separate keys. */
+export async function setChatCompletionsShared(shared: boolean): Promise<DefaultRoutePoolList> {
+  return getBackend().adapter.setChatCompletionsShared(shared);
+}
+
+/** Enroll an authorization into the default auth pool and keep it off Connections. */
+export async function attachPoolOwnedAuthorization(
+  request: AttachPoolOwnedAuthorizationRequest,
+): Promise<DefaultRoutePoolOverview> {
+  const result = await getBackend().adapter.attachPoolOwnedAuthorization(request);
+  try {
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+  } catch {
+    // Write succeeded; the pool store keeps previous rows if refresh fails.
+  }
+  return result;
+}
+
+/** Enable or disable this login in every default pool it belongs to. */
+export async function setRouteAuthorizationEnabled(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+  enabled: boolean,
+): Promise<number> {
+  return getBackend().adapter.setRouteAuthorizationEnabled(sourceKind, sourceId, enabled);
+}
+
+/** Set this login's priority in every default pool it belongs to. */
+export async function setRouteAuthorizationPriority(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+  priority: number,
+): Promise<number> {
+  return getBackend().adapter.setRouteAuthorizationPriority(sourceKind, sourceId, priority);
+}
+
+/** Remove a login reference that is still present in one or more default pools. */
+export async function removeRouteAuthorization(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+): Promise<number> {
+  return getBackend().adapter.removeRouteAuthorization(sourceKind, sourceId);
+}
+
+/** Move a Connections-managed pool member into the pool recycle bin. */
+export async function recycleRouteMembership(
+  sourceKind: AdapterSourceKind,
+  sourceId: string,
+): Promise<number> {
+  const result = await getBackend().adapter.recycleRouteMembership(sourceKind, sourceId);
+  try {
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+  } catch {
+    // Write succeeded; the pool store keeps previous rows if refresh fails.
+  }
+  return result;
+}
+
+/** Enroll Connections authorizations into the auth pool without removing them from Connections. */
+export async function syncConnectionAuthorizations(
+  request?: SyncConnectionAuthorizationsRequest,
+): Promise<SyncConnectionAuthorizationsResult> {
+  const result = await getBackend().adapter.syncConnectionAuthorizations(request);
+  try {
+    await refreshRuntimeReadModels(getBackend(), { models: ['connectionPool', 'ticketWallet'] });
+  } catch {
+    // Write succeeded; the pool store keeps previous rows if refresh fails.
+  }
+  return result;
 }
 
 /** Convert a direct login into the target Agent default local route. */
@@ -93,6 +215,21 @@ export async function removeAdapter(profileId: string): Promise<void> {
 /** Starts a previously-created local bridge on this machine. */
 export async function startAdapterBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus> {
   return getBackend().adapter.startBridge(profileId);
+}
+
+/** Start the shared local relay. Does not bind logins to Agents. */
+export async function startLocalEntry() {
+  return getBackend().adapter.startLocalEntry();
+}
+
+/** Stop the shared local relay. */
+export async function stopLocalEntry() {
+  return getBackend().adapter.stopLocalEntry();
+}
+
+/** Read whether the shared local relay is listening. */
+export async function getLocalEntryStatus() {
+  return getBackend().adapter.getLocalEntryStatus();
 }
 
 /** Stops the bridge listener without deleting its generated Connection. */

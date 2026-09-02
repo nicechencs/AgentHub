@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use crate::models::{
-    ticket_id, AdapterRoute, AdapterSourceKind, AgentId, Provider, TicketPlanRequest,
+    ticket_id, Account, AccountKind, AdapterRoute, AdapterSourceKind, AgentId, Provider,
+    TicketPlanRequest,
 };
-use crate::storage::{AdapterProfileRepo, ProviderRepo};
+use crate::storage::{AccountRepo, AdapterProfileRepo, ProviderRepo};
 use serde_json::json;
 
 use super::{
@@ -206,6 +207,117 @@ fn resolve_bind_action_rejects_unknown_custom_relay_without_persistence() {
         profiles.list(None, None, None).unwrap().len(),
         before_profile_count
     );
+}
+
+#[test]
+fn resolve_unbind_action_rejects_duplicate_profiles() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = crate::AgentHub::open(Some(dir.path())).unwrap();
+    let profiles = AdapterProfileRepo::new(hub.db.clone());
+    for id in ["duplicate-a", "duplicate-b"] {
+        profiles
+            .create(&crate::models::AdapterProfile {
+                id: id.into(),
+                name: "duplicate".into(),
+                source_kind: AdapterSourceKind::Provider,
+                source_id: "source".into(),
+                target_agent_id: AgentId::Claude,
+                route: AdapterRoute::NativeEndpoint,
+                mode: crate::models::AdapterProfileMode::Api,
+                status: crate::models::AdapterProfileStatus::Active,
+                rule_id: "rule".into(),
+                rule_version: "1".into(),
+                generated_provider_id: None,
+                local_port: None,
+                auto_start: false,
+                last_error_code: None,
+                created_at: "now".into(),
+                updated_at: "now".into(),
+            })
+            .unwrap();
+    }
+
+    let error = resolve_unbind_action(
+        &hub,
+        &ticket_id(AdapterSourceKind::Provider, "source"),
+        AgentId::Claude,
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "adapter.profile_conflict");
+}
+
+#[test]
+fn resolve_bind_action_uses_plan_gate_for_ambiguous_custom_relay() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = crate::AgentHub::open(Some(dir.path())).unwrap();
+    ProviderRepo::new(hub.db.clone())
+        .create(&Provider {
+            id: "ambiguous-relay".into(),
+            agent_id: AgentId::Claude,
+            name: "Ambiguous relay".into(),
+            settings_config: json!({
+                "apiKey": "relay-secret",
+                "baseUrl": "https://api.openai.com/v1",
+                "base_url": "https://relay.example/v1"
+            }),
+            meta: json!({"preset": "openai-compatible"}),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+
+    let ticket = ticket_id(AdapterSourceKind::Provider, "ambiguous-relay");
+    let plan = hub
+        .tickets
+        .plan(&TicketPlanRequest {
+            ticket_id: ticket.clone(),
+            target_agent_id: AgentId::Codex,
+        })
+        .unwrap();
+    assert!(!plan.can_apply);
+    assert_eq!(
+        plan.reason,
+        crate::services::adapter_route_constants::UNKNOWN_CUSTOM_RELAY_REASON
+    );
+
+    let error = resolve_bind_action(&hub, &ticket, AgentId::Codex).unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+    assert!(error.to_string().contains(&plan.reason));
+}
+
+#[test]
+fn resolve_bind_action_marks_native_codex_self_bind_for_compat_preflight() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = crate::AgentHub::open(Some(dir.path())).unwrap();
+    AccountRepo::new(hub.db.clone())
+        .create(&Account {
+            id: "codex-account".into(),
+            agent_id: AgentId::Codex,
+            kind: AccountKind::Oauth,
+            label: "Codex subscription".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "tokens": {
+                    "access_token": "access",
+                    "refresh_token": "refresh"
+                }
+            }),
+            extra: json!({}),
+            status: "active".into(),
+            is_current: false,
+            created_at: "now".into(),
+            updated_at: "now".into(),
+        })
+        .unwrap();
+
+    let action = resolve_bind_action(
+        &hub,
+        &ticket_id(AdapterSourceKind::Account, "codex-account"),
+        AgentId::Codex,
+    )
+    .unwrap();
+    assert!(matches!(action, BindAction::NativeSelf(_)));
 }
 
 #[test]

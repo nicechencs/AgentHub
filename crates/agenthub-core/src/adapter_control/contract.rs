@@ -9,7 +9,6 @@ use crate::models::{
     parse_ticket_id, AdapterProfile, AdapterRoute, AgentId, TicketBinding, TicketPlanRequest,
     TicketUnbindRequest,
 };
-use crate::services::adapter_route_constants::is_unknown_custom_relay_provider;
 use crate::services::AdapterBridgePrepareRequest;
 use crate::AgentHub;
 
@@ -70,6 +69,12 @@ pub enum BindAction {
     Reshape(TicketPlanRequest),
     /// Local bridge; host runs the listener + projection saga.
     LocalBridge(AdapterBridgePrepareRequest),
+    /// Native account switch; no adapter profile is persisted for this path.
+    ///
+    /// This explicit variant lets compatibility callers preflight the action
+    /// before attempting to construct an [`AdapterApplyResult`], which cannot
+    /// represent a native self-bind without a generated profile.
+    NativeSelf(TicketPlanRequest),
 }
 
 /// Host-facing decision for one product unbind.
@@ -83,7 +88,8 @@ pub struct UnbindAction {
     pub lock_target: Option<AgentId>,
 }
 
-/// Plan bind: validate ticket + route, then dispatch reshape vs local_bridge.
+/// Plan bind: validate ticket + route, then dispatch native self, reshape, or
+/// local_bridge.
 pub fn resolve_bind_action(
     hub: &AgentHub,
     ticket_id: &str,
@@ -97,7 +103,16 @@ pub fn resolve_bind_action(
     if !plan.can_apply {
         return Err(AppError::Unsupported(plan.reason));
     }
-    reject_unknown_custom_relay(hub, source_kind, &source_id)?;
+    if source_kind == crate::models::AdapterSourceKind::Account
+        && target_agent_id == AgentId::Codex
+        && plan.analysis.rule_id.as_deref()
+            == Some(crate::models::CODEX_SUBSCRIPTION_TO_CODEX_RULE_ID)
+    {
+        return Ok(BindAction::NativeSelf(TicketPlanRequest {
+            ticket_id: ticket_id.to_owned(),
+            target_agent_id,
+        }));
+    }
     if plan.analysis.route == AdapterRoute::LocalBridge {
         return Ok(BindAction::LocalBridge(AdapterBridgePrepareRequest {
             source_kind,
@@ -112,29 +127,6 @@ pub fn resolve_bind_action(
     }))
 }
 
-/// URL-based OpenAI-compatible classification is useful for route preview,
-/// but an unlabelled custom relay is not a bindable ticket. Keep this check
-/// before either host dispatch path: local_bridge does not pass through
-/// [`crate::services::TicketBindService::bind`].
-fn reject_unknown_custom_relay(
-    hub: &AgentHub,
-    source_kind: crate::models::AdapterSourceKind,
-    source_id: &str,
-) -> Result<()> {
-    if source_kind != crate::models::AdapterSourceKind::Provider {
-        return Ok(());
-    }
-
-    let provider = hub.providers.get(source_id, None)?;
-    if is_unknown_custom_relay_provider(&provider) {
-        return Err(AppError::Unsupported(
-            "这份自定义上游还缺有效的服务地址，没法开本机转发。请补上地址后重试，或删除后重建。"
-                .into(),
-        ));
-    }
-    Ok(())
-}
-
 /// Plan unbind: locate profile, require bridge stop when route is local_bridge.
 pub fn resolve_unbind_action(
     hub: &AgentHub,
@@ -142,10 +134,24 @@ pub fn resolve_unbind_action(
     agent_id: AgentId,
 ) -> Result<UnbindAction> {
     let (source_kind, source_id) = parse_ticket_id(ticket_id).map_err(AppError::InvalidArg)?;
-    let mut profiles =
-        hub.adapter_apply
-            .list(Some(source_kind), Some(&source_id), Some(agent_id))?;
-    let profile = profiles.pop();
+    let profiles = hub
+        .adapter_apply
+        .list(Some(source_kind), Some(&source_id), Some(agent_id))?;
+    let profile = match profiles.as_slice() {
+        [] => None,
+        [profile] => Some(profile.clone()),
+        _ => {
+            return Err(AppError::message(
+                "adapter.profile_conflict",
+                format!(
+                    "multiple adapter profiles found for {}:{} → {}; remove the duplicate profiles before unbinding",
+                    source_kind.as_str(),
+                    source_id,
+                    agent_id.as_str()
+                ),
+            ));
+        }
+    };
     let stop_bridge_profile_id = profile
         .as_ref()
         .filter(|profile| profile.route == AdapterRoute::LocalBridge)

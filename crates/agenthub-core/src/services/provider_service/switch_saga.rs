@@ -8,7 +8,7 @@ use crate::services::switch_undo::{
     clear_switch_undo, peek_switch_undo, record_switch_undo, PROVIDER_UNDO_PREFIX,
 };
 
-use super::live::{log_live_switch_paths, require_live_config_write};
+use super::live::{hash_live_paths, log_live_switch_paths, require_live_config_write};
 use super::{
     ensure_config_agent, live_config_is_empty, log_provider_op, now_ts, ProviderLiveSagaGuard,
     ProviderService,
@@ -154,12 +154,19 @@ impl ProviderService {
             }
         }
 
+        let before = hash_live_paths(adapter.as_ref());
         if let Err(error) = adapter.write_config(&target_config) {
             let live_rollback = adapter.write_config(&live_before).err();
             let db_rollback = rollback_backfill();
             return Err(compensated_switch_error(error, live_rollback, db_rollback));
         }
-        log_live_switch_paths(agent, adapter.as_ref(), &super::switch_write_last4(&target));
+        log_live_switch_paths(
+            &self.db,
+            agent,
+            adapter.as_ref(),
+            &super::switch_write_last4(&target),
+            &before,
+        );
         let now = now_ts();
         // Single transaction: is_current + demote accounts + binding (B1 cleanup).
         let provider = match self.connections.activate_provider(

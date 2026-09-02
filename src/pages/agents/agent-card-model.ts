@@ -3,8 +3,23 @@ import type { InstallChannelMeta } from '@/config/agents';
 import type { MessageKey } from '@/lib/i18n';
 import type { AgentStatus } from '@/lib/types';
 import { installLifecycle } from '@/lib/backend/contracts/install-lifecycle';
+import { detectHostPlatform, type HostPlatform } from '@/lib/platform-detect';
 
 export { installLifecycle };
+
+/** WorkBuddy / ZCode ship Win/Mac official setups only — not Linux installers. */
+export function isDesktopOfficialOnlyAgent(agentId: string): boolean {
+  return agentId === 'workbuddy' || agentId === 'zcode';
+}
+
+/** On Linux, do not treat Win/Mac official setup as the primary install path. */
+export function agentLinuxInstallUnsupported(
+  agentId: string,
+  platform: HostPlatform = detectHostPlatform(),
+): boolean {
+  return platform === 'linux' && isDesktopOfficialOnlyAgent(agentId);
+}
+
 
 export type AgentCardTaskAction = 'install' | 'upgrade' | 'oneclick';
 export type AgentCardTaskStatus = TerminalStatus;
@@ -30,11 +45,23 @@ export function agentTaskLogTitleKey(
   return 'agents.card.upgrading';
 }
 
-/** Real failures use the page CTA. Opening an official setup page is not a failure. */
+/**
+ * Failed install → primary 重试.
+ * Guided official-setup (agent still missing) → primary 重新检测 (not 安装).
+ */
 export function installRetryButtonVariant(
   status: AgentCardTaskStatus | undefined,
 ): 'default' | 'secondary' {
-  return status === 'failed' ? 'default' : 'secondary';
+  return status === 'failed' || status === 'guided' ? 'default' : 'secondary';
+}
+
+/** Label for the list/detail install CTA after terminal install outcomes. */
+export function installPrimaryLabelKey(
+  status: AgentCardTaskStatus | undefined,
+): MessageKey {
+  if (status === 'failed') return 'agents.card.retry';
+  if (status === 'guided') return 'agents.card.redetect';
+  return 'agents.card.install';
 }
 
 /** Update chip: Node-too-old (Pi) is not a generic "update unknown". */
@@ -100,6 +127,73 @@ export function updateViaLabel(
   }
 }
 
+export type AgentUpgradeKind = 'in_app' | 'open_setup' | 'hint_only';
+
+export type AgentUpgradeControl = {
+  show: boolean;
+  /** Not an in-app upgrade — gray the button. */
+  muted: boolean;
+  kind: AgentUpgradeKind;
+};
+
+/** IDE / desktop / official / unsupported: gray button + hint, or open the setup page. */
+export function agentUpgradeControl(input: {
+  installed: boolean;
+  updateVia?: string | null;
+  updateState?: string;
+  setupUrl?: string | null;
+  /** Win/Mac-only official agents on Linux: gray hint, do not open setup as primary. */
+  linuxUnsupported?: boolean;
+}): AgentUpgradeControl {
+  if (!input.installed) {
+    return { show: false, muted: false, kind: 'in_app' };
+  }
+  if (input.linuxUnsupported) {
+    return { show: true, muted: true, kind: 'hint_only' };
+  }
+  const via = asUpdateVia(input.updateVia);
+  const unsupported = input.updateState === 'unsupported';
+  if (via === 'in_app' && !unsupported) {
+    return { show: true, muted: false, kind: 'in_app' };
+  }
+  const show =
+    unsupported || via === 'official' || via === 'ide' || via === 'desktop';
+  if (!show) {
+    return { show: false, muted: false, kind: 'hint_only' };
+  }
+  const url = input.setupUrl?.trim();
+  const hasUrl = Boolean(url && /^https:\/\//i.test(url));
+  return {
+    show: true,
+    muted: true,
+    kind: hasUrl ? 'open_setup' : 'hint_only',
+  };
+}
+
+export function agentUpgradeHint(
+  control: Pick<AgentUpgradeControl, 'kind' | 'muted'>,
+  input: {
+    updateVia?: string | null;
+    note?: string | null;
+    linuxUnsupported?: boolean;
+    t: (key: MessageKey, params?: Record<string, string>) => string;
+  },
+): string {
+  if (input.linuxUnsupported) {
+    return input.t('agents.card.linuxUnsupportedHint');
+  }
+  const via = asUpdateVia(input.updateVia);
+  const where =
+    via && via !== 'in_app' && via !== 'none'
+      ? updateViaLabel(via, input.t)
+      : input.t('agents.card.unsupportedUpdate');
+  const hint = input.note?.trim() || where;
+  if (control.kind === 'open_setup') {
+    return input.t('agents.update.clickOfficial', { note: hint });
+  }
+  return hint;
+}
+
 export function uninstallViaLabel(
   via: UninstallVia,
   t: (key: MessageKey) => string,
@@ -118,6 +212,22 @@ export function uninstallViaLabel(
     default:
       return t('agents.card.viaNone');
   }
+}
+
+export type AgentUninstallControl = {
+  show: boolean;
+  /** Not an in-app uninstall — gray the button. */
+  muted: boolean;
+};
+
+/** IDE / desktop / official: gray. Leftover: show cleanup CTA. None: hide. */
+export function agentUninstallControl(uninstallVia?: string | null): AgentUninstallControl {
+  const via = asUninstallVia(uninstallVia);
+  if (via === 'in_app' || via === 'leftover') return { show: true, muted: false };
+  if (via === 'ide' || via === 'desktop' || via === 'official') {
+    return { show: true, muted: true };
+  }
+  return { show: false, muted: false };
 }
 
 /**
@@ -269,6 +379,47 @@ export function spawnInstall(
   return listAgentInstalls(agent).find((row) => row.spawn);
 }
 
+export type AgentLaunchTargets = {
+  cliPath?: string;
+  appPath?: string;
+};
+
+function launchKindForInstall(
+  agentId: string,
+  row: Pick<AgentInstall, 'source'>,
+): 'cli' | 'app' | null {
+  if (row.source === 'desktop') return 'app';
+  if (row.source === 'npm') return 'cli';
+  if (row.source === 'native') {
+    // WorkBuddy / ZCode native Setup is the Electron app, not a CLI.
+    if (installLifecycle('native', agentId).updateVia === 'official') return 'app';
+    return 'cli';
+  }
+  return null;
+}
+
+/** Linux has no official Codex window; desktop copies are still the CLI. */
+function hideCodexAppLaunch(agentId: string, platform: HostPlatform): boolean {
+  return agentId === 'codex' && platform === 'linux';
+}
+
+/** Outer card: show 启动 CLI / 启动 App only when that program exists. */
+export function agentLaunchTargets(
+  agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
+  platform: HostPlatform = detectHostPlatform(),
+): AgentLaunchTargets {
+  const out: AgentLaunchTargets = {};
+  const hideApp = hideCodexAppLaunch(agent.agentId, platform);
+  for (const row of listAgentInstalls(agent)) {
+    const location = row.location.trim();
+    if (!location) continue;
+    const kind = launchKindForInstall(agent.agentId, row);
+    if (kind === 'cli' && !out.cliPath) out.cliPath = location;
+    if (kind === 'app' && !out.appPath && !hideApp) out.appPath = location;
+  }
+  return out;
+}
+
 /** Program uninstall only covers copies whose uninstall method is in-app. */
 export function canUninstallProgramInApp(
   agent: Pick<AgentStatus, 'agentId' | 'installed' | 'binPath' | 'channel' | 'version' | 'extraCopies'>,
@@ -384,6 +535,11 @@ export type AgentListDetailsHint = {
   key: MessageKey;
   params?: { count: number };
 };
+
+/** List leftover hint is a warning — not a valid spawn path. */
+export function isLeftoverDetailsHint(hint: AgentListDetailsHint | null | undefined): boolean {
+  return hint?.key === 'agents.card.seeDetailsLeftover';
+}
 
 /**
  * List hint must match detail locations. Leftover copies are leftover, not versions.

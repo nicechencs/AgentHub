@@ -27,8 +27,9 @@ use std::sync::Arc;
 use adapters::AdapterRegistry;
 use error::Result;
 use models::{
-    AgentId, AgentUpdateInfo, InstallOutcome, MultiRunReport, RunOptions, RuntimeId, Skill,
-    SkillListing, SwitchConfirmKind, SwitchConfirmPreview,
+    AdapterSourceKind, AgentId, AgentUpdateInfo, ConnectionTrashKind, InstallOutcome, MultiRunReport,
+    RouteMembershipTrashPayload, RunOptions, RuntimeId, Skill, SkillListing, SwitchConfirmKind,
+    SwitchConfirmPreview, TRASH_HOME_ROUTE_POOL,
 };
 use platform::{LifecycleCoordinator, LifecycleResult};
 use services::{
@@ -138,6 +139,45 @@ impl AgentHub {
 
     pub fn connections(&self) -> &ConnectionService {
         &self.connections
+    }
+
+    /// Restore a recycle-bin row into its original home (Connections or the pool).
+    pub fn restore_connection_trash(&self, id: &str) -> Result<()> {
+        let row = self.connections.load_trash_payload(id)?;
+        match row.kind {
+            ConnectionTrashKind::Membership => {
+                let payload: RouteMembershipTrashPayload = serde_json::from_value(row.payload)?;
+                self.route_pools.restore_membership_trash(&payload)?;
+                self.connections.delete_trash(id)?;
+            }
+            ConnectionTrashKind::Account => {
+                let home = row.home.clone();
+                let agent_id = row.agent_id;
+                let source_id = row.source_id.clone();
+                self.connections.restore_trash(id)?;
+                if home == TRASH_HOME_ROUTE_POOL {
+                    self.route_pools.reattach_restored_pool_owned(
+                        agent_id,
+                        AdapterSourceKind::Account,
+                        &source_id,
+                    )?;
+                }
+            }
+            ConnectionTrashKind::Provider => {
+                let home = row.home.clone();
+                let agent_id = row.agent_id;
+                let source_id = row.source_id.clone();
+                self.connections.restore_trash(id)?;
+                if home == TRASH_HOME_ROUTE_POOL {
+                    self.route_pools.reattach_restored_pool_owned(
+                        agent_id,
+                        AdapterSourceKind::Provider,
+                        &source_id,
+                    )?;
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn env(&self) -> &EnvService {

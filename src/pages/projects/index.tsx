@@ -15,6 +15,7 @@ import { AgentTabStrip } from '@/components/layout/AgentTabStrip';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { SearchField } from '@/components/shared/SearchField';
 import { Button } from '@/components/ui/button';
 import {
@@ -555,14 +556,11 @@ export default function ProjectsPage() {
               )}
             </>
           )}
-          <Button
-            size="sm"
-            variant="outline"
+          <PageRefreshButton
             disabled={showListSkeleton || busy || tabAgents.length === 0}
             onClick={() => void reloadProjects()}
-          >
-            {t('projects.page.refresh')}
-          </Button>
+            label={t('projects.page.refresh')}
+          />
         </div>
       </div>
 
