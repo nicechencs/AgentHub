@@ -98,6 +98,9 @@ pub struct LocalEntryStatus {
     /// Failed local-auth attempts with no bound profile (newest first).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recent_unauthenticated_traces: Vec<RouteRequestTrace>,
+    /// True while restore or start_local_entry is bringing listeners back.
+    /// Not set for stop_local_entry. GUI shows a non-blocking restart banner.
+    pub restarting: bool,
 }
 
 impl AdapterBridgeStatus {

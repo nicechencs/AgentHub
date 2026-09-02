@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { PageChromeProvider } from '@/components/layout/PageChromeContext';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { SidebarProvider } from '@/components/layout/SidebarContext';
+import { LocalForwardRestartBanner } from '@/components/layout/LocalForwardRestartBanner';
 import { TopBar } from '@/components/layout/TopBar';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { OnboardingDialog } from '@/components/shared/OnboardingDialog';
@@ -127,6 +128,7 @@ export default function App() {
         <PageChromeProvider>
           <div className={pageRhythm.shellMain}>
             {!isChat && <TopBar />}
+            {!isChat && !isRoutesArea ? <LocalForwardRestartBanner /> : null}
             <main
               className={cn(
                 'min-h-0 flex-1',

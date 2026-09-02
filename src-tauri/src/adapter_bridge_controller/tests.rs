@@ -1,7 +1,7 @@
 use super::*;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use agenthub_core::adapters::{AdapterRegistry, AgentAdapter};
@@ -77,6 +77,31 @@ fn status_dto_never_serializes_local_or_upstream_bearers() {
         assert!(!json.contains("base_url"));
         host.shutdown().await.unwrap();
     });
+}
+
+#[test]
+fn local_entry_restarting_flag_flips_without_app_handle() {
+    let flag = AtomicBool::new(false);
+    set_local_entry_restarting(&flag, None, true);
+    assert!(flag.load(Ordering::SeqCst));
+    set_local_entry_restarting(&flag, None, true);
+    assert!(flag.load(Ordering::SeqCst));
+    set_local_entry_restarting(&flag, None, false);
+    assert!(!flag.load(Ordering::SeqCst));
+}
+
+#[test]
+fn local_entry_status_includes_restarting_flag() {
+    let host = BridgeRuntimeHost::new();
+    let flag = AtomicBool::new(true);
+    let status = local_entry_status(&host, &flag).unwrap();
+    assert!(status.restarting);
+    assert!(!status.running);
+    let json = serde_json::to_value(&status).unwrap();
+    assert_eq!(json["restarting"], true);
+    flag.store(false, Ordering::SeqCst);
+    let idle = local_entry_status(&host, &flag).unwrap();
+    assert!(!idle.restarting);
 }
 
 #[test]
