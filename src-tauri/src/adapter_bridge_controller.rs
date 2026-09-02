@@ -11,6 +11,7 @@
 //! Process-local profile / target gates and the credential-free status DTO live
 //! in [`agenthub_core::adapter_control`] so commands stay Tauri-neutral.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -20,8 +21,10 @@ use agenthub_core::adapter_control::{
 use agenthub_core::bridge::{
     BridgeHostError, BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState,
     BridgeRuntimeStatus, BridgeStartSpec, BridgeUpstreamConfig, BridgeUpstreamProtocol,
-    BridgeUpstreamStatus, DownstreamResponsesProfile, MemberHealth, ResolvedAuth, UpstreamAuthReload,
+    BridgeUpstreamStatus, DownstreamResponsesProfile, MemberHealth, ResolvedAuth,
+    UpstreamAuthReload,
 };
+use agenthub_core::logging::targets;
 use agenthub_core::models::{
     local_bridge_multi_account, ticket_id, AdapterApplyResult, AdapterProfile,
     AdapterProfileStatus, AdapterRoute, AdapterSourceKind, AdapterSourceProduct, AgentId,
@@ -37,6 +40,8 @@ use agenthub_core::services::{
 #[allow(unused_imports)]
 use agenthub_core::services::should_make_bridge_current;
 use agenthub_core::AgentHub;
+use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 
 use crate::commands::{map_err_string, with_hub_blocking};
 use crate::exit_coordinator::LifecycleShutdownBarrier;
@@ -47,6 +52,79 @@ const CODE_BRIDGE_FINALIZE: &str = "adapter.bridge_finalize";
 const CODE_BRIDGE_RESTORE_SOURCE: &str = "adapter.bridge_restore_source";
 const CODE_BRIDGE_RESTORE_START: &str = "adapter.bridge_restore_start";
 const CODE_BRIDGE_PORT_IN_USE: &str = "adapter.port_in_use";
+const LOCAL_FORWARD_LIFECYCLE_EVENT: &str = "local-forward-lifecycle";
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum LocalForwardLifecyclePhase {
+    Restarting,
+    Ready,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalForwardLifecyclePayload {
+    phase: LocalForwardLifecyclePhase,
+}
+
+/// Sets the process-local restarting flag and emits `local-forward-lifecycle`
+/// only when the value actually flips. `stop_local_entry` must not call this.
+pub(crate) fn set_local_entry_restarting(
+    flag: &AtomicBool,
+    app: Option<&AppHandle>,
+    restarting: bool,
+) {
+    let previous = flag.swap(restarting, Ordering::SeqCst);
+    if previous == restarting {
+        return;
+    }
+    let phase = if restarting {
+        LocalForwardLifecyclePhase::Restarting
+    } else {
+        LocalForwardLifecyclePhase::Ready
+    };
+    let Some(app) = app else {
+        return;
+    };
+    if let Err(error) = app.emit(
+        LOCAL_FORWARD_LIFECYCLE_EVENT,
+        &LocalForwardLifecyclePayload { phase },
+    ) {
+        tracing::debug!(
+            target: targets::GUI,
+            module = targets::GUI,
+            op = "local_forward_lifecycle",
+            error = %error,
+            "emit local-forward-lifecycle failed"
+        );
+    } else {
+        tracing::debug!(
+            target: targets::GUI,
+            module = targets::GUI,
+            op = "local_forward_lifecycle",
+            restarting,
+            "emitted local-forward-lifecycle"
+        );
+    }
+}
+
+struct LocalEntryRestartingGuard {
+    flag: Arc<AtomicBool>,
+    app: Option<AppHandle>,
+}
+
+impl LocalEntryRestartingGuard {
+    fn begin(flag: Arc<AtomicBool>, app: Option<AppHandle>) -> Self {
+        set_local_entry_restarting(&flag, app.as_ref(), true);
+        Self { flag, app }
+    }
+}
+
+impl Drop for LocalEntryRestartingGuard {
+    fn drop(&mut self) {
+        set_local_entry_restarting(&self.flag, self.app.as_ref(), false);
+    }
+}
 
 /// Process-local saga gates (Tauri-neutral; defined in core).
 pub(crate) use agenthub_core::adapter_control::AdapterBridgeSagaCoordinator;
@@ -230,7 +308,8 @@ async fn apply_local_bridge_locked(
             // A reversible failure remains retryable. NeedsAttention is
             // reserved for a failed rollback/listener compensation, where the
             // stored profile can no longer truthfully describe runtime state.
-            let state_write = if listener_compensated && !error.contains("adapter.bridge_rollback") {
+            let state_write = if listener_compensated && !error.contains("adapter.bridge_rollback")
+            {
                 mark_retryable(hub, &profile_id, code).await
             } else {
                 mark_needs_attention(hub, &profile_id, "adapter.bridge_rollback").await
@@ -483,6 +562,8 @@ pub(crate) fn restore_adapter_bridges(
     host: Arc<BridgeRuntimeHost>,
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    restarting: Arc<AtomicBool>,
+    app: AppHandle,
 ) {
     tauri::async_runtime::spawn(async move {
         let desired_running = match with_hub_blocking(hub.clone(), |hub| {
@@ -502,6 +583,8 @@ pub(crate) fn restore_adapter_bridges(
             tracing::info!(target: "gui", op = "adapter_bridge_restore", "local entry left off; skip restore");
             return;
         }
+
+        let _restarting_guard = LocalEntryRestartingGuard::begin(restarting, Some(app));
 
         let profiles = match with_hub_blocking(hub.clone(), |hub| {
             hub.adapter_bridge()
@@ -533,7 +616,8 @@ pub(crate) fn restore_adapter_bridges(
             {
                 Ok(material) => material,
                 Err(_) => {
-                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_SOURCE).await;
+                    let _ =
+                        mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_SOURCE).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code = CODE_BRIDGE_RESTORE_SOURCE, "adapter bridge source could not be restored");
                     continue;
                 }
@@ -549,7 +633,8 @@ pub(crate) fn restore_adapter_bridges(
             {
                 Ok(runtime_material) => runtime_material,
                 Err(error) => {
-                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
+                    let _ =
+                        mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge restore could not attach live index");
                     continue;
                 }
@@ -599,7 +684,8 @@ pub(crate) fn restore_adapter_bridges(
                 if listener_compensated {
                     let _ = mark_retryable(hub.clone(), &profile.id, &code).await;
                 } else {
-                    let _ = mark_needs_attention(hub.clone(), &profile.id, "adapter.bridge_stop").await;
+                    let _ =
+                        mark_needs_attention(hub.clone(), &profile.id, "adapter.bridge_stop").await;
                 }
                 tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, code = %code, "adapter bridge health check failed after restore");
                 continue;
@@ -622,7 +708,8 @@ pub(crate) fn restore_adapter_bridges(
                 }
                 Err(error) => {
                     let _ = compensate_started_bridge(&host, &profile.id, owns_listener).await;
-                    let _ = mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
+                    let _ =
+                        mark_retryable(hub.clone(), &profile.id, CODE_BRIDGE_RESTORE_START).await;
                     tracing::warn!(target: "gui", op = "adapter_bridge_restore", profile_id = %profile.id, error = %error, "adapter bridge v2 enroll after restore failed");
                     continue;
                 }
@@ -1317,8 +1404,7 @@ async fn stop_bridge_runtime(
                     }
                     Some(_) if Instant::now() >= deadline => {
                         return Err(
-                            "本机转发仍在停止，未执行路由数据变更 [adapter.bridge_stop]"
-                                .into(),
+                            "本机转发仍在停止，未执行路由数据变更 [adapter.bridge_stop]".into()
                         );
                     }
                     Some(_) => tokio::time::sleep(Duration::from_millis(25)).await,
@@ -1372,8 +1458,11 @@ pub(crate) async fn start_local_entry(
     host: Arc<BridgeRuntimeHost>,
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    restarting: Arc<AtomicBool>,
+    app: AppHandle,
     remember: bool,
 ) -> Result<LocalEntryStatus, String> {
+    let _restarting_guard = LocalEntryRestartingGuard::begin(restarting.clone(), Some(app));
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_profile("local-entry").await;
     let pools = with_hub_blocking(hub.clone(), move |hub| {
@@ -1386,7 +1475,7 @@ pub(crate) async fn start_local_entry(
         Ok(hub.route_pools().pair_adapter_flags())
     })
     .await?;
-    let status = if pools.is_empty() {
+    let mut status = if pools.is_empty() {
         let started = host
             .start(placeholder_entry_spec(
                 "local-entry",
@@ -1397,14 +1486,20 @@ pub(crate) async fn start_local_entry(
             ))
             .await
             .map_err(map_bridge_host_error)?;
-        local_entry_status_from_host(&host, vec![started.profile_id])?
+        local_entry_status_from_host(
+            &host,
+            vec![started.profile_id],
+            restarting.load(Ordering::SeqCst),
+        )?
     } else {
         let mut started = Vec::new();
         for pool in pools {
             let flags = flags;
             let pool_for_spec = pool.clone();
             let spec = with_hub_blocking(hub.clone(), move |hub| {
-                Ok(hub.adapter_bridge().pool_listener_spec(&pool_for_spec, flags))
+                Ok(hub
+                    .adapter_bridge()
+                    .pool_listener_spec(&pool_for_spec, flags))
             })
             .await?;
             let runtime = host.start(spec).await.map_err(map_bridge_host_error)?;
@@ -1418,11 +1513,13 @@ pub(crate) async fn start_local_entry(
             })
             .await;
         }
-        local_entry_status_from_host(&host, started)?
+        local_entry_status_from_host(&host, started, restarting.load(Ordering::SeqCst))?
     };
     if remember {
         write_local_entry_desired_running(hub, true).await;
     }
+    drop(_restarting_guard);
+    status.restarting = restarting.load(Ordering::SeqCst);
     Ok(status)
 }
 
@@ -1473,9 +1570,7 @@ pub(crate) async fn set_local_entry_token(
             .pool_listener_spec(&pool, hub.route_pools().pair_adapter_flags()))
     })
     .await?;
-    host.start(spec)
-        .await
-        .map_err(map_bridge_host_error)?;
+    host.start(spec).await.map_err(map_bridge_host_error)?;
     Ok(record)
 }
 
@@ -1485,6 +1580,7 @@ pub(crate) async fn stop_local_entry(
     host: Arc<BridgeRuntimeHost>,
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    restarting: Arc<AtomicBool>,
 ) -> Result<LocalEntryStatus, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_profile("local-entry").await;
@@ -1496,7 +1592,8 @@ pub(crate) async fn stop_local_entry(
             Err(error) => return Err(map_bridge_host_error(error)),
         }
     }
-    let status = local_entry_status_from_host(&host, Vec::new())?;
+    let status =
+        local_entry_status_from_host(&host, Vec::new(), restarting.load(Ordering::SeqCst))?;
     write_local_entry_desired_running(hub, false).await;
     Ok(status)
 }
@@ -1519,14 +1616,18 @@ async fn write_local_entry_desired_running(hub: Arc<AgentHub>, running: bool) {
     }
 }
 
-pub(crate) fn local_entry_status(host: &BridgeRuntimeHost) -> Result<LocalEntryStatus, String> {
+pub(crate) fn local_entry_status(
+    host: &BridgeRuntimeHost,
+    restarting: &AtomicBool,
+) -> Result<LocalEntryStatus, String> {
     let ids = host.running_ids().map_err(map_bridge_host_error)?;
-    local_entry_status_from_host(host, ids)
+    local_entry_status_from_host(host, ids, restarting.load(Ordering::SeqCst))
 }
 
 fn local_entry_status_from_host(
     host: &BridgeRuntimeHost,
     ids: Vec<String>,
+    restarting: bool,
 ) -> Result<LocalEntryStatus, String> {
     let port = host.gateway_port().map_err(map_bridge_host_error)?;
     let mut statuses = Vec::new();
@@ -1544,6 +1645,7 @@ fn local_entry_status_from_host(
         port,
         statuses,
         recent_unauthenticated_traces: host.recent_unauthenticated_route_traces(),
+        restarting,
     })
 }
 
@@ -1583,9 +1685,9 @@ fn placeholder_entry_spec(
         },
     )
     .with_mapping(AdapterSourceProduct::Other, target, false)
-    .with_downstream_responses_profile(
-        DownstreamResponsesProfile::from_surface_and_route_dialect(surface, dialect),
-    )
+    .with_downstream_responses_profile(DownstreamResponsesProfile::from_surface_and_route_dialect(
+        surface, dialect,
+    ))
     .with_pair_adapter_flags(flags.0, flags.1)
 }
 

@@ -31,6 +31,8 @@ pub struct AppState {
     exit_requested: AtomicBool,
     /// When true, the window close button hides to tray instead of quitting.
     close_to_tray: AtomicBool,
+    /// True while restore / start_local_entry is bringing loopback listeners back.
+    local_entry_restarting: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -80,6 +82,7 @@ impl AppState {
             exit_confirmation_pending: AtomicBool::new(false),
             exit_requested: AtomicBool::new(false),
             close_to_tray: AtomicBool::new(close_to_tray),
+            local_entry_restarting: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -125,6 +128,11 @@ impl AppState {
     /// before a profile or target guard.
     pub(crate) fn lifecycle_shutdown_barrier(&self) -> Arc<LifecycleShutdownBarrier> {
         self.exit_coordinator.lifecycle_barrier()
+    }
+
+    /// Process-local flag for the yellow local-forwarding restart banner.
+    pub(crate) fn local_entry_restarting(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.local_entry_restarting)
     }
 
     /// Claim the one outstanding bridge-impact confirmation dialog.

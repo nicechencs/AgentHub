@@ -61,6 +61,8 @@ pub fn run() {
                     app.state::<AppState>().bridge_host(),
                     app.state::<AppState>().bridge_saga_coordinator(),
                     app.state::<AppState>().lifecycle_shutdown_barrier(),
+                    app.state::<AppState>().local_entry_restarting(),
+                    app.handle().clone(),
                 );
             }
             Ok(())

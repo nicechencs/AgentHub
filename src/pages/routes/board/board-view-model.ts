@@ -84,6 +84,8 @@ export type LocalEntryControl = {
   starting: boolean;
   stopping: boolean;
   transitioning: boolean;
+  /** Process-local restore / start is bringing listeners back. */
+  restarting: boolean;
   /** Connection-pool logins exist; the switch still operates if they later fail. */
   hasEnrolledLogins: boolean;
 };
@@ -93,6 +95,7 @@ export function buildLocalEntryControl(
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
   hiddenTargetIds: ReadonlySet<string> = new Set(),
   pools: readonly Pick<DefaultRoutePoolOverview, 'id' | 'targetAgentId' | 'members'>[] = [],
+  restarting = false,
 ): LocalEntryControl {
   const hasEnrolledLogins = pools.some((pool) => (
     !hiddenTargetIds.has(pool.targetAgentId)
@@ -140,7 +143,8 @@ export function buildLocalEntryControl(
     running,
     starting,
     stopping,
-    transitioning: starting || stopping,
+    restarting,
+    transitioning: starting || stopping || restarting,
     hasEnrolledLogins,
   };
 }
