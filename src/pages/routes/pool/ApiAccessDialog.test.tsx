@@ -50,7 +50,7 @@ describe('ApiAccessDialog', () => {
     expect(markup).toContain('var(--agent-codex)');
     expect(markup).toContain('var(--agent-grok)');
     expect(markup).toContain('type="checkbox"');
-    expect(markup).not.toContain('接入时已定好，编辑时不能改');
+    expect(markup).not.toContain('添加时已定好，编辑时不能改');
   });
 
   it('shows the current API type above the locked hint when editing', () => {
@@ -70,7 +70,7 @@ describe('ApiAccessDialog', () => {
     expect(markup).toContain('/v1/responses');
     expect(markup).toContain('var(--agent-codex)');
     expect(markup).not.toContain('OpenAI');
-    expect(markup).toContain('接入时已定好，编辑时不能改。要换类型请再接入一次。');
+    expect(markup).toContain('添加时已定好，编辑时不能改。要换类型请再添加一次。');
     expect(markup).not.toContain('type="checkbox"');
     expect(markup).not.toContain('/v1/messages');
     expect(markup).not.toContain('/v1/chat/completions');

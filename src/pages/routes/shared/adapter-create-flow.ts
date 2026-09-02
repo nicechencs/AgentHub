@@ -214,7 +214,7 @@ export function adapterPreviewOutcome(input: {
   }
   if (input.canApply && input.route === 'local_bridge') {
     return {
-      title: t ? t('routes.create.preview.localTitle') : '可接入 · 本机路由',
+      title: t ? t('routes.create.preview.localTitle') : '可接上 · 本机路由',
       badgeLabel: t ? t('routes.create.preview.applyBadge') : '可应用',
       badgeVariant: 'success',
       nextStep: t ? t('routes.create.preview.localNext') : '确认后创建本机路由，需保持托盘运行。',
@@ -222,7 +222,7 @@ export function adapterPreviewOutcome(input: {
   }
   if (input.canApply && (input.route === 'native_endpoint' || input.route === 'config_sync')) {
     return {
-      title: t ? t('routes.create.preview.directTitle') : '可接入 · 直接写入',
+      title: t ? t('routes.create.preview.directTitle') : '可接上 · 直接写入',
       badgeLabel: t ? t('routes.create.preview.applyBadge') : '可应用',
       badgeVariant: 'success',
       nextStep: t ? t('routes.create.preview.directNext') : '确认后写入目标配置。',

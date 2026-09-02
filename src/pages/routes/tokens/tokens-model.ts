@@ -378,7 +378,7 @@ export function localTokenEditKeyGate(
       enabled: false,
       reason: t
         ? t('routes.tokens.editKeyNeedPool')
-        : '这条还不是连接池令牌，先从路由建入口',
+        : '这条还不是连接池入口 Key，先从路由建入口',
     };
   }
   return { enabled: true, reason: null };

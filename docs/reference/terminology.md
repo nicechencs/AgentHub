@@ -25,7 +25,7 @@ updated: 2026-08-31
 | 直接配置 | `native_endpoint` | 将来源端点写入目标 Agent 自己的配置 |
 | 写进对方认的登录 | `config_sync` | 将登录投影到目标 Agent 能识别的配置/登录契约 |
 | 本机转发 | `local_bridge` | 通过 loopback listener 转发或转换协议 |
-| 本机令牌 | Hub token / local bearer | 默认池给目标客户端用的本机凭据；不等于上游 API Key。增删池内登录不改这把令牌 |
+| 入口 Key | Hub token / local bearer（内部亦称本机令牌） | 默认池给目标客户端用的本机钥匙；不等于上游 API Key。增删池内登录不改这把 Key。界面与子导航统一说「入口 Key」，不说泛称「令牌」 |
 | 连接池 | default RoutePool | Routes 里列出本机转发所用登录的页面，与连接页相互独立；每个目标 Agent/surface 一个默认池 |
 | 分享至连接池 | `syncConnectionAuthorizations`（按这份登录） | 连接页把这份登录加入默认连接池；登录仍留在连接页。API Key 都可以加入（不按所属 Agent 挡掉）；国产官方登录不能分享。已经在池里、或这份登录不能加入时按钮禁用 |
 | 从连接同步 | `syncConnectionAuthorizations`（多选） | 连接池页一次加入连接页里可分享的登录（所有 API Key；Claude / Codex / Grok 官方登录仍按已登记的接法）。已经在池里的会跳过。国产官方登录不进入候选 |

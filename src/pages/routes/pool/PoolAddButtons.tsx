@@ -1,7 +1,7 @@
 /**
- * 连接池页右上角的接入入口：先在浮动页面中选择接入方式，再打开对应的配置页面。
+ * 连接池页右上角的添加入口：先在浮动页面中选择添加方式，再打开对应的配置页面。
  * 官方登录只提供支持的三个 Agent；添加 API Key 时先填服务地址和 Key，再勾选接口类型。
- * 这里接入的登录只给连接池用，不会出现在连接页。
+ * 这里加入的登录只给连接池用，不会出现在连接页。
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import { agentDisplayName } from '@/config/agents';

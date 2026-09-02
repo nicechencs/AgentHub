@@ -167,6 +167,6 @@ describe('PoolAuthorizationDetail', () => {
     );
     expect(markup).toContain('编辑密钥');
     expect(markup).toContain('登录详情');
-    expect(markup).not.toContain('接入时已定好，编辑时不能改');
+    expect(markup).not.toContain('添加时已定好，编辑时不能改');
   });
 });

@@ -155,7 +155,7 @@ describe('tokens-model', () => {
       profileId: 'p1',
     });
     expect(localTokenEditKeyGate(rows[0]).enabled).toBe(false);
-    expect(localTokenEditKeyGate(rows[0]).reason).toContain('连接池令牌');
+    expect(localTokenEditKeyGate(rows[0]).reason).toContain('连接池入口 Key');
   });
 
   it('sorts rows by endpoint kind then name', () => {
@@ -496,7 +496,7 @@ describe('tokens-model', () => {
     });
     const leftoverGate = localTokenEditKeyGate(leftoverRows[0]);
     expect(leftoverGate.enabled).toBe(false);
-    expect(leftoverGate.reason).toBe('这条还不是连接池令牌，先从路由建入口');
+    expect(leftoverGate.reason).toBe('这条还不是连接池入口 Key，先从路由建入口');
     // Import still needs profileId+token; leftovers keep both — do not block #231 pool import path.
     expect(leftoverRows[0].profileId).toBeTruthy();
     expect(leftoverRows[0].token).toBeTruthy();
