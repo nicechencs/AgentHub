@@ -281,8 +281,11 @@ export function useAgentCardLifecycle(input: {
       } else if (!isProgressForAgent(payload, agentId)) {
         return;
       }
-      if (typeof payload.line !== 'string') return;
-      recordInstallOutputChunk(liveOutputChunksRef.current, payload.line);
+      if (typeof payload.chunk !== 'string' && typeof payload.line !== 'string') return;
+      recordInstallOutputChunk(
+        liveOutputChunksRef.current,
+        typeof payload.chunk === 'string' ? payload.chunk : payload.line ?? '',
+      );
       const lines = installOutputChunksToLines(liveOutputChunksRef.current);
       setTask((prev) => {
         if (!prev || prev.status !== 'running') return prev;

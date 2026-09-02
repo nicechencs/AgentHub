@@ -173,7 +173,6 @@ export interface AdapterBridgeStatusDtoWire {
   running: boolean;
   state: string;
   upstreamStatus: string;
-  sourceConnectionId?: string;
   startedAtUnixMs?: number;
   recentInbound?: AdapterBridgeInboundRequestWire[];
   recentRouteTraces?: AdapterBridgeRouteTraceWire[];
@@ -739,7 +738,7 @@ export function mapAdapterBridgeStatusDto(
   };
 }
 
-export interface LocalEntryStatusWire {
+export interface LocalGatewayStatusWire {
   running: boolean;
   port?: number | null;
   statuses?: AdapterBridgeStatusDtoWire[];
@@ -747,7 +746,7 @@ export interface LocalEntryStatusWire {
   restarting?: boolean;
 }
 
-export function mapLocalEntryStatus(wire: LocalEntryStatusWire): import('./adapter').LocalEntryStatus {
+export function mapLocalGatewayStatus(wire: LocalGatewayStatusWire): import('./adapter').LocalGatewayStatus {
   const port = isLoopbackPort(wire.port ?? null) ? wire.port ?? null : null;
   return {
     running: wire.running === true && port != null,
@@ -757,6 +756,11 @@ export function mapLocalEntryStatus(wire: LocalEntryStatusWire): import('./adapt
     restarting: wire.restarting === true,
   };
 }
+
+/** @deprecated Prefer {@link LocalGatewayStatusWire}. */
+export type LocalEntryStatusWire = LocalGatewayStatusWire;
+/** @deprecated Prefer {@link mapLocalGatewayStatus}. */
+export const mapLocalEntryStatus = mapLocalGatewayStatus;
 
 export interface LocalTokenRecordWire {
   poolId: string;

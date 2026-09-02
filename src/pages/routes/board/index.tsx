@@ -25,7 +25,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Hint, Tip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
-import { getLocalEntryStatus, listLocalTokens } from '@/lib/api/adapter';
+import { getLocalGatewayStatus, listLocalTokens } from '@/lib/api/adapter';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import {
   isLocalEndpointKind,
@@ -45,9 +45,9 @@ import {
   BOARD_ROUTE_GRID,
   boardEndpointKeyTotals,
   buildBoardEndpointTypeRows,
-  buildLocalEntryControl,
+  buildLocalGatewayControl,
   type BoardEndpointTypeRow,
-  type LocalEntryControl,
+  type LocalGatewayControl,
 } from '@/pages/routes/board/board-view-model';
 import { buildLocalTokenRows, visibleTokenKinds } from '@/pages/routes/tokens/tokens-model';
 import {
@@ -57,7 +57,7 @@ import {
 } from '@/pages/routes/board/board-usage-model';
 import { BoardUsageSection } from '@/pages/routes/board/board-usage-section';
 
-function localEntryStatusLabel(control: LocalEntryControl, t: TranslateFn): string {
+function localGatewayStatusLabel(control: LocalGatewayControl, t: TranslateFn): string {
   if (control.restarting) return t('routes.localForward.restarting');
   if (control.stopping) return t('routes.board.entryStopping');
   if (control.starting) return t('routes.board.entryStarting');
@@ -166,8 +166,8 @@ export default function RoutesBoardPage() {
   const {
     profileErrors,
     busyProfileIds,
-    handleStartLocalEntry,
-    handleStopLocalEntry,
+    handleStartLocalGateway,
+    handleStopLocalGateway,
   } = useBridgeRuntimeActions({
     profiles,
     hiddenTargetIds,
@@ -180,12 +180,12 @@ export default function RoutesBoardPage() {
   const [endpointKind, setEndpointKind] = useState<LocalEndpointKind | 'all'>(() => (
     rememberKind(rememberedBoardUsageFilters().surface)
   ));
-  const [localEntryRestarting, setLocalEntryRestarting] = useState(false);
+  const [localGatewayRestarting, setLocalGatewayRestarting] = useState(false);
   useEffect(() => {
-    void getLocalEntryStatus()
+    void getLocalGatewayStatus()
       .then((status) => {
         setGatewayRunning(status.running);
-        setLocalEntryRestarting(status.restarting);
+        setLocalGatewayRestarting(status.restarting);
         for (const row of status.statuses) updateBridgeStatus(row);
       })
       .catch(() => undefined);
@@ -207,18 +207,18 @@ export default function RoutesBoardPage() {
     };
   }, [defaultPools, usageRefreshKey]);
   const localEntry = useMemo(
-    () => buildLocalEntryControl(
+    () => buildLocalGatewayControl(
       profiles,
       bridgeStatuses,
       hiddenTargetIds,
       defaultPools,
-      localEntryRestarting,
+      localGatewayRestarting,
     ),
-    [bridgeStatuses, defaultPools, hiddenTargetIds, localEntryRestarting, profiles],
+    [bridgeStatuses, defaultPools, hiddenTargetIds, localGatewayRestarting, profiles],
   );
   const localEntryBusy = localEntry.profileIds.some((id) => busyProfileIds[id])
     || Boolean(busyProfileIds.__local_entry__);
-  const localEntryError = profileErrors.__local_entry__
+  const localGatewayError = profileErrors.__local_entry__
     ?? localEntry.profileIds.map((id) => profileErrors[id]).find((error) => error != null)
     ?? null;
 
@@ -260,7 +260,7 @@ export default function RoutesBoardPage() {
   const pageLoading = loading || poolsLoading;
   const showStatusSkeleton = pageLoading && defaultPools.length === 0;
   const entryRunning = localEntry.running || gatewayRunning;
-  const entryLabel = localEntryStatusLabel(
+  const entryLabel = localGatewayStatusLabel(
     { ...localEntry, running: entryRunning, action: entryRunning ? 'stop' : localEntry.action },
     t,
   );
@@ -292,9 +292,9 @@ export default function RoutesBoardPage() {
         />
       ) : (
         <div className={pageRhythm.blocks}>
-          {localEntryError ? (
+          {localGatewayError ? (
             <AdapterErrorLines
-              error={localEntryError}
+              error={localGatewayError}
               fallback={localEntry.action === 'stop'
                 ? t('routes.board.entryStopFailed')
                 : t('routes.board.entryStartFailed')}
@@ -340,7 +340,7 @@ export default function RoutesBoardPage() {
                   disabled={localEntryBusy || localEntry.transitioning}
                   onCheckedChange={(on) => {
                     if (on) {
-                      void handleStartLocalEntry().then((ok) => setGatewayRunning(ok));
+                      void handleStartLocalGateway().then((ok) => setGatewayRunning(ok));
                     } else {
                       setStopOpen(true);
                     }
@@ -388,7 +388,7 @@ export default function RoutesBoardPage() {
               variant="danger"
               disabled={localEntryBusy}
               onClick={() => {
-                void handleStopLocalEntry().then((ok) => {
+                void handleStopLocalGateway().then((ok) => {
                   if (ok) {
                     setGatewayRunning(false);
                     setStopOpen(false);

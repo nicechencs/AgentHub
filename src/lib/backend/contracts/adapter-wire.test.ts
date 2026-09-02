@@ -6,7 +6,7 @@ import {
   mapAdapterRouteAnalysis,
   mapDefaultRoutePoolList,
   mapInboundRequest,
-  mapLocalEntryStatus,
+  mapLocalGatewayStatus,
   mapLocalTokenProbeResult,
   mapLocalTokenRecord,
   mapRouteTrace,
@@ -584,7 +584,7 @@ describe('Adapter Rust wire mappers', () => {
   });
 
   it('maps local entry restarting from the Tauri DTO and defaults missing to false', () => {
-    expect(mapLocalEntryStatus({
+    expect(mapLocalGatewayStatus({
       running: true,
       port: 43121,
       restarting: true,
@@ -595,7 +595,7 @@ describe('Adapter Rust wire mappers', () => {
       restarting: true,
       statuses: [],
     });
-    expect(mapLocalEntryStatus({
+    expect(mapLocalGatewayStatus({
       running: false,
       statuses: [],
     })).toMatchObject({

@@ -114,9 +114,9 @@ fn adapter_control_status_stopped_has_no_secrets() {
 
 #[test]
 fn local_entry_status_serializes_restarting() {
-    use crate::adapter_control::LocalEntryStatus;
+    use crate::adapter_control::LocalGatewayStatus;
 
-    let restarting = LocalEntryStatus {
+    let restarting = LocalGatewayStatus {
         running: false,
         port: None,
         statuses: Vec::new(),
@@ -128,7 +128,7 @@ fn local_entry_status_serializes_restarting() {
     assert_eq!(restarting_json["restarting"], true);
     assert!(restarting_json.get("recentUnauthenticatedTraces").is_none());
 
-    let idle = LocalEntryStatus {
+    let idle = LocalGatewayStatus {
         running: true,
         port: Some(43121),
         statuses: Vec::new(),

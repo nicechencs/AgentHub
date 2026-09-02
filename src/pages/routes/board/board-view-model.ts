@@ -74,7 +74,7 @@ export type BoardFleetSummary = {
 };
 
 /** Shared local-entry master switch (not per-login, not per-endpoint). */
-export type LocalEntryControl = {
+export type LocalGatewayControl = {
   profileIds: string[];
   startIds: string[];
   stopIds: string[];
@@ -90,13 +90,13 @@ export type LocalEntryControl = {
   hasEnrolledLogins: boolean;
 };
 
-export function buildLocalEntryControl(
+export function buildLocalGatewayControl(
   profiles: readonly Pick<AdapterProfile, 'id' | 'route' | 'sourceKind' | 'sourceId' | 'targetAgentId' | 'lastErrorCode'>[],
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>,
   hiddenTargetIds: ReadonlySet<string> = new Set(),
   pools: readonly Pick<DefaultRoutePoolOverview, 'id' | 'targetAgentId' | 'members'>[] = [],
   restarting = false,
-): LocalEntryControl {
+): LocalGatewayControl {
   const hasEnrolledLogins = pools.some((pool) => (
     !hiddenTargetIds.has(pool.targetAgentId)
     && pool.members.some((member) => member.enabled !== false)

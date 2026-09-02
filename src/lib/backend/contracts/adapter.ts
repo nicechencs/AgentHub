@@ -390,8 +390,8 @@ export interface SyncConnectionAuthorizationsResult {
   skipped: number;
 }
 
-/** Shared local-relay status for the board switch. */
-export type LocalEntryStatus = {
+/** Shared local-gateway status for the board switch. */
+export type LocalGatewayStatus = {
   running: boolean;
   port: number | null;
   statuses: AdapterBridgeRuntimeStatus[];
@@ -400,6 +400,9 @@ export type LocalEntryStatus = {
   /** True while restore or start is bringing local forwarding back. */
   restarting: boolean;
 };
+
+/** @deprecated Prefer {@link LocalGatewayStatus}. */
+export type LocalEntryStatus = LocalGatewayStatus;
 
 /** Loopback bearer for the tokens page. */
 export type LocalTokenRecord = {
@@ -492,7 +495,7 @@ export interface AdapterPort {
   stopBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
   getBridgeStatus(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
   setBridgeAutoStart(profileId: string, autoStart: boolean): Promise<AdapterProfile>;
-  startLocalEntry(): Promise<LocalEntryStatus>;
-  stopLocalEntry(): Promise<LocalEntryStatus>;
-  getLocalEntryStatus(): Promise<LocalEntryStatus>;
+  startLocalGateway(): Promise<LocalGatewayStatus>;
+  stopLocalGateway(): Promise<LocalGatewayStatus>;
+  getLocalGatewayStatus(): Promise<LocalGatewayStatus>;
 }

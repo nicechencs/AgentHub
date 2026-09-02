@@ -11,7 +11,7 @@ import {
   type AdapterProfile,
   type AdapterProfileFilter,
   type DefaultRoutePoolOverview,
-  type LocalEntryStatus,
+  type LocalGatewayStatus,
   type RoutePoolDialect,
   type RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
@@ -988,29 +988,29 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       profile.updatedAt = new Date().toISOString();
       return { ...profile };
     },
-    async startLocalEntry() {
+    async startLocalGateway() {
       await delay(20);
       state.localEntryRunning = true;
       state.localEntryPort = 43121;
       for (const pool of state.defaultPools) {
         pool.gatewayPort = 43121;
       }
-      return mockLocalEntryStatus(state);
+      return mockLocalGatewayStatus(state);
     },
-    async stopLocalEntry() {
+    async stopLocalGateway() {
       await delay(20);
       state.localEntryRunning = false;
       state.localEntryPort = null;
-      return mockLocalEntryStatus(state);
+      return mockLocalGatewayStatus(state);
     },
-    async getLocalEntryStatus() {
+    async getLocalGatewayStatus() {
       await delay(20);
-      return mockLocalEntryStatus(state);
+      return mockLocalGatewayStatus(state);
     },
   };
 }
 
-function mockLocalEntryStatus(state: MockAdapterState): LocalEntryStatus {
+function mockLocalGatewayStatus(state: MockAdapterState): LocalGatewayStatus {
   return {
     running: state.localEntryRunning,
     port: state.localEntryPort,
