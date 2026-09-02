@@ -261,6 +261,7 @@ pub async fn start_local_entry(state: State<'_, AppState>) -> Result<LocalEntryS
         state.bridge_host(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
+        true,
     )
     .await
     .map_err(adapter_error_from_string)
@@ -270,6 +271,7 @@ pub async fn start_local_entry(state: State<'_, AppState>) -> Result<LocalEntryS
 #[tauri::command]
 pub async fn stop_local_entry(state: State<'_, AppState>) -> Result<LocalEntryStatus, GuiError> {
     stop_shared_local_entry(
+        state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
@@ -365,6 +367,7 @@ pub async fn test_local_token(
             host.clone(),
             state.bridge_saga_coordinator(),
             state.lifecycle_shutdown_barrier(),
+            false,
         )
         .await
         .map_err(adapter_error_from_string)?,

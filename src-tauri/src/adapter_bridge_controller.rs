@@ -485,6 +485,24 @@ pub(crate) fn restore_adapter_bridges(
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
 ) {
     tauri::async_runtime::spawn(async move {
+        let desired_running = match with_hub_blocking(hub.clone(), |hub| {
+            hub.route_pools()
+                .local_entry_desired_running()
+                .map_err(|error| map_err_string("local_entry_desired_running", error))
+        })
+        .await
+        {
+            Ok(desired_running) => desired_running,
+            Err(_) => {
+                tracing::warn!(target: "gui", op = "adapter_bridge_restore", code = "adapter.bridge_restore_desired", "adapter bridge restore could not read the local entry switch");
+                true
+            }
+        };
+        if !desired_running {
+            tracing::info!(target: "gui", op = "adapter_bridge_restore", "local entry left off; skip restore");
+            return;
+        }
+
         let profiles = match with_hub_blocking(hub.clone(), |hub| {
             hub.adapter_bridge()
                 .list_auto_start_profiles()
@@ -1348,11 +1366,13 @@ async fn bridge_profile_id_for_request(
 
 /// Start the shared local relay. Pool logins are not planned or bound here;
 /// unusable accounts/keys surface later on requests.
+/// `remember` writes the board switch for the next process start.
 pub(crate) async fn start_local_entry(
     hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
+    remember: bool,
 ) -> Result<LocalEntryStatus, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_profile("local-entry").await;
@@ -1366,8 +1386,8 @@ pub(crate) async fn start_local_entry(
         Ok(hub.route_pools().pair_adapter_flags())
     })
     .await?;
-    if pools.is_empty() {
-        let status = host
+    let status = if pools.is_empty() {
+        let started = host
             .start(placeholder_entry_spec(
                 "local-entry",
                 None,
@@ -1377,28 +1397,33 @@ pub(crate) async fn start_local_entry(
             ))
             .await
             .map_err(map_bridge_host_error)?;
-        return local_entry_status_from_host(&host, vec![status.profile_id]);
+        local_entry_status_from_host(&host, vec![started.profile_id])?
+    } else {
+        let mut started = Vec::new();
+        for pool in pools {
+            let flags = flags;
+            let pool_for_spec = pool.clone();
+            let spec = with_hub_blocking(hub.clone(), move |hub| {
+                Ok(hub.adapter_bridge().pool_listener_spec(&pool_for_spec, flags))
+            })
+            .await?;
+            let runtime = host.start(spec).await.map_err(map_bridge_host_error)?;
+            let port = runtime.port;
+            started.push(runtime.profile_id.clone());
+            let pool_id = pool.id.clone();
+            let _ = with_hub_blocking(hub.clone(), move |hub| {
+                hub.route_pools()
+                    .enroll_v2(&pool_id, port)
+                    .map_err(|error| map_err_string("enroll_local_entry", error))
+            })
+            .await;
+        }
+        local_entry_status_from_host(&host, started)?
+    };
+    if remember {
+        write_local_entry_desired_running(hub, true).await;
     }
-    let mut started = Vec::new();
-    for pool in pools {
-        let flags = flags;
-        let pool_for_spec = pool.clone();
-        let spec = with_hub_blocking(hub.clone(), move |hub| {
-            Ok(hub.adapter_bridge().pool_listener_spec(&pool_for_spec, flags))
-        })
-        .await?;
-        let status = host.start(spec).await.map_err(map_bridge_host_error)?;
-        let port = status.port;
-        started.push(status.profile_id.clone());
-        let pool_id = pool.id.clone();
-        let _ = with_hub_blocking(hub.clone(), move |hub| {
-            hub.route_pools()
-                .enroll_v2(&pool_id, port)
-                .map_err(|error| map_err_string("enroll_local_entry", error))
-        })
-        .await;
-    }
-    local_entry_status_from_host(&host, started)
+    Ok(status)
 }
 
 /// Persist a pool loopback bearer and restart that edge if it is live.
@@ -1456,6 +1481,7 @@ pub(crate) async fn set_local_entry_token(
 
 /// Stop every live relay edge. Does not use host shutdown (that blocks restart).
 pub(crate) async fn stop_local_entry(
+    hub: Arc<AgentHub>,
     host: Arc<BridgeRuntimeHost>,
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
@@ -1470,7 +1496,27 @@ pub(crate) async fn stop_local_entry(
             Err(error) => return Err(map_bridge_host_error(error)),
         }
     }
-    local_entry_status_from_host(&host, Vec::new())
+    let status = local_entry_status_from_host(&host, Vec::new())?;
+    write_local_entry_desired_running(hub, false).await;
+    Ok(status)
+}
+
+async fn write_local_entry_desired_running(hub: Arc<AgentHub>, running: bool) {
+    if let Err(error) = with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .set_local_entry_desired_running(running)
+            .map_err(|error| map_err_string("set_local_entry_desired_running", error))
+    })
+    .await
+    {
+        tracing::warn!(
+            target: "gui",
+            op = "local_entry_desired_running",
+            running,
+            error = %error,
+            "could not persist local entry switch"
+        );
+    }
 }
 
 pub(crate) fn local_entry_status(host: &BridgeRuntimeHost) -> Result<LocalEntryStatus, String> {

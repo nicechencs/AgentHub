@@ -39,6 +39,10 @@ pub const FEATURE_MIXED_PROVIDER_POOL: &str = "feature.mixed_provider_pool";
 /// User choice: Kimi and DSH share one chat-completions token. Default off.
 pub const SHARE_CHAT_COMPLETIONS: &str = "share_chat_completions";
 
+/// Shared local-entry switch. Absent means restore (legacy on). Explicit off
+/// keeps the entry stopped across process restart.
+pub const LOCAL_ENTRY_DESIRED_RUNNING: &str = "local_entry_desired_running";
+
 /// Fail-closed experimental flags. Absent / anything other than an explicit
 /// on-value is off. Used by mixed-provider and pair-adapter flags.
 pub fn feature_flag_enabled(raw: Option<&str>) -> bool {
