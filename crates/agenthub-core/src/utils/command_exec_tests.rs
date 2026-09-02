@@ -72,6 +72,8 @@ fn fast_newline_output_completes_without_waiting_on_live_queue() {
 #[cfg(unix)]
 #[test]
 fn consecutive_empty_lines_reach_hook_and_accumulator() {
+    // Relies on with_install_log_hook's run-lock so parallel lib tests cannot
+    // steal/clear the process-wide hook mid-run (CI flake on PR CI).
     let chunks = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let sink = Arc::clone(&chunks);
     let hook: InstallLogHook = Arc::new(move |chunk| {
@@ -93,6 +95,8 @@ fn consecutive_empty_lines_reach_hook_and_accumulator() {
         result.stdout
     );
     let joined = chunks.lock().expect("hook mutex").concat();
+    // Parallel SystemCommandExecutor runs may still append banners into the
+    // active hook; require our payload rather than exact equality.
     assert!(
         joined.contains("first\n\nthird"),
         "live hook lost empty lines: {joined:?}"

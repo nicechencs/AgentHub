@@ -2294,6 +2294,7 @@ export const zh = {
       linuxUnsupported: "暂不支持 Linux",
       linuxUnsupportedHint: "WorkBuddy / ZCode 仅提供 Windows / macOS 安装包，当前 Linux 暂不支持。",
       notInstalled: "未安装",
+      channelOptional: "未选用 · 可选",
       seeDetails: "多个版本，点开看详情",
       seeDetailsCopies: "另有 {count} 份，点开看详情",
       seeDetailsLeftover: "另有遗留副本，勿从此路径启动",

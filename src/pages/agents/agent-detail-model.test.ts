@@ -325,6 +325,8 @@ describe('AgentDetailPanel markup', () => {
     expect(html).toContain('npm i -g @openai/codex');
     expect(html).toContain('复制命令');
     expect(html).toContain('安装');
+    expect(html).toContain(zh.agents.card.channelOptional);
+    expect(html.includes(zh.agents.card.notInstalled)).toBe(false);
   });
 
   it('opens an empty detail for an uninstalled agent', () => {
