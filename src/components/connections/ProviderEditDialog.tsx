@@ -199,6 +199,9 @@ export function ProviderEditDialog({
   compactInitialBaseUrl,
   compactInitialApiKey,
   compactEndpointPresets,
+  initialBaseUrl,
+  initialApiKey,
+  initialModel,
 }: {
   agentId: AgentId;
   open: boolean;
@@ -215,6 +218,10 @@ export function ProviderEditDialog({
   compactInitialBaseUrl?: string;
   compactInitialApiKey?: string;
   compactEndpointPresets?: readonly { id: string; label: string; baseUrl: string }[];
+  /** Prefill for Connections add from a local-route token (URL + key). */
+  initialBaseUrl?: string;
+  initialApiKey?: string;
+  initialModel?: string;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -445,21 +452,39 @@ export function ProviderEditDialog({
       return;
     }
     // 新增：有官方模板才默认官方（Pi 无单一官方 URL）。
-    // 精简 API 表单始终使用自定义配置，保证接口地址和模型可以直接填写。
+    // 精简 API 表单 / 令牌导入预填始终使用自定义配置，保证接口地址和 Key 可以直接填写。
     setName('');
     setConfigError(null);
-    setUseOfficial(compact ? false : agentHasOfficialApiTemplate(agentId));
+    const draftUrl = (initialBaseUrl ?? compactInitialBaseUrl)?.trim() || '';
+    const draftKey = (initialApiKey ?? compactInitialApiKey) ?? '';
+    const draftModel = initialModel?.trim() || '';
+    const hasDraft = Boolean(
+      draftUrl || draftKey || draftModel || (agentId === 'grok' && compactGrokApiBackend),
+    );
+    setUseOfficial(compact || hasDraft ? false : agentHasOfficialApiTemplate(agentId));
     setShowAdvanced(!compact);
     applyOfficialDefaults();
-    if (compactInitialBaseUrl || compactInitialApiKey || (agentId === 'grok' && compactGrokApiBackend)) {
-      setVars((current) => ({
-        ...current,
-        ...(compactInitialBaseUrl ? { baseUrl: compactInitialBaseUrl } : {}),
-        ...(compactInitialApiKey ? { apiKey: compactInitialApiKey } : {}),
-        ...(agentId === 'grok' && compactGrokApiBackend
-          ? { apiBackend: compactGrokApiBackend }
-          : {}),
-      }));
+    if (hasDraft) {
+      setVars((current) => {
+        const next = {
+          ...current,
+          ...(draftUrl ? { baseUrl: draftUrl } : {}),
+          ...(draftKey ? { apiKey: writableSecret(draftKey) } : {}),
+          ...(draftModel ? { model: draftModel } : {}),
+          ...(agentId === 'grok' && compactGrokApiBackend
+            ? { apiBackend: compactGrokApiBackend }
+            : {}),
+        };
+        const scaffold = defaultConfigScaffold(agentId);
+        setConfigFormat(scaffold.format);
+        setConfigText(maskConfigSecrets(
+          agentId,
+          applyFormVars(agentId, scaffold.text, scaffold.format, next),
+          scaffold.format,
+        ));
+        setConfigError(null);
+        return next;
+      });
     }
   }, [
     open,
@@ -471,6 +496,9 @@ export function ProviderEditDialog({
     compactGrokApiBackend,
     compactInitialBaseUrl,
     compactInitialApiKey,
+    initialBaseUrl,
+    initialApiKey,
+    initialModel,
     t,
   ]);
 

@@ -3,11 +3,13 @@ import type { AgentId } from '@/lib/types';
 import {
   buildConnectionsGuideUrl,
   buildResumeConnectUrl,
+  connectApiKeyDraftState,
   consumeConnectIntent,
   consumeConnectResume,
   parseConnectGuideIntent,
   parseConnectResumeParam,
   parseResumeAgentId,
+  readConnectApiKeyDraft,
   readConnectGuide,
 } from './connect-intent';
 
@@ -168,5 +170,25 @@ describe('consumeConnectResume', () => {
     expect(next.get('connect')).toBeNull();
     expect(next.get('tab')).toBe('overview');
     expect(search.get('connect')).toBe('claude');
+  });
+});
+
+describe('connectApiKeyDraftState / readConnectApiKeyDraft', () => {
+  it('round-trips a draft from location.state and ignores empty or foreign state', () => {
+    const state = connectApiKeyDraftState({
+      baseUrl: 'http://127.0.0.1:17034',
+      apiKey: 'ahb_secret',
+      model: 'kimi-k2',
+      apiBackend: 'responses',
+    });
+    expect(readConnectApiKeyDraft(state)).toEqual({
+      baseUrl: 'http://127.0.0.1:17034',
+      apiKey: 'ahb_secret',
+      model: 'kimi-k2',
+      apiBackend: 'responses',
+    });
+    expect(readConnectApiKeyDraft(null)).toBeNull();
+    expect(readConnectApiKeyDraft({})).toBeNull();
+    expect(readConnectApiKeyDraft({ other: true })).toBeNull();
   });
 });

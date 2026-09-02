@@ -49,7 +49,6 @@ import {
 import { localTokenEditKeyGate, type LocalTokenRow } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
 import type { TokenImportAgentRef } from './token-import-model';
-import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import { parseCustomModelList } from '@/pages/routes/pool/pool-authorization-detail';
 
 export function TokenDetailPanel({
@@ -57,19 +56,13 @@ export function TokenDetailPanel({
   width,
   onClose,
   onEditKey,
-  profile,
-  siblingProfiles,
   installedAgents,
-  onImported,
 }: {
   row: LocalTokenRow;
   width?: number;
   onClose: () => void;
   onEditKey?: () => void;
-  profile?: AdapterProfile | null;
-  siblingProfiles?: readonly AdapterProfile[];
   installedAgents?: readonly TokenImportAgentRef[];
-  onImported?: () => void;
 }) {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -309,10 +302,7 @@ export function TokenDetailPanel({
             {installedAgents ? (
               <TokenImportToAgentButton
                 row={row}
-                profile={profile}
-                siblingProfiles={siblingProfiles}
                 installedAgents={installedAgents}
-                onImported={onImported}
               />
             ) : null}
           </div>
