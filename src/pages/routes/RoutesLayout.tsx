@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { LocalForwardRestartBanner } from '@/components/layout/LocalForwardRestartBanner';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
 
 /**
@@ -14,6 +15,7 @@ export function RoutesLayout() {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col" data-routes-layout>
+      <LocalForwardRestartBanner />
       <Outlet />
     </div>
   );

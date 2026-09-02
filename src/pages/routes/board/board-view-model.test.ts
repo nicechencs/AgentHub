@@ -105,6 +105,21 @@ describe('buildLocalEntryControl', () => {
     expect(control.action).toBeNull();
     expect(control.profileIds).toEqual([]);
   });
+
+  it('treats restore restarting as transitioning', () => {
+    const control = buildLocalEntryControl(
+      [profile({ id: 'a' })],
+      { a: { profileId: 'a', state: 'stopped' } },
+      new Set(),
+      [],
+      true,
+    );
+    expect(control).toMatchObject({
+      restarting: true,
+      transitioning: true,
+      running: false,
+    });
+  });
 });
 
 describe('buildBoardEndpointTypeRows', () => {

@@ -688,6 +688,9 @@ export const en = {
     },
     mutationFailure: "Local route action failed. You can retry.",
     loadError: "Couldn't read local routes. Retry, or check that the tray is still running.",
+    localForward: {
+      restarting: "Local forwarding is restarting",
+    },
     profileStatus: {
       active: "Active",
       applying: "Applying",

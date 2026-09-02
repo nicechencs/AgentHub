@@ -58,6 +58,7 @@ import {
 import { BoardUsageSection } from '@/pages/routes/board/board-usage-section';
 
 function localEntryStatusLabel(control: LocalEntryControl, t: TranslateFn): string {
+  if (control.restarting) return t('routes.localForward.restarting');
   if (control.stopping) return t('routes.board.entryStopping');
   if (control.starting) return t('routes.board.entryStarting');
   if (control.running) return t('routes.board.entryRunning');
@@ -179,10 +180,12 @@ export default function RoutesBoardPage() {
   const [endpointKind, setEndpointKind] = useState<LocalEndpointKind | 'all'>(() => (
     rememberKind(rememberedBoardUsageFilters().surface)
   ));
+  const [localEntryRestarting, setLocalEntryRestarting] = useState(false);
   useEffect(() => {
     void getLocalEntryStatus()
       .then((status) => {
         setGatewayRunning(status.running);
+        setLocalEntryRestarting(status.restarting);
         for (const row of status.statuses) updateBridgeStatus(row);
       })
       .catch(() => undefined);
@@ -204,8 +207,14 @@ export default function RoutesBoardPage() {
     };
   }, [defaultPools, usageRefreshKey]);
   const localEntry = useMemo(
-    () => buildLocalEntryControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
-    [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
+    () => buildLocalEntryControl(
+      profiles,
+      bridgeStatuses,
+      hiddenTargetIds,
+      defaultPools,
+      localEntryRestarting,
+    ),
+    [bridgeStatuses, defaultPools, hiddenTargetIds, localEntryRestarting, profiles],
   );
   const localEntryBusy = localEntry.profileIds.some((id) => busyProfileIds[id])
     || Boolean(busyProfileIds.__local_entry__);

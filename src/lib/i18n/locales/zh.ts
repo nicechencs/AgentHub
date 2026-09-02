@@ -678,6 +678,9 @@ export const zh = {
     },
     mutationFailure: "本机路由操作失败，可点重试。",
     loadError: "无法读取本机路由。点重试，或确认托盘还在运行。",
+    localForward: {
+      restarting: "本机转发重启中",
+    },
     profileStatus: {
       active: "已生效",
       applying: "应用中",
