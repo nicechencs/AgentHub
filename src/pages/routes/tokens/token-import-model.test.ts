@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agentCanReceiveTokenImport,
   agentMatchesTokenSurface,
+  agentWritesLocalTokenKind,
   eligibleAgentsForTokenImport,
   isTokenImportAgentVisible,
+  resolveTokenImportProfile,
+  tokenImportAgentChoice,
   tokenImportGate,
   tokenImportSurface,
 } from './token-import-model';
+import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { LocalTokenRow } from './tokens-model';
 
 function row(
@@ -54,6 +59,33 @@ describe('agentMatchesTokenSurface', () => {
   });
 });
 
+describe('agentWritesLocalTokenKind', () => {
+  it('maps loopback writers and rejects Agents without a generated local-entry write', () => {
+    expect(agentWritesLocalTokenKind('claude')).toBe('messages');
+    expect(agentWritesLocalTokenKind('codex')).toBe('responses_codex');
+    expect(agentWritesLocalTokenKind('grok')).toBe('responses_grok');
+    expect(agentWritesLocalTokenKind('kimi')).toBe('chat_completions');
+    expect(agentWritesLocalTokenKind('dsh')).toBe('chat_completions');
+    expect(agentWritesLocalTokenKind('pi')).toBeNull();
+    expect(agentWritesLocalTokenKind('workbuddy')).toBeNull();
+    expect(agentWritesLocalTokenKind('zcode')).toBeNull();
+    expect(agentWritesLocalTokenKind('cursor')).toBeNull();
+  });
+});
+
+describe('agentCanReceiveTokenImport', () => {
+  it('only enables the Agent whose loopback kind matches this token', () => {
+    expect(agentCanReceiveTokenImport('claude', 'messages')).toBe(true);
+    expect(agentCanReceiveTokenImport('kimi', 'messages')).toBe(false);
+    expect(agentCanReceiveTokenImport('codex', 'responses_codex')).toBe(true);
+    expect(agentCanReceiveTokenImport('grok', 'responses_grok')).toBe(true);
+    expect(agentCanReceiveTokenImport('kimi', 'chat_completions')).toBe(true);
+    expect(agentCanReceiveTokenImport('dsh', 'chat_completions')).toBe(true);
+    expect(agentCanReceiveTokenImport('pi', 'chat_completions')).toBe(false);
+    expect(agentCanReceiveTokenImport('workbuddy', 'chat_completions')).toBe(false);
+  });
+});
+
 describe('isTokenImportAgentVisible', () => {
   it('requires installed && !hidden', () => {
     expect(isTokenImportAgentVisible({ installed: true, hidden: false })).toBe(true);
@@ -64,13 +96,13 @@ describe('isTokenImportAgentVisible', () => {
 });
 
 describe('eligibleAgentsForTokenImport', () => {
-  it('keeps installed order and drops surface mismatches', () => {
+  it('keeps installed order and drops Agents that cannot receive this loopback', () => {
     const agents = eligibleAgentsForTokenImport({
       kind: 'messages',
       installedIds: ['codex', 'claude', 'pi', 'cursor'],
       agentName: (id) => id.toUpperCase(),
     });
-    expect(agents.map((a) => a.id)).toEqual(['claude', 'pi']);
+    expect(agents.map((a) => a.id)).toEqual(['claude']);
     expect(agents[0]?.name).toBe('CLAUDE');
   });
 
@@ -94,53 +126,68 @@ describe('eligibleAgentsForTokenImport', () => {
     })).toEqual([]);
   });
 
-  it('includes WorkBuddy for chat_completions when installed', () => {
+  it('includes Kimi and DSH for chat_completions when installed', () => {
     expect(eligibleAgentsForTokenImport({
       kind: 'chat_completions',
-      installedIds: ['claude', 'workbuddy', 'kimi'],
-    }).map((a) => a.id)).toEqual(['workbuddy', 'kimi']);
+      installedIds: ['claude', 'workbuddy', 'kimi', 'dsh'],
+    }).map((a) => a.id)).toEqual(['kimi', 'dsh']);
+  });
+});
+
+describe('tokenImportAgentChoice', () => {
+  it('enables a matching writer and explains the others', () => {
+    expect(tokenImportAgentChoice('messages', { id: 'claude', name: 'Claude' })).toEqual({
+      id: 'claude',
+      name: 'Claude',
+      enabled: true,
+      reason: null,
+    });
+    expect(tokenImportAgentChoice('messages', { id: 'codex', name: 'Codex' }).reason).toBe('端点不匹配');
+    expect(tokenImportAgentChoice('messages', { id: 'pi', name: 'Pi' }).reason).toBe('还不能写入');
   });
 });
 
 describe('tokenImportGate', () => {
-  const eligible = [
+  const installed = [
     { id: 'claude' as const, name: 'Claude' },
+    { id: 'codex' as const, name: 'Codex' },
     { id: 'pi' as const, name: 'Pi' },
   ];
 
-  it('enables when key, profile, and eligible Agents are ready', () => {
-    const gate = tokenImportGate(row(), eligible);
+  it('opens the menu when key, profile, and any installed Agent are ready', () => {
+    const gate = tokenImportGate(row(), installed);
     expect(gate.enabled).toBe(true);
     expect(gate.reason).toBeNull();
-    expect(gate.agents.map((a) => a.id)).toEqual(['claude', 'pi']);
+    expect(gate.agents.map((a) => a.id)).toEqual(['claude', 'codex', 'pi']);
+    expect(gate.agents.find((a) => a.id === 'claude')?.enabled).toBe(true);
+    expect(gate.agents.find((a) => a.id === 'codex')?.enabled).toBe(false);
+    expect(gate.agents.find((a) => a.id === 'pi')?.enabled).toBe(false);
   });
 
-  it('disables with a short hint when nobody is eligible (no empty menu)', () => {
+  it('still opens when nobody can receive this endpoint (items explain why)', () => {
     const gate = tokenImportGate(
       row({ kind: 'chat_completions' }),
       [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'Codex' }],
     );
-    expect(gate.enabled).toBe(false);
-    expect(gate.agents).toEqual([]);
-    expect(gate.reason).toBe('没有已安装且匹配此端点的 Agent');
-  });
-
-  it('disables without a key or profile', () => {
-    expect(tokenImportGate(row({ token: null }), eligible).reason).toBe('先有入口 Key 才能导入');
-    expect(tokenImportGate(row({ profileId: null }), eligible).reason).toBe('本机入口还没就绪');
-    expect(tokenImportGate(row({ unavailable: true }), eligible).reason).toBe('状态不可用');
-  });
-
-  it('filters the passed agent list to surface matches', () => {
-    const gate = tokenImportGate(
-      row({ kind: 'responses_codex' }),
-      [
-        { id: 'claude', name: 'Claude' },
-        { id: 'codex', name: 'Codex' },
-        { id: 'pi', name: 'Pi' },
-      ],
-    );
-    expect(gate.agents.map((a) => a.id)).toEqual(['codex', 'pi']);
     expect(gate.enabled).toBe(true);
+    expect(gate.agents.every((agent) => !agent.enabled)).toBe(true);
+    expect(gate.agents[0]?.reason).toBe('端点不匹配');
+  });
+
+  it('disables without a key, profile, or installed Agent', () => {
+    expect(tokenImportGate(row({ token: null }), installed).reason).toBe('先有入口 Key 才能导入');
+    expect(tokenImportGate(row({ profileId: null }), installed).reason).toBe('本机入口还没就绪');
+    expect(tokenImportGate(row({ unavailable: true }), installed).reason).toBe('状态不可用');
+    expect(tokenImportGate(row(), []).reason).toBe('先安装 Agent');
+  });
+});
+
+describe('resolveTokenImportProfile', () => {
+  it('prefers the live profile, then the sibling with the same id', () => {
+    const live = { id: 'live' } as AdapterProfile;
+    const listed = { id: 'profile-1' } as AdapterProfile;
+    expect(resolveTokenImportProfile(live, 'profile-1', [listed])).toBe(live);
+    expect(resolveTokenImportProfile(null, 'profile-1', [listed])).toBe(listed);
+    expect(resolveTokenImportProfile(undefined, 'missing', [listed])).toBeNull();
   });
 });

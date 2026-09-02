@@ -1,7 +1,7 @@
 /**
  * One-click import of a local-route token into an Agent.
- * Reuses the「写入 Agent」path: plan/bind ticket → switchProvider on the
- * generated local-entry provider (URL + ahb_ key). No second secret store.
+ * Reuses the「写入 Agent」path: switchProvider on the generated local-entry
+ * provider (URL + ahb_ key). Bind only when that provider is not there yet.
  */
 import { listAdapterProfiles } from '@/lib/api/adapter';
 import { switchProvider } from '@/lib/api/provider';
@@ -28,9 +28,35 @@ const defaultDeps: ImportLocalTokenDeps = {
   logGuiEvent,
 };
 
+type ImportProfile = Pick<
+  AdapterProfile,
+  'sourceKind' | 'sourceId' | 'targetAgentId' | 'generatedProviderId' | 'route'
+>;
+
+function generatedForTarget(
+  profiles: readonly ImportProfile[],
+  source: ImportProfile,
+  agentId: AgentId,
+): string | null {
+  const sibling = localBridgeSiblingForTarget(profiles, source, agentId)
+    ?? (source.targetAgentId === agentId
+      ? profiles.find((row) => (
+        row.sourceKind === source.sourceKind
+        && row.sourceId === source.sourceId
+        && row.targetAgentId === agentId
+      ))
+      : undefined);
+  const fromSibling = sibling?.generatedProviderId?.trim();
+  if (fromSibling) return fromSibling;
+  if (source.targetAgentId === agentId) {
+    return source.generatedProviderId?.trim() || null;
+  }
+  return null;
+}
+
 export async function importLocalTokenToAgent(
   input: {
-    profile: Pick<AdapterProfile, 'sourceKind' | 'sourceId' | 'targetAgentId' | 'generatedProviderId' | 'route'>;
+    profile: ImportProfile;
     agentId: AgentId;
     localToken?: string | null;
     /** Pre-bind siblings; refreshed profiles are preferred after bind. */
@@ -38,37 +64,29 @@ export async function importLocalTokenToAgent(
   },
   deps: ImportLocalTokenDeps = defaultDeps,
 ): Promise<void> {
-  const ticketId = ticketIdFor(input.profile.sourceKind, input.profile.sourceId);
-  await deps.planTicket(ticketId, input.agentId);
-  const { binding } = await deps.bindTicket(ticketId, input.agentId);
+  let generated = generatedForTarget(
+    input.siblingProfiles ?? [input.profile],
+    input.profile,
+    input.agentId,
+  );
 
-  let generated: string | null = null;
-  try {
-    const profiles = await deps.listAdapterProfiles();
-    const fromBinding = binding.profileId
-      ? profiles.find((row) => row.id === binding.profileId)
-      : undefined;
-    const sibling = localBridgeSiblingForTarget(profiles, input.profile, input.agentId)
-      ?? (input.profile.targetAgentId === input.agentId
-        ? profiles.find((row) => (
-          row.sourceKind === input.profile.sourceKind
-          && row.sourceId === input.profile.sourceId
-          && row.targetAgentId === input.agentId
-        ))
-        : undefined);
-    generated = fromBinding?.generatedProviderId?.trim()
-      || sibling?.generatedProviderId?.trim()
-      || null;
-  } catch {
-    const fallback = localBridgeSiblingForTarget(
-      input.siblingProfiles ?? [],
-      input.profile,
-      input.agentId,
-    );
-    generated = fallback?.generatedProviderId?.trim()
-      || (input.profile.targetAgentId === input.agentId
-        ? input.profile.generatedProviderId?.trim() || null
-        : null);
+  if (!generated) {
+    const ticketId = ticketIdFor(input.profile.sourceKind, input.profile.sourceId);
+    await deps.planTicket(ticketId, input.agentId);
+    const { binding } = await deps.bindTicket(ticketId, input.agentId);
+    try {
+      const profiles = await deps.listAdapterProfiles();
+      const fromBinding = binding.profileId
+        ? profiles.find((row) => row.id === binding.profileId)?.generatedProviderId?.trim()
+        : undefined;
+      generated = fromBinding || generatedForTarget(profiles, input.profile, input.agentId);
+    } catch {
+      generated = generatedForTarget(
+        input.siblingProfiles ?? [input.profile],
+        input.profile,
+        input.agentId,
+      );
+    }
   }
 
   if (!generated) {

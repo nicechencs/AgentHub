@@ -51,10 +51,9 @@ function bindResult(
 }
 
 describe('importLocalTokenToAgent', () => {
-  it('plans, binds, then switchProvider on the generated local-entry provider', async () => {
+  it('switches immediately when the local-entry provider is already on this Agent', async () => {
     const planTicket = planMock();
     const bindTicket = vi.fn(async () => bindResult());
-    const listAdapterProfiles = vi.fn(async () => [profile()]);
     const switchProvider = vi.fn(async () => undefined);
     const logGuiEvent = vi.fn(async () => undefined);
 
@@ -64,11 +63,17 @@ describe('importLocalTokenToAgent', () => {
         agentId: 'claude',
         localToken: 'ahb_xxxxxxxxxxxxABCD',
       },
-      { planTicket, bindTicket, listAdapterProfiles, switchProvider, logGuiEvent },
+      {
+        planTicket,
+        bindTicket,
+        listAdapterProfiles: vi.fn(async () => []),
+        switchProvider,
+        logGuiEvent,
+      },
     );
 
-    expect(planTicket).toHaveBeenCalledWith('provider:src-1', 'claude');
-    expect(bindTicket).toHaveBeenCalledWith('provider:src-1', 'claude');
+    expect(planTicket).not.toHaveBeenCalled();
+    expect(bindTicket).not.toHaveBeenCalled();
     expect(switchProvider).toHaveBeenCalledWith('claude', 'gen-claude');
     expect(logGuiEvent).toHaveBeenCalledWith('switch_write', {
       agent: 'claude',
@@ -76,7 +81,35 @@ describe('importLocalTokenToAgent', () => {
     });
   });
 
-  it('falls back to sibling generatedProviderId when list fails', async () => {
+  it('plans, binds, then switchProvider when the generated provider is missing', async () => {
+    const planTicket = planMock();
+    const bindTicket = vi.fn(async () => bindResult());
+    const listAdapterProfiles = vi.fn(async () => [profile()]);
+    const switchProvider = vi.fn(async () => undefined);
+
+    await importLocalTokenToAgent(
+      {
+        profile: profile({ generatedProviderId: null }),
+        agentId: 'claude',
+        siblingProfiles: [profile({ generatedProviderId: null })],
+      },
+      {
+        planTicket,
+        bindTicket,
+        listAdapterProfiles,
+        switchProvider,
+        logGuiEvent: vi.fn(async () => undefined),
+      },
+    );
+
+    expect(planTicket).toHaveBeenCalledWith('provider:src-1', 'claude');
+    expect(bindTicket).toHaveBeenCalledWith('provider:src-1', 'claude');
+    expect(switchProvider).toHaveBeenCalledWith('claude', 'gen-claude');
+  });
+
+  it('uses a sibling generatedProviderId without binding again', async () => {
+    const planTicket = planMock();
+    const bindTicket = vi.fn(async () => bindResult({ profileId: null }));
     const switchProvider = vi.fn(async () => undefined);
     await importLocalTokenToAgent(
       {
@@ -85,13 +118,15 @@ describe('importLocalTokenToAgent', () => {
         siblingProfiles: [profile({ generatedProviderId: 'gen-from-sibling' })],
       },
       {
-        planTicket: planMock(),
-        bindTicket: vi.fn(async () => bindResult({ profileId: null })),
+        planTicket,
+        bindTicket,
         listAdapterProfiles: vi.fn(async () => { throw new Error('offline'); }),
         switchProvider,
         logGuiEvent: vi.fn(async () => undefined),
       },
     );
+    expect(planTicket).not.toHaveBeenCalled();
+    expect(bindTicket).not.toHaveBeenCalled();
     expect(switchProvider).toHaveBeenCalledWith('claude', 'gen-from-sibling');
   });
 
