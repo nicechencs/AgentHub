@@ -405,7 +405,7 @@ describe('Bridges page', () => {
     expect(markup).toContain('本机入口');
     expect(markup).not.toContain('交给本机网关');
     expect(markup).not.toContain('已接入的登录');
-    expect(markup).not.toContain('令牌已保存');
+    expect(markup).not.toContain('入口 Key 已保存');
   });
 
   it('shows default pool members when flag is on, and hides them when off', () => {
@@ -431,7 +431,7 @@ describe('Bridges page', () => {
       defaultPool: pool,
     });
     expect(off).not.toContain('已接入的登录');
-    expect(off).not.toContain('令牌已保存');
+    expect(off).not.toContain('入口 Key 已保存');
     const on = renderDetail({
       profile,
       bridgeStatus: runningStatus(profile.id),
@@ -446,7 +446,7 @@ describe('Bridges page', () => {
     expect(on).toContain('Responses');
     expect(on).toContain('已接入的登录');
     expect(on).toContain('OpenRouter');
-    expect(on).toContain('令牌已保存');
+    expect(on).toContain('入口 Key 已保存');
     expect(on).toContain('kimi-k2.5');
     expect(on).not.toContain('hubToken');
     expect(on).not.toContain('ahb_');
