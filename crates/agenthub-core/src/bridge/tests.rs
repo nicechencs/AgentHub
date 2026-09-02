@@ -3725,7 +3725,16 @@ async fn two_profiles_two_bearers_two_surfaces_do_not_cross() {
         .await
         .expect("responses for A");
     assert_eq!(cross_responses.status(), StatusCode::NOT_FOUND);
-    assert!(cross_responses.text().await.expect("empty 404").is_empty());
+    let cross_responses_body: Value = cross_responses.json().await.expect("surface_mismatch json");
+    assert_eq!(cross_responses_body["error"]["code"], "surface_mismatch");
+    let cross_responses_msg = cross_responses_body["error"]["message"]
+        .as_str()
+        .unwrap_or("");
+    assert!(
+        cross_responses_msg.contains("/v1/messages")
+            && cross_responses_msg.contains("/v1/responses"),
+        "{cross_responses_msg}"
+    );
 
     let served_responses = http
         .post(format!("http://127.0.0.1:{port}/v1/responses"))
@@ -3748,6 +3757,16 @@ async fn two_profiles_two_bearers_two_surfaces_do_not_cross() {
         .await
         .expect("messages for B");
     assert_eq!(cross_messages.status(), StatusCode::NOT_FOUND);
+    let cross_messages_body: Value = cross_messages.json().await.expect("surface_mismatch json");
+    assert_eq!(cross_messages_body["error"]["code"], "surface_mismatch");
+    let cross_messages_msg = cross_messages_body["error"]["message"]
+        .as_str()
+        .unwrap_or("");
+    assert!(
+        cross_messages_msg.contains("/v1/responses")
+            && cross_messages_msg.contains("/v1/messages"),
+        "{cross_messages_msg}"
+    );
 
     host.shutdown().await.expect("shutdown");
     upstream_task.abort();
