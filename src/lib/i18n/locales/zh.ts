@@ -103,8 +103,8 @@ export const zh = {
       autoCollapseOnRoutesTip:
         '只在点「路由」时自动收起。去其他页面、刷新、或在路由页内切换，都保持你手动展开或折叠的状态。折叠按钮始终可用。',
       routesNavVisibleLabel: '显示路由页面',
-      routesNavVisibleDescription: '功能开发中。打开后在侧栏显示入口；关闭后仍可用链接打开。',
-      routesNavVisibleTip: '新安装默认不显示。隐藏侧栏入口不禁用路由页；仍可通过链接打开。',
+      routesNavVisibleDescription: '在侧栏显示本机路由入口；关闭后仍可用链接打开。',
+      routesNavVisibleTip: '新安装默认显示。隐藏侧栏入口不禁用路由页；仍可通过链接打开。',
       pluginsNavVisibleLabel: '显示插件页面',
       pluginsNavVisibleDescription: '功能开发中。打开后在侧栏显示入口；关闭后仍可用链接打开。',
       pluginsNavVisibleTip: '新安装默认不显示。隐藏侧栏入口不禁用插件页；仍可通过链接打开。',
@@ -1642,6 +1642,7 @@ export const zh = {
       addApiKey: "添加 API Key",
       unused: "未使用",
       unusedWithOwner: "{name} · 未使用",
+      inUseWithOwner: "{name} · 使用中",
       usedFor: "正用于：",
       runningSuffix: " · 运行中",
       stoppedSuffix: " · 已停止",

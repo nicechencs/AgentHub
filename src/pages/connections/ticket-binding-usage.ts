@@ -113,9 +113,20 @@ export function formatTicketUsageParts(
   ownerAgentId?: AgentId,
   t?: TranslateFn,
   memberCount = 1,
+  isCurrent = false,
 ): TicketUsagePart[] {
   const active = bindings.filter((b) => b.active);
   if (active.length === 0) {
+    if (isCurrent) {
+      return [{
+        kind: 'text',
+        text: ownerAgentId
+          ? (t
+            ? t('connections.list.inUseWithOwner', { name: agentDisplayName(ownerAgentId) })
+            : `${agentDisplayName(ownerAgentId)} · 使用中`)
+          : (t ? t('connections.list.inUse') : '使用中'),
+      }];
+    }
     return [{
       kind: 'text',
       text: ownerAgentId
@@ -148,8 +159,9 @@ export function formatTicketUsageText(
   ownerAgentId?: AgentId,
   t?: TranslateFn,
   memberCount = 1,
+  isCurrent = false,
 ): string {
-  return formatTicketUsageParts(bindings, ownerAgentId, t, memberCount)
+  return formatTicketUsageParts(bindings, ownerAgentId, t, memberCount, isCurrent)
     .map((part) => usagePartPlainText(part))
     .join('');
 }
@@ -163,12 +175,15 @@ export function buildTicketWalletRows(
     /** Agent tab filter; omit for the full wallet. */
     agentFilterId?: AgentId | null;
     t?: TranslateFn;
+    /** True when this ticket is the current login for its agent (even with no active bindings). */
+    isCurrentForTicket?: (ticket: TicketView) => boolean;
   } = {},
 ): TicketWalletRow[] {
   const filter = options.filter ?? 'all';
   const highlightAgentId = options.highlightAgentId ?? null;
   const agentFilterId = options.agentFilterId ?? null;
   const t = options.t;
+  const isCurrentForTicket = options.isCurrentForTicket;
 
   let tickets = filterTickets(wallet.tickets, filter);
   if (agentFilterId) {
@@ -182,12 +197,13 @@ export function buildTicketWalletRows(
       highlightAgentId
       && bindings.some((b) => b.active && b.agentId === highlightAgentId),
     );
+    const isCurrent = isCurrentForTicket?.(ticket) === true;
     return {
       ticket,
       bindings,
       highlighted,
-      usageText: formatTicketUsageText(bindings, ticket.agentId, t, memberCount),
-      usageParts: formatTicketUsageParts(bindings, ticket.agentId, t, memberCount),
+      usageText: formatTicketUsageText(bindings, ticket.agentId, t, memberCount, isCurrent),
+      usageParts: formatTicketUsageParts(bindings, ticket.agentId, t, memberCount, isCurrent),
     };
   });
 }
