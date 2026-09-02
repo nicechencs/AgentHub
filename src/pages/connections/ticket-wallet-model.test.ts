@@ -201,6 +201,11 @@ describe('binding usage text', () => {
     expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('Local route · 运行中');
     expect(formatTicketUsageText([])).toBe('未使用');
     expect(formatTicketUsageText([], 'codex')).toBe(`${agentDisplayName('codex')} · 未使用`);
+    expect(formatTicketUsageText([], undefined, undefined, 1, true)).toBe('使用中');
+    expect(formatTicketUsageText([], 'codex', undefined, 1, true)).toBe(
+      `${agentDisplayName('codex')} · 使用中`,
+    );
+    expect(formatTicketUsageText([], undefined, undefined, 1, false)).toBe('未使用');
     const parts = formatTicketUsageParts(kimiBindings, 'kimi');
     expect(parts.some((part) => part.kind === 'bridge' && part.href === '/routes/pool?profile=p2')).toBe(true);
     expect(formatTicketUsageParts([{
@@ -279,6 +284,19 @@ describe('binding usage text', () => {
 });
 
 describe('buildTicketWalletRows', () => {
+  it('shows 使用中 for current login tickets with no active bindings', () => {
+    const wallet = sampleWallet();
+    const oauth = wallet.tickets.find((ticket) => ticket.id === 'account:oauth-1');
+    expect(oauth).toBeDefined();
+    // Drop active bindings for this ticket so usage falls back to empty/current.
+    wallet.bindings = wallet.bindings.filter((b) => b.ticketId !== 'account:oauth-1');
+    const rows = buildTicketWalletRows(wallet, {
+      isCurrentForTicket: (ticket) => ticket.id === 'account:oauth-1',
+    });
+    const row = rows.find((r) => r.ticket.id === 'account:oauth-1');
+    expect(row?.usageText).toBe(`${agentDisplayName(oauth!.agentId)} · 使用中`);
+  });
+
   it('highlights deep-link agent active bindings without privatizing the list', () => {
     const wallet = sampleWallet();
     const rows = buildTicketWalletRows(wallet, { highlightAgentId: 'claude' });

@@ -790,12 +790,13 @@ export function TicketWalletList({
         highlightAgentId: highlightAgentId ?? null,
         agentFilterId,
         t,
+        isCurrentForTicket: (ticket) => extrasForTicket?.(ticket)?.isCurrent === true,
       });
       return applyIdOrder(built, (row) => row.ticket.id, ticketOrder);
     } catch {
       return [];
     }
-  }, [wallet, highlightAgentId, agentFilterId, t, ticketOrder]);
+  }, [wallet, highlightAgentId, agentFilterId, t, ticketOrder, extrasForTicket]);
   const liveIds = React.useMemo(() => rows.map((row) => row.ticket.id), [rows]);
   React.useEffect(() => {
     seedIfEmpty(liveIds);

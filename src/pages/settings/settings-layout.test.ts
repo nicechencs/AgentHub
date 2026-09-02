@@ -46,11 +46,11 @@ describe('settings layout wiring', () => {
     );
   });
 
-  it('marks routes and plugins toggles as in development', () => {
+  it('marks plugins toggle as in development', () => {
     const prefs = source('PreferencesPanel.tsx');
     expect(prefs).toContain("t('common.inDevelopment')");
     expect(prefs).toContain('badge={<Badge');
-    expect((prefs.match(/t\('common\.inDevelopment'\)/g) ?? []).length).toBe(2);
+    expect((prefs.match(/t\('common\.inDevelopment'\)/g) ?? []).length).toBe(1);
     expect(prefs).toContain("aria-label={t('settings.general.autoCollapseOnRoutesLabel')}");
     expect(prefs).toContain("aria-label={t('settings.general.routesNavVisibleLabel')}");
     expect(prefs).toContain("aria-label={t('settings.general.pluginsNavVisibleLabel')}");

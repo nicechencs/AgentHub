@@ -139,14 +139,14 @@ describe('workspaceNavItems / manageNavItems', () => {
     ]);
   });
 
-  it('hides routes and plugins in the sidebar for a new install', () => {
+  it('shows routes by default and hides plugins in the sidebar for a new install', () => {
     expect(DEFAULT_SIDEBAR_AUTO_COLLAPSE_ON_ROUTES).toBe(true);
-    expect(DEFAULT_ROUTES_NAV_VISIBLE).toBe(false);
+    expect(DEFAULT_ROUTES_NAV_VISIBLE).toBe(true);
     expect(DEFAULT_PLUGINS_NAV_VISIBLE).toBe(false);
     expect(workspaceNavItems(DEFAULT_PLUGINS_NAV_VISIBLE).map((item) => item.to)).not.toContain(
       '/plugins',
     );
-    expect(manageNavItems(DEFAULT_ROUTES_NAV_VISIBLE).map((item) => item.to)).not.toContain(
+    expect(manageNavItems(DEFAULT_ROUTES_NAV_VISIBLE).map((item) => item.to)).toContain(
       BRIDGES_PATH,
     );
     const ctx = readFileSync(path.join(dir, 'SidebarContext.tsx'), 'utf8');
@@ -157,7 +157,7 @@ describe('workspaceNavItems / manageNavItems', () => {
     expect(ctx).toContain('loadBool(StorageKey.pluginsNavVisible, DEFAULT_PLUGINS_NAV_VISIBLE)');
   });
 
-  it('marks routes, plugins, and MCP as in development', () => {
+  it('marks plugins and MCP as in development; routes are not', () => {
     const mcp = NAV_WORKSPACE.find((item) => item.to === '/mcp');
     const plugins = NAV_WORKSPACE.find((item) => item.to === '/plugins');
     const routes = NAV_MANAGE.find((item) => item.to === BRIDGES_PATH);
@@ -166,7 +166,7 @@ describe('workspaceNavItems / manageNavItems', () => {
     expect(routes).toBeDefined();
     expect(navItemInDevelopment(mcp!)).toBe(true);
     expect(navItemInDevelopment(plugins!)).toBe(true);
-    expect(navItemInDevelopment(routes!)).toBe(true);
+    expect(navItemInDevelopment(routes!)).toBe(false);
     expect(navItemInDevelopment(NAV_WORKSPACE[0])).toBe(false);
     expect(navItemInDevelopment(NAV_MANAGE[0])).toBe(false);
     const sidebar = readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
