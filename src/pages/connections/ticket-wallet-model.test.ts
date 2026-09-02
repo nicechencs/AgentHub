@@ -259,7 +259,7 @@ describe('binding usage text', () => {
       active: true,
       profileId: null,
       bridge: null,
-    }], 'codex')).toBe(`${agentDisplayName('codex')}（Direct）`);
+    }], 'codex')).toBe(agentDisplayName('codex'));
     expect(formatTicketUsageText([{
       ticketId: 'account:codex-1',
       agentId: 'codex',
@@ -279,7 +279,7 @@ describe('binding usage text', () => {
       undefined,
       'http://127.0.0.1:43121/v1/messages',
     )).toBe('Kimi 会员 · http://127.0.0.1:43121/v1/messages');
-    expect(dashboardBindingMetaText('me@…', 'native')).toBe('me@… · Direct');
+    expect(dashboardBindingMetaText('me@…', 'native')).toBe('me@…');
   });
 });
 
@@ -928,6 +928,17 @@ describe('ticket detail fields', () => {
     expect(formatTicketBindingDetailLines(
       wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),
     )).toEqual([{ agent: agentDisplayName('claude'), status: '未使用' }]);
+    expect(buildTicketBindingRows(
+      wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),
+    )).toEqual([
+      {
+        agentId: 'claude',
+        agentLabel: agentDisplayName('claude'),
+        status: '未使用',
+        routeLabel: null,
+        localUrl: null,
+      },
+    ]);
     expect(buildTicketBindingRows(
       wallet.bindings.filter((binding) => binding.ticketId === 'provider:kimi-1'),
     )).toEqual([

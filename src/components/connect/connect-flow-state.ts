@@ -567,7 +567,7 @@ function reusePathForPlan(plan: AdapterApplyPlan): AdapterReusePath {
 
 function titleForReusePath(reusePath: AdapterReusePath, t?: TranslateFn): string {
   if (reusePath === 'local_bridge') return t ? t('kind.route.localRoute') : '本机路由';
-  if (reusePath === 'api_endpoint') return t ? t('kind.route.direct') : '直连';
+  if (reusePath === 'api_endpoint') return '';
   if (reusePath === 'native_subscription') return t ? t('kind.route.reuseLogin') : '用这份登录';
   return t ? t('kind.route.unsupported') : '当前不支持';
 }

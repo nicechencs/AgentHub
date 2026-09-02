@@ -13,7 +13,7 @@ import type {
 } from '@/lib/backend/contracts/adapter';
 
 export function routeLabel(route: AdapterRouteAnalysis['route'], t?: TranslateFn): string {
-  if (route === 'native_endpoint') return t ? t('routes.create.route.nativeEndpoint') : '直连';
+  if (route === 'native_endpoint') return t ? t('routes.create.route.nativeEndpoint') : '直接写入';
   if (route === 'local_bridge') return t ? t('routes.create.route.localBridge') : '本机路由';
   if (route === 'config_sync') return t ? t('routes.create.route.configSync') : '用这份登录';
   return t ? t('routes.create.route.unsupported') : '当前不支持';

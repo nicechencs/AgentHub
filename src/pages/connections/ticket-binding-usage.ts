@@ -68,6 +68,9 @@ export function formatBindingUsageParts(
       ? t('connections.list.poolSuffix', { n: memberCount })
       : ` · ${memberCount} 份同类登录可轮换`)
     : '';
+  if (binding.route === 'native') {
+    return [{ kind: 'text', text: name }];
+  }
   if (binding.route === 'bridge') {
     const path = routeEndpointPathForBinding({ agentId: binding.agentId });
     const endpointId = routeEndpointIdForBinding({ agentId: binding.agentId });
@@ -218,5 +221,6 @@ export function dashboardBindingMetaText(
     const url = localUrl?.trim();
     return url ? `${ticketLabel} · ${url}` : ticketLabel;
   }
-  return `${ticketLabel} · ${bindingDashboardRouteLabel(route, t)}`;
+  const routeLabel = bindingDashboardRouteLabel(route, t);
+  return routeLabel ? `${ticketLabel} · ${routeLabel}` : ticketLabel;
 }

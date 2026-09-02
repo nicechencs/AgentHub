@@ -509,6 +509,11 @@ describe('dashboardBindingMeta', () => {
   it('uses 127.0.0.1 for routed bindings and connection-state words otherwise', () => {
     expect(dashboardBindingMeta({
       ticketLabel: 'Kimi 会员',
+      route: 'native',
+      agentId: 'claude',
+    })).toEqual({ ticketLabel: 'Kimi 会员', routeLabel: '' });
+    expect(dashboardBindingMeta({
+      ticketLabel: 'Kimi 会员',
       route: 'reshape',
       agentId: 'claude',
     })).toEqual({ ticketLabel: 'Kimi 会员', routeLabel: 'Rewrite config' });
