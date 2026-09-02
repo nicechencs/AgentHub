@@ -11,7 +11,8 @@ test('app boots on mock and primary navigation works', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '连接' })).toBeVisible();
 
   const nav = page.getByRole('navigation');
-  await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toHaveCount(0);
+  // UX-10: Routes shown in main nav by default; Plugins still hidden.
+  await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toBeVisible();
   await expect(nav.getByRole('link', { name: /^插件(?:$| — )/ })).toHaveCount(0);
 
   await goNav(page, 'Projects');
@@ -166,28 +167,33 @@ test('page title sits in the top bar with notifications; Chat has neither', asyn
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);
 });
 
-test('new install hides Routes and Plugins until enabled in Settings', async ({ page }) => {
+test('new install shows Routes by default; Plugins stay hidden until Settings', async ({ page }) => {
   await openApp(page);
   const nav = page.getByRole('navigation');
-  await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toHaveCount(0);
+  // UX-10: Routes visible by default (no 开发中 mark); Plugins still opt-in.
+  await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toBeVisible();
   await expect(nav.getByRole('link', { name: /^插件(?:$| — )/ })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: /^MCP — / })).toBeVisible();
 
   await goNav(page, '设置');
   await expect(page.getByRole('switch', { name: '打开路由时自动折叠' })).toBeChecked();
-  await expect(page.getByRole('switch', { name: '显示路由页面' })).not.toBeChecked();
+  await expect(page.getByRole('switch', { name: '显示路由页面' })).toBeChecked();
   await expect(page.getByRole('switch', { name: '显示插件页面' })).not.toBeChecked();
   await expect(
     page.getByText('显示路由页面', { exact: true }).locator('..').getByText('开发中'),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page.getByText('显示插件页面', { exact: true }).locator('..').getByText('开发中'),
   ).toBeVisible();
 
+  // Settings switch still disables Routes; Plugins can be enabled.
   await page.getByRole('switch', { name: '显示路由页面' }).click();
   await page.getByRole('switch', { name: '显示插件页面' }).click();
-  await expect(nav.getByRole('link', { name: /^路由 — / })).toBeVisible();
+  await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: /^插件 — / })).toBeVisible();
+
+  await page.getByRole('switch', { name: '显示路由页面' }).click();
+  await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toBeVisible();
 
   await goNav(page, '路由');
   await expect(page).toHaveURL(/#\/routes\/board/);
