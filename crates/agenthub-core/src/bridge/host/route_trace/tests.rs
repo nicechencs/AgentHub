@@ -169,3 +169,84 @@ fn patch_usage_applies_before_and_after_push() {
     assert_eq!(second.input_tokens, Some(20));
     assert_eq!(second.output_tokens, Some(9));
 }
+
+
+#[test]
+fn route_trace_log_persists_and_restores_across_enable() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("route-traces.json");
+    let log = RouteTraceLog::new();
+    log.enable_persist(path.clone());
+
+    let mut builder = RouteTraceBuilder::begin("req-persist", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", Some(8787));
+    builder.set_model(Some("claude-sonnet".into()));
+    builder.finalize(200, &log);
+
+    let mut other = RouteTraceBuilder::begin("req-other", "POST", "/v1/chat/completions");
+    other.local_auth_ok("profile-b", None);
+    other.finalize(201, &log);
+
+    assert!(path.is_file(), "persist file should exist after finalize");
+
+    let restored = RouteTraceLog::new();
+    restored.enable_persist(path);
+    let a = restored.recent("profile-a");
+    assert_eq!(a.len(), 1);
+    assert_eq!(a[0].request_id, "req-persist");
+    assert_eq!(a[0].http_status, 200);
+    assert_eq!(a[0].model.as_deref(), Some("claude-sonnet"));
+    assert_eq!(a[0].local_auth.port, Some(8787));
+    let b = restored.recent("profile-b");
+    assert_eq!(b.len(), 1);
+    assert_eq!(b[0].request_id, "req-other");
+}
+
+#[test]
+fn route_trace_persist_ignores_corrupt_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("route-traces.json");
+    std::fs::write(&path, b"{not-json").expect("write corrupt");
+    let log = RouteTraceLog::new();
+    log.enable_persist(path);
+    assert!(log.recent("profile-a").is_empty());
+}
+
+#[test]
+fn route_trace_persist_second_enable_is_ignored() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path_a = dir.path().join("a.json");
+    let path_b = dir.path().join("b.json");
+    let log = RouteTraceLog::new();
+    log.enable_persist(path_a.clone());
+    let mut builder = RouteTraceBuilder::begin("req-a", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", None);
+    builder.finalize(200, &log);
+    log.enable_persist(path_b.clone());
+    let mut builder = RouteTraceBuilder::begin("req-b", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", None);
+    builder.finalize(200, &log);
+    assert!(path_a.is_file());
+    assert!(!path_b.exists(), "second enable_persist must not retarget writes");
+}
+
+#[test]
+fn route_trace_persist_keeps_ring_cap_on_reload() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("route-traces.json");
+    let log = RouteTraceLog::new();
+    log.enable_persist(path.clone());
+    for index in 0..(ROUTE_TRACE_CAP + 8) {
+        let mut builder = RouteTraceBuilder::begin(format!("req-{index}"), "POST", "/v1/messages");
+        builder.local_auth_ok("profile-a", None);
+        builder.finalize(200, &log);
+    }
+    let restored = RouteTraceLog::new();
+    restored.enable_persist(path);
+    let recent = restored.recent("profile-a");
+    assert_eq!(recent.len(), ROUTE_TRACE_CAP);
+    assert_eq!(
+        recent[0].request_id,
+        format!("req-{}", ROUTE_TRACE_CAP + 7)
+    );
+}

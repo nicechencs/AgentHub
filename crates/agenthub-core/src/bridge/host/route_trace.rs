@@ -2,12 +2,17 @@
 //!
 //! Records localhost auth, pool member selection, conversion path/result,
 //! upstream auth outcome, and upstream URL/account — never bodies or secrets.
+//!
+//! When persistence is enabled (desktop GUI), the last [`ROUTE_TRACE_CAP`]
+//! traces per profile are flushed to a JSON ring under the data dir and
+//! restored on process restart so Activity/monitor history survives crashes.
 
 use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::surface::DownstreamSurface;
 use super::transport::UpstreamChannel;
@@ -16,7 +21,7 @@ use crate::bridge::route_index::DispatchCandidate;
 
 pub const ROUTE_TRACE_CAP: usize = 30;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TraceStageStatus {
     Pending,
@@ -25,7 +30,7 @@ pub enum TraceStageStatus {
     Skipped,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteTraceMember {
     pub label: String,
@@ -35,7 +40,7 @@ pub struct RouteTraceMember {
     pub ticket_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteTracePoolAttempt {
     pub member: RouteTraceMember,
@@ -46,7 +51,7 @@ pub struct RouteTracePoolAttempt {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteTraceLocalAuth {
     pub status: TraceStageStatus,
@@ -60,7 +65,7 @@ pub struct RouteTraceLocalAuth {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteTracePool {
     pub status: TraceStageStatus,
@@ -74,7 +79,7 @@ pub struct RouteTracePool {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteTraceConversion {
     pub status: TraceStageStatus,
@@ -88,7 +93,7 @@ pub struct RouteTraceConversion {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteTraceUpstreamAuth {
     pub status: TraceStageStatus,
@@ -100,7 +105,7 @@ pub struct RouteTraceUpstreamAuth {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteTraceUpstream {
     pub status: TraceStageStatus,
@@ -121,7 +126,7 @@ pub struct RouteTraceUpstream {
 }
 
 /// One completed local-route request trace for Activity / monitoring UI.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteRequestTrace {
     pub request_id: String,
@@ -181,10 +186,24 @@ fn apply_usage_patch(trace: &mut RouteRequestTrace, patch: TraceUsagePatch) {
     }
 }
 
+/// On-disk ring snapshot (credential-free). Restored on GUI/process restart.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RouteTracePersistFile {
+    version: u32,
+    #[serde(default)]
+    by_profile: HashMap<String, Vec<RouteRequestTrace>>,
+    #[serde(default)]
+    unauthenticated: Vec<RouteRequestTrace>,
+}
+
 struct TraceStore {
     by_profile: HashMap<String, ProfileTraces>,
     unauthenticated: VecDeque<RouteRequestTrace>,
     pending_usage: HashMap<String, TraceUsagePatch>,
+    /// When set, finalized traces are flushed as a capped JSON ring under the
+    /// data dir so restart/crash does not wipe the monitoring list.
+    persist_path: Option<PathBuf>,
 }
 
 impl Default for TraceStore {
@@ -193,6 +212,7 @@ impl Default for TraceStore {
             by_profile: HashMap::new(),
             unauthenticated: VecDeque::new(),
             pending_usage: HashMap::new(),
+            persist_path: None,
         }
     }
 }
@@ -200,6 +220,26 @@ impl Default for TraceStore {
 impl RouteTraceLog {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Enable durable ring persistence at `path`. Loads last N traces if the
+    /// file exists. Later calls are ignored (install once at process start).
+    /// Best-effort: corrupt/missing files start empty; write failures never
+    /// affect the request path.
+    pub fn enable_persist(&self, path: PathBuf) {
+        let Ok(mut store) = self.inner.lock() else {
+            return;
+        };
+        if store.persist_path.is_some() {
+            return;
+        }
+        let empty = store.by_profile.is_empty() && store.unauthenticated.is_empty();
+        if empty {
+            if let Some(snapshot) = load_persist_file(&path) {
+                apply_snapshot(&mut store, snapshot);
+            }
+        }
+        store.persist_path = Some(path);
     }
 
     pub fn push(&self, trace: RouteRequestTrace) {
@@ -218,6 +258,7 @@ impl RouteTraceLog {
             store.unauthenticated.push_front(record);
             store.unauthenticated.truncate(ROUTE_TRACE_CAP);
         }
+        flush_persist(&store);
     }
 
     pub fn patch_usage(
@@ -242,6 +283,7 @@ impl RouteTraceLog {
                 .find(|row| row.request_id == request_id)
             {
                 apply_usage_patch(row, incoming);
+                flush_persist(&store);
                 return;
             }
         }
@@ -251,6 +293,7 @@ impl RouteTraceLog {
             .find(|row| row.request_id == request_id)
         {
             apply_usage_patch(row, incoming);
+            flush_persist(&store);
             return;
         }
         if let Some(pending) = store.pending_usage.get_mut(request_id) {
@@ -304,6 +347,74 @@ impl RouteTraceLog {
             .iter()
             .find(|row| row.request_id == request_id)
             .cloned()
+    }
+}
+
+fn apply_snapshot(store: &mut TraceStore, snapshot: RouteTracePersistFile) {
+    for (profile_id, traces) in snapshot.by_profile {
+        if profile_id.trim().is_empty() {
+            continue;
+        }
+        let entry = store.by_profile.entry(profile_id).or_default();
+        entry.recent = traces.into_iter().take(ROUTE_TRACE_CAP).collect();
+    }
+    store.unauthenticated = snapshot
+        .unauthenticated
+        .into_iter()
+        .take(ROUTE_TRACE_CAP)
+        .collect();
+}
+
+fn load_persist_file(path: &Path) -> Option<RouteTracePersistFile> {
+    let bytes = std::fs::read(path).ok()?;
+    if bytes.is_empty() {
+        return None;
+    }
+    match serde_json::from_slice::<RouteTracePersistFile>(&bytes) {
+        Ok(snapshot) if snapshot.version == 1 => Some(snapshot),
+        Ok(_) => {
+            tracing::warn!(
+                target: "core.adapter",
+                path = %path.display(),
+                "route trace persist file has unsupported version; starting empty"
+            );
+            None
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "core.adapter",
+                path = %path.display(),
+                error = %error,
+                "route trace persist file unreadable; starting empty"
+            );
+            None
+        }
+    }
+}
+
+fn flush_persist(store: &TraceStore) {
+    let Some(path) = store.persist_path.as_ref() else {
+        return;
+    };
+    let snapshot = RouteTracePersistFile {
+        version: 1,
+        by_profile: store
+            .by_profile
+            .iter()
+            .map(|(id, entry)| (id.clone(), entry.recent.iter().cloned().collect()))
+            .collect(),
+        unauthenticated: store.unauthenticated.iter().cloned().collect(),
+    };
+    let Ok(bytes) = serde_json::to_vec(&snapshot) else {
+        return;
+    };
+    if let Err(error) = crate::utils::atomic::atomic_write(path, &bytes) {
+        tracing::warn!(
+            target: "core.adapter",
+            path = %path.display(),
+            error = %error,
+            "failed to persist route traces"
+        );
     }
 }
 
