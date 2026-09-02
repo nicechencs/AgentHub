@@ -24,6 +24,44 @@ import {
 
 const log = logger.scope('runtime:agent-status');
 
+/** Cold start / hard refresh: IPC can fail once before the Rust side is ready. */
+const COLD_START_LIST_ATTEMPTS = 3;
+const COLD_START_RETRY_BASE_MS = 350;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Retry only the initial probe. Forced refreshes stay fail-fast so focus
+ * handlers do not stretch a real outage into a multi-second hang.
+ */
+async function listAgentsWithColdStartRetry(
+  backend: Backend,
+  opts: { force?: boolean },
+): Promise<AgentStatus[]> {
+  const attempts = opts.force ? 1 : COLD_START_LIST_ATTEMPTS;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await backend.agent.listAgents();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) break;
+      log.warn('agent status load not ready yet; retrying', {
+        attempt,
+        attempts,
+        errorCode: errorCode(error),
+      });
+      await delay(COLD_START_RETRY_BASE_MS * attempt);
+    }
+  }
+  throw lastError;
+}
+
+
 export type AgentStatusLoadState = 'idle' | 'loading' | 'ready' | 'error';
 
 export interface AgentStatusSnapshot {
@@ -294,8 +332,7 @@ export async function loadAgentStatuses(
   }
 
   let request!: Promise<AgentStatus[]>;
-  request = backend.agent
-    .listAgents()
+  request = listAgentsWithColdStartRetry(backend, opts)
     .then(async (statuses) => {
       if (startedEpoch !== epoch) return snapshot.statuses;
       // 三阶段：detect 先上屏；连接池复用共享 store；live-auth 最后补齐。

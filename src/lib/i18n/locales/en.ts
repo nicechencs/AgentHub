@@ -276,6 +276,9 @@ export const en = {
       diagHeader: "[AgentHub diagnostics]",
       diagTime: "Time: {time}",
       diagError: "Error: {message}",
+      diagLogs: "Logs: ~/.agenthub/logs/agenthub.*.log",
+      hintLogs: "If this keeps happening, check today's log under ~/.agenthub/logs, then retry.",
+      loadingLocal: "Loading local state…",
     },
     update: {
       found: "New version",
