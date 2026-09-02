@@ -73,7 +73,7 @@ describe('TokenDetailPanel', () => {
       { onEditKey: () => {} },
     );
     expect(leftoverMarkup).toMatch(/data-token-edit-key=""[^>]*\bdisabled\b/);
-    expect(leftoverMarkup).toContain('这条还不是连接池令牌');
+    expect(leftoverMarkup).toContain('这条还不是连接池入口 Key');
   });
 
 });

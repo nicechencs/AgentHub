@@ -125,8 +125,8 @@ function localizeAdapterCopy(raw: string, t?: TranslateFn): string {
   ) {
     return copy('unknownRelay', '这份自定义上游还缺有效的服务地址，没法开本机转发。请补上地址后重试。');
   }
-  if (/invalid adapter secret reference/i.test(trimmed) || trimmed.includes('令牌写进')) {
-    return copy('invalidSecret', '没法把令牌写进客户端配置。请点重试。');
+  if (/invalid adapter secret reference/i.test(trimmed) || trimmed.includes('令牌写进') || trimmed.includes('入口 Key 写进')) {
+    return copy('invalidSecret', '没法把入口 Key 写进客户端配置。请点重试。');
   }
   if (trimmed.includes('无法监听端口') || /couldn't listen|cannot listen/i.test(trimmed)) {
     return copy('cannotListen', '本机转发无法监听端口，请点重试。');

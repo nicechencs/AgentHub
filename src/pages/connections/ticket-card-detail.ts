@@ -203,6 +203,7 @@ function isPlaceholderOAuthLabel(label: string): boolean {
   return (
     !t
     || t === '官方未提供账号信息'
+    || t === '官方未提供登录信息'
     || t === 'codex-oauth'
     || t === 'codex oauth'
     || t === 'grok-oauth'
@@ -403,7 +404,7 @@ export function extrasFromPoolSource(
         ? source.account.email
           ?? source.account.identityLabel
           ?? source.account.subjectId
-          ?? (t ? t('connections.list.noAccountInfo') : '官方未提供账号信息')
+          ?? (t ? t('connections.list.noAccountInfo') : '官方未提供登录信息')
         : source.account.email ?? source.account.identityLabel ?? source.account.label;
     if (
       source.account.provider

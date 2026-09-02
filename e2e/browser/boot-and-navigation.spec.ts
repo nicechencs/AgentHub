@@ -15,11 +15,11 @@ test('app boots on mock and primary navigation works', async ({ page }) => {
   await expect(nav.getByRole('link', { name: /^路由(?:$| — )/ })).toBeVisible();
   await expect(nav.getByRole('link', { name: /^插件(?:$| — )/ })).toHaveCount(0);
 
-  await goNav(page, 'Projects');
+  await goNav(page, '项目');
   await expect(page).toHaveURL(/#\/projects/);
   await expect(page.getByRole('heading', { name: '项目' })).toBeVisible();
 
-  await goNav(page, 'Chat');
+  await goNav(page, '对话');
   await expect(page).toHaveURL(/#\/chat/);
   await expect(
     page.getByRole('textbox', { name: '消息输入' }).or(page.getByText('还没有可对话的 Agent')),
@@ -89,12 +89,12 @@ test('Agents page title shares the same top-left inset as other pages', async ({
   await openApp(page);
   const dashboard = await pageTitleBox(page);
 
-  await goNav(page, 'Agents');
+  await goNav(page, 'Agent');
   await expect(page).toHaveURL(/#\/agents/);
   await expect(page.getByRole('heading', { name: 'Agent 管理' })).toBeVisible();
   const agents = await pageTitleBox(page);
 
-  await goNav(page, 'Skills');
+  await goNav(page, '技能');
   await expect(page).toHaveURL(/#\/skills/);
   const skills = await pageTitleBox(page);
 
@@ -135,7 +135,7 @@ test('page title sits in the top bar with notifications; Chat has neither', asyn
   expect(Math.abs(addBox!.y + addBox!.height / 2 - (tabsBox!.y + tabsBox!.height / 2))).toBeLessThanOrEqual(8);
   const connectionsTop = tabsBox!.y;
 
-  await goNav(page, 'Skills');
+  await goNav(page, '技能');
   const skillsTabs = page.getByRole('tab', { name: /用户技能/ });
   await expect(skillsTabs).toBeVisible();
   const skillsTop = (await skillsTabs.boundingBox())!.y;
@@ -161,7 +161,7 @@ test('page title sits in the top bar with notifications; Chat has neither', asyn
   expect(Math.abs(createBox!.y + createBox!.height / 2 - (leadBox!.y + leadBox!.height / 2))).toBeLessThanOrEqual(8);
   expect(Math.abs(leadBox!.y - connectionsTop)).toBeLessThanOrEqual(12);
 
-  await goNav(page, 'Chat');
+  await goNav(page, '对话');
   await expect(page).toHaveURL(/#\/chat/);
   await expect(page.getByRole('button', { name: '通知' })).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);
@@ -221,7 +221,7 @@ test('Routes secondary nav appears under /routes*; URL entry does not auto-colla
   await expect(secondary.getByRole('link', { name: /^路由列表/ })).toHaveCount(0);
   await expect(secondary.getByRole('link', { name: /^看板/ })).toBeVisible();
   await expect(secondary.getByRole('link', { name: /^连接池/ })).toBeVisible();
-  await expect(secondary.getByRole('link', { name: /^令牌/ })).toBeVisible();
+  await expect(secondary.getByRole('link', { name: /^入口 Key/ })).toBeVisible();
   await expect(secondary.getByRole('button', { name: '展开侧栏' })).toBeVisible();
   await expect(page.getByRole('button', { name: '收起侧栏' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '看板' })).toBeVisible();

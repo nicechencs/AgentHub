@@ -698,7 +698,7 @@ function poolFailureMessage(
   t?: TranslateFn,
 ): string {
   const parts: string[] = [];
-  if (errors.accounts) parts.push(t ? t('connect.result.partAccounts') : '账号');
+  if (errors.accounts) parts.push(t ? t('connect.result.partAccounts') : '登录');
   if (errors.providers) parts.push(t ? t('connect.result.partProviders') : '供应商');
   if (profilesError) parts.push(t ? t('connect.result.partProfiles') : '本机路由记录');
   if (parts.length === 0) return t ? t('connect.result.poolPartial') : '部分资源加载失败';

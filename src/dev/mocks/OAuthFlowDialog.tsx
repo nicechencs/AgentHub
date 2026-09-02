@@ -72,7 +72,7 @@ export function OAuthFlowDialog({
         </DialogHeader>
 
         <p className="mb-2 rounded-card border border-warning/30 bg-warning/5 px-2.5 py-1.5 text-xs text-warning">
-          开发演示（dev:mock）：不会打开真实系统浏览器，回调与账号均为模拟数据。
+          开发演示（dev:mock）：不会打开真实系统浏览器，回调与登录均为模拟数据。
         </p>
 
         <div className="mb-4 flex items-center gap-2 text-xs text-muted">
@@ -155,7 +155,7 @@ export function OAuthFlowDialog({
               <p className="text-sm">{account.email}</p>
               <p className="mt-0.5 text-xs text-secondary">{account.subscription}</p>
             </div>
-            <p className="text-xs text-muted">账号已写入 mock 内存池（非真实凭据存储）</p>
+            <p className="text-xs text-muted">登录已写入 mock 内存池（非真实密钥存储）</p>
           </div>
         )}
 
@@ -171,7 +171,7 @@ export function OAuthFlowDialog({
                   onOpenChange(false);
                 }}
               >
-                立即切换到此账号
+                立即切换到此登录
               </Button>
             </>
           ) : (
