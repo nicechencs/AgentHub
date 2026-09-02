@@ -58,11 +58,15 @@ pub(super) async fn handle_conversation(
     let listen_port = gateway.cited_port_for_profile(&state.profile_id);
     trace.local_auth_ok(&state.profile_id, listen_port);
     if let Some(response) = surface.reject_if_unserved(&state, &request_id) {
+        let mismatch = super::surface::surface_mismatch_message(
+            surface,
+            state.upstream.local_surface,
+        );
         trace.local_path_failed(
             &state.profile_id,
             listen_port,
             "surface_mismatch",
-            "Local surface does not serve this path.",
+            &mismatch,
         );
         return trace_response(&mut trace, &trace_log, response);
     }
