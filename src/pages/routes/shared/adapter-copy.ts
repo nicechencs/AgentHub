@@ -51,11 +51,11 @@ export const ROUTES_PAGE_TITLE = '路由';
 export const ROUTES_PAGE_DESCRIPTION = '本机转发 · 仅 127.0.0.1 · 含端口';
 export const ROUTES_PAGE_DESCRIPTION_TIP =
   '登录信息在连接页，不展示不复制。客户端填本机地址：/v1/messages Claude 对话、/v1/responses Codex / Grok 对话、/v1/chat/completions Kimi 等补全、GET /models 模型名单。需保持托盘运行。';
-export const BRIDGES_EMPTY_TITLE = '没有本机路由';
-export const BRIDGES_EMPTY_DESCRIPTION =
+export const ROUTES_EMPTY_TITLE = '没有本机路由';
+export const ROUTES_EMPTY_DESCRIPTION =
   '多数连接不需要这一步。需要时在连接页把登录接到工具。';
-export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = '登录列表里有本机路由，但找不到正在运行的转发';
-export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = '点重试。不是「没有本机路由」。';
+export const ROUTES_WALLET_WITHOUT_RUNTIME_TITLE = '登录列表里有本机路由，但找不到正在运行的转发';
+export const ROUTES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = '点重试。不是「没有本机路由」。';
 export { ROUTES_NAV_LABEL, ROUTES_PATH, routesHrefForProfile, legacyBridgesRedirectTo };
 
 /** Unknown or missing `?profile=` stays on the auth-pool workbench; do not toast. */
@@ -66,7 +66,18 @@ export function resolveBridgesProfileQuery(
   if (!profileId) return null;
   return profiles.some((profile) => profile.id === profileId) ? profileId : null;
 }
-export const BRIDGES_MUTATION_FAILURE = '本机路由操作失败，可点重试。';
+export const ROUTES_MUTATION_FAILURE = '本机路由操作失败，可点重试。';
+
+/** @deprecated Use {@link ROUTES_EMPTY_TITLE}. */
+export const BRIDGES_EMPTY_TITLE = ROUTES_EMPTY_TITLE;
+/** @deprecated Use {@link ROUTES_EMPTY_DESCRIPTION}. */
+export const BRIDGES_EMPTY_DESCRIPTION = ROUTES_EMPTY_DESCRIPTION;
+/** @deprecated Use {@link ROUTES_WALLET_WITHOUT_RUNTIME_TITLE}. */
+export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = ROUTES_WALLET_WITHOUT_RUNTIME_TITLE;
+/** @deprecated Use {@link ROUTES_WALLET_WITHOUT_RUNTIME_DESCRIPTION}. */
+export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = ROUTES_WALLET_WITHOUT_RUNTIME_DESCRIPTION;
+/** @deprecated Use {@link ROUTES_MUTATION_FAILURE}. */
+export const BRIDGES_MUTATION_FAILURE = ROUTES_MUTATION_FAILURE;
 
 export function adapterPageDescription(): string {
   return ROUTES_PAGE_DESCRIPTION;
