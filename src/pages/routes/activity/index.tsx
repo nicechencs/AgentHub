@@ -128,6 +128,7 @@ export default function RoutesActivityPage() {
             </select>
           </label>
         ) : null}
+        <p className="min-w-0 flex-1 truncate text-meta text-muted">{t('routes.activity.scopeNote')}</p>
         <div className={pageRhythm.chromeActions}>
           <PageRefreshButton
             loading={loading}
