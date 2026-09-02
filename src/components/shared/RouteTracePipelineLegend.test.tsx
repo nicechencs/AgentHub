@@ -47,7 +47,7 @@ describe('RouteTracePipelineLegend', () => {
     expect(markup).toContain('/v1/chat/completions');
     expect(markup).toContain('Acct A');
     expect(markup).toContain('Acct B');
-    expect(markup).toContain('https://api.anthropic.com/v1/messages');
+    expect(markup).not.toContain('https://api.anthropic.com/v1/messages');
     expect(markup).not.toContain('127.0.0.1');
     expect(markup).not.toContain('data-auth-ok');
   });
@@ -71,5 +71,34 @@ describe('RouteTracePipelineLegend', () => {
     expect(markup).toContain('Messages');
     expect(markup).toContain('Anthropic');
     expect(markup).toContain('https://api.anthropic.com/v1/messages');
+  });
+
+  it('labels failed and skipped compact stages while keeping an HTTP status', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(RouteTracePipelineLegend, {
+          row: {
+            ...okRow,
+            ok: false,
+            httpStatus: 401,
+            upstreamAuth: { status: 'failed', httpStatus: 401 },
+            upstream: { status: 'skipped' },
+            failureStage: 'upstream_auth',
+          },
+          upstreamUrls: ['https://api.anthropic.com/v1/messages'],
+        }),
+      ),
+    );
+    expect(markup).toContain('data-stage-box="upstream_auth" data-stage-state="failed"');
+    expect(markup).toContain('data-stage-result="failed"');
+    expect(markup).toContain('>失败</p>');
+    expect(markup).toContain('>401</p>');
+    expect(markup).toContain('data-stage-box="upstream" data-stage-state="skipped"');
+    expect(markup).toContain('data-stage-result="not-reached"');
+    expect(markup).toContain('未到达');
+    expect(markup).not.toContain('https://api.anthropic.com/v1/messages');
+    expect(markup).not.toMatch(/data-stage-box="upstream"[^>]*data-stage-support/);
   });
 });

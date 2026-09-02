@@ -65,4 +65,27 @@ describe('ActivityTraceDetailPanel', () => {
     expect(markup).toContain('data-stage="local_auth"');
     expect(markup).toContain('data-stage-status="ok"');
   });
+
+  it('shows a compact failure summary and marks later stages as not reached', () => {
+    const markup = render(
+      createElement(ActivityTraceDetailPanel, {
+        row: row({
+          ok: false,
+          httpStatus: 401,
+          upstreamAuth: { status: 'failed', httpStatus: 401, code: 'unauthorized' },
+          upstream: { status: 'pending' },
+          failureStage: 'upstream_auth',
+        }),
+        width: 360,
+        onClose() {},
+      }),
+    );
+    expect(markup).toContain('>失败</span>');
+    expect(markup).toContain('上游鉴权失败');
+    expect(markup).toContain('>401</p>');
+    expect(markup).not.toContain('unauthorized');
+    expect(markup).toContain('data-stage="upstream"');
+    expect(markup).toContain('data-stage-status="skipped"');
+    expect(markup).toContain('未到达');
+  });
 });

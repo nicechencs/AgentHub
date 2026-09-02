@@ -19,7 +19,12 @@ import {
   formatTraceSeconds,
   formatTraceTokens,
 } from './activity-trace-list-model';
-import { StageIcon, stageStatusOf, stageTone } from './ActivityTraceList';
+import { ActivityTraceStageIcon, activityTraceStageTone } from './ActivityTraceStageDisplay';
+import {
+  activityTraceFailureHeadline,
+  activityTraceStageStatus,
+  summarizeActivityTrace,
+} from './activity-trace-summary-model';
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -52,6 +57,8 @@ export function ActivityTraceDetailPanel({
   const firstToken = formatTraceSeconds(row.ttftMs, t);
   const duration = formatTraceSeconds(row.latencyMs, t);
   const tokens = formatTraceTokens(row.inputTokens, row.outputTokens, t);
+  const summary = summarizeActivityTrace(row);
+  const failureHeadline = activityTraceFailureHeadline(summary, t);
   const extra: string[] = [];
   if (row.pool.attempts?.length) {
     for (const [index, attempt] of row.pool.attempts.entries()) {
@@ -67,6 +74,11 @@ export function ActivityTraceDetailPanel({
     <SideInspectPanel
       title={t('routes.activity.detailTitle')}
       description={`${row.method} ${row.path}`}
+      headerActions={summary.result !== 'success' ? (
+        <span className="rounded-full border border-danger/30 bg-danger/5 px-1.5 py-0.5 text-meta font-medium text-danger">
+          {t('routes.inbound.fail')}
+        </span>
+      ) : undefined}
       onClose={onClose}
       width={width}
     >
@@ -108,11 +120,18 @@ export function ActivityTraceDetailPanel({
           </Field>
         </dl>
 
+        {failureHeadline ? (
+          <section className="rounded-card border border-danger/20 border-l-2 border-l-danger bg-danger/5 px-2.5 py-2 text-meta">
+            <p className="font-medium text-danger">{failureHeadline}</p>
+            {summary.errorMessage ? <p className="mt-1 break-all text-secondary">{summary.errorMessage}</p> : null}
+          </section>
+        ) : null}
+
         <section className="space-y-2">
           <h3 className="text-sm font-medium">{t('routes.activity.colStages')}</h3>
           <ul className="space-y-1.5" aria-label={t('routes.trace.pipelineAria')}>
             {ACTIVITY_TRACE_STAGES.map((stage) => {
-              const status = stageStatusOf(row, stage);
+              const status = activityTraceStageStatus(row, stage);
               return (
                 <li
                   key={stage}
@@ -120,11 +139,11 @@ export function ActivityTraceDetailPanel({
                   data-stage={stage}
                   data-stage-status={status}
                 >
-                  <StageIcon status={status} />
+                  <ActivityTraceStageIcon status={status} />
                   <span className="min-w-0 flex-1 truncate text-meta text-primary">
                     {activityTraceStageLabel(stage, t)}
                   </span>
-                  <span className={`shrink-0 text-meta ${stageTone(status)}`}>
+                  <span className={`shrink-0 text-meta ${activityTraceStageTone(status)}`}>
                     {activityTraceStageStatusLabel(status, t)}
                   </span>
                 </li>

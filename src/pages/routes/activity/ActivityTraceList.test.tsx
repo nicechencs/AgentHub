@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
 import { ActivityTraceList } from './ActivityTraceList';
+import { ACTIVITY_TRACE_WIDTH_SPECS } from './activity-trace-list-model';
 
 function row(partial: Partial<RouteTraceListItem> = {}): RouteTraceListItem {
   return {
@@ -59,9 +60,34 @@ describe('ActivityTraceList', () => {
     expect(markup).toContain('1.2K / 340');
     expect(markup).toContain('Route A');
     expect(markup).toContain('详情');
+    expect(markup).toContain('失败于 本机鉴权');
+    expect(markup).toContain('data-activity-trace-result="failed"');
+    expect(markup).toContain('min-w-max');
     expect(markup).toContain('data-stage="local_auth"');
     expect(markup).toContain('data-stage-status="failed"');
     expect(markup).toContain('data-table-layout="split"');
+  });
+
+  it('shows success in the existing five-stage cell', () => {
+    const markup = render(createElement(ActivityTraceList, {
+      rows: [row({ ok: true, httpStatus: 200, localAuth: { status: 'ok' }, failureStage: null })],
+    }));
+    expect(markup).toContain('>成功</span>');
+    expect(markup).toContain('data-activity-trace-result="success"');
+  });
+
+  it('reserves one line for the result text and all five stage icons', () => {
+    expect(ACTIVITY_TRACE_WIDTH_SPECS.slice(0, 7).map(({ key, defaultWidth }) => ({ key, defaultWidth }))).toEqual([
+      { key: 'time', defaultWidth: 148 },
+      { key: 'request', defaultWidth: 180 },
+      { key: 'model', defaultWidth: 120 },
+      { key: 'firstToken', defaultWidth: 72 },
+      { key: 'duration', defaultWidth: 88 },
+      { key: 'tokens', defaultWidth: 104 },
+      { key: 'stages', defaultWidth: 224 },
+    ]);
+    const stages = ACTIVITY_TRACE_WIDTH_SPECS.find((spec) => spec.key === 'stages');
+    expect(stages).toMatchObject({ defaultWidth: 224, minWidth: 196 });
   });
 
   it('shows the empty label in the table body when there are no rows', () => {

@@ -115,6 +115,7 @@ function StageCard({
   support?: readonly string[];
   children?: ReactNode;
 }) {
+  const { t } = useI18n();
   const card = (
     <Card
       className={cn(
@@ -124,10 +125,23 @@ function StageCard({
         state === 'ok' && 'border-success/40',
       )}
       data-stage-box={stageId}
+      data-stage-state={state}
       data-stage-support={support && support.length > 0 ? support.join('\n') : undefined}
     >
       <p className="text-xs font-medium text-primary">{title}</p>
-      <div className="mt-1 min-w-0 flex-1">{children}</div>
+      <div className="mt-1 min-w-0 flex-1">
+        {children}
+        {state === 'failed' ? (
+          <p className="mt-1 text-xs font-medium text-danger" data-stage-result="failed">
+            {t('routes.inbound.fail')}
+          </p>
+        ) : null}
+        {state === 'skipped' ? (
+          <p className="mt-1 text-xs text-muted" data-stage-result="not-reached">
+            {t('routes.trace.notReached')}
+          </p>
+        ) : null}
+      </div>
     </Card>
   );
   if (tip == null || tip === false || tip === '') return card;
@@ -447,7 +461,7 @@ function CompactPipeline({
     `${node.path} · ${t(node.labelKey as Parameters<TranslateFn>[0])}`
   ));
   const poolSupport = poolLabels ?? [];
-  const upstreamSupport = upstreamUrls ?? [];
+  const upstreamSupport = view.upstream.state === 'skipped' ? [] : upstreamUrls ?? [];
   const poolHit = preview ? null : view.pool.selectedLabel;
   const conversionHit = preview ? null : conversionOptionLabel(view, t);
   const conversionResult = preview
@@ -530,9 +544,9 @@ function CompactPipeline({
         state={view.upstream.state}
         stageId="upstream"
         support={upstreamSupport}
-        tip={supportTip(t('routes.trace.flow.supportUpstream'), upstreamSupport)}
+        tip={view.upstream.state === 'skipped' ? undefined : supportTip(t('routes.trace.flow.supportUpstream'), upstreamSupport)}
       >
-        {view.upstream.url ? (
+        {view.upstream.state !== 'skipped' && view.upstream.url ? (
           <p className="break-all font-mono text-sm font-medium text-success">{view.upstream.url}</p>
         ) : (
           <AuthOkMark state={view.upstream.state} />

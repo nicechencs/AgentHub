@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { Check, Minus, X } from 'lucide-react';
 import { Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
@@ -17,7 +16,6 @@ import {
   TableShell,
   useColumnWidths,
 } from '@/components/ui/table';
-import type { RouteTraceStageStatus } from '@/lib/backend/contracts/adapter';
 import { formatInboundAt } from '@/pages/bridges/route-endpoint-copy';
 import {
   ACTIVITY_TRACE_COLUMN_WIDTHS_STORAGE_KEY,
@@ -30,33 +28,13 @@ import {
   formatTraceSeconds,
   formatTraceTokens,
   type ActivityTraceColumnKey,
-  type ActivityTraceStageId,
 } from './activity-trace-list-model';
-
-function stageTone(status: RouteTraceStageStatus): string {
-  if (status === 'ok') return 'text-success';
-  if (status === 'failed') return 'text-danger';
-  if (status === 'skipped') return 'text-muted';
-  return 'text-secondary';
-}
-
-function StageIcon({ status }: { status: RouteTraceStageStatus }) {
-  if (status === 'ok') return <Check className="h-3.5 w-3.5 text-success" aria-hidden />;
-  if (status === 'failed') return <X className="h-3.5 w-3.5 text-danger" aria-hidden />;
-  if (status === 'skipped') return <Minus className="h-3.5 w-3.5 text-muted" aria-hidden />;
-  return <span className="inline-block h-2 w-2 rounded-full bg-muted" aria-hidden />;
-}
-
-function stageStatusOf(
-  row: RouteTraceListItem,
-  stage: ActivityTraceStageId,
-): RouteTraceStageStatus {
-  if (stage === 'local_auth') return row.localAuth.status;
-  if (stage === 'pool') return row.pool.status;
-  if (stage === 'conversion') return row.conversion.status;
-  if (stage === 'upstream_auth') return row.upstreamAuth.status;
-  return row.upstream.status;
-}
+import {
+  activityTraceResultLabel,
+  activityTraceStageStatus,
+  summarizeActivityTrace,
+} from './activity-trace-summary-model';
+import { ActivityTraceStageIcon } from './ActivityTraceStageDisplay';
 
 export function ActivityTraceList({
   rows,
@@ -186,10 +164,18 @@ function renderColumn(
     return value ? <span className="font-mono text-meta text-muted">{value}</span> : <TableEmptyCell />;
   }
   if (key === 'stages') {
+    const summary = summarizeActivityTrace(row);
     return (
-      <div className="flex items-center gap-1" aria-label={t('routes.trace.pipelineAria')}>
+      <div
+        className="flex min-w-max items-center gap-1.5 whitespace-nowrap"
+        aria-label={t('routes.trace.pipelineAria')}
+        data-activity-trace-result={summary.result}
+      >
+        <span className={summary.result === 'success' ? 'shrink-0 text-meta text-success' : 'shrink-0 text-meta text-danger'}>
+          {activityTraceResultLabel(summary, t)}
+        </span>
         {ACTIVITY_TRACE_STAGES.map((stage) => {
-          const status = stageStatusOf(row, stage);
+          const status = activityTraceStageStatus(row, stage);
           const label = `${activityTraceStageLabel(stage, t)} · ${activityTraceStageStatusLabel(status, t)}`;
           return (
             <Tip key={stage} label={label}>
@@ -199,7 +185,7 @@ function renderColumn(
                 data-stage={stage}
                 data-stage-status={status}
               >
-                <StageIcon status={status} />
+                <ActivityTraceStageIcon status={status} />
               </span>
             </Tip>
           );
@@ -228,5 +214,3 @@ function renderColumn(
     </Button>
   );
 }
-
-export { StageIcon, stageStatusOf, stageTone };

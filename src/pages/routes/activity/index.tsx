@@ -18,6 +18,7 @@ import {
   monitoredLocalProfiles,
   resolveActivityPageSnapshot,
 } from '@/pages/routes/activity/activity-view-model';
+import { selectedActivityTrace } from '@/pages/routes/activity/activity-trace-summary-model';
 
 const ACTIVITY_PREVIEW_WIDTH_KEY = 'agenthub.routes.activity.previewWidth';
 
@@ -100,9 +101,7 @@ export default function RoutesActivityPage() {
       t,
     ],
   );
-  const detailRow = inspect.target
-    ? snapshot.feed.find((row) => row.requestId === inspect.target) ?? null
-    : null;
+  const detailRow = selectedActivityTrace(snapshot.feed, inspect.target);
 
   useEffect(() => {
     if (!inspect.target) return;
