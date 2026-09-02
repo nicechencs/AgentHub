@@ -35,7 +35,7 @@ import { useI18n } from '@/components/shared/LanguageProvider';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
 import { StorageKey } from '@/lib/ui-preferences';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
-const ICON_CLASS = 'h-4 w-4 shrink-0';
+const NAV_ICON_SIZE = 18;
 const MENU_ICON_CLASS = 'h-3.5 w-3.5';
 
 /** 右键菜单图标：与折叠按钮同款 PanelLeft 图标 */
@@ -86,7 +86,12 @@ function SidebarNavLink({
         const node = (
           <span className={cn(itemClass(isActive), 'relative')}>
             <span className="relative shrink-0">
-              <Icon className={ICON_CLASS} strokeWidth={1.8} />
+              <Icon
+                size={NAV_ICON_SIZE}
+                strokeWidth={1.6}
+                absoluteStrokeWidth
+                className="shrink-0"
+              />
               {/* Collapsed: corner pin on icon only (expanded uses trailing pin). */}
               {notice && collapsed && <StatusPin tone="warning" ring="panel" corner />}
             </span>
@@ -267,9 +272,9 @@ export function Sidebar() {
     cn(
       'group flex h-8 w-full items-center rounded-btn text-sm transition-colors duration-150',
       collapsed ? 'justify-center' : 'gap-2.5 px-2.5',
-      // 与 ListRow / 预览 active 同源：中性 bg-active，非 accent 铺色
+      // 一级导航用轻量主色底，和路由区二级导航保持层级差异。
       isActive
-        ? 'bg-active font-medium text-primary'
+        ? 'bg-accent/10 font-medium text-primary [&_svg]:text-accent'
         : 'text-secondary hover:bg-hover/70 hover:text-primary',
     );
 
@@ -319,7 +324,7 @@ export function Sidebar() {
                   <AppLogo size={20} className="h-5 w-5" />
                 </span>
                 <span className="absolute inset-0 flex items-center justify-center rounded-btn text-muted opacity-0 transition-opacity group-hover:bg-hover group-hover:text-primary group-hover:opacity-100 group-focus-visible:bg-hover group-focus-visible:text-primary group-focus-visible:opacity-100">
-                  <PanelLeftOpen className="h-4 w-4" strokeWidth={1.8} />
+                  <PanelLeftOpen size={18} strokeWidth={1.6} absoluteStrokeWidth />
                 </span>
               </button>
             </Hint>
@@ -338,7 +343,7 @@ export function Sidebar() {
                   className="flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors hover:bg-hover hover:text-primary"
                   aria-label={t('nav.collapseSidebar')}
                 >
-                  <PanelLeftClose className="h-4 w-4" strokeWidth={1.8} />
+                  <PanelLeftClose size={18} strokeWidth={1.6} absoluteStrokeWidth />
                 </button>
               </Hint>
             </>

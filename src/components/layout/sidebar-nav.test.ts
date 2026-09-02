@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FolderCode, MessageSquare, Route } from 'lucide-react';
 import { BRIDGES_PATH } from '@/lib/bridges-path';
 import {
   DEFAULT_PLUGINS_NAV_VISIBLE,
@@ -111,6 +112,21 @@ describe('nav model order', () => {
       'nav.routes',
       'nav.settings',
     ]);
+  });
+
+  it('uses compact, recognizable icons for chat, projects, and routes', () => {
+    expect(NAV_WORKSPACE.find((item) => item.to === '/chat')?.icon).toBe(MessageSquare);
+    expect(NAV_WORKSPACE.find((item) => item.to === '/projects')?.icon).toBe(FolderCode);
+    expect(NAV_MANAGE.find((item) => item.to === BRIDGES_PATH)?.icon).toBe(Route);
+  });
+
+  it('keeps active labels readable while accenting 18px navigation icons', () => {
+    const sidebar = readFileSync(path.join(dir, 'Sidebar.tsx'), 'utf8');
+    expect(sidebar).toContain('bg-accent/10 font-medium text-primary [&_svg]:text-accent');
+    expect(sidebar).toContain('const NAV_ICON_SIZE = 18;');
+    expect(sidebar).toContain('size={NAV_ICON_SIZE}');
+    expect(sidebar).toContain('strokeWidth={1.6}');
+    expect(sidebar).toContain('absoluteStrokeWidth');
   });
 });
 

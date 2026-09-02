@@ -1,4 +1,4 @@
-import { RefreshCw, Zap } from 'lucide-react';
+import { Download, Wrench } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,7 +38,7 @@ export function AgentInstallButton({
       : channelId
         ? t('agents.card.installWithChannel', { id: channelId })
         : t('agents.card.install');
-  const Icon = guided ? RefreshCw : Zap;
+  const Icon = guided || failed ? Wrench : Download;
   return (
     <Button
       size={iconOnly ? 'icon' : 'sm'}
@@ -48,7 +48,7 @@ export function AgentInstallButton({
       title={title}
       aria-label={iconOnly ? label : undefined}
     >
-      <Icon className="h-3.5 w-3.5" />
+      <Icon size={16} strokeWidth={1.6} absoluteStrokeWidth className="shrink-0" />
       {iconOnly ? null : label}
     </Button>
   );

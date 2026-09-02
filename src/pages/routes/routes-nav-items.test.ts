@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Network } from 'lucide-react';
 import {
   isRoutesAreaPath,
   ROUTES_NAV_ITEMS,
   routesNavItemInDevelopment,
 } from './routes-nav-items';
+
+const dir = path.dirname(fileURLToPath(import.meta.url));
 
 describe('routes-nav-items', () => {
   it('marks /routes and nested paths as the routes area', () => {
@@ -25,5 +31,20 @@ describe('routes-nav-items', () => {
 
   it('does not mark any routes sub-nav item as in development', () => {
     expect(ROUTES_NAV_ITEMS.every((item) => !routesNavItemInDevelopment(item))).toBe(true);
+  });
+
+  it('uses a network icon for the connection pool', () => {
+    expect(ROUTES_NAV_ITEMS.find((item) => item.to === '/routes/pool')?.icon).toBe(Network);
+  });
+
+  it('keeps secondary-nav labels readable while accenting 18px icons', () => {
+    const nav = readFileSync(path.join(dir, 'RoutesNav.tsx'), 'utf8');
+    expect(nav).toContain(
+      'bg-accent/5 font-medium text-primary ring-1 ring-inset ring-accent/10 [&_svg]:text-accent',
+    );
+    expect(nav).toContain('const NAV_ICON_SIZE = 18;');
+    expect(nav).toContain('size={NAV_ICON_SIZE}');
+    expect(nav).toContain('strokeWidth={1.6}');
+    expect(nav).toContain('absoluteStrokeWidth');
   });
 });

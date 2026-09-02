@@ -70,3 +70,4 @@ latest.json
 *.exe
 .pi/
 temp-pic/
+/artifacts
