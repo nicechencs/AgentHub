@@ -30,8 +30,8 @@ import { ListSkeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AGENT_MAP } from '@/config/agents';
 import {
-  deleteAgentProject,
-  deleteAgentProjects,
+  deleteAgentSession,
+  deleteAgentSessions,
   getAgentProjectExcerpts,
   listAgentProjectSessions,
   setShowHiddenProjects,
@@ -371,7 +371,7 @@ export default function ProjectsPage() {
     if (!deleteTarget) return;
     setBusy(true);
     try {
-      await deleteAgentProject(deleteTarget.id);
+      await deleteAgentSession(deleteTarget.id);
       const pid = deleteTarget.projectId;
       setSessionsByProject((prev) => {
         const kids = (prev[pid] ?? []).filter((s) => s.id !== deleteTarget.id);
@@ -410,7 +410,7 @@ export default function ProjectsPage() {
     if (ids.length === 0) return;
     setBusy(true);
     try {
-      const n = await deleteAgentProjects(ids);
+      const n = await deleteAgentSessions(ids);
       const idSet = new Set(ids);
       setSessionsByProject((prev) => {
         const next: Record<string, AgentSession[]> = {};

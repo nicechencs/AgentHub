@@ -49,12 +49,22 @@ export async function setShowHiddenProjects(show: boolean): Promise<void> {
   return getBackend().project.setShowHiddenProjects(show);
 }
 
-export async function deleteAgentProject(id: string): Promise<void> {
-  return getBackend().project.deleteAgentProject(id);
+export async function deleteAgentSession(id: string): Promise<void> {
+  return getBackend().project.deleteAgentSession(id);
 }
 
+export async function deleteAgentSessions(ids: string[]): Promise<number> {
+  return getBackend().project.deleteAgentSessions(ids);
+}
+
+/** @deprecated Prefer {@link deleteAgentSession}. */
+export async function deleteAgentProject(id: string): Promise<void> {
+  return deleteAgentSession(id);
+}
+
+/** @deprecated Prefer {@link deleteAgentSessions}. */
 export async function deleteAgentProjects(ids: string[]): Promise<number> {
-  return getBackend().project.deleteAgentProjects(ids);
+  return deleteAgentSessions(ids);
 }
 
 export async function getAgentProjectExcerpts(ids: string[]): Promise<AgentProjectExcerpt[]> {

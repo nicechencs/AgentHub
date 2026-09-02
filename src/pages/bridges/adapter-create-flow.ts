@@ -286,8 +286,8 @@ export function maskedIdSuffix(id: string): string {
 
 export function sourceKindLabel(sourceKind: 'account' | 'provider', t?: TranslateFn): string {
   return sourceKind === 'account'
-    ? (t ? t('routes.create.sourceKind.account') : '账号')
-    : (t ? t('routes.create.sourceKind.provider') : 'API 配置');
+    ? (t ? t('routes.create.sourceKind.account') : '登录')
+    : (t ? t('routes.create.sourceKind.provider') : '供应商');
 }
 
 /** One canonical source label for selection, preview, and confirmation. */

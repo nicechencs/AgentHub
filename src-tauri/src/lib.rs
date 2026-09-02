@@ -253,6 +253,8 @@ pub fn run() {
             commands::project::get_project_metadata,
             commands::project::upsert_project_meta,
             commands::project::set_show_hidden_projects,
+            commands::project::delete_agent_session,
+            commands::project::delete_agent_sessions,
             commands::project::delete_agent_project,
             commands::project::delete_agent_projects,
             commands::project::get_agent_project_excerpts,

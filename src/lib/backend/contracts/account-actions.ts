@@ -34,7 +34,7 @@ export function accountActionPolicy(account: Pick<
     account.refreshable === true &&
     isPiRefreshProvider(account.provider)
   ) {
-    return { kind: 'refresh-credentials', label: '刷新凭据' };
+    return { kind: 'refresh-credentials', label: '刷新登录信息' };
   }
   return undefined;
 }

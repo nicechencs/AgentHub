@@ -114,7 +114,7 @@ describe('route pool v2 view-model', () => {
     expect(routePoolMemberLabels([
       { sourceKind: 'account', sourceId: 'missing-id', enabled: true },
     ], [])).toEqual([{
-      title: '未提供账号',
+      title: '未提供登录',
       enabled: true,
       availability: undefined,
       sourceKind: 'account',

@@ -123,8 +123,8 @@ describe('PoolAddButtons', () => {
     const markup = render(
       createElement(PoolAddButtons, { agents: [...AGENTS], oauthAgents: ['claude'] }),
     );
-    expect(markup).toContain('OAuth 接入');
-    expect(markup).toContain('API 接入');
+    expect(markup).toContain('官方登录');
+    expect(markup).toContain('添加 API Key');
     expect(markup).toContain('从连接同步');
     expect(markup).not.toContain('ChevronDown');
     expect(markup).not.toContain('data-radix-menu');

@@ -41,7 +41,7 @@ function render(edit?: { provider: Provider; endpointKinds: readonly ['responses
 describe('ApiAccessDialog', () => {
   it('lists API types when adding a login', () => {
     const markup = render();
-    expect(markup).toContain('接入 API');
+    expect(markup).toContain('添加 API Key');
     expect(markup).toContain('接口类型');
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('/v1/responses');
