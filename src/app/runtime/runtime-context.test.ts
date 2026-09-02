@@ -9,7 +9,7 @@ import { getAgentCatalogSnapshot, seedAgentCatalog } from './agent-catalog-store
 import { getAgentStatusSnapshot, loadAgentStatuses } from './agent-status-store';
 import { getAppUpdateAvailable, setAppUpdateAvailable } from './app-update-store';
 import { resetBackend, setBackend } from './backend-runtime';
-import { getConnectionPoolSnapshot, loadConnectionPool } from './connection-pool-store';
+import { getConnectionInventorySnapshot, loadConnectionInventory } from './connection-inventory-store';
 import { RUNTIME_STORE_RESETS } from './runtime-context';
 import { getTicketWalletSnapshot, loadTicketWallet } from './ticket-wallet-store';
 
@@ -49,7 +49,7 @@ async function fillRuntimeStores(): Promise<void> {
   const backend = stubBackend();
   await Promise.all([
     loadAgentStatuses(backend),
-    loadConnectionPool(backend),
+    loadConnectionInventory(backend),
     loadTicketWallet(backend),
   ]);
 }
@@ -62,7 +62,7 @@ function expectStoresIdle(): void {
   });
   expect(AGENTS).toHaveLength(0);
   expect(getAgentStatusSnapshot().state).toBe('idle');
-  expect(getConnectionPoolSnapshot().state).toBe('idle');
+  expect(getConnectionInventorySnapshot().state).toBe('idle');
   expect(getTicketWalletSnapshot().state).toBe('idle');
   expect(getAppUpdateAvailable()).toBeNull();
 }
@@ -78,7 +78,7 @@ describe('runtime context reset registry', () => {
     const src = readFileSync(path.join(runtimeDir, 'backend-runtime.ts'), 'utf8');
     expect(src).toMatch(/resetRuntimeContext\(\)/);
     expect(src).not.toMatch(
-      /reset(?:AgentCatalog|AgentStatus|ConnectionPool|TicketWallet|AppUpdate)Store/,
+      /reset(?:AgentCatalog|AgentStatus|Connection(?:Pool|Inventory)|TicketWallet|AppUpdate)Store/,
     );
   });
 
@@ -87,7 +87,7 @@ describe('runtime context reset registry', () => {
     expect(getAgentCatalogSnapshot().status).toBe('ready');
     expect(AGENTS.length).toBeGreaterThan(0);
     expect(getAgentStatusSnapshot().state).toBe('ready');
-    expect(getConnectionPoolSnapshot().state).toBe('ready');
+    expect(getConnectionInventorySnapshot().state).toBe('ready');
     expect(getTicketWalletSnapshot().state).toBe('ready');
     expect(getAppUpdateAvailable()?.version).toBe('9.9.9');
 

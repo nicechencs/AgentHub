@@ -427,9 +427,7 @@ export function chatConnectionKind(
 
 function accountConnectionTitle(t: TranslateFn, status: AgentStatus | undefined): string {
   const conn = sliceAgentStatus(status ?? {}).effectiveConnection;
-  const label =
-    (conn.label !== 'unset' ? conn.label.trim() : '')
-    || (conn.currentProvider !== 'unset' ? conn.currentProvider.trim() : '');
+  const label = conn.label !== 'unset' ? conn.label.trim() : '';
   if (label && label !== t('chat.connection.unconfiguredLabel')) return label;
   return t('chat.connection.signedIn');
 }

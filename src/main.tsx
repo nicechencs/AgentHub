@@ -16,7 +16,7 @@ import {
   getBackend,
   loadAgentCatalog,
   loadAgentStatuses,
-  loadConnectionPool,
+  loadConnectionInventory,
   loadTicketWallet,
 } from '@/app/runtime';
 import { fetchCatalogShared } from '@/lib/hooks/useSkills';
@@ -59,7 +59,7 @@ function startBackgroundPreload(): Promise<void> {
   void loadAgentStatuses(backend).catch((e) => {
     log.error('agent status load failed', e);
   });
-  void loadConnectionPool(backend)
+  void loadConnectionInventory(backend)
     .then(() => reconcileAccountPool())
     .catch((e) => {
       log.error('connection pool load failed', e);

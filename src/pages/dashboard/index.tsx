@@ -60,10 +60,10 @@ import { consumeConnectResume, parseConnectResumeParam } from '@/lib/connect-flo
 import { createDefaultConnectFlowDeps } from '@/lib/connect-flow/default-deps';
 import type { ConnectFlowEntry } from '@/lib/connect-flow/types';
 import {
-  getConnectionPoolSnapshot,
+  getConnectionInventorySnapshot,
   getTicketWalletSnapshot,
   useAgentCatalog,
-  useConnectionPool,
+  useConnectionInventory,
   useTicketWallet,
 } from '@/app/runtime';
 import { AGENTS, AGENT_MAP, agentDisplayName } from '@/config/agents';
@@ -204,7 +204,7 @@ export default function DashboardPage() {
   }, [loadRuntimes, reloadAgentStatuses]);
 
   // —— 连接流程：当前授权 + `/?connect=` 回跳打开 ConnectFlowDialog ——
-  const pool = useConnectionPool();
+  const pool = useConnectionInventory();
   const {
     wallet,
     error: walletError,
@@ -290,7 +290,7 @@ export default function DashboardPage() {
     ]);
     await poolReload().catch(() => {});
     // 双侧刷新失败时 store 保留旧 state:'ready' 并写入 errors，必须一并检查
-    const poolSnapshot = getConnectionPoolSnapshot();
+    const poolSnapshot = getConnectionInventorySnapshot();
     const poolOk =
       poolSnapshot.state === 'ready' && !poolSnapshot.errors.accounts && !poolSnapshot.errors.providers;
     if (!agentsOk || !walletOk || !poolOk) {

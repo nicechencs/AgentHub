@@ -31,7 +31,7 @@ import {
   accountsForAgent,
   getTicketWalletSnapshot,
   providersForAgent,
-  useConnectionPool,
+  useConnectionInventory,
   useTicketWallet,
 } from '@/app/runtime';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
@@ -130,7 +130,7 @@ export default function ConnectionsPage() {
     error,
     reload,
   } = useInstalledAgents();
-  const pool = useConnectionPool();
+  const pool = useConnectionInventory();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();

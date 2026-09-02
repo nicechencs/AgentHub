@@ -10,10 +10,11 @@ describe('runtime production barrel', () => {
   it('does not re-export per-store reset helpers', () => {
     const src = readFileSync(path.join(runtimeDir, 'index.ts'), 'utf8');
     expect(src).not.toMatch(
-      /reset(?:AgentCatalog|AgentStatus|ConnectionPool|TicketWallet|AppUpdate)Store/,
+      /reset(?:AgentCatalog|AgentStatus|Connection(?:Pool|Inventory)|TicketWallet|AppUpdate)Store/,
     );
     expect(runtime).not.toHaveProperty('resetAgentCatalogStore');
     expect(runtime).not.toHaveProperty('resetAgentStatusStore');
+    expect(runtime).not.toHaveProperty('resetConnectionInventoryStore');
     expect(runtime).not.toHaveProperty('resetConnectionPoolStore');
     expect(runtime).not.toHaveProperty('resetTicketWalletStore');
     expect(runtime).not.toHaveProperty('resetAppUpdateStore');
@@ -25,12 +26,17 @@ describe('runtime production barrel', () => {
     expect(runtime).toHaveProperty('resetBackend');
     expect(runtime).toHaveProperty('seedAgentCatalog');
     expect(runtime).toHaveProperty('refreshRuntimeReadModels');
-    expect(runtime).toHaveProperty('notifyConnectionPoolChanged');
+    expect(runtime).toHaveProperty('notifyConnectionInventoryChanged');
     expect(runtime).toHaveProperty('notifyTicketWalletChanged');
-    expect(runtime).toHaveProperty('beginConnectionPoolMutation');
-    expect(runtime).toHaveProperty('endConnectionPoolMutation');
+    expect(runtime).toHaveProperty('beginConnectionInventoryMutation');
+    expect(runtime).toHaveProperty('endConnectionInventoryMutation');
     expect(runtime).toHaveProperty('markConnectionCurrent');
     expect(runtime).toHaveProperty('applyAgentHidden');
     expect(runtime).toHaveProperty('revertAgentHidden');
+    // N-03 deprecated aliases remain for external callers
+    expect(runtime).toHaveProperty('notifyConnectionPoolChanged');
+    expect(runtime).toHaveProperty('beginConnectionPoolMutation');
+    expect(runtime).toHaveProperty('endConnectionPoolMutation');
+    expect(runtime).toHaveProperty('useConnectionPool');
   });
 });

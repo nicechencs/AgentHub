@@ -4,16 +4,16 @@ import { wrapBareAccount } from '@/lib/backend/contracts/account-map';
 import type { Account, Provider } from '@/lib/types';
 import {
   accountsForAgent,
-  beginConnectionPoolMutation,
+  beginConnectionInventoryMutation,
   connectionCountsByAgent,
-  endConnectionPoolMutation,
-  getConnectionPoolSnapshot,
-  loadConnectionPool,
+  endConnectionInventoryMutation,
+  getConnectionInventorySnapshot,
+  loadConnectionInventory,
   markConnectionCurrent,
-  notifyConnectionPoolChanged,
+  notifyConnectionInventoryChanged,
   providersForAgent,
-  resetConnectionPoolStore,
-} from './connection-pool-store';
+  resetConnectionInventoryStore,
+} from './connection-inventory-store';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -58,16 +58,16 @@ function poolBackend(opts: {
   } as unknown as Backend;
 }
 
-describe('connection-pool-store', () => {
-  beforeEach(() => resetConnectionPoolStore());
+describe('connection-inventory-store', () => {
+  beforeEach(() => resetConnectionInventoryStore());
 
   it('reuses a completed snapshot instead of force-refreshing on a later non-force load', async () => {
     const listAccounts = vi.fn(async () => [wrapBareAccount(account('claude', 'acc-1'))]);
     const listProviders = vi.fn(async () => [provider('claude', 'prov-1')]);
     const backend = poolBackend({ listAccounts, listProviders });
 
-    const first = await loadConnectionPool(backend);
-    const second = await loadConnectionPool(backend);
+    const first = await loadConnectionInventory(backend);
+    const second = await loadConnectionInventory(backend);
 
     expect(listAccounts).toHaveBeenCalledOnce();
     expect(listProviders).toHaveBeenCalledOnce();
@@ -80,8 +80,8 @@ describe('connection-pool-store', () => {
     const backend = poolBackend({ listAccounts, listProviders });
 
     const [first, second] = await Promise.all([
-      loadConnectionPool(backend),
-      loadConnectionPool(backend),
+      loadConnectionInventory(backend),
+      loadConnectionInventory(backend),
     ]);
 
     expect(listAccounts).toHaveBeenCalledOnce();
@@ -103,7 +103,7 @@ describe('connection-pool-store', () => {
       listProviders: vi.fn(async () => providers),
     });
 
-    const loaded = await loadConnectionPool(backend);
+    const loaded = await loadConnectionInventory(backend);
 
     expect(loaded.state).toBe('partial');
     expect(loaded.accounts).toEqual([]);
@@ -125,7 +125,7 @@ describe('connection-pool-store', () => {
       }),
     });
 
-    const loaded = await loadConnectionPool(backend);
+    const loaded = await loadConnectionInventory(backend);
     expect(loaded.state).toBe('error');
     expect(loaded.accounts).toEqual([]);
     expect(loaded.providers).toEqual([]);
@@ -148,8 +148,8 @@ describe('connection-pool-store', () => {
       .mockResolvedValueOnce(nextProviders);
     const backend = poolBackend({ listAccounts, listProviders });
 
-    await loadConnectionPool(backend);
-    const refreshed = await loadConnectionPool(backend, { force: true });
+    await loadConnectionInventory(backend);
+    const refreshed = await loadConnectionInventory(backend, { force: true });
 
     expect(refreshed.state).toBe('partial');
     expect(refreshed.accounts).toEqual(previousAccounts);
@@ -173,9 +173,9 @@ describe('connection-pool-store', () => {
       .mockRejectedValueOnce(providersError);
     const backend = poolBackend({ listAccounts, listProviders });
 
-    const ready = await loadConnectionPool(backend);
-    const refresh = loadConnectionPool(backend, { force: true });
-    expect(getConnectionPoolSnapshot()).toMatchObject({
+    const ready = await loadConnectionInventory(backend);
+    const refresh = loadConnectionInventory(backend, { force: true });
+    expect(getConnectionInventorySnapshot()).toMatchObject({
       state: 'ready',
       refreshing: true,
       accounts: previousAccounts,
@@ -192,7 +192,7 @@ describe('connection-pool-store', () => {
     });
     expect(failed.errors.accounts).toBe(accountsError);
     expect(failed.errors.providers).toBe(providersError);
-    expect(getConnectionPoolSnapshot()).toEqual(failed);
+    expect(getConnectionInventorySnapshot()).toEqual(failed);
   });
 
   it('keeps the ready snapshot renderable while a forced refresh is pending', async () => {
@@ -208,11 +208,11 @@ describe('connection-pool-store', () => {
       .mockImplementationOnce(() => nextProviders.promise);
     const backend = poolBackend({ listAccounts, listProviders });
 
-    const ready = await loadConnectionPool(backend);
+    const ready = await loadConnectionInventory(backend);
     expect(ready.state).toBe('ready');
 
-    const refresh = loadConnectionPool(backend, { force: true });
-    const pending = getConnectionPoolSnapshot();
+    const refresh = loadConnectionInventory(backend, { force: true });
+    const pending = getConnectionInventorySnapshot();
     expect(pending).toMatchObject({ state: 'ready', refreshing: true });
     expect(pending.accounts).toEqual(ready.accounts);
     expect(pending.providers).toEqual(ready.providers);
@@ -238,10 +238,10 @@ describe('connection-pool-store', () => {
       .mockResolvedValueOnce([provider('codex', 'prov-2')]);
     const backend = poolBackend({ listAccounts, listProviders });
 
-    const initial = loadConnectionPool(backend);
+    const initial = loadConnectionInventory(backend);
     await Promise.resolve();
-    expect(getConnectionPoolSnapshot().state).toBe('loading');
-    const forced = loadConnectionPool(backend, { force: true });
+    expect(getConnectionInventorySnapshot().state).toBe('loading');
+    const forced = loadConnectionInventory(backend, { force: true });
 
     firstAccounts.resolve([account('claude', 'acc-1')]);
     firstProviders.resolve([provider('claude', 'prov-1')]);
@@ -254,7 +254,7 @@ describe('connection-pool-store', () => {
     expect(refreshed.providers[0]?.id).toBe('prov-2');
   });
 
-  it('notifyConnectionPoolChanged force-refreshes the pool', async () => {
+  it('notifyConnectionInventoryChanged force-refreshes the pool', async () => {
     const listAccounts = vi
       .fn()
       .mockResolvedValueOnce([account('claude', 'acc-1')])
@@ -265,8 +265,8 @@ describe('connection-pool-store', () => {
       .mockResolvedValueOnce([provider('kimi', 'prov-2')]);
     const backend = poolBackend({ listAccounts, listProviders });
 
-    await loadConnectionPool(backend);
-    const notified = await notifyConnectionPoolChanged(backend);
+    await loadConnectionInventory(backend);
+    const notified = await notifyConnectionInventoryChanged(backend);
 
     expect(listAccounts).toHaveBeenCalledTimes(2);
     expect(notified.accounts[0]?.agentId).toBe('kimi');
@@ -287,11 +287,11 @@ describe('connection-pool-store', () => {
       .mockImplementationOnce(() => new Promise<Provider[]>(() => undefined));
     const backend = poolBackend({ listAccounts, listProviders });
 
-    await loadConnectionPool(backend);
+    await loadConnectionInventory(backend);
     markConnectionCurrent('claude', 'account', 'acc-2');
-    void notifyConnectionPoolChanged(backend);
+    void notifyConnectionInventoryChanged(backend);
 
-    const pending = getConnectionPoolSnapshot();
+    const pending = getConnectionInventorySnapshot();
     expect(pending.refreshing).toBe(true);
     expect(pending.accounts.find((row) => row.id === 'acc-1')?.isCurrent).toBe(false);
     expect(pending.accounts.find((row) => row.id === 'acc-2')?.isCurrent).toBe(true);
@@ -310,10 +310,10 @@ describe('connection-pool-store', () => {
       ]),
     });
 
-    await loadConnectionPool(backend);
+    await loadConnectionInventory(backend);
     markConnectionCurrent('claude', 'provider', 'prov-1');
 
-    const next = getConnectionPoolSnapshot();
+    const next = getConnectionInventorySnapshot();
     expect(next.accounts.find((row) => row.id === 'acc-1')?.isCurrent).toBe(false);
     expect(next.accounts.find((row) => row.id === 'acc-2')?.isCurrent).toBe(true);
     expect(next.providers.find((row) => row.id === 'prov-1')?.isCurrent).toBe(true);
@@ -331,16 +331,16 @@ describe('connection-pool-store', () => {
       .mockResolvedValueOnce([provider('claude', 'prov-2')]);
     const backend = poolBackend({ listAccounts, listProviders });
 
-    await loadConnectionPool(backend);
-    beginConnectionPoolMutation();
-    await notifyConnectionPoolChanged(backend);
-    await notifyConnectionPoolChanged(backend);
+    await loadConnectionInventory(backend);
+    beginConnectionInventoryMutation();
+    await notifyConnectionInventoryChanged(backend);
+    await notifyConnectionInventoryChanged(backend);
     expect(listAccounts).toHaveBeenCalledTimes(1);
-    expect(getConnectionPoolSnapshot().accounts[0]?.id).toBe('acc-1');
+    expect(getConnectionInventorySnapshot().accounts[0]?.id).toBe('acc-1');
 
-    await endConnectionPoolMutation(backend);
+    await endConnectionInventoryMutation(backend);
     expect(listAccounts).toHaveBeenCalledTimes(2);
-    expect(getConnectionPoolSnapshot().accounts[0]?.id).toBe('acc-2');
+    expect(getConnectionInventorySnapshot().accounts[0]?.id).toBe('acc-2');
   });
 
   it('does not let a pre-reset response overwrite the new store or clear a newer inflight', async () => {
@@ -357,17 +357,17 @@ describe('connection-pool-store', () => {
       listProviders: vi.fn(() => nextProviders.promise),
     });
 
-    const stale = loadConnectionPool(firstBackend);
+    const stale = loadConnectionInventory(firstBackend);
     await Promise.resolve();
-    resetConnectionPoolStore();
-    const next = loadConnectionPool(secondBackend);
-    expect(getConnectionPoolSnapshot().state).toBe('loading');
+    resetConnectionInventoryStore();
+    const next = loadConnectionInventory(secondBackend);
+    expect(getConnectionInventorySnapshot().state).toBe('loading');
 
     staleAccounts.resolve([account('claude', 'stale-acc')]);
     staleProviders.resolve([provider('claude', 'stale-prov')]);
     await stale;
 
-    expect(getConnectionPoolSnapshot()).toMatchObject({
+    expect(getConnectionInventorySnapshot()).toMatchObject({
       state: 'loading',
       accounts: [],
       providers: [],
@@ -382,7 +382,7 @@ describe('connection-pool-store', () => {
       accounts: [account('codex', 'fresh-acc')],
       providers: [provider('codex', 'fresh-prov')],
     });
-    expect(getConnectionPoolSnapshot()).toEqual(loaded);
+    expect(getConnectionInventorySnapshot()).toEqual(loaded);
   });
 
   it('filters accounts and providers by agent and counts both together', () => {

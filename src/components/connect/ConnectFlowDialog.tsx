@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useAgentStatusesOptional } from '@/app/runtime';
-import { useConnectionPool } from '@/app/runtime/ConnectionPoolProvider';
+import { useConnectionInventory } from '@/app/runtime/ConnectionInventoryProvider';
 import { AGENT_IDS, agentDisplayName } from '@/config/agents';
 import { hiddenAgentIdSet } from '@/lib/agent-visibility';
 import {
@@ -93,7 +93,7 @@ export function ConnectFlowDialog({
   const open = entry !== null;
   const key = connectFlowEntryKey(entry);
   const { t } = useI18n();
-  const pool = useConnectionPool();
+  const pool = useConnectionInventory();
   const { statuses } = useAgentStatusesOptional();
   const depsRef = React.useRef(deps);
   depsRef.current = deps;

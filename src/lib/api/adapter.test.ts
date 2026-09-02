@@ -35,14 +35,14 @@ function deferred<T>() {
 function expectPoolRefreshOnly(): void {
   expect(refreshRuntimeReadModels).toHaveBeenCalledOnce();
   expect(refreshRuntimeReadModels).toHaveBeenCalledWith(expect.anything(), {
-    models: ['connectionPool'],
+    models: ['connectionInventory'],
   });
 }
 
 function expectBindRefresh(): void {
   expect(refreshRuntimeReadModels).toHaveBeenCalledOnce();
   expect(refreshRuntimeReadModels).toHaveBeenCalledWith(expect.anything(), {
-    models: ['connectionPool', 'ticketWallet'],
+    models: ['connectionInventory', 'ticketWallet'],
   });
 }
 

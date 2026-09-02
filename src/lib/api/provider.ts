@@ -2,8 +2,8 @@
  * Provider API façade — delegates to app runtime backend.
  */
 import {
-  beginConnectionPoolMutation,
-  endConnectionPoolMutation,
+  beginConnectionInventoryMutation,
+  endConnectionInventoryMutation,
   getBackend,
   markConnectionCurrent,
   refreshRuntimeReadModels,
@@ -64,13 +64,13 @@ export async function switchProvider(agentId: AgentId, toProviderId: string): Pr
 export async function deleteProviders(agentId: AgentId, providerIds: readonly string[]): Promise<void> {
   if (providerIds.length === 0) return;
   const backend = getBackend();
-  beginConnectionPoolMutation();
+  beginConnectionInventoryMutation();
   try {
     for (const providerId of providerIds) {
       await backend.provider.deleteProvider(agentId, providerId);
     }
   } finally {
-    await endConnectionPoolMutation(backend);
+    await endConnectionInventoryMutation(backend);
   }
   void refreshRuntimeReadModels(backend, {
     agentId,

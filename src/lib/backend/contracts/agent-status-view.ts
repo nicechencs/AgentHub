@@ -23,7 +23,12 @@ export interface AgentStatusView {
   };
   effectiveConnection: {
     kind: UnsetOr<EffectiveConnectionKind>;
+    /** Prefer this over currentProvider for display. */
     label: UnsetOr<string>;
+    /**
+     * @deprecated Compat projection of AgentStatus.currentProvider.
+     * Readers should use `label` (from effectiveLabel).
+     */
     currentProvider: UnsetOr<string>;
   };
   env: {
