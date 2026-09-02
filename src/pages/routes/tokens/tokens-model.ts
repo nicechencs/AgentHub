@@ -30,8 +30,14 @@ export interface LocalTokenUsage {
 }
 
 export interface LocalTokenRow {
-  /** Stable list key: pool id or profile id. */
+  /** Stable list key: pool id (pool-backed) or profile id (leftover). */
   id: string;
+  /**
+   * True when `id` is a route pool id safe for `setLocalToken`.
+   * False for leftover local_bridge profiles not covered by a pool —
+   * those keep `id === profile.id` for list stability but must not call setLocalToken.
+   */
+  poolBacked: boolean;
   profileId: string | null;
   /** Profiles whose gateway usage belongs to this entry key. */
   profileIds: string[];
@@ -193,6 +199,7 @@ function profileIdsForPool(
 
 function rowFromRuntime(input: {
   id: string;
+  poolBacked: boolean;
   name: string;
   kind: LocalEndpointKind;
   targetAgentId: string;
@@ -218,6 +225,7 @@ function rowFromRuntime(input: {
   const visit = lastVisitFromStatuses(input.profileIds, input.statuses);
   return {
     id: input.id,
+    poolBacked: input.poolBacked,
     profileId: input.profile?.id ?? null,
     profileIds: [...input.profileIds],
     name: input.name,
@@ -280,6 +288,7 @@ export function buildLocalTokenRows(
     const statusId = profile?.id ?? pool.id;
     rows.push(rowFromRuntime({
       id: pool.id,
+      poolBacked: true,
       name: `${pool.targetAgentId} · ${localEndpointPath(kind)}`,
       kind,
       targetAgentId: pool.targetAgentId,
@@ -308,6 +317,7 @@ export function buildLocalTokenRows(
       || status?.upstreamStatus === 'unavailable';
     rows.push(rowFromRuntime({
       id: profile.id,
+      poolBacked: false,
       name: profile.name.trim() || profile.targetAgentId,
       kind,
       targetAgentId: profile.targetAgentId,
@@ -341,4 +351,35 @@ export function buildLocalTokenRows(
     if (kindOrder !== 0) return kindOrder;
     return a.name.localeCompare(b.name);
   });
+}
+
+
+/**
+ * Whether「改入口 Key」may call `setLocalToken(row.id, …)`.
+ * Only pool-backed rows have a real pool id; leftover profile rows must stay disabled.
+ */
+export type LocalTokenEditKeyGate = {
+  enabled: boolean;
+  reason: string | null;
+};
+
+export function localTokenEditKeyGate(
+  row: Pick<LocalTokenRow, 'poolBacked' | 'unavailable'>,
+  t?: TranslateFn,
+): LocalTokenEditKeyGate {
+  if (row.unavailable) {
+    return {
+      enabled: false,
+      reason: t ? t('routes.runtime.unavailable') : '状态不可用',
+    };
+  }
+  if (!row.poolBacked) {
+    return {
+      enabled: false,
+      reason: t
+        ? t('routes.tokens.editKeyNeedPool')
+        : '这条还不是连接池令牌，先从路由建入口',
+    };
+  }
+  return { enabled: true, reason: null };
 }
