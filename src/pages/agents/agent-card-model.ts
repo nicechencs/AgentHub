@@ -220,10 +220,10 @@ export type AgentUninstallControl = {
   muted: boolean;
 };
 
-/** IDE / desktop / official: gray. Leftover / none: hide. */
+/** IDE / desktop / official: gray. Leftover: show cleanup CTA. None: hide. */
 export function agentUninstallControl(uninstallVia?: string | null): AgentUninstallControl {
   const via = asUninstallVia(uninstallVia);
-  if (via === 'in_app') return { show: true, muted: false };
+  if (via === 'in_app' || via === 'leftover') return { show: true, muted: false };
   if (via === 'ide' || via === 'desktop' || via === 'official') {
     return { show: true, muted: true };
   }
@@ -535,6 +535,11 @@ export type AgentListDetailsHint = {
   key: MessageKey;
   params?: { count: number };
 };
+
+/** List leftover hint is a warning — not a valid spawn path. */
+export function isLeftoverDetailsHint(hint: AgentListDetailsHint | null | undefined): boolean {
+  return hint?.key === 'agents.card.seeDetailsLeftover';
+}
 
 /**
  * List hint must match detail locations. Leftover copies are leftover, not versions.
