@@ -154,6 +154,17 @@ impl Gateway {
         Ok(edge)
     }
 
+    /// Bound loopback port currently cited by this profile's edge, if running.
+    pub(super) fn cited_port_for_profile(&self, profile_id: &str) -> Option<u16> {
+        let Ok(registry) = self.lock() else {
+            return None;
+        };
+        registry
+            .runtimes
+            .get(profile_id)
+            .map(|runtime| runtime.cited_port)
+    }
+
     /// List models for GET /v1/models. When a running custom OpenAI-compat
     /// backup exists for the same target, include stealth/ox-alpha.
     pub(super) fn listed_models_with_backup(&self, state: &EdgeState) -> Vec<String> {
