@@ -17,7 +17,7 @@ describe('PageHeader', () => {
     expect(source('pages/skills/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/projects/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
-    expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/routes/pool/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/agents/index.tsx')).toContain('WorkbenchSplitPage');
   });
@@ -71,7 +71,7 @@ describe('PageHeader', () => {
     expect(source('pages/connections/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/plugins/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/mcp/index.tsx')).toContain('pageRhythm.chromeActions');
-    expect(source('pages/bridges/index.tsx')).toContain('pageRhythm.chromeActions');
+    expect(source('pages/routes/pool/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/projects/index.tsx')).toContain('pageRhythm.chromeActions');
     expect(topBar).toContain('PageTitleBlock');
     expect(topBar).toContain('FeedbackButton');
@@ -86,7 +86,7 @@ describe('PageHeader', () => {
     expect(source('pages/backups/BackupsPanel.tsx')).not.toContain('flushTop');
     expect(source('pages/backups/BackupsPanel.tsx')).toContain('pageRhythm.chromeActions');
     expect(source('pages/connections/index.tsx')).toContain('WorkbenchSplitPage');
-    expect(source('pages/bridges/index.tsx')).toContain('WorkbenchSplitPage');
+    expect(source('pages/routes/pool/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/plugins/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('pages/agents/index.tsx')).toContain('WorkbenchSplitPage');
     expect(source('App.tsx')).toContain('!isChat && <TopBar');
@@ -95,9 +95,14 @@ describe('PageHeader', () => {
     expect(source('pages/chat/ChatSessionHeader.tsx')).toContain('pageRhythm.chatChromeX');
     expect(source('pages/chat/ChatSessionHeader.tsx')).not.toContain('pageRhythm.workbenchHeader');
     expect(source('App.tsx')).toContain("pathname === '/connections'");
-    expect(source('App.tsx')).toContain("pathname === '/routes'");
+    expect(source('App.tsx')).toContain('isRoutesAreaPath');
+    expect(source('App.tsx')).toContain('isRoutesArea');
+    expect(source('App.tsx')).not.toContain("pathname === '/routes'");
     expect(source('App.tsx')).toContain("pathname === '/agents'");
     expect(source('App.tsx')).toContain("pathname === '/plugins'");
     expect(source('App.tsx')).toContain("pathname === '/settings'");
+    expect(source('pages/routes/RoutesNav.tsx')).toContain('data-routes-nav');
+    expect(source('pages/routes/RoutesLayout.tsx')).toContain('data-routes-layout');
+    expect(source('pages/routes/RoutesLayout.tsx')).not.toContain('enterRoutesArea');
   });
 });

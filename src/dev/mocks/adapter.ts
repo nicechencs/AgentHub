@@ -11,14 +11,181 @@ import {
   type AdapterProfile,
   type AdapterProfileFilter,
   type DefaultRoutePoolOverview,
+  type LocalEntryStatus,
+  type RoutePoolDialect,
+  type RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
+import type { RouteMembershipTrashPayload } from '@/lib/backend/contracts';
 import { delay } from './delay';
+import { moveMockMembershipToTrash } from './trash';
 import { analyze } from './adapter/analyze';
 import { materializeApply } from './adapter/apply';
 import { buildPlan } from './adapter/plan';
 import type { MockAdapterSourceResolver, MockAdapterState } from './adapter/types';
+import { getMockAccountById, listMockAccounts, upsertMockAccount } from './account';
+import { getMockProviderById, listMockProviders, upsertMockProvider } from './provider';
 
 const adapterStates = new Set<MockAdapterState>();
+
+const MOCK_POOL_WRITERS = ['claude', 'codex', 'grok', 'kimi', 'dsh'] as const satisfies readonly DefaultRoutePoolOverview['targetAgentId'][];
+
+function mockWriterSurface(agentId: string): RoutePoolSurface | null {
+  if (agentId === 'claude') return 'messages';
+  if (agentId === 'codex' || agentId === 'grok') return 'responses';
+  if (agentId === 'kimi' || agentId === 'dsh') return 'chat_completions';
+  return null;
+}
+
+function mockWriterDialect(agentId: DefaultRoutePoolOverview['targetAgentId']): RoutePoolDialect {
+  if (
+    agentId === 'claude'
+    || agentId === 'codex'
+    || agentId === 'grok'
+    || agentId === 'kimi'
+    || agentId === 'dsh'
+  ) {
+    return agentId;
+  }
+  return 'generic';
+}
+
+function mockChatWriter(
+  agentId: DefaultRoutePoolOverview['targetAgentId'],
+  surface: RoutePoolSurface,
+  shared: boolean,
+): DefaultRoutePoolOverview['targetAgentId'] {
+  if (shared && surface === 'chat_completions' && (agentId === 'kimi' || agentId === 'dsh')) {
+    return 'kimi';
+  }
+  return agentId;
+}
+
+function mockChatPool(
+  state: MockAdapterState,
+  agentId: 'kimi' | 'dsh',
+): DefaultRoutePoolOverview {
+  const existing = state.defaultPools.find((item) => (
+    item.targetAgentId === agentId && item.surface === 'chat_completions'
+  ));
+  if (existing) return existing;
+  const pool: DefaultRoutePoolOverview = {
+    id: `pool-${agentId}-chat_completions`,
+    targetAgentId: agentId,
+    surface: 'chat_completions',
+    dialect: agentId,
+    v2Enrolled: false,
+    members: [],
+    listedModels: [],
+  };
+  state.defaultPools.push(pool);
+  return pool;
+}
+
+function mockMemberSourceAgent(sourceKind: 'account' | 'provider', sourceId: string): string | undefined {
+  return sourceKind === 'account'
+    ? getMockAccountById(sourceId)?.agentId
+    : getMockProviderById(sourceId)?.agentId;
+}
+
+function mockMergeChatPools(state: MockAdapterState): void {
+  const dsh = state.defaultPools.find((item) => (
+    item.targetAgentId === 'dsh' && item.surface === 'chat_completions'
+  ));
+  if (!dsh) return;
+  const kimi = mockChatPool(state, 'kimi');
+  for (const member of dsh.members) {
+    if (kimi.members.some((row) => (
+      row.sourceKind === member.sourceKind && row.sourceId === member.sourceId
+    ))) {
+      continue;
+    }
+    kimi.members.push({ ...member });
+  }
+  dsh.members = [];
+}
+
+function mockSplitChatPools(state: MockAdapterState): void {
+  const kimi = state.defaultPools.find((item) => (
+    item.targetAgentId === 'kimi' && item.surface === 'chat_completions'
+  ));
+  if (!kimi) return;
+  const dsh = mockChatPool(state, 'dsh');
+  const keep: typeof kimi.members = [];
+  for (const member of kimi.members) {
+    const home = mockMemberSourceAgent(member.sourceKind, member.sourceId);
+    const onDsh = dsh.members.some((row) => (
+      row.sourceKind === member.sourceKind && row.sourceId === member.sourceId
+    ));
+    if (home === 'dsh') {
+      if (!onDsh) dsh.members.push({ ...member });
+      continue;
+    }
+    keep.push(member);
+    if (home !== 'kimi' && !onDsh) dsh.members.push({ ...member });
+  }
+  kimi.members = keep;
+}
+
+function mockPoolTargetsForSync(
+  agentId: string,
+  kind: 'oauth' | 'apikey',
+  shared: boolean,
+): Array<{
+  agentId: DefaultRoutePoolOverview['targetAgentId'];
+  surface: RoutePoolSurface;
+  dialect: RoutePoolDialect;
+}> {
+  if (kind === 'oauth' && agentId !== 'claude' && agentId !== 'codex' && agentId !== 'grok') {
+    return [];
+  }
+  const native = mockWriterSurface(agentId);
+  if (native) {
+    const target = mockChatWriter(
+      agentId as DefaultRoutePoolOverview['targetAgentId'],
+      native,
+      shared,
+    );
+    return [{ agentId: target, surface: native, dialect: mockWriterDialect(target) }];
+  }
+  if (kind === 'oauth') return [];
+  const surfaces: RoutePoolSurface[] = agentId === 'workbuddy'
+    ? ['chat_completions']
+    : agentId === 'zcode' || agentId === 'pi'
+      ? ['messages', 'responses', 'chat_completions']
+      : [];
+  return MOCK_POOL_WRITERS
+    .filter((writer) => {
+      const surface = mockWriterSurface(writer);
+      if (surface == null || !surfaces.includes(surface)) return false;
+      if (shared && surface === 'chat_completions') return writer === 'kimi';
+      return true;
+    })
+    .map((writer) => ({
+      agentId: writer,
+      surface: mockWriterSurface(writer)!,
+      dialect: writer,
+    }));
+}
+
+export function restoreMockRouteMembership(payload: RouteMembershipTrashPayload): void {
+  for (const state of adapterStates) {
+    for (const snapshot of payload.members) {
+      const pool = state.defaultPools.find((item) => item.id === snapshot.routePoolId);
+      if (!pool) continue;
+      if (pool.members.some((member) => (
+        member.sourceKind === payload.sourceKind && member.sourceId === payload.sourceId
+      ))) {
+        continue;
+      }
+      pool.members.push({
+        sourceKind: payload.sourceKind,
+        sourceId: payload.sourceId,
+        enabled: snapshot.enabled,
+        priority: snapshot.priority,
+      });
+    }
+  }
+}
 
 export function resetMockAdapters(): void {
   adapterStates.forEach((state) => {
@@ -27,7 +194,9 @@ export function resetMockAdapters(): void {
     state.bridgeStatuses.clear();
     state.generatedProviders.clear();
     state.routePoolV2 = true;
+    state.shareChatCompletions = false;
     state.defaultPools.length = 0;
+    state.localTokens.clear();
   });
 }
 
@@ -176,7 +345,12 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     resolver,
     removeGeneratedProvider: resolver.removeGeneratedProvider,
     routePoolV2: true,
+    shareChatCompletions: false,
     defaultPools: [],
+    localTokens: new Map(),
+    localEntryRunning: false,
+    localEntryPort: null,
+    sourceModelCatalogs: new Map(),
   };
   adapterStates.add(state);
 
@@ -203,15 +377,463 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
     },
     async listDefaultRoutePools() {
       await delay(20);
-      if (!state.routePoolV2) return { enabled: false, pools: [] };
+      if (!state.routePoolV2) return { enabled: false, pools: [], chatCompletionsShared: false };
       return {
         enabled: true,
+        chatCompletionsShared: state.shareChatCompletions,
         pools: state.defaultPools.map((pool) => ({
           ...pool,
           members: pool.members.map((member) => ({ ...member })),
           listedModels: [...(pool.listedModels ?? [])],
         })),
       };
+    },
+    async listLocalTokens() {
+      await delay(20);
+      if (!state.routePoolV2) return [];
+      return state.defaultPools.map((pool) => {
+        const existing = state.localTokens.get(pool.id);
+        const token = existing?.trim() || `ahb_${pool.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) || 'token'}`;
+        if (!existing) state.localTokens.set(pool.id, token);
+        return { poolId: pool.id, token };
+      });
+    },
+    async ensureSourceModelCatalog(_sourceKind, sourceId) {
+      await delay(20);
+      const cached = state.sourceModelCatalogs.get(sourceId);
+      if (cached) return cached;
+      const models = state.defaultPools.flatMap((pool) => pool.listedModels ?? []);
+      const unique = [...new Set(models.map((item) => item.trim()).filter(Boolean))];
+      return {
+        models: unique,
+        source: unique.length > 0 ? 'live' as const : 'empty' as const,
+        canCustomize: unique.length === 0,
+      };
+    },
+    async setSourceCustomModels(_sourceKind, sourceId, models) {
+      await delay(20);
+      const unique = [...new Set(models.map((item) => item.trim()).filter(Boolean))];
+      const catalog = {
+        models: unique,
+        source: 'custom' as const,
+        canCustomize: true,
+      };
+      state.sourceModelCatalogs.set(sourceId, catalog);
+      return catalog;
+    },
+    async setLocalTokenCustomModels(token, models) {
+      await delay(20);
+      const unique = [...new Set(models.map((item) => item.trim()).filter(Boolean))];
+      if (token.trim()) state.sourceModelCatalogs.set(token, {
+        models: unique,
+        source: 'custom',
+        canCustomize: true,
+      });
+      return unique;
+    },
+    async listLocalTokenModels(token) {
+      await delay(20);
+      if (!token.trim()) return [];
+      const models = state.defaultPools.flatMap((pool) => pool.listedModels ?? []);
+      const unique = [...new Set(models.map((item) => item.trim()).filter(Boolean))];
+      return unique.length > 0 ? unique : ['gpt-5.4'];
+    },
+    async refreshLocalTokenModels(token) {
+      await delay(20);
+      if (!token.trim()) return [];
+      const poolId = [...state.localTokens.entries()].find(([, value]) => value === token)?.[0];
+      const pool = state.defaultPools.find((item) => item.id === poolId);
+      const fromLogins = (pool?.members ?? []).flatMap((member) => (
+        state.sourceModelCatalogs.get(member.sourceId)?.models ?? []
+      ));
+      const unique = [...new Set(fromLogins.map((item) => item.trim()).filter(Boolean))];
+      if (unique.length > 0) return unique;
+      const models = pool?.listedModels ?? state.defaultPools.flatMap((item) => item.listedModels ?? []);
+      const listed = [...new Set(models.map((item) => item.trim()).filter(Boolean))];
+      return listed.length > 0 ? listed : ['gpt-5.4'];
+    },
+    async testLocalToken(endpoint, token, path, model) {
+      await delay(20);
+      const trimmedToken = token.trim();
+      const trimmedEndpoint = endpoint.trim();
+      const trimmedPath = path.trim() || '/v1/chat/completions';
+      if (!trimmedToken || !trimmedEndpoint) {
+        return {
+          outcome: 'invalid',
+          httpStatus: null,
+          latencyMs: 0,
+          upstreamStatus: null,
+          requestUrl: null,
+          requestMethod: null,
+          requestBody: null,
+          responseBody: null,
+          errorMessage: null,
+        };
+      }
+      const loopback = trimmedEndpoint.includes('127.0.0.1')
+        || trimmedEndpoint.includes('localhost')
+        || trimmedEndpoint.includes('[::1]');
+      if (!loopback) {
+        return {
+          outcome: 'invalid',
+          httpStatus: null,
+          latencyMs: 0,
+          upstreamStatus: null,
+          requestUrl: null,
+          requestMethod: null,
+          requestBody: null,
+          responseBody: null,
+          errorMessage: null,
+        };
+      }
+      const requestUrl = trimmedEndpoint.includes('://')
+        ? trimmedEndpoint.replace(/\/[^/]*$/, trimmedPath)
+        : `http://${trimmedEndpoint}${trimmedPath}`;
+      return {
+        outcome: 'ok',
+        httpStatus: 200,
+        latencyMs: 4,
+        upstreamStatus: null,
+        requestUrl,
+        requestMethod: 'POST',
+        requestBody: JSON.stringify({
+          model: model?.trim() || 'mock',
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 8,
+          stream: false,
+        }),
+        responseBody: '{"choices":[{"message":{"content":"ok"}}]}',
+        errorMessage: null,
+      };
+    },
+    async setLocalToken(poolId, token) {
+      await delay(20);
+      const trimmed = token.trim();
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      if (!trimmed) {
+        throw adapterCommandError({
+          code: 'invalid_arg',
+          message: 'entry key must not be empty',
+          retryable: false,
+        });
+      }
+      if (!state.defaultPools.some((pool) => pool.id === poolId)) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `route pool not found: ${poolId}`,
+          retryable: false,
+        });
+      }
+      state.localTokens.set(poolId, trimmed);
+      return { poolId, token: trimmed };
+    },
+    async setChatCompletionsShared(shared: boolean) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      if (state.shareChatCompletions !== shared) {
+        state.shareChatCompletions = shared;
+        if (shared) mockMergeChatPools(state);
+        else mockSplitChatPools(state);
+      }
+      return this.listDefaultRoutePools();
+    },
+    async attachPoolOwnedAuthorization(request) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      if (request.sourceKind === 'provider') {
+        const provider = getMockProviderById(request.sourceId);
+        if (!provider) {
+          throw adapterCommandError({
+            code: 'not_found',
+            message: `provider not found: ${request.sourceId}`,
+            retryable: false,
+          });
+        }
+        if (provider.agentId !== request.targetAgentId) {
+          throw adapterCommandError({
+            code: 'invalid_arg',
+            message: 'authorization does not belong to this Agent',
+            retryable: false,
+          });
+        }
+        if (provider.isCurrent) {
+          throw adapterCommandError({
+            code: 'invalid_arg',
+            message: 'the live login cannot be pool-only',
+            retryable: false,
+          });
+        }
+        upsertMockProvider({ ...provider, home: 'route_pool' });
+      } else {
+        const account = getMockAccountById(request.sourceId);
+        if (!account) {
+          throw adapterCommandError({
+            code: 'not_found',
+            message: `account not found: ${request.sourceId}`,
+            retryable: false,
+          });
+        }
+        if (account.agentId !== request.targetAgentId) {
+          throw adapterCommandError({
+            code: 'invalid_arg',
+            message: 'authorization does not belong to this Agent',
+            retryable: false,
+          });
+        }
+        if (account.isCurrent) {
+          throw adapterCommandError({
+            code: 'invalid_arg',
+            message: 'the live login cannot be pool-only',
+            retryable: false,
+          });
+        }
+        upsertMockAccount({ ...account, home: 'route_pool' });
+      }
+      const surface: RoutePoolSurface = request.surface;
+      const poolAgent = mockChatWriter(request.targetAgentId, surface, state.shareChatCompletions);
+      const dialect: RoutePoolDialect =
+        poolAgent === 'claude'
+        || poolAgent === 'codex'
+        || poolAgent === 'grok'
+        || poolAgent === 'kimi'
+        || poolAgent === 'dsh'
+          ? poolAgent
+          : 'generic';
+      let pool = state.defaultPools.find((item) => (
+        item.targetAgentId === poolAgent && item.surface === surface
+      ));
+      if (!pool) {
+        pool = {
+          id: `pool-${poolAgent}-${surface}`,
+          targetAgentId: poolAgent,
+          surface,
+          dialect,
+          v2Enrolled: false,
+          members: [],
+          listedModels: [],
+        };
+        state.defaultPools.push(pool);
+      }
+      if (!pool.members.some((member) => (
+        member.sourceKind === request.sourceKind && member.sourceId === request.sourceId
+      ))) {
+        pool.members.push({
+          sourceKind: request.sourceKind,
+          sourceId: request.sourceId,
+          enabled: true,
+        });
+      }
+      return {
+        ...pool,
+        members: pool.members.map((member) => ({ ...member })),
+        listedModels: [...(pool.listedModels ?? [])],
+      };
+    },
+    async setRouteAuthorizationEnabled(sourceKind, sourceId, enabled) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      let changed = 0;
+      for (const pool of state.defaultPools) {
+        for (const member of pool.members) {
+          if (member.sourceKind !== sourceKind || member.sourceId !== sourceId) continue;
+          if (member.enabled === enabled) continue;
+          member.enabled = enabled;
+          changed += 1;
+        }
+      }
+      return changed;
+    },
+    async setRouteAuthorizationPriority(sourceKind, sourceId, priority) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      let changed = 0;
+      for (const pool of state.defaultPools) {
+        for (const member of pool.members) {
+          if (member.sourceKind !== sourceKind || member.sourceId !== sourceId) continue;
+          if (member.priority === priority) continue;
+          member.priority = priority;
+          changed += 1;
+        }
+      }
+      return changed;
+    },
+    async recycleRouteMembership(sourceKind, sourceId) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      const members: RouteMembershipTrashPayload['members'] = [];
+      for (const pool of state.defaultPools) {
+        for (const member of pool.members) {
+          if (member.sourceKind !== sourceKind || member.sourceId !== sourceId) continue;
+          members.push({
+            routePoolId: pool.id,
+            enabled: member.enabled,
+            priority: member.priority ?? 0,
+            position: 0,
+          });
+        }
+      }
+      const account = sourceKind === 'account' ? getMockAccountById(sourceId) : undefined;
+      const provider = sourceKind === 'provider' ? getMockProviderById(sourceId) : undefined;
+      const agentId = account?.agentId ?? provider?.agentId ?? state.defaultPools[0]?.targetAgentId;
+      if (!agentId) {
+        throw adapterCommandError({
+          code: 'not_found',
+          message: `route authorization not found: ${sourceId}`,
+          retryable: false,
+        });
+      }
+      moveMockMembershipToTrash(agentId, account?.label ?? provider?.name ?? sourceId, {
+        sourceKind,
+        sourceId,
+        members,
+      });
+      return this.removeRouteAuthorization(sourceKind, sourceId);
+    },
+    async removeRouteAuthorization(sourceKind, sourceId) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      let removed = 0;
+      for (const pool of state.defaultPools) {
+        const before = pool.members.length;
+        pool.members = pool.members.filter((member) => (
+          member.sourceKind !== sourceKind || member.sourceId !== sourceId
+        ));
+        removed += before - pool.members.length;
+      }
+      return removed;
+    },
+    async syncConnectionAuthorizations(request) {
+      await delay(20);
+      if (!state.routePoolV2) {
+        throw adapterCommandError({
+          code: 'unsupported',
+          message: 'route_pool_v2 is disabled',
+          retryable: false,
+        });
+      }
+      let added = 0;
+      let skipped = 0;
+      const enroll = (
+        agentId: string,
+        sourceKind: 'account' | 'provider',
+        sourceId: string,
+        home?: 'route_pool',
+        kind: 'oauth' | 'apikey' = 'apikey',
+      ) => {
+        if (home === 'route_pool') {
+          skipped += 1;
+          return;
+        }
+        const targets = mockPoolTargetsForSync(agentId, kind, state.shareChatCompletions);
+        if (targets.length === 0) {
+          skipped += 1;
+          return;
+        }
+        let addedAny = false;
+        for (const target of targets) {
+          let pool = state.defaultPools.find((item) => (
+            item.targetAgentId === target.agentId && item.surface === target.surface
+          ));
+          if (!pool) {
+            pool = {
+              id: `pool-${target.agentId}-${target.surface}`,
+              targetAgentId: target.agentId,
+              surface: target.surface,
+              dialect: target.dialect,
+              v2Enrolled: false,
+              members: [],
+              listedModels: [],
+            };
+            state.defaultPools.push(pool);
+          }
+          if (pool.members.some((member) => (
+            member.sourceKind === sourceKind && member.sourceId === sourceId
+          ))) {
+            continue;
+          }
+          pool.members.push({ sourceKind, sourceId, enabled: true });
+          addedAny = true;
+        }
+        if (addedAny) added += 1;
+        else skipped += 1;
+      };
+      const accounts = listMockAccounts();
+      const providers = listMockProviders();
+      if (request) {
+        for (const source of request.sources) {
+          if (source.sourceKind === 'account') {
+            const account = accounts.find((item) => item.id === source.sourceId);
+            if (account) {
+              enroll(account.agentId, 'account', account.id, account.home, account.kind);
+            } else skipped += 1;
+            continue;
+          }
+          const provider = providers.find((item) => item.id === source.sourceId);
+          if (!provider) {
+            skipped += 1;
+            continue;
+          }
+          if (state.generatedProviders.has(provider.id)) {
+            skipped += 1;
+            continue;
+          }
+          enroll(provider.agentId, 'provider', provider.id, provider.home, 'apikey');
+        }
+      } else {
+        for (const account of accounts) {
+          enroll(account.agentId, 'account', account.id, account.home, account.kind);
+        }
+        for (const provider of providers) {
+          if (state.generatedProviders.has(provider.id)) {
+            skipped += 1;
+            continue;
+          }
+          enroll(provider.agentId, 'provider', provider.id, provider.home, 'apikey');
+        }
+      }
+      return { added, skipped };
     },
     async enrollNativeToGateway(profileId) {
       await delay(20);
@@ -335,6 +957,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         startedAt: current?.startedAt ?? null,
         upstreamStatus: 'stopped',
         recentInbound: current?.recentInbound ?? [],
+        totalRequestCount: current?.totalRequestCount ?? 0,
+        failedRequestCount: current?.failedRequestCount ?? 0,
+        lastRequestAt: current?.lastRequestAt ?? null,
       };
       state.bridgeStatuses.set(profileId, status);
       return { ...status };
@@ -350,6 +975,9 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
         startedAt: null,
         upstreamStatus: 'stopped',
         recentInbound: [],
+        totalRequestCount: 0,
+        failedRequestCount: 0,
+        lastRequestAt: null,
       };
       return { ...status, recentInbound: [...(status.recentInbound ?? [])] };
     },
@@ -360,6 +988,64 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
       profile.updatedAt = new Date().toISOString();
       return { ...profile };
     },
+    async startLocalEntry() {
+      await delay(20);
+      state.localEntryRunning = true;
+      state.localEntryPort = 43121;
+      for (const pool of state.defaultPools) {
+        pool.gatewayPort = 43121;
+      }
+      return mockLocalEntryStatus(state);
+    },
+    async stopLocalEntry() {
+      await delay(20);
+      state.localEntryRunning = false;
+      state.localEntryPort = null;
+      return mockLocalEntryStatus(state);
+    },
+    async getLocalEntryStatus() {
+      await delay(20);
+      return mockLocalEntryStatus(state);
+    },
+  };
+}
+
+function mockLocalEntryStatus(state: MockAdapterState): LocalEntryStatus {
+  return {
+    running: state.localEntryRunning,
+    port: state.localEntryPort,
+    statuses: state.localEntryRunning
+      ? state.defaultPools.map((pool) => ({
+        profileId: pool.id,
+        state: 'running' as const,
+        port: 43121,
+        endpoint: 'http://127.0.0.1:43121/v1',
+        startedAt: '2026-08-12T00:00:00.000Z',
+        upstreamStatus: 'connected' as const,
+        recentInbound: [],
+        recentRouteTraces: mockRouteTraces(),
+        totalRequestCount: 0,
+        failedRequestCount: 0,
+        lastRequestAt: null,
+        localToken: `ahb_${pool.id.slice(0, 8)}`,
+      }))
+      : [],
+    unauthenticatedTraces: state.localEntryRunning
+      ? [{
+        requestId: 'mock-req-unauth',
+        at: '2026-08-12T00:00:00.000Z',
+        method: 'POST',
+        path: '/v1/messages',
+        httpStatus: 401,
+        ok: false,
+        localAuth: { status: 'failed', code: 'invalid_api_key' },
+        pool: { status: 'skipped' },
+        conversion: { status: 'skipped', path: '' },
+        upstreamAuth: { status: 'skipped' },
+        upstream: { status: 'skipped' },
+        failureStage: 'local_auth',
+      }]
+      : [],
   };
 }
 
@@ -401,8 +1087,70 @@ function mockInboundRows(): AdapterBridgeRuntimeStatus['recentInbound'] {
   ];
 }
 
+function mockRouteTraces(): AdapterBridgeRuntimeStatus['recentRouteTraces'] {
+  return [
+    {
+      requestId: 'mock-req-ok',
+      at: '2026-08-12T00:00:02.000Z',
+      method: 'POST',
+      path: '/v1/responses',
+      httpStatus: 200,
+      ok: true,
+      model: 'gpt-5',
+      latencyMs: 842,
+      ttftMs: 210,
+      inputTokens: 1200,
+      outputTokens: 340,
+      localAuth: { status: 'ok', profileId: 'mock-profile', port: 32123 },
+      pool: {
+        status: 'ok',
+        selectedMember: { label: 'pool-acct-1', sourceKind: 'account', sourceId: 'acct-1' },
+      },
+      conversion: { status: 'ok', path: 'responses_to_codex_responses', result: 'converted' },
+      upstreamAuth: { status: 'ok', httpStatus: 200 },
+      upstream: {
+        status: 'ok',
+        url: 'https://api.openai.com/v1/responses',
+        member: { label: 'pool-acct-1', sourceKind: 'account', sourceId: 'acct-1' },
+        upstreamModel: 'gpt-5',
+        httpStatus: 200,
+      },
+    },
+    {
+      requestId: 'mock-req-fail',
+      at: '2026-08-12T00:00:01.000Z',
+      method: 'POST',
+      path: '/v1/messages',
+      httpStatus: 401,
+      ok: false,
+      model: 'claude-sonnet',
+      latencyMs: 12,
+      ttftMs: null,
+      inputTokens: 80,
+      outputTokens: 0,
+      localAuth: { status: 'ok', profileId: 'mock-profile', port: 32123 },
+      pool: {
+        status: 'ok',
+        selectedMember: { label: 'pool-acct-2', sourceKind: 'account', sourceId: 'acct-2' },
+      },
+      conversion: { status: 'ok', path: 'messages_to_anthropic', result: 'converted' },
+      upstreamAuth: { status: 'failed', httpStatus: 401, code: 'unauthorized' },
+      upstream: {
+        status: 'failed',
+        url: 'https://api.anthropic.com/v1/messages',
+        member: { label: 'pool-acct-2', sourceKind: 'account', sourceId: 'acct-2' },
+        httpStatus: 401,
+        code: 'unauthorized',
+      },
+      failureStage: 'upstream_auth',
+    },
+  ];
+}
+
 function runningBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeStatus {
   const port = profile.localPort ?? 32123;
+  const recentInbound = mockInboundRows() ?? [];
+  const recentRouteTraces = mockRouteTraces() ?? [];
   return {
     profileId: profile.id,
     state: 'running',
@@ -410,7 +1158,11 @@ function runningBridgeStatus(profile: AdapterProfile): AdapterBridgeRuntimeStatu
     endpoint: `http://127.0.0.1:${port}/v1`,
     startedAt: new Date().toISOString(),
     upstreamStatus: 'unknown',
-    recentInbound: mockInboundRows(),
+    recentInbound,
+    recentRouteTraces,
+    totalRequestCount: 42,
+    failedRequestCount: 3,
+    lastRequestAt: recentInbound[0]?.at ?? null,
   };
 }
 

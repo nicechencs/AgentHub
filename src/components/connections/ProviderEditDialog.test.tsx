@@ -706,7 +706,7 @@ describe('mock Catalog aligns with mock ConfigPort projector support', () => {
   });
 
   it('claude/codex/kimi/grok have projector schemas and schema exists', async () => {
-    const expectedVersions = { claude: 1, codex: 1, kimi: 1, grok: 2 } as const;
+    const expectedVersions = { claude: 1, codex: 1, kimi: 1, grok: 3 } as const;
     for (const key of ['claude', 'codex', 'kimi', 'grok'] as const) {
       const row = MOCK_AGENT_CATALOG.find((e) => e.key === key);
       expect(row, key).toBeDefined();

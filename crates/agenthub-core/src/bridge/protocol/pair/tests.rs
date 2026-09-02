@@ -102,6 +102,7 @@ fn grok_to_codex_request_uses_official_allowlist() {
     let mut body = fixture("pair_grok_to_codex_request");
     adapt_grok_request_for_codex_upstream(&mut body, "gpt-5.4", Some("gpt-5.4"));
     assert_eq!(body["store"], false);
+    assert_eq!(body["stream"], true);
     assert_eq!(body["model"], "gpt-5.4");
     assert!(body.get("prompt_cache_key").is_none(), "{body}");
     assert!(body.get("previous_response_id").is_none(), "{body}");

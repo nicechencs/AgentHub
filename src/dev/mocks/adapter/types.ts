@@ -8,6 +8,7 @@ import {
   type AdapterPlanChange,
   type AdapterProfile,
   type DefaultRoutePoolOverview,
+  type SourceModelCatalog,
 } from '@/lib/backend/contracts/adapter';
 import type { Account, Provider } from '@/lib/types';
 import {
@@ -41,7 +42,12 @@ export interface MockAdapterState {
   resolver: MockAdapterSourceResolver;
   removeGeneratedProvider?: (provider: Provider) => void;
   routePoolV2: boolean;
+  shareChatCompletions: boolean;
   defaultPools: DefaultRoutePoolOverview[];
+  localTokens: Map<string, string>;
+  localEntryRunning: boolean;
+  localEntryPort: number | null;
+  sourceModelCatalogs: Map<string, SourceModelCatalog>;
 }
 
 export interface MockAdapterSourceResolver {

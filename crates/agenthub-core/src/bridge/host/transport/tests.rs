@@ -58,6 +58,8 @@ fn listener_state(
         codex_ingress_grok_upstream: false,
         grok_ingress_codex_upstream: false,
         continuations: std::sync::Arc::new(super::super::continuation::ContinuationBindings::new()),
+        usage_spool: Default::default(),
+        route_traces: Default::default(),
         member_model_denials: std::sync::Arc::new(std::sync::Mutex::new(
             std::collections::HashSet::new(),
         )),
@@ -138,6 +140,8 @@ fn edge_state_carries_explicit_downstream_responses_profile_from_start_spec() {
         reqwest::Url::parse("http://127.0.0.1/v1/").expect("test url"),
         CancellationToken::new(),
         crate::bridge::auth_reload::AuthReloadCoordinator::new(),
+        Default::default(),
+        Default::default(),
     );
     assert_eq!(
         edge.downstream_responses_profile,
@@ -560,6 +564,30 @@ fn official_codex_messages_prepare_folds_system_and_forces_store_false() {
 }
 
 #[test]
+fn official_codex_prepare_forces_upstream_stream_and_keeps_downstream_false() {
+    let admitted = admitted(
+        BridgeUpstreamProtocol::CodexResponsesOauth,
+        BridgeLocalSurface::Messages,
+        json!({
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 32,
+            "stream": false,
+            "messages": [{ "role": "user", "content": "ping" }]
+        }),
+    );
+    let prepared = UpstreamChannel::CodexResponses
+        .transport()
+        .prepare(DownstreamSurface::Messages, &admitted)
+        .expect("prepare");
+    assert!(!prepared.stream, "downstream asked for a complete JSON body");
+    assert_eq!(prepared.body["stream"], true);
+    assert_eq!(prepared.body["store"], false);
+    assert!(UpstreamChannel::CodexResponses.forces_upstream_stream());
+    assert!(!UpstreamChannel::Grok.forces_upstream_stream());
+    assert!(!UpstreamChannel::Anthropic.forces_upstream_stream());
+}
+
+#[test]
 fn official_codex_chat_prepare_folds_developer_and_forces_store_false() {
     let body = json!({
         "model": "claude-sonnet-4-20250514",
@@ -725,4 +753,63 @@ fn grok_prepare_converts_chat_surface_to_responses() {
     assert_eq!(prepared.body["model"], "configured-model");
     assert_eq!(prepared.body["input"][0]["role"], "user");
     assert_eq!(prepared.body["input"][0]["content"][0]["text"], "hi");
+    assert_eq!(prepared.body["stream"], false);
+    assert!(!prepared.stream);
+    assert!(!UpstreamChannel::Grok.forces_upstream_stream());
 }
+
+#[test]
+fn require_responses_conversation_seed_rejects_missing_input() {
+    let err = super::require_responses_conversation_seed(&json!({
+        "model": "grok-4.5",
+        "stream": false
+    }))
+    .expect_err("missing input seed");
+    assert_eq!(err.status(), axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn require_responses_conversation_seed_accepts_input() {
+    super::require_responses_conversation_seed(&json!({
+        "model": "grok-4.5",
+        "input": "hi"
+    }))
+    .expect("input ok");
+}
+
+#[test]
+fn passthrough_responses_object_still_allows_messages_shaped_bodies() {
+    // Anthropic/Chat identity relay reuses this helper; do not require Responses seeds here.
+    let (body, stream) = super::passthrough_responses_object(json!({
+        "model": "claude",
+        "max_tokens": 16,
+        "messages": [{"role": "user", "content": "hi"}],
+        "stream": false
+    }))
+    .expect("messages body ok for shared passthrough");
+    assert_eq!(body["messages"][0]["role"], "user");
+    assert!(!stream);
+}
+
+#[test]
+fn grok_prepare_rejects_responses_without_conversation_seed() {
+    let admitted = admitted(
+        BridgeUpstreamProtocol::XaiResponsesOauth,
+        BridgeLocalSurface::Responses,
+        json!({
+            "model": "grok-4.5",
+            "messages": [{"role": "user", "content": "hi"}]
+        }),
+    );
+    let result = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::XaiResponsesOauth)
+        .transport()
+        .prepare(DownstreamSurface::Responses, &admitted);
+    let err = match result {
+        Ok(_) => panic!("chat-shaped responses body must fail locally"),
+        Err(response) => response,
+    };
+    assert_eq!(err.status(), axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[path = "conversion_matrix.rs"]
+mod conversion_matrix;

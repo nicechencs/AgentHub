@@ -140,6 +140,10 @@ export default defineConfig(({ mode, command }) => {
       target: 'esnext',
       minify: !process.env.TAURI_DEBUG ? 'esbuild' : false,
       sourcemap: !!process.env.TAURI_DEBUG,
+      // Desktop assets load from local disk (no network waterfall), and the
+      // markdown surface renders on first paint, so the 500 kB web heuristic
+      // does not apply. Revisit lazy chunk splitting if startup parse grows.
+      chunkSizeWarningLimit: 3200,
     },
   };
 });

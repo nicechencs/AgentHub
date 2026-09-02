@@ -3,18 +3,26 @@
 //! Mutation / local_bridge lifecycle goes through
 //! [`agenthub_core::adapter_control::AdapterControl`] (desktop host impl).
 
-use agenthub_core::adapter_control::AdapterControl;
+use agenthub_core::adapter_control::{resolve_bind_action, AdapterControl, BindAction};
 use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
-    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, TicketBinding, TicketBindingRoute,
-    TicketPlanRequest, TicketWallet,
+    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenRecord, RouteDownstreamSurface,
+    SyncConnectionAuthorizationsResult, TicketBinding, TicketBindingRoute, TicketPlanRequest,
+    TicketWallet,
 };
+use agenthub_core::utils::upstream_model_catalog::SourceModelCatalog;
 use agenthub_core::AgentHub;
 use tauri::State;
 
-use crate::adapter_bridge_controller::AdapterBridgeStatusDto;
+use crate::adapter_bridge_controller::{
+    local_entry_status as read_local_entry_status,
+    start_local_entry as start_shared_local_entry,
+    stop_local_entry as stop_shared_local_entry,
+    AdapterBridgeStatusDto,
+};
+use agenthub_core::adapter_control::LocalEntryStatus;
 use crate::adapter_control_host::apply_result_from_binding;
 use crate::commands::{
     adapter_error_from_string, map_err_string, parse_agent, with_hub_blocking, GuiError,
@@ -178,13 +186,26 @@ pub async fn apply_adapter(
 ) -> Result<AdapterApplyResult, GuiError> {
     let source_kind_parsed = parse_source_kind(&source_kind).map_err(adapter_error_from_string)?;
     let ticket = ticket_id(source_kind_parsed, &source_id);
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    let preflight_ticket = ticket.clone();
+    let preflight_target = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
+    let action = with_hub_blocking(hub.clone(), move |hub| {
+        resolve_bind_action(hub, &preflight_ticket, preflight_target)
+            .map_err(|error| map_err_string("apply_adapter", error))
+    })
+    .await
+    .map_err(adapter_error_from_string)?;
+    if matches!(action, BindAction::NativeSelf(_)) {
+        return Err(adapter_error_from_string(
+            "这类登录由 Agent 自己管理，不能生成本机路由配置 [adapter.native_self]".into(),
+        ));
+    }
     let control = state.adapter_control().map_err(adapter_error_from_string)?;
-    let target_agent_id = parse_agent(&target_agent_id).map_err(adapter_error_from_string)?;
+    let target_agent_id = preflight_target;
     let binding = control
         .bind(ticket, target_agent_id)
         .await
         .map_err(adapter_error_from_string)?;
-    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     with_hub_blocking(hub, move |hub| apply_result_from_binding(hub, &binding))
         .await
         .map_err(adapter_error_from_string)
@@ -232,6 +253,41 @@ pub async fn get_adapter_bridge_status(
         .map_err(adapter_error_from_string)
 }
 
+/// Start the shared local relay (loopback listener). Does not bind logins to Agents.
+#[tauri::command]
+pub async fn start_local_entry(state: State<'_, AppState>) -> Result<LocalEntryStatus, GuiError> {
+    start_shared_local_entry(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+        true,
+    )
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Stop the shared local relay.
+#[tauri::command]
+pub async fn stop_local_entry(state: State<'_, AppState>) -> Result<LocalEntryStatus, GuiError> {
+    stop_shared_local_entry(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+    )
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Credential-free relay status for the board switch.
+#[tauri::command]
+pub async fn get_local_entry_status(
+    state: State<'_, AppState>,
+) -> Result<LocalEntryStatus, GuiError> {
+    read_local_entry_status(&state.bridge_host()).map_err(adapter_error_from_string)
+}
+
 /// Enable or disable background restore for an existing local bridge.
 #[tauri::command]
 pub async fn set_adapter_bridge_auto_start(
@@ -247,6 +303,22 @@ pub async fn set_adapter_bridge_auto_start(
         .map_err(adapter_error_from_string)
 }
 
+/// Kimi and DSH share one chat-completions token, or keep separate keys.
+#[tauri::command]
+pub async fn set_chat_completions_shared(
+    state: State<'_, AppState>,
+    shared: bool,
+) -> Result<DefaultRoutePoolList, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .set_chat_completions_shared(shared)
+            .map_err(|err| map_err_string("set_chat_completions_shared", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
 /// Default RoutePool overview for the Routes page. Hub token is never serialized.
 #[tauri::command]
 pub async fn list_default_route_pools(
@@ -257,6 +329,328 @@ pub async fn list_default_route_pools(
         hub.route_pools()
             .list_default_overviews()
             .map_err(|err| map_err_string("list_default_route_pools", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Loopback bearers for the tokens page.
+#[tauri::command]
+pub async fn list_local_tokens(
+    state: State<'_, AppState>,
+) -> Result<Vec<LocalTokenRecord>, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .list_local_tokens()
+            .map_err(|err| map_err_string("list_local_tokens", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Ensure the local entry is up, then `POST` a tiny request on the row path.
+#[tauri::command]
+pub async fn test_local_token(
+    state: State<'_, AppState>,
+    endpoint: String,
+    token: String,
+    path: String,
+    model: Option<String>,
+) -> Result<agenthub_core::utils::local_token_probe::LocalTokenProbeResult, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    let host = state.bridge_host();
+    let status = match read_local_entry_status(&host) {
+        Ok(status) if status.running => status,
+        _ => start_shared_local_entry(
+            hub.clone(),
+            host.clone(),
+            state.bridge_saga_coordinator(),
+            state.lifecycle_shutdown_barrier(),
+            false,
+        )
+        .await
+        .map_err(adapter_error_from_string)?,
+    };
+    let live_endpoint = status
+        .port
+        .map(|port| format!("127.0.0.1:{port}"))
+        .unwrap_or(endpoint);
+    let chosen = model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let lookup_token = token.clone();
+    let model = if chosen.is_some() {
+        chosen
+    } else {
+        with_hub_blocking(hub, move |hub| {
+            Ok(lookup_local_token_test_model(hub, &lookup_token))
+        })
+        .await
+        .unwrap_or(None)
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        agenthub_core::utils::local_token_probe::probe_local_token(
+            &live_endpoint,
+            &token,
+            &path,
+            model.as_deref(),
+        )
+    })
+    .await
+    .map_err(|err| adapter_error_from_string(format!("command join error: {err}")))
+}
+
+fn lookup_local_token_test_model(hub: &AgentHub, token: &str) -> Option<String> {
+    list_models_for_local_token(hub, token)
+        .into_iter()
+        .find(|model| !model.trim().is_empty())
+}
+
+fn list_models_for_local_token(hub: &AgentHub, token: &str) -> Vec<String> {
+    let Ok(records) = hub.route_pools().list_local_tokens() else {
+        return Vec::new();
+    };
+    let Some(pool_id) = records
+        .into_iter()
+        .find(|record| record.token == token)
+        .map(|record| record.pool_id)
+    else {
+        return Vec::new();
+    };
+    hub.route_pools()
+        .list_upstream_models_for_pool(&pool_id)
+        .unwrap_or_default()
+}
+
+/// Cached model list for one connection-pool login. Fetches once until URL/key/login changes.
+#[tauri::command]
+pub async fn ensure_source_model_catalog(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+) -> Result<SourceModelCatalog, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .ensure_source_model_catalog(kind, &source_id)
+            .map_err(|err| map_err_string("ensure_source_model_catalog", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Replace the cached list with a user-supplied model list for routing.
+#[tauri::command]
+pub async fn set_source_custom_models(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+    models: Vec<String>,
+) -> Result<SourceModelCatalog, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .set_source_custom_models(kind, &source_id, models)
+            .map_err(|err| map_err_string("set_source_custom_models", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Save a custom model list for the token's pool logins.
+#[tauri::command]
+pub async fn set_local_token_custom_models(
+    state: State<'_, AppState>,
+    token: String,
+    models: Vec<String>,
+) -> Result<Vec<String>, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .set_local_token_custom_models(&token, models)
+            .map_err(|err| map_err_string("set_local_token_custom_models", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Live model ids for the tokens-page test dropdown.
+#[tauri::command]
+pub async fn list_local_token_models(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<Vec<String>, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| Ok(list_models_for_local_token(hub, &token)))
+        .await
+        .map_err(adapter_error_from_string)
+}
+
+/// Re-read models supported by the token's pool logins.
+#[tauri::command]
+pub async fn refresh_local_token_models(
+    state: State<'_, AppState>,
+    token: String,
+) -> Result<Vec<String>, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        hub.route_pools()
+            .refresh_local_token_models(&token)
+            .map_err(|err| map_err_string("refresh_local_token_models", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Replace one default-pool loopback bearer. Restarts that edge if it is live.
+#[tauri::command]
+pub async fn set_local_token(
+    state: State<'_, AppState>,
+    pool_id: String,
+    token: String,
+) -> Result<LocalTokenRecord, GuiError> {
+    crate::adapter_bridge_controller::set_local_entry_token(
+        state.hub_arc().map_err(adapter_error_from_string)?,
+        state.bridge_host(),
+        state.bridge_saga_coordinator(),
+        state.lifecycle_shutdown_barrier(),
+        pool_id,
+        token,
+    )
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Enroll a newly added authorization into the default auth pool and mark it
+/// pool-owned so it does not appear on the Connections list.
+#[tauri::command]
+pub async fn attach_pool_owned_authorization(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+    target_agent_id: String,
+    surface: String,
+) -> Result<DefaultRoutePoolOverview, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        let target_agent_id = parse_agent(&target_agent_id)?;
+        let surface = RouteDownstreamSurface::parse(&surface).ok_or_else(|| {
+            "invalid route pool surface, expected: messages|responses|chat_completions".to_string()
+        })?;
+        hub.route_pools()
+            .attach_pool_owned_authorization(
+                target_agent_id,
+                surface,
+                source_kind,
+                &source_id,
+            )
+            .map_err(|err| map_err_string("attach_pool_owned_authorization", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Enable or disable every default-pool membership of one login.
+#[tauri::command]
+pub async fn set_route_authorization_enabled(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+    enabled: bool,
+) -> Result<u32, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .set_authorization_enabled(source_kind, &source_id, enabled)
+            .map_err(|err| map_err_string("set_route_authorization_enabled", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Set priority on every default-pool membership of one login.
+#[tauri::command]
+pub async fn set_route_authorization_priority(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+    priority: i64,
+) -> Result<u32, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .set_authorization_priority(source_kind, &source_id, priority)
+            .map_err(|err| map_err_string("set_route_authorization_priority", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Remove every default-pool membership of one login.
+///
+/// This only removes the route-pool authorization reference. The underlying
+/// account/provider deletion commands keep their existing behavior.
+#[tauri::command]
+pub async fn remove_route_authorization(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+) -> Result<u32, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .remove_route_authorization(source_kind, &source_id)
+            .map_err(|err| map_err_string("remove_route_authorization", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Move a Connections-managed pool member into the pool recycle bin.
+/// Leaves the Connections login in place.
+#[tauri::command]
+pub async fn recycle_route_membership(
+    state: State<'_, AppState>,
+    source_kind: String,
+    source_id: String,
+) -> Result<u32, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let source_kind = parse_source_kind(&source_kind)?;
+        hub.route_pools()
+            .recycle_route_membership(source_kind, &source_id)
+            .map_err(|err| map_err_string("recycle_route_membership", err))
+    })
+    .await
+    .map_err(adapter_error_from_string)
+}
+
+/// Enroll existing Connections authorizations into default auth pools.
+/// Does not remove them from Connections.
+#[tauri::command]
+pub async fn sync_connection_authorizations(
+    state: State<'_, AppState>,
+    request: Option<agenthub_core::models::SyncConnectionAuthorizationsRequest>,
+) -> Result<SyncConnectionAuthorizationsResult, GuiError> {
+    let hub = state.hub_arc().map_err(adapter_error_from_string)?;
+    with_hub_blocking(hub, move |hub| {
+        let result = match request.as_ref() {
+            Some(request) => hub
+                .route_pools()
+                .sync_connection_authorizations_selected(Some(&request.sources)),
+            None => hub.route_pools().sync_connection_authorizations(),
+        };
+        result
+            .map_err(|err| map_err_string("sync_connection_authorizations", err))
     })
     .await
     .map_err(adapter_error_from_string)

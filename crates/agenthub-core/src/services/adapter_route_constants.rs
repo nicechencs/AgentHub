@@ -503,6 +503,14 @@ pub(crate) fn is_unknown_custom_relay_provider(provider: &Provider) -> bool {
     host.is_none() && settings_contain_custom_openai_compat_remote(&provider.settings_config)
 }
 
+/// User-facing reason returned when a provider is classified from an
+/// OpenAI-compatible shape but does not carry a usable upstream endpoint.
+///
+/// Keep this next to [`is_unknown_custom_relay_provider`] so preview and bind
+/// paths share one policy and one message.
+pub(crate) const UNKNOWN_CUSTOM_RELAY_REASON: &str =
+    "这份自定义上游还缺有效的服务地址，没法开本机转发。请补上地址后重试，或删除后重建。";
+
 /// First usable OpenAI-compat base URL in a settings / credentials blob.
 pub(crate) fn openai_compat_base_url(blob: &Value) -> Option<String> {
     first_http_url(blob, BASE_URL_POINTERS)

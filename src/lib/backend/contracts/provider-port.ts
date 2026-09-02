@@ -1,6 +1,8 @@
 import type { AgentId, Provider, SwitchPreview } from '@/lib/types';
 import type { CoreProviderPreset } from './skill-types';
 
+export type DetectedApiEndpointType = 'messages' | 'responses' | 'chat_completions';
+
 export interface ProviderPort {
   listProviders(agentId?: AgentId): Promise<Provider[]>;
   upsertProvider(p: Provider): Promise<Provider>;
@@ -18,4 +20,9 @@ export interface ProviderPort {
    * Frontend passes provider id + baseUrl only — never the raw key.
    */
   listRemoteOpenAiModelsForProvider(providerId: string, baseUrl: string): Promise<string[]>;
+  /** Probes unsupported/valid endpoint responses without sending a model request. */
+  detectApiEndpointTypes(
+    baseUrl: string,
+    apiKey: string,
+  ): Promise<DetectedApiEndpointType[]>;
 }

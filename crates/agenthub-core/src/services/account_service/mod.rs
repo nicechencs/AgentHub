@@ -115,6 +115,18 @@ impl AccountService {
         &self.repo
     }
 
+    /// Snapshot account ids without running live reconciliation. OAuth pool
+    /// completion uses this to distinguish a newly-created row from a
+    /// refresh of an existing pool-owned row during compensation.
+    pub(crate) fn account_ids(&self, agent: AgentId) -> Result<Vec<String>> {
+        Ok(self
+            .repo
+            .list(Some(agent))?
+            .into_iter()
+            .map(|account| account.id)
+            .collect())
+    }
+
     pub(super) fn snapshot_after_pool_change(&self, agent: AgentId, note: &str) {
         let Some(backup) = self.backup.as_ref() else {
             return;

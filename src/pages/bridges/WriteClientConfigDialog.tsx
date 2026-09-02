@@ -31,7 +31,11 @@ import {
 import { switchProvider } from '@/lib/api/provider';
 import { logGuiEvent } from '@/lib/api/settings';
 import { applyLocalRouteToAgents, type CreateRouteTarget } from './create-route-flow';
-import { routeEndpointCopyKey } from './route-endpoint-copy';
+import {
+  localEndpointBrandAgentId,
+  localEndpointKindForTargetAgent,
+} from '@/lib/route-endpoints';
+import { localEndpointKindLabel } from './route-pool-view-model';
 import { localBridgeSiblingForTarget, type RouteGraphRow } from './route-graph-model';
 
 function statusVariant(status: ClientWriteStatus): 'success' | 'accent' | 'default' {
@@ -218,6 +222,8 @@ function WriteTargetRow({
 }) {
   const { t } = useI18n();
   const label = clientWriteAgentLabel(spec.agent, t);
+  const endpointKind = localEndpointKindForTargetAgent(spec.agent);
+  const brandAgentId = localEndpointBrandAgentId(endpointKind);
 
   return (
     <li
@@ -249,10 +255,15 @@ function WriteTargetRow({
             port={port}
             host={host}
             endpointId={spec.endpointId}
+            brandAgentId={brandAgentId}
             className="text-meta"
           />
-          <RouteEndpointTypeText endpointId={spec.endpointId} className="mt-0.5 block">
-            {t(routeEndpointCopyKey(spec.endpointId))}
+          <RouteEndpointTypeText
+            endpointId={spec.endpointId}
+            brandAgentId={brandAgentId}
+            className="mt-0.5 block"
+          >
+            {localEndpointKindLabel(endpointKind, t)}
           </RouteEndpointTypeText>
         </dd>
         <dt className="text-muted">{t('routes.write.wireLabel')}</dt>

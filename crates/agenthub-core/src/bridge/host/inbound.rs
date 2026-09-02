@@ -34,10 +34,25 @@ impl InboundRequestRecord {
     }
 }
 
-/// Per-profile ring of the last [`INBOUND_LOG_CAP`] inbound requests, newest first.
+/// Process-lifetime counters for one profile (survive ring truncation).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InboundRequestStats {
+    pub total_request_count: u64,
+    pub failed_request_count: u64,
+    pub last_request_at_unix_ms: Option<u128>,
+}
+
+#[derive(Default)]
+struct ProfileInbound {
+    recent: VecDeque<InboundRequestRecord>,
+    stats: InboundRequestStats,
+}
+
+/// Per-profile ring of the last [`INBOUND_LOG_CAP`] inbound requests, newest first,
+/// plus process-lifetime totals that are not capped by the ring.
 #[derive(Clone, Default)]
 pub struct InboundRequestLog {
-    inner: Arc<Mutex<HashMap<String, VecDeque<InboundRequestRecord>>>>,
+    inner: Arc<Mutex<HashMap<String, ProfileInbound>>>,
 }
 
 impl InboundRequestLog {
@@ -52,17 +67,29 @@ impl InboundRequestLog {
         let Ok(mut map) = self.inner.lock() else {
             return;
         };
-        let deque = map.entry(profile_id.to_owned()).or_default();
-        deque.push_front(record);
-        deque.truncate(INBOUND_LOG_CAP);
+        let entry = map.entry(profile_id.to_owned()).or_default();
+        entry.stats.total_request_count = entry.stats.total_request_count.saturating_add(1);
+        if !record.ok {
+            entry.stats.failed_request_count = entry.stats.failed_request_count.saturating_add(1);
+        }
+        entry.stats.last_request_at_unix_ms = Some(record.at_unix_ms);
+        entry.recent.push_front(record);
+        entry.recent.truncate(INBOUND_LOG_CAP);
     }
 
     pub fn recent(&self, profile_id: &str) -> Vec<InboundRequestRecord> {
         self.inner
             .lock()
             .ok()
-            .and_then(|map| map.get(profile_id).cloned())
-            .map(|deque| deque.into_iter().collect())
+            .and_then(|map| map.get(profile_id).map(|entry| entry.recent.iter().cloned().collect()))
+            .unwrap_or_default()
+    }
+
+    pub fn stats(&self, profile_id: &str) -> InboundRequestStats {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|map| map.get(profile_id).map(|entry| entry.stats.clone()))
             .unwrap_or_default()
     }
 }

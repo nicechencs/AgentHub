@@ -104,3 +104,7 @@ export async function listRemoteOpenAiModelsForProvider(
 ): Promise<string[]> {
   return getBackend().provider.listRemoteOpenAiModelsForProvider(providerId, baseUrl);
 }
+
+export async function detectApiEndpointTypes(baseUrl: string, apiKey: string) {
+  return getBackend().provider.detectApiEndpointTypes(baseUrl, apiKey);
+}

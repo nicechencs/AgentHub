@@ -5,7 +5,7 @@ status: current
 owner: maintainers
 audience: contributors and maintainers
 source-of-truth: current source tree and linked contract pages
-updated: 2026-08-29
+updated: 2026-08-31
 ---
 
 # AgentHub 架构总览
@@ -66,6 +66,8 @@ flowchart LR
 当前生产没有凭据落盘加密，也不为国产 OAuth 开 adapter 边或转 API；这两个边界是产品决定，不是待办。
 
 ## 相关页面
+
+对象化审查和 `*-owners.md` 是审查记录或提案，不是本页的现行说明；不要顺着文档索引把它们读完。
 
 - [Frontend and backend boundary](frontend-backend.md)：页面到 `#backend`、Tauri/mock 的调用契约。
 - [Core and runtime](core-runtime.md)：core 业务分区、运行时和 local bridge 进程边界。

@@ -185,6 +185,8 @@ export interface Provider {
   secretTail?: string;
   /** SHA-256 of the stored API key. Identity only; never the raw secret. */
   secretHash?: string;
+  /** `route_pool` stays on the auth-pool page and off the Connections list. */
+  home?: 'route_pool';
 }
 
 export type AccountKind = 'oauth' | 'apikey';
@@ -240,6 +242,8 @@ export interface Account {
   credentialFormat?: string;
   /** 来源：settings / credentials file / live / manual … */
   source?: string;
+  /** `route_pool` stays on the auth-pool page and off the Connections list. */
+  home?: 'route_pool';
   /** Claude settings 环境变量名（如 ANTHROPIC_AUTH_TOKEN） */
   envKey?: string;
   /** 脱敏后的凭据摘要字段（不含明文密钥） */

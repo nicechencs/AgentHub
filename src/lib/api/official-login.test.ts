@@ -98,6 +98,45 @@ describe('official login session façade', () => {
     expect(finishDeviceOAuth).toHaveBeenCalledWith('dev-1');
   });
 
+  it('starts Grok official login through the device adapter', async () => {
+    startDeviceOAuth.mockResolvedValue({
+      state: 'dev-grok',
+      agentId: 'grok',
+      providerKey: 'xai',
+      userCode: 'WXYZ-1234',
+      verificationUri: 'https://auth.x.ai/device',
+      intervalSecs: 5,
+      expiresInSecs: 900,
+    });
+    const session = await startOfficialLogin('grok', { id: 'xai', flow: 'deviceCode' });
+    expect(startDeviceOAuth).toHaveBeenCalledWith('grok', 'xai');
+    expect(startOAuth).not.toHaveBeenCalled();
+    expect(session.flow).toBe('deviceCode');
+    expect(session.userCode).toBe('WXYZ-1234');
+  });
+
+  it('passes pool ownership through Grok device-code login', async () => {
+    startDeviceOAuth.mockResolvedValue({
+      state: 'dev-grok-pool',
+      agentId: 'grok',
+      providerKey: 'xai',
+      userCode: 'POOL-1234',
+      verificationUri: 'https://auth.x.ai/device',
+      intervalSecs: 5,
+      expiresInSecs: 900,
+    });
+
+    const session = await startOfficialLogin(
+      'grok',
+      { id: 'xai', flow: 'deviceCode' },
+      true,
+      true,
+    );
+    expect(startDeviceOAuth).toHaveBeenCalledWith('grok', 'xai', true);
+    expect(session.flow).toBe('deviceCode');
+    expect(session.sessionId).toBe('dev-grok-pool');
+  });
+
   it('keeps waiting after a poll-chunk timeout and fails when another login starts', async () => {
     waitOAuth
       .mockResolvedValueOnce({

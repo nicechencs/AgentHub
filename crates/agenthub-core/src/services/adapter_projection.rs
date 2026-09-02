@@ -205,5 +205,69 @@ fn text_contains_bridge_slug(text: &str) -> bool {
         .any(leftover::is_agenthub_bridge_slug)
 }
 
+
+/// Find the unique adapter-generated provider whose loopback URL + local bearer
+/// exactly match live config. Used to heal `is_current` / active binding when
+/// live settings still point at one bridge while the binding stuck on another
+/// (e.g. OpenAI @40661 vs Codex @44227).
+pub fn exact_generated_provider_for_live<'a>(
+    agent: AgentId,
+    live: &Value,
+    providers: &'a [Provider],
+) -> Option<&'a Provider> {
+    let live_url = extract_probe_url(live)?;
+    let live_bearer = extract_local_bearer_token(live)?;
+    let mut matched: Option<&Provider> = None;
+    for provider in providers {
+        if provider.agent_id != agent || !generated_provider_is_adapter_owned(provider) {
+            continue;
+        }
+        let Some(url) = extract_probe_url(&provider.settings_config) else {
+            continue;
+        };
+        let Some(bearer) = extract_local_bearer_token(&provider.settings_config) else {
+            continue;
+        };
+        if url != live_url || bearer != live_bearer {
+            continue;
+        }
+        if matched.is_some() {
+            return None;
+        }
+        matched = Some(provider);
+    }
+    matched
+}
+
+fn extract_local_bearer_token(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.starts_with(LOCAL_BEARER_PREFIX) && trimmed.len() > LOCAL_BEARER_PREFIX.len() {
+                Some(trimmed.to_owned())
+            } else {
+                None
+            }
+        }
+        Value::Array(items) => items.iter().find_map(extract_local_bearer_token),
+        Value::Object(map) => {
+            for key in [
+                "ANTHROPIC_AUTH_TOKEN",
+                "api_key",
+                "apiKey",
+                "token",
+                "local_token",
+                "localToken",
+            ] {
+                if let Some(found) = map.get(key).and_then(extract_local_bearer_token) {
+                    return Some(found);
+                }
+            }
+            map.values().find_map(extract_local_bearer_token)
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests;

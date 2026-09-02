@@ -144,11 +144,16 @@ const OFFICIAL_CODEX_RESPONSE_KEYS: &[&str] = &[
 /// Prepare a request for the official ChatGPT / Codex Responses upstream.
 ///
 /// The official endpoint requires storage to be disabled for this local
-/// subscription route, rejects `role=system` input items, and 400s on
-/// unsupported request fields (`metadata`, `max_output_tokens`, and other
-/// Chat Completions leftovers). Keep only the allowlisted Responses keys
-/// so callers cannot accidentally forward Claude/OpenAI extras while
-/// leaving the provider-neutral request conversion unchanged.
+/// subscription route, **requires `stream: true`**, rejects `role=system`
+/// input items, and 400s on unsupported request fields (`metadata`,
+/// `max_output_tokens`, and other Chat Completions leftovers). Keep only
+/// the allowlisted Responses keys so callers cannot accidentally forward
+/// Claude/OpenAI extras while leaving the provider-neutral request
+/// conversion unchanged.
+///
+/// Downstream `stream` stays the client's request. The host consumes the
+/// official SSE and aggregates a complete JSON body when the client asked
+/// for a non-stream response.
 pub fn prepare_official_codex_request(
     body: &mut Value,
     incoming_model: &str,
@@ -156,6 +161,7 @@ pub fn prepare_official_codex_request(
 ) {
     apply_official_codex_model(body, incoming_model, configured_model);
     body["store"] = Value::Bool(false);
+    body["stream"] = Value::Bool(true);
     fold_official_codex_system_items(body);
     if let Some(object) = body.as_object_mut() {
         object.retain(|key, _| OFFICIAL_CODEX_RESPONSE_KEYS.contains(&key.as_str()));

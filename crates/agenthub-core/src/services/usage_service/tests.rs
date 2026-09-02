@@ -148,3 +148,129 @@ fn visibility_service_hidden_ids_feed_collect_targets() {
     let ids = visible_installed_agent_ids(&hidden, &detect);
     assert_eq!(ids, HashSet::from([AgentId::Grok]));
 }
+
+#[test]
+fn collect_ingests_gateway_spool_rows_into_the_separate_table() {
+    use crate::bridge::usage_capture::GatewayUsageEvent;
+    use crate::models::GatewayUsageQuery;
+
+    let spool_event = |request_id: &str, input: u64| GatewayUsageEvent {
+        request_id: request_id.to_owned(),
+        ts: "2026-08-30T10:00:00+00:00".to_owned(),
+        profile_id: "profile-a".to_owned(),
+        surface: "responses".to_owned(),
+        upstream_channel: Some("openai_chat".to_owned()),
+        ticket_id: Some("account:conn".to_owned()),
+        account_source_kind: Some("account".to_owned()),
+        account_source_id: Some("conn".to_owned()),
+        model: Some("test".to_owned()),
+        upstream_model: None,
+        input_tokens: input,
+        output_tokens: 3,
+        cached_input_tokens: None,
+        reasoning_tokens: None,
+        status: "ok".to_owned(),
+        status_code: Some(200),
+        error_class: None,
+        latency_ms: Some(12),
+        ttft_ms: None,
+        attempts: Some(1),
+        session_id: None,
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    let spool = tempfile::tempdir().unwrap();
+    let mut fixture = String::new();
+    fixture.push_str(&serde_json::to_string(&spool_event("req-1", 7)).unwrap());
+    fixture.push('\n');
+    fixture.push_str("{not json\n");
+    fixture.push_str(&serde_json::to_string(&spool_event("req-2", 9)).unwrap());
+    fixture.push('\n');
+    std::fs::write(spool.path().join("gateway-20260830.jsonl"), fixture).unwrap();
+
+    let db = crate::storage::Database::open(&root.path().join("usage.db")).unwrap();
+    let service = crate::services::UsageService::with_registry(
+        db,
+        crate::platform::usage::UsageSourceRegistry::new(),
+    )
+    .with_gateway_spool_dir(spool.path().to_path_buf());
+
+    // collect() drains the spool; gateway counts stay out of CollectResult.
+    let result = service.collect(None).unwrap();
+    assert_eq!(result.inserted, 0);
+
+    let rows = service
+        .gateway_usage_query(GatewayUsageQuery::default())
+        .unwrap();
+    assert_eq!(rows.len(), 2, "malformed line skipped, both events stored");
+    assert_eq!(rows[0].request_id, "req-2");
+    assert_eq!(rows[0].input_tokens, 9);
+
+    // Replay is idempotent: a second collect must not duplicate rows.
+    service.collect(None).unwrap();
+    assert_eq!(
+        service
+            .gateway_usage_query(GatewayUsageQuery::default())
+            .unwrap()
+            .len(),
+        2
+    );
+
+    // Overview aggregates the ingested window.
+    let overview = service.gateway_usage_overview(GatewayUsageQuery::default()).unwrap();
+    assert_eq!(overview.request_count, 2);
+    assert_eq!(overview.ok_count, 2);
+    assert_eq!(overview.input_tokens, 16);
+}
+
+#[test]
+fn gateway_usage_query_ingests_spool_without_a_prior_collect() {
+    use crate::bridge::usage_capture::GatewayUsageEvent;
+    use crate::models::GatewayUsageQuery;
+
+    let spool_event = |request_id: &str, input: u64| GatewayUsageEvent {
+        request_id: request_id.to_owned(),
+        ts: "2026-08-30T10:00:00+00:00".to_owned(),
+        profile_id: "profile-a".to_owned(),
+        surface: "responses".to_owned(),
+        upstream_channel: None,
+        ticket_id: None,
+        account_source_kind: None,
+        account_source_id: None,
+        model: Some("test".to_owned()),
+        upstream_model: None,
+        input_tokens: input,
+        output_tokens: 1,
+        cached_input_tokens: None,
+        reasoning_tokens: None,
+        status: "ok".to_owned(),
+        status_code: Some(200),
+        error_class: None,
+        latency_ms: Some(8),
+        ttft_ms: None,
+        attempts: Some(1),
+        session_id: None,
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    let spool = tempfile::tempdir().unwrap();
+    std::fs::write(
+        spool.path().join("gateway-20260830.jsonl"),
+        format!("{}\n", serde_json::to_string(&spool_event("req-board", 4)).unwrap()),
+    )
+    .unwrap();
+
+    let db = crate::storage::Database::open(&root.path().join("usage.db")).unwrap();
+    let service = crate::services::UsageService::with_registry(
+        db,
+        crate::platform::usage::UsageSourceRegistry::new(),
+    )
+    .with_gateway_spool_dir(spool.path().to_path_buf());
+
+    let rows = service
+        .gateway_usage_query(GatewayUsageQuery::default())
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].request_id, "req-board");
+    assert_eq!(rows[0].input_tokens, 4);
+}

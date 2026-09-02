@@ -11,6 +11,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmptyCell,
   TableHead,
   TableHeader,
   TableHeaderRow,
@@ -132,7 +133,7 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
               {endpoint}
             </Tip>
           ) : (
-            <span className="text-muted">—</span>
+            <TableEmptyCell />
           )}
         </TableCell>
         <TableCell>
@@ -141,7 +142,7 @@ function ServerTableRow({ server }: { server: McpServerEntry }) {
               {t('mcp.table.details')}
             </DetailsToggle>
           ) : (
-            <span className="text-muted">—</span>
+            <TableEmptyCell />
           )}
         </TableCell>
       </TableRow>

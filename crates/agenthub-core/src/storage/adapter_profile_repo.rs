@@ -1,5 +1,6 @@
 //! Credential-free storage for persisted adapter profiles.
 
+use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::error::{AppError, Result};
@@ -146,6 +147,38 @@ impl AdapterProfileRepo {
             }
             get_conn(conn, &profile.id)?.ok_or_else(|| {
                 AppError::message("db.adapter_profile", "profile missing after update")
+            })
+        })
+    }
+
+    /// Update only the persisted auto-start preference.
+    ///
+    /// Lifecycle callers use this narrow write so a stale profile snapshot
+    /// cannot overwrite a concurrently updated port, status, or last error.
+    pub fn set_auto_start(&self, id: &str, auto_start: bool) -> Result<AdapterProfile> {
+        let updated_at = Utc::now().to_rfc3339();
+        self.mutate(|conn| {
+            let profile = get_conn(conn, id)?
+                .ok_or_else(|| AppError::NotFound(format!("adapter profile not found: {id}")))?;
+            if profile.route != AdapterRoute::LocalBridge && auto_start {
+                return Err(AppError::InvalidArg(
+                    "adapter profile auto_start is only valid for a local_bridge route".into(),
+                ));
+            }
+            let changed = conn.execute(
+                "UPDATE adapter_profiles SET auto_start = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, i64::from(auto_start), updated_at],
+            )?;
+            if changed != 1 {
+                return Err(AppError::NotFound(format!(
+                    "adapter profile not found: {id}"
+                )));
+            }
+            get_conn(conn, id)?.ok_or_else(|| {
+                AppError::message(
+                    "db.adapter_profile",
+                    "profile missing after auto_start update",
+                )
             })
         })
     }

@@ -9,11 +9,12 @@ const Switch = React.forwardRef<
   <SwitchPrimitive.Root
     ref={ref}
     className={cn(
-      'peer relative inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full border-0 bg-transparent p-0 transition-colors',
-      'before:absolute before:inset-x-1 before:top-1/2 before:h-4 before:w-7 before:-translate-y-1/2 before:rounded-full before:border before:border-border before:bg-subtle before:content-[""]',
+      'peer inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full border-0 p-1 transition-colors',
+      // 关态用 active，避免 subtle 贴在卡片/画布上几乎看不出轨道
+      'bg-active',
       // primary 在本项目是文字色；开关选中态用 accent
-      'data-[state=checked]:before:border-accent/40 data-[state=checked]:before:bg-accent',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+      'data-[state=checked]:bg-accent',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-panel',
       'disabled:cursor-not-allowed disabled:opacity-50',
       className,
     )}
@@ -21,8 +22,8 @@ const Switch = React.forwardRef<
   >
     <SwitchPrimitive.Thumb
       className={cn(
-        'relative z-10 block h-3 w-3 translate-x-1 rounded-full bg-panel shadow-xs transition-transform',
-        'data-[state=checked]:translate-x-6',
+        'pointer-events-none block h-4 w-4 translate-x-0 rounded-full bg-white shadow-sm transition-transform',
+        'data-[state=checked]:translate-x-4',
       )}
     />
   </SwitchPrimitive.Root>

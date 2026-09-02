@@ -6,6 +6,7 @@ import {
   bridgeHostPortLabel,
   bridgeNodeStatusLine,
   buildRouteDetailSourceView,
+  currentProviderIdsFromEntries,
   detectUpstreamChannelFromCredential,
   detectUpstreamChannelFromUrl,
   hopForTestable,
@@ -14,7 +15,10 @@ import {
   routeHopLabel,
   routeModelsSummary,
   routeSourceDeletedHint,
+  routeWriteTruthFrom,
+  runningAdapterProfileIds,
   upstreamChannelLabel,
+  writeStateForProfile,
 } from './adapter-route-detail-model';
 
 function profile(partial: Partial<AdapterProfile> = {}): AdapterProfile {
@@ -101,11 +105,24 @@ describe('detectUpstreamChannelFromCredential', () => {
 });
 
 describe('appliedTargetsFromProfiles', () => {
-  it('collects sibling targets with generatedProviderId on the same source', () => {
+  const source = { sourceKind: 'provider' as const, sourceId: 'prov-1' };
+
+  it('does not treat a leftover stamp as 已写入 without current write truth', () => {
     const applied = appliedTargetsFromProfiles(
       [
         profile({ targetAgentId: 'claude', generatedProviderId: 'g-claude' }),
         profile({ id: 'b2', targetAgentId: 'codex', generatedProviderId: 'g-codex' }),
+      ],
+      source,
+    );
+    expect([...applied]).toEqual([]);
+  });
+
+  it('marks 已写入 only when the generated provider is current and the local entry is running', () => {
+    const applied = appliedTargetsFromProfiles(
+      [
+        profile({ id: 'claude-live', targetAgentId: 'claude', generatedProviderId: 'g-claude' }),
+        profile({ id: 'codex-live', targetAgentId: 'codex', generatedProviderId: 'g-codex' }),
         profile({ id: 'b3', targetAgentId: 'grok', generatedProviderId: null }),
         profile({
           id: 'other',
@@ -113,11 +130,58 @@ describe('appliedTargetsFromProfiles', () => {
           targetAgentId: 'grok',
           generatedProviderId: 'g-grok',
         }),
-        profile({ id: 'k1', targetAgentId: 'kimi', generatedProviderId: 'g-kimi' }),
+        profile({ id: 'kimi-live', targetAgentId: 'kimi', generatedProviderId: 'g-kimi' }),
       ],
-      { sourceKind: 'provider', sourceId: 'prov-1' },
+      source,
+      {
+        currentProviderByAgent: {
+          claude: 'g-claude',
+          codex: 'g-codex',
+          kimi: 'g-kimi',
+        },
+        runningProfileIds: new Set(['claude-live', 'codex-live', 'kimi-live']),
+      },
     );
     expect([...applied].sort()).toEqual(['claude', 'codex', 'kimi']);
+  });
+
+  it('clears 已写入 when the current provider moved to another local entry', () => {
+    const stale = profile({
+      id: 'stopped-40661',
+      targetAgentId: 'claude',
+      generatedProviderId: 'g-old-40661',
+      localPort: 40661,
+    });
+    const entries = [
+      { source: 'provider', agentId: 'claude', isCurrent: true, id: 'g-live-44227' },
+      { source: 'provider', agentId: 'claude', isCurrent: false, id: 'g-old-40661' },
+    ];
+    expect(currentProviderIdsFromEntries(entries)).toEqual({ claude: 'g-live-44227' });
+    expect(runningAdapterProfileIds({
+      'stopped-40661': { state: 'stopped' },
+      'live-44227': { state: 'running' },
+    })).toEqual(new Set(['live-44227']));
+    const truth = routeWriteTruthFrom(entries, {
+      'stopped-40661': { state: 'stopped' },
+      'live-44227': { state: 'running' },
+    });
+    expect(writeStateForProfile(stale, source, truth)).toEqual({
+      applied: false,
+      writeNote: 'rewritten',
+    });
+    expect([...appliedTargetsFromProfiles([stale], source, truth)]).toEqual([]);
+  });
+
+  it('clears 已写入 when the current write still points here but the local entry is stopped', () => {
+    const stopped = profile({
+      id: 'stopped-44227',
+      targetAgentId: 'claude',
+      generatedProviderId: 'g-live-44227',
+    });
+    expect(writeStateForProfile(stopped, source, {
+      currentProviderByAgent: { claude: 'g-live-44227' },
+      runningProfileIds: new Set(),
+    })).toEqual({ applied: false, writeNote: 'stopped' });
   });
 });
 

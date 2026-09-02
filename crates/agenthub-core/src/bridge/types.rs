@@ -49,7 +49,31 @@ impl ProtocolError {
             message: "The upstream model provider returned an error.".to_owned(),
         }
     }
+
+    /// Official Codex / ChatGPT Responses rejects non-stream requests.
+    /// The host forces `stream: true` and aggregates; this is the client-facing
+    /// message when the upstream still refuses streaming.
+    pub fn upstream_stream_required() -> Self {
+        Self {
+            code: "upstream_error",
+            message: UPSTREAM_STREAM_REQUIRED_ZH.to_owned(),
+        }
+    }
+
+    pub fn upstream_stream_incomplete() -> Self {
+        Self {
+            code: "upstream_error",
+            message: UPSTREAM_STREAM_INCOMPLETE_ZH.to_owned(),
+        }
+    }
 }
+
+/// Shown on the local route and in logs when the upstream requires SSE.
+pub const UPSTREAM_STREAM_REQUIRED_ZH: &str =
+    "上游要求使用流式请求。本机路由会自动改成流式并拼成完整回复；若仍失败，请点重试。";
+
+/// Shown when a forced-stream upstream closes before a terminal event.
+pub const UPSTREAM_STREAM_INCOMPLETE_ZH: &str = "上游流式回复不完整或已中断，请点重试。";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BridgeRequest {

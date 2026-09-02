@@ -20,6 +20,7 @@ type MockOAuthSession = {
   agentId: AgentId;
   providerKey: string | null;
   flow: 'pkce' | 'device';
+  poolOwned?: boolean;
   devicePolls?: number;
 };
 
@@ -252,7 +253,18 @@ export function createMockAccountPort(): AccountPort {
           },
         ];
       }
-      if (agentId === 'claude' || agentId === 'codex' || agentId === 'grok') {
+      if (agentId === 'grok') {
+        return [
+          {
+            id: 'xai',
+            agentId: 'grok',
+            label: 'Grok / xAI',
+            description: '用设备码登录 Grok 订阅',
+            flow: 'deviceCode' as const,
+          },
+        ];
+      }
+      if (agentId === 'claude' || agentId === 'codex') {
         return [
           {
             id: agentId,
@@ -306,13 +318,14 @@ export function createMockAccountPort(): AccountPort {
       oauthSessions.delete(state);
     },
 
-    async startDeviceOAuth(agentId, providerKey) {
+    async startDeviceOAuth(agentId, providerKey, poolOwned = false) {
       await delay(50);
       const state = `mock-dev-${Date.now()}`;
       oauthSessions.set(state, {
         agentId,
         providerKey,
         flow: 'device',
+        poolOwned,
       });
       return {
         state,
@@ -336,7 +349,7 @@ export function createMockAccountPort(): AccountPort {
       return { state, status: 'complete' as const, error: null };
     },
 
-    async finishDeviceOAuth(state) {
+    async finishDeviceOAuth(state, _poolOwned = false) {
       const session = requireOAuthSession(state);
       return this.completeOAuth(session.agentId, session.providerKey);
     },

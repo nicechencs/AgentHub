@@ -60,6 +60,19 @@ describe('dashboard layout wiring', () => {
     expect(page).not.toContain('stopColor={meta.color}');
   });
 
+  it('keeps trend y-axis labels in view and sorts the hover list by tokens', () => {
+    const page = source('index.tsx');
+    const tooltip = source('UsageTrendTooltip.tsx');
+    expect(page).toContain('USAGE_TREND_Y_AXIS_WIDTH');
+    expect(page).toContain('UsageTrendTooltipCard');
+    expect(page).toContain('useUsageTrendHover');
+    expect(page).not.toContain('width={48}');
+    expect(page).not.toContain('contentStyle={tooltipSurfaceStyle()}');
+    expect(tooltip).toContain('USAGE_TREND_Y_AXIS_WIDTH = 64');
+    expect(tooltip).toContain('tooltipSurfaceStyle()');
+    expect(tooltip).toContain("pointerEvents: 'auto'");
+  });
+
   it('does not open a connect popup from overview cards or show quick actions', () => {
     const page = source('index.tsx');
     expect(page).not.toContain('onConnectRequest');
@@ -73,18 +86,25 @@ describe('dashboard layout wiring', () => {
 
   it('uses the same connection-state words as Connections', () => {
     const page = source('index.tsx');
-    expect(page).toContain('connectionStateRouteLabel');
-    expect(page).toContain("from '@/lib/ticket-wallet-labels'");
+    expect(page).toContain('dashboardBindingMeta');
+    expect(page).not.toContain('connectionStateRouteLabel');
     expect(translate('zh', 'dashboard.overview.hintAccount')).toBe(translate('zh', 'kind.oauth'));
     expect(translate('zh', 'dashboard.overview.hintApi')).toBe(translate('zh', 'kind.apikey'));
-    expect(translate('zh', 'dashboard.overview.viaCompatible')).toBe(
-      translate('zh', 'kind.route.localRoute'),
-    );
     expect(translate('en', 'dashboard.overview.hintAccount')).toBe(translate('en', 'kind.oauth'));
     expect(translate('en', 'dashboard.overview.hintApi')).toBe(translate('en', 'kind.apikey'));
-    expect(translate('en', 'dashboard.overview.viaCompatible')).toBe(
-      translate('en', 'kind.route.localRoute'),
-    );
+  });
+
+  it('does not show 本机路由 chrome on overview cards', () => {
+    const overview = source('AgentOverview.tsx');
+    const page = source('index.tsx');
+    expect(overview).not.toContain('viaCompatible');
+    expect(overview).not.toContain('manageLocalRoute');
+    expect(overview).not.toContain('bridgesHrefForProfile');
+    expect(overview).not.toContain('view.bridge');
+    expect(overview).not.toContain('viaAdapter');
+    expect(page).not.toContain('listAdapterProfiles');
+    expect(page).not.toContain('getAdapterBridgeStatus');
+    expect(page).not.toContain('viaAdapter');
   });
 });
 

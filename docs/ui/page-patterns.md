@@ -3,7 +3,7 @@ title: UI 页面模式
 type: reference
 status: current
 owner: maintainers
-updated: 2026-08-30
+updated: 2026-08-31
 ---
 
 # UI Page Patterns
@@ -25,13 +25,24 @@ The application is organized by work and management, with Agent filtering inside
 | Workspace | Projects | `/projects` | Project/session tree and read-only preview |
 | Workspace | Plugins | `/plugins` | Read-only vendor plugin / extension pack inventory |
 | Manage | Dashboard | `/` | Agent status, usage, and shortcuts |
-| Manage | Connections | `/connections` | Global login list and connection actions |
-| Manage | Routes | `/routes` | Local route runtime list and details |
+| Manage | Connections | `/connections` | General login list; route-only entries with `home=route_pool` may be absent |
+| Manage | Routes | `/routes` | Local route runtime and the connection pool. May add/manage route-only official login / API Key; `/routes` opens the board; secondary nav: board / pool / tokens / activity |
 | Manage | Settings | `/settings` | Preferences, local device, backups, and about |
 
 `Routes`, `Plugins`, and `MCP` are in development. New installs hide the Routes and Plugins sidebar entries (`routesNavVisible` / `pluginsNavVisible` default off). Turning the setting on shows those entries; the pages stay reachable at `/routes` and `/plugins`. MCP stays in the workspace nav. Settings (Routes / Plugins), the page titles, and the sidebar entries (when shown) carry an in-development mark. Usage is a Dashboard section; `/usage` redirects to `/?section=usage`. Backups are a Settings tab; `/backups` redirects to `/settings?tab=backups`. Install / enable / uninstall for plugin packs is still a [proposal](../proposals/plugin-management.md); the current page is read-only.
 
 The compatibility paths `/adapter` and `/router` replace-navigate to `/routes`. They are recovery paths for existing links, not current navigation labels.
+
+Routes nested paths (secondary nav):
+
+| Label | Path | Role |
+|---|---|---|
+| Board | `/routes/board` | Endpoint-type overview, usage, and the one local-entry start/stop switch. Bare `/routes` redirects here. |
+| Connection pool | `/routes/pool` | Login list with status and detail; `?profile=` opens route detail. Logins do not start or stop the local entry. |
+| Local tokens | `/routes/tokens` | Entry keys per endpoint; copy or write into the matching Agent. Keys appear after the local entry starts. |
+| Activity | `/routes/activity` | Cross-route recent request feed |
+
+Entering any `/routes*` path shows a shell-level secondary nav panel. Clicking Routes in the primary sidebar collapses that sidebar when **Collapse sidebar on Routes** is on (writes `agenthub:sidebar-collapsed`; default on). Other primary items, refresh, secondary-nav clicks, and leaving the routes area do not auto-expand or auto-collapse it. The setting is in Preferences → Sidebar. The secondary nav top-left control expands the primary sidebar. While the URL is inside `/routes*`, the primary sidebar still shows the Routes entry even if `routesNavVisible` is off, so the active item remains visible; that preference itself is unchanged.
 
 ## 2. Application shell
 
@@ -59,7 +70,7 @@ Settings uses the workbench header and four page tabs; the tab row stays at the 
 
 | Tab | Query | Contents |
 |---|---|---|
-| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (Routes / Plugins visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
+| Preferences | `?tab=preferences` | Grouped cards: language and appearance; launch and close; sidebar (auto-collapse on Routes; Routes / Plugins visibility); Routes (duplicate-key tip and same-URL update); Skills (market source); Usage (collection interval) |
 | This computer | `?tab=local` | Data directory, log level, retention, log directory |
 | Backups | `?tab=backups` | Agent configuration snapshots; keep-copies switch; restore/delete; file inspect |
 | About | `?tab=about` | Version, update check, repository, and read-only credential-storage notes |
@@ -88,40 +99,43 @@ Every independently loaded page or block implements loading, empty, error, and p
 Dashboard is the overview for installed Agents and usage, not a second Connections or Routes workbench.
 
 - Render only installed Agents. Use an auto-fit grid so the number of Agents is not encoded in the layout.
-- Agent cards show identity, readiness, and one primary “连接 / 切换” entry. Do not duplicate management buttons already present in Agents or Connections.
+- Agent cards show identity, readiness, and one primary “连接 / 切换” entry. That opens ConnectFlow on Dashboard (直连 / 用这份登录 / 本机路由 / 当前不支持). Do not duplicate that flow on Connections.
 - Usage filters are shared by summary metrics, trend, distribution, and details: time, Agent, and model. Model options are the distinct models in the selected records, not a model-management catalog. Leaving Dashboard and coming back in the same run keeps the last time / Agent / model selection; closing the app starts from the defaults.
 - Usage collection is explicit and shows last/next sync. A parser health block is compact and partial; it names the affected Agent and keeps the rest of the dashboard usable.
 - A usage-empty state guides the first manual collection. Routes health-empty is the exception described below.
 
 ## 5. Connections
 
-Connections is a global login list in a full-height workbench split. It is not a list of generated route providers and it does not expose internal binding implementation names.
+Connections is the general login list in a full-height workbench split. Logins created or imported here, including ones later selected into a local route, are Connections-managed. Routes-owned official login and API Key entries marked “仅用于本机路由” use `home=route_pool` and may not appear here. Connections is not a list of generated route providers and it does not expose internal binding implementation names.
 
 - The top `AgentTabStrip` filters the list. Do not add a second row of “official / API key / unknown” filter chips.
 - The add menu is **导入授权** / **官方登录** / **添加 API Key**. Official login and API Key are stored as separate rows. WorkBuddy custom models and ZCode catalog providers split into one login per directory row; desktop package logins are not imported.
 - OAuth rows use an identity/person icon; API key rows use a key icon. The icon has an accessible label and a short hint.
 - Selecting a row opens the right-hand detail: related config files (copyable, open-directory), package, expiry, timeline, and the full endpoint. The list uses masked labels; the file preview shows the stored snapshot.
 - The official-login wait page does not show internal status or login file paths; failure keeps **重试** as the primary action.
-- The row actions are **分享** and **路由**. The destination action opens the shared ConnectFlow dialog with source and target context fixed by the entry point.
-- ConnectFlow explains one of four outcomes: **直连**, **用这份登录**, **本机路由**, or **当前不支持**. The explanation is a user outcome, not a protocol number.
-- A disabled destination retains the reason and offers the appropriate recovery path. Missing data and a genuinely empty login list are different states.
+- The row action is **分享至连接池**. It enrolls this Connections-managed login into the default connection pool; the login stays on Connections. **API Keys can always join** (including keys configured on WorkBuddy / ZCode / Pi). Domestic official logins cannot be shared. A disabled action keeps the reason (already in the pool, or this login cannot join — typically a domestic official login). Connections does not open ConnectFlow, and does not show **用到其他工具** or **本机转发**. Eligibility is by credential family (API Key vs domestic official login), not by home Agent.
+- Missing data and a genuinely empty login list are different states.
 
 ## 6. Routes
 
 Routes is the runtime management page for local loopback forwarding. It is not a general connection-binding editor.
 
-### 6.1 List
+### 6.0 Secondary nav and board
 
-The list is an edge-column management table with stable rows. Each row shows the route target, runtime state, loopback address (`127.0.0.1` and port when available), upstream summary, and the permitted actions. A row can be opened through `?profile=<id>`.
+Routes nested paths use a shell-level secondary nav. The **board** (`/routes/board`) is the health overview: four endpoint-kind cards (Messages, Responses · Codex, Responses · Grok, Chat completions), usage charts, and **one start/stop control for the shared local entry**. Codex and Grok share the `/v1/responses` path on the wire; the cards split them in the UI and filter usage. They are not per-endpoint switches. Logins for local forwarding are listed on the connection pool (`/routes/pool`); request filtering stays on Activity. `/routes?profile=` opens pool detail. `/adapter`, `/router`, and `/bridges` redirect into this area.
+
+### 6.1 Connection pool
+
+The connection pool lists official logins and API Keys used for local forwarding in a field-aligned table. **All API Keys can join** (including keys configured on WorkBuddy / ZCode / Pi); domestic official logins cannot. It may contain a Connections-managed login enrolled with **分享至连接池** (or bulk **从连接同步** on this page) or a Routes-managed login marked “仅用于本机路由”; the latter uses `home=route_pool` and may not appear in Connections. Connections owns the login lifecycle for entries selected from Connections; Routes owns creation, editing, and deletion for route-only entries. Removing a member from the pool does not delete the Connections-managed login. Each page has its own recycle bin: Connections trash restores to Connections; pool trash restores to the pool. The table shows login, type, and status on every row; connection count, usage window, last used, and priority only when at least one row has that value; enable last. Column widths are dragged from the header edge and remembered. Selecting a row opens a detail panel. A route row can still be opened through `?profile=<id>`.
 
 The page treats the following states separately:
 
 | State | Meaning | UI |
 |---|---|---|
-| Running | Listener and route are available | Address, port, health, and stop action |
+| Running | Listener and route are available | Address, port, health. Start/stop of the shared local entry is on the board |
 | Starting / stopping | Lifecycle mutation is in progress | Busy state, stable row, dismissal guarded |
 | Degraded | Listener exists but the last upstream check failed | Warning state plus retry/diagnostics |
-| Stopped | Durable route exists but is not running | Start action |
+| Stopped | Durable route exists but is not running | Board shows start; leftover route cards may still expose start |
 | Host unavailable | The current runtime host cannot be reached | Explicit unavailable error; never “running” and never silent mock |
 | Healthy empty | No local route is configured | Informational empty state without a conversion CTA |
 
@@ -129,11 +143,11 @@ Do not infer “running” from a durable database row when the runtime host is 
 
 ### 6.2 Detail
 
-The detail panel is a focused dialog or side surface opened from the list. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
+The detail panel is a focused dialog or side surface opened from the connection pool. It shows route identity, loopback address and port, downstream surface, upstream summary, last health result, default-pool members, and the listed models the resolver currently serves. It never shows the local token value or refresh credentials.
 
-Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Connections remains the login list; Routes does not become a second place to add credentials.
+Official `native_endpoint` / `config_sync` rows are not auto-enrolled. When `plan()` still allows a local-bridge write, the detail offers **交给本机网关**. Routes may directly add and manage an official login or API Key marked “仅用于本机路由”; it uses `home=route_pool`, may not appear in Connections, and its lifecycle stays in Routes. A login selected from Connections remains Connections-managed even while its pool membership and runtime are shown here.
 
-The primary runtime actions are start, stop, retry, and remove/unbind where the product flow permits them. A stop or unbind confirmation explains listener impact and whether the current local configuration will be restored. A failed unbind remains retryable; it must not fall back to force deletion.
+The primary start/stop control for the shared local entry is on the board, not on each pool login. Detail may still enroll a native row with **交给本机网关**, and leftover route cards may still expose start/stop. A stop or unbind confirmation explains listener impact and whether the current local configuration will be restored. A failed unbind remains retryable; it must not fall back to force deletion.
 
 ### 6.3 Runtime boundary
 

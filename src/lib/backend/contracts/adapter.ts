@@ -167,6 +167,86 @@ export interface AdapterBridgeInboundRequest {
   ok: boolean;
 }
 
+export type RouteTraceStageStatus = 'pending' | 'ok' | 'failed' | 'skipped';
+
+export interface RouteTraceMember {
+  label: string;
+  sourceKind: string;
+  sourceId: string;
+  ticketId?: string | null;
+}
+
+export interface RouteTracePoolAttempt {
+  member: RouteTraceMember;
+  status: RouteTraceStageStatus;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTraceLocalAuth {
+  status: RouteTraceStageStatus;
+  profileId?: string | null;
+  port?: number | null;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTracePool {
+  status: RouteTraceStageStatus;
+  selectedMember?: RouteTraceMember | null;
+  attempts?: RouteTracePoolAttempt[];
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTraceConversion {
+  status: RouteTraceStageStatus;
+  path: string;
+  result?: string | null;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTraceUpstreamAuth {
+  status: RouteTraceStageStatus;
+  httpStatus?: number | null;
+  code?: string | null;
+  message?: string | null;
+}
+
+export interface RouteTraceUpstream {
+  status: RouteTraceStageStatus;
+  url?: string | null;
+  member?: RouteTraceMember | null;
+  model?: string | null;
+  upstreamModel?: string | null;
+  httpStatus?: number | null;
+  code?: string | null;
+  message?: string | null;
+}
+
+/** One completed local-route request trace for monitoring. Credential-free. */
+export interface AdapterBridgeRouteTrace {
+  requestId: string;
+  at: string;
+  profileId?: string | null;
+  method: string;
+  path: string;
+  httpStatus: number;
+  ok: boolean;
+  model?: string | null;
+  latencyMs?: number | null;
+  ttftMs?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  localAuth: RouteTraceLocalAuth;
+  pool: RouteTracePool;
+  conversion: RouteTraceConversion;
+  upstreamAuth: RouteTraceUpstreamAuth;
+  upstream: RouteTraceUpstream;
+  failureStage?: string | null;
+}
+
 /** Loopback listener status. `localToken` is the bearer that actually authenticates. */
 export interface AdapterBridgeRuntimeStatus {
   profileId: string;
@@ -177,6 +257,14 @@ export interface AdapterBridgeRuntimeStatus {
   upstreamStatus?: AdapterBridgeUpstreamStatus | string | null;
   /** Newest first. Empty when no tool has connected yet. */
   recentInbound?: AdapterBridgeInboundRequest[];
+  /** Newest first. Per-request route traces for monitoring. */
+  recentRouteTraces?: AdapterBridgeRouteTrace[];
+  /** Authenticated inbound requests since this process started (not ring-capped). */
+  totalRequestCount?: number;
+  /** Failed authenticated inbound requests since this process started. */
+  failedRequestCount?: number;
+  /** ISO time of the latest authenticated inbound request this process has seen. */
+  lastRequestAt?: string | null;
   /** Loopback bearer (`ahb_…`) accepted by this listener. */
   localToken?: string | null;
 }
@@ -248,9 +336,15 @@ export type MemberAvailability = 'ready' | 'cooling' | 'isolated' | 'disabled';
 
 /** Credential-free member row. Never includes login secrets or Hub tokens. */
 export interface RouteMemberOverview {
+  id?: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
+  /** Safe account/provider label; never a credential or source-id fallback. */
+  displayLabel?: string;
+  /** Masked OAuth refresh-token tail, e.g. `**1234`; never the raw token. */
+  refreshTokenTail?: string;
   enabled: boolean;
+  priority?: number;
   availability?: MemberAvailability;
 }
 
@@ -269,13 +363,126 @@ export interface DefaultRoutePoolOverview {
 export interface DefaultRoutePoolList {
   enabled: boolean;
   pools: DefaultRoutePoolOverview[];
+  /** Kimi and DSH share one chat-completions local token when true. */
+  chatCompletionsShared?: boolean;
 }
+
+export interface AttachPoolOwnedAuthorizationRequest {
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+  targetAgentId: AgentId;
+  surface: RoutePoolSurface;
+}
+
+/** One credential-free Connections row selected for route-pool enrollment. */
+export interface SyncConnectionSource {
+  sourceKind: AdapterSourceKind;
+  sourceId: string;
+}
+
+/** Optional selection for route-pool enrollment; omitted means all eligible rows. */
+export interface SyncConnectionAuthorizationsRequest {
+  sources: SyncConnectionSource[];
+}
+
+export interface SyncConnectionAuthorizationsResult {
+  added: number;
+  skipped: number;
+}
+
+/** Shared local-relay status for the board switch. */
+export type LocalEntryStatus = {
+  running: boolean;
+  port: number | null;
+  statuses: AdapterBridgeRuntimeStatus[];
+  /** Local-auth failures without a bound route (newest first). */
+  unauthenticatedTraces?: AdapterBridgeRouteTrace[];
+};
+
+/** Loopback bearer for the tokens page. */
+export type LocalTokenRecord = {
+  poolId: string;
+  token: string;
+};
+
+/** Result of a tokens-page model-path probe with an entry key. */
+export type LocalTokenProbeOutcome =
+  | 'ok'
+  | 'unauthorized'
+  | 'unreachable'
+  | 'rejected'
+  | 'invalid';
+
+export type SourceModelCatalogSource = 'live' | 'custom' | 'empty';
+
+export type SourceModelCatalog = {
+  models: string[];
+  source: SourceModelCatalogSource;
+  canCustomize: boolean;
+};
+
+export type LocalTokenProbeResult = {
+  outcome: LocalTokenProbeOutcome;
+  httpStatus: number | null;
+  latencyMs: number;
+  upstreamStatus: string | null;
+  requestUrl: string | null;
+  requestMethod: string | null;
+  requestBody: string | null;
+  responseBody: string | null;
+  errorMessage: string | null;
+};
 
 export interface AdapterPort {
   analyze(request: AdapterRouteRequest): Promise<AdapterRouteAnalysis>;
   plan(request: AdapterRouteRequest): Promise<AdapterApplyPlan>;
   listProfiles(filter?: AdapterProfileFilter): Promise<AdapterProfile[]>;
   listDefaultRoutePools(): Promise<DefaultRoutePoolList>;
+  listLocalTokens(): Promise<LocalTokenRecord[]>;
+  listLocalTokenModels(token: string): Promise<string[]>;
+  refreshLocalTokenModels(token: string): Promise<string[]>;
+  setLocalTokenCustomModels(token: string, models: string[]): Promise<string[]>;
+  ensureSourceModelCatalog(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+  ): Promise<SourceModelCatalog>;
+  setSourceCustomModels(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+    models: string[],
+  ): Promise<SourceModelCatalog>;
+  testLocalToken(
+    endpoint: string,
+    token: string,
+    path: string,
+    model?: string | null,
+  ): Promise<LocalTokenProbeResult>;
+  setLocalToken(poolId: string, token: string): Promise<LocalTokenRecord>;
+  setChatCompletionsShared(shared: boolean): Promise<DefaultRoutePoolList>;
+  attachPoolOwnedAuthorization(
+    request: AttachPoolOwnedAuthorizationRequest,
+  ): Promise<DefaultRoutePoolOverview>;
+  setRouteAuthorizationEnabled(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+    enabled: boolean,
+  ): Promise<number>;
+  setRouteAuthorizationPriority(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+    priority: number,
+  ): Promise<number>;
+  removeRouteAuthorization(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+  ): Promise<number>;
+  recycleRouteMembership(
+    sourceKind: AdapterSourceKind,
+    sourceId: string,
+  ): Promise<number>;
+  syncConnectionAuthorizations(
+    request?: SyncConnectionAuthorizationsRequest,
+  ): Promise<SyncConnectionAuthorizationsResult>;
   enrollNativeToGateway(profileId: string): Promise<DefaultRoutePoolOverview>;
   apply(request: AdapterApplyRequest): Promise<AdapterApplyResult>;
   remove(profileId: string): Promise<void>;
@@ -283,4 +490,7 @@ export interface AdapterPort {
   stopBridge(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
   getBridgeStatus(profileId: string): Promise<AdapterBridgeRuntimeStatus>;
   setBridgeAutoStart(profileId: string, autoStart: boolean): Promise<AdapterProfile>;
+  startLocalEntry(): Promise<LocalEntryStatus>;
+  stopLocalEntry(): Promise<LocalEntryStatus>;
+  getLocalEntryStatus(): Promise<LocalEntryStatus>;
 }

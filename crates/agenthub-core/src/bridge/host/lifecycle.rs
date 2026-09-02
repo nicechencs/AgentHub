@@ -22,6 +22,7 @@ use super::gateway::{
 };
 use super::http::router;
 use super::inbound::InboundRequestRecord;
+use super::inbound::InboundRequestStats;
 use super::{
     DRAIN_TIMEOUT, FORCE_CANCEL_GRACE, MAX_IN_FLIGHT_REQUESTS_PER_PROFILE, TASK_POLL_INTERVAL,
 };
@@ -69,6 +70,22 @@ struct ActiveSocketTask {
 impl BridgeRuntimeHost {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Installs the durable gateway usage spool directory. Must be called
+    /// before edges start; later calls are ignored. Unset keeps capture a
+    /// no-op, so CLI runs and tests never write spool files.
+    pub fn set_usage_spool_dir(&self, dir: std::path::PathBuf) {
+        self.gateway
+            .usage_spool
+            .set(std::sync::Arc::new(crate::bridge::usage_capture::UsageSpool::new(dir)));
+    }
+
+    /// Enable durable route-trace ring persistence (Activity monitor history).
+    /// Loads last N traces from `path` when present; later calls are ignored.
+    /// Unset keeps an in-memory ring only (CLI / unit tests).
+    pub fn set_route_trace_persist_path(&self, path: std::path::PathBuf) {
+        self.gateway.route_traces.enable_persist(path);
     }
 
     /// Starts an edge and ensures a loopback socket. Repeating an exact live start is
@@ -135,6 +152,8 @@ impl BridgeRuntimeHost {
             upstream_url,
             force_shutdown,
             self.gateway.auth_reload.clone(),
+            self.gateway.usage_spool.clone(),
+            self.gateway.route_traces.clone(),
         );
         let runtime = EdgeRuntime {
             spec,
@@ -181,6 +200,24 @@ impl BridgeRuntimeHost {
     /// Last inbound requests for this profile (newest first). Credential-free.
     pub fn recent_inbound(&self, profile_id: &str) -> Vec<InboundRequestRecord> {
         self.gateway.inbound.recent(profile_id)
+    }
+
+    /// Last route request traces for this profile (newest first). Credential-free.
+    pub fn recent_route_traces(
+        &self,
+        profile_id: &str,
+    ) -> Vec<super::route_trace::RouteRequestTrace> {
+        self.gateway.route_traces.recent(profile_id)
+    }
+
+    /// Failed local-auth attempts without a profile binding (newest first).
+    pub fn recent_unauthenticated_route_traces(&self) -> Vec<super::route_trace::RouteRequestTrace> {
+        self.gateway.route_traces.recent_unauthenticated()
+    }
+
+    /// Process-lifetime inbound counters for this profile (not capped by the ring).
+    pub fn inbound_stats(&self, profile_id: &str) -> InboundRequestStats {
+        self.gateway.inbound.stats(profile_id)
     }
 
     pub fn statuses(&self) -> Result<Vec<BridgeRuntimeStatus>, BridgeHostError> {
@@ -338,6 +375,15 @@ impl BridgeRuntimeHost {
         Ok(registry
             .primary_port
             .filter(|port| registry.sockets.contains_key(port)))
+    }
+
+    /// Live edge ids citing the unified gateway. Empty when the relay is down.
+    pub fn running_ids(&self) -> Result<Vec<String>, BridgeHostError> {
+        let registry = self.gateway.lock()?;
+        if !registry.sockets_live() {
+            return Ok(Vec::new());
+        }
+        Ok(registry.runtimes.keys().cloned().collect())
     }
 
     /// Move the unified gateway socket to `port`.

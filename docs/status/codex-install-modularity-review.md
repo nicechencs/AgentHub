@@ -41,7 +41,7 @@ updated: 2026-08-27
 | C1 | Dashboard/Agents 反向依赖 `pages/connections/ticket-wallet-model` | P1 | **已修复** | 共享标签/菜单 helper 迁至 `src/lib/ticket-wallet-labels.ts`、`src/lib/menu-dialog-arm.ts` |
 | C2 | 连接页嵌入 `pages/accounts`、`pages/providers` Dialog | P1 | **已修复** | Dialog 迁至 `src/components/connections/`；旧路径保留 re-export |
 | C3 | `isLeftoverLocalRouteProvider` 定义在 Chat 页 | P1 | **已修复** | 迁至 `src/lib/leftover-local-route.ts`；Chat 页 re-export |
-| C4 | plan fan-out 在 Connections 与 ConnectFlow 重复 | P2 | **已缓解** | 两处均通过 `createPlanFanout`；共享 deps 在 `lib/connect-flow/default-deps.ts` |
+| C4 | plan fan-out 在 Connections 与 ConnectFlow 重复 | P2 | **已解除** | 2026-08-31 连接页行入口改为「分享至连接池」，不再对 share/route 做 plan fan-out。ConnectFlow 留在 Dashboard，deps 仍在 `lib/connect-flow/default-deps.ts` |
 | C5 | 路由页 `index.tsx` 编排过重 | P2 | **已修复** | 抽出 `use-bridge-runtime-actions`、`use-route-pool-state`、`route-inspect`；wallet 读模型在 `useAdapterResources` |
 | C6 | `ticket-wallet-model.ts` 过大（~1024 行） | P2 | **已修复** | 拆为 `ticket-wallet-filters` / `ticket-add-menu` / `ticket-binding-usage` / `ticket-card-detail` / `ticket-bind-action`；原文件保留 barrel re-export |
 | C7 | 路由页注释与创建 bind 行为不一致 | P2 | **已修复** | 注释更新为「运行时为主，创建/导入为产品例外」 |

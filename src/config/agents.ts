@@ -17,6 +17,20 @@ import {
 } from '@/lib/backend/contracts/agent-catalog-types';
 import type { AgentId, RuntimeId } from '@/lib/types';
 import { agentCssVar, type TokenAgentId } from '@/styles/tokens';
+import claudeLogo from '@/assets/agent-logos/claude.png';
+import claudeLogoSvg from '@/assets/agent-logos/claude.svg';
+import codexLogoSvg from '@/assets/agent-logos/codex.svg';
+import cursorLogo from '@/assets/agent-logos/cursor.png';
+import cursorLogoSvg from '@/assets/agent-logos/cursor.svg';
+import deepseekLogo from '@/assets/agent-logos/deepseek.png';
+import deepseekLogoSvg from '@/assets/agent-logos/deepseek.svg';
+import grokLogo from '@/assets/agent-logos/grok.png';
+import grokLogoSvg from '@/assets/agent-logos/grok.svg';
+import kimiLogoSvg from '@/assets/agent-logos/kimi.svg';
+import piLogo from '@/assets/agent-logos/pi.png';
+import piLogoSvg from '@/assets/agent-logos/pi.svg';
+import workbuddyLogoSvg from '@/assets/agent-logos/workbuddy.svg';
+import zcodeLogo from '@/assets/agent-logos/zcode.png';
 
 export interface InstallChannelMeta {
   id: string;
@@ -31,8 +45,14 @@ export interface AgentMeta {
   name: string;
   /** 品牌色 CSS 变量；未知 agent 为 muted fallback */
   color: string;
-  /** logo 用字母圆标代替 */
+  /** 首字母回退显示 */
   letter: string;
+  /** 对应 agent 的本地 PNG logo 兜底；未知 agent 没有图片 */
+  logoSrc?: string;
+  /** 对应 agent 的本地 SVG logo 首选；未知 agent 没有图片 */
+  logoSvgSrc?: string;
+  /** logo 图片容器的本地对比背景色；首字母回退不使用该值 */
+  logoBackground?: string;
   /**
    * Install channels from backend catalog.
    * Empty until `applyAgentCatalog` / hydrate runs.
@@ -46,17 +66,76 @@ export interface AgentMeta {
 
 /** Pure display decoration for known agents — not the product set. */
 export const AGENT_DISPLAY: Readonly<
-  Record<string, { readonly letter: string; readonly colorKey: TokenAgentId }>
+  Record<
+    string,
+    {
+      readonly letter: string;
+      readonly colorKey: TokenAgentId;
+      readonly logoSrc?: string;
+      readonly logoSvgSrc?: string;
+      readonly logoBackground?: string;
+    }
+  >
 > = Object.freeze({
-  claude: { letter: 'C', colorKey: 'claude' },
-  codex: { letter: 'X', colorKey: 'codex' },
-  kimi: { letter: 'K', colorKey: 'kimi' },
-  grok: { letter: 'G', colorKey: 'grok' },
-  pi: { letter: 'P', colorKey: 'pi' },
-  workbuddy: { letter: 'W', colorKey: 'workbuddy' },
-  cursor: { letter: 'R', colorKey: 'cursor' },
-  dsh: { letter: 'D', colorKey: 'dsh' },
-  zcode: { letter: 'Z', colorKey: 'zcode' },
+  claude: {
+    letter: 'C',
+    colorKey: 'claude',
+    logoSrc: claudeLogo,
+    logoSvgSrc: claudeLogoSvg,
+    logoBackground: '#ffffff',
+  },
+  codex: {
+    letter: 'X',
+    colorKey: 'codex',
+    logoSvgSrc: codexLogoSvg,
+    logoBackground: '#ffffff',
+  },
+  kimi: {
+    letter: 'K',
+    colorKey: 'kimi',
+    logoSvgSrc: kimiLogoSvg,
+    logoBackground: '#ffffff',
+  },
+  grok: {
+    letter: 'G',
+    colorKey: 'grok',
+    logoSrc: grokLogo,
+    logoSvgSrc: grokLogoSvg,
+    logoBackground: '#000000',
+  },
+  pi: {
+    letter: 'P',
+    colorKey: 'pi',
+    logoSrc: piLogo,
+    logoSvgSrc: piLogoSvg,
+    logoBackground: '#ffffff',
+  },
+  workbuddy: {
+    letter: 'W',
+    colorKey: 'workbuddy',
+    logoSvgSrc: workbuddyLogoSvg,
+    logoBackground: '#ffffff',
+  },
+  cursor: {
+    letter: 'R',
+    colorKey: 'cursor',
+    logoSrc: cursorLogo,
+    logoSvgSrc: cursorLogoSvg,
+    logoBackground: '#111111',
+  },
+  dsh: {
+    letter: 'D',
+    colorKey: 'dsh',
+    logoSrc: deepseekLogo,
+    logoSvgSrc: deepseekLogoSvg,
+    logoBackground: '#ffffff',
+  },
+  zcode: {
+    letter: 'Z',
+    colorKey: 'zcode',
+    logoSrc: zcodeLogo,
+    logoBackground: '#ffffff',
+  },
 });
 
 const FALLBACK_COLOR = 'var(--text-muted)';
@@ -80,6 +159,9 @@ export function agentMetaFromCatalogEntry(entry: AgentCatalogEntryDto): AgentMet
     name: entry.displayName,
     color: colorFor(entry.key),
     letter: letterFor(entry.key, entry.displayName),
+    logoSrc: AGENT_DISPLAY[entry.key]?.logoSrc,
+    logoSvgSrc: AGENT_DISPLAY[entry.key]?.logoSvgSrc,
+    logoBackground: AGENT_DISPLAY[entry.key]?.logoBackground,
     installChannels: entry.installChannels.map((ch) => ({
       id: ch.id,
       label: ch.label,
@@ -134,6 +216,9 @@ export function resolveAgentMeta(agentId: AgentId): AgentMeta {
     name: agentId,
     color: colorFor(agentId),
     letter: letterFor(agentId, agentId),
+    logoSrc: AGENT_DISPLAY[agentId]?.logoSrc,
+    logoSvgSrc: AGENT_DISPLAY[agentId]?.logoSvgSrc,
+    logoBackground: AGENT_DISPLAY[agentId]?.logoBackground,
     installChannels: [],
     occupancy: 'exclusive',
   };

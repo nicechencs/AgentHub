@@ -73,6 +73,49 @@ export function formatTrendTooltipLabel(date: string): string {
   return date;
 }
 
+export interface UsageTrendTooltipItem {
+  key: string;
+  name: string;
+  tokens: number;
+  color?: string;
+}
+
+export interface UsageTrendTooltipPayloadEntry {
+  value?: unknown;
+  name?: unknown;
+  color?: string;
+  dataKey?: unknown;
+}
+
+/** Drop empty series, then highest token usage first. */
+export function sortUsageTrendTooltipItems(
+  items: readonly UsageTrendTooltipItem[],
+): UsageTrendTooltipItem[] {
+  return items
+    .filter((item) => Number.isFinite(item.tokens) && item.tokens > 0)
+    .slice()
+    .sort(
+      (a, b) => b.tokens - a.tokens || a.name.localeCompare(b.name) || a.key.localeCompare(b.key),
+    );
+}
+
+export function usageTrendTooltipItemsFromPayload(
+  payload: readonly UsageTrendTooltipPayloadEntry[] | null | undefined,
+  resolveName?: (key: string) => string,
+): UsageTrendTooltipItem[] {
+  return sortUsageTrendTooltipItems(
+    (payload ?? []).map((entry) => {
+      const key = String(entry.dataKey ?? entry.name ?? '');
+      return {
+        key,
+        name: resolveName?.(key) ?? String(entry.name ?? key),
+        tokens: Number(entry.value) || 0,
+        color: typeof entry.color === 'string' ? entry.color : undefined,
+      };
+    }),
+  );
+}
+
 /** Missing series keys become 0 so stacked areas do not gap. */
 export function zeroFillTrendSeries(
   points: readonly UsageTrendPoint[],

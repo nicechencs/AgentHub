@@ -5,7 +5,9 @@ import { useCallback, useState } from 'react';
 import {
   enrollNativeToGateway,
   startAdapterBridge,
+  startLocalEntry,
   stopAdapterBridge,
+  stopLocalEntry,
 } from '@/lib/api/adapter';
 import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
 import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
@@ -55,9 +57,15 @@ export function useBridgeRuntimeActions(input: {
     });
   }, []);
 
-  const reloadThenClearProfileErrors = useCallback(() => {
+  const reloadThenClearProfileErrors = useCallback((profileIds: readonly string[]) => {
     void reloadProfiles().then(
-      () => { setProfileErrors({}); },
+      () => {
+        if (profileIds.length === 0) return;
+        const affected = new Set(profileIds);
+        setProfileErrors((current) => Object.fromEntries(
+          Object.entries(current).filter(([profileId]) => !affected.has(profileId)),
+        ));
+      },
       () => undefined,
     );
   }, [reloadProfiles]);
@@ -81,7 +89,7 @@ export function useBridgeRuntimeActions(input: {
           route: member.route,
         });
       }
-      reloadThenClearProfileErrors();
+      reloadThenClearProfileErrors(members.map((member) => member.id));
     } catch (error) {
       const compensationFailures: unknown[] = [];
       for (const id of [...started].reverse()) {
@@ -131,7 +139,7 @@ export function useBridgeRuntimeActions(input: {
         });
       }
       setStopConfirm(null);
-      reloadThenClearProfileErrors();
+      reloadThenClearProfileErrors(members.map((member) => member.id));
     } catch (error) {
       void logGuiEvent('bridge_stop_fail', {
         agent: profile.targetAgentId,
@@ -174,7 +182,7 @@ export function useBridgeRuntimeActions(input: {
         });
       }
       setRemoveConfirm(null);
-      reloadThenClearProfileErrors();
+      reloadThenClearProfileErrors(members.map((member) => member.id));
     } catch (error) {
       void logGuiEvent('bridge_remove_fail', {
         agent: profile.targetAgentId,
@@ -195,6 +203,62 @@ export function useBridgeRuntimeActions(input: {
     reloadThenClearProfileErrors,
   ]);
 
+  const handleStartLocalEntry = useCallback(async () => {
+    setProfileBusy('__local_entry__', true);
+    clearProfileError('__local_entry__');
+    try {
+      const status = await startLocalEntry();
+      for (const row of status.statuses) updateBridgeStatus(row);
+      void logGuiEvent('bridge_start', { profileId: 'local-entry', route: 'local_bridge' });
+      reloadThenClearProfileErrors(['__local_entry__']);
+      return status.running;
+    } catch (error) {
+      void logGuiEvent('bridge_start_fail', {
+        profileId: 'local-entry',
+        route: 'local_bridge',
+        code: guiErrorCode(error),
+      });
+      setProfileErrors((current) => ({
+        ...current,
+        __local_entry__: surfaceAfterCompensation(error, []),
+      }));
+      return false;
+    } finally {
+      setProfileBusy('__local_entry__', false);
+    }
+  }, [
+    clearProfileError,
+    updateBridgeStatus,
+    reloadThenClearProfileErrors,
+  ]);
+
+  const handleStopLocalEntry = useCallback(async () => {
+    setProfileBusy('__local_entry__', true);
+    clearProfileError('__local_entry__');
+    try {
+      const status = await stopLocalEntry();
+      for (const row of status.statuses) updateBridgeStatus(row);
+      void logGuiEvent('bridge_stop', { profileId: 'local-entry', route: 'local_bridge' });
+      reloadThenClearProfileErrors(['__local_entry__']);
+      return !status.running;
+    } catch (error) {
+      void logGuiEvent('bridge_stop_fail', {
+        profileId: 'local-entry',
+        route: 'local_bridge',
+        code: guiErrorCode(error),
+      });
+      setProfileErrors((current) => ({ ...current, __local_entry__: error }));
+      return false;
+    } finally {
+      setProfileBusy('__local_entry__', false);
+    }
+  }, [
+    setProfileBusy,
+    clearProfileError,
+    updateBridgeStatus,
+    reloadThenClearProfileErrors,
+  ]);
+
   const handleEnrollNative = useCallback(async (profile: AdapterProfile) => {
     setEnrollingProfileId(profile.id);
     clearProfileError(profile.id);
@@ -207,7 +271,7 @@ export function useBridgeRuntimeActions(input: {
       });
       toast({ title: t('routes.pool.enrollSuccess'), variant: 'success' });
       onEnrollDone?.();
-      reloadThenClearProfileErrors();
+      reloadThenClearProfileErrors([profile.id]);
     } catch (error) {
       void logGuiEvent('bridge_enroll_fail', {
         agent: profile.targetAgentId,
@@ -231,6 +295,8 @@ export function useBridgeRuntimeActions(input: {
     busyProfileIds,
     enrollingProfileId,
     handleStartBridge,
+    handleStartLocalEntry,
+    handleStopLocalEntry,
     confirmStopBridge,
     confirmRemove,
     handleEnrollNative,

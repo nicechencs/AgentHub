@@ -5,28 +5,33 @@ import {
   routeEndpointHttpParts,
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
-import { agentCssVar } from '@/styles/tokens';
+import { agentCssVar, type TokenAgentId } from '@/styles/tokens';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { useToast } from '@/components/ui/toast';
 
 /** Same `--agent-*` token the Agent logo/dot uses. Change colors in AGENT_COLORS. */
-export function routeEndpointTypeColor(endpointId: RouteEndpointId): string {
-  return agentCssVar(routeEndpointBrandAgentId(endpointId));
+export function routeEndpointTypeColor(
+  endpointId: RouteEndpointId,
+  brandAgentId?: TokenAgentId,
+): string {
+  return agentCssVar(brandAgentId ?? routeEndpointBrandAgentId(endpointId));
 }
 
 /** Endpoint-type copy colored with the surface's Agent. */
 export function RouteEndpointTypeText({
   endpointId,
+  brandAgentId,
   className,
   children,
 }: {
   endpointId: RouteEndpointId;
+  brandAgentId?: TokenAgentId;
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <span className={className} style={{ color: routeEndpointTypeColor(endpointId) }}>
+    <span className={className} style={{ color: routeEndpointTypeColor(endpointId, brandAgentId) }}>
       {children}
     </span>
   );
@@ -37,19 +42,21 @@ export function RouteEndpointUrl({
   port,
   host,
   endpointId,
+  brandAgentId,
   className,
 }: {
   path: string;
   port?: number | null;
   host?: string;
   endpointId?: RouteEndpointId;
+  brandAgentId?: TokenAgentId;
   className?: string;
 }) {
   const parts = routeEndpointHttpParts({ path, port, host, endpointId });
   return (
     <span className={cn('inline font-mono', className)}>
       <span className="text-secondary">{parts.origin}</span>
-      <span style={{ color: routeEndpointTypeColor(parts.endpointId) }}>{parts.path}</span>
+      <span style={{ color: routeEndpointTypeColor(parts.endpointId, brandAgentId) }}>{parts.path}</span>
     </span>
   );
 }
@@ -59,12 +66,14 @@ export function CopyableRouteEndpointUrl({
   port,
   host,
   endpointId,
+  brandAgentId,
   className,
 }: {
   path: string;
   port?: number | null;
   host?: string;
   endpointId?: RouteEndpointId;
+  brandAgentId?: TokenAgentId;
   className?: string;
 }) {
   const { t } = useI18n();
@@ -92,9 +101,41 @@ export function CopyableRouteEndpointUrl({
         port={port}
         host={host}
         endpointId={endpointId}
+        brandAgentId={brandAgentId}
         className={className}
       />
       <Copy className="h-3 w-3 shrink-0 text-muted" aria-hidden />
     </button>
   );
 }
+
+/** Absolute upstream URL: origin muted, path colored by surface/agent brand. */
+export function AbsoluteRouteEndpointUrl({
+  url,
+  endpointId,
+  brandAgentId,
+  className,
+}: {
+  url: string;
+  endpointId?: RouteEndpointId;
+  brandAgentId?: TokenAgentId;
+  className?: string;
+}) {
+  try {
+    const parsed = new URL(url);
+    const path = `${parsed.pathname}${parsed.search}`;
+    const origin = `${parsed.protocol}//${parsed.host}`;
+    const parts = routeEndpointHttpParts({ path, endpointId });
+    return (
+      <span className={cn('inline font-mono break-all', className)}>
+        <span className="text-secondary">{origin}</span>
+        <span style={{ color: routeEndpointTypeColor(parts.endpointId, brandAgentId) }}>
+          {path || '/'}
+        </span>
+      </span>
+    );
+  } catch {
+    return <span className={cn('font-mono break-all', className)}>{url}</span>;
+  }
+}
+

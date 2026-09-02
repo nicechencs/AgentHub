@@ -9,12 +9,15 @@ export function SortHandle({
   disabled,
   onDragStartId,
   onMoveNeighbor,
+  color,
   className,
 }: {
   id: string;
   disabled?: boolean;
   onDragStartId: (id: string, event: PointerEvent<HTMLSpanElement>) => void;
   onMoveNeighbor?: (id: string, direction: -1 | 1) => void;
+  /** Brand color for the six-dot grip; omit to keep the muted default. */
+  color?: string;
   className?: string;
 }) {
   const { t } = useI18n();
@@ -39,9 +42,11 @@ export function SortHandle({
         aria-label={t('common.reorder')}
         onPointerDown={(event) => onDragStartId(id, event)}
         onKeyDown={onKeyDown}
+        style={color ? { color } : undefined}
         className={cn(
-          'inline-flex h-7 w-5 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-btn text-muted',
-          'hover:bg-hover hover:text-primary active:cursor-grabbing',
+          'inline-flex h-7 w-5 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-btn',
+          color ? 'hover:bg-hover' : 'text-muted hover:bg-hover hover:text-primary',
+          'active:cursor-grabbing',
           className,
         )}
       >

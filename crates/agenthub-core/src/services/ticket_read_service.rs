@@ -11,11 +11,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::error::{AppError, Result};
 use crate::integrations::agents::codex::leftover;
 use crate::models::{
-    parse_ticket_id, ticket_id, Account, AccountKind, AdapterApplyPlan, AdapterProfile,
-    AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind, AgentId,
-    PersistedTicketSurface, Provider, Ticket, TicketBinding, TicketBindingRoute,
-    TicketBridgeRuntime, TicketCredentialClass, TicketPlanRequest, TicketSurface,
-    TicketSurfaceGroup, TicketSurfaceMember, TicketWallet, PROJECTION_NOT_A_TICKET,
+    authorization_is_route_pool_home, parse_ticket_id, ticket_id, Account, AccountKind,
+    AdapterApplyPlan, AdapterProfile, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest,
+    AdapterSourceKind, AgentId, PersistedTicketSurface, Provider, Ticket, TicketBinding,
+    TicketBindingRoute, TicketBridgeRuntime, TicketCredentialClass, TicketPlanRequest,
+    TicketSurface, TicketSurfaceGroup, TicketSurfaceMember, TicketWallet, PROJECTION_NOT_A_TICKET,
 };
 use crate::services::adapter_projection::classify_account_live;
 use crate::services::{AccountService, AdapterRouteService, ConnectionService, ProviderService};
@@ -59,6 +59,9 @@ impl TicketReadService {
 
         let mut tickets = Vec::with_capacity(accounts.len() + providers.len());
         for account in &accounts {
+            if authorization_is_route_pool_home(&account.extra) && !account.is_current {
+                continue;
+            }
             if classify_account_live(
                 account.agent_id,
                 account.kind,
@@ -75,6 +78,7 @@ impl TicketReadService {
         }
         for provider in &providers {
             if generated_provider_ids.contains(&provider.id)
+                || (authorization_is_route_pool_home(&provider.meta) && !provider.is_current)
                 || provider
                     .meta
                     .get("generatedBy")

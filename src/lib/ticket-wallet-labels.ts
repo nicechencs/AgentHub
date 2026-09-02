@@ -10,5 +10,5 @@ export function connectionStateRouteLabel(route: BindingRoute, t?: TranslateFn):
   if (!t) return bindingRouteDashboardLabel(route);
   if (route === 'reshape') return t('connections.list.routeReshape');
   if (route === 'bridge') return t('kind.route.localRoute');
-  return t('kind.route.direct');
+  return '';
 }

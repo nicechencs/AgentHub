@@ -79,7 +79,9 @@ impl AdapterControl for DesktopAdapterControl {
                 .await?;
                 Ok(ticket_binding_from_apply(&ticket_id, &result))
             }
-            BindAction::Reshape(request) => {
+            BindAction::Reshape(request) | BindAction::NativeSelf(request) => {
+                // NativeSelf is Codex official login on Codex itself: core switches
+                // the account and does not persist a generated profile.
                 let _target_guard = self.coordinator.lock_target(target_agent_id).await;
                 let hub = Arc::clone(&self.hub);
                 with_hub_blocking(hub, move |hub| {
@@ -172,7 +174,14 @@ impl AdapterControl for DesktopAdapterControl {
         profile_id: String,
         auto_start: bool,
     ) -> Result<AdapterProfile, String> {
-        set_local_bridge_auto_start(Arc::clone(&self.hub), profile_id, auto_start).await
+        set_local_bridge_auto_start(
+            Arc::clone(&self.hub),
+            Arc::clone(&self.coordinator),
+            Arc::clone(&self.lifecycle_barrier),
+            profile_id,
+            auto_start,
+        )
+        .await
     }
 }
 

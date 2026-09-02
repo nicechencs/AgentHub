@@ -107,7 +107,7 @@ pub fn adapt_codex_request_for_grok_upstream(body: &mut Value) {
 }
 
 /// Grok-shaped Responses body → official Codex upstream. Reuses the existing
-/// allowlist, `store:false`, and system folding.
+/// allowlist, `store:false`, `stream:true`, and system folding.
 pub fn adapt_grok_request_for_codex_upstream(
     body: &mut Value,
     incoming_model: &str,

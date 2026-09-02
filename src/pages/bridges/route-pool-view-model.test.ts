@@ -2,10 +2,19 @@ import { describe, expect, it } from 'vitest';
 import type { AdapterProfile, DefaultRoutePoolOverview } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import {
+  buildPoolWorkbenchRows,
+  collectPoolAuthorizations,
   defaultPoolEntryUrl,
   directProfilesForRoutePoolV2,
+  leadProfileForPool,
+  localBridgesNotInPools,
   matchDefaultPoolForProfile,
+  mergeOwnedAuthorizationsIntoRows,
   nativeEnrollCtaVisible,
+  poolAuthorizationDeleteSteps,
+  poolAuthorizationStatusView,
+  poolAuthorizationTicketView,
+  poolSurfaceForAgent,
   routePoolMemberLabels,
   routePoolMembersSectionVisible,
   routePoolSurfaceLabel,
@@ -66,9 +75,9 @@ describe('route pool v2 view-model', () => {
       url: 'http://127.0.0.1:43121',
       pending: false,
     });
-    expect(routePoolSurfaceLabel(overview.surface)).toBe('回复接口');
-    const entries: Pick<ConnectionEntry, 'source' | 'id' | 'title'>[] = [
-      { source: 'provider', id: 'kimi-1', title: 'Kimi 会员' },
+    expect(routePoolSurfaceLabel(overview.surface)).toBe('Responses');
+    const entries: Pick<ConnectionEntry, 'source' | 'id' | 'title' | 'kind'>[] = [
+      { source: 'provider', id: 'kimi-1', title: 'Kimi 会员', kind: 'apikey' },
     ];
     expect(routePoolMemberLabels(overview.members, entries)).toEqual([
       {
@@ -77,10 +86,41 @@ describe('route pool v2 view-model', () => {
         availability: undefined,
         sourceKind: 'provider',
         sourceId: 'kimi-1',
+        kind: 'apikey',
       },
     ]);
     expect(JSON.stringify(overview)).not.toContain('hubToken');
     expect(JSON.stringify(overview)).not.toContain('ahb_');
+  });
+
+  it('uses pool member display labels and masked OAuth tails when Connections has no row', () => {
+    const items = collectPoolAuthorizations([
+      pool({
+        members: [{
+          sourceKind: 'account',
+          sourceId: 'oauth-owned-id',
+          displayLabel: 'owner@example.com',
+          refreshTokenTail: '**5678',
+          enabled: true,
+        }],
+      }),
+    ], []);
+    expect(items[0]).toMatchObject({
+      title: 'owner@example.com',
+      identityLabel: 'owner@example.com',
+      refreshTokenTail: '**5678',
+    });
+    expect(items[0]?.title).not.toContain('oauth-owned-id');
+    expect(routePoolMemberLabels([
+      { sourceKind: 'account', sourceId: 'missing-id', enabled: true },
+    ], [])).toEqual([{
+      title: '未提供账号',
+      enabled: true,
+      availability: undefined,
+      sourceKind: 'account',
+      sourceId: 'missing-id',
+      kind: undefined,
+    }]);
   });
 
   it('uses pending copy when the gateway port is not allocated', () => {
@@ -119,6 +159,44 @@ describe('route pool v2 view-model', () => {
       .toEqual(['native-1']);
   });
 
+  it('picks the pool lead by id, then by matching member', () => {
+    const overview = pool();
+    expect(leadProfileForPool(overview, [profile()])?.id).toBe('bridge-1');
+    const memberOnly = profile({ id: 'other', sourceId: 'kimi-1', targetAgentId: 'codex' });
+    expect(leadProfileForPool({ ...overview, id: 'pool-x' }, [memberOnly])?.id).toBe('other');
+    expect(leadProfileForPool(overview, [profile({ id: 'miss', sourceId: 'other' })])).toBeNull();
+  });
+
+  it('builds workbench rows from default pools plus unmatched local routes', () => {
+    const enrolled = profile();
+    const extra = profile({
+      id: 'bridge-extra',
+      sourceId: 'openai-1',
+      targetAgentId: 'claude',
+      localPort: 43122,
+    });
+    const rows = buildPoolWorkbenchRows({
+      flagOn: true,
+      pools: [pool()],
+      profiles: [enrolled, extra],
+    });
+    expect(rows.map((row) => row.key)).toEqual(['bridge-1', 'bridge-extra']);
+    expect(rows[0]?.pool?.id).toBe('bridge-1');
+    expect(rows[1]?.pool).toBeNull();
+    expect(localBridgesNotInPools([pool()], [enrolled, extra]).map((item) => item.id))
+      .toEqual(['bridge-extra']);
+  });
+
+  it('falls back to one card per local route when the pool flag is off', () => {
+    const rows = buildPoolWorkbenchRows({
+      flagOn: false,
+      pools: [pool()],
+      profiles: [profile(), profile({ id: 'native-1', route: 'native_endpoint' })],
+    });
+    expect(rows.map((row) => row.key)).toEqual(['bridge-1']);
+    expect(rows[0]?.pool).toBeNull();
+  });
+
   it('collapses multiple native profiles from one source into one direct row', () => {
     const claude = profile({
       id: 'native-claude',
@@ -144,5 +222,179 @@ describe('route pool v2 view-model', () => {
       [pool()],
       profile({ id: 'other', sourceId: 'other-src', targetAgentId: 'claude' }),
     )).toBeNull();
+  });
+
+  it('lists oauth and api authorizations from pool members and pool-owned entries', () => {
+    const oauth = {
+      source: 'account' as const,
+      id: 'oauth-1',
+      title: 'Codex login',
+      agentId: 'codex' as const,
+      kind: 'oauth' as const,
+      authHealth: 'renewable' as const,
+      quota7dPct: 30,
+      account: { home: 'route_pool' as const, lastUsedAt: '2026-08-31T12:00:00Z' },
+    } as ConnectionEntry;
+    const api = {
+      source: 'provider' as const,
+      id: 'api-1',
+      title: 'Codex API',
+      agentId: 'codex' as const,
+      kind: 'apikey' as const,
+      authHealth: 'configured' as const,
+      endpointHost: 'openrouter.ai/api/v1',
+      endpointMode: 'custom' as const,
+    } as ConnectionEntry;
+    const items = collectPoolAuthorizations([
+      pool({
+        members: [
+          { sourceKind: 'account', sourceId: 'oauth-1', enabled: true, priority: 2 },
+          { sourceKind: 'provider', sourceId: 'api-1', enabled: false },
+        ],
+      }),
+    ], [oauth, api], new Map([['account:oauth-1', 2]]));
+    expect(items.map((item) => [item.kind, item.title, item.addedHere, item.authHealth])).toEqual([
+      ['oauth', 'Codex login', true, 'renewable'],
+      ['apikey', 'Codex API', false, 'configured'],
+    ]);
+    expect(items[0]).toMatchObject({
+      enabled: true,
+      canToggle: true,
+      priority: 2,
+      lastUsedAt: '2026-08-31T12:00:00Z',
+      quota7dPct: 30,
+      bindingCount: 2,
+    });
+    expect(items[1]?.enabled).toBe(false);
+    expect(items[1]?.bindingCount).toBeUndefined();
+    expect(items[1]).toMatchObject({
+      endpointHost: 'openrouter.ai/api/v1',
+      endpointMode: 'custom',
+    });
+  });
+
+  it('still lists a pool member after the Connections source row is gone', () => {
+    const items = collectPoolAuthorizations([
+      pool({
+        members: [{ sourceKind: 'account', sourceId: 'oauth-1', enabled: true }],
+      }),
+    ], []);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.key).toBe('account:oauth-1');
+  });
+
+  it('drops the list row only after both the pool member and the source entry are gone', () => {
+    expect(collectPoolAuthorizations([pool({ members: [] })], [])).toEqual([]);
+  });
+
+  it('removes pool membership and the source on the first delete click', () => {
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: true, sourceMissing: false, addedHere: true }))
+      .toEqual(['removeMembership', 'deleteSource']);
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: true, sourceMissing: true, addedHere: true }))
+      .toEqual(['removeMembership']);
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: false, sourceMissing: false, addedHere: true }))
+      .toEqual(['deleteSource']);
+    expect(poolAuthorizationDeleteSteps({ routePoolV2: true, sourceMissing: false, addedHere: false }))
+      .toEqual(['recycleMembership']);
+  });
+
+  it('keeps one row when the same authorization is in two pools', () => {
+    const oauth = {
+      source: 'account' as const,
+      id: 'grok-1',
+      title: 'Grok login',
+      agentId: 'grok' as const,
+      kind: 'oauth' as const,
+    } as ConnectionEntry;
+    const items = collectPoolAuthorizations([
+      pool({
+        id: 'grok-responses',
+        targetAgentId: 'grok',
+        surface: 'responses',
+        dialect: 'grok',
+        members: [{ sourceKind: 'account', sourceId: 'grok-1', enabled: true }],
+      }),
+      pool({
+        id: 'grok-chat',
+        targetAgentId: 'grok',
+        surface: 'chat_completions',
+        dialect: 'grok',
+        members: [{ sourceKind: 'account', sourceId: 'grok-1', enabled: true }],
+      }),
+    ], [oauth]);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe('Grok login');
+    expect(items[0]?.endpointKinds).toEqual(['responses_grok', 'chat_completions']);
+  });
+
+  it('maps stored auth health to a status chip', () => {
+    expect(poolAuthorizationStatusView({ authHealth: 'verified' }).label).toBe('已验证');
+    expect(poolAuthorizationStatusView({ authHealth: 'verified' }).tone).toBe('success');
+    expect(poolAuthorizationStatusView({ authStatus: 'expired' }).label).toBe('需要重新登录');
+    expect(poolAuthorizationStatusView({ authStatus: 'expired' }).tone).toBe('danger');
+    expect(poolAuthorizationStatusView({}).label).toBe('状态未知');
+  });
+
+  it('builds a ticket-shaped row for the login detail panel', () => {
+    const item = {
+      key: 'account:grok-1',
+      sourceKind: 'account' as const,
+      sourceId: 'grok-1',
+      agentId: 'grok' as const,
+      title: 'Grok · OAuth',
+      kind: 'oauth' as const,
+    };
+    expect(poolAuthorizationTicketView(item)).toEqual({
+      id: 'account:grok-1',
+      sourceKind: 'account',
+      sourceId: 'grok-1',
+      agentId: 'grok',
+      label: 'Grok · OAuth',
+      surface: 'unknown',
+      credentialClass: 'oauth',
+      speaks: [],
+      importedFrom: null,
+    });
+    expect(poolAuthorizationTicketView(item, {
+      id: 'account:grok-1',
+      sourceKind: 'account',
+      sourceId: 'grok-1',
+      agentId: 'grok',
+      label: 'user@x.ai',
+      surface: 'grok-xai-subscription',
+      credentialClass: 'oauth',
+      speaks: ['openai-responses'],
+      importedFrom: null,
+    }).label).toBe('user@x.ai');
+  });
+
+  it('folds a pool-owned authorization into a workbench card', () => {
+    const owned = {
+      source: 'provider' as const,
+      id: 'pool-api',
+      title: 'Pool API',
+      agentId: 'codex' as const,
+      kind: 'apikey' as const,
+      provider: { home: 'route_pool' as const },
+    } as ConnectionEntry;
+    const merged = mergeOwnedAuthorizationsIntoRows(
+      buildPoolWorkbenchRows({ flagOn: true, pools: [pool({ members: [] })], profiles: [] }),
+      [owned],
+    );
+    expect(merged[0]?.pool?.members).toEqual([
+      {
+        sourceKind: 'provider',
+        sourceId: 'pool-api',
+        displayLabel: 'Pool API',
+        enabled: true,
+      },
+    ]);
+  });
+
+  it('maps each Agent to its default local entry surface', () => {
+    expect(poolSurfaceForAgent('claude')).toBe('messages');
+    expect(poolSurfaceForAgent('codex')).toBe('responses');
+    expect(poolSurfaceForAgent('kimi')).toBe('chat_completions');
+    expect(poolSurfaceForAgent('pi')).toBeNull();
   });
 });

@@ -154,7 +154,7 @@ export type TicketBindingRowView = {
   agentId: AgentId;
   agentLabel: string;
   status: string;
-  routeLabel: string;
+  routeLabel: string | null;
   localUrl: string | null;
 };
 
@@ -649,7 +649,9 @@ export function buildTicketBindingRows(
     agentId: binding.agentId,
     agentLabel: agentDisplayName(binding.agentId),
     status: ticketBindingStatus(binding, t),
-    routeLabel: bindingDashboardRouteLabel(binding.route, t),
+    routeLabel: binding.route === 'native'
+      ? null
+      : bindingDashboardRouteLabel(binding.route, t),
     localUrl: binding.route === 'bridge'
       ? formatRouteEndpointHttpUrl({
           path: routeEndpointPathForBinding({ agentId: binding.agentId }),

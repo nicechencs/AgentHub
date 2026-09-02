@@ -4,10 +4,12 @@ description: AgentHub 前端、Tauri contract、Rust core 和 fixture 的测试�
 type: reference
 audience: contributor
 status: current
-updated: 2026-08-25
+updated: 2026-08-31
 ---
 
 # 测试参考
+
+风险分级以 [AGENTS.md](../../AGENTS.md) 为准。日常选命令时优先看 [测试与验证](../guides/testing-and-validation.md)；本页是完整命令表和文件约定。
 
 ## 命令
 
@@ -27,12 +29,7 @@ Vitest 由配置固定使用 mock backend；`pnpm dev:mock` 是浏览器演示�
 
 ## 验证范围
 
-按改动风险选择命令，不要把提交前或 CI 的全量门禁当成每次本地改动的默认步骤。分级与 Agent 流程以 [AGENTS.md](../../AGENTS.md) 为准，命令表见 [测试与验证](../guides/testing-and-validation.md)。
-
-- 局部 UI、文案、纯函数和单文件改动：对应 `vitest run <file>`，必要时 `pnpm typecheck`。
-- 模块改动：相关测试 + `pnpm typecheck`。
-- 跨层 contract / Rust 核心规则：对应 contract test 或 `cargo test -p agenthub-core --locked <filter>`。
-- 持久化、安全边界和发布：提交前矩阵和 CI 全量，包括 `pnpm build` 与 `pnpm test:pr`。
+按 [AGENTS.md](../../AGENTS.md) 的风险级别选择命令，不要把提交前或 CI 的全量门禁当成每次本地改动的默认步骤。
 
 ## 文件约定
 

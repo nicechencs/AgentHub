@@ -50,6 +50,8 @@ export interface ProviderSaveFlowInput {
   configSchema?: AgentConfigSchemaDto | null;
   isEdit: boolean;
   existing?: Provider | null;
+  /** Stable id for new records. Auto-generated when omitted. */
+  id?: string;
   name: string;
   useOfficial: boolean;
   officialLabel?: string;
@@ -268,7 +270,7 @@ function buildProviderDraft(
     };
   }
   return {
-    id: `p-${Date.now()}`,
+    id: input.id ?? `p-${Date.now()}`,
     agentId,
     name: displayName,
     preset,

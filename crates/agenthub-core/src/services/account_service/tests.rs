@@ -2924,6 +2924,89 @@ fn create_overwrites_same_oauth_identity_different_tokens() {
 }
 
 #[test]
+fn create_pool_owned_oauth_keeps_duplicate_identity_separate_from_current() {
+    let (_root, svc, _) = live_svc(AgentId::Grok);
+    let current = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "email": "a@example.com",
+                    "user_id": "user-a",
+                    "key": "at-current"
+                }
+            }),
+            extra: json!({ "source": "auth.json" }),
+            is_current: true,
+        })
+        .unwrap();
+    assert!(current.is_current);
+
+    let pool_owned = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "email": "a@example.com",
+                    "user_id": "user-a",
+                    "key": "at-pool"
+                }
+            }),
+            extra: json!({ "source": "oauth_pkce", "home": "route_pool" }),
+            is_current: false,
+        })
+        .unwrap();
+
+    assert_ne!(pool_owned.id, current.id);
+    assert!(!pool_owned.is_current);
+    assert_eq!(pool_owned.extra["home"], "route_pool");
+    assert!(
+        svc.repo()
+            .get_by_id(&current.id)
+            .unwrap()
+            .expect("current account")
+            .is_current
+    );
+    assert_eq!(svc.list(Some(AgentId::Grok)).unwrap().len(), 2);
+
+    let refreshed_pool = svc
+        .create(AccountInput {
+            agent_id: AgentId::Grok,
+            kind: AccountKind::Oauth,
+            label: "a@example.com".into(),
+            credentials: json!({
+                "format": "auth_json",
+                "body": {
+                    "email": "a@example.com",
+                    "user_id": "user-a",
+                    "key": "at-pool-rotated"
+                }
+            }),
+            extra: json!({ "source": "oauth_device", "home": "route_pool" }),
+            is_current: false,
+        })
+        .unwrap();
+
+    assert_eq!(refreshed_pool.id, pool_owned.id);
+    assert!(!refreshed_pool.is_current);
+    assert_eq!(refreshed_pool.credentials["body"]["key"], "at-pool-rotated");
+    assert!(
+        svc.repo()
+            .get_by_id(&current.id)
+            .unwrap()
+            .expect("current account")
+            .is_current
+    );
+    assert_eq!(svc.list(Some(AgentId::Grok)).unwrap().len(), 2);
+}
+
+#[test]
 fn create_keeps_unknown_oauth_identity_different_tokens_separate() {
     let (_root, svc, _) = live_svc(AgentId::Codex);
     let first = svc

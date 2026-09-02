@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { applyPort, removePort, enrollPort, refreshRuntimeReadModels } = vi.hoisted(() => ({
+const { applyPort, removePort, enrollPort, attachPort, syncPort, refreshRuntimeReadModels } = vi.hoisted(() => ({
   applyPort: vi.fn(),
   removePort: vi.fn(),
   enrollPort: vi.fn(),
+  attachPort: vi.fn(),
+  syncPort: vi.fn(),
   refreshRuntimeReadModels: vi.fn(),
 }));
 
@@ -13,12 +15,14 @@ vi.mock('@/app/runtime', () => ({
       apply: applyPort,
       remove: removePort,
       enrollNativeToGateway: enrollPort,
+      attachPoolOwnedAuthorization: attachPort,
+      syncConnectionAuthorizations: syncPort,
     },
   }),
   refreshRuntimeReadModels,
 }));
 
-import { applyAdapter, enrollNativeToGateway, removeAdapter } from './adapter';
+import { applyAdapter, attachPoolOwnedAuthorization, enrollNativeToGateway, removeAdapter, syncConnectionAuthorizations } from './adapter';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -47,6 +51,8 @@ describe('adapter façade pool refresh', () => {
     applyPort.mockReset();
     removePort.mockReset();
     enrollPort.mockReset();
+    attachPort.mockReset();
+    syncPort.mockReset();
     refreshRuntimeReadModels.mockReset();
   });
 
@@ -111,6 +117,25 @@ describe('adapter façade pool refresh', () => {
     await expect(enroll).resolves.toEqual({ enabled: true, pools: [] });
     expect(settled).toBe(true);
     expectPoolRefreshOnly();
+  });
+
+  it('refreshes connection and ticket lists after attaching a pool-owned authorization', async () => {
+    attachPort.mockResolvedValue({ id: 'pool-1', members: [] });
+    refreshRuntimeReadModels.mockResolvedValue(undefined);
+    await expect(attachPoolOwnedAuthorization({
+      sourceKind: 'provider',
+      sourceId: 'codex-api',
+      targetAgentId: 'codex',
+      surface: 'responses',
+    })).resolves.toEqual({ id: 'pool-1', members: [] });
+    expectBindRefresh();
+  });
+
+  it('refreshes connection and ticket lists after syncing from Connections', async () => {
+    syncPort.mockResolvedValue({ added: 2, skipped: 1 });
+    refreshRuntimeReadModels.mockResolvedValue(undefined);
+    await expect(syncConnectionAuthorizations()).resolves.toEqual({ added: 2, skipped: 1 });
+    expectBindRefresh();
   });
 
   it('still returns the mutation result when the follow-up pool refresh fails', async () => {

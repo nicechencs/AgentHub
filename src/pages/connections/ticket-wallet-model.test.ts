@@ -201,8 +201,13 @@ describe('binding usage text', () => {
     expect(formatTicketUsageText(kimiBindings, 'kimi')).toContain('Local route · 运行中');
     expect(formatTicketUsageText([])).toBe('未使用');
     expect(formatTicketUsageText([], 'codex')).toBe(`${agentDisplayName('codex')} · 未使用`);
+    expect(formatTicketUsageText([], undefined, undefined, 1, true)).toBe('使用中');
+    expect(formatTicketUsageText([], 'codex', undefined, 1, true)).toBe(
+      `${agentDisplayName('codex')} · 使用中`,
+    );
+    expect(formatTicketUsageText([], undefined, undefined, 1, false)).toBe('未使用');
     const parts = formatTicketUsageParts(kimiBindings, 'kimi');
-    expect(parts.some((part) => part.kind === 'bridge' && part.href === '/routes?profile=p2')).toBe(true);
+    expect(parts.some((part) => part.kind === 'bridge' && part.href === '/routes/pool?profile=p2')).toBe(true);
     expect(formatTicketUsageParts([{
       ticketId: 'provider:kimi-1',
       agentId: 'codex',
@@ -210,7 +215,7 @@ describe('binding usage text', () => {
       active: true,
       profileId: null,
       bridge: { port: 8123, running: true },
-    }]).some((part) => part.kind === 'bridge' && part.href === '/routes')).toBe(true);
+    }]).some((part) => part.kind === 'bridge' && part.href === '/routes/pool')).toBe(true);
   });
 
   it('annotates bridge usage with N-member poll pool copy', () => {
@@ -254,7 +259,7 @@ describe('binding usage text', () => {
       active: true,
       profileId: null,
       bridge: null,
-    }], 'codex')).toBe(`${agentDisplayName('codex')}（Direct）`);
+    }], 'codex')).toBe(agentDisplayName('codex'));
     expect(formatTicketUsageText([{
       ticketId: 'account:codex-1',
       agentId: 'codex',
@@ -267,12 +272,31 @@ describe('binding usage text', () => {
 
   it('maps dashboard meta text', () => {
     expect(dashboardBindingMetaText('Kimi 会员', 'reshape')).toBe('Kimi 会员 · Rewrite config');
-    expect(dashboardBindingMetaText('Kimi 会员', 'bridge')).toBe('Kimi 会员 · Local route');
-    expect(dashboardBindingMetaText('me@…', 'native')).toBe('me@… · Direct');
+    expect(dashboardBindingMetaText('Kimi 会员', 'bridge')).toBe('Kimi 会员');
+    expect(dashboardBindingMetaText(
+      'Kimi 会员',
+      'bridge',
+      undefined,
+      'http://127.0.0.1:43121/v1/messages',
+    )).toBe('Kimi 会员 · http://127.0.0.1:43121/v1/messages');
+    expect(dashboardBindingMetaText('me@…', 'native')).toBe('me@…');
   });
 });
 
 describe('buildTicketWalletRows', () => {
+  it('shows 使用中 for current login tickets with no active bindings', () => {
+    const wallet = sampleWallet();
+    const oauth = wallet.tickets.find((ticket) => ticket.id === 'account:oauth-1');
+    expect(oauth).toBeDefined();
+    // Drop active bindings for this ticket so usage falls back to empty/current.
+    wallet.bindings = wallet.bindings.filter((b) => b.ticketId !== 'account:oauth-1');
+    const rows = buildTicketWalletRows(wallet, {
+      isCurrentForTicket: (ticket) => ticket.id === 'account:oauth-1',
+    });
+    const row = rows.find((r) => r.ticket.id === 'account:oauth-1');
+    expect(row?.usageText).toBe(`${agentDisplayName(oauth!.agentId)} · 使用中`);
+  });
+
   it('highlights deep-link agent active bindings without privatizing the list', () => {
     const wallet = sampleWallet();
     const rows = buildTicketWalletRows(wallet, { highlightAgentId: 'claude' });
@@ -904,6 +928,17 @@ describe('ticket detail fields', () => {
     expect(formatTicketBindingDetailLines(
       wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),
     )).toEqual([{ agent: agentDisplayName('claude'), status: '未使用' }]);
+    expect(buildTicketBindingRows(
+      wallet.bindings.filter((binding) => binding.ticketId === 'account:oauth-1'),
+    )).toEqual([
+      {
+        agentId: 'claude',
+        agentLabel: agentDisplayName('claude'),
+        status: '未使用',
+        routeLabel: null,
+        localUrl: null,
+      },
+    ]);
     expect(buildTicketBindingRows(
       wallet.bindings.filter((binding) => binding.ticketId === 'provider:kimi-1'),
     )).toEqual([

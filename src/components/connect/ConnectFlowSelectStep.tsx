@@ -607,10 +607,9 @@ function EligibilityBody({
   }
   const maturity = planMaturityLabel(eligibility.plan.maturity, t);
   const routeTitle = planRouteSummary(eligibility.plan, t);
-  const routeLine = maturity
-    ? `${routeTitle} · ${maturity}`
-    : routeTitle;
+  const routeLine = [routeTitle, maturity].filter(Boolean).join(' · ');
   if (planEligibilityAllowsApply(eligibility)) {
+    if (!routeLine) return null;
     return <p className="mt-1 text-xs text-secondary">{routeLine}</p>;
   }
   return <p className="mt-1 text-xs text-warning">{eligibility.reason ?? routeLine}</p>;

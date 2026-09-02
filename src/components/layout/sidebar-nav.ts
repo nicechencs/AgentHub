@@ -28,7 +28,7 @@ export const NAV_WORKSPACE = [
 export const NAV_MANAGE = [
   { to: '/', navKey: 'nav.dashboard', icon: Gauge },
   { to: '/connections', navKey: 'nav.connections', icon: Key },
-  { to: BRIDGES_PATH, navKey: 'nav.routes', icon: Cable, inDevelopment: true },
+  { to: BRIDGES_PATH, navKey: 'nav.routes', icon: Cable },
   { to: '/settings', navKey: 'nav.settings', icon: Settings2 },
 ] as const;
 

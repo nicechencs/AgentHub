@@ -83,21 +83,10 @@ describe('provider-detect fields', () => {
       2,
     );
     const out = applyFormVars('claude', src, 'json', {
-      ...{
-        baseUrl: 'https://new.example.com',
-        apiKey: '',
-        model: 'opus',
-        modelOpus: '',
-        modelSonnet: '',
-        modelHaiku: '',
-        modelFable: '',
-        modelSubagent: '',
-        contextWindow: '',
-        claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN' as const,
-        reasoningEffort: '',
-        wireApi: '',
-        providerSlug: 'custom',
-      },
+      ...EMPTY_FORM_VARS,
+      baseUrl: 'https://new.example.com',
+      apiKey: '',
+      model: 'opus',
     });
     const parsed = JSON.parse(out) as {
       env: Record<string, string>;
@@ -371,19 +360,7 @@ describe('provider-detect fields', () => {
 
   it('keeps *** for untouched opaque TOML content', () => {
     const out = applyFormVars('codex', REDACTED_MARKER, 'toml', {
-      baseUrl: '',
-      apiKey: '',
-      model: '',
-      modelOpus: '',
-      modelSonnet: '',
-      modelHaiku: '',
-      modelFable: '',
-      modelSubagent: '',
-      contextWindow: '',
-      claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
-      reasoningEffort: '',
-      wireApi: '',
-      providerSlug: 'custom',
+      ...EMPTY_FORM_VARS,
     });
     expect(out).toBe(REDACTED_MARKER);
   });
@@ -442,18 +419,8 @@ describe('provider-detect fields', () => {
 
   it('writes Pi auth.json only for an official slot without relay URL', () => {
     const out = applyFormVars('pi', '{}', 'json', {
-      baseUrl: '',
+      ...EMPTY_FORM_VARS,
       apiKey: 'sk-openai-test',
-      model: '',
-      modelOpus: '',
-      modelSonnet: '',
-      modelHaiku: '',
-      modelFable: '',
-      modelSubagent: '',
-      contextWindow: '',
-      claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
-      reasoningEffort: '',
-      wireApi: '',
       providerSlug: 'openai',
     });
     const parsed = JSON.parse(out) as {
@@ -468,18 +435,10 @@ describe('provider-detect fields', () => {
 
   it('writes Pi models.json + auth.json when an official slot has a relay URL', () => {
     const out = applyFormVars('pi', '{}', 'json', {
+      ...EMPTY_FORM_VARS,
       baseUrl: 'https://api.openai.com/v1',
       apiKey: 'sk-openai-test',
       model: 'gpt-4o',
-      modelOpus: '',
-      modelSonnet: '',
-      modelHaiku: '',
-      modelFable: '',
-      modelSubagent: '',
-      contextWindow: '',
-      claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
-      reasoningEffort: '',
-      wireApi: '',
       providerSlug: 'openai',
     });
     const parsed = JSON.parse(out) as {
@@ -497,18 +456,10 @@ describe('provider-detect fields', () => {
 
   it('does not write Pi auth.json for custom or models.json bind slots', () => {
     const out = applyFormVars('pi', '{}', 'json', {
+      ...EMPTY_FORM_VARS,
       baseUrl: 'https://relay.example.com/v1',
       apiKey: 'sk-custom',
       model: 'custom-model',
-      modelOpus: '',
-      modelSonnet: '',
-      modelHaiku: '',
-      modelFable: '',
-      modelSubagent: '',
-      contextWindow: '',
-      claudeAuthEnv: 'ANTHROPIC_AUTH_TOKEN',
-      reasoningEffort: '',
-      wireApi: '',
       providerSlug: 'custom',
     });
     const parsed = JSON.parse(out) as {
@@ -820,6 +771,18 @@ describe('provider-detect fields', () => {
     expect(parsed.providerId).toBe('agenthub-managed');
     expect(parsed.models).toEqual(['my-model', 'other-model']);
     expect(parsed.apiKey).toBe('sk-custom');
+  });
+
+  it('writes the selected Grok API format', () => {
+    const out = applyFormVars('grok', '', 'toml', {
+      ...EMPTY_FORM_VARS,
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'sk-chat',
+      model: 'gpt-4o',
+      apiBackend: 'chat_completions',
+    });
+
+    expect(out).toContain('api_backend = "chat_completions"');
   });
 });
 

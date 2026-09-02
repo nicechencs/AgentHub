@@ -467,7 +467,7 @@ export function bindingRouteUsageLabel(route: BindingRoute, t?: TranslateFn): st
 export function bindingRouteDashboardLabel(route: BindingRoute, t?: TranslateFn): string {
   if (route === 'reshape') return t ? t('connections.list.routeReshape') : 'Rewrite config';
   if (route === 'bridge') return t ? t('kind.route.localRoute') : 'Local route';
-  return t ? t('kind.route.direct') : 'Direct';
+  return '';
 }
 
 /** Credential-class chip label. */

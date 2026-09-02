@@ -58,8 +58,14 @@ export function PreferencesPanel({
   const { toast } = useToast();
   const { setTheme } = useTheme();
   const { t, setLanguage } = useI18n();
-  const { routesNavVisible, setRoutesNavVisible, pluginsNavVisible, setPluginsNavVisible } =
-    useSidebar();
+  const {
+    autoCollapseOnRoutes,
+    setAutoCollapseOnRoutes,
+    routesNavVisible,
+    setRoutesNavVisible,
+    pluginsNavVisible,
+    setPluginsNavVisible,
+  } = useSidebar();
   const [accent, setAccent] = useState(loadStoredAccent);
   const usageBaselineRef = useRef(settings.usageCollectIntervalMin);
   const persistenceTrackerRef = useRef<ReturnType<typeof createSettingsPersistenceTracker> | null>(null);
@@ -236,8 +242,18 @@ export function PreferencesPanel({
       </SettingsGroup>
       <SettingsGroup title={t('settings.general.sectionSidebar')}>
         <SettingsRow
+          label={t('settings.general.autoCollapseOnRoutesLabel')}
+          description={t('settings.general.autoCollapseOnRoutesDescription')}
+          descriptionTip={t('settings.general.autoCollapseOnRoutesTip')}
+        >
+          <Switch
+            checked={autoCollapseOnRoutes}
+            onCheckedChange={setAutoCollapseOnRoutes}
+            aria-label={t('settings.general.autoCollapseOnRoutesLabel')}
+          />
+        </SettingsRow>
+        <SettingsRow
           label={t('settings.general.routesNavVisibleLabel')}
-          badge={<Badge variant="default">{t('common.inDevelopment')}</Badge>}
           description={t('settings.general.routesNavVisibleDescription')}
           descriptionTip={t('settings.general.routesNavVisibleTip')}
         >

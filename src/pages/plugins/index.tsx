@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Puzzle, RefreshCw } from 'lucide-react';
+import { Puzzle } from 'lucide-react';
 import { AgentTabStrip, type AgentTabId } from '@/components/layout/AgentTabStrip';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
@@ -8,6 +8,7 @@ import { useSideSplit } from '@/components/layout/use-side-split';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { useI18n } from '@/components/shared/LanguageProvider';
+import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ListSkeleton } from '@/components/ui/skeleton';
@@ -177,16 +178,11 @@ export default function PluginsPage() {
           aria-label={t('plugins.page.filterAria')}
         />
         <div className={pageRhythm.chromeActions}>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={loading}
+          <PageRefreshButton
+            loading={loading}
             onClick={() => void load()}
-            className="gap-1.5"
-          >
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            {t('plugins.page.refresh')}
-          </Button>
+            label={t('plugins.page.refresh')}
+          />
         </div>
       </div>
       {loading && !data ? (

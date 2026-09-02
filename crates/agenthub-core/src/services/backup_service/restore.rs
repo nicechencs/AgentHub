@@ -8,11 +8,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::logging::{self, targets};
 use crate::models::{AgentId, BackupKind, BackupRecord};
+use crate::services::live_fingerprint::LiveFileState;
 use crate::services::LiveWriteGuard;
 use crate::utils::paths::is_safe_path;
 
@@ -31,6 +33,25 @@ pub struct RestoreItem {
     pub dest: PathBuf,
     /// Hash recorded by a v1 manifest. Legacy manifests omit this field.
     pub expected_sha256: Option<String>,
+}
+
+/// One absent-file cleanup the restore declined to perform. The file was
+/// created after the backup was taken, but the restore kept it because it is
+/// no longer byte-identical to AgentHub's last managed write.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub(crate) struct SkippedDeletion {
+    /// Live path that was kept.
+    pub(crate) path: PathBuf,
+    /// Short machine-readable cause (`edited`, `unknown`, `delete_failed`,
+    /// `fingerprint_unavailable`).
+    pub(crate) reason: String,
+}
+
+/// File-restore plan plus the live paths that were absent at snapshot time
+/// and are deletion candidates after the payload files are applied.
+struct RestorePlan {
+    items: Vec<RestoreItem>,
+    absent_dests: Vec<PathBuf>,
 }
 
 /// One applied live write, for failure rollback.
@@ -126,7 +147,7 @@ impl BackupService {
         let snapshot_dir = self.validate_snapshot_dir(&record)?;
         let plan = build_restore_plan(&record, &snapshot_dir, &ordered_live, &allowed)?;
 
-        if plan.is_empty() {
+        if plan.items.is_empty() {
             return Err(AppError::NotFound(format!(
                 "backup {id} has no restorable files matching adapter live paths"
             )));
@@ -144,7 +165,7 @@ impl BackupService {
             Err(e) => return Err(e),
         };
 
-        if let Err(e) = apply_restore_plan(&plan) {
+        if let Err(e) = apply_restore_plan(&plan.items) {
             // apply_restore_plan rolls back partial live writes and surfaces
             // backup.rollback when that compensation fails. Only then try
             // PreRestore as a second-chance recovery of live files.
@@ -161,10 +182,16 @@ impl BackupService {
             return Err(e);
         }
 
+        // The backup proves these live files did not exist when it was taken,
+        // so AgentHub created them afterwards. Remove the ones whose bytes are
+        // still exactly what AgentHub last wrote; never fail over this.
+        let skipped_deletions = self.remove_absent_managed_files(agent, &plan.absent_dests);
+
         Ok(RestoreResult {
             restored: record,
             pre_restore,
-            restored_paths: plan.iter().map(|p| p.dest.clone()).collect(),
+            restored_paths: plan.items.iter().map(|p| p.dest.clone()).collect(),
+            skipped_deletions,
         })
     }
 
@@ -308,8 +335,68 @@ impl BackupService {
     ) -> Result<()> {
         let snapshot_dir = self.validate_snapshot_dir(record)?;
         let plan = build_restore_plan(record, &snapshot_dir, ordered_live, allowed)?;
-        apply_restore_plan(&plan)?;
+        apply_restore_plan(&plan.items)?;
         Ok(())
+    }
+
+    /// Remove live files that were absent when the restored backup was taken
+    /// and are still byte-identical to AgentHub's last managed write (i.e.
+    /// files AgentHub itself created and nobody touched since). Missing files
+    /// are a no-op; hand-edited, foreign, or unreadable files are kept and
+    /// reported as skipped deletions. This cleanup never fails the restore.
+    fn remove_absent_managed_files(
+        &self,
+        agent: AgentId,
+        absent_dests: &[PathBuf],
+    ) -> Vec<SkippedDeletion> {
+        let mut skipped = Vec::new();
+        for path in absent_dests {
+            let state = match crate::services::live_fingerprint::classify(&self.db, agent, path) {
+                Ok(state) => state,
+                Err(error) => {
+                    tracing::warn!(
+                        target: targets::BACKUP,
+                        agent = agent.as_str(),
+                        path = %path.display(),
+                        error = %error,
+                        "absent-file cleanup skipped: fingerprint lookup failed"
+                    );
+                    skipped.push(SkippedDeletion {
+                        path: path.clone(),
+                        reason: "fingerprint_unavailable".into(),
+                    });
+                    continue;
+                }
+            };
+            match state {
+                LiveFileState::Managed => {
+                    if let Err(error) = std::fs::remove_file(path) {
+                        tracing::warn!(
+                            target: targets::BACKUP,
+                            agent = agent.as_str(),
+                            path = %path.display(),
+                            error = %error,
+                            "absent-file cleanup failed"
+                        );
+                        skipped.push(SkippedDeletion {
+                            path: path.clone(),
+                            reason: "delete_failed".into(),
+                        });
+                    }
+                }
+                // Nothing to clean up.
+                LiveFileState::Missing => {}
+                LiveFileState::Edited => skipped.push(SkippedDeletion {
+                    path: path.clone(),
+                    reason: "edited".into(),
+                }),
+                LiveFileState::Unknown => skipped.push(SkippedDeletion {
+                    path: path.clone(),
+                    reason: "unknown".into(),
+                }),
+            }
+        }
+        skipped
     }
 }
 
@@ -349,7 +436,7 @@ fn build_restore_plan(
     snapshot_dir: &Path,
     ordered_live: &[PathBuf],
     allowed: &HashMap<String, PathBuf>,
-) -> Result<Vec<RestoreItem>> {
+) -> Result<RestorePlan> {
     let mut stored_ok: HashSet<String> = HashSet::new();
     for name in &record.files {
         let base = sanitize_basename(name)?;
@@ -382,6 +469,8 @@ fn build_restore_plan(
     } else {
         // Backward-compatible mapping for pre-manifest snapshots: replay the
         // same allocate_dest_name order against current adapter live paths.
+        // Pre-manifest snapshots have no absent markers, so there is nothing
+        // to delete afterwards.
         plan_from_legacy(snapshot_dir, ordered_live, &stored_ok)
     }
 }
@@ -392,8 +481,9 @@ fn plan_from_manifest(
     ordered_live: &[PathBuf],
     allowed: &HashMap<String, PathBuf>,
     stored_ok: &HashSet<String>,
-) -> Result<Vec<RestoreItem>> {
+) -> Result<RestorePlan> {
     let mut plan = Vec::new();
+    let mut absent_dests = Vec::new();
     let mut seen_stored = HashSet::new();
     let mut seen_dest = HashSet::new();
     // dest path_key -> stored basename, for swap/order checks
@@ -412,17 +502,6 @@ fn plan_from_manifest(
                 "reserved manifest.json cannot appear as a manifest payload entry".into(),
             ));
         }
-        // Extra entries (not in DB index) are always rejected.
-        if !stored_ok.contains(&stored) {
-            return Err(AppError::InvalidArg(format!(
-                "manifest entry not listed in backup index: {stored}"
-            )));
-        }
-        if !seen_stored.insert(stored.clone()) {
-            return Err(AppError::InvalidArg(format!(
-                "duplicate manifest stored name: {stored}"
-            )));
-        }
 
         // Destination must be on the adapter allow-list — never trust raw source
         // as an arbitrary write target.
@@ -438,7 +517,6 @@ fn plan_from_manifest(
                 dest.display()
             )));
         }
-        validate_dest_type(&dest)?;
         let dest_key = path_key(&dest);
         if !seen_dest.insert(dest_key.clone()) {
             return Err(AppError::InvalidArg(format!(
@@ -446,6 +524,28 @@ fn plan_from_manifest(
                 dest.display()
             )));
         }
+
+        if entry.absent_before {
+            // No stored payload: the live file did not exist at snapshot time.
+            // After the payload files are applied, restore removes this path
+            // again when it is still byte-identical to AgentHub's last write.
+            absent_dests.push(dest);
+            continue;
+        }
+
+        // Extra entries (not in DB index) are always rejected.
+        if !stored_ok.contains(&stored) {
+            return Err(AppError::InvalidArg(format!(
+                "manifest entry not listed in backup index: {stored}"
+            )));
+        }
+        if !seen_stored.insert(stored.clone()) {
+            return Err(AppError::InvalidArg(format!(
+                "duplicate manifest stored name: {stored}"
+            )));
+        }
+
+        validate_dest_type(&dest)?;
 
         let stored_path = snapshot_dir.join(&stored);
         ensure_regular_file(&stored_path)?;
@@ -496,14 +596,17 @@ fn plan_from_manifest(
         }
     }
 
-    Ok(plan)
+    Ok(RestorePlan {
+        items: plan,
+        absent_dests,
+    })
 }
 
 fn plan_from_legacy(
     snapshot_dir: &Path,
     ordered_live: &[PathBuf],
     stored_ok: &HashSet<String>,
-) -> Result<Vec<RestoreItem>> {
+) -> Result<RestorePlan> {
     if stored_ok.contains(MANIFEST_FILE) {
         return Err(AppError::InvalidArg(format!(
             "reserved name cannot be a backup payload: {MANIFEST_FILE}"
@@ -588,7 +691,10 @@ fn plan_from_legacy(
         });
     }
     plan.sort_by(|a, b| a.stored_path.cmp(&b.stored_path));
-    Ok(plan)
+    Ok(RestorePlan {
+        items: plan,
+        absent_dests: Vec::new(),
+    })
 }
 
 fn validate_dest_type(dest: &Path) -> Result<()> {

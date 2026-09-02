@@ -92,7 +92,7 @@ updated: 2026-08-26
 
 ### R-11｜路由移除提示仍把读取失败当成来源已移除
 
-- **位置：** `src/pages/bridges/index.tsx:206,278`、`src/pages/bridges/adapter-view-model.ts:203`（当前兼容路径）
+- **位置：** `src/pages/routes/pool/index.tsx`、`src/pages/bridges/adapter-view-model.ts:203`（当前兼容路径）
 - **问题：** Ticket wallet 或连接池读取失败时，视图仍可能按空结果分类为 orphan/source removed，掩盖真实读取错误。
 - **建议：** 保留各读取源的完整性和错误状态；只有在相关读取都成功时，才判定来源确实已移除。
 

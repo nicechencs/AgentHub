@@ -22,6 +22,7 @@ use std::time::Duration;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chrono::Utc;
+use futures_util::StreamExt;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -35,11 +36,11 @@ use crate::bridge::{
 };
 use crate::error::{AppError, Result};
 use crate::models::{
-    list_local_bridge_models, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
+    list_local_bridge_models, ticket_id, AdapterCredentialClass, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterProfileStatus, AdapterRoute, AdapterRouteRequest, AdapterSourceKind,
     AdapterSourceProduct, AdapterSupport, AdapterTargetProtocol, AdapterUpstreamTransport, AgentId,
     LocalBridgeEdge, Provider, ProviderInput, RouteDownstreamDialect, RouteDownstreamSurface,
-    RouteMember, RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE,
+    RouteMember, RoutePool, RouteSchedulePolicy, ANTHROPIC_CODEX_EDGE, CODEX_CLAUDE_RESPONSES_EDGE,
     CODEX_DSH_EDGE, CODEX_GROK_EDGE, CODEX_KIMI_EDGE, GROK_CLAUDE_EDGE, GROK_CODEX_EDGE,
     KIMI_CODEX_EDGE, OPENAI_CLAUDE_EDGE, OPENAI_CODEX_EDGE, OPENAI_GROK_BRIDGE_EDGE,
 };
@@ -77,6 +78,7 @@ const OPENAI_PROVIDER_SLUG: &str = "agenthub_openai_bridge";
 const CODEX_CLAUDE_PROVIDER_SLUG: &str = "claude-codex-adapter-bridge";
 const GENERATED_BY: &str = "adapter";
 const BRIDGE_HEALTH_TIMEOUT: Duration = Duration::from_secs(4);
+const MAX_UPSTREAM_MODELS_BODY_BYTES: usize = 1_048_576;
 const RETRYABLE_ERROR_PREFIX: &str = "retryable:";
 
 #[derive(Clone, Copy)]
@@ -702,6 +704,9 @@ impl AdapterBridgeRuntimeMaterial {
     pub async fn verify_bound_health(&mut self, port: u16) -> Result<()> {
         validate_bound_port(port)?;
         let client = reqwest::Client::builder()
+            // Health probes can carry an upstream `x-api-key`; never forward it to
+            // a redirect target owned by another service or origin.
+            .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(BRIDGE_HEALTH_TIMEOUT)
             .timeout(BRIDGE_HEALTH_TIMEOUT)
             .build()
@@ -765,10 +770,9 @@ impl AdapterBridgeRuntimeMaterial {
             )
         })?;
         if upstream.status().is_success() {
-            if let Ok(bytes) = upstream.bytes().await {
-                if let Some(ids) = parse_openai_models_json(&bytes) {
-                    self.configured_listed_models = ids;
-                }
+            let bytes = read_bounded_models_response(upstream).await?;
+            if let Some(ids) = parse_openai_models_json(&bytes) {
+                self.configured_listed_models = ids;
             }
             return Ok(());
         }
@@ -794,6 +798,43 @@ impl AdapterBridgeRuntimeMaterial {
             "upstream health probe was not successful",
         ))
     }
+}
+
+async fn read_bounded_models_response(response: reqwest::Response) -> Result<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_UPSTREAM_MODELS_BODY_BYTES as u64)
+    {
+        return Err(AppError::message(
+            "adapter.bridge_health_upstream_too_large",
+            "upstream /models response exceeds the 1 MiB limit",
+        ));
+    }
+
+    let mut body = Vec::with_capacity(
+        response
+            .content_length()
+            .map(|length| length as usize)
+            .unwrap_or_default()
+            .min(MAX_UPSTREAM_MODELS_BODY_BYTES),
+    );
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| {
+            AppError::message(
+                "adapter.bridge_health_upstream",
+                "upstream health probe response could not be read",
+            )
+        })?;
+        if chunk.len() > MAX_UPSTREAM_MODELS_BODY_BYTES.saturating_sub(body.len()) {
+            return Err(AppError::message(
+                "adapter.bridge_health_upstream_too_large",
+                "upstream /models response exceeds the 1 MiB limit",
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 pub(crate) fn parse_openai_models_json(bytes: &[u8]) -> Option<Vec<String>> {
@@ -1056,6 +1097,143 @@ impl AdapterBridgeService {
         Ok(true)
     }
 
+    /// Listener spec for the board switch. Does not bind logins to Agents.
+    /// Enabled pool members supply listed models and upstream auth so a token
+    /// test can reach a model; missing members stay a placeholder.
+    pub fn pool_listener_spec(
+        &self,
+        pool: &RoutePool,
+        flags: (bool, bool),
+    ) -> BridgeStartSpec {
+        let surface = match pool.downstream_surface {
+            RouteDownstreamSurface::Messages => BridgeLocalSurface::Messages,
+            RouteDownstreamSurface::ChatCompletions => BridgeLocalSurface::ChatCompletions,
+            RouteDownstreamSurface::Responses => BridgeLocalSurface::Responses,
+        };
+        let token = if pool.hub_token.trim().is_empty() {
+            format!("ahb_{}", pool.id)
+        } else {
+            pool.hub_token.trim().to_owned()
+        };
+        let port = pool.gateway_port.unwrap_or(0);
+        let members = self
+            .route_pools
+            .list_members(&pool.id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|member| member.enabled)
+            .collect::<Vec<_>>();
+        let Some(lead) = members.first() else {
+            return placeholder_pool_spec(pool, surface, token, port, flags);
+        };
+        let product = self
+            .routes
+            .classify_source_product(lead.source_kind, &lead.source_id)
+            .unwrap_or(AdapterSourceProduct::Other);
+        let rule = rule_for_member_product(product, pool.target_agent_id);
+        let (url, model, configured, protocol, _) = match rule {
+            Some(rule) => {
+                prepare::openai_source_upstream(self, &rule, lead.source_kind, &lead.source_id)
+            }
+            None => (
+                "http://127.0.0.1/".into(),
+                String::new(),
+                Vec::new(),
+                match surface {
+                    BridgeLocalSurface::Messages => BridgeUpstreamProtocol::AnthropicMessages,
+                    _ => BridgeUpstreamProtocol::OpenAiChatCompletions,
+                },
+                None,
+            ),
+        };
+        let auth = rule
+            .and_then(|rule| {
+                self.resolve_member_auth(rule.rule_id, lead.source_kind, &lead.source_id)
+                    .ok()
+            })
+            .filter(|auth| auth.has_token())
+            .unwrap_or_else(|| ResolvedAuth::bearer("pending"));
+        let custom = crate::services::adapter_route_constants::is_custom_openai_compat_url(&url);
+        let listed = self
+            .route_pools
+            .list_upstream_models_for_pool(&pool.id)
+            .ok()
+            .filter(|models| !models.is_empty())
+            .unwrap_or_else(|| {
+                listed_models_for_bridge(
+                    product,
+                    pool.target_agent_id,
+                    &model,
+                    custom,
+                    &configured,
+                )
+            });
+        let mut spec = BridgeStartSpec::new(
+            pool.id.clone(),
+            port,
+            token,
+            BridgeUpstreamConfig {
+                base_url: url,
+                model: {
+                    let model = model.trim();
+                    if model.is_empty() {
+                        None
+                    } else {
+                        Some(model.to_owned())
+                    }
+                },
+                source_connection_id: Some(lead.source_id.clone()),
+                auth: auth.clone(),
+                protocol,
+                local_surface: surface,
+            },
+        )
+        .with_listed_models(listed)
+        .with_mapping(product, pool.target_agent_id, custom)
+        .with_downstream_responses_profile(
+            crate::bridge::DownstreamResponsesProfile::from_surface_and_route_dialect(
+                surface,
+                pool.downstream_dialect,
+            ),
+        )
+        .with_pair_adapter_flags(flags.0, flags.1);
+        let member_specs = members
+            .iter()
+            .map(|member| {
+                let is_lead =
+                    member.source_kind == lead.source_kind && member.source_id == lead.source_id;
+                let member_auth = if is_lead {
+                    auth.clone()
+                } else {
+                    rule.and_then(|rule| {
+                        self.resolve_member_auth(rule.rule_id, member.source_kind, &member.source_id)
+                            .ok()
+                    })
+                    .filter(|item| item.has_token())
+                    .unwrap_or_else(|| ResolvedAuth::bearer(""))
+                };
+                let health = if member_auth.has_token() {
+                    MemberHealth::Renewable
+                } else {
+                    MemberHealth::NeedsLogin
+                };
+                BridgeMemberSpec {
+                    ticket_id: ticket_id(member.source_kind, &member.source_id),
+                    source_kind: member.source_kind.as_str().to_owned(),
+                    source_id: member.source_id.clone(),
+                    label: member.source_id.clone(),
+                    auth: member_auth,
+                    reload: None,
+                    health,
+                    priority: member.priority,
+                    position: member.position,
+                }
+            })
+            .collect();
+        spec = spec.with_members(member_specs);
+        spec
+    }
+
     fn route_index_for_material(
         &self,
         material: &AdapterBridgeRuntimeMaterial,
@@ -1216,6 +1394,40 @@ fn validate_route_pool_profile(
         ));
     }
     Ok(())
+}
+
+fn placeholder_pool_spec(
+    pool: &RoutePool,
+    surface: BridgeLocalSurface,
+    token: String,
+    port: u16,
+    flags: (bool, bool),
+) -> BridgeStartSpec {
+    let protocol = match surface {
+        BridgeLocalSurface::Messages => BridgeUpstreamProtocol::AnthropicMessages,
+        _ => BridgeUpstreamProtocol::OpenAiChatCompletions,
+    };
+    BridgeStartSpec::new(
+        pool.id.clone(),
+        port,
+        token,
+        BridgeUpstreamConfig {
+            base_url: "http://127.0.0.1/".into(),
+            model: None,
+            source_connection_id: None,
+            auth: ResolvedAuth::bearer("pending"),
+            protocol,
+            local_surface: surface,
+        },
+    )
+    .with_mapping(AdapterSourceProduct::Other, pool.target_agent_id, false)
+    .with_downstream_responses_profile(
+        crate::bridge::DownstreamResponsesProfile::from_surface_and_route_dialect(
+            surface,
+            pool.downstream_dialect,
+        ),
+    )
+    .with_pair_adapter_flags(flags.0, flags.1)
 }
 
 fn rule_for_member_product(

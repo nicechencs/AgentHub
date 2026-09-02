@@ -6,22 +6,30 @@
 mod admission;
 mod continuation;
 mod dispatch;
+mod dispatch_trace;
 mod gateway;
 mod http;
 pub(crate) mod inbound;
 mod lifecycle;
+mod route_trace;
 mod pair_policy;
 mod stream;
 mod surface;
 mod transport;
 mod upstream;
 
+#[cfg(test)]
+mod usage_capture_tests;
+
 pub use gateway::BridgeHostError;
 // Re-exported for bridge tests.
 #[allow(unused_imports)]
 pub(super) use gateway::CleanupCompletion;
 pub use inbound::InboundRequestRecord;
+pub use inbound::InboundRequestStats;
 pub use lifecycle::BridgeRuntimeHost;
+pub use route_trace::RouteRequestTrace;
+pub use route_trace::RouteTraceLog;
 
 #[cfg(test)]
 pub(super) use http::sse_frame_end;

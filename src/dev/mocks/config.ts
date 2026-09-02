@@ -85,13 +85,14 @@ const SCHEMAS: Record<string, AgentConfigSchemaDto> = {
   },
   grok: {
     agentKey: 'grok',
-    schemaVersion: 2,
+    schemaVersion: 3,
     nativeFormat: 'toml',
     relativePath: 'config.toml',
     fields: [
       { key: 'model', label: 'Model', valueType: { kind: 'string' } },
       { key: 'baseUrl', label: 'Base URL', valueType: { kind: 'string' } },
       { key: 'apiKey', label: 'API Key', valueType: { kind: 'secret' }, secret: true },
+      { key: 'apiBackend', label: 'API backend', valueType: { kind: 'string' } },
     ],
   },
   dsh: {

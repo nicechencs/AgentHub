@@ -575,6 +575,10 @@ pub(crate) fn user_writable_npm_prefix() -> Option<PathBuf> {
 }
 
 /// Bin dir under [`user_writable_npm_prefix`] (Windows: prefix root; Unix: `prefix/bin`).
+///
+/// Test-only: production detect derives bin dirs from the npm CLI prefix
+/// ([`npm_global_bin_dirs`]), not from this fixed fallback.
+#[cfg(test)]
 pub(crate) fn user_writable_npm_bin_dir() -> Option<PathBuf> {
     user_writable_npm_prefix().map(npm_prefix_to_bin_dir)
 }

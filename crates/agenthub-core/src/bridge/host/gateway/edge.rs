@@ -59,6 +59,9 @@ pub(in crate::bridge::host) struct EdgeState {
     /// marked unsupported. Availability only; next `/models` omits the id when
     /// no other candidate remains.
     pub(in crate::bridge::host) member_model_denials: Arc<Mutex<HashSet<(String, String)>>>,
+    /// Host-level optional gateway usage spool (clone of the shared slot).
+    pub(in crate::bridge::host) usage_spool: crate::bridge::usage_capture::UsageSpoolSlot,
+    pub(in crate::bridge::host) route_traces: crate::bridge::host::RouteTraceLog,
 }
 
 impl EdgeState {
@@ -67,6 +70,8 @@ impl EdgeState {
         upstream_url: Url,
         force_shutdown: CancellationToken,
         auth_reload: AuthReloadCoordinator,
+        usage_spool: crate::bridge::usage_capture::UsageSpoolSlot,
+        route_traces: crate::bridge::host::RouteTraceLog,
     ) -> Self {
         let state = Self {
             profile_id: Arc::from(spec.profile_id.clone()),
@@ -76,6 +81,9 @@ impl EdgeState {
             client: reqwest::Client::builder()
                 // Streaming requests deliberately have no reqwest-wide total timeout: a healthy
                 // long-running SSE response is bounded by per-chunk idle time instead.
+                // Never follow an upstream redirect: the transport may attach an API key
+                // header, and reqwest must not carry that secret to a different origin.
+                .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(UPSTREAM_CONNECT_TIMEOUT)
                 .build()
                 .expect("reqwest client builder uses static valid settings"),
@@ -99,6 +107,8 @@ impl EdgeState {
                 super::super::continuation::ContinuationBindings::new(),
             ),
             member_model_denials: Arc::new(Mutex::new(HashSet::new())),
+            usage_spool,
+            route_traces,
         };
         // stop+start is how production rotates a login; host-wide 401
         // isolation must not outlive the old picker.
