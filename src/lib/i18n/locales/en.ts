@@ -2299,6 +2299,8 @@ export const en = {
       needsOfficial: "Needs official update",
       openOfficialDownload: "Open official download",
       unsupportedUpdate: "This agent does not support automatic update checks",
+      linuxUnsupported: "Linux is not supported yet",
+      linuxUnsupportedHint: "WorkBuddy / ZCode only ship Windows / macOS installers; Linux is not supported yet.",
       notInstalled: "Not installed",
       seeDetails: "Multiple versions — open for details",
       seeDetailsCopies: "{count} other copies — open for details",

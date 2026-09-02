@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { AgentCardDialogs, type AgentCardConfirmKind } from './AgentCardDialogs';
 import { AgentInstallButton } from './AgentInstallButton';
 import {
+  agentLinuxInstallUnsupported,
   agentUninstallControl,
   agentUpgradeControl,
   agentUpgradeHint,
@@ -159,6 +160,7 @@ export function AgentDetailPanel({
     agent.update?.setupUrl,
     meta?.installChannels ?? [],
   );
+  const linuxUnsupported = agentLinuxInstallUnsupported(agent.agentId);
   const latestVersion = agent.update?.latestVersion ?? agent.latestVersion;
   const checkingUpdate = agent.update?.state === 'checking';
   const rowBusy = installing || uninstalling || upgrading || opening !== null;
@@ -265,6 +267,14 @@ export function AgentDetailPanel({
   };
 
   const doInstall = async (channel: InstallChannelMeta) => {
+    if (linuxUnsupported) {
+      toast({
+        title: t('agents.card.linuxUnsupported'),
+        description: t('agents.card.linuxUnsupportedHint'),
+        variant: 'danger',
+      });
+      return;
+    }
     const check = checkChannelEnv(channel, runtimes);
     if (!check.ready) {
       toast({
@@ -306,6 +316,14 @@ export function AgentDetailPanel({
   };
 
   const openOfficialSetup = () => {
+    if (linuxUnsupported) {
+      toast({
+        title: t('agents.card.linuxUnsupported'),
+        description: t('agents.card.linuxUnsupportedHint'),
+        variant: 'danger',
+      });
+      return;
+    }
     if (!officialSetupUrl) {
       toast({
         title: t('agents.update.noOfficialUrl'),
@@ -538,11 +556,13 @@ function InstallLocationRow({
   const versionText = formatAgentVersion(inst.version);
   const openable = Boolean(normalizeOpenPath(inst.location));
   const sourceLabel = installLocationSourceLabel(agentId, inst.source, t);
+  const linuxUnsupported = agentLinuxInstallUnsupported(agentId);
   const upgradeControl = agentUpgradeControl({
     installed: true,
     updateVia: inst.updateVia,
     updateState,
     setupUrl,
+    linuxUnsupported,
   });
   const upgradable =
     upgradeControl.kind === 'in_app'
@@ -551,7 +571,7 @@ function InstallLocationRow({
       || updateState === 'update_available'
     );
   const upgradeTooltip = upgradeControl.muted
-    ? agentUpgradeHint(upgradeControl, { updateVia: inst.updateVia, note, t })
+    ? agentUpgradeHint(upgradeControl, { updateVia: inst.updateVia, note, linuxUnsupported, t })
     : upgradable
       ? t('agents.update.available')
       : t('agents.update.forceLatest');
@@ -723,6 +743,7 @@ function MissingChannelRow({
   onInstall: () => void;
 }) {
   const { t } = useI18n();
+  const linuxUnsupported = agentLinuxInstallUnsupported(agentId);
   const sourceLabel = installLocationSourceLabel(agentId, channel.id, t);
   const command = channel.command.trim();
   const nameCommand = copyableChannelCommand(agentId, channel.id, t);
@@ -737,9 +758,11 @@ function MissingChannelRow({
               className="text-meta font-medium text-secondary"
             />
           ) : null}
-          <span className="text-meta text-muted">{t('agents.card.notInstalled')}</span>
+          <span className="text-meta text-muted">
+            {linuxUnsupported ? t('agents.card.linuxUnsupported') : t('agents.card.notInstalled')}
+          </span>
         </div>
-        <AgentInstallButton iconOnly busy={busy} channelId={channel.id} onClick={onInstall} />
+        <AgentInstallButton iconOnly busy={busy} channelId={channel.id} linuxUnsupported={linuxUnsupported} onClick={onInstall} />
       </div>
       {command ? (
         nameCommand ? (

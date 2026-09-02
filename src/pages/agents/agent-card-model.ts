@@ -3,8 +3,23 @@ import type { InstallChannelMeta } from '@/config/agents';
 import type { MessageKey } from '@/lib/i18n';
 import type { AgentStatus } from '@/lib/types';
 import { installLifecycle } from '@/lib/backend/contracts/install-lifecycle';
+import { detectHostPlatform, type HostPlatform } from '@/lib/platform-detect';
 
 export { installLifecycle };
+
+/** WorkBuddy / ZCode ship Win/Mac official setups only — not Linux installers. */
+export function isDesktopOfficialOnlyAgent(agentId: string): boolean {
+  return agentId === 'workbuddy' || agentId === 'zcode';
+}
+
+/** On Linux, do not treat Win/Mac official setup as the primary install path. */
+export function agentLinuxInstallUnsupported(
+  agentId: string,
+  platform: HostPlatform = detectHostPlatform(),
+): boolean {
+  return platform === 'linux' && isDesktopOfficialOnlyAgent(agentId);
+}
+
 
 export type AgentCardTaskAction = 'install' | 'upgrade' | 'oneclick';
 export type AgentCardTaskStatus = TerminalStatus;
@@ -115,9 +130,14 @@ export function agentUpgradeControl(input: {
   updateVia?: string | null;
   updateState?: string;
   setupUrl?: string | null;
+  /** Win/Mac-only official agents on Linux: gray hint, do not open setup as primary. */
+  linuxUnsupported?: boolean;
 }): AgentUpgradeControl {
   if (!input.installed) {
     return { show: false, muted: false, kind: 'in_app' };
+  }
+  if (input.linuxUnsupported) {
+    return { show: true, muted: true, kind: 'hint_only' };
   }
   const via = asUpdateVia(input.updateVia);
   const unsupported = input.updateState === 'unsupported';
@@ -143,9 +163,13 @@ export function agentUpgradeHint(
   input: {
     updateVia?: string | null;
     note?: string | null;
+    linuxUnsupported?: boolean;
     t: (key: MessageKey, params?: Record<string, string>) => string;
   },
 ): string {
+  if (input.linuxUnsupported) {
+    return input.t('agents.card.linuxUnsupportedHint');
+  }
   const via = asUpdateVia(input.updateVia);
   const where =
     via && via !== 'in_app' && via !== 'none'

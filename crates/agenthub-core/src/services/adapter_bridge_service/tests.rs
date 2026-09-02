@@ -1348,9 +1348,9 @@ fn start_spec_lists_grok_default_when_mapping_entries_empty() {
 }
 
 #[test]
-fn start_spec_empty_when_mapping_and_default_are_missing() {
+fn start_spec_lists_codex_to_kimi_dispatch_accepted_ids() {
     let material = AdapterBridgeRuntimeMaterial {
-        profile_id: "codex-kimi-empty-models".into(),
+        profile_id: "codex-kimi-catalog-models".into(),
         source_connection_id: "codex-subscription".into(),
         preferred_port: None,
         upstream_base_url: CHATGPT_CODEX_BASE_URL.into(),
@@ -1370,11 +1370,14 @@ fn start_spec_empty_when_mapping_and_default_are_missing() {
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
     };
-    assert!(material.start_spec(Some(0)).listed_models.is_empty());
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert_eq!(listed[0], "gpt-5.4");
+    assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
+    assert!(listed.iter().any(|model| model == "gpt-5"));
 }
 
 #[test]
-fn start_spec_lists_configured_default_when_mapping_is_missing() {
+fn start_spec_codex_to_kimi_configured_default_merges_into_catalog() {
     let material = AdapterBridgeRuntimeMaterial {
         profile_id: "codex-kimi-default-models".into(),
         source_connection_id: "codex-subscription".into(),
@@ -1396,10 +1399,10 @@ fn start_spec_lists_configured_default_when_mapping_is_missing() {
         grok_ingress_codex_upstream: false,
         schedule_policy: Default::default(),
     };
-    assert_eq!(
-        material.start_spec(Some(0)).listed_models,
-        vec!["gpt-5.4".to_string()]
-    );
+    let listed = material.start_spec(Some(0)).listed_models;
+    assert_eq!(listed[0], "gpt-5.4");
+    assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
+    assert!(listed.iter().any(|model| model == "gpt-5"));
 }
 
 #[test]
