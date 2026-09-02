@@ -80,21 +80,36 @@ pub async fn set_show_hidden_projects(
     .await
 }
 
-/// Invoke: `delete_agent_project` — deletes a **session** by id.
+/// Invoke: `delete_agent_session` — deletes a **session** by id.
 #[tauri::command]
-pub async fn delete_agent_project(state: State<'_, AppState>, id: String) -> Result<(), String> {
+pub async fn delete_agent_session(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let hub = state.hub_arc()?;
-    with_hub_blocking(hub, move |hub| delete_agent_project_inner(hub, &id)).await
+    with_hub_blocking(hub, move |hub| delete_agent_session_inner(hub, &id)).await
 }
 
-/// Invoke: `delete_agent_projects`
+/// Invoke: `delete_agent_sessions`
+#[tauri::command]
+pub async fn delete_agent_sessions(
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+) -> Result<u32, String> {
+    let hub = state.hub_arc()?;
+    with_hub_blocking(hub, move |hub| delete_agent_sessions_inner(hub, ids)).await
+}
+
+/// Compatibility alias for `delete_agent_session` (pre-rename IPC).
+#[tauri::command]
+pub async fn delete_agent_project(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    delete_agent_session(state, id).await
+}
+
+/// Compatibility alias for `delete_agent_sessions` (pre-rename IPC).
 #[tauri::command]
 pub async fn delete_agent_projects(
     state: State<'_, AppState>,
     ids: Vec<String>,
 ) -> Result<u32, String> {
-    let hub = state.hub_arc()?;
-    with_hub_blocking(hub, move |hub| delete_agent_projects_inner(hub, ids)).await
+    delete_agent_sessions(state, ids).await
 }
 
 /// Invoke: `get_agent_project_excerpts`
@@ -127,16 +142,16 @@ fn list_agent_project_sessions_inner(
         .map_err(|e| map_err_string("list_agent_project_sessions", e))
 }
 
-fn delete_agent_project_inner(hub: &AgentHub, id: &str) -> Result<(), String> {
+fn delete_agent_session_inner(hub: &AgentHub, id: &str) -> Result<(), String> {
     hub.projects()
         .delete(id)
-        .map_err(|e| map_err_string("delete_agent_project", e))
+        .map_err(|e| map_err_string("delete_agent_session", e))
 }
 
-fn delete_agent_projects_inner(hub: &AgentHub, ids: Vec<String>) -> Result<u32, String> {
+fn delete_agent_sessions_inner(hub: &AgentHub, ids: Vec<String>) -> Result<u32, String> {
     hub.projects()
         .delete_many(&ids)
-        .map_err(|e| map_err_string("delete_agent_projects", e))
+        .map_err(|e| map_err_string("delete_agent_sessions", e))
 }
 
 fn get_excerpts_inner(
@@ -179,7 +194,7 @@ mod tests {
     #[test]
     fn delete_missing_maps_error() {
         let (_dir, hub) = hub_tmp();
-        let err = delete_agent_project_inner(&hub, "claude:projects/no-such.jsonl").unwrap_err();
+        let err = delete_agent_session_inner(&hub, "claude:projects/no-such.jsonl").unwrap_err();
         assert!(!err.is_empty());
     }
 
@@ -189,7 +204,7 @@ mod tests {
         let rows = get_excerpts_inner(&hub, vec![]).unwrap();
         assert!(rows.is_empty());
         let batch =
-            delete_agent_projects_inner(&hub, vec!["claude:projects/x.jsonl".into()]).unwrap();
+            delete_agent_sessions_inner(&hub, vec!["claude:projects/x.jsonl".into()]).unwrap();
         assert_eq!(batch, 0);
     }
 

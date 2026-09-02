@@ -228,7 +228,7 @@ export function liveConfigPaths(agentId: string, t?: TranslateFn): {
         openDir: '~/.kimi-code',
         hint: hint(
           'connections.providerDialog.pathHintKimi',
-          'API Key 写在 config.toml。用官方登录的，凭据在 credentials/kimi-code.json。旧目录是 ~/.kimi。',
+          'API Key 写在 config.toml。用官方登录的，登录信息在 credentials/kimi-code.json。旧目录是 ~/.kimi。',
         ),
       };
     case 'grok':

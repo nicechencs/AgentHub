@@ -148,8 +148,8 @@ test('page title sits in the top bar with notifications; Chat has neither', asyn
   expect(Math.abs(mcpTop - connectionsTop)).toBeLessThanOrEqual(4);
 
   await goPath(page, '/routes/pool');
-  const addOauth = page.getByRole('button', { name: 'OAuth 接入' });
-  const addApi = page.getByRole('button', { name: 'API 接入' });
+  const addOauth = page.getByRole('button', { name: '官方登录' });
+  const addApi = page.getByRole('button', { name: '添加 API Key' });
   const routesLead = page.getByText(/oauth 及 API 信息|孤立本机路由/);
   await expect(addOauth).toBeVisible();
   await expect(addApi).toBeVisible();

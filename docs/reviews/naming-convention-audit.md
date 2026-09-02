@@ -341,6 +341,44 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 3. 修正事件常量后缀和 `skills_sh_market` 文件词边界。
 4. 删除确认无外部引用的兼容代理文件。
 
+## 核对后的分批整改计划（2026-09-02）
+
+以当前 `dev` 源码核对：审计 16 项均仍成立，推荐新名尚未落地。按 AGENTS.md 风险分级分批实施；每批改完跑过滤测试，最后同步文档并跑 `pnpm check:docs`。
+
+### 核对调整
+
+| 项 | 调整 |
+| --- | --- |
+| N-03 | 影响约 20 个 TS 文件 / ~149 标识符（审计原估偏小） |
+| N-07 | 前端最终状态对象未消费该字段；优先删除死字段，除非 Rust 审计路径需要保留 |
+| N-08 | 勿误改 chat 页本地 `Provider` 变量名 `currentProvider` |
+| N-04 | 已有部分 `ROUTES_*_PATH` 与 `BRIDGES_*` 并存，迁移时合并而非重造 |
+| N-12 | 全仓机械替换不做；本轮只迁公共契约与本轮触及文件，Rust 闭合枚举不动 |
+
+### 批次划分
+
+| 批次 | 覆盖 | 风险 | 文件范围（主） | 兼容策略 | 验收 |
+| --- | --- | --- | --- | --- | --- |
+| **A** | N-01、N-02、N-13 | 局部 / 跨层 IPC 轻量 | `commands/project.rs`、`project` Port/API/mock、Settings 面板、`zh.ts`/`en.ts`、Routes 连接池文案、相关测试 / e2e | 新 IPC `delete_agent_session(s)`；旧名作别名；`?tab=security` 仍映到 about；后端 `account`/`provider` 枚举不改 | 调用方走 session 名；用户文案无「凭据 / OAuth 接入 / API 接入」；Settings 面板名为 LoginInformation；定向 Vitest + i18n parity |
+| **B** | N-03、N-08 | 模块 | `connection-pool-store*`、`ConnectionPoolProvider`、读取方；`AgentStatus.currentProvider` 读取方 | 先加 `ConnectionInventory*` 与兼容导出，再迁调用方；读 `effectiveLabel`/`effectiveKind`，compat 字段暂留 | 产品「连接池」仅指 RoutePool；新代码不读 `currentProvider`；相关 Vitest |
+| **C** | N-04 | 模块 | `bridges-path.ts` → `routes-path.ts`；`pages/bridges/` → `pages/routes/shared/`；导航与导入 | `/bridges` 重定向保留；`local_bridge` / `useBridgeRuntimeActions` 不改 | 页面路径与导航用 Routes；无泛用 `BRIDGES_*` 生产入口；定向测试 |
+| **D** | N-05、N-07 | 跨层 | LocalEntry DTO/command/Port/页面；`source_connection_id` | 新 IPC `*_local_gateway`，旧 `*_local_entry` 别名；N-07 删除死字段或改为 `sourceKind+sourceId` | 内部名 LocalGateway；界面仍「本机转发」；wire 无伪契约；contract + Rust filter |
+| **E** | N-09、N-10、N-11 | 跨层 | MCP/plugins/install commands；InstallProgress；`project_skill` 动词 API | 无 `_cmd` 规范名 + 旧别名；payload 双发 `chunk`/`line`；`apply_skill_projection` + 旧别名；工作区 `listProjectSkills` 保留 | 新 invoke 无 `_cmd`；前端优先 `chunk`；技能同步与项目技能 API 分离；过滤测试 |
+| **F** | N-06 | 高风险 | route_pools 迁移、`v2_enrolled` 全栈 | 新列/字段 `unified_gateway_enrolled`，双读旧列与旧 wire；至少一个兼容版本后再删 | DB/IPC 兼容测试；页面与 wire 用新名 |
+| **G** | N-12（渐进）、N-14、N-16 | 局部 | 本轮触及的 TS 契约用 `AgentKey`；`ConnectBindPurpose`；事件常量与 `skillssh_market` | `AgentId` 别名暂留；`share`→`direct` 仅 connect-flow；文件/常量机械改名 | 本轮新代码不新增 `AgentId`；connect-flow 无 share 歧义；常量后缀一致 |
+| **H** | N-15 + 文档同步 | 局部 / 持久化 | `ui-preferences` 与各页自建键；本审计文档、术语表交叉引用 | 读旧键写新键；确认覆盖后再清旧键 | 新键统一 `agenthub:`+kebab；`pnpm check:docs` |
+
+### N-15 说明
+
+本轮若时间紧，可只落地「新键走集中 `StorageKey`」与文档约定，不做存量键批量迁移（避免重置用户布局）。存量迁移可单独跟进。
+
+### 每批验证命令（默认）
+
+- 前端局部：`pnpm test -- --run <touched.test.ts…>`；改 i18n 时加 locale parity。
+- 跨层 IPC：`pnpm test -- --run` 对应 contract/wire + 必要时 `cargo test -p agenthub --locked <filter>`。
+- 文档收尾：`pnpm check:docs`。
+- 不做默认全量 `pnpm test` / 生产 `pnpm build`（留给提交前或 CI）。
+
 ## 迁移原则
 
 跨层改名统一采用以下顺序：

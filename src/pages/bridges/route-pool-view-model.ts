@@ -103,7 +103,7 @@ export function routePoolMemberLabels(
   entries: readonly (Pick<ConnectionEntry, 'source' | 'id' | 'title' | 'kind'> & {
     identityLabel?: string;
   })[],
-  unavailableLabel = '未提供账号',
+  unavailableLabel = '未提供登录',
 ): {
   title: string;
   enabled: boolean;
@@ -228,7 +228,7 @@ function poolAuthorizationItem(
   const identityLabel = kind === 'oauth'
     ? match?.identityLabel?.trim() || displayLabel || undefined
     : undefined;
-  const fallbackTitle = fallback.title?.trim() || '未提供账号';
+  const fallbackTitle = fallback.title?.trim() || '未提供登录';
   const title = kind === 'oauth'
     ? identityLabel || match?.title?.trim() || displayLabel || fallbackTitle
     : match?.title?.trim() || displayLabel || fallbackTitle;
@@ -331,7 +331,7 @@ export function collectPoolAuthorizations(
   pools: readonly DefaultRoutePoolOverview[],
   entries: readonly ConnectionEntry[],
   bindingCounts: ReadonlyMap<string, number> = new Map(),
-  unavailableLabel = '未提供账号',
+  unavailableLabel = '未提供登录',
 ): PoolAuthorizationItem[] {
   const items = new Map<string, PoolAuthorizationItem>();
   const entryBySource = new Map<string, ConnectionEntry>(

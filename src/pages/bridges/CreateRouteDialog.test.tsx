@@ -345,7 +345,7 @@ describe('EditRouteDialog', () => {
       editProfile({ sourceKind: 'account', sourceId: 'acc-1' }),
       [editEntry({ key: 'account:acc-1', source: 'account', id: 'acc-1', provider: undefined })],
     );
-    expect(markup).toContain('这条路由的来源不是可编辑的 API 配置');
+    expect(markup).toContain('这条路由的来源不是可编辑的供应商');
     expect(markup).not.toContain('上游端点');
     expect(markup).not.toContain('type="password"');
     expect(markup).toContain('删除路由');
@@ -365,7 +365,7 @@ describe('EditRouteDialog', () => {
     expect(markup).toContain('保存修改');
     expect(markup).toContain('删除路由');
     expect(markup).not.toContain('stored-key');
-    expect(markup).not.toContain('这条路由的来源不是可编辑的 API 配置');
+    expect(markup).not.toContain('这条路由的来源不是可编辑的供应商');
   });
 
   it('seeds the stored name, url, and checked target on first render', () => {
