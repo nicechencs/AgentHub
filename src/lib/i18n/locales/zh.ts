@@ -1082,6 +1082,7 @@ export const zh = {
       clearRouteFilter: "清除路由筛选",
     },
     trace: {
+      legendTitle: "请求经过的五段",
       stageLocalAuth: "本机鉴权",
       stagePool: "连接池",
       stageConversion: "转换",

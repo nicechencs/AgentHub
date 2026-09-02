@@ -80,3 +80,29 @@ fn pool_attempts_record_failover() {
     assert_eq!(trace.pool.attempts.len(), 2);
     assert_eq!(trace.upstream.status, TraceStageStatus::Ok);
 }
+
+#[test]
+fn trace_serializes_camel_case_for_frontend() {
+    let log = RouteTraceLog::new();
+    let mut builder = RouteTraceBuilder::begin("req-json", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", Some(8787));
+    builder.pool_selected(
+        &PickedMember::new("", "account", "acct-1", "acct-1", ResolvedAuth::bearer("x"), None, MemberHealth::Renewable),
+        None,
+    );
+    builder.conversion_prepared(DownstreamSurface::Messages, UpstreamChannel::Anthropic, false);
+    builder.upstream_auth_result(true, Some(200), None, None);
+    builder.upstream_success(
+        "https://api.anthropic.com/v1/messages",
+        &PickedMember::new("", "account", "acct-1", "acct-1", ResolvedAuth::bearer("x"), None, MemberHealth::Renewable),
+        200,
+        Some("claude-sonnet"),
+    );
+    builder.finalize(200, &log);
+    let trace = log.get("req-json").expect("trace");
+    let json = serde_json::to_string(&trace).expect("json");
+    assert!(json.contains("\"requestId\""));
+    assert!(json.contains("\"localAuth\""));
+    assert!(json.contains("\"upstreamAuth\""));
+    assert!(!json.contains("local_auth"));
+}

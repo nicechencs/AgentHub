@@ -10,7 +10,6 @@ import { Hint } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { openLogsDir } from '@/lib/api/settings';
 import type {
-  AdapterBridgeInboundRequest,
   AdapterBridgeRuntimeStatus,
   AdapterProfile,
   DefaultRoutePoolOverview,
@@ -54,7 +53,9 @@ import {
   localEndpointKindForTargetAgent,
   localEndpointKindFromPool,
 } from '@/lib/route-endpoints';
-import { InboundRequestList } from '@/components/shared/InboundRequestList';
+import { RouteTraceList } from '@/components/shared/RouteTraceList';
+import { RouteTracePipelineLegend } from '@/components/shared/RouteTracePipelineLegend';
+import { buildRouteTraceFeed } from '@/pages/routes/activity/route-trace-feed-model';
 import {
   ROUTE_LOCAL_ADDRESS_LEGEND,
 } from './route-endpoint-copy';
@@ -331,7 +332,7 @@ function RouteDetailBody({
           <p className="text-meta text-muted">{routeModelsSummary(capabilities.models, t)}</p>
         </section>
 
-        <InboundRequestsSection rows={bridgeStatus?.recentInbound ?? []} />
+        <RouteRequestsSection profile={profile} bridgeStatus={bridgeStatus} />
 
         {routePoolMembersSectionVisible(routePoolV2, defaultPool) && defaultPool ? (
           <RoutePoolOverviewSection
@@ -561,12 +562,25 @@ function ClientRow({ row }: { row: RouteGraphRow }) {
   );
 }
 
-function InboundRequestsSection({ rows }: { rows: readonly AdapterBridgeInboundRequest[] }) {
+function RouteRequestsSection({
+  profile,
+  bridgeStatus,
+}: {
+  profile: AdapterProfile;
+  bridgeStatus: AdapterBridgeRuntimeStatus | undefined;
+}) {
   const { t } = useI18n();
+  const rows = buildRouteTraceFeed(
+    [profile],
+    { [profile.id]: bridgeStatus },
+    'all',
+    20,
+  );
   return (
-    <section className="space-y-2" data-route-inbound>
+    <section className="space-y-3" data-route-inbound>
       <h3 className="text-body font-medium">{t('routes.inbound.title')}</h3>
-      <InboundRequestList rows={rows} emptyLabel={t('routes.inbound.empty')} />
+      <RouteTracePipelineLegend />
+      <RouteTraceList rows={rows} emptyLabel={t('routes.inbound.empty')} />
     </section>
   );
 }

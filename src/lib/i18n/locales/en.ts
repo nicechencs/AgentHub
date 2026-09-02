@@ -1092,6 +1092,7 @@ export const en = {
       clearRouteFilter: "Clear route filter",
     },
     trace: {
+      legendTitle: "Five stages per request",
       stageLocalAuth: "Local auth",
       stagePool: "Connection pool",
       stageConversion: "Conversion",

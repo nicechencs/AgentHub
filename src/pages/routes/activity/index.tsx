@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { RouteTraceList } from '@/components/shared/RouteTraceList';
+import { RouteTracePipelineLegend } from '@/components/shared/RouteTracePipelineLegend';
 import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
@@ -116,6 +117,7 @@ export default function RoutesActivityPage() {
       </div>
 
       <p className="mb-3 text-meta text-muted">{t('routes.activity.scopeNote')}</p>
+      <RouteTracePipelineLegend className="mb-4" />
       {routeId ? (
         <p className="mb-3 text-meta">
           <button
