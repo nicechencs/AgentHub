@@ -8,7 +8,7 @@ import type {
   DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
 import { isBridgeStopCapable } from '@/pages/routes/shared/adapter-view-model';
-import { buildLocalEntryControl } from '@/pages/routes/board/board-view-model';
+import { buildLocalGatewayControl } from '@/pages/routes/board/board-view-model';
 import {
   buildRouteTraceFeed,
   type MergedRouteTraceRow,
@@ -40,7 +40,7 @@ export function monitoredLocalProfiles(
   hiddenTargetIds: ReadonlySet<string> = new Set(),
   pools: readonly Pick<DefaultRoutePoolOverview, 'id' | 'targetAgentId' | 'members'>[] = [],
 ): Pick<AdapterProfile, 'id' | 'name' | 'route' | 'targetAgentId'>[] {
-  const control = buildLocalEntryControl(profiles, {}, hiddenTargetIds, pools);
+  const control = buildLocalGatewayControl(profiles, {}, hiddenTargetIds, pools);
   const byId = new Map(profiles.map((profile) => [profile.id, profile]));
   return control.profileIds
     .map((id) => byId.get(id))
@@ -75,7 +75,7 @@ function mergeBridgeStatuses(
 export function resolveActivityPageSnapshot(input: {
   profiles: readonly AdapterProfile[];
   bridgeStatuses: Record<string, AdapterBridgeRuntimeStatus | undefined>;
-  localEntryStatuses?: readonly AdapterBridgeRuntimeStatus[];
+  localGatewayStatuses?: readonly AdapterBridgeRuntimeStatus[];
   unauthenticatedTraces?: readonly AdapterBridgeRouteTrace[];
   unauthenticatedSourceLabel?: string;
   pools?: readonly DefaultRoutePoolOverview[];
@@ -87,7 +87,7 @@ export function resolveActivityPageSnapshot(input: {
 }): ActivityPageSnapshot {
   const pools = input.pools ?? [];
   const monitored = monitoredLocalProfiles(input.profiles, input.hiddenTargetIds, pools);
-  const control = buildLocalEntryControl(
+  const control = buildLocalGatewayControl(
     input.profiles,
     input.bridgeStatuses,
     input.hiddenTargetIds,
@@ -95,7 +95,7 @@ export function resolveActivityPageSnapshot(input: {
   );
   const statuses = mergeBridgeStatuses(
     input.bridgeStatuses,
-    input.localEntryStatuses,
+    input.localGatewayStatuses,
   );
   const traceExtras = {
     unauthenticatedTraces: input.unauthenticatedTraces,

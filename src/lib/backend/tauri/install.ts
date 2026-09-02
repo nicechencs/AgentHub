@@ -15,7 +15,7 @@ export function createTauriInstallPort(): InstallPort {
   return {
     async listInstallCatalog() {
       try {
-        return await invoke<AgentInstallCatalogEntryDto[]>('list_install_catalog_cmd');
+        return await invoke<AgentInstallCatalogEntryDto[]>('list_install_catalog');
       } catch (e) {
         log.error('list_install_catalog failed', e);
         throw e;

@@ -1,8 +1,5 @@
-/**
- * Tauri-only live install/upgrade log stream.
- * Only Tauri ports may import this module.
- */
 import type { InstallProgressPayload } from '@/lib/backend/contracts/install-types';
+import { installProgressChunk } from '@/lib/backend/contracts/install-types';
 import { unavailableError } from '@/lib/backend/contracts/errors';
 import { isTauriApp } from '@/lib/platform';
 
@@ -11,7 +8,7 @@ export const INSTALL_PROGRESS_EVENT = 'install-progress';
 export type { InstallProgressPayload };
 
 /**
- * Subscribe to install progress lines emitted while install/upgrade/uninstall runs.
+ * Subscribe to install progress chunks emitted while install/upgrade/uninstall runs.
  * Returns an unsubscribe function.
  */
 export async function onInstallProgress(
@@ -27,8 +24,12 @@ export async function onInstallProgress(
     const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<InstallProgressPayload>(INSTALL_PROGRESS_EVENT, (event) => {
       const payload = event.payload;
-      if (!payload || typeof payload.line !== 'string') return;
-      handler(payload);
+      if (!payload || typeof installProgressChunk(payload) !== 'string') return;
+      // Normalize so consumers can always read `chunk`.
+      handler({
+        ...payload,
+        chunk: installProgressChunk(payload),
+      });
     });
     return unlisten;
   } catch (error) {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Notice } from '@/components/shared/Notice';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { pageRhythm } from '@/components/layout/page-rhythm';
-import { getLocalEntryStatus } from '@/lib/api/adapter';
+import { getLocalGatewayStatus } from '@/lib/api/adapter';
 import {
   onLocalForwardLifecycle,
   type LocalForwardLifecyclePhase,
@@ -49,7 +49,7 @@ export function useLocalForwardRestartBanner(): boolean {
       setStartingComingBack(localForwardStartingComingBack(status));
     };
 
-    void getLocalEntryStatus()
+    void getLocalGatewayStatus()
       .then((status) => {
         if (!cancelled) applyStatus(status);
       })
@@ -87,7 +87,7 @@ export function useLocalForwardRestartBanner(): boolean {
     });
     if (!visible) return;
     const timer = window.setInterval(() => {
-      void getLocalEntryStatus()
+      void getLocalGatewayStatus()
         .then((status) => {
           setRestarting(status.restarting);
           setStartingComingBack(localForwardStartingComingBack(status));

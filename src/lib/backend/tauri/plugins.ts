@@ -10,7 +10,7 @@ export function createTauriPluginPort(): PluginPort {
   return {
     async listInventory() {
       try {
-        return await invoke<PluginInventory>('list_plugin_inventory_cmd');
+        return await invoke<PluginInventory>('list_plugin_inventory');
       } catch (e) {
         log.error('listInventory failed', e);
         throw e;
@@ -18,7 +18,7 @@ export function createTauriPluginPort(): PluginPort {
     },
     async enable(agent: AgentId, name: string, marketplace?: string | null) {
       try {
-        await invoke<void>('enable_plugin_cmd', {
+        await invoke<void>('enable_plugin', {
           agent,
           name,
           marketplace: marketplace ?? null,
@@ -30,7 +30,7 @@ export function createTauriPluginPort(): PluginPort {
     },
     async disable(agent: AgentId, name: string, marketplace?: string | null) {
       try {
-        await invoke<void>('disable_plugin_cmd', {
+        await invoke<void>('disable_plugin', {
           agent,
           name,
           marketplace: marketplace ?? null,

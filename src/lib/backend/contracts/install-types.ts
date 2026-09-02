@@ -14,20 +14,29 @@ export interface InstallOutcome {
   details?: unknown;
 }
 
-/** Live install/upgrade/uninstall log line from the desktop event stream. */
+/** Live install/upgrade/uninstall raw UTF-8 output chunk from the desktop event stream. */
 export interface InstallProgressPayload {
   agentId?: string | null;
   action?: string;
-  line: string;
+  /** Canonical field: may be a partial line, empty string, or multi-line block. */
+  chunk: string;
+  /** @deprecated Prefer {@link InstallProgressPayload.chunk}. */
+  line?: string;
 }
 
-/** Filter helper: only lines for this agent (runtime-only lines have a null agentId). */
+/** Filter helper: only chunks for this agent (runtime-only chunks have a null agentId). */
 export function isProgressForAgent(
   payload: InstallProgressPayload,
   agentId: AgentId,
 ): boolean {
   if (!payload.agentId) return false;
   return payload.agentId === agentId;
+}
+
+export function installProgressChunk(payload: InstallProgressPayload): string {
+  if (typeof payload.chunk === 'string') return payload.chunk;
+  if (typeof payload.line === 'string') return payload.line;
+  return '';
 }
 
 /** Mirrors core `catalog::InstallChannelPlan`. */

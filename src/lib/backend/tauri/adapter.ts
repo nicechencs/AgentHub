@@ -15,14 +15,14 @@ import {
   mapAdapterRouteAnalysis,
   mapDefaultRoutePoolList,
   mapDefaultRoutePoolOverview,
-  mapLocalEntryStatus,
+  mapLocalGatewayStatus,
   mapLocalTokenProbeResult,
   mapLocalTokenRecord,
   type AdapterApplyPlanWire,
   type AdapterApplyResultWireInput,
   type AdapterBridgeStatusDtoWire,
   type AdapterProfileWire,
-  type LocalEntryStatusWire,
+  type LocalGatewayStatusWire,
   type LocalTokenProbeResultWire,
   type LocalTokenRecordWire,
   type AdapterRouteAnalysisWire,
@@ -255,17 +255,17 @@ export function createTauriAdapterPort(): AdapterPort {
       });
       return mapAdapterProfile(wire);
     },
-    async startLocalEntry() {
-      const wire = await invokeAdapter<LocalEntryStatusWire>('start_local_entry', {});
-      return mapLocalEntryStatus(wire);
+    async startLocalGateway() {
+      const wire = await invokeAdapter<LocalGatewayStatusWire>('start_local_gateway', {});
+      return mapLocalGatewayStatus(wire);
     },
-    async stopLocalEntry() {
-      const wire = await invokeAdapter<LocalEntryStatusWire>('stop_local_entry', {});
-      return mapLocalEntryStatus(wire);
+    async stopLocalGateway() {
+      const wire = await invokeAdapter<LocalGatewayStatusWire>('stop_local_gateway', {});
+      return mapLocalGatewayStatus(wire);
     },
-    async getLocalEntryStatus() {
-      const wire = await invokeAdapter<LocalEntryStatusWire>('get_local_entry_status', {});
-      return mapLocalEntryStatus(wire);
+    async getLocalGatewayStatus() {
+      const wire = await invokeAdapter<LocalGatewayStatusWire>('get_local_gateway_status', {});
+      return mapLocalGatewayStatus(wire);
     },
   };
 }

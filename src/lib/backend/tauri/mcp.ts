@@ -9,7 +9,7 @@ export function createTauriMcpPort(): McpPort {
   return {
     async listInventory() {
       try {
-        return await invoke<McpInventory>('list_mcp_inventory_cmd');
+        return await invoke<McpInventory>('list_mcp_inventory');
       } catch (e) {
         log.error('listInventory failed', e);
         throw e;

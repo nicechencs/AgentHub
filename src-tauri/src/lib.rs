@@ -126,6 +126,9 @@ pub fn run() {
             commands::adapter::start_adapter_bridge,
             commands::adapter::stop_adapter_bridge,
             commands::adapter::get_adapter_bridge_status,
+            commands::adapter::start_local_gateway,
+            commands::adapter::stop_local_gateway,
+            commands::adapter::get_local_gateway_status,
             commands::adapter::start_local_entry,
             commands::adapter::stop_local_entry,
             commands::adapter::get_local_entry_status,
@@ -143,6 +146,7 @@ pub fn run() {
             commands::configuration::plan_agent_config,
             commands::configuration::apply_agent_config,
             commands::configuration::materialize_agent_config,
+            commands::install::list_install_catalog,
             commands::install::list_install_catalog_cmd,
             commands::install::install_runtime,
             commands::install::install_agent,
@@ -156,10 +160,14 @@ pub fn run() {
             commands::agent_visibility::list_hidden_agents,
             commands::agent_visibility::set_agent_hidden,
             // MCP inventory (read-only)
+            commands::mcp::list_mcp_inventory,
             commands::mcp::list_mcp_inventory_cmd,
             // Plugin / extension pack inventory + enable/disable (not MCP)
+            commands::plugins::list_plugin_inventory,
             commands::plugins::list_plugin_inventory_cmd,
+            commands::plugins::enable_plugin,
             commands::plugins::enable_plugin_cmd,
+            commands::plugins::disable_plugin,
             commands::plugins::disable_plugin_cmd,
             // Provider
             commands::provider::list_provider_presets,

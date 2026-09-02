@@ -5,9 +5,9 @@ import { useCallback, useState } from 'react';
 import {
   enrollNativeToGateway,
   startAdapterBridge,
-  startLocalEntry,
+  startLocalGateway,
   stopAdapterBridge,
-  stopLocalEntry,
+  stopLocalGateway,
 } from '@/lib/api/adapter';
 import { guiErrorCode, logGuiEvent } from '@/lib/api/settings';
 import { listTicketWallet, ticketIdFor, unbindTicket } from '@/lib/api/tickets';
@@ -203,11 +203,11 @@ export function useBridgeRuntimeActions(input: {
     reloadThenClearProfileErrors,
   ]);
 
-  const handleStartLocalEntry = useCallback(async () => {
+  const handleStartLocalGateway = useCallback(async () => {
     setProfileBusy('__local_entry__', true);
     clearProfileError('__local_entry__');
     try {
-      const status = await startLocalEntry();
+      const status = await startLocalGateway();
       for (const row of status.statuses) updateBridgeStatus(row);
       void logGuiEvent('bridge_start', { profileId: 'local-entry', route: 'local_bridge' });
       reloadThenClearProfileErrors(['__local_entry__']);
@@ -232,11 +232,11 @@ export function useBridgeRuntimeActions(input: {
     reloadThenClearProfileErrors,
   ]);
 
-  const handleStopLocalEntry = useCallback(async () => {
+  const handleStopLocalGateway = useCallback(async () => {
     setProfileBusy('__local_entry__', true);
     clearProfileError('__local_entry__');
     try {
-      const status = await stopLocalEntry();
+      const status = await stopLocalGateway();
       for (const row of status.statuses) updateBridgeStatus(row);
       void logGuiEvent('bridge_stop', { profileId: 'local-entry', route: 'local_bridge' });
       reloadThenClearProfileErrors(['__local_entry__']);
@@ -295,8 +295,8 @@ export function useBridgeRuntimeActions(input: {
     busyProfileIds,
     enrollingProfileId,
     handleStartBridge,
-    handleStartLocalEntry,
-    handleStopLocalEntry,
+    handleStartLocalGateway,
+    handleStopLocalGateway,
     confirmStopBridge,
     confirmRemove,
     handleEnrollNative,

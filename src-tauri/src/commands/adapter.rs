@@ -4,7 +4,7 @@
 //! [`agenthub_core::adapter_control::AdapterControl`] (desktop host impl).
 
 use agenthub_core::adapter_control::{
-    resolve_bind_action, AdapterControl, BindAction, LocalEntryStatus,
+    resolve_bind_action, AdapterControl, BindAction, LocalGatewayStatus,
 };
 use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
@@ -252,12 +252,12 @@ pub async fn get_adapter_bridge_status(
         .map_err(adapter_error_from_string)
 }
 
-/// Start the shared local relay (loopback listener). Does not bind logins to Agents.
+/// Start the shared local gateway (loopback listener). Does not bind logins to Agents.
 #[tauri::command]
-pub async fn start_local_entry(
+pub async fn start_local_gateway(
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<LocalEntryStatus, GuiError> {
+) -> Result<LocalGatewayStatus, GuiError> {
     start_shared_local_entry(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
@@ -271,9 +271,9 @@ pub async fn start_local_entry(
     .map_err(adapter_error_from_string)
 }
 
-/// Stop the shared local relay.
+/// Stop the shared local gateway.
 #[tauri::command]
-pub async fn stop_local_entry(state: State<'_, AppState>) -> Result<LocalEntryStatus, GuiError> {
+pub async fn stop_local_gateway(state: State<'_, AppState>) -> Result<LocalGatewayStatus, GuiError> {
     stop_shared_local_entry(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
@@ -285,13 +285,36 @@ pub async fn stop_local_entry(state: State<'_, AppState>) -> Result<LocalEntrySt
     .map_err(adapter_error_from_string)
 }
 
-/// Credential-free relay status for the board switch.
+/// Credential-free gateway status for the board switch.
+#[tauri::command]
+pub async fn get_local_gateway_status(
+    state: State<'_, AppState>,
+) -> Result<LocalGatewayStatus, GuiError> {
+    read_local_entry_status(&state.bridge_host(), &state.local_entry_restarting())
+        .map_err(adapter_error_from_string)
+}
+
+/// Compatibility alias for `start_local_gateway`.
+#[tauri::command]
+pub async fn start_local_entry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<LocalGatewayStatus, GuiError> {
+    start_local_gateway(app, state).await
+}
+
+/// Compatibility alias for `stop_local_gateway`.
+#[tauri::command]
+pub async fn stop_local_entry(state: State<'_, AppState>) -> Result<LocalGatewayStatus, GuiError> {
+    stop_local_gateway(state).await
+}
+
+/// Compatibility alias for `get_local_gateway_status`.
 #[tauri::command]
 pub async fn get_local_entry_status(
     state: State<'_, AppState>,
-) -> Result<LocalEntryStatus, GuiError> {
-    read_local_entry_status(&state.bridge_host(), &state.local_entry_restarting())
-        .map_err(adapter_error_from_string)
+) -> Result<LocalGatewayStatus, GuiError> {
+    get_local_gateway_status(state).await
 }
 
 /// Enable or disable background restore for an existing local bridge.

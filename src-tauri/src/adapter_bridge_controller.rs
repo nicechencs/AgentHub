@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use agenthub_core::adapter_control::{
-    surface_unbind_and_restart, AdapterBridgeStatus, LocalEntryStatus,
+    surface_unbind_and_restart, AdapterBridgeStatus, LocalGatewayStatus,
 };
 use agenthub_core::bridge::{
     BridgeHostError, BridgeLocalSurface, BridgeMemberSpec, BridgeRuntimeHost, BridgeRuntimeState,
@@ -1461,7 +1461,7 @@ pub(crate) async fn start_local_entry(
     restarting: Arc<AtomicBool>,
     app: AppHandle,
     remember: bool,
-) -> Result<LocalEntryStatus, String> {
+) -> Result<LocalGatewayStatus, String> {
     let _restarting_guard = LocalEntryRestartingGuard::begin(restarting.clone(), Some(app));
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_profile("local-entry").await;
@@ -1581,7 +1581,7 @@ pub(crate) async fn stop_local_entry(
     coordinator: Arc<AdapterBridgeSagaCoordinator>,
     lifecycle_barrier: Arc<LifecycleShutdownBarrier>,
     restarting: Arc<AtomicBool>,
-) -> Result<LocalEntryStatus, String> {
+) -> Result<LocalGatewayStatus, String> {
     let _lifecycle_permit = lifecycle_barrier.enter().await?;
     let _gate = coordinator.lock_profile("local-entry").await;
     let ids = host.running_ids().map_err(map_bridge_host_error)?;
@@ -1619,7 +1619,7 @@ async fn write_local_entry_desired_running(hub: Arc<AgentHub>, running: bool) {
 pub(crate) fn local_entry_status(
     host: &BridgeRuntimeHost,
     restarting: &AtomicBool,
-) -> Result<LocalEntryStatus, String> {
+) -> Result<LocalGatewayStatus, String> {
     let ids = host.running_ids().map_err(map_bridge_host_error)?;
     local_entry_status_from_host(host, ids, restarting.load(Ordering::SeqCst))
 }
@@ -1628,7 +1628,7 @@ fn local_entry_status_from_host(
     host: &BridgeRuntimeHost,
     ids: Vec<String>,
     restarting: bool,
-) -> Result<LocalEntryStatus, String> {
+) -> Result<LocalGatewayStatus, String> {
     let port = host.gateway_port().map_err(map_bridge_host_error)?;
     let mut statuses = Vec::new();
     for id in ids {
@@ -1640,7 +1640,7 @@ fn local_entry_status_from_host(
             ));
         }
     }
-    Ok(LocalEntryStatus {
+    Ok(LocalGatewayStatus {
         running: port.is_some() && !statuses.is_empty(),
         port,
         statuses,

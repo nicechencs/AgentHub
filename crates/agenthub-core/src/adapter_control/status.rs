@@ -91,15 +91,15 @@ impl AdapterBridgeStatus {
 /// Shared local-entry (relay) status for the board switch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LocalEntryStatus {
+pub struct LocalGatewayStatus {
     pub running: bool,
     pub port: Option<u16>,
     pub statuses: Vec<AdapterBridgeStatus>,
     /// Failed local-auth attempts with no bound profile (newest first).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recent_unauthenticated_traces: Vec<RouteRequestTrace>,
-    /// True while restore or start_local_entry is bringing listeners back.
-    /// Not set for stop_local_entry. GUI shows a non-blocking restart banner.
+    /// True while restore or start_local_gateway is bringing listeners back.
+    /// Not set for stop_local_gateway. GUI shows a non-blocking restart banner.
     pub restarting: bool,
 }
 

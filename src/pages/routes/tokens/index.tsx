@@ -30,7 +30,7 @@ import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources'
 import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
 import { boardUsageWindow } from '@/pages/routes/board/board-usage-model';
 import { useBoardUsageStats } from '@/pages/routes/board/use-board-usage';
-import { buildLocalEntryControl } from '@/pages/routes/board/board-view-model';
+import { buildLocalGatewayControl } from '@/pages/routes/board/board-view-model';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { TokenDetailPanel } from './TokenDetailPanel';
 import { TokenList } from './TokenList';
@@ -85,7 +85,7 @@ export default function RoutesTokensPage() {
   });
   const inspect = useSideSplit<string>({ storageKey: ROUTES_INSPECT_WIDTH_KEY });
   const localEntry = useMemo(
-    () => buildLocalEntryControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
+    () => buildLocalGatewayControl(profiles, bridgeStatuses, hiddenTargetIds, defaultPools),
     [bridgeStatuses, defaultPools, hiddenTargetIds, profiles],
   );
 
