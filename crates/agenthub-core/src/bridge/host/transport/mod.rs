@@ -572,6 +572,24 @@ pub(super) fn passthrough_responses_object(body: Value) -> Result<(Value, bool),
     Ok((body, stream_requested))
 }
 
+/// Responses identity-relay still needs a conversation seed. Without this, Codex/Grok
+/// return opaque 400/422 that we previously collapsed to "The request was rejected."
+/// Not applied to Anthropic/Chat passthrough (they speak `messages`).
+pub(super) fn require_responses_conversation_seed(body: &Value) -> Result<(), Response> {
+    let has_seed = ["input", "previous_response_id", "prompt", "conversation"]
+        .iter()
+        .any(|key| body.get(key).is_some());
+    if has_seed {
+        return Ok(());
+    }
+    Err(error_response(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "One of `input`, `previous_response_id`, `prompt`, or `conversation` is required.",
+        None,
+    ))
+}
+
 fn overwrite_configured_model(body: &mut Value, model: Option<&str>, listed: &[String]) {
     overwrite_configured_model_with(body, model, false, listed);
 }
