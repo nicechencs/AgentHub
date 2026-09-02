@@ -50,6 +50,7 @@ import {
   installChannelKindLabel,
   installLocationSourceLabel,
   missingCatalogChannels,
+  missingChannelStatusKey,
 } from './agent-detail-model';
 import { localizeInstallCopy } from './install-labels';
 
@@ -455,6 +456,7 @@ export function AgentDetailPanel({
                 key={`missing:${channel.id}`}
                 agentId={agent.agentId}
                 channel={channel}
+                agentInstalled={agent.installed || installs.length > 0}
                 busy={rowBusy}
                 onInstall={() => {
                   setPendingChannel(channel);
@@ -766,16 +768,20 @@ function CopyableCommand({ command }: { command: string }) {
 function MissingChannelRow({
   agentId,
   channel,
+  agentInstalled,
   busy,
   onInstall,
 }: {
   agentId: string;
   channel: InstallChannelMeta;
+  /** True when another channel already satisfies this agent (alternate = optional). */
+  agentInstalled: boolean;
   busy: boolean;
   onInstall: () => void;
 }) {
   const { t } = useI18n();
   const linuxUnsupported = agentLinuxInstallUnsupported(agentId);
+  const statusKey = missingChannelStatusKey({ agentInstalled, linuxUnsupported });
   const sourceLabel = installLocationSourceLabel(agentId, channel.id, t);
   const command = channel.command.trim();
   const nameCommand = copyableChannelCommand(agentId, channel.id, t);
@@ -790,9 +796,7 @@ function MissingChannelRow({
               className="text-meta font-medium text-secondary"
             />
           ) : null}
-          <span className="text-meta text-muted">
-            {linuxUnsupported ? t('agents.card.linuxUnsupported') : t('agents.card.notInstalled')}
-          </span>
+          <span className="text-meta text-muted">{t(statusKey)}</span>
         </div>
         <AgentInstallButton iconOnly busy={busy} channelId={channel.id} linuxUnsupported={linuxUnsupported} onClick={onInstall} />
       </div>
