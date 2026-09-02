@@ -8,7 +8,7 @@ import {
   markConnectionCurrent,
   refreshRuntimeReadModels,
 } from '@/app/runtime';
-import type { AgentId, Provider, SwitchPreview } from '@/lib/types';
+import type { AgentKey, Provider, SwitchPreview } from '@/lib/types';
 
 export type {
   CoreProvider,
@@ -18,15 +18,15 @@ export type {
 export { mapCoreProvider, toCoreInput } from '@/lib/backend/contracts/provider-map';
 export type { CoreProviderPreset } from '@/lib/backend/contracts/skill-types';
 
-export async function listProviderPresets(agentId?: AgentId) {
+export async function listProviderPresets(agentId?: AgentKey) {
   return getBackend().provider.listProviderPresets(agentId);
 }
 
-export async function listProviders(agentId?: AgentId): Promise<Provider[]> {
+export async function listProviders(agentId?: AgentKey): Promise<Provider[]> {
   return getBackend().provider.listProviders(agentId);
 }
 
-function providerAuthStateChanged(agentId: AgentId): void {
+function providerAuthStateChanged(agentId: AgentKey): void {
   void refreshRuntimeReadModels(getBackend(), {
     agentId,
     clearProbe: true,
@@ -39,29 +39,29 @@ export async function upsertProvider(p: Provider): Promise<Provider> {
   return provider;
 }
 
-export async function deleteProvider(agentId: AgentId, providerId: string): Promise<void> {
+export async function deleteProvider(agentId: AgentKey, providerId: string): Promise<void> {
   await getBackend().provider.deleteProvider(agentId, providerId);
   providerAuthStateChanged(agentId);
 }
 
-export async function importProviderLive(agentId: AgentId, name?: string): Promise<Provider> {
+export async function importProviderLive(agentId: AgentKey, name?: string): Promise<Provider> {
   const imported = await getBackend().provider.importProviderLive(agentId, name);
   providerAuthStateChanged(agentId);
   return imported;
 }
 
-export async function switchPreview(agentId: AgentId, toProviderId: string): Promise<SwitchPreview> {
+export async function switchPreview(agentId: AgentKey, toProviderId: string): Promise<SwitchPreview> {
   return getBackend().provider.switchPreview(agentId, toProviderId);
 }
 
-export async function switchProvider(agentId: AgentId, toProviderId: string): Promise<void> {
+export async function switchProvider(agentId: AgentKey, toProviderId: string): Promise<void> {
   await getBackend().provider.switchProvider(agentId, toProviderId);
   markConnectionCurrent(agentId, 'provider', toProviderId);
   providerAuthStateChanged(agentId);
 }
 
 /** Deletes every listed Provider and refreshes shared read models once. */
-export async function deleteProviders(agentId: AgentId, providerIds: readonly string[]): Promise<void> {
+export async function deleteProviders(agentId: AgentKey, providerIds: readonly string[]): Promise<void> {
   if (providerIds.length === 0) return;
   const backend = getBackend();
   beginConnectionInventoryMutation();
@@ -79,13 +79,13 @@ export async function deleteProviders(agentId: AgentId, providerIds: readonly st
   });
 }
 
-export async function undoSwitch(agentId: AgentId): Promise<boolean> {
+export async function undoSwitch(agentId: AgentKey): Promise<boolean> {
   const undone = await getBackend().provider.undoSwitch(agentId);
   if (undone) providerAuthStateChanged(agentId);
   return undone;
 }
 
-export async function testLatency(agentId: AgentId, providerId: string): Promise<number> {
+export async function testLatency(agentId: AgentKey, providerId: string): Promise<number> {
   return getBackend().provider.testLatency(agentId, providerId);
 }
 

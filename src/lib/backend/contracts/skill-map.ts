@@ -1,12 +1,5 @@
 import { AGENT_IDS } from '@/config/agents';
-import type {
-  AgentId,
-  Skill,
-  SkillLinkKind,
-  SkillMapStatus,
-  SkillProjection,
-  SkillSyncState,
-} from '@/lib/types';
+import type { AgentKey, Skill, SkillLinkKind, SkillMapStatus, SkillProjection, SkillSyncState } from '@/lib/types';
 import type { CoreSkill, CoreSkillLinkKind, CoreSkillMapStatus } from './skill-types';
 
 function mapLinkKind(k?: CoreSkillLinkKind | null): SkillLinkKind {
@@ -39,8 +32,8 @@ export function mapMapStatus(
 
 /** Core Skill → UI Skill */
 export function mapCoreSkill(s: CoreSkill): Skill {
-  const sync = {} as Record<AgentId, SkillSyncState>;
-  const conflicts: AgentId[] = [];
+  const sync = {} as Record<AgentKey, SkillSyncState>;
+  const conflicts: AgentKey[] = [];
   const projections: SkillProjection[] = [];
 
   for (const id of AGENT_IDS) {

@@ -1,4 +1,4 @@
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import retryableErrorContract from './retryable-error-contract.json';
 
 /** Saved connection table selected for a read-only adapter route preview. */
@@ -8,7 +8,7 @@ export interface AdapterRouteRequest {
   sourceKind: AdapterSourceKind;
   /** Database row id; never a label, credential, or config body. */
   sourceId: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
 }
 
 /** Closed compatibility routes; unknown wire values are rejected at the adapter boundary. */
@@ -96,7 +96,7 @@ export type AdapterPlanChange =
 /** Safe preview of the eventual configuration mutation. `plan()` is the only planner exit. */
 export interface AdapterApplyPlan {
   analysis: AdapterRouteAnalysis;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   /**
    * True only when the capability matrix is open **and** plan's private
    * `write_gate` allows a write now (Account stays false). Matrix alone
@@ -125,7 +125,7 @@ export interface AdapterProfile {
   name: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   route: Exclude<AdapterRoute, 'unsupported'>;
   /** Credential family: API Key conversion vs official-login proxy. Independent of `route`. */
   mode: AdapterProfileMode;
@@ -280,7 +280,7 @@ export interface AdapterApplyResult {
 export interface AdapterProfileFilter {
   sourceKind?: AdapterSourceKind;
   sourceId?: string;
-  targetAgentId?: AgentId;
+  targetAgentId?: AgentKey;
   mode?: AdapterProfileMode;
   route?: Exclude<AdapterRoute, 'unsupported'>;
   status?: AdapterProfileStatus;
@@ -351,7 +351,7 @@ export interface RouteMemberOverview {
 /** Credential-free default-pool overview. Never includes `hubToken`. */
 export interface DefaultRoutePoolOverview {
   id: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   surface: RoutePoolSurface;
   dialect: RoutePoolDialect;
   unifiedGatewayEnrolled: boolean;
@@ -370,7 +370,7 @@ export interface DefaultRoutePoolList {
 export interface AttachPoolOwnedAuthorizationRequest {
   sourceKind: AdapterSourceKind;
   sourceId: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   surface: RoutePoolSurface;
 }
 

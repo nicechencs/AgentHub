@@ -1,9 +1,9 @@
-import type { AgentId, ParserHealth, UsageRecord } from '@/lib/types';
+import type { AgentKey, ParserHealth, UsageRecord } from '@/lib/types';
 
 /** Core UsageRecord (Rust camelCase). */
 export interface CoreUsageRecord {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   accountId?: string | null;
   model: string;
   inputTokens: number;
@@ -17,7 +17,7 @@ export interface CoreUsageRecord {
 }
 
 export interface CoreParserHealth {
-  agentId: AgentId;
+  agentId: AgentKey;
   supported: boolean;
   records: number;
   failRatePct?: number | null;

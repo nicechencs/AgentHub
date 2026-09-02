@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import {
   clearLiveAuthProbeCache,
   probeLiveAuthWithPort,
@@ -56,7 +56,7 @@ describe('live auth probe cache', () => {
   it('increments generation on clear so a stale deferred result cannot repopulate cache', async () => {
     const stale = deferred<LiveAuthProbe>();
     const fresh = deferred<LiveAuthProbe>();
-    const agentId: AgentId = 'claude';
+    const agentId: AgentKey = 'claude';
     const port = {
       probeLiveAuth: vi
         .fn()

@@ -1,11 +1,11 @@
-import type { AgentId, SkillLinkKind, SkillMapStatus, SkillSyncState } from '@/lib/types';
+import type { AgentKey, SkillLinkKind, SkillMapStatus, SkillSyncState } from '@/lib/types';
 
 export type CoreSkillSyncState = SkillSyncState;
 export type CoreSkillMapStatus = SkillMapStatus;
 export type CoreSkillLinkKind = SkillLinkKind;
 
 export interface CoreSkillProjection {
-  agent: AgentId;
+  agent: AgentKey;
   state: CoreSkillSyncState;
   linkKind?: CoreSkillLinkKind;
   targetDir?: string | null;
@@ -22,14 +22,14 @@ export interface CoreSkill {
 }
 
 export interface SkillSyncReport {
-  synced: { skill: string; agent: AgentId }[];
-  skipped: { skill: string; agent: AgentId }[];
-  failed: { skill: string; agent: AgentId; code: string; error: string }[];
+  synced: { skill: string; agent: AgentKey }[];
+  skipped: { skill: string; agent: AgentKey }[];
+  failed: { skill: string; agent: AgentKey; code: string; error: string }[];
 }
 
 /** One physical private copy after GUI grouping. */
 export interface SkillCopyLocation {
-  agentId: AgentId;
+  agentId: AgentKey;
   sourceDir: string;
   rootDir: string;
   rootLabel: string;
@@ -73,7 +73,7 @@ export interface SkillListingDto {
 
 export interface SkillProjectionResultDto {
   skillId: string;
-  agent: AgentId;
+  agent: AgentKey;
   requestedMode: 'link' | 'copy';
   appliedLinkKind: SkillLinkKind;
   fellBack: boolean;
@@ -101,7 +101,7 @@ export interface SkillMarkdownPreviewDto {
 }
 
 export interface CoreProviderPreset {
-  agent: AgentId;
+  agent: AgentKey;
   id: string;
   label: string;
   format: 'json' | 'toml';

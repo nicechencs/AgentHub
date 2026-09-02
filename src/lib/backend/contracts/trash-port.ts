@@ -1,4 +1,4 @@
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 
 export type ConnectionTrashKind = 'account' | 'provider' | 'membership';
 export type ConnectionTrashHome = 'connections' | 'route_pool';
@@ -19,7 +19,7 @@ export interface RouteMembershipTrashPayload {
 /** A deleted connection retained for 30 days and available for restore. */
 export interface ConnectionTrashItem {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   kind: ConnectionTrashKind;
   sourceId: string;
   label: string;
@@ -34,7 +34,7 @@ export interface ConnectionTrashItem {
 }
 
 export interface TrashPort {
-  list(agentId?: AgentId, home?: ConnectionTrashHome): Promise<ConnectionTrashItem[]>;
+  list(agentId?: AgentKey, home?: ConnectionTrashHome): Promise<ConnectionTrashItem[]>;
   restore(id: string): Promise<void>;
   permanentlyDelete(id: string): Promise<void>;
 }

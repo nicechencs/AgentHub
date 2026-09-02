@@ -1,4 +1,4 @@
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 export interface PluginComponent {
   kind: string;
@@ -8,7 +8,7 @@ export interface PluginComponent {
 
 export interface PluginEntry {
   id: string;
-  agent: AgentId;
+  agent: AgentKey;
   name: string;
   marketplace?: string | null;
   version?: string | null;
@@ -23,7 +23,7 @@ export interface PluginEntry {
 }
 
 export interface PluginAgentStatus {
-  agent: AgentId;
+  agent: AgentKey;
   /** listed | planned | unsupported */
   support: string;
   source?: string | null;
@@ -39,6 +39,6 @@ export interface PluginInventory {
 
 export interface PluginPort {
   listInventory(): Promise<PluginInventory>;
-  enable(agent: AgentId, name: string, marketplace?: string | null): Promise<void>;
-  disable(agent: AgentId, name: string, marketplace?: string | null): Promise<void>;
+  enable(agent: AgentKey, name: string, marketplace?: string | null): Promise<void>;
+  disable(agent: AgentKey, name: string, marketplace?: string | null): Promise<void>;
 }

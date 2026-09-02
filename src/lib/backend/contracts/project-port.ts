@@ -1,10 +1,4 @@
-import type {
-  AgentKey,
-  AgentProject,
-  AgentProjectExcerpt,
-  AgentSession,
-  ProjectMetadataFile,
-} from '@/lib/types';
+import type { AgentKey, AgentProject, AgentProjectExcerpt, AgentSession, ProjectMetadataFile } from '@/lib/types';
 
 export interface ProjectPort {
   listAgentProjects(

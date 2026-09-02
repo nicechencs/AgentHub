@@ -1,11 +1,11 @@
 import { extractAccountCredentialFiles } from '@/lib/credential-files';
-import type { Account, AccountKind, AgentId } from '@/lib/types';
+import type { Account, AccountKind, AgentKey } from '@/lib/types';
 import type { LiveAuthProbe } from './account-port';
 import { normalizeAuthHealth, type AuthHealth } from './auth-state';
 
 export interface CoreAccount {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   kind: AccountKind;
   label: string;
   credentials?: Record<string, unknown>;

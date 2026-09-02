@@ -1,4 +1,4 @@
-import type { AgentId, RuntimeId } from '@/lib/types';
+import type { AgentKey, RuntimeId } from '@/lib/types';
 import type { DoctorDetectResult, DoctorEnvStatus } from './doctor-types';
 
 export interface InstallOutcome {
@@ -27,7 +27,7 @@ export interface InstallProgressPayload {
 /** Filter helper: only chunks for this agent (runtime-only chunks have a null agentId). */
 export function isProgressForAgent(
   payload: InstallProgressPayload,
-  agentId: AgentId,
+  agentId: AgentKey,
 ): boolean {
   if (!payload.agentId) return false;
   return payload.agentId === agentId;
@@ -49,6 +49,6 @@ export interface InstallChannelPlanDto {
 
 /** Mirrors core `catalog::AgentInstallCatalogEntry`. */
 export interface AgentInstallCatalogEntryDto {
-  agentId: AgentId;
+  agentId: AgentKey;
   channels: InstallChannelPlanDto[];
 }

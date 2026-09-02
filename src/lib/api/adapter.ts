@@ -1,21 +1,6 @@
 /** Adapter route preview and the narrow, supported apply façade. */
 import { getBackend, refreshRuntimeReadModels } from '@/app/runtime';
-import type {
-  AdapterApplyPlan,
-  AdapterApplyRequest,
-  AdapterApplyResult,
-  AdapterBridgeRuntimeStatus,
-  AdapterProfile,
-  AdapterProfileFilter,
-  AdapterRouteAnalysis,
-  AdapterRouteRequest,
-  AdapterSourceKind,
-  AttachPoolOwnedAuthorizationRequest,
-  DefaultRoutePoolList,
-  DefaultRoutePoolOverview,
-  SyncConnectionAuthorizationsRequest,
-  SyncConnectionAuthorizationsResult,
-} from '@/lib/backend/contracts/adapter';
+import type { AdapterApplyPlan, AdapterApplyRequest, AdapterApplyResult, AdapterBridgeRuntimeStatus, AdapterProfile, AdapterProfileFilter, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind, AttachPoolOwnedAuthorizationRequest, DefaultRoutePoolList, DefaultRoutePoolOverview, SyncConnectionAuthorizationsRequest, SyncConnectionAuthorizationsResult } from '@/lib/backend/contracts/adapter';
 
 export type {
   AdapterAction,

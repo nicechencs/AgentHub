@@ -4,12 +4,8 @@ import {
   loadTicketWallet,
   refreshRuntimeReadModels,
 } from '@/app/runtime';
-import type {
-  AdapterApplyPlan,
-  BindTicketResult,
-  TicketWallet,
-} from '@/lib/backend/contracts';
-import type { AgentId } from '@/lib/types';
+import type { AdapterApplyPlan, BindTicketResult, TicketWallet } from '@/lib/backend/contracts';
+import type { AgentKey } from '@/lib/types';
 
 export type {
   BindingBridgeRuntime,
@@ -52,7 +48,7 @@ export async function listTicketWallet(): Promise<TicketWallet> {
 /** Plan bind(ticket, agent); same shape as planAdapter. */
 export async function planTicket(
   ticketId: string,
-  targetAgentId: AgentId,
+  targetAgentId: AgentKey,
 ): Promise<AdapterApplyPlan> {
   return getBackend().ticket.plan(ticketId, targetAgentId);
 }
@@ -60,7 +56,7 @@ export async function planTicket(
 /** Bind ticket → agent. Success is the returned active binding. */
 export async function bindTicket(
   ticketId: string,
-  targetAgentId: AgentId,
+  targetAgentId: AgentKey,
 ): Promise<BindTicketResult> {
   const result = await getBackend().ticket.bind(ticketId, targetAgentId);
   await refreshAfterTicketMutation();
@@ -68,7 +64,7 @@ export async function bindTicket(
 }
 
 /** Unbind ticket from agent. Ticket remains; caller may listWallet. */
-export async function unbindTicket(ticketId: string, agentId: AgentId): Promise<void> {
+export async function unbindTicket(ticketId: string, agentId: AgentKey): Promise<void> {
   await getBackend().ticket.unbind(ticketId, agentId);
   await refreshAfterTicketMutation();
 }

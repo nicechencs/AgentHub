@@ -1,7 +1,7 @@
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 export interface McpServerEntry {
-  agent: AgentId;
+  agent: AgentKey;
   name: string;
   transport: string;
   command?: string | null;
@@ -14,7 +14,7 @@ export interface McpServerEntry {
 }
 
 export interface McpSourceFile {
-  agent: AgentId;
+  agent: AgentKey;
   path: string;
   exists: boolean;
   readable: boolean;

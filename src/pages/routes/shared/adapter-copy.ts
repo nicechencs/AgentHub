@@ -68,17 +68,6 @@ export function resolveBridgesProfileQuery(
 }
 export const ROUTES_MUTATION_FAILURE = '本机路由操作失败，可点重试。';
 
-/** @deprecated Use {@link ROUTES_EMPTY_TITLE}. */
-export const BRIDGES_EMPTY_TITLE = ROUTES_EMPTY_TITLE;
-/** @deprecated Use {@link ROUTES_EMPTY_DESCRIPTION}. */
-export const BRIDGES_EMPTY_DESCRIPTION = ROUTES_EMPTY_DESCRIPTION;
-/** @deprecated Use {@link ROUTES_WALLET_WITHOUT_RUNTIME_TITLE}. */
-export const BRIDGES_WALLET_WITHOUT_RUNTIME_TITLE = ROUTES_WALLET_WITHOUT_RUNTIME_TITLE;
-/** @deprecated Use {@link ROUTES_WALLET_WITHOUT_RUNTIME_DESCRIPTION}. */
-export const BRIDGES_WALLET_WITHOUT_RUNTIME_DESCRIPTION = ROUTES_WALLET_WITHOUT_RUNTIME_DESCRIPTION;
-/** @deprecated Use {@link ROUTES_MUTATION_FAILURE}. */
-export const BRIDGES_MUTATION_FAILURE = ROUTES_MUTATION_FAILURE;
-
 export function adapterPageDescription(): string {
   return ROUTES_PAGE_DESCRIPTION;
 }

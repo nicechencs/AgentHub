@@ -2,13 +2,7 @@
  * Configuration API façade — delegates to app runtime backend.config.
  */
 import { getBackend } from '@/app/runtime';
-import type {
-  AgentConfigSchemaDto,
-  ConfigApplyResultDto,
-  ConfigChangePlanDto,
-  ConfigValidationResultDto,
-  NormalizedConfigDocumentDto,
-} from '@/lib/backend/contracts/config-types';
+import type { AgentConfigSchemaDto, ConfigApplyResultDto, ConfigChangePlanDto, ConfigValidationResultDto, NormalizedConfigDocumentDto } from '@/lib/backend/contracts/config-types';
 
 export type {
   AgentConfigSchemaDto,
