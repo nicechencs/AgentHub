@@ -48,9 +48,9 @@ describe('ActivityTraceDetailPanel', () => {
     expect(markup).toContain('data-side-inspect');
     expect(markup).toContain('data-activity-trace-detail="req-1"');
     expect(markup).toContain('请求详情');
-    expect(markup).toContain('入站端点');
+    expect(markup).toContain('本地调用端点');
     expect(markup).toContain('/v1/messages');
-    expect(markup).toContain('出站端点');
+    expect(markup).toContain('上游调用端点');
     expect(markup).toContain('https://api.anthropic.com/v1/messages');
     expect(markup).toContain('本机鉴权');
     expect(markup).toContain('连接池');
