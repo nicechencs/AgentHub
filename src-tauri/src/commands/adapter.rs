@@ -3,26 +3,25 @@
 //! Mutation / local_bridge lifecycle goes through
 //! [`agenthub_core::adapter_control::AdapterControl`] (desktop host impl).
 
-use agenthub_core::adapter_control::{resolve_bind_action, AdapterControl, BindAction};
+use agenthub_core::adapter_control::{
+    resolve_bind_action, AdapterControl, BindAction, LocalEntryStatus,
+};
 use agenthub_core::bridge::BridgeRuntimeHost;
 use agenthub_core::models::{
     ticket_id, AdapterApplyPlan, AdapterApplyResult, AdapterProfile, AdapterProfileFilter,
     AdapterProfileMode, AdapterRoute, AdapterRouteAnalysis, AdapterRouteRequest, AdapterSourceKind,
-    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenRecord, RouteDownstreamSurface,
-    SyncConnectionAuthorizationsResult, TicketBinding, TicketBindingRoute, TicketPlanRequest,
-    TicketWallet,
+    AgentId, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenRecord,
+    RouteDownstreamSurface, SyncConnectionAuthorizationsResult, TicketBinding, TicketBindingRoute,
+    TicketPlanRequest, TicketWallet,
 };
 use agenthub_core::utils::upstream_model_catalog::SourceModelCatalog;
 use agenthub_core::AgentHub;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::adapter_bridge_controller::{
-    local_entry_status as read_local_entry_status,
-    start_local_entry as start_shared_local_entry,
-    stop_local_entry as stop_shared_local_entry,
-    AdapterBridgeStatusDto,
+    local_entry_status as read_local_entry_status, start_local_entry as start_shared_local_entry,
+    stop_local_entry as stop_shared_local_entry, AdapterBridgeStatusDto,
 };
-use agenthub_core::adapter_control::LocalEntryStatus;
 use crate::adapter_control_host::apply_result_from_binding;
 use crate::commands::{
     adapter_error_from_string, map_err_string, parse_agent, with_hub_blocking, GuiError,
@@ -255,12 +254,17 @@ pub async fn get_adapter_bridge_status(
 
 /// Start the shared local relay (loopback listener). Does not bind logins to Agents.
 #[tauri::command]
-pub async fn start_local_entry(state: State<'_, AppState>) -> Result<LocalEntryStatus, GuiError> {
+pub async fn start_local_entry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<LocalEntryStatus, GuiError> {
     start_shared_local_entry(
         state.hub_arc().map_err(adapter_error_from_string)?,
         state.bridge_host(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
+        state.local_entry_restarting(),
+        app,
         true,
     )
     .await
@@ -275,6 +279,7 @@ pub async fn stop_local_entry(state: State<'_, AppState>) -> Result<LocalEntrySt
         state.bridge_host(),
         state.bridge_saga_coordinator(),
         state.lifecycle_shutdown_barrier(),
+        state.local_entry_restarting(),
     )
     .await
     .map_err(adapter_error_from_string)
@@ -285,7 +290,8 @@ pub async fn stop_local_entry(state: State<'_, AppState>) -> Result<LocalEntrySt
 pub async fn get_local_entry_status(
     state: State<'_, AppState>,
 ) -> Result<LocalEntryStatus, GuiError> {
-    read_local_entry_status(&state.bridge_host()).map_err(adapter_error_from_string)
+    read_local_entry_status(&state.bridge_host(), &state.local_entry_restarting())
+        .map_err(adapter_error_from_string)
 }
 
 /// Enable or disable background restore for an existing local bridge.
@@ -352,6 +358,7 @@ pub async fn list_local_tokens(
 /// Ensure the local entry is up, then `POST` a tiny request on the row path.
 #[tauri::command]
 pub async fn test_local_token(
+    app: AppHandle,
     state: State<'_, AppState>,
     endpoint: String,
     token: String,
@@ -360,13 +367,15 @@ pub async fn test_local_token(
 ) -> Result<agenthub_core::utils::local_token_probe::LocalTokenProbeResult, GuiError> {
     let hub = state.hub_arc().map_err(adapter_error_from_string)?;
     let host = state.bridge_host();
-    let status = match read_local_entry_status(&host) {
+    let status = match read_local_entry_status(&host, &state.local_entry_restarting()) {
         Ok(status) if status.running => status,
         _ => start_shared_local_entry(
             hub.clone(),
             host.clone(),
             state.bridge_saga_coordinator(),
             state.lifecycle_shutdown_barrier(),
+            state.local_entry_restarting(),
+            app,
             false,
         )
         .await

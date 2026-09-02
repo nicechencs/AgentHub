@@ -744,6 +744,7 @@ export interface LocalEntryStatusWire {
   port?: number | null;
   statuses?: AdapterBridgeStatusDtoWire[];
   recentUnauthenticatedTraces?: AdapterBridgeRouteTraceWire[];
+  restarting?: boolean;
 }
 
 export function mapLocalEntryStatus(wire: LocalEntryStatusWire): import('./adapter').LocalEntryStatus {
@@ -753,6 +754,7 @@ export function mapLocalEntryStatus(wire: LocalEntryStatusWire): import('./adapt
     port,
     statuses: Array.isArray(wire.statuses) ? wire.statuses.map(mapAdapterBridgeStatusDto) : [],
     unauthenticatedTraces: mapRouteTraces(wire.recentUnauthenticatedTraces),
+    restarting: wire.restarting === true,
   };
 }
 

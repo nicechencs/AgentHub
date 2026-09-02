@@ -1014,6 +1014,7 @@ function mockLocalEntryStatus(state: MockAdapterState): LocalEntryStatus {
   return {
     running: state.localEntryRunning,
     port: state.localEntryPort,
+    restarting: false,
     statuses: state.localEntryRunning
       ? state.defaultPools.map((pool) => ({
         profileId: pool.id,
