@@ -188,6 +188,25 @@ export function missingCatalogChannels(
   return channels.filter((channel) => channel.id.trim() && !present.has(channel.id));
 }
 
+/**
+ * Status copy for a catalog channel that is not on disk.
+ * When another channel already satisfies the agent, the alternate is optional —
+ * not a failed / unfinished install (UX-18 Kimi dual-channel).
+ */
+export type MissingChannelStatusKey =
+  | 'agents.card.linuxUnsupported'
+  | 'agents.card.channelOptional'
+  | 'agents.card.notInstalled';
+
+export function missingChannelStatusKey(input: {
+  agentInstalled: boolean;
+  linuxUnsupported?: boolean;
+}): MissingChannelStatusKey {
+  if (input.linuxUnsupported) return 'agents.card.linuxUnsupported';
+  if (input.agentInstalled) return 'agents.card.channelOptional';
+  return 'agents.card.notInstalled';
+}
+
 
 export function isDisplayableConfigDir(value?: string | null): value is string {
   if (!value || !isLiveFilePath(value)) return false;

@@ -2304,6 +2304,7 @@ export const en = {
       linuxUnsupported: "Linux is not supported yet",
       linuxUnsupportedHint: "WorkBuddy / ZCode only ship Windows / macOS installers; Linux is not supported yet.",
       notInstalled: "Not installed",
+      channelOptional: "Not selected · optional",
       seeDetails: "Multiple versions — open for details",
       seeDetailsCopies: "{count} other copies — open for details",
       seeDetailsLeftover: "Leftover copy — do not launch from this path",
