@@ -2354,6 +2354,7 @@ export const zh = {
       startAppFailed: "没法启动 App",
       install: "安装",
       retry: "重试",
+      redetect: "重新检测",
       installWithChannel: "使用渠道 {id} 安装",
       needFixEnv: " · 需先修环境",
       oneclickProgress: "环境 → Agent",

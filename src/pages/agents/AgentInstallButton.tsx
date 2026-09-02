@@ -1,12 +1,13 @@
-import { Zap } from 'lucide-react';
+import { RefreshCw, Zap } from 'lucide-react';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Button } from '@/components/ui/button';
 import {
+  installPrimaryLabelKey,
   installRetryButtonVariant,
   type AgentCardTaskStatus,
 } from './agent-card-model';
 
-/** Same 安装 / 重试 control on the agent list and in details. */
+/** Same 安装 / 重试 / 重新检测 control on the agent list and in details. */
 export function AgentInstallButton({
   status,
   busy,
@@ -24,19 +25,20 @@ export function AgentInstallButton({
   onClick: () => void;
 }) {
   const { t } = useI18n();
+  const labelKey = installPrimaryLabelKey(status);
+  const guided = status === 'guided';
   const failed = status === 'failed';
   const label = linuxUnsupported
     ? t('agents.card.linuxUnsupported')
-    : failed
-      ? t('agents.card.retry')
-      : t('agents.card.install');
+    : t(labelKey);
   const title = linuxUnsupported
     ? t('agents.card.linuxUnsupportedHint')
-    : failed
-      ? t('agents.card.retry')
+    : failed || guided
+      ? label
       : channelId
         ? t('agents.card.installWithChannel', { id: channelId })
         : t('agents.card.install');
+  const Icon = guided ? RefreshCw : Zap;
   return (
     <Button
       size={iconOnly ? 'icon' : 'sm'}
@@ -46,7 +48,7 @@ export function AgentInstallButton({
       title={title}
       aria-label={iconOnly ? label : undefined}
     >
-      <Zap className="h-3.5 w-3.5" />
+      <Icon className="h-3.5 w-3.5" />
       {iconOnly ? null : label}
     </Button>
   );

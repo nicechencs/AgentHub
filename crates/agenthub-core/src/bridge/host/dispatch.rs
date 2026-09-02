@@ -8,7 +8,7 @@ use tokio::sync::OwnedSemaphorePermit;
 use super::admission::{admit_conversation, AdmittedRequest};
 use super::dispatch_trace::trace_response;
 use super::gateway::{Gateway, GatewayAuthError, ModelSwitchOutcome};
-use super::http::{error_response, reject_invalid_local_auth, stopping_response, EdgeState};
+use super::http::{error_response, model_unavailable_message, model_unavailable_response, reject_invalid_local_auth, stopping_response, EdgeState};
 use super::pair_policy::{
     identity_relay, pair_adapter_active, pair_adapter_rejected, pair_direction, pair_model_servable,
 };
@@ -121,6 +121,7 @@ pub(super) async fn handle_conversation(
                 resolver_candidates = Some(candidates);
             }
             Ok(_) | Err(_) => {
+                let available = index.list_models(endpoint);
                 tracing::warn!(
                     target: "core.adapter",
                     profile_id = %admitted.state.profile_id,
@@ -131,20 +132,10 @@ pub(super) async fn handle_conversation(
                     status = 400_u16,
                     "v2 route index failed closed before any upstream attempt"
                 );
-                trace.pool_failed(
-                    "model_unavailable",
-                    "No running route can serve this model.",
-                );
-                return trace_response(
-                    &mut trace,
-                    &trace_log,
-                    error_response(
-                        StatusCode::BAD_REQUEST,
-                        "model_unavailable",
-                        "No running route can serve this model.",
-                        None,
-                    ),
-                );
+                let response = model_unavailable_response(&available);
+                let message = model_unavailable_message(&available);
+                trace.pool_failed("model_unavailable", &message);
+                return trace_response(&mut trace, &trace_log, response);
             }
         }
     } else {
@@ -182,6 +173,7 @@ pub(super) async fn handle_conversation(
                 } else {
                     "model_unavailable"
                 };
+                let available: Vec<String> = admitted.state.listed_models.to_vec();
                 tracing::warn!(
                     target: "core.adapter",
                     profile_id = %admitted.state.profile_id,
@@ -193,17 +185,19 @@ pub(super) async fn handle_conversation(
                     status = 400_u16,
                     "lead mapping missed and no running alternate can serve this model"
                 );
-                trace.pool_failed(code, "No running route can serve this model.");
-                return trace_response(
-                    &mut trace,
-                    &trace_log,
+                let response = if code == "model_unavailable" {
+                    model_unavailable_response(&available)
+                } else {
                     error_response(
                         StatusCode::BAD_REQUEST,
                         code,
-                        "No running route can serve this model.",
+                        &model_unavailable_message(&available),
                         None,
-                    ),
-                );
+                    )
+                };
+                let message = model_unavailable_message(&available);
+                trace.pool_failed(code, &message);
+                return trace_response(&mut trace, &trace_log, response);
             }
         }
     }
@@ -226,6 +220,7 @@ pub(super) async fn handle_conversation(
     if pair_adapter_active(&admitted.state, channel)
         && !pair_model_servable(&admitted.state, &model)
     {
+        let available: Vec<String> = admitted.state.listed_models.to_vec();
         tracing::warn!(
             target: "core.adapter",
             profile_id = %admitted.state.profile_id,
@@ -236,19 +231,12 @@ pub(super) async fn handle_conversation(
             status = 400_u16,
             "pair adapter has no upstream mapping for this model"
         );
-        trace.pool_failed(
-            "model_unavailable",
-            "No running route can serve this model.",
-        );
+        let message = model_unavailable_message(&available);
+        trace.pool_failed("model_unavailable", &message);
         return trace_response(
             &mut trace,
             &trace_log,
-            error_response(
-                StatusCode::BAD_REQUEST,
-                "model_unavailable",
-                "No running route can serve this model.",
-                None,
-            ),
+            model_unavailable_response(&available),
         );
     }
     let pair_active = pair_adapter_active(&admitted.state, channel);
