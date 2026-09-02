@@ -49,12 +49,11 @@ export type ActivityRouteOption = {
   label: string;
 };
 
-/** Distinct local-bridge routes that currently have inbound rows (or all bridges). */
+/** Distinct monitored routes for the activity page filter. */
 export function activityRouteOptions(
   profiles: readonly Pick<AdapterProfile, 'id' | 'name' | 'route' | 'targetAgentId'>[],
 ): ActivityRouteOption[] {
   return profiles
-    .filter((profile) => profile.route === 'local_bridge')
     .map((profile) => ({
       id: profile.id,
       label: profile.name.trim() || profile.targetAgentId,

@@ -1497,6 +1497,7 @@ fn local_entry_status_from_host(
         running: port.is_some() && !statuses.is_empty(),
         port,
         statuses,
+        recent_unauthenticated_traces: host.recent_unauthenticated_route_traces(),
     })
 }
 

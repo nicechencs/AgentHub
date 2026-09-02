@@ -95,6 +95,9 @@ pub struct LocalEntryStatus {
     pub running: bool,
     pub port: Option<u16>,
     pub statuses: Vec<AdapterBridgeStatus>,
+    /// Failed local-auth attempts with no bound profile (newest first).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_unauthenticated_traces: Vec<RouteRequestTrace>,
 }
 
 impl AdapterBridgeStatus {

@@ -1,32 +1,24 @@
-import { useMemo } from 'react';
-import { Activity, Boxes } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
-import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
-import { RouteTraceList } from '@/components/shared/RouteTraceList';
-import { RouteTracePipelineLegend } from '@/components/shared/RouteTracePipelineLegend';
 import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { useI18n } from '@/components/shared/LanguageProvider';
-import { Button } from '@/components/ui/button';
-import { ROUTES_POOL_PATH } from '@/lib/bridges-path';
+import { getLocalEntryStatus } from '@/lib/api/adapter';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
+import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
+import { activityRouteOptions, parseActivityFilter } from '@/pages/routes/activity/inbound-feed-model';
+import { ActivityMonitoringPanel } from '@/pages/routes/activity/ActivityMonitoringPanel';
 import {
-  activityRouteOptions,
-  parseActivityFilter,
-  type InboundFeedFilter,
-} from '@/pages/routes/activity/inbound-feed-model';
-import {
-  buildRouteTraceFeed,
-} from '@/pages/routes/activity/route-trace-feed-model';
-import { activityHref } from '@/pages/routes/board/board-view-model';
+  monitoredLocalProfiles,
+  resolveActivityPageSnapshot,
+} from '@/pages/routes/activity/activity-view-model';
 
 export default function RoutesActivityPage() {
   const { t } = useI18n();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = parseActivityFilter(searchParams.get('filter'));
   const routeId = searchParams.get('route');
@@ -38,26 +30,70 @@ export default function RoutesActivityPage() {
     loading,
     reload,
   } = useAdapterResources();
+  const { defaultPools } = useRoutePoolState({ profiles, detailTarget: null });
+  const [localEntryStatuses, setLocalEntryStatuses] = useState<
+    import('@/lib/backend/contracts/adapter').AdapterBridgeRuntimeStatus[]
+  >([]);
+  const [unauthenticatedTraces, setUnauthenticatedTraces] = useState<
+    import('@/lib/backend/contracts/adapter').AdapterBridgeRouteTrace[]
+  >([]);
 
-  const bridges = useMemo(
-    () => profiles.filter((profile) => profile.route === 'local_bridge'),
-    [profiles],
+  useEffect(() => {
+    let cancelled = false;
+    void getLocalEntryStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setLocalEntryStatuses(status.statuses ?? []);
+          setUnauthenticatedTraces(status.unauthenticatedTraces ?? []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLocalEntryStatuses([]);
+          setUnauthenticatedTraces([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profiles, bridgeStatuses, loading]);
+
+  const monitoredProfiles = useMemo(
+    () => monitoredLocalProfiles(profiles, new Set(), defaultPools),
+    [profiles, defaultPools],
   );
-  const routeOptions = useMemo(() => activityRouteOptions(bridges), [bridges]);
-  const feed = useMemo(
-    () => buildRouteTraceFeed(profiles, bridgeStatuses, filter, 20, routeId),
-    [profiles, bridgeStatuses, filter, routeId],
+  const routeOptions = useMemo(
+    () => activityRouteOptions(monitoredProfiles),
+    [monitoredProfiles],
   );
-  const allCount = useMemo(
-    () => buildRouteTraceFeed(profiles, bridgeStatuses, 'all', 100, routeId).length,
-    [profiles, bridgeStatuses, routeId],
-  );
-  const failedCount = useMemo(
-    () => buildRouteTraceFeed(profiles, bridgeStatuses, 'failed', 100, routeId).length,
-    [profiles, bridgeStatuses, routeId],
+  const snapshot = useMemo(
+    () => resolveActivityPageSnapshot({
+      profiles,
+      bridgeStatuses,
+      localEntryStatuses,
+      unauthenticatedTraces,
+      unauthenticatedSourceLabel: t('routes.activity.unauthenticatedSource'),
+      pools: defaultPools,
+      filter,
+      routeId,
+      profileState,
+      loading,
+    }),
+    [
+      profiles,
+      bridgeStatuses,
+      localEntryStatuses,
+      unauthenticatedTraces,
+      defaultPools,
+      filter,
+      routeId,
+      profileState,
+      loading,
+      t,
+    ],
   );
 
-  const setFilter = (next: InboundFeedFilter) => {
+  const setFilter = (next: typeof filter) => {
     const params = new URLSearchParams(searchParams);
     if (next === 'all') params.delete('filter');
     else params.set('filter', next);
@@ -71,8 +107,6 @@ export default function RoutesActivityPage() {
     setSearchParams(params, { replace: true });
   };
 
-  const filteredEmpty = Boolean(routeId || filter === 'failed');
-
   return (
     <RoutesPane>
       <PageHeader
@@ -85,8 +119,8 @@ export default function RoutesActivityPage() {
           value={filter}
           onChange={setFilter}
           options={[
-            { value: 'all', label: t('routes.activity.filterAll'), count: allCount },
-            { value: 'failed', label: t('routes.activity.filterFailed'), count: failedCount },
+            { value: 'all', label: t('routes.activity.filterAll'), count: snapshot.allCount },
+            { value: 'failed', label: t('routes.activity.filterFailed'), count: snapshot.failedCount },
           ]}
         />
         {routeOptions.length > 0 ? (
@@ -116,8 +150,6 @@ export default function RoutesActivityPage() {
         </div>
       </div>
 
-      <p className="mb-3 text-meta text-muted">{t('routes.activity.scopeNote')}</p>
-      <RouteTracePipelineLegend className="mb-4" />
       {routeId ? (
         <p className="mb-3 text-meta">
           <button
@@ -130,56 +162,14 @@ export default function RoutesActivityPage() {
         </p>
       ) : null}
 
-      {profileState === 'error' ? (
+      {snapshot.kind === 'error' ? (
         <ErrorState
           title={t('routes.loadError')}
           error={errors.profiles ?? t('routes.loadError')}
           onRetry={() => void reload()}
         />
-      ) : bridges.length === 0 && !loading ? (
-        <EmptyState
-          icon={Boxes}
-          title={t('routes.board.emptyTitle')}
-          description={t('routes.board.emptyDescription')}
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-2"
-              onClick={() => navigate(ROUTES_POOL_PATH)}
-            >
-              {t('routes.nav.goToList')}
-            </Button>
-          }
-        />
-      ) : feed.length === 0 ? (
-        <EmptyState
-          icon={Activity}
-          title={
-            filteredEmpty
-              ? t('routes.activity.emptyFilteredTitle')
-              : t('routes.activity.emptyTitle')
-          }
-          description={
-            filteredEmpty
-              ? t('routes.activity.emptyFilteredDescription')
-              : t('routes.activity.emptyDescription')
-          }
-          action={
-            filteredEmpty ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-2"
-                onClick={() => navigate(activityHref({}))}
-              >
-                {t('routes.activity.clearRouteFilter')}
-              </Button>
-            ) : undefined
-          }
-        />
       ) : (
-        <RouteTraceList rows={feed} />
+        <ActivityMonitoringPanel snapshot={snapshot} />
       )}
     </RoutesPane>
   );
