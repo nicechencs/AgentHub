@@ -38,6 +38,7 @@ import {
   attachTokenUsage,
   buildLocalTokenRows,
   generateLocalToken,
+  localTokenEditKeyGate,
   maskLocalToken,
   tokenTypeLabel,
   type LocalTokenRow,
@@ -141,12 +142,26 @@ export default function RoutesTokensPage() {
   }, []);
 
   const openEdit = (row: LocalTokenRow) => {
+    const gate = localTokenEditKeyGate(row, t);
+    if (!gate.enabled) {
+      toast({
+        title: gate.reason ?? t('routes.tokens.editKeyNeedPool'),
+        variant: 'danger',
+      });
+      return;
+    }
     setEditRow(row);
     setEditValue(row.token ?? '');
   };
 
   const saveEdit = async () => {
     if (!editRow || editBusy) return;
+    // setLocalToken requires a real pool id — never call it with a leftover profile id.
+    if (!editRow.poolBacked) {
+      toast({ title: t('routes.tokens.editKeyNeedPool'), variant: 'danger' });
+      setEditRow(null);
+      return;
+    }
     const token = editValue.trim();
     if (!token) {
       toast({ title: t('routes.tokens.keyRequired'), variant: 'danger' });
