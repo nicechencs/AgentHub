@@ -81,6 +81,13 @@ impl BridgeRuntimeHost {
             .set(std::sync::Arc::new(crate::bridge::usage_capture::UsageSpool::new(dir)));
     }
 
+    /// Enable durable route-trace ring persistence (Activity monitor history).
+    /// Loads last N traces from `path` when present; later calls are ignored.
+    /// Unset keeps an in-memory ring only (CLI / unit tests).
+    pub fn set_route_trace_persist_path(&self, path: std::path::PathBuf) {
+        self.gateway.route_traces.enable_persist(path);
+    }
+
     /// Starts an edge and ensures a loopback socket. Repeating an exact live start is
     /// idempotent; attempting to start while a matching profile drains fails rather than
     /// racing a second edge.
