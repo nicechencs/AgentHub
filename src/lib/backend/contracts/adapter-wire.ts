@@ -1,46 +1,9 @@
-import type { AgentId, Provider } from '@/lib/types';
+import type { AgentKey, Provider } from '@/lib/types';
 import {
   mapCoreProvider,
   type CoreProvider,
 } from './provider-map';
-import type {
-  AdapterAction,
-  AdapterApplyPlan,
-  AdapterApplyResult,
-  AdapterBridgeInboundRequest,
-  AdapterBridgeRouteTrace,
-  AdapterBridgeRuntimeState,
-  AdapterBridgeRuntimeStatus,
-  AdapterEvidence,
-  AdapterGateKind,
-  AdapterMaturity,
-  AdapterPlanChange,
-  AdapterProfile,
-  AdapterProfileMode,
-  AdapterProfileStatus,
-  AdapterReusePath,
-  AdapterRoute,
-  AdapterRouteAnalysis,
-  AdapterServiceImpact,
-  AdapterSourceKind,
-  AdapterSupport,
-  DefaultRoutePoolList,
-  DefaultRoutePoolOverview,
-  LocalTokenProbeOutcome,
-  LocalTokenProbeResult,
-  LocalTokenRecord,
-  RouteMemberOverview,
-  RouteTraceConversion,
-  RouteTraceLocalAuth,
-  RouteTraceMember,
-  RouteTracePool,
-  RouteTracePoolAttempt,
-  RouteTraceStageStatus,
-  RouteTraceUpstream,
-  RouteTraceUpstreamAuth,
-  RoutePoolDialect,
-  RoutePoolSurface,
-} from './adapter';
+import type { AdapterAction, AdapterApplyPlan, AdapterApplyResult, AdapterBridgeInboundRequest, AdapterBridgeRouteTrace, AdapterBridgeRuntimeState, AdapterBridgeRuntimeStatus, AdapterEvidence, AdapterGateKind, AdapterMaturity, AdapterPlanChange, AdapterProfile, AdapterProfileMode, AdapterProfileStatus, AdapterReusePath, AdapterRoute, AdapterRouteAnalysis, AdapterServiceImpact, AdapterSourceKind, AdapterSupport, DefaultRoutePoolList, DefaultRoutePoolOverview, LocalTokenProbeOutcome, LocalTokenProbeResult, LocalTokenRecord, RouteMemberOverview, RouteTraceConversion, RouteTraceLocalAuth, RouteTraceMember, RouteTracePool, RouteTracePoolAttempt, RouteTraceStageStatus, RouteTraceUpstream, RouteTraceUpstreamAuth, RoutePoolDialect, RoutePoolSurface } from './adapter';
 
 /** Exact camelCase shape serialized by Rust's `AdapterProfile`. */
 export interface AdapterProfileWire {
@@ -48,7 +11,7 @@ export interface AdapterProfileWire {
   name: string;
   sourceKind: AdapterSourceKind;
   sourceId: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   route: string;
   mode: string;
   status: string;
@@ -65,7 +28,7 @@ export interface AdapterProfileWire {
 /** Exact camelCase shape serialized by Rust's `Provider`. */
 export interface CoreProviderWire {
   id: string;
-  agentId: AgentId;
+  agentId: AgentKey;
   name: string;
   settingsConfig: Record<string, unknown>;
   meta: Record<string, unknown>;
@@ -216,7 +179,7 @@ export interface AdapterPlanChangeWire {
 
 export interface AdapterApplyPlanWire {
   analysis: AdapterRouteAnalysisWire;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   canApply: boolean;
   maturity?: string;
   reusePath?: string;
@@ -836,7 +799,7 @@ export interface RouteMemberOverviewWire {
 
 export interface DefaultRoutePoolOverviewWire {
   id: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   surface: string;
   dialect: string;
   unifiedGatewayEnrolled?: boolean;

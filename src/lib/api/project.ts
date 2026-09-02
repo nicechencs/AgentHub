@@ -2,13 +2,7 @@
  * Project API façade — delegates to app runtime backend.
  */
 import { getBackend } from '@/app/runtime';
-import type {
-  AgentKey,
-  AgentProject,
-  AgentProjectExcerpt,
-  AgentSession,
-  ProjectMetadataFile,
-} from '@/lib/types';
+import type { AgentKey, AgentProject, AgentProjectExcerpt, AgentSession, ProjectMetadataFile } from '@/lib/types';
 
 export type {
   CoreAgentProject,

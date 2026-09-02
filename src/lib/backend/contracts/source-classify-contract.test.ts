@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 import {
   classifyAccountSource,
   classifyProviderSource,
@@ -28,7 +28,7 @@ const MOCK_SOURCE_IDS: MockSourceId[] = [
 function accountFromCase(entry: (typeof SOURCE_CLASSIFY_CONTRACT.cases)[number]): ClassifiableAccount {
   return {
     id: entry.id,
-    agentId: entry.agentId as AgentId,
+    agentId: entry.agentId as AgentKey,
     kind: (entry.accountKind ?? 'apikey') as Account['kind'],
     label: entry.id,
     isCurrent: false,
@@ -41,7 +41,7 @@ function accountFromCase(entry: (typeof SOURCE_CLASSIFY_CONTRACT.cases)[number])
 function providerFromCase(entry: (typeof SOURCE_CLASSIFY_CONTRACT.cases)[number]): Provider {
   return {
     id: entry.id,
-    agentId: entry.agentId as AgentId,
+    agentId: entry.agentId as AgentKey,
     name: entry.id,
     preset: 'preset' in entry && typeof entry.preset === 'string' ? entry.preset : 'custom',
     configText:

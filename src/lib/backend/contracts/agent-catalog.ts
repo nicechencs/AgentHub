@@ -3,7 +3,7 @@
  * Product agent set comes from runtime catalog, not a static closed list.
  */
 import type { AgentMeta } from '@/config/agents';
-import type { AgentId, AgentStatus } from '@/lib/types';
+import type { AgentKey, AgentStatus } from '@/lib/types';
 import type { AgentCatalogEntryDto } from './agent-catalog-types';
 
 export type { AgentCatalogEntryDto, LiveOccupancyDto } from './agent-catalog-types';
@@ -13,7 +13,7 @@ export {
   mapCatalogCapabilities,
 } from './agent-catalog-types';
 
-function missingAgentStatus(id: AgentId): AgentStatus {
+function missingAgentStatus(id: AgentKey): AgentStatus {
   return {
     agentId: id,
     installed: false,

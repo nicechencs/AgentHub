@@ -7,9 +7,9 @@ import {
   createOAuthFlowToken,
   isOAuthFlowTokenCurrent,
   openManualCallbackFallbackIfCurrent,
-  validateManualCallbackUrl,
   type OAuthFlowToken,
-} from './OAuthFlowDialog';
+} from '@/components/connect/OAuthFlowDialog';
+import { validateManualCallbackUrl } from '@/lib/backend/contracts/official-login-session';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

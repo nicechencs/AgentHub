@@ -357,6 +357,7 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 | F | 已完成 | 领域名 `unifiedGatewayEnrolled`；DB 列仍为 `v2_enrolled`；wire 双读 |
 | G | 已完成 | `ConnectBindPurpose=direct`；事件 `_EVENT`；`skills_sh_market`；`AgentKey` 渐进（project port） |
 | H | 已完成 | N-15 约定写入 `ui-preferences`；文档断链修复；`pnpm check:docs` 通过 |
+| **I** | 已完成 | 删除无引用兼容代理；port/API `AgentId`→`AgentKey`（别名保留）；去掉无用 `BRIDGES_*` 文案别名；`ConnectionInventoryDiscoveryState` |
 
 ### 核对调整
 
@@ -380,6 +381,7 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 | **F** | N-06 | 高风险 | route_pools 映射、`v2_enrolled` 全栈 | **DB 列名暂留 `v2_enrolled`**；Rust/TS 领域名 `unified_gateway_enrolled` / `unifiedGatewayEnrolled`；wire 双读旧 `v2Enrolled` | 页面与 wire 用新名；SQL 仍读写旧列；过滤测试 |
 | **G** | N-12（渐进）、N-14、N-16 | 局部 | 本轮触及的 TS 契约用 `AgentKey`；`ConnectBindPurpose`；事件常量与 `skillssh_market` | `AgentId` 别名暂留；`share`→`direct` 仅 connect-flow；文件/常量机械改名 | 本轮新代码不新增 `AgentId`；connect-flow 无 share 歧义；常量后缀一致 |
 | **H** | N-15 + 文档同步 | 局部 / 持久化 | `ui-preferences` 与各页自建键；本审计文档、术语表交叉引用 | 读旧键写新键；确认覆盖后再清旧键 | 新键统一 `agenthub:`+kebab；`pnpm check:docs` |
+| **I** | 兼容层瘦身 + `AgentKey` 公共契约 | 局部 | 无引用代理对话框；`backend/contracts` + `api`；`adapter-copy` 无用 `BRIDGES_*`；connections discovery 类型名 | `AgentId` 类型别名与 IPC/DB 旧名仍保留；localStorage 旧键 / `v2_enrolled` 列 / `currentProvider` 字段不删 | 代理文件消失；port/API 新代码用 `AgentKey`；过滤 Vitest |
 
 ### N-15 说明
 
@@ -418,7 +420,7 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 
 ## 菜单与按钮命名方案（已确认 · U1–U4 已落地）
 
-代码符号整改（A–H）已完成。本节记录**用户可见**侧栏、分区标题、主按钮与空态 CTA 的定稿；用户以「继续」按推荐默认项落地。依据 [术语表](../reference/terminology.md)。
+代码符号整改（A–I）已完成。本节记录**用户可见**侧栏、分区标题、主按钮与空态 CTA 的定稿；用户以「继续」按推荐默认项落地。依据 [术语表](../reference/terminology.md)。
 
 ### 拍板结果
 

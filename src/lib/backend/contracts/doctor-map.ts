@@ -5,21 +5,9 @@
 import { RUNTIME_MAP } from '@/config/runtimes';
 import { checkChannelEnv, defaultChannel, findChannel } from '@/lib/env';
 import { installLifecycle } from './install-lifecycle';
-import type {
-  DoctorCapabilityState,
-  DoctorDetectResult,
-  DoctorEnvStatus,
-  DoctorRemediation,
-  DoctorReport,
-} from './doctor-types';
+import type { DoctorCapabilityState, DoctorDetectResult, DoctorEnvStatus, DoctorRemediation, DoctorReport } from './doctor-types';
 import type { AgentCapabilities, AgentCapability, Capability } from '@/lib/capability';
-import type {
-  AgentStatus,
-  EnvRemediation,
-  InstallChannel,
-  RemediationKind,
-  RuntimeDetect,
-} from '@/lib/types';
+import type { AgentStatus, EnvRemediation, InstallChannel, RemediationKind, RuntimeDetect } from '@/lib/types';
 
 const INSTALL_CHANNELS: InstallChannel[] = ['native', 'npm'];
 

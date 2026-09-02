@@ -7,21 +7,13 @@ import {
   markConnectionCurrent,
   refreshRuntimeReadModels,
 } from '@/app/runtime';
-import type {
-  AuthState,
-  DeviceOAuthPollInfo,
-  DeviceOAuthStartInfo,
-  LiveAuthProbe,
-  OAuthLoginOption,
-  OAuthStartInfo,
-  OAuthWaitInfo,
-} from '@/lib/backend/contracts/ports';
+import type { AuthState, DeviceOAuthPollInfo, DeviceOAuthStartInfo, LiveAuthProbe, OAuthLoginOption, OAuthStartInfo, OAuthWaitInfo } from '@/lib/backend/contracts/ports';
 import {
   clearLiveAuthProbeCache as clearProbeCache,
   probeLiveAuthWithPort,
 } from '@/lib/backend/contracts/live-auth-probe-cache';
 import { unwrapAccounts } from '@/lib/backend/contracts/account-map';
-import type { Account, AgentId } from '@/lib/types';
+import type { Account, AgentKey } from '@/lib/types';
 import { OAUTH_WAIT_TIMEOUT_SECS } from '@/lib/backend/contracts/oauth-constants';
 
 export type {
@@ -40,12 +32,12 @@ export type {
 };
 export { OAUTH_WAIT_TIMEOUT_SECS };
 
-export async function listAccounts(agentId?: AgentId): Promise<Account[]> {
+export async function listAccounts(agentId?: AgentKey): Promise<Account[]> {
   return unwrapAccounts(await getBackend().account.listAccounts(agentId));
 }
 
 /** Re-read live files into the pool, then refresh the shared store. */
-export async function reconcileAccountPool(agentId?: AgentId): Promise<void> {
+export async function reconcileAccountPool(agentId?: AgentKey): Promise<void> {
   const backend = getBackend();
   if (!backend.account.reconcileAccounts) return;
   await backend.account.reconcileAccounts(agentId);
@@ -57,7 +49,7 @@ export async function reconcileAccountPool(agentId?: AgentId): Promise<void> {
  * Pages read the AgentStatus store, so this keeps Dashboard/Connections in
  * sync without every mutation handler issuing its own live probe.
  */
-function authStateChanged(agentId: AgentId): void {
+function authStateChanged(agentId: AgentKey): void {
   void refreshRuntimeReadModels(getBackend(), {
     agentId,
     clearProbe: true,
@@ -65,12 +57,12 @@ function authStateChanged(agentId: AgentId): void {
 }
 
 /** Reconcile an externally rotated/current login through the shared store. */
-export function refreshLiveAuthState(agentId: AgentId): void {
+export function refreshLiveAuthState(agentId: AgentKey): void {
   authStateChanged(agentId);
 }
 
 export async function probeLiveAuth(
-  agentId: AgentId,
+  agentId: AgentKey,
   options: { force?: boolean } = {},
 ): Promise<LiveAuthProbe> {
   return probeLiveAuthWithPort(getBackend().account, agentId, options);
@@ -78,20 +70,20 @@ export async function probeLiveAuth(
 
 export { clearProbeCache as clearLiveAuthProbeCache };
 
-export async function switchAccount(agentId: AgentId, accountId: string): Promise<void> {
+export async function switchAccount(agentId: AgentKey, accountId: string): Promise<void> {
   await getBackend().account.switchAccount(agentId, accountId);
   markConnectionCurrent(agentId, 'account', accountId);
   authStateChanged(agentId);
 }
 
-export async function undoSwitchAccount(agentId: AgentId): Promise<boolean> {
+export async function undoSwitchAccount(agentId: AgentKey): Promise<boolean> {
   const undone = await getBackend().account.undoSwitchAccount(agentId);
   if (undone) authStateChanged(agentId);
   return undone;
 }
 
 export async function addApiKeyAccount(
-  agentId: AgentId,
+  agentId: AgentKey,
   key: string,
   label?: string | null,
   envKey?: string | null,
@@ -111,7 +103,7 @@ export async function addApiKeyAccount(
 }
 
 export async function updateApiKeyAccount(
-  agentId: AgentId,
+  agentId: AgentKey,
   accountId: string,
   opts: { label?: string | null; key?: string | null },
 ): Promise<Account> {
@@ -120,22 +112,22 @@ export async function updateApiKeyAccount(
   return account;
 }
 
-export async function importCurrentLogin(agentId: AgentId): Promise<Account> {
+export async function importCurrentLogin(agentId: AgentKey): Promise<Account> {
   const account = await getBackend().account.importCurrentLogin(agentId);
   authStateChanged(agentId);
   return account;
 }
 
-export async function oauthSupported(agentId: AgentId): Promise<boolean> {
+export async function oauthSupported(agentId: AgentKey): Promise<boolean> {
   return getBackend().account.oauthSupported(agentId);
 }
 
-export async function listOAuthOptions(agentId: AgentId): Promise<OAuthLoginOption[]> {
+export async function listOAuthOptions(agentId: AgentKey): Promise<OAuthLoginOption[]> {
   return getBackend().account.listOAuthOptions(agentId);
 }
 
 export async function startOAuth(
-  agentId: AgentId,
+  agentId: AgentKey,
   openBrowser = true,
   providerKey?: string | null,
 ): Promise<OAuthStartInfo> {
@@ -160,7 +152,7 @@ export async function cancelOAuth(state: string): Promise<void> {
 }
 
 export async function startDeviceOAuth(
-  agentId: AgentId,
+  agentId: AgentKey,
   providerKey: string,
   poolOwned = false,
 ): Promise<DeviceOAuthStartInfo> {
@@ -181,7 +173,7 @@ export async function finishDeviceOAuth(state: string, poolOwned = false): Promi
 }
 
 export async function completeOAuth(
-  agentId: AgentId,
+  agentId: AgentKey,
   providerKey?: string | null,
 ): Promise<Account> {
   const account = await getBackend().account.completeOAuth(agentId, providerKey);
@@ -189,19 +181,19 @@ export async function completeOAuth(
   return account;
 }
 
-export async function deleteAccount(agentId: AgentId, accountId: string): Promise<void> {
+export async function deleteAccount(agentId: AgentKey, accountId: string): Promise<void> {
   await getBackend().account.deleteAccount(agentId, accountId);
   authStateChanged(agentId);
 }
 
-export async function refreshToken(agentId: AgentId, accountId: string): Promise<void> {
+export async function refreshToken(agentId: AgentKey, accountId: string): Promise<void> {
   await getBackend().account.refreshToken(agentId, accountId);
   authStateChanged(agentId);
 }
 
 /** Force-refresh upstream 5h/7d quota for OAuth (no-op when unsupported). */
 export async function refreshQuota(
-  agentId: AgentId,
+  agentId: AgentKey,
   accountId: string,
 ): Promise<Account | undefined> {
   const port = getBackend().account;

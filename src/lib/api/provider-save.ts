@@ -2,12 +2,8 @@
  * Provider save use case: projector validate/materialize vs legacy applyFormVars.
  * Connection lifecycle stays on ConnectionService.
  */
-import type {
-  AgentConfigSchemaDto,
-  ConfigValidationIssueDto,
-  ConfigValidationResultDto,
-} from '@/lib/backend/contracts/config-types';
-import type { AgentId, Provider } from '@/lib/types';
+import type { AgentConfigSchemaDto, ConfigValidationIssueDto, ConfigValidationResultDto } from '@/lib/backend/contracts/config-types';
+import type { AgentKey, Provider } from '@/lib/types';
 import type { ProviderFormVars } from '@/lib/provider-detect';
 import { piProviderSlotById } from '@/lib/pi-provider-slots';
 import { REDACTED_MARKER } from '@/lib/provider-detect';
@@ -44,7 +40,7 @@ export type ProviderSaveResult =
     };
 
 export interface ProviderSaveFlowInput {
-  agentId: AgentId;
+  agentId: AgentKey;
   schemaStatus: SchemaUiStatus;
   /** Schema returned by the backend; required on the projector path. */
   configSchema?: AgentConfigSchemaDto | null;
@@ -101,7 +97,7 @@ export interface ProviderSaveFlowDeps {
     baseRaw?: unknown,
   ) => Promise<unknown>;
   applyFormVars: (
-    agentId: AgentId,
+    agentId: AgentKey,
     configText: string,
     format: 'json' | 'toml',
     vars: ProviderFormVars,
@@ -142,7 +138,7 @@ export function schemaUsesAuthEnvelope(
 }
 
 function usesAuthEnvelope(
-  agentId: AgentId,
+  agentId: AgentKey,
   schema?: AgentConfigSchemaDto | null,
 ): boolean {
   if (schemaUsesAuthEnvelope(schema)) return true;
@@ -150,7 +146,7 @@ function usesAuthEnvelope(
 }
 
 function buildTomlBaseRaw(
-  agentId: AgentId,
+  agentId: AgentKey,
   schema: AgentConfigSchemaDto | null | undefined,
   baseText: string,
   authApiKey: string | undefined,
@@ -171,7 +167,7 @@ function buildTomlBaseRaw(
 }
 
 function materializeToConfigText(
-  agentId: AgentId,
+  agentId: AgentKey,
   schema: AgentConfigSchemaDto | null | undefined,
   raw: unknown,
 ):
@@ -212,7 +208,7 @@ function materializeToConfigText(
 }
 
 function resolveAuthApiKeyInput(
-  agentId: AgentId,
+  agentId: AgentKey,
   schema: AgentConfigSchemaDto | null | undefined,
   isEdit: boolean,
   vars: ProviderFormVars,

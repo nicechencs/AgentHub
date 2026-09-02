@@ -12,13 +12,7 @@ import {
 } from '@/lib/backend/contracts/auth-state';
 import type { TranslateFn } from '@/lib/i18n';
 import { truncateAtWord } from '@/lib/text-truncate';
-import type {
-  Account,
-  AgentStatus,
-  AuthStatus,
-  EffectiveConnectionKind,
-  Provider,
-} from '@/lib/types';
+import type { Account, AgentStatus, AuthStatus, EffectiveConnectionKind, Provider } from '@/lib/types';
 
 const log = logger.scope('contracts:agent-connection');
 

@@ -1,9 +1,9 @@
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { ConnectionTrashHome, ConnectionTrashItem } from '@/lib/backend/contracts';
 import { getBackend, refreshRuntimeReadModels } from '@/app/runtime';
 
 export async function listConnectionTrash(
-  agentId?: AgentId,
+  agentId?: AgentKey,
   home?: ConnectionTrashHome,
 ): Promise<ConnectionTrashItem[]> {
   return getBackend().trash.list(agentId, home);

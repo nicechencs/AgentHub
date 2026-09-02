@@ -239,7 +239,11 @@ export function liveApiKeyImportGate(
   };
 }
 
-export type ConnectionPoolDiscoveryState = 'idle' | 'loading' | 'ready' | 'partial' | 'error';
+/** Discovery lifecycle for the connections inventory (not RoutePool). */
+export type ConnectionInventoryDiscoveryState = 'idle' | 'loading' | 'ready' | 'partial' | 'error';
+
+/** @deprecated Use {@link ConnectionInventoryDiscoveryState}. */
+export type ConnectionPoolDiscoveryState = ConnectionInventoryDiscoveryState;
 export type DiscoveredAuthKind = 'account' | 'provider';
 
 /**
@@ -358,7 +362,7 @@ export function liveAuthCoexistenceNotice(
  * surface a real first-time discovery.
  */
 export function isLiveAuthDiscoveryDeferred(input: {
-  poolState: ConnectionPoolDiscoveryState;
+  poolState: ConnectionInventoryDiscoveryState;
   probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials'> | null;
   accountsFailed?: boolean;
   providersFailed?: boolean;
@@ -419,7 +423,7 @@ function poolHasSameLiveSecret(
 }
 
 export function liveAuthDiscoveryKind(input: {
-  poolState: ConnectionPoolDiscoveryState;
+  poolState: ConnectionInventoryDiscoveryState;
   probe?: Pick<LiveAuthProbeLike, 'kind' | 'hasCredentials' | 'isAdapterProjection' | 'alsoPresent' | 'secretHash'> | null;
   accounts: readonly { kind: string; secretHash?: string | null }[];
   providers: readonly DiscoveryProviderLike[];

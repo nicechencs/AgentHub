@@ -1,6 +1,6 @@
 import { getBackend } from '@/app/runtime';
 import type { PluginInventory } from '@/lib/backend/contracts/plugin-types';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 /** Scan of vendor plugin / extension packs (not MCP). */
 export async function listPluginInventory(): Promise<PluginInventory> {
@@ -9,7 +9,7 @@ export async function listPluginInventory(): Promise<PluginInventory> {
 
 /** Turn on a listed Claude or Grok pack via the official command. */
 export async function enablePlugin(
-  agent: AgentId,
+  agent: AgentKey,
   name: string,
   marketplace?: string | null,
 ): Promise<void> {
@@ -18,7 +18,7 @@ export async function enablePlugin(
 
 /** Turn off a listed Claude or Grok pack via the official command. */
 export async function disablePlugin(
-  agent: AgentId,
+  agent: AgentKey,
   name: string,
   marketplace?: string | null,
 ): Promise<void> {
