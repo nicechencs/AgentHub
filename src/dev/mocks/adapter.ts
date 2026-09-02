@@ -11,6 +11,7 @@ import {
   type AdapterProfile,
   type AdapterProfileFilter,
   type DefaultRoutePoolOverview,
+  type LocalEntryStatus,
   type RoutePoolDialect,
   type RoutePoolSurface,
 } from '@/lib/backend/contracts/adapter';
@@ -1009,7 +1010,7 @@ export function createMockAdapterPort(resolver: MockAdapterSourceResolver): Adap
   };
 }
 
-function mockLocalEntryStatus(state: MockAdapterState) {
+function mockLocalEntryStatus(state: MockAdapterState): LocalEntryStatus {
   return {
     running: state.localEntryRunning,
     port: state.localEntryPort,
