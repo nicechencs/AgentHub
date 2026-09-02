@@ -85,7 +85,7 @@ describe('resolveActivityPageSnapshot', () => {
     const snapshot = resolveActivityPageSnapshot({
       profiles: [profile],
       bridgeStatuses: {},
-      localEntryStatuses: [{
+      localGatewayStatuses: [{
         profileId: 'route-a',
         state: 'running',
         recentRouteTraces: [trace],
