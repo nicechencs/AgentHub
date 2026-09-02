@@ -202,6 +202,11 @@ impl BridgeRuntimeHost {
         self.gateway.route_traces.recent(profile_id)
     }
 
+    /// Failed local-auth attempts without a profile binding (newest first).
+    pub fn recent_unauthenticated_route_traces(&self) -> Vec<super::route_trace::RouteRequestTrace> {
+        self.gateway.route_traces.recent_unauthenticated()
+    }
+
     /// Process-lifetime inbound counters for this profile (not capped by the ring).
     pub fn inbound_stats(&self, profile_id: &str) -> InboundRequestStats {
         self.gateway.inbound.stats(profile_id)

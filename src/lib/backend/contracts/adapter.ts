@@ -392,6 +392,8 @@ export type LocalEntryStatus = {
   running: boolean;
   port: number | null;
   statuses: AdapterBridgeRuntimeStatus[];
+  /** Local-auth failures without a bound route (newest first). */
+  unauthenticatedTraces?: AdapterBridgeRouteTrace[];
 };
 
 /** Loopback bearer for the tokens page. */

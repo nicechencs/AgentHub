@@ -68,6 +68,6 @@ describe('inbound-feed-model', () => {
       { id: 'b', name: 'Beta', route: 'local_bridge', targetAgentId: 'codex' },
       { id: 'a', name: 'Alpha', route: 'local_bridge', targetAgentId: 'claude' },
       { id: 'x', name: 'Skip', route: 'native_endpoint', targetAgentId: 'claude' },
-    ]).map((row) => row.id)).toEqual(['a', 'b']);
+    ]).map((row) => row.id)).toEqual(['a', 'b', 'x']);
   });
 });

@@ -1022,11 +1022,28 @@ function mockLocalEntryStatus(state: MockAdapterState) {
         startedAt: '2026-08-12T00:00:00.000Z',
         upstreamStatus: 'connected' as const,
         recentInbound: [],
+        recentRouteTraces: mockRouteTraces(),
         totalRequestCount: 0,
         failedRequestCount: 0,
         lastRequestAt: null,
         localToken: `ahb_${pool.id.slice(0, 8)}`,
       }))
+      : [],
+    unauthenticatedTraces: state.localEntryRunning
+      ? [{
+        requestId: 'mock-req-unauth',
+        at: '2026-08-12T00:00:00.000Z',
+        method: 'POST',
+        path: '/v1/messages',
+        httpStatus: 401,
+        ok: false,
+        localAuth: { status: 'failed', code: 'invalid_api_key' },
+        pool: { status: 'skipped' },
+        conversion: { status: 'skipped', path: '' },
+        upstreamAuth: { status: 'skipped' },
+        upstream: { status: 'skipped' },
+        failureStage: 'local_auth',
+      }]
       : [],
   };
 }
