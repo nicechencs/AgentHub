@@ -20,6 +20,7 @@ function deferred<T>() {
 
 describe('agent-status-store', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     resetAgentStatusStore();
     resetConnectionPoolStore();
   });
@@ -240,6 +241,7 @@ describe('agent-status-store', () => {
   });
 
   it('keeps backend failure distinct from an empty installed result', async () => {
+    vi.useFakeTimers();
     const backend = {
       agent: {
         listAgents: vi.fn(async () => {
@@ -248,11 +250,34 @@ describe('agent-status-store', () => {
       },
     } as unknown as Backend;
 
-    await expect(loadAgentStatuses(backend)).rejects.toThrow('agent probe failed');
+    // Attach the assertion before advancing timers so the rejection is handled.
+    const pending = expect(loadAgentStatuses(backend)).rejects.toThrow('agent probe failed');
+    await vi.runAllTimersAsync();
+    await pending;
+    expect(backend.agent.listAgents).toHaveBeenCalledTimes(3);
     const snapshot = getAgentStatusSnapshot();
     expect(snapshot.state).toBe('error');
     expect(snapshot.statuses).toEqual([]);
     expect(snapshot.error).toBeInstanceOf(Error);
+    vi.useRealTimers();
+  });
+
+  it('recovers from a transient cold-start listAgents failure without showing error', async () => {
+    vi.useFakeTimers();
+    const listAgents = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('IPC not ready'))
+      .mockResolvedValueOnce([{ agentId: 'claude', installed: true }]);
+    const backend = { agent: { listAgents } } as unknown as Backend;
+
+    const pending = loadAgentStatuses(backend);
+    expect(getAgentStatusSnapshot().state).toBe('loading');
+    await vi.runAllTimersAsync();
+    const snapshot = await pending;
+    expect(listAgents).toHaveBeenCalledTimes(2);
+    expect(snapshot.state).toBe('ready');
+    expect(snapshot.statuses[0]?.installed).toBe(true);
+    vi.useRealTimers();
   });
 
   it('runs a fresh request when a forced refresh arrives during an in-flight request', async () => {

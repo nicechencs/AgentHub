@@ -30,6 +30,18 @@ pub enum TraceStageStatus {
     Skipped,
 }
 
+impl TraceStageStatus {
+    /// Stable lowercase label for structured logs / UI stage names.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Ok => "ok",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteTraceMember {
@@ -678,6 +690,7 @@ impl RouteTraceBuilder {
         self.trace.http_status = http_status;
         self.trace.ok = (200..400).contains(&http_status);
         self.trace.latency_ms = Some(self.started.elapsed().as_millis() as u64);
+        log_route_trace_finalized(&self.trace);
         log.push(self.trace.clone());
         self.committed = true;
     }
@@ -713,6 +726,29 @@ impl Drop for RouteTraceBuilder {
             // Best-effort if caller forgot finalize after setting status.
         }
     }
+}
+
+
+/// One structured line per finished request so file logs share the monitor's
+/// five stage names + request_id (no secrets / bodies).
+fn log_route_trace_finalized(trace: &RouteRequestTrace) {
+    tracing::info!(
+        target: "core.adapter.route_trace",
+        request_id = %trace.request_id,
+        profile_id = trace.profile_id.as_deref().unwrap_or(""),
+        method = %trace.method,
+        path = %trace.path,
+        http_status = trace.http_status,
+        ok = trace.ok,
+        latency_ms = trace.latency_ms.unwrap_or(0),
+        local_auth = trace.local_auth.status.as_str(),
+        pool = trace.pool.status.as_str(),
+        conversion = trace.conversion.status.as_str(),
+        upstream_auth = trace.upstream_auth.status.as_str(),
+        upstream = trace.upstream.status.as_str(),
+        failure_stage = trace.failure_stage.as_deref().unwrap_or(""),
+        "route trace finalized"
+    );
 }
 
 pub fn trace_member(member: &PickedMember) -> RouteTraceMember {
