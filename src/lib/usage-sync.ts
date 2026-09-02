@@ -7,7 +7,10 @@ import type { TranslateFn } from '@/lib/i18n';
 import { loadString, saveString, StorageKey } from '@/lib/ui-preferences';
 
 /** Dispatched after settings save so the provider reloads interval. */
-export const USAGE_SYNC_SETTINGS_CHANGED = 'agenthub:usage-sync-settings';
+export const USAGE_SYNC_SETTINGS_CHANGED_EVENT = 'agenthub:usage-sync-settings';
+
+/** @deprecated Prefer {@link USAGE_SYNC_SETTINGS_CHANGED_EVENT}. */
+export const USAGE_SYNC_SETTINGS_CHANGED = USAGE_SYNC_SETTINGS_CHANGED_EVENT;
 
 /** Dispatched after a successful collect (manual or auto). */
 export const USAGE_COLLECTED_EVENT = 'agenthub:usage-collected';
@@ -146,7 +149,7 @@ export function buildUsageSyncStatusLine(opts: {
 
 export function notifyUsageSettingsChanged(): void {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new Event(USAGE_SYNC_SETTINGS_CHANGED));
+  window.dispatchEvent(new Event(USAGE_SYNC_SETTINGS_CHANGED_EVENT));
 }
 
 export function notifyUsageCollected(detail: UsageCollectedDetail): void {

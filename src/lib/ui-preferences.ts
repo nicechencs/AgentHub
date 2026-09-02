@@ -1,6 +1,10 @@
 /**
  * UiPreferencesStore — 真实 UI 本地偏好（theme / onboarding 等）。
  * 不是 backend mock；生产与 dev:mock 均可使用 localStorage。
+ *
+ * 持久化键约定（N-15）：新键一律通过下方 `StorageKey` 定义，格式为
+ * `agenthub:` + kebab-case。历史 `agenthub.` + camelCase 键不得直接替换；
+ * 迁移须读旧写新，确认升级覆盖后再清理旧键。
  */
 
 const PREFIX = 'agenthub:';

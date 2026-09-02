@@ -70,7 +70,7 @@ export function useTicketBindActions(input: {
   deps: Pick<ConnectFlowDeps, 'createPlanFanout'>;
   t: TranslateFn;
 }): {
-  shareActionForTicket: (ticket: TicketView) => TicketBindAction;
+  directActionForTicket: (ticket: TicketView) => TicketBindAction;
   routeActionForTicket: (ticket: TicketView) => TicketBindAction;
 } {
   const { tickets, accounts, providers, hiddenIds, poolReady, deps, t } = input;
@@ -126,7 +126,7 @@ export function useTicketBindActions(input: {
   }, [eligibilities, t, targetIds]);
 
   return {
-    shareActionForTicket: actionFor('share'),
+    directActionForTicket: actionFor('direct'),
     routeActionForTicket: actionFor('route'),
   };
 }

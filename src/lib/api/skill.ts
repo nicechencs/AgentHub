@@ -7,7 +7,7 @@ import type {
   InstalledSkillDto,
   SkillListingDto,
   SkillMarkdownPreviewDto,
-  SkillProjectResultDto,
+  SkillProjectionResultDto,
   SkillsFsChangedPayload,
 } from '@/lib/backend/contracts/skill-types';
 import type { AgentId, Skill, SkillMapStatus, SkillSyncState } from '@/lib/types';
@@ -23,7 +23,7 @@ export type {
   SkillCopyLocation,
   SkillListingDto,
   SkillMarkdownPreviewDto,
-  SkillProjectResultDto,
+  SkillProjectionResultDto,
   SkillsFsChangedPayload,
 } from '@/lib/backend/contracts/skill-types';
 
@@ -98,12 +98,21 @@ export async function updateSkill(skillId: string): Promise<CoreSkill> {
   return getBackend().skill.updateSkill(skillId);
 }
 
+export async function applySkillProjection(
+  skillId: string,
+  agentId: AgentId,
+  mode: 'link' | 'copy' = 'link',
+): Promise<SkillProjectionResultDto> {
+  return getBackend().skill.applySkillProjection(skillId, agentId, mode);
+}
+
+/** @deprecated Prefer {@link applySkillProjection}. */
 export async function projectSkill(
   skillId: string,
   agentId: AgentId,
   mode: 'link' | 'copy' = 'link',
-): Promise<SkillProjectResultDto> {
-  return getBackend().skill.projectSkill(skillId, agentId, mode);
+): Promise<SkillProjectionResultDto> {
+  return applySkillProjection(skillId, agentId, mode);
 }
 
 export async function searchSkillMarket(query = ''): Promise<SkillListingDto[]> {

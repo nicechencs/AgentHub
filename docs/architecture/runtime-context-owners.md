@@ -23,7 +23,7 @@ flowchart TB
   setBE["setBackend / resetBackend"] --> Ctx["runtime context: reset registry"]
   Ctx --> Cat["agent-catalog-store"]
   Ctx --> St["agent-status-store"]
-  Ctx --> Pool["connection-pool-store"]
+  Ctx --> Pool["connection-inventory-store"]
   Ctx --> Wal["ticket-wallet-store"]
   Ctx --> Upd["app-update-store"]
   Write["account / provider / tickets / adapter / trash / agent 写入"] --> Coord["mutation-coordinator"]
@@ -43,7 +43,7 @@ flowchart TB
 | O-07 Backend 单例 | [`backend-runtime.ts`](../../src/app/runtime/backend-runtime.ts)：`instance` 模块级；`getBackend` 惰性 `createBackend()`；`setBackend` / `resetBackend` 改实例后调用私有 `resetRuntimeStores()`。 | **保留**单例。reset 列表迁到 context registry。 |
 | Catalog store | [`agent-catalog-store.ts`](../../src/app/runtime/agent-catalog-store.ts)：`snapshot` / `epoch` / `listeners` 模块级。reset 会 `epoch += 1`、`applyAgentCatalog([])`。过期写回丢弃。[`setBackend` / `resetBackend` 已调用 catalog reset](../../src/app/runtime/agent-catalog-store.test.ts)。 | **O-52 已处理，冻结 epoch 与 catalog 随 backend reset。** |
 | Agent 状态 store | [`agent-status-store.ts`](../../src/app/runtime/agent-status-store.ts)：`snapshot` / `epoch` / `inflight` / `pendingHidden`。三阶段 detect → 连接池 → live-auth；continuation 写回前校验 epoch。reset 清 probe cache。 | **O-51 已处理，冻结。** |
-| 连接池 store | [`connection-pool-store.ts`](../../src/app/runtime/connection-pool-store.ts)：`snapshot` / `inflight` / `epoch` / `mutationDepth` / `notifyPending`。全量 `listAccounts` + `listProviders`。`markConnectionCurrent` 只改本地 `isCurrent` 展示。`begin/endConnectionPoolMutation` 把批量删除收成一次刷新。 | 快照与 batch notify **仍归本文件**。reset 必须进 registry。 |
+| 连接池 store | [`connection-inventory-store.ts`](../../src/app/runtime/connection-inventory-store.ts)：`snapshot` / `inflight` / `epoch` / `mutationDepth` / `notifyPending`。全量 `listAccounts` + `listProviders`。`markConnectionCurrent` 只改本地 `isCurrent` 展示。`begin/endConnectionPoolMutation` 把批量删除收成一次刷新。 | 快照与 batch notify **仍归本文件**。reset 必须进 registry。 |
 | 票夹 store | [`ticket-wallet-store.ts`](../../src/app/runtime/ticket-wallet-store.ts)：同样的 snapshot / inflight / epoch。Chat 已订阅共享 store（O-10）。 | 快照仍归本文件。reset 进 registry。 |
 | 应用更新 store | [`app-update-store.ts`](../../src/app/runtime/app-update-store.ts)：模块级 `available` + listeners。**不在** `resetRuntimeStores()` 里。 | 必须加入 reset 列表。无 epoch（同步写）。 |
 | 写入后刷新 | [`mutation-coordinator.ts`](../../src/app/runtime/mutation-coordinator.ts)：`refreshRuntimeReadModels`；`RuntimeReadModel` = `agentStatus` \| `connectionPool` \| `ticketWallet`；`Promise.allSettled`；失败留在各 snapshot 的 `error`。account / provider / tickets façade 已走这里。 | **O-08 / O-09 已处理，冻结合同。** |
@@ -90,7 +90,7 @@ current 指针仍只由 Core `ConnectionService` 写入。连接池上的 `isCur
 | Catalog snapshot + `AGENTS` hydrate | `agent-catalog-store` | 连接池 / 票夹 |
 | Catalog React 强制入口 | `AgentCatalogProvider` / `useAgentCatalog` | 不拥有 reset |
 | Agent 状态 + live-auth 合并 | `agent-status-store` | catalog 产品集合 |
-| 连接池 snapshot + 批量 notify | `connection-pool-store`（含 `mutationDepth`） | Core current 指针 |
+| 连接池 snapshot + 批量 notify | `connection-inventory-store`（含 `mutationDepth`） | Core current 指针 |
 | 票夹 snapshot | `ticket-wallet-store` | `bind`/`unbind` 语义 |
 | 应用更新 badge | `app-update-store` | 检测逻辑（仍在 UpdatePrompt） |
 | 乐观 `isCurrent` stamp | `markConnectionCurrent` | 不得发 `UPDATE … is_current` |
@@ -217,7 +217,7 @@ export function resetRuntimeContext(): void {
 - **测试命令：**
 
 ```text
-pnpm exec vitest run src/app/runtime/runtime-context.test.ts src/app/runtime/agent-catalog-store.test.ts src/app/runtime/agent-status-store.test.ts src/app/runtime/connection-pool-store.test.ts src/app/runtime/ticket-wallet-store.test.ts src/app/runtime/app-update-store.test.ts src/app/runtime/mutation-coordinator.test.ts
+pnpm exec vitest run src/app/runtime/runtime-context.test.ts src/app/runtime/agent-catalog-store.test.ts src/app/runtime/agent-status-store.test.ts src/app/runtime/connection-inventory-store.test.ts src/app/runtime/ticket-wallet-store.test.ts src/app/runtime/app-update-store.test.ts src/app/runtime/mutation-coordinator.test.ts
 pnpm typecheck
 pnpm check:docs
 ```
@@ -279,4 +279,4 @@ pnpm typecheck
 - [前端与 Backend Adapter 边界](frontend-backend.md)
 - [架构总览](overview.md)（本提案不改其当前态表述）
 - [产品边界](../decisions/product-boundaries.md)
-- 源码：`src/app/runtime/{backend-runtime,agent-catalog-store,agent-status-store,connection-pool-store,ticket-wallet-store,app-update-store,mutation-coordinator,AgentCatalogProvider,index}.ts`；`src/lib/api/{account,provider,tickets,adapter,trash,agent}.ts`；`src/test/setup.ts`
+- 源码：`src/app/runtime/{backend-runtime,agent-catalog-store,agent-status-store,connection-inventory-store,ticket-wallet-store,app-update-store,mutation-coordinator,AgentCatalogProvider,index}.ts`；`src/lib/api/{account,provider,tickets,adapter,trash,agent}.ts`；`src/test/setup.ts`

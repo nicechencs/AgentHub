@@ -198,6 +198,7 @@ pub fn run() {
             commands::skill::import_private_skill,
             commands::skill::uninstall_skill,
             commands::skill::update_skill,
+            commands::skill::apply_skill_projection,
             commands::skill::project_skill,
             commands::skill::search_skill_market,
             commands::skill::install_market_skill,

@@ -397,7 +397,7 @@ export function ConnectFlowDialog({
       ? t('connect.dialog.titleAgent', { name: agentDisplayName(entry.targetAgentId) })
       : entry.purpose === 'route'
         ? t('connect.dialog.titleRoute')
-        : entry.purpose === 'share'
+        : entry.purpose === 'direct'
           ? t('connect.dialog.titleShare')
           : t('connect.dialog.titleSource');
 

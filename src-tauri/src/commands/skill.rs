@@ -198,9 +198,9 @@ pub async fn update_skill(state: State<'_, AppState>, skill_id: String) -> Resul
     .await
 }
 
-/// Invoke: `project_skill`
+/// Invoke: `apply_skill_projection` — sync a shared skill onto an Agent.
 #[tauri::command]
-pub async fn project_skill(
+pub async fn apply_skill_projection(
     state: State<'_, AppState>,
     skill_id: String,
     agent_id: String,
@@ -214,15 +214,26 @@ pub async fn project_skill(
             Some("copy") => SkillProjectMode::Copy,
             Some(other) => {
                 let msg = format!("invalid project mode '{other}', expected: link|copy");
-                tracing::warn!(target: targets::GUI, op = "project_skill", "{msg}");
+                tracing::warn!(target: targets::GUI, op = "apply_skill_projection", "{msg}");
                 return Err(msg);
             }
         };
         hub.skills()
             .project_skill(&skill_id, agent, mode)
-            .map_err(|e| map_err_string("project_skill", e))
+            .map_err(|e| map_err_string("apply_skill_projection", e))
     })
     .await
+}
+
+/// Compatibility alias for `apply_skill_projection`.
+#[tauri::command]
+pub async fn project_skill(
+    state: State<'_, AppState>,
+    skill_id: String,
+    agent_id: String,
+    mode: Option<String>,
+) -> Result<SkillProjectResult, String> {
+    apply_skill_projection(state, skill_id, agent_id, mode).await
 }
 
 /// Invoke: `search_skill_market` — skills.sh / skillhub.cn (settings-driven, auto fallback).
