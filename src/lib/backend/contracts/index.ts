@@ -17,6 +17,7 @@ export * from './usage-map';
 export * from './skill-types';
 export * from './account-map';
 export * from './provider-map';
+export * from './provider-heal-types';
 export * from './backup-map';
 export * from './chat-map';
 export * from './project-map';
