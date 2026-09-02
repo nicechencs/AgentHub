@@ -12,6 +12,7 @@ import {
   canInstallAlongsideSpecial,
   canUninstallProgramInApp,
   installLifecycle,
+  installPrimaryLabelKey,
   installRetryButtonVariant,
   isInAppUpgradeChannel,
   listAgentInstalls,
@@ -474,21 +475,28 @@ describe('agent-card install confirm', () => {
     expect(dialogs).toContain('uninstallConfigKeepsApp');
   });
 
-  it('makes retry the primary button after a real failure, not after setup-guide', () => {
+  it('makes retry / redetect the primary CTA after failure or guided setup', () => {
     const card = readFileSync(path.join(dir, 'agent-card.tsx'), 'utf8');
     expect(installRetryButtonVariant('failed')).toBe('default');
-    expect(installRetryButtonVariant('guided')).toBe('secondary');
+    expect(installRetryButtonVariant('guided')).toBe('default');
     expect(installRetryButtonVariant('done')).toBe('secondary');
     expect(installRetryButtonVariant(undefined)).toBe('secondary');
+    expect(installPrimaryLabelKey('failed')).toBe('agents.card.retry');
+    expect(installPrimaryLabelKey('guided')).toBe('agents.card.redetect');
+    expect(installPrimaryLabelKey(undefined)).toBe('agents.card.install');
     expect(card).toContain('installFailed');
+    expect(card).toContain('installGuided');
+    expect(card).toContain('redetectAfterGuide');
     expect(card).toContain('<AgentInstallButton');
     expect(card).toContain('status={task?.status}');
     expect(card).toContain('variant="default"');
     expect(card).toContain('agents.card.retry');
+    expect(card).toContain('agents.card.redetect');
     expect(card).toContain('retryAction');
     const installButton = readFileSync(path.join(dir, 'AgentInstallButton.tsx'), 'utf8');
     expect(installButton).toContain('installRetryButtonVariant(status)');
-    expect(installButton).toContain('agents.card.install');
+    expect(installButton).toContain('installPrimaryLabelKey');
+    expect(installButton).toContain('agents.card.linuxUnsupported');
     expect(card).toContain('{task.diagnosis ? (');
     expect(card.lastIndexOf('{task.diagnosis ? (')).toBeLessThan(
       card.lastIndexOf('<InlineTerminal'),

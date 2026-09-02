@@ -4460,6 +4460,14 @@ async fn v2_index_unknown_model_fails_closed_without_peer_switch() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body: Value = response.json().await.expect("error json");
     assert_eq!(body["error"]["code"], "model_unavailable");
+    assert_eq!(body["error"]["available_models"], json!(["m1"]));
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("当前登录只提供：m1"),
+        "{body}"
+    );
     assert!(captured_a.lock().expect("lock A").is_empty());
     assert!(
         captured_b.lock().expect("lock B").is_empty(),
@@ -5665,6 +5673,14 @@ async fn pair_flag_on_missing_model_does_not_call_upstream() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body: Value = response.json().await.expect("json");
     assert_eq!(body["error"]["code"], "model_unavailable");
+    assert_eq!(body["error"]["available_models"], json!(["grok-4.5"]));
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("当前登录只提供：grok-4.5"),
+        "{body}"
+    );
     assert_eq!(hits.load(Ordering::SeqCst), 0);
 
     host.stop("pair-miss").await.expect("stop");
