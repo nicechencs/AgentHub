@@ -51,7 +51,12 @@ describe('ActivityTraceDetailPanel', () => {
     expect(markup).toContain('本地调用端点');
     expect(markup).toContain('/v1/messages');
     expect(markup).toContain('上游调用端点');
-    expect(markup).toContain('https://api.anthropic.com/v1/messages');
+    expect(markup).toContain('https://api.anthropic.com');
+    expect(markup).toContain('/v1/messages');
+    expect(markup).toContain('转换');
+    expect(markup).toContain('Messages');
+    expect(markup).toContain('Anthropic');
+    expect(markup).toContain('--agent-claude');
     expect(markup).toContain('本机鉴权');
     expect(markup).toContain('连接池');
     expect(markup).toContain('转换');

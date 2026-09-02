@@ -1,15 +1,21 @@
 import type { ReactNode } from 'react';
 import { SideInspectPanel } from '@/components/layout/SideInspectPanel';
-import { CopyableRouteEndpointUrl } from '@/components/shared/RouteEndpointUrl';
+import {
+  AbsoluteRouteEndpointUrl,
+  CopyableRouteEndpointUrl,
+} from '@/components/shared/RouteEndpointUrl';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
 import { routeEndpointHttpParts } from '@/lib/route-endpoints';
 import { formatInboundAt } from '@/pages/bridges/route-endpoint-copy';
 import {
   ACTIVITY_TRACE_STAGES,
+  activityTraceConversionLabel,
+  activityTraceLocalBrand,
   activityTraceModelLabel,
   activityTraceStageLabel,
   activityTraceStageStatusLabel,
+  activityTraceUpstreamBrand,
   formatTraceSeconds,
   formatTraceTokens,
 } from './activity-trace-list-model';
@@ -39,6 +45,9 @@ export function ActivityTraceDetailPanel({
     port: row.localAuth.port,
   });
   const outbound = row.upstream.url?.trim() || '';
+  const localBrand = activityTraceLocalBrand(row);
+  const upstreamBrand = activityTraceUpstreamBrand(row);
+  const conversion = activityTraceConversionLabel(row, t);
   const model = activityTraceModelLabel(row);
   const firstToken = formatTraceSeconds(row.ttftMs, t);
   const duration = formatTraceSeconds(row.latencyMs, t);
@@ -72,15 +81,18 @@ export function ActivityTraceDetailPanel({
               port={row.localAuth.port}
               host={inbound.host}
               endpointId={inbound.endpointId}
-              className="text-meta"
+              brandAgentId={localBrand}
             />
           </Field>
           <Field label={t('routes.activity.outboundEndpoint')}>
             {outbound ? (
-              <span className="font-mono">{outbound}</span>
+              <AbsoluteRouteEndpointUrl url={outbound} brandAgentId={upstreamBrand} />
             ) : (
               <span className="text-muted">—</span>
             )}
+          </Field>
+          <Field label={t('routes.activity.conversion')}>
+            {conversion || <span className="text-muted">—</span>}
           </Field>
           <Field label={t('routes.activity.colModel')}>
             {model || <span className="text-muted">—</span>}
