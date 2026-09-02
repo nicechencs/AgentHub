@@ -8,6 +8,7 @@ import type { LocalTokenRow } from './tokens-model';
 function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
   return {
     id: 'pool-kimi',
+    poolBacked: true,
     profileId: 'bridge-1',
     name: 'kimi · /v1/chat/completions',
     kind: 'chat_completions',
@@ -26,7 +27,10 @@ function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
   };
 }
 
-function render(partial: Partial<LocalTokenRow> = {}) {
+function render(
+  partial: Partial<LocalTokenRow> = {},
+  props: { onEditKey?: () => void } = {},
+) {
   return renderToStaticMarkup(
     createElement(
       TooltipProvider,
@@ -34,6 +38,7 @@ function render(partial: Partial<LocalTokenRow> = {}) {
       createElement(TokenDetailPanel, {
         row: row(partial),
         onClose: () => {},
+        onEditKey: props.onEditKey,
       }),
     ),
   );
@@ -57,4 +62,18 @@ describe('TokenDetailPanel', () => {
     expect(markup).toMatch(/data-token-test=""[^>]*\bdisabled\b/);
     expect(markup).toContain('先填写入口 Key');
   });
+
+  it('enables edit key for pool-backed rows and disables it for leftovers', () => {
+    const poolMarkup = render({}, { onEditKey: () => {} });
+    expect(poolMarkup).toContain('data-token-edit-key');
+    expect(poolMarkup).not.toMatch(/data-token-edit-key=""[^>]*\bdisabled\b/);
+
+    const leftoverMarkup = render(
+      { id: 'orphan-bridge', poolBacked: false, profileId: 'orphan-bridge' },
+      { onEditKey: () => {} },
+    );
+    expect(leftoverMarkup).toMatch(/data-token-edit-key=""[^>]*\bdisabled\b/);
+    expect(leftoverMarkup).toContain('这条还不是连接池令牌');
+  });
+
 });

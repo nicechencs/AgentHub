@@ -46,7 +46,7 @@ import {
   tokenLastPageDisplay,
   tokenUsageDisplay,
 } from './token-detail-model';
-import type { LocalTokenRow } from './tokens-model';
+import { localTokenEditKeyGate, type LocalTokenRow } from './tokens-model';
 import { TokenImportToAgentButton } from './TokenImportToAgentButton';
 import type { TokenImportAgentRef } from './token-import-model';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
@@ -94,6 +94,7 @@ export function TokenDetailPanel({
   const tokenRow = copies.find((item) => item.id === 'token');
   const canCopyToken = Boolean(tokenRow?.copyValue);
   const testGate = localTokenTestGate(row, t);
+  const editGate = localTokenEditKeyGate(row, t);
   const canRunTest = testGate.enabled && Boolean(testModel.trim()) && !testing;
 
   useEffect(() => {
@@ -290,7 +291,18 @@ export function TokenDetailPanel({
               {testing ? t('routes.tokens.testing') : t('routes.tokens.test')}
             </Button>
             {onEditKey ? (
-              <Button variant="outline" size="sm" onClick={onEditKey}>
+              <Button
+                variant="outline"
+                size="sm"
+                data-token-edit-key=""
+                disabled={!editGate.enabled}
+                onClick={() => {
+                  if (!editGate.enabled) return;
+                  onEditKey();
+                }}
+                title={editGate.reason ?? t('routes.tokens.editKey')}
+                aria-label={t('routes.tokens.editKey')}
+              >
                 {t('routes.tokens.editKey')}
               </Button>
             ) : null}
@@ -313,6 +325,8 @@ export function TokenDetailPanel({
             </p>
           ) : testGate.reason ? (
             <p className="text-meta text-muted">{testGate.reason}</p>
+          ) : editGate.reason ? (
+            <p className="text-meta text-muted" data-token-edit-key-hint="">{editGate.reason}</p>
           ) : null}
         </div>
         <div className="space-y-1" data-token-models="">
