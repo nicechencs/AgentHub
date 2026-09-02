@@ -273,16 +273,16 @@ pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
 }
 
 /// Bundled Codex CLI inside the desktop/Store install — not the window.
+///
+/// Path strings may use Windows `\\` separators even when unit tests run on
+/// Unix (CI). Normalize before taking the basename so `Path::file_name`
+/// does not treat the whole Windows path as a single component on Linux.
 pub(crate) fn looks_like_codex_bundled_cli(path: &std::path::Path) -> bool {
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
+    let s = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+    let name = s.rsplit('/').next().unwrap_or("");
     if name != "codex.exe" && name != "codex" {
         return false;
     }
-    let s = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
     let in_desktop_bin = s.contains("/openai/") && s.contains("/codex/") && s.contains("/bin/");
     in_desktop_bin
         || s.contains("/resources/")
