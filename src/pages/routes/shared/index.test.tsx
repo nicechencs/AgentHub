@@ -23,8 +23,8 @@ vi.mock('@/components/ui/dialog', () => {
 });
 import {
   ADAPTER_BRIDGE_STATUS_POLL_MS,
-  BRIDGES_EMPTY_DESCRIPTION,
-  BRIDGES_EMPTY_TITLE,
+  ROUTES_EMPTY_DESCRIPTION,
+  ROUTES_EMPTY_TITLE,
   adapterBridgeProfilesToPoll,
   adapterPageDescription,
   applyAdapterBridgeStatusPoll,
@@ -182,8 +182,8 @@ describe('Bridges page', () => {
       ...emptyListProps,
       profiles: [],
     });
-    expect(markup).toContain(BRIDGES_EMPTY_TITLE);
-    expect(markup).toContain(BRIDGES_EMPTY_DESCRIPTION);
+    expect(markup).toContain(ROUTES_EMPTY_TITLE);
+    expect(markup).toContain(ROUTES_EMPTY_DESCRIPTION);
     expect(markup).not.toContain('去 Dashboard');
     expect(markup).not.toContain('去 Connections');
     expect(markup).not.toContain('没有已绑定的本机路由');
@@ -405,7 +405,7 @@ describe('Bridges page', () => {
     expect(markup).toContain('本机入口');
     expect(markup).not.toContain('交给本机网关');
     expect(markup).not.toContain('已接入的登录');
-    expect(markup).not.toContain('令牌已保存');
+    expect(markup).not.toContain('入口 Key 已保存');
   });
 
   it('shows default pool members when flag is on, and hides them when off', () => {
@@ -431,7 +431,7 @@ describe('Bridges page', () => {
       defaultPool: pool,
     });
     expect(off).not.toContain('已接入的登录');
-    expect(off).not.toContain('令牌已保存');
+    expect(off).not.toContain('入口 Key 已保存');
     const on = renderDetail({
       profile,
       bridgeStatus: runningStatus(profile.id),
@@ -446,7 +446,7 @@ describe('Bridges page', () => {
     expect(on).toContain('Responses');
     expect(on).toContain('已接入的登录');
     expect(on).toContain('OpenRouter');
-    expect(on).toContain('令牌已保存');
+    expect(on).toContain('入口 Key 已保存');
     expect(on).toContain('kimi-k2.5');
     expect(on).not.toContain('hubToken');
     expect(on).not.toContain('ahb_');
