@@ -88,6 +88,42 @@ fn lists_and_sets_default_pool_entry_keys() {
 }
 
 #[test]
+fn set_local_token_promotes_non_default_pool() {
+    let (_dir, _db, service, profiles) = tmp();
+    let profile = bridge_profile("legacy-pool", "acc-legacy", AgentId::Claude, true);
+    profiles.create(&profile).unwrap();
+    let pool = service
+        .create_legacy_pool(&profile, "ahb_legacy-before", false)
+        .unwrap();
+    assert!(!pool.is_default);
+    assert!(service.list_local_tokens().unwrap().is_empty());
+
+    let updated = service
+        .set_local_token(&pool.id, "ahb_legacy-after")
+        .unwrap();
+    assert_eq!(updated.token, "ahb_legacy-after");
+    let saved = service.get(&pool.id).unwrap().expect("pool");
+    assert!(saved.is_default);
+    let listed = service.list_local_tokens().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].pool_id, pool.id);
+    assert_eq!(listed[0].token, "ahb_legacy-after");
+}
+
+#[test]
+fn enroll_v2_as_default_marks_pool() {
+    let (_dir, _db, service, profiles) = tmp();
+    let profile = bridge_profile("enroll-pool", "acc-enroll", AgentId::Codex, true);
+    profiles.create(&profile).unwrap();
+    service.ensure_legacy_pool(&profile).unwrap();
+    let enrolled = service.enroll_v2_as_default(&profile.id, 44227).unwrap();
+    assert!(enrolled.is_default);
+    assert!(enrolled.v2_enrolled);
+    assert_eq!(enrolled.gateway_port, Some(44227));
+    assert_eq!(service.list_local_tokens().unwrap().len(), 1);
+}
+
+#[test]
 fn product_flags_default_on() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("flag-default-on.db")).unwrap();
