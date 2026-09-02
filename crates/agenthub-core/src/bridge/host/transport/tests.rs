@@ -757,3 +757,6 @@ fn grok_prepare_converts_chat_surface_to_responses() {
     assert!(!prepared.stream);
     assert!(!UpstreamChannel::Grok.forces_upstream_stream());
 }
+
+#[path = "conversion_matrix.rs"]
+mod conversion_matrix;
