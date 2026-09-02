@@ -38,16 +38,23 @@ import {
   attachTokenUsage,
   buildLocalTokenRows,
   generateLocalToken,
+  maskLocalToken,
   tokenTypeLabel,
   type LocalTokenRow,
 } from './tokens-model';
+import { TokenImportToAgentButton } from './TokenImportToAgentButton';
+import type { TokenImportAgentRef } from './token-import-model';
 
 export default function RoutesTokensPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { hiddenIds } = useInstalledAgents();
+  const { hiddenIds, installedAgents } = useInstalledAgents();
   const hiddenTargetIds = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  const installedAgentRefs = useMemo<TokenImportAgentRef[]>(
+    () => installedAgents.map((agent) => ({ id: agent.id, name: agent.name })),
+    [installedAgents],
+  );
   const {
     profiles,
     bridgeStatuses,
@@ -56,12 +63,16 @@ export default function RoutesTokensPage() {
     loading,
     reload,
   } = useAdapterResources();
+  const profileForRow = (row: LocalTokenRow) => (
+    row.profileId ? profiles.find((item) => item.id === row.profileId) : null
+  );
   const [tokenTick, setTokenTick] = useState(0);
   const [collectKey, setCollectKey] = useState(0);
   const [tokensByPoolId, setTokensByPoolId] = useState<Record<string, string>>({});
   const [editRow, setEditRow] = useState<LocalTokenRow | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editBusy, setEditBusy] = useState(false);
+  const [importAfterSaveRow, setImportAfterSaveRow] = useState<LocalTokenRow | null>(null);
   const {
     chatCompletionsShared,
     defaultPools,
@@ -145,6 +156,11 @@ export default function RoutesTokensPage() {
     try {
       await setLocalToken(editRow.id, token);
       setEditRow(null);
+      setImportAfterSaveRow({
+        ...editRow,
+        token,
+        maskedToken: maskLocalToken(token),
+      });
       setTokenTick((tick) => tick + 1);
       void reload();
     } catch {
@@ -213,6 +229,13 @@ export default function RoutesTokensPage() {
             rows={listRows}
             activeId={inspect.target}
             onShowDetail={(row) => inspect.open(row.id)}
+            profileForRow={profileForRow}
+            siblingProfiles={profiles}
+            installedAgents={installedAgentRefs}
+            onImported={() => {
+              setTokenTick((tick) => tick + 1);
+              void reload();
+            }}
           />
         </PageSection>
       )}
@@ -257,6 +280,40 @@ export default function RoutesTokensPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={importAfterSaveRow != null}
+        onOpenChange={(open) => { if (!open) setImportAfterSaveRow(null); }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('routes.tokens.importAfterSaveTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('routes.tokens.importAfterSaveDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          {importAfterSaveRow ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <TokenImportToAgentButton
+                row={importAfterSaveRow}
+                profile={profileForRow(importAfterSaveRow)}
+                siblingProfiles={profiles}
+                installedAgents={installedAgentRefs}
+                onImported={() => {
+                  setImportAfterSaveRow(null);
+                  setTokenTick((tick) => tick + 1);
+                  void reload();
+                }}
+              />
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setImportAfterSaveRow(null)}>
+              {t('routes.tokens.importAfterSaveSkip')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </RoutesPane>
   );
 
@@ -270,6 +327,13 @@ export default function RoutesTokensPage() {
           width={inspect.paneWidth}
           onClose={() => inspect.close()}
           onEditKey={() => openEdit(detailRow)}
+          profile={profileForRow(detailRow)}
+          siblingProfiles={profiles}
+          installedAgents={installedAgentRefs}
+          onImported={() => {
+            setTokenTick((tick) => tick + 1);
+            void reload();
+          }}
         />
       ) : null}
     >
