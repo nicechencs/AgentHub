@@ -19,7 +19,15 @@ const LEGEND_TRACE = {
 /**
  * Reference flow diagram for route monitoring pages.
  */
-export function RouteTracePipelineLegend({ className }: { className?: string }) {
+export function RouteTracePipelineLegend({
+  className,
+  poolLabels,
+  upstreamUrls,
+}: {
+  className?: string;
+  poolLabels?: readonly string[];
+  upstreamUrls?: readonly string[];
+}) {
   const { t } = useI18n();
   return (
     <div
@@ -30,7 +38,12 @@ export function RouteTracePipelineLegend({ className }: { className?: string }) 
       data-route-trace-legend
     >
       <p className="mb-2 text-meta font-medium text-primary">{t('routes.trace.legendTitle')}</p>
-      <RouteTraceFlowDiagram row={LEGEND_TRACE} compact />
+      <RouteTraceFlowDiagram
+        row={LEGEND_TRACE}
+        compact
+        previewPoolLabels={poolLabels}
+        previewUpstreamUrls={upstreamUrls}
+      />
     </div>
   );
 }

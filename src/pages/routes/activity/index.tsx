@@ -4,13 +4,12 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
-import { SegmentedControl } from '@/components/shared/SegmentedControl';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { getLocalEntryStatus } from '@/lib/api/adapter';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
-import { activityRouteOptions, parseActivityFilter } from '@/pages/routes/activity/inbound-feed-model';
+import { activityRouteOptions } from '@/pages/routes/activity/inbound-feed-model';
 import { ActivityMonitoringPanel } from '@/pages/routes/activity/ActivityMonitoringPanel';
 import {
   monitoredLocalProfiles,
@@ -20,7 +19,6 @@ import {
 export default function RoutesActivityPage() {
   const { t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
-  const filter = parseActivityFilter(searchParams.get('filter'));
   const routeId = searchParams.get('route');
   const {
     profiles,
@@ -74,7 +72,7 @@ export default function RoutesActivityPage() {
       unauthenticatedTraces,
       unauthenticatedSourceLabel: t('routes.activity.unauthenticatedSource'),
       pools: defaultPools,
-      filter,
+      filter: 'all',
       routeId,
       profileState,
       loading,
@@ -85,20 +83,12 @@ export default function RoutesActivityPage() {
       localEntryStatuses,
       unauthenticatedTraces,
       defaultPools,
-      filter,
       routeId,
       profileState,
       loading,
       t,
     ],
   );
-
-  const setFilter = (next: typeof filter) => {
-    const params = new URLSearchParams(searchParams);
-    if (next === 'all') params.delete('filter');
-    else params.set('filter', next);
-    setSearchParams(params, { replace: true });
-  };
 
   const setRouteFilter = (next: string) => {
     const params = new URLSearchParams(searchParams);
@@ -114,15 +104,6 @@ export default function RoutesActivityPage() {
         description={t('routes.activity.description')}
       />
       <div className={pageRhythm.chromeRow}>
-        <SegmentedControl
-          aria-label={t('routes.activity.filterAria')}
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: 'all', label: t('routes.activity.filterAll'), count: snapshot.allCount },
-            { value: 'failed', label: t('routes.activity.filterFailed'), count: snapshot.failedCount },
-          ]}
-        />
         {routeOptions.length > 0 ? (
           <label className="flex min-w-0 items-center gap-2 text-meta text-secondary">
             <span className="shrink-0">{t('routes.activity.routeFilterAria')}</span>
@@ -169,7 +150,7 @@ export default function RoutesActivityPage() {
           onRetry={() => void reload()}
         />
       ) : (
-        <ActivityMonitoringPanel snapshot={snapshot} />
+        <ActivityMonitoringPanel snapshot={snapshot} pools={defaultPools} />
       )}
     </RoutesPane>
   );
