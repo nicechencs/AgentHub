@@ -345,7 +345,9 @@ describe('Bridges page', () => {
     expect(markup).toContain('还没有工具连上');
     expect(markup).toContain('复制本机端点 http://127.0.0.1:43121/v1/messages');
     expect(markup).toContain('仅放行：stealth/ox-alpha（其余模型将被拒绝）');
-    expect(markup).not.toContain('转换');
+    // #217 added a 转换 stage label in the route-trace legend; assert no hop-link conversion TABLE.
+    expect(markup).toContain('转换');
+    expect(markup).toContain('data-stage-box="conversion"');
     expect(markup).not.toContain('data-hop-link');
     expect(markup).not.toContain('OpenAI Responses');
     expect(markup).not.toContain('写 settings.json');
