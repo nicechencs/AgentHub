@@ -16,13 +16,13 @@ export type RouteTraceListItem = AdapterBridgeRouteTrace & {
 function stageTone(status: RouteTraceStageStatus): string {
   switch (status) {
     case 'ok':
-      return 'text-success';
+      return 'border-success/40 bg-success/10 text-success';
     case 'failed':
-      return 'text-danger';
+      return 'border-danger/40 bg-danger/10 text-danger';
     case 'skipped':
-      return 'text-muted';
+      return 'border-border bg-subtle text-muted';
     default:
-      return 'text-secondary';
+      return 'border-border bg-panel text-secondary';
   }
 }
 
@@ -34,7 +34,7 @@ function StageBadge({
   status: RouteTraceStageStatus;
 }) {
   return (
-    <span className={cn('rounded px-1.5 py-0.5 text-meta', stageTone(status))}>
+    <span className={cn('rounded-full border px-2 py-0.5 text-meta font-medium', stageTone(status))}>
       {label}
     </span>
   );

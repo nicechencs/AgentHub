@@ -556,6 +556,24 @@ function mapOptionalString(raw: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function parseAtUnixMs(raw: unknown): number | undefined {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function parseHttpStatus(raw: unknown): number {
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 100 && raw <= 599) return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    const parsed = Number(raw);
+    if (Number.isInteger(parsed) && parsed >= 100 && parsed <= 599) return parsed;
+  }
+  return NaN;
+}
+
 function mapTraceMember(wire: RouteTraceMemberWire | undefined): RouteTraceMember | null {
   if (!wire || typeof wire !== 'object') return null;
   const label = mapOptionalString(wire.label);
@@ -647,11 +665,13 @@ function mapTraceUpstream(wire: RouteTraceUpstreamWire | undefined): RouteTraceU
 export function mapRouteTrace(wire: unknown): AdapterBridgeRouteTrace | null {
   if (!wire || typeof wire !== 'object') return null;
   const row = wire as AdapterBridgeRouteTraceWire;
+  const atUnixMs = parseAtUnixMs(row.atUnixMs);
+  const httpStatus = parseHttpStatus(row.httpStatus);
   const mappedInbound = mapInboundRequest({
-    atUnixMs: row.atUnixMs,
+    atUnixMs,
     method: row.method,
     path: row.path,
-    status: row.httpStatus,
+    status: httpStatus,
     ok: row.ok,
   });
   if (!mappedInbound) return null;
