@@ -8,7 +8,7 @@ import {
   type LocalEndpointKind,
 } from '@/lib/route-endpoints';
 import { cn } from '@/lib/utils';
-import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
+import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
 
 export function PoolEndpointTypeLine({
   kind,

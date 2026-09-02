@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FolderCode, MessageSquare, Route } from 'lucide-react';
-import { BRIDGES_PATH } from '@/lib/bridges-path';
+import { ROUTES_PATH } from '@/lib/routes-path';
 import {
   DEFAULT_PLUGINS_NAV_VISIBLE,
   DEFAULT_ROUTES_NAV_VISIBLE,
@@ -103,7 +103,7 @@ describe('nav model order', () => {
     expect(NAV_MANAGE.map((item) => item.to)).toEqual([
       '/',
       '/connections',
-      BRIDGES_PATH,
+      ROUTES_PATH,
       '/settings',
     ]);
     expect(NAV_MANAGE.map((item) => item.navKey)).toEqual([
@@ -117,7 +117,7 @@ describe('nav model order', () => {
   it('uses compact, recognizable icons for chat, projects, and routes', () => {
     expect(NAV_WORKSPACE.find((item) => item.to === '/chat')?.icon).toBe(MessageSquare);
     expect(NAV_WORKSPACE.find((item) => item.to === '/projects')?.icon).toBe(FolderCode);
-    expect(NAV_MANAGE.find((item) => item.to === BRIDGES_PATH)?.icon).toBe(Route);
+    expect(NAV_MANAGE.find((item) => item.to === ROUTES_PATH)?.icon).toBe(Route);
   });
 
   it('keeps active labels readable while accenting 18px navigation icons', () => {
@@ -163,7 +163,7 @@ describe('workspaceNavItems / manageNavItems', () => {
       '/plugins',
     );
     expect(manageNavItems(DEFAULT_ROUTES_NAV_VISIBLE).map((item) => item.to)).toContain(
-      BRIDGES_PATH,
+      ROUTES_PATH,
     );
     const ctx = readFileSync(path.join(dir, 'SidebarContext.tsx'), 'utf8');
     expect(ctx).toContain(
@@ -176,7 +176,7 @@ describe('workspaceNavItems / manageNavItems', () => {
   it('marks plugins and MCP as in development; routes are not', () => {
     const mcp = NAV_WORKSPACE.find((item) => item.to === '/mcp');
     const plugins = NAV_WORKSPACE.find((item) => item.to === '/plugins');
-    const routes = NAV_MANAGE.find((item) => item.to === BRIDGES_PATH);
+    const routes = NAV_MANAGE.find((item) => item.to === ROUTES_PATH);
     expect(mcp).toBeDefined();
     expect(plugins).toBeDefined();
     expect(routes).toBeDefined();

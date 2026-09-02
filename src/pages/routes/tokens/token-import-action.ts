@@ -9,8 +9,8 @@ import { logGuiEvent } from '@/lib/api/settings';
 import { bindTicket, planTicket, ticketIdFor } from '@/lib/api/tickets';
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { AgentId } from '@/lib/types';
-import { switchWriteLast4 } from '@/pages/bridges/client-config-model';
-import { localBridgeSiblingForTarget } from '@/pages/bridges/route-graph-model';
+import { switchWriteLast4 } from '@/pages/routes/shared/client-config-model';
+import { localBridgeSiblingForTarget } from '@/pages/routes/shared/route-graph-model';
 
 export type ImportLocalTokenDeps = {
   planTicket: typeof planTicket;

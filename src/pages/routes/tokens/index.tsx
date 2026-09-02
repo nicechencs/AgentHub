@@ -22,12 +22,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import { ROUTES_POOL_PATH } from '@/lib/bridges-path';
+import { ROUTES_POOL_PATH } from '@/lib/routes-path';
 import { listLocalTokens, setLocalToken } from '@/lib/api/adapter';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
-import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/bridges/route-inspect';
-import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
-import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
+import { ROUTES_INSPECT_WIDTH_KEY } from '@/pages/routes/shared/route-inspect';
+import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
+import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
 import { boardUsageWindow } from '@/pages/routes/board/board-usage-model';
 import { useBoardUsageStats } from '@/pages/routes/board/use-board-usage';
 import { buildLocalEntryControl } from '@/pages/routes/board/board-view-model';

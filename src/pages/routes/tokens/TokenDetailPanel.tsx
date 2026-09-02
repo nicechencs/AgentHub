@@ -29,7 +29,7 @@ import {
 } from '@/lib/api/adapter';
 import type { LocalTokenProbeResult } from '@/lib/backend/contracts/adapter';
 import { localEndpointBrandAgentId } from '@/lib/route-endpoints';
-import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
+import { adapterStatusTextClass } from '@/pages/routes/shared/adapter-view-model';
 import {
   buildTokenDetailCopyRows,
   formatTokenRelative,

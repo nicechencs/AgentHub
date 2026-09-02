@@ -10,8 +10,8 @@ import {
   ROUTES_BOARD_PATH,
   ROUTES_POOL_PATH,
   ROUTES_TOKENS_PATH,
-  BRIDGES_PATH,
-} from '@/lib/bridges-path';
+  ROUTES_PATH,
+} from '@/lib/routes-path';
 import type { MessageKey } from '@/lib/i18n';
 
 export type RoutesNavItem = {
@@ -30,7 +30,7 @@ export const ROUTES_NAV_ITEMS: readonly RoutesNavItem[] = [
 ] as const;
 
 export function isRoutesAreaPath(pathname: string): boolean {
-  return pathname === BRIDGES_PATH || pathname.startsWith(`${BRIDGES_PATH}/`);
+  return pathname === ROUTES_PATH || pathname.startsWith(`${ROUTES_PATH}/`);
 }
 
 export function routesNavItemInDevelopment(item: RoutesNavItem): boolean {

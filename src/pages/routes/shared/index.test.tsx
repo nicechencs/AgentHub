@@ -169,7 +169,7 @@ describe('Bridges page', () => {
 
   it('auth-pool workbench wires the profile deep-link helper', () => {
     const source = readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), '../routes/pool/index.tsx'),
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '../pool/index.tsx'),
       'utf8',
     );
     expect(source).toContain('resolveBridgesProfileQuery');

@@ -18,8 +18,8 @@ import {
 } from '@/lib/route-endpoints';
 import type { AgentId } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
-import { isBridgeStopCapable } from '@/pages/bridges/adapter-view-model';
-import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
+import { isBridgeStopCapable } from '@/pages/routes/shared/adapter-view-model';
+import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
 
 export const BOARD_INBOUND_SNAPSHOT_LIMIT = 8;
 export const BOARD_INBOUND_WINDOW = 20;

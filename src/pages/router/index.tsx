@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { legacyBridgesRedirectTo } from '@/lib/bridges-path';
+import { legacyBridgesRedirectTo } from '@/lib/routes-path';
 
 /** 兼容旧路径：/router → /routes */
 export default function RouterToAdapterRedirect() {

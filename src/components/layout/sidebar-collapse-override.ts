@@ -3,13 +3,13 @@
  * 其它导航、刷新、路由区内切换、离开路由页都不改折叠状态。
  */
 
-import { BRIDGES_PATH } from '@/lib/bridges-path';
+import { ROUTES_PATH } from '@/lib/routes-path';
 
 export function collapsedAfterPrimaryNavClick(opts: {
   itemTo: string;
   currentCollapsed: boolean;
   autoCollapseOnRoutes: boolean;
 }): boolean {
-  if (opts.autoCollapseOnRoutes && opts.itemTo === BRIDGES_PATH) return true;
+  if (opts.autoCollapseOnRoutes && opts.itemTo === ROUTES_PATH) return true;
   return opts.currentCollapsed;
 }
