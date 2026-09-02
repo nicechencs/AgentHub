@@ -25,6 +25,7 @@ import { openExternalLink } from '@/lib/open-external';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
+  agentLinuxInstallUnsupported,
   agentTaskLogTitleKey,
   canInstallAlongsideSpecial,
   formatAgentVersion,
@@ -181,11 +182,13 @@ export function AgentCard({
     agent.update?.setupUrl,
     meta.installChannels,
   );
+  const linuxUnsupported = agentLinuxInstallUnsupported(agent.agentId);
   const upgradeControl = agentUpgradeControl({
     installed: agent.installed,
     updateVia: spawn?.updateVia,
     updateState,
     setupUrl: officialSetupUrl,
+    linuxUnsupported,
   });
   const launch = agentLaunchTargets(agent);
   const startProgram = async (kind: 'cli' | 'app', path: string) => {
@@ -208,6 +211,14 @@ export function AgentCard({
   const latestVersionLabel = formatAgentVersion(latestLabel);
 
   const openOfficialSetup = () => {
+    if (linuxUnsupported) {
+      toast({
+        title: t('agents.card.linuxUnsupported'),
+        description: t('agents.card.linuxUnsupportedHint'),
+        variant: 'danger',
+      });
+      return;
+    }
     if (!officialSetupUrl) {
       toast({
         title: t('agents.update.noOfficialUrl'),
@@ -261,6 +272,7 @@ export function AgentCard({
       return agentUpgradeHint(upgradeControl, {
         updateVia: spawn?.updateVia,
         note: localizeInstallCopy(agent.update?.note ?? '', t),
+        linuxUnsupported,
         t,
       });
     }
@@ -451,7 +463,19 @@ export function AgentCard({
               status={task?.status}
               busy={busy}
               channelId={selectedChannel.id}
-              onClick={() => (installFailed ? retryAction() : openConfirm('install'))}
+              linuxUnsupported={linuxUnsupported}
+              onClick={() => {
+                if (linuxUnsupported) {
+                  toast({
+                    title: t('agents.card.linuxUnsupported'),
+                    description: t('agents.card.linuxUnsupportedHint'),
+                    variant: 'danger',
+                  });
+                  return;
+                }
+                if (installFailed) retryAction();
+                else openConfirm('install');
+              }}
             />
             <Button
               size="icon"

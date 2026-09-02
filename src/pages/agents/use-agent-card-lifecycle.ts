@@ -19,6 +19,7 @@ import type { TranslateFn } from '@/lib/i18n';
 import type { AgentStatus, RuntimeDetect } from '@/lib/types';
 import type { AgentCardConfirmKind } from './AgentCardDialogs';
 import { localizeInstallCopy } from './install-labels';
+import { agentLinuxInstallUnsupported } from './agent-card-model';
 
 export type AgentCardTask = {
   action: 'install' | 'upgrade' | 'oneclick';
@@ -359,6 +360,14 @@ export function useAgentCardLifecycle(input: {
   };
 
   const startAgentInstall = (channel: InstallChannelMeta) => {
+    if (agentLinuxInstallUnsupported(agent.agentId)) {
+      toast({
+        title: t('agents.card.linuxUnsupported'),
+        description: t('agents.card.linuxUnsupportedHint'),
+        variant: 'danger',
+      });
+      return;
+    }
     const check = checkChannelEnv(channel, runtimes);
     if (!check.ready) {
       setSelectedChannelId(channel.id);
