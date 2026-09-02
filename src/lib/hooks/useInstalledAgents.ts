@@ -2,10 +2,14 @@
  * 已安装 Agent 列表 hook。
  * Agents 页展示全量候选；其它页面应只展示 detect 结果为 installed 且未隐藏的 Agent。
  */
-import { useMemo } from 'react';
-import { useAgentStatuses } from '@/app/runtime';
+import { useMemo, useSyncExternalStore } from 'react';
+import {
+  getAgentCatalogSnapshot,
+  subscribeAgentCatalog,
+  useAgentStatuses,
+} from '@/app/runtime';
 import { useStoredIdOrder } from '@/components/shared/use-stored-id-order';
-import { AGENTS, type AgentMeta } from '@/config/agents';
+import { AGENTS, resolveAgentMeta, type AgentMeta } from '@/config/agents';
 import {
   applyStoredAgentOrder,
   hiddenAgentIdSet,
@@ -23,6 +27,11 @@ export type AgentColumn = AgentMeta & {
 
 export function useInstalledAgents() {
   const { state, statuses, error, reload } = useAgentStatuses();
+  const catalog = useSyncExternalStore(
+    subscribeAgentCatalog,
+    getAgentCatalogSnapshot,
+    getAgentCatalogSnapshot,
+  );
   const { stored: catalogOrder } = useStoredIdOrder(StorageKey.agentsCatalogOrder);
 
   // 稳定引用：避免下游 useCallback/useEffect 因每 render 新数组而反复触发
@@ -50,15 +59,15 @@ export function useInstalledAgents() {
   const installedAgents = useMemo<AgentColumn[]>(
     () =>
       applyStoredAgentOrder(
-        AGENTS.filter((a) => installedIds.includes(a.id)).map((a) => {
-          // Prefer doctor/detect capabilities; never invent MOCK when statuses already loaded.
-          const caps = statuses?.find((s) => s.agentId === a.id)?.capabilities;
-          return { ...a, capabilities: caps };
+        installedIds.map((id) => {
+          const listed = AGENTS.find((agent) => agent.id === id) ?? resolveAgentMeta(id);
+          const caps = statuses?.find((row) => row.agentId === id)?.capabilities;
+          return { ...listed, capabilities: caps };
         }),
         (agent) => agent.id,
         catalogOrder,
       ),
-    [catalogOrder, installedIds, statuses],
+    [catalog.hydrated, catalog.status, catalogOrder, installedIds, statuses],
   );
 
   return {

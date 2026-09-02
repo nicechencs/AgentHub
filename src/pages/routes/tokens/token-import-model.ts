@@ -1,15 +1,20 @@
 /**
- * Pure eligibility for one-click「导入到 Agent」from a local-route token.
- * Surface truth: agentConversationSurfaces ∩ localEndpointSurface(kind).
- * Visibility: installed && !hidden (same rule as useInstalledAgents / visibleInstalledIds).
+ * Eligibility for one-click「导入到 Agent」from a local-route token.
+ *
+ * Menu opens when the row has a key + local entry + at least one installed Agent.
+ * An Agent is selectable only when this token kind is the loopback this Agent
+ * actually writes (Claude←messages, Codex←responses_codex, Grok←responses_grok,
+ * Kimi/DSH←chat_completions). Speaks-but-cannot-write stays visible and disabled.
  */
 import { isAgentHidden, visibleInstalledIds } from '@/lib/agent-visibility';
 import type { TranslateFn } from '@/lib/i18n';
 import {
+  localEndpointKindForTargetAgent,
   localEndpointSurface,
   type LocalEndpointKind,
   type RouteEndpointId,
 } from '@/lib/route-endpoints';
+import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { AgentId, AgentStatus } from '@/lib/types';
 import { agentConversationSurfaces } from '@/pages/agents/agent-detail-model';
 import type { LocalTokenRow } from './tokens-model';
@@ -18,6 +23,12 @@ export type TokenImportAgentRef = {
   id: AgentId;
   /** Display name for menus; callers may pass catalog name or id. */
   name: string;
+};
+
+export type TokenImportAgentChoice = TokenImportAgentRef & {
+  enabled: boolean;
+  /** Short per-row hint when this Agent cannot take the token. */
+  reason: string | null;
 };
 
 /** Wire surface this token authenticates on. */
@@ -35,7 +46,32 @@ export function agentMatchesTokenSurface(
 }
 
 /**
- * Installed, not hidden, and surface-matched — menu candidates only.
+ * Loopback writer kind for Agents that receive a generated local-entry provider.
+ * Null when bind/switch cannot write this token into the Agent.
+ */
+export function agentWritesLocalTokenKind(agentId: string): LocalEndpointKind | null {
+  if (
+    agentId === 'claude'
+    || agentId === 'codex'
+    || agentId === 'grok'
+    || agentId === 'kimi'
+    || agentId === 'dsh'
+  ) {
+    return localEndpointKindForTargetAgent(agentId);
+  }
+  return null;
+}
+
+/** True when importing this token writes the matching loopback into the Agent. */
+export function agentCanReceiveTokenImport(
+  agentId: string,
+  kind: LocalEndpointKind,
+): boolean {
+  return agentWritesLocalTokenKind(agentId) === kind;
+}
+
+/**
+ * Installed, not hidden, and able to receive this token's loopback.
  * Order follows `installedIds` when provided (catalog / stored order).
  */
 export function eligibleAgentsForTokenImport(input: {
@@ -52,7 +88,7 @@ export function eligibleAgentsForTokenImport(input: {
   const nameOf = input.agentName ?? ((id: string) => id);
   const out: TokenImportAgentRef[] = [];
   for (const id of ids) {
-    if (!agentMatchesTokenSurface(id, input.kind)) continue;
+    if (!agentCanReceiveTokenImport(id, input.kind)) continue;
     out.push({ id: id as AgentId, name: nameOf(id) || id });
   }
   return out;
@@ -65,52 +101,85 @@ export function isTokenImportAgentVisible(
   return Boolean(status?.installed) && !isAgentHidden(status);
 }
 
+export function tokenImportAgentChoice(
+  kind: LocalEndpointKind,
+  agent: TokenImportAgentRef,
+  t?: TranslateFn,
+): TokenImportAgentChoice {
+  if (agentCanReceiveTokenImport(agent.id, kind)) {
+    return { ...agent, enabled: true, reason: null };
+  }
+  if (agentWritesLocalTokenKind(agent.id) == null) {
+    return {
+      ...agent,
+      enabled: false,
+      reason: t ? t('routes.tokens.importCannotWrite') : '还不能写入',
+    };
+  }
+  return {
+    ...agent,
+    enabled: false,
+    reason: t ? t('routes.tokens.importEndpointMismatch') : '端点不匹配',
+  };
+}
+
 export type TokenImportGate = {
   enabled: boolean;
-  /** Short hint when disabled; null when the menu can open. */
+  /** Short hint when the control cannot open; null when the menu can open. */
   reason: string | null;
-  agents: TokenImportAgentRef[];
+  agents: TokenImportAgentChoice[];
 };
 
 /**
  * Whether「导入到 Agent」can open a menu for this row.
- * No empty menu: disable + hint when nobody is eligible.
+ * The menu lists every installed Agent; items that cannot receive this token
+ * stay visible and disabled with a short reason.
  */
 export function tokenImportGate(
   row: Pick<LocalTokenRow, 'kind' | 'token' | 'profileId' | 'unavailable'>,
   agents: readonly TokenImportAgentRef[],
   t?: TranslateFn,
 ): TokenImportGate {
-  const eligible = agents.filter((agent) => agentMatchesTokenSurface(agent.id, row.kind));
+  const choices = agents.map((agent) => tokenImportAgentChoice(row.kind, agent, t));
   if (row.unavailable) {
     return {
       enabled: false,
       reason: t ? t('routes.runtime.unavailable') : '状态不可用',
-      agents: eligible,
+      agents: choices,
     };
   }
   if (!row.token?.trim()) {
     return {
       enabled: false,
       reason: t ? t('routes.tokens.importNeedKey') : '先有入口 Key 才能导入',
-      agents: eligible,
+      agents: choices,
     };
   }
   if (!row.profileId?.trim()) {
     return {
       enabled: false,
       reason: t ? t('routes.tokens.importNeedEntry') : '本机入口还没就绪',
-      agents: eligible,
+      agents: choices,
     };
   }
-  if (eligible.length === 0) {
+  if (agents.length === 0) {
     return {
       enabled: false,
-      reason: t
-        ? t('routes.tokens.importNoneEligible')
-        : '没有已安装且匹配此端点的 Agent',
-      agents: eligible,
+      reason: t ? t('routes.tokens.importNeedAgent') : '先安装 Agent',
+      agents: choices,
     };
   }
-  return { enabled: true, reason: null, agents: eligible };
+  return { enabled: true, reason: null, agents: choices };
+}
+
+/** Prefer the live profile object; fall back to the row's entry in sibling list. */
+export function resolveTokenImportProfile(
+  profile: AdapterProfile | null | undefined,
+  profileId: string | null | undefined,
+  siblings?: readonly AdapterProfile[],
+): AdapterProfile | null {
+  if (profile) return profile;
+  const id = profileId?.trim();
+  if (!id || !siblings?.length) return null;
+  return siblings.find((item) => item.id === id) ?? null;
 }
