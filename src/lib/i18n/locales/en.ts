@@ -1102,6 +1102,7 @@ export const en = {
       detailTitle: "Request details",
       inboundEndpoint: "Local endpoint",
       outboundEndpoint: "Upstream endpoint",
+      conversion: "Conversion",
       tokensValue: "{in} / {out}",
       seconds: "{s}s",
       openDetailAria: "View details for this request",
