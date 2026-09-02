@@ -1,3 +1,4 @@
+use axum::http::header::{self, HeaderValue};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -135,6 +136,30 @@ pub(super) fn surface_mismatch_response(
         })),
     )
         .into_response()
+}
+
+/// Bilingual UX for wrong HTTP method on conversation paths (empty 405 body was unhelpful).
+pub(super) fn method_not_allowed_message(path: &str) -> String {
+    format!("This endpoint only accepts POST {path}. 本机该路径只接受 POST {path}。")
+}
+
+pub(super) fn method_not_allowed_response(path: &str) -> Response {
+    let message = method_not_allowed_message(path);
+    let mut response = (
+        StatusCode::METHOD_NOT_ALLOWED,
+        Json(json!({
+            "error": {
+                "code": "method_not_allowed",
+                "message": message,
+                "type": "invalid_request_error",
+            }
+        })),
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(header::ALLOW, HeaderValue::from_static("POST"));
+    response
 }
 
 #[cfg(test)]
