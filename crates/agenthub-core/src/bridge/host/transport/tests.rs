@@ -758,5 +758,58 @@ fn grok_prepare_converts_chat_surface_to_responses() {
     assert!(!UpstreamChannel::Grok.forces_upstream_stream());
 }
 
+#[test]
+fn require_responses_conversation_seed_rejects_missing_input() {
+    let err = super::require_responses_conversation_seed(&json!({
+        "model": "grok-4.5",
+        "stream": false
+    }))
+    .expect_err("missing input seed");
+    assert_eq!(err.status(), axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn require_responses_conversation_seed_accepts_input() {
+    super::require_responses_conversation_seed(&json!({
+        "model": "grok-4.5",
+        "input": "hi"
+    }))
+    .expect("input ok");
+}
+
+#[test]
+fn passthrough_responses_object_still_allows_messages_shaped_bodies() {
+    // Anthropic/Chat identity relay reuses this helper; do not require Responses seeds here.
+    let (body, stream) = super::passthrough_responses_object(json!({
+        "model": "claude",
+        "max_tokens": 16,
+        "messages": [{"role": "user", "content": "hi"}],
+        "stream": false
+    }))
+    .expect("messages body ok for shared passthrough");
+    assert_eq!(body["messages"][0]["role"], "user");
+    assert!(!stream);
+}
+
+#[test]
+fn grok_prepare_rejects_responses_without_conversation_seed() {
+    let admitted = admitted(
+        BridgeUpstreamProtocol::XaiResponsesOauth,
+        BridgeLocalSurface::Responses,
+        json!({
+            "model": "grok-4.5",
+            "messages": [{"role": "user", "content": "hi"}]
+        }),
+    );
+    let result = UpstreamChannel::from_protocol(BridgeUpstreamProtocol::XaiResponsesOauth)
+        .transport()
+        .prepare(DownstreamSurface::Responses, &admitted);
+    let err = match result {
+        Ok(_) => panic!("chat-shaped responses body must fail locally"),
+        Err(response) => response,
+    };
+    assert_eq!(err.status(), axum::http::StatusCode::BAD_REQUEST);
+}
+
 #[path = "conversion_matrix.rs"]
 mod conversion_matrix;

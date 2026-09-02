@@ -537,6 +537,22 @@ fn chat_request_maps_to_responses_and_strips_leftover_grok_model() {
 }
 
 #[test]
+fn messages_request_rejects_empty_messages_array() {
+    let error = parse_messages_request(&json!({
+        "model": "gpt-5.4",
+        "max_tokens": 16,
+        "messages": []
+    }))
+    .expect_err("empty messages must fail closed");
+    assert_eq!(error.code, "invalid_request");
+    assert!(
+        error.message.contains("at least one message"),
+        "got {}",
+        error.message
+    );
+}
+
+#[test]
 fn messages_request_maps_to_responses_and_strips_leftover_claude_model() {
     let request = parse_messages_request(&json!({
         "model": "claude-sonnet-4-20250514",

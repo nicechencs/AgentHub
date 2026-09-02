@@ -13,7 +13,7 @@ use super::super::admission::AdmittedRequest;
 use super::super::surface::DownstreamSurface;
 use super::{
     models_surface_unreachable, overwrite_configured_model, parse_bridge_request,
-    passthrough_responses_object, RecoveryPolicy, UpstreamDecode, UpstreamPrepare,
+    passthrough_responses_object, require_responses_conversation_seed, RecoveryPolicy, UpstreamDecode, UpstreamPrepare,
     UpstreamTransport,
 };
 
@@ -45,6 +45,7 @@ impl UpstreamTransport for GrokTransport {
                 let grok_identity = grok_identity(admitted);
                 let cache_seed = extract_prompt_cache_seed(&admitted.headers, &admitted.body);
                 let (mut body, stream) = passthrough_responses_object(admitted.body.clone())?;
+                require_responses_conversation_seed(&body)?;
                 if super::super::pair_policy::pair_adapter_active(
                     &admitted.state,
                     super::UpstreamChannel::Grok,
