@@ -291,7 +291,7 @@ export default function RoutesBoardPage() {
                 : t('routes.board.entryStartFailed')}
             />
           ) : null}
-          <PageSection first aria-label={t('routes.board.statusSection')}>
+          <PageSection first title={t('routes.board.statusSection')}>
             {showStatusSkeleton ? (
               <BoardRouteSkeleton count={4} />
             ) : (

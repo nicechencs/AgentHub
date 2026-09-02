@@ -6,6 +6,7 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { getLocalEntryStatus } from '@/lib/api/adapter';
+import { ADAPTER_BRIDGE_STATUS_POLL_MS } from '@/pages/bridges/adapter-model';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
@@ -38,23 +39,28 @@ export default function RoutesActivityPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void getLocalEntryStatus()
-      .then((status) => {
-        if (!cancelled) {
+    let received = false;
+    const tick = () => {
+      void getLocalEntryStatus()
+        .then((status) => {
+          if (cancelled) return;
+          received = true;
           setLocalEntryStatuses(status.statuses ?? []);
           setUnauthenticatedTraces(status.unauthenticatedTraces ?? []);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
+        })
+        .catch(() => {
+          if (cancelled || received) return;
           setLocalEntryStatuses([]);
           setUnauthenticatedTraces([]);
-        }
-      });
+        });
+    };
+    tick();
+    const timer = window.setInterval(tick, ADAPTER_BRIDGE_STATUS_POLL_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [profiles, bridgeStatuses, loading]);
+  }, [profiles, loading]);
 
   const monitoredProfiles = useMemo(
     () => monitoredLocalProfiles(profiles, new Set(), defaultPools),
