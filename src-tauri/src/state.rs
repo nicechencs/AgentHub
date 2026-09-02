@@ -67,6 +67,11 @@ impl AppState {
             Ok(dir) => bridge_host.set_usage_spool_dir(dir),
             Err(error) => logging::log_app_error(targets::GUI, "usage_gateway_dir", &error),
         }
+        // Restore Activity/monitor route traces across GUI restart/crash.
+        match agenthub_core::utils::paths::route_traces_persist_path() {
+            Ok(path) => bridge_host.set_route_trace_persist_path(path),
+            Err(error) => logging::log_app_error(targets::GUI, "route_traces_persist_path", &error),
+        }
         Self {
             hub,
             bridge_host: Arc::new(bridge_host),
