@@ -46,8 +46,8 @@ pub use adapter_bridge_service::{
     AdapterBridgeService, BridgeProviderSnapshot,
 };
 pub use adapter_projection::{
-    classify_account_live, classify_provider_config, leftover_live_flag, LiveOrigin,
-    ADAPTER_PROJECTION_KIND,
+    classify_account_live, classify_provider_config, exact_generated_provider_for_live,
+    leftover_live_flag, LiveOrigin, ADAPTER_PROJECTION_KIND,
 };
 pub use adapter_route_service::AdapterRouteService;
 pub use adapter_secret_resolver::AdapterSecretResolver;

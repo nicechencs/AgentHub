@@ -6,7 +6,8 @@ use crate::models::{
 };
 
 use super::{
-    classify_account_live, classify_provider_config, should_skip_live_reconcile, LiveOrigin,
+    classify_account_live, classify_provider_config, exact_generated_provider_for_live,
+    should_skip_live_reconcile, LiveOrigin,
 };
 
 fn profile(port: u16) -> AdapterProfile {
@@ -219,4 +220,68 @@ fn current_generated_on_claude_does_not_hide_unrelated_oauth() {
         ),
         LiveOrigin::UserGrant
     );
+}
+
+
+#[test]
+fn exact_match_picks_live_bridge_over_stale_current() {
+    let openai = provider(
+        "claude-openai",
+        true,
+        true,
+        "http://127.0.0.1:40661",
+        "ahb_openai_token_xxxxdosM",
+    );
+    let codex = provider(
+        "claude-codex",
+        false,
+        true,
+        "http://127.0.0.1:44227",
+        "ahb_codex_token_xxxxxIDv8",
+    );
+    let live = json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:44227",
+            "ANTHROPIC_AUTH_TOKEN": "ahb_codex_token_xxxxxIDv8"
+        }
+    });
+    let providers = [openai, codex];
+    let matched = exact_generated_provider_for_live(AgentId::Claude, &live, &providers);
+    assert_eq!(matched.map(|p| p.id.as_str()), Some("claude-codex"));
+}
+
+#[test]
+fn exact_match_returns_none_when_ambiguous_or_user_grant() {
+    let a = provider(
+        "a",
+        true,
+        true,
+        "http://127.0.0.1:44227",
+        "ahb_same_token_xxxxxxIDv8",
+    );
+    let b = provider(
+        "b",
+        false,
+        true,
+        "http://127.0.0.1:44227",
+        "ahb_same_token_xxxxxxIDv8",
+    );
+    let live = json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:44227",
+            "ANTHROPIC_AUTH_TOKEN": "ahb_same_token_xxxxxxIDv8"
+        }
+    });
+    let amb = [a, b];
+    assert!(exact_generated_provider_for_live(AgentId::Claude, &live, &amb).is_none());
+
+    let manual = provider(
+        "manual",
+        true,
+        false,
+        "http://127.0.0.1:44227",
+        "ahb_codex_token_xxxxxIDv8",
+    );
+    let only = [manual];
+    assert!(exact_generated_provider_for_live(AgentId::Claude, &live, &only).is_none());
 }
