@@ -266,6 +266,9 @@ export const zh = {
       diagHeader: "[AgentHub 诊断]",
       diagTime: "时间: {time}",
       diagError: "错误: {message}",
+      diagLogs: "日志: ~/.agenthub/logs/agenthub.*.log",
+      hintLogs: "若反复失败，请查看 ~/.agenthub/logs 下当天日志后再重试。",
+      loadingLocal: "正在加载本机状态…",
     },
     update: {
       found: "发现新版本",
