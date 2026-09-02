@@ -26,12 +26,12 @@ export type ActivityTraceColumnKey =
 
 export const ACTIVITY_TRACE_WIDTH_SPECS: ColumnWidthSpec<ActivityTraceColumnKey>[] = [
   { key: "time", defaultWidth: 148, minWidth: 112 },
-  { key: "request", defaultWidth: 220, minWidth: 148 },
-  { key: "model", defaultWidth: 140, minWidth: 96 },
-  { key: "firstToken", defaultWidth: 80, minWidth: 64 },
-  { key: "duration", defaultWidth: 96, minWidth: 72 },
-  { key: "tokens", defaultWidth: 120, minWidth: 88 },
-  { key: "stages", defaultWidth: 132, minWidth: 112 },
+  { key: "request", defaultWidth: 180, minWidth: 148 },
+  { key: "model", defaultWidth: 120, minWidth: 96 },
+  { key: "firstToken", defaultWidth: 72, minWidth: 64 },
+  { key: "duration", defaultWidth: 88, minWidth: 72 },
+  { key: "tokens", defaultWidth: 104, minWidth: 88 },
+  { key: "stages", defaultWidth: 224, minWidth: 196 },
   { key: "route", defaultWidth: 120, minWidth: 88 },
   { key: "details", defaultWidth: 72, minWidth: 64 },
 ];
@@ -105,7 +105,7 @@ export function activityTraceStageStatusLabel(
 ): string {
   if (status === "ok") return t("routes.inbound.ok");
   if (status === "failed") return t("routes.inbound.fail");
-  if (status === "skipped") return t("routes.trace.flow.stageSkipped");
+  if (status === "skipped") return t("routes.trace.notReached");
   return t("routes.trace.flow.authPending");
 }
 

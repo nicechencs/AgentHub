@@ -11,6 +11,7 @@ import { uniquePoolDisplayLabels, uniqueTraceUpstreamUrls } from '@/components/s
 import { ActivityTraceList } from './ActivityTraceList';
 import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
 import type { ActivityPageSnapshot } from './activity-view-model';
+import { activityTraceDisplayRow, selectedActivityTrace } from './activity-trace-summary-model';
 
 export function ActivityMonitoringPanel({
   snapshot,
@@ -24,11 +25,12 @@ export function ActivityMonitoringPanel({
   onShowDetail?: (row: RouteTraceListItem) => void;
 }) {
   const { t } = useI18n();
+  const activeRow = selectedActivityTrace(snapshot.feed, activeId);
 
   return (
     <div className="space-y-4" data-activity-monitoring>
       <RouteTracePipelineLegend
-        row={snapshot.feed[0]}
+        row={activityTraceDisplayRow(activeRow ?? snapshot.feed[0])}
         poolLabels={uniquePoolDisplayLabels(pools)}
         upstreamUrls={uniqueTraceUpstreamUrls(snapshot.feed)}
       />

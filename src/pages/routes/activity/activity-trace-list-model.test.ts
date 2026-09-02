@@ -46,7 +46,7 @@ describe('activity-trace-list-model', () => {
     expect(activityTraceStageLabel('local_auth', t)).toBe('本机鉴权');
     expect(activityTraceStageStatusLabel('ok', t)).toBe('成功');
     expect(activityTraceStageStatusLabel('failed', t)).toBe('失败');
-    expect(activityTraceStageStatusLabel('skipped', t)).toBe('未执行');
+    expect(activityTraceStageStatusLabel('skipped', t)).toBe('未到达');
   });
 
   it('formats first-token and request duration in seconds', () => {
