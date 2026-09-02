@@ -18,7 +18,7 @@ import {
   filterTicketsByAgentUsage,
 } from '@/lib/ticket-wallet';
 import type {
-  AgentId,
+  AgentKey,
   AgentStatus,
   ChatMessage,
   ChatMessageStatus,
@@ -27,9 +27,9 @@ import type {
 import type { TurnGroup } from './chat-format';
 
 export type ChatSendBlocker =
-  | { kind: 'hiddenAgents'; agentIds: AgentId[] }
-  | { kind: 'envNotReady'; agentIds: AgentId[] }
-  | { kind: 'unconfiguredAuth'; agentIds: AgentId[] }
+  | { kind: 'hiddenAgents'; agentIds: AgentKey[] }
+  | { kind: 'envNotReady'; agentIds: AgentKey[] }
+  | { kind: 'unconfiguredAuth'; agentIds: AgentKey[] }
   | { kind: 'statusUnknown' }
   | { kind: 'noCwd' }
   | { kind: 'sendingElsewhere'; conversationId: string; title: string };
@@ -37,7 +37,7 @@ export type ChatSendBlocker =
 export type ChatAgentPickerReason = 'noAuth' | 'envNotReady';
 
 export type ChatAgentPickerRow = {
-  id: AgentId;
+  id: AgentKey;
   selectable: boolean;
   reason: ChatAgentPickerReason | null;
 };
@@ -79,7 +79,7 @@ export function isChatAgentSelectable(status: AgentStatus | undefined): boolean 
  * 已安装且未隐藏的 Agent：未配置授权的置底、灰显不可选。隐藏的不进列表。
  */
 export function chatAgentPickerRows(input: {
-  catalogIds: readonly AgentId[];
+  catalogIds: readonly AgentKey[];
   agentStatus: AgentStatus[];
 }): ChatAgentPickerRow[] {
   const byId = new Map(input.agentStatus.map((a) => [a.agentId, a]));
@@ -220,9 +220,9 @@ export function groupConversationsByDay(
 
 export function sendBlockers(input: {
   conversation: Conversation;
-  hiddenIds: Set<AgentId>;
-  envNotReadyIds?: Set<AgentId>;
-  unconfiguredAuthIds?: Set<AgentId>;
+  hiddenIds: Set<AgentKey>;
+  envNotReadyIds?: Set<AgentKey>;
+  unconfiguredAuthIds?: Set<AgentKey>;
   agentsReady?: boolean;
   sendingConversationId: string | null;
   sendingTitle?: string;
@@ -267,7 +267,7 @@ export function sendBlockers(input: {
  */
 export type AutoApproveEffect = 'skip' | 'project-trust' | 'none';
 
-export function autoApproveEffect(agentId: AgentId | null | undefined): AutoApproveEffect {
+export function autoApproveEffect(agentId: AgentKey | null | undefined): AutoApproveEffect {
   switch (agentId) {
     case 'claude':
     case 'codex':
@@ -284,7 +284,7 @@ export function autoApproveEffect(agentId: AgentId | null | undefined): AutoAppr
 
 export function autoApproveActive(
   allowDangerous: boolean,
-  agentId: AgentId | null | undefined,
+  agentId: AgentKey | null | undefined,
 ): boolean {
   return allowDangerous && autoApproveEffect(agentId) !== 'none';
 }
@@ -303,7 +303,7 @@ export function autoApproveHint(t: TranslateFn, effect: AutoApproveEffect): stri
 export function autoApproveFooter(
   t: TranslateFn,
   allowDangerous: boolean,
-  agentId: AgentId | null | undefined,
+  agentId: AgentKey | null | undefined,
 ): { text: string; warning: boolean } {
   const effect = autoApproveEffect(agentId);
   if (!allowDangerous) {
@@ -327,14 +327,14 @@ export function autoApproveConfirmCopy(t: TranslateFn, effect: AutoApproveEffect
 
 /** 单选：点当前项不变；点其他项替换。无法跳过确认的 Agent 会清掉已开的自动批准。 */
 export function selectConversationAgent(input: {
-  currentIds: AgentId[];
-  nextId: AgentId;
+  currentIds: AgentKey[];
+  nextId: AgentKey;
   allowDangerous: boolean;
-}): { agentIds: AgentId[]; allowDangerous?: boolean } | null {
+}): { agentIds: AgentKey[]; allowDangerous?: boolean } | null {
   if (input.currentIds.length === 1 && input.currentIds[0] === input.nextId) {
     return null;
   }
-  const patch: { agentIds: AgentId[]; allowDangerous?: boolean } = {
+  const patch: { agentIds: AgentKey[]; allowDangerous?: boolean } = {
     agentIds: [input.nextId],
   };
   if (input.allowDangerous && autoApproveEffect(input.nextId) === 'none') {
@@ -349,8 +349,8 @@ export function selectConversationAgent(input: {
  * this collapses any legacy multi-agent rows without re-running on every open.
  */
 export function singleAgentConversationPatch(
-  agentIds: AgentId[],
-): { agentIds: AgentId[] } | null {
+  agentIds: AgentKey[],
+): { agentIds: AgentKey[] } | null {
   if (agentIds.length <= 1) return null;
   return { agentIds: [agentIds[0]] };
 }
@@ -358,13 +358,13 @@ export function singleAgentConversationPatch(
 export function newConversationDefaults(
   active: Conversation | null,
   agentStatus: AgentStatus[],
-): { agentIds: AgentId[]; cwd: string | null } {
+): { agentIds: AgentKey[]; cwd: string | null } {
   const hidden = new Set(agentStatus.filter((a) => a.hidden).map((a) => a.agentId));
   const uninstalled = new Set(
     agentStatus.filter((a) => a.installed === false).map((a) => a.agentId),
   );
   const fallback = agentStatus.find((a) => isChatAgentSelectable(a))?.agentId;
-  const fallbackIds: AgentId[] = fallback ? [fallback] : [];
+  const fallbackIds: AgentKey[] = fallback ? [fallback] : [];
 
   if (!active) {
     return { agentIds: fallbackIds, cwd: null };
@@ -388,8 +388,8 @@ export function agentPickerLabel(t: TranslateFn, active: Conversation | null): s
 }
 
 export function connectionPickerCaption(t: TranslateFn, opts: {
-  agentIds: AgentId[];
-  primaryAgent?: AgentId | null;
+  agentIds: AgentKey[];
+  primaryAgent?: AgentKey | null;
 }): string | null {
   if (opts.agentIds.length <= 1) return null;
   const id = opts.primaryAgent ?? opts.agentIds[0];
@@ -433,7 +433,7 @@ function accountConnectionTitle(t: TranslateFn, status: AgentStatus | undefined)
 }
 
 export function chatConnectionPickerView(t: TranslateFn, input: {
-  primaryAgent: AgentId | null;
+  primaryAgent: AgentKey | null;
   switching?: boolean;
   status?: AgentStatus;
   currentProviderName?: string | null;
@@ -550,7 +550,7 @@ export { isLeftoverLocalRouteProvider, leftoverProviderIsCurrent } from '@/lib/l
 /** Native pool row → switch; a login born on another Agent → bind. */
 export function chatConnectionSwitchAction(
   ticket: TicketView,
-  agentId: AgentId,
+  agentId: AgentKey,
 ): ChatConnectionSwitchAction {
   if (ticket.agentId === agentId) {
     if (ticket.sourceKind === 'account') {
@@ -575,7 +575,7 @@ function chatTicketSubtitle(
 /** Leftover generated providers are not tickets and must not appear here. */
 export function chatConnectionOptions(t: TranslateFn, input: {
   wallet: TicketWallet | null | undefined;
-  agentId: AgentId | null;
+  agentId: AgentKey | null;
 }): ChatConnectionOption[] {
   if (!input.wallet || !input.agentId) return [];
   const agentId = input.agentId;
@@ -630,7 +630,7 @@ export function messageStatusLabel(
   }
 }
 
-export function visibleAgentDots(agentIds: AgentId[]): { shown: AgentId[]; extra: number } {
+export function visibleAgentDots(agentIds: AgentKey[]): { shown: AgentKey[]; extra: number } {
   const shown = agentIds.slice(0, 3);
   return { shown, extra: Math.max(0, agentIds.length - 3) };
 }
@@ -649,13 +649,13 @@ export function retryTarget(
 }
 
 export function turnComparisonChips(agents: ChatMessage[]): Array<{
-  agentId: AgentId;
+  agentId: AgentKey;
   status: ChatMessageStatus;
   durationMs: number;
   messageId: string;
 }> {
   return agents
-    .filter((m): m is ChatMessage & { agentId: AgentId } => Boolean(m.agentId))
+    .filter((m): m is ChatMessage & { agentId: AgentKey } => Boolean(m.agentId))
     .map((m) => ({
       agentId: m.agentId,
       status: m.status,

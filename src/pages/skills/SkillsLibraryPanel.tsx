@@ -10,7 +10,7 @@ import { Tip } from '@/components/ui/tooltip';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import type { InstalledSkillDto } from '@/lib/api/skill';
 import type { AgentColumn } from '@/lib/hooks/useInstalledAgents';
-import type { AgentId, Skill } from '@/lib/types';
+import type { AgentKey, Skill } from '@/lib/types';
 import { catalogFilters } from './copy';
 import { SkillMatrix } from './SkillMatrix';
 import type { LocalFilter as LF } from './skills-preview-model';
@@ -34,20 +34,20 @@ export type SkillsLibraryPanelProps = {
   importingIds: Set<string>;
   onToggleSelect: (id: string) => void;
   onToggleSelectAll: () => void;
-  onCellClick: (skill: Skill, agentId: AgentId) => void;
+  onCellClick: (skill: Skill, agentId: AgentKey) => void;
   onCellProject?: (
     skill: Skill,
-    agentId: AgentId,
+    agentId: AgentKey,
     mode: 'link' | 'copy' | 'disable',
   ) => void;
-  onPreview: (row: InstalledSkillDto, agentId?: AgentId) => void;
+  onPreview: (row: InstalledSkillDto, agentId?: AgentKey) => void;
   activeKey: string | null;
-  onAdopt: (skillId: string, agentId: AgentId, name: string) => void;
+  onAdopt: (skillId: string, agentId: AgentKey, name: string) => void;
   onOpenDir?: (path: string) => void;
   onDeleteShared?: (row: InstalledSkillDto) => void;
-  onDeleteFromTool?: (skillId: string, agentId: AgentId, name: string) => void;
+  onDeleteFromTool?: (skillId: string, agentId: AgentKey, name: string) => void;
   agents: AgentColumn[];
-  installedAgentIds: Set<AgentId> | AgentId[];
+  installedAgentIds: Set<AgentKey> | AgentKey[];
 };
 
 export function SkillsLibraryPanel(props: SkillsLibraryPanelProps) {

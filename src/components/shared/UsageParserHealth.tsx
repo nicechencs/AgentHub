@@ -3,7 +3,7 @@ import { AlertTriangle, Check } from 'lucide-react';
 import { agentDisplayName } from '@/config/agents';
 import { tryLoadDoctorMapped } from '@/lib/api/doctor';
 import { missingPricingModels, parserHealth } from '@/lib/api/usage';
-import type { AgentId, ParserHealth } from '@/lib/types';
+import type { AgentKey, ParserHealth } from '@/lib/types';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,7 +15,7 @@ function fmtRecords(n: number): string {
 }
 
 type Row = {
-  agentId: AgentId;
+  agentId: AgentKey;
   supported: boolean;
   records: number;
   failRatePct?: number | null;

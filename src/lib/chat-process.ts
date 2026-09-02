@@ -5,7 +5,7 @@
  */
 
 import type { TranslateFn } from '@/lib/i18n';
-import type { AgentId, ChatEvent, ChatMessageStatus, ProcessStep } from '@/lib/types';
+import type { AgentKey, ChatEvent, ChatMessageStatus, ProcessStep } from '@/lib/types';
 
 export type ProcessPhase =
   | 'queued'
@@ -18,7 +18,7 @@ export type ProcessPhase =
 
 export type AgentProcessView = {
   turn: number;
-  agent: AgentId;
+  agent: AgentKey;
   phase: ProcessPhase;
   command?: string;
   stdout: string;
@@ -32,7 +32,7 @@ export type ProcessMap = Record<string, AgentProcessView>;
 
 const MAX_STEPS = 200;
 
-export function processKey(turn: number, agent: AgentId): string {
+export function processKey(turn: number, agent: AgentKey): string {
   return `${turn}:${agent}`;
 }
 
@@ -132,7 +132,7 @@ export function hasProcessDetails(view: AgentProcessView | undefined): boolean {
   );
 }
 
-function emptyView(turn: number, agent: AgentId, phase: ProcessPhase, now: number): AgentProcessView {
+function emptyView(turn: number, agent: AgentKey, phase: ProcessPhase, now: number): AgentProcessView {
   return {
     turn,
     agent,

@@ -4,7 +4,7 @@ import { useToast } from '@/components/ui/toast';
 import { AGENT_IDS } from '@/config/agents';
 import { listChatMessages, updateConversation } from '@/lib/api/chat';
 import { pickDirectory } from '@/lib/api/settings';
-import type { AgentId, ChatMessage } from '@/lib/types';
+import type { AgentKey, ChatMessage } from '@/lib/types';
 import { groupByTurn } from './chat-format';
 import {
   agentChatEnvReady,
@@ -93,7 +93,7 @@ export function useChatPage() {
   }
 
   const installed = useMemo(() => {
-    const m = new Map<AgentId, boolean>();
+    const m = new Map<AgentKey, boolean>();
     for (const a of agentStatus) m.set(a.agentId, a.installed);
     return m;
   }, [agentStatus]);
@@ -287,7 +287,7 @@ export function useChatPage() {
     }
   }
 
-  async function selectConversationAgentId(id: AgentId) {
+  async function selectConversationAgentId(id: AgentKey) {
     if (!active || sending) return;
     const row = pickerRows.find((r) => r.id === id);
     if (!row?.selectable) return;

@@ -6,7 +6,7 @@ import {
 } from '@/lib/backend/contracts/agent-connection';
 import type { RouteEndpointId } from '@/lib/route-endpoints';
 import { routeEndpointIdForBinding, routeEndpointPath } from '@/lib/route-endpoints';
-import type { AgentId, AppSettings, Provider } from '@/lib/types';
+import type { AgentKey, AppSettings, Provider } from '@/lib/types';
 import {
   contextWindowTokensFromChoice,
   parseContextWindowChoice,
@@ -125,7 +125,7 @@ export type CreateRouteInput = {
 export type ImportRouteInput = {
   sourceKind: 'account' | 'provider';
   sourceId: string;
-  agentId: AgentId;
+  agentId: AgentKey;
 };
 
 export type CreateRouteDeps = {
@@ -355,7 +355,7 @@ export function routeDuplicatePolicyFromSettings(
 export function findRouteProviderByUrl(
   providers: readonly Provider[],
   url: string,
-  agentId: AgentId,
+  agentId: AgentKey,
 ): Provider | undefined {
   const target = normalizeRouteCompareUrl(url);
   if (!target) return undefined;
@@ -645,7 +645,7 @@ function readCreateRouteConfigMeta(configText: string | undefined): {
 /** Local client surfaces for one route row (same port). */
 export function listLocalRouteSurfacesFromConfig(
   configText: string | undefined,
-  fallback: { targetAgentId: AgentId | string; ruleId?: string | null },
+  fallback: { targetAgentId: AgentKey | string; ruleId?: string | null },
 ): LocalRouteSurface[] {
   const caps = readCreateRouteCapabilities(configText);
   if (caps.endpoints.length > 0) {
@@ -762,7 +762,7 @@ export async function submitCreateRoute(
   }
 }
 
-export function importRouteTarget(agentId: AgentId): CreateRouteTarget {
+export function importRouteTarget(agentId: AgentKey): CreateRouteTarget {
   return CREATE_ROUTE_TARGETS.includes(agentId as CreateRouteTarget)
     ? agentId as CreateRouteTarget
     : 'codex';
@@ -774,8 +774,8 @@ export async function submitImportRoute(
 ): Promise<string> {
   const ticketId = ticketIdFor(input.sourceKind, input.sourceId);
   const target = importRouteTarget(input.agentId);
-  await deps.planTicket(ticketId, target as AgentId);
-  await deps.bindTicket(ticketId, target as AgentId);
+  await deps.planTicket(ticketId, target as AgentKey);
+  await deps.bindTicket(ticketId, target as AgentKey);
   return target;
 }
 

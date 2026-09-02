@@ -6,7 +6,7 @@
  * 不得互相 import 实现文件。本文件的类型名、函数名与返回类型不得擅改；
  * 如实现中发现契约缺陷，停下在交付说明中上报。
  */
-import type { Account, AgentId, AgentStatus, Provider, SwitchPreview } from '@/lib/types';
+import type { Account, AgentKey, AgentStatus, Provider, SwitchPreview } from '@/lib/types';
 import type {
   AdapterApplyPlan,
   AdapterApplyRequest,
@@ -41,7 +41,7 @@ export function bindRouteMatchesPurpose(
 
 /** 对话框进入模式（判别联合）。 */
 export type ConnectFlowEntry =
-  | { mode: 'for-agent'; targetAgentId: AgentId }
+  | { mode: 'for-agent'; targetAgentId: AgentKey }
   | { mode: 'for-source'; source: ConnectSourceRef; purpose?: ConnectBindPurpose };
 
 /**
@@ -62,7 +62,7 @@ export interface SourceOption {
   /** native = 目标 Agent 自有凭据；cross = 其他服务凭据（跨服务复用组） */
   group: 'native' | 'cross';
   /** 该凭据所属（签发方）Agent */
-  agentId: AgentId;
+  agentId: AgentKey;
   label: string;
   sublabel?: string;
   state: SourceOptionState;
@@ -74,7 +74,7 @@ export interface SourceOption {
 
 /** 构建来源选项的输入（数据由调用方加载）。 */
 export interface SourceOptionsInput {
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   accounts: readonly Account[];
   providers: readonly Provider[];
   profiles: readonly AdapterProfile[];
@@ -106,7 +106,7 @@ export type PlanEligibility =
 /** fan-out 请求单元。 */
 export interface PlanFanoutRequest {
   source: ConnectSourceRef;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
 }
 
 /** 缓存/去重键：含 kind 防 id 碰撞。 */
@@ -145,7 +145,7 @@ export interface PlanFanoutController {
 /** 连接流程成功出口（apply 与原生切换共用）。 */
 export type ConnectOutcome =
   | { kind: 'applied'; result: AdapterApplyResult }
-  | { kind: 'switched'; ref: ConnectSourceRef; agentId: AgentId };
+  | { kind: 'switched'; ref: ConnectSourceRef; agentId: AgentKey };
 
 /**
  * 对话框依赖注入集合：C2 只面向此接口编程（测试注入 fake），
@@ -187,7 +187,7 @@ export interface ConnectFlowDialogProps {
 
 /** 用途反查（钱包行"正用于哪些 Agent"）。 */
 export interface ConnectionUsageEntry {
-  agentId: AgentId;
+  agentId: AgentKey;
   /** direct = 自身 isCurrent 生效；adapter = 本机路由生效 */
   via: 'direct' | 'adapter';
 }

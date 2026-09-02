@@ -1,6 +1,6 @@
 import { AGENTS, type AgentMeta } from '@/config/agents';
 import { applyIdOrder } from '@/lib/list-order';
-import type { AgentId, AgentStatus, UsageRecord, UsageTrendPoint } from '@/lib/types';
+import type { AgentKey, AgentStatus, UsageRecord, UsageTrendPoint } from '@/lib/types';
 
 export function isAgentHidden(
   status: Pick<AgentStatus, 'hidden'> | null | undefined,
@@ -10,7 +10,7 @@ export function isAgentHidden(
 
 export function hiddenAgentIdSet(
   statuses: ReadonlyArray<Pick<AgentStatus, 'agentId' | 'hidden'>>,
-): Set<AgentId> {
+): Set<AgentKey> {
   return new Set(statuses.filter((row) => row.hidden).map((row) => row.agentId));
 }
 
@@ -20,7 +20,7 @@ export function toHiddenIdSet(hiddenIds: Iterable<string>): Set<string> {
 
 export function visibleInstalledIds(
   statuses: ReadonlyArray<Pick<AgentStatus, 'agentId' | 'installed' | 'hidden'>>,
-): AgentId[] {
+): AgentKey[] {
   return statuses.filter((row) => row.installed && !row.hidden).map((row) => row.agentId);
 }
 
@@ -30,7 +30,7 @@ export function visibleInstalledIds(
  */
 export function omittedAgentIds(
   statuses: ReadonlyArray<Pick<AgentStatus, 'agentId' | 'installed' | 'hidden'>>,
-): AgentId[] {
+): AgentKey[] {
   return statuses
     .filter((row) => !row.installed || Boolean(row.hidden))
     .map((row) => row.agentId)
@@ -71,7 +71,7 @@ export function visibleCatalogAgents(hiddenIds: Iterable<string>): AgentMeta[] {
   return AGENTS.filter((agent) => !hidden.has(agent.id));
 }
 
-export function visibleCatalogIds(hiddenIds: Iterable<string>): AgentId[] {
+export function visibleCatalogIds(hiddenIds: Iterable<string>): AgentKey[] {
   return visibleCatalogAgents(hiddenIds).map((agent) => agent.id);
 }
 
@@ -130,8 +130,8 @@ export function filterVisibleTrend(
 export function firstVisibleAgentId(
   preferred: string | null | undefined,
   allowed: readonly string[],
-  fallback: AgentId = 'claude',
-): AgentId {
-  if (preferred && allowed.includes(preferred)) return preferred as AgentId;
-  return (allowed[0] as AgentId | undefined) ?? fallback;
+  fallback: AgentKey = 'claude',
+): AgentKey {
+  if (preferred && allowed.includes(preferred)) return preferred as AgentKey;
+  return (allowed[0] as AgentKey | undefined) ?? fallback;
 }

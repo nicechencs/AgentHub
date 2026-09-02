@@ -7,7 +7,7 @@ import kimiLogo from '@/assets/agent-logos/kimi.svg';
 import zhipuLogo from '@/assets/agent-logos/zcode.png';
 import type { DetectedApiEndpointType, RoutePoolSurface } from '@/lib/backend/contracts';
 import type { LocalEndpointKind } from '@/lib/route-endpoints';
-import type { AgentId, Provider } from '@/lib/types';
+import type { AgentKey, Provider } from '@/lib/types';
 
 export type PoolAccessAgent = 'claude' | 'codex' | 'grok';
 
@@ -231,7 +231,7 @@ export function sortApiVendorsForPicker<T>(
   );
 }
 
-export function poolApiChoices(agents: readonly AgentId[]): PoolApiChoice[] {
+export function poolApiChoices(agents: readonly AgentKey[]): PoolApiChoice[] {
   return API_CHOICES.map((choice) => ({
     ...choice,
     available: agents.includes(choice.agentId),
@@ -359,7 +359,7 @@ export function poolApiRecordName(baseUrl: string, endpoint: PoolApiChoice['endp
 
 export function poolApiChoiceTypesFromEndpointKinds(
   kinds: readonly LocalEndpointKind[],
-  agentId?: AgentId,
+  agentId?: AgentKey,
 ): PoolApiChoiceType[] {
   const types: PoolApiChoiceType[] = [];
   const seen = new Set<PoolApiChoiceType>();
@@ -399,7 +399,7 @@ export function poolApiEditDraft(input: {
   baseUrl: string;
   apiKey: string;
   endpointKinds: readonly LocalEndpointKind[];
-  agentId: AgentId;
+  agentId: AgentKey;
   priority?: number | null;
 }): PoolApiEditDraft {
   const baseUrl = normalizeApiBaseUrl(input.baseUrl);

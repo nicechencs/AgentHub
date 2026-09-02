@@ -6,7 +6,7 @@ import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { MessageKey, MessageParams, TranslateFn } from '@/lib/i18n';
 import { ROUTE_ENDPOINT_PENDING_PORT } from '@/lib/route-endpoints';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { readCreateRouteCapabilities, type CreateRouteTarget } from './create-route-flow';
 import { resolveAdapterProfileSource } from './adapter-view-model';
 
@@ -227,7 +227,7 @@ function matchSourceEntry(
 function resolveSourceChannel(input: {
   missing: boolean;
   mode: 'api' | 'oauth';
-  sourceAgentId: AgentId | null;
+  sourceAgentId: AgentKey | null;
   baseUrl: string;
   upstreamUrls: readonly string[];
 }): UpstreamChannel {
@@ -242,7 +242,7 @@ function resolveSourceChannel(input: {
 
 export type RouteDetailSourceView = {
   title: string;
-  agentId: AgentId | null;
+  agentId: AgentKey | null;
   missing: boolean;
   credentialMode: 'api' | 'oauth';
   /** Display base upstream URL (may be truncated by UI). Empty if unknown. */

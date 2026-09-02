@@ -29,7 +29,7 @@ import { getSettings, updateSettings } from '@/lib/api/settings';
 import type { TranslateFn } from '@/lib/i18n';
 import { Switch } from '@/components/ui/switch';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
-import type { AgentId, BackupKind, BackupMeta } from '@/lib/types';
+import type { AgentKey, BackupKind, BackupMeta } from '@/lib/types';
 import { BackupDetailPanel } from './backup-detail-panel';
 import {
   backupCardIdentity,
@@ -75,7 +75,7 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
     reload: reloadAgents,
   } = useInstalledAgents();
 
-  const [agentId, setAgentId] = useState<AgentId | null>(null);
+  const [agentId, setAgentId] = useState<AgentKey | null>(null);
   const [backups, setBackups] = useState<BackupMeta[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -109,7 +109,7 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
   }, []);
 
   const counts = useMemo(() => {
-    const map = Object.fromEntries(AGENTS.map((a) => [a.id, 0])) as Record<AgentId, number>;
+    const map = Object.fromEntries(AGENTS.map((a) => [a.id, 0])) as Record<AgentKey, number>;
     if (!backups) return map;
     for (const b of backups) {
       map[b.agentId] = (map[b.agentId] ?? 0) + 1;
@@ -119,7 +119,7 @@ export function BackupsPanel({ toolbar }: { toolbar?: ReactNode }) {
 
   const visibleAgents: AgentMeta[] = useMemo(() => {
     const withBackups = new Set(
-      (backups ?? []).map((b) => b.agentId).filter(Boolean) as AgentId[],
+      (backups ?? []).map((b) => b.agentId).filter(Boolean) as AgentKey[],
     );
     const installed = new Set(installedIds);
     return AGENTS.filter(

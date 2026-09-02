@@ -12,7 +12,7 @@ import {
   routeEndpointPathForBinding,
 } from '@/lib/route-endpoints';
 import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
-import type { AgentId, AgentStatus, AuthStatus } from '@/lib/types';
+import type { AgentKey, AgentStatus, AuthStatus } from '@/lib/types';
 
 /** Backend/store rows keep Chinese literals. Remap at display time when `t` is set. */
 export function localizeStoredDashboardCopy(raw: string, t?: TranslateFn): string {
@@ -64,7 +64,7 @@ export function dashboardBindingMeta(
   input: {
     ticketLabel: string;
     route: BindingRoute;
-    agentId: AgentId;
+    agentId: AgentKey;
     port?: number | null;
   },
   t?: TranslateFn,
@@ -318,7 +318,7 @@ export function buildAgentCardView(
 }
 
 /** 未传 onConnectRequest 时 connect 退化为 Connections 页 */
-export function agentCardConnectFallback(agentId: AgentId): string {
+export function agentCardConnectFallback(agentId: AgentKey): string {
   return `/connections?agent=${agentId}`;
 }
 
@@ -327,9 +327,9 @@ export function agentCardConnectFallback(agentId: AgentId): string {
  */
 export function resolveAgentCardInteraction(
   action: AgentCardAction,
-  agentId: AgentId,
-  onConnectRequest?: (agentId: AgentId) => void,
-): { type: 'connect'; agentId: AgentId } | { type: 'navigate'; to: string } {
+  agentId: AgentKey,
+  onConnectRequest?: (agentId: AgentKey) => void,
+): { type: 'connect'; agentId: AgentKey } | { type: 'navigate'; to: string } {
   if (action.kind === 'navigate') {
     return { type: 'navigate', to: action.to };
   }
@@ -354,7 +354,7 @@ export function dashboardOverviewSkeletonCount(
 export function mergeAgentsInOrder(
   agentMetas: readonly AgentMeta[],
   agents: readonly AgentStatus[],
-  badgeInputs?: Readonly<Partial<Record<AgentId, AgentCardBadgeInput>>> | null,
+  badgeInputs?: Readonly<Partial<Record<AgentKey, AgentCardBadgeInput>>> | null,
   t?: TranslateFn,
 ): Array<{ meta: AgentMeta; status: AgentStatus | undefined; view: AgentCardView }> {
   return agentMetas.map((meta) => {

@@ -15,7 +15,7 @@ import {
   catalogOccupancy,
   mapCatalogCapabilities,
 } from '@/lib/backend/contracts/agent-catalog-types';
-import type { AgentId, RuntimeId } from '@/lib/types';
+import type { AgentKey, RuntimeId } from '@/lib/types';
 import { agentCssVar, type TokenAgentId } from '@/styles/tokens';
 import claudeLogo from '@/assets/agent-logos/claude.png';
 import claudeLogoSvg from '@/assets/agent-logos/claude.svg';
@@ -41,7 +41,7 @@ export interface InstallChannelMeta {
 }
 
 export interface AgentMeta {
-  id: AgentId;
+  id: AgentKey;
   name: string;
   /** 品牌色 CSS 变量；未知 agent 为 muted fallback */
   color: string;
@@ -186,7 +186,7 @@ export let AGENT_MAP: Readonly<Record<string, AgentMeta>> = Object.freeze(
 );
 
 /** Convenience id list; mirrors AGENTS order. */
-export let AGENT_IDS: readonly AgentId[] = Object.freeze([]);
+export let AGENT_IDS: readonly AgentKey[] = Object.freeze([]);
 
 /**
  * Replace product agent set from backend catalog entries.
@@ -208,7 +208,7 @@ export function applyAgentCatalog(entries: AgentCatalogEntryDto[]): void {
 }
 
 /** Resolve display meta for any key (catalog row or pure fallback). */
-export function resolveAgentMeta(agentId: AgentId): AgentMeta {
+export function resolveAgentMeta(agentId: AgentKey): AgentMeta {
   const hit = AGENT_MAP[agentId];
   if (hit) return hit;
   return {
@@ -225,6 +225,6 @@ export function resolveAgentMeta(agentId: AgentId): AgentMeta {
 }
 
 /** Safe display name; never throws on unknown catalog keys. */
-export function agentDisplayName(agentId: AgentId): string {
+export function agentDisplayName(agentId: AgentKey): string {
   return resolveAgentMeta(agentId).name;
 }

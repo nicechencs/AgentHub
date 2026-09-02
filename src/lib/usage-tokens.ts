@@ -1,4 +1,4 @@
-import type { AgentId, UsageRecord } from '@/lib/types';
+import type { AgentKey, UsageRecord } from '@/lib/types';
 
 /**
  * Token parts for metrics / distribution.
@@ -39,6 +39,6 @@ export function sumBillableInput(
   return rows.reduce((s, r) => s + usageTokenParts(r).billableInput, 0);
 }
 
-export function isCodexAgent(id: AgentId | string): boolean {
+export function isCodexAgent(id: AgentKey | string): boolean {
   return id === 'codex';
 }

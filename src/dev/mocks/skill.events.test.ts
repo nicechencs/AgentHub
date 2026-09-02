@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { createMockSkillPort, resetMockSkills } from './skill';
 
 describe('mock SkillPort.onFsChanged', () => {
@@ -58,11 +58,11 @@ describe('resetMockSkills', () => {
   it('clears projection-mode memory', async () => {
     const port = createMockSkillPort();
     const skills = await port.listSkills();
-    let hit: { skillId: string; agentId: AgentId } | undefined;
+    let hit: { skillId: string; agentId: AgentKey } | undefined;
     for (const skill of skills) {
       for (const [agentId, state] of Object.entries(skill.sync)) {
         if (state === 'absent') {
-          hit = { skillId: skill.id, agentId: agentId as AgentId };
+          hit = { skillId: skill.id, agentId: agentId as AgentKey };
           break;
         }
       }

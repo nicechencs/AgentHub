@@ -1,6 +1,6 @@
 import { AGENT_MAP, type InstallChannelMeta } from '@/config/agents';
 import { RUNTIME_MAP } from '@/config/runtimes';
-import type { AgentId, ChannelEnvCheck, RuntimeDetect, RuntimeId } from '@/lib/types';
+import type { AgentKey, ChannelEnvCheck, RuntimeDetect, RuntimeId } from '@/lib/types';
 
 /** 根据 Runtime 检测结果判断某渠道是否可安装 */
 export function checkChannelEnv(
@@ -28,7 +28,7 @@ export function checkChannelEnv(
   };
 }
 
-export function defaultChannel(agentId: AgentId): InstallChannelMeta {
+export function defaultChannel(agentId: AgentKey): InstallChannelMeta {
   const channels = AGENT_MAP[agentId]?.installChannels;
   if (channels?.[0]) return channels[0];
   // Fail-soft before catalog hydrate / unknown agent id.
@@ -40,7 +40,7 @@ export function defaultChannel(agentId: AgentId): InstallChannelMeta {
   };
 }
 
-export function findChannel(agentId: AgentId, channelId: string): InstallChannelMeta | undefined {
+export function findChannel(agentId: AgentKey, channelId: string): InstallChannelMeta | undefined {
   return AGENT_MAP[agentId]?.installChannels.find((c) => c.id === channelId);
 }
 

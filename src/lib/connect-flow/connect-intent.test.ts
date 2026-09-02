@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import {
   buildConnectionsGuideUrl,
   buildResumeConnectUrl,
@@ -11,7 +11,7 @@ import {
   readConnectGuide,
 } from './connect-intent';
 
-const ALLOWED = ['claude', 'codex', 'kimi'] as const satisfies readonly AgentId[];
+const ALLOWED = ['claude', 'codex', 'kimi'] as const satisfies readonly AgentKey[];
 
 function splitUrl(url: string): { path: string; search: URLSearchParams } {
   const q = url.indexOf('?');

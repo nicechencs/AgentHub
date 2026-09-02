@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { AgentId, UsageRecord } from '@/lib/types';
+import type { AgentKey, UsageRecord } from '@/lib/types';
 
 import type { UsageOverview } from '@/lib/backend/contracts/usage-types';
 
@@ -257,7 +257,7 @@ describe('model filter + shared scoped records', () => {
   it('keeps agent drill-down (distribution by model) inside the model filter', () => {
     const claudeRows = filterByAgent(rows, 'claude');
     const scoped = filterByModel(claudeRows, 'sonnet');
-    const dist = buildUsageDistribution(scoped, 'claude' as AgentId, CATALOG);
+    const dist = buildUsageDistribution(scoped, 'claude' as AgentKey, CATALOG);
     expect(dist).toEqual([
       {
         key: 'sonnet',

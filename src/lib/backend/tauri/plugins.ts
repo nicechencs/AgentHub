@@ -1,6 +1,6 @@
 import type { PluginPort } from '@/lib/backend/contracts';
 import type { PluginInventory } from '@/lib/backend/contracts/plugin-types';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { logger } from '@/lib/logger';
 import { invoke } from './invoke';
 
@@ -16,7 +16,7 @@ export function createTauriPluginPort(): PluginPort {
         throw e;
       }
     },
-    async enable(agent: AgentId, name: string, marketplace?: string | null) {
+    async enable(agent: AgentKey, name: string, marketplace?: string | null) {
       try {
         await invoke<void>('enable_plugin', {
           agent,
@@ -28,7 +28,7 @@ export function createTauriPluginPort(): PluginPort {
         throw e;
       }
     },
-    async disable(agent: AgentId, name: string, marketplace?: string | null) {
+    async disable(agent: AgentKey, name: string, marketplace?: string | null) {
       try {
         await invoke<void>('disable_plugin', {
           agent,

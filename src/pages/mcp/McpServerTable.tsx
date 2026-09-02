@@ -23,7 +23,7 @@ import {
 import { Tip } from '@/components/ui/tooltip';
 import { agentDisplayName } from '@/config/agents';
 import type { McpServerEntry } from '@/lib/backend/contracts/mcp-types';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import type { McpAgentGroup } from './group-servers';
 
@@ -78,7 +78,7 @@ function FileGroupHeader({
   colSpan,
   onLocate,
 }: {
-  agent: AgentId;
+  agent: AgentKey;
   showAgent: boolean;
   path: string;
   colSpan: number;
@@ -225,7 +225,7 @@ function FragmentGroup({
   servers,
   onLocate,
 }: {
-  agent: AgentId;
+  agent: AgentKey;
   showAgent: boolean;
   path: string;
   servers: McpServerEntry[];

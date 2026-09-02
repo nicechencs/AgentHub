@@ -13,7 +13,7 @@ import { checkChannelEnv, defaultChannel, findChannel } from '@/lib/env';
 import { resolveAutoInstallPlan } from '@/lib/env-plan';
 import { logger } from '@/lib/logger';
 import type {
-  AgentId,
+  AgentKey,
   AgentStatus,
   AgentUpdateInfo,
   AgentUpdateState,
@@ -23,7 +23,7 @@ import { MOCK_CAPABILITIES } from './capabilities';
 
 const log = logger.scope('dev:mock:agent');
 
-const hiddenAgentIds = new Set<AgentId>(['cursor' as AgentId]);
+const hiddenAgentIds = new Set<AgentKey>(['cursor' as AgentKey]);
 
 export function resetMockAgentVisibility(): void {
   hiddenAgentIds.clear();
@@ -45,7 +45,7 @@ export { EnvNotReadyError, InstallFailedError, mergeAgentListWithCatalog };
  * - codex: npm installed, up to date → gray force
  * - others: not installed until user installs
  */
-function defaultMockAgentStatuses(): Record<AgentId, AgentStatus> {
+function defaultMockAgentStatuses(): Record<AgentKey, AgentStatus> {
   return {
     claude: {
       agentId: 'claude',
@@ -147,12 +147,12 @@ function defaultMockAgentStatuses(): Record<AgentId, AgentStatus> {
   };
 }
 
-const state: Record<AgentId, AgentStatus> = defaultMockAgentStatuses();
+const state: Record<AgentKey, AgentStatus> = defaultMockAgentStatuses();
 
 /** Restore default install flags so opt-in ConnectFlow seeds do not leak across tests. */
 export function resetMockAgentStatuses(): void {
   const defaults = defaultMockAgentStatuses();
-  (Object.keys(defaults) as AgentId[]).forEach((id) => {
+  (Object.keys(defaults) as AgentKey[]).forEach((id) => {
     const next = defaults[id];
     const current = state[id] ?? (state[id] = next);
     current.installed = next.installed;
@@ -170,7 +170,7 @@ export function resetMockAgentStatuses(): void {
 }
 
 /** Test / opt-in fixture helper. Does not run from createBackend(). */
-export function markMockAgentInstalled(agentId: AgentId, installed = true): void {
+export function markMockAgentInstalled(agentId: AgentKey, installed = true): void {
   const current = state[agentId] ?? (state[agentId] = missingAgentStatus(agentId));
   current.installed = installed;
   if (installed) {
@@ -180,7 +180,7 @@ export function markMockAgentInstalled(agentId: AgentId, installed = true): void
   }
 }
 
-function missingAgentStatus(id: AgentId): AgentStatus {
+function missingAgentStatus(id: AgentKey): AgentStatus {
   return {
     agentId: id,
     installed: false,
@@ -372,7 +372,7 @@ export function createMockAgentPort(backend: Backend): AgentPort {
       await delay(randomLatency());
       const ids = agentIds?.length
         ? agentIds
-        : (Object.keys(state) as AgentId[]);
+        : (Object.keys(state) as AgentKey[]);
       return ids.map((id) => mockUpdateInfo(id));
     },
 
@@ -384,7 +384,7 @@ export function createMockAgentPort(backend: Backend): AgentPort {
   };
 }
 
-function mockUpdateInfo(agentId: AgentId): AgentUpdateInfo {
+function mockUpdateInfo(agentId: AgentKey): AgentUpdateInfo {
   const s = state[agentId] ?? missingAgentStatus(agentId);
   if (!s.installed) {
     return {
@@ -440,7 +440,7 @@ function mockUpdateInfo(agentId: AgentId): AgentUpdateInfo {
 }
 
 /** Mock-only install log lines for InstallOutcome.logs */
-function mockInstallLogs(agentId: AgentId, action: 'install' | 'upgrade'): string[] {
+function mockInstallLogs(agentId: AgentKey, action: 'install' | 'upgrade'): string[] {
   const name = agentDisplayName(agentId);
   const ver = state[agentId].latestVersion ?? '1.0.0';
   return [

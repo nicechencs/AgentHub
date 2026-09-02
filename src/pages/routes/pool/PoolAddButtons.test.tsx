@@ -1,7 +1,7 @@
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import {
   PoolAddButtons,
@@ -12,7 +12,7 @@ import {
   poolSurfaceForOAuth,
 } from './PoolAddButtons';
 
-const AGENTS = ['claude', 'codex', 'grok'] as const satisfies readonly AgentId[];
+const AGENTS = ['claude', 'codex', 'grok'] as const satisfies readonly AgentKey[];
 
 function render(node: ReactElement): string {
   return renderToStaticMarkup(node);
@@ -69,7 +69,7 @@ describe('poolSyncCandidates', () => {
     const entry = (
       source: 'account' | 'provider',
       id: string,
-      agentId: AgentId,
+      agentId: AgentKey,
       home?: 'route_pool',
       kind: ConnectionEntry['kind'] = source === 'account' ? 'oauth' : 'apikey',
     ) => ({

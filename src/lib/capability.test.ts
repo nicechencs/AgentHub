@@ -9,7 +9,7 @@ import {
 } from '@/lib/capability';
 import { createTranslator } from '@/lib/i18n';
 import { MOCK_CAPABILITIES } from '@/dev/mocks/capabilities';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 const ALL_CAPS: Capability[] = [
   'configWrite',
@@ -28,7 +28,7 @@ const ALL_CAPS: Capability[] = [
   'sessionResume',
 ];
 
-const AGENT_IDS: AgentId[] = [
+const AGENT_IDS: AgentKey[] = [
   'claude',
   'codex',
   'kimi',

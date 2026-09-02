@@ -14,7 +14,7 @@ import {
   type ConnectionKindFilter,
 } from '@/lib/connection-kind';
 import type { TranslateFn } from '@/lib/i18n';
-import type { AgentId, Provider } from '@/lib/types';
+import type { AgentKey, Provider } from '@/lib/types';
 import { isLeftoverLocalRouteProvider } from '@/lib/leftover-local-route';
 
 export type { ConnectionKind };
@@ -133,7 +133,7 @@ export function deleteConnectionToastDescription(
 }
 
 export type LiveAuthProbeLike = {
-  agentId: AgentId;
+  agentId: AgentKey;
   kind?: string | null;
   summary?: string | null;
   hasCredentials?: boolean;
@@ -158,7 +158,7 @@ export type LiveAuthImportGate = {
 export function liveAuthImportGate(
   probe: LiveAuthProbeLike | null | undefined,
   loading: boolean,
-  agentId: AgentId,
+  agentId: AgentKey,
   t?: TranslateFn,
 ): LiveAuthImportGate {
   if (loading) {
@@ -203,7 +203,7 @@ export function liveAuthImportGate(
 export function liveApiKeyImportGate(
   probe: LiveAuthProbeLike | null | undefined,
   loading: boolean,
-  agentId: AgentId,
+  agentId: AgentKey,
   t?: TranslateFn,
 ): LiveAuthImportGate {
   if (loading) {
@@ -287,7 +287,7 @@ export function liveImportDialogMode(
  */
 export function liveImportAction(
   mode: LiveImportDialogMode,
-  agentId?: AgentId | null,
+  agentId?: AgentKey | null,
 ): LiveImportAction {
   if (agentId === 'zcode' || agentId === 'workbuddy') return 'account';
   return mode === 'api-key' ? 'provider' : 'account';
@@ -309,7 +309,7 @@ function alsoPresentKinds(probe?: Pick<LiveAuthProbeLike, 'alsoPresent'> | null)
  */
 export function liveAuthCoexistenceNotice(
   probe: LiveAuthProbeLike | null | undefined,
-  agentId: AgentId,
+  agentId: AgentKey,
   t?: TranslateFn,
 ): string | null {
   if (!probe) return null;

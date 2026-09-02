@@ -20,7 +20,7 @@ import {
   updateConversation,
 } from '@/lib/api/chat';
 import { takeChatBootstrap } from '@/lib/chat-bootstrap';
-import type { AgentId, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
+import type { AgentKey, AgentStatus, ChatMessage, Conversation } from '@/lib/types';
 import { isChatAgentSelectable, newConversationDefaults, singleAgentConversationPatch } from './chat-model';
 import { conversationListState, createSingleFlight } from './chat-request';
 
@@ -75,7 +75,7 @@ export function useChatPageSessions(input: {
     [conversations, activeId],
   );
 
-  const defaultAgents = useCallback((agents: AgentStatus[]): AgentId[] => {
+  const defaultAgents = useCallback((agents: AgentStatus[]): AgentKey[] => {
     const selectable = agents.filter((a) => isChatAgentSelectable(a)).map((a) => a.agentId);
     if (selectable.length > 0) return [selectable[0]];
     return [];

@@ -16,7 +16,7 @@ import {
   switchWroteLiveLabel,
 } from '@/pages/connections/use-connection-page-actions';
 import type { TicketWallet } from '@/lib/backend/contracts/ticket';
-import type { AgentId, AgentStatus, Conversation, Provider } from '@/lib/types';
+import type { AgentKey, AgentStatus, Conversation, Provider } from '@/lib/types';
 import { applyFormVars, extractFormVars } from '@/lib/provider-detect';
 import { filterRemoteModelsForAgent } from '@/lib/provider-detect/remote-models';
 import {
@@ -45,9 +45,9 @@ import {
 const EMPTY_WALLET: TicketWallet = { tickets: [], bindings: [], surfaceGroups: [] };
 
 export function useChatPageConnection(input: {
-  primaryAgent: AgentId | null;
+  primaryAgent: AgentKey | null;
   active: Conversation | null;
-  hiddenIds: Set<AgentId>;
+  hiddenIds: Set<AgentKey>;
   agentStatus: AgentStatus[];
   refreshAgents: (opts?: { force?: boolean }) => Promise<AgentStatus[]>;
 }) {
@@ -70,7 +70,7 @@ export function useChatPageConnection(input: {
     [providers],
   );
 
-  const loadProviders = useCallback(async (agentId: AgentId) => {
+  const loadProviders = useCallback(async (agentId: AgentKey) => {
     const gen = ++providersGenRef.current;
     try {
       const list = await listProviders(agentId);
@@ -103,7 +103,7 @@ export function useChatPageConnection(input: {
 
   const leftoverCurrent = leftoverProviderIsCurrent(providers);
 
-  const loadLiveChatModel = useCallback(async (agentId: AgentId) => {
+  const loadLiveChatModel = useCallback(async (agentId: AgentKey) => {
     if (agentId !== 'pi') {
       setLiveChatModel(null);
       setLiveChatModels([]);

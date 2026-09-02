@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import { completeOAuth } from '@/lib/api/account';
 import { resolveAgentMeta } from '@/config/agents';
-import type { Account, AgentId } from '@/lib/types';
+import type { Account, AgentKey } from '@/lib/types';
 
 type Step = 'browser' | 'waiting' | 'done';
 
@@ -26,7 +26,7 @@ export function OAuthFlowDialog({
   onOpenChange,
   onCompleted,
 }: {
-  agentId: AgentId;
+  agentId: AgentKey;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCompleted: (acc: Account) => void;

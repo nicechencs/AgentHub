@@ -2,7 +2,7 @@
  * Ticket add menu and dialog-open helpers (Connections page).
  */
 import { agentDisplayName } from '@/config/agents';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
 import {
   MENU_DIALOG_DISMISS_CLEAR_MS,
@@ -42,7 +42,7 @@ export function ticketAddActionLabel(kind: TicketAddKind, t?: TranslateFn): stri
 }
 
 export interface TicketAddMenuAgent {
-  id: AgentId;
+  id: AgentKey;
   name: string;
   actions: Array<{ kind: TicketAddKind; label: string }>;
 }
@@ -55,7 +55,7 @@ function oauthLoginSet(
 }
 
 export function buildTicketAddMenu(
-  agentIds?: readonly AgentId[] | null,
+  agentIds?: readonly AgentKey[] | null,
   oauthLoginAgents?: ReadonlySet<string> | readonly string[] | null,
 ): TicketAddMenuAgent[] {
   if (!agentIds || agentIds.length === 0) return [];
@@ -70,7 +70,7 @@ export function buildTicketAddMenu(
 /** When an Agent tab is selected, skip the agent picker and use that Agent's actions. */
 export function focusedTicketAddAgent(
   agents: readonly TicketAddMenuAgent[],
-  focusedAgentId?: AgentId | null,
+  focusedAgentId?: AgentKey | null,
 ): TicketAddMenuAgent | null {
   if (!focusedAgentId) return null;
   return agents.find((item) => item.id === focusedAgentId) ?? null;
@@ -78,11 +78,11 @@ export function focusedTicketAddAgent(
 
 export function dispatchTicketAddAction(
   kind: TicketAddKind,
-  agentId: AgentId,
+  agentId: AgentKey,
   handlers: {
-    onImportLogin?: (id: AgentId) => void;
-    onOauth?: (id: AgentId) => void;
-    onAddKey?: (id: AgentId) => void;
+    onImportLogin?: (id: AgentKey) => void;
+    onOauth?: (id: AgentKey) => void;
+    onAddKey?: (id: AgentKey) => void;
   },
 ): void {
   if (kind === 'import-login') {
@@ -111,11 +111,11 @@ export function ticketAddMenuClosesOnKey(key: string): boolean {
 export function handleTicketAddMenuSelect(
   event: { preventDefault: () => void; stopPropagation?: () => void },
   kind: TicketAddKind,
-  agentId: AgentId,
+  agentId: AgentKey,
   handlers: {
-    onImportLogin?: (id: AgentId) => void;
-    onOauth?: (id: AgentId) => void;
-    onAddKey?: (id: AgentId) => void;
+    onImportLogin?: (id: AgentKey) => void;
+    onOauth?: (id: AgentKey) => void;
+    onAddKey?: (id: AgentKey) => void;
     onMenuClose?: () => void;
   },
   schedule: (fn: () => void, delayMs?: number) => void = scheduleAfterMenuClose,
@@ -129,9 +129,9 @@ export function handleTicketAddMenuSelect(
 
 export function ticketAddDialogState(
   kind: TicketAddKind,
-  agentId: AgentId,
+  agentId: AgentKey,
 ): {
-  addAgentId: AgentId;
+  addAgentId: AgentKey;
   loginImportOpen: boolean;
   oauthDialogOpen: boolean;
   apiKeyDialogOpen: boolean;

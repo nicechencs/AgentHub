@@ -4,7 +4,7 @@
  */
 import type { Backend } from '@/lib/backend/contracts';
 import { clearLiveAuthProbeCache } from '@/lib/backend/contracts/live-auth-probe-cache';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import { loadAgentStatuses } from './agent-status-store';
 import { notifyConnectionInventoryChanged } from './connection-inventory-store';
 import { notifyTicketWalletChanged } from './ticket-wallet-store';
@@ -20,7 +20,7 @@ const ALL_READ_MODELS: readonly RuntimeReadModel[] = [
 export async function refreshRuntimeReadModels(
   backend: Backend,
   opts: {
-    agentId?: AgentId;
+    agentId?: AgentKey;
     clearProbe?: boolean;
     models?: readonly RuntimeReadModel[];
   } = {},

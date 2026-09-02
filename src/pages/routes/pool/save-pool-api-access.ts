@@ -1,7 +1,7 @@
 import type { AgentConfigSchemaDto, ConfigValidationResultDto } from '@/lib/api/config';
 import { runProviderSaveFlow } from '@/lib/api/provider-save';
 import type { AdapterSourceKind, RoutePoolSurface } from '@/lib/backend/contracts';
-import type { AgentId, Provider } from '@/lib/types';
+import type { AgentKey, Provider } from '@/lib/types';
 import { defaultConfigScaffold } from '@/lib/provider-detect/scaffold';
 import { EMPTY_FORM_VARS, type ProviderFormVars } from '@/lib/provider-detect/types';
 import {
@@ -23,7 +23,7 @@ export type SavePoolApiAccessDeps = {
     baseRaw?: unknown,
   ) => Promise<unknown>;
   applyFormVars: (
-    agentId: AgentId,
+    agentId: AgentKey,
     configText: string,
     format: 'json' | 'toml',
     vars: ProviderFormVars,

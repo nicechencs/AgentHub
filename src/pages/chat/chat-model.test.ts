@@ -3,7 +3,7 @@ import { pageRhythm } from '@/components/layout/page-rhythm';
 import { agentDisplayName } from '@/config/agents';
 import { createTranslator } from '@/lib/i18n';
 import type { BindingView, TicketView, TicketWallet } from '@/lib/backend/contracts/ticket';
-import type { AgentId, AgentStatus, ChatMessage, Conversation, Provider } from '@/lib/types';
+import type { AgentKey, AgentStatus, ChatMessage, Conversation, Provider } from '@/lib/types';
 import type { AgentProcessView } from '@/lib/chat-process';
 import type { TurnGroup } from './chat-format';
 import {
@@ -84,7 +84,7 @@ function conv(partial: Partial<Conversation> & Pick<Conversation, 'id'>): Conver
 }
 
 function status(
-  agentId: AgentId,
+  agentId: AgentKey,
   installed: boolean,
   hidden = false,
   extra: Partial<AgentStatus> = {},
@@ -224,9 +224,9 @@ describe('sendBlockers', () => {
   it('returns hiddenAgents before envNotReady before unconfiguredAuth before noCwd before sendingElsewhere', () => {
     const blockers = sendBlockers({
       conversation: { ...base, cwd: null, agentIds: ['claude', 'kimi', 'pi', 'grok'] },
-      hiddenIds: new Set<AgentId>(['kimi']),
-      envNotReadyIds: new Set<AgentId>(['pi', 'kimi']),
-      unconfiguredAuthIds: new Set<AgentId>(['grok']),
+      hiddenIds: new Set<AgentKey>(['kimi']),
+      envNotReadyIds: new Set<AgentKey>(['pi', 'kimi']),
+      unconfiguredAuthIds: new Set<AgentKey>(['grok']),
       sendingConversationId: 'other',
       sendingTitle: '别的会话',
     });
@@ -245,9 +245,9 @@ describe('sendBlockers', () => {
   it('does not list a hidden agent again as envNotReady or unconfiguredAuth', () => {
     const blockers = sendBlockers({
       conversation: { ...base, agentIds: ['kimi'] },
-      hiddenIds: new Set<AgentId>(['kimi']),
-      envNotReadyIds: new Set<AgentId>(['kimi']),
-      unconfiguredAuthIds: new Set<AgentId>(['kimi']),
+      hiddenIds: new Set<AgentKey>(['kimi']),
+      envNotReadyIds: new Set<AgentKey>(['kimi']),
+      unconfiguredAuthIds: new Set<AgentKey>(['kimi']),
       sendingConversationId: null,
     });
     expect(blockers.map((b) => b.kind)).toEqual(['hiddenAgents']);
@@ -513,11 +513,11 @@ describe('blockerCopy', () => {
   it('returns copy for each blocker kind', () => {
     expect(blockerCopy(t, { kind: 'hiddenAgents', agentIds: ['claude'] })).toEqual({
       text: '会话包含已隐藏 Agent，暂不能发送',
-      primaryAction: '去 Agents 页',
+      primaryAction: '去 Agent 页',
     });
     expect(blockerCopy(t, { kind: 'envNotReady', agentIds: ['pi'] })).toEqual({
       text: '会话包含运行环境未就绪的 Agent，暂不能发送',
-      primaryAction: '去 Agents 页',
+      primaryAction: '去 Agent 页',
     });
     expect(blockerCopy(t, { kind: 'unconfiguredAuth', agentIds: ['grok'] })).toEqual({
       text: '会话包含未配置授权的 Agent，暂不能发送',
@@ -738,7 +738,7 @@ describe('chatAgentPickerEmptyKind', () => {
     expect(chatAgentPickerEmptyKind({ agentsReady: true, rowCount: 0 })).toBe('none');
     expect(chatAgentPickerEmptyCopy(t, 'none')).toEqual({
       text: '没有可选择的 Agent',
-      action: '去 Agents 页',
+      action: '去 Agent 页',
     });
   });
 });

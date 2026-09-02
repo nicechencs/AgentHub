@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 import {
   CONNECT_FLOW_FIXTURE_IDS,
   seedConnectFlowAdapterFixtures,
@@ -63,7 +63,7 @@ function contractAccount(id: string, source: ContractCase['source']): Account {
   const hasSecret = frozenAccountHasUsableSecret(source);
   return {
     id,
-    agentId: source.agentId as AgentId,
+    agentId: source.agentId as AgentKey,
     kind: (source.accountKind ?? 'oauth') as Account['kind'],
     label: id,
     isCurrent: false,
@@ -91,7 +91,7 @@ function upsertLiveAccount(
 async function planFor(
   sourceKind: 'account' | 'provider',
   sourceId: string,
-  targetAgentId: AgentId,
+  targetAgentId: AgentKey,
 ) {
   const adapter = createMockAdapterPort(resolver);
   return adapter.plan({ sourceKind, sourceId, targetAgentId });
@@ -102,7 +102,7 @@ function seedContractCase(item: ContractCase): string {
   if (item.source.kind === 'provider') {
     upsertMockProvider({
       id: sourceId,
-      agentId: item.source.agentId as AgentId,
+      agentId: item.source.agentId as AgentKey,
       name: item.id,
       preset: item.source.preset ?? 'default',
       configText: '{}',
@@ -167,7 +167,7 @@ describe('mock golden lookup', () => {
       const request = {
         sourceKind: item.source.kind as 'account' | 'provider',
         sourceId,
-        targetAgentId: item.target as AgentId,
+        targetAgentId: item.target as AgentKey,
       };
       const hit = lookupGoldenExpect(resolver, request);
       expect(hit, `${item.id} must hit golden`).not.toBeNull();
@@ -226,7 +226,7 @@ describe('mock golden lookup', () => {
         const request = {
           sourceKind: seed.sourceKind,
           sourceId: seed.sourceId,
-          targetAgentId: target as AgentId,
+          targetAgentId: target as AgentKey,
         };
         const hit = lookupGoldenExpect(resolver, request);
         expect(hit, `${seed.sourceId} → ${target}`).not.toBeNull();
@@ -257,7 +257,7 @@ describe('mock golden lookup', () => {
     const request = {
       sourceKind: 'provider' as const,
       sourceId,
-      targetAgentId: 'dsh' as AgentId,
+      targetAgentId: 'dsh' as AgentKey,
     };
     expect(lookupGoldenExpect(resolver, request)).toBeNull();
     const plan = await adapter.plan(request);
@@ -357,7 +357,7 @@ describe('mock golden lookup', () => {
     const request = {
       sourceKind: 'account' as const,
       sourceId: 'kimi-membership-unknown-empty',
-      targetAgentId: 'claude' as AgentId,
+      targetAgentId: 'claude' as AgentKey,
     };
     expect(lookupGoldenExpect(resolver, request)).toBeNull();
     const plan = await planFor('account', 'kimi-membership-unknown-empty', 'claude');
@@ -500,7 +500,7 @@ describe('mock golden lookup', () => {
     const request = {
       sourceKind: 'account' as const,
       sourceId: 'kimi-membership-no-key',
-      targetAgentId: 'claude' as AgentId,
+      targetAgentId: 'claude' as AgentKey,
     };
     expect(lookupGoldenExpect(resolver, request)).toBeNull();
     const plan = await planFor('account', 'kimi-membership-no-key', 'claude');

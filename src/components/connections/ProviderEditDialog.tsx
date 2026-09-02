@@ -64,7 +64,7 @@ import {
   upsertProvider,
 } from '@/lib/api/provider';
 import { runProviderSaveFlow } from '@/lib/api/provider-save';
-import type { AgentId, Provider } from '@/lib/types';
+import type { AgentKey, Provider } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import {
   applyFormVars,
@@ -112,7 +112,7 @@ const REMOTE_MODELS_DEBOUNCE_MS = 400;
 
 export type ProviderDialogMode = 'add' | 'edit';
 
-function officialFormState(agentId: AgentId, keepKey: string): OfficialToggleForm | null {
+function officialFormState(agentId: AgentKey, keepKey: string): OfficialToggleForm | null {
   const off = officialApiDefaults(agentId);
   if (!off) return null;
   const extracted = extractFormVars(agentId, off.scaffoldText, off.format);
@@ -174,7 +174,7 @@ function translateNativeConfigIssue(issue: NativeConfigIssue, t: TranslateFn): s
 }
 
 export function getConfigTextError(
-  agentId: AgentId,
+  agentId: AgentKey,
   configText: string,
   configFormat: 'json' | 'toml',
   t?: TranslateFn,
@@ -200,7 +200,7 @@ export function ProviderEditDialog({
   compactInitialApiKey,
   compactEndpointPresets,
 }: {
-  agentId: AgentId;
+  agentId: AgentKey;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   mode?: ProviderDialogMode;

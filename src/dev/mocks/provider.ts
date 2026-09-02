@@ -2,14 +2,14 @@ import { resolveAgentMeta } from '@/config/agents';
 import { PRESETS } from '@/config/presets';
 import type { ProviderPort } from '@/lib/backend/contracts';
 import { delay, randomLatency } from '@/dev/mocks/delay';
-import type { AgentId, Provider } from '@/lib/types';
+import type { AgentKey, Provider } from '@/lib/types';
 import { moveMockProviderToTrash } from './trash';
 
-function defaultPresetId(agentId: AgentId): string {
+function defaultPresetId(agentId: AgentKey): string {
   return PRESETS[agentId]?.[0]?.id ?? 'default';
 }
 
-const mockState: Record<AgentId, Provider[]> = {
+const mockState: Record<AgentKey, Provider[]> = {
   claude: [],
   codex: [],
   kimi: [],
@@ -19,11 +19,11 @@ const mockState: Record<AgentId, Provider[]> = {
   cursor: [],
 };
 
-let lastSwitch: { agentId: AgentId; fromId: string; toId: string } | null = null;
+let lastSwitch: { agentId: AgentKey; fromId: string; toId: string } | null = null;
 
 /** Clears browser-mock Connection state so each backend factory starts clean. */
 export function resetMockProviders(): void {
-  (Object.keys(mockState) as AgentId[]).forEach((agentId) => {
+  (Object.keys(mockState) as AgentKey[]).forEach((agentId) => {
     mockState[agentId].length = 0;
   });
   lastSwitch = null;
@@ -31,7 +31,7 @@ export function resetMockProviders(): void {
 
 /** Read-only lookup used by browser-only compatibility previews. */
 export function getMockProviderById(providerId: string): Provider | undefined {
-  const found = (Object.keys(mockState) as AgentId[])
+  const found = (Object.keys(mockState) as AgentKey[])
     .flatMap((agentId) => mockState[agentId] ?? [])
     .find((provider) => provider.id === providerId);
   return found ? { ...found } : undefined;
@@ -39,7 +39,7 @@ export function getMockProviderById(providerId: string): Provider | undefined {
 
 /** Snapshot of all mock providers (ticket wallet aggregation). */
 export function listMockProviders(): Provider[] {
-  return (Object.keys(mockState) as AgentId[]).flatMap((agentId) =>
+  return (Object.keys(mockState) as AgentKey[]).flatMap((agentId) =>
     (mockState[agentId] ?? []).map((provider) => ({ ...provider })),
   );
 }
@@ -93,7 +93,7 @@ export function createMockProviderPort(): ProviderPort {
       if (agentId) {
         return (mockState[agentId] ?? []).map((p) => ({ ...p }));
       }
-      return (Object.keys(mockState) as AgentId[]).flatMap((id) =>
+      return (Object.keys(mockState) as AgentKey[]).flatMap((id) =>
         (mockState[id] ?? []).map((p) => ({ ...p })),
       );
     },
@@ -175,7 +175,7 @@ export function createMockProviderPort(): ProviderPort {
       if (agentId) {
         return PRESETS[agentId].map((p) => ({ agent: agentId, ...p }));
       }
-      return (Object.keys(PRESETS) as AgentId[]).flatMap((id) =>
+      return (Object.keys(PRESETS) as AgentKey[]).flatMap((id) =>
         PRESETS[id].map((p) => ({ agent: id, ...p })),
       );
     },

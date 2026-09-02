@@ -2,7 +2,7 @@
  * ConnectFlowDialog 纯状态机（无 React）。
  * 只依赖 connect-flow/types 与既有 lib 类型；deps 由调用方注入。
  */
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 import type { AdapterApplyPlan, AdapterApplyResult, AdapterProfile } from '@/lib/api/adapter';
 import type {
   ConnectBindPurpose,
@@ -37,7 +37,7 @@ export type ConnectFlowResultView =
   | {
       kind: 'switched';
       ref: ConnectSourceRef;
-      agentId: AgentId;
+      agentId: AgentKey;
       refreshFailed: boolean;
     }
   | {
@@ -65,7 +65,7 @@ export type PoolLoadState = 'idle' | 'loading' | 'ready' | 'partial' | 'error';
 export interface BoundPlan {
   generation: number;
   source: ConnectSourceRef;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
   plan: AdapterApplyPlan;
 }
 
@@ -73,7 +73,7 @@ export interface ConnectFlowState {
   entry: ConnectFlowEntry;
   step: ConnectFlowStep;
   selectedSource: ConnectSourceRef | null;
-  selectedTargetAgentId: AgentId | null;
+  selectedTargetAgentId: AgentKey | null;
   /** 选择切换后递增；绑定 plan 带此代次，失配即 stale。 */
   selectionGeneration: number;
   previewKind: ConnectFlowPreviewKind | null;
@@ -86,7 +86,7 @@ export interface ConnectFlowState {
 export type ConnectFlowEvent =
   | { type: 'reset'; entry: ConnectFlowEntry }
   | { type: 'select_source'; option: SourceOption }
-  | { type: 'select_target'; agentId: AgentId; sourceAgentId: AgentId | null; allowOwnAgent?: boolean }
+  | { type: 'select_target'; agentId: AgentKey; sourceAgentId: AgentKey | null; allowOwnAgent?: boolean }
   | { type: 'enter_preview'; option?: SourceOption | null; eligibility?: PlanEligibility }
   | { type: 'back_to_select' }
   | { type: 'begin_apply' }
@@ -94,7 +94,7 @@ export type ConnectFlowEvent =
   | { type: 'apply_succeeded'; generation: number; result: AdapterApplyResult }
   | { type: 'apply_failed'; generation: number; error: string }
   | { type: 'apply_rejected_stale'; generation: number }
-  | { type: 'switch_succeeded'; ref: ConnectSourceRef; agentId: AgentId }
+  | { type: 'switch_succeeded'; ref: ConnectSourceRef; agentId: AgentKey }
   | { type: 'switch_failed'; error: string }
   | { type: 'refresh_failed' }
   | { type: 'retry_from_result' };
@@ -129,7 +129,7 @@ export function lookupSourceRecord(
   ref: ConnectSourceRef,
   accounts: readonly Account[],
   providers: readonly Provider[],
-): { agentId: AgentId; account?: Account; provider?: Provider } | null {
+): { agentId: AgentKey; account?: Account; provider?: Provider } | null {
   if (ref.kind === 'account') {
     const account = accounts.find((item) => item.id === ref.id);
     return account ? { agentId: account.agentId, account } : null;
@@ -164,7 +164,7 @@ export function sourceAgentIdOf(
   entry: ConnectFlowEntry,
   accounts: readonly Account[],
   providers: readonly Provider[],
-): AgentId | null {
+): AgentKey | null {
   if (entry.mode !== 'for-source') return null;
   if (isIllegalSourceRef(entry.source)) return null;
   return lookupSourceRecord(entry.source, accounts, providers)?.agentId ?? null;
@@ -172,17 +172,17 @@ export function sourceAgentIdOf(
 
 /** for-source 目标网格：排除来源自身所属 Agent，除非 keepOwnAgent。 */
 export function excludeOwnAgentTargets(
-  candidates: readonly AgentId[],
-  sourceAgentId: AgentId | null,
+  candidates: readonly AgentKey[],
+  sourceAgentId: AgentKey | null,
   keepOwnAgent = false,
-): AgentId[] {
+): AgentKey[] {
   if (!sourceAgentId || keepOwnAgent) return [...candidates];
   return candidates.filter((id) => id !== sourceAgentId);
 }
 
 /** Official Codex OAuth may 直连 / 用这份登录 onto Codex itself. */
 export function isOfficialCodexOauthAccount(
-  account: { agentId: AgentId; kind: string } | null | undefined,
+  account: { agentId: AgentKey; kind: string } | null | undefined,
 ): boolean {
   return account?.agentId === 'codex' && account.kind === 'oauth';
 }
@@ -198,7 +198,7 @@ export function keepOwnAgentTarget(
   return isOfficialCodexOauthAccount(accounts.find((item) => item.id === entry.source.id));
 }
 
-export function currentTargetAgentId(state: ConnectFlowState): AgentId | null {
+export function currentTargetAgentId(state: ConnectFlowState): AgentKey | null {
   if (state.entry.mode === 'for-agent') return state.entry.targetAgentId;
   return state.selectedTargetAgentId;
 }
@@ -666,7 +666,7 @@ export function shouldShowPreviewImportHint(input: {
 export function eligibilityOf(
   eligibilities: ReadonlyMap<string, PlanEligibility>,
   source: ConnectSourceRef | null,
-  targetAgentId: AgentId | null,
+  targetAgentId: AgentKey | null,
 ): PlanEligibility | undefined {
   if (!source || !targetAgentId) return undefined;
   return eligibilities.get(planFanoutKey({ source, targetAgentId }));
@@ -688,7 +688,7 @@ export interface EmptyKindInput {
   options: readonly SourceOption[];
   eligibilities: ReadonlyMap<string, PlanEligibility>;
   entry: ConnectFlowEntry;
-  visibleTargetAgentIds?: readonly AgentId[];
+  visibleTargetAgentIds?: readonly AgentKey[];
   t?: TranslateFn;
 }
 
@@ -899,11 +899,11 @@ export function adapterRouteMatchesPurpose(
 
 /** Keep loading/error rows; drop ready plans that belong to the other purpose. */
 export function visibleTargetsForPurpose(
-  targetIds: readonly AgentId[],
+  targetIds: readonly AgentKey[],
   source: ConnectSourceRef,
   eligibilities: ReadonlyMap<string, PlanEligibility>,
   purpose: ConnectBindPurpose | undefined,
-): AgentId[] {
+): AgentKey[] {
   if (!purpose) return [...targetIds];
   return targetIds.filter((id) => {
     const eligibility = eligibilityOf(eligibilities, source, id);
@@ -918,7 +918,7 @@ export function visibleTargetsForPurpose(
 }
 
 function routeEndpointIdForAgentEligibility(
-  agentId: AgentId,
+  agentId: AgentKey,
   eligibility: PlanEligibility | undefined,
 ): RouteEndpointId {
   if (eligibility?.kind === 'ready') {
@@ -933,10 +933,10 @@ function routeEndpointIdForAgentEligibility(
 /** Writer agents that currently sit on this unified downstream surface. */
 export function agentsForRouteEndpoint(
   endpointId: RouteEndpointId,
-  targetAgentIds: readonly AgentId[],
+  targetAgentIds: readonly AgentKey[],
   source: ConnectSourceRef,
   eligibilities: ReadonlyMap<string, PlanEligibility>,
-): AgentId[] {
+): AgentKey[] {
   return targetAgentIds.filter((agentId) => {
     const eligibility = eligibilityOf(eligibilities, source, agentId);
     return routeEndpointIdForAgentEligibility(agentId, eligibility) === endpointId;
@@ -946,10 +946,10 @@ export function agentsForRouteEndpoint(
 /** Prefer a canApply writer; otherwise the first agent still listed for the surface. */
 export function representativeAgentForRouteEndpoint(
   endpointId: RouteEndpointId,
-  targetAgentIds: readonly AgentId[],
+  targetAgentIds: readonly AgentKey[],
   source: ConnectSourceRef,
   eligibilities: ReadonlyMap<string, PlanEligibility>,
-): AgentId | null {
+): AgentKey | null {
   const agents = agentsForRouteEndpoint(endpointId, targetAgentIds, source, eligibilities);
   const applyable = agents.find((agentId) => (
     isTargetSelectable(eligibilityOf(eligibilities, source, agentId))
@@ -959,7 +959,7 @@ export function representativeAgentForRouteEndpoint(
 
 export function eligibilityForRouteEndpoint(
   endpointId: RouteEndpointId,
-  targetAgentIds: readonly AgentId[],
+  targetAgentIds: readonly AgentKey[],
   source: ConnectSourceRef,
   eligibilities: ReadonlyMap<string, PlanEligibility>,
 ): PlanEligibility | undefined {
@@ -1078,8 +1078,8 @@ export function splitSourceOptions(options: readonly SourceOption[]): {
 
 export function fanoutRequestsForAgent(
   options: readonly SourceOption[],
-  targetAgentId: AgentId,
-): { source: ConnectSourceRef; targetAgentId: AgentId }[] {
+  targetAgentId: AgentKey,
+): { source: ConnectSourceRef; targetAgentId: AgentKey }[] {
   return options
     .filter((option) => option.state.kind === 'plannable')
     .map((option) => ({ source: option.ref, targetAgentId }));
@@ -1087,12 +1087,12 @@ export function fanoutRequestsForAgent(
 
 export function fanoutRequestsForSource(
   source: ConnectSourceRef,
-  targetAgentIds: readonly AgentId[],
-): { source: ConnectSourceRef; targetAgentId: AgentId }[] {
+  targetAgentIds: readonly AgentKey[],
+): { source: ConnectSourceRef; targetAgentId: AgentKey }[] {
   return targetAgentIds.map((targetAgentId) => ({ source, targetAgentId }));
 }
 
-export function guideTargetAgentId(state: ConnectFlowState): AgentId | null {
+export function guideTargetAgentId(state: ConnectFlowState): AgentKey | null {
   return currentTargetAgentId(state);
 }
 

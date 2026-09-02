@@ -71,7 +71,7 @@ import { hasEnvIssues } from '@/lib/env';
 import { useInstalledAgents } from '@/lib/hooks/useInstalledAgents';
 import { loadBool, saveBool, StorageKey } from '@/lib/ui-preferences';
 import { resolveTheme } from '@/lib/theme';
-import type { AgentId, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
+import type { AgentKey, RuntimeDetect, UsageRecord, UsageTrendPoint } from '@/lib/types';
 import { resolveChartColor, typeScalePx } from '@/styles/tokens';
 import { USAGE_COLLECTED_EVENT } from '@/lib/usage-sync';
 import { formatTrendTick, zeroFillTrendSeries } from '@/lib/usage-trend';
@@ -155,7 +155,7 @@ export default function DashboardPage() {
   const [dateRange, setDateRange] = useState<DateRange>(
     () => rememberedUsageFilters().dateRange,
   );
-  const [agentFilter, setAgentFilter] = useState<AgentId | 'all'>(
+  const [agentFilter, setAgentFilter] = useState<AgentKey | 'all'>(
     () => rememberedUsageFilters().agentFilter,
   );
   const [modelFilter, setModelFilter] = useState(
@@ -241,7 +241,7 @@ export default function DashboardPage() {
   }, [loadRuntimes]);
 
   const badgeInputs = useMemo(() => {
-    const inputs: Partial<Record<AgentId, AgentCardBadgeInput>> = {};
+    const inputs: Partial<Record<AgentKey, AgentCardBadgeInput>> = {};
     for (const meta of AGENTS) {
       const active = wallet ? activeBindingForAgent(wallet, meta.id) : null;
       if (!active) continue;
@@ -497,7 +497,7 @@ export default function DashboardPage() {
     return installedAgents;
   }, [agentFilter, installedAgents]);
   const resolveTrendName = useCallback(
-    (key: string) => agentDisplayName(key as AgentId),
+    (key: string) => agentDisplayName(key as AgentKey),
     [],
   );
   const trendHover = useUsageTrendHover(resolveTrendName);
@@ -566,7 +566,7 @@ export default function DashboardPage() {
       {/* —— 用量总览：筛选 + 指标 + 趋势 + 分布 —— */}
       <PageSection>
         <div className={cn(pageRhythm.chromeRow)}>
-          <Select value={agentFilter} onValueChange={(v) => setAgentFilter(v as AgentId | 'all')}>
+          <Select value={agentFilter} onValueChange={(v) => setAgentFilter(v as AgentKey | 'all')}>
             <SelectTrigger className="w-36">
               <SelectValue />
             </SelectTrigger>

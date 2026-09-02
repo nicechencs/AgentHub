@@ -2,7 +2,7 @@
  * Routes page inspect-pane target types and helpers.
  */
 import type { AdapterProfile } from '@/lib/backend/contracts/adapter';
-import type { Account, AgentId, Provider } from '@/lib/types';
+import type { Account, AgentKey, Provider } from '@/lib/types';
 import type { RouteGraphView } from './route-graph-model';
 
 export type WriteTarget = { profile: AdapterProfile; graph: RouteGraphView };
@@ -14,8 +14,8 @@ export type RouteInspect =
   | { kind: 'edit'; profile: AdapterProfile }
   | { kind: 'detail'; profile: AdapterProfile }
   | { kind: 'authorization'; key: string }
-  | { kind: 'account'; agentId: AgentId; account: Account | null }
-  | { kind: 'provider'; mode: 'add' | 'edit'; agentId: AgentId; provider: Provider | null };
+  | { kind: 'account'; agentId: AgentKey; account: Account | null }
+  | { kind: 'provider'; mode: 'add' | 'edit'; agentId: AgentKey; provider: Provider | null };
 
 export function inspectProfileId(target: RouteInspect | null): string | null {
   if (!target) return null;

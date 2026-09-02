@@ -2,7 +2,7 @@ import { agentDisplayName } from '@/config/agents';
 import { authHealthLabel } from '@/lib/backend/contracts/auth-state';
 import type { ConnectionEntry } from '@/lib/connection-entry';
 import type { TranslateFn } from '@/lib/i18n';
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 import type {
   AdapterAction,
   AdapterApplyPlan,
@@ -44,13 +44,13 @@ export function canApplyAdapterPlan(plan: AdapterApplyPlan | null): boolean {
 export type AdapterPlanRequestSignature = {
   sourceKind: 'account' | 'provider';
   sourceId: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
 };
 
 export function adapterPlanRequestSignature(input: {
   sourceKind: 'account' | 'provider';
   sourceId: string;
-  targetAgentId: AgentId;
+  targetAgentId: AgentKey;
 }): AdapterPlanRequestSignature {
   return {
     sourceKind: input.sourceKind,
@@ -323,9 +323,9 @@ export function isCurrentAdapterPreviewRequest(generation: number, current: numb
 
 /** Empty target list must not reuse a stale Agent id for plan/apply. */
 export function resolveAdapterTargetAgentId(
-  selected: AgentId | '' | null | undefined,
-  available: readonly AgentId[],
-): AgentId | '' {
+  selected: AgentKey | '' | null | undefined,
+  available: readonly AgentKey[],
+): AgentKey | '' {
   if (available.length === 0) return '';
   if (selected && available.includes(selected)) return selected;
   return available[0] ?? '';
@@ -333,7 +333,7 @@ export function resolveAdapterTargetAgentId(
 
 export function canRequestAdapterPlan(input: {
   sourceId?: string | null;
-  targetAgentId?: AgentId | '' | null;
+  targetAgentId?: AgentKey | '' | null;
 }): boolean {
   return Boolean(input.sourceId) && Boolean(input.targetAgentId);
 }
@@ -348,7 +348,7 @@ export function adapterPlanChangeLabel(change: AdapterApplyPlan['changes'][numbe
 export function adapterActionLabel(action: AdapterAction): string {
   return `${action.description}${action.secret ? '（使用已保存的密钥）' : action.value ? `：${action.value}` : ''}`;
 }
-export function targetAgentName(agentId: AgentId): string {
+export function targetAgentName(agentId: AgentKey): string {
   return agentDisplayName(agentId);
 }
 

@@ -11,19 +11,19 @@
  *
  * URL 约定：
  * - intent 查询键：`intent`（`import-login` | `add-key` | `oauth`）
- * - resume 查询键：`resume`（AgentId，成功后回 Dashboard 重开 ConnectFlow；可省略）
+ * - resume 查询键：`resume`（AgentKey，成功后回 Dashboard 重开 ConnectFlow；可省略）
  * - ① 导入：`/connections?agent=X&intent=import-login&resume=X`
  * - ② 新 Key：`/connections?agent=X&mode=providers&intent=add-key&resume=X`
  * - ③ 官方登录：`/connections?agent=X&intent=oauth`（无 resume，成功后留在连接页）
  * - 回跳：`/?connect=X`
  */
-import type { AgentId } from '@/lib/types';
+import type { AgentKey } from '@/lib/types';
 
 export type ConnectGuideIntent = 'import-login' | 'add-key' | 'oauth';
 
 export type ConnectGuide = {
   intent: ConnectGuideIntent;
-  resumeAgentId: AgentId | null;
+  resumeAgentId: AgentKey | null;
 };
 
 const GUIDE_INTENTS = new Set<string>(['import-login', 'add-key', 'oauth']);
@@ -35,8 +35,8 @@ export function parseConnectGuideIntent(raw: string | null | undefined): Connect
 
 export function parseResumeAgentId(
   raw: string | null | undefined,
-  allowed: readonly AgentId[],
-): AgentId | null {
+  allowed: readonly AgentKey[],
+): AgentKey | null {
   if (raw == null || raw === '') return null;
   return allowed.includes(raw) ? raw : null;
 }
@@ -44,15 +44,15 @@ export function parseResumeAgentId(
 /** 解析 Dashboard 回跳查询键 `?connect=`。 */
 export function parseConnectResumeParam(
   raw: string | null | undefined,
-  allowed: readonly AgentId[],
-): AgentId | null {
+  allowed: readonly AgentKey[],
+): AgentKey | null {
   return parseResumeAgentId(raw, allowed);
 }
 
 export function buildConnectionsGuideUrl(input: {
-  agentId: AgentId;
+  agentId: AgentKey;
   intent: ConnectGuideIntent;
-  resumeAgentId?: AgentId | null;
+  resumeAgentId?: AgentKey | null;
 }): string {
   const params = new URLSearchParams();
   params.set('agent', input.agentId);
@@ -66,7 +66,7 @@ export function buildConnectionsGuideUrl(input: {
   return `/connections?${params.toString()}`;
 }
 
-export function buildResumeConnectUrl(agentId: AgentId): string {
+export function buildResumeConnectUrl(agentId: AgentKey): string {
   const params = new URLSearchParams();
   params.set('connect', agentId);
   return `/?${params.toString()}`;
@@ -75,7 +75,7 @@ export function buildResumeConnectUrl(agentId: AgentId): string {
 /** 从 URLSearchParams 读 intent + resume；非法 intent 当 null。 */
 export function readConnectGuide(
   search: URLSearchParams,
-  allowed: readonly AgentId[],
+  allowed: readonly AgentKey[],
 ): ConnectGuide | null {
   const intent = parseConnectGuideIntent(search.get('intent'));
   if (intent == null) return null;
