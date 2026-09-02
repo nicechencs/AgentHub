@@ -177,7 +177,11 @@ impl RoutePoolService {
             .collect())
     }
 
-    /// Replace one default-pool loopback bearer.
+    /// Replace one pool loopback bearer.
+    ///
+    /// Tokens UI also lists leftover local-bridge rows whose pools were enrolled
+    /// without `is_default` (see `enroll_v2_after_bind`). Promote those pools so
+    /// the key sticks and `list_local_tokens` can read it back.
     pub fn set_local_token(&self, pool_id: &str, token: &str) -> Result<LocalTokenRecord> {
         self.require_enabled()?;
         let token = token.trim();
@@ -188,9 +192,7 @@ impl RoutePoolService {
             AppError::NotFound(format!("route pool not found: {pool_id}"))
         })?;
         if !pool.is_default {
-            return Err(AppError::InvalidArg(
-                "only default pool entry keys can be changed".into(),
-            ));
+            self.pools.set_default(pool_id)?;
         }
         let saved = self.pools.set_hub_token(pool_id, token, &now())?;
         Ok(LocalTokenRecord {
@@ -935,6 +937,20 @@ impl RoutePoolService {
             }
         }
         self.pools.enroll_v2(pool_id, gateway_port, &now())
+    }
+
+    /// Enroll after bind and make this pool the default for its Agent / surface.
+    ///
+    /// Ordinary bridge start/restore uses this path; without the default flag,
+    /// Tokens → `set_local_token` used to reject edits and `list_local_tokens`
+    /// stayed empty even while listeners were live.
+    pub fn enroll_v2_as_default(&self, pool_id: &str, gateway_port: u16) -> Result<RoutePool> {
+        let enrolled = self.enroll_v2(pool_id, gateway_port)?;
+        if enrolled.is_default {
+            Ok(enrolled)
+        } else {
+            self.pools.set_default(&enrolled.id)
+        }
     }
 
     /// Bind the unified gateway first; persist enrollment only after bind.

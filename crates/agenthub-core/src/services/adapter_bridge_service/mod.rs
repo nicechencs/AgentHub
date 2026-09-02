@@ -1093,7 +1093,7 @@ impl AdapterBridgeService {
             return Ok(false);
         }
         self.route_pools.ensure_legacy_pool(profile)?;
-        self.route_pools.enroll_v2(&profile.id, port)?;
+        self.route_pools.enroll_v2_as_default(&profile.id, port)?;
         Ok(true)
     }
 
