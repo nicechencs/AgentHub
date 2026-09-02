@@ -1,5 +1,5 @@
 import type {
-  AgentId,
+  AgentKey,
   AgentProject,
   AgentProjectExcerpt,
   AgentSession,
@@ -8,7 +8,7 @@ import type {
 
 export interface ProjectPort {
   listAgentProjects(
-    agentId?: AgentId | null,
+    agentId?: AgentKey | null,
     includeHidden?: boolean,
   ): Promise<AgentProject[]>;
   listAgentProjectSessions(projectId: string): Promise<AgentSession[]>;

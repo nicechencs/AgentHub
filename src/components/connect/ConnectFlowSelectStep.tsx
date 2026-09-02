@@ -75,7 +75,7 @@ export function FixedSourceSummary({
   const agentId = record?.agentId;
   const attach = entry.purpose === 'route'
     ? t('connect.dialog.attachRoute', { label })
-    : entry.purpose === 'share'
+    : entry.purpose === 'direct'
       ? t('connect.dialog.attachShare', { label })
       : t('connect.dialog.attachToOthers', { label });
   return (
@@ -220,7 +220,7 @@ export function ConnectFlowSelectStep({
       {emptyKind.kind === 'all_infeasible' ? (
         <Notice tone="warning">
           {entry.mode === 'for-source'
-            ? entry.purpose === 'share'
+            ? entry.purpose === 'direct'
               ? t('connect.select.allInfeasibleShare')
               : entry.purpose === 'route'
                 ? t('connect.select.allInfeasibleRoute')

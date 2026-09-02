@@ -21,7 +21,7 @@ import {
   normalizeIntervalMin,
   notifyUsageCollected,
   saveLastCollectAt,
-  USAGE_SYNC_SETTINGS_CHANGED,
+  USAGE_SYNC_SETTINGS_CHANGED_EVENT,
   type UsageCollectSource,
 } from '@/lib/usage-sync';
 
@@ -250,8 +250,8 @@ export function UsageSyncProvider({ children }: { children: ReactNode }) {
     const onSettings = () => {
       void reloadSettings();
     };
-    window.addEventListener(USAGE_SYNC_SETTINGS_CHANGED, onSettings);
-    return () => window.removeEventListener(USAGE_SYNC_SETTINGS_CHANGED, onSettings);
+    window.addEventListener(USAGE_SYNC_SETTINGS_CHANGED_EVENT, onSettings);
+    return () => window.removeEventListener(USAGE_SYNC_SETTINGS_CHANGED_EVENT, onSettings);
   }, [reloadSettings]);
 
   // 1s tick for countdown labels

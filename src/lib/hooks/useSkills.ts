@@ -18,7 +18,7 @@ import {
   listSkillCatalog,
   listSkills,
   onSkillsFsChanged,
-  projectSkill,
+  applySkillProjection,
   searchSkillMarket,
   syncAll,
   toggleSkillSync,
@@ -28,7 +28,7 @@ import {
   type CoreSkill,
   type InstalledSkillDto,
   type SkillListingDto,
-  type SkillProjectResultDto,
+  type SkillProjectionResultDto,
 } from '@/lib/api/skill';
 import type { AgentId, Skill } from '@/lib/types';
 
@@ -552,8 +552,8 @@ export async function runProjectSkill(
   skillId: string,
   agentId: AgentId,
   mode: 'link' | 'copy' = 'link',
-): Promise<SkillProjectResultDto> {
-  const result = await projectSkill(skillId, agentId, mode);
+): Promise<SkillProjectionResultDto> {
+  const result = await applySkillProjection(skillId, agentId, mode);
   invalidateSkills(['skills', 'catalog']);
   return result;
 }

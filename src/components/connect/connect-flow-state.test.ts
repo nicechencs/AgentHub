@@ -312,7 +312,7 @@ describe('for-source 排除自身 Agent', () => {
     const share: ConnectFlowEntry = {
       mode: 'for-source',
       source: { kind: 'account', id: 'acc-grok' },
-      purpose: 'share',
+      purpose: 'direct',
     };
     expect(keepOwnAgentTarget(share, [grokAccount])).toBe(false);
     const blocked = reduceConnectFlow(createConnectFlowState(share), {
@@ -327,19 +327,19 @@ describe('for-source 排除自身 Agent', () => {
     const shareCodex: ConnectFlowEntry = {
       mode: 'for-source',
       source: { kind: 'account', id: 'acc-codex' },
-      purpose: 'share',
+      purpose: 'direct',
     };
     expect(keepOwnAgentTarget(shareCodex, [codexOauth])).toBe(true);
     const codexKey = account({ id: 'acc-codex-key', agentId: 'codex', kind: 'apikey' });
     expect(keepOwnAgentTarget({
       mode: 'for-source',
       source: { kind: 'account', id: 'acc-codex-key' },
-      purpose: 'share',
+      purpose: 'direct',
     }, [codexKey])).toBe(false);
     expect(keepOwnAgentTarget({
       mode: 'for-source',
       source: { kind: 'provider', id: 'prov-codex' },
-      purpose: 'share',
+      purpose: 'direct',
     }, [codexOauth])).toBe(false);
   });
 });
@@ -1082,8 +1082,8 @@ describe('首帧 entry 不同步', () => {
   it('state.entry 与当前 entry 的 key 不同则视为过期', () => {
     expect(connectFlowEntryKey(forAgent)).toBe('for-agent:claude');
     expect(connectFlowEntryKey(forSource)).toBe('for-source:provider:prov-kimi:all');
-    expect(connectFlowEntryKey({ ...forSource, purpose: 'share' })).toBe(
-      'for-source:provider:prov-kimi:share',
+    expect(connectFlowEntryKey({ ...forSource, purpose: 'direct' })).toBe(
+      'for-source:provider:prov-kimi:direct',
     );
     expect(connectFlowEntryKey({ ...forSource, purpose: 'route' })).toBe(
       'for-source:provider:prov-kimi:route',
@@ -1266,7 +1266,7 @@ describe('purpose-gated preview', () => {
     const entry: ConnectFlowEntry = {
       mode: 'for-source',
       source: kimiSource,
-      purpose: 'share',
+      purpose: 'direct',
     };
     let state = createConnectFlowState(entry);
     state = reduceConnectFlow(state, {
@@ -1310,7 +1310,7 @@ describe('visibleTargetsForPurpose', () => {
       })],
       [planFanoutKey({ source: kimiSource, targetAgentId: 'grok' }), { kind: 'loading' }],
     ]);
-    expect(visibleTargetsForPurpose(['claude', 'codex', 'grok'], kimiSource, map, 'share')).toEqual([
+    expect(visibleTargetsForPurpose(['claude', 'codex', 'grok'], kimiSource, map, 'direct')).toEqual([
       'claude',
       'grok',
     ]);
@@ -1336,7 +1336,7 @@ describe('visibleTargetsForPurpose', () => {
         analysis: analysis({ route: 'unsupported' }),
       })],
     ]);
-    expect(visibleTargetsForPurpose(['pi', 'claude', 'grok', 'kimi'], source, map, 'share')).toEqual([
+    expect(visibleTargetsForPurpose(['pi', 'claude', 'grok', 'kimi'], source, map, 'direct')).toEqual([
       'pi',
       'kimi',
     ]);

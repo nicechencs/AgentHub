@@ -13,7 +13,7 @@ updated: 2026-08-31
 
 | 用户界面术语 | 内部/代码术语 | 含义 |
 |---|---|---|
-| Agent | `AgentId` / `AgentKey` / `AgentAdapter` | 被 AgentHub 检测、安装、配置或运行的第三方 CLI/runtime |
+| Agent | `AgentId` / `AgentKey` / `AgentAdapter` | 被 AgentHub 检测、安装、配置或运行的第三方 CLI/runtime。开放注册表与新 TypeScript 契约优先 `AgentKey`；`AgentId` 为兼容别名 |
 | 登录 | account / credential / Ticket（内部） | 用户可选择的授权或 API key 记录。连接页与连接池各自管理自己添加的登录；从连接分享到池里的登录仍归连接页。实现中仍可能出现 Ticket，但 UI 不说“票” |
 | 官方登录 | oauth / 「官方登录」入口 | 浏览器或设备码订阅登录，与 API Key 分行保存 |
 | API Key | api_key / 「添加 API Key」 | 钥匙登录；本机若是官方登录则引导改用「导入授权」 |

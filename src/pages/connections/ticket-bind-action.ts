@@ -11,7 +11,7 @@ export type TicketRoutePlanHint = {
   reason?: string;
 };
 
-export type TicketBindPurpose = 'share' | 'route';
+export type TicketBindPurpose = 'direct' | 'route';
 
 export type TicketBindAction =
   | { disabled: false }
@@ -100,9 +100,12 @@ export function resolveTicketRouteAction(
   return resolveTicketBindAction(hints, 'route', t);
 }
 
-export function resolveTicketShareAction(
+export function resolveTicketDirectAction(
   hints: readonly TicketRoutePlanHint[],
   t?: TranslateFn,
 ): TicketBindAction {
-  return resolveTicketBindAction(hints, 'share', t);
+  return resolveTicketBindAction(hints, 'direct', t);
 }
+
+/** @deprecated Prefer {@link resolveTicketDirectAction}. */
+export const resolveTicketShareAction = resolveTicketDirectAction;

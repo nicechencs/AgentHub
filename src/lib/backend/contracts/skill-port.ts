@@ -4,7 +4,7 @@ import type {
   InstalledSkillDto,
   SkillListingDto,
   SkillMarkdownPreviewDto,
-  SkillProjectResultDto,
+  SkillProjectionResultDto,
   SkillsFsChangedPayload,
 } from './skill-types';
 
@@ -30,11 +30,11 @@ export interface SkillPort {
   installSkill(source?: string): Promise<void>;
   uninstallSkill(skillId: string, privateAgent?: AgentId): Promise<void>;
   updateSkill(skillId: string): Promise<CoreSkill>;
-  projectSkill(
+  applySkillProjection(
     skillId: string,
     agentId: AgentId,
     mode?: 'link' | 'copy',
-  ): Promise<SkillProjectResultDto>;
+  ): Promise<SkillProjectionResultDto>;
   searchSkillMarket(query?: string): Promise<SkillListingDto[]>;
   /** Install from market listing id (e.g. owner/repo/skill from skills.sh). */
   installMarketSkill(skillId: string, overwrite?: boolean): Promise<CoreSkill>;

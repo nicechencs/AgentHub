@@ -71,7 +71,7 @@ export interface SkillListingDto {
   detailUrl?: string | null;
 }
 
-export interface SkillProjectResultDto {
+export interface SkillProjectionResultDto {
   skillId: string;
   agent: AgentId;
   requestedMode: 'link' | 'copy';
@@ -79,6 +79,9 @@ export interface SkillProjectResultDto {
   fellBack: boolean;
   targetDir: string;
 }
+
+/** @deprecated Prefer {@link SkillProjectionResultDto}. */
+export type SkillProjectResultDto = SkillProjectionResultDto;
 
 /** Debounced skill-directory change from the desktop filesystem watcher. */
 export interface SkillsFsChangedPayload {

@@ -116,7 +116,7 @@ updated: 2026-09-02
 - 当前名称：“凭据展示”“凭据保存在……”“版本与凭据说明”、`SecurityPanel`、`settings.security.*`。
 - 推荐名称：“API Key 与登录信息展示”“API Key 与登录信息保存在……”“版本与登录信息说明”、`LoginInformationPanel`、`settings.loginInfo.*`。
 
-[SecurityPanel](../../src/pages/settings/SecurityPanel.tsx) 实际只展示登录信息和 API Key 的遮罩、保存位置说明，并被放在 About 页面中，不是完整的安全设置面板。[中文文案](../../src/lib/i18n/locales/zh.ts) 又直接使用了术语表不建议面向用户展示的“凭据”。
+[SecurityPanel](../../src/pages/settings/LoginInformationPanel.tsx) 实际只展示登录信息和 API Key 的遮罩、保存位置说明，并被放在 About 页面中，不是完整的安全设置面板。[中文文案](../../src/lib/i18n/locales/zh.ts) 又直接使用了术语表不建议面向用户展示的“凭据”。
 
 影响范围是 About/设置页、中英文翻译和相关 UI 测试。旧的 `?tab=security` 可以继续作为 URL 兼容映射保留。
 
@@ -127,7 +127,7 @@ updated: 2026-09-02
 - 当前名称：`connection-pool-store.ts`、`ConnectionPoolSnapshot`、`loadConnectionPool` 等。
 - 推荐名称：`connection-inventory-store.ts`、`ConnectionInventorySnapshot`、`loadConnectionInventory` 等。
 
-[connection-pool-store.ts](../../src/app/runtime/connection-pool-store.ts) 实际缓存的是全部 `accounts`、`accountViews` 和 `providers`，并不持有 `RoutePool`。项目中真正的产品“连接池”已有 [RoutePool 模型](../../crates/agenthub-core/src/models/route_pool.rs) 和 [RoutePoolService](../../crates/agenthub-core/src/services/route_pool_service.rs)。
+[connection-pool-store.ts](../../src/app/runtime/connection-inventory-store.ts) 实际缓存的是全部 `accounts`、`accountViews` 和 `providers`，并不持有 `RoutePool`。项目中真正的产品“连接池”已有 [RoutePool 模型](../../crates/agenthub-core/src/models/route_pool.rs) 和 [RoutePoolService](../../crates/agenthub-core/src/services/route_pool_service.rs)。
 
 同一名称指向两类对象，会让调用者把前端读取缓存误解为 Routes 的连接池控制面。首轮扫描发现约 12 个直接文件、89 处相关标识符。建议先增加兼容导出，再分批迁移调用方。
 
@@ -237,7 +237,7 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 - 当前名称：“账号 / API 配置”“OAuth 接入 / API 接入”“接入 API”“账号显示名”“API Key 账号已添加/更新”。
 - 推荐名称：“登录 / 供应商”“官方登录 / 添加 API Key”“添加 API Key”“登录显示名”“API Key 登录已添加/更新”。
 
-[Routes 来源选择](../../src/pages/bridges/adapter-create-flow.ts) 当前仍位于历史命名目录；它与 [连接池按钮](../../src/pages/routes/pool/PoolAddButtons.tsx) 和 [中文文案](../../src/lib/i18n/locales/zh.ts) 使用的部分名称，都和项目其他页面已经采用的“登录、官方登录、API Key、供应商”不一致。
+[Routes 来源选择](../../src/pages/routes/shared/adapter-create-flow.ts) 当前仍位于历史命名目录；它与 [连接池按钮](../../src/pages/routes/pool/PoolAddButtons.tsx) 和 [中文文案](../../src/lib/i18n/locales/zh.ts) 使用的部分名称，都和项目其他页面已经采用的“登录、官方登录、API Key、供应商”不一致。
 
 影响创建路由、连接池新增入口、API Key 对话框、中英文翻译和相关测试。后端枚举 `account/provider` 不需要因用户文案改变而重命名。
 
@@ -270,7 +270,7 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 - 当前名称：`USAGE_SYNC_SETTINGS_CHANGED`、`skillssh_market.rs`。
 - 推荐名称：`USAGE_SYNC_SETTINGS_CHANGED_EVENT`、`skills_sh_market.rs`。
 
-前者与同模块其他 DOM 事件常量的 `_EVENT` 后缀不一致；后者对应 `SkillsShMarket` 类型，但文件名缺少 `skills`、`sh` 的词边界。[Rust 文件](../../crates/agenthub-core/src/services/skillssh_market.rs)
+前者与同模块其他 DOM 事件常量的 `_EVENT` 后缀不一致；后者对应 `SkillsShMarket` 类型，但文件名缺少 `skills`、`sh` 的词边界。[Rust 文件](../../crates/agenthub-core/src/services/skills_sh_market.rs)
 
 两项都适合作为相关模块修改时的机械清理，不值得单独安排高风险变更。
 
@@ -345,6 +345,19 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 
 以当前 `dev` 源码核对：审计 16 项均仍成立，推荐新名尚未落地。按 AGENTS.md 风险分级分批实施；每批改完跑过滤测试，最后同步文档并跑 `pnpm check:docs`。
 
+### 实施状态（本分支）
+
+| 批次 | 状态 | 备注 |
+| --- | --- | --- |
+| A | 已完成 | `deleteAgentSession` + LoginInformation + Routes 文案 |
+| B | 已完成 | `ConnectionInventory`；`currentProvider` 读取方迁 `effectiveLabel` |
+| C | 已完成 | `routes-path` + `pages/routes/shared`；`bridges-path` 兼容层 |
+| D | 已完成 | `LocalGateway` IPC；TS wire 去掉死字段 `sourceConnectionId`（Rust 审计字段暂留） |
+| E | 已完成 | 无 `_cmd` 规范名；install `chunk`/`line` 双发；`applySkillProjection` |
+| F | 已完成 | 领域名 `unifiedGatewayEnrolled`；DB 列仍为 `v2_enrolled`；wire 双读 |
+| G | 已完成 | `ConnectBindPurpose=direct`；事件 `_EVENT`；`skills_sh_market`；`AgentKey` 渐进（project port） |
+| H | 已完成 | N-15 约定写入 `ui-preferences`；文档断链修复；`pnpm check:docs` 通过 |
+
 ### 核对调整
 
 | 项 | 调整 |
@@ -364,13 +377,15 @@ Rust 内部函数可继续使用后缀消歧，公开 IPC 不应泄露该细节�
 | **C** | N-04 | 模块 | `bridges-path.ts` → `routes-path.ts`；`pages/bridges/` → `pages/routes/shared/`；导航与导入 | `/bridges` 重定向保留；`local_bridge` / `useBridgeRuntimeActions` 不改 | 页面路径与导航用 Routes；无泛用 `BRIDGES_*` 生产入口；定向测试 |
 | **D** | N-05、N-07 | 跨层 | LocalEntry DTO/command/Port/页面；`source_connection_id` | 新 IPC `*_local_gateway`，旧 `*_local_entry` 别名；N-07 删除死字段或改为 `sourceKind+sourceId` | 内部名 LocalGateway；界面仍「本机转发」；wire 无伪契约；contract + Rust filter |
 | **E** | N-09、N-10、N-11 | 跨层 | MCP/plugins/install commands；InstallProgress；`project_skill` 动词 API | 无 `_cmd` 规范名 + 旧别名；payload 双发 `chunk`/`line`；`apply_skill_projection` + 旧别名；工作区 `listProjectSkills` 保留 | 新 invoke 无 `_cmd`；前端优先 `chunk`；技能同步与项目技能 API 分离；过滤测试 |
-| **F** | N-06 | 高风险 | route_pools 迁移、`v2_enrolled` 全栈 | 新列/字段 `unified_gateway_enrolled`，双读旧列与旧 wire；至少一个兼容版本后再删 | DB/IPC 兼容测试；页面与 wire 用新名 |
+| **F** | N-06 | 高风险 | route_pools 映射、`v2_enrolled` 全栈 | **DB 列名暂留 `v2_enrolled`**；Rust/TS 领域名 `unified_gateway_enrolled` / `unifiedGatewayEnrolled`；wire 双读旧 `v2Enrolled` | 页面与 wire 用新名；SQL 仍读写旧列；过滤测试 |
 | **G** | N-12（渐进）、N-14、N-16 | 局部 | 本轮触及的 TS 契约用 `AgentKey`；`ConnectBindPurpose`；事件常量与 `skillssh_market` | `AgentId` 别名暂留；`share`→`direct` 仅 connect-flow；文件/常量机械改名 | 本轮新代码不新增 `AgentId`；connect-flow 无 share 歧义；常量后缀一致 |
 | **H** | N-15 + 文档同步 | 局部 / 持久化 | `ui-preferences` 与各页自建键；本审计文档、术语表交叉引用 | 读旧键写新键；确认覆盖后再清旧键 | 新键统一 `agenthub:`+kebab；`pnpm check:docs` |
 
 ### N-15 说明
 
-本轮若时间紧，可只落地「新键走集中 `StorageKey`」与文档约定，不做存量键批量迁移（避免重置用户布局）。存量迁移可单独跟进。
+本轮只落地「新键走集中 `StorageKey`」与 `ui-preferences.ts` 注释约定，不做存量 `agenthub.` camelCase 键批量迁移（避免重置用户布局）。存量迁移可单独跟进。
+
+本文结论与问题清单仍保留审查时事实；实施以「实施状态」表为准。后续删除兼容别名前须再过一个版本窗口。
 
 ### 每批验证命令（默认）
 

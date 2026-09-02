@@ -27,8 +27,8 @@ export function connectSourceKey(ref: ConnectSourceRef): string {
   return `${ref.kind}:${ref.id}`;
 }
 
-/** for-source：分享 = 直连 / 写进对方登录；路由 = 本机转发。 */
-export type ConnectBindPurpose = 'share' | 'route';
+/** for-source：direct = 直连 / 写进对方登录；路由 = 本机转发。 */
+export type ConnectBindPurpose = 'direct' | 'route';
 
 /** Row buttons and the bind dialog share this split. */
 export function bindRouteMatchesPurpose(

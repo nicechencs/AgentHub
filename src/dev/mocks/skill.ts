@@ -432,7 +432,7 @@ export function createMockSkillPort(): SkillPort {
       throw unsupportedError('技能更新（浏览器 mock）');
     },
 
-    async projectSkill() {
+    async applySkillProjection() {
       throw unsupportedError('技能映射（浏览器 mock）');
     },
 

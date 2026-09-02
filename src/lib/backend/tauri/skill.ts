@@ -5,7 +5,7 @@ import type {
   InstalledSkillDto,
   SkillListingDto,
   SkillMarkdownPreviewDto,
-  SkillProjectResultDto,
+  SkillProjectionResultDto,
   SkillSyncReport,
   SkillsFsChangedPayload,
 } from '@/lib/backend/contracts/skill-types';
@@ -109,8 +109,8 @@ export function createTauriSkillPort(): SkillPort {
       return invoke<CoreSkill>('update_skill', { skillId });
     },
 
-    async projectSkill(skillId, agentId, mode: 'link' | 'copy' = 'link') {
-      return invoke<SkillProjectResultDto>('project_skill', {
+    async applySkillProjection(skillId, agentId, mode: 'link' | 'copy' = 'link') {
+      return invoke<SkillProjectionResultDto>('apply_skill_projection', {
         skillId,
         agentId,
         mode,

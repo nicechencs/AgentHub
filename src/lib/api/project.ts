@@ -3,7 +3,7 @@
  */
 import { getBackend } from '@/app/runtime';
 import type {
-  AgentId,
+  AgentKey,
   AgentProject,
   AgentProjectExcerpt,
   AgentSession,
@@ -24,7 +24,7 @@ export {
 } from '@/lib/backend/contracts/project-map';
 
 export async function listAgentProjects(
-  agentId?: AgentId | null,
+  agentId?: AgentKey | null,
   includeHidden = false,
 ): Promise<AgentProject[]> {
   return getBackend().project.listAgentProjects(agentId, includeHidden);
