@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { pageRhythm } from '@/components/layout/page-rhythm';
+import { WorkbenchSplitPage } from '@/components/layout/SideSplit';
+import { useSideSplit } from '@/components/layout/use-side-split';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageRefreshButton } from '@/components/shared/PageRefreshButton';
 import { useI18n } from '@/components/shared/LanguageProvider';
@@ -9,13 +11,15 @@ import { getLocalEntryStatus } from '@/lib/api/adapter';
 import { ADAPTER_BRIDGE_STATUS_POLL_MS } from '@/pages/bridges/adapter-model';
 import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
 import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
-import { RoutesPane } from '@/pages/routes/RoutesPane';
 import { activityRouteOptions } from '@/pages/routes/activity/inbound-feed-model';
 import { ActivityMonitoringPanel } from '@/pages/routes/activity/ActivityMonitoringPanel';
+import { ActivityTraceDetailPanel } from '@/pages/routes/activity/ActivityTraceDetailPanel';
 import {
   monitoredLocalProfiles,
   resolveActivityPageSnapshot,
 } from '@/pages/routes/activity/activity-view-model';
+
+const ACTIVITY_PREVIEW_WIDTH_KEY = 'agenthub.routes.activity.previewWidth';
 
 export default function RoutesActivityPage() {
   const { t } = useI18n();
@@ -30,6 +34,7 @@ export default function RoutesActivityPage() {
     reload,
   } = useAdapterResources();
   const { defaultPools } = useRoutePoolState({ profiles, detailTarget: null });
+  const inspect = useSideSplit<string>({ storageKey: ACTIVITY_PREVIEW_WIDTH_KEY });
   const [localEntryStatuses, setLocalEntryStatuses] = useState<
     import('@/lib/backend/contracts/adapter').AdapterBridgeRuntimeStatus[]
   >([]);
@@ -95,6 +100,15 @@ export default function RoutesActivityPage() {
       t,
     ],
   );
+  const detailRow = inspect.target
+    ? snapshot.feed.find((row) => row.requestId === inspect.target) ?? null
+    : null;
+
+  useEffect(() => {
+    if (!inspect.target) return;
+    if (!snapshot.feed.some((row) => row.requestId === inspect.target)) inspect.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- close when the selected request leaves the feed
+  }, [inspect.target, snapshot.feed]);
 
   const setRouteFilter = (next: string) => {
     const params = new URLSearchParams(searchParams);
@@ -104,7 +118,17 @@ export default function RoutesActivityPage() {
   };
 
   return (
-    <RoutesPane>
+    <WorkbenchSplitPage
+      split={inspect}
+      resizeAria={t('common.resizeSidePanel')}
+      panel={detailRow ? (
+        <ActivityTraceDetailPanel
+          row={detailRow}
+          width={inspect.paneWidth}
+          onClose={() => inspect.close()}
+        />
+      ) : null}
+    >
       <PageHeader
         title={t('routes.activity.title')}
         description={t('routes.activity.description')}
@@ -157,8 +181,13 @@ export default function RoutesActivityPage() {
           onRetry={() => void reload()}
         />
       ) : (
-        <ActivityMonitoringPanel snapshot={snapshot} pools={defaultPools} />
+        <ActivityMonitoringPanel
+          snapshot={snapshot}
+          pools={defaultPools}
+          activeId={inspect.target}
+          onShowDetail={(row) => inspect.open(row.requestId)}
+        />
       )}
-    </RoutesPane>
+    </WorkbenchSplitPage>
   );
 }

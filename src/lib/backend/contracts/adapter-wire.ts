@@ -155,6 +155,9 @@ export interface AdapterBridgeRouteTraceWire {
   ok?: unknown;
   model?: unknown;
   latencyMs?: unknown;
+  ttftMs?: unknown;
+  inputTokens?: unknown;
+  outputTokens?: unknown;
   localAuth?: RouteTraceLocalAuthWire;
   pool?: RouteTracePoolWire;
   conversion?: RouteTraceConversionWire;
@@ -662,6 +665,10 @@ function mapTraceUpstream(wire: RouteTraceUpstreamWire | undefined): RouteTraceU
   };
 }
 
+function mapOptionalCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 export function mapRouteTrace(wire: unknown): AdapterBridgeRouteTrace | null {
   if (!wire || typeof wire !== 'object') return null;
   const row = wire as AdapterBridgeRouteTraceWire;
@@ -686,10 +693,10 @@ export function mapRouteTrace(wire: unknown): AdapterBridgeRouteTrace | null {
     httpStatus: mappedInbound.status,
     ok: mappedInbound.ok,
     model: mapOptionalString(row.model),
-    latencyMs:
-      typeof row.latencyMs === 'number' && Number.isInteger(row.latencyMs) && row.latencyMs >= 0
-        ? row.latencyMs
-        : null,
+    latencyMs: mapOptionalCount(row.latencyMs),
+    ttftMs: mapOptionalCount(row.ttftMs),
+    inputTokens: mapOptionalCount(row.inputTokens),
+    outputTokens: mapOptionalCount(row.outputTokens),
     localAuth: mapTraceLocalAuth(row.localAuth),
     pool: mapTracePool(row.pool),
     conversion: mapTraceConversion(row.conversion),

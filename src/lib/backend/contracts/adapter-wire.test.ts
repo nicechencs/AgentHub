@@ -533,6 +533,9 @@ describe('Adapter Rust wire mappers', () => {
       ok: true,
       model: 'claude-sonnet',
       latencyMs: 42,
+      ttftMs: 120,
+      inputTokens: 11,
+      outputTokens: 7,
       localAuth: { status: 'ok', profileId: 'profile-1', port: 8787 },
       pool: {
         status: 'ok',
@@ -547,6 +550,9 @@ describe('Adapter Rust wire mappers', () => {
       },
     });
     expect(trace?.requestId).toBe('req-trace-1');
+    expect(trace?.ttftMs).toBe(120);
+    expect(trace?.inputTokens).toBe(11);
+    expect(trace?.outputTokens).toBe(7);
     expect(trace?.localAuth.status).toBe('ok');
     expect(trace?.conversion.path).toBe('messages_to_openai_chat');
     expect(JSON.stringify(trace)).not.toMatch(/sk-|ahb_|Bearer/i);

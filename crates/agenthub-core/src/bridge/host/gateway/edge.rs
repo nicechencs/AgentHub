@@ -61,6 +61,7 @@ pub(in crate::bridge::host) struct EdgeState {
     pub(in crate::bridge::host) member_model_denials: Arc<Mutex<HashSet<(String, String)>>>,
     /// Host-level optional gateway usage spool (clone of the shared slot).
     pub(in crate::bridge::host) usage_spool: crate::bridge::usage_capture::UsageSpoolSlot,
+    pub(in crate::bridge::host) route_traces: crate::bridge::host::RouteTraceLog,
 }
 
 impl EdgeState {
@@ -70,6 +71,7 @@ impl EdgeState {
         force_shutdown: CancellationToken,
         auth_reload: AuthReloadCoordinator,
         usage_spool: crate::bridge::usage_capture::UsageSpoolSlot,
+        route_traces: crate::bridge::host::RouteTraceLog,
     ) -> Self {
         let state = Self {
             profile_id: Arc::from(spec.profile_id.clone()),
@@ -106,6 +108,7 @@ impl EdgeState {
             ),
             member_model_denials: Arc::new(Mutex::new(HashSet::new())),
             usage_spool,
+            route_traces,
         };
         // stop+start is how production rotates a login; host-wide 401
         // isolation must not outlive the old picker.

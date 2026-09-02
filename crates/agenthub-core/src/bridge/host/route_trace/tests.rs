@@ -106,3 +106,22 @@ fn trace_serializes_camel_case_for_frontend() {
     assert!(json.contains("\"upstreamAuth\""));
     assert!(!json.contains("local_auth"));
 }
+
+#[test]
+fn patch_usage_applies_before_and_after_push() {
+    let log = RouteTraceLog::new();
+    log.patch_usage("req-pending", Some(120), Some(11), Some(7));
+    let mut builder = RouteTraceBuilder::begin("req-pending", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", None);
+    builder.finalize(200, &log);
+    let first = log.get("req-pending").expect("stored");
+    assert_eq!(first.ttft_ms, Some(120));
+    assert_eq!(first.input_tokens, Some(11));
+    assert_eq!(first.output_tokens, Some(7));
+
+    log.patch_usage("req-pending", Some(180), Some(20), Some(9));
+    let second = log.get("req-pending").expect("updated");
+    assert_eq!(second.ttft_ms, Some(180));
+    assert_eq!(second.input_tokens, Some(20));
+    assert_eq!(second.output_tokens, Some(9));
+}

@@ -76,6 +76,42 @@ fn usage_event(
         .with_upstream_model(state.upstream.model.as_deref())
 }
 
+fn record_trace_usage(
+    state: &EdgeState,
+    request_id: &str,
+    ttft_ms: Option<u64>,
+    usage: Option<&Usage>,
+) {
+    state.route_traces.patch_usage(
+        request_id,
+        ttft_ms,
+        usage.map(|row| row.input_tokens),
+        usage.map(|row| row.output_tokens),
+    );
+}
+
+fn emit_ok_usage(state: &EdgeState, event: GatewayUsageEvent) {
+    let has_tokens = event.input_tokens > 0 || event.output_tokens > 0;
+    state.route_traces.patch_usage(
+        &event.request_id,
+        event.ttft_ms,
+        has_tokens.then_some(event.input_tokens),
+        has_tokens.then_some(event.output_tokens),
+    );
+    emit(&state.usage_spool, event);
+}
+
+fn finish_stream_usage(
+    state: &EdgeState,
+    request_id: &str,
+    guard: StreamCaptureGuard,
+    ttft_ms: Option<u64>,
+    usage: Option<&Usage>,
+) {
+    record_trace_usage(state, request_id, ttft_ms, usage);
+    guard.succeed(ttft_ms, usage);
+}
+
 /// Extract usage from a decoded non-stream upstream body, reusing the
 /// protocol Usage IR decode helpers per upstream channel.
 fn non_stream_upstream_usage(decode: UpstreamDecode, body: &Value) -> Option<Usage> {
@@ -161,7 +197,7 @@ pub(super) async fn messages_non_stream_response(
             if let Some(usage) = non_stream_upstream_usage(decoded, &upstream_body) {
                 event = event.with_usage(&usage);
             }
-            emit(&state.usage_spool, event);
+            emit_ok_usage(&state, event);
             Json(value).into_response()
         }
         Err(error) => {
@@ -246,7 +282,7 @@ pub(super) async fn chat_non_stream_response(
             if let Some(usage) = non_stream_upstream_usage(decoded, &upstream_body) {
                 event = event.with_usage(&usage);
             }
-            emit(&state.usage_spool, event);
+            emit_ok_usage(&state, event);
             Json(value).into_response()
         }
         Err(error) => {
@@ -333,7 +369,7 @@ pub(super) async fn non_stream_response(
             if let Some(usage) = non_stream_upstream_usage(decoded, &upstream_body) {
                 event = event.with_usage(&usage);
             }
-            emit(&state.usage_spool, event);
+            emit_ok_usage(&state, event);
             Json(value).into_response()
         }
         Err(error) => {
@@ -572,8 +608,8 @@ pub(super) async fn passthrough_json_response(
     tracing::info!(target: "core.adapter.protocol", profile_id = %state.profile_id, request_id = %request_id, account_id = %member.source_id, ticket_id = %member.ticket_id, op = "passthrough", status = status.as_u16(), elapsed_ms = started.elapsed().as_millis() as u64, "bridge response completed");
     // Bytes are relayed without protocol decoding: capture records identity,
     // status, and latency only; token fields stay zero/NULL.
-    emit(
-        &state.usage_spool,
+    emit_ok_usage(
+        &state,
         usage_event(&state, &request_id, started, &member, &capture)
             .ok(Some(status.as_u16()), None),
     );
@@ -1049,7 +1085,7 @@ pub(super) fn passthrough_sse_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op, status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
-        capture_guard.succeed(ttft_ms, None);
+        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, None);
     };
     event_stream_response(output)
 }
@@ -1215,7 +1251,7 @@ pub(super) fn stream_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
-        capture_guard.succeed(ttft_ms, translator.captured_usage().as_ref());
+        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, translator.captured_usage().as_ref());
     };
     event_stream_response(output)
 }
@@ -1444,7 +1480,7 @@ pub(super) fn messages_stream_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "messages_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
-        capture_guard.succeed(ttft_ms, translator.captured_usage().as_ref());
+        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, translator.captured_usage().as_ref());
     };
     event_stream_response(output)
 }
@@ -1646,7 +1682,7 @@ pub(super) fn chat_stream_response(
         }
         observed.record_upstream_success();
         tracing::info!(target: "core.adapter.protocol", profile_id = %profile_id, request_id = %request_id, account_id = %account_id, ticket_id = %ticket_id, op = "chat_stream", status = 200_u16, elapsed_ms = started.elapsed().as_millis() as u64, "bridge stream completed");
-        capture_guard.succeed(ttft_ms, translator.captured_usage().as_ref());
+        finish_stream_usage(&observed, &request_id, capture_guard, ttft_ms, translator.captured_usage().as_ref());
     };
     event_stream_response(output)
 }

@@ -9,14 +9,19 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/shared/LanguageProvider';
 import { uniquePoolDisplayLabels, uniqueTraceUpstreamUrls } from '@/components/shared/route-trace-visual-model';
 import { ActivityTraceList } from './ActivityTraceList';
+import type { RouteTraceListItem } from '@/components/shared/RouteTraceList';
 import type { ActivityPageSnapshot } from './activity-view-model';
 
 export function ActivityMonitoringPanel({
   snapshot,
   pools = [],
+  activeId,
+  onShowDetail,
 }: {
   snapshot: ActivityPageSnapshot;
   pools?: readonly { members: readonly { displayLabel?: string }[] }[];
+  activeId?: string | null;
+  onShowDetail?: (row: RouteTraceListItem) => void;
 }) {
   const { t } = useI18n();
 
@@ -29,7 +34,7 @@ export function ActivityMonitoringPanel({
       />
       <ActivityStatusBanner snapshot={snapshot} />
       {snapshot.kind === 'loading' ? (
-        <TableSkeleton rows={6} cols={6} />
+        <TableSkeleton rows={6} cols={9} />
       ) : snapshot.kind === 'noLogins' ? (
         <EmptyState
           icon={Boxes}
@@ -47,6 +52,8 @@ export function ActivityMonitoringPanel({
       ) : (
         <ActivityTraceList
           rows={snapshot.feed}
+          activeId={activeId}
+          onShowDetail={onShowDetail}
           emptyLabel={
             snapshot.kind === 'filteredEmpty'
               ? t('routes.activity.emptyFilteredTitle')
