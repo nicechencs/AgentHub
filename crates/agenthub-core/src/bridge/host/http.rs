@@ -23,10 +23,24 @@ pub(super) fn router(gateway: Gateway) -> Router {
         .route("/health", get(health))
         .route("/v1/models", get(list_models))
         .route("/models", get(list_models))
-        .route("/v1/responses", post(responses))
-        .route("/v1/messages", post(messages))
-        .route("/v1/chat/completions", post(chat_completions))
-        .route("/chat/completions", post(chat_completions))
+        // Conversation paths are POST-only. Custom MethodRouter fallback returns
+        // bilingual method_not_allowed JSON (UX-19) instead of axum's empty 405.
+        .route(
+            "/v1/responses",
+            post(responses).fallback(conversation_method_not_allowed),
+        )
+        .route(
+            "/v1/messages",
+            post(messages).fallback(conversation_method_not_allowed),
+        )
+        .route(
+            "/v1/chat/completions",
+            post(chat_completions).fallback(conversation_method_not_allowed),
+        )
+        .route(
+            "/chat/completions",
+            post(chat_completions).fallback(conversation_method_not_allowed),
+        )
         .layer(axum::extract::DefaultBodyLimit::max(BODY_LIMIT_BYTES))
         .layer(middleware::from_fn_with_state(
             gateway.clone(),
@@ -129,6 +143,21 @@ async fn messages(State(gateway): State<Gateway>, request: Request) -> Response 
 
 async fn chat_completions(State(gateway): State<Gateway>, request: Request) -> Response {
     handle_conversation(DownstreamSurface::ChatCompletions, gateway, request).await
+}
+
+async fn conversation_method_not_allowed(request: Request) -> Response {
+    let method = request.method().as_str().to_owned();
+    let path = request.uri().path().to_owned();
+    tracing::warn!(
+        target: "core.adapter",
+        op = "serve",
+        code = "method_not_allowed",
+        method = %method,
+        path = %path,
+        status = 405_u16,
+        "conversation path does not allow this HTTP method"
+    );
+    super::surface::method_not_allowed_response(&path)
 }
 
 pub(super) async fn read_request_json(request: Request) -> Result<Value, Response> {

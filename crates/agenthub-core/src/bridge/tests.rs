@@ -817,6 +817,61 @@ async fn responses_rejects_missing_or_invalid_local_token() {
 }
 
 #[tokio::test]
+async fn get_on_conversation_paths_returns_method_not_allowed_json() {
+    // UX-19: GET on POST-only conversation paths must return bilingual JSON + Allow: POST
+    // (axum default was empty 405). Auth is not required for the method rejection.
+    let (upstream_port, upstream_task) = upstream().await;
+    let host = BridgeRuntimeHost::new();
+    let status = host
+        .start(spec("ux19-method", 0, upstream_port))
+        .await
+        .expect("start");
+    let http = client().await;
+    let port = status.port;
+
+    for path in [
+        "/v1/responses",
+        "/v1/messages",
+        "/v1/chat/completions",
+        "/chat/completions",
+    ] {
+        let response = http
+            .get(format!("http://127.0.0.1:{port}{path}"))
+            .send()
+            .await
+            .unwrap_or_else(|err| panic!("GET {path}: {err}"));
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "GET {path}"
+        );
+        let allow = response
+            .headers()
+            .get(header::ALLOW)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
+        assert!(
+            allow.split(',').any(|m| m.trim().eq_ignore_ascii_case("POST")),
+            "GET {path} Allow={allow:?}"
+        );
+        let body: Value = response.json().await.expect("method_not_allowed json");
+        assert_eq!(body["error"]["code"], "method_not_allowed");
+        assert_eq!(body["error"]["type"], "invalid_request_error");
+        let message = body["error"]["message"].as_str().unwrap_or("");
+        assert!(
+            message.contains(&format!("POST {path}"))
+                && message.contains("This endpoint only accepts POST")
+                && message.contains("本机该路径只接受 POST"),
+            "GET {path} message={message}"
+        );
+    }
+
+    host.stop("ux19-method").await.expect("stop");
+    upstream_task.abort();
+}
+
+#[tokio::test]
 async fn slow_unauthorized_body_is_rejected_before_json_extraction() {
     let (upstream_port, upstream_task) = upstream().await;
     let host = BridgeRuntimeHost::new();
