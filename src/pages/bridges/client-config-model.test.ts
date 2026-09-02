@@ -18,7 +18,7 @@ import type { RouteGraphRow } from './route-graph-model';
 
 const PORT = 43121;
 const PENDING_PORT = '{port}';
-const LOCAL_TOKEN_LABEL = '令牌（自动生成）';
+const LOCAL_TOKEN_LABEL = '入口 Key（自动生成）';
 
 const STUB_MESSAGES: Record<string, string> = {
   'routes.write.status.applied': 'wrote {name} config',
@@ -121,7 +121,7 @@ describe('clientWriteTargetSpec', () => {
     const spec = clientWriteTargetSpec('claude', { host: '127.0.0.1', port: PORT });
 
     expect(spec.configPath).toBe('~/.claude/settings.json');
-    expect(fieldKeys(spec.fields)).toEqual(['本机地址', '令牌']);
+    expect(fieldKeys(spec.fields)).toEqual(['本机地址', '入口 Key']);
 
     const baseUrl = spec.fields[0]!.value;
     const token = spec.fields[1]!.value;
@@ -148,7 +148,7 @@ describe('clientWriteTargetSpec', () => {
       port: PORT,
       localToken: full,
     });
-    const token = fieldValue(spec.fields, '令牌');
+    const token = fieldValue(spec.fields, '入口 Key');
     expect(token).toBe('末尾 dosM');
     expect(token).not.toContain(full);
     expect(token).not.toMatch(/^ahb_/);
