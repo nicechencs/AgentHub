@@ -1092,6 +1092,7 @@ export const zh = {
       detailTitle: "请求详情",
       inboundEndpoint: "本地调用端点",
       outboundEndpoint: "上游调用端点",
+      conversion: "转换",
       tokensValue: "{in} / {out}",
       seconds: "{s}s",
       openDetailAria: "查看这条请求的详情",
