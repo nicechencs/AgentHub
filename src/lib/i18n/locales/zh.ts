@@ -1517,6 +1517,8 @@ export const zh = {
     },
   },
   connections: {
+    healAligned: "已按本机设置纠正当前登录",
+    healConflict: "本机设置与当前登录不一致",
     capability: {
       configWriteUnsupported: "该 Agent 不支持配置写入",
     },

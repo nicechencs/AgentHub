@@ -1527,6 +1527,8 @@ export const en = {
     },
   },
   connections: {
+    healAligned: "Current login was corrected to match local settings",
+    healConflict: "Local settings do not match the current login",
     capability: {
       configWriteUnsupported: "This agent does not support config writes",
     },

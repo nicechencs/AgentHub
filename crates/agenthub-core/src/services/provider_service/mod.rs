@@ -13,6 +13,7 @@ mod switch_saga;
 mod tests;
 
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use chrono::Utc;
@@ -22,7 +23,7 @@ use crate::error::{AppError, Result};
 use crate::logging::targets;
 #[allow(unused_imports)]
 use crate::models::BackupKind;
-use crate::models::{AgentConfig, AgentId, Provider, ProviderInput};
+use crate::models::{AdapterBindingHealNotice, AgentConfig, AgentId, Provider, ProviderInput};
 use crate::services::{
     AdapterSecretResolver, BackupService, ConnectionService, LiveWriteAuthority,
 };
@@ -48,6 +49,7 @@ pub struct ProviderService {
     pub(super) authority: LiveWriteAuthority,
     pub(super) connections: ConnectionService,
     pub(super) secret_resolver: AdapterSecretResolver,
+    pub(super) adapter_binding_heals: Arc<Mutex<Vec<AdapterBindingHealNotice>>>,
 }
 
 impl ProviderService {
@@ -68,6 +70,7 @@ impl ProviderService {
             authority: LiveWriteAuthority::from_database(&db),
             connections: ConnectionService::new(db.clone()),
             secret_resolver: AdapterSecretResolver::new(db),
+            adapter_binding_heals: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -86,6 +89,7 @@ impl ProviderService {
             authority: LiveWriteAuthority::from_database(&db),
             connections: ConnectionService::new(db.clone()),
             secret_resolver: AdapterSecretResolver::new(db),
+            adapter_binding_heals: Arc::new(Mutex::new(Vec::new())),
         }
     }
 

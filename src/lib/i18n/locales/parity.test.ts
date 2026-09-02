@@ -43,6 +43,8 @@ describe('locale key parity', () => {
     expect(keys).toContain('settings.general.pluginsNavVisibleLabel');
     expect(keys).toContain('common.inDevelopment');
     expect(keys).toContain('nav.plugins');
+    expect(keys).toContain('connections.healAligned');
+    expect(keys).toContain('connections.healConflict');
     expect(keys).toContain('connections.providerDialog.useOfficial');
     expect(keys).toContain('connections.providerDialog.remoteModelsLoading');
     expect(keys).toContain('connections.providerDialog.remoteModelsFailed');
