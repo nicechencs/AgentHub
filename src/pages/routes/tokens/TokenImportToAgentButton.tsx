@@ -71,12 +71,19 @@ export function TokenImportToAgentButton({
   };
 
   const label = t('routes.tokens.importToAgent');
-  const disabled = !gate.enabled || busy || !profile;
+  const profileReady = Boolean(profile);
+  const blockedReason = !gate.enabled
+    ? (gate.reason ?? label)
+    : (!profileReady ? t('routes.tokens.importNeedEntry') : null);
+  const disabled = blockedReason != null || busy;
 
-  if (!gate.enabled) {
+  if (blockedReason) {
     return (
-      <Hint label={gate.reason ?? label}>
-        <span className={className}>
+      <Hint label={blockedReason}>
+        <span
+          className={className}
+          onClick={(event) => event.stopPropagation()}
+        >
           <Button
             type="button"
             variant="outline"
