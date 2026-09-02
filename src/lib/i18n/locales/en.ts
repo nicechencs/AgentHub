@@ -1082,7 +1082,7 @@ export const en = {
       filterAria: "Monitoring filter",
       filterAll: "All",
       filterFailed: "Failed",
-      scopeNote: "Each request shows five stages (local auth, pool, conversion, upstream auth, upstream). Expand for details; data appears after requests through the desktop app.",
+      scopeNote: "Open a row for details",
       emptyTitle: "No request history yet",
       emptyDescription: "Requests appear here after a client calls through a local route.",
       emptyFilteredTitle: "No requests match this filter",

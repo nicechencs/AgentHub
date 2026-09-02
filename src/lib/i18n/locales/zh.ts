@@ -1072,7 +1072,7 @@ export const zh = {
       filterAria: "监控筛选",
       filterAll: "全部",
       filterFailed: "失败",
-      scopeNote: "每条请求显示五段状态（本机鉴权、连接池、转换、上游鉴权、上游）。展开可看详情；需桌面端运行并发请求后才有数据。",
+      scopeNote: "点开一行可看详情",
       emptyTitle: "还没有请求记录",
       emptyDescription: "客户端经本机路由发出请求后会出现在这里。",
       emptyFilteredTitle: "没有符合筛选的请求",

@@ -116,7 +116,7 @@ function StageCard({
   children?: ReactNode;
 }) {
   return (
-    <Tip label={tip} className="block h-full min-w-0">
+    <Tip label={tip} className="block h-full w-full min-w-0" delayDuration={0}>
       <Card
         className={cn('flex h-full min-h-[5.5rem] min-w-0 flex-col p-3', stageBorder(state), stageBg(state))}
         data-stage-box={stageId}
@@ -262,6 +262,67 @@ const MATRIX_ROW_LABEL_KEYS: Record<(typeof TRACE_FLOW_MATRIX_ROWS)[number], str
   chat: 'routes.trace.flow.rowChat',
 };
 
+function conversionCellLabel(
+  row: (typeof TRACE_FLOW_MATRIX_ROWS)[number],
+  col: (typeof TRACE_FLOW_MATRIX_COLS)[number],
+  t: TranslateFn,
+): string {
+  return t('routes.trace.flow.conversionOption', {
+    from: t(MATRIX_ROW_LABEL_KEYS[row] as Parameters<TranslateFn>[0]),
+    to: t(MATRIX_COL_LABEL_KEYS[col] as Parameters<TranslateFn>[0]),
+  });
+}
+
+function ConversionMatrixTable({ view }: { view: TraceFlowView }) {
+  const { t } = useI18n();
+  return (
+    <table className="w-full border-collapse text-caption" data-conversion-matrix="true">
+      <thead>
+        <tr>
+          <th className="p-0.5" aria-hidden />
+          {TRACE_FLOW_MATRIX_COLS.map((col) => (
+            <th key={col} className="max-w-[3.75rem] px-0.5 pb-1 text-center font-normal text-muted">
+              <span className="block truncate">
+                {t(MATRIX_COL_LABEL_KEYS[col] as Parameters<TranslateFn>[0])}
+              </span>
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {TRACE_FLOW_MATRIX_ROWS.map((row) => (
+          <tr key={row}>
+            <th className="whitespace-nowrap pr-1 text-left font-normal text-muted">
+              {t(MATRIX_ROW_LABEL_KEYS[row] as Parameters<TranslateFn>[0])}
+            </th>
+            {TRACE_FLOW_MATRIX_COLS.map((col) => {
+              const cell = view.conversion.matrix.find((item) => item.row === row && item.col === col);
+              const state = cell?.state ?? 'idle';
+              const lit = state === 'ok' || state === 'active' || state === 'failed';
+              return (
+                <td key={col} className="p-0.5">
+                  <div
+                    className={cn(
+                      'flex h-5 w-full items-center justify-center rounded border',
+                      lit ? stageBorder(state) : 'border-border/40 bg-panel/30',
+                      lit ? stageBg(state) : '',
+                    )}
+                    aria-label={conversionCellLabel(row, col, t)}
+                    data-matrix-cell={cell?.pathId}
+                    data-lit={lit ? 'true' : 'false'}
+                  >
+                    {lit ? <StatusIcon state={state} /> : null}
+                  </div>
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function ConversionMatrix({
   view,
   compact,
@@ -271,6 +332,7 @@ function ConversionMatrix({
 }) {
   const { t } = useI18n();
   const stageState = view.conversion.state;
+  const option = conversionOptionLabel(view, t);
   if (compact) {
     return (
       <StageShell
@@ -279,67 +341,18 @@ function ConversionMatrix({
         dense
         className="min-w-[4.5rem] shrink-0"
       >
-        {view.conversion.passthrough ? (
-          <p className="max-w-[7rem] truncate text-caption text-secondary">
-            {t('routes.trace.flow.passthrough')}
-          </p>
-        ) : view.conversion.pathId ? (
-          <p className="max-w-[7rem] truncate font-mono text-caption text-muted">{view.conversion.pathId}</p>
+        {option ? (
+          <p className="max-w-[7rem] truncate text-caption text-secondary">{option}</p>
         ) : null}
       </StageShell>
     );
   }
   return (
     <StageShell title={t('routes.trace.stageConversion')} state={stageState} className="min-w-[12rem]">
-      {view.conversion.passthrough ? (
-        <p className="mb-2 text-meta text-secondary">{t('routes.trace.flow.passthrough')}</p>
-      ) : view.conversion.pathId ? (
-        <p className="mb-2 truncate font-mono text-caption text-muted">{view.conversion.pathId}</p>
+      {option ? (
+        <p className="mb-2 truncate text-meta text-secondary">{option}</p>
       ) : null}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[14rem] border-collapse text-caption">
-          <thead>
-            <tr>
-              <th className="p-0.5" aria-hidden />
-              {TRACE_FLOW_MATRIX_COLS.map((col) => (
-                <th key={col} className="px-0.5 pb-1 text-center font-normal text-muted">
-                  {t(MATRIX_COL_LABEL_KEYS[col] as Parameters<typeof t>[0])}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {TRACE_FLOW_MATRIX_ROWS.map((row) => (
-              <tr key={row}>
-                <th className="pr-1 text-left font-normal text-muted">
-                  {t(MATRIX_ROW_LABEL_KEYS[row] as Parameters<typeof t>[0])}
-                </th>
-                {TRACE_FLOW_MATRIX_COLS.map((col) => {
-                  const cell = view.conversion.matrix.find((item) => item.row === row && item.col === col);
-                  const state = cell?.state ?? 'idle';
-                  const lit = state === 'ok' || state === 'active' || state === 'failed';
-                  return (
-                    <td key={col} className="p-0.5">
-                      <div
-                        className={cn(
-                          'flex h-6 w-full items-center justify-center rounded border transition-all',
-                          lit ? stageBorder(state) : 'border-border/40 bg-panel/30',
-                          lit ? stageBg(state) : '',
-                        )}
-                        title={cell?.pathId}
-                        data-matrix-cell={cell?.pathId}
-                        data-lit={lit ? 'true' : 'false'}
-                      >
-                        {lit ? <StatusIcon state={state} /> : null}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ConversionMatrixTable view={view} />
     </StageShell>
   );
 }

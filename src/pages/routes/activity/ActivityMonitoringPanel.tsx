@@ -22,7 +22,6 @@ export function ActivityMonitoringPanel({
 
   return (
     <div className="space-y-4" data-activity-monitoring>
-      <p className="text-meta text-muted">{t('routes.activity.scopeNote')}</p>
       <RouteTracePipelineLegend
         row={snapshot.feed[0]}
         poolLabels={uniquePoolDisplayLabels(pools)}
