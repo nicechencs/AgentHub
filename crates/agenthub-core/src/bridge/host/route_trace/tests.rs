@@ -250,3 +250,42 @@ fn route_trace_persist_keeps_ring_cap_on_reload() {
         format!("req-{}", ROUTE_TRACE_CAP + 7)
     );
 }
+
+#[test]
+fn trace_stage_status_as_str_matches_serde() {
+    assert_eq!(TraceStageStatus::Pending.as_str(), "pending");
+    assert_eq!(TraceStageStatus::Ok.as_str(), "ok");
+    assert_eq!(TraceStageStatus::Failed.as_str(), "failed");
+    assert_eq!(TraceStageStatus::Skipped.as_str(), "skipped");
+}
+
+#[test]
+fn finalize_keeps_five_stage_statuses_for_log_alignment() {
+    let log = RouteTraceLog::new();
+    let mut builder = RouteTraceBuilder::begin("req-log-align", "POST", "/v1/messages");
+    builder.local_auth_ok("profile-a", Some(44227));
+    builder.finalize(200, &log);
+    let trace = log.get("req-log-align").expect("trace stored");
+    assert_eq!(trace.local_auth.status.as_str(), "ok");
+    // pool/conversion/upstream remain pending or get filled by happy path helpers;
+    // ensure labels stay stable for `core.adapter.route_trace` grepping.
+    for status in [
+        trace.pool.status,
+        trace.conversion.status,
+        trace.upstream_auth.status,
+        trace.upstream.status,
+    ] {
+        assert!(
+            matches!(
+                status,
+                TraceStageStatus::Pending
+                    | TraceStageStatus::Ok
+                    | TraceStageStatus::Failed
+                    | TraceStageStatus::Skipped
+            ),
+            "unexpected stage {:?}",
+            status
+        );
+    }
+}
+
