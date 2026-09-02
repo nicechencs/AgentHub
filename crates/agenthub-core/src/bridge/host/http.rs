@@ -44,10 +44,17 @@ async fn record_inbound(State(gateway): State<Gateway>, request: Request, next: 
         .map(|edge| edge.profile_id.to_string());
     let response = next.run(request).await;
     if let Some(profile_id) = profile_id {
-        gateway.inbound.push(
-            &profile_id,
-            InboundRequestRecord::new(method, path, response.status().as_u16()),
-        );
+        // Successful /health is a liveness probe — keep it out of the monitoring
+        // feed so it does not crowd out real route traces (and has no port/conversion).
+        let ok_health = method.eq_ignore_ascii_case("GET")
+            && path == "/health"
+            && response.status().is_success();
+        if !ok_health {
+            gateway.inbound.push(
+                &profile_id,
+                InboundRequestRecord::new(method, path, response.status().as_u16()),
+            );
+        }
     }
     response
 }

@@ -139,15 +139,14 @@ async fn http_health_and_models_are_logged_without_query_or_secrets() {
     assert_eq!(unauthorized.status(), reqwest::StatusCode::UNAUTHORIZED);
 
     let recent = host.recent_inbound("inbound-profile");
-    assert_eq!(recent.len(), 2);
+    assert_eq!(recent.len(), 1);
     assert_eq!(recent[0].method, "GET");
     assert_eq!(recent[0].path, "/models");
     assert_eq!(recent[0].status, 200);
     assert!(recent[0].ok);
-    assert_eq!(recent[1].path, "/health");
-    assert_eq!(recent[1].status, 200);
+    assert!(recent.iter().all(|row| row.path != "/health"));
     let stats = host.inbound_stats("inbound-profile");
-    assert_eq!(stats.total_request_count, 2);
+    assert_eq!(stats.total_request_count, 1);
     assert_eq!(stats.failed_request_count, 0);
     assert_eq!(stats.last_request_at_unix_ms, Some(recent[0].at_unix_ms));
     let json = serde_json::to_string(&recent).expect("json");
