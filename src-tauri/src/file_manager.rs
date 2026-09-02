@@ -272,45 +272,321 @@ pub(crate) fn launch_cli(path: &std::path::Path) -> Result<(), String> {
     }
 }
 
+/// Bundled Codex CLI inside the desktop/Store install — not the window.
+pub(crate) fn looks_like_codex_bundled_cli(path: &std::path::Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if name != "codex.exe" && name != "codex" {
+        return false;
+    }
+    let s = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+    let in_desktop_bin = s.contains("/openai/") && s.contains("/codex/") && s.contains("/bin/");
+    in_desktop_bin
+        || s.contains("/resources/")
+        || s.contains("/node_modules/")
+        || s.contains("/.vscode/")
+        || s.contains("/windowsapps/")
+        || s.contains("codex.app/")
+        || s.contains("chatgpt.app/")
+}
+
+/// How "启动 App" should treat a Codex CLI path on this OS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CodexAppLaunchKind {
+    /// WorkBuddy.exe / ZCode.exe / a real GUI binary.
+    Direct,
+    /// Windows Store ChatGPT/Codex window (`shell:AppsFolder\...`).
+    WindowsStoreOrGui,
+    /// macOS `open ChatGPT.app` / `Codex.app`.
+    MacosBundle,
+    /// No official Codex window on Linux.
+    UnsupportedOnLinux,
+}
+
+pub(crate) fn codex_app_launch_kind(path: &std::path::Path) -> CodexAppLaunchKind {
+    if !looks_like_codex_bundled_cli(path) {
+        return CodexAppLaunchKind::Direct;
+    }
+    if cfg!(windows) {
+        CodexAppLaunchKind::WindowsStoreOrGui
+    } else if cfg!(target_os = "macos") {
+        CodexAppLaunchKind::MacosBundle
+    } else if cfg!(target_os = "linux") {
+        CodexAppLaunchKind::UnsupportedOnLinux
+    } else {
+        CodexAppLaunchKind::Direct
+    }
+}
+
+pub(crate) fn macos_codex_app_bundle_names() -> &'static [&'static str] {
+    &["ChatGPT.app", "Codex.app", "OpenAI Codex.app", "OpenAI.Codex.app"]
+}
+
+/// `OpenAI.Codex_26.831.1445.0_x64__2p2nqsd0c76g0` → `OpenAI.Codex_2p2nqsd0c76g0!App`.
+#[cfg_attr(not(any(test, windows)), allow(dead_code))]
+pub(crate) fn windows_codex_app_id_from_package_full_name(
+    package_full_name: &str,
+) -> Option<String> {
+    let package_name = package_full_name.split('_').next()?.trim();
+    if !matches!(
+        package_name,
+        "OpenAI.Codex" | "OpenAI.CodexBeta" | "OpenAI.ChatGPT"
+    ) {
+        return None;
+    }
+    let publisher_id = package_full_name.rsplit('_').next()?.trim();
+    if publisher_id.is_empty() || publisher_id == package_name {
+        return None;
+    }
+    Some(format!("{package_name}_{publisher_id}!App"))
+}
+
+#[cfg_attr(not(any(test, windows)), allow(dead_code))]
+pub(crate) fn parse_windows_codex_app_id_from_registry(output: &str) -> Option<String> {
+    const PACKAGE_MARKER: &str = "\\AppModel\\Repository\\Packages\\";
+    output.lines().find_map(|line| {
+        let line = line.trim();
+        let (_, package_full_name) = line.split_once(PACKAGE_MARKER)?;
+        if package_full_name.contains('\\') {
+            return None;
+        }
+        windows_codex_app_id_from_package_full_name(package_full_name)
+    })
+}
+
+#[cfg(windows)]
+fn find_windows_codex_store_app_id() -> Option<String> {
+    const PACKAGES_KEY: &str =
+        r"HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages";
+    for package_name in ["OpenAI.Codex_", "OpenAI.CodexBeta_", "OpenAI.ChatGPT_"] {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let Ok(output) = std::process::Command::new("reg")
+            .args(["query", PACKAGES_KEY, "/f", package_name, "/k", "/s"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        else {
+            continue;
+        };
+        if !output.status.success() {
+            continue;
+        }
+        if let Some(app_id) =
+            parse_windows_codex_app_id_from_registry(&String::from_utf8_lossy(&output.stdout))
+        {
+            return Some(app_id);
+        }
+    }
+    find_windows_codex_app_id_from_windowsapps()
+}
+
+#[cfg(windows)]
+fn find_windows_codex_app_id_from_windowsapps() -> Option<String> {
+    let root = std::path::Path::new(r"C:\Program Files\WindowsApps");
+    let rd = std::fs::read_dir(root).ok()?;
+    let mut names: Vec<String> = rd
+        .flatten()
+        .filter_map(|ent| {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("OpenAI.Codex_")
+                || name.starts_with("OpenAI.CodexBeta_")
+                || name.starts_with("OpenAI.ChatGPT_")
+            {
+                Some(name.into_owned())
+            } else {
+                None
+            }
+        })
+        .collect();
+    names.sort();
+    names
+        .into_iter()
+        .rev()
+        .find_map(|name| windows_codex_app_id_from_package_full_name(&name))
+}
+
+#[cfg(windows)]
+fn find_windows_codex_gui_exe() -> Option<std::path::PathBuf> {
+    let local = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from)?;
+    let candidates = [
+        local.join("Programs").join("OpenAI").join("ChatGPT").join("ChatGPT.exe"),
+        local.join("Programs").join("ChatGPT").join("ChatGPT.exe"),
+        local.join("OpenAI").join("ChatGPT").join("ChatGPT.exe"),
+        local.join("Programs").join("OpenAI").join("Codex").join("Codex.exe"),
+        local.join("Programs").join("Codex").join("Codex.exe"),
+        local.join("OpenAI").join("Codex").join("Codex.exe"),
+        local.join("Microsoft").join("WindowsApps").join("ChatGPT.exe"),
+    ];
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+#[cfg(windows)]
+fn spawn_detached_app(program: &std::path::Path) -> Result<(), String> {
+    spawn_detached_command(std::process::Command::new(program))
+}
+
+#[cfg(windows)]
+fn launch_windows_store_app(app_id: &str) -> Result<(), String> {
+    let mut cmd = std::process::Command::new("explorer");
+    cmd.arg(format!("shell:AppsFolder\\{app_id}"));
+    spawn_detached_command(cmd)
+}
+
+#[cfg(windows)]
+fn spawn_detached_command(mut cmd: std::process::Command) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| {
+            let msg = format!("launch app failed: {e}");
+            tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
+            msg
+        })
+}
+
+#[cfg(windows)]
+fn launch_codex_desktop_window() -> Result<(), String> {
+    if let Some(app_id) = find_windows_codex_store_app_id() {
+        tracing::info!(
+            target: targets::GUI,
+            op = "launch_app",
+            via = "store",
+            app_id = %app_id,
+            "launching Codex app"
+        );
+        return launch_windows_store_app(&app_id);
+    }
+    if let Some(exe) = find_windows_codex_gui_exe() {
+        tracing::info!(
+            target: targets::GUI,
+            op = "launch_app",
+            via = "exe",
+            path = %exe.display(),
+            "launching Codex app"
+        );
+        return spawn_detached_app(&exe);
+    }
+    let msg = "codex app window not found".to_string();
+    tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
+    Err(msg)
+}
+
+#[cfg(target_os = "macos")]
+fn map_launch_app_error(err: std::io::Error) -> String {
+    let msg = format!("launch app failed: {err}");
+    tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
+    msg
+}
+
+#[cfg(target_os = "macos")]
+fn open_macos_app(bundle: &std::path::Path) -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg(bundle)
+        .spawn()
+        .map(|_| ())
+        .map_err(map_launch_app_error)
+}
+
+#[cfg(target_os = "macos")]
+fn find_macos_codex_app_bundle() -> Option<std::path::PathBuf> {
+    let home = agenthub_core::utils::paths::home_dir().ok()?;
+    for root in [
+        std::path::PathBuf::from("/Applications"),
+        home.join("Applications"),
+    ] {
+        for name in macos_codex_app_bundle_names() {
+            let candidate = root.join(name);
+            if candidate.is_dir() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn launch_macos_codex_app(path: &std::path::Path) -> Result<(), String> {
+    let bundle = enclosing_app_bundle(path)
+        .map(std::path::Path::to_path_buf)
+        .or_else(find_macos_codex_app_bundle);
+    let Some(bundle) = bundle else {
+        let msg = "codex app window not found".to_string();
+        tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
+        return Err(msg);
+    };
+    tracing::info!(
+        target: targets::GUI,
+        op = "launch_app",
+        via = "bundle",
+        path = %bundle.display(),
+        "launching Codex app"
+    );
+    open_macos_app(&bundle)
+}
+
 /// Start a desktop app without attaching to this process.
+///
+/// Codex window ≠ bundled `codex` CLI:
+/// - Windows: Store app via `shell:AppsFolder\OpenAI.Codex_*!App`
+/// - macOS: `open` ChatGPT.app / Codex.app
+/// - Linux: no official Codex window
 pub(crate) fn launch_app(path: &std::path::Path) -> Result<(), String> {
+    match codex_app_launch_kind(path) {
+        CodexAppLaunchKind::WindowsStoreOrGui => {
+            #[cfg(windows)]
+            {
+                return launch_codex_desktop_window();
+            }
+            #[cfg(not(windows))]
+            {
+                unreachable!("WindowsStoreOrGui only on Windows");
+            }
+        }
+        CodexAppLaunchKind::MacosBundle => {
+            #[cfg(target_os = "macos")]
+            {
+                return launch_macos_codex_app(path);
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                unreachable!("MacosBundle only on macOS");
+            }
+        }
+        CodexAppLaunchKind::UnsupportedOnLinux => {
+            let msg = "codex app is not available on Linux".to_string();
+            tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
+            return Err(msg);
+        }
+        CodexAppLaunchKind::Direct => {}
+    }
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        std::process::Command::new(path)
-            .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
-            .spawn()
-            .map_err(|e| {
-                let msg = format!("launch app failed: {e}");
-                tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
-                msg
-            })?;
-        Ok(())
+        spawn_detached_app(path)
     }
     #[cfg(target_os = "macos")]
     {
-        let spawned = if let Some(bundle) = enclosing_app_bundle(path) {
-            std::process::Command::new("open").arg(bundle).spawn()
-        } else {
-            std::process::Command::new(path).spawn()
-        };
-        spawned.map_err(|e| {
-            let msg = format!("launch app failed: {e}");
-            tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
-            msg
-        })?;
-        Ok(())
+        if let Some(bundle) = enclosing_app_bundle(path) {
+            return open_macos_app(bundle);
+        }
+        std::process::Command::new(path)
+            .spawn()
+            .map(|_| ())
+            .map_err(map_launch_app_error)
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        std::process::Command::new(path).spawn().map_err(|e| {
+        std::process::Command::new(path).spawn().map(|_| ()).map_err(|e| {
             let msg = format!("launch app failed: {e}");
             tracing::warn!(target: targets::GUI, op = "launch_app", "{msg}");
             msg
-        })?;
-        Ok(())
+        })
     }
     #[cfg(not(any(windows, unix)))]
     {
