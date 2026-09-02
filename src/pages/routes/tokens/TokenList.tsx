@@ -35,7 +35,7 @@ type TokenColumnKey = 'type' | 'endpoint' | 'token' | 'lastPage' | 'usage';
 const WIDTH_SPECS: ColumnWidthSpec<TokenColumnKey>[] = [
   { key: 'type', defaultWidth: 168, minWidth: 112 },
   { key: 'endpoint', defaultWidth: 280, minWidth: 180 },
-  { key: 'token', defaultWidth: 220, minWidth: 148 },
+  { key: 'token', defaultWidth: 280, minWidth: 180 },
   { key: 'lastPage', defaultWidth: 180, minWidth: 120 },
   { key: 'usage', defaultWidth: 148, minWidth: 112 },
 ];
