@@ -6,6 +6,7 @@ import {
   buildLocalTokenRows,
   generateLocalToken,
   lastVisitFromStatuses,
+  localTokenEditKeyGate,
   maskLocalToken,
   tokenTypeLabel,
   visibleTokenKinds,
@@ -129,10 +130,14 @@ describe('tokens-model', () => {
     expect(rows.map((row) => row.kind)).toEqual(['responses_codex', 'responses_grok']);
     expect(rows.map((row) => row.path)).toEqual(['/v1/responses', '/v1/responses']);
     expect(rows[0]).toMatchObject({
+      id: 'pool-codex',
+      poolBacked: true,
       profileId: 'codex-bridge',
       endpoint: '127.0.0.1:8101',
       token: 'ahb_secret',
     });
+    expect(localTokenEditKeyGate(rows[0]).enabled).toBe(true);
+    expect(localTokenEditKeyGate(rows[0]).reason).toBeNull();
   });
 
   it('falls back to leftover local-bridge profiles when no pool matches', () => {
@@ -144,6 +149,13 @@ describe('tokens-model', () => {
     expect(rows[0].kind).toBe('responses_codex');
     expect(rows[0].endpoint).toBeNull();
     expect(rows[0].token).toBeNull();
+    expect(rows[0]).toMatchObject({
+      id: 'p1',
+      poolBacked: false,
+      profileId: 'p1',
+    });
+    expect(localTokenEditKeyGate(rows[0]).enabled).toBe(false);
+    expect(localTokenEditKeyGate(rows[0]).reason).toContain('连接池令牌');
   });
 
   it('sorts rows by endpoint kind then name', () => {
@@ -437,5 +449,58 @@ describe('tokens-model', () => {
     expect(rows[0]?.token).toBe('ahb_listener_ok_Y5RM');
     expect(rows[0]?.maskedToken).toBe('ahb_••••Y5RM');
   });
+
+
+  it('marks pool rows editable and leftover profile rows not editable for setLocalToken', () => {
+    const poolRows = buildLocalTokenRows(
+      [
+        profile({
+          id: 'codex-bridge',
+          name: 'Codex',
+          targetAgentId: 'codex',
+          sourceId: 'src-codex',
+          localPort: 8101,
+        }),
+      ],
+      {},
+      {},
+      [
+        pool({
+          id: 'pool-codex',
+          targetAgentId: 'codex',
+          dialect: 'codex',
+          members: [{ sourceKind: 'provider', sourceId: 'src-codex', enabled: true }],
+          gatewayPort: 8101,
+        }),
+      ],
+    );
+    const leftoverRows = buildLocalTokenRows(
+      [profile({ id: 'orphan-bridge', name: 'Orphan', targetAgentId: 'claude' })],
+      {
+        'orphan-bridge': {
+          profileId: 'orphan-bridge',
+          state: 'running',
+          port: 9001,
+          upstreamStatus: 'connected',
+          localToken: 'ahb_orphan',
+        },
+      },
+    );
+    expect(poolRows[0]).toMatchObject({ id: 'pool-codex', poolBacked: true });
+    expect(localTokenEditKeyGate(poolRows[0])).toEqual({ enabled: true, reason: null });
+    expect(leftoverRows[0]).toMatchObject({
+      id: 'orphan-bridge',
+      poolBacked: false,
+      token: 'ahb_orphan',
+      profileId: 'orphan-bridge',
+    });
+    const leftoverGate = localTokenEditKeyGate(leftoverRows[0]);
+    expect(leftoverGate.enabled).toBe(false);
+    expect(leftoverGate.reason).toBe('这条还不是连接池令牌，先从路由建入口');
+    // Import still needs profileId+token; leftovers keep both — do not block #231 pool import path.
+    expect(leftoverRows[0].profileId).toBeTruthy();
+    expect(leftoverRows[0].token).toBeTruthy();
+  });
+
 
 });

@@ -1199,6 +1199,7 @@ export const en = {
       saveKey: "Confirm",
       keyRequired: "Enter an entry key",
       editKeyFailed: "Couldn't change the entry key",
+      editKeyNeedPool: "This isn't a connection-pool token yet — create an entry from Routes first",
       test: "Test",
       testing: "Testing…",
       testNeedKey: "Enter an entry key first",

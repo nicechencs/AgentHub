@@ -1189,6 +1189,7 @@ export const zh = {
       saveKey: "确定",
       keyRequired: "请填写入口 Key",
       editKeyFailed: "没法改入口 Key",
+      editKeyNeedPool: "这条还不是连接池令牌，先从路由建入口",
       test: "测试",
       testing: "测试中…",
       testNeedKey: "先填写入口 Key",

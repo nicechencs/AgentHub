@@ -8,6 +8,7 @@ import type { LocalTokenRow } from './tokens-model';
 function row(partial: Partial<LocalTokenRow> = {}): LocalTokenRow {
   return {
     id: 'pool-kimi',
+    poolBacked: true,
     profileId: 'bridge-1',
     name: 'kimi · /v1/chat/completions',
     kind: 'chat_completions',
