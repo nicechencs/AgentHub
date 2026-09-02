@@ -10,7 +10,7 @@
 //! - Anthropic API Key → Pi
 //! - OpenAI API → Grok / Codex
 //! - Grok subscription → Claude Code
-//! - Codex ChatGPT subscription → Grok (local GET /models)
+//! - Codex ChatGPT subscription → Grok / Kimi (local GET /models)
 //!
 //! Request-scoped edge pick (`decide_model_switch`) lives in
 //! `bridge::model_switch`, not here. This file is the static table.
@@ -331,6 +331,17 @@ pub const ADAPTER_MODEL_MAPPING_TABLES: &[AdapterModelMappingTable] = &[
         source: AdapterSourceProduct::CodexChatGptSubscription,
         target: AgentId::Grok,
         target_protocol: AdapterTargetProtocol::OpenAiResponses,
+        default_target_model: Some("gpt-5.4"),
+        entries: CODEX_GROK_MODELS,
+        allow_passthrough: false,
+    },
+    // Codex → Kimi local bridge: advertise official Codex Responses ids (not
+    // kimi-* leftovers). Same catalog shape as Codex → Grok.
+    AdapterModelMappingTable {
+        id: "codex-subscription-kimi-v1",
+        source: AdapterSourceProduct::CodexChatGptSubscription,
+        target: AgentId::Kimi,
+        target_protocol: AdapterTargetProtocol::OpenAiChatCompletions,
         default_target_model: Some("gpt-5.4"),
         entries: CODEX_GROK_MODELS,
         allow_passthrough: false,
@@ -666,12 +677,25 @@ mod tests {
             list_local_bridge_models(AdapterSourceProduct::Other, AgentId::Grok, Some("grok-4.5")),
             vec!["grok-4.5".to_string()]
         );
-        assert!(list_local_bridge_models(
+    }
+
+    #[test]
+    fn codex_to_kimi_listed_models_are_dispatch_accepted() {
+        let listed = list_local_bridge_models(
             AdapterSourceProduct::CodexChatGptSubscription,
             AgentId::Kimi,
-            Some("grok-4.5")
-        )
-        .is_empty());
+            Some("gpt-5.4"),
+        );
+        assert!(!listed.is_empty());
+        for model in &listed {
+            assert!(
+                !is_leftover_bridge_model(model),
+                "leftover id must not be listed: {model}"
+            );
+        }
+        assert_eq!(listed[0], "gpt-5.4");
+        assert!(listed.iter().any(|model| model == "gpt-5.1-codex"));
+        assert!(listed.iter().any(|model| model == "gpt-5"));
     }
 
     #[test]
