@@ -7,7 +7,7 @@ import type {
   AdapterProfile,
   DefaultRoutePoolOverview,
 } from '@/lib/backend/contracts/adapter';
-import { isBridgeStopCapable } from '@/pages/bridges/adapter-view-model';
+import { isBridgeStopCapable } from '@/pages/routes/shared/adapter-view-model';
 import { buildLocalEntryControl } from '@/pages/routes/board/board-view-model';
 import {
   buildRouteTraceFeed,

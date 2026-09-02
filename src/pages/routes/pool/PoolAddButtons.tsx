@@ -27,7 +27,7 @@ import type {
   SyncConnectionSource,
 } from '@/lib/backend/contracts';
 import type { ConnectionEntry } from '@/lib/connection-entry';
-import { sourceKindLabel } from '@/pages/bridges/adapter-create-flow';
+import { sourceKindLabel } from '@/pages/routes/shared/adapter-create-flow';
 import { isPoolShareableLogin } from '@/pages/connections/ticket-pool-import';
 import { cn } from '@/lib/utils';
 import { ApiAccessDialog } from './ApiAccessDialog';

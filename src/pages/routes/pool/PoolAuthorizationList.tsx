@@ -18,11 +18,11 @@ import {
   type ColumnWidthSpec,
 } from '@/components/ui/table';
 import { connectionKindLabel } from '@/lib/connection-kind';
-import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
+import { adapterStatusTextClass } from '@/pages/routes/shared/adapter-view-model';
 import {
   poolAuthorizationStatusView,
   type PoolAuthorizationItem,
-} from '@/pages/bridges/route-pool-view-model';
+} from '@/pages/routes/shared/route-pool-view-model';
 import { PoolEndpointTypeLine } from './PoolEndpointTypeLine';
 import { PoolLoginMark } from './PoolLoginMark';
 import {

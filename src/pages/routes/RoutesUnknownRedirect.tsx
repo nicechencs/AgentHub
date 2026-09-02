@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { routesIndexRedirectTo } from '@/lib/bridges-path';
+import { routesIndexRedirectTo } from '@/lib/routes-path';
 
 /** `/routes` index and unknown `/routes/*` → board, or auth pool when `?profile=`. */
 export function RoutesIndexRedirect() {

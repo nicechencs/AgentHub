@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const srcRoot = path.resolve(dir, '../..');
+const srcRoot = path.resolve(dir, '../../..');
 
 function source(rel: string): string {
   return readFileSync(path.join(srcRoot, rel), 'utf8');
@@ -52,7 +52,7 @@ describe('routes layout wiring', () => {
   });
 
   it('uses a plain 详情 button on Routes and Connections (no chevron)', () => {
-    const list = source('pages/bridges/AdapterProfilesList.tsx');
+    const list = source('pages/routes/shared/AdapterProfilesList.tsx');
     expect(list).toContain("t('routes.detail')");
     expect(list).not.toContain('DetailsToggle');
     expect(list).not.toContain('ChevronDown');
@@ -63,20 +63,20 @@ describe('routes layout wiring', () => {
     expect(connections).toContain('onShowDetail');
     expect(connections).toContain('onOpen=');
     expect(connections).not.toContain("t('connections.list.details')");
-    const importDialog = source('pages/bridges/ImportRouteDialog.tsx');
+    const importDialog = source('pages/routes/shared/ImportRouteDialog.tsx');
     expect(importDialog).toContain('DetailsToggle');
     expect(importDialog).toContain("t('connections.list.details')");
-    const detail = source('pages/bridges/RouteDetailPanel.tsx');
+    const detail = source('pages/routes/shared/RouteDetailPanel.tsx');
     expect(detail).toContain('asPanel');
     expect(detail).toContain('InspectSurface as DialogOrSide');
     expect(detail).toContain("t('routes.edit.action')");
     expect(detail).toContain("t('routes.inbound.title')");
     expect(detail).toContain("t('routes.inbound.empty')");
     expect(detail).toContain('ROUTE_LOCAL_ADDRESS_LEGEND');
-    const create = source('pages/bridges/CreateRouteDialog.tsx');
+    const create = source('pages/routes/shared/CreateRouteDialog.tsx');
     expect(create).toContain('localAddressCopyForTarget');
     expect(create).toContain("t('routes.endpoint.modelsLine')");
-    const write = source('pages/bridges/WriteClientConfigDialog.tsx');
+    const write = source('pages/routes/shared/WriteClientConfigDialog.tsx');
     expect(write).toContain('localEndpointKindLabel');
     expect(write).toContain("t('routes.endpoint.modelsLine')");
     expect(list).toContain("t('routes.edit.action')");
@@ -85,16 +85,16 @@ describe('routes layout wiring', () => {
 
   it('groups Claude/Codex/Grok profiles that share one source onto one card', () => {
     const page = source('pages/routes/pool/index.tsx');
-    const actions = source('pages/bridges/use-bridge-runtime-actions.ts');
+    const actions = source('pages/routes/shared/use-bridge-runtime-actions.ts');
     expect(page).toContain('groupLocalBridgeProfiles');
     expect(actions).toContain('localBridgeProfilesForSource');
-    const model = source('pages/bridges/adapter-view-model.ts');
+    const model = source('pages/routes/shared/adapter-view-model.ts');
     expect(model).toContain('One list card per upstream source');
   });
 
   it('opens edit and detail in the same right-hand inspect pane', () => {
     const page = source('pages/routes/pool/index.tsx');
-    const inspect = source('pages/bridges/route-inspect.ts');
+    const inspect = source('pages/routes/shared/route-inspect.ts');
     expect(inspect).toContain("{ kind: 'edit'; profile: AdapterProfile }");
     expect(inspect).toContain("{ kind: 'detail'; profile: AdapterProfile }");
     expect(page).toContain('onShowDetail');
@@ -111,11 +111,11 @@ describe('routes layout wiring', () => {
     expect(shell).toContain('{danger}');
     expect(shell).toContain('{primary}');
     expect(shell).not.toContain('footer={danger}');
-    const detail = source('pages/bridges/RouteDetailPanel.tsx');
+    const detail = source('pages/routes/shared/RouteDetailPanel.tsx');
     expect(detail).toContain('showCancel={false}');
     expect(detail).toContain('danger={deleteButton}');
     expect(detail).toContain('variant="outline"');
-    const create = source('pages/bridges/CreateRouteDialog.tsx');
+    const create = source('pages/routes/shared/CreateRouteDialog.tsx');
     expect(create).not.toContain('showCancel={false}');
     const panel = source('components/layout/SideInspectPanel.tsx');
     expect(panel).toContain('PanelRightClose');

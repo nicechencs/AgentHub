@@ -26,7 +26,7 @@ import RoutesTokensPage from '@/pages/routes/tokens';
 import RoutesActivityPage from '@/pages/routes/activity';
 import { isRoutesAreaPath } from '@/pages/routes/routes-nav-items';
 import { onTrayNavigate } from '@/lib/backend/tauri/tray-events';
-import { legacyBridgesRedirectTo } from '@/lib/bridges-path';
+import { legacyBridgesRedirectTo } from '@/lib/routes-path';
 import {
   checkForUpdate,
   isUpdateAvailable,

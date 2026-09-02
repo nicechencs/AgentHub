@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { PoolAuthorizationItem } from '@/pages/bridges/route-pool-view-model';
+import type { PoolAuthorizationItem } from '@/pages/routes/shared/route-pool-view-model';
 import type { Provider } from '@/lib/types';
 import { PoolAuthorizationDetail } from './PoolAuthorizationDetail';
 

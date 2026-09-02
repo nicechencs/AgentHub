@@ -10,7 +10,7 @@ import {
   Route,
   Settings2,
 } from 'lucide-react';
-import { BRIDGES_PATH } from '@/lib/bridges-path';
+import { ROUTES_PATH } from '@/lib/routes-path';
 
 export const PLUGINS_PATH = '/plugins';
 
@@ -28,7 +28,7 @@ export const NAV_WORKSPACE = [
 export const NAV_MANAGE = [
   { to: '/', navKey: 'nav.dashboard', icon: Gauge },
   { to: '/connections', navKey: 'nav.connections', icon: Key },
-  { to: BRIDGES_PATH, navKey: 'nav.routes', icon: Route },
+  { to: ROUTES_PATH, navKey: 'nav.routes', icon: Route },
   { to: '/settings', navKey: 'nav.settings', icon: Settings2 },
 ] as const;
 
@@ -44,7 +44,7 @@ export function filterManageNavItems<T extends { to: string }>(
   routesNavVisible: boolean,
 ): T[] {
   if (routesNavVisible) return [...items];
-  return items.filter((item) => item.to !== BRIDGES_PATH);
+  return items.filter((item) => item.to !== ROUTES_PATH);
 }
 
 /** 工作区导航：按「插件」可见性过滤（插件页仍可通过 URL 直接访问）。 */

@@ -35,11 +35,11 @@ import {
 } from '@/lib/route-endpoints';
 import { agentCssVar } from '@/styles/tokens';
 import { cn } from '@/lib/utils';
-import { AdapterErrorLines } from '@/pages/bridges/adapter-components';
-import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
-import { useAdapterResources } from '@/pages/bridges/use-bridge-resources';
-import { useBridgeRuntimeActions } from '@/pages/bridges/use-bridge-runtime-actions';
-import { useRoutePoolState } from '@/pages/bridges/use-route-pool-state';
+import { AdapterErrorLines } from '@/pages/routes/shared/adapter-components';
+import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
+import { useAdapterResources } from '@/pages/routes/shared/use-bridge-resources';
+import { useBridgeRuntimeActions } from '@/pages/routes/shared/use-bridge-runtime-actions';
+import { useRoutePoolState } from '@/pages/routes/shared/use-route-pool-state';
 import { RoutesPane } from '@/pages/routes/RoutesPane';
 import {
   BOARD_ROUTE_GRID,

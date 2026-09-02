@@ -13,11 +13,11 @@ import { connectionKindLabel } from '@/lib/connection-kind';
 import { localEndpointPath } from '@/lib/route-endpoints';
 import type { AgentId } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { adapterStatusTextClass } from '@/pages/bridges/adapter-view-model';
+import { adapterStatusTextClass } from '@/pages/routes/shared/adapter-view-model';
 import {
   poolAuthorizationStatusView,
   type PoolAuthorizationItem,
-} from '@/pages/bridges/route-pool-view-model';
+} from '@/pages/routes/shared/route-pool-view-model';
 import { ApiAccessForm } from './ApiAccessDialog';
 import type { PoolApiEditTarget } from './api-access-model';
 import { PoolEndpointTypeLine } from './PoolEndpointTypeLine';

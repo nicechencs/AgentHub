@@ -15,7 +15,7 @@ import {
   localEndpointPath,
   type LocalEndpointKind,
 } from '@/lib/route-endpoints';
-import { localEndpointKindLabel } from '@/pages/bridges/route-pool-view-model';
+import { localEndpointKindLabel } from '@/pages/routes/shared/route-pool-view-model';
 import {
   filterGatewayUsageRows,
   summarizeGatewayUsage,

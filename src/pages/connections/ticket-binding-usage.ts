@@ -16,7 +16,7 @@ import type {
   TicketWallet,
 } from '@/lib/backend/contracts/ticket';
 import { surfaceGroupMemberCount } from '@/lib/backend/contracts/ticket';
-import { bridgesHrefForProfile } from '@/lib/bridges-path';
+import { routesHrefForProfile } from '@/lib/routes-path';
 import type { TranslateFn } from '@/lib/i18n';
 import { filterTicketsByOwner } from '@/lib/ticket-wallet';
 import { connectionStateRouteLabel } from '@/lib/ticket-wallet-labels';
@@ -83,7 +83,7 @@ export function formatBindingUsageParts(
     return [
       { kind: 'endpoint', path, port, endpointId },
       { kind: 'text', text: '（' },
-      { kind: 'bridge', label: route, href: bridgesHrefForProfile(binding.profileId) },
+      { kind: 'bridge', label: route, href: routesHrefForProfile(binding.profileId) },
       { kind: 'text', text: t ? t('connections.list.usageCloseWithSuffix', { suffix }) : `${suffix}）` },
     ];
   }
