@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { en } from '@/lib/i18n/locales/en';
 import { zh } from '@/lib/i18n/locales/zh';
 import {
   agentTaskLogTitleKey,
@@ -39,6 +40,8 @@ describe('agent-card menu wiring', () => {
     expect(card).toContain('canInstallAlongsideSpecial');
     expect(card).toContain('uniqueInstallVersions');
     expect(card).toContain('agentListDetailsHint');
+    expect(card).toContain('isLeftoverDetailsHint');
+    expect(card).toContain('text-warning');
     expect(card).toContain('agentUpgradeControl');
     expect(card).toContain('agentLaunchTargets');
     expect(card).toContain("t('agents.card.startCli')");
@@ -135,7 +138,10 @@ describe('extra copy labels', () => {
     expect(card).not.toContain('updateViaDesktop');
     expect(zh.agents.card.seeDetails).toBe('多个版本，点开看详情');
     expect(zh.agents.card.seeDetailsCopies).toBe('另有 {count} 份，点开看详情');
-    expect(zh.agents.card.seeDetailsLeftover).toBe('另有遗留副本，点开看详情');
+    expect(zh.agents.card.seeDetailsLeftover).toBe('另有遗留副本，勿从此路径启动');
+    expect(zh.agents.card.leftoverDoNotLaunch).toBe('勿从此路径启动');
+    expect(en.agents.card.seeDetailsLeftover).toBe('Leftover copy — do not launch from this path');
+    expect(en.agents.card.leftoverDoNotLaunch).toBe('Do not launch from this path');
     expect(zh.agents.card.extraCopyLeftover).toBe('遗留数据目录 npm');
     expect(zh.agents.card.updateViaDesktop).toBe('请到桌面应用更新');
     expect(zh.agents.card.updateViaIde).toBe('请到 IDE 插件更新');
@@ -307,7 +313,7 @@ describe('extra copy labels', () => {
     expect(agentUninstallControl('ide')).toEqual({ show: true, muted: true });
     expect(agentUninstallControl('desktop')).toEqual({ show: true, muted: true });
     expect(agentUninstallControl('official')).toEqual({ show: true, muted: true });
-    expect(agentUninstallControl('leftover')).toEqual({ show: false, muted: false });
+    expect(agentUninstallControl('leftover')).toEqual({ show: true, muted: false });
     expect(agentUninstallControl('none')).toEqual({ show: false, muted: false });
     expect(
       canInstallAlongsideSpecial({

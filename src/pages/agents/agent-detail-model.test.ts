@@ -361,6 +361,9 @@ describe('AgentDetailPanel markup', () => {
     });
     expect(html).toContain('遗留数据目录 npm');
     expect(html).toContain('/v1/responses');
+    expect(html).toContain('勿从此路径启动');
+    expect(html).toContain('text-warning');
+    expect(html).toContain('border-warning/45');
     expect(html).not.toMatch(/>native</);
     expect(html).not.toMatch(/>npm</);
   });
