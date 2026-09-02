@@ -6,8 +6,11 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBe
 
 use crate::error::{AppError, Result};
 use crate::models::{
-    attach_persisted_surface, Account, AgentId, PersistedTicketSurface, Provider, ProviderInput,
-    TicketSurface,
+    attach_persisted_surface, Account, AgentId, Capability, PersistedTicketSurface, Provider,
+    ProviderInput, TicketSurface,
+};
+use crate::services::adapter_projection::{
+    exact_generated_provider_for_live, generated_provider_is_adapter_owned,
 };
 use crate::services::provider_identity::{provider_identity, stamp_secret_hash};
 use crate::services::switch_undo::{extract_probe_url, probe_url_latency_ms};
@@ -56,9 +59,11 @@ impl ProviderService {
     pub fn list(&self, agent: Option<AgentId>) -> Result<Vec<Provider>> {
         self.connections.reconcile_known_agents(agent);
         if let Some(agent) = agent {
+            let _ = self.heal_adapter_binding_from_live(agent);
             let _ = self.heal_secret_url_duplicates(agent);
         } else {
             for agent in AgentId::ALL {
+                let _ = self.heal_adapter_binding_from_live(agent);
                 let _ = self.heal_secret_url_duplicates(agent);
             }
         }
@@ -109,6 +114,8 @@ impl ProviderService {
 
     /// The unique current provider for `agent`, if any.
     pub fn get_current(&self, agent: AgentId) -> Result<Option<Provider>> {
+        self.connections.reconcile_known_agents(Some(agent));
+        let _ = self.heal_adapter_binding_from_live(agent);
         self.repo.get_current(agent)
     }
 
@@ -467,6 +474,57 @@ impl ProviderService {
                 stored.id
             ))
         })
+    }
+
+    /// If live config still matches a non-current adapter-generated provider
+    /// exactly (loopback URL + `ahb_` bearer), activate that provider so
+    /// `is_current` / `agent_active_bindings` stop drifting to a stale bridge
+    /// (for example OpenAI @40661 while `~/.claude/settings.json` points at
+    /// Codex @44227). Pool-only: does not rewrite live files.
+    ///
+    /// Skips when the current provider is a user grant, when live does not
+    /// uniquely identify one generated provider, or when Cursor is the agent.
+    pub(super) fn heal_adapter_binding_from_live(&self, agent: AgentId) -> Result<()> {
+        if agent == AgentId::Cursor {
+            return Ok(());
+        }
+        let Ok(adapter) = self.adapter(agent) else {
+            return Ok(());
+        };
+        if !adapter.capability(Capability::ConfigWrite).is_usable() {
+            return Ok(());
+        }
+        let Ok(live) = adapter.read_config() else {
+            return Ok(());
+        };
+        let providers = self.repo.list(Some(agent))?;
+        let Some(matched) = exact_generated_provider_for_live(agent, &live.raw, &providers) else {
+            return Ok(());
+        };
+        if matched.is_current {
+            return Ok(());
+        }
+        if let Some(current) = providers.iter().find(|row| row.is_current) {
+            if !generated_provider_is_adapter_owned(current) {
+                return Ok(());
+            }
+        }
+        let now = now_ts();
+        tracing::info!(
+            module = crate::logging::targets::PROVIDER,
+            op = "heal_adapter_binding_from_live",
+            agent = agent.as_str(),
+            from = providers
+                .iter()
+                .find(|row| row.is_current)
+                .map(|row| row.id.as_str())
+                .unwrap_or("-"),
+            to = matched.id.as_str(),
+            "aligning active binding to live adapter projection"
+        );
+        self.connections
+            .activate_provider(agent, &matched.id, &matched.updated_at, &now)?;
+        Ok(())
     }
 
     /// Merge same-agent rows that share secret hash + base URL into one keeper.
