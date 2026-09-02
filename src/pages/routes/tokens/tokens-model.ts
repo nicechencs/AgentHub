@@ -208,8 +208,13 @@ function rowFromRuntime(input: {
   const port = input.unavailable
     ? null
     : (input.status?.port ?? input.portHint ?? input.profile?.localPort);
-  const token = input.storedToken?.trim()
-    || (input.unavailable ? null : input.status?.localToken?.trim() || null);
+  // Live listener bearer authenticates; pool hub_token often differs and 401s.
+  // Prefer runtime localToken whenever the entry is up; fall back to stored key
+  // only when stopped / no runtime token (edit + offline display).
+  const runtimeToken = input.unavailable
+    ? null
+    : (input.status?.localToken?.trim() || null);
+  const token = runtimeToken || input.storedToken?.trim() || null;
   const visit = lastVisitFromStatuses(input.profileIds, input.statuses);
   return {
     id: input.id,
